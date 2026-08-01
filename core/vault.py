@@ -11,6 +11,10 @@ def get_fernet_instance() -> Fernet:
         key_str = settings.encryption_key
         if not key_str:
             # Fallback to in-memory key for local development/testing
+            print(
+                "[VAULT] ENCRYPTION_KEY not set — using a per-process random key; "
+                "persisted secrets will not survive restarts!"
+            )
             key_bytes = _default_test_key
         else:
             key_bytes = key_str.encode("utf-8")

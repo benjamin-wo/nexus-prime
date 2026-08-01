@@ -24,7 +24,14 @@ async def get_user_email_token(user_id: int, provider: str = "gmail") -> Optiona
         cred = result.scalar_one_or_none()
         if not cred:
             return None
-        return decrypt_token(cred.encrypted_token_payload)
+        try:
+            return decrypt_token(cred.encrypted_token_payload)
+        except Exception as exc:  # noqa: BLE001 - a bad key must not crash the webhook
+            print(
+                f"[EMAIL] failed to decrypt {provider} token for user {user_id}: "
+                f"{type(exc).__name__} — treat as not connected"
+            )
+            return None
 
 async def get_user_gmail_token(user_id: int) -> Optional[str]:
     """Retrieve and decrypt the user's Gmail OAuth refresh token from PostgreSQL (backward compatibility)."""

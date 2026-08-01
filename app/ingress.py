@@ -236,6 +236,18 @@ class TelegramIngress:
                 if reply_text:
                     sent = await send_telegram_message(chat_id, reply_text)
                     self._log_conversation("OUT" if sent else "SEND-FAIL", chat_id, reply_text)
+            except Exception as exc:  # noqa: BLE001
+                import traceback
+
+                traceback.print_exc()
+                if callback_query_id:
+                    await answer_telegram_callback(
+                        callback_query_id, text="Something glitched — try again"
+                    )
+                await send_telegram_message(
+                    chat_id,
+                    "😵‍💫 Sorry, something glitched on my end — I've logged it and I'm on it. Try again in a minute?",
+                )
             finally:
                 stop_event.set()
                 typing_task.cancel()
@@ -410,6 +422,15 @@ class TelegramIngress:
                     "OUT" if sent else "SEND-FAIL", chat_id, reply_text
                 )
             return {"status": "ok", "processed": True}
+        except Exception as exc:  # noqa: BLE001 - never leave the user hanging
+            import traceback
+
+            traceback.print_exc()
+            await send_telegram_message(
+                chat_id,
+                "😵‍💫 Sorry, something glitched on my end — I've logged it and I'm on it. Try again in a minute?",
+            )
+            return {"status": "ok", "processed": False, "error": str(exc)}
         finally:
             stop_event.set()
             typing_task.cancel()
