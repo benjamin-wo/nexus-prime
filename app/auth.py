@@ -9,7 +9,7 @@ from urllib.parse import urlencode
 
 from core.config import settings
 from core.db import async_session_factory
-from core.models import UserCredential
+from core.models import UserCredential, UserProfile
 from core.vault import encrypt_token
 
 
@@ -111,7 +111,24 @@ async def google_callback(
             )
         await session.commit()
 
+    chat_id = None
+    if user_id:
+        result = await session.execute(
+            select(UserProfile).where(UserProfile.user_id == user_id)
+        )
+        profile = result.scalar_one_or_none()
+        chat_id = profile.telegram_chat_id if profile else None
+
+    if chat_id:
+        # Let the user know on Telegram instead of leaving them to guess.
+        from app.ingress import send_telegram_message
+
+        await send_telegram_message(
+            chat_id,
+            "✅ Gmail connected! Ask me to check your email whenever you're ready.",
+        )
+
     return HTMLResponse(
         "<h2>✅ Gmail connected!</h2>"
-        "<p>You can close this tab and message the bot again — it can now read your inbox.</p>"
+        "<p>You can close this tab — I've already pinged you on Telegram.</p>"
     )

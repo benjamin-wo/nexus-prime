@@ -1,5 +1,8 @@
+import asyncio
 import base64
+import html
 import json
+import re
 from typing import Dict, Any, List, Optional
 import httpx
 from langchain_core.messages import AIMessage
@@ -11,6 +14,39 @@ from core.db import async_session_factory
 from core.models import UserProfile
 from core.scheduler import list_active_jobs, run_now, update_user_timezone
 from orchestrator.graph import assistant_graph
+
+
+def format_for_telegram(text: str) -> str:
+    """
+    Convert lightweight Markdown into Telegram-safe HTML.
+    Everything is HTML-escaped first, so unknown syntax renders as literal text
+    instead of breaking Telegram's parse mode.
+    """
+    text = html.escape(text)
+    text = re.sub(r"`([^`\n]+)`", r"<code>\1</code>", text)
+    text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text)
+    text = re.sub(r"(?<!\*)\*([^*\n]+)\*(?!\*)", r"<i>\1</i>", text)
+    text = re.sub(
+        r"\[([^\]]+)\]\((https?://[^\s)]+)\)",
+        r'<a href="\2">\1</a>',
+        text,
+    )
+
+    lines = []
+    for line in text.split("\n"):
+        stripped = line.strip()
+        if stripped.startswith("|"):
+            cells = [cell.strip() for cell in stripped.strip("|").split("|")]
+            if all(re.fullmatch(r":?-{2,}:?", cell) for cell in cells):
+                continue  # drop markdown table separator rows
+            lines.append("• " + " · ".join(cells))
+        elif re.match(r"^#{1,6}\s+", stripped):
+            lines.append("<b>" + re.sub(r"^#{1,6}\s+", "", stripped) + "</b>")
+        elif re.match(r"^\s*[-*]\s+", line):
+            lines.append("• " + re.sub(r"^\s*[-*]\s+", "", line))
+        else:
+            lines.append(line)
+    return "\n".join(lines)
 
 
 async def telegram_api_call(method: str, payload: Dict[str, Any]) -> bool:
@@ -42,7 +78,19 @@ async def send_telegram_message(
     reply_markup: Optional[Dict[str, Any]] = None,
 ) -> bool:
     """Send a text message to a Telegram chat."""
-    payload: Dict[str, Any] = {"chat_id": chat_id, "text": text}
+    url_match = re.search(r"https?://[^\s]+", text)
+    if url_match and reply_markup is None:
+        url = url_match.group(0).rstrip(".,);!?")
+        text = text.replace(url_match.group(0), "").strip()
+        text = f"{text}\n\n👇 Tap the button below." if text else "👇 Tap the button below."
+        reply_markup = {
+            "inline_keyboard": [[{"text": "🔗 Open link", "url": url}]]
+        }
+    payload: Dict[str, Any] = {
+        "chat_id": chat_id,
+        "text": format_for_telegram(text),
+        "parse_mode": "HTML",
+    }
     if reply_markup is not None:
         payload["reply_markup"] = reply_markup
     return await telegram_api_call("sendMessage", payload)
@@ -68,6 +116,16 @@ async def send_telegram_chat_action(chat_id: int, action: str = "typing") -> boo
 
 class TelegramIngress:
     """Deep ingress adapter for Telegram Bot API payloads, slash commands, callbacks, and profile lookup."""
+
+    @staticmethod
+    async def _typing_loop(chat_id: int, stop_event: asyncio.Event) -> None:
+        """Repeat the typing indicator every ~4s until processing finishes."""
+        while not stop_event.is_set():
+            await send_telegram_chat_action(chat_id, "typing")
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=4.0)
+            except asyncio.TimeoutError:
+                continue
 
     @staticmethod
     def _log_conversation(direction: str, chat_id: Any, text: Any) -> None:
@@ -164,17 +222,24 @@ class TelegramIngress:
             action = callback_data
 
         if chat_id:
-            config = {"configurable": {"thread_id": str(chat_id)}}
-            result = await assistant_graph.ainvoke(
-                Command(resume={"action": action}),
-                config=config,
-            )
-            if callback_query_id:
-                await answer_telegram_callback(callback_query_id, text="Done")
-            reply_text = self._extract_ai_reply(result)
-            if reply_text:
-                sent = await send_telegram_message(chat_id, reply_text)
-                self._log_conversation("OUT" if sent else "SEND-FAIL", chat_id, reply_text)
+            stop_event = asyncio.Event()
+            typing_task = asyncio.create_task(self._typing_loop(chat_id, stop_event))
+            try:
+                config = {"configurable": {"thread_id": str(chat_id)}}
+                result = await assistant_graph.ainvoke(
+                    Command(resume={"action": action}),
+                    config=config,
+                )
+                if callback_query_id:
+                    await answer_telegram_callback(callback_query_id, text="Done")
+                reply_text = self._extract_ai_reply(result)
+                if reply_text:
+                    sent = await send_telegram_message(chat_id, reply_text)
+                    self._log_conversation("OUT" if sent else "SEND-FAIL", chat_id, reply_text)
+            finally:
+                stop_event.set()
+                typing_task.cancel()
+                await asyncio.gather(typing_task, return_exceptions=True)
             return {"status": "ok", "action": action, "resumed": True}
         return {"status": "ok", "ignored": True}
 
@@ -281,65 +346,74 @@ class TelegramIngress:
         if chat_id:
             await send_telegram_chat_action(chat_id)
 
-        profile = await self.ensure_profile(user_id=user_id, chat_id=chat_id)
+        stop_event = asyncio.Event()
+        typing_task = asyncio.create_task(self._typing_loop(chat_id, stop_event))
+        try:
+            profile = await self.ensure_profile(user_id=user_id, chat_id=chat_id)
 
-        # Handle slash commands without invoking LangGraph
-        slash_res = await self.handle_slash_command(text, user_id=user_id)
-        if slash_res is not None:
-            if chat_id:
-                reply_text = self._format_slash_reply(slash_res, text)
-                if reply_text:
-                    sent = await send_telegram_message(chat_id, reply_text)
+            # Handle slash commands without invoking LangGraph
+            slash_res = await self.handle_slash_command(text, user_id=user_id)
+            if slash_res is not None:
+                if chat_id:
+                    reply_text = self._format_slash_reply(slash_res, text)
+                    if reply_text:
+                        sent = await send_telegram_message(chat_id, reply_text)
+                        self._log_conversation(
+                            "OUT" if sent else "SEND-FAIL", chat_id, reply_text
+                        )
+                return slash_res
+
+            content_blocks = await self.process_multimodal_attachments(message)
+            human_msg = HumanMessage(
+                content=content_blocks if len(content_blocks) > 1 else text
+            )
+
+            config = {"configurable": {"thread_id": str(chat_id)}}
+            initial_state = {
+                "messages": [human_msg],
+                "user_id": user_id,
+                "current_timezone": profile.current_timezone,
+                "active_domain": None,
+            }
+
+            result = await assistant_graph.ainvoke(initial_state, config=config)
+            reply_text = self._extract_ai_reply(result)
+            reply_markup = None
+            if result.get("intent_type") == "unsupported_transaction":
+                tags = result.get("missing_capability_tags") or ["general"]
+                primary_tag = tags[0] if tags else "general"
+                reply_markup = {
+                    "inline_keyboard": [
+                        [
+                            {
+                                "text": f"+ Log Feature Request (#{primary_tag})",
+                                "callback_data": f"log_req:{primary_tag}",
+                            }
+                        ]
+                    ]
+                }
+                if chat_id and reply_text:
+                    sent = await send_telegram_message(chat_id, reply_text, reply_markup=reply_markup)
                     self._log_conversation(
                         "OUT" if sent else "SEND-FAIL", chat_id, reply_text
                     )
-            return slash_res
+                return {
+                    "status": "ok",
+                    "processed": True,
+                    "intent_type": "unsupported_transaction",
+                    "inline_keyboard": reply_markup["inline_keyboard"],
+                }
 
-        content_blocks = await self.process_multimodal_attachments(message)
-        human_msg = HumanMessage(
-            content=content_blocks if len(content_blocks) > 1 else text
-        )
-
-        config = {"configurable": {"thread_id": str(chat_id)}}
-        initial_state = {
-            "messages": [human_msg],
-            "user_id": user_id,
-            "current_timezone": profile.current_timezone,
-            "active_domain": None,
-        }
-
-        result = await assistant_graph.ainvoke(initial_state, config=config)
-        reply_text = self._extract_ai_reply(result)
-        reply_markup = None
-        if result.get("intent_type") == "unsupported_transaction":
-            tags = result.get("missing_capability_tags") or ["general"]
-            primary_tag = tags[0] if tags else "general"
-            reply_markup = {
-                "inline_keyboard": [
-                    [
-                        {
-                            "text": f"+ Log Feature Request (#{primary_tag})",
-                            "callback_data": f"log_req:{primary_tag}",
-                        }
-                    ]
-                ]
-            }
             if chat_id and reply_text:
-                sent = await send_telegram_message(chat_id, reply_text, reply_markup=reply_markup)
+                sent = await send_telegram_message(chat_id, reply_text)
                 self._log_conversation(
                     "OUT" if sent else "SEND-FAIL", chat_id, reply_text
                 )
-            return {
-                "status": "ok",
-                "processed": True,
-                "intent_type": "unsupported_transaction",
-                "inline_keyboard": reply_markup["inline_keyboard"],
-            }
-
-        if chat_id and reply_text:
-            sent = await send_telegram_message(chat_id, reply_text)
-            self._log_conversation("OUT" if sent else "SEND-FAIL", chat_id, reply_text)
-        return {"status": "ok", "processed": True}
+            return {"status": "ok", "processed": True}
+        finally:
+            stop_event.set()
+            typing_task.cancel()
+            await asyncio.gather(typing_task, return_exceptions=True)
 
 
 # Global default ingress adapter

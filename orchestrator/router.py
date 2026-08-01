@@ -26,6 +26,8 @@ SYSTEM_PROMPT = (
     "You are warm, sharp, and lightly witty — like a capable friend who actually enjoys helping. "
     "Write like a human texting on Telegram: concise, natural, lowercase-friendly when it fits, "
     "light emoji where it adds warmth, and no corporate filler. "
+    "Format for Telegram chat: short paragraphs, **bold** for key phrases, bullet lists starting "
+    "with '-', no tables, no code fences, no headings with '#'. "
     "Never introduce yourself as a subagent or model; just be you. "
     "If you don't know something, say so honestly instead of making it up. "
     "Current Singapore time: {now}. "
@@ -76,7 +78,8 @@ class EmailPlugin:
                 message=AIMessage(
                     content=(
                         "🔐 I can check your Gmail — I just need one-time access from you. "
-                        f"Open this link and allow Gmail access (read-only), then message me again:\n{link}"
+                        f"Open this link and allow Gmail access (read-only) — "
+                        f"I'll ping you here when it's connected:\n{link}"
                     )
                 ),
                 state_update={"active_domain": self.name},
