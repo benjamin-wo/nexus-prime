@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 from typing import Protocol, List, Dict, Any, Optional
-from langchain_core.messages import AIMessage
+from datetime import datetime
+from zoneinfo import ZoneInfo
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.types import Command
 from langgraph.graph import END
 from orchestrator.state import AssistantState
@@ -8,8 +10,22 @@ from capabilities.email.tools import search_email_messages, discover_and_track_b
 from capabilities.expenses.tools import process_extracted_expense
 from capabilities.routes.tools import plan_route
 from capabilities.recipes.tools import parse_recipe_and_extract_ingredients
-from capabilities.general.tools import search_web
+from core.config import settings
+from core.llm import get_agent_llm, ThinkingLevel
 from core.audit import log_capability_request
+
+
+SYSTEM_PROMPT = (
+    "You are Nexus Prime, a personal AI assistant running as a Telegram bot for a close friend. "
+    "You are warm, sharp, and lightly witty — like a capable friend who actually enjoys helping. "
+    "Write like a human texting on Telegram: concise, natural, lowercase-friendly when it fits, "
+    "light emoji where it adds warmth, and no corporate filler. "
+    "Never introduce yourself as a subagent or model; just be you. "
+    "If you don't know something, say so honestly instead of making it up. "
+    "Current Singapore time: {now}. "
+    "You can help with email, expenses, routes, recipes, reminders, and general questions — "
+    "but if the user asks for something genuinely out of scope, say so warmly and suggest what you CAN do."
+)
 
 
 @dataclass
@@ -130,28 +146,35 @@ class GeneralPlugin:
 
     async def execute(self, state: AssistantState) -> PluginOutput:
         messages = state.get("messages", [])
-        last_text = str(messages[-1].content) if messages else ""
-        if any(
-            w in last_text.lower()
-            for w in [
-                "who is",
-                "what is",
-                "latest",
-                "news",
-                "search",
-                "current",
-                "weather",
-            ]
-        ):
-            search_res = await search_web.ainvoke({"query": last_text})
-            reply = AIMessage(
-                content=f"🌐 [General Subagent] Search results: {search_res}"
+        now_sg = datetime.now(ZoneInfo("Asia/Singapore")).strftime("%A, %d %b %Y %H:%M")
+        history = [SystemMessage(content=SYSTEM_PROMPT.format(now=now_sg))]
+        for message in messages[-8:]:
+            if isinstance(message, HumanMessage):
+                history.append(HumanMessage(content=str(message.content)))
+            elif isinstance(message, AIMessage):
+                history.append(AIMessage(content=str(message.content)))
+
+        # Tests and local runs use the placeholder key; skip the network call there.
+        if not settings.deepseek_api_key or settings.deepseek_api_key == "test_deepseek_key":
+            return PluginOutput(
+                message=AIMessage(content="Hey! I'm here — what do you need? 🙂"),
+                state_update={"active_domain": self.name},
             )
-        else:
-            reply = AIMessage(
-                content="🤖 [General Subagent] How can I assist you today?"
-            )
-        return PluginOutput(message=reply, state_update={"active_domain": self.name})
+
+        try:
+            llm = get_agent_llm(complexity=ThinkingLevel.LOW, temperature=0.7)
+            ai_message = await llm.ainvoke(history)
+            content = str(getattr(ai_message, "content", "") or "").strip()
+            if not content:
+                content = "My mind went blank for a second — mind rephrasing that?"
+        except Exception as exc:  # noqa: BLE001 - never let LLM errors kill the webhook
+            print(f"[GENERAL] LLM call failed, using fallback: {exc}")
+            content = "Sorry — my brain just glitched for a second. Try me again?"
+
+        return PluginOutput(
+            message=AIMessage(content=content),
+            state_update={"active_domain": self.name},
+        )
 
 
 class GuardrailPolicy:

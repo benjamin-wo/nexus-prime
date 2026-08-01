@@ -59,6 +59,13 @@ async def answer_telegram_callback(
     return await telegram_api_call("answerCallbackQuery", payload)
 
 
+async def send_telegram_chat_action(chat_id: int, action: str = "typing") -> bool:
+    """Show a typing indicator so the bot feels responsive while processing."""
+    return await telegram_api_call(
+        "sendChatAction", {"chat_id": chat_id, "action": action}
+    )
+
+
 class TelegramIngress:
     """Deep ingress adapter for Telegram Bot API payloads, slash commands, callbacks, and profile lookup."""
 
@@ -259,6 +266,9 @@ class TelegramIngress:
 
         if not user_id or not chat_id:
             return {"status": "ok", "ignored_missing_user": True}
+
+        if chat_id:
+            await send_telegram_chat_action(chat_id)
 
         profile = await self.ensure_profile(user_id=user_id, chat_id=chat_id)
 
