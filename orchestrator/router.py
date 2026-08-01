@@ -181,6 +181,49 @@ class ExpensePlugin:
         messages = state.get("messages", [])
         last_text = str(messages[-1].content) if messages else ""
 
+        # Listing intent: "list/show/summary my expenses" should query, not extract.
+        lowered = last_text.lower()
+        list_intent = any(
+            phrase in lowered
+            for phrase in (
+                "list my expense",
+                "show my expense",
+                "show me my expense",
+                "my expenses",
+                "expense summary",
+                "expense overview",
+                "what have i spent",
+                "how much have i spent",
+                "expenses so far",
+                "expense total",
+                "total expenses",
+            )
+        )
+        if list_intent:
+            from capabilities.expenses.tools import get_user_expenses
+
+            rows = await get_user_expenses.ainvoke({"user_id": user_id, "limit": 10})
+            if not rows:
+                reply = (
+                    "💰 No expenses logged yet. Say something like "
+                    "*\"spent $12.50 at Starbucks\"*, or ask me to check your email "
+                    "and I'll log receipts automatically."
+                )
+            else:
+                lines = ["💰 Your recent expenses:"]
+                for row in rows:
+                    lines.append(
+                        f"• {row['date'][:10]} {row['currency']} {row['amount']:.2f} — "
+                        f"{row['merchant']} ({row['category']})"
+                    )
+                total = sum(row["amount"] for row in rows)
+                lines.append(f"\nTotal (last {len(rows)}): {rows[0]['currency']} {total:.2f}")
+                reply = "\n".join(lines)
+            return PluginOutput(
+                message=AIMessage(content=reply),
+                state_update={"active_domain": self.name},
+            )
+
         extracted = await extract_expense_from_text.ainvoke({"user_text": last_text})
         if not extracted or not extracted.get("amount"):
             return PluginOutput(
