@@ -17,6 +17,7 @@ from capabilities.expenses.tools import (
     process_extracted_expense,
     extract_expense_from_text,
     expense_source_id,
+    log_expenses_from_emails,
 )
 from capabilities.routes.tools import plan_route, extract_route_request
 from capabilities.recipes.tools import (
@@ -98,6 +99,31 @@ class EmailPlugin:
                 sender = msg.get("sender", "")
                 if sender:
                     await discover_and_track_bank_domain(user_id, sender)
+
+        # Auto-log expenses found in the fetched emails (deduped by email ID).
+        expense_result = await log_expenses_from_emails.ainvoke(
+            {"user_id": user_id, "emails": results}
+        )
+        logged = expense_result.get("logged") or []
+        skipped = expense_result.get("skipped") or []
+        if logged:
+            lines = [
+                f"📧 Checked your inbox — auto-logged {len(logged)} expense"
+                f"{'s' if len(logged) != 1 else ''}:"
+            ]
+            for item in logged[:8]:
+                lines.append(
+                    f"• {item['currency']} {item['amount']:.2f} — "
+                    f"{item['merchant']} ({item['category']})"
+                )
+            if skipped:
+                lines.append(f"\n…{len(skipped)} ambiguous skipped — ask me to review them.")
+            lines.append("\n/expenses to see everything.")
+            return PluginOutput(
+                message=AIMessage(content="\n".join(lines)),
+                state_update={"active_domain": self.name},
+            )
+
         reply = AIMessage(content=await self._summarize_email_results(results))
         return PluginOutput(message=reply, state_update={"active_domain": self.name})
 

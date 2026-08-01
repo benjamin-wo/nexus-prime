@@ -1,4 +1,5 @@
 from datetime import datetime, timezone as dt_timezone
+from email.utils import parsedate_to_datetime
 import hashlib
 import json
 import re
@@ -122,6 +123,76 @@ async def get_user_expenses(user_id: int, limit: int = 10) -> List[Dict[str, Any
             }
             for row in rows
         ]
+
+
+@tool
+async def log_expenses_from_emails(
+    user_id: int,
+    emails: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """
+    Auto-extract and log expenses from fetched email messages.
+    Each email ID becomes the dedup key, so re-checking the inbox never double-logs.
+    Ambiguous or low-confidence emails are skipped (never sent to HITL buttons).
+    """
+    logged: List[Dict[str, Any]] = []
+    skipped: List[Dict[str, Any]] = []
+
+    for email_msg in (emails or [])[:10]:
+        email_id = str(email_msg.get("id") or "")
+        text = f"{email_msg.get('subject', '')}\n{email_msg.get('snippet', '')}"
+        extracted = await extract_expense_from_text.ainvoke({"user_text": text})
+        if not extracted or not extracted.get("amount"):
+            continue
+
+        if extracted.get("confidence", 0) < 0.8 or extracted.get("needs_clarification"):
+            skipped.append(
+                {
+                    "amount": extracted["amount"],
+                    "currency": extracted.get("currency", "SGD"),
+                    "merchant": extracted.get("merchant", "Unknown"),
+                }
+            )
+            continue
+
+        if email_id and await is_duplicate_expense(email_id):
+            continue
+
+        date_iso = extracted.get("date_iso") or email_msg.get("date") or ""
+        try:
+            expense_date = datetime.fromisoformat(date_iso)
+        except ValueError:
+            try:
+                expense_date = parsedate_to_datetime(date_iso)
+            except Exception:  # noqa: BLE001
+                expense_date = datetime.now(dt_timezone.utc)
+
+        expense = ExtractedExpense(
+            amount=float(extracted["amount"]),
+            currency=extracted.get("currency") or "SGD",
+            merchant=extracted.get("merchant") or "Unknown",
+            category=extracted.get("category") or "General",
+            date=expense_date,
+            confidence=float(extracted.get("confidence", 0.9)),
+            needs_clarification=False,
+        )
+        tx = await save_expense_transaction(
+            user_id=user_id,
+            expense=expense,
+            source_message_id=email_id or None,
+            is_verified=True,
+        )
+        logged.append(
+            {
+                "amount": expense.amount,
+                "currency": expense.currency,
+                "merchant": expense.merchant,
+                "category": expense.category,
+                "transaction_id": tx.id,
+            }
+        )
+
+    return {"logged": logged, "skipped": skipped}
 
 @tool
 async def process_extracted_expense(

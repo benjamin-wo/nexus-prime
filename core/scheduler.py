@@ -8,7 +8,7 @@ from apscheduler.triggers.date import DateTrigger
 from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from core.db import async_session_factory
-from core.models import ScheduledJob, UserProfile
+from core.models import ScheduledJob, UserProfile, UserCredential
 
 # 1-Hour Misfire Grace and Coalescing to survive server redeploys on Railway
 scheduler = AsyncIOScheduler(
@@ -25,11 +25,73 @@ async def _execute_scheduled_job(job_id: int, user_id: int, instruction_prompt: 
     # For testing and logging, we record the trigger execution
     print(f"[SCHEDULER] Triggered job {job_id} for user {user_id}: {instruction_prompt}")
 
+
+async def _scheduled_email_expense_sweep():
+    """Daily sweep: scan Gmail for financial emails, auto-log expenses, notify the user."""
+    from capabilities.expenses.tools import log_expenses_from_emails
+    from capabilities.email.tools import search_email_messages
+
+    async with async_session_factory() as session:
+        result = await session.execute(
+            select(UserCredential).where(UserCredential.provider == "gmail")
+        )
+        user_ids = list({cred.user_id for cred in result.scalars().all()})
+
+    for user_id in user_ids:
+        try:
+            emails = await search_email_messages.ainvoke({"user_id": user_id})
+            if not emails:
+                continue
+            expense_result = await log_expenses_from_emails.ainvoke(
+                {"user_id": user_id, "emails": emails}
+            )
+            logged = expense_result.get("logged") or []
+            if not logged:
+                continue
+
+            chat_id = None
+            async with async_session_factory() as session:
+                profile = (
+                    await session.execute(
+                        select(UserProfile).where(UserProfile.user_id == user_id)
+                    )
+                ).scalar_one_or_none()
+                chat_id = profile.telegram_chat_id if profile else None
+            if not chat_id:
+                continue
+
+            from app.ingress import send_telegram_message
+
+            lines = [
+                f"📬 Daily email sweep — auto-logged {len(logged)} expense"
+                f"{'s' if len(logged) != 1 else ''}:"
+            ]
+            for item in logged[:8]:
+                lines.append(f"• {item['currency']} {item['amount']:.2f} — {item['merchant']}")
+            await send_telegram_message(chat_id, "\n".join(lines))
+        except Exception as exc:  # noqa: BLE001 - one user's failure must not block the sweep
+            print(f"[SWEEP] error for user {user_id}: {exc}")
+
+
 async def start_scheduler():
     """Start the APScheduler instance and reconcile DB jobs."""
     if not scheduler.running:
         scheduler.start()
         await reconcile_jobs()
+        try:
+            scheduler.add_job(
+                _scheduled_email_expense_sweep,
+                trigger=CronTrigger.from_crontab(
+                    "0 9 * * *", timezone=ZoneInfo("Asia/Singapore")
+                ),
+                id="email_expense_sweep",
+                replace_existing=True,
+                misfire_grace_time=3600,
+                coalesce=True,
+                max_instances=1,
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"[SCHEDULER] failed to register email expense sweep: {exc}")
 
 async def shutdown_scheduler():
     """Shutdown APScheduler."""
