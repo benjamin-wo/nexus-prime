@@ -13,19 +13,19 @@ def test_multimodal_io_llm_initialization():
     """Verify that role='multimodal_io' returns a ChatGoogleGenerativeAI instance for Gemini Flash."""
     llm = get_llm(role="multimodal_io", temperature=0.2)
     assert isinstance(llm, ChatGoogleGenerativeAI)
-    assert llm.model == "gemini-2.5-flash"
+    assert llm.model == "gemini-3.1-flash-lite"
     assert llm.temperature == 0.2
 
     # Verify convenience helper
     helper_llm = get_multimodal_llm()
     assert isinstance(helper_llm, ChatGoogleGenerativeAI)
-    assert helper_llm.model == "gemini-2.5-flash"
+    assert helper_llm.model == "gemini-3.1-flash-lite"
 
 def test_agent_core_llm_low_thinking_level():
     """Verify that role='agent_core' with LOW complexity configures DeepSeek v4 Flash with low reasoning effort."""
     llm = get_llm(role="agent_core", complexity=ThinkingLevel.LOW)
     assert isinstance(llm, ChatOpenAI)
-    assert llm.model_name == "deepseek-chat"
+    assert llm.model_name == "deepseek-v4-flash"
     assert llm.reasoning_effort == "low"
     assert llm.max_tokens == 512
 
@@ -33,7 +33,7 @@ def test_agent_core_llm_high_thinking_level():
     """Verify that role='agent_core' with HIGH complexity configures DeepSeek v4 Flash with high reasoning effort."""
     llm = get_llm(role="agent_core", complexity="high")
     assert isinstance(llm, ChatOpenAI)
-    assert llm.model_name == "deepseek-chat"
+    assert llm.model_name == "deepseek-v4-flash"
     assert llm.reasoning_effort == "high"
     assert llm.max_tokens == 4096
 
@@ -41,7 +41,7 @@ def test_agent_core_llm_medium_default_thinking_level():
     """Verify that get_agent_llm defaults to MEDIUM thinking level."""
     llm = get_agent_llm()
     assert isinstance(llm, ChatOpenAI)
-    assert llm.model_name == "deepseek-chat"
+    assert llm.model_name == "deepseek-v4-flash"
     assert llm.reasoning_effort == "medium"
     assert llm.max_tokens == 2048
 

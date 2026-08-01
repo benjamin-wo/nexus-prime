@@ -49,10 +49,10 @@ def get_llm(
         Configured LangChain chat model instance.
     """
     if role == "multimodal_io":
-        api_key = settings.google_api_key or "test_google_key"
-        logger.debug("Initializing Google Gemini (gemini-2.5-flash) for multimodal_io role.")
+        api_key = settings.active_gemini_api_key or "test_google_key"
+        logger.debug(f"Initializing Google Gemini ({settings.gemini_model}) for multimodal_io role.")
         return ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash",
+            model=settings.gemini_model,
             google_api_key=api_key,
             temperature=temperature,
         )
@@ -69,12 +69,12 @@ def get_llm(
 
         thinking_config = THINKING_CONFIGS[level_key]
         logger.debug(
-            "Initializing DeepSeek v4 Flash (deepseek-chat) for agent_core role "
+            f"Initializing DeepSeek ({settings.deepseek_model}) for agent_core role "
             f"with thinking level='{level_key}' ({thinking_config})."
         )
 
         return ChatOpenAI(
-            model="deepseek-chat",
+            model=settings.deepseek_model,
             base_url=base_url,
             api_key=api_key,
             temperature=temperature,
