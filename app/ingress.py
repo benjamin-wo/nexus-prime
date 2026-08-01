@@ -442,6 +442,27 @@ class TelegramIngress:
                 "text": "💰 Recent expenses:\n" + "\n".join(lines),
             }
 
+        if text.startswith("/del_job"):
+            from core.scheduler import delete_scheduled_job
+
+            parts = text.split()
+            if len(parts) >= 2 and parts[1].isdigit():
+                deleted = await delete_scheduled_job(int(parts[1]), user_id)
+                return {
+                    "status": "ok",
+                    "deleted": deleted,
+                    "text": (
+                        f"🗑️ Reminder #{parts[1]} deleted."
+                        if deleted
+                        else f"⚠️ No reminder #{parts[1]} found."
+                    ),
+                }
+            return {
+                "status": "error",
+                "message": "Usage: /del_job <job_id>",
+                "text": "Usage: /del_job <job_id> — find IDs with /jobs.",
+            }
+
         return None
 
     async def handle_update(self, payload: Dict[str, Any]) -> Dict[str, Any]:

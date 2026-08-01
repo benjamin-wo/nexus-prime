@@ -24,6 +24,13 @@ from capabilities.recipes.tools import (
     parse_recipe_and_extract_ingredients,
     sync_to_grocery_list,
 )
+from capabilities.reminders.tools import parse_reminder_request
+from core.scheduler import (
+    delete_scheduled_job,
+    list_active_jobs,
+    schedule_proactive_task,
+    scheduler,
+)
 from core.config import settings
 from core.llm import extract_llm_text, get_agent_llm, get_multimodal_llm, ThinkingLevel
 from core.audit import log_capability_request
@@ -445,6 +452,98 @@ class GeneralPlugin:
         )
 
 
+class ReminderPlugin:
+    """Reminder capability plugin: creates, lists, and deletes cron reminders."""
+
+    name = "reminders"
+    keywords = ["remind", "reminder", "cron", "every", "daily", "weekly"]
+    description = "Sets cron-based reminders and scheduled tasks on Telegram."
+
+    async def execute(self, state: AssistantState) -> PluginOutput:
+        user_id = state["user_id"]
+        messages = state.get("messages", [])
+        last_text = str(messages[-1].content) if messages else ""
+
+        parsed = await parse_reminder_request.ainvoke({"user_text": last_text})
+        action = parsed.get("action")
+
+        if action == "list":
+            jobs = await list_active_jobs(user_id=user_id)
+            if not jobs:
+                reply = "📋 No active reminders. Try *\"remind me to drink water every 2 hours\"*."
+            else:
+                lines = ["📋 Active reminders:"]
+                for job in jobs:
+                    next_run = job.get("next_run_time") or "not scheduled"
+                    lines.append(
+                        f"- #{job['job_id']} *{job['job_name']}* "
+                        f"(`{job['cron_expression']}` @ {job['timezone']}, next: {next_run})"
+                    )
+                reply = "\n".join(lines)
+            return PluginOutput(
+                message=AIMessage(content=reply),
+                state_update={"active_domain": self.name},
+            )
+
+        if action == "delete":
+            job_id = parsed.get("job_id")
+            if not job_id:
+                reply = "Which reminder? Say *\"delete reminder <id>\"* — use /jobs to find the ID."
+            else:
+                deleted = await delete_scheduled_job(int(job_id), user_id)
+                reply = (
+                    f"🗑️ Reminder #{job_id} deleted."
+                    if deleted
+                    else f"⚠️ No reminder #{job_id} found."
+                )
+            return PluginOutput(
+                message=AIMessage(content=reply),
+                state_update={"active_domain": self.name},
+            )
+
+        message_text = (parsed.get("message") or "").strip()
+        cron = (parsed.get("cron") or "").strip()
+        timezone = parsed.get("timezone") or "Asia/Singapore"
+        if not message_text or not cron:
+            reply = (
+                "I can set reminders — try *\"remind me to drink water every 2 hours\"* "
+                "or *\"remind me to call mom daily at 9pm\"*."
+            )
+            return PluginOutput(
+                message=AIMessage(content=reply),
+                state_update={"active_domain": self.name},
+            )
+
+        try:
+            job = await schedule_proactive_task(
+                user_id=user_id,
+                job_name=message_text[:50],
+                cron_expression=cron,
+                instruction_prompt=message_text,
+                timezone_str=timezone,
+            )
+            aps_job = scheduler.get_job(str(job.id))
+            next_run = (
+                aps_job.next_run_time.isoformat()
+                if aps_job and aps_job.next_run_time
+                else "soon"
+            )
+            reply = (
+                f"✅ Reminder set (#{job.id}): *\"{message_text}\"*\n"
+                f"Cron `{cron}` ({timezone})\nNext run: {next_run}"
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"[REMINDERS] schedule failed: {exc}")
+            reply = (
+                f"⚠️ Couldn't parse *\"{cron}\"* as a schedule — try something like "
+                "*\"every 2 hours\"* or *\"daily at 9pm\"*."
+            )
+        return PluginOutput(
+            message=AIMessage(content=reply),
+            state_update={"active_domain": self.name},
+        )
+
+
 class GuardrailPolicy:
     """Declarative guardrail policy registry for detecting out-of-scope transactional requests."""
 
@@ -489,6 +588,7 @@ CAPABILITY_REGISTRY: Dict[str, CapabilityPlugin] = {
     "expenses": ExpensePlugin(),
     "routes": RoutePlugin(),
     "recipes": RecipePlugin(),
+    "reminders": ReminderPlugin(),
     "general": GeneralPlugin(),
 }
 

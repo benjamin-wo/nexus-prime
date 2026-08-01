@@ -20,10 +20,48 @@ scheduler = AsyncIOScheduler(
 )
 
 async def _execute_scheduled_job(job_id: int, user_id: int, instruction_prompt: str):
-    """Callback executed when a cron job fires."""
-    # In a full deployment, this triggers a notification or LangGraph run
-    # For testing and logging, we record the trigger execution
+    """Callback executed when a cron job fires: notify the user on Telegram."""
     print(f"[SCHEDULER] Triggered job {job_id} for user {user_id}: {instruction_prompt}")
+    try:
+        chat_id = None
+        async with async_session_factory() as session:
+            profile = (
+                await session.execute(
+                    select(UserProfile).where(UserProfile.user_id == user_id)
+                )
+            ).scalar_one_or_none()
+            chat_id = profile.telegram_chat_id if profile else None
+        if not chat_id:
+            return
+
+        from app.ingress import send_telegram_message
+
+        await send_telegram_message(
+            chat_id,
+            f"⏰ *Reminder* (#{job_id}):\n{instruction_prompt}",
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f"[SCHEDULER] failed to deliver job {job_id}: {exc}")
+
+
+async def delete_scheduled_job(job_id: int, user_id: int) -> bool:
+    """Deactivate and remove a scheduled job owned by the user."""
+    async with async_session_factory() as session:
+        result = await session.execute(
+            select(ScheduledJob).where(
+                ScheduledJob.id == job_id,
+                ScheduledJob.user_id == user_id,
+            )
+        )
+        job = result.scalar_one_or_none()
+        if not job:
+            return False
+        job.is_active = False
+        session.add(job)
+        await session.commit()
+        if scheduler.get_job(str(job.id)):
+            scheduler.remove_job(str(job.id))
+        return True
 
 
 async def _scheduled_email_expense_sweep():
