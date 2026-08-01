@@ -1,0 +1,1 @@
+"""Email capability plugin."""
