@@ -17,6 +17,7 @@ from capabilities.email.tools import (
 from capabilities.expenses.tools import (
     process_extracted_expense,
     extract_expense_from_text,
+    extract_expense_from_photo,
     expense_source_id,
     log_expenses_from_emails,
 )
@@ -189,7 +190,61 @@ class ExpensePlugin:
     async def execute(self, state: AssistantState) -> PluginOutput:
         user_id = state["user_id"]
         messages = state.get("messages", [])
-        last_text = str(messages[-1].content) if messages else ""
+        last_content = messages[-1].content if messages else ""
+
+        # Receipt photo path: Gemini vision extracts the expense, image hash dedups.
+        if isinstance(last_content, list):
+            media_blocks = [
+                block
+                for block in last_content
+                if isinstance(block, dict) and block.get("type") == "media"
+            ]
+            text_parts = [
+                block.get("text", "")
+                for block in last_content
+                if isinstance(block, dict) and block.get("type") == "text"
+            ]
+            caption = " ".join(text_parts).strip()
+            image_block = next(
+                (
+                    block
+                    for block in media_blocks
+                    if (block.get("mime_type") or "").startswith("image/")
+                ),
+                None,
+            )
+            if image_block:
+                import hashlib
+
+                extracted = await extract_expense_from_photo.ainvoke(
+                    {
+                        "image_b64": image_block.get("data", ""),
+                        "mime_type": image_block.get("mime_type", "image/jpeg"),
+                        "caption": caption or None,
+                    }
+                )
+                if not extracted or not extracted.get("amount"):
+                    return PluginOutput(
+                        message=AIMessage(
+                            content=(
+                                "📸 I don't see a clear receipt in that photo — try a closer, "
+                                "well-lit shot of the total, or just tell me the amount in text."
+                            )
+                        ),
+                        state_update={"active_domain": self.name},
+                    )
+                image_digest = hashlib.md5(
+                    (image_block.get("data") or "").encode("utf-8")
+                ).hexdigest()[:12]
+                return await self._finalize_expense(
+                    user_id,
+                    extracted,
+                    f"exp-photo-{user_id}-{image_digest}",
+                )
+
+        last_text = (
+            str(last_content) if not isinstance(last_content, list) else ""
+        )
 
         # Listing intent: "list/show/summary my expenses" should query, not extract.
         lowered = last_text.lower()
@@ -246,6 +301,19 @@ class ExpensePlugin:
                 state_update={"active_domain": self.name},
             )
 
+        return await self._finalize_expense(
+            user_id,
+            extracted,
+            expense_source_id(user_id, last_text),
+        )
+
+    @staticmethod
+    async def _finalize_expense(
+        user_id: int,
+        extracted: Dict[str, Any],
+        source_id: str,
+    ) -> PluginOutput:
+        """Save an extracted expense (text or photo) with dedup and HITL handling."""
         res = await process_extracted_expense.ainvoke(
             {
                 "user_id": user_id,
@@ -256,7 +324,7 @@ class ExpensePlugin:
                 "date_iso": extracted.get("date_iso") or "",
                 "confidence": extracted.get("confidence", 0.9),
                 "needs_clarification": extracted.get("needs_clarification", False),
-                "source_message_id": expense_source_id(user_id, last_text),
+                "source_message_id": source_id,
             }
         )
         status = res.get("status", "unknown")
@@ -688,7 +756,30 @@ class CapabilityRouter:
         if isinstance(last_message, AIMessage):
             return Command(goto=END)
 
-        user_text = str(getattr(last_message, "content", "")).strip()
+        last_content = getattr(last_message, "content", "")
+        if isinstance(last_content, list):
+            text_parts = [
+                block.get("text", "")
+                for block in last_content
+                if isinstance(block, dict) and block.get("type") == "text"
+            ]
+            user_text = " ".join(text_parts).strip()
+            media_blocks = [
+                block
+                for block in last_content
+                if isinstance(block, dict) and block.get("type") == "media"
+            ]
+            image_block = next(
+                (
+                    block
+                    for block in media_blocks
+                    if (block.get("mime_type") or "").startswith("image/")
+                ),
+                None,
+            )
+        else:
+            user_text = str(last_content).strip()
+            image_block = None
 
         # 1. Evaluate Unsupported Transactional Guardrails
         missing_tags = self.guardrail.evaluate(user_text)
@@ -723,7 +814,17 @@ class CapabilityRouter:
             )
 
         # 2. Dispatch to declarative capability plugin
-        target_domain = self.route_intent(user_text)
+        if image_block is not None:
+            # Receipt-like photos (no caption, or expense words) go to expense extraction;
+            # other photos go to the general multimodal assistant.
+            lowered = user_text.lower()
+            expense_hint = any(
+                phrase in lowered
+                for phrase in ("receipt", "expense", "spent", "paid", "bill", "cost", "$")
+            )
+            target_domain = "expenses" if (not lowered or expense_hint) else "general"
+        else:
+            target_domain = self.route_intent(user_text)
         plugin = self.registry.get(target_domain) or self.registry["general"]
         output = await plugin.execute(state)
 

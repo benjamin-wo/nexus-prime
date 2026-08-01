@@ -10,7 +10,12 @@ from langgraph.types import interrupt
 from sqlmodel import select
 from core.db import async_session_factory
 from core.config import settings
-from core.llm import ThinkingLevel, get_agent_llm
+from core.llm import (
+    ThinkingLevel,
+    extract_llm_text,
+    get_agent_llm,
+    get_multimodal_llm,
+)
 from core.models import ExpenseTransaction
 from capabilities.expenses.schemas import ExtractedExpense
 from capabilities.email.tools import apply_gmail_processed_label
@@ -91,6 +96,67 @@ async def extract_expense_from_text(user_text: str) -> Dict[str, Any]:
         }
     except Exception as exc:  # noqa: BLE001
         print(f"[EXPENSES] extraction parse failed: {exc}")
+        return {"amount": None}
+
+
+@tool
+async def extract_expense_from_photo(
+    image_b64: str,
+    mime_type: str = "image/jpeg",
+    caption: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Extract structured expense fields from a receipt photo using Gemini vision.
+    Returns amount, currency, merchant, category, date_iso, confidence, needs_clarification.
+    """
+    if (
+        not settings.active_gemini_api_key
+        or settings.active_gemini_api_key == "test_google_key"
+    ):
+        return {"amount": None}
+
+    llm = get_multimodal_llm(temperature=0.1)
+    prompt_text = (
+        caption
+        or "Extract the expense shown in this receipt photo."
+    )
+    ai_message = await llm.ainvoke(
+        [
+            SystemMessage(
+                content=(
+                    "You extract expenses from receipt photos. Reply with ONLY a JSON object: "
+                    '{"amount": number, "currency": string (3-letter code, default SGD), '
+                    '"merchant": string, "category": string, "date_iso": string (ISO 8601 or empty), '
+                    '"confidence": number 0-1, "needs_clarification": boolean}. '
+                    "Read the TOTAL from the receipt. If there is no legible receipt or amount, "
+                    'return {"amount": null}.'
+                )
+            ),
+            HumanMessage(
+                content=[
+                    {"type": "text", "text": prompt_text},
+                    {"type": "media", "mime_type": mime_type, "data": image_b64},
+                ]
+            ),
+        ]
+    )
+    raw = extract_llm_text(getattr(ai_message, "content", ""))
+    raw = re.sub(r"^```(?:json)?|```$", "", raw, flags=re.MULTILINE).strip()
+    try:
+        parsed = json.loads(raw)
+        if not parsed.get("amount"):
+            return {"amount": None}
+        return {
+            "amount": float(parsed["amount"]),
+            "currency": parsed.get("currency") or "SGD",
+            "merchant": parsed.get("merchant") or "Unknown",
+            "category": parsed.get("category") or "General",
+            "date_iso": parsed.get("date_iso") or "",
+            "confidence": float(parsed.get("confidence", 0.9)),
+            "needs_clarification": bool(parsed.get("needs_clarification", False)),
+        }
+    except Exception as exc:  # noqa: BLE001
+        print(f"[EXPENSES] photo extraction parse failed: {exc}")
         return {"amount": None}
 
 
