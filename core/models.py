@@ -6,7 +6,7 @@ class UserProfile(SQLModel, table=True):
     user_id: int = Field(primary_key=True)  # Telegram User ID
     telegram_chat_id: int = Field(index=True, unique=True)
     current_timezone: str = Field(default="UTC")
-    home_currency: str = Field(default="USD")
+    home_currency: str = Field(default="SGD")
     tracked_banks: List[str] = Field(default=[], sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -65,4 +65,3 @@ class CapabilityRequestLog(SQLModel, table=True):
     intent_type: str = Field(index=True)  # "unsupported_transaction" or "informational_fallback"
     missing_capability_tags: str = Field(index=True)  # Comma-separated tags e.g. "calendar,smart_home"
     created_at: datetime = Field(default_factory=datetime.utcnow)
-

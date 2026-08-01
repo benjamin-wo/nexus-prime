@@ -183,14 +183,14 @@ class ExpensePlugin:
         status = res.get("status", "unknown")
         if status == "saved_silently":
             reply = (
-                f"💰 Logged *{extracted.get('currency', 'USD')} {extracted['amount']:.2f}* "
+                f"💰 Logged *{extracted.get('currency', 'SGD')} {extracted['amount']:.2f}* "
                 f"at *{extracted['merchant']}* ({extracted.get('category', 'General')})."
             )
         elif status == "duplicate":
             reply = "🙅 That expense is already logged."
         elif status == "confirmed_by_user":
             reply = (
-                f"✅ Saved {extracted.get('currency', 'USD')} {extracted['amount']:.2f} "
+                f"✅ Saved {extracted.get('currency', 'SGD')} {extracted['amount']:.2f} "
                 f"at {extracted['merchant']}."
             )
         else:

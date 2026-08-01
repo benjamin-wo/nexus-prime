@@ -63,7 +63,7 @@ async def extract_expense_from_text(user_text: str) -> Dict[str, Any]:
             SystemMessage(
                 content=(
                     "Extract an expense from the user's message. Reply with ONLY a JSON object: "
-                    '{"amount": number, "currency": string (3-letter code, default USD), '
+                    '{"amount": number, "currency": string (3-letter code, default SGD for Singapore), '
                     '"merchant": string, "category": string, "date_iso": string (ISO 8601 or empty), '
                     '"confidence": number 0-1, "needs_clarification": boolean}. '
                     "Set confidence below 0.8 or needs_clarification true when the amount or "
@@ -81,7 +81,7 @@ async def extract_expense_from_text(user_text: str) -> Dict[str, Any]:
             return {"amount": None}
         return {
             "amount": float(parsed["amount"]),
-            "currency": parsed.get("currency") or "USD",
+            "currency": parsed.get("currency") or "SGD",
             "merchant": parsed.get("merchant") or "Unknown",
             "category": parsed.get("category") or "General",
             "date_iso": parsed.get("date_iso") or "",

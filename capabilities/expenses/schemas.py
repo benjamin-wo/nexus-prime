@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 
 class ExtractedExpense(BaseModel):
     amount: float
-    currency: str = Field(default="USD")
+    currency: str = Field(default="SGD")
     merchant: str
     category: str
     date: datetime
