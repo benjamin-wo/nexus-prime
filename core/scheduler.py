@@ -27,7 +27,7 @@ async def _execute_scheduled_job(job_id: int, user_id: int, instruction_prompt: 
 
 
 async def _scheduled_email_expense_sweep():
-    """Daily sweep: scan Gmail for financial emails, auto-log expenses, notify the user."""
+    """Recurring sweep: scan Gmail for financial emails, auto-log expenses, notify the user."""
     from capabilities.expenses.tools import log_expenses_from_emails
     from capabilities.email.tools import search_email_messages
 
@@ -82,7 +82,7 @@ async def start_scheduler():
             scheduler.add_job(
                 _scheduled_email_expense_sweep,
                 trigger=CronTrigger.from_crontab(
-                    "0 9 * * *", timezone=ZoneInfo("Asia/Singapore")
+                    "*/10 * * * *", timezone=ZoneInfo("Asia/Singapore")
                 ),
                 id="email_expense_sweep",
                 replace_existing=True,
