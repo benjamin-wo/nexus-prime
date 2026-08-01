@@ -69,6 +69,12 @@ async def send_telegram_chat_action(chat_id: int, action: str = "typing") -> boo
 class TelegramIngress:
     """Deep ingress adapter for Telegram Bot API payloads, slash commands, callbacks, and profile lookup."""
 
+    @staticmethod
+    def _log_conversation(direction: str, chat_id: Any, text: Any) -> None:
+        """Print a lightweight conversation line to Railway logs for monitoring."""
+        preview = str(text).replace("\n", " ")[:220] if text else ""
+        print(f"[TG {direction}] chat={chat_id}: {preview}")
+
     async def ensure_profile(self, user_id: int, chat_id: int) -> UserProfile:
         """Ensure user profile exists in PostgreSQL."""
         async with async_session_factory() as session:
@@ -137,10 +143,12 @@ class TelegramIngress:
                 tags=[tag],
             )
             reply_text = f"✅ Logged #{tag} to our feature wishlist!"
+            self._log_conversation("CALLBACK", chat_id, f"log_req:{tag}")
             if callback_query_id:
                 await answer_telegram_callback(callback_query_id, text="Logged")
             if chat_id:
                 await send_telegram_message(chat_id, reply_text)
+                self._log_conversation("OUT", chat_id, reply_text)
             return {
                 "status": "ok",
                 "action": "feature_request_logged",
@@ -165,7 +173,8 @@ class TelegramIngress:
                 await answer_telegram_callback(callback_query_id, text="Done")
             reply_text = self._extract_ai_reply(result)
             if reply_text:
-                await send_telegram_message(chat_id, reply_text)
+                sent = await send_telegram_message(chat_id, reply_text)
+                self._log_conversation("OUT" if sent else "SEND-FAIL", chat_id, reply_text)
             return {"status": "ok", "action": action, "resumed": True}
         return {"status": "ok", "ignored": True}
 
@@ -267,6 +276,8 @@ class TelegramIngress:
         if not user_id or not chat_id:
             return {"status": "ok", "ignored_missing_user": True}
 
+        self._log_conversation("IN", chat_id, text or "<attachment>")
+
         if chat_id:
             await send_telegram_chat_action(chat_id)
 
@@ -278,7 +289,10 @@ class TelegramIngress:
             if chat_id:
                 reply_text = self._format_slash_reply(slash_res, text)
                 if reply_text:
-                    await send_telegram_message(chat_id, reply_text)
+                    sent = await send_telegram_message(chat_id, reply_text)
+                    self._log_conversation(
+                        "OUT" if sent else "SEND-FAIL", chat_id, reply_text
+                    )
             return slash_res
 
         content_blocks = await self.process_multimodal_attachments(message)
@@ -311,7 +325,10 @@ class TelegramIngress:
                 ]
             }
             if chat_id and reply_text:
-                await send_telegram_message(chat_id, reply_text, reply_markup=reply_markup)
+                sent = await send_telegram_message(chat_id, reply_text, reply_markup=reply_markup)
+                self._log_conversation(
+                    "OUT" if sent else "SEND-FAIL", chat_id, reply_text
+                )
             return {
                 "status": "ok",
                 "processed": True,
@@ -320,7 +337,8 @@ class TelegramIngress:
             }
 
         if chat_id and reply_text:
-            await send_telegram_message(chat_id, reply_text)
+            sent = await send_telegram_message(chat_id, reply_text)
+            self._log_conversation("OUT" if sent else "SEND-FAIL", chat_id, reply_text)
         return {"status": "ok", "processed": True}
 
 
