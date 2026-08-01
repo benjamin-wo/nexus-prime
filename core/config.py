@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     encryption_key: Optional[str] = None
 
     google_api_key: Optional[str] = None
+    deepseek_api_key: Optional[str] = None
+    deepseek_base_url: str = "https://api.deepseek.com/v1"
     openai_api_key: Optional[str] = None
 
     environment: str = "development"
