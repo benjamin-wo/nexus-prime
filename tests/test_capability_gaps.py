@@ -6,7 +6,9 @@ from core.db import async_session_factory
 from core.models import CapabilityRequestLog, UserProfile
 from core.audit import log_capability_request, get_capability_leaderboard
 from core.github_sync import sync_capability_gap_to_github_issue
-from orchestrator.graph import assistant_graph
+from orchestrator.graph import get_assistant_graph
+
+assistant_graph = get_assistant_graph()
 from fastapi.testclient import TestClient
 from app.main import app
 
@@ -140,4 +142,3 @@ def test_webhook_missing_capabilities_command():
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
     assert "leaderboard" in response.json()
-

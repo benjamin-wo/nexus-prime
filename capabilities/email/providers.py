@@ -161,22 +161,8 @@ class GmailProvider:
 
         query = build_gmail_query(tracked_banks=tracked_banks, custom_query=custom_query)
         async with httpx.AsyncClient(timeout=30.0) as client:
-            token_resp = await client.post(
-                "https://oauth2.googleapis.com/token",
-                data={
-                    "client_id": settings.google_client_id,
-                    "client_secret": settings.google_client_secret,
-                    "refresh_token": refresh_token,
-                    "grant_type": "refresh_token",
-                },
-            )
-            token_data = token_resp.json()
-            access_token = token_data.get("access_token")
+            access_token = await _refresh_gmail_access_token(client, refresh_token)
             if not access_token:
-                print(
-                    f"[GMAIL] token refresh failed: "
-                    f"{token_data.get('error_description') or token_data.get('error')}"
-                )
                 return []
 
             headers = {"Authorization": f"Bearer {access_token}"}
@@ -222,9 +208,62 @@ class GmailProvider:
             return messages
 
     async def apply_processed_label(self, user_id: int, message_id: str) -> bool:
-        # In live execution, modifies Gmail thread labels via API (requires gmail.modify)
-        print(f"[GMAIL API] Applied label Assistant/Processed to message {message_id} for user {user_id}")
-        return True
+        """Apply the Assistant/Processed label via the Gmail API (requires gmail.modify)."""
+        refresh_token = await _get_gmail_refresh_token(user_id)
+        if not refresh_token:
+            return False
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                access_token = await _refresh_gmail_access_token(client, refresh_token)
+                if not access_token:
+                    return False
+                headers = {"Authorization": f"Bearer {access_token}"}
+
+                labels_resp = await client.get(
+                    "https://gmail.googleapis.com/gmail/v1/users/me/labels",
+                    headers=headers,
+                )
+                if labels_resp.status_code != 200:
+                    print(f"[GMAIL] labels list failed: {labels_resp.status_code}")
+                    return False
+                label_id = next(
+                    (
+                        label["id"]
+                        for label in labels_resp.json().get("labels", [])
+                        if label.get("name") == "Assistant/Processed"
+                    ),
+                    None,
+                )
+                if not label_id:
+                    create_resp = await client.post(
+                        "https://gmail.googleapis.com/gmail/v1/users/me/labels",
+                        json={
+                            "name": "Assistant/Processed",
+                            "messageListVisibility": "show",
+                            "labelListVisibility": "labelShow",
+                        },
+                        headers=headers,
+                    )
+                    if create_resp.status_code not in (200, 201):
+                        print(f"[GMAIL] label create failed: {create_resp.status_code}")
+                        return False
+                    label_id = create_resp.json().get("id")
+
+                modify_resp = await client.post(
+                    f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{message_id}/modify",
+                    json={"addLabelIds": [label_id]},
+                    headers=headers,
+                )
+                if modify_resp.status_code != 200:
+                    print(
+                        f"[GMAIL] label apply failed: {modify_resp.status_code} "
+                        f"{modify_resp.text[:200]}"
+                    )
+                    return False
+                return True
+        except Exception as exc:  # noqa: BLE001
+            print(f"[GMAIL] label apply error: {exc}")
+            return False
 
 
 async def _get_gmail_refresh_token(user_id: int) -> Optional[str]:
@@ -244,6 +283,28 @@ async def _get_gmail_refresh_token(user_id: int) -> Optional[str]:
         except Exception as exc:  # noqa: BLE001
             print(f"[GMAIL] failed to decrypt stored token: {exc}")
             return None
+
+
+async def _refresh_gmail_access_token(client: httpx.AsyncClient, refresh_token: str) -> Optional[str]:
+    """Exchange a stored refresh token for a short-lived Gmail access token."""
+    token_resp = await client.post(
+        "https://oauth2.googleapis.com/token",
+        data={
+            "client_id": settings.google_client_id,
+            "client_secret": settings.google_client_secret,
+            "refresh_token": refresh_token,
+            "grant_type": "refresh_token",
+        },
+    )
+    token_data = token_resp.json()
+    access_token = token_data.get("access_token")
+    if not access_token:
+        print(
+            f"[GMAIL] token refresh failed: "
+            f"{token_data.get('error_description') or token_data.get('error')}"
+        )
+        return None
+    return access_token
 
 class OutlookProvider:
     """Microsoft Outlook / Graph API backend implementation using OData $search and categories."""

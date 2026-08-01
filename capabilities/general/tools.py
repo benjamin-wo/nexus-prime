@@ -1,7 +1,9 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
+import httpx
 from langchain_core.tools import tool
 from sqlmodel import select
+from core.config import settings
 from core.db import async_session_factory
 from core.models import UserProfile
 
@@ -12,16 +14,40 @@ async def search_web(query: str) -> str:
     Search the web for general informational facts, trivia, or definitions.
     MUST NOT be used for transactional actions or modifying external systems.
     """
-    # Lightweight informational search answer synthesis
-    query_lower = query.lower()
-    if "capital of france" in query_lower:
-        return "The capital of France is Paris."
-    elif "time" in query_lower or "date" in query_lower:
-        return f"Current UTC datetime: {datetime.now(ZoneInfo('UTC')).isoformat()}"
-    elif "weather" in query_lower:
-        return "Weather forecast: Generally sunny with mild temperatures."
-    else:
-        return f"Search result for '{query}': Factual information retrieved."
+    api_key = settings.tavily_api_key
+    if not api_key or api_key.startswith("your_"):
+        return f"[search] No Tavily API key configured for query: {query}"
+
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.post(
+                "https://api.tavily.com/search",
+                json={
+                    "api_key": api_key,
+                    "query": query,
+                    "search_depth": "basic",
+                    "max_results": 5,
+                    "include_answer": True,
+                },
+            )
+            data = resp.json()
+    except Exception as exc:  # noqa: BLE001
+        return f"[search] Tavily error: {exc}"
+
+    if resp.status_code != 200:
+        return f"[search] Tavily status {resp.status_code}: {data.get('message', '')}"
+
+    answer = data.get("answer")
+    results = data.get("results") or []
+    lines = []
+    if answer:
+        lines.append(f"Summary: {answer}")
+    for item in results[:5]:
+        title = item.get("title", "")
+        url = item.get("url", "")
+        content = (item.get("content") or "")[:300]
+        lines.append(f"- {title} ({url}): {content}")
+    return "\n".join(lines) if lines else f"[search] No results for: {query}"
 
 
 @tool

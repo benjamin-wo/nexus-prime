@@ -1,4 +1,7 @@
 from typing import Optional
+from datetime import datetime
+import httpx
+from core.config import settings
 
 # Quick lookup for major cities and travel hubs to support travel timezone detection
 CITY_TIMEZONE_MAP = {
@@ -31,3 +34,27 @@ def resolve_timezone_from_coordinates(lat: float, lon: float) -> str:
     if 24 < lat < 50 and -125 < lon < -65:
         return "America/New_York"
     return "UTC"
+
+
+async def resolve_timezone_from_coordinates_api(lat: float, lon: float) -> Optional[str]:
+    """Resolve an IANA timezone from coordinates via the Google Time Zone API."""
+    api_key = settings.google_maps_api_key
+    if not api_key or api_key.startswith("your_"):
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(
+                "https://maps.googleapis.com/maps/api/timezone/json",
+                params={
+                    "location": f"{lat},{lon}",
+                    "timestamp": int(datetime.now().timestamp()),
+                    "key": api_key,
+                },
+            )
+            data = resp.json()
+        if data.get("status") == "OK" and data.get("timeZoneId"):
+            return data["timeZoneId"]
+        print(f"[LOCATION] timezone api status: {data.get('status')}")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[LOCATION] timezone api error: {exc}")
+    return None

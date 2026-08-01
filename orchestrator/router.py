@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+import asyncio
 import json
 import os
 from typing import Protocol, List, Dict, Any, Optional
@@ -25,6 +26,9 @@ from capabilities.recipes.tools import (
     sync_to_grocery_list,
 )
 from capabilities.reminders.tools import parse_reminder_request
+from capabilities.general.tools import search_web
+from orchestrator.checkpointer import prune_and_summarize_messages
+from core.audit import log_capability_request, should_sample_audit, perform_audit_evaluation
 from core.scheduler import (
     delete_scheduled_job,
     list_active_jobs,
@@ -33,7 +37,6 @@ from core.scheduler import (
 )
 from core.config import settings
 from core.llm import extract_llm_text, get_agent_llm, get_multimodal_llm, ThinkingLevel
-from core.audit import log_capability_request
 
 
 SYSTEM_PROMPT = (
@@ -377,8 +380,12 @@ class GeneralPlugin:
     async def execute(self, state: AssistantState) -> PluginOutput:
         messages = state.get("messages", [])
         now_sg = datetime.now(ZoneInfo("Asia/Singapore")).strftime("%A, %d %b %Y %H:%M")
+        if len(messages) > 12:
+            pruned, _ = prune_and_summarize_messages(messages, threshold=12)
+        else:
+            pruned = messages
         history = [SystemMessage(content=SYSTEM_PROMPT.format(now=now_sg))]
-        for message in messages[-8:]:
+        for message in pruned[-8:]:
             if isinstance(message, HumanMessage):
                 history.append(
                     HumanMessage(
@@ -398,6 +405,38 @@ class GeneralPlugin:
 
         if has_media:
             return await self._execute_multimodal(history)
+
+        # Real web search context for informational questions.
+        last_text = str(last_content) if not isinstance(last_content, list) else ""
+        if any(
+            phrase in last_text.lower()
+            for phrase in (
+                "who is",
+                "what is",
+                "latest",
+                "news",
+                "search",
+                "current",
+                "weather",
+                "capital",
+                "when is",
+                "how do i",
+                "why is",
+            )
+        ):
+            try:
+                search_result = await search_web.ainvoke({"query": last_text})
+                if search_result and not search_result.startswith("[search]"):
+                    history.append(
+                        SystemMessage(
+                            content=(
+                                "Web search results (use them as the factual basis for your "
+                                f"reply, and cite the source when useful):\n{search_result}"
+                            )
+                        )
+                    )
+            except Exception as exc:  # noqa: BLE001
+                print(f"[GENERAL] web search failed: {exc}")
 
         # Tests and local runs use the placeholder key; skip the network call there.
         if not settings.deepseek_api_key or settings.deepseek_api_key == "test_deepseek_key":
@@ -582,6 +621,26 @@ class GuardrailPolicy:
         return None
 
 
+def _schedule_audit(
+    user_id: int,
+    turn_context: Dict[str, Any],
+    force: bool = False,
+) -> None:
+    """Fire-and-forget LLM-as-a-judge evaluation without blocking the webhook."""
+    try:
+        if not should_sample_audit(hitl_triggered=force):
+            return
+        asyncio.create_task(
+            perform_audit_evaluation(
+                user_id=user_id,
+                thread_id=str(user_id),
+                turn_context=turn_context,
+            )
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f"[AUDIT] scheduling failed: {exc}")
+
+
 # Global registry of active domain capability plugins
 CAPABILITY_REGISTRY: Dict[str, CapabilityPlugin] = {
     "email": EmailPlugin(),
@@ -644,6 +703,15 @@ class CapabilityRouter:
             reply = AIMessage(
                 content=f"⚠️ [Supervisor Guardrail] This transactional capability (`#{primary_tag}`) is not yet supported. Would you like to log it as a feature request?"
             )
+            _schedule_audit(
+                user_id=user_id,
+                turn_context={
+                    "user_text": user_text,
+                    "reply_text": str(reply.content),
+                    "intent_type": "unsupported_transaction",
+                },
+                force=True,
+            )
             return Command(
                 goto=END,
                 update={
@@ -665,6 +733,15 @@ class CapabilityRouter:
             requested_task=user_text,
             intent_type=intent_type,
             tags=[plugin.name],
+        )
+        _schedule_audit(
+            user_id=user_id,
+            turn_context={
+                "user_text": user_text,
+                "reply_text": str(output.message.content),
+                "intent_type": intent_type,
+            },
+            force=False,
         )
 
         return Command(

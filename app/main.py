@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from core.db import init_db
 from core.scheduler import start_scheduler, shutdown_scheduler
+from orchestrator.checkpointer import setup_checkpointer, close_checkpointer
 from app.webhook import router as webhook_router
 from app.auth import router as auth_router
 
@@ -13,10 +14,12 @@ async def lifespan(app: FastAPI):
     - Start APScheduler engine & watchdog
     - Gracefully shutdown scheduler on exit
     """
+    await setup_checkpointer()
     await init_db()
     await start_scheduler()
     yield
     await shutdown_scheduler()
+    await close_checkpointer()
 
 app = FastAPI(
     title="Telegram Personal Assistant Bot",

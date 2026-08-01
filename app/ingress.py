@@ -14,7 +14,7 @@ from core.db import async_session_factory
 from core.llm import extract_llm_text
 from core.models import UserProfile
 from core.scheduler import list_active_jobs, run_now, update_user_timezone
-from orchestrator.graph import assistant_graph
+from orchestrator.graph import get_assistant_graph
 
 
 def format_for_telegram(text: str) -> str:
@@ -298,7 +298,7 @@ class TelegramIngress:
             typing_task = asyncio.create_task(self._typing_loop(chat_id, stop_event))
             try:
                 config = {"configurable": {"thread_id": str(chat_id)}}
-                result = await assistant_graph.ainvoke(
+                result = await get_assistant_graph().ainvoke(
                     Command(resume={"action": action}),
                     config=config,
                 )
@@ -481,6 +481,30 @@ class TelegramIngress:
         if not user_id or not chat_id:
             return {"status": "ok", "ignored_missing_user": True}
 
+        # Telegram location pins -> detect timezone and update the profile.
+        location = message.get("location") or (message.get("venue") or {}).get("location")
+        if location and location.get("latitude") is not None:
+            from core.shared_tools.location import (
+                resolve_timezone_from_coordinates,
+                resolve_timezone_from_coordinates_api,
+            )
+
+            lat = location["latitude"]
+            lon = location["longitude"]
+            tz = await resolve_timezone_from_coordinates_api(lat, lon)
+            tz = tz or resolve_timezone_from_coordinates(lat, lon)
+            updated = await update_user_timezone(user_id, tz) if tz else False
+            if updated:
+                await send_telegram_message(
+                    chat_id, f"📍 Got your location — timezone set to *{tz}*."
+                )
+            else:
+                await send_telegram_message(
+                    chat_id, "📍 Got your location, but couldn't pin down a timezone for it."
+                )
+            self._log_conversation("IN", chat_id, "<location pin>")
+            return {"status": "ok", "location": True, "timezone": tz}
+
         self._log_conversation("IN", chat_id, text or "<attachment>")
 
         if chat_id:
@@ -503,6 +527,23 @@ class TelegramIngress:
                         )
                 return slash_res
 
+            # Conversational timezone changes: "I just landed in Tokyo".
+            if text and (
+                "timezone" in text.lower()
+                or "landed in" in text.lower()
+                or "arrived in" in text.lower()
+            ):
+                from core.shared_tools.location import resolve_timezone_from_location
+
+                detected_tz = resolve_timezone_from_location(text)
+                if detected_tz:
+                    tz_updated = await update_user_timezone(user_id, detected_tz)
+                    if tz_updated:
+                        await send_telegram_message(
+                            chat_id, f"✅ Timezone updated to *{detected_tz}*."
+                        )
+                        return {"status": "ok", "timezone": detected_tz, "updated": True}
+
             content_blocks = await self.process_multimodal_attachments(message)
             has_media = any(
                 isinstance(block, dict) and block.get("type") == "media"
@@ -520,7 +561,7 @@ class TelegramIngress:
                 "active_domain": None,
             }
 
-            result = await assistant_graph.ainvoke(initial_state, config=config)
+            result = await get_assistant_graph().ainvoke(initial_state, config=config)
             interrupts = result.get("__interrupt__")
             if interrupts:
                 for interrupt_item in interrupts:

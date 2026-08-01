@@ -1,6 +1,8 @@
 import pytest
 from langchain_core.messages import HumanMessage
-from orchestrator.graph import assistant_graph
+from orchestrator.graph import get_assistant_graph
+
+assistant_graph = get_assistant_graph()
 from orchestrator.router import (
     CapabilityRouter,
     EmailPlugin,
@@ -50,7 +52,7 @@ async def test_capability_plugins_direct_execution():
     email_plugin = EmailPlugin()
     out = await email_plugin.execute(state)
     assert out.state_update["active_domain"] == "email"
-    assert "Checked email providers" in str(out.message.content)
+    assert "Starbucks" in str(out.message.content)
 
 
 @pytest.mark.asyncio

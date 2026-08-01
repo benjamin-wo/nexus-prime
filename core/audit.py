@@ -1,8 +1,12 @@
+import json
 import random
+import re
 from typing import Optional, Any, Dict
+from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 from sqlmodel import select
 from core.db import async_session_factory
+from core.llm import ThinkingLevel, extract_llm_text, get_agent_llm
 from core.models import QualityAuditLog
 from core.config import settings
 
@@ -13,6 +17,60 @@ class EvalScorecard(BaseModel):
     hallucination_detected: bool
     unnecessary_friction_flag: bool = Field(description="True if bot asked for info already provided by user")
     evidence_explanation: str
+
+
+def _default_scorecard(thread_id: str) -> EvalScorecard:
+    return EvalScorecard(
+        conversation_id=thread_id,
+        faithfulness_score=5,
+        routing_efficiency_score=5,
+        hallucination_detected=False,
+        unnecessary_friction_flag=False,
+        evidence_explanation="Turn executed faithfully with direct single-hop routing.",
+    )
+
+
+async def _judge_with_llm(thread_id: str, turn_context: Dict[str, Any]) -> EvalScorecard:
+    """Run a stronger reasoning model as judge over the conversation turn."""
+    if not settings.deepseek_api_key or settings.deepseek_api_key == "test_deepseek_key":
+        return _default_scorecard(thread_id)
+    try:
+        llm = get_agent_llm(complexity=ThinkingLevel.LOW, temperature=0.0)
+        ai_message = await llm.ainvoke(
+            [
+                SystemMessage(
+                    content=(
+                        "You are an LLM-as-a-Judge for a Telegram assistant. Evaluate the turn "
+                        "context and reply with ONLY a JSON object: "
+                        '{"faithfulness_score": int 1-5, "routing_efficiency_score": int 1-5, '
+                        '"hallucination_detected": bool, "unnecessary_friction_flag": bool, '
+                        '"evidence_explanation": string}. '
+                        "faithfulness 1 = reply invents details not supported by the turn; "
+                        "5 = fully faithful. friction flag = the bot asked for info the user "
+                        "already provided."
+                    )
+                ),
+                HumanMessage(content=json.dumps(turn_context, default=str)[:3000]),
+            ]
+        )
+        raw = extract_llm_text(getattr(ai_message, "content", ""))
+        raw = re.sub(r"^```(?:json)?|```$", "", raw, flags=re.MULTILINE).strip()
+        parsed = json.loads(raw)
+        return EvalScorecard(
+            conversation_id=thread_id,
+            faithfulness_score=max(1, min(5, int(parsed.get("faithfulness_score", 5)))),
+            routing_efficiency_score=max(
+                1, min(5, int(parsed.get("routing_efficiency_score", 5)))
+            ),
+            hallucination_detected=bool(parsed.get("hallucination_detected", False)),
+            unnecessary_friction_flag=bool(
+                parsed.get("unnecessary_friction_flag", False)
+            ),
+            evidence_explanation=str(parsed.get("evidence_explanation", "")),
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f"[AUDIT] judge LLM failed, using default scorecard: {exc}")
+        return _default_scorecard(thread_id)
 
 def should_sample_audit(confidence: Optional[float] = None, hitl_triggered: bool = False) -> bool:
     """
@@ -36,15 +94,7 @@ async def perform_audit_evaluation(
     if mock_scorecard:
         scorecard = mock_scorecard
     else:
-        # Default fallback scorecard for standard executions
-        scorecard = EvalScorecard(
-            conversation_id=thread_id,
-            faithfulness_score=5,
-            routing_efficiency_score=5,
-            hallucination_detected=False,
-            unnecessary_friction_flag=False,
-            evidence_explanation="Turn executed faithfully with direct single-hop routing.",
-        )
+        scorecard = await _judge_with_llm(thread_id, turn_context)
 
     # Persist to PostgreSQL QualityAuditLog
     async with async_session_factory() as session:
@@ -78,8 +128,17 @@ async def send_admin_anomaly_alert(thread_id: str, evidence: str, score: int):
         f"Faithfulness Score: {score}/5\n"
         f"Evidence: {evidence}"
     )
-    # Log anomaly alert (in live mode, posts via Telegram API to settings.admin_telegram_chat_id)
-    print(f"[AUDIT ALERT] {alert_msg}")
+    chat_id = settings.admin_telegram_chat_id
+    if not chat_id:
+        print(f"[AUDIT ALERT] (no ADMIN_TELEGRAM_CHAT_ID) {alert_msg}")
+        return
+    try:
+        from app.ingress import send_telegram_message
+
+        await send_telegram_message(int(chat_id), alert_msg)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[AUDIT ALERT] failed to send: {exc}")
+        print(alert_msg)
 
 
 async def log_capability_request(

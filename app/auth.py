@@ -39,7 +39,10 @@ async def gmail_connect(user_id: int = 0):
         "client_id": settings.google_client_id,
         "redirect_uri": redirect_uri,
         "response_type": "code",
-        "scope": "https://www.googleapis.com/auth/gmail.readonly",
+        "scope": (
+            "https://www.googleapis.com/auth/gmail.readonly "
+            "https://www.googleapis.com/auth/gmail.modify"
+        ),
         "access_type": "offline",
         "prompt": "consent",
         "state": str(user_id),

@@ -19,6 +19,18 @@ scheduler = AsyncIOScheduler(
     }
 )
 
+_watchdog_task: Optional[asyncio.Task] = None
+
+
+async def _watchdog_loop():
+    """60-second watchdog: reconcile Postgres job rows with in-memory APScheduler."""
+    while True:
+        await asyncio.sleep(60)
+        try:
+            await reconcile_jobs()
+        except Exception as exc:  # noqa: BLE001
+            print(f"[SCHEDULER] watchdog reconcile error: {exc}")
+
 async def _execute_scheduled_job(job_id: int, user_id: int, instruction_prompt: str):
     """Callback executed when a cron job fires: notify the user on Telegram."""
     print(f"[SCHEDULER] Triggered job {job_id} for user {user_id}: {instruction_prompt}")
@@ -113,6 +125,7 @@ async def _scheduled_email_expense_sweep():
 
 async def start_scheduler():
     """Start the APScheduler instance and reconcile DB jobs."""
+    global _watchdog_task
     if not scheduler.running:
         scheduler.start()
         await reconcile_jobs()
@@ -130,9 +143,19 @@ async def start_scheduler():
             )
         except Exception as exc:  # noqa: BLE001
             print(f"[SCHEDULER] failed to register email expense sweep: {exc}")
+    if _watchdog_task is None or _watchdog_task.done():
+        _watchdog_task = asyncio.create_task(_watchdog_loop())
 
 async def shutdown_scheduler():
     """Shutdown APScheduler."""
+    global _watchdog_task
+    if _watchdog_task is not None:
+        _watchdog_task.cancel()
+        try:
+            await asyncio.gather(_watchdog_task, return_exceptions=True)
+        except Exception:  # noqa: BLE001
+            pass
+        _watchdog_task = None
     if scheduler.running:
         scheduler.shutdown(wait=False)
 
