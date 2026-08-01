@@ -1,4 +1,6 @@
 from dataclasses import dataclass, field
+import json
+import os
 from typing import Protocol, List, Dict, Any, Optional
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -6,7 +8,11 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.types import Command
 from langgraph.graph import END
 from orchestrator.state import AssistantState
-from capabilities.email.tools import search_email_messages, discover_and_track_bank_domain
+from capabilities.email.tools import (
+    search_email_messages,
+    discover_and_track_bank_domain,
+    get_user_gmail_token,
+)
 from capabilities.expenses.tools import process_extracted_expense
 from capabilities.routes.tools import plan_route
 from capabilities.recipes.tools import parse_recipe_and_extract_ingredients
@@ -56,16 +62,75 @@ class EmailPlugin:
 
     async def execute(self, state: AssistantState) -> PluginOutput:
         user_id = state["user_id"]
+
+        # One-time Gmail authorization: the bot can't read email until the user consents.
+        if settings.google_client_id and not await get_user_gmail_token(user_id):
+            public_domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN") or ""
+            base = (
+                f"https://{public_domain}".rstrip("/")
+                if public_domain
+                else (settings.webapp_url or "").rstrip("/")
+            )
+            link = f"{base}/auth/gmail?user_id={user_id}"
+            return PluginOutput(
+                message=AIMessage(
+                    content=(
+                        "🔐 I can check your Gmail — I just need one-time access from you. "
+                        f"Open this link and allow Gmail access (read-only), then message me again:\n{link}"
+                    )
+                ),
+                state_update={"active_domain": self.name},
+            )
+
         results = await search_email_messages.ainvoke({"user_id": user_id})
         if results:
             for msg in results:
                 sender = msg.get("sender", "")
                 if sender:
                     await discover_and_track_bank_domain(user_id, sender)
-        reply = AIMessage(
-            content=f"📧 [Email Subagent] Checked email providers. Found {len(results)} relevant messages."
-        )
+        reply = AIMessage(content=await self._summarize_email_results(results))
         return PluginOutput(message=reply, state_update={"active_domain": self.name})
+
+    @staticmethod
+    async def _summarize_email_results(results: List[Dict[str, Any]]) -> str:
+        """Summarize fetched emails with DeepSeek, or fall back to a plain list."""
+        if not results:
+            return (
+                "📬 I checked your inbox — nothing expense-related in the last week. "
+                "Want me to look at a specific sender or date range?"
+            )
+
+        fallback_lines = [
+            f"• {msg.get('sender', '?')}: {msg.get('subject', '(no subject)')}"
+            for msg in results[:5]
+        ]
+        fallback = "📬 Here's what I found in your inbox:\n" + "\n".join(fallback_lines)
+
+        if not settings.deepseek_api_key or settings.deepseek_api_key == "test_deepseek_key":
+            return fallback
+
+        try:
+            llm = get_agent_llm(complexity=ThinkingLevel.LOW, temperature=0.4)
+            emails_text = json.dumps(results[:8], indent=1, default=str)
+            ai_message = await llm.ainvoke(
+                [
+                    SystemMessage(
+                        content=(
+                            "You are Nexus Prime, the user's personal assistant on Telegram. "
+                            "You just fetched real emails from their inbox. Summarize them "
+                            "conversationally in 2-5 short lines: name the senders, what each "
+                            "message is about, and flag anything that looks like a bill, receipt, "
+                            "or expense. Do not mention that you are a subagent."
+                        )
+                    ),
+                    HumanMessage(content=f"Emails:\n{emails_text}"),
+                ]
+            )
+            summary = str(getattr(ai_message, "content", "") or "").strip()
+            return summary or fallback
+        except Exception as exc:  # noqa: BLE001
+            print(f"[EMAIL] summary LLM failed, using fallback: {exc}")
+            return fallback
 
 
 class ExpensePlugin:

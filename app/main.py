@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from core.db import init_db
 from core.scheduler import start_scheduler, shutdown_scheduler
 from app.webhook import router as webhook_router
+from app.auth import router as auth_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -25,6 +26,7 @@ app = FastAPI(
 )
 
 app.include_router(webhook_router, prefix="/api", tags=["Webhook"])
+app.include_router(auth_router)
 
 @app.get("/")
 @app.get("/health")
