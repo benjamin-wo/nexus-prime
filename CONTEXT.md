@@ -17,8 +17,10 @@ This document records the Ubiquitous Language and Architectural Seams for `nexus
 ### 2. Orchestration & Routing Layer
 - **CapabilityRouter**: A deep orchestrator module (`orchestrator/router.py`) that replaces shallow supervisor `if/elif` chains and individual subagent wrapper functions.
   - **Responsibilities**:
-    - Evaluates user intent against a declarative `CAPABILITY_REGISTRY` of registered plugins.
+    - Evaluates user intent against a declarative `CAPABILITY_REGISTRY` of registered plugins and `GuardrailPolicy`.
     - Routes and invokes the matched plugin's `.execute(state)` method statelessly.
     - Emits audit telemetry and missing capability wishlist tags when an intent is unsupported.
 - **CapabilityPlugin**: The Protocol interface implemented by all domain capabilities (`EmailPlugin`, `ExpensePlugin`, `RoutePlugin`, `RecipePlugin`, `GeneralPlugin`).
-  - **Interface**: Requires `name`, `keywords`, `description`, and `async def execute(self, state: AssistantState) -> AIMessage`.
+  - **Interface**: Requires `name`, `keywords`, `description`, and `async def execute(self, state: AssistantState) -> PluginOutput`.
+- **PluginOutput**: A pure Python data structure (`message: AIMessage`, `state_update: Dict[str, Any]`) returned by a `CapabilityPlugin`. It decouples domain capability implementations from LangGraph graph/command internals, allowing 2-line standalone unit tests.
+- **GuardrailPolicy**: A declarative policy registry within `CapabilityRouter` that detects unsupported transactional requests (e.g., bank transfers, calendar scheduling, flight bookings, smart home controls) and logs wishlist feature requests.
