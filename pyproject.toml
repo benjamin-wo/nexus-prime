@@ -49,5 +49,6 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 pythonpath = ["."]
 
-[tool.setuptools]
-packages = ["app", "core", "core.shared_tools", "capabilities", "capabilities.email", "capabilities.expenses", "capabilities.recipes", "capabilities.routes", "orchestrator"]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*", "core*", "capabilities*", "orchestrator*"]

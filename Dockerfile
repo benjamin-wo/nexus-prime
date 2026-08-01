@@ -9,11 +9,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml /app/
+# Copy project files before pip install so README.md and package directories exist
+COPY . /app/
+
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir .
-
-COPY . /app/
 
 ENV PYTHONUNBUFFERED=1
 ENV PORT=8000
