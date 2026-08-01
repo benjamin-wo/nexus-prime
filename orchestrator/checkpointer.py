@@ -32,8 +32,8 @@ async def setup_checkpointer():
             "postgresql+asyncpg://", "postgresql://"
         )
         iterator = AsyncPostgresSaver.from_conn_string(conn_string, pipeline=True)
-        saver = await anext(iterator)
-        await saver.setup()
+        saver = await iterator.__aenter__()
+        await _run_postgres_migrations(conn_string)
         _postgres_iterator = iterator
         _checkpointer = saver
         print("[CHECKPOINTER] PostgresSaver ready — conversation memory is durable.")
@@ -42,12 +42,31 @@ async def setup_checkpointer():
         _checkpointer = MemorySaver()
 
 
+async def _run_postgres_migrations(conn_string: str) -> None:
+    """
+    Apply the checkpointer DDL statement-by-statement on an autocommit connection.
+    The stock saver.setup() runs the whole migration as one transaction, which
+    breaks CREATE INDEX CONCURRENTLY.
+    """
+    from langgraph.checkpoint.postgres.base import MIGRATIONS
+    from psycopg import AsyncConnection
+
+    conn = await AsyncConnection.connect(conn_string, autocommit=True)
+    try:
+        for migration in MIGRATIONS:
+            for statement in migration.split(";"):
+                if statement.strip():
+                    await conn.execute(statement)
+    finally:
+        await conn.close()
+
+
 async def close_checkpointer():
     """Release the Postgres checkpointer connection pool on shutdown."""
     global _postgres_iterator, _checkpointer
     if _postgres_iterator is not None:
         try:
-            await _postgres_iterator.aclose()
+            await _postgres_iterator.__aexit__(None, None, None)
         except Exception:  # noqa: BLE001
             pass
         _postgres_iterator = None
