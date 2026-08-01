@@ -29,3 +29,6 @@ test_testdb.sqlite
 .DS_Store
 *.swp
 *.swo
+
+# Customizations
+.agents/
