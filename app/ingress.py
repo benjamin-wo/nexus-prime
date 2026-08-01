@@ -1,13 +1,62 @@
 import base64
 import json
 from typing import Dict, Any, List, Optional
+import httpx
+from langchain_core.messages import AIMessage
 from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 from sqlmodel import select
+from core.config import settings
 from core.db import async_session_factory
 from core.models import UserProfile
 from core.scheduler import list_active_jobs, run_now, update_user_timezone
 from orchestrator.graph import assistant_graph
+
+
+async def telegram_api_call(method: str, payload: Dict[str, Any]) -> bool:
+    """Best-effort Telegram Bot API call. Returns False instead of raising on errors."""
+    token = settings.telegram_bot_token
+    if not token or token == "test_bot_token":
+        print(f"[TELEGRAM] {method} skipped: bot token not configured")
+        return False
+    url = f"https://api.telegram.org/bot{token}/{method}"
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(url, json=payload)
+        if resp.status_code != 200:
+            print(f"[TELEGRAM] {method} failed: {resp.status_code} {resp.text[:300]}")
+            return False
+        data = resp.json()
+        if not data.get("ok"):
+            print(f"[TELEGRAM] {method} error: {data.get('description')}")
+            return False
+        return True
+    except Exception as exc:  # noqa: BLE001 - webhook ack must not depend on outbound calls
+        print(f"[TELEGRAM] {method} exception: {exc}")
+        return False
+
+
+async def send_telegram_message(
+    chat_id: int,
+    text: str,
+    reply_markup: Optional[Dict[str, Any]] = None,
+) -> bool:
+    """Send a text message to a Telegram chat."""
+    payload: Dict[str, Any] = {"chat_id": chat_id, "text": text}
+    if reply_markup is not None:
+        payload["reply_markup"] = reply_markup
+    return await telegram_api_call("sendMessage", payload)
+
+
+async def answer_telegram_callback(
+    callback_query_id: str,
+    text: Optional[str] = None,
+) -> bool:
+    """Acknowledge an inline button press to clear Telegram's loading state."""
+    payload: Dict[str, Any] = {"callback_query_id": callback_query_id}
+    if text:
+        payload["text"] = text
+    return await telegram_api_call("answerCallbackQuery", payload)
 
 
 class TelegramIngress:
@@ -68,6 +117,7 @@ class TelegramIngress:
         chat_id = callback.get("message", {}).get("chat", {}).get("id")
         user_id = callback.get("from", {}).get("id")
         callback_data = callback.get("data", "")
+        callback_query_id = callback.get("id", "")
 
         if callback_data.startswith("log_req:"):
             tag = callback_data.split(":", 1)[1]
@@ -79,11 +129,16 @@ class TelegramIngress:
                 intent_type="unsupported_transaction",
                 tags=[tag],
             )
+            reply_text = f"✅ Logged #{tag} to our feature wishlist!"
+            if callback_query_id:
+                await answer_telegram_callback(callback_query_id, text="Logged")
+            if chat_id:
+                await send_telegram_message(chat_id, reply_text)
             return {
                 "status": "ok",
                 "action": "feature_request_logged",
                 "tag": tag,
-                "reply": f"✅ Logged #{tag} to our feature wishlist!",
+                "reply": reply_text,
             }
 
         action = "confirm"
@@ -95,12 +150,61 @@ class TelegramIngress:
 
         if chat_id:
             config = {"configurable": {"thread_id": str(chat_id)}}
-            await assistant_graph.ainvoke(
+            result = await assistant_graph.ainvoke(
                 Command(resume={"action": action}),
                 config=config,
             )
+            if callback_query_id:
+                await answer_telegram_callback(callback_query_id, text="Done")
+            reply_text = self._extract_ai_reply(result)
+            if reply_text:
+                await send_telegram_message(chat_id, reply_text)
             return {"status": "ok", "action": action, "resumed": True}
         return {"status": "ok", "ignored": True}
+
+    @staticmethod
+    def _extract_ai_reply(result: Dict[str, Any]) -> Optional[str]:
+        """Return the text of the last AI message produced by the assistant graph."""
+        messages = result.get("messages") or []
+        for message in reversed(messages):
+            if isinstance(message, AIMessage) and message.content:
+                return str(message.content)
+        return None
+
+    @staticmethod
+    def _format_slash_reply(result: Dict[str, Any], raw_text: str) -> Optional[str]:
+        """Convert a deterministic slash-command result into user-facing text."""
+        if result.get("text"):
+            return str(result["text"])
+
+        if raw_text.startswith("/jobs"):
+            jobs = result.get("jobs") or []
+            if not jobs:
+                return "📋 No active jobs."
+            lines = []
+            for job in jobs:
+                next_run = job.get("next_run_time") or "not scheduled"
+                lines.append(
+                    f"- #{job.get('job_id')} **{job.get('job_name')}** "
+                    f"(`{job.get('cron_expression')}` @ {job.get('timezone')}, next: {next_run})"
+                )
+            return "📋 Active jobs:\n" + "\n".join(lines)
+
+        if raw_text.startswith("/run_now"):
+            if result.get("status") == "error":
+                return str(result.get("message") or "Usage: /run_now <job_id>")
+            return (
+                f"✅ Job {raw_text.split()[1]} triggered."
+                if result.get("triggered")
+                else "⚠️ Job could not be triggered."
+            )
+
+        if raw_text.startswith("/timezone"):
+            if result.get("status") == "error":
+                return str(result.get("message") or "Usage: /timezone <zone>")
+            return f"✅ Timezone updated to `{result.get('timezone')}`."
+
+        return None
 
     async def handle_slash_command(
         self, text: str, user_id: int
@@ -161,6 +265,10 @@ class TelegramIngress:
         # Handle slash commands without invoking LangGraph
         slash_res = await self.handle_slash_command(text, user_id=user_id)
         if slash_res is not None:
+            if chat_id:
+                reply_text = self._format_slash_reply(slash_res, text)
+                if reply_text:
+                    await send_telegram_message(chat_id, reply_text)
             return slash_res
 
         content_blocks = await self.process_multimodal_attachments(message)
@@ -177,13 +285,12 @@ class TelegramIngress:
         }
 
         result = await assistant_graph.ainvoke(initial_state, config=config)
+        reply_text = self._extract_ai_reply(result)
+        reply_markup = None
         if result.get("intent_type") == "unsupported_transaction":
             tags = result.get("missing_capability_tags") or ["general"]
             primary_tag = tags[0] if tags else "general"
-            return {
-                "status": "ok",
-                "processed": True,
-                "intent_type": "unsupported_transaction",
+            reply_markup = {
                 "inline_keyboard": [
                     [
                         {
@@ -191,9 +298,19 @@ class TelegramIngress:
                             "callback_data": f"log_req:{primary_tag}",
                         }
                     ]
-                ],
+                ]
+            }
+            if chat_id and reply_text:
+                await send_telegram_message(chat_id, reply_text, reply_markup=reply_markup)
+            return {
+                "status": "ok",
+                "processed": True,
+                "intent_type": "unsupported_transaction",
+                "inline_keyboard": reply_markup["inline_keyboard"],
             }
 
+        if chat_id and reply_text:
+            await send_telegram_message(chat_id, reply_text)
         return {"status": "ok", "processed": True}
 
 
