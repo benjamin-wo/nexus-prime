@@ -25,7 +25,7 @@ from capabilities.recipes.tools import (
     sync_to_grocery_list,
 )
 from core.config import settings
-from core.llm import get_agent_llm, ThinkingLevel
+from core.llm import extract_llm_text, get_agent_llm, get_multimodal_llm, ThinkingLevel
 from core.audit import log_capability_request
 
 
@@ -330,9 +330,24 @@ class GeneralPlugin:
         history = [SystemMessage(content=SYSTEM_PROMPT.format(now=now_sg))]
         for message in messages[-8:]:
             if isinstance(message, HumanMessage):
-                history.append(HumanMessage(content=str(message.content)))
+                history.append(
+                    HumanMessage(
+                        content=message.content
+                        if isinstance(message.content, list)
+                        else str(message.content)
+                    )
+                )
             elif isinstance(message, AIMessage):
                 history.append(AIMessage(content=str(message.content)))
+
+        last_content = messages[-1].content if messages else ""
+        has_media = isinstance(last_content, list) and any(
+            isinstance(block, dict) and block.get("type") == "media"
+            for block in last_content
+        )
+
+        if has_media:
+            return await self._execute_multimodal(history)
 
         # Tests and local runs use the placeholder key; skip the network call there.
         if not settings.deepseek_api_key or settings.deepseek_api_key == "test_deepseek_key":
@@ -354,6 +369,36 @@ class GeneralPlugin:
         return PluginOutput(
             message=AIMessage(content=content),
             state_update={"active_domain": self.name},
+        )
+
+    @staticmethod
+    async def _execute_multimodal(history: List[Any]) -> PluginOutput:
+        """Answer image/audio messages with Gemini's multimodal model."""
+        fallback = (
+            "I got your photo/voice, but my vision model isn't configured "
+            "on this deployment yet (GEMINI_API_KEY missing)."
+        )
+        if (
+            not settings.active_gemini_api_key
+            or settings.active_gemini_api_key == "test_google_key"
+        ):
+            return PluginOutput(
+                message=AIMessage(content=fallback),
+                state_update={"active_domain": "general"},
+            )
+
+        try:
+            llm = get_multimodal_llm(temperature=0.4)
+            ai_message = await llm.ainvoke(history)
+            content = extract_llm_text(getattr(ai_message, "content", "")).strip()
+            if not content:
+                content = "I saw your attachment but drew a blank — mind describing it?"
+        except Exception as exc:  # noqa: BLE001
+            print(f"[GENERAL] multimodal LLM failed: {exc}")
+            content = "😵‍💫 I couldn't process that media just now — try again?"
+        return PluginOutput(
+            message=AIMessage(content=content),
+            state_update={"active_domain": "general"},
         )
 
 

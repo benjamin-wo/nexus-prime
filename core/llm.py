@@ -97,3 +97,22 @@ def get_agent_llm(
 ) -> ChatOpenAI:
     """Convenience helper to obtain DeepSeek v4 Flash with the specified thinking complexity level."""
     return get_llm(role="agent_core", complexity=complexity, temperature=temperature)
+
+
+def extract_llm_text(content: Any) -> str:
+    """
+    Normalize an LLM response into plain text. Gemini may return a list of
+    typed parts (e.g. [{'type': 'text', 'text': ...}]) rather than a string.
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                if item.get("type") == "text" and item.get("text"):
+                    parts.append(str(item["text"]))
+        return "\n".join(parts).strip()
+    return str(content)

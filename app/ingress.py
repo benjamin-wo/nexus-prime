@@ -11,6 +11,7 @@ from langgraph.types import Command
 from sqlmodel import select
 from core.config import settings
 from core.db import async_session_factory
+from core.llm import extract_llm_text
 from core.models import UserProfile
 from core.scheduler import list_active_jobs, run_now, update_user_timezone
 from orchestrator.graph import assistant_graph
@@ -156,30 +157,101 @@ class TelegramIngress:
         b64_str = base64.b64encode(data_bytes).decode("utf-8")
         return f"data:{mime_type};base64,{b64_str}"
 
+    async def _download_telegram_media(self, file_id: str) -> Optional[tuple[str, bytes]]:
+        """Download a Telegram media file via the Bot API; returns (file_path, bytes)."""
+        token = settings.telegram_bot_token
+        if not token or token == "test_bot_token":
+            return None
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                info_resp = await client.get(
+                    f"https://api.telegram.org/bot{token}/getFile",
+                    params={"file_id": file_id},
+                )
+                info = info_resp.json()
+                if not info.get("ok"):
+                    print(f"[TG MEDIA] getFile failed: {info.get('description')}")
+                    return None
+                file_path = info["result"].get("file_path")
+                if not file_path:
+                    return None
+                download = await client.get(f"https://api.telegram.org/bot{token}/{file_path}")
+                if download.status_code != 200:
+                    print(f"[TG MEDIA] download failed: {download.status_code}")
+                    return None
+                return str(file_path), download.content
+        except Exception as exc:  # noqa: BLE001
+            print(f"[TG MEDIA] download error: {exc}")
+            return None
+
+    @staticmethod
+    def _guess_mime(file_path: str, fallback: str) -> str:
+        ext = file_path.rsplit(".", 1)[-1].lower() if "." in file_path else ""
+        return {
+            "jpg": "image/jpeg",
+            "jpeg": "image/jpeg",
+            "png": "image/png",
+            "webp": "image/webp",
+            "gif": "image/gif",
+            "ogg": "audio/ogg",
+            "oga": "audio/ogg",
+            "mp3": "audio/mpeg",
+            "wav": "audio/wav",
+            "m4a": "audio/mp4",
+        }.get(ext, fallback)
+
     async def process_multimodal_attachments(
         self, message: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
-        """Construct LangChain Base64 content blocks for text, voice (.ogg), or photo (.jpg)."""
+        """
+        Download real Telegram media and construct Gemini content blocks for
+        text, voice/audio, and photos. Falls back to a warning note if a file
+        cannot be downloaded.
+        """
         content_blocks = []
         text = message.get("text") or message.get("caption") or ""
         if text:
             content_blocks.append({"type": "text", "text": text})
 
-        if "voice" in message or "audio" in message:
-            dummy_audio = b"OggS_dummy_voice_data"
-            data_uri = self.format_base64_data_uri("audio/ogg", dummy_audio)
-            content_blocks.append(
-                {"type": "media", "mime_type": "audio/ogg", "data_uri": data_uri}
+        media_items: List[tuple[str, str]] = []  # (file_id, mime_type)
+        if "voice" in message:
+            voice = message["voice"]
+            media_items.append((voice.get("file_id", ""), "audio/ogg"))
+        if "audio" in message:
+            audio = message["audio"]
+            media_items.append(
+                (audio.get("file_id", ""), audio.get("mime_type") or "audio/mpeg")
             )
+        if "document" in message:
+            document = message["document"]
+            mime = document.get("mime_type") or ""
+            if mime.startswith("image/") or mime.startswith("audio/"):
+                media_items.append((document.get("file_id", ""), mime))
+        if "photo" in message and isinstance(message["photo"], list) and message["photo"]:
+            largest = message["photo"][-1]
+            media_items.append((largest.get("file_id", ""), "image/jpeg"))
 
-        if (
-            "photo" in message
-            and isinstance(message["photo"], list)
-            and len(message["photo"]) > 0
-        ):
-            dummy_photo = b"\xff\xd8\xff_dummy_photo_data"
-            data_uri = self.format_base64_data_uri("image/jpeg", dummy_photo)
-            content_blocks.append({"type": "image_url", "image_url": {"url": data_uri}})
+        for file_id, mime_type in media_items:
+            if not file_id:
+                continue
+            downloaded = await self._download_telegram_media(file_id)
+            if downloaded is None:
+                content_blocks.append(
+                    {
+                        "type": "text",
+                        "text": "⚠️ (couldn't download the attached media)",
+                    }
+                )
+                continue
+            file_path, file_bytes = downloaded
+            resolved_mime = self._guess_mime(file_path, mime_type)
+            content_blocks.append(
+                {
+                    "type": "media",
+                    "mime_type": resolved_mime,
+                    "data": base64.b64encode(file_bytes).decode("utf-8"),
+                }
+            )
 
         return content_blocks
 
@@ -261,7 +333,7 @@ class TelegramIngress:
         messages = result.get("messages") or []
         for message in reversed(messages):
             if isinstance(message, AIMessage) and message.content:
-                return str(message.content)
+                return extract_llm_text(message.content)
         return None
 
     @staticmethod
@@ -411,8 +483,12 @@ class TelegramIngress:
                 return slash_res
 
             content_blocks = await self.process_multimodal_attachments(message)
+            has_media = any(
+                isinstance(block, dict) and block.get("type") == "media"
+                for block in content_blocks
+            )
             human_msg = HumanMessage(
-                content=content_blocks if len(content_blocks) > 1 else text
+                content=content_blocks if has_media or len(content_blocks) > 1 else text
             )
 
             config = {"configurable": {"thread_id": str(chat_id)}}
