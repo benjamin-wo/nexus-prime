@@ -13,9 +13,16 @@ from capabilities.email.tools import (
     discover_and_track_bank_domain,
     get_user_gmail_token,
 )
-from capabilities.expenses.tools import process_extracted_expense
-from capabilities.routes.tools import plan_route
-from capabilities.recipes.tools import parse_recipe_and_extract_ingredients
+from capabilities.expenses.tools import (
+    process_extracted_expense,
+    extract_expense_from_text,
+    expense_source_id,
+)
+from capabilities.routes.tools import plan_route, extract_route_request
+from capabilities.recipes.tools import (
+    parse_recipe_and_extract_ingredients,
+    sync_to_grocery_list,
+)
 from core.config import settings
 from core.llm import get_agent_llm, ThinkingLevel
 from core.audit import log_capability_request
@@ -145,23 +152,49 @@ class ExpensePlugin:
 
     async def execute(self, state: AssistantState) -> PluginOutput:
         user_id = state["user_id"]
+        messages = state.get("messages", [])
+        last_text = str(messages[-1].content) if messages else ""
+
+        extracted = await extract_expense_from_text.ainvoke({"user_text": last_text})
+        if not extracted or not extracted.get("amount"):
+            return PluginOutput(
+                message=AIMessage(
+                    content=(
+                        "💰 I couldn't spot an expense in that — try something like "
+                        "*\"spent $12.50 at Starbucks\"* or *\"paid $4.20 for kopi\"*."
+                    )
+                ),
+                state_update={"active_domain": self.name},
+            )
+
         res = await process_extracted_expense.ainvoke(
             {
                 "user_id": user_id,
-                "amount": 15.00,
-                "currency": "USD",
-                "merchant": "Starbucks",
-                "category": "Food & Drink",
-                "date_iso": "2026-08-01T10:00:00Z",
-                "confidence": 0.75,
-                "needs_clarification": True,
-                "source_message_id": "msg_1001",
+                "amount": extracted["amount"],
+                "currency": extracted.get("currency", "USD"),
+                "merchant": extracted["merchant"],
+                "category": extracted.get("category", "General"),
+                "date_iso": extracted.get("date_iso") or "",
+                "confidence": extracted.get("confidence", 0.9),
+                "needs_clarification": extracted.get("needs_clarification", False),
+                "source_message_id": expense_source_id(user_id, last_text),
             }
         )
         status = res.get("status", "unknown")
-        reply = AIMessage(
-            content=f"💰 [Expense Subagent] Processed expense: status={status}."
-        )
+        if status == "saved_silently":
+            reply = (
+                f"💰 Logged *{extracted.get('currency', 'USD')} {extracted['amount']:.2f}* "
+                f"at *{extracted['merchant']}* ({extracted.get('category', 'General')})."
+            )
+        elif status == "duplicate":
+            reply = "🙅 That expense is already logged."
+        elif status == "confirmed_by_user":
+            reply = (
+                f"✅ Saved {extracted.get('currency', 'USD')} {extracted['amount']:.2f} "
+                f"at {extracted['merchant']}."
+            )
+        else:
+            reply = f"💰 Found {extracted['amount']:.2f} at {extracted['merchant']} — confirm below."
         return PluginOutput(message=reply, state_update={"active_domain": self.name})
 
 
@@ -173,16 +206,46 @@ class RoutePlugin:
     description = "Computes travel routes and live Singapore LTA transit alerts."
 
     async def execute(self, state: AssistantState) -> PluginOutput:
+        messages = state.get("messages", [])
+        last_text = str(messages[-1].content) if messages else ""
+
+        req = await extract_route_request.ainvoke({"user_text": last_text})
+        origin = (req.get("origin") or "").strip()
+        destination = (req.get("destination") or "").strip()
+        mode = req.get("mode") or "transit"
+        if not origin or not destination:
+            return PluginOutput(
+                message=AIMessage(
+                    content=(
+                        "I need two places to route between — try *\"route from Raffles Place "
+                        "to Changi Airport\"* or *\"drive to Marina Bay Sands\"*. 🌏"
+                    )
+                ),
+                state_update={"active_domain": self.name},
+            )
+
         res = await plan_route.ainvoke(
-            {
-                "origin": "Changi Airport",
-                "destination": "Marina Bay Sands",
-                "mode": "transit",
-            }
+            {"origin": origin, "destination": destination, "mode": mode}
         )
-        reply = AIMessage(
-            content=f"🗺️ [Route Subagent] Route planned: {res['origin']} -> {res['destination']} (~{res['eta_minutes']} mins). Mode: {res['mode']}."
-        )
+        if res.get("error"):
+            return PluginOutput(
+                message=AIMessage(
+                    content=(
+                        f"⚠️ Couldn't plan that route ({res['error']}). "
+                        "Try different place names or a nearby landmark?"
+                    )
+                ),
+                state_update={"active_domain": self.name},
+            )
+
+        icon = "🚇" if mode == "transit" else "🚗"
+        lines = [
+            f"{icon} *{res['origin']}* → *{res['destination']}*: "
+            f"~{res['eta_minutes']} min ({res['distance_km']} km)"
+        ]
+        for index, step in enumerate(res.get("steps", [])[:5], 1):
+            lines.append(f"{index}. {step}")
+        reply = AIMessage(content="\n".join(lines))
         return PluginOutput(message=reply, state_update={"active_domain": self.name})
 
 
@@ -194,14 +257,37 @@ class RecipePlugin:
     description = "Parses recipes and syncs ingredients to user grocery lists."
 
     async def execute(self, state: AssistantState) -> PluginOutput:
+        user_id = state["user_id"]
+        messages = state.get("messages", [])
+        last_text = str(messages[-1].content) if messages else ""
+
         res = await parse_recipe_and_extract_ingredients.ainvoke(
-            {
-                "recipe_text": "Spaghetti Carbonara: 200g pasta, 100g pancetta, 2 eggs, 50g pecorino cheese"
-            }
+            {"recipe_text_or_url": last_text}
         )
-        reply = AIMessage(
-            content=f"🍳 [Recipe Subagent] Parsed recipe: {res['title']} with {len(res['ingredients'])} ingredients."
+        ingredients = res.get("ingredients") or []
+        if not ingredients:
+            return PluginOutput(
+                message=AIMessage(
+                    content=(
+                        "🍳 I couldn't find a recipe in that — paste a recipe and I'll add "
+                        "the ingredients to your grocery list."
+                    )
+                ),
+                state_update={"active_domain": self.name},
+            )
+
+        added = await sync_to_grocery_list.ainvoke(
+            {"user_id": user_id, "items": ingredients}
         )
+        lines = [
+            f"📖 *{res.get('title', 'Recipe')}* — added {len(added)} items to your grocery list:"
+        ]
+        for item in ingredients[:10]:
+            lines.append(f"• {item['name']} ({item.get('quantity', '1')})")
+        if len(ingredients) > 10:
+            lines.append(f"…and {len(ingredients) - 10} more")
+        lines.append("\nType /groceries to see the full list.")
+        reply = AIMessage(content="\n".join(lines))
         return PluginOutput(message=reply, state_update={"active_domain": self.name})
 
 

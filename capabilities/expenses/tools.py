@@ -1,9 +1,15 @@
 from datetime import datetime, timezone as dt_timezone
-from typing import Optional, Dict, Any
+import hashlib
+import json
+import re
+from typing import Optional, Dict, Any, List
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools import tool
 from langgraph.types import interrupt
 from sqlmodel import select
 from core.db import async_session_factory
+from core.config import settings
+from core.llm import ThinkingLevel, get_agent_llm
 from core.models import ExpenseTransaction
 from capabilities.expenses.schemas import ExtractedExpense
 from capabilities.email.tools import apply_gmail_processed_label
@@ -40,6 +46,82 @@ async def save_expense_transaction(
         await session.commit()
         await session.refresh(tx)
         return tx
+
+
+@tool
+async def extract_expense_from_text(user_text: str) -> Dict[str, Any]:
+    """
+    Extract structured expense fields from a natural-language message.
+    Returns amount, currency, merchant, category, date_iso, confidence, needs_clarification.
+    """
+    if not settings.deepseek_api_key or settings.deepseek_api_key == "test_deepseek_key":
+        return {"amount": None}
+
+    llm = get_agent_llm(complexity=ThinkingLevel.LOW, temperature=0.1)
+    ai_message = await llm.ainvoke(
+        [
+            SystemMessage(
+                content=(
+                    "Extract an expense from the user's message. Reply with ONLY a JSON object: "
+                    '{"amount": number, "currency": string (3-letter code, default USD), '
+                    '"merchant": string, "category": string, "date_iso": string (ISO 8601 or empty), '
+                    '"confidence": number 0-1, "needs_clarification": boolean}. '
+                    "Set confidence below 0.8 or needs_clarification true when the amount or "
+                    "merchant is ambiguous. If no expense is present, return {\"amount\": null}."
+                )
+            ),
+            HumanMessage(content=user_text[:2000]),
+        ]
+    )
+    raw = str(getattr(ai_message, "content", "") or "").strip()
+    raw = re.sub(r"^```(?:json)?|```$", "", raw, flags=re.MULTILINE).strip()
+    try:
+        parsed = json.loads(raw)
+        if not parsed.get("amount"):
+            return {"amount": None}
+        return {
+            "amount": float(parsed["amount"]),
+            "currency": parsed.get("currency") or "USD",
+            "merchant": parsed.get("merchant") or "Unknown",
+            "category": parsed.get("category") or "General",
+            "date_iso": parsed.get("date_iso") or "",
+            "confidence": float(parsed.get("confidence", 0.9)),
+            "needs_clarification": bool(parsed.get("needs_clarification", False)),
+        }
+    except Exception as exc:  # noqa: BLE001
+        print(f"[EXPENSES] extraction parse failed: {exc}")
+        return {"amount": None}
+
+
+def expense_source_id(user_id: int, text: str) -> str:
+    """Stable dedup key for an expense logged from a Telegram message."""
+    digest = hashlib.md5(text.encode("utf-8")).hexdigest()[:12]
+    return f"tg-{user_id}-{digest}"
+
+
+@tool
+async def get_user_expenses(user_id: int, limit: int = 10) -> List[Dict[str, Any]]:
+    """Retrieve the user's most recent expense transactions."""
+    async with async_session_factory() as session:
+        result = await session.execute(
+            select(ExpenseTransaction)
+            .where(ExpenseTransaction.user_id == user_id)
+            .order_by(ExpenseTransaction.date.desc())
+            .limit(limit)
+        )
+        rows = result.scalars().all()
+        return [
+            {
+                "id": row.id,
+                "amount": row.amount,
+                "currency": row.currency,
+                "merchant": row.merchant,
+                "category": row.category,
+                "date": row.date.isoformat(),
+                "verified": row.is_verified,
+            }
+            for row in rows
+        ]
 
 @tool
 async def process_extracted_expense(

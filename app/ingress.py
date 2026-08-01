@@ -335,6 +335,41 @@ class TelegramIngress:
                     table_md += f'| {idx} | `#{row["tag"]}` | {row["count"]} | *"{row["sample_prompt"]}"* |\n'
             return {"status": "ok", "leaderboard": leaderboard, "text": table_md}
 
+        if text.startswith("/groceries"):
+            from capabilities.recipes.tools import get_user_grocery_list
+
+            items = await get_user_grocery_list.ainvoke({"user_id": user_id})
+            if not items:
+                return {"status": "ok", "groceries": [], "text": "🛒 Your grocery list is empty."}
+            lines = [
+                f"• {item['name']} × {item['quantity']} ({item['category']})"
+                for item in items[:15]
+            ]
+            return {
+                "status": "ok",
+                "groceries": items,
+                "text": "🛒 Grocery list:\n" + "\n".join(lines),
+            }
+
+        if text.startswith("/expenses"):
+            from capabilities.expenses.tools import get_user_expenses
+
+            rows = await get_user_expenses.ainvoke({"user_id": user_id, "limit": 10})
+            if not rows:
+                return {"status": "ok", "expenses": [], "text": "💰 No expenses logged yet."}
+            lines = [
+                f"• {row['date'][:10]} {row['currency']} {row['amount']:.2f} — "
+                f"{row['merchant']} ({row['category']})"
+                for row in rows
+            ]
+            total = sum(row["amount"] for row in rows)
+            lines.append(f"\nTotal (last {len(rows)}): {rows[0]['currency']} {total:.2f}")
+            return {
+                "status": "ok",
+                "expenses": rows,
+                "text": "💰 Recent expenses:\n" + "\n".join(lines),
+            }
+
         return None
 
     async def handle_update(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -389,6 +424,28 @@ class TelegramIngress:
             }
 
             result = await assistant_graph.ainvoke(initial_state, config=config)
+            interrupts = result.get("__interrupt__")
+            if interrupts:
+                for interrupt_item in interrupts:
+                    payload = getattr(interrupt_item, "value", interrupt_item)
+                    if not isinstance(payload, dict) or not payload.get("prompt"):
+                        continue
+                    buttons = [
+                        [
+                            {
+                                "text": button.get("text", "OK"),
+                                "callback_data": button.get("callback_data", "{}"),
+                            }
+                        ]
+                        for button in payload.get("buttons", [])
+                    ]
+                    sent = await send_telegram_message(
+                        chat_id,
+                        str(payload["prompt"]),
+                        reply_markup={"inline_keyboard": buttons} if buttons else None,
+                    )
+                    self._log_conversation("OUT" if sent else "SEND-FAIL", chat_id, payload["prompt"])
+                return {"status": "ok", "interrupted": True}
             reply_text = self._extract_ai_reply(result)
             reply_markup = None
             if result.get("intent_type") == "unsupported_transaction":
