@@ -40,6 +40,7 @@ class Decision:
     source: str = "deterministic"
     retrieval_used: bool = True
     recipe: Optional[str] = None
+    rationale: Optional[str] = None
 
     @property
     def capability_ids(self) -> list[str]:
@@ -221,6 +222,7 @@ def deterministic_plan(
                 confidence=0.85,
                 source="referent-reuse",
                 retrieval_used=False,
+                rationale="Referent continuation of the previous turn; reusing its capability set without re-retrieval.",
             )
         active = (state or {}).get("active_domain")
         if active and active in {"email", "expenses", "routes", "recipes", "reminders", "general"}:
@@ -230,6 +232,7 @@ def deterministic_plan(
                 confidence=0.8,
                 source="referent-reuse",
                 retrieval_used=False,
+                rationale="Referent continuation using the active thread domain.",
             )
 
     # Probe 4: ambiguity gets one disambiguating question, never silent guessing.
@@ -242,6 +245,7 @@ def deterministic_plan(
             confidence=0.3,
             source="deterministic",
             retrieval_used=False,
+            rationale="Ambiguous request; asking one disambiguating question instead of guessing.",
         )
 
     recipe = _recipe_for(text)
@@ -261,6 +265,7 @@ def deterministic_plan(
             source="recipe",
             retrieval_used=True,
             recipe=recipe,
+            rationale=f"Recipe trigger matched: {recipe}.",
         )
 
     missing = missing_policy(text)
@@ -278,6 +283,7 @@ def deterministic_plan(
             confidence=0.9,
             source="deterministic",
             retrieval_used=bool(retrieval),
+            rationale="No registered capability can fulfil this request; refusing honestly.",
         )
 
     if not candidates:
@@ -310,6 +316,7 @@ def deterministic_plan(
         confidence=confidence,
         source="deterministic",
         retrieval_used=True,
+        rationale="Retrieved the shortlist and selected matching capabilities by intent rules.",
     )
 
 
@@ -326,7 +333,11 @@ def _insufficiency_message(missing: list[str]) -> str:
     )
 
 
-def llm_plan_prompt(user_text: str, shortlist: list[dict[str, Any]]) -> list[dict[str, str]]:
+def llm_plan_prompt(
+    user_text: str,
+    shortlist: list[dict[str, Any]],
+    state: dict[str, Any] | AssistantState | None = None,
+) -> list[dict[str, str]]:
     """Production planner prompt (Anthropic parallel-tool-use style decision).
 
     Unverified — assumption: this prompt is not exercised in this environment
@@ -337,17 +348,42 @@ def llm_plan_prompt(user_text: str, shortlist: list[dict[str, Any]]) -> list[dic
         for item in shortlist
     )
     system = (
-        "You are the Nexus Prime planner. Decide which capabilities to use and in what order. "
-        "Reply with ONLY JSON: "
+        "You are the Nexus Prime planner working in the background. Understand the request, "
+        "choose the capabilities and their order, and reason internally. Reply with ONLY JSON: "
         '{"capabilities":[{"id":"...","reason":"...","confidence":0.0-1.0}], '
         '"ordering":["..."],"insufficient_capability":{"missing_capabilities":["..."],"reasons":["..."]}'
-        ',"question":null|"..."}'
+        ',"question":null|"...","rationale":"brief internal reasoning, never shown to the user"}'
     )
+    context_parts = []
+    if state:
+        messages = state.get("messages") or []
+        history = []
+        for message in messages[-6:-1]:
+            role = "user" if getattr(message, "type", "") == "human" else "assistant"
+            content = str(getattr(message, "content", ""))[:500]
+            if content:
+                history.append(f"{role}: {content}")
+        if history:
+            context_parts.append("Conversation so far:\n" + "\n".join(history))
+        active = state.get("active_domain")
+        if active:
+            context_parts.append(f"Current thread domain: {active}")
+        last = state.get("last_decision")
+        if last and last.get("capabilities"):
+            context_parts.append(
+                f"Previous plan: {json.dumps(last, ensure_ascii=False)[:500]}"
+            )
+        feedback = state.get("verification_feedback")
+        if feedback:
+            context_parts.append(f"Verification feedback from the previous attempt: {feedback}")
     return [
         {"role": "system", "content": system},
         {
             "role": "user",
-            "content": f"User message: {user_text}\n\nRetrieval shortlist:\n{shortlist_text}",
+            "content": (
+                ("\n".join(context_parts) + "\n\n" if context_parts else "")
+                + f"User message: {user_text}\n\nRetrieval shortlist:\n{shortlist_text}"
+            ),
         },
     ]
 
@@ -379,7 +415,7 @@ async def plan_with_llm(
     ]
     llm = get_agent_llm(complexity=ThinkingLevel.LOW, temperature=0.0)
     try:
-        ai_message = await llm.ainvoke(llm_plan_prompt(user_text, shortlist))
+        ai_message = await llm.ainvoke(llm_plan_prompt(user_text, shortlist, state))
     except Exception as exc:  # noqa: BLE001
         print(f"[PLANNER] LLM call failed, falling back to deterministic: {exc}")
         return None
@@ -429,6 +465,7 @@ def decision_from_dict(
             )
         question = parsed.get("question")
         question = str(question) if question else None
+        rationale = str(parsed.get("rationale") or "") or None
         if not capabilities and not insufficient and not question:
             return None
         return Decision(
@@ -439,6 +476,7 @@ def decision_from_dict(
             confidence=max(0.0, min(1.0, float(parsed.get("confidence", 0.8)))),
             source="llm",
             retrieval_used=True,
+            rationale=rationale,
         )
     except Exception as exc:  # noqa: BLE001
         print(f"[PLANNER] invalid LLM decision, falling back to deterministic: {exc}")
@@ -465,4 +503,5 @@ def decision_to_dict(decision: Decision) -> dict[str, Any]:
         "source": decision.source,
         "retrieval_used": decision.retrieval_used,
         "recipe": decision.recipe,
+        "rationale": decision.rationale,
     }

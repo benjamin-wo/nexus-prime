@@ -43,7 +43,9 @@ Routing is **retrieve → plan → select a set**, not a single-label `goto`:
 - `orchestrator/planner.py` — Decision object: capability set, ordering, explicit
   `insufficient_capability` with reasons, confidence, and optional disambiguation question. An LLM
   planner runs when API keys are configured, with the deterministic planner as the measured
-  offline fallback.
+  offline fallback. Planning is backend-only: the plan and its internal rationale are stored in
+  state and logs, never shown to the user. The LLM planner receives recent conversation context,
+  and `orchestrator/verify.py` runs a bounded verify/re-plan check after tool execution.
 - `orchestrator/plan_router.py` — Executes a Decision through the plugin registry and returns
   `Command(goto=END)` updates.
 - `orchestrator/fastpath.py` — Skips planner/insufficiency/composition stages for known, read-only,

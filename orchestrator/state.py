@@ -14,3 +14,4 @@ class AssistantState(MessagesState):
     fallback_reason: Optional[str]
     last_decision: Optional[Dict[str, Any]]
     pending_bus_stops: Optional[List[Dict[str, Any]]]
+    plan: Optional[Dict[str, Any]]
