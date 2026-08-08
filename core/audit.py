@@ -299,6 +299,21 @@ async def perform_conversation_audit(
         session.add(log_entry)
         await session.commit()
         await session.refresh(log_entry)
+    if verdict in {"review", "critical"}:
+        try:
+            from app.ingress import send_telegram_message
+
+            await send_telegram_message(
+                int(thread_id),
+                (
+                    f"🧑‍⚖️ Conversation audit ({log_entry.judge_model}): **{verdict.upper()}**\n"
+                    f"Faithfulness {log_entry.faithfulness_score}/5 · Routing {log_entry.routing_score}/5 · "
+                    f"Tool correctness {log_entry.tool_correctness_score}/5 · Helpfulness {log_entry.helpfulness_score}/5\n"
+                    f"{log_entry.evidence}"
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"[AUDIT] failed to notify chat {thread_id}: {exc}")
     if verdict == "critical":
         await send_admin_anomaly_alert(
             thread_id=thread_id,

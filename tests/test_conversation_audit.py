@@ -46,6 +46,34 @@ async def test_conversation_audit_persists_scorecard():
 
 
 @pytest.mark.asyncio
+async def test_conversation_audit_notifies_user_chat_on_review():
+    messages = [HumanMessage(content="bus route"), AIMessage(content="wrong answer")]
+    payload = {
+        "faithfulness_score": 3,
+        "routing_score": 2,
+        "tool_correctness_score": 1,
+        "helpfulness_score": 2,
+        "verdict": "review",
+        "evidence": "Wrong bus number.",
+    }
+    sent = {}
+
+    async def _fake_send(chat_id, text, reply_markup=None):
+        sent["chat_id"] = chat_id
+        sent["text"] = text
+        return True
+
+    with patch("core.audit._judge_conversation_with_gemini", new=AsyncMock(return_value=payload)):
+        with patch("app.ingress.send_telegram_message", new=_fake_send):
+            await perform_conversation_audit(
+                user_id=149917165, thread_id="149917165", messages=messages
+            )
+    assert sent.get("chat_id") == 149917165
+    assert "Conversation audit" in sent.get("text", "")
+    assert "Wrong bus number" in sent.get("text", "")
+
+
+@pytest.mark.asyncio
 async def test_conversation_audit_falls_back_when_judge_fails():
     messages = [HumanMessage(content="hi")]
     with patch(
