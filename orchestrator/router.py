@@ -22,6 +22,7 @@ from capabilities.expenses.tools import (
     log_expenses_from_emails,
 )
 from capabilities.routes.tools import plan_route, extract_route_request
+from capabilities.routes.journey import format_journey, plan_transit_journey
 from capabilities.recipes.tools import (
     parse_recipe_and_extract_ingredients,
     sync_to_grocery_list,
@@ -365,10 +366,15 @@ class RoutePlugin:
         ):
             from capabilities.routes.tools import handle_bus_query
 
-            bus_result = await handle_bus_query(last_text)
+            bus_result = await handle_bus_query(
+                last_text, pending_stops=state.get("pending_bus_stops")
+            )
             return PluginOutput(
                 message=AIMessage(content=bus_result["message"]),
-                state_update={"active_domain": self.name},
+                state_update={
+                    "active_domain": self.name,
+                    "pending_bus_stops": bus_result.get("pending_stops"),
+                },
             )
 
         req = await extract_route_request.ainvoke({"user_text": last_text})
@@ -385,6 +391,14 @@ class RoutePlugin:
                 ),
                 state_update={"active_domain": self.name},
             )
+
+        if mode == "transit":
+            journey = await plan_transit_journey(origin, destination)
+            if not journey.get("error"):
+                return PluginOutput(
+                    message=AIMessage(content=format_journey(journey)),
+                    state_update={"active_domain": self.name},
+                )
 
         res = await plan_route.ainvoke(
             {"origin": origin, "destination": destination, "mode": mode}

@@ -47,6 +47,16 @@ class ScheduledJob(SQLModel, table=True):
     is_active: bool = Field(default=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
+
+class BusStop(SQLModel, table=True):
+    """Cached LTA bus-stop catalog for offline/robust stop-name resolution."""
+
+    code: str = Field(primary_key=True)
+    description: str = Field(index=True)
+    road_name: str = Field(index=True)
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+
 class QualityAuditLog(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="userprofile.user_id", index=True)

@@ -30,7 +30,8 @@ user's phrasing, typed input/output schemas, a side-effect class (`read`/`write`
 **derived** from manifests — there is no manager enum, class, or routing hop.
 
 - Plugins: email, expenses, routes (live LTA bus arrivals when `LTA_ACCOUNT_KEY` is configured,
-  actual bus numbers in Google Maps transit steps), recipes, reminders, general, code_exec.
+  Google Maps + LTA composed into full journey answers with live next departures and a map link),
+  recipes, reminders, general, code_exec.
 - Retrieval: `capabilities/retrieval.py` — BM25 index over manifest content with top-k shortlists
   and a recovery path when the correct capability sits outside `k`.
 - Advisory tag policy: `config/tag-policy.yaml` (unknown tags warn at load).
@@ -41,7 +42,8 @@ Routing is **retrieve → plan → select a set**, not a single-label `goto`:
 
 - `orchestrator/planner.py` — Decision object: capability set, ordering, explicit
   `insufficient_capability` with reasons, confidence, and optional disambiguation question. An LLM
-  prompt is provided for production; a deterministic offline planner is the measured artifact.
+  planner runs when API keys are configured, with the deterministic planner as the measured
+  offline fallback.
 - `orchestrator/plan_router.py` — Executes a Decision through the plugin registry and returns
   `Command(goto=END)` updates.
 - `orchestrator/fastpath.py` — Skips planner/insufficiency/composition stages for known, read-only,
@@ -99,4 +101,5 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 - v1.0 Core Architecture RFC: [spec.md](spec.md)
 - v2.0 Capability-Gap Handling & Telemetry RFC: [spec-capability-gaps.md](spec-capability-gaps.md)
 - Domain & architecture glossary: [CONTEXT.md](CONTEXT.md) and [map.md](map.md)
+- Capability orchestration recipes: [capabilities/RECIPES.md](capabilities/RECIPES.md)
 - Gauntlet loop status and lock files: [gauntlet/loop-status.md](gauntlet/loop-status.md)

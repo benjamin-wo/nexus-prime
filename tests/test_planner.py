@@ -1,9 +1,10 @@
 from langchain_core.messages import HumanMessage
 import pytest
+from langchain_core.messages import AIMessage
 
 from capabilities.registry import load_registry
 from capabilities.retrieval import BM25Index
-from orchestrator.planner import deterministic_plan
+from orchestrator.planner import decision_from_dict, deterministic_plan, plan_with_llm
 from orchestrator.graph import get_assistant_graph
 
 
@@ -79,3 +80,82 @@ async def test_referent_reuse_persists_across_graph_turns():
     assert result2.get("active_domain") == "expenses"
     reply = str(result2["messages"][-1].content)
     assert "Hey! I'm here" not in reply
+
+
+@pytest.mark.asyncio
+async def test_plugin_state_update_merged_by_plan_router(monkeypatch):
+    from unittest.mock import AsyncMock, patch
+
+    from orchestrator.plan_router import plan_dispatch
+    from orchestrator.router import PluginOutput
+
+    fake_plugin = AsyncMock()
+    fake_plugin.execute.return_value = PluginOutput(
+        message=AIMessage(content="fake reply"),
+        state_update={"pending_bus_stops": [{"code": "76161"}]},
+    )
+    fake_registry = {"expenses": fake_plugin}
+    with patch("orchestrator.router.CAPABILITY_REGISTRY", fake_registry):
+        state = {
+            "user_id": 1,
+            "active_domain": None,
+            "last_decision": None,
+            "pending_bus_stops": None,
+            "messages": [HumanMessage(content="show my expenses")],
+        }
+        command = await plan_dispatch(state)
+    assert command.update["pending_bus_stops"] == [{"code": "76161"}]
+    assert command.update["active_domain"] == "expenses"
+
+
+@pytest.mark.asyncio
+async def test_llm_planner_returns_none_without_real_key():
+    decision = await plan_with_llm("check my email", _state("check my email"), None)
+    assert decision is None
+
+
+def test_llm_decision_dict_validated_against_shortlist():
+    decision = decision_from_dict(
+        {
+            "capabilities": [
+                {"id": "email", "reason": "email intent", "confidence": 0.9},
+                {"id": "not_in_shortlist", "reason": "ignored", "confidence": 0.9},
+            ],
+            "ordering": ["email"],
+            "insufficient_capability": None,
+            "question": None,
+            "confidence": 0.9,
+        },
+        shortlist_ids={"email"},
+    )
+    assert decision is not None
+    assert decision.capability_ids == ["email"]
+    assert decision.source == "llm"
+
+
+@pytest.mark.asyncio
+async def test_llm_planner_used_when_key_present(monkeypatch):
+    from core.config import settings
+
+    monkeypatch.setattr(settings, "deepseek_api_key", "real-key")
+
+    class _FakeMessage:
+        content = (
+            '{"capabilities":[{"id":"expenses","reason":"spend query","confidence":0.9}],'
+            '"ordering":["expenses"],"insufficient_capability":null,"question":null,"confidence":0.9}'
+        )
+
+    class _FakeLLM:
+        async def ainvoke(self, messages):
+            return _FakeMessage()
+
+    monkeypatch.setattr("core.llm.get_agent_llm", lambda *a, **k: _FakeLLM())
+    from capabilities.registry import load_registry
+    from capabilities.retrieval import BM25Index
+
+    index = BM25Index(list(load_registry().values()))
+    retrieval = index.retrieve_with_recovery("how much did I spend on food", k=5)
+    decision = await plan_with_llm("how much did I spend on food", _state("how much did I spend on food"), retrieval)
+    assert decision is not None
+    assert decision.source == "llm"
+    assert decision.capability_ids == ["expenses"]

@@ -6,6 +6,7 @@ Requires LTA_ACCOUNT_KEY. All calls are read-only.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import re
 from typing import Any, Optional
 
 import httpx
@@ -14,6 +15,9 @@ from core.config import settings
 
 LTA_BASE = "https://datamall.mytransport.sg/ltaodataservice/"
 TIMEOUT_SECONDS = 15.0
+
+last_search_error: Optional[str] = None
+_catalog_loaded: Optional[bool] = None
 
 
 async def _lta_get(endpoint: str, params: dict[str, Any]) -> Optional[dict[str, Any]]:
@@ -37,16 +41,111 @@ async def _lta_get(endpoint: str, params: dict[str, Any]) -> Optional[dict[str, 
 
 
 async def search_bus_stops(search_text: str, limit: int = 5) -> list[dict[str, Any]]:
-    """Search LTA bus stops by name/road. Returns [{code, description, road_name, lat, lng}]."""
+    """Search bus stops: live SearchText first, then the local catalog with fuzzy matching."""
+    global last_search_error
+    last_search_error = None
+    api_stops = await _search_api(search_text, limit)
+    if api_stops:
+        return api_stops
+    if _lta_unreachable:
+        last_search_error = "unreachable"
+    catalog = await ensure_stop_catalog()
+    if catalog is None:
+        return []
+    return fuzzy_search_stops(catalog, search_text, limit)
+
+
+_lta_unreachable = False
+
+
+async def _search_api(search_text: str, limit: int) -> list[dict[str, Any]]:
+    global _lta_unreachable
     data = await _lta_get(
         "BusStops",
         {"$skip": 0, "SearchText": search_text},
     )
-    if not data:
+    if data is None:
+        _lta_unreachable = True
         return []
-    stops = []
-    for stop in data.get("value", [])[:limit]:
-        stops.append(
+    _lta_unreachable = False
+    return [
+        {
+            "code": str(stop.get("BusStopCode", "")),
+            "description": stop.get("Description", ""),
+            "road_name": stop.get("RoadName", ""),
+            "lat": stop.get("Latitude"),
+            "lng": stop.get("Longitude"),
+        }
+        for stop in data.get("value", [])[:limit]
+    ]
+
+
+def _normalize(text: str) -> str:
+    return re.sub(r"[^a-z0-9 ]", " ", text.lower())
+
+
+def fuzzy_search_stops(
+    stops: list[dict[str, Any]],
+    query: str,
+    limit: int = 5,
+    min_fraction: float = 0.0,
+) -> list[dict[str, Any]]:
+    """Token-overlap fuzzy search over a stop catalog (works offline)."""
+    query_tokens = set(_normalize(query).split())
+    if not query_tokens:
+        return []
+    scored = []
+    for stop in stops:
+        haystack = _normalize(
+            f"{stop.get('description', '')} {stop.get('road_name', '')}"
+        )
+        hay_tokens = haystack.split()
+        hits = sum(
+            1
+            for token in query_tokens
+            if token in hay_tokens or any(token in word for word in hay_tokens)
+        )
+        fraction = hits / len(query_tokens)
+        if hits and fraction >= min_fraction:
+            scored.append((fraction, hits, stop))
+    scored.sort(key=lambda item: (-item[0], -item[1], item[2].get("code", "")))
+    return [item[2] for item in scored[:limit]]
+
+
+async def ensure_stop_catalog() -> Optional[list[dict[str, Any]]]:
+    """Fetch the full LTA bus-stop catalog into the DB once; return cached rows."""
+    global _catalog_loaded
+    from sqlmodel import select
+
+    from core.db import async_session_factory
+    from core.models import BusStop
+
+    async with async_session_factory() as session:
+        exists = (await session.execute(select(BusStop).limit(1))).scalar_one_or_none()
+        if exists is not None:
+            _catalog_loaded = True
+            rows = (await session.execute(select(BusStop))).scalars().all()
+            return [
+                {
+                    "code": row.code,
+                    "description": row.description,
+                    "road_name": row.road_name,
+                    "lat": row.lat,
+                    "lng": row.lng,
+                }
+                for row in rows
+            ]
+
+    stops: list[dict[str, Any]] = []
+    skip = 0
+    page_size = 500
+    while skip < 7000:
+        data = await _lta_get("BusStops", {"$skip": skip, "$top": page_size})
+        if data is None:
+            _catalog_loaded = False
+            return None
+        page = data.get("value", [])
+        stops.extend(
             {
                 "code": str(stop.get("BusStopCode", "")),
                 "description": stop.get("Description", ""),
@@ -54,7 +153,17 @@ async def search_bus_stops(search_text: str, limit: int = 5) -> list[dict[str, A
                 "lat": stop.get("Latitude"),
                 "lng": stop.get("Longitude"),
             }
+            for stop in page
         )
+        if len(page) < page_size:
+            break
+        skip += page_size
+
+    async with async_session_factory() as session:
+        for stop in stops:
+            session.add(BusStop(**stop))
+        await session.commit()
+    _catalog_loaded = True
     return stops
 
 

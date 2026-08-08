@@ -139,6 +139,20 @@ def _bus_query_parts(last_text: str) -> Dict[str, Any]:
     )
     if name_match and not stop_code:
         stop_name = re.sub(r"\s+", " ", name_match.group(1)).strip(" ,'-")
+    if not stop_name and not stop_code:
+        # No preposition: take whatever follows the bus mention, e.g. "next bus tampines west cc".
+        bus_match = re.search(r"\bbus\b", lowered)
+        trailing = (
+            lowered[bus_match.end():].strip(" ,'-")
+            if bus_match
+            else ""
+        )
+        if (
+            trailing
+            and any(ch.isalnum() for ch in trailing)
+            and trailing not in ("please", "today", "now", "soon")
+        ):
+            stop_name = trailing or None
     return {
         "service": service,
         "stop_code": stop_code,
@@ -146,7 +160,20 @@ def _bus_query_parts(last_text: str) -> Dict[str, Any]:
     }
 
 
-async def handle_bus_query(last_text: str) -> Dict[str, Any]:
+def _selection_intent(text: str) -> Optional[int]:
+    normalized = re.sub(r"\s+", " ", text.strip().lower())
+    mapping = {
+        "the first one": 0, "first": 0, "1": 0, "1st": 0, "option 1": 0,
+        "the second one": 1, "second": 1, "2": 1, "2nd": 1, "option 2": 1,
+        "the third one": 2, "third": 2, "3": 2, "3rd": 2, "option 3": 2,
+    }
+    return mapping.get(normalized)
+
+
+async def handle_bus_query(
+    last_text: str,
+    pending_stops: Optional[list[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
     """Live bus arrivals via LTA DataMall. Never fabricates a bus number."""
     parts = _bus_query_parts(last_text)
     if not settings.lta_account_key or settings.lta_account_key.startswith("your_"):
@@ -159,6 +186,20 @@ async def handle_bus_query(last_text: str) -> Dict[str, Any]:
             ),
         }
 
+    selection = _selection_intent(last_text)
+    if selection is not None and pending_stops:
+        stop = pending_stops[selection]
+        arrivals = await lta.get_bus_arrivals(stop["code"], parts["service"])
+        if not arrivals:
+            return {"kind": "no_arrivals", "message": "No live arrivals returned for that stop."}
+        return {
+            "kind": "arrivals",
+            "message": (
+                f"{stop['description']} ({stop['code']}, {stop['road_name']}):\n"
+                + lta.format_arrivals(arrivals)
+            ),
+        }
+
     if parts["stop_code"]:
         arrivals = await lta.get_bus_arrivals(parts["stop_code"], parts["service"])
         if not arrivals:
@@ -168,6 +209,11 @@ async def handle_bus_query(last_text: str) -> Dict[str, Any]:
     if parts["stop_name"]:
         stops = await lta.search_bus_stops(parts["stop_name"])
         if not stops:
+            if lta.last_search_error == "unreachable":
+                return {
+                    "kind": "feed_unreachable",
+                    "message": "I couldn't reach the live bus-stop feed right now — try again in a minute.",
+                }
             return {
                 "kind": "stop_not_found",
                 "message": f"I couldn't find a bus stop matching {parts['stop_name']!r}.",
@@ -191,6 +237,7 @@ async def handle_bus_query(last_text: str) -> Dict[str, Any]:
         return {
             "kind": "stop_ambiguous",
             "message": f"Which stop did you mean?\n{options}",
+            "pending_stops": stops[:3],
         }
 
     return {

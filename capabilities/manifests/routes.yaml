@@ -1,9 +1,10 @@
 id: routes
 description: >-
-  Plan trips, transit and driving routes, and answer ETA questions: the next
-  bus, MRT or train timing, drive time between places, or the fastest way
-  home. Ask like "when is my next bus from Tampines?", "route from Raffles
-  Place to Changi Airport", or "how long is the drive to KL".
+  Plan trips, transit and driving routes, and answer ETA questions with a
+  complete live picture: journey steps with actual bus line numbers, live
+  next-departure minutes from the exact stop, total time, and a map link.
+  Ask like "when is my next bus from Tampines?", "route from Raffles Place to
+  Changi Airport", or "how long is the drive to KL".
 input_schema:
   type: object
   properties:

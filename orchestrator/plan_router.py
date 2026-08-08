@@ -56,6 +56,7 @@ async def plan_dispatch(state: AssistantState) -> Command[str]:
 
     from capabilities.registry import load_registry
     from orchestrator.fastpath import should_take_fast_path
+    from orchestrator.planner import plan_with_llm
 
     fast_path, skipped_stages = should_take_fast_path(text, load_registry(), retrieval)
     if fast_path:
@@ -66,18 +67,22 @@ async def plan_dispatch(state: AssistantState) -> Command[str]:
         from orchestrator.router import CAPABILITY_REGISTRY
 
         output = await CAPABILITY_REGISTRY[candidate].execute(state)
+        update: dict[str, Any] = {
+            "messages": [output.message],
+            "active_domain": candidate,
+            "intent_type": "in_scope",
+            "fast_path": True,
+            "skipped_stages": skipped_stages,
+        }
+        if output.state_update:
+            update.update(output.state_update)
+        update["active_domain"] = candidate
         return Command(
             goto=END,
-            update={
-                "messages": [output.message],
-                "active_domain": candidate,
-                "intent_type": "in_scope",
-                "fast_path": True,
-                "skipped_stages": skipped_stages,
-            },
+            update=update,
         )
 
-    decision = deterministic_plan(text, state, retrieval)
+    decision = await plan_with_llm(text, state, retrieval) or deterministic_plan(text, state, retrieval)
 
     if decision.question:
         return Command(
@@ -113,13 +118,31 @@ async def plan_dispatch(state: AssistantState) -> Command[str]:
             },
         )
 
+    if decision.recipe:
+        from orchestrator.recipes import execute_recipe
+
+        reply = await execute_recipe(decision.recipe, state, decision)
+        primary = _primary(decision)
+        return Command(
+            goto=END,
+            update={
+                "messages": [AIMessage(content=reply)],
+                "active_domain": primary,
+                "intent_type": "in_scope",
+                "last_decision": decision_to_dict(decision),
+                "recipe": decision.recipe,
+            },
+        )
+
     outputs: list[str] = []
+    state_updates: list[dict[str, Any]] = []
     for cap_id in decision.ordering:
         plugin = CAPABILITY_REGISTRY.get(cap_id)
         if plugin is None:
             continue
         output = await plugin.execute(state)
         outputs.append(str(output.message.content))
+        state_updates.append(output.state_update)
 
     reply_parts = outputs
     if decision.insufficient and decision.insufficient.message:
@@ -135,6 +158,11 @@ async def plan_dispatch(state: AssistantState) -> Command[str]:
         "intent_type": _intent_type(decision, primary),
         "last_decision": decision_to_dict(decision),
     }
+    for state_update in state_updates:
+        if state_update:
+            update.update(state_update)
+    update["active_domain"] = primary
+    update["intent_type"] = _intent_type(decision, primary)
     if decision.insufficient:
         update["missing_capability_tags"] = decision.insufficient.missing_capabilities
         await record_gap(state.get("user_id", 0), text, decision)

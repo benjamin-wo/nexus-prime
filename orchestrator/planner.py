@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from typing import Any, Optional
+import json
 
 from capabilities.retrieval import RetrievalResult
 from orchestrator.state import AssistantState
@@ -38,6 +39,7 @@ class Decision:
     confidence: float = 0.0
     source: str = "deterministic"
     retrieval_used: bool = True
+    recipe: Optional[str] = None
 
     @property
     def capability_ids(self) -> list[str]:
@@ -66,6 +68,43 @@ AMBIGUITY_PATTERNS = [
     r"^what('s| is) my status",
     r"^how is everything",
 ]
+
+RECIPE_TRIGGERS: dict[str, list[str]] = {
+    "briefing": ["good morning", "goodmorning", "what's up today", "brief me", "morning brief"],
+    "spend_autopsy": [
+        "where did my money go",
+        "where does my money go",
+        "analyze my spending",
+        "spend analysis",
+        "spending analysis",
+        "top merchants",
+        "top categories",
+    ],
+    "grocery_run": ["grocery run", "need groceries", "plan my grocery", "do groceries"],
+    "commute_conditions": [
+        "commute like",
+        "commute tomorrow",
+        "commute weather",
+        "leave early if",
+        "commute to",
+    ],
+    "bill_watch": ["track my bills", "bill watch", "did i pay", "bills due", "my bills"],
+}
+
+RECIPE_CAPABILITIES: dict[str, list[str]] = {
+    "briefing": ["email", "expenses", "reminders"],
+    "spend_autopsy": ["expenses", "code_exec"],
+    "grocery_run": ["recipes", "routes", "reminders"],
+    "commute_conditions": ["routes", "general", "reminders"],
+    "bill_watch": ["email", "expenses", "reminders"],
+}
+
+
+def _recipe_for(text: str) -> Optional[str]:
+    for recipe_id, phrases in RECIPE_TRIGGERS.items():
+        if any(phrase in text for phrase in phrases):
+            return recipe_id
+    return None
 
 
 def _has(text: str, words: list[str]) -> bool:
@@ -205,6 +244,25 @@ def deterministic_plan(
             retrieval_used=False,
         )
 
+    recipe = _recipe_for(text)
+    if recipe:
+        capabilities = [
+            CapabilitySelection(
+                id=cap_id,
+                reason=f"recipe:{recipe}",
+                confidence=0.9,
+            )
+            for cap_id in RECIPE_CAPABILITIES[recipe]
+        ]
+        return Decision(
+            capabilities=capabilities,
+            ordering=[cap.id for cap in capabilities],
+            confidence=0.9,
+            source="recipe",
+            retrieval_used=True,
+            recipe=recipe,
+        )
+
     missing = missing_policy(text)
     candidates = _candidate_selections(text, missing)
 
@@ -294,6 +352,99 @@ def llm_plan_prompt(user_text: str, shortlist: list[dict[str, Any]]) -> list[dic
     ]
 
 
+async def plan_with_llm(
+    user_text: str,
+    state: dict[str, Any] | AssistantState,
+    retrieval: RetrievalResult | None,
+) -> Optional[Decision]:
+    """Production planner: LLM decision with validation; None means fall back to deterministic.
+
+    Unverified — assumption: this path is exercised only with mocked models in
+    this environment; with a real API key it runs on the deployed service.
+    """
+    from core.config import settings
+    from core.llm import ThinkingLevel, get_agent_llm
+
+    if not settings.deepseek_api_key or settings.deepseek_api_key == "test_deepseek_key":
+        return None
+    if retrieval is None or not retrieval.top:
+        return None
+    shortlist = [
+        {
+            "id": hit.id,
+            "description": hit.manifest.description,
+            "score": round(hit.score, 3),
+        }
+        for hit in retrieval.top
+    ]
+    llm = get_agent_llm(complexity=ThinkingLevel.LOW, temperature=0.0)
+    try:
+        ai_message = await llm.ainvoke(llm_plan_prompt(user_text, shortlist))
+    except Exception as exc:  # noqa: BLE001
+        print(f"[PLANNER] LLM call failed, falling back to deterministic: {exc}")
+        return None
+    raw = str(getattr(ai_message, "content", "") or "").strip()
+    raw = re.sub(r"^```(?:json)?|```$", "", raw, flags=re.MULTILINE).strip()
+    try:
+        parsed = json.loads(raw)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[PLANNER] LLM JSON parse failed, falling back to deterministic: {exc}")
+        return None
+    return decision_from_dict(parsed, shortlist_ids={hit["id"] for hit in shortlist})
+
+
+def decision_from_dict(
+    parsed: dict[str, Any],
+    shortlist_ids: set[str],
+) -> Optional[Decision]:
+    """Validate an LLM decision dict against the retrieval shortlist."""
+    try:
+        capabilities = []
+        for item in parsed.get("capabilities") or []:
+            cap_id = str(item.get("id", ""))
+            if cap_id not in shortlist_ids and cap_id != "timezone":
+                continue
+            capabilities.append(
+                CapabilitySelection(
+                    id=cap_id,
+                    reason=str(item.get("reason", "")),
+                    confidence=float(item.get("confidence", 0.8)),
+                )
+            )
+        ordering = [
+            str(cap_id)
+            for cap_id in parsed.get("ordering") or []
+            if str(cap_id) in {c.id for c in capabilities}
+        ]
+        missing = [
+            str(tag)
+            for tag in (parsed.get("insufficient_capability") or {}).get("missing_capabilities", [])
+        ]
+        insufficient = None
+        if missing:
+            insufficient = InsufficientCapability(
+                missing_capabilities=missing,
+                reasons=(parsed.get("insufficient_capability") or {}).get("reasons", []),
+                message=_insufficiency_message(missing),
+            )
+        question = parsed.get("question")
+        question = str(question) if question else None
+        if not capabilities and not insufficient and not question:
+            return None
+        return Decision(
+            capabilities=capabilities,
+            ordering=ordering or [c.id for c in capabilities],
+            insufficient=insufficient,
+            question=question,
+            confidence=max(0.0, min(1.0, float(parsed.get("confidence", 0.8)))),
+            source="llm",
+            retrieval_used=True,
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f"[PLANNER] invalid LLM decision, falling back to deterministic: {exc}")
+        return None
+
+
 def decision_to_dict(decision: Decision) -> dict[str, Any]:
     return {
         "capabilities": [
@@ -313,4 +464,5 @@ def decision_to_dict(decision: Decision) -> dict[str, Any]:
         "confidence": decision.confidence,
         "source": decision.source,
         "retrieval_used": decision.retrieval_used,
+        "recipe": decision.recipe,
     }
