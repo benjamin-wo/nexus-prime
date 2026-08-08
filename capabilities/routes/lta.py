@@ -13,7 +13,7 @@ import httpx
 
 from core.config import settings
 
-LTA_BASE = "https://datamall.mytransport.sg/ltaodataservice/"
+LTA_BASE = "https://datamall2.mytransport.sg/ltaodataservice/"
 TIMEOUT_SECONDS = 15.0
 
 last_search_error: Optional[str] = None
@@ -175,12 +175,12 @@ async def get_bus_arrivals(
     params: dict[str, Any] = {"BusStopCode": stop_code}
     if service_no:
         params["ServiceNo"] = service_no
-    data = await _lta_get("BusArrivalv2", params)
+    data = await _lta_get("v3/BusArrival", params)
     if not data:
         return []
     now = datetime.now(timezone.utc)
     arrivals = []
-    for item in data.get("value", []):
+    for item in data.get("Services") or data.get("value") or []:
         minutes = []
         for key in ("NextBus", "NextBus2", "NextBus3"):
             bus = item.get(key) or {}

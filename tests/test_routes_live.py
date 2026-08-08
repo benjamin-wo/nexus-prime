@@ -121,6 +121,32 @@ async def test_selection_followup_resolves_pending_stop(monkeypatch):
     assert "Bus 27" in result["message"]
 
 
+@pytest.mark.asyncio
+async def test_get_bus_arrivals_parses_v3_services(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    future = datetime.now(timezone.utc) + timedelta(minutes=4)
+    payload = {
+        "BusStopCode": "01012",
+        "Services": [
+            {
+                "ServiceNo": "12",
+                "NextBus": {"EstimatedArrival": future.isoformat()},
+                "NextBus2": {"EstimatedArrival": None},
+                "NextBus3": {"EstimatedArrival": None},
+            }
+        ],
+    }
+    mock_get = AsyncMock(return_value=payload)
+    monkeypatch.setattr(lta, "_lta_get", mock_get)
+    arrivals = await lta.get_bus_arrivals("01012", "12")
+    assert arrivals[0]["service"] == "12"
+    minutes = arrivals[0]["arrivals_min"][0]
+    assert minutes is not None and 0 <= minutes <= 5
+    endpoint = mock_get.await_args.args[0]
+    assert endpoint == "v3/BusArrival"
+
+
 def _journey_directions_payload(departure_epoch=None):
     transit = {
         "line": {"short_name": "27", "name": "Tampines Int"},
