@@ -36,6 +36,7 @@ async def _execute_scheduled_job(job_id: int, user_id: int, instruction_prompt: 
     print(f"[SCHEDULER] Triggered job {job_id} for user {user_id}: {instruction_prompt}")
     try:
         chat_id = None
+        tz_name = "Asia/Singapore"
         async with async_session_factory() as session:
             profile = (
                 await session.execute(
@@ -43,7 +44,23 @@ async def _execute_scheduled_job(job_id: int, user_id: int, instruction_prompt: 
                 )
             ).scalar_one_or_none()
             chat_id = profile.telegram_chat_id if profile else None
+            tz_name = profile.current_timezone if profile and profile.current_timezone else tz_name
         if not chat_id:
+            return
+
+        from core.ambient import should_deliver
+        from datetime import datetime, timezone as dt_timezone
+
+        trigger = {
+            "kind": "scheduled_job",
+            "trigger_id": f"job-{job_id}",
+            "job_id": job_id,
+            "message": instruction_prompt,
+            "instruction_prompt": instruction_prompt,
+        }
+        deliver, reason = should_deliver(trigger, datetime.now(dt_timezone.utc), tz_name)
+        if not deliver:
+            print(f"[AMBIENT] suppressed job {job_id}: {reason}")
             return
 
         from app.ingress import send_telegram_message

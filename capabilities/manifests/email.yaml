@@ -1,0 +1,25 @@
+id: email
+description: >-
+  Check your inbox, look for receipts, payment alerts, salary credits and
+  bank messages, and auto-log expenses found in the emails. Ask like
+  "check gmail for receipts", "did my salary come in?", or "what's in my inbox".
+input_schema:
+  type: object
+  properties:
+    query:
+      type: string
+      description: Optional sender, date range, or topic filter (free text).
+  required: []
+output_schema:
+  type: object
+  properties:
+    summary:
+      type: string
+      description: Human-readable summary of matching messages and any logged expenses.
+  required: [summary]
+side_effect: write
+tags: [mail, inbox, receipts, finance]
+managers: [finance]
+preconditions:
+  - "Gmail or Outlook OAuth access has been granted"
+cost_hint: medium

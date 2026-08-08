@@ -1,0 +1,17 @@
+{
+  "component": "C5",
+  "verdict": "MEETS",
+  "iterations": 1,
+  "measurements": {
+    "probes": "3/3 pass",
+    "gap_records": "2/2 refusals wrote CapabilityRequestLog rows",
+    "tests": "48 passed (30 existing unchanged + 18 new)"
+  },
+  "artifacts": [
+    "orchestrator/insufficiency.py",
+    "gauntlet/eval_c5.py",
+    "gauntlet/c5/probe-traces.jsonl",
+    "tests/test_insufficiency.py"
+  ],
+  "locked_at": "2026-08-08T00:00:00+08:00"
+}

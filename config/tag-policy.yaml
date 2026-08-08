@@ -1,0 +1,28 @@
+# Advisory tag policy. Tags are free-form; unknown tags warn at load to catch
+# typos. This is data, not routing logic.
+allowed_tags:
+  - mail
+  - inbox
+  - receipts
+  - finance
+  - money
+  - spending
+  - budget
+  - transit
+  - commute
+  - bus
+  - mrt
+  - travel
+  - food
+  - cooking
+  - groceries
+  - reminders
+  - scheduling
+  - web
+  - knowledge
+  - chat
+  - life
+  - home
+  - code
+  - sandbox
+  - compute

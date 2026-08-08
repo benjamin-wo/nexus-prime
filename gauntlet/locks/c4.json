@@ -1,0 +1,18 @@
+{
+  "component": "C4",
+  "verdict": "MEETS",
+  "iterations": 1,
+  "measurements": {
+    "fast_path_p50_ms": 7.05,
+    "fast_path_p95_ms": 7.59,
+    "target_p50_ms": 3000,
+    "tests": "44 passed (30 existing unchanged + 14 new)"
+  },
+  "artifacts": [
+    "orchestrator/fastpath.py",
+    "gauntlet/eval_c4.py",
+    "gauntlet/c4/probe-traces.jsonl",
+    "tests/test_fastpath.py"
+  ],
+  "locked_at": "2026-08-08T00:00:00+08:00"
+}

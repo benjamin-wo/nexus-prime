@@ -1,0 +1,32 @@
+id: expenses
+description: >-
+  Record, list and summarise your spending: log an expense from text or a
+  receipt photo, list recent expenses, and answer how much you spent or where
+  the money went. Ask like "spent $12.50 at Starbucks", "show my expenses",
+  "record what you paid, e.g. paid $4.20 for kopi", or "how much did I spend
+  on food last month".
+input_schema:
+  type: object
+  properties:
+    text:
+      type: string
+      description: Natural-language expense description, receipt caption, or listing request.
+    image:
+      type: string
+      description: Optional base64 receipt photo.
+  required: []
+output_schema:
+  type: object
+  properties:
+    message:
+      type: string
+      description: Confirmation, listing, or clarification question.
+    status:
+      type: string
+  required: [message]
+side_effect: write
+tags: [money, spending, receipts, budget]
+managers: [finance, life]
+preconditions:
+  - "User profile exists"
+cost_hint: medium

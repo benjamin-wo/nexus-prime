@@ -259,6 +259,8 @@ class ExpensePlugin:
                 "expense overview",
                 "what have i spent",
                 "how much have i spent",
+                "how much did i spend",
+                "spent on food",
                 "expenses so far",
                 "expense total",
                 "total expenses",
@@ -862,4 +864,6 @@ _default_router = CapabilityRouter()
 
 async def capability_router_node(state: AssistantState) -> Command[str]:
     """Single deep LangGraph entry node that routes and executes capabilities."""
-    return await _default_router.dispatch(state)
+    from orchestrator.plan_router import plan_dispatch
+
+    return await plan_dispatch(state)

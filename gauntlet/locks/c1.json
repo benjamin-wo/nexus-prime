@@ -1,0 +1,20 @@
+{
+  "component": "C1",
+  "verdict": "MEETS",
+  "iterations": 1,
+  "measurements": {
+    "blind_route": "15/15",
+    "manifests": 6,
+    "tests": "35 passed (30 existing unchanged + 5 new)"
+  },
+  "artifacts": [
+    "capabilities/manifests/*.yaml",
+    "capabilities/registry.py",
+    "config/tag-policy.yaml",
+    "gauntlet/eval_c1.py",
+    "gauntlet/c1/blind-route-trace.jsonl",
+    "gauntlet/c1/probe-traces.jsonl",
+    "tests/test_manifest_registry.py"
+  ],
+  "locked_at": "2026-08-08T00:00:00+08:00"
+}

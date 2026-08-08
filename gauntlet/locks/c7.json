@@ -1,0 +1,19 @@
+{
+  "component": "C7",
+  "verdict": "MEETS",
+  "iterations": 1,
+  "measurements": {
+    "probes": "4/4 pass",
+    "tests": "58 passed (30 existing unchanged + 28 new)"
+  },
+  "artifacts": [
+    "orchestrator/promotion.py",
+    ".github/workflows/promote-capability.yml",
+    "gauntlet/c7/draft-good.json",
+    "gauntlet/c7/draft-malicious.json",
+    "gauntlet/eval_c7.py",
+    "gauntlet/c7/probe-traces.jsonl",
+    "tests/test_promotion.py"
+  ],
+  "locked_at": "2026-08-08T00:00:00+08:00"
+}

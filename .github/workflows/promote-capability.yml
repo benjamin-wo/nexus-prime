@@ -1,0 +1,28 @@
+name: Promote capability
+on:
+  workflow_dispatch:
+    inputs:
+      draft:
+        description: Path to the capability draft JSON
+        required: true
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml
+      - run: python -m orchestrator.promotion validate "${{ inputs.draft }}"
+  promote:
+    needs: validate
+    environment: capability-approval
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml
+      - run: python -m orchestrator.promotion promote "${{ inputs.draft }}" --approval "${{ secrets.APPROVAL_TOKEN }}"

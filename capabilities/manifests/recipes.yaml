@@ -1,0 +1,28 @@
+id: recipes
+description: >-
+  Turn recipes into ingredients and manage your grocery list: paste a recipe
+  to add its ingredients, add items by name, and list what is on the list.
+  Ask like "parse this pasta recipe", "add eggs and milk to my grocery list",
+  or "what's my grocery list?".
+input_schema:
+  type: object
+  properties:
+    text:
+      type: string
+      description: Recipe text/URL or grocery item request.
+  required: []
+output_schema:
+  type: object
+  properties:
+    title:
+      type: string
+    items:
+      type: array
+      description: Ingredient or grocery items added/listed.
+  required: [title]
+side_effect: write
+tags: [food, cooking, groceries]
+managers: [food, home]
+preconditions:
+  - "User profile exists"
+cost_hint: low
