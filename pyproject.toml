@@ -36,6 +36,7 @@ dependencies = [
     "python-dotenv>=1.0.1",
     "tzdata>=2024.1",
     "pgvector>=0.2.5",
+    "e2b>=2.0.0",
 ]
 
 [project.optional-dependencies]

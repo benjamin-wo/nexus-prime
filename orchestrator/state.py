@@ -12,4 +12,4 @@ class AssistantState(MessagesState):
     intent_type: Optional[str]
     missing_capability_tags: Optional[List[str]]
     fallback_reason: Optional[str]
-
+    last_decision: Optional[Dict[str, Any]]

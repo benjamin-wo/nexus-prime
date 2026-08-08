@@ -186,9 +186,10 @@ class LocalSandbox:
 class E2BSandbox:
     """E2B provider (production default when E2B_API_KEY is set).
 
-    Unverified — assumption: the real E2B execution path cannot be exercised in
-    this environment (no e2b package / no API key). Provider selection and the
-    offline contract are covered by tests.
+    The same bootstrap guard (import/egress/filesystem allowlists, data.json
+    boundary) is prepended before execution so the contract matches the local
+    provider. The exact e2b SDK calls are implemented per the documented API
+    but are not exercised against a live sandbox in this environment.
     """
 
     def __init__(self, api_key: str | None = None) -> None:
@@ -208,9 +209,39 @@ class E2BSandbox:
             from e2b import Sandbox  # type: ignore
         except ImportError as exc:
             raise SandboxUnavailable("e2b package is not installed") from exc
-        # Not exercised offline; kept behind the key check so it cannot run
-        # accidentally with fake credentials.
-        raise SandboxUnavailable("E2B execution is not available in this environment")
+        config = config or SandboxConfig()
+        started = time.monotonic()
+        source = _bootstrap(config) + "\n" + code
+        sandbox = Sandbox(api_key=self.api_key)
+        try:
+            if data is not None:
+                sandbox.filesystem.write(
+                    "/home/user/data.json", json.dumps(data)
+                )
+            result = sandbox.run_code(source, timeout=config.timeout_seconds)
+            duration_ms = (time.monotonic() - started) * 1000
+            output = str(getattr(result, "stdout", "") or "")
+            err = str(getattr(result, "stderr", "") or "")
+            error = getattr(result, "error", None)
+            if error:
+                err = f"{error}\n{err}".strip()
+            error_text = str(error or "").lower()
+            timed_out = "timed out" in error_text or "timeout" in error_text
+            output = redact_secrets(output, secrets)[: config.max_output_chars]
+            err = redact_secrets(err, secrets)[: config.max_output_chars]
+            return SandboxResult(
+                ok=error is None and not timed_out,
+                output=output,
+                stderr=err,
+                timed_out=timed_out,
+                duration_ms=round(duration_ms, 2),
+                error=None if error is None else str(error),
+            )
+        finally:
+            try:
+                sandbox.close()
+            except Exception:  # noqa: BLE001
+                pass
 
 
 def get_sandbox() -> CodeSandbox:
