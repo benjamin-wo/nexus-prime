@@ -1,28 +1,79 @@
 # Nexus Prime — Personal Assistant Telegram Bot
 
+A high-performance, single-user **Personal Assistant Telegram Bot** deployed on **Railway** with
+built-in multi-user extensibility from day one. Nexus Prime orchestrates email, expenses, routes,
+recipes, reminders, general questions, and sandboxed code through a **manifest-first capability
+registry** and a **retrieve → plan → select-a-set** router powered by LangGraph.
 
-A high-performance, single-user **Personal Assistant Telegram Bot** deployed on **Railway** with built-in **multi-user extensibility** from day one. The assistant orchestrates diverse daily tasks—including email expense tracking, route planning, grocery/recipe management, and proactive reminders—through a **3-Layer Plugin Architecture** powered by **LangGraph multi-agent orchestration** and **Gemini Flash / Kimi k3 native multimodal inference**.
+## Architecture
 
-## 3-Layer Architecture
+### Layer 1 — Core (`core/`)
 
-1. **Layer 1: Core (`core/`)**:
-   - `core/db.py`: AsyncSQLModel + `asyncpg` PostgreSQL engine (`pool_size=5, max_overflow=10`) with automatic SQLite fallback for local development.
-   - `core/vault.py`: Symmetric authenticated encryption (`Fernet` / AES-256-GCM) keyed by `ENCRYPTION_KEY` for securing OAuth tokens.
-   - `core/scheduler.py`: In-process `APScheduler` engine bound to FastAPI's `lifespan` manager, configured with `misfire_grace_time=3600`, `coalesce=True`, dynamic IANA timezone recalculation, and instant testing triggers (`/run_now`).
-   - `core/audit.py`: Background LLM-as-a-Judge quality observability engine evaluating faithfulness and routing efficiency.
-   - `core/shared_tools/`: Date/time parsing, coordinate resolver, and global email sender preset library (`email_presets.py`).
-2. **Layer 2: Capability Plugins (`capabilities/`)**:
-   - `email`: Gmail API integration, smart category queries, `-label:Assistant/Processed` labeling, and bank domain auto-discovery.
-   - `expenses`: Pydantic expense extraction, 2-layer deduplication, and Human-in-the-Loop (`confidence < 0.8`) inline confirmation.
-   - `routes`: Transit and driving route planning.
-   - `recipes`: Recipe scraping and grocery item synchronization (`GroceryItem`).
-3. **Layer 3: Orchestration (`orchestrator/`)**:
-   - LangGraph multi-agent routing using `Command(goto=...)` subgraph handoffs and `interrupt()` / `Command(resume=...)` for 1-tap inline keyboards (`[✅ Confirm]`, `[✏️ Edit]`, `[❌ Ignore]`).
-   - Persistent `thread_id = str(chat_id)` memory with an automatic summarization hook when conversations exceed 25 messages.
+- `core/db.py` — AsyncSQLModel + `asyncpg` PostgreSQL engine with automatic SQLite fallback.
+- `core/vault.py` — Symmetric authenticated encryption (`Fernet` / AES-256-GCM) for OAuth tokens.
+- `core/scheduler.py` — In-process APScheduler engine with dynamic IANA timezone recalculation,
+  `run_now` testing triggers, and ambient delivery gating.
+- `core/ambient.py` — Trigger policy: proactive delivery only from trigger records; quiet hours
+  suppress non-urgent delivery before 09:00 local; urgent triggers still land.
+- `core/audit.py` — LLM-as-a-Judge quality observability and capability-gap telemetry.
+- `core/code_sandbox.py` — Isolated code execution: import allowlist, egress allowlist, secret
+  redaction, hard timeout, credential vault unreachable. E2B provider for production; a
+  process-isolated local provider for offline runs and tests.
+- `core/shared_tools/` — Date/time parsing, coordinate resolution, email presets.
+
+### Layer 2 — Capabilities (`capabilities/`)
+
+Capabilities are declared as **manifests** in `capabilities/manifests/*.yaml` and loaded by
+`capabilities/registry.py`. Each manifest declares an id, a retrieval-facing description in the
+user's phrasing, typed input/output schemas, a side-effect class (`read`/`write`/`spend`/
+`irreversible`), free-form multi-valued tags, preconditions, and a cost hint. Manager tags are
+**derived** from manifests — there is no manager enum, class, or routing hop.
+
+- Plugins: email, expenses, routes, recipes, reminders, general, code_exec.
+- Retrieval: `capabilities/retrieval.py` — BM25 index over manifest content with top-k shortlists
+  and a recovery path when the correct capability sits outside `k`.
+- Advisory tag policy: `config/tag-policy.yaml` (unknown tags warn at load).
+
+### Layer 3 — Orchestration (`orchestrator/`)
+
+Routing is **retrieve → plan → select a set**, not a single-label `goto`:
+
+- `orchestrator/planner.py` — Decision object: capability set, ordering, explicit
+  `insufficient_capability` with reasons, confidence, and optional disambiguation question. An LLM
+  prompt is provided for production; a deterministic offline planner is the measured artifact.
+- `orchestrator/plan_router.py` — Executes a Decision through the plugin registry and returns
+  `Command(goto=END)` updates.
+- `orchestrator/fastpath.py` — Skips planner/insufficiency/composition stages for known, read-only,
+  single-capability requests (e.g. next-bus ETA).
+- `orchestrator/insufficiency.py` — First-class "I can't": distinct no-integration / needs-human
+  messages, gap records, never a fallback from a failed tool call.
+- `orchestrator/promotion.py` — Gap → draft → approval pipeline: security validation gates the
+  draft **before** any human approval is requested, provenance is recorded in `skills-lock.json`,
+  and rollback restores previous manifests.
+
+Human-in-the-loop is preserved via LangGraph `interrupt()` / `Command(resume=...)` for ambiguous
+expenses and other consequential writes. The legacy `CapabilityRouter` remains for direct unit
+testing.
+
+### CI/CD capability promotion
+
+`.github/workflows/promote-capability.yml` runs validation, then requires a manual approval
+environment before `python -m orchestrator.promotion promote <draft>` writes the manifest and
+records provenance in `skills-lock.json`.
+
+## Gauntlet loop (frozen benchmarks)
+
+The repository carries a full evaluation loop under `gauntlet/`:
+
+- **Replay set** — `gauntlet/replay-set.jsonl`, 70 trace-backed messages, frozen. Baselines:
+  `B_acc` 0.629, `B_cross` 0.214, webhook → first Telegram byte p50 7.3 ms / p95 12.6 ms (local,
+  mocked outbound network).
+- **Component benchmarks** — `gauntlet/c1/` through `gauntlet/c8/`, each with a frozen benchmark,
+  Builder brief, Blind Critic review, probe traces, and a lock file in `gauntlet/locks/`.
+- **Current planner result** — B_acc 0.986 (69/70), stated margin +0.357 over the 0.629 baseline;
+  fast path p50 ~8 ms; retrieval recall@5 ≥ 0.99 and precision@5 = 1.00 on the padded registry.
 
 ## Running Tests
-
-Run the full async pytest suite:
 
 ```bash
 pytest tests/ -v
@@ -44,5 +95,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
 ## Documentation & Architecture Specs
 
-- **v1.0 Core Architecture RFC**: [spec.md](file:///Users/benjaminwo/Documents/agent-learn/spec.md)
-- **v2.0 Capability-Gap Handling & Telemetry RFC**: [spec-capability-gaps.md](file:///Users/benjaminwo/Documents/agent-learn/spec-capability-gaps.md)
+- v1.0 Core Architecture RFC: [spec.md](spec.md)
+- v2.0 Capability-Gap Handling & Telemetry RFC: [spec-capability-gaps.md](spec-capability-gaps.md)
+- Domain & architecture glossary: [CONTEXT.md](CONTEXT.md) and [map.md](map.md)
+- Gauntlet loop status and lock files: [gauntlet/loop-status.md](gauntlet/loop-status.md)
