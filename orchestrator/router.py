@@ -358,6 +358,19 @@ class RoutePlugin:
         messages = state.get("messages", [])
         last_text = str(messages[-1].content) if messages else ""
 
+        # Live bus queries get actual service numbers via LTA DataMall.
+        lowered = last_text.lower()
+        if "bus" in lowered and any(
+            marker in lowered for marker in ("next", "arriv", "when", " at ", " from ")
+        ):
+            from capabilities.routes.tools import handle_bus_query
+
+            bus_result = await handle_bus_query(last_text)
+            return PluginOutput(
+                message=AIMessage(content=bus_result["message"]),
+                state_update={"active_domain": self.name},
+            )
+
         req = await extract_route_request.ainvoke({"user_text": last_text})
         origin = (req.get("origin") or "").strip()
         destination = (req.get("destination") or "").strip()

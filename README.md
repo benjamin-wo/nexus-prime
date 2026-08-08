@@ -29,7 +29,8 @@ user's phrasing, typed input/output schemas, a side-effect class (`read`/`write`
 `irreversible`), free-form multi-valued tags, preconditions, and a cost hint. Manager tags are
 **derived** from manifests — there is no manager enum, class, or routing hop.
 
-- Plugins: email, expenses, routes, recipes, reminders, general, code_exec.
+- Plugins: email, expenses, routes (live LTA bus arrivals when `LTA_ACCOUNT_KEY` is configured,
+  actual bus numbers in Google Maps transit steps), recipes, reminders, general, code_exec.
 - Retrieval: `capabilities/retrieval.py` — BM25 index over manifest content with top-k shortlists
   and a recovery path when the correct capability sits outside `k`.
 - Advisory tag policy: `config/tag-policy.yaml` (unknown tags warn at load).

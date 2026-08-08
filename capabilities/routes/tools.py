@@ -8,6 +8,7 @@ from langchain_core.tools import tool
 
 from core.config import settings
 from core.llm import ThinkingLevel, get_agent_llm
+from capabilities.routes import lta
 
 
 @tool
@@ -18,17 +19,16 @@ async def plan_route(origin: str, destination: str, mode: str = "transit") -> Di
     """
     mode = mode.lower() if mode.lower() in ("transit", "driving", "walking", "bicycling") else "transit"
 
-    # No API key configured (local tests/dev): structured fallback.
+    # No API key configured: honest error, no fabricated ETA or bus number.
     if not settings.google_maps_api_key or settings.google_maps_api_key.startswith("your_"):
-        eta_minutes = 25 if mode == "transit" else 18
         return {
+            "error": "route_provider_not_configured",
             "origin": origin,
             "destination": destination,
             "mode": mode,
-            "eta_minutes": eta_minutes,
-            "distance_km": 20.0,
-            "summary": f"Route from {origin} to {destination} via {mode}: ~{eta_minutes} mins.",
-            "steps": [f"Depart from {origin}", f"Arrive at {destination}"],
+            "summary": "Live routing is not configured (GOOGLE_MAPS_API_KEY missing); "
+            "no ETA or bus number was fabricated.",
+            "steps": [],
         }
 
     params = {
@@ -58,6 +58,16 @@ async def plan_route(origin: str, destination: str, mode: str = "transit") -> Di
     steps = []
     for step in leg.get("steps", []):
         text = re.sub("<[^>]+>", "", step.get("html_instructions", "")).strip()
+        transit = step.get("transit_details") or {}
+        line = transit.get("line") or {}
+        line_name = line.get("short_name") or line.get("name") or ""
+        if line_name:
+            departure = (transit.get("departure_stop") or {}).get("name", "")
+            arrival = (transit.get("arrival_stop") or {}).get("name", "")
+            duration = (step.get("duration") or {}).get("text", "")
+            text = f"Take {line_name} from {departure} to {arrival}"
+            if duration:
+                text += f" ({duration})"
         if text:
             steps.append(text)
 
@@ -109,3 +119,84 @@ async def extract_route_request(user_text: str) -> Dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         print(f"[ROUTES] extraction parse failed: {exc}")
         return {"origin": None, "destination": None, "mode": "transit"}
+
+
+def _bus_query_parts(last_text: str) -> Dict[str, Any]:
+    """Extract stop code / stop name / service number from a bus query."""
+    lowered = last_text.lower()
+    service = None
+    service_match = re.search(r"\bbus\s+(\d+[a-z]?)\b", lowered)
+    if service_match:
+        service = service_match.group(1)
+    stop_code = None
+    code_match = re.search(r"\b(\d{5})\b", last_text)
+    if code_match:
+        stop_code = code_match.group(1)
+    stop_name = None
+    name_match = re.search(
+        r"(?:at|from|near)\s+([a-z0-9 ,'-]+?)(?=\s*(?:bus|\d{5}|please|for|$))",
+        lowered,
+    )
+    if name_match and not stop_code:
+        stop_name = re.sub(r"\s+", " ", name_match.group(1)).strip(" ,'-")
+    return {
+        "service": service,
+        "stop_code": stop_code,
+        "stop_name": stop_name or None,
+    }
+
+
+async def handle_bus_query(last_text: str) -> Dict[str, Any]:
+    """Live bus arrivals via LTA DataMall. Never fabricates a bus number."""
+    parts = _bus_query_parts(last_text)
+    if not settings.lta_account_key or settings.lta_account_key.startswith("your_"):
+        return {
+            "kind": "no_live_feed",
+            "message": (
+                "I don't have a live bus feed configured (LTA_ACCOUNT_KEY missing), "
+                "so I won't guess a bus number. Set LTA_ACCOUNT_KEY and I can tell "
+                "you the actual next bus."
+            ),
+        }
+
+    if parts["stop_code"]:
+        arrivals = await lta.get_bus_arrivals(parts["stop_code"], parts["service"])
+        if not arrivals:
+            return {"kind": "no_arrivals", "message": "No live arrivals returned for that stop."}
+        return {"kind": "arrivals", "message": lta.format_arrivals(arrivals)}
+
+    if parts["stop_name"]:
+        stops = await lta.search_bus_stops(parts["stop_name"])
+        if not stops:
+            return {
+                "kind": "stop_not_found",
+                "message": f"I couldn't find a bus stop matching {parts['stop_name']!r}.",
+            }
+        if len(stops) == 1:
+            stop = stops[0]
+            arrivals = await lta.get_bus_arrivals(stop["code"], parts["service"])
+            if not arrivals:
+                return {"kind": "no_arrivals", "message": "No live arrivals returned for that stop."}
+            return {
+                "kind": "arrivals",
+                "message": (
+                    f"{stop['description']} ({stop['code']}, {stop['road_name']}):\n"
+                    + lta.format_arrivals(arrivals)
+                ),
+            }
+        options = "\n".join(
+            f"- {stop['description']} ({stop['code']}, {stop['road_name']})"
+            for stop in stops[:3]
+        )
+        return {
+            "kind": "stop_ambiguous",
+            "message": f"Which stop did you mean?\n{options}",
+        }
+
+    return {
+        "kind": "stop_required",
+        "message": (
+            "Which bus stop? Say like 'next bus from Tampines West CC' or "
+            "send a 5-digit stop code."
+        ),
+    }

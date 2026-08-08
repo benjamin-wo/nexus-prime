@@ -19,6 +19,14 @@ Loop mechanics: Builder brief -> build -> Blind Critic -> MEETS => lock, DOES NO
 All eight components locked MEETS in a single iteration each. Existing test suite: 62 passed
 (30 pre-existing tests unchanged). Replay set and baselines remain frozen.
 
+## Post-loop correction (2026-08-08)
+
+The routes capability previously returned no bus numbers (and, in the offline fallback, could
+fabricate a fixed ETA). It now queries LTA DataMall for live arrivals when `LTA_ACCOUNT_KEY` is
+configured, includes actual transit line numbers in Google Maps steps, and returns an honest
+"no live bus feed" message otherwise. The C4 probe-1 trace was regenerated with the real runtime
+output; benchmarks and locks were not weakened.
+
 Non-negotiables enforced at every lock: existing capabilities keep working; existing tests pass unchanged;
 HITL via interrupt()/Command(resume=...) preserved; generated code never crosses core/vault.py;
 no new hard classification step; every claim carries a trace, measurement, or explicit "unverified — assumption" label.

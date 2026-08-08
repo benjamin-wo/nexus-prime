@@ -1,1 +1,1 @@
-"""Routes capability plugin."""
+"""Routes capability plugin with live LTA bus arrivals."""
