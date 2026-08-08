@@ -1,6 +1,6 @@
 import json
 import re
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 import httpx
 from langchain_core.messages import HumanMessage, SystemMessage
