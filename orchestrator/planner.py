@@ -112,6 +112,10 @@ def _has(text: str, words: list[str]) -> bool:
     return any(word in text for word in words)
 
 
+def _has_word(text: str, words: list[str]) -> bool:
+    return any(re.search(rf"\b{re.escape(word)}\b", text) for word in words)
+
+
 def missing_policy(text: str) -> list[str]:
     """Missing-capability detection. Deliberately narrower than the legacy guardrail."""
     missing: list[str] = []
@@ -157,10 +161,16 @@ def _candidate_selections(text: str, missing: list[str]) -> list[CapabilitySelec
         selections.append(CapabilitySelection(id="expenses", reason="receipts found in email get logged", confidence=0.8))
 
     add("routes", [
-        "route", "eta", "drive", "driving", "transit", "bus", "mrt", "train",
+        "route", "drive", "driving", "transit", "mrt", "train",
         "traffic", "direction", "how do i get", "get to", "fastest way",
         "way home", "way to", "next bus",
     ], "route/transit intent")
+    # "bus" and "eta" are short tokens: match on word boundaries so "tembusu"
+    # (contains 'bus') or "theta" (contains 'eta') never trigger routes.
+    if _has_word(text, ["bus", "eta"]):
+        selections.append(
+            CapabilitySelection(id="routes", reason="transit token match", confidence=0.85)
+        )
 
     groceries_as_reminder_content = bool(
         re.search(r"remind .*(buy|get) groceries", text)
@@ -247,6 +257,33 @@ def deterministic_plan(
             retrieval_used=False,
             rationale="Ambiguous request; asking one disambiguating question instead of guessing.",
         )
+
+    active_routes_thread = (state or {}).get("active_domain") == "routes" or (
+        (state or {}).get("last_decision") or {}
+    ).get("ordering") == ["routes"]
+    if active_routes_thread and re.fullmatch(r"[a-z0-9 ,'\-\.]{2,40}", text):
+        if not re.search(
+            r"\b(please|me|my|the|what|when|how|which|route|bus|remind|expense|"
+            r"email|grocery|recipe|bill|to|from|at|near|next|arriv)\b",
+            text,
+        ):
+            return Decision(
+                capabilities=[
+                    CapabilitySelection(
+                        id="routes",
+                        reason="bare place fragment in an active route thread",
+                        confidence=0.8,
+                    )
+                ],
+                ordering=["routes"],
+                confidence=0.8,
+                source="fragment-reuse",
+                retrieval_used=False,
+                rationale=(
+                    "Short place-name follow-up in an active route thread; reusing routes "
+                    "and letting the plugin fill the missing endpoint from last_route."
+                ),
+            )
 
     recipe = _recipe_for(text)
     if recipe:

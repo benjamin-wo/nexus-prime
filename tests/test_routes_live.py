@@ -7,6 +7,8 @@ from capabilities.routes.tools import (
     _bus_query_parts,
     _selection_intent,
     handle_bus_query,
+    is_bare_place_fragment,
+    is_bus_arrival_query,
     plan_route,
 )
 from core.config import settings
@@ -24,6 +26,18 @@ def test_bus_query_parts_extracts_stop_and_service():
     assert _selection_intent("the first one") == 0
     assert _selection_intent("2") == 1
     assert _selection_intent("nope") is None
+
+
+def test_bus_arrival_vs_directions_classification():
+    assert is_bus_arrival_query("What bus should I take from Tembusu grand to Suntec") is False
+    assert is_bus_arrival_query("which bus goes to suntec") is False
+    assert is_bus_arrival_query("when's my next bus from Tampines West CC") is True
+    assert is_bus_arrival_query("next bus at 76161") is True
+    assert is_bus_arrival_query("route from A to B") is False
+    assert is_bare_place_fragment("tembusu grand") is True
+    assert is_bare_place_fragment("suntec city") is True
+    assert is_bare_place_fragment("to suntec") is False
+    assert is_bare_place_fragment("what bus should i take") is False
 
 
 def test_lta_format_arrivals_shows_bus_numbers():

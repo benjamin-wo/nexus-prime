@@ -75,3 +75,20 @@ class CapabilityRequestLog(SQLModel, table=True):
     intent_type: str = Field(index=True)  # "unsupported_transaction" or "informational_fallback"
     missing_capability_tags: str = Field(index=True)  # Comma-separated tags e.g. "calendar,smart_home"
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ConversationAuditLog(SQLModel, table=True):
+    """Periodic LLM-as-a-Judge review of whole conversations (default every 5 messages)."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    thread_id: str = Field(index=True)
+    user_id: int = Field(index=True)
+    message_count: int
+    faithfulness_score: int = Field(ge=1, le=5)
+    routing_score: int = Field(ge=1, le=5)
+    tool_correctness_score: int = Field(ge=1, le=5)
+    helpfulness_score: int = Field(ge=1, le=5)
+    verdict: str = Field(index=True)  # pass | review | critical
+    evidence: str
+    judge_model: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)

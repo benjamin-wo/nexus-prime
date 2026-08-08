@@ -359,12 +359,12 @@ class RoutePlugin:
         messages = state.get("messages", [])
         last_text = str(messages[-1].content) if messages else ""
 
-        # Live bus queries get actual service numbers via LTA DataMall.
+        # Bus-arrival queries (times at a stop) use LTA; directions with a
+        # destination ("bus from X to Y") go through the Maps journey instead.
         lowered = last_text.lower()
-        if "bus" in lowered and any(
-            marker in lowered for marker in ("next", "arriv", "when", " at ", " from ")
-        ):
-            from capabilities.routes.tools import handle_bus_query
+        from capabilities.routes.tools import handle_bus_query, is_bare_place_fragment, is_bus_arrival_query
+
+        if is_bus_arrival_query(last_text):
 
             bus_result = await handle_bus_query(
                 last_text, pending_stops=state.get("pending_bus_stops")
@@ -381,6 +381,16 @@ class RoutePlugin:
         origin = (req.get("origin") or "").strip()
         destination = (req.get("destination") or "").strip()
         mode = req.get("mode") or "transit"
+        last_route = state.get("last_route") or {}
+        if not origin and last_route.get("origin"):
+            origin = str(last_route["origin"])
+        if not destination and last_route.get("destination"):
+            destination = str(last_route["destination"])
+        if is_bare_place_fragment(last_text):
+            if origin and not destination:
+                destination = last_text.strip()
+            elif not origin and destination:
+                origin = last_text.strip()
         if not origin or not destination:
             return PluginOutput(
                 message=AIMessage(
@@ -397,7 +407,14 @@ class RoutePlugin:
             if not journey.get("error"):
                 return PluginOutput(
                     message=AIMessage(content=format_journey(journey)),
-                    state_update={"active_domain": self.name},
+                    state_update={
+                        "active_domain": self.name,
+                        "last_route": {
+                            "origin": origin,
+                            "destination": destination,
+                            "mode": mode,
+                        },
+                    },
                 )
 
         res = await plan_route.ainvoke(
@@ -422,7 +439,13 @@ class RoutePlugin:
         for index, step in enumerate(res.get("steps", [])[:5], 1):
             lines.append(f"{index}. {step}")
         reply = AIMessage(content="\n".join(lines))
-        return PluginOutput(message=reply, state_update={"active_domain": self.name})
+        return PluginOutput(
+            message=reply,
+            state_update={
+                "active_domain": self.name,
+                "last_route": {"origin": origin, "destination": destination, "mode": mode},
+            },
+        )
 
 
 class RecipePlugin:

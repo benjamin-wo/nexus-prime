@@ -15,7 +15,9 @@ registry** and a **retrieve → plan → select-a-set** router powered by LangGr
   `run_now` testing triggers, and ambient delivery gating.
 - `core/ambient.py` — Trigger policy: proactive delivery only from trigger records; quiet hours
   suppress non-urgent delivery before 09:00 local; urgent triggers still land.
-- `core/audit.py` — LLM-as-a-Judge quality observability and capability-gap telemetry.
+- `core/audit.py` — LLM-as-a-Judge quality observability and capability-gap telemetry. Whole
+  conversations are reviewed by Gemini 3.1 Pro every 5 user messages (`ConversationAuditLog`),
+  with a special focus on route/maps/bus correctness; `GEMINI_JUDGE_MODEL` overrides the default.
 - `core/code_sandbox.py` — Isolated code execution: import allowlist, egress allowlist, secret
   redaction, hard timeout, credential vault unreachable. E2B provider for production; a
   process-isolated local provider for offline runs and tests.

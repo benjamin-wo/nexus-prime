@@ -79,6 +79,24 @@ async def plan_dispatch(state: AssistantState) -> Command[str]:
     if not is_user:
         return Command(goto=END)
 
+    from core.audit import perform_conversation_audit, should_audit_conversation
+
+    user_message_count = sum(
+        1
+        for message in state.get("messages", [])
+        if getattr(message, "type", "") == "human"
+    )
+    if should_audit_conversation(user_message_count):
+        import asyncio
+
+        asyncio.create_task(
+            perform_conversation_audit(
+                user_id=state.get("user_id", 0),
+                thread_id=str(state.get("user_id", 0)),
+                messages=list(state.get("messages", [])),
+            )
+        )
+
     from capabilities.registry import load_registry
     from capabilities.retrieval import build_index
     from orchestrator.fastpath import should_take_fast_path

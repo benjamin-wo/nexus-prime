@@ -15,3 +15,4 @@ class AssistantState(MessagesState):
     last_decision: Optional[Dict[str, Any]]
     pending_bus_stops: Optional[List[Dict[str, Any]]]
     plan: Optional[Dict[str, Any]]
+    last_route: Optional[Dict[str, Any]]

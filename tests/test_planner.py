@@ -82,6 +82,18 @@ async def test_referent_reuse_persists_across_graph_turns():
     assert "Hey! I'm here" not in reply
 
 
+def test_bare_place_fragment_reuses_routes_thread():
+    state = {
+        "active_domain": "routes",
+        "last_decision": {"ordering": ["routes"], "capabilities": [{"id": "routes"}]},
+        "messages": [HumanMessage(content="What bus should I take from Tembusu Grand to Suntec")],
+    }
+    decision = deterministic_plan("tembusu grand", state, None)
+    assert decision.capability_ids == ["routes"]
+    assert decision.source == "fragment-reuse"
+    assert deterministic_plan("who is Albert Einstein", _state("who is Albert Einstein"), None).recipe is None
+
+
 @pytest.mark.asyncio
 async def test_plugin_state_update_merged_by_plan_router(monkeypatch):
     from unittest.mock import AsyncMock, patch

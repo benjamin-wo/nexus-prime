@@ -160,6 +160,40 @@ def _bus_query_parts(last_text: str) -> Dict[str, Any]:
     }
 
 
+def is_bus_arrival_query(last_text: str) -> bool:
+    """True when the message asks for bus times AT a stop, not for directions.
+
+    A destination ("to <place>") means the user wants a journey, so it must go
+    through the Maps+LTA journey path instead of the arrival handler.
+    """
+    lowered = last_text.lower()
+    if "bus" not in lowered:
+        return False
+    if re.search(r"\bto\s+[a-z0-9]", lowered):
+        return False
+    return any(
+        marker in lowered
+        for marker in ("next", "arriv", "when", " at ", " from ", "bus stop", "stop code")
+    )
+
+
+def is_bare_place_fragment(text: str) -> bool:
+    """A short place-name-only message (e.g. 'tembusu grand')."""
+    value = text.strip()
+    lowered = value.lower()
+    if not 2 <= len(value) <= 40 or any(ch.isdigit() for ch in value):
+        return False
+    if not re.fullmatch(r"[a-z0-9 ,'\-\.]+", lowered):
+        return False
+    if re.search(
+        r"\b(please|me|my|the|what|when|how|which|route|bus|remind|expense|"
+        r"email|grocery|recipe|bill|to|from|at|near|next|arriv)\b",
+        lowered,
+    ):
+        return False
+    return True
+
+
 def _selection_intent(text: str) -> Optional[int]:
     normalized = re.sub(r"\s+", " ", text.strip().lower())
     mapping = {

@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     google_api_key: Optional[str] = None
     gemini_api_key: Optional[str] = None
     gemini_model: str = "gemini-3.1-flash-lite"
+    gemini_judge_model: str = "gemini-3.1-pro"
     deepseek_api_key: Optional[str] = None
     deepseek_base_url: str = "https://api.deepseek.com/v1"
     deepseek_model: str = "deepseek-v4-flash"

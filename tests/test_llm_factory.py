@@ -6,6 +6,7 @@ from core.llm import (
     get_llm,
     get_multimodal_llm,
     get_agent_llm,
+    get_judge_llm,
     THINKING_CONFIGS,
 )
 
@@ -20,6 +21,14 @@ def test_multimodal_io_llm_initialization():
     helper_llm = get_multimodal_llm()
     assert isinstance(helper_llm, ChatGoogleGenerativeAI)
     assert helper_llm.model == "gemini-3.1-flash-lite"
+
+
+def test_judge_llm_initialization():
+    """Verify the conversation judge uses Gemini 3.1 Pro."""
+    llm = get_judge_llm()
+    assert isinstance(llm, ChatGoogleGenerativeAI)
+    assert llm.model == "gemini-3.1-pro"
+    assert llm.temperature == 0.0
 
 def test_agent_core_llm_low_thinking_level():
     """Verify that role='agent_core' with LOW complexity configures DeepSeek v4 Flash with low reasoning effort."""

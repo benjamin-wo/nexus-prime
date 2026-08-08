@@ -91,6 +91,16 @@ def get_multimodal_llm(temperature: float = 0.0) -> ChatGoogleGenerativeAI:
     """Convenience helper to obtain Google Gemini Flash for multimodal I/O tasks."""
     return get_llm(role="multimodal_io", temperature=temperature)
 
+
+def get_judge_llm(temperature: float = 0.0) -> ChatGoogleGenerativeAI:
+    """Gemini Pro used as the LLM-as-a-Judge for whole-conversation reviews."""
+    api_key = settings.active_gemini_api_key or "test_google_key"
+    return ChatGoogleGenerativeAI(
+        model=settings.gemini_judge_model,
+        google_api_key=api_key,
+        temperature=temperature,
+    )
+
 def get_agent_llm(
     complexity: Union[ThinkingLevel, str] = ThinkingLevel.MEDIUM,
     temperature: float = 0.0,
