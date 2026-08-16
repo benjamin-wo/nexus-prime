@@ -2120,61 +2120,67 @@ async function loadWhiteboardDetails(projectId) {
     const titleEl = document.getElementById("wb-active-title");
     const catEl = document.getElementById("wb-active-category");
     const sumEl = document.getElementById("wb-active-summary");
-    const countEl = document.getElementById("wb-canvas-block-count");
 
     if (emojiEl) emojiEl.textContent = proj.emoji_icon || "📋";
     if (titleEl) titleEl.textContent = proj.title;
     if (catEl) catEl.textContent = (proj.category || "general").toUpperCase();
     if (sumEl) sumEl.textContent = proj.summary || "Interactive planning canvas";
 
-    // Group blocks by section_name
-    const sectionsMap = new Map();
-    blocks.forEach(b => {
-      const sec = b.section_name || "General";
-      if (!sectionsMap.has(sec)) sectionsMap.set(sec, []);
-      sectionsMap.get(sec).push(b);
-    });
-
-    if (countEl) {
-      countEl.textContent = `${sectionsMap.size} sections · ${blocks.length} active cards`;
-    }
-
-    if (sectionsMap.size === 0) {
-      container.innerHTML = `
-        <div class="wb-empty-state">
-          <div class="wb-empty-icon">🪄</div>
-          <div class="wb-empty-title">This board is empty</div>
-          <div class="wb-empty-desc">Use the AI Copilot bar above or click "+ Add Card" to brainstorm and add items to this canvas!</div>
-          <div class="wb-empty-actions">
-            <button class="btn-primary-ember" onclick="document.getElementById('wb-ai-prompt-input').focus()">🪄 Ask AI Copilot</button>
-            <button class="btn-whiteboard-add-card" onclick="document.getElementById('btn-open-add-card-modal').click()">+ Add Card</button>
-          </div>
-        </div>
-      `;
-      return;
-    }
-
-    let deckHtml = "";
-    sectionsMap.forEach((sectionBlocks, sectionName) => {
-      deckHtml += `
-        <div class="wb-section-block">
-          <div class="wb-section-header">
-            <h3 class="wb-section-title">${escapeHtml(sectionName)}</h3>
-            <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 500;">${sectionBlocks.length} card${sectionBlocks.length === 1 ? '' : 's'}</span>
-          </div>
-          <div class="wb-cards-grid">
-            ${sectionBlocks.map(b => renderSmartCardHtml(b)).join("")}
-          </div>
-        </div>
-      `;
-    });
-
-    container.innerHTML = deckHtml;
+    renderWhiteboardCanvas(blocks);
 
   } catch (err) {
     console.error("Error loading whiteboard details:", err);
     container.innerHTML = `<div style="color: #fb7185; padding: 1.5rem; text-align: center;">Error loading board details.</div>`;
   }
+}
+
+function renderWhiteboardCanvas(blocks) {
+  const container = document.getElementById("wb-sections-container");
+  if (!container) return;
+
+  const countEl = document.getElementById("wb-canvas-block-count");
+  const sectionsMap = new Map();
+  blocks.forEach(b => {
+    const sec = b.section_name || "General";
+    if (!sectionsMap.has(sec)) sectionsMap.set(sec, []);
+    sectionsMap.get(sec).push(b);
+  });
+
+  if (countEl) {
+    countEl.textContent = `${sectionsMap.size} sections · ${blocks.length} active cards`;
+  }
+
+  if (sectionsMap.size === 0) {
+    container.innerHTML = `
+      <div class="wb-empty-state">
+        <div class="wb-empty-icon">🪄</div>
+        <div class="wb-empty-title">This board is empty</div>
+        <div class="wb-empty-desc">Use the AI Copilot bar above or click "+ Add Card" to brainstorm and add items to this canvas!</div>
+        <div class="wb-empty-actions">
+          <button class="btn-primary-ember" onclick="document.getElementById('wb-ai-prompt-input').focus()">🪄 Ask AI Copilot</button>
+          <button class="btn-whiteboard-add-card" onclick="document.getElementById('btn-open-add-card-modal').click()">+ Add Card</button>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  let deckHtml = "";
+  sectionsMap.forEach((sectionBlocks, sectionName) => {
+    deckHtml += `
+      <div class="wb-section-block">
+        <div class="wb-section-header">
+          <h3 class="wb-section-title">${escapeHtml(sectionName)}</h3>
+          <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 500;">${sectionBlocks.length} card${sectionBlocks.length === 1 ? '' : 's'}</span>
+        </div>
+        <div class="wb-cards-grid">
+          ${sectionBlocks.map(b => renderSmartCardHtml(b)).join("")}
+        </div>
+      </div>
+    `;
+  });
+
+  container.innerHTML = deckHtml;
 }
 
 function renderSmartCardHtml(block) {
