@@ -28,6 +28,13 @@ class ExpenseTransaction(SQLModel, table=True):
     source_message_id: Optional[str] = Field(default=None, unique=True, index=True)
     is_verified: bool = Field(default=True)
 
+class DeletedExpenseMessage(SQLModel, table=True):
+    """Tombstone table for deleted email/source transactions to prevent poller re-ingestion."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(index=True)
+    source_message_id: str = Field(index=True, unique=True)
+    deleted_at: datetime = Field(default_factory=datetime.utcnow)
+
 class GroceryItem(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="userprofile.user_id", index=True)
@@ -46,6 +53,22 @@ class ScheduledJob(SQLModel, table=True):
     timezone: str = Field(default="UTC")
     is_active: bool = Field(default=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class TaskItem(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="userprofile.user_id", index=True)
+    title: str
+    description: Optional[str] = Field(default=None)
+    status: str = Field(default="todo", index=True)  # "todo" | "done"
+    priority: str = Field(default="medium", index=True)  # "low" | "medium" | "high"
+    due_at: Optional[datetime] = Field(default=None)
+    reminder_type: str = Field(default="none")  # "none" | "once" | "recurring"
+    reminder_time: Optional[datetime] = Field(default=None)
+    cron_expression: Optional[str] = Field(default=None)
+    timezone: str = Field(default="Asia/Singapore")
+    is_reminder_active: bool = Field(default=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    completed_at: Optional[datetime] = Field(default=None)
 
 
 class BusStop(SQLModel, table=True):

@@ -1,0 +1,982 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nexus Prime — Financial Cockpit & Expenses</title>
+  <meta name="description" content="Sleek dark financial dashboard and personal assistant cockpit for Nexus Prime Telegram Bot." />
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="styles.css?v=5" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>" />
+</head>
+<body>
+
+  <!-- App Wrapper with Top-Left Ambient Ember Flare -->
+  <div class="app-shell">
+    <div class="ambient-flare" aria-hidden="true"></div>
+
+    <div class="app-frame">
+
+      <!-- ==================================================================
+           LEFT VERTICAL ICON SIDEBAR
+           ================================================================== -->
+      <aside class="left-rail-sidebar">
+        <div class="rail-top">
+          <!-- Logo -->
+          <div class="rail-logo-btn" title="Nexus Prime Cockpit">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
+              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+            </svg>
+          </div>
+
+          <!-- Navigation Icons Stack -->
+          <nav class="rail-nav" aria-label="Rail Navigation">
+            <button class="rail-nav-btn active" data-tab="tab-expenses" id="rail-btn-expenses" title="Transactions & Dashboard">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="4" width="20" height="16" rx="2"></rect>
+                <line x1="2" y1="10" x2="22" y2="10"></line>
+              </svg>
+            </button>
+
+            <button class="rail-nav-btn" data-tab="tab-livechat" id="rail-btn-livechat" title="Assistant Chat">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+              </svg>
+            </button>
+
+            <button class="rail-nav-btn" data-tab="tab-jobs" id="rail-btn-jobs" title="Reminders & Schedule">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <polyline points="12 6 12 12 16 14"></polyline>
+              </svg>
+            </button>
+
+            <button class="rail-nav-btn" data-tab="tab-groceries" id="rail-btn-groceries" title="Groceries Checklist">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
+                <line x1="3" y1="6" x2="21" y2="6"></line>
+                <path d="M16 10a4 4 0 0 1-8 0"></path>
+              </svg>
+            </button>
+
+            <button class="rail-nav-btn" data-tab="tab-overview" id="rail-btn-overview" title="Architecture & Evals">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                <polyline points="2 17 12 22 22 17"></polyline>
+                <polyline points="2 12 12 17 22 12"></polyline>
+              </svg>
+            </button>
+          </nav>
+        </div>
+
+        <!-- Bottom Pinned Items -->
+        <div class="rail-bottom">
+          <div class="rail-status-dot" title="Live on Railway project energetic-happiness"></div>
+          
+          <button class="rail-nav-btn" id="rail-btn-refresh-all" title="Refresh Dashboard">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M23 4v6h-6"></path>
+              <path d="M1 20v-6h6"></path>
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+            </svg>
+          </button>
+
+          <div class="user-avatar-disc" title="User Profile">
+            <span>BW</span>
+          </div>
+        </div>
+      </aside>
+
+      <!-- ==================================================================
+           MAIN VIEWPORT AREA
+           ================================================================== -->
+      <main class="main-viewport">
+
+        <!-- ================================================================
+             TAB 1: TRANSACTIONS DASHBOARD & BREAKDOWN (MOWANY-STYLE LAYOUT)
+             ================================================================ -->
+        <div id="tab-expenses" class="view-panel active">
+          
+          <!-- Top Header Row -->
+          <div class="dash-top-header">
+            <div class="dash-title-left">
+              <h1 class="dash-main-heading">Transactions</h1>
+            </div>
+
+            <div class="dash-actions-right">
+              <button class="btn-ask-ai-pill" id="btn-open-copilot" onclick="openCopilotDrawer()">
+                <span>⚡ Ask Nexus AI</span>
+              </button>
+              
+              <button class="btn-secondary-action-pill" id="btn-open-add-expense-modal">
+                <span>+ Log Expense</span>
+              </button>
+
+              <div class="date-range-badge" id="current-month-badge">
+                <span>📅 August 2026</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Top Metric Cards Row (3 Cards Across) -->
+          <div class="metrics-cards-row">
+            
+            <!-- Card 1: Total Transactions This Month -->
+            <div class="metric-glass-card">
+              <div class="metric-top-bar">
+                <div class="metric-icon-disc">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                    <rect x="2" y="4" width="20" height="16" rx="2"></rect>
+                    <line x1="2" y1="10" x2="22" y2="10"></line>
+                  </svg>
+                </div>
+                <span class="metric-label-text">Total Transactions This Month</span>
+              </div>
+              <div class="metric-large-figure mono-fig" id="kpi-month-tx-count">9</div>
+              <div class="metric-trend-subtext trend-up">
+                <span>↑ 12.5%</span> <span class="trend-dim">compared to last month</span>
+              </div>
+            </div>
+
+            <!-- Card 2: Total Ingested Ledger -->
+            <div class="metric-glass-card">
+              <div class="metric-top-bar">
+                <div class="metric-icon-disc green-disc">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                    <line x1="7" y1="17" x2="17" y2="7"></line>
+                    <polyline points="7 7 17 7 17 17"></polyline>
+                  </svg>
+                </div>
+                <span class="metric-label-text">All-Time Ledger Count</span>
+              </div>
+              <div class="metric-large-figure mono-fig" id="kpi-total-tx">9</div>
+              <div class="metric-trend-subtext trend-up">
+                <span>↑ 15.5%</span> <span class="trend-dim">auto-synced via Gmail & TG</span>
+              </div>
+            </div>
+
+            <!-- Card 3: Total Expenses -->
+            <div class="metric-glass-card">
+              <div class="metric-top-bar">
+                <div class="metric-icon-disc orange-disc">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                    <line x1="7" y1="7" x2="17" y2="17"></line>
+                    <polyline points="17 7 17 17 7 17"></polyline>
+                  </svg>
+                </div>
+                <span class="metric-label-text">Total Expenses</span>
+              </div>
+              <div class="metric-large-figure mono-fig" id="kpi-month-spend">$340.30</div>
+              <div class="metric-trend-subtext trend-down">
+                <span>↓ 8.5%</span> <span class="trend-dim">within monthly budget</span>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Main Dashboard 2-Column Split: Table (70%) + Breakdown Sidebar (30%) -->
+          <div class="dashboard-main-split">
+            
+            <!-- Left Column: Transactions Table Card -->
+            <div class="table-card-container">
+              
+              <!-- Table Header Toolbar -->
+              <div class="table-card-header">
+                <h2 class="table-card-title">Transactions</h2>
+
+                <div class="table-card-controls">
+                  <!-- Search Input -->
+                  <div class="table-search-pill">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5">
+                      <circle cx="11" cy="11" r="8"></circle>
+                      <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                    <input type="text" id="tx-search-input" placeholder="Search..." autocomplete="off" />
+                  </div>
+
+                  <!-- Category Filter Dropdown -->
+                  <select id="tx-category-filter" class="table-dropdown-select">
+                    <option value="all">All Status</option>
+                    <option value="Dining">Dining</option>
+                    <option value="Groceries">Groceries</option>
+                    <option value="Transport">Transport</option>
+                    <option value="Shopping">Shopping</option>
+                    <option value="Bills">Bills</option>
+                    <option value="General">General</option>
+                  </select>
+
+                  <!-- Sort Dropdown -->
+                  <select id="tx-sort-select" class="table-dropdown-select">
+                    <option value="latest">Latest</option>
+                    <option value="oldest">Oldest</option>
+                    <option value="highest">Highest Amount</option>
+                  </select>
+
+                  <button class="btn-table-icon" id="btn-refresh-expenses" title="Refresh Table">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                      <path d="M23 4v6h-6"></path>
+                      <path d="M1 20v-6h6"></path>
+                      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Batch Action Bar (Visible when rows checked) -->
+              <div id="batch-action-bar" class="batch-action-bar" style="display: none;">
+                <span id="batch-selected-count">0 transactions selected</span>
+                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                  <button class="btn-danger-pill" id="btn-batch-delete">🗑️ Delete Selected</button>
+                  <button class="btn-ghost-pill" id="btn-batch-cancel">✕ Deselect</button>
+                </div>
+              </div>
+
+              <!-- Transactions Data Table -->
+              <div class="table-scroll-wrapper">
+                <table class="financial-data-table">
+                  <thead>
+                    <tr>
+                      <th style="width: 40px; text-align: center;">
+                        <input type="checkbox" class="dash-checkbox" id="check-all-rows" />
+                      </th>
+                      <th style="width: 130px;">Transaction ID</th>
+                      <th>Payment Name</th>
+                      <th style="width: 110px; text-align: right;">Amount</th>
+                      <th style="width: 180px;">Date</th>
+                      <th style="width: 110px; text-align: center;">Status</th>
+                      <th style="width: 70px; text-align: center;"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="expenses-table-body">
+                    <!-- Populated dynamically by app.js -->
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- Table Pagination Footer -->
+              <div class="table-pagination-footer">
+                <div class="pagination-left">
+                  <span>Show data</span>
+                  <select class="pagination-page-size" id="page-size-select">
+                    <option value="10">10</option>
+                    <option value="25">25</option>
+                    <option value="50">50</option>
+                  </select>
+                  <span id="pagination-total-info">of 9 records</span>
+                </div>
+
+                <div class="pagination-right" id="pagination-nav-container">
+                  <button class="page-nav-btn" disabled>&laquo;</button>
+                  <button class="page-nav-btn" disabled>&lsaquo;</button>
+                  <button class="page-num-btn active">1</button>
+                  <button class="page-nav-btn" disabled>&rsaquo;</button>
+                  <button class="page-nav-btn" disabled>&raquo;</button>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Right Column: Category Breakdown Donut + Insights + Subscriptions -->
+            <div class="sidebar-widgets-column">
+              
+              <!-- Widget 1: Category Breakdown Donut Visualizer -->
+              <div class="sidebar-widget-card">
+                <div class="widget-header-row">
+                  <h3 class="widget-title">Category Breakdown</h3>
+                  <span class="widget-arrow-icon" title="View details">&rarr;</span>
+                </div>
+
+                <!-- SVG Donut Chart Visualizer -->
+                <div class="donut-chart-container">
+                  <div class="donut-svg-wrap">
+                    <svg viewBox="0 0 160 160" class="donut-svg" id="donut-svg-chart">
+                      <!-- Rendered dynamically by app.js -->
+                      <circle cx="80" cy="80" r="60" fill="none" stroke="#222226" stroke-width="22" />
+                    </svg>
+                    <div class="donut-center-info">
+                      <div class="donut-center-val" id="donut-center-total">$340</div>
+                      <div class="donut-center-lbl">Total Spend</div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Category Legend List -->
+                <div class="donut-legend-grid" id="donut-legend-grid">
+                  <!-- Rendered dynamically by app.js -->
+                </div>
+
+                <!-- Spend Alert Chip -->
+                <div class="spend-insight-chip" id="spend-insight-chip">
+                  <span class="chip-sparkle">🪄</span>
+                  <span id="spend-insight-text">Your dining & shopping allocate 55% of this month's budget.</span>
+                </div>
+              </div>
+
+              <!-- Widget 2: AI Financial Insights Banner -->
+              <div class="ai-insight-banner-card">
+                <div class="ai-banner-header">
+                  <div class="ai-pill-tag">
+                    <span>⚡ AI Insight</span>
+                  </div>
+                </div>
+                <div class="ai-banner-body" id="ai-insight-dynamic-body">
+                  Analyzing your transactions and spending velocity...
+                </div>
+                <button class="btn-ai-banner-action" onclick="switchTab('tab-livechat')">
+                  <span>Chat with Nexus AI &rarr;</span>
+                </button>
+              </div>
+
+              <!-- Widget 3: Top Merchants / Subscriptions List -->
+              <div class="sidebar-widget-card">
+                <div class="widget-header-row">
+                  <h3 class="widget-title">Top Merchants</h3>
+                  <span class="widget-arrow-icon" onclick="openExpenseModal()">&plus;</span>
+                </div>
+
+                <div class="merchants-mini-list" id="merchants-mini-list">
+                  <!-- Rendered dynamically by app.js -->
+                </div>
+
+                <button class="btn-outline-widget-full" onclick="openExpenseModal()">
+                  <span>+ Log New Expense</span>
+                </button>
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+
+        <!-- ================================================================
+             TAB 2: CONVERSATIONAL ASSISTANT CHAT
+             ================================================================ -->
+        <div id="tab-livechat" class="view-panel">
+          <div class="chat-viewport-card">
+            
+            <div class="chat-header-row">
+              <div class="chat-header-identity">
+                <div class="app-icon-badge amber-icon">
+                  <span>🤖</span>
+                </div>
+                <div>
+                  <div class="chat-heading-title">Nexus Prime Assistant</div>
+                  <div class="chat-online-badge"><span class="tiny-green-dot"></span> LangGraph Runtime Connected</div>
+                </div>
+              </div>
+              <div class="chat-header-actions">
+                <span class="session-chip" id="chat-session-id-display">Session: web-user</span>
+                <button class="btn-ghost-square" id="btn-clear-chat" title="Reset Session">
+                  <span>Clear</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Quick Suggestion Chips -->
+            <div class="chat-prompts-strip">
+              <span class="prompts-eyebrow">Quick Try:</span>
+              <button class="prompt-pill-btn" data-msg="Log $14.50 lunch at Amoy Hawker Centre">💸 Log $14.50 Lunch</button>
+              <button class="prompt-pill-btn" data-msg="Where did my money go this month? Analyze my top merchants.">📊 Spend Autopsy</button>
+              <button class="prompt-pill-btn" data-msg="When is my next bus 961 from Tampines?">🚌 Bus 961 Tampines</button>
+              <button class="prompt-pill-btn" data-msg="Good morning! Give me my daily briefing.">🌅 Morning Briefing</button>
+              <button class="prompt-pill-btn" data-msg="/expenses">💰 /expenses</button>
+              <button class="prompt-pill-btn" data-msg="/jobs">📋 /jobs</button>
+              <button class="prompt-pill-btn" data-msg="/groceries">🛒 /groceries</button>
+            </div>
+
+            <!-- Messages Stream -->
+            <div class="chat-messages-container" id="chat-messages-stream">
+              <div class="chat-message-bubble assistant-message">
+                <div class="msg-avatar-icon">🤖</div>
+                <div class="msg-body-wrapper">
+                  <div class="msg-text-surface">
+                    👋 <strong>Hello! I am Nexus Prime.</strong><br/><br/>
+                    I am your autonomous personal assistant. Any action you take here or in Telegram syncs with your dashboard in real-time:<br/><br/>
+                    • <strong>Expenses:</strong> <em>"Spent $32 on dinner at Cedele"</em> or <em>"Analyze my groceries spend"</em><br/>
+                    • <strong>Transit:</strong> <em>"When is the next bus 961 from Tampines?"</em> (~8ms zero-token FastPath)<br/>
+                    • <strong>Reminders:</strong> <em>"Remind me at 5pm to call Mom"</em> or <em>"/jobs"</em><br/>
+                    • <strong>Groceries:</strong> <em>"Add oat milk and salmon to my grocery list"</em>
+                  </div>
+                  <span class="msg-time-tag">Just now</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Typing Indicator -->
+            <div class="chat-typing-row" id="chat-typing-indicator" style="display: none;">
+              <div class="typing-pulser">
+                <span></span><span></span><span></span>
+              </div>
+              <span style="font-size: 0.75rem; color: #71717a;">Nexus Prime is reasoning & routing...</span>
+            </div>
+
+            <!-- Composer Input Bar -->
+            <form class="chat-composer-bar" id="chat-input-form">
+              <input 
+                type="text" 
+                id="chat-user-input" 
+                class="composer-input" 
+                placeholder="Ask Nexus Prime (e.g. Log $18 lunch, /expenses, or bus arrival)..." 
+                autocomplete="off" 
+              />
+              <button type="submit" class="btn-primary-ember" id="btn-chat-send">
+                <span>Send</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <line x1="22" y1="2" x2="11" y2="13"></line>
+                  <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                </svg>
+              </button>
+            </form>
+
+          </div>
+        </div>
+
+        <!-- ================================================================
+             TAB 3: TASKS & REMINDERS COCKPIT
+             ================================================================ -->
+        <div id="tab-jobs" class="view-panel">
+          <div class="dash-top-header">
+            <div>
+              <h1 class="dash-main-heading">Tasks & Reminders Cockpit</h1>
+              <p style="color: #71717a; font-size: 0.82rem; margin-top: 0.2rem;">
+                Unified To-Do management with APScheduler triggers, Telegram push notifications, and 1-tap callbacks
+              </p>
+            </div>
+            <div style="display: flex; gap: 0.5rem;">
+              <button class="btn-secondary-action-pill" id="btn-refresh-tasks">🔄 Refresh Tasks</button>
+            </div>
+          </div>
+
+          <!-- Top Metrics Counter Grid -->
+          <div class="tasks-stats-grid">
+            <div class="task-stat-card">
+              <div class="task-stat-icon-wrap total">📋</div>
+              <div>
+                <div class="task-stat-val" id="stat-tasks-total">0</div>
+                <div class="task-stat-lbl">Total Tasks</div>
+              </div>
+            </div>
+            <div class="task-stat-card">
+              <div class="task-stat-icon-wrap todo">⚡</div>
+              <div>
+                <div class="task-stat-val" id="stat-tasks-todo">0</div>
+                <div class="task-stat-lbl">Active To-Dos</div>
+              </div>
+            </div>
+            <div class="task-stat-card">
+              <div class="task-stat-icon-wrap reminders">⏰</div>
+              <div>
+                <div class="task-stat-val" id="stat-tasks-reminders">0</div>
+                <div class="task-stat-lbl">Active Reminders</div>
+              </div>
+            </div>
+            <div class="task-stat-card">
+              <div class="task-stat-icon-wrap done">✅</div>
+              <div>
+                <div class="task-stat-val" id="stat-tasks-done">0</div>
+                <div class="task-stat-lbl">Completed</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Quick-Add Task Composer -->
+          <form class="task-composer-card" id="task-create-form">
+            <div class="task-composer-title-row">
+              <input 
+                type="text" 
+                id="task-input-title" 
+                class="task-main-input" 
+                placeholder="➕ What needs to be done? (click to add details, due date & alert)..." 
+                required 
+                autocomplete="off"
+              />
+              <button type="submit" class="btn-primary-ember" id="btn-add-task" style="padding: 0.75rem 1.35rem; white-space: nowrap;">
+                <span>+ Add Task</span>
+              </button>
+            </div>
+
+            <!-- Smart NLP Detection Badge -->
+            <div id="task-smart-nlp-hint" class="smart-nlp-hint-badge" style="display: none;">
+              <span class="smart-nlp-icon">✨</span>
+              <span id="task-smart-nlp-text">Detected: ...</span>
+            </div>
+
+            <!-- Expandable Detailed Options (revealed on click/focus) -->
+            <div class="task-composer-expanded-body" id="task-composer-expanded-body" style="display: none; animation: fadeIn 0.2s ease;">
+              <input 
+                type="text" 
+                id="task-input-desc" 
+                class="task-notes-input" 
+                placeholder="Add optional notes, links, or context..." 
+                autocomplete="off"
+              />
+
+              <div class="task-composer-meta-row">
+                <!-- Priority Selector -->
+                <div class="task-meta-group">
+                  <span class="task-meta-label">Priority:</span>
+                  <div class="priority-toggle-group" id="task-priority-toggle">
+                    <button type="button" class="priority-btn low" data-priority="low">Low</button>
+                    <button type="button" class="priority-btn medium active" data-priority="medium">Medium</button>
+                    <button type="button" class="priority-btn high" data-priority="high">High</button>
+                  </div>
+                </div>
+
+                <!-- Due Date -->
+                <div class="task-meta-group">
+                  <span class="task-meta-label">Due Date:</span>
+                  <input type="datetime-local" id="task-input-due" class="task-date-input" />
+                </div>
+
+                <!-- Reminder Mode Selector -->
+                <div class="task-meta-group">
+                  <span class="task-meta-label">Telegram Alert:</span>
+                  <select id="task-select-reminder-type" class="task-select-input">
+                    <option value="none">No Reminder</option>
+                    <option value="once">⏰ One-Time Alert</option>
+                    <option value="recurring">🔄 Recurring Schedule</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Dynamic Reminder Config Rows -->
+              <div id="task-reminder-once-fields" style="display: none; margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px dashed #222228;">
+                <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                  <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
+                    <span class="task-meta-label">Remind Me Before Due Date:</span>
+                  </div>
+
+                  <!-- Quick Offset Preset Chips -->
+                  <div class="cron-presets-wrap" id="task-composer-offset-chips">
+                    <button type="button" class="offset-chip" data-offset="0">⏰ On Due Time</button>
+                    <button type="button" class="offset-chip" data-offset="5">⏱️ 5m before</button>
+                    <button type="button" class="offset-chip active" data-offset="15">⏱️ 15m before</button>
+                    <button type="button" class="offset-chip" data-offset="30">⏱️ 30m before</button>
+                    <button type="button" class="offset-chip" data-offset="60">⏳ 1h before</button>
+                    <button type="button" class="offset-chip" data-offset="120">⏳ 2h before</button>
+                    <button type="button" class="offset-chip" data-offset="1440">📅 1d before</button>
+                    <button type="button" class="offset-chip" data-offset="custom">🛠️ Custom Time</button>
+                  </div>
+
+                  <!-- Computed Alert Preview -->
+                  <div id="task-composer-alert-preview" class="alert-computed-preview" style="display: none;">
+                    <span>🎯 Alert will trigger:</span>
+                    <strong id="task-composer-alert-preview-text">-</strong>
+                  </div>
+
+                  <!-- Custom manual datetime picker -->
+                  <div id="task-composer-custom-time-wrap" style="display: none; margin-top: 0.35rem;">
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                      <span style="font-size: 0.75rem; color: #a1a1aa;">Exact Date & Time:</span>
+                      <input type="datetime-local" id="task-input-reminder-time" class="task-date-input" style="flex: 1;" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div id="task-reminder-recurring-fields" style="display: none; margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px dashed #222228;">
+                <div class="task-meta-group" style="align-items: flex-start; flex-direction: column; gap: 0.4rem;">
+                  <div style="display: flex; align-items: center; gap: 0.5rem; width: 100%;">
+                    <span class="task-meta-label">Cron Expression:</span>
+                    <input type="text" id="task-input-cron" class="task-date-input" placeholder="0 9 * * *" style="flex: 1; font-family: var(--font-mono);" />
+                  </div>
+                  <div class="cron-presets-wrap">
+                    <span style="font-size: 0.7rem; color: #71717a; margin-right: 0.2rem;">Presets:</span>
+                    <button type="button" class="cron-chip" data-cron="0 9 * * *">Daily @ 9am</button>
+                    <button type="button" class="cron-chip" data-cron="0 8 * * 1-5">Weekdays @ 8am</button>
+                    <button type="button" class="cron-chip" data-cron="0 9 * * 1">Every Mon @ 9am</button>
+                    <button type="button" class="cron-chip" data-cron="0 21 * * *">Nightly @ 9pm</button>
+                    <button type="button" class="cron-chip" data-cron="0 */2 * * *">Every 2 hours</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </form>
+
+          <!-- Toolbar & Filter Controls -->
+          <div class="tasks-toolbar">
+            <div class="tasks-filter-pills" id="tasks-filter-group">
+              <button class="task-filter-pill active" data-filter="all">All Tasks</button>
+              <button class="task-filter-pill" data-filter="todo">Active To-Dos</button>
+              <button class="task-filter-pill" data-filter="today">Due Today</button>
+              <button class="task-filter-pill" data-filter="reminders">With Reminders ⏰</button>
+              <button class="task-filter-pill" data-filter="done">Completed ✅</button>
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <select id="tasks-filter-priority" class="task-select-input" style="padding: 0.4rem 0.75rem; border-radius: var(--radius-pill);">
+                <option value="all">All Priorities</option>
+                <option value="high">🔴 High Priority</option>
+                <option value="medium">🟡 Medium Priority</option>
+                <option value="low">🟢 Low Priority</option>
+              </select>
+              <input 
+                type="text" 
+                id="tasks-search-input" 
+                class="task-search-input" 
+                placeholder="Search tasks..." 
+                autocomplete="off"
+              />
+            </div>
+          </div>
+
+          <!-- Tasks List Container -->
+          <div class="tasks-list-container" id="tasks-cards-list">
+            <!-- Dynamic task items populated by app.js -->
+          </div>
+
+          <!-- Collapsible Background Reminder Engine & System Timers -->
+          <details style="margin-top: 2rem; background: rgba(18, 18, 22, 0.6); border: 1px solid #27272a; border-radius: var(--radius-md); padding: 0.9rem 1.25rem;">
+            <summary style="cursor: pointer; font-size: 0.85rem; color: #d4d4d8; font-weight: 500; display: flex; align-items: center; justify-content: space-between; user-select: none;">
+              <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <span>⏱️ <b>Background Automation & Timer Engine</b></span>
+                <span class="category-tag-pill" style="font-size: 0.68rem; background: rgba(34, 197, 94, 0.12); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.25);">🟢 Active & Synced</span>
+              </div>
+              <span style="font-size: 0.75rem; color: #71717a;">Show System Status ▾</span>
+            </summary>
+            <div style="margin-top: 1rem; border-top: 1px solid #202026; padding-top: 0.85rem;">
+              <p style="font-size: 0.8rem; color: #a1a1aa; margin-bottom: 0.85rem; line-height: 1.4;">
+                This engine runs 24/7 behind the scenes to trigger your task reminders, push Telegram notifications at exact times, and automate recurring daily routines.
+              </p>
+              <div id="jobs-cards-grid">
+                <!-- Populated by app.js -->
+              </div>
+            </div>
+          </details>
+        </div>
+
+        <!-- ================================================================
+             TAB 4: GROCERIES CHECKLIST
+             ================================================================ -->
+        <div id="tab-groceries" class="view-panel">
+          <div class="dash-top-header">
+            <div>
+              <h1 class="dash-main-heading">Smart Grocery Checklist</h1>
+              <p style="color: #71717a; font-size: 0.82rem; margin-top: 0.2rem;">Shared shopping list synced between recipes, telegram, and web</p>
+            </div>
+          </div>
+
+          <!-- Add Item Form -->
+          <form class="grocery-inline-form" id="grocery-add-form" style="margin-top: 1.25rem;">
+            <input type="text" id="grocery-name-input" placeholder="Item name (e.g. Oat Milk, Salmon, Eggs)..." required />
+            <input type="text" id="grocery-qty-input" placeholder="Qty (e.g. 2 cartons, 500g)" style="max-width: 160px;" />
+            <select id="grocery-cat-input" class="table-dropdown-select" style="max-width: 170px;">
+              <option value="Produce">Produce</option>
+              <option value="Dairy & Eggs">Dairy & Eggs</option>
+              <option value="Meat & Seafood">Meat & Seafood</option>
+              <option value="Pantry">Pantry</option>
+              <option value="General">General</option>
+            </select>
+            <button type="submit" class="btn-primary-ember">+ Add Item</button>
+          </form>
+
+          <div class="groceries-deck-layout" id="groceries-list-container" style="margin-top: 1.5rem;">
+            <!-- Populated by app.js -->
+          </div>
+        </div>
+
+        <!-- ================================================================
+             TAB 5: SYSTEM & OPS (TELEMETRY)
+             ================================================================ -->
+        <div id="tab-overview" class="view-panel">
+          <div class="dash-top-header">
+            <div>
+              <h1 class="dash-main-heading">Architecture & Telemetry</h1>
+              <p style="color: #71717a; font-size: 0.82rem; margin-top: 0.2rem;">Retrieve-plan-select pipeline with zero-token FastPath (~8ms)</p>
+            </div>
+          </div>
+
+          <div class="metrics-cards-row" style="margin-top: 1.5rem;">
+            <div class="metric-glass-card">
+              <div class="metric-top-bar">
+                <div class="metric-icon-disc orange-disc">⚡</div>
+                <span class="metric-label-text">FastPath Latency</span>
+              </div>
+              <div class="metric-large-figure mono-fig">7.3 ms</div>
+              <div class="metric-trend-subtext trend-up">
+                <span>$0.00 token cost</span> <span class="trend-dim">on transit queries</span>
+              </div>
+            </div>
+
+            <div class="metric-glass-card">
+              <div class="metric-top-bar">
+                <div class="metric-icon-disc green-disc">🛡️</div>
+                <span class="metric-label-text">Security Vault</span>
+              </div>
+              <div class="metric-large-figure mono-fig">AES-256</div>
+              <div class="metric-trend-subtext trend-up">
+                <span>E2B Sandboxed</span> <span class="trend-dim">microVM compute</span>
+              </div>
+            </div>
+
+            <div class="metric-glass-card">
+              <div class="metric-top-bar">
+                <div class="metric-icon-disc purple-disc">📊</div>
+                <span class="metric-label-text">Gauntlet Replay</span>
+              </div>
+              <div class="metric-large-figure mono-fig">0.986</div>
+              <div class="metric-trend-subtext trend-up">
+                <span>69 / 70 Passed</span> <span class="trend-dim">eval suite</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </main>
+
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       MODAL DIALOG (CREATE & EDIT EXPENSE)
+       ==================================================================== -->
+  <div class="modal-backdrop-veil" id="modal-add-expense" style="display: none;">
+    <div class="modal-card-dialog">
+      
+      <div class="modal-card-header">
+        <div>
+          <h3 class="modal-title-text" id="modal-expense-title">Log New Expense</h3>
+          <p class="modal-sub-text">Record an expense transaction into your ledger</p>
+        </div>
+        <button class="modal-close-x" id="btn-close-expense-modal">&times;</button>
+      </div>
+
+      <form id="form-create-expense" class="modal-inner-form">
+        <input type="hidden" id="exp-edit-id" value="" />
+
+        <div class="form-row-split">
+          <div class="form-field-group">
+            <label for="exp-amount">Amount ($):</label>
+            <input type="number" step="0.01" min="0.01" id="exp-amount" placeholder="14.50" required />
+          </div>
+          <div class="form-field-group" style="max-width: 120px;">
+            <label for="exp-currency">Currency:</label>
+            <select id="exp-currency" class="table-dropdown-select">
+              <option value="SGD">SGD</option>
+              <option value="USD">USD</option>
+              <option value="EUR">EUR</option>
+              <option value="MYR">MYR</option>
+              <option value="JPY">JPY</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-field-group">
+          <label for="exp-merchant">Merchant / Vendor:</label>
+          <input type="text" id="exp-merchant" placeholder="e.g. FairPrice Finest, Grab, Amoy Hawker Centre" required />
+        </div>
+
+        <div class="form-row-split">
+          <div class="form-field-group">
+            <label for="exp-category">Category:</label>
+            <select id="exp-category" class="table-dropdown-select">
+              <option value="Dining">Dining</option>
+              <option value="Groceries">Groceries</option>
+              <option value="Transport">Transport</option>
+              <option value="Shopping">Shopping</option>
+              <option value="Bills">Bills</option>
+              <option value="Leisure">Leisure</option>
+              <option value="General">General</option>
+            </select>
+          </div>
+          <div class="form-field-group">
+            <label for="exp-date">Date & Time:</label>
+            <input type="datetime-local" id="exp-date" />
+          </div>
+        </div>
+
+        <div class="modal-footer-buttons">
+          <button type="button" class="btn-danger-flat" id="btn-delete-from-modal" style="margin-right: auto; display: none;">🗑️ Delete</button>
+          <button type="button" class="btn-cancel-flat" id="btn-cancel-expense-modal">Cancel</button>
+          <button type="submit" class="btn-primary-ember" id="btn-submit-expense">Save Expense</button>
+        </div>
+
+      </form>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       MODAL DIALOG (EDIT TASK & REMINDER)
+       ==================================================================== -->
+  <div class="modal-backdrop-veil" id="modal-edit-task" style="display: none;">
+    <div class="modal-card-dialog">
+      
+      <div class="modal-card-header">
+        <div>
+          <h3 class="modal-title-text" id="modal-task-heading">Edit Task</h3>
+          <p class="modal-sub-text">Update task details, priority, due date, and Telegram reminder</p>
+        </div>
+        <button type="button" class="modal-close-x" id="btn-close-task-modal">&times;</button>
+      </div>
+
+      <form id="form-edit-task" class="modal-inner-form">
+        <input type="hidden" id="task-edit-id" value="" />
+
+        <div class="form-field-group">
+          <label for="task-edit-title">Task Title:</label>
+          <input type="text" id="task-edit-title" required placeholder="What needs to be done?" />
+        </div>
+
+        <div class="form-field-group">
+          <label for="task-edit-desc">Notes / Description:</label>
+          <input type="text" id="task-edit-desc" placeholder="Add extra context or details (optional)" />
+        </div>
+
+        <div class="form-row-split">
+          <div class="form-field-group">
+            <label for="task-edit-priority">Priority:</label>
+            <select id="task-edit-priority" class="table-dropdown-select">
+              <option value="high">🔴 High Priority</option>
+              <option value="medium">🟡 Medium Priority</option>
+              <option value="low">🟢 Low Priority</option>
+            </select>
+          </div>
+          <div class="form-field-group">
+            <label for="task-edit-status">Status:</label>
+            <select id="task-edit-status" class="table-dropdown-select">
+              <option value="todo">⚡ To-Do (Pending)</option>
+              <option value="done">✅ Completed</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row-split">
+          <div class="form-field-group">
+            <label for="task-edit-due">Due Date & Time:</label>
+            <input type="datetime-local" id="task-edit-due" />
+          </div>
+          <div class="form-field-group">
+            <label for="task-edit-reminder-type">Telegram Alert:</label>
+            <select id="task-edit-reminder-type" class="table-dropdown-select">
+              <option value="none">No Reminder</option>
+              <option value="once">⏰ One-Time Alert</option>
+              <option value="recurring">🔄 Recurring Schedule</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Dynamic Reminder Edit Fields -->
+        <div id="task-edit-once-wrap" style="display: none; margin-top: 0.5rem;">
+          <div class="form-field-group">
+            <label>Remind Me Before Due Date:</label>
+          </div>
+
+          <div class="cron-presets-wrap" id="task-edit-offset-chips" style="margin-top: 0.2rem;">
+            <button type="button" class="offset-chip modal-offset-chip" data-offset="0">⏰ On Due Time</button>
+            <button type="button" class="offset-chip modal-offset-chip" data-offset="5">⏱️ 5m before</button>
+            <button type="button" class="offset-chip modal-offset-chip active" data-offset="15">⏱️ 15m before</button>
+            <button type="button" class="offset-chip modal-offset-chip" data-offset="30">⏱️ 30m before</button>
+            <button type="button" class="offset-chip modal-offset-chip" data-offset="60">⏳ 1h before</button>
+            <button type="button" class="offset-chip modal-offset-chip" data-offset="120">⏳ 2h before</button>
+            <button type="button" class="offset-chip modal-offset-chip" data-offset="1440">📅 1d before</button>
+            <button type="button" class="offset-chip modal-offset-chip" data-offset="custom">🛠️ Custom Time</button>
+          </div>
+
+          <!-- Computed Alert Preview -->
+          <div id="task-edit-alert-preview" class="alert-computed-preview" style="display: none; margin-top: 0.5rem;">
+            <span>🎯 Alert will trigger:</span>
+            <strong id="task-edit-alert-preview-text">-</strong>
+          </div>
+
+          <!-- Custom manual datetime picker -->
+          <div id="task-edit-custom-time-wrap" style="display: none; margin-top: 0.5rem;">
+            <div class="form-field-group">
+              <label for="task-edit-reminder-time">Exact Alert Date & Time:</label>
+              <input type="datetime-local" id="task-edit-reminder-time" />
+            </div>
+          </div>
+        </div>
+
+        <div id="task-edit-recurring-wrap" style="display: none; margin-top: 0.5rem;">
+          <div class="form-field-group">
+            <label for="task-edit-cron">Cron Expression:</label>
+            <input type="text" id="task-edit-cron" placeholder="0 9 * * *" style="font-family: var(--font-mono);" />
+          </div>
+          <div class="cron-presets-wrap" style="margin-top: 0.35rem;">
+            <span style="font-size: 0.7rem; color: #71717a; margin-right: 0.2rem;">Presets:</span>
+            <button type="button" class="cron-chip modal-cron-chip" data-cron="0 9 * * *">Daily 9am</button>
+            <button type="button" class="cron-chip modal-cron-chip" data-cron="0 8 * * 1-5">Weekdays 8am</button>
+            <button type="button" class="cron-chip modal-cron-chip" data-cron="0 9 * * 1">Mon 9am</button>
+            <button type="button" class="cron-chip modal-cron-chip" data-cron="0 21 * * *">Nightly 9pm</button>
+          </div>
+        </div>
+
+        <div class="modal-footer-buttons">
+          <button type="button" class="btn-danger-flat" id="btn-delete-task-modal" style="margin-right: auto;">🗑️ Delete Task</button>
+          <button type="button" class="btn-cancel-flat" id="btn-cancel-task-modal">Cancel</button>
+          <button type="submit" class="btn-primary-ember" id="btn-save-task-edit">Save Changes</button>
+        </div>
+
+      </form>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       CONTEXT-AWARE AI COPILOT DRAWER
+       ==================================================================== -->
+  <div class="copilot-drawer-backdrop" id="copilot-backdrop" style="display: none;" onclick="closeCopilotDrawer()"></div>
+  <aside class="copilot-drawer" id="copilot-drawer" aria-label="Nexus AI Copilot">
+    <div class="copilot-drawer-header">
+      <div class="copilot-brand">
+        <div class="copilot-avatar-orb">⚡</div>
+        <div>
+          <div class="copilot-title">Nexus Copilot</div>
+          <div class="copilot-subtitle"><span class="copilot-live-dot"></span> Context: <span id="copilot-context-label">Transactions & Expenses</span></div>
+        </div>
+      </div>
+      <div class="copilot-header-actions">
+        <button class="copilot-btn-icon" id="btn-copilot-clear" title="Reset Session">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path></svg>
+        </button>
+        <button class="copilot-btn-close" id="btn-close-copilot" onclick="closeCopilotDrawer()" title="Close copilot">&times;</button>
+      </div>
+    </div>
+
+    <!-- Quick Prompts Pills -->
+    <div class="copilot-prompts-bar" id="copilot-quick-prompts">
+      <button class="copilot-prompt-chip" data-prompt="Analyze where my money went this month">📊 Spend Breakdown</button>
+      <button class="copilot-prompt-chip" data-prompt="What is my highest expense this week?">🔍 Top Expense</button>
+      <button class="copilot-prompt-chip" data-prompt="Log $12.50 for lunch at Amoy Hawker Centre">💸 Log $12.50 Lunch</button>
+      <button class="copilot-prompt-chip" data-prompt="How much have I spent on Dining vs Groceries?">🥗 Dining vs Groceries</button>
+    </div>
+
+    <!-- Messages Stream -->
+    <div class="copilot-messages-stream" id="copilot-messages">
+      <div class="copilot-msg assistant">
+        <div class="copilot-msg-bubble">
+          👋 <strong>Hi! I'm your Nexus Copilot.</strong><br/><br/>
+          I'm synced with your live transactions and ledger. You can ask me to analyze spending patterns, categorize receipts, or log/modify expenses in natural language.
+        </div>
+      </div>
+    </div>
+
+    <!-- Typing Indicator -->
+    <div class="copilot-typing-indicator" id="copilot-typing" style="display: none;">
+      <div class="typing-pulser"><span></span><span></span><span></span></div>
+      <span>Nexus is reasoning...</span>
+    </div>
+
+    <!-- Composer -->
+    <form class="copilot-composer" id="copilot-form">
+      <input type="text" id="copilot-input" class="copilot-input" placeholder="Ask anything or log an expense..." autocomplete="off" />
+      <button type="submit" class="copilot-btn-send" id="btn-copilot-send" title="Send message">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="22" y1="2" x2="11" y2="13"></line>
+          <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+        </svg>
+      </button>
+    </form>
+  </aside>
+
+  <!-- Toast Notification Overlay -->
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+  <script src="manifests-data.js"></script>
+  <script src="app.js?v=6"></script>
+</body>
+</html>

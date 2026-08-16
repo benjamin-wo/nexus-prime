@@ -8,7 +8,7 @@ from apscheduler.triggers.date import DateTrigger
 from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from core.db import async_session_factory
-from core.models import ScheduledJob, UserProfile, UserCredential
+from core.models import ScheduledJob, UserProfile, UserCredential, TaskItem
 
 # 1-Hour Misfire Grace and Coalescing to survive server redeploys on Railway
 scheduler = AsyncIOScheduler(
@@ -43,9 +43,15 @@ async def _execute_scheduled_job(job_id: int, user_id: int, instruction_prompt: 
                     select(UserProfile).where(UserProfile.user_id == user_id)
                 )
             ).scalar_one_or_none()
-            chat_id = profile.telegram_chat_id if profile else None
+            chat_id = profile.telegram_chat_id if (profile and profile.telegram_chat_id != 999999) else None
+            if not chat_id and settings.admin_telegram_chat_id:
+                try:
+                    chat_id = int(settings.admin_telegram_chat_id)
+                except Exception:
+                    pass
             tz_name = profile.current_timezone if profile and profile.current_timezone else tz_name
         if not chat_id:
+            print(f"[SCHEDULER] Cannot deliver scheduled job {job_id}: no valid telegram chat_id found for user {user_id}")
             return
 
         from core.ambient import should_deliver
@@ -71,6 +77,183 @@ async def _execute_scheduled_job(job_id: int, user_id: int, instruction_prompt: 
         )
     except Exception as exc:  # noqa: BLE001
         print(f"[SCHEDULER] failed to deliver job {job_id}: {exc}")
+
+
+async def _execute_task_reminder(task_id: int, user_id: int, is_test: bool = False):
+    """Callback executed when a task reminder fires: send rich Telegram alert with 1-tap buttons."""
+    print(f"[SCHEDULER] Triggered task reminder for task {task_id} (user {user_id}, is_test={is_test})")
+    try:
+        chat_id = None
+        task = None
+        async with async_session_factory() as session:
+            task = (
+                await session.execute(
+                    select(TaskItem).where(TaskItem.id == task_id)
+                )
+            ).scalar_one_or_none()
+            if not task or (not is_test and (task.status == "done" or not task.is_reminder_active)):
+                return
+
+            profile = (
+                await session.execute(
+                    select(UserProfile).where(UserProfile.user_id == task.user_id)
+                )
+            ).scalar_one_or_none()
+            chat_id = profile.telegram_chat_id if (profile and profile.telegram_chat_id != 999999) else None
+            if not chat_id and settings.admin_telegram_chat_id:
+                try:
+                    chat_id = int(settings.admin_telegram_chat_id)
+                except Exception:
+                    pass
+
+            # For normal one-time reminder, mark reminder as triggered / inactive
+            if not is_test and task.reminder_type == "once":
+                task.is_reminder_active = False
+                session.add(task)
+                await session.commit()
+
+        if not chat_id or not task:
+            print(f"[SCHEDULER] Cannot deliver task reminder {task_id}: no valid telegram chat_id found")
+            return
+
+        priority_icons = {
+            "high": "🔴 High",
+            "medium": "🟡 Medium",
+            "low": "🟢 Low",
+        }
+        p_badge = priority_icons.get(task.priority, "🟡 Medium")
+
+        tz_name = (profile.current_timezone if profile and profile.current_timezone else None) or task.timezone or "Asia/Singapore"
+        due_str = ""
+        if task.due_at:
+            try:
+                import zoneinfo
+                from datetime import timezone
+                dt_utc = task.due_at if task.due_at.tzinfo else task.due_at.replace(tzinfo=timezone.utc)
+                local_dt = dt_utc.astimezone(zoneinfo.ZoneInfo(tz_name))
+                due_str = f"\n📅 Due: {local_dt.strftime('%a, %b %d, %I:%M %p')}"
+            except Exception:
+                due_str = f"\n📅 Due: {task.due_at.strftime('%Y-%m-%d %H:%M')}"
+
+        desc_str = f"\n*{task.description}*" if task.description else ""
+
+        message_text = (
+            f"⏰ **Task Reminder** (#{task.id})\n"
+            f"**{task.title}**"
+            f"{desc_str}\n"
+            f"Priority: {p_badge}{due_str}"
+        )
+
+        reply_markup = {
+            "inline_keyboard": [
+                [
+                    {"text": "✅ Mark Done", "callback_data": f"td:{task.id}"},
+                    {"text": "⏰ Snooze 1h", "callback_data": f"ts:{task.id}"},
+                ]
+            ]
+        }
+
+        from app.ingress import send_telegram_message
+        await send_telegram_message(
+            chat_id,
+            message_text,
+            reply_markup=reply_markup,
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f"[SCHEDULER] failed to deliver task reminder {task_id}: {exc}")
+
+
+def _add_task_to_scheduler(task: TaskItem):
+    """Compile trigger for TaskItem and add to APScheduler."""
+    if not task.is_reminder_active or task.status == "done" or task.reminder_type == "none":
+        return
+
+    job_id = f"task_{task.id}"
+    try:
+        tz = ZoneInfo(task.timezone)
+    except Exception:
+        tz = ZoneInfo("UTC")
+
+    now = datetime.now(dt_timezone.utc)
+
+    if task.reminder_type == "once" and task.reminder_time:
+        rem_time = task.reminder_time
+        if rem_time.tzinfo is None:
+            rem_time = rem_time.replace(tzinfo=tz)
+        if rem_time > now:
+            trigger = DateTrigger(run_date=rem_time)
+            scheduler.add_job(
+                _execute_task_reminder,
+                trigger=trigger,
+                args=[task.id, task.user_id],
+                id=job_id,
+                replace_existing=True,
+            )
+    elif task.reminder_type == "recurring" and task.cron_expression:
+        try:
+            trigger = CronTrigger.from_crontab(task.cron_expression, timezone=tz)
+            scheduler.add_job(
+                _execute_task_reminder,
+                trigger=trigger,
+                args=[task.id, task.user_id],
+                id=job_id,
+                replace_existing=True,
+            )
+        except Exception as exc:
+            print(f"[SCHEDULER] Invalid cron expression for task {task.id}: {exc}")
+
+
+def remove_task_reminder(task_id: int):
+    """Remove a task's reminder from APScheduler."""
+    job_id = f"task_{task_id}"
+    if scheduler.get_job(job_id):
+        scheduler.remove_job(job_id)
+
+
+async def snooze_task_reminder(task_id: int, user_id: int, minutes: int = 60) -> bool:
+    """Snooze a task reminder by N minutes."""
+    async with async_session_factory() as session:
+        task = (
+            await session.execute(
+                select(TaskItem).where(TaskItem.id == task_id, TaskItem.user_id == user_id)
+            )
+        ).scalar_one_or_none()
+        if not task:
+            return False
+
+        now = datetime.now(dt_timezone.utc)
+        snoozed_time = now + timedelta(minutes=minutes)
+        task.reminder_type = "once"
+        task.reminder_time = snoozed_time
+        task.is_reminder_active = True
+        session.add(task)
+        await session.commit()
+
+        # Schedule immediate DateTrigger
+        job_id = f"task_{task.id}"
+        scheduler.add_job(
+            _execute_task_reminder,
+            trigger=DateTrigger(run_date=snoozed_time),
+            args=[task.id, task.user_id],
+            id=job_id,
+            replace_existing=True,
+        )
+        return True
+
+
+async def trigger_task_alert_now(task_id: int, user_id: int) -> bool:
+    """Trigger a task reminder immediately (e.g. for testing)."""
+    async with async_session_factory() as session:
+        task = (
+            await session.execute(
+                select(TaskItem).where(TaskItem.id == task_id)
+            )
+        ).scalar_one_or_none()
+        if not task:
+            return False
+
+    asyncio.create_task(_execute_task_reminder(task_id, task.user_id, is_test=True))
+    return True
 
 
 async def delete_scheduled_job(job_id: int, user_id: int) -> bool:
@@ -226,12 +409,22 @@ def _add_job_to_scheduler(job: ScheduledJob):
     )
 
 async def reconcile_jobs():
-    """Watchdog task: reconcile PostgreSQL ScheduledJob rows with Uvicorn memory."""
+    """Watchdog task: reconcile PostgreSQL ScheduledJob and TaskItem rows with Uvicorn memory."""
     async with async_session_factory() as session:
         result = await session.execute(select(ScheduledJob).where(ScheduledJob.is_active == True))
         active_jobs = result.scalars().all()
         for job in active_jobs:
             _add_job_to_scheduler(job)
+
+        task_result = await session.execute(
+            select(TaskItem).where(
+                TaskItem.is_reminder_active == True,
+                TaskItem.status == "todo",
+            )
+        )
+        active_tasks = task_result.scalars().all()
+        for task in active_tasks:
+            _add_task_to_scheduler(task)
 
 async def update_user_timezone(user_id: int, new_timezone: str) -> bool:
     """Update user timezone and recalculate next_run_time for all active jobs."""

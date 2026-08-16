@@ -1,10 +1,11 @@
+import core.models  # noqa: F401 - ensure all SQLModel tables are registered with metadata
 from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlmodel import SQLModel
 from core.config import settings
 
 def get_engine():
-    db_url = settings.database_url
+    db_url = settings.resolved_database_url
     if db_url.startswith("sqlite"):
         return create_async_engine(
             db_url,

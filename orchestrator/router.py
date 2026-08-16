@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 import asyncio
 import json
 import os
+import re
 from typing import Protocol, List, Dict, Any, Optional
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -247,7 +248,7 @@ class ExpensePlugin:
             str(last_content) if not isinstance(last_content, list) else ""
         )
 
-        # Listing intent: "list/show/summary my expenses" should query, not extract.
+        # Listing intent: "list/show/how much/spending/summary" queries → query DB, not extract.
         lowered = last_text.lower()
         list_intent = any(
             phrase in lowered
@@ -261,32 +262,115 @@ class ExpensePlugin:
                 "what have i spent",
                 "how much have i spent",
                 "how much did i spend",
-                "spent on food",
+                "how much on",
+                "how much did i spend on",
+                "spent on",
+                "spending on",
                 "expenses so far",
                 "expense total",
                 "total expenses",
+                "food expenses",
+                "food spending",
+                "/expenses",
             )
         )
         if list_intent:
             from capabilities.expenses.tools import get_user_expenses
+            from datetime import timezone as _tz, timedelta
 
-            rows = await get_user_expenses.ainvoke({"user_id": user_id, "limit": 10})
+            now_sg = datetime.now(_tz.utc).astimezone(ZoneInfo("Asia/Singapore"))
+            now_iso = now_sg.isoformat()
+
+            # ── LLM-powered structured intent extraction ─────────────────────────
+            # Ask the LLM to parse the user's natural-language query into structured
+            # filters instead of relying on a brittle hardcoded keyword list.
+            VALID_CATEGORIES = ["Dining", "Groceries", "Transport", "Shopping", "Bills", "General", "Leisure"]
+            intent_filters: Dict[str, Any] = {
+                "categories": None,
+                "since_date": None,
+                "until_date": None,
+                "summary_only": False,
+                "label": "recent expenses",
+            }
+
+            if settings.deepseek_api_key and settings.deepseek_api_key != "test_deepseek_key":
+                try:
+                    llm = get_agent_llm(complexity=ThinkingLevel.LOW, temperature=0.0)
+                    extraction_prompt = (
+                        f"Today is {now_iso} (Asia/Singapore). "
+                        "The user is asking about their expense history. "
+                        "Extract structured query filters from their message. "
+                        "Reply ONLY with a JSON object (no markdown fences):\n"
+                        "{\n"
+                        f'  "categories": null | array of strings from {VALID_CATEGORIES},\n'
+                        '  "since_date": null | ISO 8601 datetime string (inclusive start),\n'
+                        '  "until_date": null | ISO 8601 datetime string (exclusive end),\n'
+                        '  "summary_only": boolean (true if user wants total/sum, not itemised list),\n'
+                        '  "label": short human-readable description of what was queried (e.g. "food this week")\n'
+                        "}\n\n"
+                        "Rules:\n"
+                        "- 'food', 'eating', 'hawker', 'restaurant', 'meals', 'takeout' → Dining and/or Groceries\n"
+                        "- 'this week' = Monday 00:00 SGT to now\n"
+                        "- 'this month' = 1st of current month 00:00 SGT to now\n"
+                        "- 'today' = today 00:00 SGT to now\n"
+                        "- 'yesterday' = yesterday 00:00 to 23:59 SGT\n"
+                        "- 'last fortnight' = 14 days ago to now\n"
+                        "- 'last N days' = N days ago 00:00 to now\n"
+                        "- If no category filter mentioned, set categories to null\n"
+                        "- If no time filter mentioned, set both date fields to null"
+                    )
+                    ai_msg = await llm.ainvoke([
+                        SystemMessage(content=extraction_prompt),
+                        HumanMessage(content=last_text),
+                    ])
+                    raw = str(getattr(ai_msg, "content", "") or "").strip()
+                    raw = re.sub(r"^```(?:json)?|```$", "", raw, flags=re.MULTILINE).strip()
+                    parsed = json.loads(raw)
+                    intent_filters["categories"] = parsed.get("categories") or None
+                    intent_filters["since_date"] = parsed.get("since_date") or None
+                    intent_filters["until_date"] = parsed.get("until_date") or None
+                    intent_filters["summary_only"] = bool(parsed.get("summary_only", False))
+                    intent_filters["label"] = str(parsed.get("label", "recent expenses"))
+                except Exception as parse_err:
+                    print(f"[EXPENSES] LLM intent parse failed, querying unfiltered: {parse_err}")
+
+            rows = await get_user_expenses.ainvoke({
+                "user_id": user_id,
+                "limit": 50,
+                "categories": intent_filters["categories"],
+                "since_date": intent_filters["since_date"],
+                "until_date": intent_filters["until_date"],
+            })
+
+            label = intent_filters["label"]
             if not rows:
                 reply = (
-                    "💰 No expenses logged yet. Say something like "
-                    "*\"spent $12.50 at Starbucks\"*, or ask me to check your email "
-                    "and I'll log receipts automatically."
+                    f"💰 No expenses found for *{label}*. "
+                    "Try *\"spent $12.50 at Starbucks\"* or ask me to scan your email for receipts."
                 )
             else:
-                lines = ["💰 Your recent expenses:"]
-                for row in rows:
-                    lines.append(
-                        f"• {row['date'][:10]} {row['currency']} {row['amount']:.2f} — "
-                        f"{row['merchant']} ({row['category']})"
-                    )
                 total = sum(row["amount"] for row in rows)
-                lines.append(f"\nTotal (last {len(rows)}): {rows[0]['currency']} {total:.2f}")
-                reply = "\n".join(lines)
+                currency = rows[0]["currency"]
+                count = len(rows)
+                if intent_filters["summary_only"]:
+                    reply = (
+                        f"💰 *{label.title()}* — you spent **{currency} {total:.2f}** "
+                        f"across {count} transaction{'s' if count != 1 else ''}."
+                    )
+                else:
+                    lines = [
+                        f"💰 *{label.title()}* — **{currency} {total:.2f}** "
+                        f"across {count} transaction{'s' if count != 1 else ''}:"
+                    ]
+                    for row in rows[:15]:
+                        lines.append(
+                            f"• {row['date'][:10]} {row['currency']} {row['amount']:.2f} — "
+                            f"{row['merchant']} ({row['category']})"
+                        )
+                    if count > 15:
+                        lines.append(f"…and {count - 15} more.")
+                    reply = "\n".join(lines)
+
             return PluginOutput(
                 message=AIMessage(content=reply),
                 state_update={"active_domain": self.name},

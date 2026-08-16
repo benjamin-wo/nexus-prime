@@ -78,3 +78,21 @@ async def test_apply_email_processed_tag():
     assert await apply_email_processed_tag.ainvoke({"user_id": 3002, "message_id": "msg_outlook_1", "provider": "outlook"}) is True
     assert await apply_outlook_processed_category.ainvoke({"user_id": 3002, "message_id": "msg_outlook_1"}) is True
 
+@pytest.mark.asyncio
+async def test_deleted_expense_tombstone_deduplication():
+    from core.models import DeletedExpenseMessage
+    from core.db import async_session_factory
+    from capabilities.expenses.tools import is_duplicate_expense
+
+    msg_id = "test_tombstone_msg_123"
+    # Initially not duplicate
+    assert await is_duplicate_expense(msg_id) is False
+
+    # Insert tombstone
+    async with async_session_factory() as session:
+        session.add(DeletedExpenseMessage(user_id=9999, source_message_id=msg_id))
+        await session.commit()
+
+    # Now is_duplicate_expense should return True
+    assert await is_duplicate_expense(msg_id) is True
+

@@ -286,6 +286,80 @@ class TelegramIngress:
                 "reply": reply_text,
             }
 
+        if callback_data.startswith("td:"):
+            task_id_str = callback_data.split(":", 1)[1]
+            try:
+                task_id = int(task_id_str)
+                from core.models import TaskItem
+                from core.db import async_session_factory
+                from core.scheduler import remove_task_reminder
+                from sqlmodel import select
+                from datetime import datetime
+
+                title = f"Task #{task_id}"
+                async with async_session_factory() as session:
+                    task = (await session.execute(
+                        select(TaskItem).where(TaskItem.id == task_id)
+                    )).scalar_one_or_none()
+                    if task:
+                        task.status = "done"
+                        task.completed_at = datetime.utcnow()
+                        task.is_reminder_active = False
+                        session.add(task)
+                        await session.commit()
+                        remove_task_reminder(task.id)
+                        title = task.title
+
+                reply_text = f"✅ Marked <b>{title}</b> as done! Great job."
+                self._log_conversation("CALLBACK", chat_id, f"td:{task_id}")
+                if callback_query_id:
+                    await answer_telegram_callback(callback_query_id, text="Marked as done! 🎉")
+                if chat_id:
+                    await send_telegram_message(chat_id, reply_text)
+                    self._log_conversation("OUT", chat_id, reply_text)
+                return {
+                    "status": "ok",
+                    "action": "task_completed",
+                    "task_id": task_id,
+                    "reply": reply_text,
+                }
+            except Exception as exc:
+                print(f"[CALLBACK] error completing task {callback_data}: {exc}")
+
+        if callback_data.startswith("ts:"):
+            task_id_str = callback_data.split(":", 1)[1]
+            try:
+                task_id = int(task_id_str)
+                from core.models import TaskItem
+                from core.db import async_session_factory
+                from core.scheduler import snooze_task_reminder
+                from sqlmodel import select
+
+                title = f"Task #{task_id}"
+                async with async_session_factory() as session:
+                    task = (await session.execute(
+                        select(TaskItem).where(TaskItem.id == task_id)
+                    )).scalar_one_or_none()
+                    if task:
+                        title = task.title
+
+                await snooze_task_reminder(task_id, user_id=user_id or 0, minutes=60)
+                reply_text = f"⏰ Snoozed <b>{title}</b> for 1 hour."
+                self._log_conversation("CALLBACK", chat_id, f"ts:{task_id}")
+                if callback_query_id:
+                    await answer_telegram_callback(callback_query_id, text="Snoozed 1h ⏰")
+                if chat_id:
+                    await send_telegram_message(chat_id, reply_text)
+                    self._log_conversation("OUT", chat_id, reply_text)
+                return {
+                    "status": "ok",
+                    "action": "task_snoozed",
+                    "task_id": task_id,
+                    "reply": reply_text,
+                }
+            except Exception as exc:
+                print(f"[CALLBACK] error snoozing task {callback_data}: {exc}")
+
         action = "confirm"
         try:
             parsed = json.loads(callback_data)
@@ -440,6 +514,29 @@ class TelegramIngress:
                 "status": "ok",
                 "expenses": rows,
                 "text": "💰 Recent expenses:\n" + "\n".join(lines),
+            }
+
+        if text.startswith(("/tasks", "/todo")):
+            from core.models import TaskItem
+            from core.db import async_session_factory
+            from sqlmodel import select
+
+            async with async_session_factory() as session:
+                tasks = (await session.execute(
+                    select(TaskItem).where(TaskItem.user_id == user_id, TaskItem.status == "todo").order_by(TaskItem.created_at.desc())
+                )).scalars().all()
+
+            if not tasks:
+                return {"status": "ok", "tasks": [], "text": "📋 You have no pending tasks! Great job."}
+            lines = []
+            for t in tasks[:15]:
+                rem_info = f" (⏰ {t.reminder_type})" if t.reminder_type != "none" else ""
+                due_info = f" — due {t.due_at.strftime('%m/%d %H:%M')}" if t.due_at else ""
+                lines.append(f"• #{t.id} <b>{t.title}</b> [{t.priority.upper()}]{due_info}{rem_info}")
+            return {
+                "status": "ok",
+                "tasks": [t.model_dump() for t in tasks],
+                "text": "📋 <b>Pending Tasks:</b>\n" + "\n".join(lines),
             }
 
         if text.startswith("/del_job"):

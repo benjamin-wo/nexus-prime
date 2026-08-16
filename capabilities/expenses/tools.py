@@ -16,19 +16,43 @@ from core.llm import (
     get_agent_llm,
     get_multimodal_llm,
 )
-from core.models import ExpenseTransaction
+from core.models import ExpenseTransaction, DeletedExpenseMessage
 from capabilities.expenses.schemas import ExtractedExpense
-from capabilities.email.tools import apply_gmail_processed_label
+from capabilities.email.tools import apply_gmail_processed_label, apply_email_processed_tag
 
 async def is_duplicate_expense(source_message_id: Optional[str]) -> bool:
-    """Layer 2 Deduplication: check if source_message_id is already in PostgreSQL."""
+    """Layer 2 Deduplication: check if source_message_id is in PostgreSQL or was previously deleted."""
     if not source_message_id:
         return False
     async with async_session_factory() as session:
         result = await session.execute(
             select(ExpenseTransaction).where(ExpenseTransaction.source_message_id == source_message_id)
         )
-        return result.scalar_one_or_none() is not None
+        if result.scalar_one_or_none() is not None:
+            return True
+        del_result = await session.execute(
+            select(DeletedExpenseMessage).where(DeletedExpenseMessage.source_message_id == source_message_id)
+        )
+        return del_result.scalar_one_or_none() is not None
+def normalize_category_name(raw: Optional[str]) -> str:
+    """Canonical category mapping for incoming receipts and messages."""
+    if not raw:
+        return "General"
+    c = raw.strip().lower()
+    if any(k in c for k in ["dining", "food", "restaurant", "cafe", "hawker", "beverage", "drink", "coffee", "meal", "bar", "cider", "bakery"]):
+        return "Dining"
+    if any(k in c for k in ["grocer", "supermarket", "mart", "fairprice", "cold storage", "shengsiong", "convenience", "7-eleven", "cheers"]):
+        return "Groceries"
+    if any(k in c for k in ["transport", "transit", "bus", "mrt", "grab", "taxi", "gojek", "comfort", "ride"]):
+        return "Transport"
+    if any(k in c for k in ["shop", "retail", "uniqlo", "clothes", "apparel", "electronics", "amazon", "lazada", "shopee", "department"]):
+        return "Shopping"
+    if any(k in c for k in ["bill", "utilit", "telco", "singtel", "starhub", "subscri", "netflix", "spotify", "rent", "insurance", "telecom"]):
+        return "Bills"
+    if c in ["other", "unknown", "misc", "miscellaneous"]:
+        return "General"
+    return raw.strip().title()
+
 
 async def save_expense_transaction(
     user_id: int,
@@ -36,14 +60,15 @@ async def save_expense_transaction(
     source_message_id: Optional[str] = None,
     is_verified: bool = True,
 ) -> ExpenseTransaction:
-    """Persist ExtractedExpense to PostgreSQL ExpenseTransaction table."""
+    """Persist ExtractedExpense to PostgreSQL ExpenseTransaction table with normalized category."""
     async with async_session_factory() as session:
+        norm_cat = normalize_category_name(expense.category)
         tx = ExpenseTransaction(
             user_id=user_id,
             amount=expense.amount,
             currency=expense.currency,
             merchant=expense.merchant,
-            category=expense.category,
+            category=norm_cat,
             date=expense.date,
             source_message_id=source_message_id,
             is_verified=is_verified,
@@ -167,15 +192,49 @@ def expense_source_id(user_id: int, text: str) -> str:
 
 
 @tool
-async def get_user_expenses(user_id: int, limit: int = 10) -> List[Dict[str, Any]]:
-    """Retrieve the user's most recent expense transactions."""
+async def get_user_expenses(
+    user_id: int,
+    limit: int = 10,
+    categories: Optional[List[str]] = None,
+    since_date: Optional[str] = None,
+    until_date: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Retrieve the user's expense transactions, optionally filtered by category list
+    and/or a date range (ISO 8601 strings). Returns up to `limit` rows ordered newest-first.
+    """
+    from sqlmodel import or_
     async with async_session_factory() as session:
-        result = await session.execute(
-            select(ExpenseTransaction)
-            .where(ExpenseTransaction.user_id == user_id)
-            .order_by(ExpenseTransaction.date.desc())
-            .limit(limit)
-        )
+        query = select(ExpenseTransaction).where(ExpenseTransaction.user_id == user_id)
+
+        if categories:
+            query = query.where(
+                or_(*[ExpenseTransaction.category == cat for cat in categories])
+            )
+        if since_date:
+            try:
+                cutoff = datetime.fromisoformat(since_date)
+                # DB column is TIMESTAMP WITHOUT TIME ZONE — strip tz to avoid asyncpg mismatch
+                if cutoff.tzinfo is not None:
+                    from datetime import timezone as _dt_tz
+                    cutoff = cutoff.astimezone(_dt_tz.utc).replace(tzinfo=None)
+            except ValueError:
+                cutoff = None
+            if cutoff:
+                query = query.where(ExpenseTransaction.date >= cutoff)
+        if until_date:
+            try:
+                cutoff_end = datetime.fromisoformat(until_date)
+                if cutoff_end.tzinfo is not None:
+                    from datetime import timezone as _dt_tz
+                    cutoff_end = cutoff_end.astimezone(_dt_tz.utc).replace(tzinfo=None)
+            except ValueError:
+                cutoff_end = None
+            if cutoff_end:
+                query = query.where(ExpenseTransaction.date < cutoff_end)
+
+        query = query.order_by(ExpenseTransaction.date.desc()).limit(limit)
+        result = await session.execute(query)
         rows = result.scalars().all()
         return [
             {
@@ -189,6 +248,8 @@ async def get_user_expenses(user_id: int, limit: int = 10) -> List[Dict[str, Any
             }
             for row in rows
         ]
+
+
 
 
 @tool
@@ -248,6 +309,15 @@ async def log_expenses_from_emails(
             source_message_id=email_id or None,
             is_verified=True,
         )
+        if email_id:
+            try:
+                provider = email_msg.get("provider", "gmail")
+                await apply_email_processed_tag.ainvoke(
+                    {"user_id": user_id, "message_id": email_id, "provider": provider}
+                )
+            except Exception as tag_err:
+                print(f"[EXPENSES] Failed to apply processed tag to {email_id}: {tag_err}")
+
         logged.append(
             {
                 "amount": expense.amount,

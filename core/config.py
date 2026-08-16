@@ -46,6 +46,17 @@ class Settings(BaseSettings):
         """Returns either GEMINI_API_KEY or GOOGLE_API_KEY if set."""
         return self.gemini_api_key or self.google_api_key
 
+    @property
+    def resolved_database_url(self) -> str:
+        """Returns an absolute SQLite file URI when a relative path is configured."""
+        url = self.database_url
+        if url.startswith("sqlite+aiosqlite:///./"):
+            rel_path = url.replace("sqlite+aiosqlite:///./", "")
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            abs_db_path = os.path.join(base_dir, rel_path)
+            return f"sqlite+aiosqlite:///{abs_db_path}"
+        return url
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 settings = Settings()
