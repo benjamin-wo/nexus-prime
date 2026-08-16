@@ -2304,20 +2304,25 @@ function renderSmartCardHtml(block) {
   `;
 }
 
-// Window interactive helper functions for smart cards
+// Window interactive helper functions for smart cards (Instant Optimistic UI)
 window.selectComparisonWinner = async function(blockId, optionId) {
   const block = cachedWhiteboardBlocks.find(b => b.id === blockId);
   if (!block || !block.content_payload || !block.content_payload.options) return;
 
+  const selectedOpt = block.content_payload.options.find(o => o.id === optionId);
   const updatedOptions = block.content_payload.options.map(opt => ({
     ...opt,
     is_winner: opt.id === optionId,
   }));
 
-  // Optimistic UI update
+  // Instant 0ms In-Memory DOM update
   block.content_payload.options = updatedOptions;
-  loadWhiteboardDetails(currentWhiteboardId);
+  renderWhiteboardCanvas(cachedWhiteboardBlocks);
+  if (selectedOpt) {
+    showToast(`⭐ Selected "${selectedOpt.name}" as top choice`, "info");
+  }
 
+  // Background Sync
   try {
     await fetch(`/api/dashboard/whiteboards/blocks/${blockId}`, {
       method: "PATCH",
@@ -2325,7 +2330,8 @@ window.selectComparisonWinner = async function(blockId, optionId) {
       body: JSON.stringify({ content_payload: { ...block.content_payload, options: updatedOptions } }),
     });
   } catch (err) {
-    console.error("Error updating winner:", err);
+    console.error("Error saving winner:", err);
+    showToast(`Failed to sync choice to server: ${err.message}`, "danger");
   }
 };
 
@@ -2338,10 +2344,11 @@ window.toggleChecklistItem = async function(blockId, itemId) {
     return item;
   });
 
-  // Optimistic UI update
+  // Instant 0ms In-Memory DOM update
   block.content_payload.items = updatedItems;
-  loadWhiteboardDetails(currentWhiteboardId);
+  renderWhiteboardCanvas(cachedWhiteboardBlocks);
 
+  // Background Sync
   try {
     await fetch(`/api/dashboard/whiteboards/blocks/${blockId}`, {
       method: "PATCH",
@@ -2350,6 +2357,7 @@ window.toggleChecklistItem = async function(blockId, itemId) {
     });
   } catch (err) {
     console.error("Error toggling checklist item:", err);
+    showToast(`Failed to sync checklist: ${err.message}`, "danger");
   }
 };
 
@@ -2364,9 +2372,9 @@ window.addChecklistItem = async function(blockId, inputElem) {
   const newItem = { id: `c-${Date.now()}`, text, checked: false };
   const updatedItems = [...currentItems, newItem];
 
-  // Optimistic UI
+  // Instant 0ms UI update
   block.content_payload = { ...block.content_payload, items: updatedItems };
-  loadWhiteboardDetails(currentWhiteboardId);
+  renderWhiteboardCanvas(cachedWhiteboardBlocks);
 
   try {
     await fetch(`/api/dashboard/whiteboards/blocks/${blockId}`, {
@@ -2376,26 +2384,35 @@ window.addChecklistItem = async function(blockId, inputElem) {
     });
   } catch (err) {
     console.error("Error adding checklist item:", err);
+    showToast(`Failed to save checklist item: ${err.message}`, "danger");
   }
 };
 
 window.deleteBlockCard = async function(blockId) {
-  if (!confirm("Are you sure you want to delete this card?")) return;
+  const idx = cachedWhiteboardBlocks.findIndex(b => b.id === blockId);
+  if (idx === -1) return;
+
+  // Instant optimistic removal
+  cachedWhiteboardBlocks.splice(idx, 1);
+  renderWhiteboardCanvas(cachedWhiteboardBlocks);
+  showToast("🗑️ Card deleted from canvas", "info");
+
   try {
     await fetch(`/api/dashboard/whiteboards/blocks/${blockId}`, { method: "DELETE" });
-    await loadWhiteboardDetails(currentWhiteboardId);
   } catch (err) {
-    alert("Error deleting card: " + err.message);
+    console.error("Error deleting card:", err);
+    showToast(`Error deleting card: ${err.message}`, "danger");
+    loadWhiteboardDetails(currentWhiteboardId);
   }
 };
 
 window.escalateBlockToTask = async function(blockId) {
   const block = cachedWhiteboardBlocks.find(b => b.id === blockId);
   if (!block) return;
-  const taskTitle = prompt("Enter task title to schedule in Tasks & Reminders:", block.title);
-  if (!taskTitle) return;
-
+  const taskTitle = block.title;
   const dueStr = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+
+  showToast(`⏳ Scheduling task "${taskTitle}"...`, "info");
 
   try {
     const res = await fetch(`/api/dashboard/whiteboards/blocks/${blockId}/escalate_task`, {
@@ -2411,10 +2428,15 @@ window.escalateBlockToTask = async function(blockId) {
     });
     if (!res.ok) throw new Error("Failed to escalate task");
     const data = await res.json();
-    alert(`✅ Task scheduled: "${data.title}"!\nTelegram push reminder active.`);
-    loadWhiteboardDetails(currentWhiteboardId);
+    
+    // Update local card state
+    block.linked_task_id = data.task_id;
+    renderWhiteboardCanvas(cachedWhiteboardBlocks);
+
+    showToast(`✅ Task scheduled: "${data.title}"!\nTelegram push reminder active ⏰`, "success");
+    if (typeof loadTasksList === "function") loadTasksList();
   } catch (err) {
-    alert("Error creating task: " + err.message);
+    showToast(`Error creating task: ${err.message}`, "danger");
   }
 };
 
@@ -2422,11 +2444,11 @@ window.escalateOptionToTask = async function(blockId, optionId) {
   const block = cachedWhiteboardBlocks.find(b => b.id === blockId);
   if (!block) return;
   const opt = (block.content_payload?.options || []).find(o => o.id === optionId);
-  const optName = opt ? opt.name : block.title;
-  const taskTitle = prompt("Enter task title for this choice:", `Book ${optName} for ${block.title}`);
-  if (!taskTitle) return;
-
+  const optName = opt ? opt.name : "Choice";
+  const taskTitle = `Book ${optName} (${block.title})`;
   const dueStr = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+
+  showToast(`⏳ Scheduling task for "${optName}"...`, "info");
 
   try {
     const res = await fetch(`/api/dashboard/whiteboards/blocks/${blockId}/escalate_task`, {
@@ -2442,10 +2464,15 @@ window.escalateOptionToTask = async function(blockId, optionId) {
     });
     if (!res.ok) throw new Error("Failed to escalate task");
     const data = await res.json();
-    alert(`✅ Task created: "${data.title}"!\nScheduled in your Tasks Cockpit.`);
-    loadWhiteboardDetails(currentWhiteboardId);
+
+    // Update local card state
+    block.linked_task_id = data.task_id;
+    renderWhiteboardCanvas(cachedWhiteboardBlocks);
+
+    showToast(`✅ Task scheduled: "${data.title}"!\nTelegram push reminder active ⏰`, "success");
+    if (typeof loadTasksList === "function") loadTasksList();
   } catch (err) {
-    alert("Error creating task: " + err.message);
+    showToast(`Error creating task: ${err.message}`, "danger");
   }
 };
 
@@ -2453,11 +2480,10 @@ window.escalateBlockToExpense = async function(blockId) {
   const block = cachedWhiteboardBlocks.find(b => b.id === blockId);
   const items = block?.content_payload?.items || [];
   const total = items.reduce((acc, i) => acc + (parseFloat(i.cost) || 0), 0);
+  const merchant = block ? block.title : "Whiteboard Budget";
+  const amount = total || 100.0;
 
-  const merchant = prompt("Enter merchant / description for expense:", block ? block.title : "Whiteboard Budget");
-  if (!merchant) return;
-  const amountStr = prompt("Enter expense amount ($):", total ? total.toFixed(2) : "100.00");
-  if (!amountStr) return;
+  showToast(`⏳ Logging $${amount.toFixed(2)} to Financial Cockpit...`, "info");
 
   try {
     const res = await fetch(`/api/dashboard/whiteboards/blocks/${blockId}/escalate_expense`, {
@@ -2465,17 +2491,17 @@ window.escalateBlockToExpense = async function(blockId) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         merchant,
-        amount: parseFloat(amountStr),
+        amount,
         category: "Travel",
         currency: "SGD",
       }),
     });
     if (!res.ok) throw new Error("Failed to log expense");
     const data = await res.json();
-    alert(`💰 Logged $${data.amount.toFixed(2)} to ${data.merchant} in Financial Cockpit!`);
-    loadDashboardSummary();
+    showToast(`💰 Logged $${data.amount.toFixed(2)} to ${data.merchant} in Financial Cockpit!`, "success");
+    if (typeof loadDashboardSummary === "function") loadDashboardSummary();
   } catch (err) {
-    alert("Error logging expense: " + err.message);
+    showToast(`Error logging expense: ${err.message}`, "danger");
   }
 };
 
