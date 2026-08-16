@@ -2547,6 +2547,27 @@ table.financial-data-table tr:hover td {
   font-weight: 600;
 }
 
+.btn-ghost-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  width: 32px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid #282834;
+  border-radius: var(--radius-sm);
+  color: #71717a;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-ghost-danger:hover {
+  background: rgba(244, 63, 94, 0.15);
+  border-color: rgba(244, 63, 94, 0.4);
+  color: #fb7185;
+  box-shadow: 0 0 12px rgba(244, 63, 94, 0.25);
+}
+
 /* In-Canvas AI Copilot Bar */
 .wb-copilot-container {
   margin-bottom: 1.5rem;
