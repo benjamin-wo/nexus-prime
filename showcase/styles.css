@@ -2615,26 +2615,46 @@ table.financial-data-table tr:hover td {
   overflow: hidden;
 }
 
+/* Category-specific abstract artistic landscape fallback gradients */
+.wb-carousel-card[data-category="trip"] {
+  background-image: linear-gradient(145deg, #071326 0%, #172554 40%, #1d4ed8 75%, #38bdf8 100%);
+}
+.wb-carousel-card[data-category="meal"] {
+  background-image: linear-gradient(145deg, #022c22 0%, #065f46 40%, #059669 75%, #f59e0b 100%);
+}
+.wb-carousel-card[data-category="project"] {
+  background-image: linear-gradient(145deg, #0f0a2a 0%, #312e81 40%, #4f46e5 75%, #ec4899 100%);
+}
+.wb-carousel-card[data-category="event"] {
+  background-image: linear-gradient(145deg, #240046 0%, #581c87 40%, #7e22ce 75%, #f43f5e 100%);
+}
+.wb-carousel-card[data-category="general"] {
+  background-image: linear-gradient(145deg, #111116 0%, #242430 40%, #383848 75%, #ea580c 100%);
+}
+
 /* Gradient scrim over the cover image for text legibility */
 .wb-carousel-card::after {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.25) 40%, transparent 55%);
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.88) 0%, rgba(0, 0, 0, 0.35) 45%, transparent 65%);
   pointer-events: none;
 }
 
 /* Shimmer skeleton while the cover art is being generated */
-.wb-carousel-card.shimmer {
-  background: linear-gradient(90deg, #1c1c24 25%, #2a2a36 50%, #1c1c24 75%);
+.wb-carousel-card.shimmer::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.12) 50%, transparent 100%);
   background-size: 200% 100%;
-  background-position: 0 0;
-  animation: wb-shimmer 1.4s infinite;
+  animation: wb-shimmer 1.8s infinite;
+  pointer-events: none;
 }
 
 @keyframes wb-shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
 }
 
 .wb-carousel-card.ghost {

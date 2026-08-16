@@ -1873,12 +1873,13 @@ function renderBoardCarousel(boards, activeId) {
   const nextIdx = (cur + 1) % total;
 
   function cardHtml(board, cls) {
-    const cat = (board.category || "general").charAt(0).toUpperCase() + (board.category || "general").slice(1);
+    const rawCat = (board.category || "general").toLowerCase();
+    const cat = rawCat.charAt(0).toUpperCase() + rawCat.slice(1);
     const ready = !!board.cover_ready;
     const bgStyle = ready ? `style="background-image:url('/api/dashboard/whiteboards/${board.id}/cover')"` : "";
     const shimmerCls = ready ? "" : " shimmer";
     return `
-      <div class="wb-carousel-card ${cls}${shimmerCls}" data-board-id="${board.id}" ${bgStyle}>
+      <div class="wb-carousel-card ${cls}${shimmerCls}" data-board-id="${board.id}" data-category="${rawCat}" ${bgStyle}>
         <div class="wb-carousel-card-info">
           <div class="wb-carousel-card-emoji">${board.emoji_icon || "📋"}</div>
           <div class="wb-carousel-card-title">${escapeHtml(board.title)}</div>
@@ -2094,16 +2095,17 @@ function initWhiteboard() {
     deleteBoardBtn.addEventListener("click", async () => {
       if (!currentWhiteboardId) return;
       const currentProj = cachedWhiteboards.find(p => p.id === currentWhiteboardId);
-      const title = currentProj ? currentProj.title : "this board";
-      if (!confirm(`Are you sure you want to delete "${title}" and all its cards?`)) return;
+      const title = currentProj ? currentProj.title : "Board";
 
       try {
-        const res = await fetch(`/api/dashboard/whiteboards/${currentWhiteboardId}`, { method: "DELETE" });
+        const deletedId = currentWhiteboardId;
+        const res = await fetch(`/api/dashboard/whiteboards/${deletedId}`, { method: "DELETE" });
         if (!res.ok) throw new Error("Failed to delete board");
         currentWhiteboardId = null;
+        showToast(`🗑️ "${title}" deleted`);
         await loadWhiteboards();
       } catch (err) {
-        alert("Error deleting board: " + err.message);
+        showToast("Error deleting board: " + err.message, "error");
       }
     });
   }
