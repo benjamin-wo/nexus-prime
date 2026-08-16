@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from sqlmodel import SQLModel, Field, Column, JSON
 
 class UserProfile(SQLModel, table=True):
@@ -69,6 +69,33 @@ class TaskItem(SQLModel, table=True):
     is_reminder_active: bool = Field(default=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     completed_at: Optional[datetime] = Field(default=None)
+
+
+class WhiteboardProject(SQLModel, table=True):
+    """Living canvas / whiteboard project (trips, events, projects, meal plans, etc.)."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="userprofile.user_id", index=True)
+    title: str
+    emoji_icon: str = Field(default="📋")
+    category: str = Field(default="general", index=True)  # trip | event | project | meal | general
+    summary: Optional[str] = Field(default=None)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class WhiteboardBlock(SQLModel, table=True):
+    """Polymorphic interactive card / block inside a whiteboard project."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    project_id: int = Field(foreign_key="whiteboardproject.id", index=True)
+    section_name: str = Field(default="General", index=True)  # e.g. "Accommodations", "Itinerary", "Checklist"
+    block_type: str = Field(default="note", index=True)  # comparison | checklist | itinerary | budget | note
+    title: str
+    content_payload: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
+    position_order: int = Field(default=0)
+    linked_task_id: Optional[int] = Field(default=None, foreign_key="taskitem.id")
+    linked_expense_id: Optional[int] = Field(default=None, foreign_key="expensetransaction.id")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class BusStop(SQLModel, table=True):

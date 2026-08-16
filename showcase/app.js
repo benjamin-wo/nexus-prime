@@ -39,7 +39,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initDashboard();
   initWebChat();
   initExpenseModal();
-  initGroceries();
+  initWhiteboard();
   initTasksAndReminders();
   initJobs();
   initCopilotDrawer();
@@ -90,8 +90,8 @@ function switchTab(tabId) {
   } else if (tabId === "tab-jobs") {
     loadTasks();
     loadJobs();
-  } else if (tabId === "tab-groceries") {
-    loadGroceries();
+  } else if (tabId === "tab-whiteboard" || tabId === "tab-groceries") {
+    loadWhiteboards();
   } else if (tabId === "tab-livechat") {
     setTimeout(() => {
       const input = document.getElementById("chat-user-input");
@@ -1817,87 +1817,656 @@ window.deleteJobItem = async function(id) {
 };
 
 // ==========================================================================
-// 4. GROCERIES CHECKLIST
+// ==========================================================================
+// 4. PLANNING WHITEBOARDS & LIVING CANVAS
 // ==========================================================================
 
-function initGroceries() {
-  const form = document.getElementById("grocery-add-form");
-  if (form) {
-    form.addEventListener("submit", async (e) => {
+let currentWhiteboardId = null;
+let cachedWhiteboards = [];
+let cachedWhiteboardBlocks = [];
+
+function initWhiteboard() {
+  // Board Switcher Dropdown
+  const selector = document.getElementById("wb-project-selector");
+  if (selector) {
+    selector.addEventListener("change", (e) => {
+      currentWhiteboardId = parseInt(e.target.value, 10);
+      loadWhiteboardDetails(currentWhiteboardId);
+    });
+  }
+
+  // Create Board Modal Controls
+  const openCreateBtn = document.getElementById("btn-open-create-board-modal");
+  const modalCreate = document.getElementById("modal-create-board");
+  const closeCreateBtn = document.getElementById("btn-close-create-board");
+  const cancelCreateBtn = document.getElementById("btn-cancel-create-board");
+  const formCreate = document.getElementById("form-create-board");
+
+  if (openCreateBtn && modalCreate) {
+    openCreateBtn.addEventListener("click", () => {
+      modalCreate.style.display = "flex";
+      const titleInput = document.getElementById("new-board-title");
+      if (titleInput) titleInput.focus();
+    });
+  }
+
+  const hideCreateModal = () => {
+    if (modalCreate) modalCreate.style.display = "none";
+    if (formCreate) formCreate.reset();
+  };
+
+  if (closeCreateBtn) closeCreateBtn.addEventListener("click", hideCreateModal);
+  if (cancelCreateBtn) cancelCreateBtn.addEventListener("click", hideCreateModal);
+
+  // Template Card Selection
+  const templateCards = document.querySelectorAll(".wb-template-card");
+  templateCards.forEach(card => {
+    card.addEventListener("click", () => {
+      templateCards.forEach(c => c.classList.remove("selected"));
+      card.classList.add("selected");
+      const radio = card.querySelector('input[type="radio"]');
+      if (radio) radio.checked = true;
+
+      // Auto-populate emoji and category
+      const t = card.getAttribute("data-template");
+      const emojiInput = document.getElementById("new-board-emoji");
+      const catSelect = document.getElementById("new-board-category");
+      if (t === "trip") {
+        if (emojiInput) emojiInput.value = "✈️";
+        if (catSelect) catSelect.value = "trip";
+      } else if (t === "meal") {
+        if (emojiInput) emojiInput.value = "🛒";
+        if (catSelect) catSelect.value = "meal";
+      } else if (t === "event") {
+        if (emojiInput) emojiInput.value = "🎉";
+        if (catSelect) catSelect.value = "event";
+      } else if (t === "project") {
+        if (emojiInput) emojiInput.value = "🚀";
+        if (catSelect) catSelect.value = "project";
+      } else {
+        if (emojiInput) emojiInput.value = "📝";
+        if (catSelect) catSelect.value = "general";
+      }
+    });
+  });
+
+  // Submit Create Board Form
+  if (formCreate) {
+    formCreate.addEventListener("submit", async (e) => {
       e.preventDefault();
-      const name = document.getElementById("grocery-name-input").value.trim();
-      const qty = document.getElementById("grocery-qty-input").value.trim() || "1";
-      const cat = document.getElementById("grocery-cat-input").value;
+      const title = document.getElementById("new-board-title").value.trim();
+      const emoji = document.getElementById("new-board-emoji").value.trim() || "📋";
+      const category = document.getElementById("new-board-category").value;
+      const summary = document.getElementById("new-board-summary").value.trim();
+      const selectedTemplate = document.querySelector('input[name="board-template-choice"]:checked')?.value || "blank";
 
       try {
-        const res = await fetch("/api/dashboard/groceries", {
+        const res = await fetch("/api/dashboard/whiteboards", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, quantity: qty, category: cat })
+          body: JSON.stringify({
+            title,
+            emoji_icon: emoji,
+            category,
+            summary: summary || null,
+            template: selectedTemplate,
+          }),
         });
-        if (res.ok) {
-          form.reset();
-          loadGroceries();
-          loadDashboardSummary();
-        }
+        if (!res.ok) throw new Error("Failed to create board");
+        const data = await res.json();
+        hideCreateModal();
+        await loadWhiteboards(data.project.id);
       } catch (err) {
-        alert("Error adding grocery item: " + err.message);
+        alert("Error creating board: " + err.message);
+      }
+    });
+  }
+
+  // Delete Board Button
+  const deleteBoardBtn = document.getElementById("btn-delete-active-board");
+  if (deleteBoardBtn) {
+    deleteBoardBtn.addEventListener("click", async () => {
+      if (!currentWhiteboardId) return;
+      const currentProj = cachedWhiteboards.find(p => p.id === currentWhiteboardId);
+      const title = currentProj ? currentProj.title : "this board";
+      if (!confirm(`Are you sure you want to delete "${title}" and all its cards?`)) return;
+
+      try {
+        const res = await fetch(`/api/dashboard/whiteboards/${currentWhiteboardId}`, { method: "DELETE" });
+        if (!res.ok) throw new Error("Failed to delete board");
+        currentWhiteboardId = null;
+        await loadWhiteboards();
+      } catch (err) {
+        alert("Error deleting board: " + err.message);
+      }
+    });
+  }
+
+  // AI Copilot Prompt Form & Chips
+  const aiSubmitBtn = document.getElementById("wb-ai-prompt-submit");
+  const aiInput = document.getElementById("wb-ai-prompt-input");
+
+  const triggerAiCopilot = async (promptText) => {
+    if (!promptText || !currentWhiteboardId) return;
+    const origBtnText = aiSubmitBtn.innerHTML;
+    aiSubmitBtn.disabled = true;
+    aiSubmitBtn.innerHTML = `<span>Thinking...</span>`;
+
+    try {
+      const res = await fetch(`/api/dashboard/whiteboards/${currentWhiteboardId}/ai_copilot`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: promptText, section_name: "✨ AI Insights & Research" }),
+      });
+      if (!res.ok) throw new Error("AI generation failed");
+      if (aiInput) aiInput.value = "";
+      await loadWhiteboardDetails(currentWhiteboardId);
+    } catch (err) {
+      alert("Error generating card: " + err.message);
+    } finally {
+      aiSubmitBtn.disabled = false;
+      aiSubmitBtn.innerHTML = origBtnText;
+    }
+  };
+
+  if (aiSubmitBtn && aiInput) {
+    aiSubmitBtn.addEventListener("click", () => triggerAiCopilot(aiInput.value.trim()));
+    aiInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        triggerAiCopilot(aiInput.value.trim());
+      }
+    });
+  }
+
+  const promptChips = document.querySelectorAll(".wb-prompt-chip");
+  promptChips.forEach(chip => {
+    chip.addEventListener("click", () => {
+      const p = chip.getAttribute("data-prompt");
+      if (aiInput) aiInput.value = p;
+      triggerAiCopilot(p);
+    });
+  });
+
+  // Add Card Modal Controls
+  const openAddCardBtn = document.getElementById("btn-open-add-card-modal");
+  const modalAddCard = document.getElementById("modal-add-card");
+  const closeAddCardBtn = document.getElementById("btn-close-add-card");
+  const cancelAddCardBtn = document.getElementById("btn-cancel-add-card");
+  const formAddCard = document.getElementById("form-add-card");
+
+  if (openAddCardBtn && modalAddCard) {
+    openAddCardBtn.addEventListener("click", () => {
+      modalAddCard.style.display = "flex";
+      const titleInput = document.getElementById("new-card-title");
+      if (titleInput) titleInput.focus();
+    });
+  }
+
+  const hideAddCardModal = () => {
+    if (modalAddCard) modalAddCard.style.display = "none";
+    if (formAddCard) formAddCard.reset();
+  };
+
+  if (closeAddCardBtn) closeAddCardBtn.addEventListener("click", hideAddCardModal);
+  if (cancelAddCardBtn) cancelAddCardBtn.addEventListener("click", hideAddCardModal);
+
+  if (formAddCard) {
+    formAddCard.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (!currentWhiteboardId) return;
+
+      const section = document.getElementById("new-card-section").value.trim() || "General";
+      const blockType = document.getElementById("new-card-type").value;
+      const title = document.getElementById("new-card-title").value.trim();
+      const notes = document.getElementById("new-card-notes").value.trim();
+
+      let contentPayload = {};
+      if (blockType === "note") {
+        contentPayload = { markdown: notes };
+      } else if (blockType === "checklist") {
+        const lines = notes ? notes.split("\n").filter(l => l.trim()) : ["First check item"];
+        contentPayload = { items: lines.map((l, idx) => ({ id: `c-${idx + 1}`, text: l.trim().replace(/^[-*•]\s*/, ''), checked: false })) };
+      } else if (blockType === "comparison") {
+        contentPayload = {
+          options: [
+            { id: "opt-1", name: title, price: "Standard", rating: "4.8 ★", pros: [notes || "Great option"], cons: [], is_winner: true }
+          ]
+        };
+      } else if (blockType === "itinerary") {
+        contentPayload = {
+          steps: [
+            { time: "09:00", title: title, location: "Main Venue", notes: notes || "Scheduled event" }
+          ]
+        };
+      } else if (blockType === "budget") {
+        contentPayload = {
+          currency: "SGD",
+          items: [{ name: title, cost: 100, status: "Estimated" }]
+        };
+      }
+
+      try {
+        const res = await fetch(`/api/dashboard/whiteboards/${currentWhiteboardId}/blocks`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            section_name: section,
+            block_type: blockType,
+            title,
+            content_payload: contentPayload,
+          }),
+        });
+        if (!res.ok) throw new Error("Failed to add card");
+        hideAddCardModal();
+        await loadWhiteboardDetails(currentWhiteboardId);
+      } catch (err) {
+        alert("Error adding card: " + err.message);
       }
     });
   }
 }
 
-async function loadGroceries() {
-  const container = document.getElementById("groceries-list-container");
-  if (!container) return;
-
+async function loadWhiteboards(selectProjectId = null) {
   try {
-    const res = await fetch("/api/dashboard/groceries");
-    if (!res.ok) throw new Error("Failed to load groceries");
+    const res = await fetch("/api/dashboard/whiteboards");
+    if (!res.ok) throw new Error("Failed to fetch whiteboards");
     const data = await res.json();
+    cachedWhiteboards = data.projects || [];
 
-    if (!data.groceries || data.groceries.length === 0) {
-      container.innerHTML = `<div style="grid-column: 1/-1; padding: 2.5rem; text-align: center; color: var(--text-muted); background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-md);">🛒 Your grocery shopping list is empty. Add an item above or via Assistant Chat!</div>`;
+    const dropdown = document.getElementById("wb-project-selector");
+    if (!dropdown) return;
+
+    if (cachedWhiteboards.length === 0) {
+      dropdown.innerHTML = `<option value="">No boards</option>`;
       return;
     }
 
-    container.innerHTML = data.groceries.map(g => `
-      <div class="metric-glass-card" style="min-height: 90px; ${g.is_purchased ? 'opacity: 0.45;' : ''}" data-id="${g.id}">
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-          <div style="display: flex; align-items: center; gap: 0.65rem;">
-            <input type="checkbox" class="dash-checkbox" ${g.is_purchased ? 'checked' : ''} onchange="toggleGroceryItem(${g.id})" />
-            <div>
-              <div style="font-size: 0.88rem; font-weight: 600; color: #fff; ${g.is_purchased ? 'text-decoration: line-through;' : ''}">${escapeHtml(g.name)}</div>
-              <div style="font-size: 0.72rem; color: var(--text-muted);">${escapeHtml(g.quantity)} · ${escapeHtml(g.category)}</div>
-            </div>
-          </div>
-          <button class="row-action-btn" onclick="deleteGroceryItem(${g.id})">🗑️</button>
-        </div>
-      </div>
+    dropdown.innerHTML = cachedWhiteboards.map(p => `
+      <option value="${p.id}" ${selectProjectId ? (p.id === selectProjectId ? 'selected' : '') : (p.id === currentWhiteboardId ? 'selected' : '')}>
+        ${p.emoji_icon} ${escapeHtml(p.title)}
+      </option>
     `).join("");
 
+    if (selectProjectId) {
+      currentWhiteboardId = selectProjectId;
+    } else if (!currentWhiteboardId || !cachedWhiteboards.some(p => p.id === currentWhiteboardId)) {
+      currentWhiteboardId = cachedWhiteboards[0].id;
+    }
+
+    dropdown.value = String(currentWhiteboardId);
+    await loadWhiteboardDetails(currentWhiteboardId);
+
   } catch (err) {
-    console.warn("Could not load groceries:", err);
+    console.warn("Could not load whiteboards:", err);
   }
 }
 
-window.toggleGroceryItem = async function(id) {
+async function loadWhiteboardDetails(projectId) {
+  if (!projectId) return;
+  const container = document.getElementById("wb-sections-container");
+  if (!container) return;
+
   try {
-    await fetch(`/api/dashboard/groceries/${id}/toggle`, { method: "PATCH" });
-    loadGroceries();
-    loadDashboardSummary();
+    const res = await fetch(`/api/dashboard/whiteboards/${projectId}`);
+    if (!res.ok) throw new Error("Failed to fetch whiteboard details");
+    const data = await res.json();
+    const proj = data.project;
+    const blocks = data.blocks || [];
+    cachedWhiteboardBlocks = blocks;
+
+    // Update Header
+    const emojiEl = document.getElementById("wb-active-emoji");
+    const titleEl = document.getElementById("wb-active-title");
+    const catEl = document.getElementById("wb-active-category");
+    const sumEl = document.getElementById("wb-active-summary");
+    const countEl = document.getElementById("wb-canvas-block-count");
+
+    if (emojiEl) emojiEl.textContent = proj.emoji_icon || "📋";
+    if (titleEl) titleEl.textContent = proj.title;
+    if (catEl) catEl.textContent = proj.category.toUpperCase();
+    if (sumEl) sumEl.textContent = proj.summary || "Interactive planning canvas";
+
+    // Group blocks by section_name
+    const sectionsMap = new Map();
+    blocks.forEach(b => {
+      const sec = b.section_name || "General";
+      if (!sectionsMap.has(sec)) sectionsMap.set(sec, []);
+      sectionsMap.get(sec).push(b);
+    });
+
+    if (countEl) {
+      countEl.textContent = `${sectionsMap.size} sections · ${blocks.length} active cards`;
+    }
+
+    if (sectionsMap.size === 0) {
+      container.innerHTML = `
+        <div style="padding: 3.5rem 1rem; text-align: center; color: var(--text-muted); background: #111115; border: 1px dashed #272730; border-radius: var(--radius-md);">
+          <div style="font-size: 2rem; margin-bottom: 0.5rem;">🪄</div>
+          <div style="font-size: 1rem; font-weight: 600; color: #fff; margin-bottom: 0.3rem;">This board is empty</div>
+          <div style="font-size: 0.82rem; max-width: 420px; margin: 0 auto 1.25rem auto;">Use the AI Copilot bar above or click "+ Add Card" to brainstorm and add items!</div>
+          <button class="btn-primary-ember" onclick="document.getElementById('wb-ai-prompt-input').focus()">🪄 Ask AI Copilot</button>
+        </div>
+      `;
+      return;
+    }
+
+    let deckHtml = "";
+    sectionsMap.forEach((sectionBlocks, sectionName) => {
+      deckHtml += `
+        <div class="wb-section-block">
+          <div class="wb-section-header">
+            <h3 class="wb-section-title">${escapeHtml(sectionName)}</h3>
+            <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 500;">${sectionBlocks.length} card${sectionBlocks.length === 1 ? '' : 's'}</span>
+          </div>
+          <div class="wb-cards-grid">
+            ${sectionBlocks.map(b => renderSmartCardHtml(b)).join("")}
+          </div>
+        </div>
+      `;
+    });
+
+    container.innerHTML = deckHtml;
+
   } catch (err) {
-    console.error("Error toggling grocery:", err);
+    console.error("Error loading whiteboard details:", err);
+    container.innerHTML = `<div style="color: #fb7185; padding: 1.5rem; text-align: center;">Error loading board details.</div>`;
+  }
+}
+
+function renderSmartCardHtml(block) {
+  const payload = block.content_payload || {};
+  let cardBodyHtml = "";
+
+  if (block.block_type === "comparison") {
+    const options = payload.options || [];
+    cardBodyHtml = `
+      <div class="wb-opt-list">
+        ${options.map(opt => `
+          <div class="wb-opt-tile ${opt.is_winner ? 'winner' : ''}">
+            <div class="wb-opt-top">
+              <div>
+                <span class="wb-opt-name">${escapeHtml(opt.name)}</span>
+                <span class="wb-opt-rating">${opt.rating || ''}</span>
+              </div>
+              <span class="wb-opt-price">${opt.price || ''}</span>
+            </div>
+            ${opt.pros && opt.pros.length ? `
+              <ul class="wb-opt-bullets">
+                ${opt.pros.map(p => `<li>✅ ${escapeHtml(p)}</li>`).join("")}
+                ${(opt.cons || []).map(c => `<li>⚠️ ${escapeHtml(c)}</li>`).join("")}
+              </ul>
+            ` : ''}
+            <div class="wb-opt-actions">
+              ${opt.is_winner ? `
+                <span class="wb-winner-badge">🏆 Selected Choice</span>
+                <button class="btn-card-escalate" onclick="escalateOptionToTask(${block.id}, '${escapeHtml(opt.name)}', '${escapeHtml(block.title)}')">⏰ Add Task</button>
+              ` : `
+                <button class="btn-select-winner" onclick="selectComparisonWinner(${block.id}, '${opt.id}')">⭐ Select Option</button>
+              `}
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    `;
+  } else if (block.block_type === "checklist") {
+    const items = payload.items || [];
+    const checkedCount = items.filter(i => i.checked).length;
+    const progressPct = items.length ? Math.round((checkedCount / items.length) * 100) : 0;
+
+    cardBodyHtml = `
+      <div class="wb-check-progress">
+        <div class="wb-check-progress-fill" style="width: ${progressPct}%;"></div>
+      </div>
+      <div style="display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--text-muted); margin-bottom: 0.5rem;">
+        <span>${checkedCount} of ${items.length} completed</span>
+        <span style="font-family: var(--font-mono);">${progressPct}%</span>
+      </div>
+      <div class="wb-checklist-items">
+        ${items.map(item => `
+          <div class="wb-check-row ${item.checked ? 'done' : ''}" onclick="toggleChecklistItem(${block.id}, '${item.id}')">
+            <input type="checkbox" class="dash-checkbox" ${item.checked ? 'checked' : ''} style="pointer-events: none;" />
+            <span>${escapeHtml(item.text)}</span>
+          </div>
+        `).join("")}
+      </div>
+      <div class="wb-check-inline-add">
+        <input type="text" class="wb-check-input" placeholder="+ Add item..." onkeydown="if(event.key==='Enter'){ addChecklistItem(${block.id}, this); }" />
+      </div>
+    `;
+  } else if (block.block_type === "itinerary") {
+    const steps = payload.steps || [];
+    cardBodyHtml = `
+      <div class="wb-itin-timeline">
+        ${steps.map(step => `
+          <div class="wb-itin-node">
+            <div class="wb-itin-time">${escapeHtml(step.time || '')} · <span style="color: #d4d4d8;">${escapeHtml(step.location || '')}</span></div>
+            <div class="wb-itin-step-title">${escapeHtml(step.title || '')}</div>
+            ${step.notes ? `<div class="wb-itin-notes">${escapeHtml(step.notes)}</div>` : ''}
+          </div>
+        `).join("")}
+      </div>
+    `;
+  } else if (block.block_type === "budget") {
+    const items = payload.items || [];
+    const curr = payload.currency || "SGD";
+    const total = items.reduce((acc, i) => acc + (parseFloat(i.cost) || 0), 0);
+
+    cardBodyHtml = `
+      <div class="wb-budget-summary-pill">
+        <span>Total:</span>
+        <span>$${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${curr}</span>
+      </div>
+      <div class="wb-budget-rows">
+        ${items.map(item => `
+          <div class="wb-budget-row">
+            <div>
+              <span style="color: #fff; font-weight: 500;">${escapeHtml(item.name)}</span>
+              <span style="font-size: 0.68rem; margin-left: 0.35rem; color: var(--text-muted);">(${escapeHtml(item.status || 'Estimated')})</span>
+            </div>
+            <span class="wb-budget-cost">$${(parseFloat(item.cost) || 0).toFixed(2)}</span>
+          </div>
+        `).join("")}
+      </div>
+    `;
+  } else {
+    // Note
+    const text = payload.markdown || "";
+    cardBodyHtml = `<div class="wb-note-text">${escapeHtml(text)}</div>`;
+  }
+
+  return `
+    <div class="wb-card" data-block-id="${block.id}">
+      <div>
+        <div class="wb-card-header-row">
+          <span class="wb-card-type-tag ${block.block_type}">${block.block_type}</span>
+          <button class="btn-card-delete" onclick="deleteBlockCard(${block.id})" title="Delete card">🗑️</button>
+        </div>
+        <h4 class="wb-card-title">${escapeHtml(block.title)}</h4>
+        ${cardBodyHtml}
+      </div>
+
+      <div class="wb-card-footer">
+        <div class="wb-card-actions-left">
+          ${block.block_type !== 'comparison' ? `
+            <button class="btn-card-escalate" onclick="escalateBlockToTask(${block.id}, '${escapeHtml(block.title)}')">⏰ Add Task</button>
+          ` : ''}
+          ${block.block_type === 'budget' ? `
+            <button class="btn-card-escalate" onclick="escalateBlockToExpense(${block.id})">💰 Log Expense</button>
+          ` : ''}
+        </div>
+        <span style="font-size: 0.68rem; color: var(--text-muted);">${block.linked_task_id ? '🔗 Linked Task' : ''}</span>
+      </div>
+    </div>
+  `;
+}
+
+// Window interactive helper functions for smart cards
+window.selectComparisonWinner = async function(blockId, optionId) {
+  const block = cachedWhiteboardBlocks.find(b => b.id === blockId);
+  if (!block || !block.content_payload || !block.content_payload.options) return;
+
+  const updatedOptions = block.content_payload.options.map(opt => ({
+    ...opt,
+    is_winner: opt.id === optionId,
+  }));
+
+  // Optimistic UI update
+  block.content_payload.options = updatedOptions;
+  loadWhiteboardDetails(currentWhiteboardId);
+
+  try {
+    await fetch(`/api/dashboard/whiteboards/blocks/${blockId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content_payload: { ...block.content_payload, options: updatedOptions } }),
+    });
+  } catch (err) {
+    console.error("Error updating winner:", err);
   }
 };
 
-window.deleteGroceryItem = async function(id) {
+window.toggleChecklistItem = async function(blockId, itemId) {
+  const block = cachedWhiteboardBlocks.find(b => b.id === blockId);
+  if (!block || !block.content_payload || !block.content_payload.items) return;
+
+  const updatedItems = block.content_payload.items.map(item => {
+    if (item.id === itemId) return { ...item, checked: !item.checked };
+    return item;
+  });
+
+  // Optimistic UI update
+  block.content_payload.items = updatedItems;
+  loadWhiteboardDetails(currentWhiteboardId);
+
   try {
-    await fetch(`/api/dashboard/groceries/${id}`, { method: "DELETE" });
-    loadGroceries();
+    await fetch(`/api/dashboard/whiteboards/blocks/${blockId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content_payload: { ...block.content_payload, items: updatedItems } }),
+    });
+  } catch (err) {
+    console.error("Error toggling checklist item:", err);
+  }
+};
+
+window.addChecklistItem = async function(blockId, inputElem) {
+  const text = inputElem.value.trim();
+  if (!text) return;
+  inputElem.value = "";
+
+  const block = cachedWhiteboardBlocks.find(b => b.id === blockId);
+  if (!block) return;
+  const currentItems = block.content_payload?.items || [];
+  const newItem = { id: `c-${Date.now()}`, text, checked: false };
+  const updatedItems = [...currentItems, newItem];
+
+  // Optimistic UI
+  block.content_payload = { ...block.content_payload, items: updatedItems };
+  loadWhiteboardDetails(currentWhiteboardId);
+
+  try {
+    await fetch(`/api/dashboard/whiteboards/blocks/${blockId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content_payload: block.content_payload }),
+    });
+  } catch (err) {
+    console.error("Error adding checklist item:", err);
+  }
+};
+
+window.deleteBlockCard = async function(blockId) {
+  if (!confirm("Are you sure you want to delete this card?")) return;
+  try {
+    await fetch(`/api/dashboard/whiteboards/blocks/${blockId}`, { method: "DELETE" });
+    await loadWhiteboardDetails(currentWhiteboardId);
+  } catch (err) {
+    alert("Error deleting card: " + err.message);
+  }
+};
+
+window.escalateBlockToTask = async function(blockId, defaultTitle) {
+  const taskTitle = prompt("Enter task title to schedule in Tasks & Reminders:", defaultTitle);
+  if (!taskTitle) return;
+
+  const dueStr = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+
+  try {
+    const res = await fetch(`/api/dashboard/whiteboards/blocks/${blockId}/escalate_task`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: taskTitle,
+        due_at: dueStr,
+        reminder_type: "once",
+        reminder_time: dueStr,
+        priority: "high",
+      }),
+    });
+    if (!res.ok) throw new Error("Failed to escalate task");
+    const data = await res.json();
+    alert(`✅ Task scheduled: "${data.title}"!\nTelegram push reminder active.`);
+    loadWhiteboardDetails(currentWhiteboardId);
+  } catch (err) {
+    alert("Error creating task: " + err.message);
+  }
+};
+
+window.escalateOptionToTask = async function(blockId, optionName, cardTitle) {
+  const taskTitle = prompt("Enter task title for this choice:", `Book ${optionName} for ${cardTitle}`);
+  if (!taskTitle) return;
+
+  const dueStr = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+
+  try {
+    const res = await fetch(`/api/dashboard/whiteboards/blocks/${blockId}/escalate_task`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: taskTitle,
+        due_at: dueStr,
+        reminder_type: "once",
+        reminder_time: dueStr,
+        priority: "high",
+      }),
+    });
+    if (!res.ok) throw new Error("Failed to escalate task");
+    const data = await res.json();
+    alert(`✅ Task created: "${data.title}"!\nScheduled in your Tasks Cockpit.`);
+    loadWhiteboardDetails(currentWhiteboardId);
+  } catch (err) {
+    alert("Error creating task: " + err.message);
+  }
+};
+
+window.escalateBlockToExpense = async function(blockId) {
+  const block = cachedWhiteboardBlocks.find(b => b.id === blockId);
+  const items = block?.content_payload?.items || [];
+  const total = items.reduce((acc, i) => acc + (parseFloat(i.cost) || 0), 0);
+
+  const merchant = prompt("Enter merchant / description for expense:", block ? block.title : "Whiteboard Budget");
+  if (!merchant) return;
+  const amountStr = prompt("Enter expense amount ($):", total ? total.toFixed(2) : "100.00");
+  if (!amountStr) return;
+
+  try {
+    const res = await fetch(`/api/dashboard/whiteboards/blocks/${blockId}/escalate_expense`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        merchant,
+        amount: parseFloat(amountStr),
+        category: "Travel",
+        currency: "SGD",
+      }),
+    });
+    if (!res.ok) throw new Error("Failed to log expense");
+    const data = await res.json();
+    alert(`💰 Logged $${data.amount.toFixed(2)} to ${data.merchant} in Financial Cockpit!`);
     loadDashboardSummary();
   } catch (err) {
-    console.error("Error deleting grocery:", err);
+    alert("Error logging expense: " + err.message);
   }
 };
 

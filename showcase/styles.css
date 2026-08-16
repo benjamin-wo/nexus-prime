@@ -2456,3 +2456,622 @@ table.financial-data-table tr:hover td {
   border-radius: var(--radius-md);
   color: var(--text-muted);
 }
+
+/* ==========================================================================
+   PLANNING WHITEBOARD & LIVING CANVAS STYLES
+   ========================================================================== */
+
+.wb-top-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.wb-header-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.wb-header-emoji {
+  font-size: 1.75rem;
+  line-height: 1;
+}
+
+.wb-main-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-white);
+  margin: 0;
+}
+
+.wb-cat-badge {
+  background: rgba(249, 115, 22, 0.15);
+  border: 1px solid rgba(249, 115, 22, 0.35);
+  color: var(--orange-primary);
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.2rem 0.6rem;
+  border-radius: var(--radius-pill);
+}
+
+.wb-header-summary {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  margin-top: 0.35rem;
+  max-width: 650px;
+}
+
+.wb-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.wb-select-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.wb-select-label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.wb-board-dropdown {
+  min-width: 180px;
+  background: #141418;
+  border: 1px solid #272730;
+  color: var(--text-white);
+  border-radius: var(--radius-sm);
+  padding: 0.45rem 0.75rem;
+  font-size: 0.82rem;
+  font-weight: 500;
+}
+
+.wb-create-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.9rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+/* In-Canvas AI Copilot Bar */
+.wb-copilot-container {
+  margin-bottom: 1.5rem;
+}
+
+.wb-copilot-card {
+  background: linear-gradient(135deg, rgba(24, 24, 28, 0.95), rgba(18, 18, 22, 0.95));
+  border: 1px solid rgba(249, 115, 22, 0.25);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius-md);
+  padding: 0.9rem 1.1rem;
+}
+
+.wb-copilot-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.wb-copilot-icon {
+  font-size: 1.3rem;
+  flex-shrink: 0;
+}
+
+.wb-copilot-input {
+  flex: 1;
+  background: #0f0f13;
+  border: 1px solid #282832;
+  border-radius: var(--radius-sm);
+  padding: 0.65rem 0.9rem;
+  color: #fff;
+  font-size: 0.85rem;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.wb-copilot-input:focus {
+  border-color: var(--orange-primary);
+  box-shadow: 0 0 10px rgba(249, 115, 22, 0.25);
+}
+
+.wb-copilot-btn {
+  padding: 0.65rem 1.1rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.wb-copilot-chips {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.75rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.wb-chips-label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.wb-prompt-chip {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid #272730;
+  color: #a1a1aa;
+  border-radius: var(--radius-pill);
+  padding: 0.25rem 0.65rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.wb-prompt-chip:hover {
+  background: rgba(249, 115, 22, 0.15);
+  border-color: rgba(249, 115, 22, 0.4);
+  color: #fff;
+}
+
+/* Toolbar */
+.wb-canvas-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid #1a1a20;
+}
+
+.wb-canvas-stats {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* Canvas Sections Deck */
+.wb-canvas-deck {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.wb-section-block {
+  background: #111115;
+  border: 1px solid #202028;
+  border-radius: var(--radius-md);
+  padding: 1.25rem;
+}
+
+.wb-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid #1b1b22;
+}
+
+.wb-section-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-white);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.wb-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 1rem;
+}
+
+/* Base Card Style */
+.wb-card {
+  background: #16161c;
+  border: 1px solid #2a2a35;
+  border-radius: var(--radius-sm);
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+
+.wb-card:hover {
+  border-color: #3e3e4f;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.wb-card-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.wb-card-type-tag {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--radius-sm);
+  background: #20202a;
+  color: #a1a1aa;
+}
+
+.wb-card-type-tag.comparison { background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); }
+.wb-card-type-tag.checklist { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+.wb-card-type-tag.itinerary { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3); }
+.wb-card-type-tag.budget { background: rgba(234, 179, 8, 0.15); color: #facc15; border: 1px solid rgba(234, 179, 8, 0.3); }
+.wb-card-type-tag.note { background: rgba(148, 163, 184, 0.15); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.3); }
+
+.wb-card-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-white);
+  margin: 0;
+  line-height: 1.3;
+}
+
+/* Comparison Smart Card */
+.wb-opt-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 0.75rem 0;
+}
+
+.wb-opt-tile {
+  background: #101014;
+  border: 1px solid #23232c;
+  border-radius: var(--radius-sm);
+  padding: 0.75rem;
+  transition: all 0.15s ease;
+}
+
+.wb-opt-tile.winner {
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.45);
+  box-shadow: 0 0 14px rgba(16, 185, 129, 0.15);
+}
+
+.wb-opt-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.35rem;
+}
+
+.wb-opt-name {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.wb-opt-price {
+  font-size: 0.78rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--emerald-accent);
+}
+
+.wb-opt-rating {
+  font-size: 0.72rem;
+  color: #fbbf24;
+  font-weight: 600;
+  margin-left: 0.4rem;
+}
+
+.wb-opt-bullets {
+  margin: 0.3rem 0 0.5rem 0;
+  padding-left: 1rem;
+  font-size: 0.75rem;
+  color: #a1a1aa;
+}
+
+.wb-opt-bullets li {
+  margin-bottom: 0.2rem;
+}
+
+.wb-opt-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 0.4rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.btn-select-winner {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid #2e2e3a;
+  color: #d4d4d8;
+  border-radius: var(--radius-sm);
+  padding: 0.25rem 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-select-winner:hover {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: rgba(16, 185, 129, 0.5);
+  color: #34d399;
+}
+
+.wb-winner-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: rgba(16, 185, 129, 0.2);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #34d399;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--radius-pill);
+}
+
+/* Checklist Smart Card */
+.wb-check-progress {
+  height: 4px;
+  background: #22222c;
+  border-radius: 2px;
+  overflow: hidden;
+  margin: 0.5rem 0 0.75rem 0;
+}
+
+.wb-check-progress-fill {
+  height: 100%;
+  background: var(--emerald-accent);
+  transition: width 0.3s ease;
+}
+
+.wb-checklist-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-bottom: 0.75rem;
+}
+
+.wb-check-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: #d4d4d8;
+  cursor: pointer;
+}
+
+.wb-check-row.done {
+  color: #71717a;
+  text-decoration: line-through;
+}
+
+.wb-check-inline-add {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+
+.wb-check-input {
+  flex: 1;
+  background: #0e0e12;
+  border: 1px solid #22222a;
+  border-radius: var(--radius-sm);
+  padding: 0.35rem 0.6rem;
+  color: #fff;
+  font-size: 0.78rem;
+}
+
+/* Itinerary Smart Card */
+.wb-itin-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  position: relative;
+  padding-left: 1rem;
+  border-left: 2px solid #272733;
+  margin: 0.75rem 0;
+}
+
+.wb-itin-node {
+  position: relative;
+}
+
+.wb-itin-node::before {
+  content: "";
+  position: absolute;
+  left: -1.35rem;
+  top: 0.25rem;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--orange-primary);
+}
+
+.wb-itin-time {
+  font-size: 0.7rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--orange-primary);
+}
+
+.wb-itin-step-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #fff;
+  margin-top: 0.1rem;
+}
+
+.wb-itin-notes {
+  font-size: 0.73rem;
+  color: #a1a1aa;
+  margin-top: 0.15rem;
+}
+
+/* Budget Smart Card */
+.wb-budget-summary-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: rgba(234, 179, 8, 0.15);
+  border: 1px solid rgba(234, 179, 8, 0.3);
+  color: #facc15;
+  font-size: 0.78rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  padding: 0.25rem 0.65rem;
+  border-radius: var(--radius-pill);
+  margin-bottom: 0.75rem;
+}
+
+.wb-budget-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+
+.wb-budget-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  padding: 0.25rem 0;
+  border-bottom: 1px solid #1f1f26;
+}
+
+.wb-budget-cost {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: #fff;
+}
+
+/* Note Smart Card */
+.wb-note-text {
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: #d4d4d8;
+  white-space: pre-wrap;
+  margin: 0.5rem 0 0.75rem 0;
+}
+
+/* Card Action Footer */
+.wb-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 0.75rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid #20202a;
+}
+
+.wb-card-actions-left {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.btn-card-escalate {
+  background: rgba(249, 115, 22, 0.1);
+  border: 1px solid rgba(249, 115, 22, 0.3);
+  color: var(--orange-primary);
+  border-radius: var(--radius-sm);
+  padding: 0.25rem 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-card-escalate:hover {
+  background: var(--orange-primary);
+  color: #fff;
+}
+
+.btn-card-delete {
+  background: transparent;
+  border: none;
+  color: #52525b;
+  cursor: pointer;
+  padding: 0.2rem;
+  border-radius: var(--radius-sm);
+  transition: color 0.15s;
+}
+
+.btn-card-delete:hover {
+  color: #f43f5e;
+}
+
+/* Template Grid in Modal */
+.wb-template-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 0.6rem;
+  margin-top: 0.4rem;
+}
+
+.wb-template-card {
+  background: #141418;
+  border: 1px solid #272732;
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 0.5rem;
+  text-align: center;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  transition: all 0.15s ease;
+}
+
+.wb-template-card:hover {
+  border-color: #3f3f50;
+  background: #191920;
+}
+
+.wb-template-card.selected {
+  background: rgba(249, 115, 22, 0.12);
+  border-color: var(--orange-primary);
+  box-shadow: 0 0 10px rgba(249, 115, 22, 0.2);
+}
+
+.wb-temp-icon {
+  font-size: 1.4rem;
+}
+
+.wb-temp-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.wb-temp-desc {
+  font-size: 0.65rem;
+  color: #71717a;
+  line-height: 1.2;
+}

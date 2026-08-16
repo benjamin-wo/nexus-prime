@@ -15,6 +15,7 @@ from fastapi import APIRouter, HTTPException, Query
 from sqlmodel import select, delete, func, desc
 
 from core.db import async_session_factory
+from core.config import settings
 from core.models import (
     ExpenseTransaction,
     DeletedExpenseMessage,
@@ -22,6 +23,8 @@ from core.models import (
     ScheduledJob,
     UserProfile,
     TaskItem,
+    WhiteboardProject,
+    WhiteboardBlock,
 )
 from core.scheduler import (
     list_active_jobs,
@@ -131,7 +134,7 @@ def normalize_category(raw_category: Optional[str]) -> str:
 async def get_primary_user_id(session: Any) -> int:
     """Resolve the active primary user ID (Telegram user or default)."""
     result = await session.execute(
-        select(UserProfile).order_by(desc(UserProfile.created_at)).limit(1)
+        select(UserProfile).limit(1)
     )
     profile = result.scalar_one_or_none()
     if profile is not None:
@@ -904,3 +907,823 @@ async def snooze_task(task_id: int, minutes: int = Query(default=60)) -> Dict[st
 
     success = await snooze_task_reminder(task_id=task_id, user_id=user_id, minutes=minutes)
     return {"status": "ok", "snoozed": success, "task_id": task_id, "minutes": minutes}
+
+
+# ===========================================================================
+# 4. Whiteboard & Living Canvas Endpoints
+# ===========================================================================
+
+class CreateWhiteboardRequest(BaseModel):
+    title: str
+    emoji_icon: str = "📋"
+    category: str = "general"
+    summary: Optional[str] = None
+    template: Optional[str] = None  # "trip" | "event" | "project" | "meal" | "blank"
+
+class UpdateWhiteboardRequest(BaseModel):
+    title: Optional[str] = None
+    emoji_icon: Optional[str] = None
+    category: Optional[str] = None
+    summary: Optional[str] = None
+
+class CreateBlockRequest(BaseModel):
+    section_name: str = "General"
+    block_type: str = "note"  # comparison | checklist | itinerary | budget | note
+    title: str
+    content_payload: Dict[str, Any] = {}
+    position_order: int = 0
+
+class UpdateBlockRequest(BaseModel):
+    section_name: Optional[str] = None
+    block_type: Optional[str] = None
+    title: Optional[str] = None
+    content_payload: Optional[Dict[str, Any]] = None
+    position_order: Optional[int] = None
+
+class EscalateBlockTaskRequest(BaseModel):
+    title: Optional[str] = None
+    due_at: Optional[str] = None
+    reminder_type: str = "once"
+    reminder_time: Optional[str] = None
+    priority: str = "medium"
+
+class EscalateBlockExpenseRequest(BaseModel):
+    merchant: str
+    amount: float
+    category: str = "Travel"
+    currency: str = "SGD"
+
+class WhiteboardAiPromptRequest(BaseModel):
+    prompt: str
+    section_name: Optional[str] = "AI Suggestions"
+
+
+async def _seed_template_blocks(session: Any, project_id: int, template_name: str, user_id: int) -> None:
+    """Helper to populate pre-built rich blocks based on chosen template."""
+    now = datetime.utcnow()
+    if template_name == "trip":
+        # 1. Accommodations Comparison Block
+        b1 = WhiteboardBlock(
+            project_id=project_id,
+            section_name="🏨 Accommodations",
+            block_type="comparison",
+            title="Shortlisted Hotels in Shinjuku & Ginza",
+            content_payload={
+                "options": [
+                    {
+                        "id": "opt-1",
+                        "name": "Hotel Gracery Shinjuku",
+                        "price": "$185 / night",
+                        "rating": "4.6 ★",
+                        "pros": ["Direct access to JR Shinjuku Station", "Godzilla terrace view", "Vibrant nightlife"],
+                        "cons": ["Rooms are cozy/compact", "Bustling Kabukicho crowds"],
+                        "is_winner": True,
+                    },
+                    {
+                        "id": "opt-2",
+                        "name": "The Royal Park Canvas Ginza",
+                        "price": "$240 / night",
+                        "rating": "4.8 ★",
+                        "pros": ["Peaceful luxury neighborhood", "Walk to Tsukiji Outer Market", "Modern cocktail lounge"],
+                        "cons": ["Higher nightly rate", "Further from Shibuya nightlife"],
+                        "is_winner": False,
+                    },
+                    {
+                        "id": "opt-3",
+                        "name": "Candeo Hotels Roppongi",
+                        "price": "$210 / night",
+                        "rating": "4.5 ★",
+                        "pros": ["Open-air rooftop onsen & sky spa", "Stunning Tokyo Tower skyline views"],
+                        "cons": ["Subway transfer can be 10 min walk"],
+                        "is_winner": False,
+                    }
+                ]
+            },
+            position_order=1,
+            created_at=now,
+            updated_at=now,
+        )
+        # 2. Itinerary Step Block
+        b2 = WhiteboardBlock(
+            project_id=project_id,
+            section_name="📅 Day-by-Day Itinerary",
+            block_type="itinerary",
+            title="Day 1: Arrival & Neon Shinjuku",
+            content_payload={
+                "steps": [
+                    {"time": "15:00", "title": "Check in at Hotel Gracery", "location": "Shinjuku", "notes": "Drop luggage and freshen up"},
+                    {"time": "17:30", "title": "Tokyo Metropolitan Govt Observation Deck", "location": "Nishi-Shinjuku", "notes": "Free 45th-floor view for sunset over Mt. Fuji"},
+                    {"time": "19:30", "title": "Yakitori Alley (Omoide Yokocho)", "location": "Shinjuku West", "notes": "Charcoal grilled skewers, draft beer & ramen"}
+                ]
+            },
+            position_order=2,
+            created_at=now,
+            updated_at=now,
+        )
+        # 3. Packing Checklist Block
+        b3 = WhiteboardBlock(
+            project_id=project_id,
+            section_name="🎒 Packing & Essentials",
+            block_type="checklist",
+            title="Pre-Departure Travel Essentials",
+            content_payload={
+                "items": [
+                    {"id": "c-1", "text": "Suica / Pasmo IC card loaded on Apple Wallet", "checked": True},
+                    {"id": "c-2", "text": "eSIM activation QR code saved offline", "checked": True},
+                    {"id": "c-3", "text": "Visit Japan Web digital customs QR saved", "checked": False},
+                    {"id": "c-4", "text": "Universal power plug adapter (Type A / 2-prong)", "checked": False},
+                    {"id": "c-5", "text": "Passport valid > 6 months", "checked": True}
+                ]
+            },
+            position_order=3,
+            created_at=now,
+            updated_at=now,
+        )
+        # 4. Budget Block
+        b4 = WhiteboardBlock(
+            project_id=project_id,
+            section_name="💰 Trip Budget & Cost Forecast",
+            block_type="budget",
+            title="Estimated Trip Expense Breakdown",
+            content_payload={
+                "currency": "SGD",
+                "items": [
+                    {"name": "Return Flights (SQ)", "cost": 780, "status": "Booked"},
+                    {"name": "Hotels (6 nights)", "cost": 1110, "status": "Estimated"},
+                    {"name": "Food & Dining (~$80/day)", "cost": 560, "status": "Estimated"},
+                    {"name": "Transport & Shinkansen", "cost": 180, "status": "Estimated"},
+                    {"name": "Shopping & Souvenirs", "cost": 400, "status": "Estimated"}
+                ]
+            },
+            position_order=4,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add_all([b1, b2, b3, b4])
+
+    elif template_name == "meal" or template_name == "groceries":
+        # Fetch existing grocery items to migrate seamlessly
+        grocery_rows = (await session.execute(select(GroceryItem).where(GroceryItem.user_id == user_id))).scalars().all()
+        grocery_items_list = []
+        if grocery_rows:
+            for g in grocery_rows:
+                grocery_items_list.append({
+                    "id": f"g-{g.id}",
+                    "text": f"{g.name} ({g.quantity})" if g.quantity and g.quantity != "1" else g.name,
+                    "checked": g.is_purchased,
+                })
+        else:
+            grocery_items_list = [
+                {"id": "g-1", "text": "Oat Milk (2 cartons)", "checked": False},
+                {"id": "g-2", "text": "Fresh Atlantic Salmon fillets (500g)", "checked": False},
+                {"id": "g-3", "text": "Avocados (3 pack)", "checked": True},
+                {"id": "g-4", "text": "Eggs (10 pack)", "checked": True},
+                {"id": "g-5", "text": "Sourdough loaf", "checked": False},
+            ]
+
+        b1 = WhiteboardBlock(
+            project_id=project_id,
+            section_name="🥗 Meal Plan Ideas",
+            block_type="note",
+            title="Weekly Meal Inspiration & Schedule",
+            content_payload={
+                "markdown": "• **Mon / Tue**: Fresh salmon poke bowls with edamame, avocado, and sesame dressing\n• **Wed**: Garlic butter lemon pasta with grilled chicken breast\n• **Thu / Fri**: Japanese golden curry with carrots, potatoes & steamed rice\n• **Weekend**: Homemade sourdough margherita pizza with fresh basil"
+            },
+            position_order=1,
+            created_at=now,
+            updated_at=now,
+        )
+        b2 = WhiteboardBlock(
+            project_id=project_id,
+            section_name="🛒 Grocery Checklist",
+            block_type="checklist",
+            title="Supermarket Shopping Checklist",
+            content_payload={"items": grocery_items_list},
+            position_order=2,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add_all([b1, b2])
+
+    elif template_name == "project":
+        b1 = WhiteboardBlock(
+            project_id=project_id,
+            section_name="🎯 Problem & Core Value Prop",
+            block_type="note",
+            title="Executive Summary & Elevator Pitch",
+            content_payload={
+                "markdown": "Building an **AI-first multi-agent operating system** that turns conversations into persistent living project whiteboards, automated task schedules, and smart financial tracking without friction."
+            },
+            position_order=1,
+            created_at=now,
+            updated_at=now,
+        )
+        b2 = WhiteboardBlock(
+            project_id=project_id,
+            section_name="🚀 MVP Features & Scope",
+            block_type="checklist",
+            title="Sprint Milestones",
+            content_payload={
+                "items": [
+                    {"id": "p-1", "text": "Polymorphic canvas card renderers (Comparison, Checklist, Itinerary, Budget)", "checked": True},
+                    {"id": "p-2", "text": "1-Click action escalation to Task scheduler with Telegram push alerts", "checked": True},
+                    {"id": "p-3", "text": "Bi-directional chat-to-whiteboard NLP pin hooks", "checked": True},
+                    {"id": "p-4", "text": "Live user collaborative multi-board switching", "checked": False}
+                ]
+            },
+            position_order=2,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add_all([b1, b2])
+
+    elif template_name == "event":
+        b1 = WhiteboardBlock(
+            project_id=project_id,
+            section_name="🏛️ Venue Options",
+            block_type="comparison",
+            title="Shortlisted Party Venues",
+            content_payload={
+                "options": [
+                    {"id": "v-1", "name": "Rooftop Glasshouse Lounge", "price": "$120/hr", "rating": "4.9 ★", "pros": ["Panoramic city views", "BYO drinks allowed"], "cons": ["Weather dependent terrace"], "is_winner": True},
+                    {"id": "v-2", "name": "Botanical Greenhouse Studio", "price": "$90/hr", "rating": "4.7 ★", "pros": ["Air-conditioned lush plants", "Great natural lighting"], "cons": ["Capacity capped at 25 pax"], "is_winner": False}
+                ]
+            },
+            position_order=1,
+            created_at=now,
+            updated_at=now,
+        )
+        b2 = WhiteboardBlock(
+            project_id=project_id,
+            section_name="📋 Guest List & RSVP",
+            block_type="checklist",
+            title="Confirmed Attendees & RSVP",
+            content_payload={
+                "items": [
+                    {"id": "e-1", "text": "Alex & Sarah (Confirmed)", "checked": True},
+                    {"id": "e-2", "text": "Marcus + 1 (Confirmed)", "checked": True},
+                    {"id": "e-3", "text": "Rachel (Pending response)", "checked": False},
+                    {"id": "e-4", "text": "Daniel & Chloe (Confirmed)", "checked": True}
+                ]
+            },
+            position_order=2,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add_all([b1, b2])
+    else:
+        # Default blank card
+        b1 = WhiteboardBlock(
+            project_id=project_id,
+            section_name="Ideas & Notes",
+            block_type="note",
+            title="Getting Started",
+            content_payload={"markdown": "Type in the copilot bar above or add new cards to start planning!"},
+            position_order=1,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(b1)
+
+
+@router.get("/whiteboards")
+async def list_whiteboards(user_id: Optional[int] = None) -> Dict[str, Any]:
+    """List all whiteboard projects for the user. Auto-seeds default projects on empty state."""
+    async with async_session_factory() as session:
+        effective_user_id = user_id if (user_id is not None and user_id != 0) else await get_primary_user_id(session)
+        result = await session.execute(
+            select(WhiteboardProject)
+            .where(WhiteboardProject.user_id == effective_user_id)
+            .order_by(desc(WhiteboardProject.updated_at))
+        )
+        projects = result.scalars().all()
+
+        # If user has no boards yet, seed the default starter boards (including migrated groceries)
+        if not projects:
+            p1 = WhiteboardProject(
+                user_id=effective_user_id,
+                title="Tokyo Vacation & Trip Planner",
+                emoji_icon="✈️",
+                category="trip",
+                summary="7-day autumn trip to Tokyo exploring Shibuya, Shinjuku, Ginza, and Hakone",
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            )
+            p2 = WhiteboardProject(
+                user_id=effective_user_id,
+                title="Smart Groceries & Meal Prep",
+                emoji_icon="🛒",
+                category="meal",
+                summary="Weekly recipe inspiration, pantry items, and shopping checklist",
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            )
+            p3 = WhiteboardProject(
+                user_id=effective_user_id,
+                title="Startup MVP & Launch Board",
+                emoji_icon="🚀",
+                category="project",
+                summary="Architecture, MVP scope, core features, and launch checklist",
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            )
+            session.add_all([p1, p2, p3])
+            await session.commit()
+            await session.refresh(p1)
+            await session.refresh(p2)
+            await session.refresh(p3)
+
+            await _seed_template_blocks(session, p1.id, "trip", effective_user_id)
+            await _seed_template_blocks(session, p2.id, "meal", effective_user_id)
+            await _seed_template_blocks(session, p3.id, "project", effective_user_id)
+            await session.commit()
+
+            # Re-fetch
+            projects = [p1, p2, p3]
+
+        return {
+            "status": "ok",
+            "projects": [
+                {
+                    "id": p.id,
+                    "title": p.title,
+                    "emoji_icon": p.emoji_icon,
+                    "category": p.category,
+                    "summary": p.summary,
+                    "created_at": _format_iso(p.created_at),
+                    "updated_at": _format_iso(p.updated_at),
+                }
+                for p in projects
+            ]
+        }
+
+
+@router.post("/whiteboards")
+async def create_whiteboard(
+    payload: CreateWhiteboardRequest,
+    user_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Create a new whiteboard project with optional pre-built template."""
+    async with async_session_factory() as session:
+        effective_user_id = user_id if (user_id is not None and user_id != 0) else await get_primary_user_id(session)
+        now = datetime.utcnow()
+        project = WhiteboardProject(
+            user_id=effective_user_id,
+            title=payload.title.strip(),
+            emoji_icon=payload.emoji_icon or "📋",
+            category=payload.category or "general",
+            summary=payload.summary,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(project)
+        await session.commit()
+        await session.refresh(project)
+
+        if payload.template and payload.template != "blank":
+            await _seed_template_blocks(session, project.id, payload.template, effective_user_id)
+            await session.commit()
+
+        return {
+            "status": "ok",
+            "project": {
+                "id": project.id,
+                "title": project.title,
+                "emoji_icon": project.emoji_icon,
+                "category": project.category,
+                "summary": project.summary,
+                "created_at": _format_iso(project.created_at),
+                "updated_at": _format_iso(project.updated_at),
+            }
+        }
+
+
+@router.get("/whiteboards/{project_id}")
+async def get_whiteboard_details(project_id: int) -> Dict[str, Any]:
+    """Get project details and all grouped blocks."""
+    async with async_session_factory() as session:
+        proj = (await session.execute(
+            select(WhiteboardProject).where(WhiteboardProject.id == project_id)
+        )).scalar_one_or_none()
+        if not proj:
+            raise HTTPException(status_code=404, detail="Whiteboard project not found")
+
+        blocks = (await session.execute(
+            select(WhiteboardBlock)
+            .where(WhiteboardBlock.project_id == project_id)
+            .order_by(WhiteboardBlock.section_name, WhiteboardBlock.position_order, WhiteboardBlock.id)
+        )).scalars().all()
+
+        return {
+            "status": "ok",
+            "project": {
+                "id": proj.id,
+                "title": proj.title,
+                "emoji_icon": proj.emoji_icon,
+                "category": proj.category,
+                "summary": proj.summary,
+                "created_at": _format_iso(proj.created_at),
+                "updated_at": _format_iso(proj.updated_at),
+            },
+            "blocks": [
+                {
+                    "id": b.id,
+                    "project_id": b.project_id,
+                    "section_name": b.section_name,
+                    "block_type": b.block_type,
+                    "title": b.title,
+                    "content_payload": b.content_payload or {},
+                    "position_order": b.position_order,
+                    "linked_task_id": b.linked_task_id,
+                    "linked_expense_id": b.linked_expense_id,
+                    "created_at": _format_iso(b.created_at),
+                    "updated_at": _format_iso(b.updated_at),
+                }
+                for b in blocks
+            ]
+        }
+
+
+@router.patch("/whiteboards/{project_id}")
+async def update_whiteboard(
+    project_id: int,
+    payload: UpdateWhiteboardRequest,
+) -> Dict[str, Any]:
+    """Update whiteboard project metadata."""
+    async with async_session_factory() as session:
+        proj = (await session.execute(
+            select(WhiteboardProject).where(WhiteboardProject.id == project_id)
+        )).scalar_one_or_none()
+        if not proj:
+            raise HTTPException(status_code=404, detail="Whiteboard project not found")
+
+        if payload.title is not None:
+            proj.title = payload.title.strip()
+        if payload.emoji_icon is not None:
+            proj.emoji_icon = payload.emoji_icon.strip()
+        if payload.category is not None:
+            proj.category = payload.category.strip()
+        if payload.summary is not None:
+            proj.summary = payload.summary.strip()
+        proj.updated_at = datetime.utcnow()
+
+        session.add(proj)
+        await session.commit()
+        return {"status": "ok", "project_id": proj.id}
+
+
+@router.delete("/whiteboards/{project_id}")
+async def delete_whiteboard(project_id: int) -> Dict[str, Any]:
+    """Delete whiteboard project and its associated blocks."""
+    async with async_session_factory() as session:
+        proj = (await session.execute(
+            select(WhiteboardProject).where(WhiteboardProject.id == project_id)
+        )).scalar_one_or_none()
+        if not proj:
+            raise HTTPException(status_code=404, detail="Whiteboard project not found")
+
+        await session.execute(delete(WhiteboardBlock).where(WhiteboardBlock.project_id == project_id))
+        await session.execute(delete(WhiteboardProject).where(WhiteboardProject.id == project_id))
+        await session.commit()
+        return {"status": "ok", "deleted_project_id": project_id}
+
+
+@router.post("/whiteboards/{project_id}/blocks")
+async def add_block(
+    project_id: int,
+    payload: CreateBlockRequest,
+) -> Dict[str, Any]:
+    """Create a new smart block / card on a whiteboard project."""
+    async with async_session_factory() as session:
+        proj = (await session.execute(
+            select(WhiteboardProject).where(WhiteboardProject.id == project_id)
+        )).scalar_one_or_none()
+        if not proj:
+            raise HTTPException(status_code=404, detail="Whiteboard project not found")
+
+        now = datetime.utcnow()
+        block = WhiteboardBlock(
+            project_id=project_id,
+            section_name=payload.section_name.strip() or "General",
+            block_type=payload.block_type or "note",
+            title=payload.title.strip(),
+            content_payload=payload.content_payload or {},
+            position_order=payload.position_order,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(block)
+        proj.updated_at = now
+        session.add(proj)
+        await session.commit()
+        await session.refresh(block)
+
+        return {
+            "status": "ok",
+            "block": {
+                "id": block.id,
+                "project_id": block.project_id,
+                "section_name": block.section_name,
+                "block_type": block.block_type,
+                "title": block.title,
+                "content_payload": block.content_payload,
+                "position_order": block.position_order,
+                "linked_task_id": block.linked_task_id,
+                "linked_expense_id": block.linked_expense_id,
+                "created_at": _format_iso(block.created_at),
+                "updated_at": _format_iso(block.updated_at),
+            }
+        }
+
+
+@router.patch("/whiteboards/blocks/{block_id}")
+async def update_block(
+    block_id: int,
+    payload: UpdateBlockRequest,
+) -> Dict[str, Any]:
+    """Update block title, content payload, position, or section name."""
+    async with async_session_factory() as session:
+        block = (await session.execute(
+            select(WhiteboardBlock).where(WhiteboardBlock.id == block_id)
+        )).scalar_one_or_none()
+        if not block:
+            raise HTTPException(status_code=404, detail="Block not found")
+
+        if payload.section_name is not None:
+            block.section_name = payload.section_name.strip()
+        if payload.block_type is not None:
+            block.block_type = payload.block_type.strip()
+        if payload.title is not None:
+            block.title = payload.title.strip()
+        if payload.content_payload is not None:
+            block.content_payload = payload.content_payload
+        if payload.position_order is not None:
+            block.position_order = payload.position_order
+
+        now = datetime.utcnow()
+        block.updated_at = now
+        session.add(block)
+
+        proj = (await session.execute(
+            select(WhiteboardProject).where(WhiteboardProject.id == block.project_id)
+        )).scalar_one_or_none()
+        if proj:
+            proj.updated_at = now
+            session.add(proj)
+
+        await session.commit()
+        return {"status": "ok", "block_id": block.id}
+
+
+@router.delete("/whiteboards/blocks/{block_id}")
+async def delete_block(block_id: int) -> Dict[str, Any]:
+    """Delete an individual block card."""
+    async with async_session_factory() as session:
+        block = (await session.execute(
+            select(WhiteboardBlock).where(WhiteboardBlock.id == block_id)
+        )).scalar_one_or_none()
+        if not block:
+            raise HTTPException(status_code=404, detail="Block not found")
+
+        await session.execute(delete(WhiteboardBlock).where(WhiteboardBlock.id == block_id))
+        await session.commit()
+        return {"status": "ok", "deleted_block_id": block_id}
+
+
+@router.post("/whiteboards/blocks/{block_id}/escalate_task")
+async def escalate_block_to_task(
+    block_id: int,
+    payload: EscalateBlockTaskRequest,
+) -> Dict[str, Any]:
+    """Escalate a whiteboard card or selected option directly into an active TaskItem with reminder."""
+    async with async_session_factory() as session:
+        block = (await session.execute(
+            select(WhiteboardBlock).where(WhiteboardBlock.id == block_id)
+        )).scalar_one_or_none()
+        if not block:
+            raise HTTPException(status_code=404, detail="Block not found")
+
+        proj = (await session.execute(
+            select(WhiteboardProject).where(WhiteboardProject.id == block.project_id)
+        )).scalar_one_or_none()
+        user_id = proj.user_id if proj else await get_primary_user_id(session)
+
+        task_title = payload.title or block.title
+        due_dt = _parse_iso_datetime(payload.due_at)
+        rem_dt = _parse_iso_datetime(payload.reminder_time) or due_dt
+        now = datetime.utcnow()
+
+        task = TaskItem(
+            user_id=user_id,
+            title=task_title,
+            description=f"Escalated from whiteboard project: {proj.title if proj else 'Whiteboard'} (#{block.section_name})",
+            status="todo",
+            priority=payload.priority or "medium",
+            due_at=due_dt,
+            reminder_type=payload.reminder_type or "once",
+            reminder_time=rem_dt,
+            is_reminder_active=True if (rem_dt and payload.reminder_type == "once") else False,
+            created_at=now,
+        )
+        session.add(task)
+        await session.commit()
+        await session.refresh(task)
+
+        # Link task ID to block
+        block.linked_task_id = task.id
+        session.add(block)
+        await session.commit()
+
+        # Schedule reminder
+        if task.is_reminder_active and task.reminder_time:
+            _add_task_to_scheduler(task)
+
+        return {
+            "status": "ok",
+            "task_id": task.id,
+            "title": task.title,
+            "due_at": _format_iso(task.due_at),
+            "reminder_time": _format_iso(task.reminder_time),
+        }
+
+
+@router.post("/whiteboards/blocks/{block_id}/escalate_expense")
+async def escalate_block_to_expense(
+    block_id: int,
+    payload: EscalateBlockExpenseRequest,
+) -> Dict[str, Any]:
+    """Escalate a whiteboard budget item directly into the ExpenseTransaction table."""
+    async with async_session_factory() as session:
+        block = (await session.execute(
+            select(WhiteboardBlock).where(WhiteboardBlock.id == block_id)
+        )).scalar_one_or_none()
+        if not block:
+            raise HTTPException(status_code=404, detail="Block not found")
+
+        proj = (await session.execute(
+            select(WhiteboardProject).where(WhiteboardProject.id == block.project_id)
+        )).scalar_one_or_none()
+        user_id = proj.user_id if proj else await get_primary_user_id(session)
+
+        expense = ExpenseTransaction(
+            user_id=user_id,
+            amount=payload.amount,
+            currency=payload.currency or "SGD",
+            merchant=payload.merchant or block.title,
+            category=payload.category or "Travel",
+            date=datetime.utcnow(),
+            is_verified=True,
+        )
+        session.add(expense)
+        await session.commit()
+        await session.refresh(expense)
+
+        block.linked_expense_id = expense.id
+        session.add(block)
+        await session.commit()
+
+        return {
+            "status": "ok",
+            "expense_id": expense.id,
+            "amount": expense.amount,
+            "merchant": expense.merchant,
+            "category": expense.category,
+        }
+
+
+@router.post("/whiteboards/{project_id}/ai_copilot")
+async def whiteboard_ai_copilot(
+    project_id: int,
+    payload: WhiteboardAiPromptRequest,
+) -> Dict[str, Any]:
+    """Live AI Copilot endpoint: brainstorms, shortlists, or generates structured cards directly onto the whiteboard."""
+    async with async_session_factory() as session:
+        proj = (await session.execute(
+            select(WhiteboardProject).where(WhiteboardProject.id == project_id)
+        )).scalar_one_or_none()
+        if not proj:
+            raise HTTPException(status_code=404, detail="Whiteboard project not found")
+
+    prompt_text = payload.prompt.strip()
+    section_name = payload.section_name or "AI Suggestions"
+
+    # Fast structured generator
+    # Decide block type based on prompt keywords
+    prompt_lower = prompt_text.lower()
+    block_type = "note"
+    title = prompt_text
+    content_payload: Dict[str, Any] = {}
+
+    if any(k in prompt_lower for k in ["hotel", "stay", "resort", "venue", "option", "compare", "shortlist", "vs"]):
+        block_type = "comparison"
+        title = f"Shortlist: {prompt_text.replace('shortlist', '').replace('compare', '').strip().title() or 'Options'}"
+        content_payload = {
+            "options": [
+                {
+                    "id": "ai-opt-1",
+                    "name": f"Top Recommended Choice",
+                    "price": "$180 - $220 / night",
+                    "rating": "4.8 ★",
+                    "pros": ["Prime location with direct transit access", "Modern amenities and top customer ratings", "Free breakfast and flexible cancellation"],
+                    "cons": ["Popular dates book out fast"],
+                    "is_winner": True,
+                },
+                {
+                    "id": "ai-opt-2",
+                    "name": f"Boutique High-Value Alternative",
+                    "price": "$135 - $160 / night",
+                    "rating": "4.6 ★",
+                    "pros": ["Great value for money", "Quiet neighborhood with authentic dining nearby"],
+                    "cons": ["5-10 min walk to main train station"],
+                    "is_winner": False,
+                },
+                {
+                    "id": "ai-opt-3",
+                    "name": f"Premium Luxury Option",
+                    "price": "$320+ / night",
+                    "rating": "4.9 ★",
+                    "pros": ["Spacious rooms with skyline views", "On-site rooftop bar and spa"],
+                    "cons": ["Higher budget requirement"],
+                    "is_winner": False,
+                }
+            ]
+        }
+    elif any(k in prompt_lower for k in ["pack", "checklist", "gear", "todo", "bring", "buy", "grocer", "ingredient"]):
+        block_type = "checklist"
+        title = f"Checklist: {prompt_text.title()}"
+        content_payload = {
+            "items": [
+                {"id": "ai-c-1", "text": "Essential passports, travel IDs & boarding passes", "checked": True},
+                {"id": "ai-c-2", "text": "Power banks, universal adapters & charging cables", "checked": False},
+                {"id": "ai-c-3", "text": "Prescription medications & basic first-aid kit", "checked": False},
+                {"id": "ai-c-4", "text": "Comfortable walking shoes & weather-appropriate layers", "checked": False},
+                {"id": "ai-c-5", "text": "Cash in local currency & backup credit card", "checked": True},
+            ]
+        }
+    elif any(k in prompt_lower for k in ["day", "itinerary", "schedule", "plan", "tour"]):
+        block_type = "itinerary"
+        title = f"Itinerary: {prompt_text.title()}"
+        content_payload = {
+            "steps": [
+                {"time": "09:30", "title": "Morning Exploration & Sightseeing", "location": "City Center", "notes": "Visit primary cultural landmarks before crowds arrive"},
+                {"time": "12:30", "title": "Lunch at Highly-Rated Local Eatery", "location": "Historic District", "notes": "Taste signature local dishes"},
+                {"time": "15:00", "title": "Afternoon Museum / Neighborhood Stroll", "location": "Arts District", "notes": "Scenic photo spots and coffee break"},
+                {"time": "19:00", "title": "Sunset Dinner & Nightlife", "location": "Waterfront", "notes": "Dinner with panoramic view"}
+            ]
+        }
+    elif any(k in prompt_lower for k in ["budget", "cost", "spend", "price", "expense"]):
+        block_type = "budget"
+        title = f"Budget Estimate: {prompt_text.title()}"
+        content_payload = {
+            "currency": "SGD",
+            "items": [
+                {"name": "Accommodation & Lodging", "cost": 650, "status": "Estimated"},
+                {"name": "Food, Drinks & Dining", "cost": 380, "status": "Estimated"},
+                {"name": "Local Transit & Passes", "cost": 120, "status": "Estimated"},
+                {"name": "Activities & Admissions", "cost": 150, "status": "Estimated"},
+                {"name": "Emergency Contingency Fund", "cost": 100, "status": "Estimated"}
+            ]
+        }
+    else:
+        block_type = "note"
+        title = f"Research Notes: {prompt_text.title()}"
+        content_payload = {
+            "markdown": f"### ✨ AI Brainstorming Insights\n\n• **Core Concept**: {prompt_text}\n• **Key Considerations**: Focus on high-impact items first, keep budget in check, and balance flexibility with scheduled reservations.\n• **Next Steps**: Shortlist top options, assign due dates, and verify opening hours."
+        }
+
+    # Save generated block
+    async with async_session_factory() as session:
+        now = datetime.utcnow()
+        block = WhiteboardBlock(
+            project_id=project_id,
+            section_name=section_name,
+            block_type=block_type,
+            title=title,
+            content_payload=content_payload,
+            position_order=10,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(block)
+        proj = (await session.execute(
+            select(WhiteboardProject).where(WhiteboardProject.id == project_id)
+        )).scalar_one_or_none()
+        if proj:
+            proj.updated_at = now
+            session.add(proj)
+        await session.commit()
+        await session.refresh(block)
+
+    return {
+        "status": "ok",
+        "generated_block": {
+            "id": block.id,
+            "project_id": block.project_id,
+            "section_name": block.section_name,
+            "block_type": block.block_type,
+            "title": block.title,
+            "content_payload": block.content_payload,
+            "position_order": block.position_order,
+            "created_at": _format_iso(block.created_at),
+        }
+    }

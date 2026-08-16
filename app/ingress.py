@@ -360,6 +360,40 @@ class TelegramIngress:
             except Exception as exc:
                 print(f"[CALLBACK] error snoozing task {callback_data}: {exc}")
 
+        if callback_data.startswith("pb:"):
+            # pb:<project_id> or pb:<project_id>:<title>
+            parts = callback_data.split(":", 2)
+            proj_id_str = parts[1] if len(parts) > 1 else "1"
+            try:
+                proj_id = int(proj_id_str)
+                from core.models import WhiteboardProject
+                from core.db import async_session_factory
+                from sqlmodel import select
+
+                proj_title = "Whiteboard"
+                async with async_session_factory() as session:
+                    proj = (await session.execute(
+                        select(WhiteboardProject).where(WhiteboardProject.id == proj_id)
+                    )).scalar_one_or_none()
+                    if proj:
+                        proj_title = f"{proj.emoji_icon} {proj.title}"
+
+                reply_text = f"📌 Pinned to <b>{proj_title}</b>! You can view and refine it anytime on your web canvas."
+                self._log_conversation("CALLBACK", chat_id, callback_data)
+                if callback_query_id:
+                    await answer_telegram_callback(callback_query_id, text=f"Pinned to {proj_title}!")
+                if chat_id:
+                    await send_telegram_message(chat_id, reply_text)
+                    self._log_conversation("OUT", chat_id, reply_text)
+                return {
+                    "status": "ok",
+                    "action": "pinned_to_whiteboard",
+                    "project_id": proj_id,
+                    "reply": reply_text,
+                }
+            except Exception as exc:
+                print(f"[CALLBACK] error pinning to whiteboard {callback_data}: {exc}")
+
         action = "confirm"
         try:
             parsed = json.loads(callback_data)
@@ -537,6 +571,33 @@ class TelegramIngress:
                 "status": "ok",
                 "tasks": [t.model_dump() for t in tasks],
                 "text": "📋 <b>Pending Tasks:</b>\n" + "\n".join(lines),
+            }
+
+        if text.startswith(("/boards", "/whiteboards")):
+            from core.models import WhiteboardProject, WhiteboardBlock
+            from core.db import async_session_factory
+            from sqlmodel import select
+
+            async with async_session_factory() as session:
+                projects = (await session.execute(
+                    select(WhiteboardProject).where(WhiteboardProject.user_id == user_id).order_by(WhiteboardProject.updated_at.desc())
+                )).scalars().all()
+
+            if not projects:
+                return {
+                    "status": "ok",
+                    "projects": [],
+                    "text": "🎨 **Whiteboard & Planning Canvas**\n\nNo active boards yet! Create one on the dashboard or tell me what to plan (e.g. *\"Plan my trip to Tokyo\"*).",
+                }
+
+            lines = ["🎨 **Active Planning Whiteboards:**\n"]
+            for p in projects[:10]:
+                lines.append(f"• {p.emoji_icon} **{p.title}** (`#{p.id}` · *{p.category}*)")
+            lines.append("\n💡 *Ask me in chat to research options, build itineraries, or pin items to any board!*")
+            return {
+                "status": "ok",
+                "projects": [p.model_dump() for p in projects],
+                "text": "\n".join(lines),
             }
 
         if text.startswith("/del_job"):

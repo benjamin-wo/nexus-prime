@@ -1,0 +1,35 @@
+id: whiteboard
+description: >-
+  Manage interactive planning whiteboards and living canvases: brainstorm trip
+  itineraries, hotel and venue shortlists with pros/cons, grocery and meal prep
+  plans, event checklists, and project ideas. Ask like "plan my trip to Tokyo",
+  "shortlist 3 hotels in Shinjuku", "create a packing list for Bali", "plan
+  dinner recipes for the week", or "pin this to my whiteboard".
+input_schema:
+  type: object
+  properties:
+    text:
+      type: string
+      description: Planning request, brainstorming prompt, or board query.
+    board_id:
+      type: integer
+      description: Optional target board/project ID to modify.
+  required: []
+output_schema:
+  type: object
+  properties:
+    message:
+      type: string
+      description: Summary of generated or updated planning cards.
+    board_id:
+      type: integer
+      description: ID of the created or updated board.
+    status:
+      type: string
+  required: [message]
+side_effect: write
+tags: [planning, whiteboard, travel, trip, events, checklists, ideas]
+managers: [life, general]
+preconditions:
+  - "User profile exists"
+cost_hint: medium
