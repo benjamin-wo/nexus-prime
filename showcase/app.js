@@ -2141,11 +2141,14 @@ async function loadWhiteboardDetails(projectId) {
 
     if (sectionsMap.size === 0) {
       container.innerHTML = `
-        <div style="padding: 3.5rem 1rem; text-align: center; color: var(--text-muted); background: #111115; border: 1px dashed #272730; border-radius: var(--radius-md);">
-          <div style="font-size: 2rem; margin-bottom: 0.5rem;">🪄</div>
-          <div style="font-size: 1rem; font-weight: 600; color: #fff; margin-bottom: 0.3rem;">This board is empty</div>
-          <div style="font-size: 0.82rem; max-width: 420px; margin: 0 auto 1.25rem auto;">Use the AI Copilot bar above or click "+ Add Card" to brainstorm and add items!</div>
-          <button class="btn-primary-ember" onclick="document.getElementById('wb-ai-prompt-input').focus()">🪄 Ask AI Copilot</button>
+        <div class="wb-empty-state">
+          <div class="wb-empty-icon">🪄</div>
+          <div class="wb-empty-title">This board is empty</div>
+          <div class="wb-empty-desc">Use the AI Copilot bar above or click "+ Add Card" to brainstorm and add items to this canvas!</div>
+          <div class="wb-empty-actions">
+            <button class="btn-primary-ember" onclick="document.getElementById('wb-ai-prompt-input').focus()">🪄 Ask AI Copilot</button>
+            <button class="btn-whiteboard-add-card" onclick="document.getElementById('btn-open-add-card-modal').click()">+ Add Card</button>
+          </div>
         </div>
       `;
       return;

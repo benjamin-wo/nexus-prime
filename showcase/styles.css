@@ -2646,11 +2646,77 @@ table.financial-data-table tr:hover td {
   font-weight: 500;
 }
 
+.btn-whiteboard-add-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid #2e2e3a;
+  color: #e4e4e7;
+  border-radius: var(--radius-sm);
+  padding: 0.38rem 0.85rem;
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-whiteboard-add-card:hover {
+  background: rgba(249, 115, 22, 0.15);
+  border-color: var(--orange-primary);
+  color: #fff;
+  box-shadow: 0 0 12px rgba(249, 115, 22, 0.2);
+}
+
 /* Canvas Sections Deck */
 .wb-canvas-deck {
   display: flex;
   flex-direction: column;
   gap: 2rem;
+}
+
+/* Empty Board State */
+.wb-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 4rem 1.5rem;
+  background: #111115;
+  border: 1px dashed #282834;
+  border-radius: var(--radius-md);
+  box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.35);
+}
+
+.wb-empty-icon {
+  font-size: 2.5rem;
+  margin-bottom: 0.75rem;
+  filter: drop-shadow(0 0 12px rgba(249, 115, 22, 0.35));
+}
+
+.wb-empty-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-white);
+  margin-bottom: 0.35rem;
+}
+
+.wb-empty-desc {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  max-width: 440px;
+  line-height: 1.5;
+  margin: 0 auto 1.5rem auto;
+}
+
+.wb-empty-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
 }
 
 .wb-section-block {
