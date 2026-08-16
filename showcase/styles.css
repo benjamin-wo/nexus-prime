@@ -2501,6 +2501,10 @@ table.financial-data-table tr:hover td {
   border-radius: var(--radius-pill);
 }
 
+.wb-cat-badge:empty {
+  display: none !important;
+}
+
 .wb-header-summary {
   color: var(--text-secondary);
   font-size: 0.85rem;

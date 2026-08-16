@@ -2246,11 +2246,22 @@ async function loadWhiteboards(selectProjectId = null) {
       // renderBoardCarousel([], null) collapses the carousel and reveals the
       // #wb-empty-state template tiles automatically.
       renderBoardCarousel([], null);
-      document.getElementById("wb-active-title").textContent = "No Boards";
-      document.getElementById("wb-active-summary").textContent = "Create your first board to get started.";
-      document.getElementById("wb-active-emoji").textContent = "📋";
-      document.getElementById("wb-active-category").textContent = "";
-      document.getElementById("wb-sections-container").innerHTML = "";
+      const titleEl = document.getElementById("wb-active-title");
+      const sumEl = document.getElementById("wb-active-summary");
+      const emojiEl = document.getElementById("wb-active-emoji");
+      const catEl = document.getElementById("wb-active-category");
+      const countEl = document.getElementById("wb-canvas-block-count");
+      const container = document.getElementById("wb-sections-container");
+
+      if (titleEl) titleEl.textContent = "Whiteboard & Ideas";
+      if (sumEl) sumEl.textContent = "Visual workspace for trips, projects, recipes, and brainstorming with AI Copilot.";
+      if (emojiEl) emojiEl.textContent = "📋";
+      if (catEl) {
+        catEl.textContent = "";
+        catEl.style.display = "none";
+      }
+      if (countEl) countEl.textContent = "0 sections · 0 active cards";
+      if (container) container.innerHTML = "";
       return;
     }
 
@@ -2292,7 +2303,10 @@ async function loadWhiteboardDetails(projectId) {
 
     if (emojiEl) emojiEl.textContent = proj.emoji_icon || "📋";
     if (titleEl) titleEl.textContent = proj.title;
-    if (catEl) catEl.textContent = (proj.category || "general").toUpperCase();
+    if (catEl) {
+      catEl.textContent = (proj.category || "general").toUpperCase();
+      catEl.style.display = "";
+    }
     if (sumEl) sumEl.textContent = proj.summary || "Interactive planning canvas";
 
     renderWhiteboardCanvas(blocks, proj.category);
