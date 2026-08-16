@@ -3070,8 +3070,24 @@ table.financial-data-table tr:hover td {
   color: #fff;
 }
 
-.wb-temp-desc {
-  font-size: 0.65rem;
-  color: #71717a;
-  line-height: 1.2;
+.wb-modal-dialog {
+  max-width: 580px;
+}
+
+.modal-textarea {
+  width: 100%;
+  background: #141418;
+  border: 1px solid #272730;
+  color: var(--text-white);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.75rem;
+  font-family: inherit;
+  font-size: 0.85rem;
+  resize: vertical;
+}
+
+.modal-textarea:focus {
+  outline: none;
+  border-color: var(--orange-primary);
+  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.2);
 }

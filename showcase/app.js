@@ -2082,17 +2082,17 @@ async function loadWhiteboards(selectProjectId = null) {
       return;
     }
 
-    dropdown.innerHTML = cachedWhiteboards.map(p => `
-      <option value="${p.id}" ${selectProjectId ? (p.id === selectProjectId ? 'selected' : '') : (p.id === currentWhiteboardId ? 'selected' : '')}>
-        ${p.emoji_icon} ${escapeHtml(p.title)}
-      </option>
-    `).join("");
-
     if (selectProjectId) {
       currentWhiteboardId = selectProjectId;
     } else if (!currentWhiteboardId || !cachedWhiteboards.some(p => p.id === currentWhiteboardId)) {
       currentWhiteboardId = cachedWhiteboards[0].id;
     }
+
+    dropdown.innerHTML = cachedWhiteboards.map(p => `
+      <option value="${p.id}" ${p.id === currentWhiteboardId ? 'selected' : ''}>
+        ${p.emoji_icon} ${escapeHtml(p.title)}
+      </option>
+    `).join("");
 
     dropdown.value = String(currentWhiteboardId);
     await loadWhiteboardDetails(currentWhiteboardId);
@@ -2124,7 +2124,7 @@ async function loadWhiteboardDetails(projectId) {
 
     if (emojiEl) emojiEl.textContent = proj.emoji_icon || "📋";
     if (titleEl) titleEl.textContent = proj.title;
-    if (catEl) catEl.textContent = proj.category.toUpperCase();
+    if (catEl) catEl.textContent = (proj.category || "general").toUpperCase();
     if (sumEl) sumEl.textContent = proj.summary || "Interactive planning canvas";
 
     // Group blocks by section_name
@@ -2191,16 +2191,16 @@ function renderSmartCardHtml(block) {
               </div>
               <span class="wb-opt-price">${opt.price || ''}</span>
             </div>
-            ${opt.pros && opt.pros.length ? `
+            ${(opt.pros?.length || opt.cons?.length) ? `
               <ul class="wb-opt-bullets">
-                ${opt.pros.map(p => `<li>✅ ${escapeHtml(p)}</li>`).join("")}
+                ${(opt.pros || []).map(p => `<li>✅ ${escapeHtml(p)}</li>`).join("")}
                 ${(opt.cons || []).map(c => `<li>⚠️ ${escapeHtml(c)}</li>`).join("")}
               </ul>
             ` : ''}
             <div class="wb-opt-actions">
               ${opt.is_winner ? `
                 <span class="wb-winner-badge">🏆 Selected Choice</span>
-                <button class="btn-card-escalate" onclick="escalateOptionToTask(${block.id}, '${escapeHtml(opt.name)}', '${escapeHtml(block.title)}')">⏰ Add Task</button>
+                <button class="btn-card-escalate" onclick="escalateOptionToTask(${block.id}, '${opt.id}')">⏰ Add Task</button>
               ` : `
                 <button class="btn-select-winner" onclick="selectComparisonWinner(${block.id}, '${opt.id}')">⭐ Select Option</button>
               `}
@@ -2289,7 +2289,7 @@ function renderSmartCardHtml(block) {
       <div class="wb-card-footer">
         <div class="wb-card-actions-left">
           ${block.block_type !== 'comparison' ? `
-            <button class="btn-card-escalate" onclick="escalateBlockToTask(${block.id}, '${escapeHtml(block.title)}')">⏰ Add Task</button>
+            <button class="btn-card-escalate" onclick="escalateBlockToTask(${block.id})">⏰ Add Task</button>
           ` : ''}
           ${block.block_type === 'budget' ? `
             <button class="btn-card-escalate" onclick="escalateBlockToExpense(${block.id})">💰 Log Expense</button>
@@ -2386,8 +2386,10 @@ window.deleteBlockCard = async function(blockId) {
   }
 };
 
-window.escalateBlockToTask = async function(blockId, defaultTitle) {
-  const taskTitle = prompt("Enter task title to schedule in Tasks & Reminders:", defaultTitle);
+window.escalateBlockToTask = async function(blockId) {
+  const block = cachedWhiteboardBlocks.find(b => b.id === blockId);
+  if (!block) return;
+  const taskTitle = prompt("Enter task title to schedule in Tasks & Reminders:", block.title);
   if (!taskTitle) return;
 
   const dueStr = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
@@ -2413,8 +2415,12 @@ window.escalateBlockToTask = async function(blockId, defaultTitle) {
   }
 };
 
-window.escalateOptionToTask = async function(blockId, optionName, cardTitle) {
-  const taskTitle = prompt("Enter task title for this choice:", `Book ${optionName} for ${cardTitle}`);
+window.escalateOptionToTask = async function(blockId, optionId) {
+  const block = cachedWhiteboardBlocks.find(b => b.id === blockId);
+  if (!block) return;
+  const opt = (block.content_payload?.options || []).find(o => o.id === optionId);
+  const optName = opt ? opt.name : block.title;
+  const taskTitle = prompt("Enter task title for this choice:", `Book ${optName} for ${block.title}`);
   if (!taskTitle) return;
 
   const dueStr = new Date(Date.now() + 24 * 3600 * 1000).toISOString();

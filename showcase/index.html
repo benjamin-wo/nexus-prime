@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="styles.css?v=5" />
+  <link rel="stylesheet" href="styles.css?v=8" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>" />
 </head>
 <body>
@@ -728,147 +728,6 @@
         </div>
 
         <!-- ================================================================
-             MODAL: CREATE NEW WHITEBOARD PROJECT & TEMPLATE PICKER
-             ================================================================ -->
-        <div id="modal-create-board" class="custom-modal-backdrop" style="display: none;">
-          <div class="custom-modal-card wb-modal-card">
-            <div class="modal-header-row">
-              <div class="modal-title-wrap">
-                <span class="modal-icon-badge">✨</span>
-                <div>
-                  <h3 class="modal-heading">Create New Planning Board</h3>
-                  <p class="modal-subheading">Choose a starter template or begin with a blank canvas</p>
-                </div>
-              </div>
-              <button class="btn-modal-close" id="btn-close-create-board">&times;</button>
-            </div>
-
-            <form id="form-create-board">
-              <div class="modal-field-group">
-                <label class="modal-label">Board Title & Emoji Icon</label>
-                <div style="display: flex; gap: 0.5rem;">
-                  <input type="text" id="new-board-emoji" class="modal-text-input" value="✈️" style="max-width: 65px; text-align: center; font-size: 1.25rem;" />
-                  <input type="text" id="new-board-title" class="modal-text-input" placeholder="e.g. Kyoto Autumn Trip 2026, Summer BBQ Party..." required />
-                </div>
-              </div>
-
-              <div class="modal-field-group">
-                <label class="modal-label">Category</label>
-                <select id="new-board-category" class="table-dropdown-select" style="width: 100%;">
-                  <option value="trip">✈️ Trip & Travel</option>
-                  <option value="event">🎉 Event & Party</option>
-                  <option value="project">🚀 Project & Startup</option>
-                  <option value="meal">🛒 Groceries & Meal Prep</option>
-                  <option value="general">📝 General Planning</option>
-                </select>
-              </div>
-
-              <div class="modal-field-group">
-                <label class="modal-label">Summary / Description (Optional)</label>
-                <input type="text" id="new-board-summary" class="modal-text-input" placeholder="Brief project summary or goals..." />
-              </div>
-
-              <!-- Starter Templates Grid -->
-              <div class="modal-field-group">
-                <label class="modal-label">Choose Starter Template</label>
-                <div class="wb-template-grid">
-                  <label class="wb-template-card selected" data-template="trip">
-                    <input type="radio" name="board-template-choice" value="trip" checked style="display: none;" />
-                    <span class="wb-temp-icon">✈️</span>
-                    <span class="wb-temp-title">Trip Planner</span>
-                    <span class="wb-temp-desc">Hotels, Day Itinerary, Packing, Budget</span>
-                  </label>
-
-                  <label class="wb-template-card" data-template="meal">
-                    <input type="radio" name="board-template-choice" value="meal" style="display: none;" />
-                    <span class="wb-temp-icon">🛒</span>
-                    <span class="wb-temp-title">Groceries & Meals</span>
-                    <span class="wb-temp-desc">Meal prep, shopping checklist, recipes</span>
-                  </label>
-
-                  <label class="wb-template-card" data-template="event">
-                    <input type="radio" name="board-template-choice" value="event" style="display: none;" />
-                    <span class="wb-temp-icon">🎉</span>
-                    <span class="wb-temp-title">Event & Party</span>
-                    <span class="wb-temp-desc">Venues, RSVP guest list, supplies</span>
-                  </label>
-
-                  <label class="wb-template-card" data-template="project">
-                    <input type="radio" name="board-template-choice" value="project" style="display: none;" />
-                    <span class="wb-temp-icon">🚀</span>
-                    <span class="wb-temp-title">Startup & Project</span>
-                    <span class="wb-temp-desc">Problem, MVP features, milestones</span>
-                  </label>
-
-                  <label class="wb-template-card" data-template="blank">
-                    <input type="radio" name="board-template-choice" value="blank" style="display: none;" />
-                    <span class="wb-temp-icon">📝</span>
-                    <span class="wb-temp-title">Blank Canvas</span>
-                    <span class="wb-temp-desc">Clean canvas for custom brainstorming</span>
-                  </label>
-                </div>
-              </div>
-
-              <div class="modal-actions-row">
-                <button type="button" class="btn-ghost" id="btn-cancel-create-board">Cancel</button>
-                <button type="submit" class="btn-primary-ember" id="btn-submit-create-board">Create Whiteboard</button>
-              </div>
-            </form>
-          </div>
-        </div>
-
-        <!-- ================================================================
-             MODAL: ADD MANUAL CARD TO BOARD
-             ================================================================ -->
-        <div id="modal-add-card" class="custom-modal-backdrop" style="display: none;">
-          <div class="custom-modal-card wb-modal-card">
-            <div class="modal-header-row">
-              <div class="modal-title-wrap">
-                <span class="modal-icon-badge">➕</span>
-                <div>
-                  <h3 class="modal-heading">Add Card to Whiteboard</h3>
-                  <p class="modal-subheading">Choose a card type and attach to a section</p>
-                </div>
-              </div>
-              <button class="btn-modal-close" id="btn-close-add-card">&times;</button>
-            </div>
-
-            <form id="form-add-card">
-              <div class="modal-field-group">
-                <label class="modal-label">Section Name</label>
-                <input type="text" id="new-card-section" class="modal-text-input" placeholder="e.g. 🏨 Accommodations, 📅 Day 1, 🎒 Essentials" value="General" required />
-              </div>
-
-              <div class="modal-field-group">
-                <label class="modal-label">Card Type</label>
-                <select id="new-card-type" class="table-dropdown-select" style="width: 100%;">
-                  <option value="note">📝 Rich Note / Idea</option>
-                  <option value="checklist">📋 Interactive Checklist</option>
-                  <option value="comparison">⚖️ Decision / Comparison Block</option>
-                  <option value="itinerary">📅 Timeline / Itinerary Step</option>
-                  <option value="budget">💰 Budget & Cost Estimator</option>
-                </select>
-              </div>
-
-              <div class="modal-field-group">
-                <label class="modal-label">Card Title</label>
-                <input type="text" id="new-card-title" class="modal-text-input" placeholder="e.g. Restaurant Shortlist, Key Takeaways..." required />
-              </div>
-
-              <div class="modal-field-group">
-                <label class="modal-label">Content / Notes</label>
-                <textarea id="new-card-notes" class="modal-textarea" rows="4" placeholder="Enter notes, bullet points, or details..."></textarea>
-              </div>
-
-              <div class="modal-actions-row">
-                <button type="button" class="btn-ghost" id="btn-cancel-add-card">Cancel</button>
-                <button type="submit" class="btn-primary-ember" id="btn-submit-add-card">+ Add to Board</button>
-              </div>
-            </form>
-          </div>
-        </div>
-
-        <!-- ================================================================
              TAB 5: SYSTEM & OPS (TELEMETRY)
              ================================================================ -->
         <div id="tab-overview" class="view-panel">
@@ -1105,6 +964,141 @@
   </div>
 
   <!-- ====================================================================
+       MODAL: CREATE NEW WHITEBOARD PROJECT & TEMPLATE PICKER
+       ==================================================================== -->
+  <div class="modal-backdrop-veil" id="modal-create-board" style="display: none;">
+    <div class="modal-card-dialog wb-modal-dialog">
+      <div class="modal-card-header">
+        <div>
+          <h3 class="modal-title-text">Create New Planning Board</h3>
+          <p class="modal-sub-text">Choose a starter template or begin with a blank canvas</p>
+        </div>
+        <button type="button" class="modal-close-x" id="btn-close-create-board">&times;</button>
+      </div>
+
+      <form id="form-create-board" class="modal-inner-form">
+        <div class="form-field-group">
+          <label>Board Title & Emoji Icon:</label>
+          <div style="display: flex; gap: 0.5rem;">
+            <input type="text" id="new-board-emoji" value="✈️" style="max-width: 65px; text-align: center; font-size: 1.25rem;" />
+            <input type="text" id="new-board-title" placeholder="e.g. Kyoto Autumn Trip 2026, Summer BBQ Party..." required />
+          </div>
+        </div>
+
+        <div class="form-field-group">
+          <label for="new-board-category">Category:</label>
+          <select id="new-board-category" class="table-dropdown-select" style="width: 100%;">
+            <option value="trip">✈️ Trip & Travel</option>
+            <option value="event">🎉 Event & Party</option>
+            <option value="project">🚀 Project & Startup</option>
+            <option value="meal">🛒 Groceries & Meal Prep</option>
+            <option value="general">📝 General Planning</option>
+          </select>
+        </div>
+
+        <div class="form-field-group">
+          <label for="new-board-summary">Summary / Description (Optional):</label>
+          <input type="text" id="new-board-summary" placeholder="Brief project summary or goals..." />
+        </div>
+
+        <!-- Starter Templates Grid -->
+        <div class="form-field-group">
+          <label>Choose Starter Template:</label>
+          <div class="wb-template-grid">
+            <label class="wb-template-card selected" data-template="trip">
+              <input type="radio" name="board-template-choice" value="trip" checked style="display: none;" />
+              <span class="wb-temp-icon">✈️</span>
+              <span class="wb-temp-title">Trip Planner</span>
+              <span class="wb-temp-desc">Hotels, Day Itinerary, Packing, Budget</span>
+            </label>
+
+            <label class="wb-template-card" data-template="meal">
+              <input type="radio" name="board-template-choice" value="meal" style="display: none;" />
+              <span class="wb-temp-icon">🛒</span>
+              <span class="wb-temp-title">Groceries & Meals</span>
+              <span class="wb-temp-desc">Meal prep, shopping checklist, recipes</span>
+            </label>
+
+            <label class="wb-template-card" data-template="event">
+              <input type="radio" name="board-template-choice" value="event" style="display: none;" />
+              <span class="wb-temp-icon">🎉</span>
+              <span class="wb-temp-title">Event & Party</span>
+              <span class="wb-temp-desc">Venues, RSVP guest list, supplies</span>
+            </label>
+
+            <label class="wb-template-card" data-template="project">
+              <input type="radio" name="board-template-choice" value="project" style="display: none;" />
+              <span class="wb-temp-icon">🚀</span>
+              <span class="wb-temp-title">Startup & Project</span>
+              <span class="wb-temp-desc">Problem, MVP features, milestones</span>
+            </label>
+
+            <label class="wb-template-card" data-template="blank">
+              <input type="radio" name="board-template-choice" value="blank" style="display: none;" />
+              <span class="wb-temp-icon">📝</span>
+              <span class="wb-temp-title">Blank Canvas</span>
+              <span class="wb-temp-desc">Clean canvas for custom brainstorming</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="modal-footer-buttons" style="margin-top: 0.5rem;">
+          <button type="button" class="btn-cancel-flat" id="btn-cancel-create-board">Cancel</button>
+          <button type="submit" class="btn-primary-ember" id="btn-submit-create-board">Create Whiteboard</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       MODAL: ADD MANUAL CARD TO BOARD
+       ==================================================================== -->
+  <div class="modal-backdrop-veil" id="modal-add-card" style="display: none;">
+    <div class="modal-card-dialog wb-modal-dialog">
+      <div class="modal-card-header">
+        <div>
+          <h3 class="modal-title-text">Add Card to Whiteboard</h3>
+          <p class="modal-sub-text">Choose a card type and attach to a section</p>
+        </div>
+        <button type="button" class="modal-close-x" id="btn-close-add-card">&times;</button>
+      </div>
+
+      <form id="form-add-card" class="modal-inner-form">
+        <div class="form-field-group">
+          <label for="new-card-section">Section Name:</label>
+          <input type="text" id="new-card-section" placeholder="e.g. 🏨 Accommodations, 📅 Day 1, 🎒 Essentials" value="General" required />
+        </div>
+
+        <div class="form-field-group">
+          <label for="new-card-type">Card Type:</label>
+          <select id="new-card-type" class="table-dropdown-select" style="width: 100%;">
+            <option value="note">📝 Rich Note / Idea</option>
+            <option value="checklist">📋 Interactive Checklist</option>
+            <option value="comparison">⚖️ Decision / Comparison Block</option>
+            <option value="itinerary">📅 Timeline / Itinerary Step</option>
+            <option value="budget">💰 Budget & Cost Estimator</option>
+          </select>
+        </div>
+
+        <div class="form-field-group">
+          <label for="new-card-title">Card Title:</label>
+          <input type="text" id="new-card-title" placeholder="e.g. Restaurant Shortlist, Key Takeaways..." required />
+        </div>
+
+        <div class="form-field-group">
+          <label for="new-card-notes">Content / Notes:</label>
+          <textarea id="new-card-notes" class="modal-textarea" rows="4" placeholder="Enter notes, bullet points, or details..."></textarea>
+        </div>
+
+        <div class="modal-footer-buttons" style="margin-top: 0.5rem;">
+          <button type="button" class="btn-cancel-flat" id="btn-cancel-add-card">Cancel</button>
+          <button type="submit" class="btn-primary-ember" id="btn-submit-add-card">+ Add to Board</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ====================================================================
        CONTEXT-AWARE AI COPILOT DRAWER
        ==================================================================== -->
   <div class="copilot-drawer-backdrop" id="copilot-backdrop" style="display: none;" onclick="closeCopilotDrawer()"></div>
@@ -1165,6 +1159,6 @@
   <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
   <script src="manifests-data.js"></script>
-  <script src="app.js?v=6"></script>
+  <script src="app.js?v=8"></script>
 </body>
 </html>
