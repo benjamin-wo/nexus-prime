@@ -133,14 +133,6 @@ def normalize_category(raw_category: Optional[str]) -> str:
 
 async def get_primary_user_id(session: Any) -> int:
     """Resolve the active primary user ID (Telegram user or default)."""
-    result = await session.execute(
-        select(UserProfile).limit(1)
-    )
-    profile = result.scalar_one_or_none()
-    if profile is not None:
-        return profile.user_id
-
-    # Create default user profile to ensure foreign key constraints pass
     admin_id = 999999
     if settings.admin_telegram_chat_id:
         try:
@@ -148,15 +140,27 @@ async def get_primary_user_id(session: Any) -> int:
         except Exception:
             admin_id = 999999
 
-    default_user = UserProfile(
-        user_id=admin_id,
-        telegram_chat_id=admin_id,
-        current_timezone="Asia/Singapore",
-        home_currency="SGD",
-    )
-    session.add(default_user)
-    await session.commit()
-    return admin_id
+    try:
+        result = await session.execute(
+            select(UserProfile).limit(1)
+        )
+        profile = result.scalar_one_or_none()
+        if profile is not None:
+            return profile.user_id
+
+        # Create default user profile to ensure foreign key constraints pass
+        default_user = UserProfile(
+            user_id=admin_id,
+            telegram_chat_id=admin_id,
+            current_timezone="Asia/Singapore",
+            home_currency="SGD",
+        )
+        session.add(default_user)
+        await session.commit()
+        return admin_id
+    except Exception as e:
+        logger.warning(f"Could not resolve or create UserProfile: {e}")
+        return admin_id
 
 
 async def migrate_existing_categories_if_needed(session: Any) -> None:
