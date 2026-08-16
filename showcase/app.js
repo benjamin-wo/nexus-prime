@@ -2182,6 +2182,7 @@ function renderWhiteboardCanvas(blocks) {
 
   container.innerHTML = deckHtml;
 }
+window.renderWhiteboardCanvas = renderWhiteboardCanvas;
 
 function renderSmartCardHtml(block) {
   const payload = block.content_payload || {};
