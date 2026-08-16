@@ -1825,15 +1825,109 @@ let currentWhiteboardId = null;
 let cachedWhiteboards = [];
 let cachedWhiteboardBlocks = [];
 
-function initWhiteboard() {
-  // Board Switcher Dropdown
-  const selector = document.getElementById("wb-project-selector");
-  if (selector) {
-    selector.addEventListener("change", (e) => {
-      currentWhiteboardId = parseInt(e.target.value, 10);
-      loadWhiteboardDetails(currentWhiteboardId);
+// ── Carousel state ──────────────────────────────────────────────────────────
+let carouselIndex = 0;
+
+function renderBoardCarousel(boards, activeId) {
+  const track = document.getElementById("wb-carousel-track");
+  const dotsEl = document.getElementById("wb-carousel-dots");
+  const counter = document.getElementById("wb-carousel-counter");
+  const prevBtn = document.getElementById("wb-carousel-prev");
+  const nextBtn = document.getElementById("wb-carousel-next");
+  const delBtn = document.getElementById("btn-delete-active-board");
+
+  if (!track) return;
+
+  if (boards.length === 0) {
+    track.innerHTML = `<div class="wb-carousel-empty">No boards yet — create your first one above ✨</div>`;
+    if (dotsEl) dotsEl.innerHTML = "";
+    if (counter) counter.textContent = "0 / 0";
+    if (prevBtn) prevBtn.disabled = true;
+    if (nextBtn) nextBtn.disabled = true;
+    if (delBtn) delBtn.style.visibility = "hidden";
+    return;
+  }
+
+  if (delBtn) delBtn.style.visibility = "visible";
+
+  // Determine carouselIndex from activeId
+  const activeIdx = boards.findIndex(b => b.id === activeId);
+  if (activeIdx !== -1) carouselIndex = activeIdx;
+
+  const total = boards.length;
+  const cur = carouselIndex;
+  const prevIdx = (cur - 1 + total) % total;
+  const nextIdx = (cur + 1) % total;
+
+  function cardHtml(board, cls) {
+    const cat = (board.category || "general").charAt(0).toUpperCase() + (board.category || "general").slice(1);
+    return `
+      <div class="wb-carousel-card ${cls}" data-board-id="${board.id}">
+        <div class="wb-carousel-card-emoji">${board.emoji_icon || "📋"}</div>
+        <div class="wb-carousel-card-title">${escapeHtml(board.title)}</div>
+        <div class="wb-carousel-card-badge">${cat}</div>
+      </div>`;
+  }
+
+  let html = "";
+  if (total > 1) html += cardHtml(boards[prevIdx], "ghost prev");
+  html += cardHtml(boards[cur], "active");
+  if (total > 1) html += cardHtml(boards[nextIdx], "ghost next");
+  track.innerHTML = html;
+
+  // Dots
+  if (dotsEl) {
+    dotsEl.innerHTML = boards.map((_, i) =>
+      `<div class="wb-carousel-dot ${i === cur ? 'active' : ''}" data-idx="${i}"></div>`
+    ).join("");
+    dotsEl.querySelectorAll(".wb-carousel-dot").forEach(dot => {
+      dot.addEventListener("click", () => {
+        carouselIndex = parseInt(dot.dataset.idx, 10);
+        currentWhiteboardId = boards[carouselIndex].id;
+        renderBoardCarousel(boards, currentWhiteboardId);
+        loadWhiteboardDetails(currentWhiteboardId);
+      });
     });
   }
+
+  // Counter
+  const pad = n => String(n + 1).padStart(2, "0");
+  if (counter) counter.textContent = `${pad(cur)} / ${pad(total - 1)}`;
+
+  // Arrow states
+  if (prevBtn) prevBtn.disabled = total <= 1;
+  if (nextBtn) nextBtn.disabled = total <= 1;
+
+  // Card click — ghost cards navigate
+  track.querySelectorAll(".wb-carousel-card").forEach(card => {
+    card.addEventListener("click", () => {
+      const bid = parseInt(card.dataset.boardId, 10);
+      if (bid !== currentWhiteboardId) {
+        currentWhiteboardId = bid;
+        carouselIndex = boards.findIndex(b => b.id === bid);
+        renderBoardCarousel(boards, currentWhiteboardId);
+        loadWhiteboardDetails(currentWhiteboardId);
+      }
+    });
+  });
+}
+
+function initWhiteboard() {
+  // Carousel arrow buttons
+  document.getElementById("wb-carousel-prev")?.addEventListener("click", () => {
+    if (!cachedWhiteboards.length) return;
+    carouselIndex = (carouselIndex - 1 + cachedWhiteboards.length) % cachedWhiteboards.length;
+    currentWhiteboardId = cachedWhiteboards[carouselIndex].id;
+    renderBoardCarousel(cachedWhiteboards, currentWhiteboardId);
+    loadWhiteboardDetails(currentWhiteboardId);
+  });
+  document.getElementById("wb-carousel-next")?.addEventListener("click", () => {
+    if (!cachedWhiteboards.length) return;
+    carouselIndex = (carouselIndex + 1) % cachedWhiteboards.length;
+    currentWhiteboardId = cachedWhiteboards[carouselIndex].id;
+    renderBoardCarousel(cachedWhiteboards, currentWhiteboardId);
+    loadWhiteboardDetails(currentWhiteboardId);
+  });
 
   // Create Board Modal Controls
   const openCreateBtn = document.getElementById("btn-open-create-board-modal");
@@ -2074,27 +2168,31 @@ async function loadWhiteboards(selectProjectId = null) {
     const data = await res.json();
     cachedWhiteboards = data.projects || [];
 
-    const dropdown = document.getElementById("wb-project-selector");
-    if (!dropdown) return;
-
     if (cachedWhiteboards.length === 0) {
-      dropdown.innerHTML = `<option value="">No boards</option>`;
+      renderBoardCarousel([], null);
+      // Show empty state in the canvas area too
+      document.getElementById("wb-active-title").textContent = "No Boards";
+      document.getElementById("wb-active-summary").textContent = "Create your first board to get started.";
+      document.getElementById("wb-active-emoji").textContent = "📋";
+      document.getElementById("wb-active-category").textContent = "";
+      document.getElementById("wb-sections-container").innerHTML = `
+        <div class="wb-empty-state">
+          <div class="wb-empty-icon">🗂️</div>
+          <p class="wb-empty-text">No boards yet. Use <strong>New Board</strong> above to create one.</p>
+        </div>`;
       return;
     }
 
     if (selectProjectId) {
       currentWhiteboardId = selectProjectId;
+      carouselIndex = cachedWhiteboards.findIndex(p => p.id === selectProjectId);
+      if (carouselIndex < 0) carouselIndex = 0;
     } else if (!currentWhiteboardId || !cachedWhiteboards.some(p => p.id === currentWhiteboardId)) {
       currentWhiteboardId = cachedWhiteboards[0].id;
+      carouselIndex = 0;
     }
 
-    dropdown.innerHTML = cachedWhiteboards.map(p => `
-      <option value="${p.id}" ${p.id === currentWhiteboardId ? 'selected' : ''}>
-        ${p.emoji_icon} ${escapeHtml(p.title)}
-      </option>
-    `).join("");
-
-    dropdown.value = String(currentWhiteboardId);
+    renderBoardCarousel(cachedWhiteboards, currentWhiteboardId);
     await loadWhiteboardDetails(currentWhiteboardId);
 
   } catch (err) {

@@ -1202,48 +1202,61 @@ async def list_whiteboards(user_id: Optional[int] = None) -> Dict[str, Any]:
         )
         projects = result.scalars().all()
 
-        # If user has no boards yet, seed the default starter boards (including migrated groceries)
+        # Only seed default starter boards on first-ever load (whiteboard_seeded == False).
+        # If the user has intentionally deleted all boards, honour the empty state.
         if not projects:
-            p1 = WhiteboardProject(
-                user_id=effective_user_id,
-                title="Tokyo Vacation & Trip Planner",
-                emoji_icon="✈️",
-                category="trip",
-                summary="7-day autumn trip to Tokyo exploring Shibuya, Shinjuku, Ginza, and Hakone",
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow(),
-            )
-            p2 = WhiteboardProject(
-                user_id=effective_user_id,
-                title="Smart Groceries & Meal Prep",
-                emoji_icon="🛒",
-                category="meal",
-                summary="Weekly recipe inspiration, pantry items, and shopping checklist",
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow(),
-            )
-            p3 = WhiteboardProject(
-                user_id=effective_user_id,
-                title="Startup MVP & Launch Board",
-                emoji_icon="🚀",
-                category="project",
-                summary="Architecture, MVP scope, core features, and launch checklist",
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow(),
-            )
-            session.add_all([p1, p2, p3])
-            await session.commit()
-            await session.refresh(p1)
-            await session.refresh(p2)
-            await session.refresh(p3)
+            user_profile = (await session.execute(
+                select(UserProfile).where(UserProfile.user_id == effective_user_id)
+            )).scalar_one_or_none()
 
-            await _seed_template_blocks(session, p1.id, "trip", effective_user_id)
-            await _seed_template_blocks(session, p2.id, "meal", effective_user_id)
-            await _seed_template_blocks(session, p3.id, "project", effective_user_id)
-            await session.commit()
+            should_seed = user_profile is not None and not user_profile.whiteboard_seeded
 
-            # Re-fetch
-            projects = [p1, p2, p3]
+            if should_seed:
+                p1 = WhiteboardProject(
+                    user_id=effective_user_id,
+                    title="Tokyo Vacation & Trip Planner",
+                    emoji_icon="✈️",
+                    category="trip",
+                    summary="7-day autumn trip to Tokyo exploring Shibuya, Shinjuku, Ginza, and Hakone",
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow(),
+                )
+                p2 = WhiteboardProject(
+                    user_id=effective_user_id,
+                    title="Smart Groceries & Meal Prep",
+                    emoji_icon="🛒",
+                    category="meal",
+                    summary="Weekly recipe inspiration, pantry items, and shopping checklist",
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow(),
+                )
+                p3 = WhiteboardProject(
+                    user_id=effective_user_id,
+                    title="Startup MVP & Launch Board",
+                    emoji_icon="🚀",
+                    category="project",
+                    summary="Architecture, MVP scope, core features, and launch checklist",
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow(),
+                )
+                session.add_all([p1, p2, p3])
+                await session.commit()
+                await session.refresh(p1)
+                await session.refresh(p2)
+                await session.refresh(p3)
+
+                await _seed_template_blocks(session, p1.id, "trip", effective_user_id)
+                await _seed_template_blocks(session, p2.id, "meal", effective_user_id)
+                await _seed_template_blocks(session, p3.id, "project", effective_user_id)
+
+                # Mark as seeded — never auto-seed again for this user
+                if user_profile:
+                    user_profile.whiteboard_seeded = True
+                    session.add(user_profile)
+                await session.commit()
+
+                # Re-fetch
+                projects = [p1, p2, p3]
 
         return {
             "status": "ok",

@@ -8,6 +8,7 @@ class UserProfile(SQLModel, table=True):
     current_timezone: str = Field(default="UTC")
     home_currency: str = Field(default="SGD")
     tracked_banks: List[str] = Field(default=[], sa_column=Column(JSON))
+    whiteboard_seeded: bool = Field(default=False)  # True after first-time board seeding — prevents re-seed on empty state
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class UserCredential(SQLModel, table=True):

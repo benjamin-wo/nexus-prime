@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="styles.css?v=13" />
+  <link rel="stylesheet" href="styles.css?v=14" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>" />
 </head>
 <body>
@@ -665,22 +665,35 @@
               <p class="wb-header-summary" id="wb-active-summary">7-day autumn trip to Tokyo exploring Shibuya, Shinjuku, Ginza, and Hakone</p>
             </div>
 
-            <!-- Header Controls -->
-            <div class="wb-header-actions">
-              <div class="wb-select-wrapper">
-                <label for="wb-project-selector" class="wb-select-label">Board:</label>
-                <select id="wb-project-selector" class="table-dropdown-select wb-board-dropdown">
-                  <!-- Populated by app.js -->
-                </select>
-              </div>
+          </div>
 
-              <button class="btn-primary-ember wb-create-btn" id="btn-open-create-board-modal">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          <!-- Board Carousel Picker -->
+          <div class="wb-board-carousel" id="wb-board-carousel">
+            <div class="wb-carousel-header">
+              <span class="wb-carousel-counter" id="wb-carousel-counter">01 / 03</span>
+              <button class="btn-primary-ember wb-create-btn-sm" id="btn-open-create-board-modal">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
                 New Board
               </button>
+            </div>
 
-              <button class="btn-ghost-danger" id="btn-delete-active-board" title="Delete current board">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+            <div class="wb-carousel-stage" id="wb-carousel-stage">
+              <button class="wb-carousel-arrow left" id="wb-carousel-prev" aria-label="Previous board">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+              </button>
+              <div class="wb-carousel-track" id="wb-carousel-track">
+                <!-- Populated by app.js -->
+              </div>
+              <button class="wb-carousel-arrow right" id="wb-carousel-next" aria-label="Next board">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+              </button>
+            </div>
+
+            <div class="wb-carousel-footer">
+              <div class="wb-carousel-dots" id="wb-carousel-dots"></div>
+              <button class="btn-ghost-danger wb-delete-board-btn" id="btn-delete-active-board" title="Delete current board">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                Delete Board
               </button>
             </div>
           </div>
@@ -1159,6 +1172,6 @@
   <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
   <script src="manifests-data.js"></script>
-  <script src="app.js?v=13"></script>
+  <script src="app.js?v=14"></script>
 </body>
 </html>
