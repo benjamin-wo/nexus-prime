@@ -2591,39 +2591,66 @@ table.financial-data-table tr:hover td {
   justify-content: center;
   gap: 0.75rem;
   overflow: hidden;
-  min-height: 96px;
+  min-height: 150px;
 }
 
 .wb-carousel-card {
   flex-shrink: 0;
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  padding: 0.85rem 1rem;
+  justify-content: flex-end;
+  height: 150px;
   border-radius: var(--radius-md);
   cursor: pointer;
   transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
   border: 1px solid transparent;
   text-align: center;
   user-select: none;
+  background-color: #1c1c24;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  overflow: hidden;
+}
+
+/* Gradient scrim over the cover image for text legibility */
+.wb-carousel-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.25) 40%, transparent 55%);
+  pointer-events: none;
+}
+
+/* Shimmer skeleton while the cover art is being generated */
+.wb-carousel-card.shimmer {
+  background: linear-gradient(90deg, #1c1c24 25%, #2a2a36 50%, #1c1c24 75%);
+  background-size: 200% 100%;
+  background-position: 0 0;
+  animation: wb-shimmer 1.4s infinite;
+}
+
+@keyframes wb-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
 .wb-carousel-card.ghost {
   width: calc(28% - 1.5rem);
   min-width: 90px;
   max-width: 140px;
+  height: 126px;
   opacity: 0.45;
   transform: scale(0.85);
-  background: rgba(255, 255, 255, 0.03);
+  background-color: rgba(255, 255, 255, 0.03);
   border-color: rgba(255, 255, 255, 0.07);
 }
 
 .wb-carousel-card.ghost:hover {
   opacity: 0.7;
   transform: scale(0.88);
-  background: rgba(249, 115, 22, 0.06);
   border-color: rgba(249, 115, 22, 0.2);
 }
 
@@ -2631,20 +2658,35 @@ table.financial-data-table tr:hover td {
   width: 44%;
   min-width: 160px;
   max-width: 260px;
+  height: 150px;
   opacity: 1;
   transform: scale(1);
-  background: linear-gradient(135deg, rgba(249, 115, 22, 0.1), rgba(249, 115, 22, 0.04));
   border-color: rgba(249, 115, 22, 0.45);
   box-shadow: 0 0 20px rgba(249, 115, 22, 0.18), 0 4px 16px rgba(0, 0, 0, 0.35);
 }
 
+/* Bottom-pinned overlay content (emoji + title + badge) */
+.wb-carousel-card-info {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.75rem;
+}
+
 .wb-carousel-card-emoji {
-  font-size: 2rem;
+  font-size: 1.5rem;
   line-height: 1;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.6));
 }
 
 .wb-carousel-card.ghost .wb-carousel-card-emoji {
-  font-size: 1.5rem;
+  font-size: 1.3rem;
 }
 
 .wb-carousel-card-title {
@@ -2656,6 +2698,7 @@ table.financial-data-table tr:hover td {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
 }
 
 .wb-carousel-card.ghost .wb-carousel-card-title {
@@ -2664,14 +2707,14 @@ table.financial-data-table tr:hover td {
 }
 
 .wb-carousel-card-badge {
-  font-size: 0.63rem;
+  font-size: 0.58rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--orange-primary);
-  background: rgba(249, 115, 22, 0.12);
+  background: rgba(0, 0, 0, 0.45);
   border: 1px solid rgba(249, 115, 22, 0.25);
-  padding: 0.15rem 0.5rem;
+  padding: 0.12rem 0.5rem;
   border-radius: var(--radius-pill);
 }
 
@@ -2932,6 +2975,106 @@ table.financial-data-table tr:hover td {
   justify-content: center;
   gap: 0.75rem;
   flex-wrap: wrap;
+}
+
+/* Zero-board Empty State Panel (template quick-start tiles) */
+.wb-empty-state-panel {
+  text-align: center;
+  padding: 2.5rem 1.5rem 2rem;
+  margin-bottom: 1.25rem;
+  background: linear-gradient(135deg, rgba(20, 20, 26, 0.9), rgba(16, 16, 20, 0.95));
+  border: 1px dashed #2a2a36;
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+}
+
+.wb-empty-tiles {
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-top: 1.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.wb-template-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 150px;
+  padding: 1.25rem 1.5rem;
+  background: #141418;
+  border: 1px solid #272732;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  color: inherit;
+  font-family: inherit;
+  text-align: center;
+  transition: all 0.15s ease;
+}
+
+.wb-template-tile:hover {
+  border-color: var(--orange-primary);
+  background: rgba(249, 115, 22, 0.08);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(249, 115, 22, 0.12);
+}
+
+.wb-template-tile .wb-temp-icon {
+  font-size: 1.6rem;
+}
+
+.wb-template-tile .wb-temp-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.wb-temp-sub {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.wb-empty-new-board {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius-sm);
+  transition: all 0.15s ease;
+}
+
+.wb-empty-new-board:hover {
+  color: var(--orange-primary);
+  background: rgba(249, 115, 22, 0.08);
+}
+
+/* Ghost placeholder cards (category-adaptive hints on empty boards) */
+.wb-ghost-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 1rem;
+  width: 100%;
+}
+
+.wb-ghost-card {
+  border: 1px dashed #2a2a36;
+  border-radius: var(--radius-md);
+  padding: 2.25rem 1rem;
+  text-align: center;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.015);
+  opacity: 0.4;
+  pointer-events: none;
+  user-select: none;
 }
 
 .wb-section-block {

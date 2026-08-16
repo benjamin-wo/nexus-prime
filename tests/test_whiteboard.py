@@ -213,3 +213,40 @@ async def test_whiteboard_ai_copilot_and_telegram_ingress():
     })
     assert cb_res["status"] == "ok"
     assert cb_res["action"] == "pinned_to_whiteboard"
+
+
+@pytest.mark.asyncio
+async def test_whiteboard_cover_endpoint_and_lifecycle():
+    from app.dashboard_api import get_whiteboard_cover, delete_whiteboard, _cover_file_path
+    import os
+
+    # 1. Create a board
+    create_res = await create_whiteboard(
+        payload=CreateWhiteboardRequest(
+            title="Kyoto Zen Gardens",
+            emoji_icon="⛩️",
+            category="trip",
+            template="blank",
+        ),
+        user_id=8001,
+    )
+    proj_id = create_res["project"]["id"]
+    assert create_res["project"]["cover_ready"] is False
+
+    # 2. Query cover before file exists -> returns 202 {"status": "generating"}
+    cover_res = await get_whiteboard_cover(project_id=proj_id)
+    assert cover_res.status_code == 202
+
+    # 3. Simulate cover file written to disk -> returns 200 FileResponse
+    cover_path = _cover_file_path(proj_id)
+    os.makedirs(os.path.dirname(cover_path), exist_ok=True)
+    with open(cover_path, "wb") as f:
+        f.write(b"\x89PNG\r\n\x1a\nfake-cover-bytes")
+
+    cover_res_ready = await get_whiteboard_cover(project_id=proj_id)
+    assert cover_res_ready.media_type == "image/png"
+
+    # 4. Delete board -> cover file is cleaned up
+    del_res = await delete_whiteboard(project_id=proj_id)
+    assert del_res["status"] == "ok"
+    assert not os.path.exists(cover_path)

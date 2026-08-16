@@ -1827,6 +1827,8 @@ let cachedWhiteboardBlocks = [];
 
 // ── Carousel state ──────────────────────────────────────────────────────────
 let carouselIndex = 0;
+// Track in-flight cover polls so re-renders can clean them up.
+const coverPollers = new Map();
 
 function renderBoardCarousel(boards, activeId) {
   const track = document.getElementById("wb-carousel-track");
@@ -1835,11 +1837,20 @@ function renderBoardCarousel(boards, activeId) {
   const prevBtn = document.getElementById("wb-carousel-prev");
   const nextBtn = document.getElementById("wb-carousel-next");
   const delBtn = document.getElementById("btn-delete-active-board");
+  const carouselEl = document.getElementById("wb-board-carousel");
+  const emptyStateEl = document.getElementById("wb-empty-state");
 
   if (!track) return;
 
+  // Stop any stale cover polls from a previous render.
+  coverPollers.forEach(clearInterval);
+  coverPollers.clear();
+
   if (boards.length === 0) {
-    track.innerHTML = `<div class="wb-carousel-empty">No boards yet — create your first one above ✨</div>`;
+    // Zero boards — collapse the carousel and reveal template quick-start tiles.
+    if (carouselEl) carouselEl.style.display = "none";
+    if (emptyStateEl) emptyStateEl.style.display = "block";
+    track.innerHTML = "";
     if (dotsEl) dotsEl.innerHTML = "";
     if (counter) counter.textContent = "0 / 0";
     if (prevBtn) prevBtn.disabled = true;
@@ -1848,6 +1859,8 @@ function renderBoardCarousel(boards, activeId) {
     return;
   }
 
+  if (carouselEl) carouselEl.style.display = "";
+  if (emptyStateEl) emptyStateEl.style.display = "none";
   if (delBtn) delBtn.style.visibility = "visible";
 
   // Determine carouselIndex from activeId
@@ -1861,11 +1874,16 @@ function renderBoardCarousel(boards, activeId) {
 
   function cardHtml(board, cls) {
     const cat = (board.category || "general").charAt(0).toUpperCase() + (board.category || "general").slice(1);
+    const ready = !!board.cover_ready;
+    const bgStyle = ready ? `style="background-image:url('/api/dashboard/whiteboards/${board.id}/cover')"` : "";
+    const shimmerCls = ready ? "" : " shimmer";
     return `
-      <div class="wb-carousel-card ${cls}" data-board-id="${board.id}">
-        <div class="wb-carousel-card-emoji">${board.emoji_icon || "📋"}</div>
-        <div class="wb-carousel-card-title">${escapeHtml(board.title)}</div>
-        <div class="wb-carousel-card-badge">${cat}</div>
+      <div class="wb-carousel-card ${cls}${shimmerCls}" data-board-id="${board.id}" ${bgStyle}>
+        <div class="wb-carousel-card-info">
+          <div class="wb-carousel-card-emoji">${board.emoji_icon || "📋"}</div>
+          <div class="wb-carousel-card-title">${escapeHtml(board.title)}</div>
+          <div class="wb-carousel-card-badge">${cat}</div>
+        </div>
       </div>`;
   }
 
@@ -1874,6 +1892,12 @@ function renderBoardCarousel(boards, activeId) {
   html += cardHtml(boards[cur], "active");
   if (total > 1) html += cardHtml(boards[nextIdx], "ghost next");
   track.innerHTML = html;
+
+  // Start cover polling for any card whose art isn't ready yet (also triggers
+  // generation on the backend for pre-existing boards).
+  boards.forEach(board => {
+    if (!board.cover_ready) pollBoardCover(board.id);
+  });
 
   // Dots
   if (dotsEl) {
@@ -1910,6 +1934,54 @@ function renderBoardCarousel(boards, activeId) {
       }
     });
   });
+}
+
+// Poll the cover endpoint every 2s until the generated image is available (200),
+// then swap it in and clear the shimmer. Give up after MAX attempts so a
+// permanently failing generation doesn't poll forever.
+const COVER_POLL_INTERVAL_MS = 2000;
+const MAX_COVER_POLL_ATTEMPTS = 30; // ~60s before we stop and show the fallback
+
+function pollBoardCover(boardId) {
+  if (coverPollers.has(boardId)) return;
+  const coverUrl = `/api/dashboard/whiteboards/${boardId}/cover`;
+  let attempts = 0;
+  const poller = setInterval(async () => {
+    attempts += 1;
+    try {
+      const res = await fetch(coverUrl);
+      if (res.status === 200) {
+        clearInterval(poller);
+        coverPollers.delete(boardId);
+        const card = document.querySelector(`.wb-carousel-card[data-board-id="${boardId}"]`);
+        if (card) {
+          card.style.backgroundImage = `url('${coverUrl}?t=${Date.now()}')`;
+          card.classList.remove("shimmer");
+          card.classList.add("cover-ready");
+        }
+        return;
+      }
+      if (res.status === 404 || attempts >= MAX_COVER_POLL_ATTEMPTS) {
+        // Board gone (404) or generation is not going to finish — stop polling
+        // and fall back to the plain card (emoji + title on dark background).
+        clearInterval(poller);
+        coverPollers.delete(boardId);
+        const card = document.querySelector(`.wb-carousel-card[data-board-id="${boardId}"]`);
+        if (card) card.classList.remove("shimmer");
+        return;
+      }
+      // 202 {"status":"generating"} → keep polling.
+    } catch (err) {
+      // Transient network error — keep polling until MAX attempts.
+      if (attempts >= MAX_COVER_POLL_ATTEMPTS) {
+        clearInterval(poller);
+        coverPollers.delete(boardId);
+        const card = document.querySelector(`.wb-carousel-card[data-board-id="${boardId}"]`);
+        if (card) card.classList.remove("shimmer");
+      }
+    }
+  }, COVER_POLL_INTERVAL_MS);
+  coverPollers.set(boardId, poller);
 }
 
 function initWhiteboard() {
@@ -2169,17 +2241,14 @@ async function loadWhiteboards(selectProjectId = null) {
     cachedWhiteboards = data.projects || [];
 
     if (cachedWhiteboards.length === 0) {
+      // renderBoardCarousel([], null) collapses the carousel and reveals the
+      // #wb-empty-state template tiles automatically.
       renderBoardCarousel([], null);
-      // Show empty state in the canvas area too
       document.getElementById("wb-active-title").textContent = "No Boards";
       document.getElementById("wb-active-summary").textContent = "Create your first board to get started.";
       document.getElementById("wb-active-emoji").textContent = "📋";
       document.getElementById("wb-active-category").textContent = "";
-      document.getElementById("wb-sections-container").innerHTML = `
-        <div class="wb-empty-state">
-          <div class="wb-empty-icon">🗂️</div>
-          <p class="wb-empty-text">No boards yet. Use <strong>New Board</strong> above to create one.</p>
-        </div>`;
+      document.getElementById("wb-sections-container").innerHTML = "";
       return;
     }
 
@@ -2224,7 +2293,7 @@ async function loadWhiteboardDetails(projectId) {
     if (catEl) catEl.textContent = (proj.category || "general").toUpperCase();
     if (sumEl) sumEl.textContent = proj.summary || "Interactive planning canvas";
 
-    renderWhiteboardCanvas(blocks);
+    renderWhiteboardCanvas(blocks, proj.category);
 
   } catch (err) {
     console.error("Error loading whiteboard details:", err);
@@ -2232,7 +2301,45 @@ async function loadWhiteboardDetails(projectId) {
   }
 }
 
-function renderWhiteboardCanvas(blocks) {
+// Category-adaptive ghost placeholder cards shown when a board has no real cards yet.
+// Purely visual — no IDs, no click handlers — so they vanish on the first real card.
+function renderGhostCards(category) {
+  const cat = (category || "general").toLowerCase();
+  const hints = {
+    trip: ["Flights ✈", "Hotels 🏨", "Itinerary 📅", "Budget 💰"],
+    meal: ["Recipes 🍳", "Groceries 🛒", "Meal Plan 📋", "Pantry 🧺"],
+    project: ["Features 🎯", "Milestones 🚀", "Risks ⚠️", "Team 👥"],
+    event: ["Venue 🏛️", "Guest List 📋", "Schedule 🗓️", "Budget 💰"],
+    general: ["Note 📝", "Task ✅", "Idea 💡", "Link 🔗"],
+  };
+  const items = hints[cat] || hints.general;
+  return `<div class="wb-ghost-grid">${items.map(t => `<div class="wb-ghost-card">${t}</div>`).join("")}</div>`;
+}
+
+// Empty-state template tile quick-start — creates a board from a ready-made
+// template and navigates to it (cover art generates in the background).
+async function createBoardFromTemplate(type) {
+  const meta = {
+    trip: { title: "New Trip Planner", emoji_icon: "✈️", category: "trip", summary: "Plan flights, hotels, itinerary and budget", template: "trip" },
+    meal: { title: "Meal Prep & Groceries", emoji_icon: "🛒", category: "meal", summary: "Weekly recipes, meal plan and shopping checklist", template: "meal" },
+    project: { title: "New Project Board", emoji_icon: "🚀", category: "project", summary: "Features, milestones and team planning", template: "project" },
+  };
+  const m = meta[type] || { title: "New Board", emoji_icon: "📋", category: "general", summary: "A fresh planning board", template: "blank" };
+  try {
+    const res = await fetch("/api/dashboard/whiteboards", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(m),
+    });
+    if (!res.ok) throw new Error("Failed to create board");
+    const data = await res.json();
+    await loadWhiteboards(data.project.id);
+  } catch (err) {
+    alert("Error creating board: " + err.message);
+  }
+}
+
+function renderWhiteboardCanvas(blocks, category) {
   const container = document.getElementById("wb-sections-container");
   if (!container) return;
 
@@ -2249,11 +2356,13 @@ function renderWhiteboardCanvas(blocks) {
   }
 
   if (sectionsMap.size === 0) {
+    // Empty board → category-adaptive ghost hints plus quick actions.
     container.innerHTML = `
-      <div class="wb-empty-state">
+      ${renderGhostCards(category)}
+      <div class="wb-empty-state" style="margin-top: 1.5rem;">
         <div class="wb-empty-icon">🪄</div>
         <div class="wb-empty-title">This board is empty</div>
-        <div class="wb-empty-desc">Use the AI Copilot bar above or click "+ Add Card" to brainstorm and add items to this canvas!</div>
+        <div class="wb-empty-desc">These are the kinds of cards you can add here. Use the AI Copilot bar above or click "+ Add Card" to bring this canvas to life!</div>
         <div class="wb-empty-actions">
           <button class="btn-primary-ember" onclick="document.getElementById('wb-ai-prompt-input').focus()">🪄 Ask AI Copilot</button>
           <button class="btn-whiteboard-add-card" onclick="document.getElementById('btn-open-add-card-modal').click()">+ Add Card</button>

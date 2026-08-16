@@ -8,10 +8,14 @@ Provides REST endpoints for querying and managing personal assistant data:
 
 from __future__ import annotations
 
+import asyncio
+import logging
+import os
 from datetime import datetime, timezone as dt_timezone
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
+from fastapi.responses import FileResponse, JSONResponse
 from sqlmodel import select, delete, func, desc
 
 from core.db import async_session_factory
@@ -37,6 +41,154 @@ from core.scheduler import (
 )
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
+
+logger = logging.getLogger(__name__)
+
+# Directory where AI-generated board cover art is persisted (project_root/data/board_covers
+# by default, or DATA_DIR/board_covers when an absolute DATA_DIR is configured).
+BOARD_COVERS_DIR = os.path.join(settings.resolved_data_dir, "board_covers")
+
+# In-flight cover generation guard — prevents duplicate concurrent Imagen calls per board.
+_cover_generation_inflight: set = set()
+
+# Strong references to in-flight generation tasks so the garbage collector never
+# collects them while suspended at an await ("Task was destroyed but it is pending").
+_cover_generation_tasks: Dict[int, "asyncio.Task[None]"] = {}
+
+
+# ---------------------------------------------------------------------------
+# Board Cover Art (Imagen)
+# ---------------------------------------------------------------------------
+
+# Category-adaptive art direction used to build the "Artsy Narrative Landscape" prompt.
+_COVER_THEMES: Dict[str, Dict[str, str]] = {
+    "trip": {
+        "sky": "a dusky gradient from deep indigo into warm amber along the horizon",
+        "foreground": "a winding coastal road, glowing street lamps and distant mountain silhouettes",
+        "aurora": "soft teal and violet aurora ribbons drifting overhead",
+    },
+    "event": {
+        "sky": "a festive violet-to-magenta twilight",
+        "foreground": "string lights, gentle confetti and a celebratory stage silhouette",
+        "aurora": "colourful sparkle bursts scattered across the sky",
+    },
+    "meal": {
+        "sky": "warm golden-hour light fading into a creamy sky",
+        "foreground": "a rustic wooden table with fresh produce, herbs and ceramic bowls",
+        "aurora": "subtle warm bokeh lights glowing in the background",
+    },
+    "project": {
+        "sky": "a cool midnight blue with faint constellation lines",
+        "foreground": "abstract geometric shapes, floating nodes and a glowing roadmap",
+        "aurora": "electric cyan energy streaks arcing overhead",
+    },
+    "general": {
+        "sky": "a soft gradient twilight blending lavender into slate",
+        "foreground": "abstract mountains, calm water and floating luminous notes",
+        "aurora": "gentle pastel aurora washing across the sky",
+    },
+}
+
+
+def _build_imagen_prompt(title: str, category: Optional[str], summary: Optional[str]) -> str:
+    """Construct the 'Artsy Narrative Landscape' prompt, adapting sky / foreground /
+    aurora styling to the board's category and title."""
+    theme = _COVER_THEMES.get((category or "general").strip().lower(), _COVER_THEMES["general"])
+    subject = title.strip() or "a personal planning board"
+    context = (summary or "").strip()
+    return (
+        "Artsy Narrative Landscape illustration, tall vertical banner. "
+        f"Theme: {subject}. "
+        f"{'Context: ' + context + '. ' if context else ''}"
+        f"Sky: {theme['sky']}. Foreground: {theme['foreground']}. "
+        f"Aurora: {theme['aurora']}. "
+        "Cinematic lighting, rich painterly detail, soft depth of field, "
+        "no text, no words, no letters, no logos."
+    )
+
+
+def _cover_file_path(project_id: int) -> str:
+    return os.path.join(BOARD_COVERS_DIR, f"{project_id}.png")
+
+
+async def _generate_board_cover(project_id: int) -> None:
+    """Generate Imagen cover art for a board and persist it to disk.
+
+    Safe to run as a background task: fetches the project from the DB, builds a
+    category-aware prompt, calls Imagen, writes the PNG to BOARD_COVERS_DIR and
+    finally flips WhiteboardProject.cover_ready to True. Any failure leaves the
+    flag False so a later poll can retry.
+    """
+    try:
+        api_key = settings.active_gemini_api_key
+        if not api_key:
+            logger.info("No Gemini API key configured — skipping cover generation for board %s", project_id)
+            return
+
+        async with async_session_factory() as session:
+            proj = (await session.execute(
+                select(WhiteboardProject).where(WhiteboardProject.id == project_id)
+            )).scalar_one_or_none()
+            if not proj:
+                return
+            title, category, summary = proj.title, proj.category, proj.summary
+
+        prompt = _build_imagen_prompt(title, category, summary)
+
+        import google.generativeai as genai
+
+        genai.configure(api_key=api_key)
+        imagen_model = genai.ImageGenerationModel("imagen-3.0-fast-generate-001")
+        result = imagen_model.generate_images(prompt=prompt, number_of_images=1, aspect_ratio="9:16")
+        if not result or not result.images:
+            logger.warning("Imagen returned no images for board %s", project_id)
+            return
+
+        image = result.images[0]
+        image_bytes = getattr(image, "image_bytes", None) or getattr(image, "_image_bytes", None)
+        if not image_bytes:
+            logger.warning("Imagen image had no bytes for board %s", project_id)
+            return
+
+        os.makedirs(BOARD_COVERS_DIR, exist_ok=True)
+        with open(_cover_file_path(project_id), "wb") as f:
+            f.write(image_bytes)
+
+        async with async_session_factory() as session:
+            proj = (await session.execute(
+                select(WhiteboardProject).where(WhiteboardProject.id == project_id)
+            )).scalar_one_or_none()
+            if proj:
+                proj.cover_ready = True
+                session.add(proj)
+                await session.commit()
+        logger.info("Cover art generated for board %s", project_id)
+    except Exception as exc:  # noqa: BLE001 - background task must never crash the request
+        logger.warning("Cover generation failed for board %s: %s", project_id, exc)
+    finally:
+        _cover_generation_inflight.discard(project_id)
+
+
+def _schedule_cover_generation(project_id: int) -> None:
+    """Safely kick off cover generation as a tracked asyncio task.
+
+    Adds the board to the in-flight guard, keeps a strong reference to the task
+    (so the GC cannot collect it mid-await) and removes both once it completes.
+    """
+    _cover_generation_inflight.add(project_id)
+    task = asyncio.create_task(_generate_board_cover(project_id))
+    _cover_generation_tasks[project_id] = task
+    task.add_done_callback(lambda _t, pid=project_id: _cover_generation_tasks.pop(pid, None))
+
+
+def _maybe_trigger_cover_generation(project_id: int) -> None:
+    """Kick off cover generation in the background if it isn't already running
+    and no cover file exists yet."""
+    if project_id in _cover_generation_inflight:
+        return
+    if os.path.exists(_cover_file_path(project_id)):
+        return
+    _schedule_cover_generation(project_id)
 
 
 # ---------------------------------------------------------------------------
@@ -1267,6 +1419,7 @@ async def list_whiteboards(user_id: Optional[int] = None) -> Dict[str, Any]:
                     "emoji_icon": p.emoji_icon,
                     "category": p.category,
                     "summary": p.summary,
+                    "cover_ready": p.cover_ready,
                     "created_at": _format_iso(p.created_at),
                     "updated_at": _format_iso(p.updated_at),
                 }
@@ -1279,8 +1432,17 @@ async def list_whiteboards(user_id: Optional[int] = None) -> Dict[str, Any]:
 async def create_whiteboard(
     payload: CreateWhiteboardRequest,
     user_id: Optional[int] = None,
+    background_tasks: BackgroundTasks = BackgroundTasks(),
 ) -> Dict[str, Any]:
-    """Create a new whiteboard project with optional pre-built template."""
+    """Create a new whiteboard project with optional pre-built template.
+
+    Cover art generation runs in the background via FastAPI BackgroundTasks so the
+    endpoint returns immediately; the carousel shows a shimmer until it is ready.
+
+    FastAPI injects a fresh per-request BackgroundTasks instance, so the default
+    value is only used when the function is called directly (e.g. in tests), where
+    add_task simply queues the coroutine without executing it.
+    """
     async with async_session_factory() as session:
         effective_user_id = user_id if (user_id is not None and user_id != 0) else await get_primary_user_id(session)
         now = datetime.utcnow()
@@ -1301,6 +1463,13 @@ async def create_whiteboard(
             await _seed_template_blocks(session, project.id, payload.template, effective_user_id)
             await session.commit()
 
+        # Kick off cover generation after the response is sent. We mark the board
+        # as in-flight up front so a concurrent poll of /cover cannot spawn a
+        # duplicate Imagen call.
+        if project.id not in _cover_generation_inflight:
+            _cover_generation_inflight.add(project.id)
+            background_tasks.add_task(_generate_board_cover, project.id)
+
         return {
             "status": "ok",
             "project": {
@@ -1309,6 +1478,7 @@ async def create_whiteboard(
                 "emoji_icon": project.emoji_icon,
                 "category": project.category,
                 "summary": project.summary,
+                "cover_ready": project.cover_ready,
                 "created_at": _format_iso(project.created_at),
                 "updated_at": _format_iso(project.updated_at),
             }
@@ -1339,6 +1509,7 @@ async def get_whiteboard_details(project_id: int) -> Dict[str, Any]:
                 "emoji_icon": proj.emoji_icon,
                 "category": proj.category,
                 "summary": proj.summary,
+                "cover_ready": proj.cover_ready,
                 "created_at": _format_iso(proj.created_at),
                 "updated_at": _format_iso(proj.updated_at),
             },
@@ -1359,6 +1530,30 @@ async def get_whiteboard_details(project_id: int) -> Dict[str, Any]:
                 for b in blocks
             ]
         }
+
+
+@router.get("/whiteboards/{project_id}/cover")
+async def get_whiteboard_cover(project_id: int):
+    """Return the AI-generated cover art PNG for a board.
+
+    - 200 with the image bytes when the cover is ready on disk.
+    - 202 {"status": "generating"} when it is not yet ready (kicks off generation
+      in the background so the frontend can poll until it flips to 200).
+    - 404 when the board does not exist.
+    """
+    cover_path = _cover_file_path(project_id)
+    if os.path.exists(cover_path):
+        return FileResponse(cover_path, media_type="image/png")
+
+    async with async_session_factory() as session:
+        exists = (await session.execute(
+            select(WhiteboardProject.id).where(WhiteboardProject.id == project_id)
+        )).scalar_one_or_none()
+    if not exists:
+        raise HTTPException(status_code=404, detail="Whiteboard not found")
+
+    _maybe_trigger_cover_generation(project_id)
+    return JSONResponse(status_code=202, content={"status": "generating"})
 
 
 @router.patch("/whiteboards/{project_id}")
@@ -1402,6 +1597,19 @@ async def delete_whiteboard(project_id: int) -> Dict[str, Any]:
         await session.execute(delete(WhiteboardBlock).where(WhiteboardBlock.project_id == project_id))
         await session.execute(delete(WhiteboardProject).where(WhiteboardProject.id == project_id))
         await session.commit()
+
+        # Clean up the generated cover art file and cancel any in-flight generation.
+        _cover_generation_inflight.discard(project_id)
+        task = _cover_generation_tasks.pop(project_id, None)
+        if task is not None and not task.done():
+            task.cancel()
+        cover_path = _cover_file_path(project_id)
+        if os.path.exists(cover_path):
+            try:
+                os.remove(cover_path)
+            except OSError:
+                logger.warning("Could not remove cover art for deleted board %s", project_id)
+
         return {"status": "ok", "deleted_project_id": project_id}
 
 

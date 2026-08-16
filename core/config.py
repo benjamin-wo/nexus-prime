@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     environment: str = "development"
     port: int = 8000
 
+    # Filesystem storage root (relative to project root) for generated artifacts
+    # such as AI board cover art. On Railway, set DATA_DIR="/data" to use the
+    # persistent volume.
+    data_dir: str = "data"
+
     @property
     def active_gemini_api_key(self) -> Optional[str]:
         """Returns either GEMINI_API_KEY or GOOGLE_API_KEY if set."""
@@ -56,6 +61,14 @@ class Settings(BaseSettings):
             abs_db_path = os.path.join(base_dir, rel_path)
             return f"sqlite+aiosqlite:///{abs_db_path}"
         return url
+
+    @property
+    def resolved_data_dir(self) -> str:
+        """Returns an absolute filesystem path for the data/artifacts directory."""
+        if os.path.isabs(self.data_dir):
+            return self.data_dir
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        return os.path.join(base_dir, self.data_dir)
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

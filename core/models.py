@@ -80,6 +80,7 @@ class WhiteboardProject(SQLModel, table=True):
     emoji_icon: str = Field(default="📋")
     category: str = Field(default="general", index=True)  # trip | event | project | meal | general
     summary: Optional[str] = Field(default=None)
+    cover_ready: bool = Field(default=False)  # True once the AI-generated cover art is saved to disk
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 

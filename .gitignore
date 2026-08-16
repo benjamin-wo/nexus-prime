@@ -20,6 +20,9 @@ htmlcov/
 *.sqlite
 test_testdb.sqlite
 
+# Runtime-generated artifacts (AI board cover art etc.)
+data/
+
 # Environment variables
 .env
 .env.local

@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="styles.css?v=14" />
+  <link rel="stylesheet" href="styles.css?v=15" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>" />
 </head>
 <body>
@@ -667,6 +667,54 @@
 
           </div>
 
+          <!-- Zero-Board Empty State: template quick-start tiles (shown when no boards) -->
+          <div id="wb-empty-state" class="wb-empty-state-panel" style="display:none;">
+            <div class="wb-empty-icon">🗂️</div>
+            <div class="wb-empty-title">Your boards live here</div>
+            <div class="wb-empty-desc">Start a new board with a ready-made template — the AI Copilot will help fill in the details.</div>
+            <div class="wb-empty-tiles">
+              <button type="button" class="wb-template-tile" onclick="createBoardFromTemplate('trip')">
+                <span class="wb-temp-icon">✈️</span>
+                <span class="wb-temp-title">Trip</span>
+                <span class="wb-temp-sub">Hotels · itinerary · budget</span>
+              </button>
+              <button type="button" class="wb-template-tile" onclick="createBoardFromTemplate('meal')">
+                <span class="wb-temp-icon">🛒</span>
+                <span class="wb-temp-title">Meal</span>
+                <span class="wb-temp-sub">Recipes · meal plan · groceries</span>
+              </button>
+              <button type="button" class="wb-template-tile" onclick="createBoardFromTemplate('project')">
+                <span class="wb-temp-icon">🚀</span>
+                <span class="wb-temp-title">Project</span>
+                <span class="wb-temp-sub">Features · milestones · team</span>
+              </button>
+            </div>
+            <button type="button" class="wb-empty-new-board" onclick="document.getElementById('btn-open-create-board-modal').click()">+ New blank board</button>
+          </div>
+
+          <!-- In-Canvas AI Copilot Prompt Bar -->
+          <div class="wb-copilot-container">
+            <div class="wb-copilot-card">
+              <div class="wb-copilot-input-row">
+                <span class="wb-copilot-icon">🪄</span>
+                <input type="text" id="wb-ai-prompt-input" class="wb-copilot-input" placeholder="Ask Nexus to brainstorm, shortlist options, create checklists, or estimate budgets for this board..." />
+                <button type="button" id="wb-ai-prompt-submit" class="btn-primary-ember wb-copilot-btn">
+                  <span>Generate</span>
+                </button>
+              </div>
+
+              <!-- Quick Prompt Suggestion Chips -->
+              <div class="wb-copilot-chips">
+                <span class="wb-chips-label">Quick actions:</span>
+                <button class="wb-prompt-chip" data-prompt="Shortlist 3 top accommodation options with prices and pros/cons">🏨 Shortlist Hotels</button>
+                <button class="wb-prompt-chip" data-prompt="Create a pre-departure travel packing checklist">🎒 Packing Checklist</button>
+                <button class="wb-prompt-chip" data-prompt="Generate a 1-day morning to evening itinerary">📅 Day Itinerary</button>
+                <button class="wb-prompt-chip" data-prompt="Estimate cost breakdown and budget items">💰 Estimate Budget</button>
+                <button class="wb-prompt-chip" data-prompt="Suggest 5 healthy dinner recipe ideas and ingredients">🥗 Meal Prep & Groceries</button>
+              </div>
+            </div>
+          </div>
+
           <!-- Board Carousel Picker -->
           <div class="wb-board-carousel" id="wb-board-carousel">
             <div class="wb-carousel-header">
@@ -695,29 +743,6 @@
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                 Delete Board
               </button>
-            </div>
-          </div>
-
-          <!-- In-Canvas AI Copilot Prompt Bar -->
-          <div class="wb-copilot-container">
-            <div class="wb-copilot-card">
-              <div class="wb-copilot-input-row">
-                <span class="wb-copilot-icon">🪄</span>
-                <input type="text" id="wb-ai-prompt-input" class="wb-copilot-input" placeholder="Ask Nexus to brainstorm, shortlist options, create checklists, or estimate budgets for this board..." />
-                <button type="button" id="wb-ai-prompt-submit" class="btn-primary-ember wb-copilot-btn">
-                  <span>Generate</span>
-                </button>
-              </div>
-
-              <!-- Quick Prompt Suggestion Chips -->
-              <div class="wb-copilot-chips">
-                <span class="wb-chips-label">Quick actions:</span>
-                <button class="wb-prompt-chip" data-prompt="Shortlist 3 top accommodation options with prices and pros/cons">🏨 Shortlist Hotels</button>
-                <button class="wb-prompt-chip" data-prompt="Create a pre-departure travel packing checklist">🎒 Packing Checklist</button>
-                <button class="wb-prompt-chip" data-prompt="Generate a 1-day morning to evening itinerary">📅 Day Itinerary</button>
-                <button class="wb-prompt-chip" data-prompt="Estimate cost breakdown and budget items">💰 Estimate Budget</button>
-                <button class="wb-prompt-chip" data-prompt="Suggest 5 healthy dinner recipe ideas and ingredients">🥗 Meal Prep & Groceries</button>
-              </div>
             </div>
           </div>
 
@@ -1172,6 +1197,6 @@
   <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
   <script src="manifests-data.js"></script>
-  <script src="app.js?v=14"></script>
+  <script src="app.js?v=15"></script>
 </body>
 </html>
