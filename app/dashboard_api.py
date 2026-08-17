@@ -136,45 +136,59 @@ async def _generate_board_cover(project_id: int) -> None:
         prompt = _build_imagen_prompt(title, category, summary)
 
         image_bytes = None
+        # 1. Primary generation path: Interactions API with gemini-3.1-flash-lite-image
         try:
+            import base64
             from google import genai
-            from google.genai import types
 
             client = genai.Client(api_key=api_key)
-            result = client.models.generate_images(
-                model="imagen-3.0-generate-002",
-                prompt=prompt,
-                config=types.GenerateImagesConfig(
-                    number_of_images=1,
-                    aspect_ratio="9:16",
-                    output_mime_type="image/png",
-                ),
+            generation_config = {
+                "temperature": 1,
+                "max_output_tokens": 65536,
+                "top_p": 0.95,
+                "thinking_level": "minimal",
+            }
+            interaction = client.interactions.create(
+                model="models/gemini-3.1-flash-lite-image",
+                input=prompt,
+                generation_config=generation_config,
+                response_modalities=["image", "text"],
             )
-            if result and result.generated_images:
-                image_bytes = result.generated_images[0].image.image_bytes
-        except Exception as sdk_exc:
-            logger.info("Imagen generation via google.genai failed, trying fast-generate model: %s", sdk_exc)
+            for step in interaction.steps:
+                if step.type == "model_output" and step.content:
+                    for part in step.content:
+                        if getattr(part, "type", None) == "image" and getattr(part, "data", None):
+                            image_bytes = base64.b64decode(part.data)
+                            break
+                    if image_bytes:
+                        break
+        except Exception as inter_exc:
+            logger.info("Interactions image generation failed for board %s, trying generate_content: %s", project_id, inter_exc)
+
+        # 2. Fallback generation path: generate_content with gemini-2.5-flash-image
+        if not image_bytes:
             try:
                 from google import genai
                 from google.genai import types
 
                 client = genai.Client(api_key=api_key)
-                result = client.models.generate_images(
-                    model="imagen-3.0-fast-generate-001",
-                    prompt=prompt,
-                    config=types.GenerateImagesConfig(
-                        number_of_images=1,
-                        aspect_ratio="9:16",
-                        output_mime_type="image/png",
+                response = client.models.generate_content(
+                    model="gemini-2.5-flash-image",
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        response_modalities=["IMAGE"],
                     ),
                 )
-                if result and result.generated_images:
-                    image_bytes = result.generated_images[0].image.image_bytes
-            except Exception as fast_exc:
-                logger.warning("Imagen fast-generate also failed for board %s: %s", project_id, fast_exc)
+                if response.candidates and response.candidates[0].content:
+                    for part in response.candidates[0].content.parts:
+                        if hasattr(part, "inline_data") and part.inline_data and part.inline_data.data:
+                            image_bytes = part.inline_data.data
+                            break
+            except Exception as gen_exc:
+                logger.warning("generate_content image fallback failed for board %s: %s", project_id, gen_exc)
 
         if not image_bytes:
-            logger.warning("Imagen returned no image bytes for board %s", project_id)
+            logger.warning("No image bytes returned for board %s", project_id)
             return
 
         os.makedirs(BOARD_COVERS_DIR, exist_ok=True)
