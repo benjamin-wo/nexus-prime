@@ -135,19 +135,46 @@ async def _generate_board_cover(project_id: int) -> None:
 
         prompt = _build_imagen_prompt(title, category, summary)
 
-        import google.generativeai as genai
+        image_bytes = None
+        try:
+            from google import genai
+            from google.genai import types
 
-        genai.configure(api_key=api_key)
-        imagen_model = genai.ImageGenerationModel("imagen-3.0-fast-generate-001")
-        result = imagen_model.generate_images(prompt=prompt, number_of_images=1, aspect_ratio="9:16")
-        if not result or not result.images:
-            logger.warning("Imagen returned no images for board %s", project_id)
-            return
+            client = genai.Client(api_key=api_key)
+            result = client.models.generate_images(
+                model="imagen-3.0-generate-002",
+                prompt=prompt,
+                config=types.GenerateImagesConfig(
+                    number_of_images=1,
+                    aspect_ratio="9:16",
+                    output_mime_type="image/png",
+                ),
+            )
+            if result and result.generated_images:
+                image_bytes = result.generated_images[0].image.image_bytes
+        except Exception as sdk_exc:
+            logger.info("Imagen generation via google.genai failed, trying fast-generate model: %s", sdk_exc)
+            try:
+                from google import genai
+                from google.genai import types
 
-        image = result.images[0]
-        image_bytes = getattr(image, "image_bytes", None) or getattr(image, "_image_bytes", None)
+                client = genai.Client(api_key=api_key)
+                result = client.models.generate_images(
+                    model="imagen-3.0-fast-generate-001",
+                    prompt=prompt,
+                    config=types.GenerateImagesConfig(
+                        number_of_images=1,
+                        aspect_ratio="9:16",
+                        output_mime_type="image/png",
+                    ),
+                )
+                if result and result.generated_images:
+                    image_bytes = result.generated_images[0].image.image_bytes
+            except Exception as fast_exc:
+                logger.warning("Imagen fast-generate also failed for board %s: %s", project_id, fast_exc)
+
         if not image_bytes:
-            logger.warning("Imagen image had no bytes for board %s", project_id)
+            logger.warning("Imagen returned no image bytes for board %s", project_id)
             return
 
         os.makedirs(BOARD_COVERS_DIR, exist_ok=True)
@@ -162,7 +189,7 @@ async def _generate_board_cover(project_id: int) -> None:
                 proj.cover_ready = True
                 session.add(proj)
                 await session.commit()
-        logger.info("Cover art generated for board %s", project_id)
+        logger.info("Cover art generated successfully for board %s", project_id)
     except Exception as exc:  # noqa: BLE001 - background task must never crash the request
         logger.warning("Cover generation failed for board %s: %s", project_id, exc)
     finally:
