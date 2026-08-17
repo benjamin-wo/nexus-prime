@@ -502,14 +502,40 @@ function renderExpensesTableRows() {
     return;
   }
 
+function formatExpenseDateTime(dateVal) {
+  if (!dateVal) return "—";
+  const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+  if (typeof dateVal === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dateVal.trim())) {
+    const [y, m, day] = dateVal.trim().split("-").map(Number);
+    return `${monthNames[m - 1]} ${day}, ${y}`;
+  }
+
+  const d = new Date(dateVal);
+  if (isNaN(d.getTime())) return String(dateVal);
+
+  const dateStr = `${monthNames[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+  const isMidnight = d.getHours() === 0 && d.getMinutes() === 0 && d.getSeconds() === 0;
+  const isDateOnlyIso = typeof dateVal === "string" && (
+    dateVal.endsWith("T00:00:00") ||
+    dateVal.endsWith("T00:00:00Z") ||
+    dateVal.endsWith("T00:00:00+00:00") ||
+    !dateVal.includes("T")
+  );
+
+  if (isMidnight && isDateOnlyIso) {
+    return dateStr;
+  }
+
+  const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return `${dateStr} · ${timeStr}`;
+}
+
   tbody.innerHTML = pageRows.map((tx) => {
     const txnId = `TXN-24080${String(tx.id).padStart(3, '0')}`;
     const normCat = normalizeCategory(tx.category);
     const catCfg = CATEGORY_MAP[normCat] || CATEGORY_MAP["General"];
-    const dateObj = tx.date ? new Date(tx.date) : new Date();
-    const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-    const dateStr = `${monthNames[dateObj.getMonth()]} ${dateObj.getDate()}, ${dateObj.getFullYear()}`;
-    const timeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const formattedDate = formatExpenseDateTime(tx.date);
     const isChecked = selectedExpenseIds.has(tx.id);
 
     return `
@@ -527,7 +553,7 @@ function renderExpensesTableRows() {
           </div>
         </td>
         <td class="td-amount-figure debit">-$${tx.amount.toFixed(2)}</td>
-        <td class="td-date-cell">${dateStr} · ${timeStr}</td>
+        <td class="td-date-cell">${formattedDate}</td>
         <td style="text-align: center;">
           <span class="status-badge-pill completed">Completed</span>
         </td>

@@ -95,7 +95,7 @@ async def extract_expense_from_text(user_text: str) -> Dict[str, Any]:
                 content=(
                     "Extract an expense from the user's message. Reply with ONLY a JSON object: "
                     '{"amount": number, "currency": string (3-letter code, default SGD for Singapore), '
-                    '"merchant": string, "category": string, "date_iso": string (ISO 8601 or empty), '
+                    '"merchant": string, "category": string, "date_iso": string (ISO 8601 with time and timezone if mentioned, e.g. 2026-08-16T14:32:00+08:00, or YYYY-MM-DD if time not mentioned), '
                     '"confidence": number 0-1, "needs_clarification": boolean}. '
                     "Set confidence below 0.8 or needs_clarification true when the amount or "
                     "merchant is ambiguous. If no expense is present, return {\"amount\": null}."
@@ -151,7 +151,7 @@ async def extract_expense_from_photo(
                 content=(
                     "You extract expenses from receipt photos. Reply with ONLY a JSON object: "
                     '{"amount": number, "currency": string (3-letter code, default SGD), '
-                    '"merchant": string, "category": string, "date_iso": string (ISO 8601 or empty), '
+                    '"merchant": string, "category": string, "date_iso": string (ISO 8601 with time and timezone if mentioned, e.g. 2026-08-16T14:32:00, or YYYY-MM-DD), '
                     '"confidence": number 0-1, "needs_clarification": boolean}. '
                     "Read the TOTAL from the receipt. If there is no legible receipt or amount, "
                     'return {"amount": null}.'
@@ -285,14 +285,44 @@ async def log_expenses_from_emails(
         if email_id and await is_duplicate_expense(email_id):
             continue
 
-        date_iso = extracted.get("date_iso") or email_msg.get("date") or ""
-        try:
-            expense_date = datetime.fromisoformat(date_iso)
-        except ValueError:
+        date_iso = extracted.get("date_iso") or ""
+        email_date_str = email_msg.get("date") or ""
+
+        expense_date = None
+        # 1. If LLM returned full ISO with time (e.g. 2026-08-16T14:32:00+08:00)
+        if date_iso and ("T" in date_iso or " " in date_iso):
             try:
-                expense_date = parsedate_to_datetime(date_iso)
-            except Exception:  # noqa: BLE001
-                expense_date = datetime.now(dt_timezone.utc)
+                expense_date = datetime.fromisoformat(date_iso.replace("Z", "+00:00")).replace(tzinfo=None)
+            except Exception:
+                pass
+
+        # 2. If date_iso is date-only (e.g. 2026-08-16), combine with email header delivery time
+        if not expense_date and email_date_str:
+            try:
+                msg_dt = parsedate_to_datetime(email_date_str)
+                if date_iso:
+                    try:
+                        d_only = datetime.fromisoformat(date_iso).date()
+                        expense_date = datetime.combine(d_only, msg_dt.time())
+                    except Exception:
+                        expense_date = msg_dt.replace(tzinfo=None) if hasattr(msg_dt, "tzinfo") else msg_dt
+                else:
+                    expense_date = msg_dt.replace(tzinfo=None) if hasattr(msg_dt, "tzinfo") else msg_dt
+            except Exception:
+                pass
+
+        # 3. Fallback: try raw date_iso or parsedate
+        if not expense_date and date_iso:
+            try:
+                expense_date = datetime.fromisoformat(date_iso)
+            except Exception:
+                try:
+                    expense_date = parsedate_to_datetime(date_iso)
+                except Exception:
+                    pass
+
+        if not expense_date:
+            expense_date = datetime.now(dt_timezone.utc).replace(tzinfo=None)
 
         expense = ExtractedExpense(
             amount=float(extracted["amount"]),
