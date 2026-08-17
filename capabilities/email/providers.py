@@ -3,7 +3,8 @@ import asyncio
 import email
 import httpx
 import imaplib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone as dt_timezone
+from email.utils import parsedate_to_datetime
 from email.header import decode_header, make_header
 from zoneinfo import ZoneInfo
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -95,6 +96,16 @@ def _fetch_outlook_imap(
             if not matches_custom or not matches_bank:
                 continue
 
+            raw_date = _decode_mime(msg.get("Date"))
+            date_iso = ""
+            if raw_date:
+                try:
+                    date_iso = parsedate_to_datetime(raw_date).isoformat()
+                except Exception:
+                    date_iso = raw_date
+            if not date_iso:
+                date_iso = datetime.now(dt_timezone.utc).isoformat()
+
             messages.append(
                 {
                     "id": str(uid, "utf-8", errors="replace"),
@@ -102,7 +113,7 @@ def _fetch_outlook_imap(
                     "subject": subject or "(no subject)",
                     "sender": sender,
                     "snippet": body or "(no text body)",
-                    "date": date,
+                    "date": date_iso,
                     "query_used": custom_query or f"recent since {since}",
                 }
             )
@@ -194,6 +205,22 @@ class GmailProvider:
                     (h.get("name") or "").lower(): h.get("value", "")
                     for h in meta.get("payload", {}).get("headers", [])
                 }
+                raw_date = header_map.get("date", "")
+                internal_ms = meta.get("internalDate")
+                date_iso = ""
+                if raw_date:
+                    try:
+                        date_iso = parsedate_to_datetime(raw_date).isoformat()
+                    except Exception:
+                        pass
+                if not date_iso and internal_ms:
+                    try:
+                        date_iso = datetime.fromtimestamp(int(internal_ms) / 1000.0, tz=dt_timezone.utc).isoformat()
+                    except Exception:
+                        pass
+                if not date_iso:
+                    date_iso = datetime.now(dt_timezone.utc).isoformat()
+
                 messages.append(
                     {
                         "id": item["id"],
@@ -201,7 +228,7 @@ class GmailProvider:
                         "subject": header_map.get("subject") or "(no subject)",
                         "sender": header_map.get("from", ""),
                         "snippet": meta.get("snippet", ""),
-                        "date": header_map.get("date", ""),
+                        "date": date_iso,
                         "query_used": query,
                     }
                 )

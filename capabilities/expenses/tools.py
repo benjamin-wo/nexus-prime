@@ -288,41 +288,36 @@ async def log_expenses_from_emails(
         date_iso = extracted.get("date_iso") or ""
         email_date_str = email_msg.get("date") or ""
 
-        expense_date = None
-        # 1. If LLM returned full ISO with time (e.g. 2026-08-16T14:32:00+08:00)
-        if date_iso and ("T" in date_iso or " " in date_iso):
+        def _parse_raw_dt(v: str) -> Optional[datetime]:
+            if not v:
+                return None
             try:
-                expense_date = datetime.fromisoformat(date_iso.replace("Z", "+00:00")).replace(tzinfo=None)
-            except Exception:
-                pass
-
-        # 2. If date_iso is date-only (e.g. 2026-08-16), combine with email header delivery time
-        if not expense_date and email_date_str:
-            try:
-                msg_dt = parsedate_to_datetime(email_date_str)
-                if date_iso:
-                    try:
-                        d_only = datetime.fromisoformat(date_iso).date()
-                        expense_date = datetime.combine(d_only, msg_dt.time())
-                    except Exception:
-                        expense_date = msg_dt.replace(tzinfo=None) if hasattr(msg_dt, "tzinfo") else msg_dt
-                else:
-                    expense_date = msg_dt.replace(tzinfo=None) if hasattr(msg_dt, "tzinfo") else msg_dt
-            except Exception:
-                pass
-
-        # 3. Fallback: try raw date_iso or parsedate
-        if not expense_date and date_iso:
-            try:
-                expense_date = datetime.fromisoformat(date_iso)
+                return parsedate_to_datetime(v)
             except Exception:
                 try:
-                    expense_date = parsedate_to_datetime(date_iso)
+                    return datetime.fromisoformat(v.replace("Z", "+00:00"))
                 except Exception:
-                    pass
+                    return None
 
-        if not expense_date:
-            expense_date = datetime.now(dt_timezone.utc).replace(tzinfo=None)
+        email_dt = _parse_raw_dt(email_date_str)
+        extracted_dt = _parse_raw_dt(date_iso)
+
+        if extracted_dt and (extracted_dt.hour != 0 or extracted_dt.minute != 0 or extracted_dt.second != 0):
+            expense_date = extracted_dt
+        elif extracted_dt and email_dt:
+            # Combine extracted date with email message timestamp
+            expense_date = datetime.combine(extracted_dt.date(), email_dt.time())
+        elif email_dt:
+            # Fall back to exact email header timestamp
+            expense_date = email_dt
+        elif extracted_dt:
+            # Attach polling/logging timestamp
+            expense_date = datetime.combine(extracted_dt.date(), datetime.now().time())
+        else:
+            expense_date = datetime.now()
+
+        if hasattr(expense_date, "tzinfo") and expense_date.tzinfo:
+            expense_date = expense_date.astimezone(dt_timezone.utc).replace(tzinfo=None)
 
         expense = ExtractedExpense(
             amount=float(extracted["amount"]),
@@ -379,9 +374,14 @@ async def process_extracted_expense(
         return {"status": "duplicate", "message": f"Message {source_message_id} already processed."}
 
     try:
-        dt = datetime.fromisoformat(date_iso)
-    except ValueError:
-        dt = datetime.now(dt_timezone.utc)
+        dt = datetime.fromisoformat(date_iso.replace("Z", "+00:00"))
+        if dt.hour == 0 and dt.minute == 0 and dt.second == 0:
+            dt = datetime.combine(dt.date(), datetime.now().time())
+    except Exception:
+        dt = datetime.now()
+
+    if hasattr(dt, "tzinfo") and dt.tzinfo:
+        dt = dt.astimezone(dt_timezone.utc).replace(tzinfo=None)
 
     expense = ExtractedExpense(
         amount=amount,
