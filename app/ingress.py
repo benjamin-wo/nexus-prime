@@ -551,6 +551,26 @@ class TelegramIngress:
                 "text": welcome_text,
             }
 
+        if text.startswith(("/connect_email", "/gmail", "/email")):
+            public_domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN") or ""
+            if public_domain:
+                base_url = f"https://{public_domain}".rstrip("/")
+            elif settings.webapp_url:
+                base_url = settings.webapp_url.rstrip("/")
+            else:
+                base_url = "http://localhost:8000"
+
+            connect_url = f"{base_url}/auth/gmail?user_id={user_id}"
+            return {
+                "status": "ok",
+                "text": (
+                    "📬 **Connect Your Gmail for Automated Expense Tracking**\n\n"
+                    "Tap below to securely authorize read-only receipt tracking with Google. "
+                    "Your transactions will be automatically extracted and organized on your personal dashboard:\n\n"
+                    f"{connect_url}"
+                ),
+            }
+
         if text.startswith("/expenses"):
             from capabilities.expenses.tools import get_user_expenses
 
