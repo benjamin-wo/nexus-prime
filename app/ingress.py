@@ -531,6 +531,26 @@ class TelegramIngress:
                 "text": "🛒 Grocery list:\n" + "\n".join(lines),
             }
 
+        if text.startswith(("/dashboard", "/start", "/web", "/app", "/link")):
+            public_domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN") or ""
+            if public_domain:
+                base_url = f"https://{public_domain}".rstrip("/")
+            elif settings.webapp_url:
+                base_url = settings.webapp_url.rstrip("/")
+            else:
+                base_url = "http://localhost:8000"
+
+            dash_url = f"{base_url}/?user_id={user_id}"
+            welcome_text = (
+                "👋 **Welcome to Nexus Prime Cockpit!**\n\n"
+                "Tap below to open your personal financial cockpit, view expenses, and manage tasks:\n\n"
+                f"{dash_url}"
+            )
+            return {
+                "status": "ok",
+                "text": welcome_text,
+            }
+
         if text.startswith("/expenses"):
             from capabilities.expenses.tools import get_user_expenses
 
