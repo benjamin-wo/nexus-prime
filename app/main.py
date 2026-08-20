@@ -17,11 +17,17 @@ async def lifespan(app: FastAPI):
     Uvicorn lifespan manager for Railway deployment:
     - Initialize database tables
     - Start APScheduler engine & watchdog
+    - Register Telegram bot commands and menu button
     - Gracefully shutdown scheduler on exit
     """
     await setup_checkpointer()
     await init_db()
     await start_scheduler()
+    try:
+        from app.ingress import setup_telegram_bot_commands
+        await setup_telegram_bot_commands()
+    except Exception as exc:
+        print(f"[TELEGRAM] Failed to setup bot commands on startup: {exc}")
     yield
     await shutdown_scheduler()
     await close_checkpointer()

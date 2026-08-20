@@ -108,6 +108,34 @@ async def answer_telegram_callback(
     return await telegram_api_call("answerCallbackQuery", payload)
 
 
+async def setup_telegram_bot_commands() -> bool:
+    """
+    Register native Telegram bot slash commands (pop-up autocomplete list on '/')
+    and configure the bottom persistent chat Menu Button.
+    """
+    commands = [
+        {"command": "dashboard", "description": "🚀 Open Web Cockpit & Analytics"},
+        {"command": "split", "description": "👥 Split a bill with friends & create IOUs"},
+        {"command": "expenses", "description": "💰 View recent expenses & spending"},
+        {"command": "tasks", "description": "📋 View pending tasks & reminders"},
+        {"command": "groceries", "description": "🛒 View grocery shopping list"},
+        {"command": "email", "description": "📬 Connect Gmail for automatic receipts"},
+        {"command": "jobs", "description": "⏰ Manage scheduled background alerts"},
+        {"command": "timezone", "description": "📍 Check or update your current timezone"},
+        {"command": "help", "description": "💡 View tips, shortcuts & commands guide"},
+    ]
+    
+    # 1. Register slash commands so typing '/' pops up the interactive menu
+    res1 = await telegram_api_call("setMyCommands", {"commands": commands})
+    
+    # 2. Configure default Menu button to open the command menu
+    res2 = await telegram_api_call("setChatMenuButton", {"menu_button": {"type": "commands"}})
+    
+    print(f"[TELEGRAM] Bot commands registered: {res1}, Menu button configured: {res2}")
+    return res1 and res2
+
+
+
 async def send_telegram_chat_action(chat_id: int, action: str = "typing") -> bool:
     """Show a typing indicator so the bot feels responsive while processing."""
     return await telegram_api_call(
@@ -261,6 +289,38 @@ class TelegramIngress:
         user_id = callback.get("from", {}).get("id")
         callback_data = callback.get("data", "")
         callback_query_id = callback.get("id", "")
+
+        if callback_data.startswith("cmd:"):
+            cmd = callback_data.split(":", 1)[1]
+            if callback_query_id:
+                await answer_telegram_callback(callback_query_id)
+            if cmd == "expenses":
+                res = await self.handle_slash_command("/expenses", user_id=user_id or 0)
+                if res and chat_id:
+                    await send_telegram_message(chat_id, res.get("text", "No expenses."))
+            elif cmd == "tasks":
+                res = await self.handle_slash_command("/tasks", user_id=user_id or 0)
+                if res and chat_id:
+                    await send_telegram_message(chat_id, res.get("text", "No tasks."))
+            elif cmd == "email":
+                res = await self.handle_slash_command("/email", user_id=user_id or 0)
+                if res and chat_id:
+                    await send_telegram_message(chat_id, res.get("text", "Connect email."))
+            elif cmd == "split":
+                if chat_id:
+                    await send_telegram_message(
+                        chat_id,
+                        "👥 **How to Split a Bill:**\n\n"
+                        "Send a message like:\n"
+                        "• `/split 160 Haidilao with Alex, Chloe, Ben and me`\n"
+                        "• Or simply text: *'Split $120 dinner at Haidilao with Chloe and Alex'*\n"
+                        "• Or upload a receipt photo with the caption: *'Split 3 ways'*."
+                    )
+            elif cmd == "groceries":
+                res = await self.handle_slash_command("/groceries", user_id=user_id or 0)
+                if res and chat_id:
+                    await send_telegram_message(chat_id, res.get("text", "Grocery list."))
+            return {"status": "ok", "action": f"cmd_{cmd}"}
 
         if callback_data.startswith("log_req:"):
             tag = callback_data.split(":", 1)[1]
@@ -565,7 +625,54 @@ class TelegramIngress:
                 "text": "🛒 Grocery list:\n" + "\n".join(lines),
             }
 
-        if text.startswith(("/dashboard", "/start", "/web", "/app", "/link")):
+        if text.startswith(("/help", "/commands", "/start")):
+            public_domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN") or ""
+            if public_domain:
+                base_url = f"https://{public_domain}".rstrip("/")
+            elif settings.webapp_url:
+                base_url = settings.webapp_url.rstrip("/")
+            else:
+                base_url = "http://localhost:8000"
+
+            dash_url = f"{base_url}/?user_id={user_id}"
+            help_text = (
+                "🤖 **Welcome to Nexus Prime — Your AI Life Copilot**\n\n"
+                "Here are the core features & quick shortcuts you can use:\n\n"
+                "💳 **Expenses & Spending**\n"
+                "• Type or voice: *'Spent $12.50 at Starbucks'* or snap a receipt photo\n"
+                "• `/expenses` — View recent spending\n"
+                "• `/split <amount> with <friends>` — Split bills & generate WhatsApp text\n"
+                "• `/email` — Connect Gmail for automated receipt tracking\n\n"
+                "📋 **Tasks & Reminders**\n"
+                "• Type or voice: *'Remind me tomorrow at 9am to submit report'*\n"
+                "• `/tasks` — View your todo list & pending IOUs\n"
+                "• `/jobs` — View scheduled background alerts\n\n"
+                "🛒 **Groceries & Commute**\n"
+                "• Type: *'Add oat milk and eggs to grocery list'*\n"
+                "• `/groceries` — View shopping list\n"
+                "• Ask: *'Bus timings at 08057'* or *'Route to Orchard'*\n\n"
+                "🚀 **Web Cockpit & Analytics**\n"
+                "• `/dashboard` — Open your personal visual cockpit\n\n"
+                f"{dash_url}"
+            )
+            buttons = [
+                [{"text": "🚀 Open Web Cockpit", "url": dash_url}],
+                [
+                    {"text": "💰 Recent Expenses", "callback_data": "cmd:expenses"},
+                    {"text": "📋 Pending Tasks", "callback_data": "cmd:tasks"},
+                ],
+                [
+                    {"text": "📬 Connect Gmail", "callback_data": "cmd:email"},
+                    {"text": "👥 Split a Bill", "callback_data": "cmd:split"},
+                ],
+            ]
+            return {
+                "status": "ok",
+                "text": help_text,
+                "reply_markup": {"inline_keyboard": buttons},
+            }
+
+        if text.startswith(("/dashboard", "/web", "/app", "/link")):
             public_domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN") or ""
             if public_domain:
                 base_url = f"https://{public_domain}".rstrip("/")
@@ -583,6 +690,7 @@ class TelegramIngress:
             return {
                 "status": "ok",
                 "text": welcome_text,
+                "reply_markup": {"inline_keyboard": [[{"text": "🚀 Open Web Cockpit", "url": dash_url}]]},
             }
 
         if text.startswith(("/connect_email", "/gmail", "/email")):
