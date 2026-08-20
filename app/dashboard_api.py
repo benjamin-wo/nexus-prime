@@ -459,6 +459,7 @@ async def get_dashboard_summary(user_id: Optional[int] = Query(default=None)) ->
             "top_merchants": merchants_list,
             "active_jobs_count": len(active_jobs),
             "pending_groceries_count": groceries_pending,
+            "is_admin": settings.is_admin(effective_user_id),
         }
 
 

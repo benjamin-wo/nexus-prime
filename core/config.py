@@ -70,6 +70,21 @@ class Settings(BaseSettings):
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         return os.path.join(base_dir, self.data_dir)
 
+    # Capability Access Control
+    admin_only_capabilities: set[str] = {"whiteboard"}
+
+    def is_admin(self, user_id: Optional[object]) -> bool:
+        """
+        Check if user_id matches admin_telegram_chat_id.
+        If no admin_telegram_chat_id is set, default to True for local testing.
+        """
+        if not self.admin_telegram_chat_id:
+            return True
+        if not user_id:
+            return False
+        return str(user_id).strip() == str(self.admin_telegram_chat_id).strip()
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 settings = Settings()
+

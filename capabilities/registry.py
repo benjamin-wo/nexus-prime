@@ -109,22 +109,30 @@ def load_allowed_tags() -> set[str]:
     return set(data.get("allowed_tags") or [])
 
 
+ADMIN_CAPABILITIES = {"whiteboard"}
+
+
 def load_manifests(
     manifest_dir: Path | None = None,
     extra_manifests: Iterable[Path] | None = None,
+    is_admin: bool = True,
 ) -> list[Manifest]:
     manifest_dir = manifest_dir or MANIFEST_DIR
     allowed = load_allowed_tags()
     paths = sorted(manifest_dir.glob("*.yaml")) + sorted(manifest_dir.glob("*.yml"))
     paths += [Path(p) for p in (extra_manifests or [])]
-    return [load_manifest(p, allowed_tags=allowed) for p in paths]
+    manifests = [load_manifest(p, allowed_tags=allowed) for p in paths]
+    if not is_admin:
+        manifests = [m for m in manifests if m.id not in ADMIN_CAPABILITIES]
+    return manifests
 
 
 def load_registry(
     manifest_dir: Path | None = None,
     extra_manifests: Iterable[Path] | None = None,
+    is_admin: bool = True,
 ) -> dict[str, Manifest]:
-    return {m.id: m for m in load_manifests(manifest_dir, extra_manifests)}
+    return {m.id: m for m in load_manifests(manifest_dir, extra_manifests, is_admin=is_admin)}
 
 
 def derived_managers(manifests: Iterable[Manifest]) -> tuple[str, ...]:

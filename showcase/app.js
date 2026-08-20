@@ -276,6 +276,22 @@ async function loadDashboardSummary() {
           `;
         }).join("");
       }
+    // Capability Access Gating: Whiteboards & Overview tabs are Admin-only preview
+    const isAdmin = data.is_admin === true;
+    const wbTabBtn = document.getElementById("rail-btn-whiteboard");
+    const overviewTabBtn = document.getElementById("rail-btn-overview");
+
+    if (!isAdmin) {
+      if (wbTabBtn) wbTabBtn.style.display = "none";
+      if (overviewTabBtn) overviewTabBtn.style.display = "none";
+      
+      const activeTabId = document.querySelector(".rail-nav-btn.active")?.getAttribute("data-tab");
+      if (activeTabId === "tab-whiteboard" || activeTabId === "tab-overview") {
+        switchTab("tab-expenses");
+      }
+    } else {
+      if (wbTabBtn) wbTabBtn.style.display = "";
+      if (overviewTabBtn) overviewTabBtn.style.display = "";
     }
 
   } catch (err) {

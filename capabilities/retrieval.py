@@ -136,8 +136,11 @@ class BM25Index:
         return False
 
 
-def build_index(extra_manifests: list[Manifest] | None = None) -> BM25Index:
-    registry = load_registry()
+def build_index(
+    extra_manifests: list[Manifest] | None = None,
+    is_admin: bool = True,
+) -> BM25Index:
+    registry = load_registry(is_admin=is_admin)
     manifests = list(registry.values()) + (extra_manifests or [])
     return BM25Index(manifests)
 

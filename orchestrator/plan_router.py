@@ -10,6 +10,7 @@ from langgraph.types import Command
 from langgraph.graph import END
 
 from capabilities.retrieval import RetrievalResult
+from core.config import settings
 from orchestrator.planner import Decision, decision_to_dict, deterministic_plan
 from orchestrator.state import AssistantState
 
@@ -107,9 +108,11 @@ async def plan_dispatch(state: AssistantState) -> Command[str]:
     )
     from orchestrator.planner import plan_with_llm
 
-    retrieval: RetrievalResult = build_index().retrieve_with_recovery(text, k=5)
+    user_id = state.get("user_id")
+    is_admin = settings.is_admin(user_id)
+    retrieval: RetrievalResult = build_index(is_admin=is_admin).retrieve_with_recovery(text, k=5)
 
-    fast_path, skipped_stages = should_take_fast_path(text, load_registry(), retrieval)
+    fast_path, skipped_stages = should_take_fast_path(text, load_registry(is_admin=is_admin), retrieval)
     if fast_path:
         from orchestrator.planner import _candidate_selections, missing_policy
 

@@ -71,3 +71,14 @@ def test_c1_probe6_unknown_tag_warns_at_load(tmp_path):
     _write_manifest(manifest, {"tags": ["calandar"]})
     with pytest.warns(UserWarning, match="calandar"):
         load_manifest(manifest)
+
+
+def test_load_registry_is_admin_gating():
+    admin_reg = load_registry(is_admin=True)
+    assert "whiteboard" in admin_reg
+
+    friend_reg = load_registry(is_admin=False)
+    assert "whiteboard" not in friend_reg
+    assert "expenses" in friend_reg
+    assert "reminders" in friend_reg
+
