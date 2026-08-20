@@ -286,6 +286,40 @@ class TelegramIngress:
                 "reply": reply_text,
             }
 
+        if callback_data.startswith("sb:"):
+            tx_id_str = callback_data.split(":", 1)[1]
+            try:
+                tx_id = int(tx_id_str)
+                from core.models import ExpenseTransaction
+                from core.db import async_session_factory
+                from sqlmodel import select
+
+                async with async_session_factory() as session:
+                    tx = (await session.execute(
+                        select(ExpenseTransaction).where(ExpenseTransaction.id == tx_id)
+                    )).scalar_one_or_none()
+
+                if tx:
+                    reply_text = (
+                        f"👥 **Split Bill: {tx.currency} {tx.amount:.2f} at {tx.merchant}**\n\n"
+                        f"Who are you splitting this with? Tell me the names or number of people (e.g. *\"Alex, Chloe, Ben and me\"* or *\"/split {tx.amount:.2f} {tx.merchant} with Alex, Chloe and Ben\"*)."
+                    )
+                else:
+                    reply_text = "👥 Tell me the amount and friends to split with (e.g. *'/split 120 Haidilao with Alex, Chloe and me'*)."
+            except Exception:
+                reply_text = "👥 Tell me who you want to split this bill with (e.g. *'/split 120 Haidilao with Alex, Chloe and me'*)."
+
+            if callback_query_id:
+                await answer_telegram_callback(callback_query_id, text="Let's split this bill!")
+            if chat_id:
+                await send_telegram_message(chat_id, reply_text)
+                self._log_conversation("OUT", chat_id, reply_text)
+            return {
+                "status": "ok",
+                "action": "split_bill_prompt",
+                "reply": reply_text,
+            }
+
         if callback_data.startswith("td:"):
             task_id_str = callback_data.split(":", 1)[1]
             try:
@@ -569,6 +603,44 @@ class TelegramIngress:
                     "Your transactions will be automatically extracted and organized on your personal dashboard:\n\n"
                     f"{connect_url}"
                 ),
+            }
+
+        if text.startswith("/split"):
+            from capabilities.expenses.tools import split_bill_expense
+            
+            amt_match = re.search(r"\$?([0-9]+(?:\.[0-9]{1,2})?)", text)
+            if not amt_match:
+                return {
+                    "status": "ok",
+                    "text": "Usage: `/split <amount> [merchant] with [Friend 1], [Friend 2]...`\n\nExample: `/split 160 Haidilao with Alex, Chloe, Ben and me`",
+                }
+            amt = float(amt_match.group(1))
+
+            names_part = text
+            if "with " in text.lower():
+                names_part = text.lower().split("with ", 1)[1]
+            elif "between " in text.lower():
+                names_part = text.lower().split("between ", 1)[1]
+            elif "for " in text.lower():
+                names_part = text.lower().split("for ", 1)[1]
+
+            merchant = "Dinner / Outing"
+            m_match = re.search(rf"\$?{amt_match.group(1)}\s+([a-zA-Z0-9\s]+?)(?:\s+with|\s+between|\s+for|$)", text, re.IGNORECASE)
+            if m_match and m_match.group(1).strip():
+                merchant = m_match.group(1).strip().title()
+
+            people_names = [p.strip().title() for p in re.split(r",|\band\b|&", names_part) if p.strip()]
+
+            res = await split_bill_expense.ainvoke({
+                "user_id": user_id,
+                "total_amount": amt,
+                "merchant": merchant,
+                "people": people_names,
+            })
+            return {
+                "status": "ok",
+                "text": res.get("reply_text"),
+                "reply_markup": {"inline_keyboard": res.get("buttons")} if res.get("buttons") else None,
             }
 
         if text.startswith("/expenses"):

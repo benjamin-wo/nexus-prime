@@ -653,8 +653,9 @@ class GeneralPlugin:
             except Exception as exc:  # noqa: BLE001
                 print(f"[GENERAL] web search failed: {exc}")
 
-        # Tests and local runs use the placeholder key; skip the network call there.
-        if not settings.deepseek_api_key or settings.deepseek_api_key == "test_deepseek_key":
+        # Tests and local runs use placeholder keys; skip network call if no provider is configured.
+        has_key = bool(settings.active_gemini_api_key or (settings.deepseek_api_key and settings.deepseek_api_key != "test_deepseek_key"))
+        if not has_key:
             return PluginOutput(
                 message=AIMessage(content="Hey! I'm here — what do you need? 🙂"),
                 state_update={"active_domain": self.name},

@@ -340,6 +340,26 @@ async def log_expenses_from_emails(
             except Exception as tag_err:
                 print(f"[EXPENSES] Failed to apply processed tag to {email_id}: {tag_err}")
 
+        # Smart Low-Intrusion Notification Threshold:
+        # Only ping Telegram for high-value / group-sized expenses (>= $50 SGD) with Split Bill shortcut
+        if expense.amount >= 50.0:
+            try:
+                from app.ingress import send_telegram_message
+                alert_text = (
+                    f"💳 **New Expense Logged: {expense.currency} {expense.amount:.2f} at {expense.merchant}**\n\n"
+                    f"📅 {expense.date.strftime('%d %b %Y, %H:%M')}\n"
+                    f"🏷️ Category: #{expense.category}\n\n"
+                    f"Did you foot the bill for a group?"
+                )
+                buttons = [[{"text": "👥 Split this bill", "callback_data": f"sb:{tx.id}"}]]
+                await send_telegram_message(
+                    chat_id=user_id,
+                    text=alert_text,
+                    reply_markup={"inline_keyboard": buttons},
+                )
+            except Exception as notify_err:
+                print(f"[EXPENSES] Smart alert notification failed: {notify_err}")
+
         logged.append(
             {
                 "amount": expense.amount,
@@ -428,3 +448,123 @@ async def process_extracted_expense(
     if source_message_id:
         await apply_gmail_processed_label.ainvoke({"user_id": user_id, "message_id": source_message_id})
     return {"status": "saved_silently", "transaction_id": tx.id}
+
+
+@tool
+async def split_bill_expense(
+    user_id: int,
+    total_amount: float,
+    merchant: str = "Dinner / Event",
+    people: Optional[List[str]] = None,
+    people_count: Optional[int] = None,
+    transaction_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    """
+    Split an expense among friends, auto-adjust user's personal spend on dashboard,
+    generate copy-pastable WhatsApp group text, and create 1-tap IOU collection tasks.
+    """
+    from core.models import TaskItem, ExpenseTransaction
+    from core.db import async_session_factory
+    from sqlmodel import select, desc
+
+    # Parse friends list
+    parsed_people = []
+    if people:
+        for p in people:
+            cleaned = p.strip().title()
+            if cleaned and cleaned.lower() not in {"me", "myself", "i", "you", "user"}:
+                parsed_people.append(cleaned)
+
+    unique_friends = list(dict.fromkeys(parsed_people))
+
+    if people_count and people_count > 1 and len(unique_friends) < (people_count - 1):
+        needed = (people_count - 1) - len(unique_friends)
+        for i in range(1, needed + 1):
+            unique_friends.append(f"Friend {len(unique_friends) + 1}")
+
+    total_splits = len(unique_friends) + 1
+    if total_splits < 2:
+        total_splits = 2
+        unique_friends = ["Friend 1"]
+
+    per_person = round(total_amount / total_splits, 2)
+    my_share = round(total_amount - (per_person * len(unique_friends)), 2)
+
+    created_tasks = []
+    async with async_session_factory() as session:
+        # 1. Update existing parent transaction to user's net share
+        target_tx = None
+        if transaction_id:
+            target_tx = (await session.execute(
+                select(ExpenseTransaction).where(ExpenseTransaction.id == transaction_id, ExpenseTransaction.user_id == user_id)
+            )).scalar_one_or_none()
+        else:
+            recent_txs = (await session.execute(
+                select(ExpenseTransaction)
+                .where(ExpenseTransaction.user_id == user_id)
+                .order_by(desc(ExpenseTransaction.date))
+                .limit(5)
+            )).scalars().all()
+            for tx in recent_txs:
+                if abs(tx.amount - total_amount) < 0.01 or (merchant.lower() in (tx.merchant or "").lower()):
+                    target_tx = tx
+                    break
+
+        if target_tx:
+            target_tx.amount = my_share
+            target_tx.merchant = f"{merchant} (My share of ${total_amount:.2f})"
+            session.add(target_tx)
+
+        # 2. Create IOU tasks for each friend
+        for friend in unique_friends:
+            iou_task = TaskItem(
+                user_id=user_id,
+                title=f"Collect ${per_person:.2f} from {friend} for {merchant}",
+                priority="medium",
+                status="todo",
+                reminder_type="none",
+                description=f"Bill split from ${total_amount:.2f} total ({total_splits} people).",
+            )
+            session.add(iou_task)
+            await session.flush()
+            created_tasks.append({
+                "task_id": iou_task.id,
+                "friend": friend,
+                "amount": per_person,
+            })
+
+        await session.commit()
+
+    # Format copy-paste text for WhatsApp / Telegram group chat
+    breakdown_lines = [f"• {friend}: **${per_person:.2f}**" for friend in unique_friends]
+    breakdown_lines.append(f"• You: **${my_share:.2f}** *(Paid)*")
+
+    copy_paste_lines = [f"{friend}: ${per_person:.2f}" for friend in unique_friends]
+    copy_paste_lines.append(f"Me: ${my_share:.2f} (Paid)")
+
+    copy_paste_block = (
+        f"🧾 *{merchant} Bill Split (${total_amount:.2f})*\n"
+        + "\n".join(copy_paste_lines)
+        + "\n👉 *PayNow to my mobile number!*"
+    )
+
+    full_reply = (
+        f"🧾 **Bill Split: {merchant} (${total_amount:.2f} across {total_splits} people)**\n\n"
+        + "\n".join(breakdown_lines)
+        + f"\n\n📋 **Copy & Paste for Group Chat:**\n<code>{copy_paste_block}</code>\n\n"
+        + f"💡 *Adjusted your dashboard expense to **${my_share:.2f}** and created {len(created_tasks)} IOU tasks below.*"
+    )
+
+    buttons = [[{"text": f"✅ {t['friend']} Paid (${t['amount']:.2f})", "callback_data": f"td:{t['task_id']}"}] for t in created_tasks]
+
+    return {
+        "status": "ok",
+        "total_amount": total_amount,
+        "my_share": my_share,
+        "per_person": per_person,
+        "friends": unique_friends,
+        "tasks": created_tasks,
+        "reply_text": full_reply,
+        "buttons": buttons,
+    }
+
