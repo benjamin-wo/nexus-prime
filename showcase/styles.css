@@ -3511,7 +3511,7 @@ table.financial-data-table tr:hover td {
   }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 900px) {
   :root {
     --header-height: 56px;
     --nav-bottom-height: 62px;
@@ -3529,7 +3529,7 @@ table.financial-data-table tr:hover td {
     min-height: 100vh !important;
     width: 100vw !important;
     overflow-x: hidden !important;
-    padding-bottom: calc(var(--nav-bottom-height) + env(safe-area-inset-bottom, 14px) + 1rem) !important;
+    padding-bottom: calc(var(--nav-bottom-height) + env(safe-area-inset-bottom, 14px) + 1.5rem) !important;
   }
 
   .app-frame {
@@ -3538,7 +3538,7 @@ table.financial-data-table tr:hover td {
     border-radius: 0 !important;
     min-height: 100vh !important;
     width: 100vw !important;
-    overflow-x: hidden !important;
+    overflow: visible !important;
     box-shadow: none !important;
   }
 
@@ -3560,14 +3560,14 @@ table.financial-data-table tr:hover td {
     top: auto !important;
     width: 100vw !important;
     height: calc(var(--nav-bottom-height) + env(safe-area-inset-bottom, 12px)) !important;
-    background: rgba(14, 14, 18, 0.94) !important;
+    background: rgba(14, 14, 18, 0.96) !important;
     backdrop-filter: blur(24px) !important;
     -webkit-backdrop-filter: blur(24px) !important;
     border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
     border-right: none !important;
     border-bottom: none !important;
     border-left: none !important;
-    z-index: 9999 !important;
+    z-index: 99999 !important;
     display: flex !important;
     flex-direction: row !important;
     align-items: center !important;
@@ -3922,7 +3922,9 @@ table.financial-data-table tr:hover td {
     height: 88vh !important;
     top: auto !important;
     bottom: 0 !important;
-    border-radius: 20px 20px 0 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    border-radius: 24px 24px 0 0 !important;
     border-left: none !important;
     border-top: 1px solid rgba(255, 255, 255, 0.12) !important;
     transform: translateY(100%) !important;
@@ -3934,8 +3936,8 @@ table.financial-data-table tr:hover td {
   }
 
   .copilot-drawer-header {
-    padding: 1rem 1.25rem !important;
-    border-radius: 20px 20px 0 0 !important;
+    padding: 1.1rem 1.25rem !important;
+    border-radius: 24px 24px 0 0 !important;
   }
 
   .copilot-chat-body {
@@ -3944,7 +3946,7 @@ table.financial-data-table tr:hover td {
 
   .copilot-input-area {
     padding: 0.85rem !important;
-    padding-bottom: calc(0.85rem + env(safe-area-inset-bottom, 12px)) !important;
+    padding-bottom: calc(0.85rem + env(safe-area-inset-bottom, 14px)) !important;
   }
 
   .copilot-input-area textarea {
@@ -4003,5 +4005,6 @@ table.financial-data-table tr:hover td {
     padding: 0.75rem !important;
   }
 }
+
 
 
