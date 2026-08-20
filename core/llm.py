@@ -58,6 +58,15 @@ def get_llm(
         )
 
     elif role == "agent_core":
+        if settings.llm_provider == "gemini" or (not settings.deepseek_api_key and settings.active_gemini_api_key):
+            api_key = settings.active_gemini_api_key or "test_google_key"
+            logger.debug(f"Initializing Google Gemini ({settings.gemini_model}) for agent_core role.")
+            return ChatGoogleGenerativeAI(
+                model=settings.gemini_model,
+                google_api_key=api_key,
+                temperature=temperature,
+            )
+
         api_key = settings.deepseek_api_key or "test_deepseek_key"
         base_url = settings.deepseek_base_url or "https://api.deepseek.com/v1"
         

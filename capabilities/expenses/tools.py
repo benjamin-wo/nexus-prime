@@ -85,28 +85,25 @@ async def extract_expense_from_text(user_text: str) -> Dict[str, Any]:
     Extract structured expense fields from a natural-language message.
     Returns amount, currency, merchant, category, date_iso, confidence, needs_clarification.
     """
-    if not settings.deepseek_api_key or settings.deepseek_api_key == "test_deepseek_key":
-        return {"amount": None}
-
-    llm = get_agent_llm(complexity=ThinkingLevel.LOW, temperature=0.1)
-    ai_message = await llm.ainvoke(
-        [
-            SystemMessage(
-                content=(
-                    "Extract an expense from the user's message. Reply with ONLY a JSON object: "
-                    '{"amount": number, "currency": string (3-letter code, default SGD for Singapore), '
-                    '"merchant": string, "category": string, "date_iso": string (ISO 8601 with time and timezone if mentioned, e.g. 2026-08-16T14:32:00+08:00, or YYYY-MM-DD if time not mentioned), '
-                    '"confidence": number 0-1, "needs_clarification": boolean}. '
-                    "Set confidence below 0.8 or needs_clarification true when the amount or "
-                    "merchant is ambiguous. If no expense is present, return {\"amount\": null}."
-                )
-            ),
-            HumanMessage(content=user_text[:2000]),
-        ]
-    )
-    raw = str(getattr(ai_message, "content", "") or "").strip()
-    raw = re.sub(r"^```(?:json)?|```$", "", raw, flags=re.MULTILINE).strip()
     try:
+        llm = get_agent_llm(complexity=ThinkingLevel.LOW, temperature=0.1)
+        ai_message = await llm.ainvoke(
+            [
+                SystemMessage(
+                    content=(
+                        "Extract an expense from the user's message. Reply with ONLY a JSON object: "
+                        '{"amount": number, "currency": string (3-letter code, default SGD for Singapore), '
+                        '"merchant": string, "category": string, "date_iso": string (ISO 8601 with time and timezone if mentioned, e.g. 2026-08-16T14:32:00+08:00, or YYYY-MM-DD if time not mentioned), '
+                        '"confidence": number 0-1, "needs_clarification": boolean}. '
+                        "Set confidence below 0.8 or needs_clarification true when the amount or "
+                        "merchant is ambiguous. If no expense is present, return {\"amount\": null}."
+                    )
+                ),
+                HumanMessage(content=user_text[:2000]),
+            ]
+        )
+        raw = str(getattr(ai_message, "content", "") or "").strip()
+        raw = re.sub(r"^```(?:json)?|```$", "", raw, flags=re.MULTILINE).strip()
         parsed = json.loads(raw)
         if not parsed.get("amount"):
             return {"amount": None}

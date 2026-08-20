@@ -129,7 +129,7 @@ def missing_policy(text: str) -> list[str]:
         missing.append("smart_home")
     if _has(text, ["book a table", "reserve a table", "restaurant booking"]):
         missing.append("restaurant_booking")
-    if _has(text, ["budget"]):
+    if _has(text, ["budget at risk", "my budget", "set a budget", "budget limit", "track budget", "over budget", "under budget", "trip budget"]):
         missing.append("budget")
     if re.search(r"email .* to me|email me|send me? .* to my email|send .* by email", text):
         missing.append("email_send")
@@ -385,11 +385,16 @@ def llm_plan_prompt(
         for item in shortlist
     )
     system = (
-        "You are the Nexus Prime planner working in the background. Understand the request, "
-        "choose the capabilities and their order, and reason internally. Reply with ONLY JSON: "
+        "You are the Nexus Prime planner working in the background. Understand the user's intent, "
+        "and select the capability plugins needed.\n"
+        "CRITICAL PLANNING RULES:\n"
+        "1. For any requests to plan trips, itineraries, brainstorm ideas, research, answer questions, or give recommendations, ALWAYS select the 'general' capability. The assistant will proactively generate a concrete itinerary and plan immediately.\n"
+        "2. 'question' field MUST BE null unless the input is a single isolated word with zero context (e.g. 'check'). NEVER use 'question' to interview the user or ask for trip details/budgets. Route to 'general' instead.\n"
+        "3. If the user mentions travel, destinations, dates, places, food, restaurants, fitness, or activities, route to 'general'.\n"
+        "Reply ONLY with JSON:\n"
         '{"capabilities":[{"id":"...","reason":"...","confidence":0.0-1.0}], '
-        '"ordering":["..."],"insufficient_capability":{"missing_capabilities":["..."],"reasons":["..."]}'
-        ',"question":null|"...","rationale":"brief internal reasoning, never shown to the user"}'
+        '"ordering":["..."],"insufficient_capability":null|{"missing_capabilities":["..."],"reasons":["..."]}'
+        ',"question":null,"rationale":"brief internal reasoning"}'
     )
     context_parts = []
     if state:
