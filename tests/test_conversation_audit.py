@@ -46,15 +46,15 @@ async def test_conversation_audit_persists_scorecard():
 
 
 @pytest.mark.asyncio
-async def test_conversation_audit_notifies_user_chat_on_review():
+async def test_conversation_audit_alerts_admin_on_critical():
     messages = [HumanMessage(content="bus route"), AIMessage(content="wrong answer")]
     payload = {
-        "faithfulness_score": 3,
+        "faithfulness_score": 1,
         "routing_score": 2,
         "tool_correctness_score": 1,
         "helpfulness_score": 2,
-        "verdict": "review",
-        "evidence": "Wrong bus number.",
+        "verdict": "critical",
+        "evidence": "Wrong bus number hallucinated.",
     }
     sent = {}
 
@@ -64,13 +64,15 @@ async def test_conversation_audit_notifies_user_chat_on_review():
         return True
 
     with patch("core.audit._judge_conversation_with_gemini", new=AsyncMock(return_value=payload)):
-        with patch("app.ingress.send_telegram_message", new=_fake_send):
-            await perform_conversation_audit(
-                user_id=149917165, thread_id="149917165", messages=messages
-            )
-    assert sent.get("chat_id") == 149917165
-    assert "Conversation audit" in sent.get("text", "")
-    assert "Wrong bus number" in sent.get("text", "")
+        with patch("core.audit.settings.admin_telegram_chat_id", "999888"):
+            with patch("app.ingress.send_telegram_message", new=_fake_send):
+                await perform_conversation_audit(
+                    user_id=149917165, thread_id="149917165", messages=messages
+                )
+    # Admin channel notified, NOT the user chat
+    assert sent.get("chat_id") == 999888
+    assert "AUDIT ANOMALY" in sent.get("text", "")
+    assert "Wrong bus number hallucinated" in sent.get("text", "")
 
 
 @pytest.mark.asyncio

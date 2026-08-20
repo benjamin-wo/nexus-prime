@@ -16,8 +16,8 @@ class Settings(BaseSettings):
     # AI & Multimodal Models
     google_api_key: Optional[str] = None
     gemini_api_key: Optional[str] = None
-    gemini_model: str = "gemini-3.1-flash-lite"
-    gemini_judge_model: str = "gemini-3.1-pro"
+    gemini_model: str = "gemini-2.5-flash"
+    gemini_judge_model: str = "gemini-3.1-pro-preview"
     deepseek_api_key: Optional[str] = None
     deepseek_base_url: str = "https://api.deepseek.com/v1"
     deepseek_model: str = "deepseek-v4-flash"
