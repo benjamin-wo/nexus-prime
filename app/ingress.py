@@ -109,6 +109,13 @@ async def answer_telegram_callback(
     return await telegram_api_call("answerCallbackQuery", payload)
 
 
+async def delete_telegram_message(chat_id: int, message_id: int) -> bool:
+    """Delete a Telegram message by ID to remove completed/snoozed reminder bubbles."""
+    return await telegram_api_call(
+        "deleteMessage", {"chat_id": chat_id, "message_id": message_id}
+    )
+
+
 async def setup_telegram_bot_commands() -> bool:
     """
     Register native Telegram bot slash commands (pop-up autocomplete list on '/')
@@ -417,18 +424,19 @@ class TelegramIngress:
                         remove_task_reminder(task.id)
                         title = task.title
 
-                reply_text = f"✅ Marked <b>{title}</b> as done! Great job."
                 self._log_conversation("CALLBACK", chat_id, f"td:{task_id}")
                 if callback_query_id:
-                    await answer_telegram_callback(callback_query_id, text="Marked as done! 🎉")
-                if chat_id:
-                    await send_telegram_message(chat_id, reply_text)
-                    self._log_conversation("OUT", chat_id, reply_text)
+                    await answer_telegram_callback(callback_query_id, text=f"✅ Marked '{title}' as done")
+
+                # Remove the reminder message bubble so the chat stays clean
+                message_id = callback.get("message", {}).get("message_id")
+                if chat_id and message_id:
+                    await delete_telegram_message(chat_id, message_id)
+
                 return {
                     "status": "ok",
                     "action": "task_completed",
                     "task_id": task_id,
-                    "reply": reply_text,
                 }
             except Exception as exc:
                 print(f"[CALLBACK] error completing task {callback_data}: {exc}")
@@ -451,18 +459,19 @@ class TelegramIngress:
                         title = task.title
 
                 await snooze_task_reminder(task_id, user_id=user_id or 0, minutes=60)
-                reply_text = f"⏰ Snoozed <b>{title}</b> for 1 hour."
                 self._log_conversation("CALLBACK", chat_id, f"ts:{task_id}")
                 if callback_query_id:
-                    await answer_telegram_callback(callback_query_id, text="Snoozed 1h ⏰")
-                if chat_id:
-                    await send_telegram_message(chat_id, reply_text)
-                    self._log_conversation("OUT", chat_id, reply_text)
+                    await answer_telegram_callback(callback_query_id, text=f"⏰ Snoozed '{title}' for 1h")
+
+                # Remove the reminder message bubble
+                message_id = callback.get("message", {}).get("message_id")
+                if chat_id and message_id:
+                    await delete_telegram_message(chat_id, message_id)
+
                 return {
                     "status": "ok",
                     "action": "task_snoozed",
                     "task_id": task_id,
-                    "reply": reply_text,
                 }
             except Exception as exc:
                 print(f"[CALLBACK] error snoozing task {callback_data}: {exc}")
