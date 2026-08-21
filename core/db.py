@@ -74,6 +74,35 @@ async def init_db() -> None:
             if not _is_duplicate_column_error(exc):
                 logger.warning("Migration for cover_ready skipped: %s", exc)
 
+        # Idempotent migration: add receipt_items and split_data columns to expensetransaction
+        try:
+            db_url = settings.resolved_database_url
+            if db_url.startswith("sqlite"):
+                await conn.execute(
+                    text("ALTER TABLE expensetransaction ADD COLUMN receipt_items JSON DEFAULT '[]'")
+                )
+            else:
+                await conn.execute(
+                    text("ALTER TABLE expensetransaction ADD COLUMN IF NOT EXISTS receipt_items JSON DEFAULT '[]'::json")
+                )
+        except (OperationalError, ProgrammingError) as exc:
+            if not _is_duplicate_column_error(exc):
+                logger.warning("Migration for receipt_items skipped: %s", exc)
+
+        try:
+            db_url = settings.resolved_database_url
+            if db_url.startswith("sqlite"):
+                await conn.execute(
+                    text("ALTER TABLE expensetransaction ADD COLUMN split_data JSON DEFAULT '{}'")
+                )
+            else:
+                await conn.execute(
+                    text("ALTER TABLE expensetransaction ADD COLUMN IF NOT EXISTS split_data JSON DEFAULT '{}'::json")
+                )
+        except (OperationalError, ProgrammingError) as exc:
+            if not _is_duplicate_column_error(exc):
+                logger.warning("Migration for split_data skipped: %s", exc)
+
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
     async with async_session_factory() as session:
         yield session
