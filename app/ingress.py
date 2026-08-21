@@ -2,6 +2,7 @@ import asyncio
 import base64
 import html
 import json
+import os
 import re
 from typing import Dict, Any, List, Optional
 import httpx
@@ -899,7 +900,10 @@ class TelegramIngress:
                 if chat_id:
                     reply_text = self._format_slash_reply(slash_res, text)
                     if reply_text:
-                        sent = await send_telegram_message(chat_id, reply_text)
+                        reply_markup = slash_res.get("reply_markup")
+                        sent = await send_telegram_message(
+                            chat_id, reply_text, reply_markup=reply_markup
+                        )
                         self._log_conversation(
                             "OUT" if sent else "SEND-FAIL", chat_id, reply_text
                         )
