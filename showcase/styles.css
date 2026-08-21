@@ -475,6 +475,12 @@ body {
   flex-wrap: wrap;
 }
 
+.table-card-controls-row-2 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .table-search-pill {
   background: var(--bg-input);
   border: 1px solid var(--border-subtle);
@@ -534,6 +540,10 @@ body {
 .btn-table-icon:hover {
   color: var(--orange-primary);
   border-color: var(--orange-primary);
+}
+
+.table-mobile-swipe-hint {
+  display: none;
 }
 
 /* Data Table Styling (Matching Reference Table) */
@@ -3509,44 +3519,54 @@ table.financial-data-table tr:hover td {
   .metrics-cards-row {
     grid-template-columns: repeat(2, 1fr) !important;
   }
+  .sidebar-widgets-column {
+    width: 100% !important;
+  }
 }
 
 @media (max-width: 900px) {
   :root {
     --header-height: 56px;
-    --nav-bottom-height: 62px;
+    --nav-bottom-height: 64px;
   }
 
+  /* Root Viewport Mechanics & Scrolling Setup */
   html, body {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: 100dvh !important;
     overflow-x: hidden !important;
-    width: 100vw !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
     position: relative;
     -webkit-text-size-adjust: 100%;
   }
 
   .app-shell {
     padding: 0 !important;
-    min-height: 100vh !important;
-    width: 100vw !important;
+    min-height: 100dvh !important;
+    width: 100% !important;
+    max-width: 100% !important;
     overflow-x: hidden !important;
-    padding-bottom: calc(var(--nav-bottom-height) + env(safe-area-inset-bottom, 14px) + 1.5rem) !important;
+    box-sizing: border-box !important;
   }
 
   .app-frame {
     flex-direction: column !important;
     border: none !important;
     border-radius: 0 !important;
-    min-height: 100vh !important;
-    width: 100vw !important;
+    min-height: 100dvh !important;
+    width: 100% !important;
+    max-width: 100% !important;
     overflow: visible !important;
     box-shadow: none !important;
   }
 
   .ambient-flare {
-    width: 250px !important;
-    height: 250px !important;
-    opacity: 0.25 !important;
-    filter: blur(80px) !important;
+    width: 200px !important;
+    height: 200px !important;
+    opacity: 0.2 !important;
+    filter: blur(70px) !important;
   }
 
   /* --------------------------------------------------------------------------
@@ -3558,22 +3578,23 @@ table.financial-data-table tr:hover td {
     left: 0 !important;
     right: 0 !important;
     top: auto !important;
-    width: 100vw !important;
+    width: 100% !important;
     height: calc(var(--nav-bottom-height) + env(safe-area-inset-bottom, 12px)) !important;
-    background: rgba(14, 14, 18, 0.96) !important;
+    background: rgba(14, 14, 18, 0.94) !important;
     backdrop-filter: blur(24px) !important;
     -webkit-backdrop-filter: blur(24px) !important;
-    border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
     border-right: none !important;
     border-bottom: none !important;
     border-left: none !important;
-    z-index: 99999 !important;
+    z-index: 9999 !important;
     display: flex !important;
     flex-direction: row !important;
     align-items: center !important;
     justify-content: space-around !important;
     padding: 0 0.5rem env(safe-area-inset-bottom, 8px) 0.5rem !important;
-    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.6) !important;
+    box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.7) !important;
+    box-sizing: border-box !important;
   }
 
   .rail-logo-btn,
@@ -3603,6 +3624,10 @@ table.financial-data-table tr:hover td {
     align-items: center !important;
     justify-content: center !important;
     background: transparent !important;
+    color: #71717a !important;
+    border: none !important;
+    cursor: pointer !important;
+    touch-action: manipulation !important;
   }
 
   .rail-nav-btn svg {
@@ -3620,9 +3645,9 @@ table.financial-data-table tr:hover td {
      MAIN VIEWPORT & PAGE CONTAINERS
      -------------------------------------------------------------------------- */
   .main-viewport {
-    padding: 1rem 0.85rem !important;
-    width: 100vw !important;
-    max-width: 100vw !important;
+    padding: 0.85rem 0.65rem calc(var(--nav-bottom-height) + env(safe-area-inset-bottom, 16px) + 1.5rem) 0.65rem !important;
+    width: 100% !important;
+    max-width: 100% !important;
     box-sizing: border-box !important;
     overflow-x: hidden !important;
   }
@@ -3640,8 +3665,8 @@ table.financial-data-table tr:hover td {
     display: flex !important;
     flex-direction: column !important;
     align-items: stretch !important;
-    gap: 0.85rem !important;
-    margin-bottom: 1.25rem !important;
+    gap: 0.75rem !important;
+    margin-bottom: 1rem !important;
     width: 100% !important;
   }
 
@@ -3653,7 +3678,7 @@ table.financial-data-table tr:hover td {
   }
 
   .dash-main-heading {
-    font-size: 1.5rem !important;
+    font-size: 1.4rem !important;
     font-weight: 800 !important;
     letter-spacing: -0.02em !important;
   }
@@ -3669,10 +3694,11 @@ table.financial-data-table tr:hover td {
   .btn-secondary-action-pill {
     width: 100% !important;
     justify-content: center !important;
-    padding: 0.7rem 0.75rem !important;
-    font-size: 0.82rem !important;
-    border-radius: var(--radius-sm) !important;
+    padding: 0.65rem 0.6rem !important;
+    font-size: 0.8rem !important;
+    border-radius: var(--radius-pill) !important;
     white-space: nowrap !important;
+    box-sizing: border-box !important;
   }
 
   .date-range-badge {
@@ -3680,8 +3706,9 @@ table.financial-data-table tr:hover td {
     width: 100% !important;
     text-align: center !important;
     justify-content: center !important;
-    padding: 0.5rem !important;
-    font-size: 0.78rem !important;
+    padding: 0.45rem !important;
+    font-size: 0.75rem !important;
+    box-sizing: border-box !important;
   }
 
   /* --------------------------------------------------------------------------
@@ -3689,52 +3716,56 @@ table.financial-data-table tr:hover td {
      -------------------------------------------------------------------------- */
   .metrics-cards-row {
     grid-template-columns: 1fr !important;
-    gap: 0.75rem !important;
+    gap: 0.65rem !important;
     width: 100% !important;
     margin-bottom: 1rem !important;
   }
 
-  .metric-card {
-    padding: 1rem !important;
+  .metric-glass-card {
+    padding: 0.85rem 1rem !important;
     border-radius: 14px !important;
+    box-sizing: border-box !important;
   }
 
-  .metric-card-val {
-    font-size: 1.6rem !important;
-  }
-
-  .budget-visual-container {
-    padding: 1rem !important;
-    border-radius: 14px !important;
-  }
-
-  .budget-progress-track {
-    height: 8px !important;
+  .metric-large-figure {
+    font-size: 1.5rem !important;
+    margin: 0.35rem 0 !important;
   }
 
   /* --------------------------------------------------------------------------
-     TRANSACTIONS DATA TABLE & FILTERS
+     TRANSACTIONS DATA TABLE & CONTROLS (MOWANI STYLE)
      -------------------------------------------------------------------------- */
-  .dash-table-card {
-    padding: 0.85rem 0.75rem !important;
-    border-radius: 14px !important;
+  .table-card-container {
     width: 100% !important;
-    overflow: hidden !important;
+    max-width: 100% !important;
+    padding: 0.85rem 0.65rem !important;
+    border-radius: 16px !important;
     box-sizing: border-box !important;
+    overflow: hidden !important;
+  }
+
+  .table-card-header {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 0.75rem !important;
+    margin-bottom: 0.85rem !important;
+  }
+
+  .table-card-title {
+    font-size: 1.15rem !important;
   }
 
   .table-card-controls {
     display: flex !important;
     flex-direction: column !important;
-    gap: 0.65rem !important;
+    gap: 0.5rem !important;
     width: 100% !important;
-    margin-bottom: 0.75rem !important;
   }
 
   .table-search-pill {
     width: 100% !important;
-    padding: 0.65rem 0.85rem !important;
-    border-radius: 10px !important;
+    padding: 0.55rem 0.75rem !important;
+    border-radius: var(--radius-pill) !important;
     box-sizing: border-box !important;
   }
 
@@ -3743,44 +3774,67 @@ table.financial-data-table tr:hover td {
     width: 100% !important;
   }
 
-  .table-filter-pills {
+  .table-card-controls-row-2 {
     display: flex !important;
-    overflow-x: auto !important;
-    gap: 0.4rem !important;
-    padding-bottom: 0.35rem !important;
-    -webkit-overflow-scrolling: touch !important;
+    gap: 0.45rem !important;
     width: 100% !important;
-    scrollbar-width: none !important;
+    align-items: center !important;
   }
 
-  .table-filter-pills::-webkit-scrollbar {
-    display: none !important;
+  .table-dropdown-select {
+    flex: 1 !important;
+    padding: 0.45rem 0.5rem !important;
+    font-size: 0.75rem !important;
+    border-radius: var(--radius-pill) !important;
+    min-width: 0 !important;
   }
 
-  .filter-pill {
-    padding: 0.45rem 0.75rem !important;
-    font-size: 0.76rem !important;
-    white-space: nowrap !important;
+  .btn-table-icon {
+    padding: 0.45rem 0.65rem !important;
     flex-shrink: 0 !important;
+    min-width: 36px !important;
+    min-height: 36px !important;
   }
 
-  .dash-table-wrapper {
+  .table-mobile-swipe-hint {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    font-size: 0.72rem !important;
+    color: #a1a1aa !important;
+    background: rgba(255, 255, 255, 0.03) !important;
+    border: 1px dashed rgba(255, 255, 255, 0.08) !important;
+    border-radius: var(--radius-pill) !important;
+    padding: 0.35rem 0.75rem !important;
+    margin-bottom: 0.5rem !important;
+    letter-spacing: 0.01em !important;
+  }
+
+  /* Dedicated Touch-Scrolling Table Wrapper */
+  .table-scroll-wrapper {
     width: 100% !important;
+    max-width: 100% !important;
     overflow-x: auto !important;
+    overflow-y: hidden !important;
     -webkit-overflow-scrolling: touch !important;
+    overscroll-behavior-x: contain !important;
+    touch-action: pan-x pan-y !important;
+    border-radius: 12px !important;
     margin: 0.5rem 0 !important;
-    border-radius: 10px !important;
     border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    position: relative !important;
   }
 
-  .dash-table {
-    min-width: 600px !important;
-    font-size: 0.82rem !important;
+  table.financial-data-table {
+    min-width: 580px !important;
+    font-size: 0.78rem !important;
+    width: 100% !important;
   }
 
-  .dash-table th,
-  .dash-table td {
-    padding: 0.7rem 0.5rem !important;
+  table.financial-data-table th,
+  table.financial-data-table td {
+    padding: 0.65rem 0.5rem !important;
+    white-space: nowrap !important;
   }
 
   .td-payment-name-cell {
@@ -3788,18 +3842,42 @@ table.financial-data-table tr:hover td {
   }
 
   .merchant-mini-icon {
-    width: 28px !important;
-    height: 28px !important;
+    width: 26px !important;
+    height: 26px !important;
+    font-size: 0.8rem !important;
+  }
+
+  .row-action-btn {
+    min-width: 32px !important;
+    min-height: 32px !important;
     font-size: 0.85rem !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
   }
 
   .table-pagination-footer {
     display: flex !important;
     flex-direction: column !important;
-    gap: 0.75rem !important;
+    gap: 0.65rem !important;
     align-items: center !important;
     text-align: center !important;
     padding-top: 0.75rem !important;
+  }
+
+  .pagination-left {
+    font-size: 0.75rem !important;
+  }
+
+  .pagination-right {
+    gap: 0.25rem !important;
+  }
+
+  .page-nav-btn,
+  .page-num-btn {
+    width: 32px !important;
+    height: 32px !important;
+    font-size: 0.78rem !important;
   }
 
   .batch-action-bar {
@@ -3817,109 +3895,352 @@ table.financial-data-table tr:hover td {
   }
 
   /* --------------------------------------------------------------------------
-     WHITEBOARD & IDEAS VIEW
+     SIDEBAR BREAKDOWN & WIDGETS COLUMN
      -------------------------------------------------------------------------- */
-  .wb-hero-banner {
-    height: 190px !important;
-    border-radius: 14px !important;
-    margin-bottom: 1rem !important;
-  }
-
-  .wb-hero-overlay {
-    padding: 1rem !important;
-  }
-
-  .wb-hero-title {
-    font-size: 1.25rem !important;
-    line-height: 1.2 !important;
-  }
-
-  .wb-hero-subtitle {
-    font-size: 0.8rem !important;
-    line-height: 1.35 !important;
-    display: -webkit-box !important;
-    -webkit-line-clamp: 2 !important;
-    -webkit-box-orient: vertical !important;
-    overflow: hidden !important;
-  }
-
-  .wb-board-scroller {
-    padding: 0.5rem 0 !important;
-    gap: 0.65rem !important;
-  }
-
-  .wb-board-card {
-    min-width: 135px !important;
-    max-width: 145px !important;
-    height: 180px !important;
-    border-radius: 12px !important;
-  }
-
-  .wb-actions-row {
-    display: grid !important;
-    grid-template-columns: 1fr 1fr !important;
-    gap: 0.5rem !important;
+  .sidebar-widgets-column {
     width: 100% !important;
-    margin: 0.85rem 0 !important;
-  }
-
-  .wb-actions-row button {
-    width: 100% !important;
-    justify-content: center !important;
-    font-size: 0.8rem !important;
-    padding: 0.6rem 0.5rem !important;
-  }
-
-  .wb-sections-grid {
     display: flex !important;
-    flex-direction: row !important;
-    overflow-x: auto !important;
+    flex-direction: column !important;
     gap: 0.85rem !important;
-    scroll-snap-type: x mandatory !important;
-    padding-bottom: 1.25rem !important;
-    -webkit-overflow-scrolling: touch !important;
-    width: 100% !important;
   }
 
-  .wb-section-col {
-    min-width: 82vw !important;
-    max-width: 85vw !important;
-    scroll-snap-align: center !important;
-    padding: 0.85rem !important;
+  .sidebar-widget-card,
+  .ai-insight-banner-card {
+    padding: 0.85rem 1rem !important;
     border-radius: 14px !important;
-    flex-shrink: 0 !important;
+    box-sizing: border-box !important;
+  }
+
+  .donut-chart-container {
+    padding: 0.5rem 0 !important;
+  }
+
+  .donut-legend-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 0.4rem !important;
   }
 
   /* --------------------------------------------------------------------------
-     TASKS & REMINDERS TAB
+     LIVE CHAT TAB
      -------------------------------------------------------------------------- */
-  .tasks-container {
-    width: 100% !important;
-    padding: 0 !important;
+  .chat-viewport-card {
+    height: calc(100dvh - var(--nav-bottom-height) - env(safe-area-inset-bottom, 16px) - 2rem) !important;
+    max-height: calc(100dvh - var(--nav-bottom-height) - env(safe-area-inset-bottom, 16px) - 2rem) !important;
+    display: flex !important;
+    flex-direction: column !important;
+    padding: 0.75rem 0.65rem !important;
+    border-radius: 14px !important;
+    box-sizing: border-box !important;
   }
 
-  .task-input-bar {
+  .chat-header-row {
+    padding-bottom: 0.65rem !important;
+    flex-shrink: 0 !important;
+  }
+
+  .chat-prompts-strip {
+    overflow-x: auto !important;
+    white-space: nowrap !important;
+    scrollbar-width: none !important;
+    -webkit-overflow-scrolling: touch !important;
+    flex-shrink: 0 !important;
+    padding: 0.4rem 0 !important;
+    display: flex !important;
+    gap: 0.35rem !important;
+  }
+
+  .chat-prompts-strip::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  .prompt-pill-btn {
+    font-size: 0.72rem !important;
+    padding: 0.35rem 0.65rem !important;
+    flex-shrink: 0 !important;
+  }
+
+  .chat-messages-container {
+    flex: 1 !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    padding: 0.5rem 0 !important;
+    gap: 0.75rem !important;
+  }
+
+  .chat-message-bubble {
+    max-width: 95% !important;
+  }
+
+  .msg-text-surface {
+    font-size: 0.82rem !important;
+    padding: 0.75rem 0.85rem !important;
+    word-break: break-word !important;
+  }
+
+  .chat-composer-bar {
+    padding-top: 0.5rem !important;
+    flex-shrink: 0 !important;
+    gap: 0.4rem !important;
+  }
+
+  .composer-input {
+    font-size: 16px !important; /* Prevents auto zoom on iOS */
+    padding: 0.65rem 0.75rem !important;
+  }
+
+  .chat-composer-bar button {
+    padding: 0.65rem 0.85rem !important;
+  }
+
+  /* --------------------------------------------------------------------------
+     TASKS & REMINDERS TAB (COCKPIT)
+     -------------------------------------------------------------------------- */
+  .tasks-stats-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 0.5rem !important;
+    margin-bottom: 0.85rem !important;
+  }
+
+  .task-stat-card {
+    padding: 0.75rem !important;
+    border-radius: 12px !important;
+  }
+
+  .task-stat-val {
+    font-size: 1.25rem !important;
+  }
+
+  .task-stat-lbl {
+    font-size: 0.7rem !important;
+  }
+
+  .task-composer-card {
+    padding: 0.85rem 0.75rem !important;
+    border-radius: 14px !important;
+    margin-bottom: 0.85rem !important;
+  }
+
+  .task-composer-title-row {
     flex-direction: column !important;
     gap: 0.5rem !important;
   }
 
-  .task-input-bar input {
+  .task-main-input {
     font-size: 16px !important;
+    padding: 0.65rem 0.75rem !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  #btn-add-task {
+    width: 100% !important;
+    justify-content: center !important;
+    padding: 0.65rem !important;
+  }
+
+  .task-notes-input {
+    font-size: 16px !important;
+    padding: 0.55rem 0.75rem !important;
+  }
+
+  .task-composer-meta-row {
+    flex-direction: column !important;
+    gap: 0.65rem !important;
+  }
+
+  .task-meta-group {
+    width: 100% !important;
+    justify-content: space-between !important;
+  }
+
+  .priority-toggle-group {
+    width: 100% !important;
+    display: flex !important;
+  }
+
+  .priority-btn {
+    flex: 1 !important;
+    padding: 0.45rem !important;
+    font-size: 0.75rem !important;
+  }
+
+  .task-date-input,
+  .task-select-input {
+    font-size: 16px !important;
+    padding: 0.45rem 0.65rem !important;
+    box-sizing: border-box !important;
+  }
+
+  .cron-presets-wrap {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 0.35rem !important;
     width: 100% !important;
   }
 
+  .offset-chip,
+  .cron-chip {
+    padding: 0.35rem 0.55rem !important;
+    font-size: 0.72rem !important;
+  }
+
+  .tasks-toolbar {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 0.65rem !important;
+    margin-bottom: 0.85rem !important;
+  }
+
+  .tasks-filter-pills {
+    overflow-x: auto !important;
+    white-space: nowrap !important;
+    scrollbar-width: none !important;
+    -webkit-overflow-scrolling: touch !important;
+    display: flex !important;
+    gap: 0.35rem !important;
+    padding-bottom: 0.25rem !important;
+  }
+
+  .tasks-filter-pills::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  .task-filter-pill {
+    padding: 0.4rem 0.7rem !important;
+    font-size: 0.75rem !important;
+    flex-shrink: 0 !important;
+  }
+
+  .tasks-toolbar > div:last-child {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 0.45rem !important;
+    width: 100% !important;
+  }
+
+  .task-search-input {
+    font-size: 16px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
   .task-item-card {
-    padding: 0.85rem !important;
+    padding: 0.75rem 0.85rem !important;
     border-radius: 12px !important;
+  }
+
+  /* --------------------------------------------------------------------------
+     PLANNING WHITEBOARD & LIVING CANVAS TAB
+     -------------------------------------------------------------------------- */
+  .wb-top-header {
+    margin-bottom: 0.85rem !important;
+  }
+
+  .wb-header-title-row {
+    flex-wrap: wrap !important;
+    gap: 0.4rem !important;
+  }
+
+  .wb-main-title {
+    font-size: 1.3rem !important;
+  }
+
+  .wb-copilot-container {
+    margin-bottom: 1rem !important;
+  }
+
+  .wb-copilot-card {
+    padding: 0.85rem !important;
+    border-radius: 14px !important;
+  }
+
+  .wb-copilot-input-row {
+    flex-direction: column !important;
+    gap: 0.5rem !important;
+  }
+
+  .wb-copilot-input {
+    font-size: 16px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .wb-copilot-btn {
+    width: 100% !important;
+    justify-content: center !important;
+    padding: 0.65rem !important;
+  }
+
+  .wb-copilot-chips {
+    overflow-x: auto !important;
+    white-space: nowrap !important;
+    scrollbar-width: none !important;
+    -webkit-overflow-scrolling: touch !important;
+    display: flex !important;
+    gap: 0.35rem !important;
+    padding: 0.35rem 0 !important;
+  }
+
+  .wb-copilot-chips::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  .wb-prompt-chip {
+    font-size: 0.72rem !important;
+    padding: 0.35rem 0.65rem !important;
+    flex-shrink: 0 !important;
+  }
+
+  .wb-board-carousel {
+    padding: 0.85rem 0.65rem !important;
+    border-radius: 14px !important;
+    margin-bottom: 1rem !important;
+  }
+
+  .wb-carousel-stage {
+    gap: 0.35rem !important;
+  }
+
+  .wb-carousel-arrow {
+    width: 32px !important;
+    height: 32px !important;
+    flex-shrink: 0 !important;
+  }
+
+  .wb-board-card {
+    min-width: 125px !important;
+    max-width: 135px !important;
+    height: 160px !important;
+    padding: 0.75rem !important;
+    border-radius: 12px !important;
+  }
+
+  .wb-canvas-deck {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 1rem !important;
+    width: 100% !important;
+  }
+
+  .wb-canvas-section-col {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 0.85rem !important;
+    border-radius: 14px !important;
+    box-sizing: border-box !important;
+  }
+
+  .wb-empty-tiles {
+    grid-template-columns: 1fr !important;
   }
 
   /* --------------------------------------------------------------------------
      COPILOT DRAWER (FULL-SCREEN BOTTOM SHEET ON MOBILE)
      -------------------------------------------------------------------------- */
   .copilot-drawer {
-    width: 100vw !important;
-    max-width: 100vw !important;
-    height: 88vh !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 88dvh !important;
     top: auto !important;
     bottom: 0 !important;
     left: 0 !important;
@@ -3929,6 +4250,7 @@ table.financial-data-table tr:hover td {
     border-top: 1px solid rgba(255, 255, 255, 0.12) !important;
     transform: translateY(100%) !important;
     box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.9) !important;
+    z-index: 10001 !important;
   }
 
   .copilot-drawer.open {
@@ -3936,17 +4258,17 @@ table.financial-data-table tr:hover td {
   }
 
   .copilot-drawer-header {
-    padding: 1.1rem 1.25rem !important;
+    padding: 1rem 1.15rem !important;
     border-radius: 24px 24px 0 0 !important;
   }
 
   .copilot-chat-body {
-    padding: 1rem 0.85rem !important;
+    padding: 0.85rem !important;
   }
 
   .copilot-input-area {
-    padding: 0.85rem !important;
-    padding-bottom: calc(0.85rem + env(safe-area-inset-bottom, 14px)) !important;
+    padding: 0.75rem !important;
+    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 14px)) !important;
   }
 
   .copilot-input-area textarea {
@@ -3954,27 +4276,31 @@ table.financial-data-table tr:hover td {
   }
 
   /* --------------------------------------------------------------------------
-     MODALS & DIALOGS (SLEEK MOBILE BOTTOM-SHEET)
+     MODALS & DIALOGS (NATIVE MOBILE BOTTOM SHEETS)
      -------------------------------------------------------------------------- */
-  .modal-backdrop {
+  .modal-backdrop-veil {
     padding: 0 !important;
     align-items: flex-end !important;
     justify-content: center !important;
     z-index: 10000 !important;
+    background: rgba(0, 0, 0, 0.75) !important;
+    backdrop-filter: blur(8px) !important;
+    -webkit-backdrop-filter: blur(8px) !important;
   }
 
-  .modal-dialog,
+  .modal-card-dialog,
   .wb-modal-dialog {
-    width: 100vw !important;
-    max-width: 100vw !important;
-    max-height: 88vh !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 88dvh !important;
     overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
     border-radius: 24px 24px 0 0 !important;
     border-bottom: none !important;
-    padding: 1.5rem 1.25rem calc(1.5rem + env(safe-area-inset-bottom, 16px)) 1.25rem !important;
+    padding: 1.25rem 1.15rem calc(1.25rem + env(safe-area-inset-bottom, 16px)) 1.15rem !important;
     margin: 0 !important;
     box-sizing: border-box !important;
-    animation: slideUpModal 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    animation: slideUpModal 0.28s cubic-bezier(0.16, 1, 0.3, 1) !important;
   }
 
   @keyframes slideUpModal {
@@ -3982,29 +4308,42 @@ table.financial-data-table tr:hover td {
     to { transform: translateY(0); }
   }
 
-  .modal-form-group input,
-  .modal-form-group select,
+  .form-row-split {
+    grid-template-columns: 1fr !important;
+    gap: 0.65rem !important;
+  }
+
+  .form-field-group input,
+  .form-field-group select,
   .modal-textarea {
     font-size: 16px !important; /* Critical to prevent iOS Safari auto-zooming */
-    padding: 0.75rem !important;
+    padding: 0.65rem 0.75rem !important;
     border-radius: 10px !important;
     width: 100% !important;
     box-sizing: border-box !important;
   }
 
-  .modal-footer {
+  .modal-footer-buttons {
     display: flex !important;
     flex-direction: column-reverse !important;
     gap: 0.5rem !important;
-    margin-top: 1.25rem !important;
+    margin-top: 1.15rem !important;
   }
 
-  .modal-footer button {
+  .modal-footer-buttons button {
     width: 100% !important;
     justify-content: center !important;
     padding: 0.75rem !important;
+    font-size: 0.85rem !important;
+    box-sizing: border-box !important;
+  }
+
+  .wb-template-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 0.5rem !important;
   }
 }
+
 
 
 

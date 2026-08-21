@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="styles.css?v=22" />
+  <link rel="stylesheet" href="styles.css?v=23" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>" />
 </head>
 <body>
@@ -198,31 +198,33 @@
                     <input type="text" id="tx-search-input" placeholder="Search..." autocomplete="off" />
                   </div>
 
-                  <!-- Category Filter Dropdown -->
-                  <select id="tx-category-filter" class="table-dropdown-select">
-                    <option value="all">All Status</option>
-                    <option value="Dining">Dining</option>
-                    <option value="Groceries">Groceries</option>
-                    <option value="Transport">Transport</option>
-                    <option value="Shopping">Shopping</option>
-                    <option value="Bills">Bills</option>
-                    <option value="General">General</option>
-                  </select>
+                  <div class="table-card-controls-row-2">
+                    <!-- Category Filter Dropdown -->
+                    <select id="tx-category-filter" class="table-dropdown-select">
+                      <option value="all">All Status</option>
+                      <option value="Dining">Dining</option>
+                      <option value="Groceries">Groceries</option>
+                      <option value="Transport">Transport</option>
+                      <option value="Shopping">Shopping</option>
+                      <option value="Bills">Bills</option>
+                      <option value="General">General</option>
+                    </select>
 
-                  <!-- Sort Dropdown -->
-                  <select id="tx-sort-select" class="table-dropdown-select">
-                    <option value="latest">Latest</option>
-                    <option value="oldest">Oldest</option>
-                    <option value="highest">Highest Amount</option>
-                  </select>
+                    <!-- Sort Dropdown -->
+                    <select id="tx-sort-select" class="table-dropdown-select">
+                      <option value="latest">Latest</option>
+                      <option value="oldest">Oldest</option>
+                      <option value="highest">Highest Amount</option>
+                    </select>
 
-                  <button class="btn-table-icon" id="btn-refresh-expenses" title="Refresh Table">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                      <path d="M23 4v6h-6"></path>
-                      <path d="M1 20v-6h6"></path>
-                      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-                    </svg>
-                  </button>
+                    <button class="btn-table-icon" id="btn-refresh-expenses" title="Refresh Table">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <path d="M23 4v6h-6"></path>
+                        <path d="M1 20v-6h6"></path>
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                      </svg>
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -233,6 +235,11 @@
                   <button class="btn-danger-pill" id="btn-batch-delete">🗑️ Delete Selected</button>
                   <button class="btn-ghost-pill" id="btn-batch-cancel">✕ Deselect</button>
                 </div>
+              </div>
+
+              <!-- Mobile Swipe Hint -->
+              <div class="table-mobile-swipe-hint" aria-hidden="true">
+                <span>👈 Swipe table to view all details 👉</span>
               </div>
 
               <!-- Transactions Data Table -->
