@@ -85,23 +85,34 @@ async def extract_expense_from_text(user_text: str) -> Dict[str, Any]:
     Extract structured expense fields from a natural-language message.
     Returns amount, currency, merchant, category, date_iso, confidence, needs_clarification.
     """
+    messages = [
+        SystemMessage(
+            content=(
+                "Extract an expense from the user's message. Reply with ONLY a JSON object: "
+                '{"amount": number, "currency": string (3-letter code, default SGD for Singapore), '
+                '"merchant": string, "category": string, "date_iso": string (ISO 8601 with time and timezone if mentioned, e.g. 2026-08-16T14:32:00+08:00, or YYYY-MM-DD if time not mentioned), '
+                '"confidence": number 0-1, "needs_clarification": boolean}. '
+                "Set confidence below 0.8 or needs_clarification true when the amount or "
+                "merchant is ambiguous. If no expense is present, return {\"amount\": null}."
+            )
+        ),
+        HumanMessage(content=user_text[:2000]),
+    ]
+
     try:
         llm = get_agent_llm(complexity=ThinkingLevel.LOW, temperature=0.1)
-        ai_message = await llm.ainvoke(
-            [
-                SystemMessage(
-                    content=(
-                        "Extract an expense from the user's message. Reply with ONLY a JSON object: "
-                        '{"amount": number, "currency": string (3-letter code, default SGD for Singapore), '
-                        '"merchant": string, "category": string, "date_iso": string (ISO 8601 with time and timezone if mentioned, e.g. 2026-08-16T14:32:00+08:00, or YYYY-MM-DD if time not mentioned), '
-                        '"confidence": number 0-1, "needs_clarification": boolean}. '
-                        "Set confidence below 0.8 or needs_clarification true when the amount or "
-                        "merchant is ambiguous. If no expense is present, return {\"amount\": null}."
-                    )
-                ),
-                HumanMessage(content=user_text[:2000]),
-            ]
-        )
+        ai_message = await llm.ainvoke(messages)
+    except Exception as primary_exc:
+        # Fallback directly to Gemini if DeepSeek fails or lacks quota
+        try:
+            from core.llm import get_multimodal_llm
+            fallback_llm = get_multimodal_llm(temperature=0.1)
+            ai_message = await fallback_llm.ainvoke(messages)
+        except Exception as exc:
+            print(f"[EXPENSES] extraction parse failed (both primary and fallback): {exc}")
+            return {"amount": None}
+
+    try:
         raw = str(getattr(ai_message, "content", "") or "").strip()
         raw = re.sub(r"^```(?:json)?|```$", "", raw, flags=re.MULTILINE).strip()
         parsed = json.loads(raw)
@@ -117,7 +128,7 @@ async def extract_expense_from_text(user_text: str) -> Dict[str, Any]:
             "needs_clarification": bool(parsed.get("needs_clarification", False)),
         }
     except Exception as exc:  # noqa: BLE001
-        print(f"[EXPENSES] extraction parse failed: {exc}")
+        print(f"[EXPENSES] JSON parse failed: {exc}")
         return {"amount": None}
 
 
