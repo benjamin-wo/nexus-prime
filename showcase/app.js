@@ -3,7 +3,7 @@
  * Implements Mowany-style 2-column dashboard, SVG donut category visualizer, ledger table, and live assistant chat.
  */
 
-// Application State
+// Application State & Global Registries
 let webSessionId = localStorage.getItem("nexus_web_session_id") || `web-${Math.random().toString(36).substring(2, 9)}`;
 localStorage.setItem("nexus_web_session_id", webSessionId);
 
@@ -11,6 +11,25 @@ let activeCategoryFilter = "all";
 let activeSearchQuery = "";
 let currentExpensesList = [];
 let activeSortMode = "latest";
+let selectedExpenseIds = new Set();
+let undoStack = [];
+let currentPage = 1;
+let pageSize = 10;
+
+let activeTaskFilter = "all";
+let activeTaskPriority = "all";
+let activeTaskSearch = "";
+let cachedTasksList = [];
+let currentComposerPriority = "medium";
+let composerSelectedOffset = "15";
+let editSelectedOffset = "15";
+let lastNlpParsedResult = null;
+
+let currentWhiteboardId = null;
+let cachedWhiteboards = [];
+let cachedWhiteboardBlocks = [];
+let carouselIndex = 0;
+const coverPollers = new Map();
 
 // Category Visual Styling
 const CATEGORY_MAP = {
@@ -366,9 +385,6 @@ function renderDonutChart(categories, totalSpend) {
   svg.innerHTML = circlesHtml;
 }
 
-let selectedExpenseIds = new Set();
-let undoStack = [];
-
 function pushUndoAction(action) {
   undoStack.push(action);
   if (undoStack.length > 15) undoStack.shift();
@@ -477,9 +493,6 @@ function updateBatchActionBar() {
     bar.style.display = "none";
   }
 }
-
-let currentPage = 1;
-let pageSize = 10;
 
 async function loadExpensesTable(category = "all", search = "", sort = "latest") {
   try {
@@ -880,12 +893,6 @@ function initExpenseModal() {
 // 3. TASKS & REMINDERS COCKPIT
 // ==========================================================================
 
-let activeTaskFilter = "all";
-let activeTaskPriority = "all";
-let activeTaskSearch = "";
-let cachedTasksList = [];
-let currentComposerPriority = "medium";
-
 function toLocalDatetimeInputString(dateVal) {
   if (!dateVal) return "";
   const d = new Date(dateVal);
@@ -1046,10 +1053,6 @@ function parseNaturalLanguageTask(rawText, baseDate = new Date()) {
     matchedPhrase
   };
 }
-
-let composerSelectedOffset = "15";
-let editSelectedOffset = "15";
-let lastNlpParsedResult = null;
 
 function initTasksAndReminders() {
   // Priority selector buttons
@@ -1893,18 +1896,8 @@ window.deleteJobItem = async function(id) {
 };
 
 // ==========================================================================
-// ==========================================================================
 // 4. PLANNING WHITEBOARDS & LIVING CANVAS
 // ==========================================================================
-
-let currentWhiteboardId = null;
-let cachedWhiteboards = [];
-let cachedWhiteboardBlocks = [];
-
-// ── Carousel state ──────────────────────────────────────────────────────────
-let carouselIndex = 0;
-// Track in-flight cover polls so re-renders can clean them up.
-const coverPollers = new Map();
 
 function renderBoardCarousel(boards, activeId) {
   const track = document.getElementById("wb-carousel-track");
