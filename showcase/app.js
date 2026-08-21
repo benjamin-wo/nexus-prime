@@ -2962,7 +2962,8 @@ function appendMessage(sender, text, buttons = null) {
   msgDiv.querySelectorAll("button[data-action]").forEach(btn => {
     btn.addEventListener("click", () => {
       const actionPayload = btn.getAttribute("data-action");
-      btn.parentElement.innerHTML = `<span style="font-size:0.75rem; color:var(--text-muted);">Action chosen: ${btn.textContent}</span>`;
+      // Remove the entire bubble when a quick-action button is pressed
+      msgDiv.remove();
       sendChatMessage(btn.textContent, actionPayload);
     });
   });
@@ -3145,8 +3146,9 @@ function appendCopilotMessage(sender, text, buttons = null) {
   msgDiv.querySelectorAll("button[data-action]").forEach(btn => {
     btn.addEventListener("click", () => {
       const actionPayload = btn.getAttribute("data-action");
-      btn.parentElement.innerHTML = `<span style="font-size:0.75rem; color:var(--text-muted);">Action chosen: ${btn.textContent}</span>`;
-      sendChatMessage(btn.textContent, actionPayload);
+      // Remove the entire bubble when a quick-action button is pressed
+      msgDiv.remove();
+      sendCopilotMessage(btn.textContent);
     });
   });
 
