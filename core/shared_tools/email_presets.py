@@ -16,6 +16,12 @@ GLOBAL_BANK_PRESET_DOMAINS = [
     "paypal.com",
     "stripe.com",
     "square.com",
+    "dbs.com",
+    "dbs.com.sg",
+    "ocbc.com",
+    "uob.com.sg",
+    "grab.com",
+    "apple.com",
 ]
 
 def build_gmail_query(tracked_banks: Optional[List[str]] = None, custom_query: Optional[str] = None) -> str:
