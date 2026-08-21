@@ -32,7 +32,7 @@ def _default_scorecard(thread_id: str) -> EvalScorecard:
 
 async def _judge_with_llm(thread_id: str, turn_context: Dict[str, Any]) -> EvalScorecard:
     """Run a stronger reasoning model as judge over the conversation turn."""
-    if not settings.deepseek_api_key or settings.deepseek_api_key == "test_deepseek_key":
+    if not settings.has_llm_key:
         return _default_scorecard(thread_id)
     try:
         llm = get_agent_llm(complexity=ThinkingLevel.LOW, temperature=0.0)

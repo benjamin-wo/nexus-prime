@@ -91,7 +91,7 @@ async def extract_route_request(user_text: str) -> Dict[str, Any]:
     Returns {"origin", "destination", "mode"} where mode is one of
     transit/driving/walking/bicycling.
     """
-    if not settings.deepseek_api_key or settings.deepseek_api_key == "test_deepseek_key":
+    if not settings.has_llm_key:
         return {"origin": None, "destination": None, "mode": "transit"}
 
     llm = get_agent_llm(complexity=ThinkingLevel.LOW, temperature=0.1)

@@ -443,7 +443,7 @@ async def plan_with_llm(
     from core.config import settings
     from core.llm import ThinkingLevel, get_agent_llm
 
-    if not settings.deepseek_api_key or settings.deepseek_api_key == "test_deepseek_key":
+    if not settings.has_llm_key:
         return None
     if retrieval is None or not retrieval.top:
         return None

@@ -52,6 +52,16 @@ class Settings(BaseSettings):
         return self.gemini_api_key or self.google_api_key
 
     @property
+    def has_llm_key(self) -> bool:
+        """Returns True if an active LLM provider (Gemini or DeepSeek) has a valid key configured."""
+        if self.llm_provider == "gemini":
+            return bool(self.active_gemini_api_key and self.active_gemini_api_key != "test_google_key")
+        return bool(
+            (self.deepseek_api_key and self.deepseek_api_key != "test_deepseek_key")
+            or (self.active_gemini_api_key and self.active_gemini_api_key != "test_google_key")
+        )
+
+    @property
     def resolved_database_url(self) -> str:
         """Returns an absolute SQLite file URI when a relative path is configured."""
         url = self.database_url

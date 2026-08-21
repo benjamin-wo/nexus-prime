@@ -15,7 +15,7 @@ async def parse_reminder_request(user_text: str) -> Dict[str, Any]:
     Parse a natural-language reminder request into an action and cron schedule.
     Returns {"action": "create"|"list"|"delete", "message", "cron", "timezone", "job_id"}.
     """
-    if not settings.deepseek_api_key or settings.deepseek_api_key == "test_deepseek_key":
+    if not settings.has_llm_key:
         return {"action": None}
 
     llm = get_agent_llm(complexity=ThinkingLevel.LOW, temperature=0.1)

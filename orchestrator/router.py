@@ -164,7 +164,7 @@ class EmailPlugin:
         ]
         fallback = "📬 Here's what I found in your inbox:\n" + "\n".join(fallback_lines)
 
-        if not settings.deepseek_api_key or settings.deepseek_api_key == "test_deepseek_key":
+        if not settings.has_llm_key:
             return fallback
 
         try:
@@ -302,7 +302,7 @@ class ExpensePlugin:
                 "label": "recent expenses",
             }
 
-            if settings.deepseek_api_key and settings.deepseek_api_key != "test_deepseek_key":
+            if settings.has_llm_key:
                 try:
                     llm = get_agent_llm(complexity=ThinkingLevel.LOW, temperature=0.0)
                     extraction_prompt = (

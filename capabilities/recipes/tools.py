@@ -18,7 +18,7 @@ async def parse_recipe_and_extract_ingredients(recipe_text_or_url: str) -> Dict[
     Extract a recipe title and structured ingredient list from recipe text.
     Each ingredient has name, quantity, and category.
     """
-    if not settings.deepseek_api_key or settings.deepseek_api_key == "test_deepseek_key":
+    if not settings.has_llm_key:
         # Local tests/dev fallback: structured canned result.
         return {
             "title": "Extracted Recipe",
