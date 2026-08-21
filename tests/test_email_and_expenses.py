@@ -181,4 +181,43 @@ def test_gmail_payload_body_extraction():
     assert "<style>" not in extracted_html
 
 
+def test_bill_split_calculation():
+    from capabilities.expenses.tools import calculate_bill_split
+
+    items = [
+        {"name": "Truffle Pasta", "price": 24.00, "quantity": 1, "assigned_to": ["Alice"]},
+        {"name": "Salmon Bowl", "price": 20.00, "quantity": 1, "assigned_to": ["Bob"]},
+        {"name": "Shared Fries", "price": 8.00, "quantity": 1, "assigned_to": ["Alice", "Bob"]},
+        {"name": "Steak", "price": 30.00, "quantity": 1, "assigned_to": ["Me"]},
+    ]
+    friends = ["Alice", "Bob", "Me"]
+
+    res = calculate_bill_split(
+        items=items,
+        friends=friends,
+        service_charge_pct=10.0,
+        tax_pct=9.0,
+        discount=0.0,
+    )
+
+    friends_map = {f["name"]: f for f in res["friends"]}
+
+    # Alice: Pasta (24) + Fries/2 (4) = 28.00 subtotal
+    # Svc: 28 * 0.10 = 2.80; Tax: (28 + 2.80) * 0.09 = 2.772 -> ~33.57
+    assert friends_map["Alice"]["subtotal"] == 28.00
+    assert friends_map["Alice"]["total"] == pytest.approx(33.57, abs=0.05)
+
+    # Bob: Salmon (20) + Fries/2 (4) = 24.00 subtotal
+    assert friends_map["Bob"]["subtotal"] == 24.00
+    assert friends_map["Bob"]["total"] == pytest.approx(28.78, abs=0.05)
+
+    # Me: Steak (30) = 30.00 subtotal
+    assert friends_map["Me"]["subtotal"] == 30.00
+    assert friends_map["Me"]["total"] == pytest.approx(35.97, abs=0.05)
+
+    # Total bill
+    assert res["total_bill"] == pytest.approx(98.32, abs=0.1)
+
+
+
 

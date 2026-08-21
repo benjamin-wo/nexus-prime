@@ -4342,8 +4342,525 @@ table.financial-data-table tr:hover td {
     grid-template-columns: repeat(2, 1fr) !important;
     gap: 0.5rem !important;
   }
+
+  .tx-modal-tabs {
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+  }
+
+  .tx-charges-bar {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 0.45rem !important;
+  }
+
+  .tx-charge-field.total-field {
+    grid-column: span 2 !important;
+  }
+
+  .split-summary-grid {
+    grid-template-columns: 1fr !important;
+  }
 }
 
+/* ==========================================================================
+   TRANSACTION DETAILS, RECEIPT OCR & BILL SPLITTING WORKBENCH STYLES
+   ========================================================================== */
 
+.modal-dialog-split {
+  max-width: 680px !important;
+  width: 95% !important;
+  max-height: 90vh !important;
+  overflow-y: auto !important;
+  padding: 1.5rem !important;
+  background: #121217 !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
 
+.tx-detail-header-total {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  background: rgba(255, 107, 53, 0.08);
+  border: 1px solid rgba(255, 107, 53, 0.2);
+  border-radius: 12px;
+  padding: 0.35rem 0.75rem;
+}
 
+.tx-detail-total-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #a1a1aa;
+}
+
+.tx-detail-total-val {
+  font-family: var(--font-mono);
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--orange-primary);
+}
+
+.tx-modal-tabs {
+  display: flex;
+  gap: 0.5rem;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 0.35rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  margin: 1rem 0;
+}
+
+.tx-tab-btn {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 0.55rem 0.85rem;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.tx-tab-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.tx-tab-btn.active {
+  background: rgba(255, 107, 53, 0.18);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(255, 107, 53, 0.2);
+}
+
+.tx-tab-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+/* Receipt OCR Dropzone */
+.receipt-ocr-dropzone {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1.5px dashed rgba(255, 107, 53, 0.3);
+  border-radius: 14px;
+  padding: 1.15rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.receipt-ocr-dropzone:hover {
+  background: rgba(255, 107, 53, 0.05);
+  border-color: var(--orange-primary);
+}
+
+.ocr-dropzone-content {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.ocr-icon-orb {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: rgba(255, 107, 53, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.35rem;
+  flex-shrink: 0;
+}
+
+.ocr-drop-title {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 0.2rem;
+}
+
+.ocr-drop-sub {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.ocr-dropzone-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  font-size: 0.82rem;
+  color: var(--orange-primary);
+  padding: 0.5rem 0;
+}
+
+/* Line Items Table */
+.tx-line-items-wrapper {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  padding: 0.85rem;
+}
+
+.tx-line-items-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.tx-line-items-table-scroll {
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.tx-items-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.tx-items-table th {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.tx-items-table td {
+  padding: 0.45rem 0.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.tx-item-input-name {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  color: #fff;
+  font-size: 0.82rem;
+  padding: 0.35rem 0.55rem;
+  outline: none;
+}
+
+.tx-item-input-name:focus {
+  border-color: var(--orange-primary);
+}
+
+.tx-item-input-qty {
+  width: 50px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  color: #fff;
+  font-size: 0.82rem;
+  padding: 0.35rem;
+  text-align: center;
+  font-family: var(--font-mono);
+  outline: none;
+}
+
+.tx-item-input-price {
+  width: 80px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  color: #fff;
+  font-size: 0.82rem;
+  padding: 0.35rem 0.55rem;
+  text-align: right;
+  font-family: var(--font-mono);
+  outline: none;
+}
+
+.tx-item-btn-del {
+  background: transparent;
+  border: none;
+  color: #71717a;
+  cursor: pointer;
+  padding: 0.3rem;
+  border-radius: 4px;
+  transition: all 0.15s;
+}
+
+.tx-item-btn-del:hover {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+/* Taxes & Charges Bar */
+.tx-charges-bar {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.5rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  padding: 0.75rem;
+}
+
+.tx-charge-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.tx-charge-field label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.tx-charge-field input {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  color: #fff;
+  font-size: 0.82rem;
+  padding: 0.35rem 0.45rem;
+  font-family: var(--font-mono);
+  text-align: right;
+  outline: none;
+}
+
+.tx-charge-field.total-field input {
+  border-color: rgba(255, 107, 53, 0.4);
+  background: rgba(255, 107, 53, 0.08);
+}
+
+/* Split Bill Workbench */
+.split-friends-manager {
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  padding: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.split-friends-chips-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.friend-pill-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-pill);
+  padding: 0.25rem 0.65rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+.friend-avatar-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--orange-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  font-weight: 800;
+  color: #fff;
+}
+
+.friend-remove-x {
+  background: transparent;
+  border: none;
+  color: #a1a1aa;
+  cursor: pointer;
+  font-size: 0.85rem;
+  line-height: 1;
+  padding: 0 0.15rem;
+}
+
+.friend-remove-x:hover {
+  color: #ef4444;
+}
+
+.split-even-toggle-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.split-assignment-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.split-section-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #a1a1aa;
+}
+
+.split-assignment-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.split-item-card {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  padding: 0.6rem 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.split-item-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.split-item-name {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+.split-item-cost {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--orange-primary);
+  font-weight: 700;
+}
+
+.split-assign-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  align-items: center;
+}
+
+.friend-toggle-chip {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-pill);
+  padding: 0.2rem 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #71717a;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.friend-toggle-chip.active {
+  background: rgba(255, 107, 53, 0.2);
+  border-color: var(--orange-primary);
+  color: #fff;
+}
+
+/* Individual Summary Grid */
+.split-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.65rem;
+}
+
+.split-person-card {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.split-person-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.split-person-name-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.split-paid-toggle {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-pill);
+  padding: 0.15rem 0.45rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  cursor: pointer;
+  color: #fbbf24;
+}
+
+.split-paid-toggle.paid {
+  background: rgba(34, 197, 94, 0.15);
+  border-color: rgba(34, 197, 94, 0.3);
+  color: #22c55e;
+}
+
+.split-person-total {
+  font-family: var(--font-mono);
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #fff;
+}
+
+.split-person-subtext {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  line-height: 1.3;
+}
+
+.split-share-box {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  padding: 0.75rem;
+}
+
+.split-preview-textarea {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  color: #d4d4d8;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  padding: 0.5rem;
+  resize: vertical;
+  outline: none;
+  box-sizing: border-box;
+}

@@ -518,6 +518,8 @@ async def list_expenses(
                 "date": r.date.isoformat() if r.date else "",
                 "is_verified": r.is_verified,
                 "source": "gmail" if r.source_message_id and "gmail" in r.source_message_id.lower() else ("telegram" if r.source_message_id else "manual"),
+                "receipt_items": r.receipt_items or [],
+                "split_data": r.split_data or {},
             }
             for r in rows
         ]
@@ -617,6 +619,151 @@ async def update_expense(expense_id: int, req: ExpenseUpdateRequest) -> Dict[str
                 "category": tx.category,
                 "date": tx.date.isoformat() if tx.date else "",
             },
+        }
+
+
+class ReceiptOCRRequest(BaseModel):
+    image_b64: str = Field(..., description="Base64 data URL or raw Base64 string of receipt photo")
+    mime_type: Optional[str] = Field(default="image/jpeg", description="MIME type")
+
+
+class ExpenseDetailsUpdateRequest(BaseModel):
+    merchant: Optional[str] = None
+    amount: Optional[float] = None
+    category: Optional[str] = None
+    currency: Optional[str] = None
+    date: Optional[str] = None
+    receipt_items: Optional[List[Dict[str, Any]]] = None
+    split_data: Optional[Dict[str, Any]] = None
+
+
+class SyncGroceriesRequest(BaseModel):
+    items: List[str] = Field(default=[], description="List of item names to check off")
+
+
+@router.post("/expenses/ocr-receipt")
+async def ocr_receipt(req: ReceiptOCRRequest) -> Dict[str, Any]:
+    """Parse itemized dishes/groceries and tax rates from a receipt photo using Gemini Vision."""
+    from capabilities.expenses.tools import extract_itemized_receipt_from_image
+    data_b64 = req.image_b64
+    if "," in data_b64:
+        data_b64 = data_b64.split(",", 1)[1]
+    res = await extract_itemized_receipt_from_image(data_b64, mime_type=req.mime_type or "image/jpeg")
+    return {"status": "ok", "receipt": res}
+
+
+@router.get("/expenses/{expense_id}/details")
+async def get_expense_details(expense_id: int) -> Dict[str, Any]:
+    """Fetch complete details, itemized line items, and split bill state for an expense."""
+    async with async_session_factory() as session:
+        result = await session.execute(
+            select(ExpenseTransaction).where(ExpenseTransaction.id == expense_id)
+        )
+        tx = result.scalar_one_or_none()
+        if not tx:
+            raise HTTPException(status_code=404, detail="Expense not found")
+        return {
+            "status": "ok",
+            "expense": {
+                "id": tx.id,
+                "user_id": tx.user_id,
+                "amount": tx.amount,
+                "currency": tx.currency,
+                "merchant": tx.merchant,
+                "category": tx.category,
+                "date": tx.date.isoformat() if tx.date else "",
+                "is_verified": tx.is_verified,
+                "receipt_items": tx.receipt_items or [],
+                "split_data": tx.split_data or {},
+            }
+        }
+
+
+@router.put("/expenses/{expense_id}/details")
+async def update_expense_details(expense_id: int, req: ExpenseDetailsUpdateRequest) -> Dict[str, Any]:
+    """Update an expense record, including receipt line items and bill split breakdown."""
+    async with async_session_factory() as session:
+        result = await session.execute(
+            select(ExpenseTransaction).where(ExpenseTransaction.id == expense_id)
+        )
+        tx = result.scalar_one_or_none()
+        if not tx:
+            raise HTTPException(status_code=404, detail="Expense not found")
+        
+        if req.merchant is not None:
+            tx.merchant = req.merchant
+        if req.amount is not None:
+            tx.amount = req.amount
+        if req.currency is not None:
+            tx.currency = req.currency
+        if req.category is not None:
+            tx.category = req.category
+        if req.date is not None:
+            try:
+                tx.date = datetime.fromisoformat(req.date.replace("Z", "+00:00")).replace(tzinfo=None)
+            except ValueError:
+                pass
+        if req.receipt_items is not None:
+            tx.receipt_items = req.receipt_items
+        if req.split_data is not None:
+            tx.split_data = req.split_data
+
+        session.add(tx)
+        await session.commit()
+        await session.refresh(tx)
+        return {
+            "status": "ok",
+            "message": f"Updated details for expense #{tx.id}",
+            "expense": {
+                "id": tx.id,
+                "amount": tx.amount,
+                "currency": tx.currency,
+                "merchant": tx.merchant,
+                "category": tx.category,
+                "date": tx.date.isoformat() if tx.date else "",
+                "receipt_items": tx.receipt_items,
+                "split_data": tx.split_data,
+            }
+        }
+
+
+@router.post("/expenses/{expense_id}/sync-groceries")
+async def sync_expense_groceries(expense_id: int, req: SyncGroceriesRequest) -> Dict[str, Any]:
+    """Match receipt grocery items against pending GroceryItem checklist and check them off."""
+    from core.models import GroceryItem
+    async with async_session_factory() as session:
+        result = await session.execute(
+            select(ExpenseTransaction).where(ExpenseTransaction.id == expense_id)
+        )
+        tx = result.scalar_one_or_none()
+        if not tx:
+            raise HTTPException(status_code=404, detail="Expense not found")
+        
+        user_id = tx.user_id
+        checked_off = []
+        items_to_sync = req.items
+        if not items_to_sync and tx.receipt_items:
+            items_to_sync = [it.get("name") for it in tx.receipt_items if it.get("name")]
+
+        grocery_res = await session.execute(
+            select(GroceryItem).where(GroceryItem.user_id == user_id, GroceryItem.is_purchased == False)
+        )
+        unpurchased = grocery_res.scalars().all()
+
+        for g_item in unpurchased:
+            for name in items_to_sync:
+                if name and (name.lower() in g_item.name.lower() or g_item.name.lower() in name.lower()):
+                    g_item.is_purchased = True
+                    session.add(g_item)
+                    checked_off.append(g_item.name)
+                    break
+        
+        await session.commit()
+        return {
+            "status": "ok",
+            "checked_off_count": len(checked_off),
+            "checked_off_items": checked_off,
+            "message": f"Checked off {len(checked_off)} matching items from grocery list.",
         }
 
 

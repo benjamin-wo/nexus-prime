@@ -348,6 +348,171 @@ async def extract_expense_from_photo(
         return {"amount": None}
 
 
+async def extract_itemized_receipt_from_image(
+    image_b64: str,
+    mime_type: str = "image/jpeg",
+) -> Dict[str, Any]:
+    """
+    Extract itemized dishes/groceries, prices, subtotal, tax, service charge, and total
+    from a receipt photo using Gemini Multimodal Vision.
+    """
+    if (
+        not settings.active_gemini_api_key
+        or settings.active_gemini_api_key == "test_google_key"
+    ):
+        return {
+            "merchant": "Receipt Merchant",
+            "category": "Dining",
+            "items": [],
+            "subtotal": 0.0,
+            "service_charge_pct": 10.0,
+            "tax_pct": 9.0,
+            "discount": 0.0,
+            "total": 0.0,
+        }
+
+    try:
+        llm = get_multimodal_llm(temperature=0.1)
+        ai_message = await llm.ainvoke(
+            [
+                SystemMessage(
+                    content=(
+                        "You are an expert financial receipt OCR engine. Analyze this receipt photo and extract all individual line items. "
+                        "Return ONLY a valid JSON object matching this schema:\n"
+                        "{\n"
+                        '  "merchant": string,\n'
+                        '  "category": string (Dining, Groceries, Shopping, Transport, Bills, General),\n'
+                        '  "date_iso": string,\n'
+                        '  "currency": string (e.g. SGD, USD, EUR),\n'
+                        '  "items": [\n'
+                        '    {"name": string, "price": number, "quantity": number}\n'
+                        '  ],\n'
+                        '  "subtotal": number,\n'
+                        '  "service_charge_pct": number,\n'
+                        '  "tax_pct": number,\n'
+                        '  "discount": number,\n'
+                        '  "total": number\n'
+                        "}\n"
+                        "Extract all items legibly. If no items or receipt found, return empty items list."
+                    )
+                ),
+                HumanMessage(
+                    content=[
+                        {"type": "text", "text": "Extract itemized receipt line items and tax/service charges."},
+                        {"type": "media", "mime_type": mime_type, "data": image_b64},
+                    ]
+                ),
+            ]
+        )
+        raw = extract_llm_text(getattr(ai_message, "content", ""))
+        raw = re.sub(r"^```(?:json)?|```$", "", raw, flags=re.MULTILINE).strip()
+        parsed = json.loads(raw)
+        items = []
+        for it in parsed.get("items", []):
+            if isinstance(it, dict) and it.get("name") and it.get("price") is not None:
+                items.append({
+                    "name": str(it.get("name")),
+                    "price": float(it.get("price", 0)),
+                    "quantity": int(it.get("quantity", 1)),
+                    "assigned_to": it.get("assigned_to") or [],
+                })
+        
+        subtotal = float(parsed.get("subtotal") or sum(it["price"] * it["quantity"] for it in items))
+        svc_pct = float(parsed.get("service_charge_pct") or (10.0 if parsed.get("service_charge_amount") else 0.0))
+        tax_pct = float(parsed.get("tax_pct") or (9.0 if parsed.get("tax_amount") else 0.0))
+        discount = float(parsed.get("discount") or 0.0)
+        total = float(parsed.get("total") or (subtotal * (1 + svc_pct/100) * (1 + tax_pct/100) - discount))
+
+        return {
+            "merchant": parsed.get("merchant") or "Unknown Merchant",
+            "category": parsed.get("category") or "Dining",
+            "date_iso": parsed.get("date_iso") or "",
+            "currency": parsed.get("currency") or "SGD",
+            "items": items,
+            "subtotal": round(subtotal, 2),
+            "service_charge_pct": svc_pct,
+            "tax_pct": tax_pct,
+            "discount": round(discount, 2),
+            "total": round(total, 2),
+        }
+    except Exception as exc:  # noqa: BLE001
+        print(f"[EXPENSES] itemized receipt OCR failed: {exc}")
+        return {
+            "merchant": "Unknown Merchant",
+            "category": "Dining",
+            "items": [],
+            "subtotal": 0.0,
+            "service_charge_pct": 10.0,
+            "tax_pct": 9.0,
+            "discount": 0.0,
+            "total": 0.0,
+        }
+
+
+def calculate_bill_split(
+    items: List[Dict[str, Any]],
+    friends: List[str],
+    service_charge_pct: float = 10.0,
+    tax_pct: float = 9.0,
+    discount: float = 0.0,
+) -> Dict[str, Any]:
+    """
+    Calculate proportional item-by-item split with service charge and tax distribution.
+    """
+    if not friends:
+        friends = ["Me"]
+
+    friend_subtotals = {f: 0.0 for f in friends}
+    friend_items = {f: [] for f in friends}
+
+    for it in items:
+        price = float(it.get("price", 0.0)) * int(it.get("quantity", 1))
+        assigned = it.get("assigned_to") or []
+        # Filter assigned to only valid friends in list
+        valid_assigned = [f for f in assigned if f in friends]
+        if not valid_assigned:
+            valid_assigned = friends  # Split across all if unassigned
+
+        split_share = price / len(valid_assigned)
+        for f in valid_assigned:
+            friend_subtotals[f] += split_share
+            friend_items[f].append({
+                "name": it.get("name", "Item"),
+                "share_price": round(split_share, 2),
+                "is_shared": len(valid_assigned) > 1,
+                "shared_with_count": len(valid_assigned),
+            })
+
+    total_subtotal = sum(friend_subtotals.values()) or 1.0
+
+    breakdown = []
+    for f in friends:
+        sub = friend_subtotals[f]
+        ratio = sub / total_subtotal if total_subtotal > 0 else (1.0 / len(friends))
+        svc_amount = sub * (service_charge_pct / 100.0)
+        tax_amount = (sub + svc_amount) * (tax_pct / 100.0)
+        disc_share = discount * ratio
+        friend_total = max(0.0, sub + svc_amount + tax_amount - disc_share)
+
+        breakdown.append({
+            "name": f,
+            "subtotal": round(sub, 2),
+            "service_charge": round(svc_amount, 2),
+            "tax": round(tax_amount, 2),
+            "discount": round(disc_share, 2),
+            "total": round(friend_total, 2),
+            "items": friend_items[f],
+        })
+
+    return {
+        "friends": breakdown,
+        "total_bill": round(sum(b["total"] for b in breakdown), 2),
+        "service_charge_pct": service_charge_pct,
+        "tax_pct": tax_pct,
+        "discount": discount,
+    }
+
+
 def expense_source_id(user_id: int, text: str) -> str:
     """Stable dedup key for an expense logged from a Telegram message."""
     digest = hashlib.md5(text.encode("utf-8")).hexdigest()[:12]

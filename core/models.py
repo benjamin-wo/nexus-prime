@@ -28,6 +28,8 @@ class ExpenseTransaction(SQLModel, table=True):
     date: datetime
     source_message_id: Optional[str] = Field(default=None, unique=True, index=True)
     is_verified: bool = Field(default=True)
+    receipt_items: List[Dict[str, Any]] = Field(default=[], sa_column=Column(JSON))
+    split_data: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
 
 class DeletedExpenseMessage(SQLModel, table=True):
     """Tombstone table for deleted email/source transactions to prevent poller re-ingestion."""

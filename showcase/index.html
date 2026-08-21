@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="styles.css?v=23" />
+  <link rel="stylesheet" href="styles.css?v=24" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>" />
 </head>
 <body>
@@ -897,6 +897,197 @@
   </div>
 
   <!-- ====================================================================
+       MODAL: TRANSACTION DETAILS, RECEIPT OCR & BILL SPLITTING WORKBENCH
+       ==================================================================== -->
+  <div class="modal-backdrop-veil" id="modal-transaction-details" style="display: none;">
+    <div class="modal-card-dialog modal-dialog-split">
+      
+      <!-- Modal Header -->
+      <div class="modal-card-header">
+        <div style="flex: 1; min-width: 0;">
+          <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+            <h3 class="modal-title-text" id="tx-detail-merchant">Transaction Details</h3>
+            <span class="category-tag-pill" id="tx-detail-cat-pill">Dining</span>
+            <span class="source-tag-pill" id="tx-detail-source-pill">ledger</span>
+          </div>
+          <p class="modal-sub-text" id="tx-detail-date-sub">Created on --</p>
+        </div>
+        
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+          <div class="tx-detail-header-total">
+            <span class="tx-detail-total-label">Grand Total</span>
+            <span class="tx-detail-total-val" id="tx-detail-header-total-val">$0.00</span>
+          </div>
+          <button class="modal-close-x" id="btn-close-tx-detail-modal" type="button">&times;</button>
+        </div>
+      </div>
+
+      <!-- Segmented Tab Navigation inside Modal -->
+      <div class="tx-modal-tabs">
+        <button type="button" class="tx-tab-btn active" id="btn-tx-tab-receipt" data-tab="tx-tab-pane-receipt">
+          🧾 Receipt & Line Items
+        </button>
+        <button type="button" class="tx-tab-btn" id="btn-tx-tab-split" data-tab="tx-tab-pane-split">
+          🔀 Split Bill Workbench <span class="badge-pill" id="tx-split-count-badge">1</span>
+        </button>
+      </div>
+
+      <!-- TAB 1: RECEIPT & LINE ITEMS -->
+      <div class="tx-tab-pane active" id="tx-tab-pane-receipt">
+        
+        <!-- OCR Drag-and-Drop / Camera Banner -->
+        <div class="receipt-ocr-dropzone" id="receipt-ocr-dropzone">
+          <input type="file" id="receipt-file-input" accept="image/*" style="display: none;" />
+          <div class="ocr-dropzone-content" id="ocr-dropzone-idle">
+            <div class="ocr-icon-orb">📷</div>
+            <div>
+              <div class="ocr-drop-title">Snap or Upload Receipt Photo</div>
+              <div class="ocr-drop-sub">Drag & drop or tap to scan items, prices & taxes with Gemini Vision</div>
+            </div>
+            <button type="button" class="btn-ember-pill" id="btn-trigger-receipt-file">Scan Receipt</button>
+          </div>
+          <div class="ocr-dropzone-loading" id="ocr-dropzone-loading" style="display: none;">
+            <div class="typing-pulser"><span></span><span></span><span></span></div>
+            <span>Analyzing receipt & extracting line items with Gemini Vision...</span>
+          </div>
+        </div>
+
+        <!-- Meta Summary Form -->
+        <div class="form-row-split" style="margin-top: 0.75rem;">
+          <div class="form-field-group">
+            <label for="tx-detail-input-merchant">Merchant / Place:</label>
+            <input type="text" id="tx-detail-input-merchant" placeholder="e.g. Cedele, FairPrice" />
+          </div>
+          <div class="form-field-group" style="max-width: 140px;">
+            <label for="tx-detail-input-category">Category:</label>
+            <select id="tx-detail-input-category" class="table-dropdown-select" style="width: 100%;">
+              <option value="Dining">Dining</option>
+              <option value="Groceries">Groceries</option>
+              <option value="Transport">Transport</option>
+              <option value="Shopping">Shopping</option>
+              <option value="Bills">Bills</option>
+              <option value="General">General</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Line Items Section -->
+        <div class="tx-line-items-wrapper">
+          <div class="tx-line-items-header">
+            <span style="font-weight: 700; font-size: 0.85rem; color: #fff;">Itemized Breakdown</span>
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+              <button type="button" class="btn-ghost-pill" id="btn-sync-grocery-list" style="display: none;">
+                🛒 Sync to Groceries Checklist
+              </button>
+              <button type="button" class="btn-ghost-pill" id="btn-add-line-item">+ Add Item</button>
+            </div>
+          </div>
+
+          <div class="tx-line-items-table-scroll">
+            <table class="tx-items-table">
+              <thead>
+                <tr>
+                  <th style="width: 50%;">Dish / Item</th>
+                  <th style="width: 15%; text-align: center;">Qty</th>
+                  <th style="width: 25%; text-align: right;">Price ($)</th>
+                  <th style="width: 10%; text-align: center;"></th>
+                </tr>
+              </thead>
+              <tbody id="tx-line-items-tbody">
+                <!-- Dynamically Rendered Rows -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Taxes & Charges Bar -->
+        <div class="tx-charges-bar">
+          <div class="tx-charge-field">
+            <label for="tx-input-subtotal">Subtotal ($)</label>
+            <input type="number" step="0.01" id="tx-input-subtotal" readonly />
+          </div>
+          <div class="tx-charge-field">
+            <label for="tx-input-svc-pct">Svc Charge (%)</label>
+            <input type="number" step="0.5" id="tx-input-svc-pct" value="10" />
+          </div>
+          <div class="tx-charge-field">
+            <label for="tx-input-tax-pct">GST / Tax (%)</label>
+            <input type="number" step="0.5" id="tx-input-tax-pct" value="9" />
+          </div>
+          <div class="tx-charge-field">
+            <label for="tx-input-discount">Discount ($)</label>
+            <input type="number" step="0.01" id="tx-input-discount" value="0.00" />
+          </div>
+          <div class="tx-charge-field total-field">
+            <label for="tx-input-grand-total">Total Bill ($)</label>
+            <input type="number" step="0.01" id="tx-input-grand-total" style="font-weight: 800; color: #ff6b35;" />
+          </div>
+        </div>
+
+      </div>
+
+      <!-- TAB 2: SPLIT BILL WORKBENCH -->
+      <div class="tx-tab-pane" id="tx-tab-pane-split" style="display: none;">
+        
+        <!-- Friends Manager Bar -->
+        <div class="split-friends-manager">
+          <div style="display: flex; align-items: center; gap: 0.5rem; width: 100%;">
+            <div class="table-search-pill" style="flex: 1;">
+              <input type="text" id="split-add-friend-input" placeholder="Add friend name (e.g. Alice, Bob)..." />
+            </div>
+            <button type="button" class="btn-ember-pill" id="btn-add-split-friend">+ Add Friend</button>
+          </div>
+
+          <div class="split-friends-chips-row" id="split-friends-chips-row">
+            <!-- Friend Pills with Avatars -->
+          </div>
+
+          <div class="split-even-toggle-wrap">
+            <label class="toggle-checkbox-label">
+              <input type="checkbox" id="split-even-checkbox" />
+              <span>Split bill evenly among all friends</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Item-to-Person Assignment Grid -->
+        <div class="split-assignment-section" id="split-assignment-section">
+          <div class="split-section-title">Tap friends to assign items:</div>
+          <div class="split-assignment-cards" id="split-assignment-cards">
+            <!-- Dynamically populated item cards with friend toggle chips -->
+          </div>
+        </div>
+
+        <!-- Live Breakdown Summary per Person -->
+        <div class="split-breakdown-section">
+          <div class="split-section-title">Calculated Individual Breakdown:</div>
+          <div class="split-summary-grid" id="split-summary-grid">
+            <!-- Friend breakdown cards with Subtotal + Svc + Tax + Total Due + Paid Status -->
+          </div>
+        </div>
+
+        <!-- Formatted WhatsApp / Telegram Message Generator -->
+        <div class="split-share-box">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+            <span style="font-weight: 700; font-size: 0.8rem; color: #a1a1aa;">📱 Telegram / WhatsApp Breakdown</span>
+            <button type="button" class="btn-ghost-pill" id="btn-copy-split-msg">📋 Copy Breakdown</button>
+          </div>
+          <textarea id="split-formatted-preview" class="split-preview-textarea" rows="5" readonly></textarea>
+        </div>
+
+      </div>
+
+      <!-- Modal Footer Action Buttons -->
+      <div class="modal-footer-buttons" style="margin-top: 1rem;">
+        <button type="button" class="btn-danger-flat" id="btn-delete-tx-detail" style="margin-right: auto;">🗑️ Delete</button>
+        <button type="button" class="btn-cancel-flat" id="btn-cancel-tx-detail">Close</button>
+        <button type="button" class="btn-primary-ember" id="btn-save-tx-detail">Save & Apply</button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ====================================================================
        MODAL DIALOG (EDIT TASK & REMINDER)
        ==================================================================== -->
   <div class="modal-backdrop-veil" id="modal-edit-task" style="display: none;">
@@ -1208,6 +1399,6 @@
   <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
   <script src="manifests-data.js"></script>
-  <script src="app.js?v=25"></script>
+  <script src="app.js?v=26"></script>
 </body>
 </html>

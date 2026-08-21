@@ -75,6 +75,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initDashboard();
   initWebChat();
   initExpenseModal();
+  initTransactionDetailsModal();
   initWhiteboard();
   initTasksAndReminders();
   initJobs();
@@ -587,10 +588,11 @@ function renderExpensesTableRows() {
     const catCfg = CATEGORY_MAP[normCat] || CATEGORY_MAP["General"];
     const formattedDate = formatExpenseDateTime(tx.date);
     const isChecked = selectedExpenseIds.has(tx.id);
+    const hasSplit = tx.split_data && Array.isArray(tx.split_data.friends) && tx.split_data.friends.length > 1;
 
     return `
-      <tr data-id="${tx.id}">
-        <td style="text-align: center;">
+      <tr data-id="${tx.id}" style="cursor: pointer;" onclick="openTransactionDetailsModal(${tx.id})" title="Click to view details, receipt items or split bill">
+        <td style="text-align: center;" onclick="event.stopPropagation()">
           <input type="checkbox" class="dash-checkbox row-checkbox" data-id="${tx.id}" ${isChecked ? 'checked' : ''} onchange="toggleRowCheckbox(${tx.id}, this.checked)" />
         </td>
         <td class="td-txn-id">${txnId}</td>
@@ -599,7 +601,10 @@ function renderExpensesTableRows() {
             <div class="merchant-mini-icon" style="background: ${catCfg.bg}; color: ${catCfg.color};">
               ${catCfg.icon}
             </div>
-            <span class="merchant-title-text">${escapeHtml(tx.merchant)}</span>
+            <div style="display: flex; flex-direction: column; min-width: 0;">
+              <span class="merchant-title-text">${escapeHtml(tx.merchant)}</span>
+              ${hasSplit ? `<span style="font-size: 0.65rem; color: var(--orange-primary); font-weight: 700;">🔀 Split (${tx.split_data.friends.length} people)</span>` : ''}
+            </div>
           </div>
         </td>
         <td class="td-amount-figure debit">-$${tx.amount.toFixed(2)}</td>
@@ -607,10 +612,11 @@ function renderExpensesTableRows() {
         <td style="text-align: center;">
           <span class="status-badge-pill completed">Completed</span>
         </td>
-        <td style="text-align: center;">
+        <td style="text-align: center;" onclick="event.stopPropagation()">
           <div style="display: flex; justify-content: center; gap: 0.35rem;">
-            <button class="row-action-btn" onclick="openEditExpenseModal(${tx.id})" title="Edit expense">✏️</button>
-            <button class="row-action-btn" onclick="deleteExpenseItem(${tx.id})" title="Delete expense">🗑️</button>
+            <button class="row-action-btn" onclick="event.stopPropagation(); openTransactionDetailsModal(${tx.id})" title="Details & Split Bill">🔀</button>
+            <button class="row-action-btn" onclick="event.stopPropagation(); openEditExpenseModal(${tx.id})" title="Quick edit">✏️</button>
+            <button class="row-action-btn" onclick="event.stopPropagation(); deleteExpenseItem(${tx.id})" title="Delete expense">🗑️</button>
           </div>
         </td>
       </tr>
@@ -3170,3 +3176,757 @@ function escapeAttr(str) {
   if (!str) return "";
   return str.replace(/'/g, "&apos;").replace(/"/g, "&quot;");
 }
+
+// ==========================================================================
+// 8. TRANSACTION DETAILS, RECEIPT OCR & BILL SPLITTING WORKBENCH
+// ==========================================================================
+
+let activeDetailExpense = null;
+let detailLineItems = [];
+let splitFriends = ["Me"];
+let splitPaidStatus = {};
+let isSplitEvenly = false;
+
+function initTransactionDetailsModal() {
+  const modal = document.getElementById("modal-transaction-details");
+  const btnClose = document.getElementById("btn-close-tx-detail-modal");
+  const btnCancel = document.getElementById("btn-cancel-tx-detail");
+  const btnSave = document.getElementById("btn-save-tx-detail");
+  const btnDelete = document.getElementById("btn-delete-tx-detail");
+  const btnAddFriend = document.getElementById("btn-add-split-friend");
+  const friendInput = document.getElementById("split-add-friend-input");
+  const btnAddItem = document.getElementById("btn-add-line-item");
+  const btnSyncGrocery = document.getElementById("btn-sync-grocery-list");
+  const btnCopyMsg = document.getElementById("btn-copy-split-msg");
+  const evenCheckbox = document.getElementById("split-even-checkbox");
+
+  // Tabs inside modal
+  const tabReceiptBtn = document.getElementById("btn-tx-tab-receipt");
+  const tabSplitBtn = document.getElementById("btn-tx-tab-split");
+  const paneReceipt = document.getElementById("tx-tab-pane-receipt");
+  const paneSplit = document.getElementById("tx-tab-pane-split");
+
+  if (tabReceiptBtn && tabSplitBtn) {
+    tabReceiptBtn.addEventListener("click", () => {
+      tabReceiptBtn.classList.add("active");
+      tabSplitBtn.classList.remove("active");
+      if (paneReceipt) paneReceipt.style.display = "";
+      if (paneSplit) paneSplit.style.display = "none";
+    });
+
+    tabSplitBtn.addEventListener("click", () => {
+      tabSplitBtn.classList.add("active");
+      tabReceiptBtn.classList.remove("active");
+      if (paneReceipt) paneReceipt.style.display = "none";
+      if (paneSplit) paneSplit.style.display = "";
+      renderSplitWorkbench();
+    });
+  }
+
+  // Close handlers
+  if (btnClose) btnClose.addEventListener("click", closeTransactionDetailsModal);
+  if (btnCancel) btnCancel.addEventListener("click", closeTransactionDetailsModal);
+  if (modal) {
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) closeTransactionDetailsModal();
+    });
+  }
+
+  // Delete handler
+  if (btnDelete) {
+    btnDelete.addEventListener("click", async () => {
+      if (!activeDetailExpense) return;
+      if (!confirm(`Are you sure you want to delete this expense record (#${activeDetailExpense.id})?`)) return;
+      await deleteExpenseItem(activeDetailExpense.id);
+      closeTransactionDetailsModal();
+    });
+  }
+
+  // Save details handler
+  if (btnSave) {
+    btnSave.addEventListener("click", saveTransactionDetails);
+  }
+
+  // Add line item
+  if (btnAddItem) {
+    btnAddItem.addEventListener("click", () => {
+      detailLineItems.push({
+        name: "New Item",
+        quantity: 1,
+        price: 0.0,
+        assigned_to: [...splitFriends],
+      });
+      renderDetailLineItems();
+      calculateChargesAndTotal();
+    });
+  }
+
+  // Charges input change listeners
+  ["tx-input-svc-pct", "tx-input-tax-pct", "tx-input-discount", "tx-input-grand-total"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.addEventListener("input", () => {
+        calculateChargesAndTotal();
+      });
+    }
+  });
+
+  // Friend manager
+  if (btnAddFriend && friendInput) {
+    const addFriend = () => {
+      const name = friendInput.value.trim();
+      if (!name) return;
+      if (!splitFriends.includes(name)) {
+        splitFriends.push(name);
+        if (!(name in splitPaidStatus)) {
+          splitPaidStatus[name] = false;
+        }
+        // Assign new friend to existing items if unassigned
+        detailLineItems.forEach(it => {
+          if (!it.assigned_to || it.assigned_to.length === 0) {
+            it.assigned_to = [...splitFriends];
+          }
+        });
+      }
+      friendInput.value = "";
+      renderSplitWorkbench();
+    };
+
+    btnAddFriend.addEventListener("click", addFriend);
+    friendInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        addFriend();
+      }
+    });
+  }
+
+  // Even split checkbox
+  if (evenCheckbox) {
+    evenCheckbox.addEventListener("change", () => {
+      isSplitEvenly = evenCheckbox.checked;
+      const assignSec = document.getElementById("split-assignment-section");
+      if (assignSec) {
+        assignSec.style.display = isSplitEvenly ? "none" : "";
+      }
+      renderSplitWorkbench();
+    });
+  }
+
+  // Sync Grocery List
+  if (btnSyncGrocery) {
+    btnSyncGrocery.addEventListener("click", syncGroceryListFromReceipt);
+  }
+
+  // Copy Telegram/WhatsApp Message
+  if (btnCopyMsg) {
+    btnCopyMsg.addEventListener("click", () => {
+      const textarea = document.getElementById("split-formatted-preview");
+      if (!textarea) return;
+      textarea.select();
+      navigator.clipboard.writeText(textarea.value);
+      showToast("📋 Copied WhatsApp / Telegram Breakdown to clipboard!");
+    });
+  }
+
+  // Receipt OCR file upload & drag-drop
+  initReceiptOcrUploader();
+}
+
+function initReceiptOcrUploader() {
+  const dropzone = document.getElementById("receipt-ocr-dropzone");
+  const fileInput = document.getElementById("receipt-file-input");
+  const triggerBtn = document.getElementById("btn-trigger-receipt-file");
+
+  if (!dropzone || !fileInput) return;
+
+  if (triggerBtn) {
+    triggerBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      fileInput.click();
+    });
+  }
+
+  dropzone.addEventListener("click", () => fileInput.click());
+
+  fileInput.addEventListener("change", (e) => {
+    const file = e.target.files?.[0];
+    if (file) processReceiptImageFile(file);
+  });
+
+  dropzone.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    dropzone.style.borderColor = "var(--orange-primary)";
+    dropzone.style.background = "rgba(255, 107, 53, 0.08)";
+  });
+
+  dropzone.addEventListener("dragleave", () => {
+    dropzone.style.borderColor = "";
+    dropzone.style.background = "";
+  });
+
+  dropzone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dropzone.style.borderColor = "";
+    dropzone.style.background = "";
+    const file = e.dataTransfer?.files?.[0];
+    if (file && file.type.startsWith("image/")) {
+      processReceiptImageFile(file);
+    }
+  });
+}
+
+async function processReceiptImageFile(file) {
+  const idleBox = document.getElementById("ocr-dropzone-idle");
+  const loadingBox = document.getElementById("ocr-dropzone-loading");
+
+  if (idleBox) idleBox.style.display = "none";
+  if (loadingBox) loadingBox.style.display = "flex";
+
+  try {
+    const base64Data = await readFileAsBase64(file);
+    const mimeType = file.type || "image/jpeg";
+
+    const res = await fetch(getApiUrl("/api/dashboard/expenses/ocr-receipt"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        image_b64: base64Data,
+        mime_type: mimeType,
+      }),
+    });
+
+    if (!res.ok) throw new Error("OCR request failed");
+    const data = await res.json();
+    const receipt = data.receipt || {};
+
+    if (receipt.merchant && receipt.merchant !== "Unknown Merchant") {
+      const merchantInput = document.getElementById("tx-detail-input-merchant");
+      if (merchantInput) merchantInput.value = receipt.merchant;
+      const titleEl = document.getElementById("tx-detail-merchant");
+      if (titleEl) titleEl.textContent = receipt.merchant;
+    }
+
+    if (receipt.category) {
+      const catSelect = document.getElementById("tx-detail-input-category");
+      if (catSelect) catSelect.value = normalizeCategory(receipt.category);
+    }
+
+    // Set extracted items
+    if (Array.isArray(receipt.items) && receipt.items.length > 0) {
+      detailLineItems = receipt.items.map(it => ({
+        name: it.name || "Item",
+        quantity: parseInt(it.quantity) || 1,
+        price: parseFloat(it.price) || 0.0,
+        assigned_to: it.assigned_to || [...splitFriends],
+      }));
+    }
+
+    // Set tax and service charges
+    if (receipt.service_charge_pct !== undefined) {
+      const svcel = document.getElementById("tx-input-svc-pct");
+      if (svcel) svcel.value = receipt.service_charge_pct;
+    }
+    if (receipt.tax_pct !== undefined) {
+      const taxel = document.getElementById("tx-input-tax-pct");
+      if (taxel) taxel.value = receipt.tax_pct;
+    }
+    if (receipt.discount !== undefined) {
+      const discel = document.getElementById("tx-input-discount");
+      if (discel) discel.value = receipt.discount;
+    }
+
+    renderDetailLineItems();
+    calculateChargesAndTotal();
+
+    showToast(`⚡ Scanned ${detailLineItems.length} items with Gemini Vision!`);
+
+  } catch (err) {
+    console.error("Receipt OCR processing failed:", err);
+    showToast("⚠️ Could not parse receipt photo. You can add items manually.");
+  } finally {
+    if (idleBox) idleBox.style.display = "flex";
+    if (loadingBox) loadingBox.style.display = "none";
+  }
+}
+
+function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = error => reject(error);
+    reader.readAsDataURL(file);
+  });
+}
+
+async function openTransactionDetailsModal(expenseId) {
+  const modal = document.getElementById("modal-transaction-details");
+  if (!modal) return;
+
+  // Find in cached list or fetch
+  let expense = (currentExpensesList || []).find(e => e.id === expenseId);
+  try {
+    const res = await fetch(getApiUrl(`/api/dashboard/expenses/${expenseId}/details`));
+    if (res.ok) {
+      const data = await res.json();
+      if (data.expense) expense = data.expense;
+    }
+  } catch (err) {
+    console.warn("Could not fetch remote expense details:", err);
+  }
+
+  if (!expense) return;
+  activeDetailExpense = expense;
+
+  // Header
+  const titleEl = document.getElementById("tx-detail-merchant");
+  const catPill = document.getElementById("tx-detail-cat-pill");
+  const sourcePill = document.getElementById("tx-detail-source-pill");
+  const dateSub = document.getElementById("tx-detail-date-sub");
+  const totalVal = document.getElementById("tx-detail-header-total-val");
+
+  if (titleEl) titleEl.textContent = expense.merchant || "Transaction Details";
+  if (catPill) {
+    const norm = normalizeCategory(expense.category);
+    catPill.textContent = norm;
+    const cfg = CATEGORY_MAP[norm] || CATEGORY_MAP["General"];
+    catPill.style.background = cfg.bg;
+    catPill.style.color = cfg.color;
+  }
+  if (sourcePill) sourcePill.textContent = expense.source || "ledger";
+  if (dateSub) dateSub.textContent = `Recorded on ${formatExpenseDateTime(expense.date)}`;
+  if (totalVal) totalVal.textContent = `$${expense.amount.toFixed(2)}`;
+
+  // Meta inputs
+  const merchantInput = document.getElementById("tx-detail-input-merchant");
+  const catSelect = document.getElementById("tx-detail-input-category");
+  if (merchantInput) merchantInput.value = expense.merchant || "";
+  if (catSelect) catSelect.value = normalizeCategory(expense.category);
+
+  // Setup items
+  if (Array.isArray(expense.receipt_items) && expense.receipt_items.length > 0) {
+    detailLineItems = JSON.parse(JSON.stringify(expense.receipt_items));
+  } else {
+    // Default to 1 item matching transaction
+    detailLineItems = [
+      {
+        name: expense.merchant || "General Item",
+        quantity: 1,
+        price: expense.amount || 0.0,
+        assigned_to: ["Me"],
+      }
+    ];
+  }
+
+  // Setup split data
+  const splitData = expense.split_data || {};
+  if (Array.isArray(splitData.friends) && splitData.friends.length > 0) {
+    splitFriends = [...splitData.friends];
+  } else {
+    splitFriends = ["Me"];
+  }
+
+  splitPaidStatus = splitData.paid_status || {};
+  splitFriends.forEach(f => {
+    if (!(f in splitPaidStatus)) splitPaidStatus[f] = (f === "Me");
+  });
+
+  isSplitEvenly = Boolean(splitData.is_even);
+  const evenCheckbox = document.getElementById("split-even-checkbox");
+  if (evenCheckbox) evenCheckbox.checked = isSplitEvenly;
+
+  const svcel = document.getElementById("tx-input-svc-pct");
+  const taxel = document.getElementById("tx-input-tax-pct");
+  const discel = document.getElementById("tx-input-discount");
+  if (svcel) svcel.value = splitData.svc_pct ?? (expense.category === "Dining" ? 10 : 0);
+  if (taxel) taxel.value = splitData.tax_pct ?? (expense.category === "Dining" || expense.category === "Shopping" ? 9 : 0);
+  if (discel) discel.value = splitData.discount ?? 0.0;
+
+  // Grocery button visibility
+  const btnSyncGrocery = document.getElementById("btn-sync-grocery-list");
+  if (btnSyncGrocery) {
+    btnSyncGrocery.style.display = normalizeCategory(expense.category) === "Groceries" ? "" : "none";
+  }
+
+  // Default tab is Receipt
+  const tabReceiptBtn = document.getElementById("btn-tx-tab-receipt");
+  const tabSplitBtn = document.getElementById("btn-tx-tab-split");
+  const paneReceipt = document.getElementById("tx-tab-pane-receipt");
+  const paneSplit = document.getElementById("tx-tab-pane-split");
+  if (tabReceiptBtn) tabReceiptBtn.classList.add("active");
+  if (tabSplitBtn) tabSplitBtn.classList.remove("active");
+  if (paneReceipt) paneReceipt.style.display = "";
+  if (paneSplit) paneSplit.style.display = "none";
+
+  renderDetailLineItems();
+  calculateChargesAndTotal();
+
+  modal.style.display = "flex";
+}
+
+function closeTransactionDetailsModal() {
+  const modal = document.getElementById("modal-transaction-details");
+  if (modal) modal.style.display = "none";
+  activeDetailExpense = null;
+}
+
+function renderDetailLineItems() {
+  const tbody = document.getElementById("tx-line-items-tbody");
+  if (!tbody) return;
+
+  if (detailLineItems.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="4" style="text-align: center; color: #71717a; padding: 1rem;">
+          No line items yet. Click "+ Add Item" or scan a receipt photo above.
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  tbody.innerHTML = detailLineItems.map((it, idx) => `
+    <tr>
+      <td>
+        <input type="text" class="tx-item-input-name" value="${escapeAttr(it.name)}" oninput="updateLineItemField(${idx}, 'name', this.value)" placeholder="Item or dish name..." />
+      </td>
+      <td style="text-align: center;">
+        <input type="number" min="1" step="1" class="tx-item-input-qty" value="${it.quantity || 1}" oninput="updateLineItemField(${idx}, 'quantity', parseInt(this.value) || 1)" />
+      </td>
+      <td style="text-align: right;">
+        <input type="number" min="0" step="0.01" class="tx-item-input-price" value="${(it.price || 0).toFixed(2)}" oninput="updateLineItemField(${idx}, 'price', parseFloat(this.value) || 0)" />
+      </td>
+      <td style="text-align: center;">
+        <button type="button" class="tx-item-btn-del" onclick="deleteLineItem(${idx})" title="Delete row">✕</button>
+      </td>
+    </tr>
+  `).join("");
+}
+
+function updateLineItemField(idx, field, val) {
+  if (detailLineItems[idx]) {
+    detailLineItems[idx][field] = val;
+    calculateChargesAndTotal();
+  }
+}
+
+function deleteLineItem(idx) {
+  detailLineItems.splice(idx, 1);
+  renderDetailLineItems();
+  calculateChargesAndTotal();
+}
+
+function calculateChargesAndTotal() {
+  const subtotal = detailLineItems.reduce((acc, it) => acc + (it.price * (it.quantity || 1)), 0.0);
+  const svcPct = parseFloat(document.getElementById("tx-input-svc-pct")?.value) || 0.0;
+  const taxPct = parseFloat(document.getElementById("tx-input-tax-pct")?.value) || 0.0;
+  const discount = parseFloat(document.getElementById("tx-input-discount")?.value) || 0.0;
+
+  const svcAmt = subtotal * (svcPct / 100.0);
+  const taxAmt = (subtotal + svcAmt) * (taxPct / 100.0);
+  const grandTotal = Math.max(0, subtotal + svcAmt + taxAmt - discount);
+
+  const subtotalEl = document.getElementById("tx-input-subtotal");
+  const grandTotalEl = document.getElementById("tx-input-grand-total");
+  const headerTotalEl = document.getElementById("tx-detail-header-total-val");
+
+  if (subtotalEl) subtotalEl.value = subtotal.toFixed(2);
+  if (grandTotalEl) grandTotalEl.value = grandTotal.toFixed(2);
+  if (headerTotalEl) headerTotalEl.textContent = `$${grandTotal.toFixed(2)}`;
+
+  const splitBadge = document.getElementById("tx-split-count-badge");
+  if (splitBadge) splitBadge.textContent = splitFriends.length;
+
+  renderSplitWorkbench();
+}
+
+function renderSplitWorkbench() {
+  renderFriendPills();
+  renderItemAssignmentCards();
+  renderSplitCalculations();
+}
+
+function renderFriendPills() {
+  const container = document.getElementById("split-friends-chips-row");
+  if (!container) return;
+
+  container.innerHTML = splitFriends.map(f => {
+    const initial = f.charAt(0).toUpperCase();
+    const isMe = f === "Me";
+    return `
+      <div class="friend-pill-chip">
+        <div class="friend-avatar-dot">${initial}</div>
+        <span>${escapeHtml(f)}</span>
+        ${!isMe ? `<button type="button" class="friend-remove-x" onclick="removeSplitFriend('${escapeAttr(f)}')">✕</button>` : ''}
+      </div>
+    `;
+  }).join("");
+}
+
+function removeSplitFriend(name) {
+  if (name === "Me") return;
+  splitFriends = splitFriends.filter(f => f !== name);
+  delete splitPaidStatus[name];
+  // Remove from assigned items
+  detailLineItems.forEach(it => {
+    if (Array.isArray(it.assigned_to)) {
+      it.assigned_to = it.assigned_to.filter(f => f !== name);
+      if (it.assigned_to.length === 0) it.assigned_to = ["Me"];
+    }
+  });
+  renderSplitWorkbench();
+}
+
+function renderItemAssignmentCards() {
+  const container = document.getElementById("split-assignment-cards");
+  const assignSec = document.getElementById("split-assignment-section");
+  if (!container) return;
+
+  if (isSplitEvenly) {
+    if (assignSec) assignSec.style.display = "none";
+    return;
+  }
+  if (assignSec) assignSec.style.display = "";
+
+  if (detailLineItems.length === 0) {
+    container.innerHTML = `<div style="font-size:0.75rem; color:#71717a;">Add items in Receipt tab first.</div>`;
+    return;
+  }
+
+  container.innerHTML = detailLineItems.map((it, itIdx) => {
+    const assigned = Array.isArray(it.assigned_to) && it.assigned_to.length > 0 ? it.assigned_to : splitFriends;
+    const cost = it.price * (it.quantity || 1);
+
+    return `
+      <div class="split-item-card">
+        <div class="split-item-meta">
+          <span class="split-item-name">${it.quantity > 1 ? `${it.quantity}x ` : ''}${escapeHtml(it.name)}</span>
+          <span class="split-item-cost">$${cost.toFixed(2)}</span>
+        </div>
+        <div class="split-assign-chips">
+          ${splitFriends.map(f => {
+            const isAssigned = assigned.includes(f);
+            return `
+              <button type="button" class="friend-toggle-chip ${isAssigned ? 'active' : ''}" onclick="toggleItemFriendAssignment(${itIdx}, '${escapeAttr(f)}')">
+                ${escapeHtml(f)}
+              </button>
+            `;
+          }).join("")}
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+function toggleItemFriendAssignment(itemIdx, friendName) {
+  const item = detailLineItems[itemIdx];
+  if (!item) return;
+
+  let assigned = Array.isArray(item.assigned_to) ? [...item.assigned_to] : [...splitFriends];
+  if (assigned.includes(friendName)) {
+    if (assigned.length > 1) {
+      assigned = assigned.filter(f => f !== friendName);
+    }
+  } else {
+    assigned.push(friendName);
+  }
+  item.assigned_to = assigned;
+  renderSplitWorkbench();
+}
+
+function renderSplitCalculations() {
+  const grid = document.getElementById("split-summary-grid");
+  const previewTextarea = document.getElementById("split-formatted-preview");
+  if (!grid) return;
+
+  const svcPct = parseFloat(document.getElementById("tx-input-svc-pct")?.value) || 0.0;
+  const taxPct = parseFloat(document.getElementById("tx-input-tax-pct")?.value) || 0.0;
+  const discount = parseFloat(document.getElementById("tx-input-discount")?.value) || 0.0;
+
+  let breakdown = [];
+  const grandTotal = parseFloat(document.getElementById("tx-input-grand-total")?.value) || 0.0;
+
+  if (isSplitEvenly && splitFriends.length > 0) {
+    const evenShare = grandTotal / splitFriends.length;
+    breakdown = splitFriends.map(f => ({
+      name: f,
+      subtotal: evenShare,
+      service_charge: 0,
+      tax: 0,
+      discount: 0,
+      total: evenShare,
+      items: [{ name: "Equal Split", share_price: evenShare }],
+    }));
+  } else {
+    const friendSubtotals = {};
+    const friendItems = {};
+    splitFriends.forEach(f => {
+      friendSubtotals[f] = 0.0;
+      friendItems[f] = [];
+    });
+
+    detailLineItems.forEach(it => {
+      const price = it.price * (it.quantity || 1);
+      const assigned = (it.assigned_to && it.assigned_to.length > 0)
+        ? it.assigned_to.filter(f => splitFriends.includes(f))
+        : splitFriends;
+      const validAssigned = assigned.length > 0 ? assigned : splitFriends;
+      const share = price / validAssigned.length;
+
+      validAssigned.forEach(f => {
+        friendSubtotals[f] = (friendSubtotals[f] || 0) + share;
+        friendItems[f].push({
+          name: it.name,
+          share_price: share,
+          is_shared: validAssigned.length > 1,
+        });
+      });
+    });
+
+    const totalSub = Object.values(friendSubtotals).reduce((a, b) => a + b, 0.0) || 1.0;
+
+    breakdown = splitFriends.map(f => {
+      const sub = friendSubtotals[f] || 0.0;
+      const ratio = sub / totalSub;
+      const svc = sub * (svcPct / 100.0);
+      const tax = (sub + svc) * (taxPct / 100.0);
+      const disc = discount * ratio;
+      const friendTot = Math.max(0, sub + svc + tax - disc);
+
+      return {
+        name: f,
+        subtotal: sub,
+        service_charge: svc,
+        tax: tax,
+        discount: disc,
+        total: friendTot,
+        items: friendItems[f] || [],
+      };
+    });
+  }
+
+  // Render individual summary cards
+  grid.innerHTML = breakdown.map(b => {
+    const isPaid = splitPaidStatus[b.name] === true;
+    const initial = b.name.charAt(0).toUpperCase();
+
+    return `
+      <div class="split-person-card">
+        <div class="split-person-header">
+          <div class="split-person-name-wrap">
+            <div class="friend-avatar-dot">${initial}</div>
+            <span>${escapeHtml(b.name)}</span>
+          </div>
+          <button type="button" class="split-paid-toggle ${isPaid ? 'paid' : ''}" onclick="toggleFriendPaidStatus('${escapeAttr(b.name)}')">
+            ${isPaid ? '🟢 Paid' : '🟡 Pending'}
+          </button>
+        </div>
+        <div class="split-person-total">$${b.total.toFixed(2)}</div>
+        <div class="split-person-subtext">
+          Sub: $${b.subtotal.toFixed(2)} ${b.service_charge > 0 ? `+ Svc $${b.service_charge.toFixed(2)}` : ''} ${b.tax > 0 ? `+ Tax $${b.tax.toFixed(2)}` : ''}
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  // Generate copyable WhatsApp/Telegram summary
+  if (previewTextarea) {
+    const merchantName = document.getElementById("tx-detail-input-merchant")?.value || "Dining Bill";
+    let msg = `🧾 *${merchantName} Bill Split*\n`;
+    msg += `💰 Grand Total: $${grandTotal.toFixed(2)}\n`;
+    msg += `─────────────────────────\n`;
+
+    breakdown.forEach(b => {
+      const statusIcon = splitPaidStatus[b.name] ? "✅" : "⏳";
+      msg += `👤 *${b.name}*: $${b.total.toFixed(2)} ${statusIcon}\n`;
+      if (b.items && b.items.length > 0) {
+        b.items.forEach(it => {
+          msg += `   • ${it.name} ($${it.share_price.toFixed(2)}${it.is_shared ? ' shared' : ''})\n`;
+        });
+      }
+      if (b.service_charge > 0 || b.tax > 0) {
+        msg += `   • Tax/Svc: +$${(b.service_charge + b.tax).toFixed(2)}\n`;
+      }
+      msg += `\n`;
+    });
+
+    msg += `💸 PayNow to: ${getUserId() || "Mobile / QR"}\n`;
+    msg += `✨ Shared via Nexus Prime`;
+    previewTextarea.value = msg;
+  }
+}
+
+function toggleFriendPaidStatus(friendName) {
+  splitPaidStatus[friendName] = !splitPaidStatus[friendName];
+  renderSplitCalculations();
+}
+
+async function saveTransactionDetails() {
+  if (!activeDetailExpense) return;
+
+  const merchant = document.getElementById("tx-detail-input-merchant")?.value || activeDetailExpense.merchant;
+  const category = document.getElementById("tx-detail-input-category")?.value || activeDetailExpense.category;
+  const grandTotal = parseFloat(document.getElementById("tx-input-grand-total")?.value) || activeDetailExpense.amount;
+  const svcPct = parseFloat(document.getElementById("tx-input-svc-pct")?.value) || 0.0;
+  const taxPct = parseFloat(document.getElementById("tx-input-tax-pct")?.value) || 0.0;
+  const discount = parseFloat(document.getElementById("tx-input-discount")?.value) || 0.0;
+
+  const splitData = {
+    friends: splitFriends,
+    paid_status: splitPaidStatus,
+    is_even: isSplitEvenly,
+    svc_pct: svcPct,
+    tax_pct: taxPct,
+    discount: discount,
+  };
+
+  try {
+    const res = await fetch(getApiUrl(`/api/dashboard/expenses/${activeDetailExpense.id}/details`), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        merchant: merchant,
+        category: category,
+        amount: grandTotal,
+        receipt_items: detailLineItems,
+        split_data: splitData,
+      }),
+    });
+
+    if (!res.ok) throw new Error("Failed to save transaction details");
+    showToast("💾 Saved transaction items and bill split!");
+    closeTransactionDetailsModal();
+    loadDashboardSummary();
+    loadExpensesTable(activeCategoryFilter, activeSearchQuery, activeSortMode);
+
+  } catch (err) {
+    console.error("Save details error:", err);
+    showToast("⚠️ Could not save changes. Please try again.");
+  }
+}
+
+async function syncGroceryListFromReceipt() {
+  if (!activeDetailExpense) return;
+  const itemNames = detailLineItems.map(it => it.name).filter(Boolean);
+  if (itemNames.length === 0) {
+    showToast("No items found to sync.");
+    return;
+  }
+
+  try {
+    const res = await fetch(getApiUrl(`/api/dashboard/expenses/${activeDetailExpense.id}/sync-groceries`), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items: itemNames }),
+    });
+
+    if (!res.ok) throw new Error("Failed to sync groceries");
+    const data = await res.json();
+    showToast(`🛒 ${data.message || `Checked off ${data.checked_off_count} items!`}`);
+
+  } catch (err) {
+    console.error("Grocery sync failed:", err);
+    showToast("⚠️ Could not sync groceries checklist.");
+  }
+}
+
