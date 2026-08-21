@@ -20,15 +20,15 @@ class ThinkingLevel(str, Enum):
 THINKING_CONFIGS: Dict[str, Dict[str, Any]] = {
     ThinkingLevel.LOW.value: {
         "reasoning_effort": "low",
-        "max_tokens": 512,
+        "max_tokens": 2048,
     },
     ThinkingLevel.MEDIUM.value: {
         "reasoning_effort": "medium",
-        "max_tokens": 2048,
+        "max_tokens": 4096,
     },
     ThinkingLevel.HIGH.value: {
         "reasoning_effort": "high",
-        "max_tokens": 4096,
+        "max_tokens": 8192,
     },
 }
 

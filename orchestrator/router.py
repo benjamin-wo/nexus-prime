@@ -700,14 +700,8 @@ class GeneralPlugin:
 
         # Tests and local runs use placeholder keys; skip network call if no provider is configured.
         has_key = bool(settings.active_gemini_api_key or (settings.deepseek_api_key and settings.deepseek_api_key != "test_deepseek_key"))
-        if not has_key:
-            return PluginOutput(
-                message=AIMessage(content=self._generate_rule_based_response(last_text)),
-                state_update={"active_domain": self.name},
-            )
-
         try:
-            llm = get_agent_llm(complexity=ThinkingLevel.LOW, temperature=0.7)
+            llm = get_agent_llm(complexity=ThinkingLevel.MEDIUM, temperature=0.7)
             ai_message = await llm.ainvoke(history)
             content = str(getattr(ai_message, "content", "") or "").strip()
             if not content:
@@ -738,14 +732,15 @@ class GeneralPlugin:
             )
 
         try:
-            llm = get_multimodal_llm(temperature=0.4)
+            llm = get_multimodal_llm(complexity=ThinkingLevel.HIGH, temperature=0.2)
             ai_message = await llm.ainvoke(history)
             content = extract_llm_text(getattr(ai_message, "content", "")).strip()
             if not content:
-                content = "I saw your attachment but drew a blank — mind describing it?"
+                content = "I processed your media message, but couldn't generate a description."
         except Exception as exc:  # noqa: BLE001
-            print(f"[GENERAL] multimodal LLM failed: {exc}")
-            content = "😵‍💫 I couldn't process that media just now — try again?"
+            print(f"[GENERAL] multimodal call failed: {exc}")
+            content = fallback
+
         return PluginOutput(
             message=AIMessage(content=content),
             state_update={"active_domain": "general"},
@@ -753,11 +748,11 @@ class GeneralPlugin:
 
 
 class ReminderPlugin:
-    """Reminder capability plugin: creates, lists, and deletes cron reminders."""
+    """Sets one-time timers and recurring cron-based reminders on Telegram."""
 
     name = "reminders"
-    keywords = ["remind", "reminder", "cron", "every", "daily", "weekly"]
-    description = "Sets cron-based reminders and scheduled tasks on Telegram."
+    keywords = ["remind", "reminder", "schedule", "cron", "alarm", "timer"]
+    description = "Sets one-time timers and recurring reminders on Telegram."
 
     async def execute(self, state: AssistantState) -> PluginOutput:
         user_id = state["user_id"]
@@ -770,14 +765,15 @@ class ReminderPlugin:
         if action == "list":
             jobs = await list_active_jobs(user_id=user_id)
             if not jobs:
-                reply = "📋 No active reminders. Try *\"remind me to drink water every 2 hours\"*."
+                reply = "📋 No active reminders. Try *\"remind me in 5 minutes to check oven\"* or *\"remind me to drink water every 2 hours\"*."
             else:
-                lines = ["📋 Active reminders:"]
+                lines = ["📋 **Active Reminders & Timers**:"]
                 for job in jobs:
                     next_run = job.get("next_run_time") or "not scheduled"
+                    sched_desc = f"`{job['cron_expression']}`" if job.get("type") == "recurring" else "one-time"
                     lines.append(
                         f"- #{job['job_id']} *{job['job_name']}* "
-                        f"(`{job['cron_expression']}` @ {job['timezone']}, next: {next_run})"
+                        f"({sched_desc} @ {job['timezone']}, next: {next_run})"
                     )
                 reply = "\n".join(lines)
             return PluginOutput(
@@ -801,13 +797,67 @@ class ReminderPlugin:
                 state_update={"active_domain": self.name},
             )
 
+        reminder_type = parsed.get("reminder_type", "recurring")
+        delay_seconds = parsed.get("delay_seconds")
         message_text = (parsed.get("message") or "").strip()
-        cron = (parsed.get("cron") or "").strip()
         timezone = parsed.get("timezone") or "Asia/Singapore"
+
+        # 1. ONE-TIME RELATIVE REMINDER
+        if reminder_type == "once" or delay_seconds is not None:
+            if not message_text:
+                message_text = "Reminder"
+            from core.scheduler import schedule_one_shot_reminder
+            import zoneinfo
+            try:
+                tz = zoneinfo.ZoneInfo(timezone)
+            except Exception:
+                tz = zoneinfo.ZoneInfo("Asia/Singapore")
+
+            delay = int(delay_seconds) if delay_seconds else 60
+            now_local = datetime.now(tz)
+            run_time = now_local + timedelta(seconds=delay)
+
+            try:
+                task = await schedule_one_shot_reminder(
+                    user_id=user_id,
+                    message=message_text,
+                    run_date=run_time,
+                    timezone_str=timezone,
+                )
+                if delay < 60:
+                    time_desc = f"{delay}s"
+                elif delay == 60:
+                    time_desc = "1 minute"
+                elif delay < 3600:
+                    mins = delay // 60
+                    time_desc = f"{mins} minute{'s' if mins != 1 else ''}"
+                elif delay < 86400:
+                    hrs = delay // 3600
+                    time_desc = f"{hrs} hour{'s' if hrs != 1 else ''}"
+                else:
+                    days = delay // 86400
+                    time_desc = f"{days} day{'s' if days != 1 else ''}"
+
+                time_str = run_time.strftime("%I:%M %p").lstrip("0")
+                reply = (
+                    f"⏰ **Reminder set** (#{task.id}): *\"{message_text}\"*\n"
+                    f"I'll ping you in **{time_desc}** (at {time_str})."
+                )
+            except Exception as exc:  # noqa: BLE001
+                print(f"[REMINDERS] one-shot schedule failed: {exc}")
+                reply = f"⚠️ Couldn't schedule reminder: {exc}"
+
+            return PluginOutput(
+                message=AIMessage(content=reply),
+                state_update={"active_domain": self.name},
+            )
+
+        # 2. RECURRING CRON REMINDER
+        cron = (parsed.get("cron") or "").strip()
         if not message_text or not cron:
             reply = (
-                "I can set reminders — try *\"remind me to drink water every 2 hours\"* "
-                "or *\"remind me to call mom daily at 9pm\"*."
+                "I can set reminders — try *\"remind me in 5 minutes to check oven\"* "
+                "or *\"remind me to drink water every 2 hours\"*."
             )
             return PluginOutput(
                 message=AIMessage(content=reply),
@@ -824,16 +874,16 @@ class ReminderPlugin:
             )
             aps_job = scheduler.get_job(str(job.id))
             next_run = (
-                aps_job.next_run_time.isoformat()
-                if aps_job and aps_job.next_run_time
+                aps_job.next_run_time.strftime("%a, %b %d at %I:%M %p")
+                if (aps_job and aps_job.next_run_time)
                 else "soon"
             )
             reply = (
-                f"✅ Reminder set (#{job.id}): *\"{message_text}\"*\n"
-                f"Cron `{cron}` ({timezone})\nNext run: {next_run}"
+                f"✅ **Recurring reminder set** (#{job.id}): *\"{message_text}\"*\n"
+                f"Schedule: `{cron}` ({timezone})\nNext run: {next_run}"
             )
         except Exception as exc:  # noqa: BLE001
-            print(f"[REMINDERS] schedule failed: {exc}")
+            print(f"[REMINDERS] recurring schedule failed: {exc}")
             reply = (
                 f"⚠️ Couldn't parse *\"{cron}\"* as a schedule — try something like "
                 "*\"every 2 hours\"* or *\"daily at 9pm\"*."

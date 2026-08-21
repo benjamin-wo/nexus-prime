@@ -256,9 +256,46 @@ async def trigger_task_alert_now(task_id: int, user_id: int) -> bool:
     return True
 
 
-async def delete_scheduled_job(job_id: int, user_id: int) -> bool:
-    """Deactivate and remove a scheduled job owned by the user."""
+async def schedule_one_shot_reminder(
+    user_id: int,
+    message: str,
+    run_date: datetime,
+    timezone_str: str = "Asia/Singapore",
+) -> TaskItem:
+    """Schedule a one-off reminder via TaskItem and DateTrigger."""
     async with async_session_factory() as session:
+        task = TaskItem(
+            user_id=user_id,
+            title=message[:200],
+            description=None,
+            status="todo",
+            priority="medium",
+            due_at=run_date,
+            reminder_type="once",
+            reminder_time=run_date,
+            timezone=timezone_str,
+            is_reminder_active=True,
+        )
+        session.add(task)
+        await session.commit()
+        await session.refresh(task)
+
+        job_id = f"task_{task.id}"
+        scheduler.add_job(
+            _execute_task_reminder,
+            trigger=DateTrigger(run_date=run_date),
+            args=[task.id, task.user_id],
+            id=job_id,
+            replace_existing=True,
+        )
+        return task
+
+
+async def delete_scheduled_job(job_id: int, user_id: int) -> bool:
+    """Deactivate and remove a scheduled job or task reminder owned by the user."""
+    deleted = False
+    async with async_session_factory() as session:
+        # 1. Check ScheduledJob
         result = await session.execute(
             select(ScheduledJob).where(
                 ScheduledJob.id == job_id,
@@ -266,14 +303,30 @@ async def delete_scheduled_job(job_id: int, user_id: int) -> bool:
             )
         )
         job = result.scalar_one_or_none()
-        if not job:
-            return False
-        job.is_active = False
-        session.add(job)
-        await session.commit()
-        if scheduler.get_job(str(job.id)):
-            scheduler.remove_job(str(job.id))
-        return True
+        if job:
+            job.is_active = False
+            session.add(job)
+            deleted = True
+            if scheduler.get_job(str(job.id)):
+                scheduler.remove_job(str(job.id))
+
+        # 2. Check TaskItem
+        t_res = await session.execute(
+            select(TaskItem).where(
+                TaskItem.id == job_id,
+                TaskItem.user_id == user_id,
+            )
+        )
+        task = t_res.scalar_one_or_none()
+        if task:
+            task.is_reminder_active = False
+            session.add(task)
+            deleted = True
+            remove_task_reminder(task.id)
+
+        if deleted:
+            await session.commit()
+        return deleted
 
 
 async def _scheduled_email_expense_sweep():
@@ -473,17 +526,18 @@ async def update_user_timezone(user_id: int, new_timezone: str) -> bool:
         return True
 
 async def list_active_jobs(user_id: int) -> List[Dict[str, Any]]:
-    """Return local timestamps for next_run_time of active jobs."""
+    """Return local timestamps for next_run_time of active jobs and task reminders."""
+    job_info_list = []
     async with async_session_factory() as session:
+        # 1. Scheduled recurring jobs
         result = await session.execute(
             select(ScheduledJob).where(ScheduledJob.user_id == user_id, ScheduledJob.is_active == True)
         )
         jobs = result.scalars().all()
-
-        job_info_list = []
         for job in jobs:
             aps_job = scheduler.get_job(str(job.id))
-            next_run = aps_job.next_run_time.isoformat() if (aps_job and aps_job.next_run_time) else None
+            aps_next = getattr(aps_job, "next_run_time", None) if aps_job else None
+            next_run = aps_next.isoformat() if aps_next else None
             job_info_list.append({
                 "job_id": job.id,
                 "job_name": job.job_name,
@@ -491,8 +545,33 @@ async def list_active_jobs(user_id: int) -> List[Dict[str, Any]]:
                 "timezone": job.timezone,
                 "next_run_time": next_run,
                 "instruction_prompt": job.instruction_prompt,
+                "type": "recurring",
             })
-        return job_info_list
+
+        # 2. One-time task reminders
+        t_res = await session.execute(
+            select(TaskItem).where(
+                TaskItem.user_id == user_id,
+                TaskItem.is_reminder_active == True,
+                TaskItem.status == "todo",
+            )
+        )
+        tasks = t_res.scalars().all()
+        for task in tasks:
+            job_key = f"task_{task.id}"
+            aps_job = scheduler.get_job(job_key)
+            aps_next = getattr(aps_job, "next_run_time", None) if aps_job else None
+            next_run = aps_next.isoformat() if aps_next else (task.reminder_time.isoformat() if task.reminder_time else None)
+            job_info_list.append({
+                "job_id": task.id,
+                "job_name": task.title,
+                "cron_expression": "once",
+                "timezone": task.timezone,
+                "next_run_time": next_run,
+                "instruction_prompt": task.title,
+                "type": "once",
+            })
+    return job_info_list
 
 async def run_now(job_id: int) -> bool:
     """Dry-run testing: trigger any reminder on demand in 5 seconds."""

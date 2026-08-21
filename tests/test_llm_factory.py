@@ -49,7 +49,7 @@ def test_agent_core_llm_low_thinking_level(monkeypatch):
     assert isinstance(llm, ChatOpenAI)
     assert llm.model_name == "deepseek-v4-flash"
     assert llm.reasoning_effort == "low"
-    assert llm.max_tokens == 512
+    assert llm.max_tokens == 2048
 
 def test_agent_core_llm_high_thinking_level(monkeypatch):
     """Verify that role='agent_core' with HIGH complexity configures DeepSeek with high reasoning effort."""
@@ -59,7 +59,7 @@ def test_agent_core_llm_high_thinking_level(monkeypatch):
     assert isinstance(llm, ChatOpenAI)
     assert llm.model_name == "deepseek-v4-flash"
     assert llm.reasoning_effort == "high"
-    assert llm.max_tokens == 4096
+    assert llm.max_tokens == 8192
 
 def test_agent_core_llm_medium_default_thinking_level(monkeypatch):
     """Verify that get_agent_llm with DeepSeek defaults to MEDIUM thinking level."""
@@ -69,7 +69,7 @@ def test_agent_core_llm_medium_default_thinking_level(monkeypatch):
     assert isinstance(llm, ChatOpenAI)
     assert llm.model_name == "deepseek-v4-flash"
     assert llm.reasoning_effort == "medium"
-    assert llm.max_tokens == 2048
+    assert llm.max_tokens == 4096
 
 def test_unrecognized_complexity_falls_back_to_medium(monkeypatch):
     """Verify that an invalid complexity string gracefully falls back to MEDIUM for DeepSeek."""
@@ -78,7 +78,7 @@ def test_unrecognized_complexity_falls_back_to_medium(monkeypatch):
     llm = get_agent_llm(complexity="super_heavy")
     assert isinstance(llm, ChatOpenAI)
     assert llm.reasoning_effort == "medium"
-    assert llm.max_tokens == 2048
+    assert llm.max_tokens == 4096
 
 def test_invalid_role_raises_value_error():
     """Verify that requesting an unsupported role raises a ValueError."""

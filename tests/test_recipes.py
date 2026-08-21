@@ -78,7 +78,9 @@ async def test_spend_autopsy_uses_sandbox():
 
 
 @pytest.mark.asyncio
-async def test_grocery_run_lists_items_and_route_note():
+async def test_grocery_run_lists_items_and_route_note(monkeypatch):
+    from core.config import settings
+    monkeypatch.setattr(settings, "google_maps_api_key", "")
     user_id = 900004
     await _seed_profile(user_id)
     async with async_session_factory() as session:
@@ -113,7 +115,10 @@ async def test_bill_watch_lists_emails_payments_and_requirement():
 
 
 @pytest.mark.asyncio
-async def test_commute_conditions_is_honest_without_keys():
+async def test_commute_conditions_is_honest_without_keys(monkeypatch):
+    from core.config import settings
+    monkeypatch.setattr(settings, "google_maps_api_key", "")
+    monkeypatch.setattr(settings, "tavily_api_key", "")
     reply = await execute_recipe(
         "commute_conditions",
         _state("commute from Tampines to Raffles Place tomorrow", 900006),
