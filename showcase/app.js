@@ -259,24 +259,32 @@ async function loadDashboardSummary() {
     const insightText = document.getElementById("spend-insight-text");
     const aiDynamicBody = document.getElementById("ai-insight-dynamic-body");
 
-    if (data.categories.length > 0) {
+    if (data.categories && data.categories.length > 0) {
       const topCat = data.categories[0];
       if (insightText) {
         insightText.textContent = `Your ${topCat.category.toLowerCase()} spending represents ${topCat.percentage}% of this month's budget.`;
       }
+    } else {
+      if (insightText) {
+        insightText.textContent = "Log expenses or forward receipts to see your category insights.";
+      }
     }
 
     if (aiDynamicBody) {
-      const count = data.month_transactions_count || data.total_transactions_count;
-      const topM = data.top_merchants && data.top_merchants.length > 0 ? data.top_merchants[0] : null;
-      const topMText = topM ? `your top merchant is <strong>${escapeHtml(topM.merchant)}</strong> ($${topM.amount.toFixed(2)})` : "your spend is evenly distributed";
-      aiDynamicBody.innerHTML = `You have logged <strong>${count} transactions</strong> totaling <strong>$${data.total_spent_month.toFixed(2)}</strong> this month. Based on your spending velocity, ${topMText}.`;
+      const count = data.month_transactions_count || data.total_transactions_count || 0;
+      if (count === 0) {
+        aiDynamicBody.innerHTML = `No transactions recorded for this period yet. Send receipt photos or messages in Telegram or click <strong>+ Log Expense</strong> to get started!`;
+      } else {
+        const topM = data.top_merchants && data.top_merchants.length > 0 ? data.top_merchants[0] : null;
+        const topMText = topM ? `your top merchant is <strong>${escapeHtml(topM.merchant)}</strong> ($${topM.amount.toFixed(2)})` : "your spend is evenly distributed";
+        aiDynamicBody.innerHTML = `You have logged <strong>${count} transactions</strong> totaling <strong>$${(data.total_spent_month || 0).toFixed(2)}</strong> this month. Based on your spending velocity, ${topMText}.`;
+      }
     }
 
     // Render Top Merchants Mini List in Sidebar
     const miniList = document.getElementById("merchants-mini-list");
     if (miniList) {
-      if (data.top_merchants.length === 0) {
+      if (!data.top_merchants || data.top_merchants.length === 0) {
         miniList.innerHTML = `<div style="font-size:0.75rem; color:var(--text-muted); text-align:center; padding:1rem;">No merchant data.</div>`;
       } else {
         miniList.innerHTML = data.top_merchants.map(m => {
@@ -293,6 +301,8 @@ async function loadDashboardSummary() {
           `;
         }).join("");
       }
+    }
+
     // Capability Access Gating: Whiteboards & Overview tabs are Admin-only preview
     const isAdmin = data.is_admin === true;
     const wbTabBtn = document.getElementById("rail-btn-whiteboard");
@@ -498,43 +508,6 @@ async function loadExpensesTable(category = "all", search = "", sort = "latest")
   }
 }
 
-function renderExpensesTableRows() {
-  const tbody = document.getElementById("expenses-table-body");
-  const totalInfo = document.getElementById("pagination-total-info");
-  const navContainer = document.getElementById("pagination-nav-container");
-  if (!tbody) return;
-
-  const rows = currentExpensesList || [];
-  const totalRecords = rows.length;
-  const totalPages = Math.max(1, Math.ceil(totalRecords / pageSize));
-
-  if (currentPage > totalPages) currentPage = totalPages;
-  if (currentPage < 1) currentPage = 1;
-
-  const startIndex = (currentPage - 1) * pageSize;
-  const endIndex = Math.min(startIndex + pageSize, totalRecords);
-  const pageRows = rows.slice(startIndex, endIndex);
-
-  if (totalInfo) {
-    totalInfo.textContent = `of ${totalRecords} records`;
-  }
-
-  if (rows.length === 0) {
-    tbody.innerHTML = `
-      <tr>
-        <td colspan="7" style="padding: 2.5rem; text-align: center; color: var(--text-muted);">
-          No transactions found matching "${escapeHtml(activeSearchQuery || activeCategoryFilter)}".
-        </td>
-      </tr>
-    `;
-    selectedExpenseIds.clear();
-    updateBatchActionBar();
-    if (navContainer) {
-      navContainer.innerHTML = `<button class="page-num-btn active">1</button>`;
-    }
-    return;
-  }
-
 function formatExpenseDateTime(dateVal) {
   if (!dateVal) return "—";
   const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -563,6 +536,50 @@ function formatExpenseDateTime(dateVal) {
   const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   return `${dateStr} · ${timeStr}`;
 }
+
+function renderExpensesTableRows() {
+  const tbody = document.getElementById("expenses-table-body");
+  const totalInfo = document.getElementById("pagination-total-info");
+  const navContainer = document.getElementById("pagination-nav-container");
+  if (!tbody) return;
+
+  const rows = currentExpensesList || [];
+  const totalRecords = rows.length;
+  const totalPages = Math.max(1, Math.ceil(totalRecords / pageSize));
+
+  if (currentPage > totalPages) currentPage = totalPages;
+  if (currentPage < 1) currentPage = 1;
+
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = Math.min(startIndex + pageSize, totalRecords);
+  const pageRows = rows.slice(startIndex, endIndex);
+
+  if (totalInfo) {
+    totalInfo.textContent = `of ${totalRecords} records`;
+  }
+
+  if (rows.length === 0) {
+    const isFiltered = Boolean(activeSearchQuery || (activeCategoryFilter && activeCategoryFilter !== "all"));
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="7" style="padding: 3.5rem 1rem; text-align: center; color: var(--text-muted);">
+          <div style="font-size: 1.75rem; margin-bottom: 0.5rem;">💳</div>
+          <div style="font-size: 0.95rem; font-weight: 500; color: #d4d4d8;">
+            ${isFiltered ? `No transactions found matching "${escapeHtml(activeSearchQuery || activeCategoryFilter)}"` : "No transactions recorded yet"}
+          </div>
+          <div style="font-size: 0.78rem; color: #71717a; margin-top: 0.35rem;">
+            ${isFiltered ? "Try clearing your search keyword or selecting 'All Status'." : "Forward your receipt emails or send transactions via Telegram / '+ Log Expense' to begin tracking."}
+          </div>
+        </td>
+      </tr>
+    `;
+    selectedExpenseIds.clear();
+    updateBatchActionBar();
+    if (navContainer) {
+      navContainer.innerHTML = `<button class="page-num-btn active" disabled>1</button>`;
+    }
+    return;
+  }
 
   tbody.innerHTML = pageRows.map((tx) => {
     const txnId = `TXN-24080${String(tx.id).padStart(3, '0')}`;

@@ -136,7 +136,7 @@
                 </div>
                 <span class="metric-label-text">Total Transactions This Month</span>
               </div>
-              <div class="metric-large-figure mono-fig" id="kpi-month-tx-count">9</div>
+              <div class="metric-large-figure mono-fig" id="kpi-month-tx-count">0</div>
               <div class="metric-trend-subtext trend-up">
                 <span>↑ 12.5%</span> <span class="trend-dim">compared to last month</span>
               </div>
@@ -153,7 +153,7 @@
                 </div>
                 <span class="metric-label-text">All-Time Ledger Count</span>
               </div>
-              <div class="metric-large-figure mono-fig" id="kpi-total-tx">9</div>
+              <div class="metric-large-figure mono-fig" id="kpi-total-tx">0</div>
               <div class="metric-trend-subtext trend-up">
                 <span>↑ 15.5%</span> <span class="trend-dim">auto-synced via Gmail & TG</span>
               </div>
@@ -165,12 +165,12 @@
                 <div class="metric-icon-disc orange-disc">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
                     <line x1="7" y1="7" x2="17" y2="17"></line>
-                    <polyline points="17 7 17 17 7 17"></polyline>
+                    <polyline points="17 7 17 7 17 17"></polyline>
                   </svg>
                 </div>
                 <span class="metric-label-text">Total Expenses</span>
               </div>
-              <div class="metric-large-figure mono-fig" id="kpi-month-spend">$340.30</div>
+              <div class="metric-large-figure mono-fig" id="kpi-month-spend">$0.00</div>
               <div class="metric-trend-subtext trend-down">
                 <span>↓ 8.5%</span> <span class="trend-dim">within monthly budget</span>
               </div>
@@ -252,7 +252,12 @@
                     </tr>
                   </thead>
                   <tbody id="expenses-table-body">
-                    <!-- Populated dynamically by app.js -->
+                    <tr>
+                      <td colspan="7" style="padding: 3rem 1rem; text-align: center; color: var(--text-muted);">
+                        <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">⏳</div>
+                        <div style="font-size: 0.9rem; color: #a1a1aa;">Loading transactions...</div>
+                      </td>
+                    </tr>
                   </tbody>
                 </table>
               </div>
@@ -266,7 +271,7 @@
                     <option value="25">25</option>
                     <option value="50">50</option>
                   </select>
-                  <span id="pagination-total-info">of 9 records</span>
+                  <span id="pagination-total-info">of 0 records</span>
                 </div>
 
                 <div class="pagination-right" id="pagination-nav-container">
@@ -294,11 +299,10 @@
                 <div class="donut-chart-container">
                   <div class="donut-svg-wrap">
                     <svg viewBox="0 0 160 160" class="donut-svg" id="donut-svg-chart">
-                      <!-- Rendered dynamically by app.js -->
                       <circle cx="80" cy="80" r="60" fill="none" stroke="#222226" stroke-width="22" />
                     </svg>
                     <div class="donut-center-info">
-                      <div class="donut-center-val" id="donut-center-total">$340</div>
+                      <div class="donut-center-val" id="donut-center-total">$0</div>
                       <div class="donut-center-lbl">Total Spend</div>
                     </div>
                   </div>
@@ -312,7 +316,7 @@
                 <!-- Spend Alert Chip -->
                 <div class="spend-insight-chip" id="spend-insight-chip">
                   <span class="chip-sparkle">🪄</span>
-                  <span id="spend-insight-text">Your dining & shopping allocate 55% of this month's budget.</span>
+                  <span id="spend-insight-text">Syncing your expenses...</span>
                 </div>
               </div>
 
@@ -1197,6 +1201,6 @@
   <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
   <script src="manifests-data.js"></script>
-  <script src="app.js?v=23"></script>
+  <script src="app.js?v=24"></script>
 </body>
 </html>
