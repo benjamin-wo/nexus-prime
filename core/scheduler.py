@@ -340,22 +340,35 @@ async def _scheduled_email_expense_sweep():
         )
         user_ids = list({cred.user_id for cred in result.scalars().all()})
 
-        # Auto-cleanup any legacy transactions where merchant matched email footer disclaimers
+        # Auto-cleanup any legacy bogus transactions (ref numbers, years, footer disclaimer merchants)
         try:
             from core.models import ExpenseTransaction
             from sqlmodel import or_
+            # 1. Purge absurd numbers (ref IDs, phone numbers, years logged as prices)
+            bogus_res = await session.execute(
+                select(ExpenseTransaction).where(
+                    or_(
+                        ExpenseTransaction.amount >= 100000.0,
+                        (ExpenseTransaction.amount.in_([2024.0, 2025.0, 2026.0, 2027.0]) & ExpenseTransaction.merchant.in_(["Apple", "PayLah! Alerts", "Email Receipt", "Unknown"])),
+                        (ExpenseTransaction.merchant == "PayLah! Alerts") & (ExpenseTransaction.amount == 21.0),
+                    )
+                )
+            )
+            for bad_tx in bogus_res.scalars().all():
+                await session.delete(bad_tx)
+
+            # 2. Fix legacy disclaimer words in merchant field
             bogus_merchants = ["receiving this", "receiving this email", "receiving this email and any", "this email and any"]
             b_res = await session.execute(
                 select(ExpenseTransaction).where(or_(*[ExpenseTransaction.merchant.ilike(f"%{bm}%") for bm in bogus_merchants]))
             )
-            bogus_txs = b_res.scalars().all()
-            for btx in bogus_txs:
+            for btx in b_res.scalars().all():
                 btx.merchant = "Email Receipt"
                 session.add(btx)
-            if bogus_txs:
-                await session.commit()
+
+            await session.commit()
         except Exception as clean_err:
-            print(f"[SWEEP] disclaimer cleanup error: {clean_err}")
+            print(f"[SWEEP] legacy transaction cleanup error: {clean_err}")
 
     for user_id in user_ids:
         try:

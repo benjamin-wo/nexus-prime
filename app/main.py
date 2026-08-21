@@ -22,6 +22,25 @@ async def lifespan(app: FastAPI):
     """
     await setup_checkpointer()
     await init_db()
+    try:
+        from core.db import async_session_factory
+        from core.models import ExpenseTransaction
+        from sqlmodel import or_, select
+        async with async_session_factory() as session:
+            bogus_res = await session.execute(
+                select(ExpenseTransaction).where(
+                    or_(
+                        ExpenseTransaction.amount >= 100000.0,
+                        (ExpenseTransaction.amount.in_([2024.0, 2025.0, 2026.0, 2027.0]) & ExpenseTransaction.merchant.in_(["Apple", "PayLah! Alerts", "Email Receipt", "Unknown"])),
+                        (ExpenseTransaction.merchant == "PayLah! Alerts") & (ExpenseTransaction.amount == 21.0),
+                    )
+                )
+            )
+            for bad_tx in bogus_res.scalars().all():
+                await session.delete(bad_tx)
+            await session.commit()
+    except Exception as clean_err:
+        print(f"[STARTUP] legacy cleanup error: {clean_err}")
     await start_scheduler()
     try:
         from app.ingress import setup_telegram_bot_commands

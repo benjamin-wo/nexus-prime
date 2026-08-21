@@ -135,3 +135,19 @@ def test_email_merchant_resolution():
     )
     assert resolved_clean == "Toast Box"
 
+
+def test_regex_expense_amount_precision_and_non_expense_emails():
+    from capabilities.expenses.tools import _regex_extract_expense
+
+    # 1. Genuine receipts with currency prefix
+    assert _regex_extract_expense("Total Paid: SGD 11.50 for your ride")["amount"] == 11.50
+    assert _regex_extract_expense("Your receipt: $5.90 at Chicken Stea")["amount"] == 5.90
+    assert _regex_extract_expense("Paid: S$12.80 to Toast Box")["amount"] == 12.80
+
+    # 2. Non-expense advisory / terms emails should NOT extract dates/years/ref IDs as prices
+    assert _regex_extract_expense("DBS PayLah! Alert: Ref 7873098920963352 on 21 Aug 2026")["amount"] is None
+    assert _regex_extract_expense("Apple Distribution International Ltd 2026. Privacy Policy.")["amount"] is None
+    assert _regex_extract_expense("Terms & conditions update for August 2026")["amount"] is None
+    assert _regex_extract_expense("Your login was detected on 21 Aug 2026")["amount"] is None
+
+

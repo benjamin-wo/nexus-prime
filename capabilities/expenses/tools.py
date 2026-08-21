@@ -82,38 +82,48 @@ async def save_expense_transaction(
 def _regex_extract_expense(text: str) -> Dict[str, Any]:
     """Deterministic regex extraction fallback for when LLM quota is unavailable."""
     amount = None
-    # 1. Check with currency symbol ($18.50, SGD 18.50)
-    m = re.search(r"[\$SGDusd€¥£]\s*(\d+(?:\.\d{1,2})?)", text, re.IGNORECASE)
+    currency = "SGD"
+
+    # 1. Check with explicit currency prefix ($18.50, SGD 18.50, S$12, USD 25.00)
+    m = re.search(r"(?:SGD|S\$|\$|USD|EUR|GBP|€|£|¥)\s*(\d{1,6}(?:\.\d{1,2})?)", text, re.IGNORECASE)
     if m:
         try:
-            amount = float(m.group(1))
+            val = float(m.group(1))
+            if 0.01 <= val < 100000.0 and val not in (2024.0, 2025.0, 2026.0, 2027.0):
+                amount = val
         except ValueError:
             pass
 
-    # 2. Check "18.50 SGD/dollars"
+    # 2. Check with explicit currency suffix ("18.50 SGD", "25 dollars", "15.00 bucks")
     if not amount:
-        m = re.search(r"(\d+(?:\.\d{1,2})?)\s*(?:SGD|USD|dollars|bucks)", text, re.IGNORECASE)
+        m = re.search(r"(\d{1,6}(?:\.\d{1,2})?)\s*(?:SGD|S\$|USD|EUR|GBP|dollars|bucks)", text, re.IGNORECASE)
         if m:
             try:
-                amount = float(m.group(1))
+                val = float(m.group(1))
+                if 0.01 <= val < 100000.0 and val not in (2024.0, 2025.0, 2026.0, 2027.0):
+                    amount = val
             except ValueError:
                 pass
 
-    # 3. Check "spent/paid/cost 18.50"
+    # 3. Check "spent/paid/cost/charged/total: 18.50"
     if not amount:
-        m = re.search(r"\b(?:spent|paid|cost)\s+(\d+(?:\.\d{1,2})?)", text, re.IGNORECASE)
+        m = re.search(r"\b(?:spent|paid|cost|charged|total|bill|amount|fee)\s*[:=-]?\s*(?:\$|SGD|S\$)?\s*(\d{1,6}(?:\.\d{1,2})?)", text, re.IGNORECASE)
         if m:
             try:
-                amount = float(m.group(1))
+                val = float(m.group(1))
+                if 0.01 <= val < 100000.0 and val not in (2024.0, 2025.0, 2026.0, 2027.0):
+                    amount = val
             except ValueError:
                 pass
 
-    # 4. Check any standard decimal number like 18.50
+    # 4. Check standard decimal price (e.g. 18.50) ONLY if preceded by standard transaction words
     if not amount:
-        m = re.search(r"\b(\d+\.\d{2})\b", text)
+        m = re.search(r"\b(?:payment of|price of|received|subtotal)\s*(\d{1,6}\.\d{2})\b", text, re.IGNORECASE)
         if m:
             try:
-                amount = float(m.group(1))
+                val = float(m.group(1))
+                if 0.01 <= val < 100000.0 and val not in (2024.0, 2025.0, 2026.0, 2027.0):
+                    amount = val
             except ValueError:
                 pass
 
@@ -152,7 +162,7 @@ def _regex_extract_expense(text: str) -> Dict[str, Any]:
 
     return {
         "amount": amount,
-        "currency": "SGD",
+        "currency": currency,
         "merchant": merchant[:60] if merchant else "Expense",
         "category": category,
         "date_iso": "",
@@ -222,12 +232,15 @@ async def extract_expense_from_text(user_text: str) -> Dict[str, Any]:
     messages = [
         SystemMessage(
             content=(
-                "Extract an expense from the user's message. Reply with ONLY a JSON object: "
-                '{"amount": number, "currency": string (3-letter code, default SGD for Singapore), '
-                '"merchant": string, "category": string, "date_iso": string (ISO 8601 with time and timezone if mentioned, e.g. 2026-08-16T14:32:00+08:00, or YYYY-MM-DD if time not mentioned), '
-                '"confidence": number 0-1, "needs_clarification": boolean}. '
-                "Set confidence below 0.8 or needs_clarification true when the amount or "
-                "merchant is ambiguous. If no expense is present, return {\"amount\": null}."
+                "You are a strict financial transaction extractor. "
+                "Analyze the message/receipt/email and extract the EXACT transaction amount paid or spent.\n"
+                "RULES:\n"
+                "1. If the message is a promotional email, terms update, newsletter, login notification, security alert, or does NOT contain a genuine paid expense, return {\"amount\": null}.\n"
+                "2. DO NOT extract years (e.g. 2026), dates (e.g. 21 Aug), phone numbers, account numbers, card numbers, or transaction reference IDs (e.g. Ref: 7873098920963352) as the amount.\n"
+                "3. Extract ONLY the total price or amount actually charged/spent.\n"
+                "4. Reply with ONLY a JSON object:\n"
+                '{"amount": number|null, "currency": string, "merchant": string, "category": string, "date_iso": string, "confidence": number, "needs_clarification": boolean}\n'
+                "Default currency: SGD for Singapore."
             )
         ),
         HumanMessage(content=user_text[:2000]),
@@ -250,10 +263,18 @@ async def extract_expense_from_text(user_text: str) -> Dict[str, Any]:
         raw = str(getattr(ai_message, "content", "") or "").strip()
         raw = re.sub(r"^```(?:json)?|```$", "", raw, flags=re.MULTILINE).strip()
         parsed = json.loads(raw)
-        if not parsed.get("amount"):
-            return _regex_extract_expense(user_text)
+        if parsed.get("amount") is None:
+            return {"amount": None}
+
+        amount_val = float(parsed["amount"])
+        # Guard against absurd extracted numbers or years
+        if amount_val <= 0 or amount_val >= 100000.0 or amount_val in (2024.0, 2025.0, 2026.0, 2027.0):
+            # Check if this was an actual price mentioned with currency symbol
+            if not re.search(r"(?:SGD|S\$|\$|USD|EUR|GBP)\s*" + re.escape(str(int(amount_val))), user_text):
+                return {"amount": None}
+
         return {
-            "amount": float(parsed["amount"]),
+            "amount": amount_val,
             "currency": parsed.get("currency") or "SGD",
             "merchant": parsed.get("merchant") or "Unknown",
             "category": parsed.get("category") or "General",
