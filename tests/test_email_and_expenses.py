@@ -69,7 +69,15 @@ async def test_search_email_messages_multi_provider():
     assert outlook_results[0]["provider"] == "outlook"
     assert "Amazon" in outlook_results[0]["subject"]
 
-    # Unified search without explicit provider should default to configured providers (default: gmail)
+    # Register outlook credentials for user 3002 so active provider detection picks it up
+    from core.models import UserCredential
+    from core.db import async_session_factory
+    async with async_session_factory() as session:
+        cred = UserCredential(user_id=3002, provider="outlook", encrypted_token_payload="dummy")
+        session.add(cred)
+        await session.commit()
+
+    # Unified search without explicit provider should default to configured providers
     unified_results = await search_email_messages.ainvoke({"user_id": 3002})
     assert len(unified_results) >= 1
 
@@ -95,4 +103,35 @@ async def test_deleted_expense_tombstone_deduplication():
 
     # Now is_duplicate_expense should return True
     assert await is_duplicate_expense(msg_id) is True
+
+
+def test_email_merchant_resolution():
+    from capabilities.expenses.tools import clean_sender_name, _resolve_email_merchant
+
+    assert clean_sender_name("Grab <no-reply@grab.com>") == "Grab"
+    assert clean_sender_name('"Starbucks Coffee SG" <receipts@starbucks.com.sg>') == "Starbucks Coffee SG"
+    assert clean_sender_name("receipts@deliveroo.com.sg") == "Deliveroo"
+    assert clean_sender_name("Apple <no_reply@email.apple.com>") == "Apple"
+
+    # Bogus disclaimer extraction should be rejected and replaced by clean sender or subject
+    resolved_grab = _resolve_email_merchant(
+        extracted_merchant="receiving this",
+        sender="Grab <no-reply@grab.com>",
+        subject="Your Grab E-Receipt",
+    )
+    assert resolved_grab == "Grab"
+
+    resolved_fp = _resolve_email_merchant(
+        extracted_merchant="receiving this email and any",
+        sender="no-reply@fairprice.com.sg",
+        subject="Order Confirmation",
+    )
+    assert resolved_fp == "Fairprice"
+
+    resolved_clean = _resolve_email_merchant(
+        extracted_merchant="Toast Box",
+        sender="DBS Alerts <alerts@dbs.com>",
+        subject="Transaction Alert",
+    )
+    assert resolved_clean == "Toast Box"
 

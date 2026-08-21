@@ -4,6 +4,12 @@ from app.main import app
 
 client = TestClient(app)
 
+def _webhook_headers():
+    from core.config import settings
+    if settings.telegram_webhook_secret:
+        return {"X-Telegram-Bot-Api-Secret-Token": settings.telegram_webhook_secret}
+    return {}
+
 def test_health_check_endpoint():
     response = client.get("/health")
     assert response.status_code == 200
@@ -19,7 +25,7 @@ def test_webhook_text_message():
             "text": "Check my gmail inbox for receipts",
         },
     }
-    response = client.post("/api/webhook", json=payload)
+    response = client.post("/api/webhook", json=payload, headers=_webhook_headers())
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
 
@@ -33,7 +39,7 @@ def test_webhook_callback_query_resume():
             "data": '{"a": "confirm"}',
         },
     }
-    response = client.post("/api/webhook", json=payload)
+    response = client.post("/api/webhook", json=payload, headers=_webhook_headers())
     assert response.status_code == 200
     assert response.json()["resumed"] is True
 
@@ -47,6 +53,6 @@ def test_webhook_jobs_command():
             "text": "/jobs",
         },
     }
-    response = client.post("/api/webhook", json=payload)
+    response = client.post("/api/webhook", json=payload, headers=_webhook_headers())
     assert response.status_code == 200
     assert "jobs" in response.json()

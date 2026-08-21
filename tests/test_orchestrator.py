@@ -41,8 +41,14 @@ async def test_supervisor_routes_to_route_subagent():
 
 
 @pytest.mark.asyncio
-async def test_capability_plugins_direct_execution():
+async def test_capability_plugins_direct_execution(monkeypatch):
     """Verify CapabilityPlugin standalone execution without LangGraph dependencies."""
+    from unittest.mock import AsyncMock
+    import capabilities.email.tools as email_tools
+    import orchestrator.router as router_module
+    monkeypatch.setattr(router_module, "get_user_gmail_token", AsyncMock(return_value="mock_token"))
+    monkeypatch.setattr(email_tools.search_email_messages, "coroutine", AsyncMock(return_value=[{"sender": "Starbucks", "subject": "Receipt", "snippet": "$5.50"}]))
+
     state = {
         "messages": [HumanMessage(content="Check gmail")],
         "user_id": 4001,

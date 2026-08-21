@@ -129,6 +129,8 @@ async def test_supervisor_fallback_and_guardrail_routing():
 
 
 def test_webhook_missing_capabilities_command():
+    from core.config import settings
+    headers = {"X-Telegram-Bot-Api-Secret-Token": settings.telegram_webhook_secret} if settings.telegram_webhook_secret else {}
     payload = {
         "update_id": 20001,
         "message": {
@@ -138,7 +140,7 @@ def test_webhook_missing_capabilities_command():
             "text": "/missing_capabilities",
         },
     }
-    response = client.post("/api/webhook", json=payload)
+    response = client.post("/api/webhook", json=payload, headers=headers)
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
     assert "leaderboard" in response.json()

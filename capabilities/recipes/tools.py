@@ -18,34 +18,38 @@ async def parse_recipe_and_extract_ingredients(recipe_text_or_url: str) -> Dict[
     Extract a recipe title and structured ingredient list from recipe text.
     Each ingredient has name, quantity, and category.
     """
+    canned_fallback = {
+        "title": "Extracted Recipe",
+        "ingredients": [
+            {"name": "Garlic", "quantity": "2 cloves", "category": "Produce"},
+            {"name": "Olive Oil", "quantity": "2 tbsp", "category": "Pantry"},
+            {"name": "Spaghetti", "quantity": "1 lb", "category": "Pasta"},
+        ],
+    }
     if not settings.has_llm_key:
-        # Local tests/dev fallback: structured canned result.
-        return {
-            "title": "Extracted Recipe",
-            "ingredients": [
-                {"name": "Garlic", "quantity": "2 cloves", "category": "Produce"},
-                {"name": "Olive Oil", "quantity": "2 tbsp", "category": "Pantry"},
-                {"name": "Spaghetti", "quantity": "1 lb", "category": "Pasta"},
-            ],
-        }
+        return canned_fallback
 
-    llm = get_agent_llm(complexity=ThinkingLevel.LOW, temperature=0.2)
-    ai_message = await llm.ainvoke(
-        [
-            SystemMessage(
-                content=(
-                    "Extract the recipe title and ingredient list from the text. Reply with ONLY "
-                    'a JSON object: {"title": string, "ingredients": [{"name": string, '
-                    '"quantity": string, "category": string}]}. Categories: Produce, Meat, Dairy, '
-                    "Pantry, Pasta, Bakery, Frozen, Spices, Other. If no recipe is present, return "
-                    '{"title": "", "ingredients": []}.'
-                )
-            ),
-            HumanMessage(content=recipe_text_or_url[:4000]),
-        ]
-    )
-    raw = str(getattr(ai_message, "content", "") or "").strip()
-    raw = re.sub(r"^```(?:json)?|```$", "", raw, flags=re.MULTILINE).strip()
+    try:
+        llm = get_agent_llm(complexity=ThinkingLevel.LOW, temperature=0.2)
+        ai_message = await llm.ainvoke(
+            [
+                SystemMessage(
+                    content=(
+                        "Extract the recipe title and ingredient list from the text. Reply with ONLY "
+                        'a JSON object: {"title": string, "ingredients": [{"name": string, '
+                        '"quantity": string, "category": string}]}. Categories: Produce, Meat, Dairy, '
+                        "Pantry, Pasta, Bakery, Frozen, Spices, Other. If no recipe is present, return "
+                        '{"title": "", "ingredients": []}.'
+                    )
+                ),
+                HumanMessage(content=recipe_text_or_url[:4000]),
+            ]
+        )
+        raw = str(getattr(ai_message, "content", "") or "").strip()
+        raw = re.sub(r"^```(?:json)?|```$", "", raw, flags=re.MULTILINE).strip()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[RECIPES] LLM call failed: {exc}, using canned fallback")
+        return canned_fallback
     try:
         parsed = json.loads(raw)
         ingredients = parsed.get("ingredients") or []

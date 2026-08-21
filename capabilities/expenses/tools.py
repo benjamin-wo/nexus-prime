@@ -134,13 +134,21 @@ def _regex_extract_expense(text: str) -> Dict[str, Any]:
         category = "Bills"
 
     merchant = "Direct Expense"
-    m_match = re.search(r"(?:at|from|@)\s+([A-Za-z0-9\s&'-]+?)(?:\s+for|\s+on|\s*$)", text, re.IGNORECASE)
+    disclaimer_words = [
+        "receiving", "this", "my", "your", "the", "an", "a", "us", "here",
+        "it", "which", "whose", "whom", "email", "any", "disclaimer", "privacy"
+    ]
+    m_match = re.search(r"(?:at|from|@)\s+([A-Za-z0-9\s&'-]+?)(?:\s+for|\s+on|\s*[-–:]|\s*$)", text, re.IGNORECASE)
     if m_match:
-        merchant = m_match.group(1).strip()
+        cand = m_match.group(1).strip()
+        if not any(cand.lower().startswith(w) for w in disclaimer_words):
+            merchant = cand
     else:
-        for_match = re.search(r"(?:on|for)\s+([A-Za-z0-9\s&'-]+?)(?:\s+at|\s+from|\s*$)", text, re.IGNORECASE)
+        for_match = re.search(r"(?:on|for)\s+([A-Za-z0-9\s&'-]+?)(?:\s+at|\s+from|\s*[-–:]|\s*$)", text, re.IGNORECASE)
         if for_match:
-            merchant = for_match.group(1).strip()
+            cand = for_match.group(1).strip()
+            if not any(cand.lower().startswith(w) for w in disclaimer_words):
+                merchant = cand
 
     return {
         "amount": amount,
@@ -151,6 +159,58 @@ def _regex_extract_expense(text: str) -> Dict[str, Any]:
         "confidence": 0.85,
         "needs_clarification": False,
     }
+
+
+def clean_sender_name(sender_raw: str) -> str:
+    """Extract a human-friendly merchant/brand name from an email sender string."""
+    if not sender_raw:
+        return ""
+    # Extract "Name" from "Name <email@domain.com>"
+    match = re.match(r"^[\"'\s]*([^<>\"]+?)[\"'\s]*<.+?>", sender_raw.strip())
+    if match:
+        name = match.group(1).strip()
+        if name and not re.match(r"^(?:no[-_]?reply|notification|alerts?|receipts?|orders?|support|info|billing|service)$", name, re.IGNORECASE):
+            return name
+    # Extract domain if email only
+    email_match = re.search(r"[\w\.-]+@([\w\.-]+)", sender_raw)
+    if email_match:
+        domain = email_match.group(1).lower()
+        parts = [p for p in domain.split(".") if p not in ["com", "sg", "org", "net", "io", "co", "gov", "edu", "email", "mail", "app"]]
+        if parts:
+            clean_part = parts[-1]
+            if clean_part not in ["gmail", "yahoo", "hotmail", "outlook", "icloud"]:
+                return clean_part.capitalize()
+    return sender_raw.strip()
+
+
+def _resolve_email_merchant(
+    extracted_merchant: Optional[str],
+    sender: str = "",
+    subject: str = "",
+    snippet: str = "",
+) -> str:
+    """Resolve an accurate merchant name for an email, filtering out email boilerplate/disclaimers."""
+    clean_sender = clean_sender_name(sender)
+    invalid_fragments = [
+        "receiving this", "this email", "email and any", "terms and conditions",
+        "privacy policy", "unsubscribe", "do not reply", "no-reply", "unknown",
+        "direct expense", "expense", "transaction", "payment", "invoice",
+        "receipt", "e-receipt", "tax invoice"
+    ]
+    if extracted_merchant:
+        m_lower = extracted_merchant.strip().lower()
+        is_invalid = any(frag in m_lower for frag in invalid_fragments) or len(extracted_merchant.strip()) < 2
+        if not is_invalid:
+            return extracted_merchant.strip()
+    if subject:
+        sub_match = re.search(r"(?:from|at)\s+([A-Za-z0-9\s&'-]{2,30})(?:\s+for|\s+order|\s+on|\s*[-–:]|\s*$)", subject, re.IGNORECASE)
+        if sub_match:
+            sub_cand = sub_match.group(1).strip()
+            if not any(frag in sub_cand.lower() for frag in invalid_fragments):
+                return sub_cand
+    if clean_sender:
+        return clean_sender
+    return "Email Receipt"
 
 
 @tool
@@ -349,17 +409,28 @@ async def log_expenses_from_emails(
 
     for email_msg in (emails or [])[:10]:
         email_id = str(email_msg.get("id") or "")
-        text = f"{email_msg.get('subject', '')}\n{email_msg.get('snippet', '')}"
+        sender = str(email_msg.get("sender") or "")
+        subject = str(email_msg.get("subject") or "")
+        snippet = str(email_msg.get("snippet") or "")
+
+        text = f"Sender: {sender}\nSubject: {subject}\nBody: {snippet}"
         extracted = await extract_expense_from_text.ainvoke({"user_text": text})
         if not extracted or not extracted.get("amount"):
             continue
+
+        merchant = _resolve_email_merchant(
+            extracted_merchant=extracted.get("merchant"),
+            sender=sender,
+            subject=subject,
+            snippet=snippet,
+        )
 
         if extracted.get("confidence", 0) < 0.8 or extracted.get("needs_clarification"):
             skipped.append(
                 {
                     "amount": extracted["amount"],
                     "currency": extracted.get("currency", "SGD"),
-                    "merchant": extracted.get("merchant", "Unknown"),
+                    "merchant": merchant,
                 }
             )
             continue
@@ -404,7 +475,7 @@ async def log_expenses_from_emails(
         expense = ExtractedExpense(
             amount=float(extracted["amount"]),
             currency=extracted.get("currency") or "SGD",
-            merchant=extracted.get("merchant") or "Unknown",
+            merchant=merchant,
             category=extracted.get("category") or "General",
             date=expense_date,
             confidence=float(extracted.get("confidence", 0.9)),

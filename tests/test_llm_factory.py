@@ -12,51 +12,71 @@ from core.llm import (
 
 def test_multimodal_io_llm_initialization():
     """Verify that role='multimodal_io' returns a ChatGoogleGenerativeAI instance for Gemini Flash."""
+    from core.config import settings
     llm = get_llm(role="multimodal_io", temperature=0.2)
     assert isinstance(llm, ChatGoogleGenerativeAI)
-    assert llm.model == "gemini-3.1-flash-lite"
+    assert llm.model == settings.gemini_model
     assert llm.temperature == 0.2
 
     # Verify convenience helper
     helper_llm = get_multimodal_llm()
     assert isinstance(helper_llm, ChatGoogleGenerativeAI)
-    assert helper_llm.model == "gemini-3.1-flash-lite"
+    assert helper_llm.model == settings.gemini_model
 
 
 def test_judge_llm_initialization():
-    """Verify the conversation judge uses Gemini 3.1 Pro."""
+    """Verify the conversation judge uses Gemini Judge model."""
+    from core.config import settings
     llm = get_judge_llm()
     assert isinstance(llm, ChatGoogleGenerativeAI)
-    assert llm.model == "gemini-3.1-pro"
+    assert llm.model == settings.gemini_judge_model
     assert llm.temperature == 0.0
 
-def test_agent_core_llm_low_thinking_level():
-    """Verify that role='agent_core' with LOW complexity configures DeepSeek v4 Flash with low reasoning effort."""
+def test_agent_core_llm_with_gemini_provider(monkeypatch):
+    """Verify that role='agent_core' with Gemini provider returns ChatGoogleGenerativeAI."""
+    from core.config import settings
+    monkeypatch.setattr(settings, "llm_provider", "gemini")
+    llm = get_llm(role="agent_core")
+    assert isinstance(llm, ChatGoogleGenerativeAI)
+    assert llm.model == settings.gemini_model
+
+
+def test_agent_core_llm_low_thinking_level(monkeypatch):
+    """Verify that role='agent_core' with DeepSeek provider configures DeepSeek with low reasoning effort."""
+    from core.config import settings
+    monkeypatch.setattr(settings, "llm_provider", "deepseek")
     llm = get_llm(role="agent_core", complexity=ThinkingLevel.LOW)
     assert isinstance(llm, ChatOpenAI)
     assert llm.model_name == "deepseek-v4-flash"
     assert llm.reasoning_effort == "low"
     assert llm.max_tokens == 512
 
-def test_agent_core_llm_high_thinking_level():
-    """Verify that role='agent_core' with HIGH complexity configures DeepSeek v4 Flash with high reasoning effort."""
+def test_agent_core_llm_high_thinking_level(monkeypatch):
+    """Verify that role='agent_core' with HIGH complexity configures DeepSeek with high reasoning effort."""
+    from core.config import settings
+    monkeypatch.setattr(settings, "llm_provider", "deepseek")
     llm = get_llm(role="agent_core", complexity="high")
     assert isinstance(llm, ChatOpenAI)
     assert llm.model_name == "deepseek-v4-flash"
     assert llm.reasoning_effort == "high"
     assert llm.max_tokens == 4096
 
-def test_agent_core_llm_medium_default_thinking_level():
-    """Verify that get_agent_llm defaults to MEDIUM thinking level."""
+def test_agent_core_llm_medium_default_thinking_level(monkeypatch):
+    """Verify that get_agent_llm with DeepSeek defaults to MEDIUM thinking level."""
+    from core.config import settings
+    monkeypatch.setattr(settings, "llm_provider", "deepseek")
     llm = get_agent_llm()
     assert isinstance(llm, ChatOpenAI)
     assert llm.model_name == "deepseek-v4-flash"
     assert llm.reasoning_effort == "medium"
     assert llm.max_tokens == 2048
 
-def test_unrecognized_complexity_falls_back_to_medium():
-    """Verify that an invalid complexity string gracefully falls back to MEDIUM."""
+def test_unrecognized_complexity_falls_back_to_medium(monkeypatch):
+    """Verify that an invalid complexity string gracefully falls back to MEDIUM for DeepSeek."""
+    from core.config import settings
+    monkeypatch.setattr(settings, "llm_provider", "deepseek")
     llm = get_agent_llm(complexity="super_heavy")
+    assert isinstance(llm, ChatOpenAI)
     assert llm.reasoning_effort == "medium"
     assert llm.max_tokens == 2048
 

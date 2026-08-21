@@ -91,25 +91,43 @@ async def extract_route_request(user_text: str) -> Dict[str, Any]:
     Returns {"origin", "destination", "mode"} where mode is one of
     transit/driving/walking/bicycling.
     """
-    if not settings.has_llm_key:
-        return {"origin": None, "destination": None, "mode": "transit"}
+    def _regex_route(text: str) -> Dict[str, Any]:
+        mode = "transit"
+        lowered = text.lower()
+        if "driving" in lowered or "drive" in lowered or "car" in lowered:
+            mode = "driving"
+        elif "walking" in lowered or "walk" in lowered:
+            mode = "walking"
+        elif "bicycling" in lowered or "cycle" in lowered or "bike" in lowered:
+            mode = "bicycling"
 
-    llm = get_agent_llm(complexity=ThinkingLevel.LOW, temperature=0.1)
-    ai_message = await llm.ainvoke(
-        [
-            SystemMessage(
-                content=(
-                    "Extract a route request from the user's text. Reply with ONLY a JSON object "
-                    '{"origin": string, "destination": string, "mode": "transit"|"driving"|"walking"|"bicycling"}. '
-                    "If a place is missing, use null for that field. Default mode: transit."
-                )
-            ),
-            HumanMessage(content=user_text),
-        ]
-    )
-    raw = str(getattr(ai_message, "content", "") or "").strip()
-    raw = re.sub(r"^```(?:json)?|```$", "", raw, flags=re.MULTILINE).strip()
+        m = re.search(r"from\s+([A-Za-z0-9\s&'-]+?)\s+to\s+([A-Za-z0-9\s&'-]+?)(?:\s+by|\s+tomorrow|\s*$)", text, re.IGNORECASE)
+        if m:
+            return {"origin": m.group(1).strip(), "destination": m.group(2).strip(), "mode": mode}
+        to_m = re.search(r"to\s+([A-Za-z0-9\s&'-]+?)(?:\s+by|\s+from|\s*$)", text, re.IGNORECASE)
+        if to_m:
+            return {"origin": None, "destination": to_m.group(1).strip(), "mode": mode}
+        return {"origin": None, "destination": None, "mode": mode}
+
+    if not settings.has_llm_key:
+        return _regex_route(user_text)
+
     try:
+        llm = get_agent_llm(complexity=ThinkingLevel.LOW, temperature=0.1)
+        ai_message = await llm.ainvoke(
+            [
+                SystemMessage(
+                    content=(
+                        "Extract a route request from the user's text. Reply with ONLY a JSON object "
+                        '{"origin": string, "destination": string, "mode": "transit"|"driving"|"walking"|"bicycling"}. '
+                        "If a place is missing, use null for that field. Default mode: transit."
+                    )
+                ),
+                HumanMessage(content=user_text),
+            ]
+        )
+        raw = str(getattr(ai_message, "content", "") or "").strip()
+        raw = re.sub(r"^```(?:json)?|```$", "", raw, flags=re.MULTILINE).strip()
         parsed = json.loads(raw)
         return {
             "origin": parsed.get("origin"),
@@ -117,8 +135,8 @@ async def extract_route_request(user_text: str) -> Dict[str, Any]:
             "mode": parsed.get("mode") or "transit",
         }
     except Exception as exc:  # noqa: BLE001
-        print(f"[ROUTES] extraction parse failed: {exc}")
-        return {"origin": None, "destination": None, "mode": "transit"}
+        print(f"[ROUTES] extraction failed: {exc}, using fallback")
+        return _regex_route(user_text)
 
 
 def _bus_query_parts(last_text: str) -> Dict[str, Any]:

@@ -287,6 +287,23 @@ async def _scheduled_email_expense_sweep():
         )
         user_ids = list({cred.user_id for cred in result.scalars().all()})
 
+        # Auto-cleanup any legacy transactions where merchant matched email footer disclaimers
+        try:
+            from core.models import ExpenseTransaction
+            from sqlmodel import or_
+            bogus_merchants = ["receiving this", "receiving this email", "receiving this email and any", "this email and any"]
+            b_res = await session.execute(
+                select(ExpenseTransaction).where(or_(*[ExpenseTransaction.merchant.ilike(f"%{bm}%") for bm in bogus_merchants]))
+            )
+            bogus_txs = b_res.scalars().all()
+            for btx in bogus_txs:
+                btx.merchant = "Email Receipt"
+                session.add(btx)
+            if bogus_txs:
+                await session.commit()
+        except Exception as clean_err:
+            print(f"[SWEEP] disclaimer cleanup error: {clean_err}")
+
     for user_id in user_ids:
         try:
             emails = await search_email_messages.ainvoke({"user_id": user_id})
