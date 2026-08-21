@@ -38,14 +38,35 @@ def _regex_parse_reminder(text: str, default_tz: str = "Asia/Singapore") -> Opti
             "reminder_type": "delete",
         }
 
-    # 3. Relative time expressions (e.g. "in 1 minute", "in 5 mins", "in 2 hours", "in 30s")
+    # 3. Relative time expressions (e.g. "in 1 minute", "in one minute", "in 5 mins", "in 2 hours", "in 30s")
+    _WORD_TO_NUM = {
+        "a": 1,
+        "an": 1,
+        "one": 1,
+        "two": 2,
+        "three": 3,
+        "four": 4,
+        "five": 5,
+        "six": 6,
+        "seven": 7,
+        "eight": 8,
+        "nine": 9,
+        "ten": 10,
+        "fifteen": 15,
+        "twenty": 20,
+        "thirty": 30,
+        "forty": 40,
+        "fifty": 50,
+        "sixty": 60,
+    }
     in_match = re.search(
-        r"\bin\s+(\d+)\s*(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days)\b",
+        r"\bin\s+(\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|thirty|forty|fifty|sixty)\s*(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days)\b",
         text,
         re.IGNORECASE,
     )
     if in_match:
-        qty = int(in_match.group(1))
+        raw_qty = in_match.group(1).lower()
+        qty = int(raw_qty) if raw_qty.isdigit() else _WORD_TO_NUM.get(raw_qty, 1)
         unit = in_match.group(2).lower()
         mult = 1
         if unit.startswith("m"):
@@ -61,7 +82,7 @@ def _regex_parse_reminder(text: str, default_tz: str = "Asia/Singapore") -> Opti
         after_text = text[end_idx:].strip()
 
         before_clean = re.sub(
-            r"^(?:remind\s+(?:me\s+)?(?:to\s+|that\s+|about\s+|for\s+)?|set\s+(?:a\s+)?reminder\s+(?:to\s+|that\s+|about\s+|for\s+)?|ping\s+me\s+(?:to\s+)?)+",
+            r"^(?:(?:can|could|please|will|would)?\s*(?:you\s+)?(?:remind\s+(?:me\s+)?(?:to\s+|that\s+|about\s+|for\s+)?|set\s+(?:a\s+)?reminder\s+(?:to\s+|that\s+|about\s+|for\s+)?|ping\s+me\s+(?:to\s+)?))+",
             "",
             before_text,
             flags=re.IGNORECASE,

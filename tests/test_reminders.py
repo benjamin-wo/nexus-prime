@@ -78,3 +78,23 @@ async def test_schedule_and_list_one_shot_reminder():
     # Delete
     deleted = await delete_scheduled_job(task.id, user_id)
     assert deleted is True
+
+
+@pytest.mark.asyncio
+async def test_reminders_plugin_one_minute_execution():
+    """Verify ReminderPlugin.execute processes relative 1-minute reminders without NameError."""
+    from orchestrator.router import ReminderPlugin
+    from orchestrator.state import AssistantState
+    from langchain_core.messages import HumanMessage
+
+    plugin = ReminderPlugin()
+    state = AssistantState(
+        messages=[HumanMessage(content="can you remind me in one minute to take out the trash")],
+        user_id=149917165,
+        user_profile={"user_id": 149917165, "current_timezone": "Asia/Singapore"},
+    )
+    res = await plugin.execute(state)
+    assert res.message is not None
+    assert "Reminder set" in res.message.content
+    assert "1 minute" in res.message.content or "take out the trash" in res.message.content
+
