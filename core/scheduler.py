@@ -263,6 +263,13 @@ async def schedule_one_shot_reminder(
     timezone_str: str = "Asia/Singapore",
 ) -> TaskItem:
     """Schedule a one-off reminder via TaskItem and DateTrigger."""
+    # Convert run_date to naive UTC for safe DB storage in TIMESTAMP WITHOUT TIME ZONE
+    from datetime import timezone as dt_tz
+    if run_date.tzinfo is not None:
+        db_dt = run_date.astimezone(dt_tz.utc).replace(tzinfo=None)
+    else:
+        db_dt = run_date
+
     async with async_session_factory() as session:
         task = TaskItem(
             user_id=user_id,
@@ -270,9 +277,9 @@ async def schedule_one_shot_reminder(
             description=None,
             status="todo",
             priority="medium",
-            due_at=run_date,
+            due_at=db_dt,
             reminder_type="once",
-            reminder_time=run_date,
+            reminder_time=db_dt,
             timezone=timezone_str,
             is_reminder_active=True,
         )

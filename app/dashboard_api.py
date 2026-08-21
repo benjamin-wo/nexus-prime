@@ -1033,8 +1033,8 @@ def _parse_iso_datetime(dt_str: Optional[str]) -> Optional[datetime]:
     try:
         clean = dt_str.strip().replace("Z", "+00:00")
         dt = datetime.fromisoformat(clean)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
         return dt
     except Exception:
         return None
