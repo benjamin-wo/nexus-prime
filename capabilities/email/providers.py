@@ -1,8 +1,11 @@
 from typing import Protocol, List, Dict, Any, Optional
 import asyncio
+import base64
 import email
+import html
 import httpx
 import imaplib
+import re
 from datetime import datetime, timedelta, timezone as dt_timezone
 from email.utils import parsedate_to_datetime
 from email.header import decode_header, make_header
@@ -129,6 +132,57 @@ def _fetch_outlook_imap(
                 pass
 
 
+def _extract_gmail_body(payload: Dict[str, Any], limit: int = 4000) -> str:
+    """Extract plain text or cleanly stripped HTML body from Gmail message payload."""
+    if not payload:
+        return ""
+
+    def _decode_b64(data: str) -> str:
+        try:
+            padded = data + "=" * (-len(data) % 4)
+            return base64.urlsafe_b64decode(padded.encode("utf-8")).decode("utf-8", errors="replace")
+        except Exception:
+            return ""
+
+    plain_parts: List[str] = []
+    html_parts: List[str] = []
+
+    def _walk_parts(parts: List[Dict[str, Any]]):
+        for part in parts:
+            mime = (part.get("mimeType") or "").lower()
+            data = part.get("body", {}).get("data")
+            if mime.startswith("text/plain") and data:
+                plain_parts.append(_decode_b64(data))
+            elif mime.startswith("text/html") and data:
+                html_parts.append(_decode_b64(data))
+            if "parts" in part and isinstance(part["parts"], list):
+                _walk_parts(part["parts"])
+
+    if "parts" in payload and isinstance(payload["parts"], list):
+        _walk_parts(payload["parts"])
+    elif payload.get("body", {}).get("data"):
+        mime = (payload.get("mimeType") or "").lower()
+        data = payload["body"]["data"]
+        if mime.startswith("text/html"):
+            html_parts.append(_decode_b64(data))
+        else:
+            plain_parts.append(_decode_b64(data))
+
+    if plain_parts:
+        full_plain = "\n".join(plain_parts)
+        return " ".join(full_plain.split())[:limit]
+
+    if html_parts:
+        full_html = "\n".join(html_parts)
+        clean = re.sub(r"<style[^>]*>.*?</style>", " ", full_html, flags=re.DOTALL | re.IGNORECASE)
+        clean = re.sub(r"<script[^>]*>.*?</script>", " ", clean, flags=re.DOTALL | re.IGNORECASE)
+        clean = re.sub(r"<[^>]+>", " ", clean)
+        clean = html.unescape(clean)
+        return " ".join(clean.split())[:limit]
+
+    return ""
+
+
 class EmailProvider(Protocol):
     """Protocol for email service providers (Gmail, Outlook, etc.)."""
     async def search_messages(
@@ -190,20 +244,16 @@ class GmailProvider:
             for item in (list_resp.json().get("messages") or [])[:10]:
                 meta_resp = await client.get(
                     f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{item['id']}",
-                    params=[
-                        ("format", "metadata"),
-                        ("metadataHeaders", "From"),
-                        ("metadataHeaders", "Subject"),
-                        ("metadataHeaders", "Date"),
-                    ],
+                    params={"format": "full"},
                     headers=headers,
                 )
                 if meta_resp.status_code != 200:
                     continue
                 meta = meta_resp.json()
+                payload = meta.get("payload", {})
                 header_map = {
                     (h.get("name") or "").lower(): h.get("value", "")
-                    for h in meta.get("payload", {}).get("headers", [])
+                    for h in payload.get("headers", [])
                 }
                 raw_date = header_map.get("date", "")
                 internal_ms = meta.get("internalDate")
@@ -221,13 +271,18 @@ class GmailProvider:
                 if not date_iso:
                     date_iso = datetime.now(dt_timezone.utc).isoformat()
 
+                # Extract the real full message text from MIME payload
+                full_body = _extract_gmail_body(payload, limit=4000)
+                snippet_text = full_body or meta.get("snippet", "")
+
                 messages.append(
                     {
                         "id": item["id"],
                         "provider": "gmail",
                         "subject": header_map.get("subject") or "(no subject)",
                         "sender": header_map.get("from", ""),
-                        "snippet": meta.get("snippet", ""),
+                        "body": full_body,
+                        "snippet": snippet_text,
                         "date": date_iso,
                         "query_used": query,
                     }

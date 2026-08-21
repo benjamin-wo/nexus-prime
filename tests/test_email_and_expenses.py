@@ -151,3 +151,34 @@ def test_regex_expense_amount_precision_and_non_expense_emails():
     assert _regex_extract_expense("Your login was detected on 21 Aug 2026")["amount"] is None
 
 
+def test_gmail_payload_body_extraction():
+    import base64
+    from capabilities.email.providers import _extract_gmail_body
+
+    # 1. Plain text payload
+    plain_content = "Total amount paid: SGD 14.50 to Merchant XYZ on 21 Aug 2026."
+    b64_plain = base64.urlsafe_b64encode(plain_content.encode("utf-8")).decode("utf-8")
+    payload_plain = {
+        "mimeType": "text/plain",
+        "body": {"data": b64_plain},
+    }
+    assert "SGD 14.50" in _extract_gmail_body(payload_plain)
+
+    # 2. HTML multipart payload
+    html_content = "<html><body><p>Apple Invoice</p><p>Total: <b>$2.98</b></p><style>.hide{display:none}</style></body></html>"
+    b64_html = base64.urlsafe_b64encode(html_content.encode("utf-8")).decode("utf-8")
+    payload_html = {
+        "mimeType": "multipart/alternative",
+        "parts": [
+            {
+                "mimeType": "text/html",
+                "body": {"data": b64_html},
+            }
+        ],
+    }
+    extracted_html = _extract_gmail_body(payload_html)
+    assert "Total: $2.98" in extracted_html
+    assert "<style>" not in extracted_html
+
+
+

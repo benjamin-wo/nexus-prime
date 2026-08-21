@@ -564,6 +564,19 @@ async def create_expense(req: ExpenseCreateRequest) -> Dict[str, Any]:
         }
 
 
+@router.post("/expenses/sync-emails")
+async def sync_emails_now(user_id: Optional[int] = Query(default=None)) -> Dict[str, Any]:
+    """Trigger an immediate email financial sweep to parse and extract receipts."""
+    from core.scheduler import _scheduled_email_expense_sweep
+    try:
+        await _scheduled_email_expense_sweep()
+        return {"status": "ok", "message": "Email sweep completed successfully"}
+    except Exception as exc:
+        logger.error("Failed to run email sweep: %s", exc)
+        return {"status": "error", "message": str(exc)}
+
+
+
 @router.put("/expenses/{expense_id}")
 async def update_expense(expense_id: int, req: ExpenseUpdateRequest) -> Dict[str, Any]:
     """Update an existing expense transaction directly."""
