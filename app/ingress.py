@@ -174,11 +174,23 @@ class TelegramIngress:
                 profile = UserProfile(
                     user_id=user_id,
                     telegram_chat_id=chat_id,
-                    current_timezone="UTC",
+                    current_timezone="Asia/Singapore",
                 )
                 session.add(profile)
                 await session.commit()
                 await session.refresh(profile)
+            else:
+                updated = False
+                if chat_id and chat_id != 999999 and profile.telegram_chat_id != chat_id:
+                    profile.telegram_chat_id = chat_id
+                    updated = True
+                if not profile.current_timezone or profile.current_timezone == "UTC":
+                    profile.current_timezone = "Asia/Singapore"
+                    updated = True
+                if updated:
+                    session.add(profile)
+                    await session.commit()
+                    await session.refresh(profile)
             return profile
 
     def format_base64_data_uri(self, mime_type: str, data_bytes: bytes) -> str:

@@ -7,6 +7,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
 from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from core.config import settings
 from core.db import async_session_factory
 from core.models import ScheduledJob, UserProfile, UserCredential, TaskItem
 
@@ -43,8 +44,10 @@ async def _execute_scheduled_job(job_id: int, user_id: int, instruction_prompt: 
                     select(UserProfile).where(UserProfile.user_id == user_id)
                 )
             ).scalar_one_or_none()
-            chat_id = profile.telegram_chat_id if (profile and profile.telegram_chat_id != 999999) else None
-            if not chat_id and settings.admin_telegram_chat_id:
+            chat_id = profile.telegram_chat_id if (profile and profile.telegram_chat_id and profile.telegram_chat_id != 999999) else None
+            if not chat_id and user_id and user_id > 1000 and user_id != 999999:
+                chat_id = user_id
+            if not chat_id and getattr(settings, "admin_telegram_chat_id", None):
                 try:
                     chat_id = int(settings.admin_telegram_chat_id)
                 except Exception:
@@ -99,8 +102,10 @@ async def _execute_task_reminder(task_id: int, user_id: int, is_test: bool = Fal
                     select(UserProfile).where(UserProfile.user_id == task.user_id)
                 )
             ).scalar_one_or_none()
-            chat_id = profile.telegram_chat_id if (profile and profile.telegram_chat_id != 999999) else None
-            if not chat_id and settings.admin_telegram_chat_id:
+            chat_id = profile.telegram_chat_id if (profile and profile.telegram_chat_id and profile.telegram_chat_id != 999999) else None
+            if not chat_id and task.user_id and task.user_id > 1000 and task.user_id != 999999:
+                chat_id = task.user_id
+            if not chat_id and getattr(settings, "admin_telegram_chat_id", None):
                 try:
                     chat_id = int(settings.admin_telegram_chat_id)
                 except Exception:
@@ -178,8 +183,9 @@ def _add_task_to_scheduler(task: TaskItem):
 
     if task.reminder_type == "once" and task.reminder_time:
         rem_time = task.reminder_time
+        # In DB, reminder_time is stored as UTC naive timestamp
         if rem_time.tzinfo is None:
-            rem_time = rem_time.replace(tzinfo=tz)
+            rem_time = rem_time.replace(tzinfo=dt_timezone.utc)
         if rem_time > now:
             trigger = DateTrigger(run_date=rem_time)
             scheduler.add_job(
@@ -222,9 +228,10 @@ async def snooze_task_reminder(task_id: int, user_id: int, minutes: int = 60) ->
             return False
 
         now = datetime.now(dt_timezone.utc)
-        snoozed_time = now + timedelta(minutes=minutes)
+        snoozed_time_utc = now + timedelta(minutes=minutes)
+        db_snooze = snoozed_time_utc.replace(tzinfo=None)
         task.reminder_type = "once"
-        task.reminder_time = snoozed_time
+        task.reminder_time = db_snooze
         task.is_reminder_active = True
         session.add(task)
         await session.commit()
@@ -233,7 +240,7 @@ async def snooze_task_reminder(task_id: int, user_id: int, minutes: int = 60) ->
         job_id = f"task_{task.id}"
         scheduler.add_job(
             _execute_task_reminder,
-            trigger=DateTrigger(run_date=snoozed_time),
+            trigger=DateTrigger(run_date=snoozed_time_utc),
             args=[task.id, task.user_id],
             id=job_id,
             replace_existing=True,
@@ -416,7 +423,21 @@ async def _scheduled_email_expense_sweep():
 async def start_scheduler():
     """Start the APScheduler instance and reconcile DB jobs."""
     global _watchdog_task
+    try:
+        current_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        current_loop = None
+
+    if scheduler.running and getattr(scheduler, "_eventloop", None) is not None:
+        if getattr(scheduler, "_eventloop", None).is_closed() or (current_loop and getattr(scheduler, "_eventloop", None) != current_loop):
+            try:
+                scheduler.shutdown(wait=False)
+            except Exception:
+                pass
+
     if not scheduler.running:
+        if current_loop:
+            scheduler._eventloop = current_loop
         scheduler.start()
         await reconcile_jobs()
         try:

@@ -98,3 +98,55 @@ async def test_reminders_plugin_one_minute_execution():
     assert "Reminder set" in res.message.content
     assert "1 minute" in res.message.content or "take out the trash" in res.message.content
 
+
+@pytest.mark.asyncio
+async def test_task_reminder_utc_reconcile_and_delivery(monkeypatch):
+    """Verify that task reminders stored in UTC survive reconciliation and deliver without NameError."""
+    from core.scheduler import _add_task_to_scheduler, _execute_task_reminder, scheduler
+    from core.models import TaskItem
+    from datetime import datetime, timedelta, timezone as dt_tz
+
+    user_id = 149917165
+    now_utc = datetime.now(dt_tz.utc)
+    future_utc_naive = (now_utc + timedelta(minutes=5)).replace(tzinfo=None)
+
+    task = TaskItem(
+        id=99999,
+        user_id=user_id,
+        title="take out the trash",
+        status="todo",
+        priority="medium",
+        reminder_type="once",
+        reminder_time=future_utc_naive,
+        timezone="Asia/Singapore",
+        is_reminder_active=True,
+    )
+
+    from core.scheduler import start_scheduler, shutdown_scheduler
+    from core.db import async_session_factory
+    async with async_session_factory() as session:
+        session.add(task)
+        await session.commit()
+        await session.refresh(task)
+
+    await start_scheduler()
+    try:
+        # Reconcile/add task to scheduler
+        _add_task_to_scheduler(task)
+        job = scheduler.get_job(f"task_{task.id}")
+        assert job is not None
+
+        # Test delivery
+        sent_messages = []
+        async def mock_send(chat_id, text, reply_markup=None):
+            sent_messages.append((chat_id, text))
+            return True
+
+        monkeypatch.setattr("app.ingress.send_telegram_message", mock_send)
+        await _execute_task_reminder(task_id=task.id, user_id=user_id, is_test=True)
+        assert len(sent_messages) == 1
+        assert "take out the trash" in sent_messages[0][1]
+    finally:
+        scheduler.remove_job(f"task_{task.id}")
+        await shutdown_scheduler()
+
