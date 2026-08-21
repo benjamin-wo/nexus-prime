@@ -590,6 +590,51 @@ class GeneralPlugin:
     keywords = []
     description = "Fallback capability using DeepSeek v4 Flash and Tavily web search."
 
+    @staticmethod
+    def _generate_rule_based_response(text: str) -> str:
+        """Graceful conversational fallback for greetings and standard queries if LLM quota is unavailable."""
+        text_lower = text.strip().lower()
+        
+        # Greetings
+        greetings = ["hello", "hi", "hey", "hola", "yo", "sup", "good morning", "good afternoon", "good evening", "howdy", "hiya", "start", "/start"]
+        if any(text_lower == g or text_lower.startswith(f"{g} ") or text_lower.startswith(f"{g}!") or text_lower.startswith(f"{g},") for g in greetings):
+            return (
+                "Hey there! 👋 I'm **Nexus Prime**, your personal assistant.\n\n"
+                "Here is what I can help you with:\n"
+                "• 💰 **Track Expenses**: Send *Spent $14 on lunch* or upload receipt photos\n"
+                "• 👥 **Split Bills**: Send */split $60 with Alice and Bob*\n"
+                "• ⏰ **Reminders & Tasks**: Send *Remind me to call Mom at 6pm*\n"
+                "• 📊 **Dashboard**: Tap /dashboard to view your live cockpit & ledger\n\n"
+                "What would you like to do today?"
+            )
+            
+        # Thanks / acknowledgement
+        if any(w in text_lower for w in ["thank", "thanks", "thx", "appreciate", "cheers"]):
+            return "You're very welcome! Let me know if there's anything else you need. 😊"
+            
+        # How are you / status
+        if any(phrase in text_lower for phrase in ["how are you", "how's it going", "how r u", "whats up", "what's up"]):
+            return "I'm doing great and ready to assist! What can I help you tackle today? 🚀"
+            
+        # Help / capabilities
+        if any(phrase in text_lower for phrase in ["help", "what can you do", "who are you", "what are your features", "commands", "/help"]):
+            return (
+                "🤖 **Nexus Prime Capabilities**\n\n"
+                "• 💰 **Expenses**: Track spending (*$15 Starbucks*), summarize budgets, and view charts.\n"
+                "• 🧾 **Receipt Scanner**: Upload or forward receipt photos for automatic scanning.\n"
+                "• 👥 **Bill Splitting**: Easily split dining or group costs and request PayNow/shares.\n"
+                "• ⏰ **Tasks & Reminders**: Schedule smart timed reminders in plain English.\n"
+                "• 📊 **Web Dashboard**: Access your real-time cockpit via /dashboard.\n\n"
+                "Type /help anytime for interactive command shortcuts!"
+            )
+            
+        # General friendly fallback
+        return (
+            "I'm here to help! You can ask me to track expenses (*Spent $15 on lunch*), split a bill (*"
+            "/split $50 with Sam*), set reminders (*Remind me at 4pm*), or tap /dashboard to view your cockpit.\n\n"
+            "How can I assist you right now?"
+        )
+
     async def execute(self, state: AssistantState) -> PluginOutput:
         messages = state.get("messages", [])
         now_sg = datetime.now(ZoneInfo("Asia/Singapore")).strftime("%A, %d %b %Y %H:%M")
@@ -657,7 +702,7 @@ class GeneralPlugin:
         has_key = bool(settings.active_gemini_api_key or (settings.deepseek_api_key and settings.deepseek_api_key != "test_deepseek_key"))
         if not has_key:
             return PluginOutput(
-                message=AIMessage(content="Hey! I'm here — what do you need? 🙂"),
+                message=AIMessage(content=self._generate_rule_based_response(last_text)),
                 state_update={"active_domain": self.name},
             )
 
@@ -666,10 +711,10 @@ class GeneralPlugin:
             ai_message = await llm.ainvoke(history)
             content = str(getattr(ai_message, "content", "") or "").strip()
             if not content:
-                content = "My mind went blank for a second — mind rephrasing that?"
+                content = self._generate_rule_based_response(last_text)
         except Exception as exc:  # noqa: BLE001 - never let LLM errors kill the webhook
             print(f"[GENERAL] LLM call failed, using fallback: {exc}")
-            content = "Sorry — my brain just glitched for a second. Try me again?"
+            content = self._generate_rule_based_response(last_text)
 
         return PluginOutput(
             message=AIMessage(content=content),

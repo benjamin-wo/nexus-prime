@@ -79,6 +79,80 @@ async def save_expense_transaction(
         return tx
 
 
+def _regex_extract_expense(text: str) -> Dict[str, Any]:
+    """Deterministic regex extraction fallback for when LLM quota is unavailable."""
+    amount = None
+    # 1. Check with currency symbol ($18.50, SGD 18.50)
+    m = re.search(r"[\$SGDusd€¥£]\s*(\d+(?:\.\d{1,2})?)", text, re.IGNORECASE)
+    if m:
+        try:
+            amount = float(m.group(1))
+        except ValueError:
+            pass
+
+    # 2. Check "18.50 SGD/dollars"
+    if not amount:
+        m = re.search(r"(\d+(?:\.\d{1,2})?)\s*(?:SGD|USD|dollars|bucks)", text, re.IGNORECASE)
+        if m:
+            try:
+                amount = float(m.group(1))
+            except ValueError:
+                pass
+
+    # 3. Check "spent/paid/cost 18.50"
+    if not amount:
+        m = re.search(r"\b(?:spent|paid|cost)\s+(\d+(?:\.\d{1,2})?)", text, re.IGNORECASE)
+        if m:
+            try:
+                amount = float(m.group(1))
+            except ValueError:
+                pass
+
+    # 4. Check any standard decimal number like 18.50
+    if not amount:
+        m = re.search(r"\b(\d+\.\d{2})\b", text)
+        if m:
+            try:
+                amount = float(m.group(1))
+            except ValueError:
+                pass
+
+    if not amount or amount <= 0:
+        return {"amount": None}
+
+    text_lower = text.lower()
+    category = "General"
+    if any(k in text_lower for k in ["lunch", "dinner", "breakfast", "coffee", "cafe", "starbucks", "food", "eat", "mcdonald", "toast", "dining", "bar", "drinks"]):
+        category = "Dining"
+    elif any(k in text_lower for k in ["grab", "gojek", "taxi", "cab", "mrt", "bus", "transport", "petrol", "parking"]):
+        category = "Transport"
+    elif any(k in text_lower for k in ["ntuc", "fairprice", "cold storage", "supermarket", "groceries", "grocery", "donki", "shengsiong"]):
+        category = "Groceries"
+    elif any(k in text_lower for k in ["shopee", "lazada", "amazon", "uniqlo", "zara", "shopping", "clothes", "shoes"]):
+        category = "Shopping"
+    elif any(k in text_lower for k in ["bill", "utilities", "singtel", "starhub", "sp services", "rent", "insurance", "telco"]):
+        category = "Bills"
+
+    merchant = "Direct Expense"
+    m_match = re.search(r"(?:at|from|@)\s+([A-Za-z0-9\s&'-]+?)(?:\s+for|\s+on|\s*$)", text, re.IGNORECASE)
+    if m_match:
+        merchant = m_match.group(1).strip()
+    else:
+        for_match = re.search(r"(?:on|for)\s+([A-Za-z0-9\s&'-]+?)(?:\s+at|\s+from|\s*$)", text, re.IGNORECASE)
+        if for_match:
+            merchant = for_match.group(1).strip()
+
+    return {
+        "amount": amount,
+        "currency": "SGD",
+        "merchant": merchant[:60] if merchant else "Expense",
+        "category": category,
+        "date_iso": "",
+        "confidence": 0.85,
+        "needs_clarification": False,
+    }
+
+
 @tool
 async def extract_expense_from_text(user_text: str) -> Dict[str, Any]:
     """
@@ -110,14 +184,14 @@ async def extract_expense_from_text(user_text: str) -> Dict[str, Any]:
             ai_message = await fallback_llm.ainvoke(messages)
         except Exception as exc:
             print(f"[EXPENSES] extraction parse failed (both primary and fallback): {exc}")
-            return {"amount": None}
+            return _regex_extract_expense(user_text)
 
     try:
         raw = str(getattr(ai_message, "content", "") or "").strip()
         raw = re.sub(r"^```(?:json)?|```$", "", raw, flags=re.MULTILINE).strip()
         parsed = json.loads(raw)
         if not parsed.get("amount"):
-            return {"amount": None}
+            return _regex_extract_expense(user_text)
         return {
             "amount": float(parsed["amount"]),
             "currency": parsed.get("currency") or "SGD",
@@ -129,7 +203,7 @@ async def extract_expense_from_text(user_text: str) -> Dict[str, Any]:
         }
     except Exception as exc:  # noqa: BLE001
         print(f"[EXPENSES] JSON parse failed: {exc}")
-        return {"amount": None}
+        return _regex_extract_expense(user_text)
 
 
 @tool
