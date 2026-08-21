@@ -431,7 +431,9 @@ async def log_expenses_from_emails(
     for email_msg in (emails or [])[:10]:
         email_id = str(email_msg.get("id") or "")
         sender = str(email_msg.get("sender") or "")
+        subject = str(email_msg.get("subject") or "")
         body_text = str(email_msg.get("body") or email_msg.get("snippet") or "")
+        snippet = str(email_msg.get("snippet") or "")
 
         text = f"Sender: {sender}\nSubject: {subject}\nBody: {body_text}"
         extracted = await extract_expense_from_text.ainvoke({"user_text": text})

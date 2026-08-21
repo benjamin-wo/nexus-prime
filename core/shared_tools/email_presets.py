@@ -1,10 +1,8 @@
 from typing import List, Optional
 
 DEFAULT_GMAIL_FINANCIAL_QUERY = (
-    '(category:primary OR category:updates) '
-    '(subject:"receipt" OR subject:"transaction" OR subject:"charge" OR '
-    'subject:"payment" OR subject:"order" OR "you paid" OR "amount due") '
-    '-label:Assistant/Processed newer_than:7d'
+    '("receipt" OR "transaction" OR "charge" OR "payment" OR "order" OR "you paid" OR "amount due" OR "invoice" OR "alert" OR "transfer") '
+    'newer_than:7d'
 )
 
 GLOBAL_BANK_PRESET_DOMAINS = [
@@ -32,7 +30,6 @@ def build_gmail_query(tracked_banks: Optional[List[str]] = None, custom_query: O
     if custom_query:
         return custom_query
 
-    query = DEFAULT_GMAIL_FINANCIAL_QUERY
     all_domains = list(GLOBAL_BANK_PRESET_DOMAINS)
     if tracked_banks:
         for b in tracked_banks:
@@ -41,10 +38,9 @@ def build_gmail_query(tracked_banks: Optional[List[str]] = None, custom_query: O
 
     if all_domains:
         domains_str = " OR ".join(f"from:{domain}" for domain in all_domains)
-        # Combine default financial keywords OR domain matches
-        query = f"({DEFAULT_GMAIL_FINANCIAL_QUERY}) OR ({domains_str} -label:Assistant/Processed newer_than:7d)"
+        return f"({DEFAULT_GMAIL_FINANCIAL_QUERY}) OR ({domains_str} newer_than:7d)"
 
-    return query
+    return DEFAULT_GMAIL_FINANCIAL_QUERY
 
 DEFAULT_OUTLOOK_FINANCIAL_SEARCH = (
     '"receipt" OR "transaction" OR "charge" OR "payment" OR "order" OR "you paid" OR "amount due"'

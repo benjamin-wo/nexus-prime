@@ -7,8 +7,8 @@ def test_gmail_query_builder():
     query = build_gmail_query(
         tracked_banks=["chase.com", "citi.com"],
     )
-    assert "-label:Assistant/Processed" in query
     assert "chase.com" in query
+    assert "newer_than:7d" in query
 
     custom = build_gmail_query(custom_query="receipt")
     assert custom == "receipt"
