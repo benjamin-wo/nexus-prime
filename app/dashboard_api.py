@@ -325,7 +325,7 @@ def normalize_category(raw_category: Optional[str]) -> str:
 
 
 async def get_primary_user_id(session: Any) -> int:
-    """Resolve the active primary user ID (Telegram user or default)."""
+    """Resolve the active primary user ID (Telegram admin user or default)."""
     admin_id = 999999
     if settings.admin_telegram_chat_id:
         try:
@@ -334,9 +334,16 @@ async def get_primary_user_id(session: Any) -> int:
             admin_id = 999999
 
     try:
+        # Prioritize admin user profile if configured
         result = await session.execute(
-            select(UserProfile).limit(1)
+            select(UserProfile).where(UserProfile.user_id == admin_id)
         )
+        profile = result.scalar_one_or_none()
+        if profile is not None:
+            return profile.user_id
+
+        # Fallback to any existing user profile
+        result = await session.execute(select(UserProfile).limit(1))
         profile = result.scalar_one_or_none()
         if profile is not None:
             return profile.user_id

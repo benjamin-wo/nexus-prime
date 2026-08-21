@@ -33,6 +33,23 @@ function normalizeCategory(cat) {
   return "General";
 }
 
+function getUserId() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const qUid = urlParams.get("user_id");
+  if (qUid) {
+    localStorage.setItem("nexus_user_id", qUid);
+    return qUid;
+  }
+  return localStorage.getItem("nexus_user_id") || "";
+}
+
+function getApiUrl(path) {
+  const uid = getUserId();
+  if (!uid) return path;
+  const separator = path.includes("?") ? "&" : "?";
+  return `${path}${separator}user_id=${encodeURIComponent(uid)}`;
+}
+
 // Initialization
 document.addEventListener("DOMContentLoaded", () => {
   initRailNavigation();
@@ -198,7 +215,7 @@ function initDashboard() {
 
 async function loadDashboardSummary() {
   try {
-    const res = await fetch("/api/dashboard/summary");
+    const res = await fetch(getApiUrl("/api/dashboard/summary"));
     if (!res.ok) throw new Error("Failed to load summary");
     const data = await res.json();
 
@@ -456,7 +473,7 @@ let pageSize = 10;
 
 async function loadExpensesTable(category = "all", search = "", sort = "latest") {
   try {
-    let url = `/api/dashboard/expenses?limit=100`;
+    let url = getApiUrl(`/api/dashboard/expenses?limit=100`);
     if (category && category !== "all") url += `&category=${encodeURIComponent(category)}`;
     if (search) url += `&search=${encodeURIComponent(search)}`;
 
@@ -1446,7 +1463,7 @@ async function loadTasks() {
   if (!container) return;
 
   try {
-    const res = await fetch("/api/dashboard/tasks");
+    const res = await fetch(getApiUrl("/api/dashboard/tasks"));
     if (!res.ok) throw new Error("Failed to fetch tasks");
     const data = await res.json();
 
@@ -1791,7 +1808,7 @@ async function loadJobs() {
   if (!container) return;
 
   try {
-    const res = await fetch("/api/dashboard/jobs");
+    const res = await fetch(getApiUrl("/api/dashboard/jobs"));
     if (!res.ok) throw new Error("Failed to load jobs");
     const data = await res.json();
 
@@ -2279,7 +2296,7 @@ function initWhiteboard() {
 
 async function loadWhiteboards(selectProjectId = null) {
   try {
-    const res = await fetch("/api/dashboard/whiteboards");
+    const res = await fetch(getApiUrl("/api/dashboard/whiteboards"));
     if (!res.ok) throw new Error("Failed to fetch whiteboards");
     const data = await res.json();
     cachedWhiteboards = data.projects || [];
