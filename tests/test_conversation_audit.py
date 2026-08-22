@@ -10,8 +10,8 @@ from core.models import ConversationAuditLog
 
 
 def test_conversation_audit_cadence():
-    assert should_audit_conversation(5) is True
     assert should_audit_conversation(10) is True
+    assert should_audit_conversation(20) is True
     assert should_audit_conversation(4) is False
     assert should_audit_conversation(0) is False
     assert should_audit_conversation(6, every_n=3) is True

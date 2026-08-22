@@ -1023,7 +1023,25 @@ class TelegramIngress:
         except Exception as exc:  # noqa: BLE001 - never leave the user hanging
             import traceback
 
+            tb_str = traceback.format_exc()
             traceback.print_exc()
+
+            # Asynchronously report production bug to Gemini SRE audit and GitHub Issues
+            try:
+                from core.audit import report_production_bug
+
+                asyncio.create_task(
+                    report_production_bug(
+                        user_id=user_id,
+                        thread_id=str(user_id or chat_id),
+                        error_context=f"TelegramIngress runtime exception: {exc}",
+                        error_traceback=tb_str,
+                        detection_source="runtime_exception",
+                    )
+                )
+            except Exception:  # noqa: BLE001
+                pass
+
             await send_telegram_message(
                 chat_id,
                 "😵‍💫 Sorry, something glitched on my end — I've logged it and I'm on it. Try again in a minute?",

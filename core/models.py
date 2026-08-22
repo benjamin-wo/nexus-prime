@@ -132,7 +132,7 @@ class CapabilityRequestLog(SQLModel, table=True):
 
 
 class ConversationAuditLog(SQLModel, table=True):
-    """Periodic LLM-as-a-Judge review of whole conversations (default every 5 messages)."""
+    """Periodic LLM-as-a-Judge review of whole conversations (default every 10 messages)."""
 
     id: Optional[int] = Field(default=None, primary_key=True)
     thread_id: str = Field(index=True)
@@ -146,3 +146,26 @@ class ConversationAuditLog(SQLModel, table=True):
     evidence: str
     judge_model: str
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ProductionBugLog(SQLModel, table=True):
+    """Production bug and audit failure telemetry tracked via Gemini 3.1 Pro and synced to GitHub Issues."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    fingerprint: str = Field(index=True)
+    title: str = Field(index=True)
+    severity: str = Field(default="P2", index=True)  # P0, P1, P2, P3
+    subsystem: str = Field(default="general", index=True)
+    detection_source: str = Field(default="conversation_audit", index=True)  # conversation_audit | runtime_exception | quality_audit
+    user_id: Optional[int] = Field(default=None, index=True)
+    thread_id: Optional[str] = Field(default=None, index=True)
+    root_cause: Optional[str] = Field(default=None)
+    reproduction_context: Optional[str] = Field(default=None)
+    suggested_fix: Optional[str] = Field(default=None)
+    error_traceback: Optional[str] = Field(default=None)
+    github_issue_url: Optional[str] = Field(default=None)
+    github_issue_number: Optional[int] = Field(default=None)
+    occurrence_count: int = Field(default=1)
+    status: str = Field(default="open", index=True)  # open | resolved
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
