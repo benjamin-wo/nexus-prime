@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 from typing import Optional, Dict, Any, List
+from zoneinfo import ZoneInfo
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools import tool
 from langgraph.types import interrupt
@@ -34,6 +35,58 @@ async def is_duplicate_expense(source_message_id: Optional[str]) -> bool:
             select(DeletedExpenseMessage).where(DeletedExpenseMessage.source_message_id == source_message_id)
         )
         return del_result.scalar_one_or_none() is not None
+
+SPLIT_ALERT_THRESHOLD = 50.0
+
+
+async def _is_quiet_hours(user_id: int) -> bool:
+    """True before the quiet-hours cutoff (09:00 local) — smart alerts stay low-intrusion."""
+    from core.ambient import QUIET_HOUR_END
+    from core.models import UserProfile
+
+    tz_name = "Asia/Singapore"
+    async with async_session_factory() as session:
+        profile = (await session.execute(
+            select(UserProfile).where(UserProfile.user_id == user_id)
+        )).scalar_one_or_none()
+        if profile and profile.current_timezone:
+            tz_name = profile.current_timezone
+    try:
+        local = datetime.now(dt_timezone.utc).astimezone(ZoneInfo(tz_name))
+    except Exception:
+        return False
+    return local.hour < QUIET_HOUR_END
+
+
+async def _send_split_alert_batch(user_id: int, candidates: List[Dict[str, Any]]) -> set:
+    """Send ONE consolidated Telegram alert with a Split Bill button per high-value expense."""
+    from app.ingress import send_telegram_message
+
+    alert_text = (
+        f"💳 **New High-Value Expense{'s' if len(candidates) > 1 else ''} Logged**\n\n"
+        + "\n".join(
+            f"• {c['currency']} {c['amount']:.2f} — {c['merchant']} "
+            f"(#{c['category']}) · {c['date'].strftime('%d %b %Y, %H:%M')}"
+            for c in candidates
+        )
+        + "\n\nDid you foot the bill for a group? Split any of these:"
+    )
+    buttons = [
+        [{"text": f"👥 Split {c['currency']} {c['amount']:.2f} — {c['merchant']}", "callback_data": f"sb:{c['tx_id']}"}]
+        for c in candidates
+    ]
+    try:
+        await send_telegram_message(
+            chat_id=user_id,
+            text=alert_text,
+            reply_markup={"inline_keyboard": buttons},
+        )
+    except Exception as notify_err:
+        print(f"[EXPENSES] Smart alert notification failed: {notify_err}")
+        return set()
+    return {c["tx_id"] for c in candidates}
+
+
 def normalize_category_name(raw: Optional[str]) -> str:
     """Canonical category mapping for incoming receipts and messages."""
     if not raw:
@@ -584,14 +637,18 @@ async def get_user_expenses(
 async def log_expenses_from_emails(
     user_id: int,
     emails: List[Dict[str, Any]],
+    notify: bool = True,
 ) -> Dict[str, Any]:
     """
     Auto-extract and log expenses from fetched email messages.
     Each email ID becomes the dedup key, so re-checking the inbox never double-logs.
     Ambiguous or low-confidence emails are skipped (never sent to HITL buttons).
+    High-value expenses (>= $50) are surfaced as ONE consolidated Telegram alert per run
+    with a Split Bill shortcut; quiet-hour runs skip the push entirely.
     """
     logged: List[Dict[str, Any]] = []
     skipped: List[Dict[str, Any]] = []
+    alert_candidates: List[Dict[str, Any]] = []
 
     for email_msg in (emails or [])[:10]:
         email_id = str(email_msg.get("id") or "")
@@ -685,23 +742,17 @@ async def log_expenses_from_emails(
 
         # Smart Low-Intrusion Notification Threshold:
         # Only ping Telegram for high-value / group-sized expenses (>= $50 SGD) with Split Bill shortcut
-        if expense.amount >= 50.0:
-            try:
-                from app.ingress import send_telegram_message
-                alert_text = (
-                    f"💳 **New Expense Logged: {expense.currency} {expense.amount:.2f} at {expense.merchant}**\n\n"
-                    f"📅 {expense.date.strftime('%d %b %Y, %H:%M')}\n"
-                    f"🏷️ Category: #{expense.category}\n\n"
-                    f"Did you foot the bill for a group?"
-                )
-                buttons = [[{"text": "👥 Split this bill", "callback_data": f"sb:{tx.id}"}]]
-                await send_telegram_message(
-                    chat_id=user_id,
-                    text=alert_text,
-                    reply_markup={"inline_keyboard": buttons},
-                )
-            except Exception as notify_err:
-                print(f"[EXPENSES] Smart alert notification failed: {notify_err}")
+        if expense.amount >= SPLIT_ALERT_THRESHOLD:
+            alert_candidates.append(
+                {
+                    "tx_id": tx.id,
+                    "amount": expense.amount,
+                    "currency": expense.currency,
+                    "merchant": expense.merchant,
+                    "category": expense.category,
+                    "date": expense.date,
+                }
+            )
 
         logged.append(
             {
@@ -712,6 +763,14 @@ async def log_expenses_from_emails(
                 "transaction_id": tx.id,
             }
         )
+
+    # Batch all high-value alerts into ONE message per run (no per-email bursts),
+    # and skip pushes entirely during quiet hours (before 09:00 local).
+    notified_ids: set = set()
+    if notify and alert_candidates and not await _is_quiet_hours(user_id):
+        notified_ids = await _send_split_alert_batch(user_id, alert_candidates)
+    for item in logged:
+        item["notified"] = item["transaction_id"] in notified_ids
 
     return {"logged": logged, "skipped": skipped}
 

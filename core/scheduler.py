@@ -407,6 +407,23 @@ async def _scheduled_email_expense_sweep():
             if not chat_id:
                 continue
 
+            # High-value smart alerts were already delivered this run — the summary would duplicate them.
+            if any(item.get("notified") for item in logged):
+                continue
+
+            # Quiet hours: no sweep summary pushes before 09:00 local time.
+            from core.ambient import QUIET_HOUR_END
+
+            tz_name = (
+                profile.current_timezone if profile and profile.current_timezone else "Asia/Singapore"
+            )
+            try:
+                local_now = datetime.now(dt_timezone.utc).astimezone(ZoneInfo(tz_name))
+            except Exception:
+                local_now = datetime.now(dt_timezone.utc).astimezone(ZoneInfo("Asia/Singapore"))
+            if local_now.hour < QUIET_HOUR_END:
+                continue
+
             from app.ingress import send_telegram_message
 
             lines = [

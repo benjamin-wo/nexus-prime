@@ -21,6 +21,7 @@ from capabilities.expenses.tools import (
     extract_expense_from_photo,
     expense_source_id,
     log_expenses_from_emails,
+    SPLIT_ALERT_THRESHOLD,
 )
 from capabilities.routes.tools import plan_route, extract_route_request
 from capabilities.routes.journey import format_journey, plan_transit_journey
@@ -123,8 +124,10 @@ class EmailPlugin:
                     await discover_and_track_bank_domain(user_id, sender)
 
         # Auto-log expenses found in the fetched emails (deduped by email ID).
+        # notify=False: this is a user-initiated chat request, so no separate Telegram push —
+        # the reply below already announces everything (and the sweep path stays the snitch).
         expense_result = await log_expenses_from_emails.ainvoke(
-            {"user_id": user_id, "emails": results}
+            {"user_id": user_id, "emails": results, "notify": False}
         )
         logged = expense_result.get("logged") or []
         skipped = expense_result.get("skipped") or []
@@ -138,6 +141,8 @@ class EmailPlugin:
                     f"• {item['currency']} {item['amount']:.2f} — "
                     f"{item['merchant']} ({item['category']})"
                 )
+            if any(item["amount"] >= SPLIT_ALERT_THRESHOLD for item in logged):
+                lines.append("\n💡 Big bill? Reply /split to split it with friends.")
             if skipped:
                 lines.append(f"\n…{len(skipped)} ambiguous skipped — ask me to review them.")
             lines.append("\n/expenses to see everything.")
@@ -424,18 +429,28 @@ class ExpensePlugin:
             }
         )
         status = res.get("status", "unknown")
+        split_hint = ""
+        if (
+            status in ("saved_silently", "confirmed_by_user")
+            and float(extracted["amount"]) >= SPLIT_ALERT_THRESHOLD
+        ):
+            split_hint = (
+                f"\n💡 Over {extracted.get('currency', 'SGD')} {SPLIT_ALERT_THRESHOLD:.0f}"
+                f" — split with friends anytime: "
+                f"*'/split {extracted['amount']:.2f} {extracted['merchant']} with [names]'*."
+            )
         if status == "saved_silently":
             reply = (
                 f"💰 Logged *{extracted.get('currency', 'SGD')} {extracted['amount']:.2f}* "
                 f"at *{extracted['merchant']}* ({extracted.get('category', 'General')})."
-            )
+            ) + split_hint
         elif status == "duplicate":
             reply = "🙅 That expense is already logged."
         elif status == "confirmed_by_user":
             reply = (
                 f"✅ Saved {extracted.get('currency', 'SGD')} {extracted['amount']:.2f} "
                 f"at {extracted['merchant']}."
-            )
+            ) + split_hint
         else:
             reply = f"💰 Found {extracted['amount']:.2f} at {extracted['merchant']} — confirm below."
         return PluginOutput(message=reply, state_update={"active_domain": self.name})
