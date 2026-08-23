@@ -2,9 +2,12 @@ id: whiteboard
 description: >-
   Manage interactive planning whiteboards and living canvases: brainstorm trip
   itineraries, hotel and venue shortlists with pros/cons, grocery and meal prep
-  plans, event checklists, and project ideas. Ask like "plan my trip to Tokyo",
-  "shortlist 3 hotels in Shinjuku", "create a packing list for Bali", "plan
-  dinner recipes for the week", or "pin this to my whiteboard".
+  plans, event checklists, and project ideas. Captures stays, activities,
+  fitness clubs, spas, lunches, dinners, restaurant picks, budgets, and day
+  plans as structured cards. Ask like "plan my trip to Tokyo",
+  "shortlist 3 hotels in Shinjuku", "create a packing list for Bali",
+  "plan dinner recipes for the week", "we need a spa afternoon and a
+  steakhouse dinner", or "pin this to my whiteboard".
 input_schema:
   type: object
   properties:
