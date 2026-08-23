@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
+import asyncio
 from typing import Any
 
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.types import Command
 from langgraph.graph import END
 
@@ -75,6 +76,20 @@ async def _execute_capabilities(
     return outputs, state_updates, reply
 
 
+_PLANNING_SIGNALS = (
+    "trip", "travel", "flight", "villa", "hotel", "airbnb", "stay", "booked", "booking",
+    "itinerary", "lunch", "dinner", "breakfast", "brunch", "restaurant", "eat",
+    "club", "beach", "party", "bachelor", "activity", "tour", "gym", "fitness",
+    "yoga", "spa", "reservation", "check in", "check-in", "pack", "headcount",
+    "friday", "saturday", "sunday", "monday",
+)
+
+
+def _has_planning_signal(text: str) -> bool:
+    lowered = (text or "").lower()
+    return any(signal in lowered for signal in _PLANNING_SIGNALS)
+
+
 async def plan_dispatch(state: AssistantState) -> Command[str]:
     text, is_user = _user_text(state)
     if not is_user:
@@ -87,14 +102,20 @@ async def plan_dispatch(state: AssistantState) -> Command[str]:
         for message in state.get("messages", [])
         if getattr(message, "type", "") == "human"
     )
-    if should_audit_conversation(user_message_count):
-        import asyncio
+    audit_due = should_audit_conversation(user_message_count)
 
+    def schedule_turn_audit(reply_text: str) -> None:
+        """Audit the completed turn, not the previous tail of a long thread."""
+        if not audit_due:
+            return
         asyncio.create_task(
             perform_conversation_audit(
                 user_id=state.get("user_id", 0),
                 thread_id=str(state.get("user_id", 0)),
-                messages=list(state.get("messages", [])),
+                messages=[
+                    HumanMessage(content=text),
+                    AIMessage(content=reply_text),
+                ],
             )
         )
 
@@ -107,6 +128,7 @@ async def plan_dispatch(state: AssistantState) -> Command[str]:
         record_gap,
     )
     from orchestrator.planner import plan_with_llm
+    from capabilities.expenses.tools import parse_incoming_transaction_text
 
     user_id = state.get("user_id")
     is_admin = settings.is_admin(user_id)
@@ -131,12 +153,78 @@ async def plan_dispatch(state: AssistantState) -> Command[str]:
         if output.state_update:
             update.update(output.state_update)
         update["active_domain"] = candidate
+        schedule_turn_audit(str(output.message.content))
         return Command(goto=END, update=update)
 
-    decision = await plan_with_llm(text, state, retrieval) or deterministic_plan(text, state, retrieval)
+    from orchestrator.planner import (
+        CapabilitySelection,
+        is_email_connection_request,
+        is_email_disconnect_request,
+    )
+
+    if parse_incoming_transaction_text(text) is not None:
+        # Incoming-money messages are deterministic finance writes. Keep them
+        # out of the generic LLM planning path so they cannot be mislabeled as
+        # an unsupported capability such as #income_tracking.
+        from orchestrator.planner import CapabilitySelection
+
+        decision = Decision(
+            capabilities=[
+                CapabilitySelection(
+                    id="expenses",
+                    reason="incoming-money transaction logging",
+                    confidence=0.98,
+                )
+            ],
+            ordering=["expenses"],
+            confidence=0.98,
+            source="deterministic-income",
+            retrieval_used=False,
+            rationale="Explicit incoming-money language and amount matched the finance parser.",
+        )
+    elif is_email_connection_request(text) or is_email_disconnect_request(text):
+        # Mailbox onboarding and revocation are email capability operations,
+        # not missing account-linking capabilities.
+        decision = Decision(
+            capabilities=[
+                CapabilitySelection(id="email", reason="email provider access request", confidence=0.98)
+            ],
+            ordering=["email"],
+            confidence=0.98,
+            source="deterministic-email-connect",
+            retrieval_used=False,
+            rationale="Mailbox connection requests are handled by EmailPlugin OAuth onboarding.",
+        )
+    else:
+        decision = await plan_with_llm(text, state, retrieval) or deterministic_plan(text, state, retrieval)
+
+    # Active planning threads stay on the board: when both planner paths resolve
+    # to plain chat but the conversation is an ongoing plan, route to the
+    # whiteboard intake so follow-ups mutate the board instead of dissolving.
+    from orchestrator.planner import in_planning_thread
+
+    if (
+        [c.id for c in decision.capabilities] == ["general"]
+        and in_planning_thread(state, text)
+        and _has_planning_signal(text)
+    ):
+        from orchestrator.planner import CapabilitySelection
+
+        decision = Decision(
+            capabilities=[
+                CapabilitySelection(id="whiteboard", reason="planning follow-up in active board thread", confidence=0.85)
+            ],
+            ordering=["whiteboard"],
+            confidence=0.85,
+            source=decision.source,
+            retrieval_used=decision.retrieval_used,
+            rationale="Planning-signal follow-up while a whiteboard thread is active; overriding general fallback.",
+        )
+        _log_plan(decision)
     _log_plan(decision)
 
     if decision.question:
+        schedule_turn_audit(decision.question)
         return Command(
             goto=END,
             update={
@@ -152,6 +240,7 @@ async def plan_dispatch(state: AssistantState) -> Command[str]:
         await record_gap(state.get("user_id", 0), text, decision)
         kind = classify_insufficiency(decision.insufficient.missing_capabilities, text)
         refusal_text = insufficiency_message(kind, decision.insufficient.missing_capabilities)
+        schedule_turn_audit(refusal_text)
         return Command(
             goto=END,
             update={
@@ -169,6 +258,7 @@ async def plan_dispatch(state: AssistantState) -> Command[str]:
 
         reply = await execute_recipe(decision.recipe, state, decision)
         primary = _primary(decision)
+        schedule_turn_audit(reply)
         return Command(
             goto=END,
             update={
@@ -227,4 +317,5 @@ async def plan_dispatch(state: AssistantState) -> Command[str]:
     if decision.insufficient:
         update["missing_capability_tags"] = decision.insufficient.missing_capabilities
         await record_gap(state.get("user_id", 0), text, decision)
+    schedule_turn_audit(reply)
     return Command(goto=END, update=update)

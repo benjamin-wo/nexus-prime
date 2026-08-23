@@ -6,6 +6,7 @@ class AssistantState(MessagesState):
     user_id: int
     current_timezone: str
     active_domain: Optional[str]
+    channel: Optional[str] = None  # "telegram" | "web" | "api" — for wishlist/bug telemetry attribution
     pending_confirmation: Optional[Dict[str, Any]]
     ui_actions: Optional[List[Dict[str, Any]]]
     conversation_summary: Optional[str]

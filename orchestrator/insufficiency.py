@@ -47,9 +47,14 @@ async def record_gap(user_id: int, requested_task: str, decision: Decision) -> O
         return None
     from core.audit import log_capability_request
 
+    reasons = decision.insufficient.reasons or ["capability not registered"]
+    gap_message = decision.insufficient.message or ""
     return await log_capability_request(
         user_id=user_id,
         requested_task=requested_task,
         intent_type="insufficient_capability",
         tags=decision.insufficient.missing_capabilities,
+        block_reason="; ".join(str(r) for r in reasons),
+        agent_reply=gap_message,
+        channel="unknown",
     )

@@ -112,6 +112,55 @@ def _has(text: str, words: list[str]) -> bool:
     return any(word in text for word in words)
 
 
+_STRONG_PLANNING_SIGNALS = (
+    "trip", "travel", "vacation", "holiday", "getaway", "itinerary",
+    "packing list", "airbnb", "villa", "beach club", "bachelor", "bachelorette",
+)
+
+
+def in_planning_thread(state: Any = None, text: str = "") -> bool:
+    """True when this conversation is an active planning/board thread.
+
+    Uses the persisted active domain plus the last few human messages, because a
+    single detour through general chat must not orphan an ongoing plan."""
+    if (state or {}).get("active_domain") == "whiteboard":
+        return True
+    lowered_now = (text or "").lower()
+    if any(w in lowered_now for w in _STRONG_PLANNING_SIGNALS):
+        return True
+    messages = (state or {}).get("messages") or []
+    humans = [str(getattr(m, "content", "")) for m in messages if getattr(m, "type", "") == "human"]
+    return any(
+        any(w in msg.lower() for w in _STRONG_PLANNING_SIGNALS)
+        for msg in humans[-3:]
+    )
+
+
+def is_email_connection_request(text: str) -> bool:
+    """Detect mailbox onboarding before the general planner can call it a gap."""
+    lowered = (text or "").lower()
+    connect_words = (
+        "connect", "link", "integrat", "authoriz", "grant access", "set up", "setup", "add",
+    )
+    mailbox_words = (
+        "email", "mailbox", "gmail", "outlook", "hotmail", "microsoft mail", "office 365",
+    )
+    return any(word in lowered for word in connect_words) and any(word in lowered for word in mailbox_words)
+
+
+def is_email_disconnect_request(text: str) -> bool:
+    """Detect a request to revoke/remove mailbox access."""
+    lowered = (text or "").lower()
+    disconnect_words = (
+        "disconnect", "unlink", "revoke", "remove access", "stop reading", "stop checking",
+        "stop scanning", "forget my", "delete my email connection",
+    )
+    mailbox_words = (
+        "email", "mailbox", "gmail", "outlook", "hotmail", "microsoft mail", "office 365",
+    )
+    return any(word in lowered for word in disconnect_words) and any(word in lowered for word in mailbox_words)
+
+
 def _has_word(text: str, words: list[str]) -> bool:
     return any(re.search(rf"\b{re.escape(word)}\b", text) for word in words)
 
@@ -145,7 +194,7 @@ def _candidate_selections(text: str, missing: list[str]) -> list[CapabilitySelec
         if _has(text, words):
             selections.append(CapabilitySelection(id=cap_id, reason=reason, confidence=confidence))
 
-    add("email", ["email", "gmail", "inbox", "mail"], "email-related intent")
+    add("email", ["email", "gmail", "outlook", "hotmail", "inbox", "mail"], "email-related intent")
     if _has(text, ["salary", "paycheck"]):
         selections.append(CapabilitySelection(id="email", reason="salary/paycheck check", confidence=0.85))
     # Finding a receipt (no expense action verb) is an email search, not a log.
@@ -181,6 +230,13 @@ def _candidate_selections(text: str, missing: list[str]) -> list[CapabilitySelec
             "recipe/grocery intent")
 
     add("reminders", ["remind", "reminder", "cron"], "reminder/scheduling intent")
+
+    add("whiteboard", [
+        "whiteboard", "white board", "planning board", " boards",
+        "plan a trip", "plan my trip", "plan our trip", "plan a", "plan my",
+        "trip to", "vacation", "holiday", "getaway", "bachelor",
+        "itinerary", "shortlist", "packing list", "pin to",
+    ], "planning/board intent")
 
     add("general", [
         "who is", "capital", "weather", "rain", "rains", "news", "search the web",
@@ -235,7 +291,7 @@ def deterministic_plan(
                 rationale="Referent continuation of the previous turn; reusing its capability set without re-retrieval.",
             )
         active = (state or {}).get("active_domain")
-        if active and active in {"email", "expenses", "routes", "recipes", "reminders", "general"}:
+        if active and active in {"email", "expenses", "routes", "recipes", "reminders", "whiteboard", "general"}:
             return Decision(
                 capabilities=[CapabilitySelection(id=active, reason="referent continuation of active domain", confidence=0.8)],
                 ordering=[active],
@@ -308,6 +364,25 @@ def deterministic_plan(
     missing = missing_policy(text)
     candidates = _candidate_selections(text, missing)
 
+    # Active planning thread: keep board follow-ups on the whiteboard instead of
+    # letting them dissolve into general chat.
+    if (
+        in_planning_thread(state, text)
+        and any(
+            w in text for w in (
+                "trip", "villa", "hotel", "airbnb", "flight", "booked", "booking",
+                "lunch", "dinner", "breakfast", "brunch", "restaurant", "club",
+                "beach", "party", "fitness", "gym", "yoga", "spa", "activity",
+                "itinerary", "friday", "saturday", "sunday", "monday", "pack",
+                "headcount", "budget", "plan",
+            )
+        )
+        and (not candidates or all(c.id == "general" for c in candidates))
+    ):
+        candidates = [
+            CapabilitySelection(id="whiteboard", reason="planning follow-up in active board thread", confidence=0.85)
+        ]
+
     # Honest insufficiency: if every candidate is blocked by a missing capability,
     # say so directly instead of routing somewhere wrong.
     if not candidates and missing:
@@ -330,7 +405,12 @@ def deterministic_plan(
 
     if retrieval is not None:
         available = _retrieval_ids(retrieval)
-        candidates = [c for c in candidates if c.id in available or c.id == "timezone"]
+        # Timezone is a core fast path; whiteboard follow-ups are validated by
+        # conversation context (in_planning_thread), not by keyword retrieval.
+        exempt = {"timezone"}
+        if in_planning_thread(state, text):
+            exempt.add("whiteboard")
+        candidates = [c for c in candidates if c.id in available or c.id in exempt]
         if not candidates:
             candidates = [
                 CapabilitySelection(id="general", reason="no retrieval corroboration", confidence=0.5)
@@ -387,10 +467,15 @@ def llm_plan_prompt(
     system = (
         "You are the Nexus Prime planner working in the background. Understand the user's intent, "
         "and select the capability plugins needed.\n"
-        "CRITICAL PLANNING RULES:\n"
-        "1. For any requests to plan trips, itineraries, brainstorm ideas, research, answer questions, or give recommendations, ALWAYS select the 'general' capability. The assistant will proactively generate a concrete itinerary and plan immediately.\n"
-        "2. 'question' field MUST BE null unless the input is a single isolated word with zero context (e.g. 'check'). NEVER use 'question' to interview the user or ask for trip details/budgets. Route to 'general' instead.\n"
-        "3. If the user mentions travel, destinations, dates, places, food, restaurants, fitness, or activities, route to 'general'.\n"
+        "CAPABILITY SELECTION RULES:\n"
+        "1. 'whiteboard' handles ALL planning requests: creating or updating trip/event/project/meal "
+        "boards, itineraries, shortlists, packing lists, bookings to organize, brainstorming ideas, "
+        "and follow-ups that add activities, food, spas, or logistics to a plan. It captures structured "
+        "cards and researches options — prefer it over 'general' for anything plan-shaped.\n"
+        "2. Use 'general' for factual questions, casual chat, definitions, news, or explanations that "
+        "do not involve organizing a plan or updating a board. If an active planning thread exists "
+        "(Current thread domain: whiteboard), keep planning-related follow-ups on 'whiteboard'.\n"
+        "3. The 'question' field MUST BE null unless the input is a single isolated word with zero context (e.g. 'check'). NEVER use 'question' to interview the user or ask for trip details/budgets.\n"
         "Reply ONLY with JSON:\n"
         '{"capabilities":[{"id":"...","reason":"...","confidence":0.0-1.0}], '
         '"ordering":["..."],"insufficient_capability":null|{"missing_capabilities":["..."],"reasons":["..."]}'

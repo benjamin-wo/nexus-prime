@@ -1,6 +1,9 @@
 import os
+import traceback
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import HTTPException
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from core.db import init_db
@@ -67,6 +70,37 @@ app.include_router(auth_router)
 async def health_check():
     """Health check endpoint for Railway deployment monitoring."""
     return {"status": "ok", "service": "Telegram Personal Assistant Bot"}
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """Capture unhandled route errors into the production-bug pipeline (DB + GitHub Issues).
+
+    Keeps a 500 to the caller while recording a service-side issue for agent review.
+    Re-raised HTTPExceptions keep their original status/detail intact.
+    """
+    if isinstance(exc, HTTPException):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail},
+        )
+    try:
+        from core.audit import record_operation_event
+
+        await record_operation_event(
+            subsystem=(request.url.path or "ingress").strip("/").split("/")[0] or "ingress",
+            error_context=f"Unhandled {type(exc).__name__} on {request.method} {request.url.path}",
+            error_traceback="".join(
+                traceback.format_exception(type(exc), exc, exc.__traceback__)
+            )[:3000],
+            detection_source="runtime_exception",
+        )
+    except Exception as audit_err:  # noqa: BLE001 - the audit funnel must never hide the original fault
+        print(f"[OPS AUDIT] failed to record unhandled exception: {audit_err}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "internal_error"},
+    )
 
 # Mount showcase web application
 showcase_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "showcase")

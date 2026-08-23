@@ -1,15 +1,17 @@
 id: expenses
 description: >-
-  Record, list, split and summarise your spending: log an expense from text or a
-  receipt photo, split dinner or group outing bills among friends with copy-pastable WhatsApp/Telegram text and 1-tap IOU collection tasks, list recent expenses, and answer how much you spent or where
-  the money went. Ask like "spent $12.50 at Starbucks", "split $160 at Haidilao with Alex, Chloe, Ben and me", "show my expenses",
-  or "how much did I spend on food last month".
+  Record, list and summarise money in and out: log an expense or incoming payment from
+  text or a receipt photo, split dinner or group outing bills among friends with
+  copy-pastable WhatsApp/Telegram text and 1-tap IOU collection tasks, list recent
+  transactions, and answer where the money went. Ask like "spent $12.50 at Starbucks",
+  "Loren repaid me $13", "salary $3500 from my employer", "split $160 at Haidilao with
+  Alex, Chloe, Ben and me", or "show my transactions".
 input_schema:
   type: object
   properties:
     text:
       type: string
-      description: Natural-language expense description, receipt caption, bill splitting request, or listing request.
+      description: Natural-language money-in or money-out description, receipt caption, bill splitting request, or listing request.
     image:
       type: string
       description: Optional base64 receipt photo.
@@ -24,7 +26,7 @@ output_schema:
       type: string
   required: [message]
 side_effect: write
-tags: [money, spending, receipts, budget, split, "split bill", iou]
+tags: [money, spending, income, receipts, budget, split, "split bill", iou]
 managers: [finance, life]
 preconditions:
   - "User profile exists"

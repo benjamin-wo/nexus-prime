@@ -121,6 +121,37 @@ async def test_plugin_state_update_merged_by_plan_router(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_incoming_money_is_not_reclassified_as_missing_capability(monkeypatch):
+    from unittest.mock import AsyncMock, patch
+
+    from orchestrator.plan_router import plan_dispatch
+    from orchestrator.router import PluginOutput
+    from orchestrator.planner import Decision, InsufficientCapability
+
+    fake_plugin = AsyncMock()
+    fake_plugin.execute.return_value = PluginOutput(
+        message=AIMessage(content="logged incoming SGD 13.00 from Loren"),
+    )
+    unsupported = Decision(
+        insufficient=InsufficientCapability(
+            missing_capabilities=["income_tracking"],
+            reasons=["test planner response"],
+            message="unsupported",
+        ),
+        confidence=0.9,
+    )
+    state = _state("Loren already paid me $13 yesterday")
+
+    with patch("orchestrator.router.CAPABILITY_REGISTRY", {"expenses": fake_plugin}), \
+            patch("orchestrator.planner.plan_with_llm", new=AsyncMock(return_value=unsupported)):
+        command = await plan_dispatch(state)
+
+    fake_plugin.execute.assert_awaited_once()
+    assert command.update["active_domain"] == "expenses"
+    assert "unsupported" not in command.update["messages"][-1].content
+
+
+@pytest.mark.asyncio
 async def test_llm_planner_returns_none_without_real_key():
     decision = await plan_with_llm("check my email", _state("check my email"), None)
     assert decision is None

@@ -15,6 +15,24 @@ def test_health_check_endpoint():
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
 
+
+@pytest.mark.asyncio
+async def test_email_command_lists_only_configured_providers():
+    """The /email command must only link providers whose OAuth client credentials are configured."""
+    from app.ingress import TelegramIngress
+    from core.config import settings
+
+    res = await TelegramIngress().handle_slash_command("/email", user_id=9001)
+    assert res is not None
+    text = res["text"]
+    has_gmail_creds = bool(settings.google_client_id and settings.google_client_secret)
+    has_ms_creds = bool(settings.microsoft_client_id and settings.microsoft_client_secret)
+    if has_gmail_creds:
+        assert "/auth/gmail" in text
+    if has_ms_creds:
+        assert "/auth/outlook" in text
+    assert has_gmail_creds or has_ms_creds or "isn't configured" in text
+
 def test_webhook_text_message():
     payload = {
         "update_id": 10001,

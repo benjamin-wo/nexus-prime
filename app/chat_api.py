@@ -130,6 +130,7 @@ async def handle_web_chat(request: ChatRequest) -> ChatResponse:
             "user_id": user_id,
             "current_timezone": profile.current_timezone,
             "active_domain": None,
+            "channel": "web",
         }
 
         graph = get_assistant_graph()

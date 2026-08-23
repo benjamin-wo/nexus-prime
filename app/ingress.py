@@ -17,6 +17,40 @@ from core.models import UserProfile
 from core.scheduler import list_active_jobs, run_now, update_user_timezone
 from orchestrator.graph import get_assistant_graph
 
+# Short-lived store of content awaiting a "pin to board" button press.
+# Keyed by an 8-char token embedded in callback_data (Telegram caps it at 64 bytes).
+_pending_pins: Dict[str, Dict[str, Any]] = {}
+_PENDING_PIN_TTL_SECONDS = 3600
+
+
+def register_pending_pin(project_id: int, user_id: int, title: str, markdown: str) -> str:
+    """Store plannable content and return the token to embed in `pb:<project>:<token>` buttons."""
+    import time
+    import uuid
+
+    now = time.time()
+    for tok in [t for t, v in _pending_pins.items() if now - v.get("ts", 0) > _PENDING_PIN_TTL_SECONDS]:
+        _pending_pins.pop(tok, None)
+    token = uuid.uuid4().hex[:8]
+    _pending_pins[token] = {
+        "project_id": project_id,
+        "user_id": user_id,
+        "title": (title or "Pinned from Telegram")[:200],
+        "markdown": markdown or "",
+        "ts": now,
+    }
+    return token
+
+
+async def consume_pending_pin(token: str) -> Optional[Dict[str, Any]]:
+    """Pop stored pin content for a token, if present and fresh."""
+    import time
+
+    entry = _pending_pins.pop(token, None) if token else None
+    if not entry or time.time() - entry.get("ts", 0) > _PENDING_PIN_TTL_SECONDS:
+        return None
+    return entry
+
 
 def format_for_telegram(text: str) -> str:
     """
@@ -49,6 +83,49 @@ def format_for_telegram(text: str) -> str:
         else:
             lines.append(line)
     return "\n".join(lines)
+
+
+def parse_custom_split_amounts(text: str) -> Dict[str, float]:
+    """Extract explicit final shares from a /split command.
+
+    Supported forms include ``I pay $20, Alex pays $10`` and
+    ``Me: $20, Alex: $10``. An empty mapping means the caller should use the
+    normal equal/item-based split behavior.
+    """
+    matches = []
+    personal = re.compile(
+        r"\b(?P<name>me|myself|i|my\s+share)\b\s*"
+        r"(?:(?:will|should|need\s+to)\s+)?"
+        r"(?:(?:pay|paid|pays|owe|owes|get|gets|share(?:\s+is)?)\s*|:\s*)"
+        r"\$?\s*(?P<amount>\d+(?:\.\d{1,2})?)",
+        re.IGNORECASE,
+    )
+    named = re.compile(
+        r"\b(?P<name>[A-Za-z][A-Za-z0-9'&.\-]{1,30})\b\s*"
+        r"(?:(?:will|should|needs?\s+to)\s+)?"
+        r"(?:pay|paid|pays|owe|owes|get|gets|share(?:\s+is)?)\s*"
+        r"\$?\s*(?P<amount>\d+(?:\.\d{1,2})?)",
+        re.IGNORECASE,
+    )
+    colon = re.compile(
+        r"\b(?P<name>[A-Za-z][A-Za-z0-9'&.\-]{1,30})\b\s*:\s*"
+        r"\$?\s*(?P<amount>\d+(?:\.\d{1,2})?)",
+        re.IGNORECASE,
+    )
+    matches.extend(personal.finditer(text or ""))
+    matches.extend(named.finditer(text or ""))
+    matches.extend(colon.finditer(text or ""))
+
+    amounts: Dict[str, float] = {}
+    for match in sorted(matches, key=lambda item: item.start()):
+        name = match.group("name").strip().title()
+        if name.lower() in {"me", "my", "myself", "i", "my share"}:
+            name = "Me"
+        try:
+            amounts[name] = round(float(match.group("amount")), 2)
+        except (TypeError, ValueError):
+            continue
+    return amounts if len(amounts) >= 2 else {}
 
 
 async def telegram_api_call(method: str, payload: Dict[str, Any]) -> bool:
@@ -125,9 +202,12 @@ async def setup_telegram_bot_commands() -> bool:
         {"command": "dashboard", "description": "🚀 Open Web Cockpit & Analytics"},
         {"command": "split", "description": "👥 Split a bill with friends & create IOUs"},
         {"command": "expenses", "description": "💰 View recent expenses & spending"},
+        {"command": "income", "description": "💵 View incoming money"},
+        {"command": "credit", "description": "➕ Log money received"},
         {"command": "tasks", "description": "📋 View pending tasks & reminders"},
         {"command": "groceries", "description": "🛒 View grocery shopping list"},
-        {"command": "email", "description": "📬 Connect Gmail for automatic receipts"},
+        {"command": "email", "description": "📬 Connect Gmail or Outlook for receipts"},
+        {"command": "disconnect_email", "description": "🔌 Remove Gmail or Outlook access"},
         {"command": "jobs", "description": "⏰ Manage scheduled background alerts"},
         {"command": "timezone", "description": "📍 Check or update your current timezone"},
         {"command": "help", "description": "💡 View tips, shortcuts & commands guide"},
@@ -322,6 +402,10 @@ class TelegramIngress:
                 res = await self.handle_slash_command("/tasks", user_id=user_id or 0)
                 if res and chat_id:
                     await send_telegram_message(chat_id, res.get("text", "No tasks."))
+            elif cmd == "income":
+                res = await self.handle_slash_command("/income", user_id=user_id or 0)
+                if res and chat_id:
+                    await send_telegram_message(chat_id, res.get("text", "No incoming money."))
             elif cmd == "email":
                 res = await self.handle_slash_command("/email", user_id=user_id or 0)
                 if res and chat_id:
@@ -351,6 +435,9 @@ class TelegramIngress:
                 requested_task=f"Feature wishlist confirmation for #{tag}",
                 intent_type="unsupported_transaction",
                 tags=[tag],
+                expectation=f"User explicitly requested a feature for `{tag}` via the Telegram wishlist button.",
+                block_reason="Capability does not exist yet — logged from explicit wishlist confirmation.",
+                channel="telegram",
             )
             reply_text = f"✅ Logged #{tag} to our feature wishlist!"
             self._log_conversation("CALLBACK", chat_id, f"log_req:{tag}")
@@ -376,7 +463,10 @@ class TelegramIngress:
 
                 async with async_session_factory() as session:
                     tx = (await session.execute(
-                        select(ExpenseTransaction).where(ExpenseTransaction.id == tx_id)
+                        select(ExpenseTransaction).where(
+                            ExpenseTransaction.id == tx_id,
+                            ExpenseTransaction.user_id == (user_id or 0),
+                        )
                     )).scalar_one_or_none()
 
                 if tx:
@@ -413,9 +503,66 @@ class TelegramIngress:
                 title = f"Task #{task_id}"
                 async with async_session_factory() as session:
                     task = (await session.execute(
-                        select(TaskItem).where(TaskItem.id == task_id)
+                        select(TaskItem).where(
+                            TaskItem.id == task_id,
+                            TaskItem.user_id == (user_id or 0),
+                        )
                     )).scalar_one_or_none()
                     if task:
+                        if task.linked_expense_id and task.iou_friend:
+                            from capabilities.expenses.settlement import (
+                                IouSettlementCommand,
+                                settle_iou,
+                            )
+
+                            settlement = await settle_iou(IouSettlementCommand(
+                                expense_id=task.linked_expense_id,
+                                user_id=user_id or 0,
+                                participant=task.iou_friend,
+                            ))
+                            if settlement.get("status") in {"settled", "already_settled"}:
+                                title = f"{task.iou_friend} repayment"
+                                if callback_query_id:
+                                    await answer_telegram_callback(
+                                        callback_query_id,
+                                        text=f"✅ {task.iou_friend} marked paid",
+                                    )
+                                if chat_id:
+                                    if settlement.get("status") == "already_settled":
+                                        reply_text = f"ℹ️ {task.iou_friend}'s IOU is already marked as paid."
+                                    else:
+                                        reply_text = (
+                                            f"✅ Marked {task.iou_friend}'s IOU as paid and logged "
+                                            f"{settlement.get('amount_received', 0):.2f} "
+                                            f"{settlement.get('currency', 'SGD')} incoming."
+                                        )
+                                    await send_telegram_message(
+                                        chat_id,
+                                        reply_text,
+                                    )
+                                return {
+                                    "status": "ok",
+                                    "action": "iou_settled",
+                                    "task_id": task_id,
+                                    "expense_id": task.linked_expense_id,
+                                    "settlement": settlement,
+                                }
+                            if callback_query_id:
+                                await answer_telegram_callback(
+                                    callback_query_id,
+                                    text="Could not settle this IOU",
+                                )
+                            if chat_id:
+                                await send_telegram_message(
+                                    chat_id,
+                                    "I could not reconcile that IOU. Open the transaction in the cockpit to review it.",
+                                )
+                            return {
+                                "status": "error",
+                                "action": "iou_settlement_failed",
+                                "task_id": task_id,
+                                "settlement": settlement,
+                            }
                         task.status = "done"
                         task.completed_at = datetime.utcnow()
                         task.is_reminder_active = False
@@ -477,24 +624,48 @@ class TelegramIngress:
                 print(f"[CALLBACK] error snoozing task {callback_data}: {exc}")
 
         if callback_data.startswith("pb:"):
-            # pb:<project_id> or pb:<project_id>:<title>
+            # pb:<project_id>[:<token>] — pin content to a whiteboard board.
+            # With a token, the exact content captured when the button was sent is
+            # written as a note card. Without one, an honest placeholder card is
+            # still created so "Pinned!" never lies.
             parts = callback_data.split(":", 2)
             proj_id_str = parts[1] if len(parts) > 1 else "1"
+            token = parts[2] if len(parts) > 2 else ""
             try:
                 proj_id = int(proj_id_str)
                 from core.models import WhiteboardProject
                 from core.db import async_session_factory
-                from sqlmodel import select
+                from sqlmodel import select as _select
+                from capabilities.whiteboard.tools import add_block_to_whiteboard
 
                 proj_title = "Whiteboard"
                 async with async_session_factory() as session:
                     proj = (await session.execute(
-                        select(WhiteboardProject).where(WhiteboardProject.id == proj_id)
+                        _select(WhiteboardProject).where(WhiteboardProject.id == proj_id)
                     )).scalar_one_or_none()
                     if proj:
                         proj_title = f"{proj.emoji_icon} {proj.title}"
 
-                reply_text = f"📌 Pinned to <b>{proj_title}</b>! You can view and refine it anytime on your web canvas."
+                pin_entry = await consume_pending_pin(token)
+                if pin_entry and int(pin_entry.get("project_id") or 0) == proj_id:
+                    block_title = str(pin_entry.get("title") or "Pinned from Telegram")
+                    markdown = f"📌 **Pinned from Telegram**\n\n{pin_entry.get('markdown') or ''}".strip()
+                else:
+                    block_title = "📌 Pinned from Telegram"
+                    markdown = f"Pinned on {__import__('datetime').datetime.utcnow().strftime('%b %d, %H:%M')} UTC"
+
+                block = await add_block_to_whiteboard(
+                    project_id=proj_id,
+                    section_name="Pinned",
+                    block_type="note",
+                    title=block_title,
+                    content_payload={"markdown": markdown},
+                )
+
+                reply_text = (
+                    f"📌 Pinned *{block.title}* to <b>{proj_title}</b> (card #{block.id}).\n"
+                    f"View it anytime on your web canvas."
+                )
                 self._log_conversation("CALLBACK", chat_id, callback_data)
                 if callback_query_id:
                     await answer_telegram_callback(callback_query_id, text=f"Pinned to {proj_title}!")
@@ -505,6 +676,7 @@ class TelegramIngress:
                     "status": "ok",
                     "action": "pinned_to_whiteboard",
                     "project_id": proj_id,
+                    "block_id": block.id,
                     "reply": reply_text,
                 }
             except Exception as exc:
@@ -647,6 +819,64 @@ class TelegramIngress:
                 "text": "🛒 Grocery list:\n" + "\n".join(lines),
             }
 
+        if text.startswith(("/income", "/incoming")):
+            from core.models import IncomeTransaction
+
+            async with async_session_factory() as session:
+                rows = (await session.execute(
+                    select(IncomeTransaction)
+                    .where(IncomeTransaction.user_id == user_id)
+                    .order_by(IncomeTransaction.date.desc())
+                    .limit(10)
+                )).scalars().all()
+            if not rows:
+                return {"status": "ok", "income": [], "text": "💵 No incoming money logged yet."}
+            lines = [
+                f"• {row.date.strftime('%Y-%m-%d')} {row.currency} {row.amount:.2f} — "
+                f"{row.source} ({row.category})"
+                for row in rows
+            ]
+            total = sum(row.amount for row in rows)
+            lines.append(f"\nTotal (last {len(rows)}): {rows[0].currency} {total:.2f}")
+            return {
+                "status": "ok",
+                "income": [row.model_dump() for row in rows],
+                "text": "💵 Recent incoming money:\n" + "\n".join(lines),
+            }
+
+        if text.startswith(("/credit", "/received", "/log_income")):
+            from capabilities.expenses.tools import (
+                income_source_id,
+                is_duplicate_income,
+                parse_incoming_transaction_text,
+                save_income_transaction,
+            )
+
+            parse_text = text if not text.startswith("/credit") else text.replace("/credit", "received", 1)
+            parse_text = parse_text if not parse_text.startswith("/log_income") else parse_text.replace("/log_income", "received", 1)
+            parsed = parse_incoming_transaction_text(parse_text)
+            if parsed is None:
+                return {
+                    "status": "error",
+                    "text": "Usage: `/credit <amount> from <person or company> [salary|repayment|claim]`.",
+                }
+            source_id = income_source_id(user_id, text)
+            if await is_duplicate_income(source_id):
+                return {"status": "ok", "text": "↩️ That incoming transaction is already logged."}
+            item = await save_income_transaction(
+                user_id=user_id,
+                income=parsed,
+                source_message_id=source_id,
+            )
+            return {
+                "status": "ok",
+                "income": item.model_dump(),
+                "text": (
+                    f"✅ Logged incoming *{item.currency} {item.amount:.2f}* from "
+                    f"*{item.source}* ({item.category})."
+                ),
+            }
+
         if text.startswith(("/help", "/commands", "/start")):
             public_domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN") or ""
             if public_domain:
@@ -664,7 +894,12 @@ class TelegramIngress:
                 "• Type or voice: *'Spent $12.50 at Starbucks'* or snap a receipt photo\n"
                 "• `/expenses` — View recent spending\n"
                 "• `/split <amount> with <friends>` — Split bills & generate WhatsApp text\n"
-                "• `/email` — Connect Gmail for automated receipt tracking\n\n"
+                "• `/email` — Connect email (Gmail/Outlook) for automated receipt tracking\n\n"
+                "💵 **Money In**\n"
+                "• Type: *'Loren repaid me $13'* or *'salary SGD 3500 from my employer'*\n"
+                "• `/credit <amount> from <person or company>` — Log money received\n"
+                "• `/income` — View recent incoming money\n\n"
+                "• `/disconnect_email [gmail|outlook|all]` — Remove mailbox access\n\n"
                 "📋 **Tasks & Reminders**\n"
                 "• Type or voice: *'Remind me tomorrow at 9am to submit report'*\n"
                 "• `/tasks` — View your todo list & pending IOUs\n"
@@ -681,6 +916,7 @@ class TelegramIngress:
                 [{"text": "🚀 Open Web Cockpit", "url": dash_url}],
                 [
                     {"text": "💰 Recent Expenses", "callback_data": "cmd:expenses"},
+                    {"text": "💵 Recent Incoming", "callback_data": "cmd:income"},
                     {"text": "📋 Pending Tasks", "callback_data": "cmd:tasks"},
                 ],
                 [
@@ -724,16 +960,45 @@ class TelegramIngress:
             else:
                 base_url = "http://localhost:8000"
 
-            connect_url = f"{base_url}/auth/gmail?user_id={user_id}"
+            lines = [
+                "📬 **Connect Your Email for Automated Expense Tracking**\n\n"
+                "Tap a link to securely authorize read-only receipt tracking. "
+                "Your transactions will be automatically extracted and organized on your personal dashboard:"
+            ]
+            if settings.google_client_id and settings.google_client_secret:
+                lines.append(f"\n🟢 Gmail: {base_url}/auth/gmail?user_id={user_id}")
+            if settings.microsoft_client_id and settings.microsoft_client_secret:
+                lines.append(f"\n🔵 Outlook: {base_url}/auth/outlook?user_id={user_id}")
+            if len(lines) == 1:
+                lines.append(
+                    "\n\n⚠️ Email OAuth isn't configured for any provider on this service yet. "
+                    "Ask the operator to set the OAuth client credentials."
+                )
             return {
                 "status": "ok",
-                "text": (
-                    "📬 **Connect Your Gmail for Automated Expense Tracking**\n\n"
-                    "Tap below to securely authorize read-only receipt tracking with Google. "
-                    "Your transactions will be automatically extracted and organized on your personal dashboard:\n\n"
-                    f"{connect_url}"
-                ),
+                "text": "\n".join(lines),
             }
+
+        if text.startswith(("/disconnect_email", "/disconnect_mail")):
+            from capabilities.email.tools import disconnect_email_account
+
+            parts = text.split()
+            provider = parts[1].lower() if len(parts) > 1 else "all"
+            result = await disconnect_email_account(user_id=user_id, provider=provider)
+            if result.get("status") == "invalid_provider":
+                return {
+                    "status": "error",
+                    "text": "Usage: `/disconnect_email gmail`, `/disconnect_email outlook`, or `/disconnect_email all`.",
+                }
+            if result.get("count"):
+                names = ", ".join(result["disconnected"]).title()
+                return {
+                    "status": "ok",
+                    "disconnected": result["disconnected"],
+                    "text": f"🔌 Disconnected {names}. I will no longer read those mailboxes or use them for automatic expense tracking.",
+                }
+            target = "your mailboxes" if provider in {"all", "email", "both"} else f"your {provider} account"
+            return {"status": "ok", "text": f"ℹ️ No connected credential found for {target}."}
 
         if text.startswith("/split"):
             from capabilities.expenses.tools import split_bill_expense
@@ -742,7 +1007,7 @@ class TelegramIngress:
             if not amt_match:
                 return {
                     "status": "ok",
-                    "text": "Usage: `/split <amount> [merchant] with [Friend 1], [Friend 2]...`\n\nExample: `/split 160 Haidilao with Alex, Chloe, Ben and me`",
+                    "text": "Usage: `/split <amount> [merchant] with [Friend 1], [Friend 2]...`\n\nExamples:\n`/split 160 Haidilao with Alex, Chloe, Ben and me`\n`/split 30 with Alex, I pay $20 and Alex pays $10`",
                 }
             amt = float(amt_match.group(1))
 
@@ -759,17 +1024,22 @@ class TelegramIngress:
             if m_match and m_match.group(1).strip():
                 merchant = m_match.group(1).strip().title()
 
-            people_names = [p.strip().title() for p in re.split(r",|\band\b|&", names_part) if p.strip()]
+            custom_amounts = parse_custom_split_amounts(text)
+            if custom_amounts:
+                people_names = [name for name in custom_amounts if name != "Me"]
+            else:
+                people_names = [p.strip().title() for p in re.split(r",|\band\b|&", names_part) if p.strip()]
 
             res = await split_bill_expense.ainvoke({
                 "user_id": user_id,
                 "total_amount": amt,
                 "merchant": merchant,
                 "people": people_names,
+                "custom_amounts": custom_amounts or None,
             })
             return {
                 "status": "ok",
-                "text": res.get("reply_text"),
+                "text": res.get("reply_text") or res.get("message"),
                 "reply_markup": {"inline_keyboard": res.get("buttons")} if res.get("buttons") else None,
             }
 

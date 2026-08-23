@@ -6,7 +6,7 @@ import re
 from typing import Protocol, List, Dict, Any, Optional
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.types import Command
 from langgraph.graph import END
 from orchestrator.state import AssistantState
@@ -14,6 +14,8 @@ from capabilities.email.tools import (
     search_email_messages,
     discover_and_track_bank_domain,
     get_user_gmail_token,
+    get_user_outlook_token,
+    disconnect_email_account,
 )
 from capabilities.expenses.tools import (
     process_extracted_expense,
@@ -21,6 +23,10 @@ from capabilities.expenses.tools import (
     extract_expense_from_photo,
     expense_source_id,
     log_expenses_from_emails,
+    parse_incoming_transaction_text,
+    save_income_transaction,
+    income_source_id,
+    is_duplicate_income,
     SPLIT_ALERT_THRESHOLD,
 )
 from capabilities.routes.tools import plan_route, extract_route_request
@@ -30,7 +36,6 @@ from capabilities.recipes.tools import (
     sync_to_grocery_list,
 )
 from capabilities.reminders.tools import parse_reminder_request
-from capabilities.general.tools import search_web
 from orchestrator.checkpointer import prune_and_summarize_messages
 from core.audit import log_capability_request, should_sample_audit, perform_audit_evaluation
 from core.scheduler import (
@@ -90,29 +95,79 @@ class EmailPlugin:
     """Email capability plugin: searches financial messages and tracks bank domains."""
 
     name = "email"
-    keywords = ["email", "gmail", "inbox", "mail"]
+    keywords = ["email", "gmail", "outlook", "hotmail", "inbox", "mail"]
     description = "Searches email providers and discovers bank domains automatically."
 
     async def execute(self, state: AssistantState) -> PluginOutput:
         user_id = state["user_id"]
+        messages = state.get("messages", [])
+        last_text = str(messages[-1].content) if messages else ""
+        lowered_text = last_text.lower()
+        from orchestrator.planner import is_email_disconnect_request
 
-        # One-time Gmail authorization: the bot can't read email until the user consents.
-        if settings.google_client_id and not await get_user_gmail_token(user_id):
+        if is_email_disconnect_request(last_text):
+            requested_provider = "all"
+            if any(word in lowered_text for word in ("outlook", "hotmail", "microsoft mail", "office 365")):
+                requested_provider = "outlook"
+            elif any(word in lowered_text for word in ("gmail", "google mail")):
+                requested_provider = "gmail"
+            disconnected = await disconnect_email_account(
+                user_id=user_id,
+                provider=requested_provider,
+            )
+            if disconnected.get("count"):
+                names = ", ".join(disconnected["disconnected"]).title()
+                reply = (
+                    f"🔌 Disconnected {names}. I will no longer read that mailbox or use it for "
+                    "automatic expense tracking."
+                )
+            else:
+                target = "your mailbox" if requested_provider == "all" else f"your {requested_provider} account"
+                reply = f"ℹ️ No connected credential found for {target}."
+            return PluginOutput(
+                message=AIMessage(content=reply),
+                state_update={"active_domain": self.name},
+            )
+
+        connection_intent = any(
+            word in lowered_text
+            for word in ("connect", "link", "integrat", "authoriz", "grant access", "set up", "setup")
+        )
+        requested_outlook = any(word in lowered_text for word in ("outlook", "hotmail", "microsoft mail", "office 365"))
+        requested_gmail = any(word in lowered_text for word in ("gmail", "google mail"))
+
+        # One-time mailbox authorization: the bot can't read email until the user consents.
+        # Offer whichever providers are still missing (Gmail and/or Outlook).
+        gmail_token = await get_user_gmail_token(user_id)
+        outlook_token = await get_user_outlook_token(user_id)
+        needs_gmail = bool(settings.google_client_id and settings.google_client_secret) and not gmail_token
+        needs_outlook = bool(settings.microsoft_client_id and settings.microsoft_client_secret) and not outlook_token
+
+        # Show missing provider links even when another provider is already
+        # connected. This is especially important for "connect Outlook" after
+        # Gmail has already been authorized.
+        missing_requested_provider = (
+            (requested_outlook and needs_outlook)
+            or (requested_gmail and needs_gmail)
+        )
+        no_mailbox_connected = not gmail_token and not outlook_token
+        if missing_requested_provider or (no_mailbox_connected and (needs_gmail or needs_outlook)):
             public_domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN") or ""
             base = (
                 f"https://{public_domain}".rstrip("/")
                 if public_domain
                 else (settings.webapp_url or "").rstrip("/")
             )
-            link = f"{base}/auth/gmail?user_id={user_id}"
+            lines = [
+                "🔐 I can check your email — I just need one-time access from you.",
+                "Open a link and allow read-only access; I'll ping you here when it's connected:",
+            ]
+            if needs_gmail and (not connection_intent or requested_gmail or not requested_outlook):
+                lines.append(f"🟢 Gmail: {base}/auth/gmail?user_id={user_id}")
+            if needs_outlook and (not connection_intent or requested_outlook or not requested_gmail):
+                lines.append(f"🔵 Outlook: {base}/auth/outlook?user_id={user_id}")
             return PluginOutput(
-                message=AIMessage(
-                    content=(
-                        "🔐 I can check your Gmail — I just need one-time access from you. "
-                        f"Open this link and allow Gmail access (read-only) — "
-                        f"I'll ping you here when it's connected:\n{link}"
-                    )
-                ),
+                message=AIMessage(content="\n".join(lines)),
                 state_update={"active_domain": self.name},
             )
 
@@ -200,8 +255,11 @@ class ExpensePlugin:
     """Expense capability plugin: extracts expenses, checks duplicates, and triggers HITL on ambiguity."""
 
     name = "expenses"
-    keywords = ["expense", "spent", "paid", "receipt", "starbucks", "dollar", "$"]
-    description = "Processes receipts and financial expenses with HITL confirmation."
+    keywords = [
+        "expense", "spent", "paid", "receipt", "starbucks", "dollar", "$",
+        "received", "salary", "payroll", "repaid", "reimbursement", "claim", "credited",
+    ]
+    description = "Processes spending, incoming money, receipts, and financial expenses with HITL confirmation."
 
     async def execute(self, state: AssistantState) -> PluginOutput:
         user_id = state["user_id"]
@@ -262,6 +320,14 @@ class ExpensePlugin:
             str(last_content) if not isinstance(last_content, list) else ""
         )
 
+        incoming = parse_incoming_transaction_text(last_text)
+        if incoming is not None:
+            return await self._finalize_income(
+                user_id,
+                incoming,
+                income_source_id(user_id, last_text),
+            )
+
         # Listing intent: "list/show/how much/spending/summary" queries → query DB, not extract.
         lowered = last_text.lower()
         list_intent = any(
@@ -286,10 +352,19 @@ class ExpensePlugin:
                 "food expenses",
                 "food spending",
                 "/expenses",
+                "my transactions",
+                "transaction history",
+                "transaction summary",
+                "my income",
+                "income summary",
+                "how much did i receive",
+                "how much have i received",
+                "net cashflow",
+                "cash flow",
             )
         )
         if list_intent:
-            from capabilities.expenses.tools import get_user_expenses
+            from capabilities.expenses.tools import query_unified_transactions
             from datetime import timezone as _tz, timedelta
 
             now_sg = datetime.now(_tz.utc).astimezone(ZoneInfo("Asia/Singapore"))
@@ -324,6 +399,7 @@ class ExpensePlugin:
                         "}\n\n"
                         "Rules:\n"
                         "- 'food', 'eating', 'hawker', 'restaurant', 'meals', 'takeout' → Dining and/or Groceries\n"
+                        "- 'salary', 'repayment', 'reimbursement', 'refund', 'income', 'money in' → leave categories null so money-in rows are not filtered out\n"
                         "- 'this week' = Monday 00:00 SGT to now\n"
                         "- 'this month' = 1st of current month 00:00 SGT to now\n"
                         "- 'today' = today 00:00 SGT to now\n"
@@ -348,38 +424,56 @@ class ExpensePlugin:
                 except Exception as parse_err:
                     print(f"[EXPENSES] LLM intent parse failed, querying unfiltered: {parse_err}")
 
-            rows = await get_user_expenses.ainvoke({
-                "user_id": user_id,
-                "limit": 50,
-                "categories": intent_filters["categories"],
-                "since_date": intent_filters["since_date"],
-                "until_date": intent_filters["until_date"],
-            })
+            ledger = await query_unified_transactions(
+                user_id=user_id,
+                direction="all",
+                categories=intent_filters["categories"],
+                since_date=intent_filters["since_date"],
+                until_date=intent_filters["until_date"],
+                limit=50,
+            )
 
             label = intent_filters["label"]
+            money_out = ledger["money_out"]
+            money_in = ledger["money_in"]
+            rows = ledger["items"]
             if not rows:
                 reply = (
-                    f"💰 No expenses found for *{label}*. "
+                    f"💰 No transactions found for *{label}*. "
                     "Try *\"spent $12.50 at Starbucks\"* or ask me to scan your email for receipts."
                 )
             else:
-                total = sum(row["amount"] for row in rows)
-                currency = rows[0]["currency"]
-                count = len(rows)
+                currencies = sorted(set(money_out) | set(money_in))
+                currency = currencies[0] if len(currencies) == 1 else None
+                spent = sum(b["total"] for b in money_out.values())
+                earned = sum(b["total"] for b in money_in.values())
+                count = ledger["total_matched"]
+                header_amounts: List[str] = []
+                if currency is None:
+                    for cur, bucket in sorted(money_out.items()):
+                        header_amounts.append(f"-{cur} {bucket['total']:.2f}")
+                    for cur, bucket in sorted(money_in.items()):
+                        header_amounts.append(f"+{cur} {bucket['total']:.2f}")
+                    header = f"💰 *{label.title()}*: **{' / '.join(header_amounts)}**" if header_amounts else ""
+                else:
+                    header = (
+                        f"💰 *{label.title()}* — out **-{currency} {spent:.2f}**, "
+                        f"in **+{currency} {earned:.2f}**, net "
+                        f"**{earned - spent:+.2f} {currency}**"
+                    )
                 if intent_filters["summary_only"]:
-                    reply = (
-                        f"💰 *{label.title()}* — you spent **{currency} {total:.2f}** "
-                        f"across {count} transaction{'s' if count != 1 else ''}."
+                    reply = header or (
+                        f"💰 Nothing recorded for *{label}* yet."
                     )
                 else:
-                    lines = [
-                        f"💰 *{label.title()}* — **{currency} {total:.2f}** "
-                        f"across {count} transaction{'s' if count != 1 else ''}:"
-                    ]
+                    count_word = f"{count} transaction{'s' if count != 1 else ''}"
+                    lines = [f"{header} across {count_word}:"] if header else [f"💰 {label.title()}:"]
                     for row in rows[:15]:
+                        mark = "-" if row["direction"] == "outgoing" else "+"
+                        title = row["title"]
                         lines.append(
-                            f"• {row['date'][:10]} {row['currency']} {row['amount']:.2f} — "
-                            f"{row['merchant']} ({row['category']})"
+                            f"• {row['date'][:10]} {mark}{row['currency']} {row['amount']:.2f} — "
+                            f"{title} ({row['category']})"
                         )
                     if count > 15:
                         lines.append(f"…and {count - 15} more.")
@@ -454,6 +548,78 @@ class ExpensePlugin:
         else:
             reply = f"💰 Found {extracted['amount']:.2f} at {extracted['merchant']} — confirm below."
         return PluginOutput(message=reply, state_update={"active_domain": self.name})
+
+    @staticmethod
+    async def _finalize_income(
+        user_id: int,
+        parsed: Dict[str, Any],
+        source_id: str,
+    ) -> PluginOutput:
+        """Save an explicit incoming-money message once and confirm the result."""
+        if parsed.get("category") == "Friend Repayment":
+            from capabilities.expenses.settlement import settle_matching_iou
+
+            received_at = None
+            try:
+                received_at = datetime.fromisoformat(
+                    str(parsed.get("date_iso") or "").replace("Z", "+00:00")
+                )
+            except ValueError:
+                pass
+            settlement = await settle_matching_iou(
+                user_id=user_id,
+                participant=str(parsed.get("source") or ""),
+                amount=float(parsed.get("amount") or 0.0),
+                received_at=received_at,
+                notes=str(parsed.get("notes") or "").strip() or None,
+            )
+            if settlement is not None and settlement.get("status") in {
+                "settled",
+                "partially_settled",
+                "already_settled",
+            }:
+                status = settlement["status"]
+                if status == "already_settled":
+                    reply = (
+                        f"ℹ️ {settlement['participant']}'s repayment is already marked as paid "
+                        f"({settlement['currency']} {settlement['amount_due']:.2f})."
+                    )
+                elif status == "partially_settled":
+                    outstanding = settlement["amount_due"] - settlement["total_received"]
+                    reply = (
+                        f"💵 Logged {settlement['currency']} {settlement['amount_received']:.2f} from "
+                        f"{settlement['participant']}. Their IOU still has "
+                        f"{settlement['currency']} {outstanding:.2f} outstanding."
+                    )
+                else:
+                    reply = (
+                        f"✅ Logged {settlement['currency']} {settlement['amount_received']:.2f} from "
+                        f"{settlement['participant']} and marked their IOU as paid."
+                    )
+                return PluginOutput(
+                    message=AIMessage(content=reply),
+                    state_update={"active_domain": "expenses"},
+                )
+
+        if await is_duplicate_income(source_id):
+            return PluginOutput(
+                message=AIMessage(content="↩️ That incoming transaction is already logged."),
+                state_update={"active_domain": "expenses"},
+            )
+
+        item = await save_income_transaction(
+            user_id=user_id,
+            income=parsed,
+            source_message_id=source_id,
+        )
+        reply = (
+            f"💵 Logged *{item.currency} {item.amount:.2f}* from *{item.source}* "
+            f"({item.category})."
+        )
+        return PluginOutput(
+            message=AIMessage(content=reply),
+            state_update={"active_domain": "expenses"},
+        )
 
 
 class RoutePlugin:
@@ -681,48 +847,75 @@ class GeneralPlugin:
         if has_media:
             return await self._execute_multimodal(history)
 
-        # Real web search context for informational questions.
         last_text = str(last_content) if not isinstance(last_content, list) else ""
-        if any(
-            phrase in last_text.lower()
-            for phrase in (
-                "who is",
-                "what is",
-                "latest",
-                "news",
-                "search",
-                "current",
-                "weather",
-                "capital",
-                "when is",
-                "how do i",
-                "why is",
-            )
-        ):
-            try:
-                search_result = await search_web.ainvoke({"query": last_text})
-                if search_result and not search_result.startswith("[search]"):
-                    history.append(
-                        SystemMessage(
-                            content=(
-                                "Web search results (use them as the factual basis for your "
-                                f"reply, and cite the source when useful):\n{search_result}"
-                            )
-                        )
-                    )
-            except Exception as exc:  # noqa: BLE001
-                print(f"[GENERAL] web search failed: {exc}")
+
+        # Bounded tool loop: the model itself decides when to search the web or read
+        # the transaction ledger. Import lazily: tests monkeypatch
+        # capabilities.general.tools.search_web, which requires late binding.
+        from capabilities.general.tools import query_transactions, search_web
+
+        available_tools = [search_web, query_transactions]
 
         # Tests and local runs use placeholder keys; skip network call if no provider is configured.
         has_key = bool(settings.active_gemini_api_key or (settings.deepseek_api_key and settings.deepseek_api_key != "test_deepseek_key"))
+        if not has_key:
+            content = self._generate_rule_based_response(last_text)
+            return PluginOutput(
+                message=AIMessage(content=content),
+                state_update={"active_domain": self.name},
+            )
+
         try:
             llm = get_agent_llm(complexity=ThinkingLevel.MEDIUM, temperature=0.7)
-            ai_message = await llm.ainvoke(history)
-            content = str(getattr(ai_message, "content", "") or "").strip()
+            llm_with_tools = llm.bind_tools(available_tools)
+            ai_message = await llm_with_tools.ainvoke(history)
+
+            MAX_TOOL_ROUNDS = 3
+            for _round in range(MAX_TOOL_ROUNDS):
+                tool_calls = getattr(ai_message, "tool_calls", None) or []
+                if not tool_calls:
+                    break
+                history.append(ai_message)
+                for call in tool_calls:
+                    call_name = str(call.get("name") or "")
+                    call_args = dict(call.get("args") or {})
+                    if call_name == "query_transactions":
+                        # Identity guard: never trust a model-supplied user_id.
+                        call_args["user_id"] = int(user_id or 0)
+                    tool_obj = next((t for t in available_tools if t.name == call_name), None)
+                    if tool_obj is None:
+                        observation: Any = f"[{call_name}] Unknown tool."
+                    else:
+                        try:
+                            observation = await tool_obj.ainvoke(call_args)
+                        except Exception as tool_exc:  # noqa: BLE001
+                            print(f"[GENERAL] tool {call_name} failed: {tool_exc}")
+                            observation = f"[{call_name}] failed: {tool_exc}"
+                    history.append(
+                        ToolMessage(
+                            content=str(observation),
+                            tool_call_id=str(call.get("id") or call_name),
+                        )
+                    )
+                ai_message = await llm_with_tools.ainvoke(history)
+
+            content = extract_llm_text(getattr(ai_message, "content", "")).strip()
             if not content:
-                content = self._generate_rule_based_response(last_text)
+                if getattr(ai_message, "tool_calls", None):
+                    history.append(ai_message)
+                    for call in ai_message.tool_calls:
+                        history.append(
+                            ToolMessage(
+                                content="[tool] Round budget exhausted; answer from what you have.",
+                                tool_call_id=str(call.get("id") or call.get("name") or ""),
+                            )
+                        )
+                    final_message = await llm.ainvoke(history)
+                    content = extract_llm_text(getattr(final_message, "content", "")).strip()
+                if not content:
+                    content = self._generate_rule_based_response(last_text)
         except Exception as exc:  # noqa: BLE001 - never let LLM errors kill the webhook
-            print(f"[GENERAL] LLM call failed, using fallback: {exc}")
+            print(f"[GENERAL] LLM/tool loop failed, using fallback: {exc}")
             content = self._generate_rule_based_response(last_text)
 
         return PluginOutput(
@@ -869,9 +1062,12 @@ class ReminderPlugin:
 
         # 2. RECURRING CRON REMINDER
         cron = (parsed.get("cron") or "").strip()
-        if not message_text or not cron:
+        from capabilities.reminders.tools import has_recurrence_keyword
+
+        if not message_text or not cron or not has_recurrence_keyword(last_text):
             reply = (
-                "I can set reminders — try *\"remind me in 5 minutes to check oven\"* "
+                "I can set reminders — try *\"remind me in 5 minutes to check oven\"*, "
+                "*\"remind me tomorrow at 9am to call mom\"* "
                 "or *\"remind me to drink water every 2 hours\"*."
             )
             return PluginOutput(
@@ -909,6 +1105,448 @@ class ReminderPlugin:
         )
 
 
+class WhiteboardPlugin:
+    """Conversational whiteboard capability: create boards, list them, summarize,
+    pin notes, and add checklist cards — backed by the shared whiteboard tools."""
+
+    name = "whiteboard"
+    keywords = [
+        "whiteboard", "white board", "boards", " board", "planning canvas",
+        "plan a trip", "trip to", "itinerary", "shortlist", "packing list",
+        "pin to", "pin this", "pin that", "pin it", "brainstorm",
+        "plan my", "plan our", "plan for", "plan dinner", "plan the",
+    ]
+    description = "Create and manage living planning boards (trips, events, projects, meal plans)."
+
+    _CATEGORY_HINTS = [
+        (("trip", "travel", "vacation", "holiday", "getaway", "tour"), "trip"),
+        (("meal", "food", "dinner", "lunch", "grocer", "recipe", "cook", "menu"), "meal"),
+        (("party", "wedding", "event", "birthday", "celebration", "gathering"), "event"),
+        (("startup", "mvp", "launch", "feature", "sprint", "roadmap", "project"), "project"),
+    ]
+
+    @classmethod
+    def _guess_category(cls, text: str) -> str:
+        lowered = (text or "").lower()
+        for needles, category in cls._CATEGORY_HINTS:
+            if any(n in lowered for n in needles):
+                return category
+        return "general"
+
+    @staticmethod
+    def _clean_board_title(raw: str) -> str:
+        title = (raw or "").strip().strip("?!. ").strip()
+        title = re.sub(
+            r"^(?:a|an|the|my|our|new|another)\s+",
+            "",
+            title,
+            flags=re.IGNORECASE,
+        ).strip()
+        title = re.sub(r"\s+(board|whiteboard|canvas|planner)$", "", title, flags=re.IGNORECASE).strip()
+        if title:
+            title = title[0].upper() + title[1:]
+        return title or "New Board"
+
+    @staticmethod
+    def _extract_board_ref(text: str) -> str:
+        """Pull the board-name fragment out of phrases like '... to my tokyo board'."""
+        ref = re.sub(
+            r"^(?:pin|add)\b[^to]*?\bto\s+(?:my|the|our)?\s*",
+            "",
+            text,
+            flags=re.IGNORECASE,
+        ).strip()
+        ref = re.sub(r"\s*(?:board|whiteboard|canvas)s?\s*$", "", ref, flags=re.IGNORECASE).strip()
+        return ref
+
+    def _parse_intent(self, text: str) -> Dict[str, Any]:
+        raw = (text or "").strip()
+        lowered = raw.lower()
+
+        if re.search(r"\b(show|list|view|what|my)\b.*\b(boards|whiteboards)\b", lowered) or lowered.startswith("/boards"):
+            return {"action": "list"}
+
+        # Capture groups run against the original text so user casing survives.
+        pin_match = re.search(r"\bpin\b(.+?)\b(?:to|on)\b(.+)", raw, re.IGNORECASE)
+        if pin_match:
+            return {
+                "action": "pin",
+                "content": re.sub(r"^(this|that|it)\b\s*", "", pin_match.group(1).strip(), flags=re.IGNORECASE),
+                "board_ref": self._extract_board_ref("pin to " + pin_match.group(2).strip()),
+            }
+
+        add_match = re.search(
+            r"\badd\s+(?:a\s+)?(note|checklist|card|todo|to-do)?\s*(.*?)\s*(?:to|on)\s+(?:my|the|our)?\s*(.+?)\s*(?:boards?|whiteboards?|canvas)?\s*$",
+            raw,
+            re.IGNORECASE,
+        )
+        if add_match and add_match.group(2):
+            return {
+                "action": "add_card",
+                "kind": (add_match.group(1) or "note").lower(),
+                "content": add_match.group(2).strip(),
+                "board_ref": add_match.group(3).strip(),
+            }
+
+        summary_match = re.search(
+            r"(?:what(?:'s| is)|show me|summar\w+|overview of)\s+(?:on\s+|of\s+)?(?:my|the|our)?\s*(.+?)\s*(?:boards?|whiteboards?|canvas)\b",
+            raw,
+            re.IGNORECASE,
+        )
+        if summary_match:
+            return {"action": "summary", "board_ref": summary_match.group(1).strip()}
+
+        create_match = re.search(
+            r"^(?:plan|create|start|make|new)\s+(?:a\s+|an\s+|my\s+|our\s+|the\s+|new\s+)*(?:board|whiteboard|canvas)?\s*(?:for|called|named|to)?\s*(.*)$",
+            raw,
+            re.IGNORECASE,
+        )
+        if create_match and (create_match.group(1) or "board" in lowered or "whiteboard" in lowered or "canvas" in lowered):
+            remainder = create_match.group(1) or ""
+            if remainder or re.search(r"\b(board|whiteboard|canvas)\b", lowered):
+                return {"action": "create", "topic": remainder or "Untitled"}
+
+        return {"action": None}
+
+    async def execute(self, state: AssistantState) -> PluginOutput:
+        from capabilities.whiteboard import tools as wb
+
+        user_id = state["user_id"]
+        messages = state.get("messages", [])
+        last_text = str(messages[-1].content) if messages else ""
+
+        intent = self._parse_intent(last_text)
+        action = intent.get("action")
+
+        if action == "list":
+            boards = await wb.list_user_boards(user_id)
+            if not boards:
+                reply = (
+                    "🎨 You have no boards yet. Say *\"plan a trip to Tokyo\"* or "
+                    "*\"new board for my startup\"* and I'll create one."
+                )
+            else:
+                lines = ["🎨 **Your Planning Boards**:"]
+                for b in boards[:10]:
+                    lines.append(
+                        f"- {b.emoji_icon} *{b.title}* (`#{b.id}` · {b.category})"
+                    )
+                lines.append("\n💡 Ask me *\"what's on my Tokyo board\"* or *\"pin this to my Tokyo board\"*.")
+                reply = "\n".join(lines)
+            return PluginOutput(message=AIMessage(content=reply), state_update={"active_domain": self.name})
+
+        if action == "summary":
+            board = await wb.find_board(user_id, intent.get("board_ref", ""))
+            if not board:
+                reply = "🤔 I couldn't find that board. Send *my boards* to see them all."
+            else:
+                summary = await wb.board_summary_text(board.id)
+                reply = summary or f"{board.emoji_icon} *{board.title}* is empty."
+            return PluginOutput(message=AIMessage(content=reply), state_update={"active_domain": self.name})
+
+        if action == "create":
+            topic = self._clean_board_title(intent.get("topic", ""))
+            category = self._guess_category(topic)
+            emoji = {"trip": "✈️", "meal": "🛒", "event": "🎉", "project": "🚀", "general": "📋"}.get(category, "📋")
+            board = await wb.create_board(user_id=user_id, title=topic, category=category, emoji_icon=emoji)
+            sections = ", ".join(board.section_order or [])
+            reply = (
+                f"🎨 Created {emoji} *{board.title}* (#{board.id}, {category}).\n"
+                f"Sections: {sections}.\n"
+                f"Open the Whiteboard tab to fill it in — or ask me to *pin* ideas to it."
+            )
+            return PluginOutput(message=AIMessage(content=reply), state_update={"active_domain": self.name})
+
+        if action in ("pin", "add_card"):
+            board_ref = intent.get("board_ref", "")
+            board = await wb.find_board(user_id, board_ref)
+            if not board:
+                boards = await wb.list_user_boards(user_id)
+                names = ", ".join(f"{b.emoji_icon} {b.title}" for b in boards[:5]) or "none yet"
+                reply = (
+                    f"🤔 Which board? I found: {names}.\n"
+                    f"Try *\"pin this to my <board name> board\"*."
+                )
+                return PluginOutput(message=AIMessage(content=reply), state_update={"active_domain": self.name})
+
+            raw_content = (intent.get("content") or "").strip()
+            if not raw_content:
+                raw_content = re.sub(
+                    r"^\s*pin\b.*?\bto\b.*$|^\s*add\b.*?\bto\b.*$",
+                    "",
+                    last_text,
+                    flags=re.IGNORECASE,
+                ).strip() or last_text
+
+            if action == "add_card" and intent.get("kind") in ("checklist", "todo", "to-do"):
+                items = [ln.strip("-*• ").strip() for ln in raw_content.split("\n") if ln.strip()]
+                block = await wb.add_block_to_whiteboard(
+                    project_id=board.id,
+                    section_name="Checklist",
+                    block_type="checklist",
+                    title=(raw_content.split("\n")[0] or "Checklist")[:200],
+                    content_payload={"items": [{"id": f"c-{i + 1}", "text": t, "checked": False} for i, t in enumerate(items)]},
+                )
+                reply = f"☑️ Added checklist *{block.title}* to {board.emoji_icon} *{board.title}* (#{board.id})."
+            else:
+                block = await wb.add_block_to_whiteboard(
+                    project_id=board.id,
+                    section_name="Pinned",
+                    block_type="note",
+                    title=raw_content[:200] or "Pinned note",
+                    content_payload={"markdown": raw_content},
+                )
+                reply = f"📌 Pinned to {board.emoji_icon} *{board.title}* (#{board.id}) as card #{block.id}."
+            return PluginOutput(message=AIMessage(content=reply), state_update={"active_domain": self.name})
+
+        # action is None → deep-reasoning planning intake (create/augment from freeform text)
+        planned = await self._planning_intake(user_id, last_text)
+        if planned is not None:
+            return PluginOutput(
+                message=AIMessage(content=planned),
+                state_update={"active_domain": self.name},
+            )
+
+        reply = (
+            "🎨 I can run your planning boards from chat:\n"
+            "• *\"I want to plan a trip to Bali 3rd-6th Sept...\"* — I'll build the board, "
+            "capture bookings, and research the gaps\n"
+            "• *\"My boards\"* — list them\n"
+            "• *\"What's on my Tokyo board?\"* — summarize\n"
+            "• *\"Pin this to my Tokyo board: try the ramen at Ichiran\"* — pin a note"
+        )
+        return PluginOutput(message=AIMessage(content=reply), state_update={"active_domain": self.name})
+
+    async def _planning_intake(self, user_id: int, last_text: str) -> Optional[str]:
+        """Deep comprehension pass: decompose a freeform request into board cards,
+        research topics, and follow-up questions. Returns None when the request
+        is not planning-related (caller falls back to guidance)."""
+        from capabilities.whiteboard import tools as wb
+        from capabilities.whiteboard.planner import (
+            ENTITY_SECTION_DEFAULTS,
+            comprehend_request,
+        )
+
+        boards = await wb.list_user_boards(user_id)
+        target_board = None
+        explicit_match = False
+        if boards:
+            # 1. Explicit title fragment match in the message
+            for b in boards[:3]:
+                first_word = next((w for w in re.split(r"\W+", last_text.lower()) if len(w) > 3), "")
+                if first_word and first_word in b.title.lower():
+                    target_board = b
+                    explicit_match = True
+                    break
+            # 2. Durable pointer: the user's last touched board (survives restarts)
+            if target_board is None:
+                try:
+                    target_board = await wb.get_last_board(user_id)
+                    explicit_match = target_board is not None
+                except Exception:  # noqa: BLE001
+                    target_board = None
+            # 3. Recency fallback within 48h
+            if target_board is None:
+                try:
+                    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+
+                    recent = boards[0]
+                    updated = recent.updated_at
+                    if updated and updated.tzinfo is None:
+                        updated = updated.replace(tzinfo=_tz.utc)
+                    if updated and (_dt.now(_tz.utc) - updated) < _td(hours=48):
+                        target_board = recent
+                except Exception:  # noqa: BLE001
+                    target_board = None
+
+        board_context = None
+        if target_board is not None:
+            details = await wb.fetch_whiteboard_details(target_board.id)
+            sections = sorted({b["section_name"] for b in (details or {}).get("blocks", [])})
+            board_context = {
+                "id": target_board.id,
+                "title": target_board.title,
+                "category": target_board.category,
+                "sections": sections,
+                "explicit_match": explicit_match,
+            }
+
+        brief = await comprehend_request(last_text, board_context)
+        if not brief or brief.get("action") == "none":
+            return None
+
+        emoji_map = {"trip": "✈️", "meal": "🛒", "event": "🎉", "project": "🚀", "general": "📋"}
+        emoji = emoji_map.get(brief.get("category"), "📋")
+
+        # 1. Create or augment the board
+        if brief["action"] == "augment_board" and target_board is not None:
+            board = target_board
+        else:
+            existing = await wb.find_board(user_id, brief["board_title"])
+            board = existing or await wb.create_board(
+                user_id=user_id,
+                title=brief["board_title"],
+                category=brief.get("category") or "general",
+                emoji_icon=emoji,
+                summary=brief.get("summary"),
+            )
+        try:
+            await wb.set_last_board(user_id, board.id)
+        except Exception:  # noqa: BLE001 - pointer persistence must never break intake
+            pass
+
+        # 2. Materialize entities as cards (grouped by section)
+        created_cards: List[tuple] = []
+        section_for_kind = dict(ENTITY_SECTION_DEFAULTS)
+        for entity in brief.get("entities", []):
+            kind = entity.get("kind", "note")
+            status = entity.get("status", "tbd")
+            status_badge = {"booked": "✅ Booked", "confirmed": "📍 Confirmed", "tbd": "💭 Idea"}.get(status, "")
+            markdown_parts = []
+            if status_badge:
+                markdown_parts.append(f"**{status_badge}**")
+            if entity.get("details"):
+                markdown_parts.append(entity["details"])
+            block = await wb.add_block_to_whiteboard(
+                project_id=board.id,
+                section_name=section_for_kind.get(kind, "Notes"),
+                block_type="note",
+                title=entity.get("title", "Untitled")[:200],
+                content_payload={"markdown": "\n\n".join(markdown_parts)},
+            )
+            created_cards.append((section_for_kind.get(kind, "Notes"), block))
+
+        # 3. Skeleton itinerary when a date range exists and no itinerary-typed card yet
+        date_range = brief.get("date_range")
+        if date_range:
+            await wb.add_block_to_whiteboard(
+                project_id=board.id,
+                section_name="Itinerary",
+                block_type="itinerary",
+                title=f"Skeleton: {date_range}",
+                content_payload={"steps": []},
+            )
+            created_cards.append(("Itinerary", None))
+
+        # 4. Research pass — concurrent web searches, capped
+        research_queries = brief.get("research_queries") or []
+        findings_lines: List[str] = []
+        research_topics: List[Dict[str, Any]] = []
+        if research_queries:
+            from capabilities.general.tools import search_web
+
+            async def _run(query: str):
+                try:
+                    return query, await asyncio.wait_for(
+                        search_web.ainvoke({"query": query}), timeout=25
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    return query, f"[search failed: {exc}]"
+
+            results = await asyncio.gather(*[_run(q) for q in research_queries])
+            for query, raw_result in results:
+                snippet = str(raw_result).strip()
+                # Keep the summary line + top 2 result bullets per topic, trimmed
+                # to a clean word boundary (Tavily cuts mid-word).
+                lines = [ln.strip() for ln in snippet.split("\n") if ln.strip()][:3]
+
+                def _clean(line: str, cap: int = 200) -> str:
+                    if len(line) <= cap:
+                        return line
+                    cut = line[:cap]
+                    stop = max(cut.rfind(". "), cut.rfind(", "), cut.rfind(" "))
+                    return cut[:stop + 1].rstrip(" ,") if stop > 40 else cut.rstrip() + "…"
+
+                lines = [_clean(ln) for ln in lines]
+                condensed = "\n".join(lines)[:700]
+                findings_lines.append(f"**{query}**\n{condensed}")
+
+                summary_line = next(
+                    (line[len("Summary:"):].strip() for line in lines if line.lower().startswith("summary:")),
+                    "",
+                )
+                sources = []
+                for line in lines:
+                    source_match = re.match(r"^[-*•]\s+(.+?)\s+\((https?://[^)]+)\)", line)
+                    if source_match:
+                        sources.append({
+                            "title": source_match.group(1).strip()[:120],
+                            "url": source_match.group(2).strip()[:400],
+                        })
+                research_topics.append({
+                    "query": query[:160],
+                    "summary": summary_line[:300],
+                    "sources": sources[:3],
+                })
+
+            if findings_lines:
+                await wb.add_block_to_whiteboard(
+                    project_id=board.id,
+                    section_name="🔍 Research",
+                    block_type="note",
+                    title="Auto-research findings",
+                    content_payload={
+                        "topics": research_topics,
+                        "markdown": "\n\n".join(findings_lines)[:4000],
+                    },
+                )
+
+        # 5. Compose the intuitive reply: captured → researched → questions
+        header = (
+            f"🎨 Updated {board.emoji_icon} *{board.title}* (#{board.id})"
+            if brief["action"] == "augment_board" and target_board is not None
+            else f"🎨 Created {board.emoji_icon} *{board.title}* (#{board.id})"
+        )
+        parts = [header]
+
+        detail_bits = [b for b in (brief.get("destination"), brief.get("date_range")) if b]
+        occasion = brief.get("occasion")
+        if occasion:
+            detail_bits.append(occasion)
+        if detail_bits:
+            parts.append("📅 " + " · ".join(detail_bits))
+
+        if created_cards:
+            card_lines = []
+            for section, block in created_cards[:8]:
+                t = block.title if block else f"Skeleton: {date_range}"
+                card_lines.append(f"• {t} _({section})_")
+            parts.append("Cards added:\n" + "\n".join(card_lines))
+
+        if findings_lines:
+            highlights = findings_lines[0].split("\n")
+            preview = "\n".join(highlights[:3])[:500]
+            parts.append(f"🔎 Quick findings:\n{preview}\n_Full notes saved to the 🔍 Research section._")
+
+        questions = brief.get("follow_up_questions") or []
+        if questions:
+            q_lines = "\n".join(f"{i + 1}. {q}" for i, q in enumerate(questions))
+            parts.append(f"To fine-tune the plan:\n{q_lines}")
+
+        parts.append("_Open the Whiteboard tab to see everything laid out._")
+        return "\n\n".join(parts)
+
+
+def _describe_expectation(user_text: str, tags: List[str]) -> str:
+    """One-line statement of what the user wanted to accomplish, for gap tickets."""
+    text = (user_text or "").strip().replace("\n", " ")
+    if len(text) > 240:
+        text = text[:237] + "..."
+    key = tags[0] if tags else "custom"
+    scope = {
+        "bank_transfer": "Initiate a bank transfer / send money",
+        "calendar": "Schedule, view or manage calendar events",
+        "flight_booking": "Search or book flights",
+        "smart_home": "Control smart-home devices",
+        "email_send": "Compose and send an email",
+        "budget": "Set or track a budget",
+        "restaurant_booking": "Reserve a restaurant table",
+    }.get(key)
+    if scope:
+        return f"{scope}. Full request: \"{text}\""
+    return f"User expected the assistant to carry out: \"{text}\""
+
+
 class GuardrailPolicy:
     """Declarative guardrail policy registry for detecting out-of-scope transactional requests."""
 
@@ -922,7 +1560,10 @@ class GuardrailPolicy:
                 "pay ",
             ): "bank_transfer",
             ("calendar", "schedule", "meeting", "appointment", "invite"): "calendar",
-            ("flight", "hotel", "book a flight", "flight_booking"): "flight_booking",
+            (
+                "book a flight", "flight ticket", "book flights",
+                "book a hotel", "hotel booking", "reserve a hotel",
+            ): "flight_booking",
             ("smart home", "lights", "turn on", "turn off", "thermostat"): "smart_home",
         }
 
@@ -974,6 +1615,7 @@ CAPABILITY_REGISTRY: Dict[str, CapabilityPlugin] = {
     "routes": RoutePlugin(),
     "recipes": RecipePlugin(),
     "reminders": ReminderPlugin(),
+    "whiteboard": WhiteboardPlugin(),
     "general": GeneralPlugin(),
 }
 
@@ -998,6 +1640,19 @@ class CapabilityRouter:
             if any(k in lowered for k in plugin.keywords):
                 return name
         return "general"
+
+    _PLANNING_SIGNALS = (
+        "trip", "travel", "flight", "hotel", "villa", "airbnb", "stay", "booking", "booked",
+        "itinerary", "lunch", "dinner", "breakfast", "brunch", "restaurant", "eat",
+        "club", "beach", "party", "bachelor", "activity", "tour", "gym", "fitness",
+        "yoga", "spa", "reservation", "check in", "check-in", "pack", "headcount",
+        "day 1", "day 2", "day 3", "friday", "saturday", "sunday", "monday",
+    )
+
+    @classmethod
+    def _has_planning_signal(cls, text: str) -> bool:
+        lowered = (text or "").lower()
+        return any(signal in lowered for signal in cls._PLANNING_SIGNALS)
 
     async def dispatch(self, state: AssistantState) -> Command[str]:
         """
@@ -1043,14 +1698,21 @@ class CapabilityRouter:
         missing_tags = self.guardrail.evaluate(user_text)
         if missing_tags:
             primary_tag = missing_tags[0]
+            reply = AIMessage(
+                content=f"⚠️ [Supervisor Guardrail] This transactional capability (`#{primary_tag}`) is not yet supported. Would you like to log it as a feature request?"
+            )
             await log_capability_request(
                 user_id=user_id,
                 requested_task=user_text,
                 intent_type="unsupported_transaction",
                 tags=missing_tags,
-            )
-            reply = AIMessage(
-                content=f"⚠️ [Supervisor Guardrail] This transactional capability (`#{primary_tag}`) is not yet supported. Would you like to log it as a feature request?"
+                expectation=_describe_expectation(user_text, missing_tags),
+                block_reason=(
+                    f"GuardrailPolicy classified the request as an unsupported transactional "
+                    f"capability (`{'`, `'.join(missing_tags)}`) — no plugin is registered to carry it out."
+                ),
+                agent_reply=str(reply.content),
+                channel=state.get("channel") or "unknown",
             )
             _schedule_audit(
                 user_id=user_id,
@@ -1083,6 +1745,11 @@ class CapabilityRouter:
             target_domain = "expenses" if (not lowered or expense_hint) else "general"
         else:
             target_domain = self.route_intent(user_text)
+            if target_domain == "general" and state.get("active_domain") == "whiteboard":
+                # Planning conversations continue on the board: follow-ups like
+                # "we need a place for lunch" shouldn't fall out of context.
+                if self._has_planning_signal(user_text):
+                    target_domain = "whiteboard"
         plugin = self.registry.get(target_domain) or self.registry["general"]
         output = await plugin.execute(state)
 
