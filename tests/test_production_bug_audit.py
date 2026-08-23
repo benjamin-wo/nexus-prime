@@ -9,6 +9,7 @@ from core.audit import (
     redact_sensitive_info,
     report_production_bug,
     perform_conversation_audit,
+    record_operation_event,
 )
 from core.github_sync import sync_production_bug_to_github_issue
 
@@ -212,6 +213,119 @@ async def test_conversation_audit_triggers_bug_report_on_critical():
                 assert kwargs["user_id"] == 12345
                 assert kwargs["detection_source"] == "conversation_audit"
                 assert "Fabricated bus 9999" in kwargs["error_context"]
+
+
+@pytest.mark.asyncio
+async def test_record_operation_event_creates_deduped_issue():
+    """record_operation_event persists a ProductionBugLog row and dedups on re-run."""
+    mock_gh_result = {"url": "https://github.com/owner/repo/issues/77", "number": 77}
+
+    with patch(
+        "core.audit.sync_production_bug_to_github_issue",
+        new=AsyncMock(return_value=mock_gh_result),
+    ) as mock_sync:
+        first = await record_operation_event(
+            subsystem="scheduler",
+            error_context="db unreachable during sweep",
+            detection_source="operations_health",
+            fingerprint="db_unreachable",
+            severity="P1",
+        )
+        second = await record_operation_event(
+            subsystem="scheduler",
+            error_context="db unreachable during sweep",
+            detection_source="operations_health",
+            fingerprint="db_unreachable",
+            severity="P1",
+        )
+
+    assert first.id == second.id
+    assert first.fingerprint == "db_unreachable"
+    assert first.subsystem == "scheduler"
+    assert first.severity == "P1"
+    assert first.occurrence_count == 1
+    assert second.occurrence_count == 2
+    assert mock_sync.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_record_operation_event_deterministic_fingerprint_when_unspecified():
+    """Without a fingerprint, identical operation events still deduplicate."""
+    mock_gh_result = {"url": "https://github.com/owner/repo/issues/78", "number": 78}
+    with patch(
+        "core.audit.sync_production_bug_to_github_issue",
+        new=AsyncMock(return_value=mock_gh_result),
+    ):
+        a = await record_operation_event(
+            subsystem="email",
+            error_context="outlook token refresh failed: invalid_grant",
+            detection_source="runtime_exception",
+        )
+        b = await record_operation_event(
+            subsystem="email",
+            error_context="outlook token refresh failed: invalid_grant",
+            detection_source="runtime_exception",
+        )
+    assert a.id == b.id
+
+
+def test_health_sweep_records_missing_credential_probes(monkeypatch):
+    """The operations health sweep records an issue when missing provider credentials."""
+    import core.scheduler as sched_mod
+    from core.config import settings
+
+    monkeypatch.setattr(settings, "google_client_id", None)
+    monkeypatch.setattr(settings, "google_client_secret", None)
+    monkeypatch.setattr(settings, "microsoft_client_id", None)
+    monkeypatch.setattr(settings, "microsoft_client_secret", None)
+    monkeypatch.setattr(settings, "telegram_bot_token", None)
+
+    with patch(
+        "core.audit.record_operation_event",
+        new=AsyncMock(side_effect=lambda **kw: None),
+    ) as mock_record:
+        import asyncio
+
+        asyncio.run(sched_mod._run_operations_health_sweep())
+
+    fingerprints = {call.kwargs["fingerprint"] for call in mock_record.call_args_list}
+    assert "env_missing_gmail_credentials" in fingerprints
+    assert "env_missing_outlook_credentials" in fingerprints
+
+
+def test_unhandled_exception_middleware_records_runtime_bug(monkeypatch):
+    """fastapi exception handler funnels unhandled errors into the operation pipeline."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    recorded = {}
+
+    async def _fake_record(**kwargs):
+        recorded.update(kwargs)
+
+    import core.audit as audit_mod
+
+    monkeypatch.setattr(audit_mod, "record_operation_event", _fake_record)
+
+    with TestClient(app) as client:
+        resp = client.get("/api/this-route-does-not-exist")
+    # Unknown routes 404 via normal handling; the middleware only intercepts 5xx routes.
+    # Exercise the handler directly to prove the funnel fires.
+    from app.main import unhandled_exception_handler
+    from fastapi import Request
+
+    raw_exc = ValueError("boom")
+    from unittest.mock import MagicMock
+
+    req = MagicMock(spec=Request)
+    req.url.path = "/api/dashboard/explode"
+    req.method = "GET"
+    import asyncio
+
+    resp = asyncio.run(unhandled_exception_handler(req, raw_exc))
+    assert recorded["subsystem"] == "api"
+    assert "ValueError" in recorded.get("error_context", "")
+    assert resp.status_code == 500
 
 
 @pytest.mark.asyncio

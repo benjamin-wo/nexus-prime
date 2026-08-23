@@ -132,6 +132,9 @@ async def send_admin_anomaly_alert(thread_id: str, evidence: str, score: int):
         f"Faithfulness Score: {score}/5\n"
         f"Evidence: {evidence}"
     )
+    if not settings.audit_telegram_alerts:
+        print("[AUDIT ALERT] Telegram delivery disabled; anomaly retained in DB/GitHub.")
+        return
     chat_id = settings.admin_telegram_chat_id
     if not chat_id:
         print(f"[AUDIT ALERT] (no ADMIN_TELEGRAM_CHAT_ID) {alert_msg}")
@@ -145,15 +148,27 @@ async def send_admin_anomaly_alert(thread_id: str, evidence: str, score: int):
         print(alert_msg)
 
 
+# Intent types that represent a genuine capability gap and therefore deserve a
+# GitHub wishlist/backlog ticket. Other calls (informational_fallback, in_scope)
+# are counters for the leaderboard only — syncing them would spam the repo.
+GAP_INTENT_TYPES = {"unsupported_transaction", "insufficient_capability"}
+
+
 async def log_capability_request(
     user_id: int,
     requested_task: str,
     intent_type: str,
     tags: list[str],
+    expectation: Optional[str] = None,
+    block_reason: Optional[str] = None,
+    agent_reply: Optional[str] = None,
+    channel: Optional[str] = None,
 ) -> "CapabilityRequestLog":
     """
     Persist a missing capability demand entry in CapabilityRequestLog and
-    asynchronously sync to GitHub Issues if configured.
+    asynchronously sync genuine gaps (guardrail refusals / insufficiency) to
+    GitHub Issues with full context: request, expectation, missing areas,
+    block reason, and the reply shown to the user.
     """
     from core.models import CapabilityRequestLog
     from core.github_sync import sync_capability_gap_to_github_issue
@@ -165,18 +180,28 @@ async def log_capability_request(
             requested_task=requested_task,
             intent_type=intent_type,
             missing_capability_tags=tags_str,
+            expectation=expectation,
+            block_reason=block_reason,
+            agent_reply=agent_reply,
+            channel=channel,
         )
         session.add(entry)
         await session.commit()
         await session.refresh(entry)
 
-    # Sync each tag to GitHub Issues backlog without blocking core execution
-    for tag in tags:
-        await sync_capability_gap_to_github_issue(
-            tag=tag,
-            prompt=requested_task,
-            intent_type=intent_type,
-        )
+    # Sync each tag to GitHub Issues backlog without blocking core execution.
+    # Only genuine gaps create tickets; leaderboard-only calls stay local.
+    if intent_type in GAP_INTENT_TYPES:
+        for tag in tags:
+            await sync_capability_gap_to_github_issue(
+                tag=tag,
+                prompt=requested_task,
+                intent_type=intent_type,
+                expectation=expectation,
+                block_reason=block_reason,
+                agent_reply=agent_reply,
+                channel=channel,
+            )
 
     return entry
 
@@ -213,7 +238,9 @@ async def get_capability_leaderboard(limit: int = 10) -> list[dict]:
 
 
 JUDGE_SYSTEM_PROMPT = (
-    "You are an expert reviewer of a personal assistant's Telegram conversations. "
+    "You are an expert reviewer of ONE completed turn from a personal assistant's Telegram conversation. "
+    "Judge only the newest user request and the assistant reply in the supplied transcript; "
+    "do not attribute claims from older turns to the newest reply. "
     "The transcript may include 'role': 'tool' entries showing actual tool invocations "
     "and their raw outputs. Cross-check every claim in the assistant's replies against "
     "the real tool data: numbers, IDs, names, and times must come from tool outputs, "
@@ -221,7 +248,9 @@ JUDGE_SYSTEM_PROMPT = (
     "are bus numbers real, are stops correct, is the route grounded in provided tool data, "
     "is there a map link when useful, and does the assistant fabricate anything? Also judge "
     "whether the right capabilities were used (was a relevant tool skipped or mis-called?) "
-    "and whether the reply is honest and helpful. "
+    "and whether the reply is honest and helpful. Deterministic responses such as OAuth links, "
+    "capability refusals, confirmations, and routing messages do not require a tool call; "
+    "do not label those as hallucinations merely because no tool message is present. "
     "Reply with ONLY JSON: "
     '{"faithfulness_score": int 1-5, "routing_score": int 1-5, '
     '"tool_correctness_score": int 1-5, "helpfulness_score": int 1-5, '
@@ -411,6 +440,95 @@ async def _triage_bug_with_gemini(triage_input: Dict[str, Any]) -> Dict[str, Any
     return json.loads(raw)
 
 
+async def record_operation_event(
+    subsystem: str,
+    error_context: str,
+    detection_source: str = "runtime_exception",
+    user_id: Optional[int] = None,
+    thread_id: Optional[str] = None,
+    error_traceback: Optional[str] = None,
+    fingerprint: Optional[str] = None,
+    severity: str = "P2",
+    title: Optional[str] = None,
+) -> Optional["ProductionBugLog"]:
+    """
+    Record an operational event (runtime error, health-probe failure, delivery
+    failure) through the production-bug pipeline without an LLM triage call.
+
+    Falls back to a deterministic fingerprint when none is supplied so identical
+    failures keep deduplicating into one open issue + recurrence comments.
+    """
+    from core.models import ProductionBugLog
+    from datetime import datetime
+
+    text = redact_sensitive_info(str(error_context or ""))
+    trace = redact_sensitive_info(str(error_traceback or ""))
+    if not fingerprint:
+        handle = (title or text or "operation")[:120]
+        seed = f"{detection_source}:{subsystem}:{handle}"
+        fingerprint = f"op_{subsystem}_{abs(hash(seed)) % 100000}".lower().replace(" ", "_")
+
+    occurrence_count = 1
+    async with async_session_factory() as session:
+        result = await session.execute(
+            select(ProductionBugLog).where(
+                ProductionBugLog.fingerprint == fingerprint,
+                ProductionBugLog.status == "open",
+            )
+        )
+        existing = result.scalars().first()
+        if existing:
+            existing.occurrence_count += 1
+            existing.updated_at = datetime.utcnow()
+            if not existing.error_traceback and error_traceback:
+                existing.error_traceback = error_traceback
+            occurrence_count = existing.occurrence_count
+            session.add(existing)
+            await session.commit()
+            await session.refresh(existing)
+            log_record = existing
+        else:
+            log_record = ProductionBugLog(
+                fingerprint=fingerprint,
+                title=(title or (f"{subsystem.replace('_', ' ').title()} operation failure")[:120]),
+                severity=severity if severity in {"P0", "P1", "P2", "P3"} else "P2",
+                subsystem=subsystem.lower(),
+                detection_source=detection_source,
+                user_id=user_id,
+                thread_id=thread_id,
+                root_cause=text,
+                reproduction_context=text[:500],
+                error_traceback=trace or None,
+                occurrence_count=1,
+                status="open",
+            )
+            session.add(log_record)
+            await session.commit()
+            await session.refresh(log_record)
+
+    # Sync straight away (dedups into existing issue / creates new one).
+    gh_result = await sync_production_bug_to_github_issue(
+        fingerprint=fingerprint,
+        title=log_record.title,
+        severity=log_record.severity,
+        subsystem=log_record.subsystem,
+        detection_source=detection_source,
+        root_cause=text,
+        reproduction_context=text[:500],
+        error_traceback=trace or None,
+        occurrence_count=occurrence_count,
+    )
+    if gh_result and isinstance(gh_result, dict):
+        async with async_session_factory() as session:
+            db_entry = await session.get(ProductionBugLog, log_record.id)
+            if db_entry:
+                db_entry.github_issue_url = gh_result.get("url")
+                db_entry.github_issue_number = gh_result.get("number")
+                session.add(db_entry)
+                await session.commit()
+    return log_record
+
+
 async def report_production_bug(
     user_id: Optional[int] = None,
     thread_id: Optional[str] = None,
@@ -540,4 +658,3 @@ async def report_production_bug(
                 log_record = db_entry
 
     return log_record
-

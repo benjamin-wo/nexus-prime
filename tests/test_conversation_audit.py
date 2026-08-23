@@ -65,14 +65,40 @@ async def test_conversation_audit_alerts_admin_on_critical():
 
     with patch("core.audit._judge_conversation_with_gemini", new=AsyncMock(return_value=payload)):
         with patch("core.audit.settings.admin_telegram_chat_id", "999888"):
-            with patch("app.ingress.send_telegram_message", new=_fake_send):
-                await perform_conversation_audit(
-                    user_id=149917165, thread_id="149917165", messages=messages
-                )
+            with patch("core.audit.settings.audit_telegram_alerts", True):
+                with patch("app.ingress.send_telegram_message", new=_fake_send):
+                    await perform_conversation_audit(
+                        user_id=149917165, thread_id="149917165", messages=messages
+                    )
     # Admin channel notified, NOT the user chat
     assert sent.get("chat_id") == 999888
     assert "AUDIT ANOMALY" in sent.get("text", "")
     assert "Wrong bus number hallucinated" in sent.get("text", "")
+
+
+@pytest.mark.asyncio
+async def test_conversation_audit_does_not_send_telegram_by_default():
+    """Audit failures remain available for DB/GitHub triage without Telegram noise."""
+    messages = [HumanMessage(content="connect my Outlook email"), AIMessage(content="OAuth link")]
+    payload = {
+        "faithfulness_score": 1,
+        "routing_score": 1,
+        "tool_correctness_score": 1,
+        "helpfulness_score": 1,
+        "verdict": "critical",
+        "evidence": "test anomaly",
+    }
+    with patch("core.audit.settings.audit_telegram_alerts", False):
+        with patch("core.audit.settings.admin_telegram_chat_id", "999888"):
+            with patch("app.ingress.send_telegram_message", new=AsyncMock()) as send:
+                from core.audit import send_admin_anomaly_alert
+
+                await send_admin_anomaly_alert(
+                    thread_id="outlook-connect",
+                    evidence="test anomaly",
+                    score=1,
+                )
+                send.assert_not_awaited()
 
 
 @pytest.mark.asyncio

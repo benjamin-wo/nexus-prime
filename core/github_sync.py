@@ -1,6 +1,6 @@
 import os
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from datetime import datetime
 import httpx
 
@@ -8,9 +8,241 @@ logger = logging.getLogger(__name__)
 
 GITHUB_API_BASE = "https://api.github.com"
 
+# Knowledge base: what each known gap tag would enable, and the concrete
+# areas that are currently missing. Custom wishlist tags fall back to a
+# generic template but still get the full request/expectation context.
+GAP_TAG_KNOWLEDGE: Dict[str, Dict[str, Any]] = {
+        "calendar": {
+        "what_it_enables": "Configure, list, edit and delete calendar events; answer schedule/meeting questions; set reminders around events.",
+        "expected": [
+            "Calendar integration (Google Calendar / Outlook) with OAuth",
+            "Event CRUD tools & availability checks",
+            "Schedule-aware reminder chaining",
+            "Plugin + manifest + router wiring",
+        ],
+        "next_steps": [
+            "Add a CalendarPlugin alongside the existing EmailPlugin auth pattern",
+            "Reuse /auth flow for calendar scopes, store refresh tokens in UserCredential",
+            "Define tools (create_event, list_events, update_event, delete_event) and a manifest yaml",
+        ],
+    },
+    "flight_booking": {
+        "what_it_enables": "Search flights, compare prices/connections, and (eventually) book tickets.",
+        "expected": [
+            "Flight search API integration (lookup, price, availability)",
+            "Booking engine or hand-off to partner flow",
+            "Plugin + manifest + router wiring",
+        ],
+        "next_steps": [
+            "Start read-only: flight search + price alerts before any checkout flow",
+            "Add a SearchFlightPlugin with manifest; keep booking behind HITL confirmation",
+        ],
+    },
+    "bank_transfer": {
+        "what_it_enables": "Initiate bank transfers, manage payees, and read account balances.",
+        "expected": [
+            "Bank/provider API integration or Open Banking connector",
+            "Strong multi-factor HITL confirmation on every transfer",
+            "Plugin + manifest + router wiring",
+        ],
+        "next_steps": [
+            "Scope down to read-only balance/statement first",
+            "Design transfer confirmation flow reusing the existing interrupt() HITL pattern",
+        ],
+    },
+    "smart_home": {
+        "what_it_enables": "Control lights, thermostats and other smart-home devices by voice.",
+        "expected": [
+            "Smart-home bridge integration (Matter/HomeKit/Hub)",
+            "Device registry + control tools",
+            "Plugin + manifest + router wiring",
+        ],
+        "next_steps": [
+            "Start with a device-status (read-only) capability; add writes behind HITL",
+        ],
+    },
+    "email_send": {
+        "what_it_enables": "Compose and send emails on the user's behalf.",
+        "expected": [
+            "SMTP or Graph/API send permission (Mail.Send)",
+            "Compose tool + confirmation step before send",
+            "Plugin + manifest + router wiring",
+        ],
+        "next_steps": [
+            "Reuse the OAuth credential store; add Mail.Send scope; clamp recipients to the user's own address until verified",
+        ],
+    },
+    "budget": {
+        "what_it_enables": "Set monthly budgets by category, track spend against them, and warn on overruns.",
+        "expected": [
+            "Budget model + rules engine",
+            "Category rollup against ExpenseTransaction",
+            "Alerting hooks into ambient.py",
+        ],
+        "next_steps": [
+            "Add BudgetPlugin with set_budget/list_budget tools; surface progress on the dashboard summary",
+        ],
+    },
+    "restaurant_booking": {
+        "what_it_enables": "Search restaurants, check tables and make reservations.",
+        "expected": [
+            "Reservation provider integration",
+            "HITL confirmation of slot + party size",
+        ],
+        "next_steps": [
+            "Read-only search first (reuse Tavily/web tooling), then a booking provider",
+        ],
+    },
+}
+
+
+def _tag_knowledge(tag: str) -> Dict[str, Any]:
+    key = tag.strip().lstrip("#").lower()
+    if key in GAP_TAG_KNOWLEDGE:
+        return GAP_TAG_KNOWLEDGE[key]
+    return {
+        "what_it_enables": f"A '{key}' capability that fulfils this kind of request.",
+        "expected": [
+            f"Domain tools & API integration for {key}",
+            "Plugin + manifest + router wiring",
+            "Telegram/Web UI surface if applicable",
+        ],
+        "next_steps": [
+            "Assess the requested scope in the issue comments; propose a mini-spec, then implement a first read-only slice",
+        ],
+    }
+
+
+def _missing_area_status(tag: str) -> List[str]:
+    """Inspect the repo to see which layers already exist for this capability."""
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    clean_tag = tag.strip().lstrip("#").lower()
+
+    checks = []
+    checks.append(("Manifest (capabilities/manifests/{}.yaml)".format(clean_tag), os.path.exists(os.path.join(root, "capabilities", "manifests", f"{clean_tag}.yaml"))))
+    checks.append(("Plugin registered in CAPABILITY_REGISTRY", _plugin_exists(clean_tag)))
+    checks.append(
+        (
+            "Domain tools module (capabilities/{}/tools.py)".format(clean_tag),
+            os.path.exists(os.path.join(root, "capabilities", clean_tag, "tools.py")),
+        )
+    )
+    lines = []
+    for label, present in checks:
+        lines.append(f"- [{'x' if present else ' '}] {label}")
+    return lines
+
+
+def _plugin_exists(tag: str) -> bool:
+    try:
+        from orchestrator.router import CAPABILITY_REGISTRY, CapabilityPlugin  # noqa: F401
+        return tag in CAPABILITY_REGISTRY
+    except Exception:
+        return False
+
+
+def _build_capability_gap_body(
+    tag: str,
+    prompt: str,
+    intent_type: str,
+    expectation: Optional[str],
+    block_reason: Optional[str],
+    agent_reply: Optional[str],
+    channel: Optional[str],
+    occurred_count: int = 1,
+) -> str:
+    """Compose a detailed, greppable GitHub issue body for a capability gap."""
+    knowledge = _tag_knowledge(tag)
+    status_checks = _missing_area_status(tag)
+    timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    lines: List[str] = [
+        "## 🪄 Feature Request / Capability Gap",
+        "",
+        f"- **Requested Capability**: `#{tag}`",
+        f"- **First Requested**: {timestamp} (occurrence #{occurred_count})",
+        f"- **Intent Type**: `{intent_type}`",
+        f"- **Channel**: `{channel or 'unknown'}`",
+        "",
+        "### 🎯 What it enables",
+        knowledge["what_it_enables"],
+        "",
+    ]
+
+    lines.append("### 👤 User request (verbatim)")
+    lines.append("```")
+    lines.append((prompt or "").strip()[:1500])
+    lines.append("```")
+    lines.append("")
+
+    if expectation:
+        lines.append("### ✅ Expected behaviour")
+        lines.append(expectation)
+        lines.append("")
+
+    lines.append("### 🧩 Areas currently missing")
+    lines.extend(f"- {area}" for area in knowledge["expected"])
+    lines.append("")
+    lines.append("### 🏗️ Current implementation state")
+    lines.extend(status_checks)
+    lines.append("")
+
+    if block_reason or intent_type == "unsupported_transaction":
+        lines.append("### 🚫 Why it was refused / error")
+        lines.append(block_reason or "Guardrail classified the request as an unsupported transactional capability and refused it.")
+        lines.append("")
+
+    if agent_reply:
+        lines.append("### 💬 What the assistant told the user")
+        lines.append("> " + (agent_reply or "").strip()[:600].replace("\n", "\n> "))
+        lines.append("")
+
+    lines.append("### 🛠️ Suggested next steps")
+    lines.extend(f"- {step}" for step in knowledge["next_steps"])
+    lines.append("")
+    lines.append("---")
+    lines.append("*Automatically logged by Nexus Prime telemetry — the request could not be carried out at the time of asking.*")
+    return "\n".join(lines)
+
+
+def _build_gap_comment(
+    tag: str,
+    prompt: str,
+    intent_type: str,
+    expectation: Optional[str],
+    block_reason: Optional[str],
+    agent_reply: Optional[str],
+    channel: Optional[str],
+    occurred_count: int = 1,
+) -> str:
+    """Compact per-occurrence comment with the full context of this request."""
+    parts = [
+        f"### 🔁 Capability Gap Occurrence #{occurred_count}",
+        f"- **User request**:",
+        "```",
+        (prompt or "").strip()[:1200],
+        "```",
+        f"- **Intent Type**: `{intent_type}`",
+        f"- **Channel**: `{channel or 'unknown'}`",
+        f"- **Timestamp**: `{datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}`",
+    ]
+    if expectation:
+        parts.append(f"- **Expected**: {expectation[:140]}")
+    if block_reason:
+        parts.append(f"- **Block reason / error**: {block_reason[:200]}")
+    if agent_reply:
+        parts.append(f"- **Assistant reply to user**: {agent_reply[:200]}")
+    return "\n".join(str(p) for p in parts)
+
 
 async def sync_capability_gap_to_github_issue(
-    tag: str, prompt: str, intent_type: str
+    tag: str,
+    prompt: str,
+    intent_type: str,
+    expectation: Optional[str] = None,
+    block_reason: Optional[str] = None,
+    agent_reply: Optional[str] = None,
+    channel: Optional[str] = None,
 ) -> Optional[str]:
     """
     Synchronizes a capability demand request with a GitHub Repository's Issues backlog.
@@ -52,13 +284,28 @@ async def sync_capability_gap_to_github_issue(
                         break
 
             if existing_issue_number:
-                # Add a +1 comment to existing issue
+                # Add a +1 comment with this occurrence's full context
+                occurred = 1
+                try:
+                    issue_resp = await client.get(
+                        f"{GITHUB_API_BASE}/repos/{repo}/issues/{existing_issue_number}",
+                        headers=headers,
+                    )
+                    if issue_resp.status_code == 200:
+                        occurred = int(issue_resp.json().get("comments", 0)) + 1
+                except Exception:
+                    pass
                 comment_url = f"{GITHUB_API_BASE}/repos/{repo}/issues/{existing_issue_number}/comments"
                 comment_payload = {
-                    "body": (
-                        f"+1 Capability Demand Request:\n"
-                        f"- **Prompt**: \"{prompt}\"\n"
-                        f"- **Intent Type**: `{intent_type}`"
+                    "body": _build_gap_comment(
+                        tag=clean_tag,
+                        prompt=prompt,
+                        intent_type=intent_type,
+                        expectation=expectation,
+                        block_reason=block_reason,
+                        agent_reply=agent_reply,
+                        channel=channel,
+                        occurred_count=occurred,
                     )
                 }
                 res = await client.post(
@@ -70,16 +317,19 @@ async def sync_capability_gap_to_github_issue(
                     )
                     return f"https://github.com/{repo}/issues/{existing_issue_number}"
             else:
-                # Create a new GitHub Issue
+                # Create a new GitHub Issue with the full detailed body
                 create_url = f"{GITHUB_API_BASE}/repos/{repo}/issues"
                 issue_payload = {
                     "title": f"[Wishlist] Missing Capability: #{clean_tag}",
-                    "body": (
-                        f"### Missing Capability Demand Log\n\n"
-                        f"- **Requested Tag**: `#{clean_tag}`\n"
-                        f"- **First Sample Prompt**: \"{prompt}\"\n"
-                        f"- **Intent Type**: `{intent_type}`\n\n"
-                        f"*Automatically logged by Telegram Assistant Bot v2.0 Telemetry*"
+                    "body": _build_capability_gap_body(
+                        tag=clean_tag,
+                        prompt=prompt,
+                        intent_type=intent_type,
+                        expectation=expectation,
+                        block_reason=block_reason,
+                        agent_reply=agent_reply,
+                        channel=channel,
+                        occurred_count=1,
                     ),
                     "labels": ["capability-gap", "enhancement", "wishlist"],
                 }
