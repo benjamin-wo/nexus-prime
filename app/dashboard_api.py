@@ -11,17 +11,22 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 from datetime import datetime, timezone as dt_timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional, assert_never
+from urllib.parse import urlparse
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
 from fastapi.responses import FileResponse, JSONResponse
 from sqlmodel import select, delete, func, desc
+from sqlalchemy import or_, update
 
 from core.db import async_session_factory
 from core.config import settings
+from capabilities.whiteboard.tools import DEFAULT_SECTION_TEMPLATES
 from core.models import (
     ExpenseTransaction,
+    IncomeTransaction,
     DeletedExpenseMessage,
     GroceryItem,
     ScheduledJob,
@@ -39,6 +44,7 @@ from core.scheduler import (
     snooze_task_reminder,
     trigger_task_alert_now,
 )
+from capabilities.expenses.settlement import IouSettlementCommand, settle_iou
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
@@ -97,7 +103,10 @@ def _build_imagen_prompt(title: str, category: Optional[str], summary: Optional[
     subject = title.strip() or "a personal planning board"
     context = (summary or "").strip()
     return (
-        "Artsy Narrative Landscape illustration, tall vertical banner. "
+        "Artsy Narrative Landscape illustration for a compact web card. "
+        "Wide landscape composition, 16:9 aspect ratio, 1K web-thumbnail detail, "
+        "subject centered with generous safe margins so it crops cleanly inside a "
+        "260x150px card. Do not create a portrait poster or tall vertical banner. "
         f"Theme: {subject}. "
         f"{'Context: ' + context + '. ' if context else ''}"
         f"Sky: {theme['sky']}. Foreground: {theme['foreground']}. "
@@ -111,6 +120,23 @@ def _cover_file_path(project_id: int) -> str:
     return os.path.join(BOARD_COVERS_DIR, f"{project_id}.png")
 
 
+def _cover_cache_version(project_id: int) -> Optional[str]:
+    """Return a stable browser-cache version for the persisted cover file."""
+    try:
+        return str(os.stat(_cover_file_path(project_id)).st_mtime_ns)
+    except OSError:
+        return None
+
+
+def _cover_cache_headers(project_id: int) -> Dict[str, str]:
+    """Cache cover bytes aggressively while allowing a new file to invalidate them."""
+    version = _cover_cache_version(project_id) or "pending"
+    return {
+        "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800",
+        "ETag": f'W/"board-cover-{project_id}-{version}"',
+    }
+
+
 async def _generate_board_cover(project_id: int) -> None:
     """Generate Imagen cover art for a board and persist it to disk.
 
@@ -120,6 +146,20 @@ async def _generate_board_cover(project_id: int) -> None:
     flag False so a later poll can retry.
     """
     try:
+        # The durable file is the source of truth. A restart, repeated GET, or
+        # a second worker must reuse it without spending another image token.
+        if os.path.isfile(_cover_file_path(project_id)):
+            async with async_session_factory() as session:
+                proj = (await session.execute(
+                    select(WhiteboardProject).where(WhiteboardProject.id == project_id)
+                )).scalar_one_or_none()
+                if proj and not proj.cover_ready:
+                    proj.cover_ready = True
+                    session.add(proj)
+                    await session.commit()
+            logger.info("Reusing cached cover art for board %s", project_id)
+            return
+
         api_key = settings.active_gemini_api_key
         if not api_key:
             logger.info("No Gemini API key configured — skipping cover generation for board %s", project_id)
@@ -144,9 +184,13 @@ async def _generate_board_cover(project_id: int) -> None:
             client = genai.Client(api_key=api_key)
             generation_config = {
                 "temperature": 1,
-                "max_output_tokens": 65536,
+                "max_output_tokens": 1024,
                 "top_p": 0.95,
                 "thinking_level": "minimal",
+                "image_config": {
+                    "aspect_ratio": "16:9",
+                    "image_size": "1K",
+                },
             }
             interaction = client.interactions.create(
                 model="models/gemini-3.1-flash-lite-image",
@@ -172,13 +216,32 @@ async def _generate_board_cover(project_id: int) -> None:
                 from google.genai import types
 
                 client = genai.Client(api_key=api_key)
-                response = client.models.generate_content(
-                    model="gemini-2.5-flash-image",
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        response_modalities=["IMAGE"],
-                    ),
-                )
+                try:
+                    response = client.models.generate_content(
+                        model="gemini-2.5-flash-image",
+                        contents=prompt,
+                        config=types.GenerateContentConfig(
+                            response_modalities=["IMAGE"],
+                            max_output_tokens=1024,
+                            image_config=types.ImageConfig(
+                                aspect_ratio="16:9",
+                                image_size="1K",
+                            ),
+                        ),
+                    )
+                except Exception as config_exc:
+                    # Older image model revisions may reject image_size while
+                    # still accepting the prompt/aspect ratio path.
+                    logger.info("Image config rejected for board %s, retrying minimal config: %s", project_id, config_exc)
+                    response = client.models.generate_content(
+                        model="gemini-2.5-flash-image",
+                        contents=prompt,
+                        config=types.GenerateContentConfig(
+                            response_modalities=["IMAGE"],
+                            max_output_tokens=1024,
+                            image_config=types.ImageConfig(aspect_ratio="16:9"),
+                        ),
+                    )
                 if response.candidates and response.candidates[0].content:
                     for part in response.candidates[0].content.parts:
                         if hasattr(part, "inline_data") and part.inline_data and part.inline_data.data:
@@ -242,6 +305,7 @@ class ExpenseCreateRequest(BaseModel):
     merchant: str = Field(..., description="Store or merchant name")
     category: str = Field(default="General", description="Expense category")
     date: Optional[str] = Field(default=None, description="ISO timestamp or date string")
+    notes: Optional[str] = Field(default=None, max_length=500)
     user_id: Optional[int] = Field(default=999999, description="Target user ID")
 
 
@@ -251,6 +315,51 @@ class ExpenseUpdateRequest(BaseModel):
     merchant: Optional[str] = Field(default=None, description="Store or merchant name")
     category: Optional[str] = Field(default=None, description="Expense category")
     date: Optional[str] = Field(default=None, description="ISO timestamp or date string")
+    notes: Optional[str] = Field(default=None, max_length=500)
+
+
+class IncomeCreateRequest(BaseModel):
+    amount: float = Field(..., gt=0, description="Incoming amount")
+    currency: str = Field(default="SGD", description="3-letter currency code")
+    source: str = Field(..., min_length=1, max_length=120, description="Who or where the money came from")
+    category: str = Field(default="Other", max_length=40, description="Salary, repayment, reimbursement, claim, or other")
+    date: Optional[str] = Field(default=None, description="ISO timestamp or date string")
+    notes: Optional[str] = Field(default=None, max_length=500, description="Optional context")
+    user_id: Optional[int] = Field(default=999999, description="Target user ID")
+
+
+class IncomeUpdateRequest(BaseModel):
+    amount: Optional[float] = Field(default=None, gt=0, description="Incoming amount")
+    currency: Optional[str] = Field(default=None, description="3-letter currency code")
+    source: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    category: Optional[str] = Field(default=None, max_length=40)
+    date: Optional[str] = Field(default=None, description="ISO timestamp or date string")
+    notes: Optional[str] = Field(default=None, max_length=500)
+
+
+class TransactionCreateRequest(BaseModel):
+    direction: Literal["outgoing", "incoming"] = "outgoing"
+    amount: float = Field(..., gt=0)
+    currency: str = Field(default="SGD", min_length=3, max_length=3)
+    counterparty: str = Field(..., min_length=1, max_length=120)
+    category: str = Field(default="Other", max_length=40)
+    date: Optional[str] = Field(default=None)
+    notes: Optional[str] = Field(default=None, max_length=500)
+    user_id: Optional[int] = Field(default=999999)
+
+
+class TransactionUpdateRequest(BaseModel):
+    amount: Optional[float] = Field(default=None, gt=0)
+    currency: Optional[str] = Field(default=None, min_length=3, max_length=3)
+    counterparty: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    category: Optional[str] = Field(default=None, max_length=40)
+    date: Optional[str] = Field(default=None)
+    notes: Optional[str] = Field(default=None, max_length=500)
+
+
+class IouSettlementRequest(BaseModel):
+    participant: str = Field(..., min_length=1, max_length=120)
+    amount: Optional[float] = Field(default=None, gt=0)
 
 
 
@@ -394,12 +503,29 @@ async def get_dashboard_summary(user_id: Optional[int] = Query(default=None)) ->
         result = await session.execute(query)
         expenses = result.scalars().all()
 
+        income_query = select(IncomeTransaction)
+        if user_id is not None and user_id != 0:
+            income_query = income_query.where(IncomeTransaction.user_id == user_id)
+        income_result = await session.execute(income_query)
+        income = income_result.scalars().all()
+
         now = datetime.now(dt_timezone.utc)
         current_year_month = now.strftime("%Y-%m")
 
         total_spent_all = sum(e.amount for e in expenses)
         month_expenses = [e for e in expenses if e.date and e.date.strftime("%Y-%m") == current_year_month]
         total_spent_month = sum(e.amount for e in month_expenses) if month_expenses else total_spent_all
+        month_income = [i for i in income if i.date and i.date.strftime("%Y-%m") == current_year_month]
+        total_income_month = sum(i.amount for i in month_income)
+        total_income_all = sum(i.amount for i in income)
+        total_transaction_count = len(expenses) + len(income)
+        month_transaction_count = len(month_expenses) + len(month_income)
+        pending_iou_count = 0
+        pending_iou_amount = 0.0
+        for expense in expenses:
+            _, count, amount = _split_payment_summary(expense.split_data or {})
+            pending_iou_count += count
+            pending_iou_amount += amount
 
         # Normalized Category breakdown
         category_totals: Dict[str, float] = {}
@@ -460,8 +586,14 @@ async def get_dashboard_summary(user_id: Optional[int] = Query(default=None)) ->
             "currency": profile.home_currency if profile else "SGD",
             "timezone": profile.current_timezone if profile else "Asia/Singapore",
             "total_spent_month": round(total_spent_month, 2),
-            "total_transactions_count": len(expenses),
-            "month_transactions_count": len(target_set),
+            "total_income_month": round(total_income_month, 2),
+            "total_income_all": round(total_income_all, 2),
+            "income_transactions_count": len(income),
+            "net_cash_flow_month": round(total_income_month - total_spent_month, 2),
+            "pending_iou_count": pending_iou_count,
+            "pending_iou_amount": round(pending_iou_amount, 2),
+            "total_transactions_count": total_transaction_count,
+            "month_transactions_count": month_transaction_count,
             "categories": categories_list,
             "top_merchants": merchants_list,
             "active_jobs_count": len(active_jobs),
@@ -515,8 +647,12 @@ async def list_expenses(
                 "currency": r.currency,
                 "merchant": r.merchant,
                 "category": normalize_category(r.category),
-                "date": r.date.isoformat() if r.date else "",
+                # DB stores naive UTC — emit an explicit UTC marker so browsers
+                # convert to the viewer's local timezone instead of showing
+                # UTC clock values as if they were local.
+                "date": _format_iso(r.date),
                 "is_verified": r.is_verified,
+                "notes": r.notes,
                 "source": "gmail" if r.source_message_id and "gmail" in r.source_message_id.lower() else ("telegram" if r.source_message_id else "manual"),
                 "receipt_items": r.receipt_items or [],
                 "split_data": r.split_data or {},
@@ -525,6 +661,511 @@ async def list_expenses(
         ]
 
         return {"status": "ok", "expenses": items, "count": len(items)}
+
+
+def _income_to_dict(item: IncomeTransaction) -> Dict[str, Any]:
+    return {
+        "id": item.id,
+        "amount": item.amount,
+        "currency": item.currency,
+        "source": item.source,
+        "category": item.category,
+        "date": _format_iso(item.date),
+        "notes": item.notes,
+        "linked_expense_id": item.linked_expense_id,
+    }
+
+
+def _split_payment_summary(split_data: Dict[str, Any]) -> tuple[str, int, float]:
+    """Return display status, pending participant count, and pending amount."""
+    friends = [name for name in (split_data.get("friends") or []) if name != "Me"]
+    share_amounts = dict(
+        split_data.get("share_amounts")
+        or split_data.get("custom_amounts")
+        or {}
+    )
+    if not friends or not share_amounts:
+        return "completed", 0, 0.0
+
+    paid_status = dict(split_data.get("paid_status") or {})
+    paid_amounts = dict(split_data.get("paid_amounts") or {})
+    pending_amount = 0.0
+    pending_count = 0
+    paid_count = 0
+    for friend in friends:
+        amount_due = round(float(share_amounts.get(friend) or 0.0), 2)
+        amount_paid = round(float(paid_amounts.get(friend) or 0.0), 2)
+        if paid_status.get(friend) is True:
+            paid_count += 1
+            continue
+        remaining = max(0.0, amount_due - amount_paid)
+        if remaining > 0.01:
+            pending_count += 1
+            pending_amount += remaining
+
+    if pending_count == 0:
+        return "paid", 0, 0.0
+    if paid_count > 0 or any(
+        float(paid_amounts.get(friend) or 0.0) > 0 for friend in friends
+    ):
+        return "partially_paid", pending_count, round(pending_amount, 2)
+    return "pending", pending_count, round(pending_amount, 2)
+
+
+def _expense_to_transaction(item: ExpenseTransaction) -> Dict[str, Any]:
+    """Serialize an expense using the unified transaction contract."""
+    split_data = item.split_data or {}
+    split_status, pending_count, pending_amount = _split_payment_summary(split_data)
+    return {
+        "id": f"outgoing:{item.id}",
+        "record_id": item.id,
+        "direction": "outgoing",
+        "type": "expense",
+        "amount": item.amount,
+        "signed_amount": -abs(item.amount),
+        "currency": item.currency,
+        "title": item.merchant,
+        "counterparty": item.merchant,
+        "category": normalize_category(item.category),
+        "date": _format_iso(item.date),
+        "status": split_status,
+        "source": (
+            "gmail"
+            if item.source_message_id and "gmail" in item.source_message_id.lower()
+            else "telegram"
+            if item.source_message_id
+            else "manual"
+        ),
+        "notes": item.notes,
+        "expense_id": item.id,
+        "income_id": None,
+        "linked_transaction_id": None,
+        "pending_iou_count": pending_count,
+        "pending_iou_amount": pending_amount,
+        "split_data": split_data,
+    }
+
+
+def _income_to_transaction(item: IncomeTransaction) -> Dict[str, Any]:
+    """Serialize incoming money using the unified transaction contract."""
+    return {
+        "id": f"incoming:{item.id}",
+        "record_id": item.id,
+        "direction": "incoming",
+        "type": item.category.lower().replace(" ", "_"),
+        "amount": item.amount,
+        "signed_amount": abs(item.amount),
+        "currency": item.currency,
+        "title": item.source,
+        "counterparty": item.source,
+        "category": item.category,
+        "date": _format_iso(item.date),
+        "status": "completed",
+        "source": "iou" if item.linked_expense_id else "manual",
+        "notes": item.notes,
+        "expense_id": item.linked_expense_id,
+        "income_id": item.id,
+        "linked_transaction_id": (
+            f"outgoing:{item.linked_expense_id}"
+            if item.linked_expense_id
+            else None
+        ),
+        "pending_iou_count": 0,
+        "pending_iou_amount": 0.0,
+        "split_data": {},
+    }
+
+
+def _parse_transaction_key(value: str) -> tuple[str, int] | None:
+    """Parse a stable unified transaction key such as ``incoming:14``."""
+    direction, separator, raw_id = value.partition(":")
+    if not separator or direction not in {"outgoing", "incoming"} or not raw_id.isdigit():
+        return None
+    return direction, int(raw_id)
+
+
+@router.get("/transactions")
+async def list_transactions(
+    direction: Literal["all", "outgoing", "incoming"] = Query(default="all"),
+    status: Literal["all", "completed", "pending", "partially_paid", "paid"] = Query(default="all"),
+    category: Optional[str] = Query(default=None),
+    search: Optional[str] = Query(default=None),
+    user_id: Optional[int] = Query(default=None),
+    limit: int = Query(default=100, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> Dict[str, Any]:
+    """List outgoing and incoming records through one normalized ledger contract."""
+    async with async_session_factory() as session:
+        effective_user_id = (
+            user_id if user_id is not None and user_id != 0 else await get_primary_user_id(session)
+        )
+        transactions: List[Dict[str, Any]] = []
+        search_pattern = f"%{search}%" if search else None
+
+        if direction in {"all", "outgoing"}:
+            expense_query = select(ExpenseTransaction).where(
+                ExpenseTransaction.user_id == effective_user_id
+            )
+            if category and category.lower() != "all":
+                expense_query = expense_query.where(
+                    ExpenseTransaction.category.ilike(f"%{category}%")
+                )
+            if search_pattern:
+                expense_query = expense_query.where(
+                    or_(
+                        ExpenseTransaction.merchant.ilike(search_pattern),
+                        ExpenseTransaction.category.ilike(search_pattern),
+                    )
+                )
+            expenses = (await session.execute(expense_query)).scalars().all()
+            transactions.extend(_expense_to_transaction(row) for row in expenses)
+
+        if direction in {"all", "incoming"}:
+            income_query = select(IncomeTransaction).where(
+                IncomeTransaction.user_id == effective_user_id
+            )
+            if category and category.lower() != "all":
+                income_query = income_query.where(
+                    IncomeTransaction.category.ilike(f"%{category}%")
+                )
+            if search_pattern:
+                income_query = income_query.where(
+                    or_(
+                        IncomeTransaction.source.ilike(search_pattern),
+                        IncomeTransaction.category.ilike(search_pattern),
+                        IncomeTransaction.notes.ilike(search_pattern),
+                    )
+                )
+            income = (await session.execute(income_query)).scalars().all()
+            transactions.extend(_income_to_transaction(row) for row in income)
+
+        if status == "pending":
+            transactions = [
+                row
+                for row in transactions
+                if row["status"] in {"pending", "partially_paid"}
+            ]
+        elif status != "all":
+            transactions = [row for row in transactions if row["status"] == status]
+        transactions.sort(key=lambda row: row["date"] or "", reverse=True)
+        total_count = len(transactions)
+        return {
+            "status": "ok",
+            "transactions": transactions[offset : offset + limit],
+            "count": total_count,
+        }
+
+
+@router.post("/transactions")
+async def create_transaction(
+    req: TransactionCreateRequest,
+    user_id: Optional[int] = Query(default=None),
+) -> Dict[str, Any]:
+    """Create either direction of transaction through one entry point."""
+    async with async_session_factory() as session:
+        target_uid = (
+            user_id
+            if user_id is not None and user_id != 0
+            else req.user_id
+            if req.user_id and req.user_id != 999999
+            else await get_primary_user_id(session)
+        )
+        profile = (await session.execute(
+            select(UserProfile).where(UserProfile.user_id == target_uid)
+        )).scalar_one_or_none()
+        if profile is None:
+            session.add(UserProfile(
+                user_id=target_uid,
+                telegram_chat_id=target_uid,
+                current_timezone="Asia/Singapore",
+            ))
+            await session.flush()
+
+        transaction_date = _parse_iso_datetime(req.date) if req.date else None
+        transaction_date = transaction_date or datetime.utcnow()
+        currency = req.currency.strip().upper()
+
+        match req.direction:
+            case "outgoing":
+                item = ExpenseTransaction(
+                    user_id=target_uid,
+                    amount=round(req.amount, 2),
+                    currency=currency,
+                    merchant=req.counterparty.strip(),
+                    category=normalize_category(req.category),
+                    date=transaction_date,
+                    is_verified=True,
+                    notes=req.notes.strip() if req.notes else None,
+                )
+                session.add(item)
+                await session.commit()
+                await session.refresh(item)
+                transaction = _expense_to_transaction(item)
+            case "incoming":
+                item = IncomeTransaction(
+                    user_id=target_uid,
+                    amount=round(req.amount, 2),
+                    currency=currency,
+                    source=req.counterparty.strip(),
+                    category=req.category.strip().title() or "Other",
+                    date=transaction_date,
+                    notes=req.notes.strip() if req.notes else None,
+                )
+                session.add(item)
+                await session.commit()
+                await session.refresh(item)
+                transaction = _income_to_transaction(item)
+            case unreachable:
+                assert_never(unreachable)
+
+        return {"status": "ok", "transaction": transaction}
+
+
+@router.put("/transactions/{transaction_key}")
+async def update_transaction(
+    transaction_key: str,
+    req: TransactionUpdateRequest,
+    user_id: Optional[int] = Query(default=None),
+) -> Dict[str, Any]:
+    """Update one normalized transaction while preserving its direction."""
+    parsed_key = _parse_transaction_key(transaction_key)
+    if parsed_key is None:
+        raise HTTPException(status_code=400, detail="Invalid transaction ID")
+    direction, record_id = parsed_key
+
+    async with async_session_factory() as session:
+        target_uid = (
+            user_id if user_id is not None and user_id != 0 else await get_primary_user_id(session)
+        )
+        match direction:
+            case "outgoing":
+                item = (await session.execute(
+                    select(ExpenseTransaction).where(
+                        ExpenseTransaction.id == record_id,
+                        ExpenseTransaction.user_id == target_uid,
+                    )
+                )).scalar_one_or_none()
+                if item is None:
+                    raise HTTPException(status_code=404, detail="Transaction not found")
+                if req.amount is not None:
+                    item.amount = round(req.amount, 2)
+                if req.currency is not None:
+                    item.currency = req.currency.strip().upper()
+                if req.counterparty is not None:
+                    item.merchant = req.counterparty.strip()
+                if req.category is not None:
+                    item.category = normalize_category(req.category)
+                if req.date is not None:
+                    item.date = _parse_iso_datetime(req.date) or item.date
+                if req.notes is not None:
+                    item.notes = req.notes.strip() or None
+                session.add(item)
+                await session.commit()
+                await session.refresh(item)
+                transaction = _expense_to_transaction(item)
+            case "incoming":
+                item = (await session.execute(
+                    select(IncomeTransaction).where(
+                        IncomeTransaction.id == record_id,
+                        IncomeTransaction.user_id == target_uid,
+                    )
+                )).scalar_one_or_none()
+                if item is None:
+                    raise HTTPException(status_code=404, detail="Transaction not found")
+                if req.amount is not None:
+                    item.amount = round(req.amount, 2)
+                if req.currency is not None:
+                    item.currency = req.currency.strip().upper()
+                if req.counterparty is not None:
+                    item.source = req.counterparty.strip()
+                if req.category is not None:
+                    item.category = req.category.strip().title() or "Other"
+                if req.date is not None:
+                    item.date = _parse_iso_datetime(req.date) or item.date
+                if req.notes is not None:
+                    item.notes = req.notes.strip() or None
+                session.add(item)
+                await session.commit()
+                await session.refresh(item)
+                transaction = _income_to_transaction(item)
+            case unreachable:
+                assert_never(unreachable)
+
+        return {"status": "ok", "transaction": transaction}
+
+
+@router.delete("/transactions/{transaction_key}")
+async def delete_transaction(
+    transaction_key: str,
+    user_id: Optional[int] = Query(default=None),
+) -> Dict[str, Any]:
+    """Delete one normalized transaction in a user-scoped operation."""
+    parsed_key = _parse_transaction_key(transaction_key)
+    if parsed_key is None:
+        raise HTTPException(status_code=400, detail="Invalid transaction ID")
+    direction, record_id = parsed_key
+
+    async with async_session_factory() as session:
+        target_uid = (
+            user_id if user_id is not None and user_id != 0 else await get_primary_user_id(session)
+        )
+        model = ExpenseTransaction if direction == "outgoing" else IncomeTransaction
+        item = (await session.execute(
+            select(model).where(model.id == record_id, model.user_id == target_uid)
+        )).scalar_one_or_none()
+        if item is None:
+            raise HTTPException(status_code=404, detail="Transaction not found")
+        await session.delete(item)
+        await session.commit()
+        return {"status": "ok", "deleted_id": transaction_key}
+
+
+@router.post("/transactions/{transaction_key}/settle")
+async def settle_transaction(
+    transaction_key: str,
+    req: IouSettlementRequest,
+    user_id: Optional[int] = Query(default=None),
+) -> Dict[str, Any]:
+    """Record a full or partial IOU repayment through the unified ledger."""
+    parsed_key = _parse_transaction_key(transaction_key)
+    if parsed_key is None or parsed_key[0] != "outgoing":
+        raise HTTPException(status_code=400, detail="Only outgoing split transactions can be settled")
+    if user_id is not None and user_id != 0:
+        target_uid = user_id
+    else:
+        async with async_session_factory() as session:
+            target_uid = await get_primary_user_id(session)
+    settlement = await settle_iou(IouSettlementCommand(
+        expense_id=parsed_key[1],
+        user_id=target_uid,
+        participant=req.participant,
+        amount=req.amount,
+    ))
+    if settlement.get("status") == "not_found":
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    if settlement.get("status") in {"invalid_participant", "invalid_amount"}:
+        raise HTTPException(status_code=400, detail=settlement)
+    return {"status": "ok", "settlement": settlement}
+
+
+@router.get("/income")
+async def list_income(
+    user_id: Optional[int] = Query(default=None),
+    category: Optional[str] = Query(default=None),
+    search: Optional[str] = Query(default=None),
+    limit: int = Query(default=100, le=200),
+    offset: int = Query(default=0),
+) -> Dict[str, Any]:
+    """List incoming money separately from expense transactions."""
+    async with async_session_factory() as session:
+        query = select(IncomeTransaction)
+        if user_id is not None and user_id != 0:
+            query = query.where(IncomeTransaction.user_id == user_id)
+        if category and category.lower() != "all":
+            query = query.where(IncomeTransaction.category.ilike(f"%{category}%"))
+        if search:
+            pattern = f"%{search}%"
+            query = query.where(
+                IncomeTransaction.source.ilike(pattern)
+                | IncomeTransaction.category.ilike(pattern)
+                | IncomeTransaction.notes.ilike(pattern)
+            )
+        query = query.order_by(desc(IncomeTransaction.date)).offset(offset).limit(limit)
+        rows = (await session.execute(query)).scalars().all()
+        return {"status": "ok", "income": [_income_to_dict(row) for row in rows], "count": len(rows)}
+
+
+@router.post("/income")
+async def create_income(
+    req: IncomeCreateRequest,
+    user_id: Optional[int] = Query(default=None),
+) -> Dict[str, Any]:
+    """Record salary, repayments, reimbursements, claims, or other money received."""
+    async with async_session_factory() as session:
+        target_uid = (
+            user_id
+            if user_id is not None and user_id != 0
+            else (req.user_id if req.user_id and req.user_id != 999999 else await get_primary_user_id(session))
+        )
+        profile = (await session.execute(
+            select(UserProfile).where(UserProfile.user_id == target_uid)
+        )).scalar_one_or_none()
+        if not profile:
+            session.add(UserProfile(
+                user_id=target_uid,
+                telegram_chat_id=target_uid,
+                current_timezone="Asia/Singapore",
+            ))
+            await session.flush()
+
+        income_date = _parse_iso_datetime(req.date) if req.date else None
+        item = IncomeTransaction(
+            user_id=target_uid,
+            amount=round(req.amount, 2),
+            currency=(req.currency or "SGD").strip().upper(),
+            source=req.source.strip(),
+            category=(req.category or "Other").strip().title(),
+            date=income_date or datetime.utcnow(),
+            notes=req.notes.strip() if req.notes else None,
+        )
+        session.add(item)
+        await session.commit()
+        await session.refresh(item)
+        return {"status": "ok", "message": f"Logged incoming {item.currency} {item.amount:.2f} from {item.source}", "income": _income_to_dict(item)}
+
+
+@router.put("/income/{income_id}")
+async def update_income(
+    income_id: int,
+    req: IncomeUpdateRequest,
+    user_id: Optional[int] = Query(default=None),
+) -> Dict[str, Any]:
+    """Correct a manually logged incoming transaction."""
+    async with async_session_factory() as session:
+        query = select(IncomeTransaction).where(IncomeTransaction.id == income_id)
+        if user_id is not None and user_id != 0:
+            query = query.where(IncomeTransaction.user_id == user_id)
+        item = (await session.execute(query)).scalar_one_or_none()
+        if not item:
+            raise HTTPException(status_code=404, detail="Incoming transaction not found")
+
+        if req.amount is not None:
+            item.amount = round(req.amount, 2)
+        if req.currency is not None:
+            item.currency = req.currency.strip().upper()
+        if req.source is not None:
+            item.source = req.source.strip()
+        if req.category is not None:
+            item.category = req.category.strip().title()
+        if req.date is not None:
+            parsed_date = _parse_iso_datetime(req.date)
+            if parsed_date is not None:
+                item.date = parsed_date
+        if req.notes is not None:
+            item.notes = req.notes.strip() or None
+
+        session.add(item)
+        await session.commit()
+        await session.refresh(item)
+        return {"status": "ok", "income": _income_to_dict(item)}
+
+
+@router.delete("/income/{income_id}")
+async def delete_income(
+    income_id: int,
+    user_id: Optional[int] = Query(default=None),
+) -> Dict[str, Any]:
+    """Remove a manually logged incoming transaction."""
+    async with async_session_factory() as session:
+        query = select(IncomeTransaction).where(IncomeTransaction.id == income_id)
+        if user_id is not None and user_id != 0:
+            query = query.where(IncomeTransaction.user_id == user_id)
+        item = (await session.execute(query)).scalar_one_or_none()
+        if not item:
+            raise HTTPException(status_code=404, detail="Incoming transaction not found")
+        await session.delete(item)
+        await session.commit()
+        return {"status": "ok", "deleted_id": income_id}
 
 
 @router.post("/expenses")
@@ -554,6 +1195,7 @@ async def create_expense(req: ExpenseCreateRequest) -> Dict[str, Any]:
             category=normalize_category(req.category),
             date=dt,
             is_verified=True,
+            notes=req.notes.strip() if req.notes else None,
         )
         session.add(tx)
         await session.commit()
@@ -603,6 +1245,8 @@ async def update_expense(expense_id: int, req: ExpenseUpdateRequest) -> Dict[str
                 tx.date = datetime.fromisoformat(req.date.replace("Z", "+00:00")).replace(tzinfo=None)
             except ValueError:
                 pass
+        if req.notes is not None:
+            tx.notes = req.notes.strip() or None
 
         session.add(tx)
         await session.commit()
@@ -617,7 +1261,8 @@ async def update_expense(expense_id: int, req: ExpenseUpdateRequest) -> Dict[str
                 "currency": tx.currency,
                 "merchant": tx.merchant,
                 "category": tx.category,
-                "date": tx.date.isoformat() if tx.date else "",
+                "date": _format_iso(tx.date),
+                "notes": tx.notes,
             },
         }
 
@@ -633,6 +1278,7 @@ class ExpenseDetailsUpdateRequest(BaseModel):
     category: Optional[str] = None
     currency: Optional[str] = None
     date: Optional[str] = None
+    notes: Optional[str] = Field(default=None, max_length=500)
     receipt_items: Optional[List[Dict[str, Any]]] = None
     split_data: Optional[Dict[str, Any]] = None
 
@@ -653,12 +1299,16 @@ async def ocr_receipt(req: ReceiptOCRRequest) -> Dict[str, Any]:
 
 
 @router.get("/expenses/{expense_id}/details")
-async def get_expense_details(expense_id: int) -> Dict[str, Any]:
+async def get_expense_details(
+    expense_id: int,
+    user_id: Optional[int] = Query(default=None),
+) -> Dict[str, Any]:
     """Fetch complete details, itemized line items, and split bill state for an expense."""
     async with async_session_factory() as session:
-        result = await session.execute(
-            select(ExpenseTransaction).where(ExpenseTransaction.id == expense_id)
-        )
+        query = select(ExpenseTransaction).where(ExpenseTransaction.id == expense_id)
+        if user_id is not None and user_id != 0:
+            query = query.where(ExpenseTransaction.user_id == user_id)
+        result = await session.execute(query)
         tx = result.scalar_one_or_none()
         if not tx:
             raise HTTPException(status_code=404, detail="Expense not found")
@@ -671,8 +1321,9 @@ async def get_expense_details(expense_id: int) -> Dict[str, Any]:
                 "currency": tx.currency,
                 "merchant": tx.merchant,
                 "category": tx.category,
-                "date": tx.date.isoformat() if tx.date else "",
+                "date": _format_iso(tx.date),
                 "is_verified": tx.is_verified,
+                "notes": tx.notes,
                 "receipt_items": tx.receipt_items or [],
                 "split_data": tx.split_data or {},
             }
@@ -680,12 +1331,17 @@ async def get_expense_details(expense_id: int) -> Dict[str, Any]:
 
 
 @router.put("/expenses/{expense_id}/details")
-async def update_expense_details(expense_id: int, req: ExpenseDetailsUpdateRequest) -> Dict[str, Any]:
+async def update_expense_details(
+    expense_id: int,
+    req: ExpenseDetailsUpdateRequest,
+    user_id: Optional[int] = Query(default=None),
+) -> Dict[str, Any]:
     """Update an expense record, including receipt line items and bill split breakdown."""
     async with async_session_factory() as session:
-        result = await session.execute(
-            select(ExpenseTransaction).where(ExpenseTransaction.id == expense_id)
-        )
+        query = select(ExpenseTransaction).where(ExpenseTransaction.id == expense_id)
+        if user_id is not None and user_id != 0:
+            query = query.where(ExpenseTransaction.user_id == user_id)
+        result = await session.execute(query)
         tx = result.scalar_one_or_none()
         if not tx:
             raise HTTPException(status_code=404, detail="Expense not found")
@@ -703,6 +1359,8 @@ async def update_expense_details(expense_id: int, req: ExpenseDetailsUpdateReque
                 tx.date = datetime.fromisoformat(req.date.replace("Z", "+00:00")).replace(tzinfo=None)
             except ValueError:
                 pass
+        if req.notes is not None:
+            tx.notes = req.notes.strip() or None
         if req.receipt_items is not None:
             tx.receipt_items = req.receipt_items
         if req.split_data is not None:
@@ -720,7 +1378,8 @@ async def update_expense_details(expense_id: int, req: ExpenseDetailsUpdateReque
                 "currency": tx.currency,
                 "merchant": tx.merchant,
                 "category": tx.category,
-                "date": tx.date.isoformat() if tx.date else "",
+                "date": _format_iso(tx.date),
+                "notes": tx.notes,
                 "receipt_items": tx.receipt_items,
                 "split_data": tx.split_data,
             }
@@ -728,13 +1387,18 @@ async def update_expense_details(expense_id: int, req: ExpenseDetailsUpdateReque
 
 
 @router.post("/expenses/{expense_id}/sync-groceries")
-async def sync_expense_groceries(expense_id: int, req: SyncGroceriesRequest) -> Dict[str, Any]:
+async def sync_expense_groceries(
+    expense_id: int,
+    req: SyncGroceriesRequest,
+    user_id: Optional[int] = Query(default=None),
+) -> Dict[str, Any]:
     """Match receipt grocery items against pending GroceryItem checklist and check them off."""
     from core.models import GroceryItem
     async with async_session_factory() as session:
-        result = await session.execute(
-            select(ExpenseTransaction).where(ExpenseTransaction.id == expense_id)
-        )
+        query = select(ExpenseTransaction).where(ExpenseTransaction.id == expense_id)
+        if user_id is not None and user_id != 0:
+            query = query.where(ExpenseTransaction.user_id == user_id)
+        result = await session.execute(query)
         tx = result.scalar_one_or_none()
         if not tx:
             raise HTTPException(status_code=404, detail="Expense not found")
@@ -1088,6 +1752,9 @@ async def list_tasks(
                     "cron_expression": t.cron_expression,
                     "timezone": t.timezone,
                     "is_reminder_active": t.is_reminder_active,
+                    "linked_expense_id": t.linked_expense_id,
+                    "iou_friend": t.iou_friend,
+                    "iou_amount": t.iou_amount,
                     "created_at": _format_iso(t.created_at),
                     "completed_at": _format_iso(t.completed_at),
                 }
@@ -1145,6 +1812,9 @@ async def create_task(req: TaskCreateRequest) -> Dict[str, Any]:
                 "cron_expression": task.cron_expression,
                 "timezone": task.timezone,
                 "is_reminder_active": task.is_reminder_active,
+                "linked_expense_id": task.linked_expense_id,
+                "iou_friend": task.iou_friend,
+                "iou_amount": task.iou_amount,
                 "created_at": _format_iso(task.created_at),
                 "completed_at": _format_iso(task.completed_at),
             },
@@ -1217,6 +1887,9 @@ async def update_task(task_id: int, req: TaskUpdateRequest) -> Dict[str, Any]:
                 "cron_expression": task.cron_expression,
                 "timezone": task.timezone,
                 "is_reminder_active": task.is_reminder_active,
+                "linked_expense_id": task.linked_expense_id,
+                "iou_friend": task.iou_friend,
+                "iou_amount": task.iou_amount,
                 "created_at": _format_iso(task.created_at),
                 "completed_at": _format_iso(task.completed_at),
             },
@@ -1235,6 +1908,13 @@ async def delete_task(task_id: int) -> Dict[str, Any]:
             raise HTTPException(status_code=404, detail="Task not found")
 
         remove_task_reminder(task.id)
+        # Whiteboard cards retain their content after escalation, so detach
+        # their optional task link before removing the referenced task.
+        await session.execute(
+            update(WhiteboardBlock)
+            .where(WhiteboardBlock.linked_task_id == task_id)
+            .values(linked_task_id=None)
+        )
         await session.execute(delete(TaskItem).where(TaskItem.id == task_id))
         await session.commit()
         return {"status": "ok", "deleted_id": task_id}
@@ -1321,6 +2001,22 @@ class EscalateBlockExpenseRequest(BaseModel):
 class WhiteboardAiPromptRequest(BaseModel):
     prompt: str
     section_name: Optional[str] = "AI Suggestions"
+
+class SectionReorderEntry(BaseModel):
+    name: str
+    block_ids: List[int] = []
+
+class ReorderWhiteboardRequest(BaseModel):
+    """Full-canvas ordering: section order + per-section block order."""
+    section_order: Optional[List[str]] = None
+    sections: Optional[List[SectionReorderEntry]] = None
+
+class SectionOpRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+
+class SectionRenameRequest(BaseModel):
+    old_name: str = Field(min_length=1, max_length=80)
+    new_name: str = Field(min_length=1, max_length=80)
 
 
 async def _seed_template_blocks(session: Any, project_id: int, template_name: str, user_id: int) -> None:
@@ -1628,7 +2324,9 @@ async def list_whiteboards(user_id: Optional[int] = None) -> Dict[str, Any]:
                     "emoji_icon": p.emoji_icon,
                     "category": p.category,
                     "summary": p.summary,
-                    "cover_ready": p.cover_ready,
+                    "cover_ready": bool(_cover_cache_version(p.id)),
+                    "cover_version": _cover_cache_version(p.id),
+                    "section_order": p.section_order or [],
                     "created_at": _format_iso(p.created_at),
                     "updated_at": _format_iso(p.updated_at),
                 }
@@ -1655,12 +2353,14 @@ async def create_whiteboard(
     async with async_session_factory() as session:
         effective_user_id = user_id if (user_id is not None and user_id != 0) else await get_primary_user_id(session)
         now = datetime.utcnow()
+        category = payload.category or "general"
         project = WhiteboardProject(
             user_id=effective_user_id,
             title=payload.title.strip(),
             emoji_icon=payload.emoji_icon or "📋",
-            category=payload.category or "general",
+            category=category,
             summary=payload.summary,
+            section_order=DEFAULT_SECTION_TEMPLATES.get(category, DEFAULT_SECTION_TEMPLATES["general"]),
             created_at=now,
             updated_at=now,
         )
@@ -1687,7 +2387,9 @@ async def create_whiteboard(
                 "emoji_icon": project.emoji_icon,
                 "category": project.category,
                 "summary": project.summary,
-                "cover_ready": project.cover_ready,
+                "cover_ready": bool(_cover_cache_version(project.id)),
+                "cover_version": _cover_cache_version(project.id),
+                "section_order": project.section_order or [],
                 "created_at": _format_iso(project.created_at),
                 "updated_at": _format_iso(project.updated_at),
             }
@@ -1718,7 +2420,9 @@ async def get_whiteboard_details(project_id: int) -> Dict[str, Any]:
                 "emoji_icon": proj.emoji_icon,
                 "category": proj.category,
                 "summary": proj.summary,
-                "cover_ready": proj.cover_ready,
+                "cover_ready": bool(_cover_cache_version(proj.id)),
+                "cover_version": _cover_cache_version(proj.id),
+                "section_order": proj.section_order or [],
                 "created_at": _format_iso(proj.created_at),
                 "updated_at": _format_iso(proj.updated_at),
             },
@@ -1752,7 +2456,11 @@ async def get_whiteboard_cover(project_id: int):
     """
     cover_path = _cover_file_path(project_id)
     if os.path.exists(cover_path):
-        return FileResponse(cover_path, media_type="image/png")
+        return FileResponse(
+            cover_path,
+            media_type="image/png",
+            headers=_cover_cache_headers(project_id),
+        )
 
     async with async_session_factory() as session:
         exists = (await session.execute(
@@ -1836,9 +2544,10 @@ async def add_block(
             raise HTTPException(status_code=404, detail="Whiteboard project not found")
 
         now = datetime.utcnow()
+        section = payload.section_name.strip() or "General"
         block = WhiteboardBlock(
             project_id=project_id,
-            section_name=payload.section_name.strip() or "General",
+            section_name=section,
             block_type=payload.block_type or "note",
             title=payload.title.strip(),
             content_payload=payload.content_payload or {},
@@ -1848,6 +2557,10 @@ async def add_block(
         )
         session.add(block)
         proj.updated_at = now
+        order = list(proj.section_order or [])
+        if section not in order:
+            order.append(section)
+            proj.section_order = order
         session.add(proj)
         await session.commit()
         await session.refresh(block)
@@ -1868,6 +2581,131 @@ async def add_block(
                 "updated_at": _format_iso(block.updated_at),
             }
         }
+
+
+@router.post("/whiteboards/{project_id}/reorder")
+async def reorder_whiteboard(project_id: int, payload: ReorderWhiteboardRequest) -> Dict[str, Any]:
+    """Persist canvas ordering: section order and per-section card order."""
+    async with async_session_factory() as session:
+        proj = (await session.execute(
+            select(WhiteboardProject).where(WhiteboardProject.id == project_id)
+        )).scalar_one_or_none()
+        if not proj:
+            raise HTTPException(status_code=404, detail="Whiteboard project not found")
+
+        if payload.section_order is not None:
+            proj.section_order = [s.strip() for s in payload.section_order if s.strip()]
+
+        if payload.sections:
+            blocks = (await session.execute(
+                select(WhiteboardBlock).where(WhiteboardBlock.project_id == project_id)
+            )).scalars().all()
+            by_id = {b.id: b for b in blocks}
+            for sec in payload.sections:
+                for idx, block_id in enumerate(sec.block_ids):
+                    block = by_id.get(block_id)
+                    if block is None:
+                        continue
+                    block.position_order = idx
+                    block.section_name = sec.name.strip() or block.section_name
+                    block.updated_at = datetime.utcnow()
+                    session.add(block)
+
+        proj.updated_at = datetime.utcnow()
+        session.add(proj)
+        await session.commit()
+        return {"status": "ok", "section_order": proj.section_order or []}
+
+
+@router.post("/whiteboards/{project_id}/sections")
+async def add_section(project_id: int, payload: SectionOpRequest) -> Dict[str, Any]:
+    """Register a new (initially empty) section on the board."""
+    name = payload.name.strip()
+    async with async_session_factory() as session:
+        proj = (await session.execute(
+            select(WhiteboardProject).where(WhiteboardProject.id == project_id)
+        )).scalar_one_or_none()
+        if not proj:
+            raise HTTPException(status_code=404, detail="Whiteboard project not found")
+
+        order = list(proj.section_order or [])
+        if name in order:
+            raise HTTPException(status_code=409, detail=f"Section '{name}' already exists")
+        order.append(name)
+        proj.section_order = order
+        proj.updated_at = datetime.utcnow()
+        session.add(proj)
+        await session.commit()
+        return {"status": "ok", "section_order": order}
+
+
+@router.patch("/whiteboards/{project_id}/sections")
+async def rename_section(project_id: int, payload: SectionRenameRequest) -> Dict[str, Any]:
+    """Rename a section across every block and the board's section order."""
+    old_name = payload.old_name.strip()
+    new_name = payload.new_name.strip()
+    if not new_name:
+        raise HTTPException(status_code=422, detail="New section name cannot be empty")
+
+    async with async_session_factory() as session:
+        proj = (await session.execute(
+            select(WhiteboardProject).where(WhiteboardProject.id == project_id)
+        )).scalar_one_or_none()
+        if not proj:
+            raise HTTPException(status_code=404, detail="Whiteboard project not found")
+
+        blocks = (await session.execute(
+            select(WhiteboardBlock).where(
+                WhiteboardBlock.project_id == project_id,
+                WhiteboardBlock.section_name == old_name,
+            )
+        )).scalars().all()
+
+        order = list(proj.section_order or [])
+        if old_name not in order and not blocks:
+            raise HTTPException(status_code=404, detail=f"Section '{old_name}' not found")
+
+        for b in blocks:
+            b.section_name = new_name
+            b.updated_at = datetime.utcnow()
+            session.add(b)
+
+        # Merge gracefully if target section already exists
+        if new_name in order:
+            proj.section_order = [s for s in order if s != old_name]
+        else:
+            proj.section_order = [new_name if s == old_name else s for s in order]
+
+        proj.updated_at = datetime.utcnow()
+        session.add(proj)
+        await session.commit()
+        return {"status": "ok", "renamed_blocks": len(blocks), "section_order": proj.section_order}
+
+
+@router.delete("/whiteboards/{project_id}/sections")
+async def delete_section(project_id: int, name: str) -> Dict[str, Any]:
+    """Delete a section, its cards, and its entry in the section order."""
+    async with async_session_factory() as session:
+        proj = (await session.execute(
+            select(WhiteboardProject).where(WhiteboardProject.id == project_id)
+        )).scalar_one_or_none()
+        if not proj:
+            raise HTTPException(status_code=404, detail="Whiteboard project not found")
+
+        result = await session.execute(
+            delete(WhiteboardBlock).where(
+                WhiteboardBlock.project_id == project_id,
+                WhiteboardBlock.section_name == name.strip(),
+            )
+        )
+        removed_cards = result.rowcount or 0
+
+        order = list(proj.section_order or [])
+        proj.section_order = [s for s in order if s != name.strip()]
+        proj.updated_at = datetime.utcnow()
+        session.add(proj)
+        await session.commit()
+        return {"status": "ok", "deleted_cards": removed_cards, "section_order": proj.section_order}
 
 
 @router.patch("/whiteboards/blocks/{block_id}")
@@ -2025,24 +2863,166 @@ async def escalate_block_to_expense(
         }
 
 
-@router.post("/whiteboards/{project_id}/ai_copilot")
-async def whiteboard_ai_copilot(
-    project_id: int,
-    payload: WhiteboardAiPromptRequest,
-) -> Dict[str, Any]:
-    """Live AI Copilot endpoint: brainstorms, shortlists, or generates structured cards directly onto the whiteboard."""
-    async with async_session_factory() as session:
-        proj = (await session.execute(
-            select(WhiteboardProject).where(WhiteboardProject.id == project_id)
-        )).scalar_one_or_none()
-        if not proj:
-            raise HTTPException(status_code=404, detail="Whiteboard project not found")
+def _validate_generated_block(raw: Any) -> Optional[Dict[str, Any]]:
+    """Validate an LLM-generated block dict; returns normalized block fields or None."""
+    if not isinstance(raw, dict):
+        return None
+    block_type = raw.get("block_type")
+    title = str(raw.get("title") or "").strip()
+    payload = raw.get("content_payload")
+    if block_type not in ("comparison", "checklist", "itinerary", "budget", "note"):
+        return None
+    if not title:
+        return None
+    if not isinstance(payload, dict):
+        return None
 
-    prompt_text = payload.prompt.strip()
-    section_name = payload.section_name or "AI Suggestions"
+    section_name = str(raw.get("section_name") or "").strip()[:60]
+    result = {"section_name": section_name}
 
-    # Fast structured generator
-    # Decide block type based on prompt keywords
+    if block_type == "comparison":
+        options = payload.get("options")
+        if not isinstance(options, list) or len(options) < 2:
+            return None
+        clean_options = []
+        for idx, opt in enumerate(options[:6]):
+            if not isinstance(opt, dict) or not str(opt.get("name") or "").strip():
+                continue
+            clean_options.append({
+                "id": f"ai-opt-{idx + 1}",
+                "name": str(opt.get("name")).strip()[:80],
+                "price": str(opt.get("price") or "").strip()[:40],
+                "rating": str(opt.get("rating") or "").strip()[:12],
+                "pros": [str(p).strip()[:120] for p in (opt.get("pros") or []) if str(p).strip()][:4],
+                "cons": [str(c).strip()[:120] for c in (opt.get("cons") or []) if str(c).strip()][:4],
+                "is_winner": bool(opt.get("is_winner")) and len(clean_options) == 0,
+            })
+        if len(clean_options) < 2:
+            return None
+        # Guarantee exactly one winner
+        if not any(o["is_winner"] for o in clean_options):
+            clean_options[0]["is_winner"] = True
+        else:
+            seen_winner = False
+            for o in clean_options:
+                if o["is_winner"]:
+                    if seen_winner:
+                        o["is_winner"] = False
+                    seen_winner = True
+        return {**result, "block_type": block_type, "title": title[:120], "content_payload": {"options": clean_options}}
+
+    if block_type == "checklist":
+        items = payload.get("items")
+        if not isinstance(items, list) or not items:
+            return None
+        clean_items = []
+        for idx, item in enumerate(items[:20]):
+            text = str(item.get("text") if isinstance(item, dict) else item or "").strip()
+            if not text:
+                continue
+            clean_items.append({"id": f"ai-c-{idx + 1}", "text": text[:140], "checked": False})
+        if not clean_items:
+            return None
+        return {**result, "block_type": block_type, "title": title[:120], "content_payload": {"items": clean_items}}
+
+    if block_type == "itinerary":
+        steps = payload.get("steps")
+        if not isinstance(steps, list) or not steps:
+            return None
+        clean_steps = []
+        for s in steps[:12]:
+            if not isinstance(s, dict) or not str(s.get("title") or "").strip():
+                continue
+            clean_steps.append({
+                "time": str(s.get("time") or "").strip()[:10],
+                "title": str(s.get("title")).strip()[:100],
+                "location": str(s.get("location") or "").strip()[:80],
+                "notes": str(s.get("notes") or "").strip()[:200],
+            })
+        if not clean_steps:
+            return None
+        return {**result, "block_type": block_type, "title": title[:120], "content_payload": {"steps": clean_steps}}
+
+    if block_type == "budget":
+        items = payload.get("items")
+        if not isinstance(items, list) or not items:
+            return None
+        clean_items = []
+        for item in items[:15]:
+            if not isinstance(item, dict) or not str(item.get("name") or "").strip():
+                continue
+            try:
+                cost = round(float(item.get("cost")), 2)
+            except (TypeError, ValueError):
+                continue
+            clean_items.append({
+                "name": str(item.get("name")).strip()[:80],
+                "cost": cost,
+                "status": str(item.get("status") or "Estimated").strip()[:20],
+            })
+        if not clean_items:
+            return None
+        currency = str(payload.get("currency") or "SGD").strip().upper()[:5]
+        return {**result, "block_type": block_type, "title": title[:120], "content_payload": {"currency": currency, "items": clean_items}}
+
+    # note
+    markdown = str(payload.get("markdown") or "").strip()
+    if not markdown:
+        return None
+    return {**result, "block_type": "note", "title": title[:120], "content_payload": {"markdown": markdown[:2000]}}
+
+
+async def _llm_generate_block_json(prompt: str, board_context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Ask the LLM to generate one structured whiteboard card. Returns validated fields or None."""
+    from core.llm import ThinkingLevel, get_agent_llm
+    import json as _json
+    import re as _re
+
+    if not settings.has_llm_key:
+        return None
+
+    existing = board_context.get("existing_sections") or []
+    system_prompt = (
+        "You are the AI copilot of a visual planning whiteboard. Generate exactly ONE card "
+        "for the user's request. Reply with ONLY a JSON object:\n"
+        '{"block_type": "comparison"|"checklist"|"itinerary"|"budget"|"note", '
+        '"section_name": string, "title": string, "content_payload": object}\n\n'
+        "Payload shapes:\n"
+        '- comparison: {"options": [{"name","price","rating","pros":[..],"cons":[..],"is_winner":bool}]} '
+        "(2-4 options, exactly one is_winner)\n"
+        "- checklist: {\"items\": [{\"text\": string}]} (5-12 concrete actionable items)\n"
+        "- itinerary: {\"steps\": [{\"time\":\"09:30\",\"title\",\"location\",\"notes\"}]}\n"
+        "- budget: {\"currency\": \"SGD\", \"items\": [{\"name\",\"cost\":number,\"status\":\"Estimated\"}]}\n"
+        "- note: {\"markdown\": string} (concise markdown bullets)\n\n"
+        f"Board context — title: {board_context.get('title')!r}, category: {board_context.get('category')!r}, "
+        f"summary: {board_context.get('summary')!r}, existing sections: {existing}.\n"
+        "Rules:\n"
+        "1. Content must be specific to the request and board topic — never generic placeholder text.\n"
+        "2. Pick section_name that fits the board's existing sections when sensible.\n"
+        "3. Prices/costs must be plausible for the locale implied by the board."
+    )
+
+    try:
+        llm = get_agent_llm(complexity=ThinkingLevel.LOW, temperature=0.4)
+        from langchain_core.messages import HumanMessage, SystemMessage
+
+        ai_message = await llm.ainvoke(
+            [SystemMessage(content=system_prompt), HumanMessage(content=prompt[:1500])]
+        )
+        raw = str(getattr(ai_message, "content", "") or "").strip()
+        raw = _re.sub(r"^```(?:json)?|```$", "", raw, flags=_re.MULTILINE).strip()
+        start, end = raw.find("{"), raw.rfind("}")
+        if start == -1 or end <= start:
+            return None
+        parsed = _json.loads(raw[start:end + 1])
+        return _validate_generated_block(parsed)
+    except Exception as exc:  # noqa: BLE001 - copilot must degrade gracefully
+        logger.info("LLM copilot generation failed, using template fallback: %s", exc)
+        return None
+
+
+def _template_block_for_prompt(prompt_text: str) -> Dict[str, Any]:
+    """Deterministic offline fallback generator used when the LLM path is unavailable."""
     prompt_lower = prompt_text.lower()
     block_type = "note"
     title = prompt_text
@@ -2087,11 +3067,11 @@ async def whiteboard_ai_copilot(
         title = f"Checklist: {prompt_text.title()}"
         content_payload = {
             "items": [
-                {"id": "ai-c-1", "text": "Essential passports, travel IDs & boarding passes", "checked": True},
+                {"id": "ai-c-1", "text": "Essential passports, travel IDs & boarding passes", "checked": False},
                 {"id": "ai-c-2", "text": "Power banks, universal adapters & charging cables", "checked": False},
                 {"id": "ai-c-3", "text": "Prescription medications & basic first-aid kit", "checked": False},
                 {"id": "ai-c-4", "text": "Comfortable walking shoes & weather-appropriate layers", "checked": False},
-                {"id": "ai-c-5", "text": "Cash in local currency & backup credit card", "checked": True},
+                {"id": "ai-c-5", "text": "Cash in local currency & backup credit card", "checked": False},
             ]
         }
     elif any(k in prompt_lower for k in ["day", "itinerary", "schedule", "plan", "tour"]):
@@ -2122,19 +3102,216 @@ async def whiteboard_ai_copilot(
         block_type = "note"
         title = f"Research Notes: {prompt_text.title()}"
         content_payload = {
-            "markdown": f"### ✨ AI Brainstorming Insights\n\n• **Core Concept**: {prompt_text}\n• **Key Considerations**: Focus on high-impact items first, keep budget in check, and balance flexibility with scheduled reservations.\n• **Next Steps**: Shortlist top options, assign due dates, and verify opening hours."
+            "markdown": f"### ✨ Brainstorming Insights\n\n• **Core Concept**: {prompt_text}\n• **Key Considerations**: Focus on high-impact items first, keep budget in check, and balance flexibility with scheduled reservations.\n• **Next Steps**: Shortlist top options, assign due dates, and verify opening hours."
         }
+
+    return {"block_type": block_type, "title": title, "content_payload": content_payload}
+
+
+def _is_explicit_research_prompt(prompt: str) -> bool:
+    """Detect prompts that should fetch evidence rather than invent a card."""
+    lowered = (prompt or "").lower()
+    return any(
+        phrase in lowered
+        for phrase in (
+            "research", "look up", "look into", "search for", "find out",
+            "check the latest", "what are the best", "where should we",
+        )
+    )
+
+
+async def _research_whiteboard_prompt(
+    prompt: str,
+    board_context: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """Run one bounded web search and normalize it into a compact research card."""
+    if not settings.tavily_api_key or settings.tavily_api_key.startswith("your_"):
+        return None
+
+    from capabilities.general.tools import search_web
+
+    sections = board_context.get("existing_sections") or []
+    context = " ".join(
+        str(value).strip()
+        for value in (
+            board_context.get("title"),
+            board_context.get("category"),
+            board_context.get("summary"),
+            ", ".join(str(section) for section in sections[:10]),
+        )
+        if value
+    )
+    specific_request = not re.fullmatch(
+        r"(?:can you|could you|please)?\s*(?:do|help me with|help me to)?\s*"
+        r"(?:some )?research(?: for me| on this| about it)?[?.!]*",
+        prompt.strip(),
+        flags=re.IGNORECASE,
+    )
+    if specific_request:
+        query = f"{prompt.strip()} {context} current practical recommendations official sites reputable guides"
+        topic_title = prompt.strip()[:160]
+    else:
+        query = (
+            f"Current practical recommendations for the planning board '{board_context.get('title')}'. "
+            f"Find useful options for its open sections ({', '.join(str(section) for section in sections[:8])}), "
+            f"with context {board_context.get('summary') or board_context.get('category')}. "
+            "Use current reputable guides and official websites; avoid social-media posts."
+        )
+        topic_title = f"Ideas for {board_context.get('title') or 'this board'}"
+    query = query.strip()[:1200]
+    try:
+        raw_result = await asyncio.wait_for(
+            search_web.ainvoke({"query": query, "include_images": True}),
+            timeout=25,
+        )
+    except Exception as exc:  # noqa: BLE001 - copilot can fall back gracefully
+        logger.info("Whiteboard research search failed: %s", exc)
+        return None
+
+    raw_text = str(raw_result or "").strip()
+    if not raw_text or raw_text.startswith("[search]"):
+        return None
+
+    lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
+    summary = ""
+    sources = []
+    images = []
+    for line in lines:
+        summary_match = re.match(r"^Summary:\s*(.+)$", line, re.IGNORECASE)
+        if summary_match:
+            summary = summary_match.group(1).strip()[:320]
+            continue
+        image_match = re.match(r"^Image:\s*(https?://\S+)", line, re.IGNORECASE)
+        if image_match:
+            images.append(image_match.group(1).rstrip(".,"))
+            continue
+        source_match = re.match(
+            r"^[-*•]\s+(.+?)\s+\((https?://[^)]+)\)\s*:?(.*)$",
+            line,
+        )
+        if source_match:
+            url = source_match.group(2).strip()
+            try:
+                hostname = urlparse(url).hostname or ""
+            except ValueError:
+                hostname = ""
+            sources.append({
+                "title": source_match.group(1).strip()[:120],
+                "url": url[:400],
+                "snippet": source_match.group(3).strip()[:260],
+                "hostname": hostname.lower(),
+            })
+
+    # Social feeds are often low-context or unstable. Prefer editorial and
+    # official sources when Tavily gives us alternatives.
+    preferred_sources = [
+        source for source in sources
+        if not any(host in source["hostname"] for host in ("instagram.com", "facebook.com", "tiktok.com"))
+    ]
+    if preferred_sources:
+        sources = preferred_sources
+    for index, source in enumerate(sources):
+        if index < len(images):
+            source["image_url"] = images[index]
+        source.pop("hostname", None)
+
+    if not summary:
+        summary = next((line for line in lines if not line.startswith(("-", "*", "•", "Image:"))), "")[:320]
+    if not summary and not sources:
+        return None
+
+    return {
+        "section_name": "🔍 Research",
+        "block_type": "note",
+        "title": f"Research: {topic_title}".rstrip(" ."),
+        "content_payload": {
+            "topics": [{
+                "query": topic_title,
+                "summary": summary,
+                "sources": sources[:5],
+                "images": images[:5],
+            }],
+            "markdown": "\n".join([
+                f"**{prompt.strip()[:160]}**",
+                f"Summary: {summary}" if summary else "",
+                *[
+                    f"- {source['title']} ({source['url']})"
+                    for source in sources[:5]
+                ],
+            ]),
+        },
+    }
+
+
+@router.post("/whiteboards/{project_id}/ai_copilot")
+async def whiteboard_ai_copilot(
+    project_id: int,
+    payload: WhiteboardAiPromptRequest,
+) -> Dict[str, Any]:
+    """Live AI Copilot endpoint: brainstorms, shortlists, or generates structured cards directly onto the whiteboard."""
+    async with async_session_factory() as session:
+        proj = (await session.execute(
+            select(WhiteboardProject).where(WhiteboardProject.id == project_id)
+        )).scalar_one_or_none()
+        if not proj:
+            raise HTTPException(status_code=404, detail="Whiteboard project not found")
+
+        existing_sections = list(proj.section_order or [])
+        if not existing_sections:
+            sec_rows = await session.execute(
+                select(WhiteboardBlock.section_name)
+                .where(WhiteboardBlock.project_id == project_id)
+                .distinct()
+            )
+            existing_sections = [row[0] for row in sec_rows.all()]
+        board_context = {
+            "title": proj.title,
+            "category": proj.category,
+            "summary": proj.summary,
+            "existing_sections": existing_sections[:15],
+        }
+
+    prompt_text = payload.prompt.strip()
+
+    generated = None
+    engine = "llm"
+    if _is_explicit_research_prompt(prompt_text):
+        generated = await _research_whiteboard_prompt(prompt_text, board_context)
+        if generated is not None:
+            engine = "research"
+    if generated is None:
+        generated = await _llm_generate_block_json(prompt_text, board_context)
+    if generated is None:
+        generated = _template_block_for_prompt(prompt_text)
+        engine = "template"
+
+    block_type = generated["block_type"]
+    title = generated["title"]
+    content_payload = generated["content_payload"]
+    # Prefer the copilot's own section choice when it picked one
+    section_name = (
+        (generated.get("section_name") or "").strip()
+        or ("🔍 Research" if engine == "research" else "")
+        or (payload.section_name or "").strip()
+        or "AI Suggestions"
+    )
 
     # Save generated block
     async with async_session_factory() as session:
         now = datetime.utcnow()
+        max_pos = (await session.execute(
+            select(WhiteboardBlock.position_order)
+            .where(WhiteboardBlock.project_id == project_id)
+            .order_by(desc(WhiteboardBlock.position_order))
+            .limit(1)
+        )).scalar()
         block = WhiteboardBlock(
             project_id=project_id,
             section_name=section_name,
             block_type=block_type,
             title=title,
             content_payload=content_payload,
-            position_order=10,
+            position_order=(max_pos or 0) + 1,
             created_at=now,
             updated_at=now,
         )
@@ -2143,6 +3320,10 @@ async def whiteboard_ai_copilot(
             select(WhiteboardProject).where(WhiteboardProject.id == project_id)
         )).scalar_one_or_none()
         if proj:
+            order = list(proj.section_order or [])
+            if section_name not in order:
+                order.append(section_name)
+                proj.section_order = order
             proj.updated_at = now
             session.add(proj)
         await session.commit()
@@ -2150,6 +3331,7 @@ async def whiteboard_ai_copilot(
 
     return {
         "status": "ok",
+        "engine": engine,
         "generated_block": {
             "id": block.id,
             "project_id": block.project_id,

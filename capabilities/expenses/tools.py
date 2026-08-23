@@ -1,4 +1,4 @@
-from datetime import datetime, timezone as dt_timezone
+from datetime import datetime, timedelta, timezone as dt_timezone
 from email.utils import parsedate_to_datetime
 import hashlib
 import json
@@ -17,7 +17,7 @@ from core.llm import (
     get_agent_llm,
     get_multimodal_llm,
 )
-from core.models import ExpenseTransaction, DeletedExpenseMessage
+from core.models import ExpenseTransaction, DeletedExpenseMessage, IncomeTransaction, UserProfile
 from capabilities.expenses.schemas import ExtractedExpense
 from capabilities.email.tools import apply_gmail_processed_label, apply_email_processed_tag
 
@@ -36,7 +36,130 @@ async def is_duplicate_expense(source_message_id: Optional[str]) -> bool:
         )
         return del_result.scalar_one_or_none() is not None
 
+
+_MERCHANT_STOPWORDS = {
+    "the", "and", "of", "at", "my", "card", "purchase", "payment", "transaction",
+    "singapore", "pte", "ltd", "limited", "inc", "store", "online",
+}
+
+
+def _merchant_tokens(name: str) -> set:
+    """Significant lowercase tokens of a merchant name for fuzzy comparison."""
+    tokens = re.findall(r"[a-z0-9]{3,}", (name or "").lower())
+    return {t for t in tokens if t not in _MERCHANT_STOPWORDS}
+
+
+def _merchants_match(a: str, b: str) -> bool:
+    """True when two merchant names plausibly refer to the same business."""
+    ta, tb = _merchant_tokens(a), _merchant_tokens(b)
+    if not ta or not tb:
+        return False
+    a_l, b_l = (a or "").lower().strip(), (b or "").lower().strip()
+    if a_l in b_l or b_l in a_l:
+        return True
+    return len(ta & tb) >= 1
+
+
+async def find_cross_source_duplicate(
+    user_id: int,
+    amount: float,
+    currency: str,
+    expense_date: datetime,
+    sender_domain: str,
+    merchant: str,
+    body_text: str = "",
+) -> Optional[ExpenseTransaction]:
+    """
+    Layer 3 Deduplication (semantic, cross-source): companies email a receipt while
+    banks email a transaction alert for the SAME purchase. Match an incoming email
+    against recent transactions by amount/currency/time-window plus fuzzy merchant
+    identity, and only across DIFFERENT senders so repeat purchases at the same
+    merchant still log normally.
+    """
+    domain = (sender_domain or "").lower()
+    window_start = expense_date - timedelta(hours=24)
+    window_end = expense_date + timedelta(hours=24)
+    tolerance = max(0.02, abs(amount) * 0.01)
+
+    async with async_session_factory() as session:
+        result = await session.execute(
+            select(ExpenseTransaction).where(
+                ExpenseTransaction.user_id == user_id,
+                ExpenseTransaction.currency == currency,
+                ExpenseTransaction.amount >= amount - tolerance,
+                ExpenseTransaction.amount <= amount + tolerance,
+                ExpenseTransaction.date >= window_start.replace(tzinfo=None),
+                ExpenseTransaction.date <= window_end.replace(tzinfo=None),
+            ).order_by(ExpenseTransaction.date.desc()).limit(20)
+        )
+        candidates = result.scalars().all()
+
+    body_lower = (body_text or "").lower()
+    for tx in candidates:
+        existing_domain = (tx.source_sender_domain or "").lower()
+        # Cross-source only: same-sender repeats are legitimate purchases.
+        if domain and existing_domain and domain == existing_domain:
+            continue
+        if _merchants_match(merchant, tx.merchant):
+            return tx
+        # Bank alerts often extract the bank as merchant — look for the stored
+        # merchant name inside the incoming email body instead.
+        tx_merchant = (tx.merchant or "").strip()
+        if len(tx_merchant) >= 4 and tx_merchant.lower() in body_lower:
+            return tx
+    return None
+
 SPLIT_ALERT_THRESHOLD = 50.0
+
+_MAX_EXTRACTED_DATE_DRIFT_DAYS = 15
+
+
+def _reconcile_expense_date(
+    extracted_dt: Optional[datetime],
+    email_dt: Optional[datetime],
+) -> datetime:
+    """
+    Reconcile the LLM-extracted transaction time with reality.
+
+    Anchors: the email receive timestamp is always trustworthy; the extracted
+    date is not (LLMs invent years, bank alert bodies contain account-year
+    noise like 'member since 2022'). Anything more than 15 days away from the
+    anchor is discarded. Date-only extractions adopt the anchor's time instead
+    of surfacing as 00:00 rows.
+    """
+    anchor = email_dt or datetime.now(dt_timezone.utc).replace(tzinfo=None)
+    if extracted_dt is None:
+        return anchor
+
+    try:
+        drift_days = abs((extracted_dt - anchor).total_seconds()) / 86400.0
+    except TypeError:
+        # mixing naive/aware — normalize to naive UTC and retry
+        return _reconcile_expense_date(_to_naive_utc(extracted_dt), _to_naive_utc(email_dt)) if email_dt else anchor
+
+    if drift_days > _MAX_EXTRACTED_DATE_DRIFT_DAYS:
+        return anchor
+
+    extracted_naive = extracted_dt
+    if hasattr(extracted_dt, "tzinfo") and extracted_dt.tzinfo:
+        extracted_naive = extracted_dt.astimezone(dt_timezone.utc).replace(tzinfo=None)
+    if (
+        extracted_naive.hour == 0
+        and extracted_naive.minute == 0
+        and extracted_naive.second == 0
+        and email_dt is not None
+    ):
+        # Date-only extraction + trustworthy email time -> merge both
+        return datetime.combine(extracted_naive.date(), email_dt.time())
+    return extracted_naive
+
+
+def _to_naive_utc(dt_value: Optional[datetime]) -> Optional[datetime]:
+    if dt_value is None:
+        return None
+    if dt_value.tzinfo is not None:
+        return dt_value.astimezone(dt_timezone.utc).replace(tzinfo=None)
+    return dt_value
 
 
 async def _is_quiet_hours(user_id: int) -> bool:
@@ -62,11 +185,32 @@ async def _send_split_alert_batch(user_id: int, candidates: List[Dict[str, Any]]
     """Send ONE consolidated Telegram alert with a Split Bill button per high-value expense."""
     from app.ingress import send_telegram_message
 
+    # Format transaction times in the user's own timezone, not raw UTC.
+    from core.models import UserProfile
+
+    tz_name = "Asia/Singapore"
+    async with async_session_factory() as session:
+        profile = (await session.execute(
+            select(UserProfile).where(UserProfile.user_id == user_id)
+        )).scalar_one_or_none()
+        if profile and profile.current_timezone:
+            tz_name = profile.current_timezone
+    try:
+        local_tz = ZoneInfo(tz_name)
+    except Exception:
+        local_tz = ZoneInfo("UTC")
+
+    def fmt(d: datetime) -> str:
+        dt_val = d
+        if dt_val.tzinfo is None:
+            dt_val = dt_val.replace(tzinfo=dt_timezone.utc)
+        return dt_val.astimezone(local_tz).strftime("%d %b %Y, %H:%M")
+
     alert_text = (
         f"💳 **New High-Value Expense{'s' if len(candidates) > 1 else ''} Logged**\n\n"
         + "\n".join(
             f"• {c['currency']} {c['amount']:.2f} — {c['merchant']} "
-            f"(#{c['category']}) · {c['date'].strftime('%d %b %Y, %H:%M')}"
+            f"(#{c['category']}) · {fmt(c['date'])}"
             for c in candidates
         )
         + "\n\nDid you foot the bill for a group? Split any of these:"
@@ -107,11 +251,173 @@ def normalize_category_name(raw: Optional[str]) -> str:
     return raw.strip().title()
 
 
+def normalize_income_category(raw: Optional[str]) -> str:
+    """Map incoming-money phrases to the categories used by the ledger."""
+    value = (raw or "").strip().lower()
+    if any(word in value for word in ("salary", "payroll", "wage", "bonus")):
+        return "Salary"
+    if any(word in value for word in ("repay", "repaid", "paid back", "paid me", "returned")):
+        return "Friend Repayment"
+    if any(word in value for word in ("reimburse", "refund")):
+        return "Reimbursement"
+    if any(word in value for word in ("claim", "insur")):
+        return "Claim Payout"
+    if "transfer" in value:
+        return "Transfer"
+    return "Other"
+
+
+def parse_incoming_transaction_text(text: str) -> Optional[Dict[str, Any]]:
+    """Parse an explicit incoming-money message into ledger fields."""
+    normalized = " ".join((text or "").strip().split())
+    lowered = normalized.lower()
+    incoming_markers = (
+        "received",
+        "got paid",
+        "salary",
+        "payroll",
+        "repaid",
+        "paid me back",
+        "paid me",
+        "reimbursement",
+        "reimbursed",
+        "insurance claim",
+        "claim payout",
+        "refund",
+        "credited",
+    )
+    if not any(marker in lowered for marker in incoming_markers):
+        return None
+
+    amount_match = re.search(
+        r"(?:S\$|SGD|USD|EUR|MYR|JPY|\$)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)"
+        r"|\b([0-9][0-9,]*(?:\.[0-9]{1,2})?)\s*(?:SGD|USD|EUR|MYR|JPY)\b"
+        r"|(?:^|\s)(?:received|credited|credit|salary|got paid)\s+([0-9][0-9,]*(?:\.[0-9]{1,2})?)",
+        normalized,
+        re.IGNORECASE,
+    )
+    if amount_match is None:
+        return None
+    raw_amount = amount_match.group(1) or amount_match.group(2) or amount_match.group(3) or ""
+    amount = round(float(raw_amount.replace(",", "")), 2)
+
+    currency = "SGD"
+    currency_match = re.search(r"\b(SGD|USD|EUR|MYR|JPY)\b|S\$|\$", normalized, re.IGNORECASE)
+    if currency_match:
+        token = currency_match.group(0).upper()
+        currency = "SGD" if token in {"$", "S$"} else token
+
+    category = normalize_income_category(normalized)
+    source = "Other"
+    from_match = re.search(
+        r"\bfrom\s+([A-Za-z][A-Za-z0-9 .&'_-]{1,79}?)(?:\s+(?:for|on|via|as)\b|$)",
+        normalized,
+        re.IGNORECASE,
+    )
+    repaid_match = re.search(
+        r"^([A-Za-z][A-Za-z0-9 .&'_-]{1,79}?)\s+(?:already\s+)?(?:repaid|paid me back|paid me|returned)\b",
+        normalized,
+        re.IGNORECASE,
+    )
+    if from_match:
+        source = from_match.group(1).strip(" .,-").title()
+    elif repaid_match:
+        source = repaid_match.group(1).strip(" .,-").title()
+    elif category == "Salary":
+        source = "Employer"
+    elif category == "Claim Payout":
+        source = "Insurer"
+    elif category == "Reimbursement":
+        source = "Reimbursement"
+
+    if category == "Claim Payout" and source.lower().endswith(" claim"):
+        source = source[:-6].strip()
+
+    transaction_date = datetime.now(dt_timezone.utc)
+    if re.search(r"\byesterday\b", lowered):
+        transaction_date -= timedelta(days=1)
+
+    return {
+        "amount": amount,
+        "currency": currency,
+        "source": source,
+        "category": category,
+        "date_iso": transaction_date.isoformat(),
+        "notes": normalized,
+    }
+
+
+def income_source_id(user_id: int, text: str) -> str:
+    """Build a stable Telegram deduplication key for an incoming transaction."""
+    digest = hashlib.md5(text.encode("utf-8")).hexdigest()[:12]
+    return f"tg-income-{user_id}-{digest}"
+
+
+async def is_duplicate_income(source_message_id: Optional[str]) -> bool:
+    """Return whether an incoming transaction source was already recorded."""
+    if not source_message_id:
+        return False
+    async with async_session_factory() as session:
+        result = await session.execute(
+            select(IncomeTransaction).where(
+                IncomeTransaction.source_message_id == source_message_id
+            )
+        )
+        return result.scalar_one_or_none() is not None
+
+
+async def save_income_transaction(
+    user_id: int,
+    income: Dict[str, Any],
+    source_message_id: Optional[str] = None,
+) -> IncomeTransaction:
+    """Persist parsed incoming-money fields for one user."""
+    async with async_session_factory() as session:
+        profile = (await session.execute(
+            select(UserProfile).where(UserProfile.user_id == user_id)
+        )).scalar_one_or_none()
+        if profile is None:
+            session.add(
+                UserProfile(
+                    user_id=user_id,
+                    telegram_chat_id=user_id,
+                    current_timezone="Asia/Singapore",
+                )
+            )
+            await session.flush()
+
+        parsed_date = income.get("date") or income.get("date_iso")
+        try:
+            income_date = datetime.fromisoformat(str(parsed_date).replace("Z", "+00:00"))
+        except ValueError:
+            income_date = datetime.now(dt_timezone.utc)
+        if income_date.tzinfo is not None:
+            income_date = income_date.astimezone(dt_timezone.utc).replace(tzinfo=None)
+
+        item = IncomeTransaction(
+            user_id=user_id,
+            amount=round(float(income["amount"]), 2),
+            currency=str(income.get("currency") or "SGD").strip().upper(),
+            source=str(income.get("source") or "Other").strip(),
+            category=normalize_income_category(str(income.get("category") or "Other")),
+            date=income_date,
+            notes=str(income.get("notes") or "").strip() or None,
+            source_message_id=source_message_id,
+            linked_expense_id=income.get("linked_expense_id"),
+        )
+        session.add(item)
+        await session.commit()
+        await session.refresh(item)
+        return item
+
+
 async def save_expense_transaction(
     user_id: int,
     expense: ExtractedExpense,
     source_message_id: Optional[str] = None,
     is_verified: bool = True,
+    source_sender_domain: Optional[str] = None,
+    logged_at: Optional[datetime] = None,
 ) -> ExpenseTransaction:
     """Persist ExtractedExpense to PostgreSQL ExpenseTransaction table with normalized category."""
     async with async_session_factory() as session:
@@ -124,6 +430,8 @@ async def save_expense_transaction(
             category=norm_cat,
             date=expense.date,
             source_message_id=source_message_id,
+            source_sender_domain=(source_sender_domain or "").lower() or None,
+            logged_at=logged_at,
             is_verified=is_verified,
         )
         session.add(tx)
@@ -291,7 +599,8 @@ async def extract_expense_from_text(user_text: str) -> Dict[str, Any]:
                 "1. If the message is a promotional email, terms update, newsletter, login notification, security alert, or does NOT contain a genuine paid expense, return {\"amount\": null}.\n"
                 "2. DO NOT extract years (e.g. 2026), dates (e.g. 21 Aug), phone numbers, account numbers, card numbers, or transaction reference IDs (e.g. Ref: 7873098920963352) as the amount.\n"
                 "3. Extract ONLY the total price or amount actually charged/spent.\n"
-                "4. Reply with ONLY a JSON object:\n"
+                '4. date_iso: the transaction date must be within 14 days of the email\'s own timestamp or the current date. NEVER invent a year or copy a year from account numbers, membership dates (e.g. "member since 2022") or reference IDs. If the message shows only day/month (e.g. "22 Aug"), use the current year; if no transaction date is shown at all, return "".\n'
+                "5. Reply with ONLY a JSON object:\n"
                 '{"amount": number|null, "currency": string, "merchant": string, "category": string, "date_iso": string, "confidence": number, "needs_clarification": boolean}\n'
                 "Default currency: SGD for Singapore."
             )
@@ -508,6 +817,7 @@ def calculate_bill_split(
     service_charge_pct: float = 10.0,
     tax_pct: float = 9.0,
     discount: float = 0.0,
+    total_inclusive: bool = False,
 ) -> Dict[str, Any]:
     """
     Calculate proportional item-by-item split with service charge and tax distribution.
@@ -542,8 +852,8 @@ def calculate_bill_split(
     for f in friends:
         sub = friend_subtotals[f]
         ratio = sub / total_subtotal if total_subtotal > 0 else (1.0 / len(friends))
-        svc_amount = sub * (service_charge_pct / 100.0)
-        tax_amount = (sub + svc_amount) * (tax_pct / 100.0)
+        svc_amount = 0.0 if total_inclusive else sub * (service_charge_pct / 100.0)
+        tax_amount = 0.0 if total_inclusive else (sub + svc_amount) * (tax_pct / 100.0)
         disc_share = discount * ratio
         friend_total = max(0.0, sub + svc_amount + tax_amount - disc_share)
 
@@ -557,12 +867,24 @@ def calculate_bill_split(
             "items": friend_items[f],
         })
 
+    if total_inclusive and breakdown:
+        # Currency rounding can otherwise make an even split of e.g. $37.05
+        # display as $18.52 + $18.52 = $37.04. Put the cent remainder on the
+        # final participant so displayed shares always reconcile to the bill.
+        target_cents = round(max(0.0, total_subtotal - discount) * 100)
+        rounded_cents = sum(round(b["total"] * 100) for b in breakdown)
+        remainder_cents = target_cents - rounded_cents
+        if remainder_cents:
+            last = breakdown[-1]
+            last["total"] = round((round(last["total"] * 100) + remainder_cents) / 100, 2)
+
     return {
         "friends": breakdown,
         "total_bill": round(sum(b["total"] for b in breakdown), 2),
         "service_charge_pct": service_charge_pct,
         "tax_pct": tax_pct,
         "discount": discount,
+        "total_inclusive": total_inclusive,
     }
 
 
@@ -624,11 +946,151 @@ async def get_user_expenses(
                 "currency": row.currency,
                 "merchant": row.merchant,
                 "category": row.category,
-                "date": row.date.isoformat(),
+                "date": row.date.isoformat() + "+00:00",
                 "verified": row.is_verified,
             }
             for row in rows
         ]
+
+
+async def _parse_ledger_date(value: Optional[str]) -> Optional[datetime]:
+    """Normalize an ISO date string to naive UTC for TIMESTAMP WITHOUT TIME ZONE columns."""
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+    if parsed.tzinfo is not None:
+        return parsed.astimezone(dt_timezone.utc).replace(tzinfo=None)
+    return parsed
+
+
+async def query_unified_transactions(
+    user_id: int,
+    direction: str = "all",
+    categories: Optional[List[str]] = None,
+    since_date: Optional[str] = None,
+    until_date: Optional[str] = None,
+    search_text: Optional[str] = None,
+    limit: int = 20,
+) -> Dict[str, Any]:
+    """
+    Read both money-out (ExpenseTransaction) and money-in (IncomeTransaction) tables
+    through one normalized contract. Shared by the dashboard API and the agent-side
+    query_transactions tool so filters behave identically on every surface.
+
+    Returns structured data: per-direction totals/counts by currency, net cashflow
+    per currency, and up to `limit` merged item rows ordered newest-first.
+    """
+    from sqlmodel import or_
+
+    since_dt = await _parse_ledger_date(since_date)
+    until_dt = await _parse_ledger_date(until_date)
+    wanted_directions = {"outgoing", "incoming"} if direction == "all" else {direction}
+    pattern = f"%{search_text}%" if search_text else None
+
+    outgoing_items: List[Dict[str, Any]] = []
+    incoming_items: List[Dict[str, Any]] = []
+
+    async with async_session_factory() as session:
+        if "outgoing" in wanted_directions:
+            expense_query = select(ExpenseTransaction).where(
+                ExpenseTransaction.user_id == user_id
+            )
+            if categories:
+                expense_query = expense_query.where(
+                    or_(*[ExpenseTransaction.category == cat for cat in categories])
+                )
+            if since_dt:
+                expense_query = expense_query.where(ExpenseTransaction.date >= since_dt)
+            if until_dt:
+                expense_query = expense_query.where(ExpenseTransaction.date < until_dt)
+            if pattern:
+                expense_query = expense_query.where(
+                    or_(
+                        ExpenseTransaction.merchant.ilike(pattern),
+                        ExpenseTransaction.category.ilike(pattern),
+                    )
+                )
+            expense_rows = (
+                await session.execute(expense_query.order_by(ExpenseTransaction.date.desc()))
+            ).scalars().all()
+            outgoing_items = [
+                {
+                    "direction": "outgoing",
+                    "title": row.merchant,
+                    "amount": float(row.amount),
+                    "currency": row.currency,
+                    "category": row.category,
+                    "date": row.date.isoformat(),
+                }
+                for row in expense_rows
+            ]
+
+        if "incoming" in wanted_directions:
+            income_query = select(IncomeTransaction).where(
+                IncomeTransaction.user_id == user_id
+            )
+            if categories:
+                income_query = income_query.where(
+                    or_(*[IncomeTransaction.category == cat for cat in categories])
+                )
+            if since_dt:
+                income_query = income_query.where(IncomeTransaction.date >= since_dt)
+            if until_dt:
+                income_query = income_query.where(IncomeTransaction.date < until_dt)
+            if pattern:
+                income_query = income_query.where(
+                    or_(
+                        IncomeTransaction.source.ilike(pattern),
+                        IncomeTransaction.category.ilike(pattern),
+                        IncomeTransaction.notes.ilike(pattern),
+                    )
+                )
+            income_rows = (
+                await session.execute(income_query.order_by(IncomeTransaction.date.desc()))
+            ).scalars().all()
+            incoming_items = [
+                {
+                    "direction": "incoming",
+                    "title": row.source,
+                    "amount": float(row.amount),
+                    "currency": row.currency,
+                    "category": row.category,
+                    "date": row.date.isoformat(),
+                }
+                for row in income_rows
+            ]
+
+    def _totals(items: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+        grouped: Dict[str, Dict[str, Any]] = {}
+        for item in items:
+            bucket = grouped.setdefault(item["currency"], {"total": 0.0, "count": 0})
+            bucket["total"] += item["amount"]
+            bucket["count"] += 1
+        return grouped
+
+    items = sorted(outgoing_items + incoming_items, key=lambda row: row["date"], reverse=True)
+    outgoing_totals = _totals(outgoing_items)
+    incoming_totals = _totals(incoming_items)
+    currencies = sorted(set(outgoing_totals) | set(incoming_totals))
+    net = {
+        currency: round(
+            incoming_totals.get(currency, {}).get("total", 0.0)
+            - outgoing_totals.get(currency, {}).get("total", 0.0),
+            2,
+        )
+        for currency in currencies
+    }
+    return {
+        "direction": direction,
+        "money_out": outgoing_totals,
+        "money_in": incoming_totals,
+        "net": net,
+        "items": items[: max(1, limit)],
+        "total_matched": len(items),
+    }
 
 
 
@@ -648,7 +1110,12 @@ async def log_expenses_from_emails(
     """
     logged: List[Dict[str, Any]] = []
     skipped: List[Dict[str, Any]] = []
+    deduped: List[Dict[str, Any]] = []
     alert_candidates: List[Dict[str, Any]] = []
+
+    def _sender_domain(raw_sender: str) -> str:
+        m = re.search(r"@([\w\.-]+)", raw_sender or "")
+        return (m.group(1) if m else "").lower()
 
     for email_msg in (emails or [])[:10]:
         email_id = str(email_msg.get("id") or "")
@@ -656,6 +1123,13 @@ async def log_expenses_from_emails(
         subject = str(email_msg.get("subject") or "")
         body_text = str(email_msg.get("body") or email_msg.get("snippet") or "")
         snippet = str(email_msg.get("snippet") or "")
+        sender_domain = _sender_domain(sender)
+
+        # Avoid re-running extraction on messages already logged. This matters
+        # because each poll searches a rolling seven-day window and Gmail may
+        # not allow the Assistant/Processed label to be applied.
+        if email_id and await is_duplicate_expense(email_id):
+            continue
 
         text = f"Sender: {sender}\nSubject: {subject}\nBody: {body_text}"
         extracted = await extract_expense_from_text.ainvoke({"user_text": text})
@@ -679,9 +1153,6 @@ async def log_expenses_from_emails(
             )
             continue
 
-        if email_id and await is_duplicate_expense(email_id):
-            continue
-
         date_iso = extracted.get("date_iso") or ""
         email_date_str = email_msg.get("date") or ""
 
@@ -699,22 +1170,43 @@ async def log_expenses_from_emails(
         email_dt = _parse_raw_dt(email_date_str)
         extracted_dt = _parse_raw_dt(date_iso)
 
-        if extracted_dt and (extracted_dt.hour != 0 or extracted_dt.minute != 0 or extracted_dt.second != 0):
-            expense_date = extracted_dt
-        elif extracted_dt and email_dt:
-            # Combine extracted date with email message timestamp
-            expense_date = datetime.combine(extracted_dt.date(), email_dt.time())
-        elif email_dt:
-            # Fall back to exact email header timestamp
-            expense_date = email_dt
-        elif extracted_dt:
-            # Attach polling/logging timestamp
-            expense_date = datetime.combine(extracted_dt.date(), datetime.now().time())
-        else:
-            expense_date = datetime.now()
+        # Trustworthy anchor (email receive time) + drift-guarded extracted date
+        reconciled = _reconcile_expense_date(extracted_dt, email_dt)
+        if hasattr(reconciled, "tzinfo") and reconciled.tzinfo:
+            reconciled = reconciled.astimezone(dt_timezone.utc).replace(tzinfo=None)
+        expense_date = _to_naive_utc(reconciled)
 
-        if hasattr(expense_date, "tzinfo") and expense_date.tzinfo:
-            expense_date = expense_date.astimezone(dt_timezone.utc).replace(tzinfo=None)
+        # Layer 3: the same purchase often arrives twice — a receipt from the
+        # merchant AND a transaction alert from the bank. Log it once.
+        cross_dup = await find_cross_source_duplicate(
+            user_id=user_id,
+            amount=float(extracted["amount"]),
+            currency=extracted.get("currency") or "SGD",
+            expense_date=expense_date,
+            sender_domain=sender_domain,
+            merchant=merchant,
+            body_text=body_text,
+        )
+        if cross_dup is not None:
+            deduped.append(
+                {
+                    "amount": float(extracted["amount"]),
+                    "currency": extracted.get("currency", "SGD"),
+                    "merchant": merchant,
+                    "matched_transaction_id": cross_dup.id,
+                    "source_message_id": email_id,
+                }
+            )
+            if email_id:
+                # Mark processed so this email is never re-scanned
+                try:
+                    provider = email_msg.get("provider", "gmail")
+                    await apply_email_processed_tag.ainvoke(
+                        {"user_id": user_id, "message_id": email_id, "provider": provider}
+                    )
+                except Exception as tag_err:
+                    print(f"[EXPENSES] Failed to tag deduped email {email_id}: {tag_err}")
+            continue
 
         expense = ExtractedExpense(
             amount=float(extracted["amount"]),
@@ -730,6 +1222,8 @@ async def log_expenses_from_emails(
             expense=expense,
             source_message_id=email_id or None,
             is_verified=True,
+            source_sender_domain=sender_domain or None,
+            logged_at=datetime.utcnow(),
         )
         if email_id:
             try:
@@ -772,7 +1266,7 @@ async def log_expenses_from_emails(
     for item in logged:
         item["notified"] = item["transaction_id"] in notified_ids
 
-    return {"logged": logged, "skipped": skipped}
+    return {"logged": logged, "skipped": skipped, "deduped": deduped}
 
 @tool
 async def process_extracted_expense(
@@ -860,10 +1354,14 @@ async def split_bill_expense(
     people: Optional[List[str]] = None,
     people_count: Optional[int] = None,
     transaction_id: Optional[int] = None,
+    custom_amounts: Optional[Dict[str, float]] = None,
 ) -> Dict[str, Any]:
     """
-    Split an expense among friends, auto-adjust user's personal spend on dashboard,
-    generate copy-pastable WhatsApp group text, and create 1-tap IOU collection tasks.
+    Split an expense among friends, generate copy-pastable WhatsApp group text,
+    and create 1-tap IOU collection tasks.
+
+    The parent expense remains at the gross bill total for ledger accuracy. The
+    user's personal share and friend receivables are stored in split_data.
     """
     from core.models import TaskItem, ExpenseTransaction
     from core.db import async_session_factory
@@ -884,17 +1382,73 @@ async def split_bill_expense(
         for i in range(1, needed + 1):
             unique_friends.append(f"Friend {len(unique_friends) + 1}")
 
+    normalized_amounts: Dict[str, float] = {}
+    if custom_amounts:
+        # Custom amounts are final amounts due and must explicitly include the
+        # user's own share ("Me") plus every friend being split with.
+        for raw_name, raw_amount in custom_amounts.items():
+            name = str(raw_name).strip().title()
+            if name.lower() in {"me", "myself", "i", "you", "user"}:
+                name = "Me"
+            try:
+                amount = round(float(raw_amount), 2)
+            except (TypeError, ValueError):
+                return {
+                    "status": "needs_adjustment",
+                    "message": f"I couldn't read the amount assigned to {raw_name!r}.",
+                }
+            if amount < 0:
+                return {
+                    "status": "needs_adjustment",
+                    "message": "Custom shares cannot be negative.",
+                }
+            normalized_amounts[name] = amount
+            if name != "Me" and name not in unique_friends:
+                unique_friends.append(name)
+
+        expected_people = ["Me", *unique_friends]
+        missing_people = [name for name in expected_people if name not in normalized_amounts]
+        if missing_people:
+            return {
+                "status": "needs_adjustment",
+                "message": "Enter a final amount for everyone: " + ", ".join(missing_people) + ".",
+                "amounts": normalized_amounts,
+            }
+        amount_sum = round(sum(normalized_amounts[name] for name in expected_people), 2)
+        if abs(amount_sum - round(total_amount, 2)) > 0.01:
+            return {
+                "status": "needs_adjustment",
+                "message": (
+                    f"Custom shares total ${amount_sum:.2f}, but the bill is ${total_amount:.2f}. "
+                    f"Adjust the shares by ${round(total_amount - amount_sum, 2):.2f}."
+                ),
+                "amounts": normalized_amounts,
+            }
+
     total_splits = len(unique_friends) + 1
     if total_splits < 2:
         total_splits = 2
         unique_friends = ["Friend 1"]
 
-    per_person = round(total_amount / total_splits, 2)
-    my_share = round(total_amount - (per_person * len(unique_friends)), 2)
+    per_person = None
+    if normalized_amounts:
+        my_share = normalized_amounts["Me"]
+    else:
+        per_person = round(total_amount / total_splits, 2)
+        my_share = round(total_amount - (per_person * len(unique_friends)), 2)
 
+    share_amounts = {
+        "Me": my_share,
+        **{
+            friend: normalized_amounts.get(friend, per_person) or 0.0
+            for friend in unique_friends
+        },
+    }
     created_tasks = []
+    task_ids: Dict[str, int] = {}
     async with async_session_factory() as session:
-        # 1. Update existing parent transaction to user's net share
+        # 1. Keep the parent transaction at the gross total and attach the
+        # split ledger so the dashboard can show both views.
         target_tx = None
         if transaction_id:
             target_tx = (await session.execute(
@@ -912,36 +1466,128 @@ async def split_bill_expense(
                     target_tx = tx
                     break
 
-        if target_tx:
-            target_tx.amount = my_share
-            target_tx.merchant = f"{merchant} (My share of ${total_amount:.2f})"
+        if target_tx is None:
+            target_tx = ExpenseTransaction(
+                user_id=user_id,
+                amount=round(total_amount, 2),
+                currency="SGD",
+                merchant=merchant,
+                category="Dining",
+                date=datetime.utcnow(),
+                is_verified=True,
+            )
             session.add(target_tx)
+            await session.flush()
+
+        existing_split = dict(target_tx.split_data or {})
+        existing_paid_status = dict(existing_split.get("paid_status") or {})
+        existing_paid_amounts = dict(existing_split.get("paid_amounts") or {})
+        existing_task_ids = dict(existing_split.get("task_ids") or {})
+        paid_status = {
+            "Me": True,
+            **{
+                friend: bool(existing_paid_status.get(friend, False))
+                for friend in unique_friends
+            },
+        }
+        paid_amounts = {
+            "Me": my_share,
+            **{
+                friend: (
+                    share_amounts[friend]
+                    if paid_status[friend]
+                    else round(float(existing_paid_amounts.get(friend, 0.0)), 2)
+                )
+                for friend in unique_friends
+            },
+        }
+        target_tx.amount = round(total_amount, 2)
+        target_tx.split_data = {
+            **existing_split,
+            "friends": ["Me", *unique_friends],
+            "paid_status": paid_status,
+            "paid_amounts": paid_amounts,
+            "task_ids": existing_task_ids,
+            "is_even": not bool(normalized_amounts),
+            "split_mode": "custom" if normalized_amounts else "even",
+            "custom_amounts": normalized_amounts or None,
+            "share_amounts": share_amounts,
+            "gross_total": round(total_amount, 2),
+            "my_share": my_share,
+        }
+        session.add(target_tx)
 
         # 2. Create IOU tasks for each friend
         for friend in unique_friends:
-            iou_task = TaskItem(
+            owed_amount = normalized_amounts.get(friend, per_person)
+            if not owed_amount or owed_amount <= 0:
+                continue
+            existing_task = None
+            existing_task_id = existing_task_ids.get(friend)
+            if existing_task_id:
+                existing_task = (await session.execute(
+                    select(TaskItem).where(
+                        TaskItem.id == existing_task_id,
+                        TaskItem.user_id == user_id,
+                    )
+                )).scalar_one_or_none()
+            if existing_task is None:
+                existing_task = (await session.execute(
+                    select(TaskItem).where(
+                        TaskItem.user_id == user_id,
+                        TaskItem.linked_expense_id == target_tx.id,
+                        TaskItem.iou_friend == friend,
+                    )
+                )).scalars().first()
+
+            iou_task = existing_task or TaskItem(
                 user_id=user_id,
-                title=f"Collect ${per_person:.2f} from {friend} for {merchant}",
+                title=f"Collect ${owed_amount:.2f} from {friend} for {merchant}",
                 priority="medium",
-                status="todo",
+                status="done" if paid_status[friend] else "todo",
                 reminder_type="none",
                 description=f"Bill split from ${total_amount:.2f} total ({total_splits} people).",
+                linked_expense_id=target_tx.id,
+                iou_friend=friend,
+                iou_amount=owed_amount,
             )
+            iou_task.title = f"Collect ${owed_amount:.2f} from {friend} for {merchant}"
+            iou_task.description = f"Bill split from ${total_amount:.2f} total ({total_splits} people)."
+            iou_task.linked_expense_id = target_tx.id
+            iou_task.iou_friend = friend
+            iou_task.iou_amount = owed_amount
+            if paid_status[friend]:
+                iou_task.status = "done"
+                iou_task.completed_at = iou_task.completed_at or datetime.utcnow()
+                iou_task.is_reminder_active = False
             session.add(iou_task)
             await session.flush()
+            task_ids[friend] = iou_task.id
             created_tasks.append({
                 "task_id": iou_task.id,
                 "friend": friend,
-                "amount": per_person,
+                "amount": owed_amount,
             })
+
+        target_tx.split_data = {
+            **(target_tx.split_data or {}),
+            "task_ids": task_ids,
+        }
+        session.add(target_tx)
 
         await session.commit()
 
     # Format copy-paste text for WhatsApp / Telegram group chat
-    breakdown_lines = [f"• {friend}: **${per_person:.2f}**" for friend in unique_friends]
+    breakdown_lines = [
+        f"• {friend}: **${(normalized_amounts.get(friend, per_person) or 0.0):.2f}**"
+        for friend in unique_friends
+    ]
     breakdown_lines.append(f"• You: **${my_share:.2f}** *(Paid)*")
 
-    copy_paste_lines = [f"{friend}: ${per_person:.2f}" for friend in unique_friends]
+    copy_paste_lines = [
+        f"{friend}: ${(normalized_amounts.get(friend, per_person) or 0.0):.2f}"
+        for friend in unique_friends
+    ]
     copy_paste_lines.append(f"Me: ${my_share:.2f} (Paid)")
 
     copy_paste_block = (
@@ -954,7 +1600,7 @@ async def split_bill_expense(
         f"🧾 **Bill Split: {merchant} (${total_amount:.2f} across {total_splits} people)**\n\n"
         + "\n".join(breakdown_lines)
         + f"\n\n📋 **Copy & Paste for Group Chat:**\n<code>{copy_paste_block}</code>\n\n"
-        + f"💡 *Adjusted your dashboard expense to **${my_share:.2f}** and created {len(created_tasks)} IOU tasks below.*"
+        + f"💡 *Kept your dashboard expense at the full **${total_amount:.2f}** and recorded your **${my_share:.2f}** share, with {len(created_tasks)} IOU tasks below.*"
     )
 
     buttons = [[{"text": f"✅ {t['friend']} Paid (${t['amount']:.2f})", "callback_data": f"td:{t['task_id']}"}] for t in created_tasks]
@@ -964,9 +1610,9 @@ async def split_bill_expense(
         "total_amount": total_amount,
         "my_share": my_share,
         "per_person": per_person,
+        "custom_amounts": normalized_amounts or None,
         "friends": unique_friends,
         "tasks": created_tasks,
         "reply_text": full_reply,
         "buttons": buttons,
     }
-
