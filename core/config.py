@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     telegram_bot_token: str = "test_bot_token"
     telegram_webhook_secret: Optional[str] = None
     admin_telegram_chat_id: Optional[str] = None
+    audit_telegram_alerts: bool = False  # Keep audit findings in DB/GitHub unless explicitly enabled
 
     # Database: Default to sqlite+aiosqlite for zero-config local/test runs
     database_url: str = "sqlite+aiosqlite:///./test_assistant.db"
@@ -34,6 +35,7 @@ class Settings(BaseSettings):
     lta_account_key: Optional[str] = None
     microsoft_client_id: Optional[str] = None
     microsoft_client_secret: Optional[str] = None
+    microsoft_tenant: str = "consumers"  # Personal Microsoft accounts use /consumers, not /common
     outlook_email: Optional[str] = None
     outlook_app_password: Optional[str] = None
     webapp_url: Optional[str] = None
@@ -97,4 +99,3 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 settings = Settings()
-
