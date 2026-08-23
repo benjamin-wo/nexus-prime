@@ -28,6 +28,9 @@ let lastNlpParsedResult = null;
 let currentWhiteboardId = null;
 let cachedWhiteboards = [];
 let cachedWhiteboardBlocks = [];
+let cachedWhiteboardProject = null;
+let wbLastInteraction = 0;
+let wbDragInProgress = false;
 let carouselIndex = 0;
 const coverPollers = new Map();
 
@@ -89,6 +92,13 @@ document.addEventListener("DOMContentLoaded", () => {
       loadExpensesTable(activeCategoryFilter, activeSearchQuery, activeSortMode);
     } else if (activeTab === "tab-jobs") {
       loadTasks();
+    } else if (activeTab === "tab-whiteboard" || activeTab === "tab-groceries") {
+      // Live board sync — skip while the user is actively interacting (dragging,
+      // typing in checklist inputs) so remote refreshes never clobber local edits.
+      const idleMs = Date.now() - wbLastInteraction;
+      if (!wbDragInProgress && idleMs > 10000 && currentWhiteboardId) {
+        loadWhiteboardDetails(currentWhiteboardId, { silent: true });
+      }
     }
   }, 8000);
 });
@@ -142,6 +152,12 @@ function switchTab(tabId) {
 // ==========================================================================
 
 function initDashboard() {
+  if (document.getElementById("tx-direction-filter") && typeof window.initUnifiedTransactions === "function") {
+    window.initUnifiedTransactions();
+    loadDashboardSummary();
+    return;
+  }
+
   loadDashboardSummary();
   loadExpensesTable();
 
@@ -233,6 +249,12 @@ function initDashboard() {
   }
 }
 
+function localDateTimeValue(date = new Date()) {
+  const local = new Date(date);
+  local.setMinutes(local.getMinutes() - local.getTimezoneOffset());
+  return local.toISOString().slice(0, 16);
+}
+
 async function loadDashboardSummary() {
   try {
     const res = await fetch(getApiUrl("/api/dashboard/summary"));
@@ -241,13 +263,26 @@ async function loadDashboardSummary() {
 
     // Top 3 Metric Cards Figures
     const monthTxCount = document.getElementById("kpi-month-tx-count");
-    if (monthTxCount) monthTxCount.textContent = `${data.month_transactions_count || data.total_transactions_count}`;
+    if (monthTxCount) monthTxCount.textContent = `${data.month_transactions_count ?? 0}`;
 
     const totalTx = document.getElementById("kpi-total-tx");
     if (totalTx) totalTx.textContent = `${data.total_transactions_count}`;
 
     const monthSpend = document.getElementById("kpi-month-spend");
     if (monthSpend) monthSpend.textContent = `$${data.total_spent_month.toFixed(2)}`;
+
+    const incomeMonth = document.getElementById("kpi-income-month");
+    if (incomeMonth) incomeMonth.textContent = `$${(data.total_income_month || 0).toFixed(2)}`;
+    const incomeAll = document.getElementById("kpi-income-all");
+    if (incomeAll) incomeAll.textContent = `$${(data.total_income_all || 0).toFixed(2)}`;
+    const incomeCount = document.getElementById("kpi-income-count");
+    if (incomeCount) incomeCount.textContent = `${data.income_transactions_count || 0} record${data.income_transactions_count === 1 ? "" : "s"}`;
+    const netCashflow = document.getElementById("kpi-net-cashflow");
+    if (netCashflow) {
+      const net = data.net_cash_flow_month || 0;
+      netCashflow.textContent = `${net < 0 ? "-" : ""}$${Math.abs(net).toFixed(2)}`;
+      netCashflow.style.color = net >= 0 ? "var(--emerald-accent)" : "#f87171";
+    }
 
     // Donut Center Total
     const donutTotal = document.getElementById("donut-center-total");
@@ -293,7 +328,7 @@ async function loadDashboardSummary() {
     if (aiDynamicBody) {
       const count = data.month_transactions_count || data.total_transactions_count || 0;
       if (count === 0) {
-        aiDynamicBody.innerHTML = `No transactions recorded for this period yet. Send receipt photos or messages in Telegram or click <strong>+ Log Expense</strong> to get started!`;
+        aiDynamicBody.innerHTML = `No transactions recorded for this period yet. Send a money-in or money-out message in Telegram or click <strong>+ Log Transaction</strong> to get started.`;
       } else {
         const topM = data.top_merchants && data.top_merchants.length > 0 ? data.top_merchants[0] : null;
         const topMText = topM ? `your top merchant is <strong>${escapeHtml(topM.merchant)}</strong> ($${topM.amount.toFixed(2)})` : "your spend is evenly distributed";
@@ -483,6 +518,10 @@ function updateBatchActionBar() {
 }
 
 async function loadExpensesTable(category = "all", search = "", sort = "latest") {
+  if (document.getElementById("tx-direction-filter") && typeof window.loadUnifiedTransactions === "function") {
+    return window.loadUnifiedTransactions();
+  }
+
   try {
     let url = getApiUrl(`/api/dashboard/expenses?limit=100`);
     if (category && category !== "all") url += `&category=${encodeURIComponent(category)}`;
@@ -569,7 +608,7 @@ function renderExpensesTableRows() {
             ${isFiltered ? `No transactions found matching "${escapeHtml(activeSearchQuery || activeCategoryFilter)}"` : "No transactions recorded yet"}
           </div>
           <div style="font-size: 0.78rem; color: #71717a; margin-top: 0.35rem;">
-            ${isFiltered ? "Try clearing your search keyword or selecting 'All Status'." : "Forward your receipt emails or send transactions via Telegram / '+ Log Expense' to begin tracking."}
+            ${isFiltered ? "Try clearing your search keyword or selecting 'All money movement'." : "Forward receipts or send money-in and money-out messages via Telegram to start tracking."}
           </div>
         </td>
       </tr>
@@ -820,7 +859,7 @@ function initExpenseModal() {
   if (cancelBtn) cancelBtn.addEventListener("click", () => modal.style.display = "none");
 
   modal.addEventListener("click", (e) => {
-    if (e.target === modal) modal.style.display = "none";
+    if (!e.target.closest(".modal-card-dialog")) modal.style.display = "none";
   });
 
   if (form) {
@@ -1312,6 +1351,12 @@ function initTasksAndReminders() {
   const cancelTaskModalBtn = document.getElementById("btn-cancel-task-modal");
   if (closeTaskModalBtn) closeTaskModalBtn.addEventListener("click", closeEditTaskModal);
   if (cancelTaskModalBtn) cancelTaskModalBtn.addEventListener("click", closeEditTaskModal);
+  const editTaskModal = document.getElementById("modal-edit-task");
+  if (editTaskModal) {
+    editTaskModal.addEventListener("click", (event) => {
+      if (!event.target.closest(".modal-card-dialog")) closeEditTaskModal();
+    });
+  }
 
   const editModalReminderType = document.getElementById("task-edit-reminder-type");
   const editOnceWrap = document.getElementById("task-edit-once-wrap");
@@ -1878,11 +1923,13 @@ window.triggerJobRun = async function(id) {
 window.deleteJobItem = async function(id) {
   if (!confirm(`Delete system job #${id}?`)) return;
   try {
-    const res = await fetch(`/api/dashboard/jobs/${id}`, { method: "DELETE" });
-    if (res.ok) {
-      showTaskToast(`🗑️ System job #${id} deleted.`, "info");
-      loadJobs();
+    const res = await fetch(getApiUrl(`/api/dashboard/jobs/${id}`), { method: "DELETE" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.deleted !== true) {
+      throw new Error(data.detail || "Reminder was not found for this user");
     }
+    showTaskToast(`🗑️ System job #${id} deleted.`, "info");
+    await loadJobs();
   } catch (err) {
     showTaskToast("Error deleting job: " + err.message, "error");
   }
@@ -1938,7 +1985,9 @@ function renderBoardCarousel(boards, activeId) {
     const rawCat = (board.category || "general").toLowerCase();
     const cat = rawCat.charAt(0).toUpperCase() + rawCat.slice(1);
     const ready = !!board.cover_ready;
-    const bgStyle = ready ? `style="background-image:url('/api/dashboard/whiteboards/${board.id}/cover')"` : "";
+    const coverUrl = `/api/dashboard/whiteboards/${board.id}/cover`;
+    const coverVersion = board.cover_version ? `?v=${encodeURIComponent(board.cover_version)}` : "";
+    const bgStyle = ready ? `style="background-image:url('${coverUrl}${coverVersion}')"` : "";
     const shimmerCls = ready ? "" : " shimmer";
     return `
       <div class="wb-carousel-card ${cls}${shimmerCls}" data-board-id="${board.id}" data-category="${rawCat}" ${bgStyle}>
@@ -2012,13 +2061,19 @@ function pollBoardCover(boardId) {
   const poller = setInterval(async () => {
     attempts += 1;
     try {
-      const res = await fetch(coverUrl);
+      const res = await fetch(coverUrl, { cache: "no-store" });
       if (res.status === 200) {
         clearInterval(poller);
         coverPollers.delete(boardId);
         const card = document.querySelector(`.wb-carousel-card[data-board-id="${boardId}"]`);
+        const boardState = cachedWhiteboards.find(board => board.id === boardId);
+        const coverVersion = res.headers.get("etag") || String(Date.now());
+        if (boardState) {
+          boardState.cover_ready = true;
+          boardState.cover_version = coverVersion;
+        }
         if (card) {
-          card.style.backgroundImage = `url('${coverUrl}?t=${Date.now()}')`;
+          card.style.backgroundImage = `url('${coverUrl}?v=${encodeURIComponent(coverVersion)}')`;
           card.classList.remove("shimmer");
           card.classList.add("cover-ready");
         }
@@ -2086,6 +2141,11 @@ function initWhiteboard() {
 
   if (closeCreateBtn) closeCreateBtn.addEventListener("click", hideCreateModal);
   if (cancelCreateBtn) cancelCreateBtn.addEventListener("click", hideCreateModal);
+  if (modalCreate) {
+    modalCreate.addEventListener("click", (event) => {
+      if (!event.target.closest(".modal-card-dialog")) hideCreateModal();
+    });
+  }
 
   // Template Card Selection
   const templateCards = document.querySelectorAll(".wb-template-card");
@@ -2186,7 +2246,8 @@ function initWhiteboard() {
       const res = await fetch(`/api/dashboard/whiteboards/${currentWhiteboardId}/ai_copilot`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: promptText, section_name: "✨ AI Insights & Research" }),
+        // Let the AI copilot choose the most fitting section for the generated card.
+        body: JSON.stringify({ prompt: promptText }),
       });
       if (!res.ok) throw new Error("AI generation failed");
       if (aiInput) aiInput.value = "";
@@ -2240,6 +2301,11 @@ function initWhiteboard() {
 
   if (closeAddCardBtn) closeAddCardBtn.addEventListener("click", hideAddCardModal);
   if (cancelAddCardBtn) cancelAddCardBtn.addEventListener("click", hideAddCardModal);
+  if (modalAddCard) {
+    modalAddCard.addEventListener("click", (event) => {
+      if (!event.target.closest(".modal-card-dialog")) hideAddCardModal();
+    });
+  }
 
   if (formAddCard) {
     formAddCard.addEventListener("submit", async (e) => {
@@ -2308,6 +2374,8 @@ async function loadWhiteboards(selectProjectId = null) {
       // renderBoardCarousel([], null) collapses the carousel and reveals the
       // #wb-empty-state template tiles automatically.
       renderBoardCarousel([], null);
+      cachedWhiteboardProject = null;
+      cachedWhiteboardBlocks = [];
       const titleEl = document.getElementById("wb-active-title");
       const sumEl = document.getElementById("wb-active-summary");
       const emojiEl = document.getElementById("wb-active-emoji");
@@ -2344,7 +2412,7 @@ async function loadWhiteboards(selectProjectId = null) {
   }
 }
 
-async function loadWhiteboardDetails(projectId) {
+async function loadWhiteboardDetails(projectId, opts = {}) {
   if (!projectId) return;
   const container = document.getElementById("wb-sections-container");
   if (!container) return;
@@ -2355,6 +2423,7 @@ async function loadWhiteboardDetails(projectId) {
     const data = await res.json();
     const proj = data.project;
     const blocks = data.blocks || [];
+    cachedWhiteboardProject = proj;
     cachedWhiteboardBlocks = blocks;
 
     // Update Header
@@ -2374,6 +2443,7 @@ async function loadWhiteboardDetails(projectId) {
     renderWhiteboardCanvas(blocks, proj.category);
 
   } catch (err) {
+    if (opts.silent) return; // background poll — keep the current canvas on transient errors
     console.error("Error loading whiteboard details:", err);
     container.innerHTML = `<div style="color: #fb7185; padding: 1.5rem; text-align: center;">Error loading board details.</div>`;
   }
@@ -2429,11 +2499,22 @@ function renderWhiteboardCanvas(blocks, category) {
     sectionsMap.get(sec).push(b);
   });
 
+  // Order sections: explicit section_order first, then any untracked (alphabetically).
+  const trackedOrder = (cachedWhiteboardProject?.section_order || []);
+  const seen = new Set();
+  const orderedNames = [];
+  trackedOrder.forEach(name => {
+    if (!seen.has(name)) { orderedNames.push(name); seen.add(name); }
+  });
+  [...sectionsMap.keys()].sort((a, b) => a.localeCompare(b)).forEach(name => {
+    if (!seen.has(name)) { orderedNames.push(name); seen.add(name); }
+  });
+
   if (countEl) {
-    countEl.textContent = `${sectionsMap.size} sections · ${blocks.length} active cards`;
+    countEl.textContent = `${orderedNames.length} sections · ${blocks.length} active cards`;
   }
 
-  if (sectionsMap.size === 0) {
+  if (orderedNames.length === 0) {
     // Empty board → category-adaptive ghost hints plus quick actions.
     container.innerHTML = `
       ${renderGhostCards(category)}
@@ -2451,27 +2532,552 @@ function renderWhiteboardCanvas(blocks, category) {
   }
 
   let deckHtml = "";
-  sectionsMap.forEach((sectionBlocks, sectionName) => {
+  orderedNames.forEach(sectionName => {
+    const sectionBlocks = sectionsMap.get(sectionName) || [];
     deckHtml += `
-      <div class="wb-section-block">
+      <div class="wb-section-block" data-section-name="${escapeHtml(sectionName)}">
         <div class="wb-section-header">
+          <span class="wb-section-grip" title="Drag to reorder section" draggable="true">⠿</span>
           <h3 class="wb-section-title">${escapeHtml(sectionName)}</h3>
           <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 500;">${sectionBlocks.length} card${sectionBlocks.length === 1 ? '' : 's'}</span>
+          <span class="wb-section-actions">
+            <button class="wb-section-btn" title="Rename section" onclick="wbRenameSectionPrompt(this)">✏️</button>
+            <button class="wb-section-btn wb-section-btn-danger" title="Delete section and its cards" onclick="wbDeleteSectionFlow(this)">🗑️</button>
+          </span>
         </div>
         <div class="wb-cards-grid">
           ${sectionBlocks.map(b => renderSmartCardHtml(b)).join("")}
+          ${sectionBlocks.length === 0 ? `<button class="wb-empty-section-hint" onclick="document.getElementById('btn-open-add-card-modal').click()">＋ Empty section — click to add a card</button>` : ''}
         </div>
       </div>
     `;
   });
 
+  deckHtml += `
+    <button class="wb-add-section-btn" onclick="wbAddSectionFlow()">+ Add Section</button>
+  `;
+
   container.innerHTML = deckHtml;
+  initBoardDnd(container);
 }
 window.renderWhiteboardCanvas = renderWhiteboardCanvas;
+
+// ---------------------------------------------------------------------------
+// Board canvas: drag & drop ordering + section management + persistence
+// ---------------------------------------------------------------------------
+
+function markWbInteraction() {
+  wbLastInteraction = Date.now();
+}
+
+function initBoardDnd(container) {
+  if (!container) return;
+  markWbInteraction();
+
+  let dragPayload = null; // {type: 'card'|'section', ...}
+
+  const clearIndicators = () => {
+    container.querySelectorAll(".wb-drop-before").forEach(el => el.classList.remove("wb-drop-before"));
+    container.querySelectorAll(".wb-section-drop-target").forEach(el => el.classList.remove("wb-section-drop-target"));
+  };
+
+  // Cards
+  container.querySelectorAll(".wb-card").forEach(card => {
+    card.setAttribute("draggable", "true");
+    card.addEventListener("dragstart", (e) => {
+      dragPayload = { type: "card", blockId: parseInt(card.dataset.blockId, 10) };
+      wbDragInProgress = true;
+      markWbInteraction();
+      card.classList.add("wb-dragging");
+      try { e.dataTransfer.setData("text/plain", String(dragPayload.blockId)); e.dataTransfer.effectAllowed = "move"; } catch (_) {}
+    });
+    card.addEventListener("dragend", () => {
+      dragPayload = null;
+      wbDragInProgress = false;
+      markWbInteraction();
+      clearIndicators();
+      card.classList.remove("wb-dragging");
+    });
+  });
+
+  // Section grids accept card drops
+  container.querySelectorAll(".wb-cards-grid").forEach(grid => {
+    grid.addEventListener("dragover", (e) => {
+      if (!dragPayload) return;
+      e.preventDefault();
+      if (dragPayload.type === "section") {
+        grid.closest(".wb-section-block")?.classList.add("wb-section-drop-target");
+      }
+    });
+    grid.addEventListener("drop", async (e) => {
+      if (!dragPayload || dragPayload.type !== "card") return;
+      e.preventDefault();
+      const sectionBlockEl = grid.closest(".wb-section-block");
+      const targetSection = sectionBlockEl?.dataset.sectionName;
+      if (!targetSection) return;
+
+      // Insertion index: count visible cards before the drop point (excluding dragged card)
+      const cardEls = [...grid.querySelectorAll(".wb-card")]
+        .filter(el => parseInt(el.dataset.blockId, 10) !== dragPayload.blockId);
+      let insertIdx = cardEls.length;
+      for (let i = 0; i < cardEls.length; i++) {
+        const rect = cardEls[i].getBoundingClientRect();
+        if ((e.clientY - rect.top) <= rect.height / 2) { insertIdx = i; break; }
+      }
+
+      const block = cachedWhiteboardBlocks.find(b => b.id === dragPayload.blockId);
+      if (!block) return;
+      const fromSection = block.section_name || "General";
+
+      // Rebuild cache ordering optimistically
+      const targetIds = cachedWhiteboardBlocks
+        .filter(b => b.id !== dragPayload.blockId && (b.section_name || "General") === targetSection)
+        .map(b => b.id);
+      const clampedIdx = Math.max(0, Math.min(insertIdx, targetIds.length));
+      targetIds.splice(clampedIdx, 0, dragPayload.blockId);
+
+      let pos = 0;
+      const newOrderIds = [];
+      orderedSectionNames().forEach(name => {
+        const ids = name === targetSection
+          ? targetIds
+          : cachedWhiteboardBlocks.filter(b => b.id !== dragPayload.blockId && (b.section_name || "General") === name).map(b => b.id);
+        ids.forEach(id => newOrderIds.push({ id, section: name, position: pos++ }));
+      });
+
+      applyBlockOrder(newOrderIds);
+      renderWhiteboardCanvas(cachedWhiteboardBlocks, cachedWhiteboardProject?.category);
+      persistBoardOrder();
+
+      if (fromSection !== targetSection) {
+        showToast(`📌 Card moved to "${targetSection}"`, "info");
+      }
+    });
+  });
+
+  // Section headers: drag to reorder sections
+  container.querySelectorAll(".wb-section-grip").forEach(grip => {
+    grip.addEventListener("dragstart", (e) => {
+      const sectionEl = grip.closest(".wb-section-block");
+      dragPayload = { type: "section", name: sectionEl?.dataset.sectionName };
+      wbDragInProgress = true;
+      markWbInteraction();
+      try { e.dataTransfer.setData("text/plain", String(dragPayload.name)); } catch (_) {}
+    });
+    grip.addEventListener("dragend", () => {
+      dragPayload = null;
+      wbDragInProgress = false;
+      markWbInteraction();
+      clearIndicators();
+    });
+  });
+
+  container.querySelectorAll(".wb-section-header").forEach(header => {
+    header.addEventListener("dragover", (e) => {
+      if (!dragPayload || dragPayload.type !== "section") return;
+      e.preventDefault();
+      header.classList.add("wb-section-drop-target");
+    });
+    header.addEventListener("dragleave", () => header.classList.remove("wb-section-drop-target"));
+    header.addEventListener("drop", (e) => {
+      if (!dragPayload || dragPayload.type !== "section") return;
+      e.preventDefault();
+      header.classList.remove("wb-section-drop-target");
+      const targetName = header.closest(".wb-section-block")?.dataset.sectionName;
+      const fromName = dragPayload.name;
+      if (!targetName || targetName === fromName) return;
+
+      const names = orderedSectionNames().filter(n => n !== fromName);
+      const targetIdx = names.indexOf(targetName);
+      names.splice(targetIdx < 0 ? names.length : targetIdx, 0, fromName);
+      cachedWhiteboardProject = { ...(cachedWhiteboardProject || {}), section_order: names };
+      renderWhiteboardCanvas(cachedWhiteboardBlocks, cachedWhiteboardProject?.category);
+      persistBoardOrder();
+    });
+  });
+
+  // Any pointer/key interaction inside the tab defers background polling
+  const panel = document.getElementById("tab-whiteboard");
+  if (panel) {
+    ["pointerdown", "keydown"].forEach(evt =>
+      panel.addEventListener(evt, markWbInteraction, { passive: true })
+    );
+  }
+}
+
+function orderedSectionNames() {
+  const tracked = cachedWhiteboardProject?.section_order || [];
+  const seen = new Set();
+  const names = [];
+  tracked.forEach(n => { if (!seen.has(n)) { names.push(n); seen.add(n); } });
+  cachedWhiteboardBlocks.forEach(b => {
+    const n = b.section_name || "General";
+    if (!seen.has(n)) { names.push(n); seen.add(n); }
+  });
+  return names;
+}
+
+function applyBlockOrder(orderEntries) {
+  const byId = new Map(cachedWhiteboardBlocks.map(b => [b.id, b]));
+  const next = [];
+  orderEntries.forEach(entry => {
+    const block = byId.get(entry.id);
+    if (!block) return;
+    block.section_name = entry.section;
+    block.position_order = entry.position;
+    next.push(block);
+    byId.delete(entry.id);
+  });
+  // Keep any blocks not covered by the payload at the tail
+  byId.forEach(b => next.push(b));
+  cachedWhiteboardBlocks = next;
+}
+
+async function persistBoardOrder() {
+  if (!currentWhiteboardId) return;
+  const sectionsPayload = orderedSectionNames().map(name => ({
+    name,
+    block_ids: cachedWhiteboardBlocks.filter(b => (b.section_name || "General") === name).map(b => b.id),
+  }));
+  try {
+    await fetch(`/api/dashboard/whiteboards/${currentWhiteboardId}/reorder`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ section_order: orderedSectionNames(), sections: sectionsPayload }),
+    });
+  } catch (err) {
+    console.error("Error persisting board order:", err);
+    showToast(`Couldn't save new layout: ${err.message}`, "danger");
+  }
+}
+
+window.wbAddSectionFlow = function () {
+  const name = (prompt("New section name:") || "").trim();
+  if (!name || !currentWhiteboardId) return;
+  fetch(`/api/dashboard/whiteboards/${currentWhiteboardId}/sections`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  })
+    .then(async (res) => {
+      if (res.status === 409) { showToast(`Section "${name}" already exists`, "info"); return; }
+      if (!res.ok) throw new Error("Failed to add section");
+      if (cachedWhiteboardProject) {
+        cachedWhiteboardProject.section_order = (await res.json()).section_order;
+      }
+      renderWhiteboardCanvas(cachedWhiteboardBlocks, cachedWhiteboardProject?.category);
+      showToast(`🆕 Section "${name}" added`, "success");
+    })
+    .catch(err => showToast(`Error adding section: ${err.message}`, "danger"));
+};
+
+window.wbRenameSectionPrompt = function (btn) {
+  const sectionEl = btn.closest(".wb-section-block");
+  const oldName = sectionEl?.dataset.sectionName;
+  if (!oldName || !currentWhiteboardId) return;
+  const newName = (prompt("Rename section:", oldName) || "").trim();
+  if (!newName || newName === oldName) return;
+  fetch(`/api/dashboard/whiteboards/${currentWhiteboardId}/sections`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ old_name: oldName, new_name: newName }),
+  })
+    .then(async (res) => {
+      if (!res.ok) throw new Error("Failed to rename section");
+      const data = await res.json();
+      cachedWhiteboardBlocks.forEach(b => {
+        if ((b.section_name || "General") === oldName) b.section_name = newName;
+      });
+      if (cachedWhiteboardProject) cachedWhiteboardProject.section_order = data.section_order;
+      renderWhiteboardCanvas(cachedWhiteboardBlocks, cachedWhiteboardProject?.category);
+      showToast(`✏️ Renamed to "${newName}"`, "success");
+    })
+    .catch(err => showToast(`Error renaming section: ${err.message}`, "danger"));
+};
+
+window.wbDeleteSectionFlow = function (btn) {
+  const sectionEl = btn.closest(".wb-section-block");
+  const name = sectionEl?.dataset.sectionName;
+  if (!name || !currentWhiteboardId) return;
+  const cardCount = cachedWhiteboardBlocks.filter(b => (b.section_name || "General") === name).length;
+  const msg = cardCount > 0
+    ? `Delete section "${name}" and its ${cardCount} card${cardCount === 1 ? '' : 's'}? This cannot be undone.`
+    : `Delete empty section "${name}"?`;
+  if (!confirm(msg)) return;
+  fetch(`/api/dashboard/whiteboards/${currentWhiteboardId}/sections?name=${encodeURIComponent(name)}`, { method: "DELETE" })
+    .then(async (res) => {
+      if (!res.ok) throw new Error("Failed to delete section");
+      const data = await res.json();
+      cachedWhiteboardBlocks = cachedWhiteboardBlocks.filter(b => (b.section_name || "General") !== name);
+      if (cachedWhiteboardProject) cachedWhiteboardProject.section_order = data.section_order;
+      renderWhiteboardCanvas(cachedWhiteboardBlocks, cachedWhiteboardProject?.category);
+      showToast(`🗑️ Section "${name}" deleted (${data.deleted_cards} cards)`, "info");
+    })
+    .catch(err => showToast(`Error deleting section: ${err.message}`, "danger"));
+};
+
+function renderMarkdownInline(text) {
+  let safe = escapeHtml(String(text || ""));
+  safe = safe.replace(
+    /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+    (_, label, url) => `<a href="${safeExternalHref(url)}" target="_blank" rel="noopener noreferrer">${label}</a>`
+  );
+  safe = safe.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+  safe = safe.replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, "<em>$1</em>");
+  safe = safe.replace(/`([^`\n]+)`/g, "<code>$1</code>");
+  return safe;
+}
+
+
+function renderMarkdownLite(markdown) {
+  const lines = String(markdown || "").replace(/\r\n/g, "\n").split("\n");
+  const html = [];
+  let listItems = [];
+
+  const flushList = () => {
+    if (!listItems.length) return;
+    html.push(`<ul class="wb-note-list">${listItems.join("")}</ul>`);
+    listItems = [];
+  };
+
+  lines.forEach(line => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      flushList();
+      return;
+    }
+    const heading = trimmed.match(/^#{1,4}\s+(.+)$/);
+    if (heading) {
+      flushList();
+      html.push(`<h5 class="wb-note-heading">${renderMarkdownInline(heading[1])}</h5>`);
+      return;
+    }
+    const bullet = trimmed.match(/^(?:[-*•])\s+(.+)$/);
+    if (bullet) {
+      listItems.push(`<li>${renderMarkdownInline(bullet[1])}</li>`);
+      return;
+    }
+    const numbered = trimmed.match(/^\d+[.)]\s+(.+)$/);
+    if (numbered) {
+      listItems.push(`<li>${renderMarkdownInline(numbered[1])}</li>`);
+      return;
+    }
+    flushList();
+    html.push(`<p>${renderMarkdownInline(trimmed)}</p>`);
+  });
+  flushList();
+  return html.join("");
+}
+
+
+function truncateText(text, limit = 220) {
+  const clean = String(text || "").replace(/\s+/g, " ").trim();
+  if (clean.length <= limit) return clean;
+  return `${clean.slice(0, limit - 1).trimEnd()}…`;
+}
+
+
+function safeExternalHref(url) {
+  try {
+    const parsed = new URL(String(url || ""), window.location.origin);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "#";
+    return escapeHtml(parsed.href).replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  } catch (_) {
+    return "#";
+  }
+}
+
+
+function parseResearchTopics(source) {
+  if (source && typeof source === "object" && Array.isArray(source.topics)) {
+    return source.topics.map(topic => ({
+      query: truncateText(topic.query, 160),
+      summary: String(topic.summary || "").trim().slice(0, 900),
+      sources: Array.isArray(topic.sources)
+        ? topic.sources.slice(0, 8).map(item => ({
+          title: truncateText(item.title, 100),
+          url: String(item.url || ""),
+          snippet: String(item.snippet || "").trim().slice(0, 500),
+          image_url: String(item.image_url || ""),
+        }))
+        : [],
+      images: Array.isArray(topic.images) ? topic.images.slice(0, 8).map(String) : [],
+    })).filter(topic => topic.query || topic.summary || topic.sources.length);
+  }
+
+  const markdown = typeof source === "string" ? source : source?.markdown || "";
+  const topics = [];
+  let current = null;
+  const lines = String(markdown || "").replace(/\r\n/g, "\n").split("\n");
+  lines.forEach(line => {
+    const heading = line.trim().match(/^\*\*(.+?)\*\*\s*$/);
+    if (heading) {
+      current = { query: heading[1].trim(), summary: "", sources: [], images: [] };
+      topics.push(current);
+      return;
+    }
+    if (!current) {
+      current = { query: "Research", summary: "", sources: [], images: [] };
+      topics.push(current);
+    }
+    const summary = line.trim().match(/^Summary:\s*(.+)$/i);
+    if (summary) {
+      current.summary = String(summary[1] || "").trim().slice(0, 900);
+      return;
+    }
+    const image = line.trim().match(/^Image:\s*(https?:\/\/\S+)/i);
+    if (image) {
+      const imageUrl = image[1].replace(/[.,]+$/, "");
+      current.images.push(imageUrl);
+      const lastSource = current.sources[current.sources.length - 1];
+      if (lastSource && !lastSource.image_url) lastSource.image_url = imageUrl;
+      return;
+    }
+    const source = line.trim().match(/^[-*•]\s+(.+?)\s+\((https?:\/\/[^)]+)\)\s*:?(.*)$/);
+    if (source) {
+      current.sources.push({
+        title: truncateText(source[1], 100),
+        url: source[2],
+        snippet: truncateText(source[3], 180),
+        image_url: "",
+      });
+    }
+  });
+  return topics.filter(topic => topic.query || topic.summary || topic.sources.length);
+}
+
+
+function renderResearchSourceTile(source, fallbackImage = "") {
+  const imageCandidate = source.image_url || fallbackImage;
+  const imageUrl = safeExternalHref(imageCandidate);
+  const domain = (() => {
+    try { return new URL(source.url).hostname.replace(/^www\./, ""); } catch (_) { return "source"; }
+  })();
+  return `
+    <a href="${safeExternalHref(source.url)}" target="_blank" rel="noopener noreferrer" class="wb-research-source-tile">
+      <div class="wb-research-source-image-wrap">
+        <span class="wb-research-source-placeholder" aria-hidden="true">✦</span>
+        ${imageUrl !== "#" ? `<img src="${imageUrl}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()" />` : ""}
+      </div>
+      <div class="wb-research-source-tile-content">
+        <div class="wb-research-source-tile-title">${escapeHtml(source.title || "Research source")}</div>
+        ${source.snippet ? `<p class="wb-research-source-snippet">${escapeHtml(source.snippet)}</p>` : ""}
+        <div class="wb-research-source-domain">${escapeHtml(domain)} <span aria-hidden="true">↗</span></div>
+      </div>
+    </a>
+  `;
+}
+
+
+function renderResearchBody(source, blockId) {
+  const topics = parseResearchTopics(source);
+  if (!topics.length) {
+    return `<div class="wb-research-empty">No concise findings available yet.</div>`;
+  }
+  return `
+    <div class="wb-research-body">
+      <div class="wb-research-kicker">
+        <span>Web research digest</span>
+        <span>${topics.length} topic${topics.length === 1 ? "" : "s"}</span>
+      </div>
+      <button type="button" class="wb-research-open-btn" onclick="openResearchCard(${Number(blockId) || 0})">
+        Open research <span aria-hidden="true">↗</span>
+      </button>
+      <div class="wb-research-topics">
+        ${topics.map(topic => `
+          <article class="wb-research-topic">
+            <div class="wb-research-topic-title">${escapeHtml(topic.query)}</div>
+            ${topic.summary ? `<p class="wb-research-summary">${escapeHtml(truncateText(topic.summary, 240))}</p>` : ""}
+            ${topic.sources.length ? `
+              <div class="wb-research-source-grid">
+                ${topic.sources.slice(0, 3).map((item, index) => renderResearchSourceTile(item, topic.images[index] || "")).join("")}
+              </div>
+              ${topic.sources.length > 3 ? `
+                <details class="wb-research-sources">
+                  <summary>${topic.sources.length - 3} more source${topic.sources.length - 3 === 1 ? "" : "s"}</summary>
+                  <div class="wb-research-source-list">
+                    ${topic.sources.slice(3).map(item => `
+                      <a href="${safeExternalHref(item.url)}" target="_blank" rel="noopener noreferrer" class="wb-research-source">
+                        <span>${escapeHtml(item.title)}</span><span aria-hidden="true">↗</span>
+                      </a>
+                    `).join("")}
+                  </div>
+                </details>
+              ` : ""}
+            ` : ""}
+          </article>
+        `).join("")}
+      </div>
+      <div class="wb-research-footer">Open the digest for full context and source links.</div>
+    </div>
+  `;
+}
+
+
+function renderResearchDetailBody(source) {
+  const topics = parseResearchTopics(source);
+  if (!topics.length) return renderMarkdownLite(source?.markdown || source || "");
+
+  return topics.map(topic => `
+    <section class="wb-research-detail-topic">
+      <h4>${escapeHtml(topic.query || "Research")}</h4>
+      ${topic.summary ? `<p>${escapeHtml(topic.summary)}</p>` : ""}
+      ${topic.sources.length ? `
+        <div class="wb-research-detail-sources">
+          ${topic.sources.map((item, index) => renderResearchSourceTile(item, topic.images[index] || "")).join("")}
+        </div>
+      ` : ""}
+    </section>
+  `).join("");
+}
+
+
+window.openResearchCard = function (blockId) {
+  const block = cachedWhiteboardBlocks.find(item => item.id === Number(blockId));
+  if (!block) return;
+
+  let modal = document.getElementById("wb-research-detail-modal");
+  if (!modal) {
+    modal = document.createElement("div");
+    modal.id = "wb-research-detail-modal";
+    modal.className = "wb-research-detail-modal";
+    modal.innerHTML = `
+      <div class="wb-research-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="wb-research-detail-title">
+        <div class="wb-research-detail-header">
+          <div>
+            <div class="wb-research-detail-eyebrow">Web research</div>
+            <h3 id="wb-research-detail-title">Research digest</h3>
+          </div>
+          <button type="button" class="wb-research-detail-close" aria-label="Close research">×</button>
+        </div>
+        <div class="wb-research-detail-content"></div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    modal.querySelector(".wb-research-detail-close").addEventListener("click", closeResearchCard);
+    modal.addEventListener("click", event => {
+      if (!event.target.closest(".wb-research-detail-dialog")) closeResearchCard();
+    });
+  }
+
+  modal.querySelector(".wb-research-detail-content").innerHTML = renderResearchDetailBody(block.content_payload || {});
+  modal.style.display = "flex";
+  document.body.classList.add("wb-research-modal-open");
+};
+
+
+function closeResearchCard() {
+  const modal = document.getElementById("wb-research-detail-modal");
+  if (modal) modal.style.display = "none";
+  document.body.classList.remove("wb-research-modal-open");
+}
+
 
 function renderSmartCardHtml(block) {
   const payload = block.content_payload || {};
   let cardBodyHtml = "";
+  const isResearch = block.section_name === "🔍 Research" || /research/i.test(block.title || "");
+  const cardTitle = isResearch ? "Research digest" : block.title;
 
   if (block.block_type === "comparison") {
     const options = payload.options || [];
@@ -2567,31 +3173,42 @@ function renderSmartCardHtml(block) {
   } else {
     // Note
     const text = payload.markdown || "";
-    cardBodyHtml = `<div class="wb-note-text">${escapeHtml(text)}</div>`;
+    cardBodyHtml = isResearch
+      ? renderResearchBody(payload, block.id)
+      : `<div class="wb-note-text">${renderMarkdownLite(text)}</div>`;
   }
+
+  const hasCardActions = !isResearch && (
+    block.block_type !== "comparison"
+    || block.block_type === "budget"
+    || block.linked_task_id
+    || block.linked_expense_id
+  );
 
   return `
     <div class="wb-card" data-block-id="${block.id}">
       <div>
         <div class="wb-card-header-row">
-          <span class="wb-card-type-tag ${block.block_type}">${block.block_type}</span>
+          <span class="wb-card-type-tag ${isResearch ? "research" : block.block_type}">${isResearch ? "research" : block.block_type}</span>
           <button class="btn-card-delete" onclick="deleteBlockCard(${block.id})" title="Delete card">🗑️</button>
         </div>
-        <h4 class="wb-card-title">${escapeHtml(block.title)}</h4>
+        <h4 class="wb-card-title">${escapeHtml(cardTitle)}</h4>
         ${cardBodyHtml}
       </div>
 
-      <div class="wb-card-footer">
-        <div class="wb-card-actions-left">
-          ${block.block_type !== 'comparison' ? `
-            <button class="btn-card-escalate" onclick="escalateBlockToTask(${block.id})">⏰ Add Task</button>
-          ` : ''}
-          ${block.block_type === 'budget' ? `
-            <button class="btn-card-escalate" onclick="escalateBlockToExpense(${block.id})">💰 Log Expense</button>
-          ` : ''}
+      ${hasCardActions ? `
+        <div class="wb-card-footer">
+          <div class="wb-card-actions-left">
+            ${block.block_type !== 'comparison' ? `
+              <button class="btn-card-escalate" onclick="escalateBlockToTask(${block.id})">⏰ Add Task</button>
+            ` : ''}
+            ${block.block_type === 'budget' ? `
+              <button class="btn-card-escalate" onclick="escalateBlockToExpense(${block.id})">💰 Log Expense</button>
+            ` : ''}
+          </div>
+          <span style="font-size: 0.68rem; color: var(--text-muted);">${block.linked_task_id ? '🔗 Linked Task' : ''}</span>
         </div>
-        <span style="font-size: 0.68rem; color: var(--text-muted);">${block.linked_task_id ? '🔗 Linked Task' : ''}</span>
-      </div>
+      ` : ""}
     </div>
   `;
 }
@@ -2876,6 +3493,7 @@ async function sendChatMessage(userText, action = null) {
       message: userText,
       session_id: webSessionId,
       timezone: userTimezone,
+      user_id: Number(getUserId()) || 999999,
       action: action
     };
 
@@ -2986,7 +3604,7 @@ window.openCopilotDrawer = function(context = "transactions") {
   const input = document.getElementById("copilot-input");
 
   if (contextLabel) {
-    if (context === "transactions") contextLabel.textContent = "Transactions & Expenses";
+    if (context === "transactions") contextLabel.textContent = "Transactions";
     else if (context === "jobs") contextLabel.textContent = "Scheduled Tasks & Reminders";
     else if (context === "groceries") contextLabel.textContent = "Smart Grocery Checklist";
     else contextLabel.textContent = "General Overview";
@@ -3079,6 +3697,7 @@ async function sendCopilotMessage(userText) {
       message: userText,
       session_id: webSessionId,
       timezone: userTimezone,
+      user_id: Number(getUserId()) || 999999,
       context: {
         current_page: copilotContext,
         active_filter: activeCategoryFilter,
@@ -3188,6 +3807,52 @@ let detailLineItems = [];
 let splitFriends = ["Me"];
 let splitPaidStatus = {};
 let isSplitEvenly = false;
+let isTotalInclusive = true;
+let splitChargeBackup = { svc: 0.0, tax: 0.0 };
+let isCustomSplit = false;
+let customSplitAmounts = {};
+let customSplitMode = "amount";
+let customSplitInputs = {};
+let customSplitTouched = new Set();
+
+const CUSTOM_SPLIT_MODES = {
+  amount: {
+    title: "Custom amounts due",
+    hint: "Enter a fixed share; the remainder is distributed across untouched people.",
+    placeholder: "0.00",
+    inputType: "number",
+    inputMode: "decimal",
+    prefix: "$",
+    suffix: "",
+  },
+  ratio: {
+    title: "Custom ratio shares",
+    hint: "Enter one weight per person, or type a shorthand such as 2:1 for two people.",
+    placeholder: "1",
+    inputType: "text",
+    inputMode: "text",
+    prefix: "x",
+    suffix: "",
+  },
+  percentage: {
+    title: "Custom percentage shares",
+    hint: "Enter each person's percentage. The total must equal 100%.",
+    placeholder: "50",
+    inputType: "number",
+    inputMode: "decimal",
+    prefix: "",
+    suffix: "%",
+  },
+  fraction: {
+    title: "Custom fraction shares",
+    hint: "Enter fractions such as 1/2. The fractions must add up to 1.",
+    placeholder: "1/2",
+    inputType: "text",
+    inputMode: "text",
+    prefix: "",
+    suffix: "of total",
+  },
+};
 
 function initTransactionDetailsModal() {
   const modal = document.getElementById("modal-transaction-details");
@@ -3201,6 +3866,9 @@ function initTransactionDetailsModal() {
   const btnSyncGrocery = document.getElementById("btn-sync-grocery-list");
   const btnCopyMsg = document.getElementById("btn-copy-split-msg");
   const evenCheckbox = document.getElementById("split-even-checkbox");
+  const totalInclusiveCheckbox = document.getElementById("tx-input-total-inclusive");
+  const customSplitCheckbox = document.getElementById("split-custom-checkbox");
+  const customSplitModeSelect = document.getElementById("split-custom-mode");
 
   // Tabs inside modal
   const tabReceiptBtn = document.getElementById("btn-tx-tab-receipt");
@@ -3230,7 +3898,7 @@ function initTransactionDetailsModal() {
   if (btnCancel) btnCancel.addEventListener("click", closeTransactionDetailsModal);
   if (modal) {
     modal.addEventListener("click", (e) => {
-      if (e.target === modal) closeTransactionDetailsModal();
+      if (!e.target.closest(".modal-dialog-split")) closeTransactionDetailsModal();
     });
   }
 
@@ -3273,6 +3941,14 @@ function initTransactionDetailsModal() {
     }
   });
 
+  if (totalInclusiveCheckbox) {
+    totalInclusiveCheckbox.addEventListener("change", () => {
+      isTotalInclusive = totalInclusiveCheckbox.checked;
+      applyTotalInclusiveMode();
+      calculateChargesAndTotal();
+    });
+  }
+
   // Friend manager
   if (btnAddFriend && friendInput) {
     const addFriend = () => {
@@ -3307,11 +3983,35 @@ function initTransactionDetailsModal() {
   if (evenCheckbox) {
     evenCheckbox.addEventListener("change", () => {
       isSplitEvenly = evenCheckbox.checked;
+      if (isSplitEvenly) {
+        isCustomSplit = false;
+        const customCheckbox = document.getElementById("split-custom-checkbox");
+        if (customCheckbox) customCheckbox.checked = false;
+      }
       const assignSec = document.getElementById("split-assignment-section");
       if (assignSec) {
         assignSec.style.display = isSplitEvenly ? "none" : "";
       }
       renderSplitWorkbench();
+    });
+  }
+
+  if (customSplitCheckbox) {
+    customSplitCheckbox.addEventListener("change", () => {
+      isCustomSplit = customSplitCheckbox.checked;
+      if (isCustomSplit) {
+        isSplitEvenly = false;
+        customSplitTouched = new Set();
+        if (evenCheckbox) evenCheckbox.checked = false;
+        ensureCustomSplitAmounts();
+      }
+      renderSplitWorkbench();
+    });
+  }
+
+  if (customSplitModeSelect) {
+    customSplitModeSelect.addEventListener("change", () => {
+      setCustomSplitMode(customSplitModeSelect.value);
     });
   }
 
@@ -3527,6 +4227,22 @@ async function openTransactionDetailsModal(expenseId) {
   } else {
     splitFriends = ["Me"];
   }
+  customSplitAmounts = {};
+  customSplitInputs = {};
+  customSplitTouched = new Set();
+  customSplitMode = Object.prototype.hasOwnProperty.call(CUSTOM_SPLIT_MODES, splitData.custom_allocation_mode)
+    ? splitData.custom_allocation_mode
+    : "amount";
+  const savedInputs = splitData.custom_allocations && typeof splitData.custom_allocations === "object"
+    ? splitData.custom_allocations
+    : splitData.custom_amounts;
+  if (savedInputs && typeof savedInputs === "object") {
+    splitFriends.forEach(friend => {
+      if (Object.prototype.hasOwnProperty.call(savedInputs, friend)) {
+        customSplitInputs[friend] = String(savedInputs[friend]);
+      }
+    });
+  }
 
   splitPaidStatus = splitData.paid_status || {};
   splitFriends.forEach(f => {
@@ -3534,15 +4250,39 @@ async function openTransactionDetailsModal(expenseId) {
   });
 
   isSplitEvenly = Boolean(splitData.is_even);
+  isCustomSplit = (
+    splitData.split_mode === "custom"
+    || Boolean(splitData.custom_amounts)
+    || Boolean(splitData.custom_allocation_mode)
+  );
+  if (isCustomSplit) isSplitEvenly = false;
   const evenCheckbox = document.getElementById("split-even-checkbox");
   if (evenCheckbox) evenCheckbox.checked = isSplitEvenly;
+  const customCheckbox = document.getElementById("split-custom-checkbox");
+  if (customCheckbox) customCheckbox.checked = isCustomSplit;
+  const customModeSelect = document.getElementById("split-custom-mode");
+  if (customModeSelect) customModeSelect.value = customSplitMode;
 
   const svcel = document.getElementById("tx-input-svc-pct");
   const taxel = document.getElementById("tx-input-tax-pct");
   const discel = document.getElementById("tx-input-discount");
-  if (svcel) svcel.value = splitData.svc_pct ?? (expense.category === "Dining" ? 10 : 0);
-  if (taxel) taxel.value = splitData.tax_pct ?? (expense.category === "Dining" || expense.category === "Shopping" ? 9 : 0);
+  const hasSavedChargeConfig = (
+    Object.prototype.hasOwnProperty.call(splitData, "svc_pct")
+    || Object.prototype.hasOwnProperty.call(splitData, "tax_pct")
+    || Object.prototype.hasOwnProperty.call(splitData, "total_inclusive")
+  );
+  const defaultSvc = splitData.svc_pct ?? (expense.category === "Dining" ? 10 : 0);
+  const defaultTax = splitData.tax_pct ?? (expense.category === "Dining" || expense.category === "Shopping" ? 9 : 0);
+  splitChargeBackup = { svc: Number(defaultSvc) || 0, tax: Number(defaultTax) || 0 };
+  // Existing ledger amounts are normally already settled totals. Preserve the
+  // old extra-charge mode only for transactions that explicitly saved it.
+  isTotalInclusive = splitData.total_inclusive ?? !hasSavedChargeConfig;
+  if (svcel) svcel.value = defaultSvc;
+  if (taxel) taxel.value = defaultTax;
   if (discel) discel.value = splitData.discount ?? 0.0;
+  const totalInclusiveEl = document.getElementById("tx-input-total-inclusive");
+  if (totalInclusiveEl) totalInclusiveEl.checked = isTotalInclusive;
+  applyTotalInclusiveMode();
 
   // Grocery button visibility
   const btnSyncGrocery = document.getElementById("btn-sync-grocery-list");
@@ -3623,9 +4363,9 @@ function calculateChargesAndTotal() {
   const svcPct = parseFloat(document.getElementById("tx-input-svc-pct")?.value) || 0.0;
   const taxPct = parseFloat(document.getElementById("tx-input-tax-pct")?.value) || 0.0;
   const discount = parseFloat(document.getElementById("tx-input-discount")?.value) || 0.0;
-
-  const svcAmt = subtotal * (svcPct / 100.0);
-  const taxAmt = (subtotal + svcAmt) * (taxPct / 100.0);
+  const inclusive = document.getElementById("tx-input-total-inclusive")?.checked ?? isTotalInclusive;
+  const svcAmt = inclusive ? 0.0 : subtotal * (svcPct / 100.0);
+  const taxAmt = inclusive ? 0.0 : (subtotal + svcAmt) * (taxPct / 100.0);
   const grandTotal = Math.max(0, subtotal + svcAmt + taxAmt - discount);
 
   const subtotalEl = document.getElementById("tx-input-subtotal");
@@ -3642,8 +4382,31 @@ function calculateChargesAndTotal() {
   renderSplitWorkbench();
 }
 
+function applyTotalInclusiveMode() {
+  const checkbox = document.getElementById("tx-input-total-inclusive");
+  const svcEl = document.getElementById("tx-input-svc-pct");
+  const taxEl = document.getElementById("tx-input-tax-pct");
+  const hintEl = document.querySelector(".tx-inclusive-toggle small");
+  const inclusive = checkbox?.checked ?? isTotalInclusive;
+  isTotalInclusive = inclusive;
+
+  if (inclusive) {
+    // Keep the user's extra-charge values available if they switch modes.
+    if (svcEl && !svcEl.disabled) splitChargeBackup.svc = parseFloat(svcEl.value) || 0.0;
+    if (taxEl && !taxEl.disabled) splitChargeBackup.tax = parseFloat(taxEl.value) || 0.0;
+    if (svcEl) { svcEl.value = "0"; svcEl.disabled = true; }
+    if (taxEl) { taxEl.value = "0"; taxEl.disabled = true; }
+    if (hintEl) hintEl.textContent = "Charges are included in the original total and are not added again.";
+  } else {
+    if (svcEl) { svcEl.value = splitChargeBackup.svc; svcEl.disabled = false; }
+    if (taxEl) { taxEl.value = splitChargeBackup.tax; taxEl.disabled = false; }
+    if (hintEl) hintEl.textContent = "Uncheck only when adding charges to a pre-tax subtotal.";
+  }
+}
+
 function renderSplitWorkbench() {
   renderFriendPills();
+  renderCustomSplitAmounts();
   renderItemAssignmentCards();
   renderSplitCalculations();
 }
@@ -3669,6 +4432,9 @@ function removeSplitFriend(name) {
   if (name === "Me") return;
   splitFriends = splitFriends.filter(f => f !== name);
   delete splitPaidStatus[name];
+  delete customSplitInputs[name];
+  customSplitTouched.delete(name);
+  delete customSplitAmounts[name];
   // Remove from assigned items
   detailLineItems.forEach(it => {
     if (Array.isArray(it.assigned_to)) {
@@ -3679,12 +4445,333 @@ function removeSplitFriend(name) {
   renderSplitWorkbench();
 }
 
+function parseCustomSplitNumber(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw || !/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(raw)) return null;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function parseCustomSplitFraction(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const fraction = raw.match(/^(\d+(?:\.\d*)?)\s*\/\s*(\d+(?:\.\d*)?)$/);
+  if (fraction) {
+    const numerator = Number(fraction[1]);
+    const denominator = Number(fraction[2]);
+    if (Number.isFinite(numerator) && Number.isFinite(denominator) && denominator > 0) {
+      return numerator / denominator;
+    }
+    return null;
+  }
+  return parseCustomSplitNumber(raw);
+}
+
+function allocateCustomSplitCents(totalCents, weights) {
+  const weightTotal = weights.reduce((sum, weight) => sum + (weight || 0), 0);
+  if (!(weightTotal > 0)) return weights.map(() => 0);
+
+  const exact = weights.map(weight => Math.max(0, totalCents * weight / weightTotal));
+  const cents = exact.map(value => Math.floor(value));
+  let remainder = totalCents - cents.reduce((sum, value) => sum + value, 0);
+  const order = exact
+    .map((value, index) => ({ index, fraction: value - Math.floor(value) }))
+    .sort((a, b) => b.fraction - a.fraction || a.index - b.index);
+
+  for (let index = 0; index < remainder && order.length > 0; index += 1) {
+    cents[order[index % order.length].index] += 1;
+  }
+  return cents;
+}
+
+function getCustomAllocationResult() {
+  const grandTotal = parseFloat(document.getElementById("tx-input-grand-total")?.value) || 0.0;
+  const totalCents = Math.max(0, Math.round(grandTotal * 100));
+  const rawValues = splitFriends.map(friend => customSplitInputs[friend] ?? "");
+  let values = rawValues.map(value => (
+    customSplitMode === "fraction" ? parseCustomSplitFraction(value) : parseCustomSplitNumber(value)
+  ));
+  if (customSplitMode === "ratio") {
+    const shorthand = rawValues.find(value => String(value).includes(":"));
+    if (shorthand) {
+      const parts = String(shorthand).split(":").map(part => parseCustomSplitNumber(part));
+      if (parts.length === splitFriends.length) values = parts;
+    }
+  }
+  const hasInvalidInput = values.some(value => value === null);
+  const inputTotal = values.reduce((sum, value) => sum + (value ?? 0), 0);
+  let amountsCents = values.map(() => 0);
+  let valid = !hasInvalidInput;
+  let message = "";
+
+  if (customSplitMode === "amount") {
+    amountsCents = values.map(value => value === null ? 0 : Math.round(value * 100));
+    const allocatedCents = amountsCents.reduce((sum, value) => sum + value, 0);
+    if (hasInvalidInput) {
+      valid = false;
+      message = "Enter a valid amount for everyone.";
+    } else if (Math.abs(allocatedCents - totalCents) > 1) {
+      valid = false;
+      message = `Amounts must add up to $${grandTotal.toFixed(2)}.`;
+    }
+  } else if (customSplitMode === "ratio") {
+    if (inputTotal <= 0) {
+      valid = false;
+      message = "Enter a ratio for at least one person.";
+    } else {
+      amountsCents = allocateCustomSplitCents(totalCents, values.map(value => value || 0));
+    }
+    if (hasInvalidInput) {
+      valid = false;
+      message = "Enter a valid ratio for everyone.";
+    }
+  } else if (customSplitMode === "percentage") {
+    if (Math.abs(Math.round(inputTotal * 100) - 10000) > 1) {
+      valid = false;
+      message = `Percentages must add up to 100% (currently ${inputTotal.toFixed(2)}%).`;
+    } else {
+      amountsCents = allocateCustomSplitCents(totalCents, values.map(value => value || 0));
+    }
+    if (hasInvalidInput) {
+      valid = false;
+      message = "Enter a valid percentage for everyone.";
+    }
+  } else {
+    if (Math.abs(inputTotal - 1) > 0.0001) {
+      valid = false;
+      message = `Fractions must add up to 1 (currently ${inputTotal.toFixed(4)}).`;
+    } else {
+      amountsCents = allocateCustomSplitCents(totalCents, values.map(value => value || 0));
+    }
+    if (hasInvalidInput) {
+      valid = false;
+      message = "Enter a valid fraction for everyone, such as 1/2.";
+    }
+  }
+
+  // Show a useful in-progress preview even while a percentage/fraction total is
+  // being corrected, without allowing the invalid allocation to be saved.
+  if (!valid && customSplitMode === "percentage") {
+    amountsCents = values.map(value => value === null ? 0 : Math.round(totalCents * value / 100));
+  } else if (!valid && customSplitMode === "fraction") {
+    amountsCents = values.map(value => value === null ? 0 : Math.round(totalCents * value));
+  }
+
+  const amounts = {};
+  splitFriends.forEach((friend, index) => {
+    amounts[friend] = amountsCents[index] / 100;
+  });
+  return {
+    valid,
+    message,
+    amounts,
+    allocatedCents: amountsCents.reduce((sum, value) => sum + value, 0),
+    inputTotal,
+    rawValues,
+    values,
+  };
+}
+
+function formatCustomSplitInputNumber(value, digits = 4) {
+  return String(Number(value.toFixed(digits)));
+}
+
+function seedCustomSplitInputs() {
+  const grandTotal = parseFloat(document.getElementById("tx-input-grand-total")?.value) || 0.0;
+  const totalCents = Math.max(0, Math.round(grandTotal * 100));
+  const baseCents = splitFriends.length > 0 ? Math.floor(totalCents / splitFriends.length) : 0;
+  const remainderCents = totalCents - (baseCents * splitFriends.length);
+  const basePercentHundredths = splitFriends.length > 0 ? Math.floor(10000 / splitFriends.length) : 0;
+  const percentRemainder = 10000 - (basePercentHundredths * splitFriends.length);
+
+  splitFriends.forEach((friend, index) => {
+    if (customSplitMode === "amount") {
+      customSplitInputs[friend] = ((baseCents + (index < remainderCents ? 1 : 0)) / 100).toFixed(2);
+    } else if (customSplitMode === "ratio") {
+      customSplitInputs[friend] = "1";
+    } else if (customSplitMode === "percentage") {
+      customSplitInputs[friend] = ((basePercentHundredths + (index < percentRemainder ? 1 : 0)) / 100).toFixed(2);
+    } else {
+      customSplitInputs[friend] = `1/${splitFriends.length || 1}`;
+    }
+  });
+}
+
+function ensureCustomSplitAmounts() {
+  const hasExistingInputs = splitFriends.some(friend => (
+    Object.prototype.hasOwnProperty.call(customSplitInputs, friend)
+  ));
+
+  if (!hasExistingInputs && splitFriends.length > 0) {
+    seedCustomSplitInputs();
+  }
+  splitFriends.forEach(friend => {
+    if (!Object.prototype.hasOwnProperty.call(customSplitInputs, friend)) {
+      customSplitInputs[friend] = customSplitMode === "amount" ? "0.00" : "0";
+    }
+  });
+  Object.keys(customSplitInputs).forEach(friend => {
+    if (!splitFriends.includes(friend)) delete customSplitInputs[friend];
+  });
+
+  const result = getCustomAllocationResult();
+  customSplitAmounts = result.amounts;
+  return result;
+}
+
+function autoAllocateCustomAmountRemainder() {
+  if (customSplitMode !== "amount" || customSplitTouched.size === 0) return;
+
+  const grandTotal = parseFloat(document.getElementById("tx-input-grand-total")?.value) || 0.0;
+  const totalCents = Math.max(0, Math.round(grandTotal * 100));
+  const fixedFriends = splitFriends.filter(friend => customSplitTouched.has(friend));
+  const remainingFriends = splitFriends.filter(friend => !customSplitTouched.has(friend));
+  if (remainingFriends.length === 0) return;
+
+  const fixedValues = fixedFriends.map(friend => parseCustomSplitNumber(customSplitInputs[friend]));
+  if (fixedValues.some(value => value === null)) return;
+
+  const fixedCents = fixedValues.reduce((sum, value) => sum + Math.round(value * 100), 0);
+  const remainingCents = Math.max(0, totalCents - fixedCents);
+  const baseCents = Math.floor(remainingCents / remainingFriends.length);
+  const remainderCents = remainingCents - (baseCents * remainingFriends.length);
+  remainingFriends.forEach((friend, index) => {
+    customSplitInputs[friend] = ((baseCents + (index < remainderCents ? 1 : 0)) / 100).toFixed(2);
+  });
+}
+
+function syncCustomAmountInputValues() {
+  splitFriends.forEach((friend, index) => {
+    const input = document.getElementById(`split-custom-input-${index}`);
+    if (input && input !== document.activeElement) {
+      input.value = String(customSplitInputs[friend] ?? "");
+    }
+  });
+}
+
+function setCustomSplitMode(nextMode) {
+  if (!Object.prototype.hasOwnProperty.call(CUSTOM_SPLIT_MODES, nextMode)) return;
+  if (nextMode === customSplitMode) return;
+
+  const previous = ensureCustomSplitAmounts();
+  const previousAmounts = splitFriends.map(friend => Math.max(0, Number(previous.amounts[friend]) || 0));
+  const totalCents = Math.max(0, Math.round((parseFloat(document.getElementById("tx-input-grand-total")?.value) || 0) * 100));
+  customSplitMode = nextMode;
+  customSplitInputs = {};
+  customSplitTouched = new Set();
+
+  if (totalCents === 0 || previousAmounts.every(amount => amount <= 0)) {
+    seedCustomSplitInputs();
+  } else if (nextMode === "amount") {
+    splitFriends.forEach((friend, index) => {
+      customSplitInputs[friend] = previousAmounts[index].toFixed(2);
+    });
+  } else if (nextMode === "ratio") {
+    const positive = previousAmounts.filter(amount => amount > 0);
+    const minimum = Math.min(...positive);
+    const maximum = Math.max(...positive);
+    splitFriends.forEach((friend, index) => {
+      const amount = previousAmounts[index];
+      const ratio = amount <= 0 ? 0 : (maximum / minimum < 1.005 ? 1 : amount / minimum);
+      customSplitInputs[friend] = formatCustomSplitInputNumber(ratio);
+    });
+  } else if (nextMode === "percentage") {
+    const values = previousAmounts.map(amount => amount * 100 / (totalCents / 100));
+    values[values.length - 1] = Math.max(0, 100 - values.slice(0, -1).reduce((sum, value) => sum + Number(value.toFixed(2)), 0));
+    splitFriends.forEach((friend, index) => {
+      customSplitInputs[friend] = values[index].toFixed(2);
+    });
+  } else {
+    splitFriends.forEach((friend, index) => {
+      customSplitInputs[friend] = formatCustomSplitInputNumber(previousAmounts[index] / (totalCents / 100));
+    });
+  }
+
+  const modeSelect = document.getElementById("split-custom-mode");
+  if (modeSelect) modeSelect.value = customSplitMode;
+  renderSplitWorkbench();
+}
+
+function updateCustomSplitInput(friendName, value) {
+  customSplitInputs[friendName] = String(value ?? "");
+  if (customSplitMode === "amount") {
+    customSplitTouched.add(friendName);
+    autoAllocateCustomAmountRemainder();
+    syncCustomAmountInputValues();
+  }
+  const result = getCustomAllocationResult();
+  customSplitAmounts = result.amounts;
+  updateCustomSplitSummary(result);
+  renderSplitCalculations();
+}
+
+function renderCustomSplitAmounts() {
+  const section = document.getElementById("split-custom-amounts");
+  const list = document.getElementById("split-custom-amount-list");
+  if (!section || !list) return;
+
+  section.style.display = isCustomSplit ? "" : "none";
+  if (!isCustomSplit) return;
+  ensureCustomSplitAmounts();
+  const config = CUSTOM_SPLIT_MODES[customSplitMode] || CUSTOM_SPLIT_MODES.amount;
+  const modeSelect = document.getElementById("split-custom-mode");
+  const title = document.getElementById("split-custom-section-title");
+  const hint = document.getElementById("split-custom-mode-hint");
+  if (modeSelect) modeSelect.value = customSplitMode;
+  if (title) title.textContent = config.title;
+  if (hint) hint.textContent = config.hint;
+
+  list.innerHTML = splitFriends.map((friend, index) => `
+    <label class="split-custom-amount-row">
+      <span class="split-custom-person">
+        <span class="friend-avatar-dot">${escapeHtml(friend.charAt(0).toUpperCase())}</span>
+        ${escapeHtml(friend)}
+      </span>
+      <span class="split-custom-input-wrap">
+        ${config.prefix ? `<span>${config.prefix}</span>` : ""}
+        <input id="split-custom-input-${index}" type="${config.inputType}" ${config.inputType === "number" ? 'min="0" step="0.01"' : ""}
+          inputmode="${config.inputMode}" value="${escapeAttr(String(customSplitInputs[friend] ?? ""))}"
+          placeholder="${config.placeholder}" oninput="updateCustomSplitInput('${escapeAttr(friend)}', this.value)"
+          aria-label="${config.title} for ${escapeAttr(friend)}" />
+        ${config.suffix ? `<span class="split-custom-suffix">${config.suffix}</span>` : ""}
+      </span>
+    </label>
+  `).join("");
+  updateCustomSplitSummary();
+}
+
+function updateCustomSplitSummary(result = null) {
+  if (!isCustomSplit) return;
+  const grandTotal = parseFloat(document.getElementById("tx-input-grand-total")?.value) || 0.0;
+  const allocation = result || getCustomAllocationResult();
+  customSplitAmounts = allocation.amounts;
+  const allocated = allocation.allocatedCents / 100;
+  const totalLabel = document.getElementById("split-custom-total-label");
+  const remainingEl = document.getElementById("split-custom-remaining");
+
+  let allocationLabel = `Allocated $${allocated.toFixed(2)} of $${grandTotal.toFixed(2)}`;
+  if (customSplitMode === "ratio") {
+    const ratioDisplay = allocation.values.map(value => value === null ? "?" : value).join(" : ");
+    allocationLabel = `Ratio ${ratioDisplay} • ${allocationLabel}`;
+  } else if (customSplitMode === "percentage") {
+    allocationLabel = `Entered ${allocation.inputTotal.toFixed(2)}% • ${allocationLabel}`;
+  } else if (customSplitMode === "fraction") {
+    allocationLabel = `Entered ${allocation.inputTotal.toFixed(4)} of total • ${allocationLabel}`;
+  }
+  if (totalLabel) totalLabel.textContent = allocationLabel;
+  if (remainingEl) {
+    remainingEl.classList.toggle("balanced", allocation.valid);
+    remainingEl.classList.toggle("over", !allocation.valid && allocation.allocatedCents > Math.round(grandTotal * 100) + 1);
+    remainingEl.textContent = allocation.valid ? "✓ Fully allocated" : allocation.message;
+  }
+}
+
 function renderItemAssignmentCards() {
   const container = document.getElementById("split-assignment-cards");
   const assignSec = document.getElementById("split-assignment-section");
   if (!container) return;
 
-  if (isSplitEvenly) {
+  if (isSplitEvenly || isCustomSplit) {
     if (assignSec) assignSec.style.display = "none";
     return;
   }
@@ -3744,21 +4831,41 @@ function renderSplitCalculations() {
   const svcPct = parseFloat(document.getElementById("tx-input-svc-pct")?.value) || 0.0;
   const taxPct = parseFloat(document.getElementById("tx-input-tax-pct")?.value) || 0.0;
   const discount = parseFloat(document.getElementById("tx-input-discount")?.value) || 0.0;
+  const inclusive = document.getElementById("tx-input-total-inclusive")?.checked ?? isTotalInclusive;
 
   let breakdown = [];
   const grandTotal = parseFloat(document.getElementById("tx-input-grand-total")?.value) || 0.0;
 
-  if (isSplitEvenly && splitFriends.length > 0) {
-    const evenShare = grandTotal / splitFriends.length;
-    breakdown = splitFriends.map(f => ({
-      name: f,
-      subtotal: evenShare,
-      service_charge: 0,
-      tax: 0,
-      discount: 0,
-      total: evenShare,
-      items: [{ name: "Equal Split", share_price: evenShare }],
-    }));
+  if (isCustomSplit && splitFriends.length > 0) {
+    ensureCustomSplitAmounts();
+    breakdown = splitFriends.map(friend => {
+      const amount = Number(customSplitAmounts[friend]) || 0.0;
+      return {
+        name: friend,
+        subtotal: amount,
+        service_charge: 0,
+        tax: 0,
+        discount: 0,
+        total: amount,
+        items: [{ name: "Custom share", share_price: amount }],
+      };
+    });
+  } else if (isSplitEvenly && splitFriends.length > 0) {
+    const totalCents = Math.max(0, Math.round(grandTotal * 100));
+    const baseCents = Math.floor(totalCents / splitFriends.length);
+    const remainderCents = totalCents - (baseCents * splitFriends.length);
+    breakdown = splitFriends.map((f, index) => {
+      const share = (baseCents + (index < remainderCents ? 1 : 0)) / 100;
+      return {
+        name: f,
+        subtotal: share,
+        service_charge: 0,
+        tax: 0,
+        discount: 0,
+        total: share,
+        items: [{ name: "Equal Split", share_price: share }],
+      };
+    });
   } else {
     const friendSubtotals = {};
     const friendItems = {};
@@ -3773,9 +4880,14 @@ function renderSplitCalculations() {
         ? it.assigned_to.filter(f => splitFriends.includes(f))
         : splitFriends;
       const validAssigned = assigned.length > 0 ? assigned : splitFriends;
-      const share = price / validAssigned.length;
+      // Allocate item cents before calculating totals so the displayed shares
+      // cannot lose a cent on values such as $37.05 / 2.
+      const priceCents = Math.max(0, Math.round(price * 100));
+      const baseCents = Math.floor(priceCents / validAssigned.length);
+      const remainderCents = priceCents - (baseCents * validAssigned.length);
 
-      validAssigned.forEach(f => {
+      validAssigned.forEach((f, index) => {
+        const share = (baseCents + (index < remainderCents ? 1 : 0)) / 100;
         friendSubtotals[f] = (friendSubtotals[f] || 0) + share;
         friendItems[f].push({
           name: it.name,
@@ -3790,8 +4902,8 @@ function renderSplitCalculations() {
     breakdown = splitFriends.map(f => {
       const sub = friendSubtotals[f] || 0.0;
       const ratio = sub / totalSub;
-      const svc = sub * (svcPct / 100.0);
-      const tax = (sub + svc) * (taxPct / 100.0);
+      const svc = inclusive ? 0.0 : sub * (svcPct / 100.0);
+      const tax = inclusive ? 0.0 : (sub + svc) * (taxPct / 100.0);
       const disc = discount * ratio;
       const friendTot = Math.max(0, sub + svc + tax - disc);
 
@@ -3805,6 +4917,18 @@ function renderSplitCalculations() {
         items: friendItems[f] || [],
       };
     });
+  }
+
+  // Reconcile rounded person totals to the displayed grand total. This keeps
+  // the sum of visible shares equal to the amount the user is splitting.
+  if (breakdown.length > 0 && !isCustomSplit) {
+    const targetCents = Math.max(0, Math.round(grandTotal * 100));
+    const visibleCents = breakdown.reduce((sum, person) => sum + Math.round(person.total * 100), 0);
+    const remainderCents = targetCents - visibleCents;
+    if (remainderCents) {
+      const last = breakdown[breakdown.length - 1];
+      last.total = (Math.round(last.total * 100) + remainderCents) / 100;
+    }
   }
 
   // Render individual summary cards
@@ -3858,8 +4982,21 @@ function renderSplitCalculations() {
   }
 }
 
-function toggleFriendPaidStatus(friendName) {
-  splitPaidStatus[friendName] = !splitPaidStatus[friendName];
+async function toggleFriendPaidStatus(friendName) {
+  if (friendName === "Me" || splitPaidStatus[friendName]) return;
+  if (activeDetailExpense?.id && typeof window.settleUnifiedIou === "function") {
+    const settled = await window.settleUnifiedIou(`outgoing:${activeDetailExpense.id}`, friendName);
+    if (settled) {
+      splitPaidStatus[friendName] = true;
+      activeDetailExpense.split_data = {
+        ...(activeDetailExpense.split_data || {}),
+        paid_status: splitPaidStatus,
+      };
+      renderSplitCalculations();
+    }
+    return;
+  }
+  splitPaidStatus[friendName] = true;
   renderSplitCalculations();
 }
 
@@ -3873,6 +5010,15 @@ async function saveTransactionDetails() {
   const taxPct = parseFloat(document.getElementById("tx-input-tax-pct")?.value) || 0.0;
   const discount = parseFloat(document.getElementById("tx-input-discount")?.value) || 0.0;
 
+  if (isCustomSplit) {
+    const allocation = ensureCustomSplitAmounts();
+    if (!allocation.valid) {
+      updateCustomSplitSummary();
+      showToast(allocation.message, "danger");
+      return;
+    }
+  }
+
   const splitData = {
     friends: splitFriends,
     paid_status: splitPaidStatus,
@@ -3880,6 +5026,15 @@ async function saveTransactionDetails() {
     svc_pct: svcPct,
     tax_pct: taxPct,
     discount: discount,
+    total_inclusive: isTotalInclusive,
+    split_mode: isCustomSplit ? "custom" : (isSplitEvenly ? "even" : "items"),
+    custom_amounts: isCustomSplit ? { ...customSplitAmounts } : null,
+    share_amounts: isCustomSplit ? { ...customSplitAmounts } : null,
+    custom_allocation_mode: isCustomSplit ? customSplitMode : null,
+    custom_allocations: isCustomSplit ? { ...customSplitInputs } : null,
+    // Keep the gross bill auditable even when the personal share is smaller.
+    gross_total: grandTotal,
+    my_share: isCustomSplit ? (Number(customSplitAmounts.Me) || 0) : null,
   };
 
   try {
@@ -3931,4 +5086,3 @@ async function syncGroceryListFromReceipt() {
     showToast("⚠️ Could not sync groceries checklist.");
   }
 }
-

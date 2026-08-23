@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="styles.css?v=24" />
+  <link rel="stylesheet" href="styles.css?v=37" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>" />
 </head>
 <body>
@@ -112,12 +112,12 @@
                 <span>⚡ Ask Nexus AI</span>
               </button>
               
-              <button class="btn-secondary-action-pill" id="btn-open-add-expense-modal">
-                <span>+ Log Expense</span>
+              <button class="btn-secondary-action-pill" id="btn-open-add-transaction">
+                <span>+ Log Transaction</span>
               </button>
 
               <div class="date-range-badge" id="current-month-badge">
-                <span>📅 August 2026</span>
+                <span>Live cash flow</span>
               </div>
             </div>
           </div>
@@ -138,11 +138,10 @@
               </div>
               <div class="metric-large-figure mono-fig" id="kpi-month-tx-count">0</div>
               <div class="metric-trend-subtext trend-up">
-                <span>↑ 12.5%</span> <span class="trend-dim">compared to last month</span>
+                <span>Money in and money out</span>
               </div>
             </div>
 
-            <!-- Card 2: Total Ingested Ledger -->
             <div class="metric-glass-card">
               <div class="metric-top-bar">
                 <div class="metric-icon-disc green-disc">
@@ -151,15 +150,14 @@
                     <polyline points="7 7 17 7 17 17"></polyline>
                   </svg>
                 </div>
-                <span class="metric-label-text">All-Time Ledger Count</span>
+                <span class="metric-label-text">Money In This Month</span>
               </div>
-              <div class="metric-large-figure mono-fig" id="kpi-total-tx">0</div>
+              <div class="metric-large-figure mono-fig" id="kpi-income-month">$0.00</div>
               <div class="metric-trend-subtext trend-up">
-                <span>↑ 15.5%</span> <span class="trend-dim">auto-synced via Gmail & TG</span>
+                <span>Cash received</span> <span class="trend-dim">manual, Telegram, linked IOUs</span>
               </div>
             </div>
 
-            <!-- Card 3: Total Expenses -->
             <div class="metric-glass-card">
               <div class="metric-top-bar">
                 <div class="metric-icon-disc orange-disc">
@@ -168,11 +166,11 @@
                     <polyline points="17 7 17 7 17 17"></polyline>
                   </svg>
                 </div>
-                <span class="metric-label-text">Total Expenses</span>
+                <span class="metric-label-text">Net Cash Flow</span>
               </div>
-              <div class="metric-large-figure mono-fig" id="kpi-month-spend">$0.00</div>
-              <div class="metric-trend-subtext trend-down">
-                <span>↓ 8.5%</span> <span class="trend-dim">within monthly budget</span>
+              <div class="metric-large-figure mono-fig" id="kpi-net-cashflow">$0.00</div>
+              <div class="metric-trend-subtext">
+                <span>Money in minus money out</span>
               </div>
             </div>
 
@@ -199,15 +197,26 @@
                   </div>
 
                   <div class="table-card-controls-row-2">
-                    <!-- Category Filter Dropdown -->
+                    <select id="tx-direction-filter" class="table-dropdown-select">
+                      <option value="all">All money movement</option>
+                      <option value="outgoing">Money out</option>
+                      <option value="incoming">Money in</option>
+                      <option value="pending">Pending IOUs</option>
+                    </select>
+
                     <select id="tx-category-filter" class="table-dropdown-select">
-                      <option value="all">All Status</option>
+                      <option value="all">All types</option>
                       <option value="Dining">Dining</option>
                       <option value="Groceries">Groceries</option>
                       <option value="Transport">Transport</option>
                       <option value="Shopping">Shopping</option>
                       <option value="Bills">Bills</option>
                       <option value="General">General</option>
+                      <option value="Salary">Salary</option>
+                      <option value="Friend Repayment">Friend repayment</option>
+                      <option value="Reimbursement">Reimbursement</option>
+                      <option value="Claim Payout">Claim payout</option>
+                      <option value="Transfer">Transfer</option>
                     </select>
 
                     <!-- Sort Dropdown -->
@@ -228,30 +237,14 @@
                 </div>
               </div>
 
-              <!-- Batch Action Bar (Visible when rows checked) -->
-              <div id="batch-action-bar" class="batch-action-bar" style="display: none;">
-                <span id="batch-selected-count">0 transactions selected</span>
-                <div style="display: flex; gap: 0.5rem; align-items: center;">
-                  <button class="btn-danger-pill" id="btn-batch-delete">🗑️ Delete Selected</button>
-                  <button class="btn-ghost-pill" id="btn-batch-cancel">✕ Deselect</button>
-                </div>
-              </div>
-
-              <!-- Mobile Swipe Hint -->
-              <div class="table-mobile-swipe-hint" aria-hidden="true">
-                <span>👈 Swipe table to view all details 👉</span>
-              </div>
-
               <!-- Transactions Data Table -->
               <div class="table-scroll-wrapper">
-                <table class="financial-data-table">
+                <table class="financial-data-table unified-transactions-table">
                   <thead>
                     <tr>
-                      <th style="width: 40px; text-align: center;">
-                        <input type="checkbox" class="dash-checkbox" id="check-all-rows" />
-                      </th>
                       <th style="width: 130px;">Transaction ID</th>
-                      <th>Payment Name</th>
+                      <th>Transaction</th>
+                      <th style="width: 130px;">Direction</th>
                       <th style="width: 110px; text-align: right;">Amount</th>
                       <th style="width: 180px;">Date</th>
                       <th style="width: 110px; text-align: center;">Status</th>
@@ -260,7 +253,7 @@
                   </thead>
                   <tbody id="expenses-table-body">
                     <tr>
-                      <td colspan="7" style="padding: 3rem 1rem; text-align: center; color: var(--text-muted);">
+                        <td colspan="7" style="padding: 3rem 1rem; text-align: center; color: var(--text-muted);">
                         <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">⏳</div>
                         <div style="font-size: 0.9rem; color: #a1a1aa;">Loading transactions...</div>
                       </td>
@@ -353,8 +346,8 @@
                   <!-- Rendered dynamically by app.js -->
                 </div>
 
-                <button class="btn-outline-widget-full" onclick="openExpenseModal()">
-                  <span>+ Log New Expense</span>
+                  <button class="btn-outline-widget-full" onclick="openExpenseModal()">
+                   <span>+ Log Transaction</span>
                 </button>
               </div>
 
@@ -828,31 +821,33 @@
     </div>
   </div>
 
-  <!-- ====================================================================
-       MODAL DIALOG (CREATE & EDIT EXPENSE)
-       ==================================================================== -->
-  <div class="modal-backdrop-veil" id="modal-add-expense" style="display: none;">
-    <div class="modal-card-dialog">
-      
+  <div class="modal-backdrop-veil" id="modal-add-transaction" style="display: none;">
+    <div class="modal-card-dialog transaction-entry-dialog" role="dialog" aria-modal="true" aria-labelledby="transaction-entry-title">
       <div class="modal-card-header">
         <div>
-          <h3 class="modal-title-text" id="modal-expense-title">Log New Expense</h3>
-          <p class="modal-sub-text">Record an expense transaction into your ledger</p>
+          <h3 class="modal-title-text" id="transaction-entry-title">Log transaction</h3>
+          <p class="modal-sub-text" id="transaction-entry-subtitle">Keep money in and money out in one timeline.</p>
         </div>
-        <button class="modal-close-x" id="btn-close-expense-modal">&times;</button>
+        <button class="modal-close-x" id="btn-close-transaction-modal" type="button" aria-label="Close transaction form">&times;</button>
       </div>
 
-      <form id="form-create-expense" class="modal-inner-form">
-        <input type="hidden" id="exp-edit-id" value="" />
+      <form id="form-create-transaction" class="modal-inner-form">
+        <input type="hidden" id="transaction-edit-id" value="" />
+
+        <div class="transaction-direction-switch" role="group" aria-label="Transaction direction">
+          <button type="button" class="transaction-direction-btn active" data-direction="outgoing" aria-pressed="true">Money out</button>
+          <button type="button" class="transaction-direction-btn" data-direction="incoming" aria-pressed="false">Money in</button>
+        </div>
+        <p class="transaction-entry-hint" id="transaction-entry-hint">Record a purchase, bill, or other spending.</p>
 
         <div class="form-row-split">
           <div class="form-field-group">
-            <label for="exp-amount">Amount ($):</label>
-            <input type="number" step="0.01" min="0.01" id="exp-amount" placeholder="14.50" required />
+            <label for="transaction-amount">Amount</label>
+            <input type="number" step="0.01" min="0.01" id="transaction-amount" placeholder="42.50" required />
           </div>
-          <div class="form-field-group" style="max-width: 120px;">
-            <label for="exp-currency">Currency:</label>
-            <select id="exp-currency" class="table-dropdown-select">
+          <div class="form-field-group transaction-currency-field">
+            <label for="transaction-currency">Currency</label>
+            <select id="transaction-currency" class="table-dropdown-select">
               <option value="SGD">SGD</option>
               <option value="USD">USD</option>
               <option value="EUR">EUR</option>
@@ -863,35 +858,32 @@
         </div>
 
         <div class="form-field-group">
-          <label for="exp-merchant">Merchant / Vendor:</label>
-          <input type="text" id="exp-merchant" placeholder="e.g. FairPrice Finest, Grab, Amoy Hawker Centre" required />
+          <label for="transaction-counterparty" id="transaction-counterparty-label">Merchant</label>
+          <input type="text" id="transaction-counterparty" placeholder="e.g. FairPrice, Grab, or Amoy Hawker Centre" required />
         </div>
 
         <div class="form-row-split">
           <div class="form-field-group">
-            <label for="exp-category">Category:</label>
-            <select id="exp-category" class="table-dropdown-select">
-              <option value="Dining">Dining</option>
-              <option value="Groceries">Groceries</option>
-              <option value="Transport">Transport</option>
-              <option value="Shopping">Shopping</option>
-              <option value="Bills">Bills</option>
-              <option value="Leisure">Leisure</option>
-              <option value="General">General</option>
-            </select>
+            <label for="transaction-category">Type</label>
+            <select id="transaction-category" class="table-dropdown-select"></select>
           </div>
           <div class="form-field-group">
-            <label for="exp-date">Date & Time:</label>
-            <input type="datetime-local" id="exp-date" />
+            <label for="transaction-date">Date & time</label>
+            <input type="datetime-local" id="transaction-date" />
           </div>
         </div>
 
-        <div class="modal-footer-buttons">
-          <button type="button" class="btn-danger-flat" id="btn-delete-from-modal" style="margin-right: auto; display: none;">🗑️ Delete</button>
-          <button type="button" class="btn-cancel-flat" id="btn-cancel-expense-modal">Cancel</button>
-          <button type="submit" class="btn-primary-ember" id="btn-submit-expense">Save Expense</button>
+        <div class="form-field-group">
+          <label for="transaction-notes">Notes <span class="field-optional">Optional</span></label>
+          <textarea id="transaction-notes" rows="3" placeholder="Add context, a claim reference, or what the repayment covered."></textarea>
         </div>
+        <div class="transaction-form-error" id="transaction-form-error" role="alert" aria-live="polite"></div>
 
+        <div class="modal-footer-buttons">
+          <button type="button" class="btn-danger-flat" id="btn-delete-transaction" style="margin-right: auto; display: none;">Delete</button>
+          <button type="button" class="btn-cancel-flat" id="btn-cancel-transaction">Cancel</button>
+          <button type="submit" class="btn-primary-ember" id="btn-submit-transaction">Save transaction</button>
+        </div>
       </form>
     </div>
   </div>
@@ -944,7 +936,7 @@
               <div class="ocr-drop-title">Snap or Upload Receipt Photo</div>
               <div class="ocr-drop-sub">Drag & drop or tap to scan items, prices & taxes with Gemini Vision</div>
             </div>
-            <button type="button" class="btn-ember-pill" id="btn-trigger-receipt-file">Scan Receipt</button>
+            <button type="button" class="btn-primary-ember" id="btn-trigger-receipt-file">Scan Receipt</button>
           </div>
           <div class="ocr-dropzone-loading" id="ocr-dropzone-loading" style="display: none;">
             <div class="typing-pulser"><span></span><span></span><span></span></div>
@@ -1001,6 +993,15 @@
         </div>
 
         <!-- Taxes & Charges Bar -->
+        <div class="tx-total-mode-row">
+          <label class="tx-inclusive-toggle" for="tx-input-total-inclusive">
+            <input type="checkbox" id="tx-input-total-inclusive" checked />
+            <span>
+              <strong>Total already includes tax &amp; service charges</strong>
+              <small>Use this for card/bank totals like $37.05. Uncheck only when adding charges to a pre-tax subtotal.</small>
+            </span>
+          </label>
+        </div>
         <div class="tx-charges-bar">
           <div class="tx-charge-field">
             <label for="tx-input-subtotal">Subtotal ($)</label>
@@ -1035,7 +1036,7 @@
             <div class="table-search-pill" style="flex: 1;">
               <input type="text" id="split-add-friend-input" placeholder="Add friend name (e.g. Alice, Bob)..." />
             </div>
-            <button type="button" class="btn-ember-pill" id="btn-add-split-friend">+ Add Friend</button>
+            <button type="button" class="btn-primary-ember" id="btn-add-split-friend">+ Add Friend</button>
           </div>
 
           <div class="split-friends-chips-row" id="split-friends-chips-row">
@@ -1047,6 +1048,31 @@
               <input type="checkbox" id="split-even-checkbox" />
               <span>Split bill evenly among all friends</span>
             </label>
+            <label class="toggle-checkbox-label split-custom-toggle-label">
+              <input type="checkbox" id="split-custom-checkbox" />
+              <span>Customize each share</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="split-custom-amounts" id="split-custom-amounts" style="display: none;">
+          <div class="split-custom-method-row">
+            <div>
+              <label class="split-custom-method-label" for="split-custom-mode">Allocation method</label>
+              <select id="split-custom-mode" class="split-custom-mode-select">
+                <option value="amount">Final amounts</option>
+                <option value="ratio">Ratios / weights</option>
+                <option value="percentage">Percentages</option>
+                <option value="fraction">Fractions</option>
+              </select>
+            </div>
+            <span class="split-custom-method-hint" id="split-custom-mode-hint">Enter the final amount each person owes.</span>
+          </div>
+          <div class="split-section-title" id="split-custom-section-title">Custom amounts due</div>
+          <div class="split-custom-amount-list" id="split-custom-amount-list"></div>
+          <div class="split-custom-total-row">
+            <span id="split-custom-total-label">Allocated $0.00 of $0.00</span>
+            <span id="split-custom-remaining" class="split-custom-remaining">$0.00 remaining</span>
           </div>
         </div>
 
@@ -1348,7 +1374,7 @@
         <div class="copilot-avatar-orb">⚡</div>
         <div>
           <div class="copilot-title">Nexus Copilot</div>
-          <div class="copilot-subtitle"><span class="copilot-live-dot"></span> Context: <span id="copilot-context-label">Transactions & Expenses</span></div>
+        <div class="copilot-subtitle"><span class="copilot-live-dot"></span> Context: <span id="copilot-context-label">Transactions</span></div>
         </div>
       </div>
       <div class="copilot-header-actions">
@@ -1363,7 +1389,8 @@
     <div class="copilot-prompts-bar" id="copilot-quick-prompts">
       <button class="copilot-prompt-chip" data-prompt="Analyze where my money went this month">📊 Spend Breakdown</button>
       <button class="copilot-prompt-chip" data-prompt="What is my highest expense this week?">🔍 Top Expense</button>
-      <button class="copilot-prompt-chip" data-prompt="Log $12.50 for lunch at Amoy Hawker Centre">💸 Log $12.50 Lunch</button>
+      <button class="copilot-prompt-chip" data-prompt="Log $12.50 for lunch at Amoy Hawker Centre">Log $12.50 Lunch</button>
+      <button class="copilot-prompt-chip" data-prompt="I received SGD 3500 salary from my employer">Log salary</button>
       <button class="copilot-prompt-chip" data-prompt="How much have I spent on Dining vs Groceries?">🥗 Dining vs Groceries</button>
     </div>
 
@@ -1385,7 +1412,7 @@
 
     <!-- Composer -->
     <form class="copilot-composer" id="copilot-form">
-      <input type="text" id="copilot-input" class="copilot-input" placeholder="Ask anything or log an expense..." autocomplete="off" />
+      <input type="text" id="copilot-input" class="copilot-input" placeholder="Ask anything or log a transaction..." autocomplete="off" />
       <button type="submit" class="copilot-btn-send" id="btn-copilot-send" title="Send message">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
           <line x1="22" y1="2" x2="11" y2="13"></line>
@@ -1399,6 +1426,8 @@
   <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
   <script src="manifests-data.js"></script>
-  <script src="app.js?v=27"></script>
+  <script src="app.js?v=41"></script>
+  <script src="transactions.js?v=3"></script>
+  <script src="transaction-entry.js?v=1"></script>
 </body>
 </html>
