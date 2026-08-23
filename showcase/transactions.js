@@ -18,6 +18,15 @@ function transactionHtml(value) {
   return escapeHtml(String(value ?? ""));
 }
 
+function transactionActionIcon(action) {
+  const icons = {
+    edit: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z"></path></svg>',
+    split: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="6" r="2.5"></circle><circle cx="18" cy="18" r="2.5"></circle><path d="M8.5 6h3a4 4 0 0 1 4 4v5.5"></path><path d="m13 13 2.5 2.5L18 13"></path></svg>',
+    delete: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path><path d="M10 11v5M14 11v5"></path></svg>',
+  };
+  return icons[action] || "";
+}
+
 function transactionDateValue(value) {
   if (!value) return "";
   const date = new Date(value);
@@ -115,7 +124,7 @@ function renderUnifiedTransactions() {
       <td data-label="Amount" class="td-amount-figure ${isIncoming ? "credit" : "debit"}">${amount}</td>
       <td data-label="Date" class="td-date-cell">${transactionHtml(formatExpenseDateTime(transaction.date))}</td>
       <td data-label="Status" class="transaction-status-cell"><span class="status-badge-pill ${transactionStatusClass(transaction.status)}">${transactionHtml(pendingLabel)}</span>${transactionSettlementActions(transaction)}</td>
-      <td data-label="Actions" class="transaction-actions-cell"><button type="button" class="row-action-btn" data-action="edit" data-key="${encodeURIComponent(transaction.id)}" aria-label="Edit ${transactionHtml(transaction.title)}">Edit</button>${!isIncoming && transaction.split_data && transaction.split_data.friends ? `<button type="button" class="row-action-btn" data-action="details" data-record-id="${transaction.record_id}" aria-label="Open details for ${transactionHtml(transaction.title)}">Split</button>` : ""}</td>
+      <td data-label="Actions" class="transaction-actions-cell"><button type="button" class="row-action-btn" data-action="edit" data-key="${encodeURIComponent(transaction.id)}" aria-label="Edit ${transactionHtml(transaction.title)}" title="Edit transaction">${transactionActionIcon("edit")}<span class="row-action-label">Edit</span></button>${!isIncoming && transaction.split_data && transaction.split_data.friends ? `<button type="button" class="row-action-btn" data-action="details" data-record-id="${transaction.record_id}" aria-label="Open details for ${transactionHtml(transaction.title)}" title="Split details">${transactionActionIcon("split")}<span class="row-action-label">Split</span></button>` : ""}</td>
     </tr>`;
   }).join("");
 

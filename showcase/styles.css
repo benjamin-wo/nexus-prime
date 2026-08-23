@@ -671,6 +671,24 @@ table.financial-data-table tr:hover td {
   transition: color 0.15s;
 }
 
+.row-action-btn svg,
+#btn-delete-transaction svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+  flex: 0 0 auto;
+}
+
+.row-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
 .row-action-btn:hover {
   color: var(--text-white);
 }
@@ -4621,6 +4639,10 @@ table.financial-data-table tr:hover td {
     display: inline-flex !important;
     align-items: center !important;
     justify-content: center !important;
+  }
+
+  .row-action-label {
+    display: none;
   }
 
   .table-pagination-footer {
