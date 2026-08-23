@@ -12,6 +12,38 @@ from orchestrator.router import GeneralPlugin
 MEDIA_BLOCK = {"type": "media", "mime_type": "image/jpeg", "data": "aGVsbG8="}
 
 
+class _FakeHttpResponse:
+    def __init__(self, payload=None, status_code=200, content=b""):
+        self._payload = payload
+        self.status_code = status_code
+        self.content = content
+
+    def json(self):
+        return self._payload
+
+
+class _FakeTelegramHttpClient:
+    requests = []
+
+    def __init__(self, **kwargs):
+        self.options = kwargs
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        return None
+
+    async def get(self, url, **kwargs):
+        self.requests.append(url)
+        if url.endswith("/getFile"):
+            return _FakeHttpResponse({
+                "ok": True,
+                "result": {"file_path": "photos/file_1.jpg"},
+            })
+        return _FakeHttpResponse(status_code=200, content=b"image-bytes")
+
+
 class _FakeMultimodalLLM:
     def __init__(self):
         self.calls = []
@@ -35,6 +67,21 @@ async def test_multimodal_path_invokes_gemini_without_typeerror(monkeypatch):
     assert len(fake_llm.calls) == 1
     assert "screenshot analyzed" in str(output.message.content)
     assert output.state_update == {"active_domain": "general"}
+
+
+@pytest.mark.asyncio
+async def test_telegram_media_download_uses_file_api_path(monkeypatch):
+    _FakeTelegramHttpClient.requests = []
+    monkeypatch.setattr(ingress_module.httpx, "AsyncClient", _FakeTelegramHttpClient)
+    monkeypatch.setattr(ingress_module.settings, "telegram_bot_token", "test-token")
+
+    result = await TelegramIngress()._download_telegram_media("file-123")
+
+    assert result == ("photos/file_1.jpg", b"image-bytes")
+    assert _FakeTelegramHttpClient.requests == [
+        "https://api.telegram.org/bottest-token/getFile",
+        "https://api.telegram.org/file/bottest-token/photos/file_1.jpg",
+    ]
 
 
 class _SpyGeneralPlugin:

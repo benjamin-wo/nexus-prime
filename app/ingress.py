@@ -303,7 +303,7 @@ class TelegramIngress:
                 file_path = info["result"].get("file_path")
                 if not file_path:
                     return None
-                download = await client.get(f"https://api.telegram.org/bot{token}/{file_path}")
+                download = await client.get(f"https://api.telegram.org/file/bot{token}/{file_path}")
                 if download.status_code != 200:
                     print(f"[TG MEDIA] download failed: {download.status_code}")
                     return None
