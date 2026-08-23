@@ -103,7 +103,7 @@ class EmailPlugin:
         messages = state.get("messages", [])
         last_text = str(messages[-1].content) if messages else ""
         lowered_text = last_text.lower()
-        from orchestrator.planner import is_email_disconnect_request
+        from orchestrator.planner import is_email_disconnect_request, is_latest_email_request
 
         if is_email_disconnect_request(last_text):
             requested_provider = "all"
@@ -171,6 +171,17 @@ class EmailPlugin:
                 state_update={"active_domain": self.name},
             )
 
+        # Informational "check the latest email" requests fetch the true newest
+        # messages (no financial keyword, no expense auto-logging). A generic
+        # sweep here is why "check my latest email" used to return stale receipts.
+        if is_latest_email_request(last_text):
+            latest_results = await search_email_messages.ainvoke({"user_id": user_id, "latest": True})
+            reply = AIMessage(content=await self._summarize_email_results(latest_results, latest=True))
+            return PluginOutput(
+                message=reply,
+                state_update={"active_domain": self.name},
+            )
+
         results = await search_email_messages.ainvoke({"user_id": user_id})
         if results:
             for msg in results:
@@ -210,9 +221,11 @@ class EmailPlugin:
         return PluginOutput(message=reply, state_update={"active_domain": self.name})
 
     @staticmethod
-    async def _summarize_email_results(results: List[Dict[str, Any]]) -> str:
-        """Summarize fetched emails with DeepSeek, or fall back to a plain list."""
+    async def _summarize_email_results(results: List[Dict[str, Any]], latest: bool = False) -> str:
+        """Summarize fetched emails with the agent LLM, or fall back to a plain list."""
         if not results:
+            if latest:
+                return "📬 I couldn't find any emails in your mailbox right now."
             return (
                 "📬 I checked your inbox — nothing expense-related in the last week. "
                 "Want me to look at a specific sender or date range?"
@@ -235,10 +248,14 @@ class EmailPlugin:
                     SystemMessage(
                         content=(
                             "You are Nexus Prime, the user's personal assistant on Telegram. "
-                            "You just fetched real emails from their inbox. Summarize them "
-                            "conversationally in 2-5 short lines: name the senders, what each "
-                            "message is about, and flag anything that looks like a bill, receipt, "
-                            "or expense. Do not mention that you are a subagent."
+                            "You just fetched emails from their inbox. Summarize them "
+                            "conversationally in 2-5 short lines: name the senders and what "
+                            "each message is about, and flag anything that looks like a bill, "
+                            "receipt, or expense. "
+                            "Only describe emails present in the provided JSON. Never invent, "
+                            "guess, or reconstruct senders, subjects, amounts, or dates that are "
+                            "not listed; if an email lacks a subject or body, say so instead of "
+                            "making one up. Do not mention that you are a subagent."
                         )
                     ),
                     HumanMessage(content=f"Emails:\n{emails_text}"),
@@ -926,28 +943,32 @@ class GeneralPlugin:
     @staticmethod
     async def _execute_multimodal(history: List[Any]) -> PluginOutput:
         """Answer image/audio messages with Gemini's multimodal model."""
-        fallback = (
-            "I got your photo/voice, but my vision model isn't configured "
-            "on this deployment yet (GEMINI_API_KEY missing)."
-        )
         if (
             not settings.active_gemini_api_key
             or settings.active_gemini_api_key == "test_google_key"
         ):
             return PluginOutput(
-                message=AIMessage(content=fallback),
+                message=AIMessage(
+                    content=(
+                        "I got your photo/voice, but my vision model isn't configured "
+                        "on this deployment yet (GEMINI_API_KEY missing)."
+                    )
+                ),
                 state_update={"active_domain": "general"},
             )
 
         try:
-            llm = get_multimodal_llm(complexity=ThinkingLevel.HIGH, temperature=0.2)
+            llm = get_multimodal_llm(temperature=0.2)
             ai_message = await llm.ainvoke(history)
             content = extract_llm_text(getattr(ai_message, "content", "")).strip()
             if not content:
                 content = "I processed your media message, but couldn't generate a description."
         except Exception as exc:  # noqa: BLE001
             print(f"[GENERAL] multimodal call failed: {exc}")
-            content = fallback
+            content = (
+                "Hmm, I couldn't analyze that just now — my vision model hit an error. "
+                "Mind sending it again?"
+            )
 
         return PluginOutput(
             message=AIMessage(content=content),

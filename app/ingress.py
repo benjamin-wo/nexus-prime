@@ -1222,8 +1222,25 @@ class TelegramIngress:
                 isinstance(block, dict) and block.get("type") == "media"
                 for block in content_blocks
             )
+            attachment_text = " ".join(
+                str(block.get("text") or "")
+                for block in content_blocks
+                if isinstance(block, dict) and block.get("type") == "text"
+            ).strip()
+            if not content_blocks and not text:
+                # Unsupported attachment types (stickers, video, raw files) would
+                # otherwise reach the agent as a literally empty message.
+                attachment_keys = (
+                    "sticker", "video", "video_note", "animation", "document", "contact"
+                )
+                attachment_kind = next(
+                    (key for key in attachment_keys if key in message), "attachment"
+                )
+                attachment_text = f"(sent a {attachment_kind} I can't read yet)"
             human_msg = HumanMessage(
-                content=content_blocks if has_media or len(content_blocks) > 1 else text
+                content=content_blocks
+                if has_media or len(content_blocks) > 1
+                else (text or attachment_text)
             )
 
             config = {"configurable": {"thread_id": str(chat_id)}}

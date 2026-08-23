@@ -162,6 +162,49 @@ async def plan_dispatch(state: AssistantState) -> Command[str]:
         is_email_disconnect_request,
     )
 
+    messages = state.get("messages", [])
+    last_content = getattr(messages[-1], "content", "") if messages else ""
+    has_media = isinstance(last_content, list) and any(
+        isinstance(block, dict) and block.get("type") == "media"
+        for block in last_content
+    )
+    if not text and has_media:
+        # Media-only messages have nothing for the planner to reason over;
+        # without this they get planned as empty strings and misrouted.
+        decision = Decision(
+            capabilities=[
+                CapabilitySelection(
+                    id="general",
+                    reason="media-only message routed to multimodal assistant",
+                    confidence=0.95,
+                )
+            ],
+            ordering=["general"],
+            confidence=0.95,
+            source="deterministic-media",
+            retrieval_used=False,
+            rationale="No text content; media attachments are handled by the general plugin.",
+        )
+        outputs, state_updates, reply = await _execute_capabilities(decision, state)
+        primary = _primary(decision)
+        schedule_turn_audit(reply)
+        return Command(
+            goto=END,
+            update={
+                "messages": [AIMessage(content=reply)],
+                "active_domain": primary,
+                "intent_type": _intent_type(decision, primary),
+                "last_decision": decision_to_dict(decision),
+                "plan": decision_to_dict(decision),
+                **{
+                    key: value
+                    for update in state_updates
+                    for key, value in (update or {}).items()
+                    if value
+                },
+            },
+        )
+
     if parse_incoming_transaction_text(text) is not None:
         # Incoming-money messages are deterministic finance writes. Keep them
         # out of the generic LLM planning path so they cannot be mislabeled as
