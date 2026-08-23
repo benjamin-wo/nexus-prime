@@ -148,7 +148,7 @@ async def test_iou_settlement_updates_split_task_and_income_once():
         assert before.json()["transactions"][0]["status"] == "pending"
 
         settled = await client.post(
-            f"/api/dashboard/transactions/outgoing:{tx.id}/settle?user_id={user_id}",
+            f"/api/dashboard/transactions/out-{tx.id:06d}/settle?user_id={user_id}",
             json={"participant": "Alex"},
         )
         assert settled.status_code == 200
@@ -156,7 +156,7 @@ async def test_iou_settlement_updates_split_task_and_income_once():
         assert settled.json()["settlement"]["amount_received"] == 10.0
 
         repeated = await client.post(
-            f"/api/dashboard/transactions/outgoing:{tx.id}/settle?user_id={user_id}",
+            f"/api/dashboard/transactions/out-{tx.id:06d}/settle?user_id={user_id}",
             json={"participant": "Alex"},
         )
         assert repeated.status_code == 200

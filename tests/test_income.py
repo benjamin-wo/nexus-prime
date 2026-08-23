@@ -104,6 +104,10 @@ async def test_unified_transactions_exposes_both_directions():
         assert unified.status_code == 200
         rows = unified.json()["transactions"]
         assert {row["direction"] for row in rows} == {"outgoing", "incoming"}
+        outgoing_row = next(row for row in rows if row["direction"] == "outgoing")
+        incoming_row = next(row for row in rows if row["direction"] == "incoming")
+        assert outgoing_row["id"] == f"out-{outgoing_row['record_id']:06d}"
+        assert incoming_row["id"] == f"in-{incoming_row['record_id']:06d}"
         assert any(row["title"] == "Amoy Hawker Centre" and row["signed_amount"] == -42.5 for row in rows)
         assert any(row["title"] == "Loren" and row["signed_amount"] == 13.0 for row in rows)
 

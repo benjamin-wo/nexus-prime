@@ -712,12 +712,20 @@ def _split_payment_summary(split_data: Dict[str, Any]) -> tuple[str, int, float]
     return "pending", pending_count, round(pending_amount, 2)
 
 
+TRANSACTION_ID_WIDTH = 6
+
+
+def _transaction_public_id(direction: str, record_id: int) -> str:
+    prefix = {"outgoing": "out", "incoming": "in"}[direction]
+    return f"{prefix}-{record_id:0{TRANSACTION_ID_WIDTH}d}"
+
+
 def _expense_to_transaction(item: ExpenseTransaction) -> Dict[str, Any]:
     """Serialize an expense using the unified transaction contract."""
     split_data = item.split_data or {}
     split_status, pending_count, pending_amount = _split_payment_summary(split_data)
     return {
-        "id": f"outgoing:{item.id}",
+        "id": _transaction_public_id("outgoing", item.id),
         "record_id": item.id,
         "direction": "outgoing",
         "type": "expense",
@@ -749,7 +757,7 @@ def _expense_to_transaction(item: ExpenseTransaction) -> Dict[str, Any]:
 def _income_to_transaction(item: IncomeTransaction) -> Dict[str, Any]:
     """Serialize incoming money using the unified transaction contract."""
     return {
-        "id": f"incoming:{item.id}",
+        "id": _transaction_public_id("incoming", item.id),
         "record_id": item.id,
         "direction": "incoming",
         "type": item.category.lower().replace(" ", "_"),
@@ -766,7 +774,7 @@ def _income_to_transaction(item: IncomeTransaction) -> Dict[str, Any]:
         "expense_id": item.linked_expense_id,
         "income_id": item.id,
         "linked_transaction_id": (
-            f"outgoing:{item.linked_expense_id}"
+            _transaction_public_id("outgoing", item.linked_expense_id)
             if item.linked_expense_id
             else None
         ),
@@ -777,9 +785,10 @@ def _income_to_transaction(item: IncomeTransaction) -> Dict[str, Any]:
 
 
 def _parse_transaction_key(value: str) -> tuple[str, int] | None:
-    """Parse a stable unified transaction key such as ``incoming:14``."""
-    direction, separator, raw_id = value.partition(":")
-    if not separator or direction not in {"outgoing", "incoming"} or not raw_id.isdigit():
+    """Parse a stable unified transaction key such as ``in-14``."""
+    prefix, separator, raw_id = value.partition("-")
+    direction = {"out": "outgoing", "in": "incoming"}.get(prefix)
+    if not separator or direction is None or not raw_id.isdigit():
         return None
     return direction, int(raw_id)
 

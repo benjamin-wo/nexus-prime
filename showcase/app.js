@@ -4985,7 +4985,10 @@ function renderSplitCalculations() {
 async function toggleFriendPaidStatus(friendName) {
   if (friendName === "Me" || splitPaidStatus[friendName]) return;
   if (activeDetailExpense?.id && typeof window.settleUnifiedIou === "function") {
-    const settled = await window.settleUnifiedIou(`outgoing:${activeDetailExpense.id}`, friendName);
+    const settled = await window.settleUnifiedIou(
+      `out-${String(activeDetailExpense.id).padStart(6, "0")}`,
+      friendName,
+    );
     if (settled) {
       splitPaidStatus[friendName] = true;
       activeDetailExpense.split_data = {
