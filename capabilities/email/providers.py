@@ -76,7 +76,13 @@ def _fetch_outlook_imap(
         # true newest messages are returned regardless of age.
         criteria = ("ALL",) if latest else ("SINCE", since)
         status, data = conn.search(None, *criteria)
-        uids = data[0].split() if status == "OK" and data and data[0] else []
+        # A large mailbox returns the UID list split over multiple IMAP lines;
+        # data[0] alone would silently truncate it to the oldest messages.
+        uids: List[bytes] = []
+        if status == "OK" and data:
+            for chunk in data:
+                if chunk:
+                    uids.extend(chunk.split())
         uids = uids[-limit:] if uids else []
 
         messages: List[Dict[str, Any]] = []

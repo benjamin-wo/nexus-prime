@@ -126,7 +126,7 @@ def test_email_connection_intent_is_not_a_missing_capability():
 
 
 def test_latest_email_intent_detection():
-    from orchestrator.planner import is_latest_email_request
+    from orchestrator.planner import is_latest_email_request, is_financial_email_request
 
     assert is_latest_email_request("check my latest email") is True
     assert is_latest_email_request("show me my newest emails") is True
@@ -134,6 +134,12 @@ def test_latest_email_intent_detection():
     assert is_latest_email_request("check my inbox for receipts") is False
     assert is_latest_email_request("check my email for transactions") is False
     assert is_latest_email_request("connect my outlook") is False
+
+    # Financial-intent emails must keep using the keyword sweep.
+    assert is_financial_email_request("check my inbox for receipts") is True
+    assert is_financial_email_request("find my paypal statements") is True
+    assert is_financial_email_request("did you see the DBS email today") is False
+    assert is_financial_email_request("check my latest email") is False
 
 
 @pytest.mark.asyncio
@@ -168,6 +174,74 @@ async def test_email_plugin_latest_request_skips_expense_logging(monkeypatch):
     assert captured.get("latest") is True
     assert log_spy.await_count == 0
     assert "Catchup" in str(out.message.content)
+
+
+@pytest.mark.asyncio
+async def test_email_plugin_generic_inbox_ask_uses_latest_mode(monkeypatch):
+    """Conversational phrasing like 'did you see the DBS email today' must use latest mode."""
+    from unittest.mock import AsyncMock
+    import orchestrator.router as router_module
+    import capabilities.email.tools as email_tools
+
+    captured: dict = {}
+
+    async def fake_search(**kwargs):
+        captured.update(kwargs)
+        return [{
+            "sender": "DBS <alerts@dbs.com>",
+            "subject": "Ibanking one-time password",
+            "date": "2026-08-24T10:00:00Z",
+        }]
+
+    monkeypatch.setattr(router_module, "get_user_gmail_token", AsyncMock(return_value="mock_token"))
+    monkeypatch.setattr(router_module, "get_user_outlook_token", AsyncMock(return_value=None))
+    monkeypatch.setattr(email_tools.search_email_messages, "coroutine", fake_search)
+
+    out = await EmailPlugin().execute({
+        "messages": [HumanMessage(content="did you see the DBS email today")],
+        "user_id": 4001,
+        "current_timezone": "UTC",
+        "active_domain": None,
+    })
+    assert captured.get("latest") is True
+    assert "DBS" in str(out.message.content)
+
+
+@pytest.mark.asyncio
+async def test_email_plugin_financial_ask_keeps_sweep_mode(monkeypatch):
+    """Explicit financial intents ('receipts') must stay on the keyword sweep (latest=False)."""
+    from unittest.mock import AsyncMock
+    import orchestrator.router as router_module
+    import capabilities.email.tools as email_tools
+
+    captured: dict = {}
+
+    async def fake_search(**kwargs):
+        captured.update(kwargs)
+        return [{
+            "sender": "Amazon <auto-confirm@amazon.com>",
+            "subject": "Payment receipt",
+            "date": "2026-08-20T10:00:00Z",
+        }]
+
+    monkeypatch.setattr(router_module, "get_user_gmail_token", AsyncMock(return_value="mock_token"))
+    monkeypatch.setattr(router_module, "get_user_outlook_token", AsyncMock(return_value=None))
+    monkeypatch.setattr(email_tools.search_email_messages, "coroutine", fake_search)
+    from capabilities.expenses.tools import log_expenses_from_emails
+    monkeypatch.setattr(
+        log_expenses_from_emails,
+        "coroutine",
+        AsyncMock(return_value={"logged": [], "skipped": [], "deduped": []}),
+    )
+
+    out = await EmailPlugin().execute({
+        "messages": [HumanMessage(content="check my inbox for receipts")],
+        "user_id": 4001,
+        "current_timezone": "UTC",
+        "active_domain": None,
+    })
+    assert captured.get("latest") is False
+    assert "Amazon" in str(out.message.content)
 
 
 @pytest.mark.asyncio

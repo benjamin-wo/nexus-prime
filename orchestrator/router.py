@@ -103,7 +103,11 @@ class EmailPlugin:
         messages = state.get("messages", [])
         last_text = str(messages[-1].content) if messages else ""
         lowered_text = last_text.lower()
-        from orchestrator.planner import is_email_disconnect_request, is_latest_email_request
+        from orchestrator.planner import (
+            is_email_disconnect_request,
+            is_latest_email_request,
+            is_financial_email_request,
+        )
 
         if is_email_disconnect_request(last_text):
             requested_provider = "all"
@@ -174,7 +178,11 @@ class EmailPlugin:
         # Informational "check the latest email" requests fetch the true newest
         # messages (no financial keyword, no expense auto-logging). A generic
         # sweep here is why "check my latest email" used to return stale receipts.
-        if is_latest_email_request(last_text):
+        # Real phrasings ("did you see the DBS email today?") rarely match the
+        # literal "latest email" list, so latest is the DEFAULT for any email
+        # request without an explicit financial intent; the keyword sweep runs
+        # only for receipt/bill/expense/bank asks.
+        if is_latest_email_request(last_text) or not is_financial_email_request(last_text):
             latest_results = await search_email_messages.ainvoke({"user_id": user_id, "latest": True})
             reply = AIMessage(content=await self._summarize_email_results(latest_results, latest=True))
             return PluginOutput(

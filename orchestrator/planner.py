@@ -177,6 +177,20 @@ def is_latest_email_request(text: str) -> bool:
     return any(phrase in lowered for phrase in latest_phrases)
 
 
+_FINANCIAL_EMAIL_WORDS = (
+    "receipt", "bill", "invoice", "statement", "payment", "transaction", "expense",
+    "spent", "spend", "refund", "salary", "payroll", "bank", "transfer", "charge",
+    "amount due", "fee", "tax", "credited",
+)
+
+
+def is_financial_email_request(text: str) -> bool:
+    """Detect an explicit financial-intent email request that should use the
+    keyword sweep instead of the plain newest-messages fetch."""
+    lowered = (text or "").lower()
+    return any(word in lowered for word in _FINANCIAL_EMAIL_WORDS)
+
+
 def _has_word(text: str, words: list[str]) -> bool:
     return any(re.search(rf"\b{re.escape(word)}\b", text) for word in words)
 
