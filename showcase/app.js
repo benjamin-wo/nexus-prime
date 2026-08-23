@@ -55,6 +55,26 @@ function normalizeCategory(cat) {
   return "General";
 }
 
+function mergeDashboardCategories(categories, totalSpend) {
+  const merged = new Map();
+  for (const item of Array.isArray(categories) ? categories : []) {
+    const category = normalizeCategory(item.category);
+    const current = merged.get(category) || { category, amount: 0, count: 0 };
+    current.amount += Number(item.amount) || 0;
+    current.count += Number(item.count) || 0;
+    merged.set(category, current);
+  }
+  return [...merged.values()]
+    .sort((a, b) => b.amount - a.amount)
+    .map((item) => ({
+      ...item,
+      amount: Math.round(item.amount * 100) / 100,
+      percentage: totalSpend > 0
+        ? Math.round((item.amount / totalSpend) * 1000) / 10
+        : 0,
+    }));
+}
+
 function getUserId() {
   const urlParams = new URLSearchParams(window.location.search);
   const qUid = urlParams.get("user_id");
@@ -260,6 +280,7 @@ async function loadDashboardSummary() {
     const res = await fetch(getApiUrl("/api/dashboard/summary"));
     if (!res.ok) throw new Error("Failed to load summary");
     const data = await res.json();
+    data.categories = mergeDashboardCategories(data.categories, data.total_spent_month);
 
     // Top 3 Metric Cards Figures
     const monthTxCount = document.getElementById("kpi-month-tx-count");

@@ -805,16 +805,19 @@ table.financial-data-table tr:hover td {
 
 .donut-center-val {
   font-family: var(--font-mono);
-  font-size: 1.15rem;
+  font-size: clamp(0.95rem, 4vw, 1.15rem);
   font-weight: 700;
   color: var(--text-white);
+  line-height: 1.1;
 }
 
 .donut-center-lbl {
-  font-size: 0.65rem;
+  font-size: clamp(0.48rem, 1.8vw, 0.62rem);
   color: var(--text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.035em;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 /* Legend Grid */
@@ -3096,10 +3099,13 @@ table.financial-data-table tr:hover td {
   font-weight: 500;
   height: auto;
   width: auto;
+  min-width: max-content;
+  flex-shrink: 0;
   color: #52525b;
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
+  white-space: nowrap;
   cursor: pointer;
   transition: all 0.15s ease;
 }
