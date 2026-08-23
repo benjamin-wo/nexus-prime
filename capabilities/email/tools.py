@@ -1,6 +1,8 @@
 from typing import List, Dict, Any, Optional
 import asyncio
 import httpx
+from datetime import datetime, timezone as dt_timezone
+from email.utils import parsedate_to_datetime
 from langchain_core.tools import tool
 from sqlmodel import select
 from core.db import async_session_factory
@@ -140,13 +142,45 @@ async def discover_and_track_bank_domain(user_id: int, sender_email: str) -> boo
             return True
         return False
 
+def _parse_message_datetime(raw: Any) -> Optional[datetime]:
+    """Parse an email date string into an aware UTC datetime, or None."""
+    if not raw:
+        return None
+    value = str(raw)
+    try:
+        parsed = parsedate_to_datetime(value)
+    except Exception:
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except Exception:
+            return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=dt_timezone.utc)
+    return parsed
+
+
+def _sort_messages_newest_first(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Sort merged provider results by message date, newest first. Messages with an
+    unparseable date sort last so they never masquerade as the newest."""
+    def key(msg: Dict[str, Any]):
+        parsed = _parse_message_datetime(msg.get("date") or "")
+        return (parsed is not None, parsed if parsed else datetime.min.replace(tzinfo=dt_timezone.utc))
+    return sorted(messages, key=key, reverse=True)
+
+
 @tool
 async def search_email_messages(
-    user_id: int, custom_query: Optional[str] = None, provider: Optional[str] = None
+    user_id: int,
+    custom_query: Optional[str] = None,
+    provider: Optional[str] = None,
+    latest: bool = False,
 ) -> List[Dict[str, Any]]:
     """
     Search financial email messages across active email providers (Gmail, Outlook, etc.)
     using the zero-friction smart financial query and domain presets.
+
+    When latest=True, fetch the newest messages from each provider with no financial
+    keyword filter and return them merged, newest first.
     """
     async with async_session_factory() as session:
         result = await session.execute(select(UserProfile).where(UserProfile.user_id == user_id))
@@ -166,6 +200,7 @@ async def search_email_messages(
                     user_id=user_id,
                     tracked_banks=tracked_banks,
                     custom_query=custom_query,
+                    latest=latest,
                 )
             )
 
@@ -176,26 +211,26 @@ async def search_email_messages(
     merged_messages = []
     for res in results:
         merged_messages.extend(res)
-    return merged_messages
+    return _sort_messages_newest_first(merged_messages)
 
 @tool
-async def search_gmail_messages(user_id: int, custom_query: Optional[str] = None) -> List[Dict[str, Any]]:
+async def search_gmail_messages(user_id: int, custom_query: Optional[str] = None, latest: bool = False) -> List[Dict[str, Any]]:
     """
     Search Gmail messages using the zero-friction smart financial query.
     Requires gmail.readonly scope.
     """
     return await search_email_messages.ainvoke(
-        {"user_id": user_id, "custom_query": custom_query, "provider": "gmail"}
+        {"user_id": user_id, "custom_query": custom_query, "provider": "gmail", "latest": latest}
     )
 
 @tool
-async def search_outlook_messages(user_id: int, custom_query: Optional[str] = None) -> List[Dict[str, Any]]:
+async def search_outlook_messages(user_id: int, custom_query: Optional[str] = None, latest: bool = False) -> List[Dict[str, Any]]:
     """
     Search Microsoft Outlook messages using OData $search and $filter financial queries.
     Requires Mail.Read scope.
     """
     return await search_email_messages.ainvoke(
-        {"user_id": user_id, "custom_query": custom_query, "provider": "outlook"}
+        {"user_id": user_id, "custom_query": custom_query, "provider": "outlook", "latest": latest}
     )
 
 @tool

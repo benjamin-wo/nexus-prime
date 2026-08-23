@@ -439,6 +439,76 @@ async def test_outlook_oauth_flow_stores_credential(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_outlook_latest_mode_fetches_newest_first(monkeypatch: MonkeyPatch):
+    """Latest-email mode must query Graph for newest messages WITHOUT a financial query."""
+    from core.models import UserCredential
+    from core.vault import encrypt_token
+    from capabilities.email import providers as ep
+    from capabilities.email.providers import OutlookProvider
+
+    user_id = 9312
+    async with async_session_factory() as session:
+        session.add(UserCredential(
+            user_id=user_id,
+            provider="outlook",
+            encrypted_token_payload=encrypt_token("fake-ms-refresh-token"),
+        ))
+        await session.commit()
+
+    seen_params: dict = {}
+
+    class FakeResp:
+        def __init__(self, data, status_code=200):
+            self._data, self.status_code = data, status_code
+        def json(self):
+            return self._data
+
+    class LatestGraphClient:
+        def __init__(self, *args, **kwargs):
+            pass
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *exc):
+            return False
+        async def post(self, url, data=None):
+            if data and data.get("grant_type") == "refresh_token":
+                return FakeResp({"access_token": "fake-graph-token"})
+            return FakeResp({})
+        async def get(self, url, headers=None, params=None):
+            if url.endswith("/messages"):
+                seen_params.update(params or {})
+                return FakeResp({"value": [{
+                    "id": "msgraph-latest-1",
+                    "subject": "Catchup from Alice",
+                    "from": {"emailAddress": {"name": "Alice", "address": "alice@example.com"}},
+                    "body": {"content": "Hi!"},
+                    "receivedDateTime": "2026-08-24T09:00:00Z",
+                    "categories": [],
+                }]})
+            return FakeResp({})
+
+    monkeypatch.setattr(ep.httpx, "AsyncClient", LatestGraphClient)
+    msgs = await OutlookProvider().search_messages(user_id=user_id, tracked_banks=[], latest=True)
+    assert msgs[0]["subject"] == "Catchup from Alice"
+    assert msgs[0]["provider"] == "outlook"
+    assert "$search" not in seen_params
+    assert "$filter" not in seen_params
+    assert seen_params.get("$orderby") == "receivedDateTime desc"
+
+
+def test_merge_sorts_messages_newest_first():
+    from capabilities.email.tools import _sort_messages_newest_first
+    msgs = [
+        {"id": "old", "date": "2026-08-01T10:00:00Z"},
+        {"id": "no-date", "date": ""},
+        {"id": "newest", "date": "2026-08-24T09:00:00Z"},
+        {"id": "mid", "date": "Mon, 10 Aug 2026 12:00:00 +0800"},
+    ]
+    ordered = [m["id"] for m in _sort_messages_newest_first(msgs)]
+    assert ordered == ["newest", "mid", "old", "no-date"]
+
+
+@pytest.mark.asyncio
 async def test_disconnect_email_provider_and_all(monkeypatch):
     """Disconnect removes only the requested provider, or every mailbox for all."""
     from unittest.mock import AsyncMock

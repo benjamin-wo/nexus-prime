@@ -161,6 +161,22 @@ def is_email_disconnect_request(text: str) -> bool:
     return any(word in lowered for word in disconnect_words) and any(word in lowered for word in mailbox_words)
 
 
+def is_latest_email_request(text: str) -> bool:
+    """Detect an informational "latest email" request (newest messages), as opposed
+    to a financial sweep ("find receipts", "log expenses")."""
+    lowered = (text or "").lower()
+    latest_phrases = (
+        "latest email", "latest emails", "latest mail", "latest message", "latest messages",
+        "newest email", "newest emails", "newest mail", "newest message", "newest messages",
+        "most recent email", "most recent emails", "most recent mail", "most recent message",
+        "most recent messages",
+        "check the latest", "check my latest", "see the latest", "see my latest",
+        "what's the latest", "what is the latest", "whats the latest",
+        "any new emails", "any new email", "any new mail",
+    )
+    return any(phrase in lowered for phrase in latest_phrases)
+
+
 def _has_word(text: str, words: list[str]) -> bool:
     return any(re.search(rf"\b{re.escape(word)}\b", text) for word in words)
 

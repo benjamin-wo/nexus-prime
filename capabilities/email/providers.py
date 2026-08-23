@@ -54,6 +54,7 @@ def _body_snippet(message: email.message.Message, limit: int = 220) -> str:
 def _fetch_outlook_imap(
     tracked_banks: List[str],
     custom_query: Optional[str] = None,
+    latest: bool = False,
     limit: int = 10,
 ) -> List[Dict[str, Any]]:
     """
@@ -71,7 +72,10 @@ def _fetch_outlook_imap(
         conn = imaplib.IMAP4_SSL("outlook.office365.com", 993, timeout=30)
         conn.login(user, password)
         conn.select("INBOX", readonly=True)
-        status, data = conn.search(None, "SINCE", since)
+        # Informational "latest email" lookups skip the rolling window so the
+        # true newest messages are returned regardless of age.
+        criteria = ("ALL",) if latest else ("SINCE", since)
+        status, data = conn.search(None, *criteria)
         uids = data[0].split() if status == "OK" and data and data[0] else []
         uids = uids[-limit:] if uids else []
 
@@ -96,7 +100,7 @@ def _fetch_outlook_imap(
                 not tracked_banks
                 or any(domain in sender_domain for domain in tracked_banks)
             )
-            if not matches_custom or not matches_bank:
+            if not latest and (not matches_custom or not matches_bank):
                 continue
 
             raw_date = _decode_mime(msg.get("Date"))
@@ -186,7 +190,11 @@ def _extract_gmail_body(payload: Dict[str, Any], limit: int = 4000) -> str:
 class EmailProvider(Protocol):
     """Protocol for email service providers (Gmail, Outlook, etc.)."""
     async def search_messages(
-        self, user_id: int, tracked_banks: List[str], custom_query: Optional[str] = None
+        self,
+        user_id: int,
+        tracked_banks: List[str],
+        custom_query: Optional[str] = None,
+        latest: bool = False,
     ) -> List[Dict[str, Any]]:
         ...
 
@@ -196,10 +204,14 @@ class EmailProvider(Protocol):
 class GmailProvider:
     """Gmail backend implementation using Google OAuth and Lucene-style search queries."""
     async def search_messages(
-        self, user_id: int, tracked_banks: List[str], custom_query: Optional[str] = None
+        self,
+        user_id: int,
+        tracked_banks: List[str],
+        custom_query: Optional[str] = None,
+        latest: bool = False,
     ) -> List[Dict[str, Any]]:
         if settings.google_client_id:
-            return await self._search_real_gmail(user_id, tracked_banks, custom_query)
+            return await self._search_real_gmail(user_id, tracked_banks, custom_query, latest)
 
         query = build_gmail_query(tracked_banks=tracked_banks, custom_query=custom_query)
         # No OAuth client configured (local tests/dev): structured mock for pipeline tests.
@@ -216,7 +228,11 @@ class GmailProvider:
         ]
 
     async def _search_real_gmail(
-        self, user_id: int, tracked_banks: List[str], custom_query: Optional[str] = None
+        self,
+        user_id: int,
+        tracked_banks: List[str],
+        custom_query: Optional[str] = None,
+        latest: bool = False,
     ) -> List[Dict[str, Any]]:
         """Fetch real messages from the Gmail API using the stored OAuth refresh token."""
         refresh_token = await _get_gmail_refresh_token(user_id)
@@ -224,7 +240,9 @@ class GmailProvider:
             print(f"[GMAIL] no refresh token for user {user_id} — connect at /auth/gmail")
             return []
 
-        query = build_gmail_query(tracked_banks=tracked_banks, custom_query=custom_query)
+        # Informational "latest email" lookups fetch the newest messages with no
+        # financial keyword filter; the Gmail API returns newest-first by default.
+        query = "" if latest else build_gmail_query(tracked_banks=tracked_banks, custom_query=custom_query)
         async with httpx.AsyncClient(timeout=30.0) as client:
             access_token = await _refresh_gmail_access_token(client, refresh_token)
             if not access_token:
@@ -394,17 +412,21 @@ class OutlookProvider:
     """Microsoft Outlook backend: per-user OAuth via Microsoft Graph, IMAP app-password fallback."""
 
     async def search_messages(
-        self, user_id: int, tracked_banks: List[str], custom_query: Optional[str] = None
+        self,
+        user_id: int,
+        tracked_banks: List[str],
+        custom_query: Optional[str] = None,
+        latest: bool = False,
     ) -> List[Dict[str, Any]]:
         # 1. Per-user OAuth via Microsoft Graph (preferred)
         refresh_token = await _get_outlook_refresh_token(user_id)
         if refresh_token:
-            return await self._search_real_outlook(user_id, refresh_token, tracked_banks, custom_query)
+            return await self._search_real_outlook(user_id, refresh_token, tracked_banks, custom_query, latest)
 
         # 2. Single-mailbox IMAP fallback from environment credentials
         if settings.outlook_email and settings.outlook_app_password:
             return await asyncio.to_thread(
-                _fetch_outlook_imap, tracked_banks, custom_query
+                _fetch_outlook_imap, tracked_banks, custom_query, latest
             )
 
         odata_params = build_outlook_query(tracked_banks=tracked_banks, custom_query=custom_query)
@@ -427,6 +449,7 @@ class OutlookProvider:
         refresh_token: str,
         tracked_banks: List[str],
         custom_query: Optional[str] = None,
+        latest: bool = False,
     ) -> List[Dict[str, Any]]:
         """Fetch real messages from Microsoft Graph using the stored OAuth refresh token."""
         query_params = build_outlook_query(tracked_banks=tracked_banks, custom_query=custom_query)
@@ -441,15 +464,20 @@ class OutlookProvider:
             params = {
                 "$top": "10",
                 "$select": "id,subject,from,body,receivedDateTime,categories",
-                **query_params,
             }
-            # Bound Outlook polling to the same rolling window as Gmail.
-            existing_filter = query_params.get("$filter") or ""
-            received_filter = f"receivedDateTime ge {since}"
-            params["$filter"] = f"{received_filter} and {existing_filter}" if existing_filter else received_filter
-            if "$search" not in query_params:
-                # Microsoft Graph forbids combining $search with $orderby
+            if latest:
+                # Informational "latest email" lookups: newest messages first,
+                # no financial keywords, no rolling window.
                 params["$orderby"] = "receivedDateTime desc"
+            else:
+                params.update(query_params)
+                # Bound Outlook polling to the same rolling window as Gmail.
+                existing_filter = query_params.get("$filter") or ""
+                received_filter = f"receivedDateTime ge {since}"
+                params["$filter"] = f"{received_filter} and {existing_filter}" if existing_filter else received_filter
+                if "$search" not in query_params:
+                    # Microsoft Graph forbids combining $search with $orderby
+                    params["$orderby"] = "receivedDateTime desc"
             list_resp = await client.get(
                 "https://graph.microsoft.com/v1.0/me/messages",
                 headers=headers,
