@@ -56,6 +56,57 @@ def test_regex_reminder_parser_list_and_delete():
     assert res_del["job_id"] == 42
 
 
+def test_has_recurrence_keyword():
+    """Only explicit repetition language permits eternal recurring jobs."""
+    from capabilities.reminders.tools import has_recurrence_keyword
+
+    assert has_recurrence_keyword("remind me to text my wife every day at 10am")
+    assert has_recurrence_keyword("drink water every 2 hours")
+    assert has_recurrence_keyword("stretch weekdays at 7am")
+    assert has_recurrence_keyword("take pills each morning")
+    assert not has_recurrence_keyword("remind me at 10:01 am to text my wife")
+    assert not has_recurrence_keyword("give my friends entry to my condo")
+
+
+def test_next_occurrence_delay_deterministic():
+    """Absolute wall-clock times resolve to a sane one-shot delay."""
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+    from capabilities.reminders.tools import next_occurrence_delay_seconds
+
+    tz = ZoneInfo("Asia/Singapore")
+    now = datetime.now(tz)
+    target = now.replace(hour=3, minute=33, second=0, microsecond=0)
+    if target <= now:
+        target += timedelta(days=1)
+    expected = int((target - now).total_seconds())
+
+    got = next_occurrence_delay_seconds("ping me at 3:33 am tomorrow-ish", "Asia/Singapore")
+    assert got is not None
+    assert abs(got - max(expected, 60)) <= 5
+
+
+def test_downgrade_ghost_recurring():
+    """LLM 'recurring' verdicts without repetition language must never become daily crons."""
+    from capabilities.reminders.tools import _downgrade_ghost_recurring
+
+    parsed = {
+        "action": "create",
+        "reminder_type": "recurring",
+        "message": "text my wife",
+        "cron": "1 10 * * *",
+        "timezone": "Asia/Singapore",
+    }
+    downgraded = _downgrade_ghost_recurring(parsed, "remind me at 10:01 am to text my wife")
+    assert downgraded["action"] == "create"
+    assert downgraded["reminder_type"] == "once"
+    assert downgraded["cron"] is None
+    assert downgraded["delay_seconds"] >= 60
+
+    dropped = _downgrade_ghost_recurring(parsed, "text my wife")
+    assert dropped["action"] is None
+
+
 @pytest.mark.asyncio
 async def test_schedule_and_list_one_shot_reminder():
     """Verify scheduling a one-shot reminder via TaskItem and DateTrigger."""

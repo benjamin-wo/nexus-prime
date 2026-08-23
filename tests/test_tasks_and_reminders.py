@@ -5,7 +5,7 @@ from sqlmodel import select
 
 from app.main import app
 from core.db import async_session_factory
-from core.models import UserProfile, TaskItem
+from core.models import UserProfile, TaskItem, WhiteboardProject, WhiteboardBlock
 from core.scheduler import (
     start_scheduler,
     shutdown_scheduler,
@@ -180,3 +180,44 @@ async def test_dashboard_tasks_api():
         res_del = await client.delete(f"/api/dashboard/tasks/{task_id}")
         assert res_del.status_code == 200
         assert res_del.json()["deleted_id"] == task_id
+
+
+@pytest.mark.asyncio
+async def test_dashboard_task_delete_unlinks_whiteboard_block():
+    """Deleting a task escalated from a board must not violate its FK link."""
+    async with async_session_factory() as session:
+        user = UserProfile(user_id=3004, telegram_chat_id=9004, current_timezone="Asia/Singapore")
+        project = WhiteboardProject(user_id=3004, title="Weekend Plans", category="project")
+        session.add_all([user, project])
+        await session.commit()
+        await session.refresh(project)
+
+        task = TaskItem(user_id=3004, title="Book spa appointment", reminder_type="none")
+        session.add(task)
+        await session.commit()
+        await session.refresh(task)
+
+        block = WhiteboardBlock(
+            project_id=project.id,
+            section_name="Checklist",
+            block_type="checklist",
+            title="Book spa appointment",
+            linked_task_id=task.id,
+        )
+        session.add(block)
+        await session.commit()
+        task_id = task.id
+        block_id = block.id
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.delete(f"/api/dashboard/tasks/{task_id}")
+
+    assert response.status_code == 200
+    assert response.json()["deleted_id"] == task_id
+
+    async with async_session_factory() as session:
+        assert (await session.get(TaskItem, task_id)) is None
+        remaining_block = await session.get(WhiteboardBlock, block_id)
+        assert remaining_block is not None
+        assert remaining_block.linked_task_id is None

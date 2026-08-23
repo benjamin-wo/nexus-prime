@@ -343,16 +343,165 @@ async def delete_scheduled_job(job_id: int, user_id: int) -> bool:
         return deleted
 
 
+EMAIL_DIGEST_START_HOUR = 9
+EMAIL_DIGEST_END_HOUR = 21
+
+
+def _utc_naive(value: Optional[datetime]) -> Optional[datetime]:
+    """Normalize a stored timestamp to naive UTC for PostgreSQL timestamp columns."""
+    if value is None:
+        return None
+    if value.tzinfo is not None:
+        return value.astimezone(dt_timezone.utc).replace(tzinfo=None)
+    return value
+
+
+def _format_digest_transaction_date(value: datetime, tz: ZoneInfo) -> str:
+    """Render a stored UTC transaction timestamp in the user's local timezone."""
+    aware = value if value.tzinfo is not None else value.replace(tzinfo=dt_timezone.utc)
+    return aware.astimezone(tz).strftime("%a, %d %b %Y at %I:%M %p")
+
+
+async def _send_daily_email_expense_digest(
+    user_id: int,
+    now_utc: Optional[datetime] = None,
+) -> bool:
+    """Send at most one consolidated expense digest per local day.
+
+    The ingestion sweep remains frequent for freshness, but this boundary keeps
+    routine polling activity out of Telegram and prevents overnight alerts.
+    """
+    from core.models import ExpenseTransaction
+    from app.ingress import send_telegram_message
+
+    now_utc = now_utc or datetime.now(dt_timezone.utc)
+    now_naive = now_utc.replace(tzinfo=None)
+
+    async with async_session_factory() as session:
+        profile = (
+            await session.execute(
+                select(UserProfile).where(UserProfile.user_id == user_id)
+            )
+        ).scalar_one_or_none()
+        if not profile or not profile.telegram_chat_id:
+            return False
+
+        try:
+            user_tz = ZoneInfo(profile.current_timezone or "Asia/Singapore")
+        except Exception:
+            user_tz = ZoneInfo("Asia/Singapore")
+        local_now = now_utc.astimezone(user_tz)
+
+        # Never send routine summaries overnight. If the app missed 09:00,
+        # the first sweep before 21:00 still delivers that day's digest.
+        if not (EMAIL_DIGEST_START_HOUR <= local_now.hour < EMAIL_DIGEST_END_HOUR):
+            return False
+
+        last_digest = profile.last_email_digest_at
+        last_digest_utc = (
+            last_digest.replace(tzinfo=dt_timezone.utc)
+            if last_digest and last_digest.tzinfo is None
+            else last_digest
+        )
+        if last_digest_utc and last_digest_utc.astimezone(user_tz).date() >= local_now.date():
+            return False
+
+        if last_digest_utc:
+            since = _utc_naive(last_digest_utc)
+        else:
+            local_start = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+            since = local_start.astimezone(dt_timezone.utc).replace(tzinfo=None)
+
+        transactions = (
+            await session.execute(
+                select(ExpenseTransaction)
+                .where(
+                    ExpenseTransaction.user_id == user_id,
+                    ExpenseTransaction.logged_at.is_not(None),
+                    ExpenseTransaction.logged_at > since,
+                    ExpenseTransaction.logged_at <= now_naive,
+                )
+                .order_by(ExpenseTransaction.logged_at, ExpenseTransaction.id)
+                .limit(50)
+            )
+        ).scalars().all()
+        if not transactions:
+            # Do not mark an empty digest as sent: a transaction arriving later
+            # that same day should still be included.
+            return False
+
+        chat_id = profile.telegram_chat_id
+
+    lines = [
+        f"📬 **Daily expense digest — {local_now.strftime('%a, %d %b')}**",
+        f"Auto-logged {len(transactions)} expense{'s' if len(transactions) != 1 else ''} from email:",
+    ]
+    high_value_buttons = []
+    for tx in transactions:
+        lines.append(
+            f"• {tx.currency} {tx.amount:.2f} — {tx.merchant}"
+            f" ({_format_digest_transaction_date(tx.date, user_tz)})"
+        )
+        if tx.amount >= 50.0:
+            high_value_buttons.append([
+                {
+                    "text": f"👥 Split {tx.currency} {tx.amount:.2f} — {tx.merchant}",
+                    "callback_data": f"sb:{tx.id}",
+                }
+            ])
+    if len(transactions) == 50:
+        lines.append("…showing the first 50; use /expenses for the complete list.")
+    if high_value_buttons:
+        lines.append("\n💡 Split a group expense with the buttons below.")
+
+    sent = await send_telegram_message(
+        chat_id,
+        "\n".join(lines),
+        reply_markup={"inline_keyboard": high_value_buttons} if high_value_buttons else None,
+    )
+    if not sent:
+        return False
+
+    # Mark only after Telegram accepts the message. The timestamp is persisted
+    # so a process restart cannot send the same digest again.
+    async with async_session_factory() as session:
+        profile = (
+            await session.execute(
+                select(UserProfile).where(UserProfile.user_id == user_id)
+            )
+        ).scalar_one_or_none()
+        if profile:
+            profile.last_email_digest_at = now_naive
+            session.add(profile)
+            await session.commit()
+    return True
+
+
 async def _scheduled_email_expense_sweep():
-    """Recurring sweep: scan Gmail for financial emails, auto-log expenses, notify the user."""
+    """Recurring sweep: scan connected mailboxes (Gmail + Outlook) for financial emails, auto-log expenses, notify the user."""
     from capabilities.expenses.tools import log_expenses_from_emails
     from capabilities.email.tools import search_email_messages
+    from capabilities.email.providers import PROVIDER_REGISTRY
+
+    email_providers = list(PROVIDER_REGISTRY.keys())
 
     async with async_session_factory() as session:
         result = await session.execute(
-            select(UserCredential).where(UserCredential.provider == "gmail")
+            select(UserCredential).where(UserCredential.provider.in_(email_providers))
         )
-        user_ids = list({cred.user_id for cred in result.scalars().all()})
+        email_creds = list(result.scalars().all())
+        user_ids = sorted({cred.user_id for cred in email_creds})
+
+        # Environment-configured Outlook mailbox (no per-user credential row):
+        # still sweep it under the admin/primary user so those receipts get logged.
+        if settings.outlook_email and settings.outlook_app_password:
+            has_outlook_cred = any(cred.provider == "outlook" for cred in email_creds)
+            if not has_outlook_cred and getattr(settings, "admin_telegram_chat_id", None):
+                try:
+                    user_ids.append(int(settings.admin_telegram_chat_id))
+                except (TypeError, ValueError):
+                    pass
+        user_ids = sorted(set(user_ids))
 
         # Auto-cleanup any legacy bogus transactions (ref numbers, years, footer disclaimer merchants)
         try:
@@ -387,54 +536,92 @@ async def _scheduled_email_expense_sweep():
     for user_id in user_ids:
         try:
             emails = await search_email_messages.ainvoke({"user_id": user_id})
-            if not emails:
-                continue
-            expense_result = await log_expenses_from_emails.ainvoke(
-                {"user_id": user_id, "emails": emails}
-            )
-            logged = expense_result.get("logged") or []
-            if not logged:
-                continue
-
-            chat_id = None
-            async with async_session_factory() as session:
-                profile = (
-                    await session.execute(
-                        select(UserProfile).where(UserProfile.user_id == user_id)
-                    )
-                ).scalar_one_or_none()
-                chat_id = profile.telegram_chat_id if profile else None
-            if not chat_id:
-                continue
-
-            # High-value smart alerts were already delivered this run — the summary would duplicate them.
-            if any(item.get("notified") for item in logged):
-                continue
-
-            # Quiet hours: no sweep summary pushes before 09:00 local time.
-            from core.ambient import QUIET_HOUR_END
-
-            tz_name = (
-                profile.current_timezone if profile and profile.current_timezone else "Asia/Singapore"
-            )
-            try:
-                local_now = datetime.now(dt_timezone.utc).astimezone(ZoneInfo(tz_name))
-            except Exception:
-                local_now = datetime.now(dt_timezone.utc).astimezone(ZoneInfo("Asia/Singapore"))
-            if local_now.hour < QUIET_HOUR_END:
-                continue
-
-            from app.ingress import send_telegram_message
-
-            lines = [
-                f"📬 Daily email sweep — auto-logged {len(logged)} expense"
-                f"{'s' if len(logged) != 1 else ''}:"
-            ]
-            for item in logged[:8]:
-                lines.append(f"• {item['currency']} {item['amount']:.2f} — {item['merchant']}")
-            await send_telegram_message(chat_id, "\n".join(lines))
+            # Ingestion is silent. A single local-time digest consolidates
+            # everything logged since the previous digest.
+            if emails:
+                await log_expenses_from_emails.ainvoke(
+                    {"user_id": user_id, "emails": emails, "notify": False}
+                )
+            await _send_daily_email_expense_digest(user_id)
         except Exception as exc:  # noqa: BLE001 - one user's failure must not block the sweep
             print(f"[SWEEP] error for user {user_id}: {exc}")
+
+
+async def _run_operations_health_sweep():
+    """Every 15 minutes, probe service health and record failures as GitHub issues.
+
+    Detects the same 'operational rot' (missing provider credentials, unreachable
+    DB, broken integrations) over and over, but `record_operation_event` dedups by
+    fingerprint so a failing probe only keeps one open issue with recurrence comments.
+    """
+    from core.audit import record_operation_event
+
+    probes: List[Dict[str, Any]] = []
+
+    # 1. OAuth provider credential presence (the "Outlook not configured" class)
+    provider_envs = {
+        "gmail": ("google_client_id", "google_client_secret"),
+        "outlook": ("microsoft_client_id", "microsoft_client_secret"),
+        "maps": ("google_maps_api_key",),
+        "lta": ("lta_account_key",),
+    }
+    for name, keys in provider_envs.items():
+        missing = [k for k in keys if not getattr(settings, k, None)]
+        if missing:
+            probes.append({
+                "subsystem": name,
+                "severity": "P3",
+                "error_context": f"Provider {name} OAuth credentials are not configured (missing: {', '.join(missing)}).",
+                "detection_source": "operations_health",
+                "fingerprint": f"env_missing_{name}_credentials",
+            })
+
+    # 2. Database reachability
+    try:
+        async with async_session_factory() as session:
+            await session.execute(select(ScheduledJob).limit(1))
+    except Exception as exc:  # noqa: BLE001
+        probes.append({
+            "type": "database",
+            "severity": "P1",
+            "error_context": f"Database unreachable during operations health sweep: {type(exc).__name__}: {exc}",
+            "detection_source": "operations_health",
+            "fingerprint": "db_unreachable",
+        })
+
+    # 3. Scheduler status
+    if not (scheduler.running if hasattr(scheduler, "running") else False):
+        probes.append({
+            "subsystem": "scheduler",
+            "severity": "P1",
+            "error_context": "APScheduler is not running.",
+            "detection_source": "operations_health",
+            "fingerprint": "scheduler_not_running",
+        })
+
+    # 4. Telegram bot token presence (the ingress can't start at all without it)
+    if not settings.telegram_bot_token or settings.telegram_bot_token == "test_bot_token":
+        probes.append({
+            "subsystem": "telegram",
+            "severity": "P1",
+            "error_context": "TELEGRAM_BOT_TOKEN is not configured (or still the local test default).",
+            "detection_source": "operations_health",
+            "fingerprint": "env_missing_telegram_bot_token",
+        })
+
+    for probe in probes:
+        try:
+            await record_operation_event(
+                subsystem=probe.get("subsystem", probe.get("type", "operations")),
+                error_context=probe["error_context"],
+                detection_source=probe.get("detection_source", "operations_health"),
+                fingerprint=probe.get("fingerprint"),
+                severity=probe.get("severity", "P2"),
+            )
+        except Exception as exc:  # noqa: BLE001 - a probe failure must not kill the sweep
+            print(f"[OPS SWEEP] failed to record probe: {exc}")
+
+    print(f"[OPS SWEEP] completed with {len(probes)} issue(s) recorded.")
 
 
 async def start_scheduler():
@@ -457,20 +644,22 @@ async def start_scheduler():
             scheduler._eventloop = current_loop
         scheduler.start()
         await reconcile_jobs()
-        try:
-            scheduler.add_job(
-                _scheduled_email_expense_sweep,
-                trigger=CronTrigger.from_crontab(
-                    "*/10 * * * *", timezone=ZoneInfo("Asia/Singapore")
-                ),
-                id="email_expense_sweep",
-                replace_existing=True,
-                misfire_grace_time=3600,
-                coalesce=True,
-                max_instances=1,
-            )
-        except Exception as exc:  # noqa: BLE001
-            print(f"[SCHEDULER] failed to register email expense sweep: {exc}")
+        for name, cron, func in (
+            ("email_expense_sweep", "*/10 * * * *", _scheduled_email_expense_sweep),
+            ("operations_health_sweep", "*/15 * * * *", _run_operations_health_sweep),
+        ):
+            try:
+                scheduler.add_job(
+                    func,
+                    trigger=CronTrigger.from_crontab(cron, timezone=ZoneInfo("Asia/Singapore")),
+                    id=name,
+                    replace_existing=True,
+                    misfire_grace_time=3600,
+                    coalesce=True,
+                    max_instances=1,
+                )
+            except Exception as exc:  # noqa: BLE001
+                print(f"[SCHEDULER] failed to register {name}: {exc}")
     if _watchdog_task is None or _watchdog_task.done():
         _watchdog_task = asyncio.create_task(_watchdog_loop())
 
