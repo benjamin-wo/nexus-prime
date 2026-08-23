@@ -257,15 +257,17 @@ class GmailProvider:
                 }
                 raw_date = header_map.get("date", "")
                 internal_ms = meta.get("internalDate")
+                # internalDate is the authoritative UTC receive time; the Date
+                # header can be spoofed or wrong (forwards, marketing mail).
                 date_iso = ""
-                if raw_date:
-                    try:
-                        date_iso = parsedate_to_datetime(raw_date).isoformat()
-                    except Exception:
-                        pass
-                if not date_iso and internal_ms:
+                if internal_ms:
                     try:
                         date_iso = datetime.fromtimestamp(int(internal_ms) / 1000.0, tz=dt_timezone.utc).isoformat()
+                    except Exception:
+                        pass
+                if not date_iso and raw_date:
+                    try:
+                        date_iso = parsedate_to_datetime(raw_date).isoformat()
                     except Exception:
                         pass
                 if not date_iso:
@@ -389,10 +391,17 @@ async def _refresh_gmail_access_token(client: httpx.AsyncClient, refresh_token: 
     return access_token
 
 class OutlookProvider:
-    """Microsoft Outlook / Graph API backend implementation using OData $search and categories."""
+    """Microsoft Outlook backend: per-user OAuth via Microsoft Graph, IMAP app-password fallback."""
+
     async def search_messages(
         self, user_id: int, tracked_banks: List[str], custom_query: Optional[str] = None
     ) -> List[Dict[str, Any]]:
+        # 1. Per-user OAuth via Microsoft Graph (preferred)
+        refresh_token = await _get_outlook_refresh_token(user_id)
+        if refresh_token:
+            return await self._search_real_outlook(user_id, refresh_token, tracked_banks, custom_query)
+
+        # 2. Single-mailbox IMAP fallback from environment credentials
         if settings.outlook_email and settings.outlook_app_password:
             return await asyncio.to_thread(
                 _fetch_outlook_imap, tracked_banks, custom_query
@@ -412,10 +421,162 @@ class OutlookProvider:
             }
         ]
 
+    async def _search_real_outlook(
+        self,
+        user_id: int,
+        refresh_token: str,
+        tracked_banks: List[str],
+        custom_query: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Fetch real messages from Microsoft Graph using the stored OAuth refresh token."""
+        query_params = build_outlook_query(tracked_banks=tracked_banks, custom_query=custom_query)
+        since = (datetime.now(dt_timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            access_token = await _refresh_outlook_access_token(client, refresh_token)
+            if not access_token:
+                return []
+
+            headers = {"Authorization": f"Bearer {access_token}"}
+            params = {
+                "$top": "10",
+                "$select": "id,subject,from,body,receivedDateTime,categories",
+                **query_params,
+            }
+            # Bound Outlook polling to the same rolling window as Gmail.
+            existing_filter = query_params.get("$filter") or ""
+            received_filter = f"receivedDateTime ge {since}"
+            params["$filter"] = f"{received_filter} and {existing_filter}" if existing_filter else received_filter
+            if "$search" not in query_params:
+                # Microsoft Graph forbids combining $search with $orderby
+                params["$orderby"] = "receivedDateTime desc"
+            list_resp = await client.get(
+                "https://graph.microsoft.com/v1.0/me/messages",
+                headers=headers,
+                params=params,
+            )
+            if list_resp.status_code == 401:
+                print("[OUTLOOK] access token rejected — reconnect Outlook at /auth/outlook")
+                return []
+            if list_resp.status_code != 200:
+                print(f"[OUTLOOK] list failed: {list_resp.status_code} {list_resp.text[:200]}")
+                return []
+
+            messages = []
+            for item in (list_resp.json().get("value") or [])[:10]:
+                sender_raw = ((item.get("from") or {}).get("emailAddress") or {})
+                sender = (
+                    f"{sender_raw.get('name', '')} <{sender_raw.get('address', '')}>".strip(" <>")
+                    or sender_raw.get("address", "")
+                )
+                body_content = ((item.get("body") or {}).get("content") or "")
+                body_text = _html_to_text(body_content, limit=4000)
+
+                messages.append(
+                    {
+                        "id": item.get("id", ""),
+                        "provider": "outlook",
+                        "subject": item.get("subject") or "(no subject)",
+                        "sender": sender,
+                        "body": body_text,
+                        "snippet": body_text[:220] or "(no text body)",
+                        "date": item.get("receivedDateTime") or "",
+                        "query_used": query_params.get("$search", ""),
+                    }
+                )
+            return messages
+
     async def apply_processed_label(self, user_id: int, message_id: str) -> bool:
-        # In live execution, PATCHes Microsoft Graph message categories with 'Assistant/Processed'
-        print(f"[OUTLOOK GRAPH API] Applied category Assistant/Processed to message {message_id} for user {user_id}")
-        return True
+        """Add the 'Assistant/Processed' category to a message via Microsoft Graph."""
+        refresh_token = await _get_outlook_refresh_token(user_id)
+        if not refresh_token:
+            return False
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                access_token = await _refresh_outlook_access_token(client, refresh_token)
+                if not access_token:
+                    return False
+                headers = {"Authorization": f"Bearer {access_token}"}
+
+                msg_resp = await client.get(
+                    f"https://graph.microsoft.com/v1.0/me/messages/{message_id}",
+                    headers=headers,
+                    params={"$select": "categories"},
+                )
+                existing: List[str] = []
+                if msg_resp.status_code == 200:
+                    existing = list(msg_resp.json().get("categories") or [])
+                if "Assistant/Processed" in existing:
+                    return True
+
+                patch_resp = await client.patch(
+                    f"https://graph.microsoft.com/v1.0/me/messages/{message_id}",
+                    headers=headers,
+                    json={"categories": existing + ["Assistant/Processed"]},
+                )
+                if patch_resp.status_code not in (200, 201, 204):
+                    print(f"[OUTLOOK] category patch failed: {patch_resp.status_code}")
+                    return False
+                return True
+        except Exception as exc:  # noqa: BLE001
+            print(f"[OUTLOOK] label apply error: {exc}")
+            return False
+
+
+def _html_to_text(html_body: str, limit: int = 4000) -> str:
+    """Convert an HTML email body to clean plain text (also passes plain text through)."""
+    if not html_body:
+        return ""
+    if "<" not in html_body:
+        return " ".join(html_body.split())[:limit]
+    clean = re.sub(r"<style[^>]*>.*?</style>", " ", html_body, flags=re.DOTALL | re.IGNORECASE)
+    clean = re.sub(r"<script[^>]*>.*?</script>", " ", clean, flags=re.DOTALL | re.IGNORECASE)
+    clean = re.sub(r"<[^>]+>", " ", clean)
+    clean = html.unescape(clean)
+    return " ".join(clean.split())[:limit]
+
+
+async def _get_outlook_refresh_token(user_id: int) -> Optional[str]:
+    """Return the decrypted Microsoft refresh token for a user, or None if not connected."""
+    async with async_session_factory() as session:
+        result = await session.execute(
+            select(UserCredential).where(
+                UserCredential.user_id == user_id,
+                UserCredential.provider == "outlook",
+            )
+        )
+        cred = result.scalar_one_or_none()
+        if not cred:
+            return None
+        try:
+            return decrypt_token(cred.encrypted_token_payload)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[OUTLOOK] failed to decrypt stored token: {exc}")
+            return None
+
+
+async def _refresh_outlook_access_token(client: httpx.AsyncClient, refresh_token: str) -> Optional[str]:
+    """Exchange a stored Microsoft refresh token for a short-lived Graph access token."""
+    tenant = settings.microsoft_tenant or "consumers"
+    token_resp = await client.post(
+        f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token",
+        data={
+            "client_id": settings.microsoft_client_id,
+            "client_secret": settings.microsoft_client_secret or "",
+            "refresh_token": refresh_token,
+            "grant_type": "refresh_token",
+            "scope": "offline_access Mail.Read Mail.ReadWrite User.Read",
+        },
+    )
+    token_data = token_resp.json()
+    access_token = token_data.get("access_token")
+    if not access_token:
+        print(
+            f"[OUTLOOK] token refresh failed: "
+            f"{token_data.get('error_description') or token_data.get('error')}"
+        )
+        return None
+    return access_token
 
 PROVIDER_REGISTRY: Dict[str, EmailProvider] = {
     "gmail": GmailProvider(),

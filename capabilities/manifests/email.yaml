@@ -1,8 +1,9 @@
 id: email
 description: >-
   Check your inbox, look for receipts, payment alerts, salary credits and
-  bank messages, and auto-log expenses found in the emails. Ask like
-  "check gmail for receipts", "did my salary come in?", or "what's in my inbox".
+  bank messages, connect Gmail or Outlook, and auto-log expenses found in the
+  emails. Ask like "connect my Outlook email", "check gmail for receipts",
+  "did my salary come in?", or "what's in my inbox".
 input_schema:
   type: object
   properties:

@@ -62,7 +62,9 @@ def build_outlook_query(tracked_banks: Optional[List[str]] = None, custom_query:
             if b not in all_domains:
                 all_domains.append(b)
 
-    domain_search = " OR ".join(f"from:{domain}" for domain in all_domains)
+    # Graph message search does not accept Gmail's `from:domain` operator.
+    # Keep domain terms searchable without emitting invalid OData search syntax.
+    domain_search = " OR ".join(f'"{domain}"' for domain in all_domains)
     search_str = f"({DEFAULT_OUTLOOK_FINANCIAL_SEARCH}) OR ({domain_search})"
     filter_str = "not(categories/any(c:c eq 'Assistant/Processed'))"
 

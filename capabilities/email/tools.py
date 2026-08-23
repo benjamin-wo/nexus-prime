@@ -1,5 +1,6 @@
 from typing import List, Dict, Any, Optional
 import asyncio
+import httpx
 from langchain_core.tools import tool
 from sqlmodel import select
 from core.db import async_session_factory
@@ -36,6 +37,84 @@ async def get_user_email_token(user_id: int, provider: str = "gmail") -> Optiona
 async def get_user_gmail_token(user_id: int) -> Optional[str]:
     """Retrieve and decrypt the user's Gmail OAuth refresh token from PostgreSQL (backward compatibility)."""
     return await get_user_email_token(user_id, provider="gmail")
+
+async def get_user_outlook_token(user_id: int) -> Optional[str]:
+    """Retrieve and decrypt the user's Microsoft OAuth refresh token from PostgreSQL."""
+    return await get_user_email_token(user_id, provider="outlook")
+
+
+async def _revoke_gmail_token(refresh_token: str) -> bool:
+    """Best-effort Google token revocation; local deletion remains authoritative."""
+    if not refresh_token:
+        return False
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(
+                "https://oauth2.googleapis.com/revoke",
+                data={"token": refresh_token},
+            )
+        return response.status_code == 200
+    except Exception as exc:  # noqa: BLE001 - disconnect must succeed locally even if revoke is unavailable
+        print(f"[GMAIL] token revocation failed: {type(exc).__name__}")
+        return False
+
+
+async def disconnect_email_account(
+    user_id: int,
+    provider: str = "all",
+) -> Dict[str, Any]:
+    """Remove one or all mailbox credentials for a user.
+
+    Tokens are deleted from the local vault first. Gmail revocation is attempted
+    afterward; Microsoft refresh tokens have no equivalent consumer revocation
+    endpoint, so deleting the local token stops all future Graph access.
+    """
+    requested = (provider or "all").strip().lower()
+    if requested in {"all", "email", "both"}:
+        providers = set(PROVIDER_REGISTRY)
+    elif requested in PROVIDER_REGISTRY:
+        providers = {requested}
+    else:
+        return {
+            "status": "invalid_provider",
+            "provider": requested,
+            "message": "Choose gmail, outlook, or all.",
+        }
+
+    gmail_tokens: List[str] = []
+    connected: List[str] = []
+    async with async_session_factory() as session:
+        result = await session.execute(
+            select(UserCredential).where(
+                UserCredential.user_id == user_id,
+                UserCredential.provider.in_(providers),
+            )
+        )
+        credentials = list(result.scalars().all())
+        for credential in credentials:
+            provider_name = credential.provider.lower()
+            connected.append(provider_name)
+            if provider_name == "gmail":
+                try:
+                    gmail_tokens.append(decrypt_token(credential.encrypted_token_payload))
+                except Exception:
+                    pass
+            await session.delete(credential)
+        if credentials:
+            await session.commit()
+
+    revoked = 0
+    for token in gmail_tokens:
+        if await _revoke_gmail_token(token):
+            revoked += 1
+
+    return {
+        "status": "ok",
+        "requested_provider": requested,
+        "disconnected": sorted(set(connected)),
+        "count": len(connected),
+        "gmail_tokens_revoked": revoked,
+    }
 
 async def discover_and_track_bank_domain(user_id: int, sender_email: str) -> bool:
     """
