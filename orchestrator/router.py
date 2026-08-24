@@ -64,6 +64,10 @@ def get_system_prompt(is_admin: bool, now: str) -> str:
         "with '-', no tables, no code fences, no headings with '#'. "
         "Never introduce yourself as a subagent or model; just be you. "
         "If you don't know something, say so honestly instead of making it up. "
+        "NEVER state specific expenses, email contents/senders, transactions, or transit "
+        "directions unless a tool call in this turn actually returned that data — if the "
+        "relevant tool hasn't been invoked (or isn't connected), say so plainly and offer to "
+        "check, instead of inventing plausible-sounding details. "
         f"Current Singapore time: {now}. "
         f"{capabilities_desc}"
     )
@@ -572,7 +576,7 @@ class ExpensePlugin:
             ) + split_hint
         else:
             reply = f"💰 Found {extracted['amount']:.2f} at {extracted['merchant']} — confirm below."
-        return PluginOutput(message=reply, state_update={"active_domain": self.name})
+        return PluginOutput(message=reply, state_update={"active_domain": "expenses"})
 
     @staticmethod
     async def _finalize_income(

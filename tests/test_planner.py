@@ -177,6 +177,52 @@ def test_llm_decision_dict_validated_against_shortlist():
 
 
 @pytest.mark.asyncio
+async def test_llm_planner_widens_shortlist_to_expanded_on_recovery(monkeypatch):
+    """Regression (#10): a low-confidence retrieval (`recovered=True`) must widen
+    the LLM's candidate pool to `expanded`, not just the top-k. Otherwise a query
+    that shares no tokens with any manifest (e.g. "did u see the one from DBS
+    today?") can leave the right capability out of the shortlist entirely, the
+    LLM's pick gets rejected by decision_from_dict's shortlist validation, and
+    the planner silently falls back to deterministic routing / hallucination."""
+    from core.config import settings
+    from capabilities.retrieval import RetrievalHit, RetrievalResult
+
+    monkeypatch.setattr(settings, "deepseek_api_key", "real-key")
+    monkeypatch.setattr(settings, "llm_provider", "deepseek")
+
+    registry = load_registry()
+    general_hit = RetrievalHit(id="general", score=0.0, rank=1, manifest=registry["general"])
+    email_hit = RetrievalHit(id="email", score=0.0, rank=2, manifest=registry["email"])
+    # "email" only appears in the expanded pool, not the top-k shown by default.
+    retrieval = RetrievalResult(
+        query="did u see the one from dbs today",
+        top=(general_hit,),
+        recovered=True,
+        expanded=(general_hit, email_hit),
+        all_scores=(general_hit, email_hit),
+        k=1,
+    )
+
+    class _FakeMessage:
+        content = (
+            '{"capabilities":[{"id":"email","reason":"sender reference","confidence":0.8}],'
+            '"ordering":["email"],"insufficient_capability":null,"question":null,"confidence":0.8}'
+        )
+
+    class _FakeLLM:
+        async def ainvoke(self, messages):
+            return _FakeMessage()
+
+    monkeypatch.setattr("core.llm.get_agent_llm", lambda *a, **k: _FakeLLM())
+
+    decision = await plan_with_llm(
+        "did u see the one from dbs today", _state("did u see the one from dbs today"), retrieval
+    )
+    assert decision is not None
+    assert decision.capability_ids == ["email"]
+
+
+@pytest.mark.asyncio
 async def test_llm_planner_used_when_key_present(monkeypatch):
     from core.config import settings
 

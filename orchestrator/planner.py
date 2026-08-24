@@ -506,6 +506,10 @@ def llm_plan_prompt(
         "do not involve organizing a plan or updating a board. If an active planning thread exists "
         "(Current thread domain: whiteboard), keep planning-related follow-ups on 'whiteboard'.\n"
         "3. The 'question' field MUST BE null unless the input is a single isolated word with zero context (e.g. 'check'). NEVER use 'question' to interview the user or ask for trip details/budgets.\n"
+        "4. Route to 'email' whenever the user references a specific message, sender, or bank/company name "
+        "they expect you to have seen (e.g. \"did u see the one from DBS today?\", \"there's an email from "
+        "payroll\"), even without the literal word 'email' — never answer from memory or assumption about "
+        "inbox contents.\n"
         "Reply ONLY with JSON:\n"
         '{"capabilities":[{"id":"...","reason":"...","confidence":0.0-1.0}], '
         '"ordering":["..."],"insufficient_capability":null|{"missing_capabilities":["..."],"reasons":["..."]}'
@@ -562,13 +566,23 @@ async def plan_with_llm(
         return None
     if retrieval is None or not retrieval.top:
         return None
+    # Low-confidence retrieval (retrieval.recovered) means the top-k BM25 hits
+    # aren't trustworthy — e.g. a message like "did u see the email from DBS
+    # today?" shares no tokens with any manifest, so plain top-k can leave the
+    # right capability out of the LLM's candidate set entirely. Widen to the
+    # expanded shortlist in that case, matching _retrieval_ids' recovery logic,
+    # instead of silently limiting the planner to a possibly-irrelevant top-5.
+    candidate_hits = list(retrieval.top)
+    if retrieval.recovered:
+        seen_ids = {hit.id for hit in candidate_hits}
+        candidate_hits.extend(hit for hit in retrieval.expanded if hit.id not in seen_ids)
     shortlist = [
         {
             "id": hit.id,
             "description": hit.manifest.description,
             "score": round(hit.score, 3),
         }
-        for hit in retrieval.top
+        for hit in candidate_hits
     ]
     llm = get_agent_llm(complexity=ThinkingLevel.LOW, temperature=0.0)
     try:
