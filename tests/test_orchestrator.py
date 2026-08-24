@@ -208,6 +208,93 @@ async def test_email_plugin_generic_inbox_ask_uses_latest_mode(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_email_plugin_scopes_financial_sweep_to_named_provider(monkeypatch):
+    """Regression: "look for transactions from my outlook ... log them as expenses"
+    used to search ALL connected providers merged together, silently ignoring the
+    explicit 'outlook' instruction — a user with Gmail also connected got Gmail's
+    unrelated inbox summarized back with no indication Outlook was ever queried,
+    and nothing got logged despite an explicit expense-logging request."""
+    from unittest.mock import AsyncMock
+    import orchestrator.router as router_module
+    import capabilities.email.tools as email_tools
+
+    captured: dict = {}
+
+    async def fake_search(**kwargs):
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr(router_module, "get_user_gmail_token", AsyncMock(return_value="mock_gmail_token"))
+    monkeypatch.setattr(router_module, "get_user_outlook_token", AsyncMock(return_value="mock_outlook_token"))
+    monkeypatch.setattr(email_tools.search_email_messages, "coroutine", fake_search)
+
+    await EmailPlugin().execute({
+        "messages": [HumanMessage(
+            content="Can you look for all transactions from my outlook for the past two days and log them as expenses"
+        )],
+        "user_id": 4001,
+        "current_timezone": "UTC",
+        "active_domain": None,
+    })
+    assert captured.get("provider") == "outlook"
+
+
+@pytest.mark.asyncio
+async def test_email_plugin_scopes_latest_mode_to_named_gmail(monkeypatch):
+    """Symmetric case on the latest-mode call site: naming Gmail explicitly
+    must scope the search to Gmail, not merge in Outlook too."""
+    from unittest.mock import AsyncMock
+    import orchestrator.router as router_module
+    import capabilities.email.tools as email_tools
+
+    captured: dict = {}
+
+    async def fake_search(**kwargs):
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr(router_module, "get_user_gmail_token", AsyncMock(return_value="mock_gmail_token"))
+    monkeypatch.setattr(router_module, "get_user_outlook_token", AsyncMock(return_value="mock_outlook_token"))
+    monkeypatch.setattr(email_tools.search_email_messages, "coroutine", fake_search)
+
+    await EmailPlugin().execute({
+        "messages": [HumanMessage(content="what's new in my gmail")],
+        "user_id": 4001,
+        "current_timezone": "UTC",
+        "active_domain": None,
+    })
+    assert captured.get("provider") == "gmail"
+    assert captured.get("latest") is True
+
+
+@pytest.mark.asyncio
+async def test_email_plugin_no_provider_scope_when_unnamed(monkeypatch):
+    """When the user doesn't name a specific provider, keep searching every
+    connected mailbox (existing behavior must not regress)."""
+    from unittest.mock import AsyncMock
+    import orchestrator.router as router_module
+    import capabilities.email.tools as email_tools
+
+    captured: dict = {}
+
+    async def fake_search(**kwargs):
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr(router_module, "get_user_gmail_token", AsyncMock(return_value="mock_gmail_token"))
+    monkeypatch.setattr(router_module, "get_user_outlook_token", AsyncMock(return_value="mock_outlook_token"))
+    monkeypatch.setattr(email_tools.search_email_messages, "coroutine", fake_search)
+
+    await EmailPlugin().execute({
+        "messages": [HumanMessage(content="any new transactions I should know about?")],
+        "user_id": 4001,
+        "current_timezone": "UTC",
+        "active_domain": None,
+    })
+    assert captured.get("provider") is None
+
+
+@pytest.mark.asyncio
 async def test_email_plugin_financial_ask_keeps_sweep_mode(monkeypatch):
     """Explicit financial intents ('receipts') must stay on the keyword sweep (latest=False)."""
     from unittest.mock import AsyncMock

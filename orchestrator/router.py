@@ -144,6 +144,21 @@ class EmailPlugin:
         requested_outlook = any(word in lowered_text for word in ("outlook", "hotmail", "microsoft mail", "office 365"))
         requested_gmail = any(word in lowered_text for word in ("gmail", "google mail"))
 
+        # When the user names exactly one provider ("check outlook for...",
+        # "see my gmail"), scope the search to that mailbox instead of merging
+        # every connected provider. Without this, a user with both Gmail and
+        # Outlook connected who explicitly asks about Outlook silently gets
+        # Gmail's (irrelevant) results back with no indication Outlook was
+        # ever queried — the exact "outlook fails terribly" report: the
+        # assistant summarizes generic Gmail promos and finds no transactions,
+        # with nothing in the reply signaling it never actually looked at
+        # Outlook.
+        requested_provider_scope: Optional[str] = None
+        if requested_outlook and not requested_gmail:
+            requested_provider_scope = "outlook"
+        elif requested_gmail and not requested_outlook:
+            requested_provider_scope = "gmail"
+
         # One-time mailbox authorization: the bot can't read email until the user consents.
         # Offer whichever providers are still missing (Gmail and/or Outlook).
         gmail_token = await get_user_gmail_token(user_id)
@@ -187,14 +202,18 @@ class EmailPlugin:
         # request without an explicit financial intent; the keyword sweep runs
         # only for receipt/bill/expense/bank asks.
         if is_latest_email_request(last_text) or not is_financial_email_request(last_text):
-            latest_results = await search_email_messages.ainvoke({"user_id": user_id, "latest": True})
+            latest_results = await search_email_messages.ainvoke(
+                {"user_id": user_id, "latest": True, "provider": requested_provider_scope}
+            )
             reply = AIMessage(content=await self._summarize_email_results(latest_results, latest=True))
             return PluginOutput(
                 message=reply,
                 state_update={"active_domain": self.name},
             )
 
-        results = await search_email_messages.ainvoke({"user_id": user_id})
+        results = await search_email_messages.ainvoke(
+            {"user_id": user_id, "provider": requested_provider_scope}
+        )
         if results:
             for msg in results:
                 sender = msg.get("sender", "")
