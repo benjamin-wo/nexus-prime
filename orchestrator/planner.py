@@ -349,8 +349,9 @@ def deterministic_plan(
     ).get("ordering") == ["routes"]
     if active_routes_thread and re.fullmatch(r"[a-z0-9 ,'\-\.]{2,40}", text):
         if not re.search(
-            r"\b(please|me|my|the|what|when|how|which|route|bus|remind|expense|"
-            r"email|grocery|recipe|bill|to|from|at|near|next|arriv)\b",
+            r"\b(please|me|my|the|what|when|how|which|route|bus|buses|remind|expense|"
+            r"email|grocery|recipe|bill|to|from|at|near|next|arriv|"
+            r"no|not|yes|yeah|nah|other|others|different|instead|again|want|wanna|dont)\b",
             text,
         ):
             return Decision(
@@ -510,6 +511,11 @@ def llm_plan_prompt(
         "they expect you to have seen (e.g. \"did u see the one from DBS today?\", \"there's an email from "
         "payroll\"), even without the literal word 'email' — never answer from memory or assumption about "
         "inbox contents.\n"
+        "5. If an active thread domain is given (e.g. \"Current thread domain: routes\") and the message is "
+        "a short reactive follow-up about the same thing — a correction, a request for alternatives, "
+        "confirming/rejecting an option (e.g. \"no I want other buses\", \"what about walking instead\") — "
+        "keep it on that same domain rather than dropping to 'general'. Never invent route steps, bus "
+        "numbers, or timings from memory; only report what a route/transit tool call actually returned.\n"
         "Reply ONLY with JSON:\n"
         '{"capabilities":[{"id":"...","reason":"...","confidence":0.0-1.0}], '
         '"ordering":["..."],"insufficient_capability":null|{"missing_capabilities":["..."],"reasons":["..."]}'

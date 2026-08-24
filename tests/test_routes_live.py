@@ -38,6 +38,12 @@ def test_bus_arrival_vs_directions_classification():
     assert is_bare_place_fragment("suntec city") is True
     assert is_bare_place_fragment("to suntec") is False
     assert is_bare_place_fragment("what bus should i take") is False
+    # Regression (#15): a conversational follow-up rejecting/alternating the
+    # current route ("no I want other buses") is not a place name, but used to
+    # slip past the exclusion list (no word-boundary "bus" match on "buses",
+    # and none of "no"/"want"/"other" were excluded) and get treated as one.
+    assert is_bare_place_fragment("no i want other buses") is False
+    assert is_bare_place_fragment("other one") is False
 
 
 def test_lta_format_arrivals_shows_bus_numbers():
