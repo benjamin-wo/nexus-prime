@@ -46,6 +46,31 @@ async def test_expense_processing_and_hitl_trigger():
     })
     assert res_dup["status"] == "duplicate"
 
+
+@pytest.mark.asyncio
+async def test_finalize_expense_sets_active_domain_without_nameerror():
+    """Regression (#11): _finalize_expense was a @staticmethod that referenced
+    `self.name` for the active_domain state update, so every text/photo expense
+    (e.g. "Record a $15 lunch expense") crashed with NameError: name 'self' is
+    not defined once it reached the finalization step."""
+    from orchestrator.router import ExpensePlugin
+
+    out = await ExpensePlugin._finalize_expense(
+        user_id=3060,
+        extracted={
+            "amount": 15.0,
+            "currency": "SGD",
+            "merchant": "Deli",
+            "category": "Food",
+            "date_iso": "",
+            "confidence": 0.95,
+            "needs_clarification": False,
+        },
+        source_id="test_finalize_expense_no_nameerror",
+    )
+    assert out.state_update["active_domain"] == "expenses"
+    assert "15.00" in out.message
+
 from core.shared_tools.email_presets import build_outlook_query
 from capabilities.email.tools import (
     search_email_messages,

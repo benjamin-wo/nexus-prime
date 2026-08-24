@@ -64,6 +64,10 @@ def get_system_prompt(is_admin: bool, now: str) -> str:
         "with '-', no tables, no code fences, no headings with '#'. "
         "Never introduce yourself as a subagent or model; just be you. "
         "If you don't know something, say so honestly instead of making it up. "
+        "NEVER state specific expenses, email contents/senders, transactions, or transit "
+        "directions unless a tool call in this turn actually returned that data — if the "
+        "relevant tool hasn't been invoked (or isn't connected), say so plainly and offer to "
+        "check, instead of inventing plausible-sounding details. "
         f"Current Singapore time: {now}. "
         f"{capabilities_desc}"
     )
@@ -572,7 +576,7 @@ class ExpensePlugin:
             ) + split_hint
         else:
             reply = f"💰 Found {extracted['amount']:.2f} at {extracted['merchant']} — confirm below."
-        return PluginOutput(message=reply, state_update={"active_domain": self.name})
+        return PluginOutput(message=reply, state_update={"active_domain": "expenses"})
 
     @staticmethod
     async def _finalize_income(
@@ -851,8 +855,18 @@ class GeneralPlugin:
         user_id = state.get("user_id")
         is_admin = settings.is_admin(user_id)
         history = [SystemMessage(content=get_system_prompt(is_admin=is_admin, now=now_sg))]
-        for message in pruned[-8:]:
-            if isinstance(message, HumanMessage):
+        # Iterate the full `pruned` list (already bounded by prune_and_summarize_messages
+        # to <=12 raw messages, or 1 summary note + the last 10) rather than re-slicing
+        # it with [-8:] — that used to cut off the summary note at index 0 whenever
+        # pruning actually triggered, silently dropping everything before the last ~8
+        # turns with no compensating summary. Also handle SystemMessage explicitly:
+        # the summary note is a SystemMessage and was previously falling through this
+        # if/elif unrecognized, so it was never added to `history` even when it survived
+        # the slice.
+        for message in pruned:
+            if isinstance(message, SystemMessage):
+                history.append(SystemMessage(content=str(message.content)))
+            elif isinstance(message, HumanMessage):
                 history.append(
                     HumanMessage(
                         content=message.content
