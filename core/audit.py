@@ -276,7 +276,7 @@ async def _judge_conversation_with_gemini(transcript: list[dict]) -> dict:
     return json.loads(raw)
 
 
-def should_audit_conversation(user_message_count: int, every_n: int = 10) -> bool:
+def should_audit_conversation(user_message_count: int, every_n: int = 4) -> bool:
     """Audit a conversation when the user message count hits the cadence."""
     return user_message_count > 0 and user_message_count % every_n == 0
 
