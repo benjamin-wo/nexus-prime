@@ -208,6 +208,53 @@ async def test_email_plugin_generic_inbox_ask_uses_latest_mode(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_email_plugin_summary_prompt_carries_the_user_question(monkeypatch):
+    """Regression (#26): the "latest" summarizer's LLM prompt was hardcoded to a
+    generic "summarize conversationally" instruction and never received the
+    user's actual message — so a specific question like "did I book a flight"
+    got a generic inbox dump instead of an answer, even when the answer was
+    present in the fetched emails."""
+    from unittest.mock import AsyncMock
+    from langchain_core.messages import AIMessage
+    import orchestrator.router as router_module
+    import capabilities.email.tools as email_tools
+
+    async def fake_search(**kwargs):
+        return [{
+            "sender": "OCBC <alerts@ocbc.com>",
+            "subject": "Funds transfer confirmation",
+            "date": "2026-08-24T10:00:00Z",
+        }]
+
+    monkeypatch.setattr(router_module, "get_user_gmail_token", AsyncMock(return_value="mock_token"))
+    monkeypatch.setattr(router_module, "get_user_outlook_token", AsyncMock(return_value=None))
+    monkeypatch.setattr(email_tools.search_email_messages, "coroutine", fake_search)
+    monkeypatch.setattr(router_module.settings, "gemini_api_key", "fake-key-for-test")
+
+    captured: dict = {}
+
+    class _CapturingLLM:
+        async def ainvoke(self, messages):
+            captured["messages"] = messages
+            return AIMessage(content="No flight booking email found in your inbox.")
+
+    monkeypatch.setattr(router_module, "get_agent_llm", lambda *a, **k: _CapturingLLM())
+
+    question = "Did I book a flight on 24 Jul? Check my outlook"
+    out = await EmailPlugin().execute({
+        "messages": [HumanMessage(content=question)],
+        "user_id": 4001,
+        "current_timezone": "UTC",
+        "active_domain": None,
+    })
+
+    system_prompt = str(captured["messages"][0].content)
+    assert question in system_prompt
+    assert "answer THAT question directly" in system_prompt
+    assert "No flight booking email found" in str(out.message.content)
+
+
+@pytest.mark.asyncio
 async def test_email_plugin_scopes_financial_sweep_to_named_provider(monkeypatch):
     """Regression: "look for transactions from my outlook ... log them as expenses"
     used to search ALL connected providers merged together, silently ignoring the

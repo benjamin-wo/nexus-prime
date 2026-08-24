@@ -656,30 +656,45 @@ async def extract_expense_from_photo(
     caption: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
-    Extract structured expense fields from a receipt photo using Gemini vision.
-    Returns amount, currency, merchant, category, date_iso, confidence, needs_clarification.
+    Classify a photo and, only if it's actually a receipt, extract structured
+    expense fields from it using Gemini vision.
+
+    Returns amount, currency, merchant, category, date_iso, confidence,
+    needs_clarification when it's a receipt. When it isn't, amount is None
+    and `description` carries a one-line description of what the image
+    actually shows (a points/rewards balance, a screenshot, a random photo,
+    etc.) so the caller can respond honestly instead of assuming every photo
+    is a failed receipt scan.
     """
     if (
         not settings.active_gemini_api_key
         or settings.active_gemini_api_key == "test_google_key"
     ):
-        return {"amount": None}
+        return {"amount": None, "description": None}
 
     llm = get_multimodal_llm(temperature=0.1)
     prompt_text = (
         caption
-        or "Extract the expense shown in this receipt photo."
+        or "Look at this photo. If it's a receipt, extract the expense; otherwise describe what it shows."
     )
     ai_message = await llm.ainvoke(
         [
             SystemMessage(
                 content=(
-                    "You extract expenses from receipt photos. Reply with ONLY a JSON object: "
-                    '{"amount": number, "currency": string (3-letter code, default SGD), '
+                    "You look at a photo and first decide whether it is a purchase "
+                    "receipt/invoice with a legible total, or something else entirely "
+                    "(e.g. a rewards/points/miles balance, a screenshot, an unrelated "
+                    "photo). Do not assume it is a receipt just because you were asked "
+                    "to look at it. Reply with ONLY a JSON object: "
+                    '{"amount": number|null, "currency": string (3-letter code, default SGD), '
                     '"merchant": string, "category": string, "date_iso": string (ISO 8601 with time and timezone if mentioned, e.g. 2026-08-16T14:32:00, or YYYY-MM-DD), '
-                    '"confidence": number 0-1, "needs_clarification": boolean}. '
-                    "Read the TOTAL from the receipt. If there is no legible receipt or amount, "
-                    'return {"amount": null}.'
+                    '"confidence": number 0-1, "needs_clarification": boolean, '
+                    '"description": string}. '
+                    "If it IS a legible receipt, read the TOTAL and fill amount/currency/merchant/etc. "
+                    "If it is NOT a receipt (or the total isn't legible), set amount to null and "
+                    "put a short, specific description of what the photo actually shows in "
+                    "'description' (e.g. \"a DBS rewards points balance screenshot\") — "
+                    "never leave description generic like \"an image\"."
                 )
             ),
             HumanMessage(
@@ -695,7 +710,7 @@ async def extract_expense_from_photo(
     try:
         parsed = json.loads(raw)
         if not parsed.get("amount"):
-            return {"amount": None}
+            return {"amount": None, "description": parsed.get("description") or None}
         return {
             "amount": float(parsed["amount"]),
             "currency": parsed.get("currency") or "SGD",
@@ -707,7 +722,7 @@ async def extract_expense_from_photo(
         }
     except Exception as exc:  # noqa: BLE001
         print(f"[EXPENSES] photo extraction parse failed: {exc}")
-        return {"amount": None}
+        return {"amount": None, "description": None}
 
 
 async def extract_itemized_receipt_from_image(

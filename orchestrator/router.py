@@ -205,7 +205,9 @@ class EmailPlugin:
             latest_results = await search_email_messages.ainvoke(
                 {"user_id": user_id, "latest": True, "provider": requested_provider_scope}
             )
-            reply = AIMessage(content=await self._summarize_email_results(latest_results, latest=True))
+            reply = AIMessage(
+                content=await self._summarize_email_results(latest_results, latest=True, user_question=last_text)
+            )
             return PluginOutput(
                 message=reply,
                 state_update={"active_domain": self.name},
@@ -248,12 +250,15 @@ class EmailPlugin:
                 state_update={"active_domain": self.name},
             )
 
-        reply = AIMessage(content=await self._summarize_email_results(results))
+        reply = AIMessage(content=await self._summarize_email_results(results, user_question=last_text))
         return PluginOutput(message=reply, state_update={"active_domain": self.name})
 
     @staticmethod
-    async def _summarize_email_results(results: List[Dict[str, Any]], latest: bool = False) -> str:
-        """Summarize fetched emails with the agent LLM, or fall back to a plain list."""
+    async def _summarize_email_results(
+        results: List[Dict[str, Any]], latest: bool = False, user_question: str = ""
+    ) -> str:
+        """Answer the user's actual question from fetched emails, or fall back to
+        a general summary for generic asks ("what's new", "check my latest email")."""
         if not results:
             if latest:
                 return "📬 I couldn't find any emails in your mailbox right now."
@@ -274,15 +279,30 @@ class EmailPlugin:
         try:
             llm = get_agent_llm(complexity=ThinkingLevel.LOW, temperature=0.4)
             emails_text = json.dumps(results[:8], indent=1, default=str)
+            question = (user_question or "").strip()
+            if question:
+                instruction = (
+                    "The user asked a specific question — answer THAT question directly and "
+                    "concisely using only the emails below (e.g. if they asked whether they "
+                    "booked a flight, say plainly whether a flight-booking email is present, "
+                    "and name it if so — don't just describe unrelated emails instead of "
+                    "answering). If none of the emails answer their question, say so plainly "
+                    "instead of changing the subject to a generic inbox summary.\n\n"
+                    f'User\'s question: "{question}"'
+                )
+            else:
+                instruction = (
+                    "Summarize them conversationally in 2-5 short lines: name the senders and "
+                    "what each message is about, and flag anything that looks like a bill, "
+                    "receipt, or expense."
+                )
             ai_message = await llm.ainvoke(
                 [
                     SystemMessage(
                         content=(
                             "You are Nexus Prime, the user's personal assistant on Telegram. "
-                            "You just fetched emails from their inbox. Summarize them "
-                            "conversationally in 2-5 short lines: name the senders and what "
-                            "each message is about, and flag anything that looks like a bill, "
-                            "receipt, or expense. "
+                            "You just fetched emails from their inbox. "
+                            f"{instruction} "
                             "Only describe emails present in the provided JSON. Never invent, "
                             "guess, or reconstruct senders, subjects, amounts, or dates that are "
                             "not listed; if an email lacks a subject or body, say so instead of "
@@ -346,13 +366,38 @@ class ExpensePlugin:
                     }
                 )
                 if not extracted or not extracted.get("amount"):
-                    return PluginOutput(
-                        message=AIMessage(
-                            content=(
-                                "📸 I don't see a clear receipt in that photo — try a closer, "
-                                "well-lit shot of the total, or just tell me the amount in text."
+                    # The photo wasn't a (legible) receipt. Don't assume the caption
+                    # was therefore also worthless — a caption can carry its own,
+                    # independent expense ("also spent $10 on parking") even when
+                    # the photo itself doesn't. Try that before giving up.
+                    if caption:
+                        caption_extracted = await extract_expense_from_text.ainvoke(
+                            {"user_text": caption}
+                        )
+                        if caption_extracted and caption_extracted.get("amount"):
+                            return await self._finalize_expense(
+                                user_id,
+                                caption_extracted,
+                                expense_source_id(user_id, caption),
                             )
-                        ),
+
+                    # Neither the photo nor the caption yielded an expense. Say what
+                    # was actually seen instead of implying the photo was blurry/bad —
+                    # this may not be a receipt at all (e.g. a rewards/points balance),
+                    # which isn't something this bot tracks yet.
+                    description = (extracted or {}).get("description")
+                    if description:
+                        lines = [f"📸 That's not a receipt — looks like {description}."]
+                        lines.append("I don't have a way to track that yet.")
+                    else:
+                        lines = [
+                            "📸 I don't see a clear receipt in that photo — try a closer, "
+                            "well-lit shot of the total, or just tell me the amount in text."
+                        ]
+                    if caption:
+                        lines.append(f'I did note what you wrote: "{caption}" — just can\'t act on it yet.')
+                    return PluginOutput(
+                        message=AIMessage(content="\n".join(lines)),
                         state_update={"active_domain": self.name},
                     )
                 image_digest = hashlib.md5(
