@@ -10,9 +10,12 @@ from core.models import ConversationAuditLog
 
 
 def test_conversation_audit_cadence():
-    assert should_audit_conversation(10) is True
-    assert should_audit_conversation(20) is True
-    assert should_audit_conversation(4) is False
+    """Default cadence is every 4 user messages (#16: shortened from 10 so a
+    frustrated user's turns get caught sooner instead of waiting out a long
+    fixed interval)."""
+    assert should_audit_conversation(4) is True
+    assert should_audit_conversation(8) is True
+    assert should_audit_conversation(3) is False
     assert should_audit_conversation(0) is False
     assert should_audit_conversation(6, every_n=3) is True
     assert should_audit_conversation(4, every_n=3) is False
