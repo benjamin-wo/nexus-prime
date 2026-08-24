@@ -94,6 +94,20 @@ def test_bare_place_fragment_reuses_routes_thread():
     assert deterministic_plan("who is Albert Einstein", _state("who is Albert Einstein"), None).recipe is None
 
 
+def test_bare_place_fragment_excludes_conversational_followups():
+    """Regression (#15): "no I want other buses" is a reactive follow-up, not a
+    place name — it used to fullmatch the bare-fragment shape with no excluded
+    word hit ("buses" doesn't word-boundary-match "bus"), so it got silently
+    treated as a destination fragment instead of being planned/routed properly."""
+    state = {
+        "active_domain": "routes",
+        "last_decision": {"ordering": ["routes"], "capabilities": [{"id": "routes"}]},
+        "messages": [HumanMessage(content="route from Tampines to Suntec")],
+    }
+    decision = deterministic_plan("no i want other buses", state, None)
+    assert decision.source != "fragment-reuse"
+
+
 @pytest.mark.asyncio
 async def test_plugin_state_update_merged_by_plan_router(monkeypatch):
     from unittest.mock import AsyncMock, patch

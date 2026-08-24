@@ -204,8 +204,9 @@ def is_bare_place_fragment(text: str) -> bool:
     if not re.fullmatch(r"[a-z0-9 ,'\-\.]+", lowered):
         return False
     if re.search(
-        r"\b(please|me|my|the|what|when|how|which|route|bus|remind|expense|"
-        r"email|grocery|recipe|bill|to|from|at|near|next|arriv)\b",
+        r"\b(please|me|my|the|what|when|how|which|route|bus|buses|remind|expense|"
+        r"email|grocery|recipe|bill|to|from|at|near|next|arriv|"
+        r"no|not|yes|yeah|nah|other|others|different|instead|again|want|wanna|dont)\b",
         lowered,
     ):
         return False
