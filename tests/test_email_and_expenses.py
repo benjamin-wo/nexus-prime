@@ -817,3 +817,112 @@ async def test_daily_email_digest_respects_quiet_hours(monkeypatch):
     eight_am_sgt = datetime(2026, 8, 23, 0, 0, tzinfo=dt_timezone.utc)
     assert await _send_daily_email_expense_digest(user_id, eight_am_sgt) is False
     assert sent == []
+
+
+@pytest.mark.asyncio
+async def test_extract_expense_from_photo_classifies_non_receipt_images(monkeypatch):
+    """Regression (#25): a non-receipt photo (e.g. a rewards/points balance) used
+    to come back as bare {"amount": None} with zero information about what was
+    actually in the image. It now carries a `description` so the caller can
+    respond honestly instead of assuming the photo was a bad/blurry receipt."""
+    import capabilities.expenses.tools as exp_tools
+    from core.config import settings
+
+    monkeypatch.setattr(settings, "gemini_api_key", "fake-key-for-test")
+
+    class _FakeVisionMessage:
+        content = (
+            '{"amount": null, "description": "a DBS rewards points balance screenshot"}'
+        )
+
+    class _FakeVisionLLM:
+        async def ainvoke(self, messages):
+            return _FakeVisionMessage()
+
+    monkeypatch.setattr(exp_tools, "get_multimodal_llm", lambda **k: _FakeVisionLLM())
+
+    result = await exp_tools.extract_expense_from_photo.ainvoke({
+        "image_b64": "fake_b64",
+        "mime_type": "image/jpeg",
+        "caption": "Citibank and UOB points and their expiration dates",
+    })
+    assert result["amount"] is None
+    assert result["description"] == "a DBS rewards points balance screenshot"
+
+
+@pytest.mark.asyncio
+async def test_expense_plugin_photo_no_receipt_does_not_drop_caption(monkeypatch):
+    """Regression (#25): ExpensePlugin used to unconditionally treat a photo as
+    a receipt attempt and, on failure, discard the caption entirely with a
+    generic "I don't see a clear receipt" message — even when the vision model
+    correctly identified the image as something else (not a receipt) and the
+    caption held real information. The reply must now say what was actually
+    seen and must not silently drop the caption."""
+    import orchestrator.router as router_module
+    from orchestrator.router import ExpensePlugin
+    from langchain_core.messages import HumanMessage
+
+    async def fake_photo_extract(**kwargs):
+        return {"amount": None, "description": "a DBS rewards points balance screenshot"}
+
+    # The caption itself isn't a monetary expense either (also points, not spend).
+    async def fake_text_extract(**kwargs):
+        return {"amount": None}
+
+    monkeypatch.setattr(router_module.extract_expense_from_photo, "coroutine", fake_photo_extract)
+    monkeypatch.setattr(router_module.extract_expense_from_text, "coroutine", fake_text_extract)
+
+    caption = "Citibank and UOB points and their expiration dates"
+    out = await ExpensePlugin().execute({
+        "messages": [HumanMessage(content=[
+            {"type": "media", "mime_type": "image/jpeg", "data": "fake_b64"},
+            {"type": "text", "text": caption},
+        ])],
+        "user_id": 4001,
+        "current_timezone": "UTC",
+        "active_domain": None,
+    })
+
+    content = str(out.message.content)
+    assert "points" in content.lower()
+    assert caption in content
+    assert "well-lit shot" not in content  # not the generic bad-photo message
+
+
+@pytest.mark.asyncio
+async def test_expense_plugin_photo_falls_back_to_caption_expense(monkeypatch):
+    """A caption CAN carry its own independent expense even when the photo
+    itself isn't a legible receipt — that must still get logged, not lost."""
+    import orchestrator.router as router_module
+    from orchestrator.router import ExpensePlugin
+    from langchain_core.messages import HumanMessage
+
+    async def fake_photo_extract(**kwargs):
+        return {"amount": None, "description": "a blurry photo"}
+
+    async def fake_text_extract(**kwargs):
+        return {
+            "amount": 10.0,
+            "currency": "SGD",
+            "merchant": "Parking",
+            "category": "Transport",
+            "date_iso": "",
+            "confidence": 0.9,
+            "needs_clarification": False,
+        }
+
+    monkeypatch.setattr(router_module.extract_expense_from_photo, "coroutine", fake_photo_extract)
+    monkeypatch.setattr(router_module.extract_expense_from_text, "coroutine", fake_text_extract)
+
+    out = await ExpensePlugin().execute({
+        "messages": [HumanMessage(content=[
+            {"type": "media", "mime_type": "image/jpeg", "data": "fake_b64"},
+            {"type": "text", "text": "also spent $10 on parking"},
+        ])],
+        "user_id": 4002,
+        "current_timezone": "UTC",
+        "active_domain": None,
+    })
+    # _finalize_expense returns a plain string, not an AIMessage.
+    assert "10.00" in str(out.message)
+    assert "Parking" in str(out.message)
