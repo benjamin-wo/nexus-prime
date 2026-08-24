@@ -109,6 +109,36 @@ async def test_search_email_messages_multi_provider():
     unified_results = await search_email_messages.ainvoke({"user_id": 3002})
     assert len(unified_results) >= 1
 
+
+@pytest.mark.asyncio
+async def test_search_email_messages_survives_one_provider_failing(monkeypatch):
+    """Regression: one provider raising (e.g. Outlook's OAuth/Graph call hitting a
+    network blip or a rejected token) used to take down the WHOLE search via
+    asyncio.gather's default fail-fast behavior, discarding results from every
+    OTHER provider that already succeeded — the webhook crashed with the generic
+    "something glitched" fallback instead of degrading gracefully."""
+    import capabilities.email.providers as providers_mod
+    import capabilities.email.tools as tools_mod
+
+    async def fake_gmail(*a, **k):
+        return [{"id": "g1", "provider": "gmail", "subject": "ok", "sender": "a@b.com", "snippet": "", "date": ""}]
+
+    async def fake_outlook(*a, **k):
+        raise RuntimeError("simulated Graph API failure")
+
+    monkeypatch.setattr(providers_mod.PROVIDER_REGISTRY["gmail"], "search_messages", fake_gmail)
+    monkeypatch.setattr(providers_mod.PROVIDER_REGISTRY["outlook"], "search_messages", fake_outlook)
+
+    async def fake_active_providers(user_id):
+        return ["gmail", "outlook"]
+
+    monkeypatch.setattr(tools_mod, "get_active_providers_for_user", fake_active_providers)
+
+    result = await tools_mod.search_email_messages.ainvoke({"user_id": 1})
+    assert len(result) == 1
+    assert result[0]["provider"] == "gmail"
+
+
 @pytest.mark.asyncio
 async def test_apply_email_processed_tag():
     """Outlook processed-tag hits Microsoft Graph when an OAuth token is stored."""

@@ -192,24 +192,33 @@ async def search_email_messages(
     else:
         providers_to_query = await get_active_providers_for_user(user_id)
 
-    tasks = []
-    for p_name in providers_to_query:
-        if p_name in PROVIDER_REGISTRY:
-            tasks.append(
-                PROVIDER_REGISTRY[p_name].search_messages(
-                    user_id=user_id,
-                    tracked_banks=tracked_banks,
-                    custom_query=custom_query,
-                    latest=latest,
-                )
-            )
+    queried_providers = [p_name for p_name in providers_to_query if p_name in PROVIDER_REGISTRY]
+    tasks = [
+        PROVIDER_REGISTRY[p_name].search_messages(
+            user_id=user_id,
+            tracked_banks=tracked_banks,
+            custom_query=custom_query,
+            latest=latest,
+        )
+        for p_name in queried_providers
+    ]
 
     if not tasks:
         return []
 
-    results = await asyncio.gather(*tasks)
+    # return_exceptions=True: every provider here (IMAP, mock) already swallows
+    # its own errors and returns [] on failure, except the real Gmail/Outlook
+    # OAuth paths, which can raise on a network blip or a rejected token
+    # exchange. Without this, asyncio.gather propagates that single provider's
+    # exception and discards results from every OTHER provider that already
+    # succeeded — one flaky mailbox taking down the whole search and crashing
+    # the webhook turn instead of degrading gracefully.
+    results = await asyncio.gather(*tasks, return_exceptions=True)
     merged_messages = []
-    for res in results:
+    for p_name, res in zip(queried_providers, results):
+        if isinstance(res, BaseException):
+            print(f"[EMAIL] {p_name} search failed, skipping: {type(res).__name__}: {res}")
+            continue
         merged_messages.extend(res)
     return _sort_messages_newest_first(merged_messages)
 
