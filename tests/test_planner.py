@@ -4,7 +4,7 @@ from langchain_core.messages import AIMessage
 
 from capabilities.registry import load_registry
 from capabilities.retrieval import BM25Index
-from orchestrator.planner import decision_from_dict, deterministic_plan, plan_with_llm
+from orchestrator.planner import decision_from_dict, deterministic_plan, missing_policy, plan_with_llm
 from orchestrator.graph import get_assistant_graph
 
 
@@ -262,3 +262,23 @@ async def test_llm_planner_used_when_key_present(monkeypatch):
     assert decision is not None
     assert decision.source == "llm"
     assert decision.capability_ids == ["expenses"]
+
+
+def test_missing_policy_excludes_retrospective_flight_queries():
+    """Regression (#21): "did I book a flight on 24 Jul? Check my outlook" is an
+    email lookup, not a request to book a NEW flight — but missing_policy's
+    "book a flight" substring check fired on it anyway, entangling a perfectly
+    supported email search with a flight_booking capability-gap refusal."""
+    retrospective = "did i book a flight on 24 jul? check my outlook"
+    assert "flight_booking" not in missing_policy(retrospective)
+
+    # A genuine forward-looking booking request must still be flagged.
+    forward_looking = "please book a flight to tokyo next friday"
+    assert "flight_booking" in missing_policy(forward_looking)
+
+
+def test_deterministic_plan_routes_retrospective_flight_query_to_email():
+    text = "did i book a flight on 24 jul? check my outlook"
+    decision = deterministic_plan(text, _state(text), None)
+    assert "email" in decision.capability_ids
+    assert decision.insufficient is None

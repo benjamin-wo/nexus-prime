@@ -195,12 +195,25 @@ def _has_word(text: str, words: list[str]) -> bool:
     return any(re.search(rf"\b{re.escape(word)}\b", text) for word in words)
 
 
+_RETROSPECTIVE_QUERY_MARKERS = (
+    "did i", "have i", "did we", "have we", "when did i", "when did we",
+    "check my email", "check my outlook", "check my gmail", "check my inbox",
+)
+
+
 def missing_policy(text: str) -> list[str]:
     """Missing-capability detection. Deliberately narrower than the legacy guardrail."""
     missing: list[str] = []
     if _has(text, ["calendar", "appointment", "meeting", "invite"]):
         missing.append("calendar")
-    if _has(text, ["book a flight", "flight to ", "flight from ", "book a hotel"]):
+    # "book a flight"/"book a hotel" are meant to catch forward-looking booking
+    # requests. A retrospective status check ("did I book a flight on 24 Jul?
+    # Check my outlook") contains the same substring but is really an email
+    # lookup — flagging it as a missing flight_booking capability blocks (or
+    # muddies) the perfectly-supported email search instead.
+    if not _has(text, _RETROSPECTIVE_QUERY_MARKERS) and _has(
+        text, ["book a flight", "flight to ", "flight from ", "book a hotel"]
+    ):
         missing.append("flight_booking")
     if _has(text, ["transfer", "send money", "wire "]):
         missing.append("bank_transfer")
