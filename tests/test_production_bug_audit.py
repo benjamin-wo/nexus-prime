@@ -378,3 +378,21 @@ async def test_transcript_includes_tool_calls_for_judge_and_triage():
             )
             roles = [entry["role"] for entry in triage_payload_capture["transcript"]]
             assert "tool" in roles
+
+
+def test_bug_triage_prompt_guards_against_deterministic_plugin_false_positives():
+    """Regression (#54, same shape as the earlier #47): whiteboard board
+    create/list/summary/pin/add-card confirmations are executed through
+    deterministic Python dispatch, never LangChain tool-calling, so a real,
+    correct confirmation (e.g. a genuine DB-backed pin with a real board/card
+    ID) will never show a 'role': 'tool' transcript entry -- by design, not
+    by bug. Without an explicit carve-out the triage LLM reliably mislabels
+    these as "hallucinated ... without tool invocation" P1s. The judge prompt
+    (JUDGE_SYSTEM_PROMPT) already had this carve-out; the triage prompt that
+    actually files GitHub issues (BUG_TRIAGE_SYSTEM_PROMPT) did not."""
+    from core.audit import BUG_TRIAGE_SYSTEM_PROMPT
+
+    lowered = BUG_TRIAGE_SYSTEM_PROMPT.lower()
+    assert "deterministic" in lowered
+    assert "whiteboard" in lowered
+    assert "not flag these as a hallucination" in lowered or "do not flag these as a hallucination" in lowered
