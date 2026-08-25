@@ -332,6 +332,29 @@ async def plan_dispatch(state: AssistantState) -> Command[str]:
             or deterministic_plan(text, state_with_feedback, retrieval)
         )
         _log_plan(decision)
+
+        # Regression (#34): the re-plan can legitimately decide it needs more
+        # info (decision.question set) instead of producing a better answer —
+        # e.g. verify catches "wrong bus line", re-plan realizes it doesn't
+        # know which stop the user is at. The first pass already short-circuits
+        # to asking in that case (see the `if decision.question:` block above);
+        # without the same guard here, this branch executed the capability
+        # anyway against stale/default state and shipped a wrong answer
+        # (reported: asked about bus 131, replied with directions for bus 10)
+        # instead of asking the question the planner itself decided it needed.
+        if decision.question:
+            schedule_turn_audit(decision.question)
+            return Command(
+                goto=END,
+                update={
+                    "messages": [AIMessage(content=decision.question)],
+                    "active_domain": state.get("active_domain"),
+                    "intent_type": "needs_clarification",
+                    "last_decision": decision_to_dict(decision),
+                    "plan": decision_to_dict(decision),
+                },
+            )
+
         outputs, state_updates, reply = await _execute_capabilities(decision, state)
         verify = (
             await verify_with_llm(
