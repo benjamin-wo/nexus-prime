@@ -62,11 +62,16 @@ def _log_plan(decision: Decision) -> None:
 async def _execute_capabilities(
     decision: Decision,
     state: AssistantState,
-) -> tuple[list[str], list[dict[str, Any]], str]:
+) -> tuple[list[str], list[dict[str, Any]], str, list[Any]]:
     from orchestrator.router import CAPABILITY_REGISTRY
 
     outputs: list[str] = []
     state_updates: list[dict[str, Any]] = []
+    # Regression (#53): a plugin's own tool-call/tool-result messages (e.g.
+    # GeneralPlugin's bounded tool loop) must reach persisted state alongside
+    # the combined reply below, or a reply genuinely grounded by a real tool
+    # call is indistinguishable from a hallucination to any later reader.
+    extra_messages: list[Any] = []
     for cap_id in decision.ordering:
         plugin = CAPABILITY_REGISTRY.get(cap_id)
         if plugin is None:
@@ -74,13 +79,14 @@ async def _execute_capabilities(
         output = await plugin.execute(state)
         outputs.append(str(output.message.content))
         state_updates.append(output.state_update)
+        extra_messages.extend(output.extra_messages)
     reply_parts = list(outputs)
     if decision.insufficient and decision.insufficient.message:
         reply_parts.append(decision.insufficient.message)
     reply = "\n\n".join(part for part in reply_parts if part)
     if not reply:
         reply = decision.insufficient.message or "I couldn't work out what to do with that."
-    return outputs, state_updates, reply
+    return outputs, state_updates, reply, extra_messages
 
 
 _PLANNING_SIGNALS = (
@@ -179,7 +185,7 @@ async def plan_dispatch(state: AssistantState) -> Command[str]:
 
         output = await CAPABILITY_REGISTRY[candidate].execute(state)
         update: dict[str, Any] = {
-            "messages": [output.message],
+            "messages": [*output.extra_messages, output.message],
             "active_domain": candidate,
             "intent_type": "in_scope",
             "fast_path": True,
@@ -220,13 +226,13 @@ async def plan_dispatch(state: AssistantState) -> Command[str]:
             retrieval_used=False,
             rationale="No text content; media attachments are handled by the general plugin.",
         )
-        outputs, state_updates, reply = await _execute_capabilities(decision, state)
+        outputs, state_updates, reply, extra_messages = await _execute_capabilities(decision, state)
         primary = _primary(decision)
         schedule_turn_audit(reply)
         return Command(
             goto=END,
             update={
-                "messages": [AIMessage(content=reply)],
+                "messages": [*extra_messages, AIMessage(content=reply)],
                 "active_domain": primary,
                 "intent_type": _intent_type(decision, primary),
                 "last_decision": decision_to_dict(decision),
@@ -351,7 +357,7 @@ async def plan_dispatch(state: AssistantState) -> Command[str]:
 
     from orchestrator.verify import verify_deterministic, verify_with_llm
 
-    outputs, state_updates, reply = await _execute_capabilities(decision, state)
+    outputs, state_updates, reply, extra_messages = await _execute_capabilities(decision, state)
     verify = (
         await verify_with_llm(decision, text, reply, "\n".join(outputs)[:1200], state)
         or verify_deterministic(decision, reply, text)
@@ -390,7 +396,7 @@ async def plan_dispatch(state: AssistantState) -> Command[str]:
                 },
             )
 
-        outputs, state_updates, reply = await _execute_capabilities(decision, state)
+        outputs, state_updates, reply, extra_messages = await _execute_capabilities(decision, state)
         verify = (
             await verify_with_llm(
                 decision, text, reply, "\n".join(outputs)[:1200], state_with_feedback
@@ -404,7 +410,7 @@ async def plan_dispatch(state: AssistantState) -> Command[str]:
 
     primary = _primary(decision)
     update: dict[str, Any] = {
-        "messages": [AIMessage(content=reply)],
+        "messages": [*extra_messages, AIMessage(content=reply)],
         "active_domain": primary,
         "intent_type": _intent_type(decision, primary),
         "last_decision": decision_to_dict(decision),

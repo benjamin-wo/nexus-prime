@@ -6,7 +6,7 @@ import re
 from typing import Protocol, List, Dict, Any, Optional
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.types import Command
 from langgraph.graph import END
 from orchestrator.state import AssistantState
@@ -82,6 +82,16 @@ class PluginOutput:
 
     message: AIMessage
     state_update: Dict[str, Any] = field(default_factory=dict)
+    # Regression (#53): GeneralPlugin's tool loop calls real tools
+    # (summarize_board, query_transactions, ...) against a local `history`
+    # list that was never surfaced back into persisted state -- the audit
+    # pipeline (and any later reviewer) then sees a reply grounded in real
+    # data with NO tool invocation in the transcript, indistinguishable from
+    # a hallucination. Plugins that run their own tool-calling loop can
+    # populate this with the AIMessage(tool_calls=...)/ToolMessage pairs
+    # actually produced this turn so callers persist them alongside the
+    # final reply.
+    extra_messages: List[BaseMessage] = field(default_factory=list)
 
 
 class CapabilityPlugin(Protocol):
@@ -1143,12 +1153,26 @@ class GeneralPlugin:
 
         llm = None
         llm_with_tools = None
+        # Regression (#53): capture whatever tool-call/tool-result messages
+        # _run_tool_loop appends to `history` this turn, so a reply grounded
+        # in a real summarize_board/query_transactions/... call is
+        # persisted with that provenance instead of looking, to any later
+        # reader (the audit pipeline included), like an ungrounded answer.
+        pre_loop_len = len(history)
+        extra_messages: List[BaseMessage] = []
         try:
             content = await asyncio.wait_for(
                 _compose_reply(), timeout=GENERAL_TOOL_LOOP_TIMEOUT_SECONDS
             )
             if not content:
                 content = self._generate_rule_based_response(last_text)
+            else:
+                # Excludes the URL-guard's SystemMessage nudge (internal
+                # steering only) -- keeps just the genuine tool-call/result
+                # pairs a reader would want to see.
+                extra_messages = [
+                    m for m in history[pre_loop_len:] if not isinstance(m, SystemMessage)
+                ]
         except Exception as exc:  # noqa: BLE001 - never let LLM/timeout errors kill the webhook
             print(f"[GENERAL] LLM/tool loop failed, using fallback: {exc}")
             content = self._generate_rule_based_response(last_text)
@@ -1156,6 +1180,7 @@ class GeneralPlugin:
         return PluginOutput(
             message=AIMessage(content=content),
             state_update={"active_domain": self.name},
+            extra_messages=extra_messages,
         )
 
     @staticmethod

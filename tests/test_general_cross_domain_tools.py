@@ -164,3 +164,63 @@ async def test_general_plugin_overrides_llm_supplied_user_id_for_new_tools(monke
     assert captured["user_id"] == 9107
     assert captured["user_id"] != 666666
     assert "here are your reminders" in str(output.message.content)
+
+
+@pytest.mark.asyncio
+async def test_general_plugin_surfaces_tool_call_provenance_for_persistence(monkeypatch):
+    """Regression (#53): GeneralPlugin's tool loop calls real tools
+    (summarize_board here) against a local `history` list that plan_router.py
+    used to discard entirely -- only the final AIMessage(content=...) ever
+    reached persisted state. That leaves the durable conversation transcript
+    showing a reply grounded in real board data with NO tool invocation
+    anywhere in it, indistinguishable from a hallucination to any later
+    reader (the audit pipeline included -- this is what got #53 filed as a
+    false-positive P1). PluginOutput.extra_messages must now carry the
+    genuine AIMessage(tool_calls=...)/ToolMessage pair produced this turn."""
+    from langchain_core.messages import AIMessage, ToolMessage
+    import orchestrator.router as router_module
+    from orchestrator.router import GeneralPlugin
+
+    class _SpySummarizeBoard:
+        name = "summarize_board"
+
+        async def ainvoke(self, args):
+            return "✈️ Bali Bachelor Party: Villa Samatha (booked), Finn's Beach Club (tbd)."
+
+    class _FakeToolCallingLLM:
+        def __init__(self):
+            self.calls = 0
+
+        def bind_tools(self, tools):
+            return self
+
+        async def ainvoke(self, messages):
+            self.calls += 1
+            if self.calls == 1:
+                return AIMessage(content="", tool_calls=[{
+                    "name": "summarize_board",
+                    "args": {"board_ref": "bali"},
+                    "id": "call_1",
+                    "type": "tool_call",
+                }])
+            return AIMessage(content="Here's what's on your Bali board.")
+
+    import capabilities.general.tools as general_tools
+
+    monkeypatch.setattr(general_tools, "summarize_board", _SpySummarizeBoard())
+    monkeypatch.setattr(router_module, "get_agent_llm", lambda *a, **k: _FakeToolCallingLLM())
+    monkeypatch.setattr(router_module.settings, "gemini_api_key", "fake-key-for-test")
+
+    output = await GeneralPlugin().execute({
+        "user_id": 9108,
+        "messages": [HumanMessage(content="what is on my board")],
+    })
+
+    assert "Here's what's on your Bali board" in str(output.message.content)
+    # The real tool call/result must be surfaced, not silently dropped.
+    tool_call_messages = [m for m in output.extra_messages if isinstance(m, AIMessage) and m.tool_calls]
+    tool_result_messages = [m for m in output.extra_messages if isinstance(m, ToolMessage)]
+    assert tool_call_messages, "the tool-calling AIMessage must be in extra_messages"
+    assert tool_call_messages[0].tool_calls[0]["name"] == "summarize_board"
+    assert tool_result_messages, "the ToolMessage result must be in extra_messages"
+    assert "Villa Samatha" in str(tool_result_messages[0].content)
