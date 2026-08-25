@@ -13,7 +13,14 @@ from langgraph.graph import END
 from capabilities.retrieval import RetrievalResult
 from core.config import settings
 from orchestrator.planner import Decision, decision_to_dict, deterministic_plan
+from orchestrator.self_diagnostics import looks_like_self_diagnostic_question
 from orchestrator.state import AssistantState
+
+# Bounded like every other LLM-backed step in this pipeline (see core/llm.py's
+# LLM_REQUEST_TIMEOUT_SECONDS and orchestrator/router.py's
+# PLANNING_INTAKE_TIMEOUT_SECONDS) -- a slow self-diagnosis must fall through
+# to normal routing, not silently eat the webhook's own budget.
+SELF_DIAGNOSTIC_TIMEOUT_SECONDS = 20.0
 
 
 def _user_text(state: AssistantState) -> tuple[str, bool]:
@@ -118,6 +125,34 @@ async def plan_dispatch(state: AssistantState) -> Command[str]:
                 ],
             )
         )
+
+    # Regression-class fix: "why is this happening" / "this is broken" style
+    # meta-questions about the bot's own behavior kept getting misrouted into
+    # a random capability's own disambiguation flow (e.g. #48's "🤔 Which
+    # board?" misfire) instead of actually being answered. Intercept them
+    # deterministically, before the planner ever sees the text, and answer
+    # from the bot's own last routing decision + live integration health.
+    # Falls through to normal routing when there's nothing yet to explain
+    # (fresh conversation) or the explanation itself fails/times out.
+    if looks_like_self_diagnostic_question(text):
+        from orchestrator.self_diagnostics import explain_last_turn
+
+        try:
+            explanation = await asyncio.wait_for(
+                explain_last_turn(state), timeout=SELF_DIAGNOSTIC_TIMEOUT_SECONDS
+            )
+        except asyncio.TimeoutError:
+            explanation = None
+        if explanation:
+            schedule_turn_audit(explanation)
+            return Command(
+                goto=END,
+                update={
+                    "messages": [AIMessage(content=explanation)],
+                    "active_domain": state.get("active_domain"),
+                    "intent_type": "self_diagnostic",
+                },
+            )
 
     from capabilities.registry import load_registry
     from capabilities.retrieval import build_index
