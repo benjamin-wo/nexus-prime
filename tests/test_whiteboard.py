@@ -744,6 +744,53 @@ async def test_planning_intake_augments_recent_board_and_researches(monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_planning_intake_fails_fast_instead_of_hanging_past_webhook_timeout(monkeypatch):
+    """Regression: a real production incident where "bring up the upcoming
+    bali trip" -- and then every unrelated follow-up message, since none
+    matched a fast _parse_intent path either -- got stuck re-running
+    _planning_intake() on every single turn, each one silently taking longer
+    than the webhook's own 45s timeout with zero real progress ("Still
+    working on that" forever). comprehend_request() and the research pass
+    were each individually bounded, but nothing bounded their sum, so a slow
+    (but within-budget) response from either could exceed the outer webhook
+    deadline. WhiteboardPlugin.execute() must now fail fast with an honest
+    message well under that ceiling instead of hanging."""
+    import asyncio
+    from capabilities.whiteboard import planner as wb_planner
+    import orchestrator.router as router_module
+    from orchestrator.router import WhiteboardPlugin
+    from orchestrator.state import AssistantState
+    from langchain_core.messages import HumanMessage
+
+    # Tiny bound so the test itself stays fast while still exercising real
+    # asyncio.wait_for cancellation, not a mock of it.
+    monkeypatch.setattr(router_module, "PLANNING_INTAKE_TIMEOUT_SECONDS", 0.05)
+
+    async def slow_comprehend(text, board_context=None):
+        await asyncio.sleep(0.3)  # well past the 0.05s bound above
+        return {"action": "none"}  # never reached
+
+    monkeypatch.setattr(wb_planner, "comprehend_request", slow_comprehend)
+
+    plugin = WhiteboardPlugin()
+    state = AssistantState(
+        messages=[HumanMessage(content="can you bring up the upcoming bali trip for me to plan some stuff")],
+        user_id=7701,
+    )
+
+    loop = asyncio.get_event_loop()
+    started = loop.time()
+    res = await plugin.execute(state)
+    elapsed = loop.time() - started
+
+    assert elapsed < 0.2, f"execute() should fail fast at the bound, not wait out the full hang ({elapsed}s)"
+    body = res.message.content
+    assert "taking longer than expected" in body
+    assert "Created" not in body
+    assert res.state_update == {"active_domain": "whiteboard"}
+
+
+@pytest.mark.asyncio
 async def test_dispatch_reroutes_whiteboard_followups():
     """With active_domain=whiteboard, planning-signal follow-ups stay on the board."""
     from orchestrator.router import CapabilityRouter

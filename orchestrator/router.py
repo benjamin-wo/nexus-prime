@@ -1260,6 +1260,28 @@ class ReminderPlugin:
         )
 
 
+# Regression: _planning_intake() chains a comprehend_request() LLM call
+# (bounded to LLM_REQUEST_TIMEOUT_SECONDS=30s, see core/llm.py) followed by a
+# concurrent research pass (each query bounded to RESEARCH_QUERY_TIMEOUT_SECONDS
+# below) -- each step is individually bounded, but nothing bounded their SUM,
+# so a slow-but-within-budget LLM/search response on both steps could
+# legitimately take up to ~45-55s combined, blowing straight past the
+# webhook's own 45s ceiling (app/webhook.py's WEBHOOK_PROCESSING_TIMEOUT_SECONDS).
+# Production repro: "bring up the upcoming bali trip" set active_domain to
+# whiteboard, and every subsequent message -- even unrelated ones like "this
+# is broken", since _parse_intent() can't match them to a fast path either --
+# re-entered this same expensive, unbounded-as-a-whole pipeline, so the user
+# got the generic "Still working on that" webhook-timeout fallback on every
+# single turn with zero real progress. PLANNING_INTAKE_TIMEOUT_SECONDS bounds
+# the whole pipeline safely under the webhook ceiling so a slow turn fails
+# fast with an honest, on-topic message instead of silently re-running into
+# the same wall every time; RESEARCH_QUERY_TIMEOUT_SECONDS is tightened from
+# its prior 25s so a slow comprehend_request() call still leaves the research
+# pass a realistic chance to finish inside the outer bound.
+PLANNING_INTAKE_TIMEOUT_SECONDS = 35.0
+RESEARCH_QUERY_TIMEOUT_SECONDS = 15.0
+
+
 class WhiteboardPlugin:
     """Conversational whiteboard capability: create boards, list them, summarize,
     pin notes, and add checklist cards — backed by the shared whiteboard tools."""
@@ -1454,8 +1476,21 @@ class WhiteboardPlugin:
                 reply = f"📌 Pinned to {board.emoji_icon} *{board.title}* (#{board.id}) as card #{block.id}."
             return PluginOutput(message=AIMessage(content=reply), state_update={"active_domain": self.name})
 
-        # action is None → deep-reasoning planning intake (create/augment from freeform text)
-        planned = await self._planning_intake(user_id, last_text)
+        # action is None → deep-reasoning planning intake (create/augment from freeform text).
+        # Bounded well under the webhook's own timeout -- see PLANNING_INTAKE_TIMEOUT_SECONDS.
+        try:
+            planned = await asyncio.wait_for(
+                self._planning_intake(user_id, last_text),
+                timeout=PLANNING_INTAKE_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            return PluginOutput(
+                message=AIMessage(content=(
+                    "🎨 Still pulling that together — it's taking longer than expected. "
+                    "Try asking again in a moment, or say *\"my boards\"* to see what's there already."
+                )),
+                state_update={"active_domain": self.name},
+            )
         if planned is not None:
             return PluginOutput(
                 message=AIMessage(content=planned),
@@ -1593,7 +1628,7 @@ class WhiteboardPlugin:
             async def _run(query: str):
                 try:
                     return query, await asyncio.wait_for(
-                        search_web.ainvoke({"query": query}), timeout=25
+                        search_web.ainvoke({"query": query}), timeout=RESEARCH_QUERY_TIMEOUT_SECONDS
                     )
                 except Exception as exc:  # noqa: BLE001
                     return query, f"[search failed: {exc}]"
