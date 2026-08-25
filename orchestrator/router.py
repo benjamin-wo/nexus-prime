@@ -955,12 +955,32 @@ class GeneralPlugin:
 
         last_text = str(last_content) if not isinstance(last_content, list) else ""
 
-        # Bounded tool loop: the model itself decides when to search the web or read
-        # the transaction ledger. Import lazily: tests monkeypatch
-        # capabilities.general.tools.search_web, which requires late binding.
-        from capabilities.general.tools import fetch_url, query_transactions, search_web
+        # Bounded tool loop: the model itself decides when to search the web,
+        # read the transaction ledger, or peek at other domains' data
+        # (reminders/boards/email are READ-only here -- writes stay behind
+        # their own guarded capability plugins, see capabilities/general/tools.py's
+        # "Cross-domain read tools" section for why). Import lazily: tests
+        # monkeypatch capabilities.general.tools.search_web, which requires
+        # late binding.
+        from capabilities.general.tools import (
+            fetch_url,
+            list_my_boards,
+            list_my_reminders,
+            query_transactions,
+            search_my_email,
+            search_web,
+            summarize_board,
+        )
 
-        available_tools = [search_web, fetch_url, query_transactions]
+        available_tools = [
+            search_web,
+            fetch_url,
+            query_transactions,
+            list_my_reminders,
+            list_my_boards,
+            summarize_board,
+            search_my_email,
+        ]
 
         # Tests and local runs use placeholder keys; skip network call if no provider is configured.
         has_key = bool(settings.active_gemini_api_key or (settings.deepseek_api_key and settings.deepseek_api_key != "test_deepseek_key"))
@@ -989,7 +1009,13 @@ class GeneralPlugin:
                 for call in tool_calls:
                     call_name = str(call.get("name") or "")
                     call_args = dict(call.get("args") or {})
-                    if call_name == "query_transactions":
+                    if call_name in (
+                        "query_transactions",
+                        "list_my_reminders",
+                        "list_my_boards",
+                        "summarize_board",
+                        "search_my_email",
+                    ):
                         # Identity guard: never trust a model-supplied user_id.
                         call_args["user_id"] = int(user_id or 0)
                     if call_name in ("search_web", "fetch_url"):
