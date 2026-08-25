@@ -1352,8 +1352,14 @@ class WhiteboardPlugin:
                 "board_ref": self._extract_board_ref("pin to " + pin_match.group(2).strip()),
             }
 
+        # Regression (#48): "to"/"on" here lacked word boundaries, so they could
+        # match as a bare substring inside an unrelated word -- e.g. "add the
+        # location can you provide..." matched on "locati|ON|", splitting
+        # content="the locati" and board_ref="can you provide...", instead of
+        # correctly falling through to no match at all. pin_match (below)
+        # already guards this correctly with \b(?:to|on)\b; add_match didn't.
         add_match = re.search(
-            r"\badd\s+(?:a\s+)?(note|checklist|card|todo|to-do)?\s*(.*?)\s*(?:to|on)\s+(?:my|the|our)?\s*(.+?)\s*(?:boards?|whiteboards?|canvas)?\s*$",
+            r"\badd\s+(?:a\s+)?(note|checklist|card|todo|to-do)?\s*(.*?)\s*\b(?:to|on)\b\s+(?:my|the|our)?\s*(.+?)\s*(?:boards?|whiteboards?|canvas)?\s*$",
             raw,
             re.IGNORECASE,
         )

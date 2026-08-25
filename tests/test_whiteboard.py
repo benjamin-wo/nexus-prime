@@ -743,6 +743,70 @@ async def test_planning_intake_augments_recent_board_and_researches(monkeypatch)
     assert research_card["content_payload"]["topics"][0]["sources"][0]["url"].startswith("https://")
 
 
+def test_parse_intent_does_not_misfire_on_location_substring():
+    """Regression (#48, production incident): "why is the bali bachelor
+    party whiteboard full of stubs, when i ask you to add the location can
+    you provide some details from the web and like google maps etc" -- a
+    conversational question/feature request, not a command -- got
+    misclassified as an actionable add_card request. Root cause: add_match's
+    (?:to|on) lacked word boundaries, so it matched the "on" inside
+    "locati|on|" as if the user had written "add X on Y board", producing
+    content="the locati" and board_ref="can you provide...". That garbage
+    board_ref never resolves, so the reply becomes the wrong "Which board?"
+    disambiguation instead of a real answer."""
+    from orchestrator.router import WhiteboardPlugin
+
+    plugin = WhiteboardPlugin()
+    intent = plugin._parse_intent(
+        "why is the bali bachelor party whiteboard full of stubs, when i ask "
+        "you to add the location can you provide some details from the web "
+        "and like google maps etc"
+    )
+    assert intent.get("action") is None, f"should not match any fast action, got: {intent}"
+
+    # Legitimate add/pin commands (including ones containing "location" as a
+    # real word) must still match correctly.
+    assert plugin._parse_intent("add lunch to my Bali board") == {
+        "action": "add_card",
+        "kind": "note",
+        "content": "lunch",
+        "board_ref": "Bali",
+    }
+    assert plugin._parse_intent("add the hotel location to my Bali board")["action"] == "add_card"
+    assert plugin._parse_intent("pin this to my Tokyo board")["action"] == "pin"
+
+
+@pytest.mark.asyncio
+async def test_whiteboard_feedback_message_reaches_planning_intake_not_which_board(monkeypatch):
+    """End-to-end version of the same regression: the exact reported message
+    must flow through to _planning_intake() (the real conversational/deep
+    path) rather than short-circuiting into the "Which board?" fallback."""
+    from capabilities.whiteboard import planner as wb_planner
+    from orchestrator.router import WhiteboardPlugin
+    from orchestrator.state import AssistantState
+    from langchain_core.messages import HumanMessage
+
+    async def fake_comprehend(text, board_context=None):
+        return {"action": "none"}
+
+    monkeypatch.setattr(wb_planner, "comprehend_request", fake_comprehend)
+
+    plugin = WhiteboardPlugin()
+    state = AssistantState(
+        messages=[HumanMessage(content=(
+            "why is the bali bachelor party whiteboard full of stubs, when i ask "
+            "you to add the location can you provide some details from the web "
+            "and like google maps etc"
+        ))],
+        user_id=7801,
+    )
+    res = await plugin.execute(state)
+    body = res.message.content
+
+    assert "Which board?" not in body
+    assert "I can run your planning boards from chat" in body
+
+
 @pytest.mark.asyncio
 async def test_planning_intake_fails_fast_instead_of_hanging_past_webhook_timeout(monkeypatch):
     """Regression: a real production incident where "bring up the upcoming
