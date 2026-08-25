@@ -55,4 +55,27 @@ async def receive_telegram_webhook(request: Request):
                 )
             except Exception:  # noqa: BLE001 - never let the timeout handler itself hang the response
                 pass
+        # Regression: this cancellation happens mid-flight through
+        # handle_update(), before plan_dispatch() ever reaches the point
+        # where it schedules a conversation audit -- so a run of webhook
+        # timeouts was previously invisible to every audit/monitoring path
+        # (confirmed live: 5 consecutive timeouts for one chat, zero audit
+        # entries). Report it explicitly instead of leaving it silent.
+        try:
+            from core.audit import record_operation_event
+
+            await record_operation_event(
+                subsystem="webhook",
+                error_context=(
+                    f"Webhook processing exceeded {WEBHOOK_PROCESSING_TIMEOUT_SECONDS}s "
+                    f"and was cancelled (chat_id={chat_id})."
+                ),
+                detection_source="webhook_timeout",
+                user_id=chat_id,
+                fingerprint="op_webhook_processing_timeout",
+                severity="P1",
+                title="Webhook processing repeatedly exceeds its own timeout",
+            )
+        except Exception:  # noqa: BLE001 - audit reporting must never break the timeout response
+            pass
         return {"status": "ok", "processed": False, "timeout": True}
