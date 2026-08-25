@@ -7,6 +7,15 @@ from core.config import settings
 
 logger = logging.getLogger("nexus_prime.llm")
 
+# None of the four client constructions below set a request timeout, so a
+# stalled provider call (network stall, provider-side hang) can block an
+# ainvoke() indefinitely. That is fatal upstream: app/webhook.py awaits the
+# whole request-handling chain before responding to Telegram, so a single
+# hung LLM call there means the webhook never returns, Telegram never gets
+# its 200 OK, and it redelivers the same update on its own backoff schedule
+# forever -- piling up duplicate in-flight work for one stuck chat.
+LLM_REQUEST_TIMEOUT_SECONDS = 30.0
+
 class ThinkingLevel(str, Enum):
     """
     Thinking complexity tiers for DeepSeek v4 Flash agent reasoning.
@@ -55,6 +64,7 @@ def get_llm(
             model=settings.gemini_model,
             google_api_key=api_key,
             temperature=temperature,
+            timeout=LLM_REQUEST_TIMEOUT_SECONDS,
         )
 
     elif role == "agent_core":
@@ -65,6 +75,7 @@ def get_llm(
                 model=settings.gemini_model,
                 google_api_key=api_key,
                 temperature=temperature,
+                timeout=LLM_REQUEST_TIMEOUT_SECONDS,
             )
 
         api_key = settings.deepseek_api_key or "test_deepseek_key"
@@ -89,6 +100,7 @@ def get_llm(
             temperature=temperature,
             reasoning_effort=thinking_config["reasoning_effort"],
             max_tokens=thinking_config["max_tokens"],
+            timeout=LLM_REQUEST_TIMEOUT_SECONDS,
         )
 
     else:
@@ -108,6 +120,7 @@ def get_judge_llm(temperature: float = 0.0) -> ChatGoogleGenerativeAI:
         model=settings.gemini_judge_model,
         google_api_key=api_key,
         temperature=temperature,
+        timeout=LLM_REQUEST_TIMEOUT_SECONDS,
     )
 
 def get_agent_llm(

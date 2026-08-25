@@ -84,3 +84,28 @@ def test_invalid_role_raises_value_error():
     """Verify that requesting an unsupported role raises a ValueError."""
     with pytest.raises(ValueError, match="Unsupported LLM role"):
         get_llm(role="invalid_role")
+
+
+def test_all_llm_clients_have_a_bounded_request_timeout(monkeypatch):
+    """Regression (P0): none of the four client constructions set a request
+    timeout, so a stalled provider call could hang an ainvoke() forever.
+    That's fatal upstream -- app/webhook.py awaits the whole request chain
+    before responding to Telegram, so one hung LLM call meant the webhook
+    never returned, Telegram never got its 200 OK, and it redelivered the
+    same update on its own backoff schedule indefinitely (verified against
+    a real production incident: a stuck chat retried every ~60-130s for
+    10+ minutes with the typing-indicator loop never cancelled, escalating
+    to a sendChatAction 429 storm)."""
+    from core.config import settings
+    from core.llm import LLM_REQUEST_TIMEOUT_SECONDS
+
+    assert LLM_REQUEST_TIMEOUT_SECONDS is not None and LLM_REQUEST_TIMEOUT_SECONDS > 0
+
+    assert get_llm(role="multimodal_io").timeout == LLM_REQUEST_TIMEOUT_SECONDS
+    assert get_judge_llm().timeout == LLM_REQUEST_TIMEOUT_SECONDS
+
+    monkeypatch.setattr(settings, "llm_provider", "gemini")
+    assert get_llm(role="agent_core").timeout == LLM_REQUEST_TIMEOUT_SECONDS
+
+    monkeypatch.setattr(settings, "llm_provider", "deepseek")
+    assert get_agent_llm().request_timeout == LLM_REQUEST_TIMEOUT_SECONDS
