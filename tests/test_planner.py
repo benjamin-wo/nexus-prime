@@ -264,6 +264,77 @@ async def test_llm_planner_used_when_key_present(monkeypatch):
     assert decision.capability_ids == ["expenses"]
 
 
+@pytest.mark.asyncio
+async def test_replan_asks_question_instead_of_executing_wrong_capability(monkeypatch):
+    """Regression (#34): a re-plan (triggered by verify's needs_replan) can
+    legitimately decide it needs more info instead of a better answer -- e.g.
+    verify catches "wrong bus line", re-plan realizes it doesn't know which
+    stop the user is at. The first planning pass already short-circuits to
+    asking when decision.question is set; the retry path used to skip that
+    guard entirely and execute the capability anyway against stale state,
+    shipping a wrong answer (production repro: asked about bus 131, got
+    directions for bus 10) instead of asking the question the planner itself
+    decided it needed."""
+    from unittest.mock import AsyncMock, patch
+
+    from orchestrator.plan_router import plan_dispatch
+    from orchestrator.planner import CapabilitySelection, Decision
+    from orchestrator.router import PluginOutput
+    from orchestrator.verify import VerifyResult
+
+    first_decision = Decision(
+        capabilities=[CapabilitySelection(id="routes", reason="test", confidence=1.0)],
+        ordering=["routes"],
+        confidence=1.0,
+        source="llm",
+        retrieval_used=True,
+    )
+    replan_decision = Decision(
+        capabilities=[CapabilitySelection(id="routes", reason="test", confidence=1.0)],
+        ordering=["routes"],
+        confidence=0.8,
+        source="llm",
+        retrieval_used=True,
+        question="Which bus stop are you at?",
+    )
+
+    fake_plugin = AsyncMock()
+    fake_plugin.execute.return_value = PluginOutput(
+        message=AIMessage(content="Bus 10 runs from X to Y."),
+        state_update={},
+    )
+    fake_registry = {"routes": fake_plugin}
+
+    bad_verify = VerifyResult(
+        fulfilled=False,
+        needs_replan=True,
+        reason="wrong bus line",
+        missing="user asked about bus 131, reply was about a different bus",
+    )
+
+    state = {
+        "user_id": 1,
+        "active_domain": "routes",
+        "last_decision": None,
+        "pending_bus_stops": None,
+        "messages": [HumanMessage(content="info on bus 131 please")],
+    }
+
+    with patch("orchestrator.router.CAPABILITY_REGISTRY", fake_registry), \
+            patch(
+                "orchestrator.planner.plan_with_llm",
+                new=AsyncMock(side_effect=[first_decision, replan_decision]),
+            ), \
+            patch("orchestrator.verify.verify_with_llm", new=AsyncMock(return_value=bad_verify)):
+        command = await plan_dispatch(state)
+
+    # The capability must run once (the first attempt) and never again once
+    # the re-plan decides it needs to ask instead of answering.
+    assert fake_plugin.execute.await_count == 1
+    assert command.update["intent_type"] == "needs_clarification"
+    assert command.update["messages"][0].content == "Which bus stop are you at?"
+
+
 def test_missing_policy_excludes_retrospective_flight_queries():
     """Regression (#21): "did I book a flight on 24 Jul? Check my outlook" is an
     email lookup, not a request to book a NEW flight — but missing_policy's
