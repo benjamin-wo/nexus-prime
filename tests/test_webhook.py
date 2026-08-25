@@ -103,6 +103,53 @@ def test_webhook_times_out_instead_of_hanging_forever(monkeypatch):
     assert body.get("timeout") is True
 
 
+def test_webhook_timeout_reports_an_operation_event(monkeypatch):
+    """Regression: a webhook-level timeout cancels handle_update() before
+    plan_dispatch() ever reaches schedule_turn_audit(), so a run of repeated
+    timeouts was invisible to every audit/monitoring path (confirmed live:
+    5 consecutive timeouts for one chat, zero audit entries -- the owner
+    asked why the auto-audit never picked it up). The timeout handler must
+    now explicitly report the incident through record_operation_event so it
+    surfaces as a tracked (deduplicated) production bug instead of silently
+    vanishing."""
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    import app.webhook as webhook_module
+    import core.audit as audit_module
+    from app.ingress import telegram_ingress
+
+    monkeypatch.setattr(webhook_module, "WEBHOOK_PROCESSING_TIMEOUT_SECONDS", 0.05)
+
+    async def _hang(payload):
+        await asyncio.sleep(999)
+
+    monkeypatch.setattr(telegram_ingress, "handle_update", _hang)
+    monkeypatch.setattr(webhook_module, "send_telegram_message", AsyncMock(return_value=True))
+    fake_record = AsyncMock(return_value=None)
+    monkeypatch.setattr(audit_module, "record_operation_event", fake_record)
+
+    payload = {
+        "update_id": 10005,
+        "message": {
+            "message_id": 504,
+            "from": {"id": 9003, "first_name": "Test"},
+            "chat": {"id": 9003, "type": "private"},
+            "text": "bring up the upcoming bali trip for me to plan some stuff",
+        },
+    }
+    response = client.post("/api/webhook", json=payload, headers=_webhook_headers())
+    assert response.status_code == 200
+    assert response.json().get("timeout") is True
+
+    assert fake_record.await_count == 1
+    call_kwargs = fake_record.await_args.kwargs
+    assert call_kwargs["detection_source"] == "webhook_timeout"
+    assert call_kwargs["user_id"] == 9003
+    assert call_kwargs["fingerprint"] == "op_webhook_processing_timeout"
+    assert call_kwargs["severity"] == "P1"
+
+
 def test_webhook_jobs_command():
     payload = {
         "update_id": 10003,
