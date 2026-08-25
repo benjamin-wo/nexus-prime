@@ -207,3 +207,108 @@ async def query_transactions(
     if ledger["total_matched"] > len(items):
         lines.append(f"…and {ledger['total_matched'] - len(items)} more.")
     return "\n".join(lines)
+
+
+# --- Cross-domain read tools ------------------------------------------------
+# Part of moving the "general" plugin toward a real conversational agent
+# (full history + tools) as the default landing zone for cross-domain and
+# ambiguous asks, instead of the LLM planner having to pick exactly one
+# narrow, single-message-blind capability plugin per turn. Deliberately
+# READ-ONLY: anything that writes (logging an expense, creating a reminder,
+# pinning to a board) stays behind its existing guarded plugin, which keeps
+# its own validation/dedup/confirmation logic -- these just let the agent
+# answer questions and follow-ups about that data naturally.
+
+
+@tool
+async def list_my_reminders(user_id: int = 0) -> str:
+    """
+    List the user's active reminders and scheduled jobs (recurring or
+    one-shot). Use for "what reminders do I have", "what's coming up".
+    Read-only -- to create, change, or cancel a reminder, tell the user to
+    just ask normally (that's handled by the reminders capability, not this
+    tool).
+
+    Args:
+        user_id: ignored; the assistant injects the authenticated user's ID.
+    """
+    from core.scheduler import list_active_jobs
+
+    jobs = await list_active_jobs(int(user_id or 0))
+    if not jobs:
+        return "[reminders] No active reminders or scheduled jobs."
+    lines = []
+    for job in jobs[:15]:
+        name = job.get("job_name") or "Reminder"
+        next_run = job.get("next_run_time") or "not scheduled"
+        lines.append(f"• {name} — next: {next_run}")
+    return "\n".join(lines)
+
+
+@tool
+async def list_my_boards(user_id: int = 0) -> str:
+    """
+    List the user's planning whiteboards (trips, events, projects, meal
+    plans) by title and category. Use as a first step before summarizing a
+    specific board, or for "what boards do I have". Read-only.
+
+    Args:
+        user_id: ignored; the assistant injects the authenticated user's ID.
+    """
+    from capabilities.whiteboard.tools import list_user_boards
+
+    boards = await list_user_boards(int(user_id or 0))
+    if not boards:
+        return "[boards] No planning boards yet."
+    return "\n".join(f"• {b.emoji_icon} {b.title} (#{b.id}, {b.category})" for b in boards[:10])
+
+
+@tool
+async def summarize_board(board_ref: str, user_id: int = 0) -> str:
+    """
+    Summarize a specific planning whiteboard by name, e.g. "what's on my
+    Bali board" (fuzzy title match). Read-only -- does not create, pin, or
+    modify anything on the board.
+
+    Args:
+        board_ref: the board name or fragment the user referenced.
+        user_id: ignored; the assistant injects the authenticated user's ID.
+    """
+    from capabilities.whiteboard.tools import board_summary_text, find_board
+
+    board = await find_board(int(user_id or 0), board_ref)
+    if not board:
+        return f"[boards] No board matching {board_ref!r}."
+    summary = await board_summary_text(board.id)
+    return summary or f"{board.emoji_icon} {board.title} is empty."
+
+
+@tool
+async def search_my_email(query: str = "", latest: bool = False, user_id: int = 0) -> str:
+    """
+    Search the user's connected email (Gmail/Outlook) for messages matching
+    a query, or fetch the newest messages when latest=True and query is
+    empty. Read-only. Returns raw sender/subject/date lines -- summarize or
+    answer from exactly what's returned; never invent a sender or subject
+    not present in the result.
+
+    Args:
+        query: free-text search (leave empty with latest=True for "what's new").
+        latest: fetch the newest messages instead of a keyword search.
+        user_id: ignored; the assistant injects the authenticated user's ID.
+    """
+    from capabilities.email.tools import search_email_messages
+
+    try:
+        results = await search_email_messages(
+            int(user_id or 0), custom_query=query.strip() or None, latest=latest
+        )
+    except Exception as exc:  # noqa: BLE001
+        return f"[email] search failed: {exc}"
+    if not results:
+        return "[email] No matching messages (or no mailbox connected)."
+    lines = [
+        f"• {r.get('sender', '?')} — {r.get('subject', '(no subject)')} ({r.get('date', '')})"
+        for r in results[:8]
+    ]
+    return "\n".join(lines)
