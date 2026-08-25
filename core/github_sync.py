@@ -362,11 +362,18 @@ async def sync_production_bug_to_github_issue(
     suggested_fix: Optional[str] = None,
     error_traceback: Optional[str] = None,
     occurrence_count: int = 1,
+    extra_labels: Optional[List[str]] = None,
 ) -> Optional[Dict[str, Any]]:
     """
     Synchronize an automated production bug or audit failure report to GitHub Issues.
     Performs fingerprint-based deduplication and auto-comments on existing open issues.
     Returns a dict with {"url": str, "number": int} or None if sync is disabled or fails.
+
+    detection_source == "user_reported" (filed via the /file-issue command, see #14)
+    renders a distinct issue shape: no fabricated "audit" framing or traceback
+    section, a `user-reported` label instead of `audit-detected`, and any
+    `extra_labels` (e.g. `human-review-required`) appended so automated triage
+    can gate on it until a human clears the label.
     """
     token = os.getenv("GITHUB_TOKEN")
     repo = os.getenv("GITHUB_REPO")
@@ -384,6 +391,7 @@ async def sync_production_bug_to_github_issue(
     }
 
     clean_fp = fingerprint.strip().lower()
+    user_reported = detection_source == "user_reported"
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -406,8 +414,9 @@ async def sync_production_bug_to_github_issue(
             if existing_issue_number:
                 # Issue already exists; append recurrence comment
                 comment_url = f"{GITHUB_API_BASE}/repos/{repo}/issues/{existing_issue_number}/comments"
+                recurrence_label = "User Report Recurrence" if user_reported else "Production Bug Recurrence"
                 comment_body_parts = [
-                    f"### 🔄 Production Bug Recurrence (Occurrence #{occurrence_count})",
+                    f"### 🔄 {recurrence_label} (Occurrence #{occurrence_count})",
                     f"- **Timestamp**: `{now_iso}`",
                     f"- **Detection Source**: `{detection_source}`",
                 ]
@@ -431,49 +440,80 @@ async def sync_production_bug_to_github_issue(
             else:
                 # Create a new GitHub Issue
                 create_url = f"{GITHUB_API_BASE}/repos/{repo}/issues"
-                body_parts = [
-                    f"<!-- fingerprint: {clean_fp} -->",
-                    f"## 🚨 Production Bug Report (Gemini 3.1 Pro Audit)",
-                    "",
-                    f"- **Subsystem**: `{subsystem}`",
-                    f"- **Severity**: `{severity}`",
-                    f"- **Detection Source**: `{detection_source}`",
-                    f"- **Fingerprint**: `{clean_fp}`",
-                    f"- **Detected At**: `{now_iso}`",
-                    "",
-                    "### 🔍 Root Cause Analysis",
-                    root_cause or "Under investigation.",
-                    "",
-                    "### 🧪 Reproduction Context",
-                    reproduction_context or "N/A",
-                    "",
+                if user_reported:
+                    # A human filed this themselves via /file-issue — no fabricated
+                    # traceback or "audit" framing, and no suggested_fix section
+                    # (the triage step classifies category/priority, not a fix).
+                    body_parts = [
+                        f"<!-- fingerprint: {clean_fp} -->",
+                        "## 🐛 User-Reported Bug (filed via /file-issue)",
+                        "",
+                        f"- **Subsystem**: `{subsystem}`",
+                        f"- **Priority**: `{severity}`",
+                        f"- **Detection Source**: `{detection_source}`",
+                        f"- **Fingerprint**: `{clean_fp}`",
+                        f"- **Filed At**: `{now_iso}`",
+                        "",
+                        "### 📝 Reported by the user",
+                        reproduction_context or "N/A",
+                        "",
+                    ]
+                    if root_cause:
+                        body_parts.extend(["### 🧭 Triage summary", root_cause, ""])
+                    body_parts.append(
+                        "*Filed via the /file-issue Telegram command and auto-triaged for "
+                        "category/priority — gated behind `human-review-required` until a "
+                        "person reviews it.*"
+                    )
+                else:
+                    body_parts = [
+                        f"<!-- fingerprint: {clean_fp} -->",
+                        f"## 🚨 Production Bug Report (Gemini 3.1 Pro Audit)",
+                        "",
+                        f"- **Subsystem**: `{subsystem}`",
+                        f"- **Severity**: `{severity}`",
+                        f"- **Detection Source**: `{detection_source}`",
+                        f"- **Fingerprint**: `{clean_fp}`",
+                        f"- **Detected At**: `{now_iso}`",
+                        "",
+                        "### 🔍 Root Cause Analysis",
+                        root_cause or "Under investigation.",
+                        "",
+                        "### 🧪 Reproduction Context",
+                        reproduction_context or "N/A",
+                        "",
+                    ]
+                    if suggested_fix:
+                        body_parts.extend([
+                            "### 🛠️ Suggested Fix",
+                            f"```python\n{suggested_fix}\n```",
+                            "",
+                        ])
+                    if error_traceback:
+                        body_parts.extend([
+                            "<details>",
+                            "<summary>Traceback / Log Context</summary>",
+                            "",
+                            f"```\n{error_traceback}\n```",
+                            "</details>",
+                            "",
+                        ])
+                    body_parts.append("*Automatically captured and triaged in the background by Gemini 3.1 Pro Audit.*")
+
+                labels = [
+                    "bug",
+                    "user-reported" if user_reported else "audit-detected",
+                    f"severity:{severity.lower()}",
+                    f"area:{subsystem.lower()}",
                 ]
-                if suggested_fix:
-                    body_parts.extend([
-                        "### 🛠️ Suggested Fix",
-                        f"```python\n{suggested_fix}\n```",
-                        "",
-                    ])
-                if error_traceback:
-                    body_parts.extend([
-                        "<details>",
-                        "<summary>Traceback / Log Context</summary>",
-                        "",
-                        f"```\n{error_traceback}\n```",
-                        "</details>",
-                        "",
-                    ])
-                body_parts.append("*Automatically captured and triaged in the background by Gemini 3.1 Pro Audit.*")
+                for extra in extra_labels or []:
+                    if extra not in labels:
+                        labels.append(extra)
 
                 issue_payload = {
                     "title": f"[{severity}][{subsystem.capitalize()}] {title}",
                     "body": "\n".join(body_parts),
-                    "labels": [
-                        "bug",
-                        "audit-detected",
-                        f"severity:{severity.lower()}",
-                        f"area:{subsystem.lower()}",
-                    ],
+                    "labels": labels,
                 }
                 res = await client.post(create_url, json=issue_payload, headers=headers)
                 if res.status_code in (200, 201):

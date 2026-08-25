@@ -8,6 +8,7 @@ from core.models import ProductionBugLog, UserProfile
 from core.audit import (
     redact_sensitive_info,
     report_production_bug,
+    report_user_filed_bug,
     perform_conversation_audit,
     record_operation_event,
 )
@@ -326,6 +327,183 @@ def test_unhandled_exception_middleware_records_runtime_bug(monkeypatch):
     assert recorded["subsystem"] == "api"
     assert "ValueError" in recorded.get("error_context", "")
     assert resp.status_code == 500
+
+
+@pytest.mark.asyncio
+async def test_report_user_filed_bug_creates_db_record_and_syncs():
+    """#14: /file-issue triages with an LLM (mocked here) and files through the
+    same persistence/GitHub-sync plumbing as automated production bugs, but
+    tagged detection_source='user_reported' and gated with human-review-required."""
+    mock_triage = {
+        "title": "Split icon missing on cockpit",
+        "category": "ui",
+        "subsystem": "showcase",
+        "priority": "P2",
+        "summary": "User reports no split icon next to edit on the transaction row.",
+        "fingerprint": "cockpit_missing_split_icon",
+    }
+    mock_gh_result = {"url": "https://github.com/owner/repo/issues/201", "number": 201}
+
+    with patch(
+        "core.audit.sync_production_bug_to_github_issue",
+        new=AsyncMock(return_value=mock_gh_result),
+    ) as mock_sync:
+        log_entry = await report_user_filed_bug(
+            user_id=555,
+            description="There is no icon for transaction splitting beside the edit icon.",
+            thread_id="t555",
+            mock_triage=mock_triage,
+        )
+
+    assert log_entry.id is not None
+    assert log_entry.fingerprint == "cockpit_missing_split_icon"
+    assert log_entry.severity == "P2"
+    assert log_entry.subsystem == "showcase"
+    assert log_entry.detection_source == "user_reported"
+    assert log_entry.user_id == 555
+    assert log_entry.github_issue_url == "https://github.com/owner/repo/issues/201"
+    assert log_entry.github_issue_number == 201
+    assert log_entry.occurrence_count == 1
+
+    mock_sync.assert_called_once()
+    _, kwargs = mock_sync.call_args
+    assert kwargs["detection_source"] == "user_reported"
+    assert kwargs["extra_labels"] == ["human-review-required"]
+
+    # A repeat report of the same bug dedups into a recurrence, not a new issue.
+    with patch(
+        "core.audit.sync_production_bug_to_github_issue",
+        new=AsyncMock(return_value=mock_gh_result),
+    ):
+        log_entry_2 = await report_user_filed_bug(
+            user_id=555,
+            description="Still no split icon next to edit.",
+            thread_id="t555",
+            mock_triage=mock_triage,
+        )
+    assert log_entry_2.id == log_entry.id
+    assert log_entry_2.occurrence_count == 2
+
+
+@pytest.mark.asyncio
+async def test_report_user_filed_bug_falls_back_when_triage_llm_fails():
+    """LLM triage failure must not block filing -- fall back to a heuristic
+    classification instead of dropping the user's report."""
+    with patch(
+        "core.audit._triage_user_report_with_gemini",
+        new=AsyncMock(side_effect=RuntimeError("quota exceeded")),
+    ):
+        with patch(
+            "core.audit.sync_production_bug_to_github_issue",
+            new=AsyncMock(return_value=None),
+        ):
+            log_entry = await report_user_filed_bug(
+                user_id=556,
+                description="The dashboard chart is blank on load.",
+                thread_id="t556",
+            )
+
+    assert log_entry.id is not None
+    assert log_entry.detection_source == "user_reported"
+    assert log_entry.severity == "P2"
+    assert log_entry.subsystem == "general"
+
+
+@pytest.mark.asyncio
+async def test_sync_production_bug_user_reported_gets_distinct_shape(monkeypatch):
+    """#14: a /file-issue report must look different from an automated audit
+    finding -- no fabricated 'Gemini Audit' framing or traceback, a
+    `user-reported` label instead of `audit-detected`, plus the
+    human-review-required gate label."""
+    monkeypatch.setenv("GITHUB_TOKEN", "dummy_token")
+    monkeypatch.setenv("GITHUB_REPO", "owner/repo")
+
+    mock_get_resp = MagicMock()
+    mock_get_resp.status_code = 200
+    mock_get_resp.json.return_value = []
+
+    mock_post_resp = MagicMock()
+    mock_post_resp.status_code = 201
+    mock_post_resp.json.return_value = {
+        "number": 202,
+        "html_url": "https://github.com/owner/repo/issues/202",
+    }
+
+    mock_client = AsyncMock()
+    mock_client.get.return_value = mock_get_resp
+    mock_client.post.return_value = mock_post_resp
+
+    mock_client_cls = MagicMock()
+    mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+    with patch("core.github_sync.httpx.AsyncClient", mock_client_cls):
+        result = await sync_production_bug_to_github_issue(
+            fingerprint="cockpit_missing_split_icon",
+            title="Split icon missing on cockpit",
+            severity="P2",
+            subsystem="showcase",
+            detection_source="user_reported",
+            root_cause="User reports no split icon next to edit.",
+            reproduction_context="There is no icon for transaction splitting beside the edit icon.",
+            error_traceback="Traceback (most recent call last): boom",  # must never surface
+            extra_labels=["human-review-required"],
+        )
+
+    assert result == {"url": "https://github.com/owner/repo/issues/202", "number": 202}
+    args, kwargs = mock_client.post.call_args
+    payload = kwargs.get("json", {})
+    labels = payload.get("labels", [])
+    assert "user-reported" in labels
+    assert "human-review-required" in labels
+    assert "audit-detected" not in labels
+
+    body = payload.get("body", "")
+    assert "User-Reported Bug" in body
+    assert "filed via /file-issue" in body
+    assert "Gemini 3.1 Pro Audit" not in body
+    assert "Traceback (most recent call last)" not in body
+
+
+@pytest.mark.asyncio
+async def test_sync_production_bug_default_source_unaffected(monkeypatch):
+    """Sanity guard: adding the user_reported shape must not change the
+    default (automated audit) issue shape or labels."""
+    monkeypatch.setenv("GITHUB_TOKEN", "dummy_token")
+    monkeypatch.setenv("GITHUB_REPO", "owner/repo")
+
+    mock_get_resp = MagicMock()
+    mock_get_resp.status_code = 200
+    mock_get_resp.json.return_value = []
+
+    mock_post_resp = MagicMock()
+    mock_post_resp.status_code = 201
+    mock_post_resp.json.return_value = {
+        "number": 203,
+        "html_url": "https://github.com/owner/repo/issues/203",
+    }
+
+    mock_client = AsyncMock()
+    mock_client.get.return_value = mock_get_resp
+    mock_client.post.return_value = mock_post_resp
+    mock_client_cls = MagicMock()
+    mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+    with patch("core.github_sync.httpx.AsyncClient", mock_client_cls):
+        await sync_production_bug_to_github_issue(
+            fingerprint="routes_generic_error",
+            title="Generic route error",
+            severity="P2",
+            subsystem="routes",
+            detection_source="runtime_exception",
+        )
+
+    args, kwargs = mock_client.post.call_args
+    payload = kwargs.get("json", {})
+    labels = payload.get("labels", [])
+    assert "audit-detected" in labels
+    assert "user-reported" not in labels
+    assert "human-review-required" not in labels
+    assert "Gemini 3.1 Pro Audit" in payload.get("body", "")
 
 
 @pytest.mark.asyncio

@@ -658,3 +658,161 @@ async def report_production_bug(
                 log_record = db_entry
 
     return log_record
+
+
+# ── User-filed bug reports (/file-issue, see #14) ──────────────────────────
+#
+# Deliberately separate from the automated report_production_bug pipeline
+# above even though it reuses the same persistence + GitHub-sync plumbing:
+# a user report has no traceback or tool transcript to triage against, must
+# never be routed there by general chat intent-matching (only the explicit,
+# higher-friction /file-issue command may call this), and always carries a
+# `human-review-required` label so the periodic triage routine leaves it
+# alone until a human clears the label.
+
+USER_BUG_TRIAGE_SYSTEM_PROMPT = (
+    "You are triaging a bug report a user filed directly through the /file-issue command "
+    "in Nexus Prime, an AI personal assistant Telegram bot. The text is the user's own "
+    "description of a problem in their own words — there is no traceback, tool log, or "
+    "conversation transcript for this event, so do not invent a technical root cause. "
+    "Given the user's report, classify it and return ONLY a JSON object with:\n"
+    "{\n"
+    '  "title": "Short descriptive bug title (max 80 chars)",\n'
+    '  "category": "One of: ui, function, data, performance, other",\n'
+    '  "subsystem": "One of: routes, expenses, email, whiteboard, reminders, ingress, general, showcase, dashboard",\n'
+    '  "priority": "One of: P0 (system unusable/data loss), P1 (major feature broken), P2 (minor issue/annoyance), P3 (cosmetic)",\n'
+    '  "summary": "One or two sentence restatement of the problem in clear, neutral terms",\n'
+    '  "fingerprint": "Deterministic alphanumeric snake_case identifier (e.g. cockpit_missing_split_icon) for deduplicating repeat reports of the same issue"\n'
+    "}"
+)
+
+
+async def _triage_user_report_with_gemini(triage_input: Dict[str, Any]) -> Dict[str, Any]:
+    from core.llm import get_judge_llm
+
+    llm = get_judge_llm()
+    ai_message = await llm.ainvoke(
+        [
+            SystemMessage(content=USER_BUG_TRIAGE_SYSTEM_PROMPT),
+            HumanMessage(
+                content=json.dumps(triage_input, ensure_ascii=False, default=str)[:4000]
+            ),
+        ]
+    )
+    raw = extract_llm_text(getattr(ai_message, "content", ""))
+    raw = re.sub(r"^```(?:json)?|```$", "", raw, flags=re.MULTILINE).strip()
+    return json.loads(raw)
+
+
+async def report_user_filed_bug(
+    user_id: int,
+    description: str,
+    thread_id: Optional[str] = None,
+    channel: str = "telegram",
+    mock_triage: Optional[Dict[str, Any]] = None,
+) -> "ProductionBugLog":
+    """
+    File a bug the user explicitly reported through the high-friction /file-issue
+    command (never invoked from general chat intent-matching — see #14). Triages
+    category + priority with an LLM from the user's own words (no fabricated
+    traceback), then reuses the production-bug persistence/GitHub-sync plumbing
+    with a `human-review-required` gate label so automated triage leaves it
+    alone until a human clears the label.
+    """
+    from datetime import datetime
+    from core.models import ProductionBugLog
+
+    text = redact_sensitive_info((description or "").strip())
+    triage_payload = {"user_report": text[:2000], "channel": channel}
+
+    if mock_triage:
+        triage_result = mock_triage
+    else:
+        try:
+            triage_result = await _triage_user_report_with_gemini(triage_payload)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[FILE-ISSUE] triage failed, falling back to heuristic: {exc}")
+            clean_hash = abs(hash(text)) % 100000
+            triage_result = {
+                "title": text[:80] or "User-reported bug",
+                "category": "other",
+                "subsystem": "general",
+                "priority": "P2",
+                "summary": text[:300],
+                "fingerprint": f"userbug_general_{clean_hash}",
+            }
+
+    fingerprint = (
+        str(triage_result.get("fingerprint") or f"userbug_{abs(hash(text)) % 100000}")
+        .lower()
+        .replace(" ", "_")
+        .strip()
+    )
+    title = str(triage_result.get("title") or text[:80] or "User-reported bug")[:120]
+    severity = str(triage_result.get("priority") or "P2").upper()
+    if severity not in {"P0", "P1", "P2", "P3"}:
+        severity = "P2"
+    subsystem = str(triage_result.get("subsystem") or "general").lower()
+    summary = redact_sensitive_info(str(triage_result.get("summary") or text))[:1000]
+
+    # Check for an existing open report with the same fingerprint (repeat reports
+    # of the same bug become a recurrence comment instead of a new issue).
+    occurrence_count = 1
+    async with async_session_factory() as session:
+        result = await session.execute(
+            select(ProductionBugLog).where(
+                ProductionBugLog.fingerprint == fingerprint,
+                ProductionBugLog.status == "open",
+            )
+        )
+        existing_log = result.scalars().first()
+        if existing_log:
+            existing_log.occurrence_count += 1
+            existing_log.updated_at = datetime.utcnow()
+            occurrence_count = existing_log.occurrence_count
+            session.add(existing_log)
+            await session.commit()
+            await session.refresh(existing_log)
+            log_record = existing_log
+        else:
+            log_record = ProductionBugLog(
+                fingerprint=fingerprint,
+                title=title,
+                severity=severity,
+                subsystem=subsystem,
+                detection_source="user_reported",
+                user_id=user_id,
+                thread_id=thread_id,
+                root_cause=summary,
+                reproduction_context=text[:500],
+                occurrence_count=1,
+                status="open",
+            )
+            session.add(log_record)
+            await session.commit()
+            await session.refresh(log_record)
+
+    gh_result = await sync_production_bug_to_github_issue(
+        fingerprint=fingerprint,
+        title=title,
+        severity=severity,
+        subsystem=subsystem,
+        detection_source="user_reported",
+        root_cause=summary,
+        reproduction_context=text[:500],
+        occurrence_count=occurrence_count,
+        extra_labels=["human-review-required"],
+    )
+
+    if gh_result and isinstance(gh_result, dict):
+        async with async_session_factory() as session:
+            db_entry = await session.get(ProductionBugLog, log_record.id)
+            if db_entry:
+                db_entry.github_issue_url = gh_result.get("url")
+                db_entry.github_issue_number = gh_result.get("number")
+                session.add(db_entry)
+                await session.commit()
+                await session.refresh(db_entry)
+                log_record = db_entry
+
+    return log_record

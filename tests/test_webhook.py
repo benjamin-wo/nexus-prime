@@ -116,3 +116,83 @@ def test_webhook_jobs_command():
     response = client.post("/api/webhook", json=payload, headers=_webhook_headers())
     assert response.status_code == 200
     assert "jobs" in response.json()
+
+
+@pytest.mark.asyncio
+async def test_file_issue_command_requires_description():
+    """#14: bare /file-issue (no description) must not file anything -- just usage help."""
+    from app.ingress import TelegramIngress
+
+    res = await TelegramIngress().handle_slash_command("/file-issue", user_id=9001)
+    assert res is not None
+    assert res["status"] == "error"
+    assert "Usage" in res["text"]
+
+
+@pytest.mark.asyncio
+async def test_file_issue_command_files_report_and_links_issue(monkeypatch):
+    """#14: /file-issue <description> files through core.audit.report_user_filed_bug
+    and replies with the filed issue link -- never through the LangGraph orchestrator."""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    import core.audit as audit_mod
+    from app.ingress import TelegramIngress
+
+    fake_log = SimpleNamespace(
+        github_issue_url="https://github.com/owner/repo/issues/303",
+        github_issue_number=303,
+        title="Split icon missing on cockpit",
+        severity="P2",
+        subsystem="showcase",
+    )
+    mock_report = AsyncMock(return_value=fake_log)
+    monkeypatch.setattr(audit_mod, "report_user_filed_bug", mock_report)
+
+    res = await TelegramIngress().handle_slash_command(
+        "/file-issue there is no icon for transaction splitting beside the edit icon",
+        user_id=9002,
+    )
+    assert res is not None
+    assert res["status"] == "ok"
+    assert "https://github.com/owner/repo/issues/303" in res["text"]
+    assert "#303" in res["text"]
+
+    mock_report.assert_called_once()
+    _, kwargs = mock_report.call_args
+    assert kwargs["user_id"] == 9002
+    assert "no icon for transaction splitting" in kwargs["description"]
+    assert kwargs["channel"] == "telegram"
+
+
+@pytest.mark.asyncio
+async def test_file_issue_command_underscore_alias_and_unconfigured_github(monkeypatch):
+    """The /file_issue alias works, and an unconfigured GitHub sync says so
+    honestly instead of implying a public issue was filed."""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    import core.audit as audit_mod
+    from app.ingress import TelegramIngress
+
+    fake_log = SimpleNamespace(
+        github_issue_url=None,
+        github_issue_number=None,
+        title="Cockpit bug",
+        severity="P2",
+        subsystem="general",
+    )
+    monkeypatch.setattr(audit_mod, "report_user_filed_bug", AsyncMock(return_value=fake_log))
+
+    res = await TelegramIngress().handle_slash_command("/file_issue something is off", user_id=9003)
+    assert res is not None
+    assert res["status"] == "ok"
+    assert "isn't configured" in res["text"]
+
+
+def test_bug_filing_not_wired_into_general_chat_routing():
+    """#14: filing a bug must only be reachable via the explicit /file-issue
+    command -- never through general chat intent-matching (CAPABILITY_REGISTRY
+    keyword routing or the LLM planner both dispatch off this same registry)."""
+    from orchestrator.router import CAPABILITY_REGISTRY
+
+    assert "bug_logging" not in CAPABILITY_REGISTRY
+    assert "file_issue" not in CAPABILITY_REGISTRY

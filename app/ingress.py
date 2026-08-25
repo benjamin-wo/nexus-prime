@@ -210,6 +210,7 @@ async def setup_telegram_bot_commands() -> bool:
         {"command": "disconnect_email", "description": "🔌 Remove Gmail or Outlook access"},
         {"command": "jobs", "description": "⏰ Manage scheduled background alerts"},
         {"command": "timezone", "description": "📍 Check or update your current timezone"},
+        {"command": "file_issue", "description": "🐞 Report a bug (files a reviewed issue)"},
         {"command": "help", "description": "💡 View tips, shortcuts & commands guide"},
     ]
     
@@ -803,6 +804,45 @@ class TelegramIngress:
                     table_md += f'| {idx} | `#{row["tag"]}` | {row["count"]} | *"{row["sample_prompt"]}"* |\n'
             return {"status": "ok", "leaderboard": leaderboard, "text": table_md}
 
+        if text.startswith(("/file-issue", "/file_issue")):
+            # Deliberately high-friction: only this explicit command files a real
+            # GitHub issue, never general chat intent-matching (see #14). No HITL
+            # confirmation step either — the dedicated command *is* the friction.
+            parts = text.split(maxsplit=1)
+            description = parts[1].strip() if len(parts) > 1 else ""
+            if not description:
+                return {
+                    "status": "error",
+                    "text": (
+                        "🐞 Usage: `/file-issue <what's wrong>`\n\n"
+                        "Example: `/file-issue there's no split icon next to edit on the cockpit`\n\n"
+                        "This files a real tracked issue — a human reviews it before anyone acts on it."
+                    ),
+                }
+
+            from core.audit import report_user_filed_bug
+
+            log_entry = await report_user_filed_bug(
+                user_id=user_id,
+                description=description,
+                thread_id=str(user_id),
+                channel="telegram",
+            )
+            if log_entry.github_issue_url:
+                reply_text = (
+                    f"🐞 Filed **#{log_entry.github_issue_number}: {log_entry.title}**\n"
+                    f"{log_entry.github_issue_url}\n"
+                    f"Priority {log_entry.severity} · area {log_entry.subsystem}. "
+                    "Flagged for human review before anyone acts on it — thanks for flagging it!"
+                )
+            else:
+                reply_text = (
+                    f"🐞 Got it — logged **{log_entry.title}** "
+                    f"(priority {log_entry.severity} · area {log_entry.subsystem}) internally.\n"
+                    "GitHub sync isn't configured on this deployment, so no public issue was filed."
+                )
+            return {"status": "ok", "text": reply_text}
+
         if text.startswith("/groceries"):
             from capabilities.recipes.tools import get_user_grocery_list
 
@@ -908,6 +948,8 @@ class TelegramIngress:
                 "• Type: *'Add oat milk and eggs to grocery list'*\n"
                 "• `/groceries` — View shopping list\n"
                 "• Ask: *'Bus timings at 08057'* or *'Route to Orchard'*\n\n"
+                "🐞 **Bugs & Feedback**\n"
+                "• `/file-issue <what's wrong>` — Report a bug; files a tracked issue for review\n\n"
                 "🚀 **Web Cockpit & Analytics**\n"
                 "• `/dashboard` — Open your personal visual cockpit\n\n"
                 f"{dash_url}"

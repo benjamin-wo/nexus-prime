@@ -185,7 +185,7 @@ class ProductionBugLog(SQLModel, table=True):
     title: str = Field(index=True)
     severity: str = Field(default="P2", index=True)  # P0, P1, P2, P3
     subsystem: str = Field(default="general", index=True)
-    detection_source: str = Field(default="conversation_audit", index=True)  # conversation_audit | runtime_exception | quality_audit
+    detection_source: str = Field(default="conversation_audit", index=True)  # conversation_audit | runtime_exception | quality_audit | user_reported
     user_id: Optional[int] = Field(default=None, index=True)
     thread_id: Optional[str] = Field(default=None, index=True)
     root_cause: Optional[str] = Field(default=None)
