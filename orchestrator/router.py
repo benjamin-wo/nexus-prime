@@ -857,6 +857,9 @@ class RecipePlugin:
         return PluginOutput(message=reply, state_update={"active_domain": self.name})
 
 
+URL_PATTERN = re.compile(r"https?://\S+")
+
+
 class GeneralPlugin:
     """General capability plugin: handles factual queries and casual conversation with DeepSeek v4 Flash + Tavily."""
 
@@ -968,23 +971,29 @@ class GeneralPlugin:
                 state_update={"active_domain": self.name},
             )
 
-        try:
-            llm = get_agent_llm(complexity=ThinkingLevel.MEDIUM, temperature=0.7)
-            llm_with_tools = llm.bind_tools(available_tools)
-            ai_message = await llm_with_tools.ainvoke(history)
+        MAX_TOOL_ROUNDS = 3
 
-            MAX_TOOL_ROUNDS = 3
+        async def _run_tool_loop(hist: list) -> tuple[str, bool]:
+            """Runs the bounded tool-call loop against `hist` in place and
+            returns (final_text, link_tool_used). link_tool_used is True only
+            if search_web or fetch_url actually ran this pass, so a raw URL
+            in final_text with link_tool_used=False is provably unverified
+            rather than sourced from a real search/fetch."""
+            link_tool_used = False
+            ai_message = await llm_with_tools.ainvoke(hist)
             for _round in range(MAX_TOOL_ROUNDS):
                 tool_calls = getattr(ai_message, "tool_calls", None) or []
                 if not tool_calls:
                     break
-                history.append(ai_message)
+                hist.append(ai_message)
                 for call in tool_calls:
                     call_name = str(call.get("name") or "")
                     call_args = dict(call.get("args") or {})
                     if call_name == "query_transactions":
                         # Identity guard: never trust a model-supplied user_id.
                         call_args["user_id"] = int(user_id or 0)
+                    if call_name in ("search_web", "fetch_url"):
+                        link_tool_used = True
                     tool_obj = next((t for t in available_tools if t.name == call_name), None)
                     if tool_obj is None:
                         observation: Any = f"[{call_name}] Unknown tool."
@@ -994,29 +1003,68 @@ class GeneralPlugin:
                         except Exception as tool_exc:  # noqa: BLE001
                             print(f"[GENERAL] tool {call_name} failed: {tool_exc}")
                             observation = f"[{call_name}] failed: {tool_exc}"
-                    history.append(
+                    hist.append(
                         ToolMessage(
                             content=str(observation),
                             tool_call_id=str(call.get("id") or call_name),
                         )
                     )
-                ai_message = await llm_with_tools.ainvoke(history)
+                ai_message = await llm_with_tools.ainvoke(hist)
 
-            content = extract_llm_text(getattr(ai_message, "content", "")).strip()
-            if not content:
-                if getattr(ai_message, "tool_calls", None):
-                    history.append(ai_message)
-                    for call in ai_message.tool_calls:
-                        history.append(
-                            ToolMessage(
-                                content="[tool] Round budget exhausted; answer from what you have.",
-                                tool_call_id=str(call.get("id") or call.get("name") or ""),
-                            )
+            text = extract_llm_text(getattr(ai_message, "content", "")).strip()
+            if not text and getattr(ai_message, "tool_calls", None):
+                hist.append(ai_message)
+                for call in ai_message.tool_calls:
+                    hist.append(
+                        ToolMessage(
+                            content="[tool] Round budget exhausted; answer from what you have.",
+                            tool_call_id=str(call.get("id") or call.get("name") or ""),
                         )
-                    final_message = await llm.ainvoke(history)
-                    content = extract_llm_text(getattr(final_message, "content", "")).strip()
-                if not content:
-                    content = self._generate_rule_based_response(last_text)
+                    )
+                final_message = await llm.ainvoke(hist)
+                text = extract_llm_text(getattr(final_message, "content", "")).strip()
+            return text, link_tool_used
+
+        try:
+            llm = get_agent_llm(complexity=ThinkingLevel.MEDIUM, temperature=0.7)
+            llm_with_tools = llm.bind_tools(available_tools)
+            content, link_tool_used = await _run_tool_loop(history)
+
+            # Regression (#42, #43): asked directly for a link, the model
+            # fabricated one (a plausible-looking Instagram reel URL; dead
+            # Foodadvisor/Burpple/Tripadvisor links) instead of calling
+            # search_web/fetch_url -- confirmed against real production logs
+            # with both tools already available. A raw http(s) URL in the
+            # final reply that this pass never backed with an actual
+            # search_web/fetch_url call is unverifiable and very likely
+            # invented, so nudge for one corrective retry rather than ship it.
+            if content and URL_PATTERN.search(content) and not link_tool_used:
+                history.append(
+                    SystemMessage(
+                        content=(
+                            "Your draft reply included a link, but you did not call "
+                            "search_web or fetch_url this turn -- that link is "
+                            "unverified and must not be sent as-is. Call search_web "
+                            "or fetch_url now to find a real link, or rewrite your "
+                            "reply without inventing one."
+                        )
+                    )
+                )
+                retried_content, link_tool_used = await _run_tool_loop(history)
+                if retried_content:
+                    content = retried_content
+                if URL_PATTERN.search(content) and not link_tool_used:
+                    # Still no real tool call backing the link after one nudge
+                    # -- strip it rather than ship a link that's provably
+                    # unverified.
+                    content = URL_PATTERN.sub("", content).strip()
+                    content += (
+                        "\n\n(I don't have a verified link for that right now "
+                        "-- want me to search for one?)"
+                    )
+
+            if not content:
+                content = self._generate_rule_based_response(last_text)
         except Exception as exc:  # noqa: BLE001 - never let LLM errors kill the webhook
             print(f"[GENERAL] LLM/tool loop failed, using fallback: {exc}")
             content = self._generate_rule_based_response(last_text)
