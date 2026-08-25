@@ -22,6 +22,11 @@ allowed_tags:
   - web
   - knowledge
   - chat
+  - link
+  - url
+  - fetch
+  - extract
+  - webpage
   - life
   - home
   - code

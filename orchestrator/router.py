@@ -955,9 +955,9 @@ class GeneralPlugin:
         # Bounded tool loop: the model itself decides when to search the web or read
         # the transaction ledger. Import lazily: tests monkeypatch
         # capabilities.general.tools.search_web, which requires late binding.
-        from capabilities.general.tools import query_transactions, search_web
+        from capabilities.general.tools import fetch_url, query_transactions, search_web
 
-        available_tools = [search_web, query_transactions]
+        available_tools = [search_web, fetch_url, query_transactions]
 
         # Tests and local runs use placeholder keys; skip network call if no provider is configured.
         has_key = bool(settings.active_gemini_api_key or (settings.deepseek_api_key and settings.deepseek_api_key != "test_deepseek_key"))

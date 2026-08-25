@@ -1,9 +1,11 @@
 id: general
 description: >-
   Answer general questions, facts, news, weather, calculations, translations
-  and casual conversation, with web search when useful. Ask like "what is the
-  capital of France?", "who is Albert Einstein", "search the web for the new
-  phone release date", or "how am I doing".
+  and casual conversation, with web search when useful, and can read a
+  specific link/URL the user shares to answer questions about that page. Ask
+  like "what is the capital of France?", "who is Albert Einstein", "search
+  the web for the new phone release date", "how am I doing", or "what does
+  this link say: <url>".
 input_schema:
   type: object
   properties:
@@ -19,7 +21,7 @@ output_schema:
       description: Plain-language answer.
   required: [answer]
 side_effect: read
-tags: [web, knowledge, chat]
+tags: [web, knowledge, chat, link, url, fetch, extract, webpage]
 managers: [life]
 preconditions: []
 cost_hint: medium
