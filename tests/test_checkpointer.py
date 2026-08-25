@@ -1,7 +1,7 @@
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from orchestrator.checkpointer import prune_and_summarize_messages
+from orchestrator.checkpointer import prune_and_summarize_messages, recent_turns
 
 
 def _long_conversation(fact: str, turns: int = 19) -> list:
@@ -77,3 +77,49 @@ async def test_general_plugin_carries_the_summary_into_llm_history(monkeypatch):
     history_text = "\n".join(str(getattr(m, "content", "")) for m in history)
     assert "Biscuit" in history_text
     assert output.message.content == "here's what I've got"
+
+
+# --- recent_turns (#35) -------------------------------------------------
+
+def test_recent_turns_excludes_the_current_message_by_default():
+    """The current message is the plugin's own primary input, extracted
+    separately -- including it again here would just duplicate it."""
+    messages = [
+        HumanMessage(content="spent $15 on lunch"),
+        AIMessage(content="Logged $15 for lunch."),
+        HumanMessage(content="actually make that $20"),
+    ]
+    context = recent_turns(messages)
+    assert "spent $15 on lunch" in context
+    assert "Logged $15 for lunch" in context
+    assert "actually make that $20" not in context
+
+
+def test_recent_turns_caps_at_n_pairs():
+    messages = []
+    for i in range(10):
+        messages.append(HumanMessage(content=f"user turn {i}"))
+        messages.append(AIMessage(content=f"reply {i}"))
+    messages.append(HumanMessage(content="current message"))
+
+    context = recent_turns(messages, n=2)
+    assert "user turn 9" in context
+    assert "reply 9" in context
+    assert "user turn 8" in context
+    assert "user turn 7" not in context  # older than the last 2 pairs
+
+
+def test_recent_turns_empty_for_first_message_in_conversation():
+    assert recent_turns([HumanMessage(content="hello")]) == ""
+    assert recent_turns([]) == ""
+
+
+def test_recent_turns_formats_roles_distinctly():
+    messages = [
+        HumanMessage(content="what's on my Bali board"),
+        AIMessage(content="Villa Samatha, booked."),
+        HumanMessage(content="current"),
+    ]
+    context = recent_turns(messages)
+    assert "User: what's on my Bali board" in context
+    assert "Assistant: Villa Samatha, booked." in context

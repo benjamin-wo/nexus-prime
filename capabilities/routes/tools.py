@@ -85,11 +85,19 @@ async def plan_route(origin: str, destination: str, mode: str = "transit") -> Di
 
 
 @tool
-async def extract_route_request(user_text: str) -> Dict[str, Any]:
+async def extract_route_request(user_text: str, recent_context: str = "") -> Dict[str, Any]:
     """
     Extract origin, destination, and travel mode from a natural-language route request.
     Returns {"origin", "destination", "mode"} where mode is one of
     transit/driving/walking/bicycling.
+
+    recent_context (#35): the last few conversation turns, so a correction
+    like "actually from Bugis instead" can be resolved against the origin
+    named a turn earlier. This is purely additive grounding for the LLM
+    extraction prompt — it does NOT replace RoutePlugin's own last_route /
+    is_bare_place_fragment carry-over logic (router.py), which stays the
+    primary mechanism for continuing a route across turns. Only reaches the
+    LLM path; the regex fallback below is untouched.
     """
     def _regex_route(text: str) -> Dict[str, Any]:
         mode = "transit"
@@ -120,10 +128,21 @@ async def extract_route_request(user_text: str) -> Dict[str, Any]:
                     content=(
                         "Extract a route request from the user's text. Reply with ONLY a JSON object "
                         '{"origin": string, "destination": string, "mode": "transit"|"driving"|"walking"|"bicycling"}. '
-                        "If a place is missing, use null for that field. Default mode: transit."
+                        "If a place is missing, use null for that field. Default mode: transit. "
+                        "If recent conversation is provided, use it ONLY to resolve a correction to a "
+                        "place already named in this exchange (e.g. 'actually from Bugis instead') — "
+                        "never invent an origin or destination that isn't referenced in the current "
+                        "message itself; when in doubt, leave that field null and let the fallback "
+                        "carry-over logic handle it."
                     )
                 ),
-                HumanMessage(content=user_text),
+                HumanMessage(
+                    content=(
+                        f"Recent conversation:\n{recent_context}\n\n---\n\n{user_text}"
+                        if recent_context
+                        else user_text
+                    )
+                ),
             ]
         )
         raw = str(getattr(ai_message, "content", "") or "").strip()

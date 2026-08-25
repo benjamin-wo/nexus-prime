@@ -211,12 +211,17 @@ def _regex_parse_reminder(text: str, default_tz: str = "Asia/Singapore") -> Opti
 
 
 @tool
-async def parse_reminder_request(user_text: str) -> Dict[str, Any]:
+async def parse_reminder_request(user_text: str, recent_context: str = "") -> Dict[str, Any]:
     """
     Parse a natural-language reminder request into an action, schedule, and message.
     Returns {"action": "create"|"list"|"delete", "reminder_type": "once"|"recurring",
              "delay_seconds": number|null, "message": string, "cron": string|null,
              "timezone": string, "job_id": number|null}.
+
+    recent_context (#35): the last few conversation turns, so a follow-up
+    correction ("actually make that every day instead") can be resolved
+    against the reminder just discussed. Only reaches the LLM path — the
+    deterministic regex fast path above is untouched.
     """
     # 1. Deterministic fast path
     regex_res = _regex_parse_reminder(user_text)
@@ -254,10 +259,20 @@ async def parse_reminder_request(user_text: str) -> Dict[str, Any]:
                         "   - NEVER invent a recurring schedule for a one-time request like 'remind me at 10am to text X' — that must be 'once'\n"
                         "3. LISTING: action = 'list'\n"
                         "4. DELETING (e.g. 'delete reminder 3'): action = 'delete', job_id = 3\n"
-                        "Default timezone: Asia/Singapore."
+                        "Default timezone: Asia/Singapore.\n"
+                        "If recent conversation is provided, use it ONLY to resolve a correction or "
+                        "continuation of a reminder already being set up (e.g. 'actually every day') — "
+                        "the current message is always the request to parse; never invent a reminder "
+                        "from unrelated earlier conversation."
                     )
                 ),
-                HumanMessage(content=user_text[:2000]),
+                HumanMessage(
+                    content=(
+                        f"Recent conversation:\n{recent_context}\n\n---\n\n{user_text[:2000]}"
+                        if recent_context
+                        else user_text[:2000]
+                    )
+                ),
             ]
         )
         raw = str(getattr(ai_message, "content", "") or "").strip()

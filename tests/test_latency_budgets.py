@@ -39,7 +39,7 @@ async def test_whiteboard_planning_intake_never_exceeds_webhook_budget(monkeypat
     SCALE = 100.0  # real: comprehend ~30s + research ~15s vs 45s webhook ceiling
     monkeypatch.setattr(router_module, "PLANNING_INTAKE_TIMEOUT_SECONDS", 35.0 / SCALE)
 
-    async def slow_comprehend(text, board_context=None):
+    async def slow_comprehend(text, board_context=None, recent_context=""):
         # Stands in for comprehend_request's own ~30s ceiling PLUS a
         # subsequent research pass's ~15s -- individually each fits its own
         # bound, but their sum (45s) exceeds PLANNING_INTAKE_TIMEOUT_SECONDS

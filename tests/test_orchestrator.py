@@ -255,6 +255,143 @@ async def test_email_plugin_summary_prompt_carries_the_user_question(monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_email_plugin_threads_recent_conversation_into_summary_prompt(monkeypatch):
+    """Regression (#35): EmailPlugin used to read only messages[-1], so a
+    reactive follow-up ("what about the one from DBS instead") had nothing
+    to resolve against. The recent conversation must now reach the
+    summarizer's prompt alongside the current question."""
+    from unittest.mock import AsyncMock
+    from langchain_core.messages import AIMessage
+    import orchestrator.router as router_module
+    import capabilities.email.tools as email_tools
+
+    async def fake_search(**kwargs):
+        return [{"sender": "DBS <alerts@dbs.com>", "subject": "Statement ready", "date": "2026-08-24T10:00:00Z"}]
+
+    monkeypatch.setattr(router_module, "get_user_gmail_token", AsyncMock(return_value="mock_token"))
+    monkeypatch.setattr(router_module, "get_user_outlook_token", AsyncMock(return_value=None))
+    monkeypatch.setattr(email_tools.search_email_messages, "coroutine", fake_search)
+    monkeypatch.setattr(router_module.settings, "gemini_api_key", "fake-key-for-test")
+
+    captured: dict = {}
+
+    class _CapturingLLM:
+        async def ainvoke(self, messages):
+            captured["messages"] = messages
+            return AIMessage(content="Here's the DBS statement email.")
+
+    monkeypatch.setattr(router_module, "get_agent_llm", lambda *a, **k: _CapturingLLM())
+
+    out = await EmailPlugin().execute({
+        "messages": [
+            HumanMessage(content="did I get anything from the bank recently?"),
+            AIMessage(content="I found a couple of bank emails — want me to check a specific one?"),
+            HumanMessage(content="what about the one from DBS instead"),
+        ],
+        "user_id": 4002,
+        "current_timezone": "UTC",
+        "active_domain": None,
+    })
+
+    human_prompt = str(captured["messages"][1].content)
+    assert "did I get anything from the bank recently" in human_prompt
+    assert "I found a couple of bank emails" in human_prompt
+    assert "Here's the DBS statement email" in str(out.message.content)
+
+
+@pytest.mark.asyncio
+async def test_route_plugin_threads_recent_conversation_into_extraction(monkeypatch):
+    """Regression (#35): RoutePlugin's extract_route_request call used to
+    read only messages[-1], so a correction like "actually from Bugis
+    instead" had no prior route to resolve against. recent_turns(messages)
+    must now reach the extraction prompt -- this must NOT touch the
+    deterministic bus-arrival path (handle_bus_query/pending_bus_stops),
+    which stays untouched."""
+    import orchestrator.router as router_module
+    from orchestrator.router import RoutePlugin
+    from langchain_core.messages import AIMessage
+
+    captured: dict = {}
+
+    async def fake_extract(**kwargs):
+        captured.update(kwargs)
+        return {"origin": "Bugis", "destination": "Changi Airport", "mode": "transit"}
+
+    async def fake_journey(origin, destination):
+        return {"error": "no live feed"}
+
+    async def fake_plan_route(**kwargs):
+        return {
+            "origin": kwargs["origin"],
+            "destination": kwargs["destination"],
+            "mode": kwargs["mode"],
+            "eta_minutes": 40,
+            "distance_km": 20,
+            "steps": ["Take the MRT"],
+        }
+
+    monkeypatch.setattr(router_module.extract_route_request, "coroutine", fake_extract)
+    monkeypatch.setattr(router_module, "plan_transit_journey", fake_journey)
+    monkeypatch.setattr(router_module.plan_route, "coroutine", fake_plan_route)
+
+    out = await RoutePlugin().execute({
+        "messages": [
+            HumanMessage(content="route from Raffles Place to Changi Airport"),
+            AIMessage(content="🚇 *Raffles Place* → *Changi Airport*: ~30 min (18 km)"),
+            HumanMessage(content="actually from Bugis instead"),
+        ],
+        "user_id": 4006,
+        "current_timezone": "UTC",
+        "active_domain": None,
+    })
+
+    assert "recent_context" in captured
+    assert "route from Raffles Place to Changi Airport" in captured["recent_context"]
+    assert "Bugis" in str(out.message.content)
+
+
+@pytest.mark.asyncio
+async def test_recipe_plugin_threads_recent_conversation_into_extraction(monkeypatch):
+    """Regression (#35): RecipePlugin used to read only messages[-1], so a
+    correction like "actually use 2 eggs, not 3" had no recipe to resolve
+    against. recent_turns(messages) must now reach
+    parse_recipe_and_extract_ingredients."""
+    import orchestrator.router as router_module
+    from orchestrator.router import RecipePlugin
+    from langchain_core.messages import AIMessage
+
+    captured: dict = {}
+
+    async def fake_extract(**kwargs):
+        captured.update(kwargs)
+        return {
+            "title": "Omelette",
+            "ingredients": [{"name": "Eggs", "quantity": "2", "category": "Dairy"}],
+        }
+
+    async def fake_sync(**kwargs):
+        return [1]
+
+    monkeypatch.setattr(router_module.parse_recipe_and_extract_ingredients, "coroutine", fake_extract)
+    monkeypatch.setattr(router_module.sync_to_grocery_list, "coroutine", fake_sync)
+
+    out = await RecipePlugin().execute({
+        "messages": [
+            HumanMessage(content="3 eggs, salt, butter — whisk and fry"),
+            AIMessage(content="📖 *Extracted Recipe* — added 3 items to your grocery list:"),
+            HumanMessage(content="actually make it 2 eggs, not 3"),
+        ],
+        "user_id": 4004,
+        "current_timezone": "UTC",
+        "active_domain": None,
+    })
+
+    assert "recent_context" in captured
+    assert "3 eggs, salt, butter" in captured["recent_context"]
+    assert "Omelette" in str(out.message.content)
+
+
+@pytest.mark.asyncio
 async def test_email_plugin_scopes_financial_sweep_to_named_provider(monkeypatch):
     """Regression: "look for transactions from my outlook ... log them as expenses"
     used to search ALL connected providers merged together, silently ignoring the

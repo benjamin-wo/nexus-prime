@@ -612,6 +612,42 @@ def test_planner_validate_brief():
 
 
 @pytest.mark.asyncio
+async def test_planning_intake_threads_recent_conversation_into_comprehend_request(monkeypatch):
+    """Regression (#35): WhiteboardPlugin used to read only messages[-1],
+    so a reactive follow-up ("no budget but thinking of...") had no way to
+    resolve against what was actually just discussed. _planning_intake must
+    now pass the recent conversation through to comprehend_request."""
+    from capabilities.whiteboard import planner as wb_planner
+    from orchestrator.router import WhiteboardPlugin
+    from orchestrator.state import AssistantState
+    from langchain_core.messages import AIMessage, HumanMessage
+
+    captured = {}
+
+    async def fake_comprehend(text, board_context=None, recent_context=""):
+        captured["recent_context"] = recent_context
+        return {"action": "none"}
+
+    monkeypatch.setattr(wb_planner, "comprehend_request", fake_comprehend)
+
+    plugin = WhiteboardPlugin()
+    state = AssistantState(
+        messages=[
+            HumanMessage(content="thinking of a bachelor party in Bali sometime in September"),
+            AIMessage(content="Sounds fun! Want me to start a board for it?"),
+            HumanMessage(content="no budget yet but let's figure out venues"),
+        ],
+        user_id=7901,
+    )
+    await plugin.execute(state)
+
+    assert "bachelor party in Bali" in captured["recent_context"]
+    assert "Want me to start a board" in captured["recent_context"]
+    # The current message is the primary `text` argument, not duplicated here.
+    assert "no budget yet but let's figure out venues" not in captured["recent_context"]
+
+
+@pytest.mark.asyncio
 async def test_planning_intake_creates_board_with_entities(monkeypatch):
     """A freeform planning dump becomes one board with status-badged cards."""
     from capabilities.whiteboard import planner as wb_planner
@@ -620,7 +656,7 @@ async def test_planning_intake_creates_board_with_entities(monkeypatch):
     from orchestrator.state import AssistantState
     from langchain_core.messages import HumanMessage
 
-    async def fake_comprehend(text, board_context=None):
+    async def fake_comprehend(text, board_context=None, recent_context=""):
         return {
             "action": "create_board",
             "board_title": "Bali Bachelor Party",
@@ -691,7 +727,7 @@ async def test_planning_intake_augments_recent_board_and_researches(monkeypatch)
     )
     proj_id = create_res["project"]["id"]
 
-    async def fake_comprehend(text, board_context=None):
+    async def fake_comprehend(text, board_context=None, recent_context=""):
         assert board_context is not None
         assert board_context["id"] == proj_id
         return {
@@ -786,7 +822,7 @@ async def test_whiteboard_feedback_message_reaches_planning_intake_not_which_boa
     from orchestrator.state import AssistantState
     from langchain_core.messages import HumanMessage
 
-    async def fake_comprehend(text, board_context=None):
+    async def fake_comprehend(text, board_context=None, recent_context=""):
         return {"action": "none"}
 
     monkeypatch.setattr(wb_planner, "comprehend_request", fake_comprehend)
@@ -830,7 +866,7 @@ async def test_planning_intake_fails_fast_instead_of_hanging_past_webhook_timeou
     # asyncio.wait_for cancellation, not a mock of it.
     monkeypatch.setattr(router_module, "PLANNING_INTAKE_TIMEOUT_SECONDS", 0.05)
 
-    async def slow_comprehend(text, board_context=None):
+    async def slow_comprehend(text, board_context=None, recent_context=""):
         await asyncio.sleep(0.3)  # well past the 0.05s bound above
         return {"action": "none"}  # never reached
 

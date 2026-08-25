@@ -1,5 +1,5 @@
 from typing import List, Tuple
-from langchain_core.messages import BaseMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langgraph.checkpoint.memory import MemorySaver
 from core.config import settings
 
@@ -96,3 +96,31 @@ def prune_and_summarize_messages(
     summary_str = "Prior Conversation Summary:\n" + "\n".join(summary_lines[:15])
     system_note = SystemMessage(content=f"[SYSTEM: {summary_str}]")
     return [system_note] + recent_messages, summary_str
+
+
+def recent_turns(messages: List[BaseMessage], n: int = 3, exclude_last: bool = True) -> str:
+    """Compact "User: ...\\nAssistant: ..." formatting of the last `n` human/AI
+    turn pairs, for threading into a domain plugin's own LLM extraction call
+    as follow-up context (#35) -- without changing what triggers that call in
+    the first place. Every plugin's deterministic fast-path/regex checks keep
+    operating on the single latest message exactly as before; this is purely
+    additional context for the LLM fallback path, so a reactive follow-up
+    ("make that $20 instead", "and that one too") can be resolved against
+    what was actually just discussed instead of landing as an isolated,
+    context-free request.
+
+    Excludes the current/latest message by default, since callers already
+    extract that separately as their primary input -- passing it again here
+    would just duplicate it in the prompt. Returns "" for an empty/single-
+    message history, so callers can safely omit an empty context block.
+    """
+    tail = messages[:-1] if exclude_last and messages else list(messages)
+    tail = tail[-(n * 2):]
+    lines = []
+    for m in tail:
+        if isinstance(m, HumanMessage):
+            content = m.content if isinstance(m.content, str) else str(m.content)
+            lines.append(f"User: {content[:300]}")
+        elif isinstance(m, AIMessage):
+            lines.append(f"Assistant: {str(m.content)[:300]}")
+    return "\n".join(lines)

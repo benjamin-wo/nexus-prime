@@ -926,3 +926,46 @@ async def test_expense_plugin_photo_falls_back_to_caption_expense(monkeypatch):
     # _finalize_expense returns a plain string, not an AIMessage.
     assert "10.00" in str(out.message)
     assert "Parking" in str(out.message)
+
+
+@pytest.mark.asyncio
+async def test_expense_plugin_threads_recent_conversation_into_text_extraction(monkeypatch):
+    """#35: a correction like "actually make that $20" only makes sense with
+    the prior turn in view. ExpensePlugin's main text-extraction call site
+    must pass recent_turns(messages) through to extract_expense_from_text so
+    the LLM can resolve the correction instead of guessing from "actually
+    make that $20" alone."""
+    import orchestrator.router as router_module
+    from orchestrator.router import ExpensePlugin
+    from langchain_core.messages import AIMessage, HumanMessage
+
+    captured = {}
+
+    async def fake_text_extract(**kwargs):
+        captured.update(kwargs)
+        return {
+            "amount": 20.0,
+            "currency": "USD",
+            "merchant": "Lunch",
+            "category": "Food",
+            "date_iso": "",
+            "confidence": 0.9,
+            "needs_clarification": False,
+        }
+
+    monkeypatch.setattr(router_module.extract_expense_from_text, "coroutine", fake_text_extract)
+
+    out = await ExpensePlugin().execute({
+        "messages": [
+            HumanMessage(content="spent $15 on lunch"),
+            AIMessage(content="Logged $15.00 for Lunch."),
+            HumanMessage(content="actually make that $20 instead"),
+        ],
+        "user_id": 4003,
+        "current_timezone": "UTC",
+        "active_domain": None,
+    })
+
+    assert "recent_context" in captured
+    assert "spent $15 on lunch" in captured["recent_context"]
+    assert "20.00" in str(out.message)

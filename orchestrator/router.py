@@ -201,12 +201,18 @@ class EmailPlugin:
         # literal "latest email" list, so latest is the DEFAULT for any email
         # request without an explicit financial intent; the keyword sweep runs
         # only for receipt/bill/expense/bank asks.
+        from orchestrator.checkpointer import recent_turns
+
+        recent_context = recent_turns(messages)
+
         if is_latest_email_request(last_text) or not is_financial_email_request(last_text):
             latest_results = await search_email_messages.ainvoke(
                 {"user_id": user_id, "latest": True, "provider": requested_provider_scope}
             )
             reply = AIMessage(
-                content=await self._summarize_email_results(latest_results, latest=True, user_question=last_text)
+                content=await self._summarize_email_results(
+                    latest_results, latest=True, user_question=last_text, recent_context=recent_context
+                )
             )
             return PluginOutput(
                 message=reply,
@@ -250,15 +256,27 @@ class EmailPlugin:
                 state_update={"active_domain": self.name},
             )
 
-        reply = AIMessage(content=await self._summarize_email_results(results, user_question=last_text))
+        reply = AIMessage(
+            content=await self._summarize_email_results(
+                results, user_question=last_text, recent_context=recent_context
+            )
+        )
         return PluginOutput(message=reply, state_update={"active_domain": self.name})
 
     @staticmethod
     async def _summarize_email_results(
-        results: List[Dict[str, Any]], latest: bool = False, user_question: str = ""
+        results: List[Dict[str, Any]],
+        latest: bool = False,
+        user_question: str = "",
+        recent_context: str = "",
     ) -> str:
         """Answer the user's actual question from fetched emails, or fall back to
-        a general summary for generic asks ("what's new", "check my latest email")."""
+        a general summary for generic asks ("what's new", "check my latest email").
+
+        recent_context (#35): the last few conversation turns, so a reactive
+        follow-up ("what about the one from DBS instead?") can be resolved
+        against what was just discussed rather than landing as an isolated
+        request. Purely additional grounding; never overrides user_question."""
         if not results:
             if latest:
                 return "📬 I couldn't find any emails in your mailbox right now."
@@ -296,6 +314,14 @@ class EmailPlugin:
                     "what each message is about, and flag anything that looks like a bill, "
                     "receipt, or expense."
                 )
+            human_parts = [f"Emails:\n{emails_text}"]
+            if recent_context:
+                human_parts.insert(
+                    0,
+                    "Recent conversation, for resolving a reactive follow-up like "
+                    "'what about the one from DBS instead' -- the user's question "
+                    f"above takes priority:\n{recent_context}",
+                )
             ai_message = await llm.ainvoke(
                 [
                     SystemMessage(
@@ -309,7 +335,7 @@ class EmailPlugin:
                             "making one up. Do not mention that you are a subagent."
                         )
                     ),
-                    HumanMessage(content=f"Emails:\n{emails_text}"),
+                    HumanMessage(content="\n\n---\n\n".join(human_parts)),
                 ]
             )
             summary = str(getattr(ai_message, "content", "") or "").strip()
@@ -577,7 +603,11 @@ class ExpensePlugin:
                 state_update={"active_domain": self.name},
             )
 
-        extracted = await extract_expense_from_text.ainvoke({"user_text": last_text})
+        from orchestrator.checkpointer import recent_turns
+
+        extracted = await extract_expense_from_text.ainvoke(
+            {"user_text": last_text, "recent_context": recent_turns(messages)}
+        )
         if not extracted or not extracted.get("amount"):
             return PluginOutput(
                 message=AIMessage(
@@ -744,7 +774,11 @@ class RoutePlugin:
                 },
             )
 
-        req = await extract_route_request.ainvoke({"user_text": last_text})
+        from orchestrator.checkpointer import recent_turns
+
+        req = await extract_route_request.ainvoke(
+            {"user_text": last_text, "recent_context": recent_turns(messages)}
+        )
         origin = (req.get("origin") or "").strip()
         destination = (req.get("destination") or "").strip()
         mode = req.get("mode") or "transit"
@@ -827,8 +861,10 @@ class RecipePlugin:
         messages = state.get("messages", [])
         last_text = str(messages[-1].content) if messages else ""
 
+        from orchestrator.checkpointer import recent_turns
+
         res = await parse_recipe_and_extract_ingredients.ainvoke(
-            {"recipe_text_or_url": last_text}
+            {"recipe_text_or_url": last_text, "recent_context": recent_turns(messages)}
         )
         ingredients = res.get("ingredients") or []
         if not ingredients:
@@ -1170,7 +1206,11 @@ class ReminderPlugin:
         messages = state.get("messages", [])
         last_text = str(messages[-1].content) if messages else ""
 
-        parsed = await parse_reminder_request.ainvoke({"user_text": last_text})
+        from orchestrator.checkpointer import recent_turns
+
+        parsed = await parse_reminder_request.ainvoke(
+            {"user_text": last_text, "recent_context": recent_turns(messages)}
+        )
         action = parsed.get("action")
 
         if action == "list":
@@ -1534,7 +1574,7 @@ class WhiteboardPlugin:
         # Bounded well under the webhook's own timeout -- see PLANNING_INTAKE_TIMEOUT_SECONDS.
         try:
             planned = await asyncio.wait_for(
-                self._planning_intake(user_id, last_text),
+                self._planning_intake(user_id, last_text, messages),
                 timeout=PLANNING_INTAKE_TIMEOUT_SECONDS,
             )
         except asyncio.TimeoutError:
@@ -1561,7 +1601,9 @@ class WhiteboardPlugin:
         )
         return PluginOutput(message=AIMessage(content=reply), state_update={"active_domain": self.name})
 
-    async def _planning_intake(self, user_id: int, last_text: str) -> Optional[str]:
+    async def _planning_intake(
+        self, user_id: int, last_text: str, messages: Optional[List[Any]] = None
+    ) -> Optional[str]:
         """Deep comprehension pass: decompose a freeform request into board cards,
         research topics, and follow-up questions. Returns None when the request
         is not planning-related (caller falls back to guidance)."""
@@ -1570,6 +1612,7 @@ class WhiteboardPlugin:
             ENTITY_SECTION_DEFAULTS,
             comprehend_request,
         )
+        from orchestrator.checkpointer import recent_turns
 
         boards = await wb.list_user_boards(user_id)
         target_board = None
@@ -1615,7 +1658,9 @@ class WhiteboardPlugin:
                 "explicit_match": explicit_match,
             }
 
-        brief = await comprehend_request(last_text, board_context)
+        brief = await comprehend_request(
+            last_text, board_context, recent_context=recent_turns(messages or [])
+        )
         if not brief or brief.get("action") == "none":
             return None
 
