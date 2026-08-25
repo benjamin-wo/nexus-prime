@@ -859,6 +859,20 @@ class RecipePlugin:
 
 URL_PATTERN = re.compile(r"https?://\S+")
 
+# Regression: GeneralPlugin's tool loop chains up to MAX_TOOL_ROUNDS+1 LLM
+# calls (each individually bounded to LLM_REQUEST_TIMEOUT_SECONDS=30s, see
+# core/llm.py) per pass, and can run TWO full passes (the #42/#43 URL-guard
+# retry below) -- each step is bounded on its own, but nothing bounded their
+# SUM, the exact same shape that let whiteboard's planning-intake blow the
+# webhook's own 45s ceiling (#45/PLANNING_INTAKE_TIMEOUT_SECONDS) on every
+# single turn. GeneralPlugin is now the default landing zone for cross-domain
+# and ambiguous conversation (see the "general" manifest and #51's tool
+# expansion), so this same latent risk here is exercised even more often.
+# Bounding the whole composition step lets the existing broad except-clause
+# below fall back to a fast, honest reply instead of silently re-running into
+# the webhook's own timeout on a slow turn.
+GENERAL_TOOL_LOOP_TIMEOUT_SECONDS = 35.0
+
 
 class GeneralPlugin:
     """General capability plugin: handles factual queries and casual conversation with DeepSeek v4 Flash + Tavily."""
@@ -1051,7 +1065,8 @@ class GeneralPlugin:
                 text = extract_llm_text(getattr(final_message, "content", "")).strip()
             return text, link_tool_used
 
-        try:
+        async def _compose_reply() -> str:
+            nonlocal llm, llm_with_tools
             llm = get_agent_llm(complexity=ThinkingLevel.MEDIUM, temperature=0.7)
             llm_with_tools = llm.bind_tools(available_tools)
             content, link_tool_used = await _run_tool_loop(history)
@@ -1088,10 +1103,17 @@ class GeneralPlugin:
                         "\n\n(I don't have a verified link for that right now "
                         "-- want me to search for one?)"
                     )
+            return content
 
+        llm = None
+        llm_with_tools = None
+        try:
+            content = await asyncio.wait_for(
+                _compose_reply(), timeout=GENERAL_TOOL_LOOP_TIMEOUT_SECONDS
+            )
             if not content:
                 content = self._generate_rule_based_response(last_text)
-        except Exception as exc:  # noqa: BLE001 - never let LLM errors kill the webhook
+        except Exception as exc:  # noqa: BLE001 - never let LLM/timeout errors kill the webhook
             print(f"[GENERAL] LLM/tool loop failed, using fallback: {exc}")
             content = self._generate_rule_based_response(last_text)
 
