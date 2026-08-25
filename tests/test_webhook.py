@@ -61,6 +61,48 @@ def test_webhook_callback_query_resume():
     assert response.status_code == 200
     assert response.json()["resumed"] is True
 
+def test_webhook_times_out_instead_of_hanging_forever(monkeypatch):
+    """Regression (P0, production incident): a hung downstream call (e.g. a
+    stalled LLM request -- see core/llm.py's LLM_REQUEST_TIMEOUT_SECONDS)
+    must not hang the webhook response forever. Before this fix,
+    receive_telegram_webhook fully awaited handle_update() with no
+    timeout anywhere in the chain -- if handle_update never completed,
+    the webhook never returned, Telegram never got its 200 OK, and it
+    redelivered the same update on its own backoff schedule indefinitely.
+    Verified against a real incident: the same chat was redelivered every
+    ~60-130s for 10+ minutes with zero replies ever sent, while each
+    redelivery's never-cancelled typing-indicator loop piled up until
+    Telegram's sendChatAction calls were failing with 429s dozens/sec."""
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    import app.webhook as webhook_module
+    from app.ingress import telegram_ingress
+
+    monkeypatch.setattr(webhook_module, "WEBHOOK_PROCESSING_TIMEOUT_SECONDS", 0.05)
+
+    async def _hang(payload):
+        await asyncio.sleep(999)
+
+    monkeypatch.setattr(telegram_ingress, "handle_update", _hang)
+    monkeypatch.setattr(webhook_module, "send_telegram_message", AsyncMock(return_value=True))
+
+    payload = {
+        "update_id": 10004,
+        "message": {
+            "message_id": 503,
+            "from": {"id": 9002, "first_name": "Test"},
+            "chat": {"id": 9002, "type": "private"},
+            "text": "Can you see if there are any flight bookings in my email",
+        },
+    }
+    response = client.post("/api/webhook", json=payload, headers=_webhook_headers())
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ok"
+    assert body.get("timeout") is True
+
+
 def test_webhook_jobs_command():
     payload = {
         "update_id": 10003,
