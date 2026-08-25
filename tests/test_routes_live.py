@@ -74,6 +74,58 @@ def test_fuzzy_search_stops_works_offline():
 
 
 @pytest.mark.asyncio
+async def test_search_bus_stops_finds_real_match_not_irrelevant_catalog_page(monkeypatch):
+    """Regression (#57): a query like "fullerton sq hotel" got back unrelated
+    Victoria St stops (Hotel Grand Pacific, St. Joseph's Ch, Bras Basah Cplx)
+    in production because search_bus_stops() trusted a "live SearchText" call
+    against LTA's BusStops endpoint first -- but per LTA's own API docs that
+    endpoint has no free-text search parameter, only $skip/$top pagination,
+    so a real LTA server silently ignores SearchText and returns whatever its
+    first unfiltered page happens to be, every time, regardless of query.
+    Since that page is non-empty it was trusted directly, so the correct
+    local fuzzy match was never even attempted. search_bus_stops() must go
+    straight to the local catalog's fuzzy match, which correctly finds the
+    real "Fullerton Sq" stop over the Victoria St red herrings.
+
+    Mocks _lta_get itself (not search_bus_stops' internals) to faithfully
+    reproduce that real-server behavior: any call carrying "SearchText"
+    returns the same fixed, irrelevant page no matter what text was sent;
+    only the paginated $skip/$top bulk-catalog call returns the real match.
+    """
+    monkeypatch.setattr(settings, "lta_account_key", "test-lta-key")
+
+    victoria_st_page = {
+        "value": [
+            {"BusStopCode": "01012", "Description": "Hotel Grand Pacific", "RoadName": "Victoria St"},
+            {"BusStopCode": "01013", "Description": "St. Joseph's Ch", "RoadName": "Victoria St"},
+            {"BusStopCode": "01019", "Description": "Bras Basah Cplx", "RoadName": "Victoria St"},
+        ]
+    }
+    full_catalog_page = {
+        "value": victoria_st_page["value"] + [
+            {"BusStopCode": "04121", "Description": "Fullerton Sq", "RoadName": "Fullerton Rd"},
+        ]
+    }
+
+    async def fake_lta_get(endpoint, params):
+        assert endpoint == "BusStops"
+        if "SearchText" in params:
+            # Real LTA behavior: SearchText is not a real filter -- always
+            # the same page, regardless of what text was sent.
+            return victoria_st_page
+        if params.get("$skip", 0) > 0:
+            return {"value": []}
+        return full_catalog_page
+
+    monkeypatch.setattr(lta, "_lta_get", fake_lta_get)
+
+    results = await lta.search_bus_stops("fullerton sq hotel")
+    assert results
+    assert results[0]["code"] == "04121"
+    assert results[0]["description"] == "Fullerton Sq"
+
+
+@pytest.mark.asyncio
 async def test_no_live_feed_is_honest_when_key_missing():
     monkeypatch = pytest.MonkeyPatch()
     monkeypatch.setattr(settings, "lta_account_key", None)

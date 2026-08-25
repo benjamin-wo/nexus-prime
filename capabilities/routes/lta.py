@@ -41,43 +41,27 @@ async def _lta_get(endpoint: str, params: dict[str, Any]) -> Optional[dict[str, 
 
 
 async def search_bus_stops(search_text: str, limit: int = 5) -> list[dict[str, Any]]:
-    """Search bus stops: live SearchText first, then the local catalog with fuzzy matching."""
+    """Search bus stops via the local catalog, fuzzy-matched against the query.
+
+    Regression (#57): this used to try a "live SearchText" call against LTA's
+    BusStops endpoint first. That endpoint has no free-text search parameter
+    of its own -- per LTA's own API docs it supports only $skip/$top
+    pagination -- so passing SearchText was silently ignored and the call
+    returned an arbitrary, unfiltered page of the full catalog (in practice,
+    always the same handful of stops from the very start of the listing).
+    Because that page was non-empty, it was trusted as the "match" and
+    returned directly, so a query like "fullerton sq hotel" got back
+    completely unrelated stops from Victoria St -- confidently wrong instead
+    of a real match. fuzzy_search_stops() against the real local catalog
+    finds the correct stop; this never had a live-search advantage to give up.
+    """
     global last_search_error
     last_search_error = None
-    api_stops = await _search_api(search_text, limit)
-    if api_stops:
-        return api_stops
-    if _lta_unreachable:
-        last_search_error = "unreachable"
     catalog = await ensure_stop_catalog()
     if catalog is None:
+        last_search_error = "unreachable"
         return []
     return fuzzy_search_stops(catalog, search_text, limit)
-
-
-_lta_unreachable = False
-
-
-async def _search_api(search_text: str, limit: int) -> list[dict[str, Any]]:
-    global _lta_unreachable
-    data = await _lta_get(
-        "BusStops",
-        {"$skip": 0, "SearchText": search_text},
-    )
-    if data is None:
-        _lta_unreachable = True
-        return []
-    _lta_unreachable = False
-    return [
-        {
-            "code": str(stop.get("BusStopCode", "")),
-            "description": stop.get("Description", ""),
-            "road_name": stop.get("RoadName", ""),
-            "lat": stop.get("Latitude"),
-            "lng": stop.get("Longitude"),
-        }
-        for stop in data.get("value", [])[:limit]
-    ]
 
 
 def _normalize(text: str) -> str:
