@@ -4913,9 +4913,34 @@ table.financial-data-table tr:hover td {
     box-sizing: border-box !important;
   }
 
-  .task-item-card {
+  /* Regression (#29): this rule used to target a nonexistent selector with
+     the class words reversed (the markup renders ".task-card-item" — see
+     showcase/app.js), so it never applied on mobile. With no mobile
+     override, ".task-card-item" kept
+     its desktop row layout: ".task-actions-col" (Test Alert / Edit / delete,
+     flex-shrink: 0) held its full width and squeezed ".task-left-col" down to
+     ~60-90px, so ".task-title-text"'s "word-break: break-word" chopped every
+     word in the task title onto its own line. Fix the class name and make the
+     card wrap to a second row for actions instead of squeezing the title. */
+  .task-card-item {
     padding: 0.75rem 0.85rem !important;
     border-radius: 12px !important;
+    flex-wrap: wrap !important;
+  }
+
+  .task-left-col {
+    width: 100% !important;
+    flex: 1 1 100% !important;
+  }
+
+  .task-actions-col {
+    width: 100% !important;
+    flex: 1 1 100% !important;
+    flex-wrap: wrap !important;
+    justify-content: flex-start !important;
+    margin-top: 0.65rem !important;
+    padding-top: 0.65rem !important;
+    border-top: 1px dashed #222228 !important;
   }
 
   /* --------------------------------------------------------------------------
