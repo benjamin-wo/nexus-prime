@@ -119,8 +119,17 @@ def validate_brief(raw: Any) -> Optional[Dict[str, Any]]:
 async def comprehend_request(
     text: str,
     board_context: Optional[Dict[str, Any]] = None,
+    recent_context: str = "",
 ) -> Optional[Dict[str, Any]]:
-    """Run the deep-reasoning comprehension pass over a freeform planning request."""
+    """Run the deep-reasoning comprehension pass over a freeform planning request.
+
+    recent_context (#35): the last few conversation turns, for resolving a
+    reactive follow-up ("no budget but thinking of some fitness club Friday")
+    against what was just discussed -- planning is inherently multi-turn, and
+    this plugin previously only ever saw the single latest message. Purely
+    additional grounding for the LLM pass; board_context and the deterministic
+    entity-materialization pipeline below are unaffected.
+    """
     if not settings.has_llm_key:
         return _heuristic_brief(text)
 
@@ -128,6 +137,12 @@ async def comprehend_request(
     from core.llm import ThinkingLevel, get_agent_llm
 
     context_lines = []
+    if recent_context:
+        context_lines.append(
+            "Recent conversation, for resolving references like 'that one too' or "
+            "a reactive follow-up -- the request below the --- separator is the "
+            f"user's CURRENT message and takes priority:\n{recent_context}"
+        )
     if board_context:
         if board_context.get("explicit_match"):
             context_lines.append(

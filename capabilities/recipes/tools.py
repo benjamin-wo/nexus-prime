@@ -13,10 +13,17 @@ from core.models import GroceryItem
 
 
 @tool
-async def parse_recipe_and_extract_ingredients(recipe_text_or_url: str) -> Dict[str, Any]:
+async def parse_recipe_and_extract_ingredients(
+    recipe_text_or_url: str, recent_context: str = ""
+) -> Dict[str, Any]:
     """
     Extract a recipe title and structured ingredient list from recipe text.
     Each ingredient has name, quantity, and category.
+
+    recent_context (#35): the last few conversation turns, so a follow-up
+    correction ("actually make it 2 eggs, not 3") can be resolved against the
+    recipe pasted a turn earlier instead of being read as a fresh, incomplete
+    recipe on its own.
     """
     canned_fallback = {
         "title": "Extracted Recipe",
@@ -39,10 +46,19 @@ async def parse_recipe_and_extract_ingredients(recipe_text_or_url: str) -> Dict[
                         'a JSON object: {"title": string, "ingredients": [{"name": string, '
                         '"quantity": string, "category": string}]}. Categories: Produce, Meat, Dairy, '
                         "Pantry, Pasta, Bakery, Frozen, Spices, Other. If no recipe is present, return "
-                        '{"title": "", "ingredients": []}.'
+                        '{"title": "", "ingredients": []}. If recent conversation is provided, use it '
+                        "ONLY to resolve a correction or continuation of a recipe already discussed "
+                        "(e.g. 'actually use 2 eggs') — the current message is always the recipe to "
+                        "extract; never pull in ingredients from an unrelated earlier recipe."
                     )
                 ),
-                HumanMessage(content=recipe_text_or_url[:4000]),
+                HumanMessage(
+                    content=(
+                        f"Recent conversation:\n{recent_context}\n\n---\n\n{recipe_text_or_url[:4000]}"
+                        if recent_context
+                        else recipe_text_or_url[:4000]
+                    )
+                ),
             ]
         )
         raw = str(getattr(ai_message, "content", "") or "").strip()

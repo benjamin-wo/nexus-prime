@@ -585,10 +585,16 @@ def _resolve_email_merchant(
 
 
 @tool
-async def extract_expense_from_text(user_text: str) -> Dict[str, Any]:
+async def extract_expense_from_text(user_text: str, recent_context: str = "") -> Dict[str, Any]:
     """
     Extract structured expense fields from a natural-language message.
     Returns amount, currency, merchant, category, date_iso, confidence, needs_clarification.
+
+    recent_context (#35): the last few conversation turns, used ONLY to
+    resolve an explicit correction/follow-up on the CURRENT message (e.g.
+    "actually make that $20" right after "logged $15 for lunch") -- this is
+    a money-writing path, so it must never be used to invent a transaction
+    the current message doesn't itself describe. See rule 6 below.
     """
     messages = [
         SystemMessage(
@@ -602,10 +608,21 @@ async def extract_expense_from_text(user_text: str) -> Dict[str, Any]:
                 '4. date_iso: the transaction date must be within 14 days of the email\'s own timestamp or the current date. NEVER invent a year or copy a year from account numbers, membership dates (e.g. "member since 2022") or reference IDs. If the message shows only day/month (e.g. "22 Aug"), use the current year; if no transaction date is shown at all, return "".\n'
                 "5. Reply with ONLY a JSON object:\n"
                 '{"amount": number|null, "currency": string, "merchant": string, "category": string, "date_iso": string, "confidence": number, "needs_clarification": boolean}\n'
-                "Default currency: SGD for Singapore."
+                "Default currency: SGD for Singapore.\n"
+                "6. A 'Recent conversation' block, if present below, is ONLY for resolving an "
+                "explicit correction to the CURRENT message (e.g. 'actually make that $20' "
+                "referring back to an amount just discussed). NEVER use it to extract an "
+                "expense the current message does not itself describe -- if the current "
+                "message alone has no genuine paid expense, return {\"amount\": null} "
+                "regardless of what the recent conversation contains."
             )
         ),
-        HumanMessage(content=user_text[:2000]),
+        HumanMessage(
+            content=(
+                (f"Recent conversation:\n{recent_context}\n\n---\n\n" if recent_context else "")
+                + user_text[:2000]
+            )
+        ),
     ]
 
     try:

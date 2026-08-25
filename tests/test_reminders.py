@@ -151,6 +151,50 @@ async def test_reminders_plugin_one_minute_execution():
 
 
 @pytest.mark.asyncio
+async def test_reminder_plugin_threads_recent_conversation_into_parse(monkeypatch):
+    """Regression (#35): ReminderPlugin used to read only messages[-1], so a
+    follow-up correction ("actually make it every day instead") had no
+    reminder to resolve against. recent_turns(messages) must now reach
+    parse_reminder_request's LLM path (the deterministic regex fast path is
+    untouched, since this phrasing has no relative-time expression of its
+    own to match)."""
+    import orchestrator.router as router_module
+    from orchestrator.router import ReminderPlugin
+    from langchain_core.messages import AIMessage, HumanMessage
+
+    captured: dict = {}
+
+    async def fake_parse(**kwargs):
+        captured.update(kwargs)
+        return {
+            "action": "create",
+            "reminder_type": "recurring",
+            "delay_seconds": None,
+            "message": "drink water",
+            "cron": "0 9 * * *",
+            "timezone": "Asia/Singapore",
+            "job_id": None,
+        }
+
+    monkeypatch.setattr(router_module.parse_reminder_request, "coroutine", fake_parse)
+
+    out = await ReminderPlugin().execute({
+        "messages": [
+            HumanMessage(content="remind me to drink water at 9am"),
+            AIMessage(content="Reminder set for 9:00 AM."),
+            HumanMessage(content="actually make it every day instead"),
+        ],
+        "user_id": 4005,
+        "current_timezone": "Asia/Singapore",
+        "active_domain": None,
+    })
+
+    assert "recent_context" in captured
+    assert "remind me to drink water at 9am" in captured["recent_context"]
+    assert out.message is not None
+
+
+@pytest.mark.asyncio
 async def test_task_reminder_utc_reconcile_and_delivery(monkeypatch):
     """Verify that task reminders stored in UTC survive reconciliation and deliver without NameError."""
     from core.scheduler import _add_task_to_scheduler, _execute_task_reminder, scheduler
