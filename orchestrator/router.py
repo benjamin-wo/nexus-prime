@@ -1381,6 +1381,59 @@ class ReminderPlugin:
         )
 
 
+class ScheduledContentDeliveryPlugin:
+    """Schedules and delivers recurring content briefings (news, stock markets)."""
+
+    name = "scheduled_content_delivery"
+    keywords = ["news briefing", "daily briefing", "morning summary", "stock market", "news"]
+    description = "Schedules recurring briefings of top global news and stock market news."
+
+    async def execute(self, state: AssistantState) -> PluginOutput:
+        user_id = state["user_id"]
+        messages = state.get("messages", [])
+        last_text = str(messages[-1].content) if messages else ""
+        lowered = last_text.lower()
+
+        from capabilities.scheduled_content_delivery.tools import build_daily_briefing
+
+        is_schedule_request = any(
+            phrase in lowered
+            for phrase in (
+                "daily", "every morning", "every day", "recurring", "each morning",
+                "schedule", "morning summary", "morning briefing",
+            )
+        )
+        if is_schedule_request:
+            from core.scheduler import schedule_proactive_task
+
+            try:
+                job = await schedule_proactive_task(
+                    user_id=user_id,
+                    job_name="daily_briefing",
+                    cron_expression="0 9 * * *",
+                    instruction_prompt="Daily morning briefing: top global news and stock market news",
+                    timezone_str="Asia/Singapore",
+                )
+                reply = (
+                    "📰 Done! I'll send you a **daily morning briefing** of the top "
+                    "global news and stock market news at **09:00** every day.\n"
+                    f"Job #`{job.id}` — manage it anytime with /jobs."
+                )
+            except Exception as exc:  # noqa: BLE001
+                print(f"[BRIEFING] schedule failed: {exc}")
+                reply = "⚠️ Couldn't schedule the briefing right now — try again in a moment."
+            return PluginOutput(
+                message=AIMessage(content=reply),
+                state_update={"active_domain": self.name},
+            )
+
+        briefing = await build_daily_briefing()
+        return PluginOutput(
+            message=AIMessage(content=briefing),
+            state_update={"active_domain": self.name},
+        )
+
+
 # Regression: _planning_intake() chains a comprehend_request() LLM call
 # (bounded to LLM_REQUEST_TIMEOUT_SECONDS=30s, see core/llm.py) followed by a
 # concurrent research pass (each query bounded to RESEARCH_QUERY_TIMEOUT_SECONDS
@@ -1937,6 +1990,7 @@ CAPABILITY_REGISTRY: Dict[str, CapabilityPlugin] = {
     "routes": RoutePlugin(),
     "recipes": RecipePlugin(),
     "reminders": ReminderPlugin(),
+    "scheduled_content_delivery": ScheduledContentDeliveryPlugin(),
     "whiteboard": WhiteboardPlugin(),
     "general": GeneralPlugin(),
 }
