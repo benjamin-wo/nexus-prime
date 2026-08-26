@@ -108,6 +108,43 @@ async def plan_dispatch(state: AssistantState) -> Command[str]:
     if not is_user:
         return Command(goto=END)
 
+    from orchestrator.planner import CapabilitySelection, Decision, is_termination_intent
+
+    if is_termination_intent(text):
+        decision = Decision(
+            capabilities=[
+                CapabilitySelection(
+                    id="general",
+                    reason="closing/stop request",
+                    confidence=0.95,
+                )
+            ],
+            ordering=["general"],
+            confidence=0.95,
+            source="termination",
+            retrieval_used=False,
+            rationale="User asked to stop or close the thread; acknowledging instead of re-planning.",
+        )
+        outputs, state_updates, reply = await _execute_capabilities(decision, state)
+        primary = _primary(decision)
+        schedule_turn_audit(reply)
+        return Command(
+            goto=END,
+            update={
+                "messages": [AIMessage(content=reply)],
+                "active_domain": primary,
+                "intent_type": "close",
+                "last_decision": decision_to_dict(decision),
+                "plan": decision_to_dict(decision),
+                **{
+                    key: value
+                    for update in state_updates
+                    for key, value in (update or {}).items()
+                    if value
+                },
+            },
+        )
+
     from core.audit import perform_conversation_audit, should_audit_conversation
 
     user_message_count = sum(

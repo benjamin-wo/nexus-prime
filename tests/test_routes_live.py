@@ -9,6 +9,7 @@ from capabilities.routes.tools import (
     handle_bus_query,
     is_bare_place_fragment,
     is_bus_arrival_query,
+    is_bus_disambiguation_answer,
     plan_route,
 )
 from core.config import settings
@@ -44,6 +45,24 @@ def test_bus_arrival_vs_directions_classification():
     # and none of "no"/"want"/"other" were excluded) and get treated as one.
     assert is_bare_place_fragment("no i want other buses") is False
     assert is_bare_place_fragment("other one") is False
+
+
+def test_disambiguation_answer_matches_pending_stop():
+    pending = [
+        {"code": "03011", "description": "Fullerton Sq", "road_name": "Fullerton Rd"},
+        {"code": "01139", "description": "Bugis Stn/Parkview Sq", "road_name": "Nth Bridge Rd"},
+        {"code": "04321", "description": "UE Sq", "road_name": "Clemenceau Ave"},
+    ]
+    assert is_bus_disambiguation_answer("the first one", pending) is True
+    assert is_bus_disambiguation_answer("2", pending) is True
+    assert is_bus_disambiguation_answer("03011", pending) is True
+    assert is_bus_disambiguation_answer("Fullerton sq", pending) is True
+    assert is_bus_disambiguation_answer("fullerton", pending) is True
+    assert is_bus_disambiguation_answer("bugis stn/parkview", pending) is True
+    assert is_bus_disambiguation_answer("This is a problem", pending) is False
+    assert is_bus_disambiguation_answer("Stop", pending) is False
+    assert is_bus_disambiguation_answer("what bus should I take", pending) is False
+    assert is_bus_disambiguation_answer("Fullerton sq", None) is False
 
 
 def test_lta_format_arrivals_shows_bus_numbers():
@@ -191,6 +210,36 @@ async def test_selection_followup_resolves_pending_stop(monkeypatch):
     assert result["kind"] == "arrivals"
     assert "Tampines West CC (76161" in result["message"]
     assert "Bus 27" in result["message"]
+
+
+@pytest.mark.asyncio
+async def test_route_plugin_honors_pending_bus_stop_answer(monkeypatch):
+    """A place-name answer to a bus disambiguation must stay in the bus handler,
+    not be hijacked into journey planning."""
+    from langchain_core.messages import HumanMessage
+
+    from orchestrator.router import RoutePlugin
+
+    pending = [
+        {"code": "03011", "description": "Fullerton Sq", "road_name": "Fullerton Rd"},
+        {"code": "01139", "description": "Bugis Stn/Parkview Sq", "road_name": "Nth Bridge Rd"},
+    ]
+    fake = AsyncMock(
+        return_value={
+            "kind": "arrivals",
+            "message": "Fullerton Sq (03011, Fullerton Rd):\nBus 10: next 3 min",
+        }
+    )
+    monkeypatch.setattr("capabilities.routes.tools.handle_bus_query", fake)
+    state = {
+        "user_id": 1,
+        "pending_bus_stops": pending,
+        "messages": [HumanMessage(content="Fullerton sq")],
+        "last_route": {"origin": "Fullerton hotel", "destination": "Tembusu grand"},
+    }
+    output = await RoutePlugin().execute(state)
+    fake.assert_awaited_once()
+    assert "Bus 10" in output.message.content
 
 
 @pytest.mark.asyncio

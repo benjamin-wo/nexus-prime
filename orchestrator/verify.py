@@ -27,6 +27,14 @@ def verify_deterministic(
     user_text: str = "",
 ) -> VerifyResult:
     """Offline verification rules. Never triggers a loop on honest refusals."""
+    from orchestrator.planner import is_termination_intent
+
+    if is_termination_intent(user_text):
+        return VerifyResult(
+            fulfilled=True,
+            needs_replan=False,
+            reason="termination/closing request is final; acknowledging without re-planning",
+        )
     if not reply_text or not reply_text.strip():
         return VerifyResult(
             fulfilled=False,
@@ -67,7 +75,10 @@ async def verify_with_llm(
         "You verify whether the assistant's reply fulfils the user's request. "
         "Reply with ONLY JSON: "
         '{"fulfilled": bool, "missing": string|null, "replan": bool}. '
-        "Replan only if the reply is empty, clearly wrong, or a needed capability was skipped."
+        "Replan only if the reply is empty, clearly wrong, or a needed capability was skipped. "
+        "If the user's request is a stop/closing/acknowledgment (e.g. 'stop', 'that's enough', "
+        "'cancel') or a complaint without a new concrete ask, treat the reply as fulfilled and "
+        "do NOT request replanning."
     )
     plan = json.dumps(decision_to_dict(decision), ensure_ascii=False) if hasattr(decision, "recipe") else str(decision)
     try:

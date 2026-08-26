@@ -232,6 +232,44 @@ def is_bare_place_fragment(text: str) -> bool:
     return True
 
 
+def is_bus_disambiguation_answer(
+    text: str, pending_stops: Optional[list[Dict[str, Any]]] = None
+) -> bool:
+    """True when a message answers an outstanding bus-stop disambiguation.
+
+    A user replying to "Which stop did you mean?" typically sends either a
+    selection token ("the second one", "2"), a 5-digit stop code, or a short
+    re-typed place name matching one of the offered stops. Recognizing this is
+    what keeps such answers inside the bus-arrival handler instead of letting
+    the generic fragment-reuse/journey path hijack them into route planning.
+    """
+    if _selection_intent(text) is not None:
+        return True
+    if re.search(r"\b\d{5}\b", text):
+        return True
+    if not pending_stops or len(text.strip()) > 60:
+        return False
+    lowered = text.strip().lower()
+    if re.search(
+        r"\b(what|when|how|which|route|bus|please|remind|my|expense|email|grocery)\b",
+        lowered,
+    ):
+        return False
+    for stop in pending_stops:
+        description = str(stop.get("description") or "").lower()
+        code = str(stop.get("code") or "").lower()
+        if lowered == code or description.startswith(lowered) or lowered in description:
+            return True
+        # "fullerton" -> "Fullerton Sq": leading-token match (slashes normalize
+        # names like "Bugis Stn/Parkview Sq").
+        if any(
+            token and description.startswith(token)
+            for token in lowered.replace("/", " ").split()
+        ):
+            return True
+    return False
+
+
 def _selection_intent(text: str) -> Optional[int]:
     normalized = re.sub(r"\s+", " ", text.strip().lower())
     mapping = {
