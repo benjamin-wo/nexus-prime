@@ -1381,6 +1381,86 @@ class ReminderPlugin:
         )
 
 
+class MemoryPlugin:
+    """Personal memory: records and recalls structured user facts (slice #1: points/miles)."""
+
+    name = "memory"
+    keywords = ["points", "miles", "balance", "reward", "remember"]
+    description = "Remembers structured personal facts — points/miles balances first."
+
+    async def execute(self, state: AssistantState) -> PluginOutput:
+        user_id = state["user_id"]
+        messages = state.get("messages", [])
+        last_text = str(messages[-1].content) if messages else ""
+
+        from capabilities.memory.tools import (
+            extract_points_balance,
+            query_points_balances,
+            upsert_points_balance,
+        )
+
+        lowered = last_text.lower()
+        recall_intent = any(
+            phrase in lowered
+            for phrase in (
+                "what are my", "how many points", "how many miles", "my points",
+                "my miles", "points balance", "miles balance", "reward balance",
+                "list my points", "list my miles",
+            )
+        )
+        if recall_intent or ("point" in lowered and ("?" in last_text or "balance" in lowered)):
+            rows = await query_points_balances(user_id)
+            if not rows:
+                reply = (
+                    "🧠 I don't have any points/miles balances saved yet. Tell me "
+                    "*\"I have 12000 DBS points\"* or *\"my Citibank miles balance "
+                    "is 45000\"* and I'll remember it."
+                )
+            else:
+                lines = ["🧠 **Your Points & Miles Balances**:"]
+                for row in rows:
+                    label = row["program"] or row["issuer"]
+                    expiry = f" · exp {row['expiry'][:10]}" if row.get("expiry") else ""
+                    lines.append(f"• *{label}*: {row['balance']:,.0f}{expiry}")
+                lines.append("\nSend me an updated balance and I'll update it.")
+                reply = "\n".join(lines)
+            return PluginOutput(
+                message=AIMessage(content=reply),
+                state_update={"active_domain": self.name},
+            )
+
+        extracted = await extract_points_balance(last_text)
+        if not extracted.get("balance"):
+            reply = (
+                "🧠 I can remember your points/miles balances — try *\"I have 12000 "
+                "DBS points expiring next month\"* or *\"what are my points balances?\"*."
+            )
+            return PluginOutput(
+                message=AIMessage(content=reply),
+                state_update={"active_domain": self.name},
+            )
+
+        record = await upsert_points_balance(
+            user_id=user_id,
+            issuer=extracted.get("issuer") or "Unknown",
+            program=extracted.get("program"),
+            balance=float(extracted["balance"]),
+            expiry=extracted.get("expiry"),
+        )
+        label = (record.program or record.issuer)
+        expiry_note = ""
+        if record.expiry_date:
+            expiry_note = f", expiring {record.expiry_date.strftime('%d %b %Y')}"
+        reply = (
+            f"🧠 Got it — *{label}*: **{record.balance:,.0f}** points/miles saved{expiry_note}. "
+            "Ask *\"what are my points balances?\"* anytime to see them."
+        )
+        return PluginOutput(
+            message=AIMessage(content=reply),
+            state_update={"active_domain": self.name},
+        )
+
+
 class BugLoggingPlugin:
     """Logs user-reported bugs into the production-bug pipeline and GitHub issues."""
 
@@ -2044,6 +2124,7 @@ CAPABILITY_REGISTRY: Dict[str, CapabilityPlugin] = {
     "reminders": ReminderPlugin(),
     "scheduled_content_delivery": ScheduledContentDeliveryPlugin(),
     "bug_logging": BugLoggingPlugin(),
+    "memory": MemoryPlugin(),
     "whiteboard": WhiteboardPlugin(),
     "general": GeneralPlugin(),
 }
