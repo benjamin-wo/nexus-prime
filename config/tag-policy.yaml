@@ -24,6 +24,8 @@ allowed_tags:
   - chat
   - news
   - briefing
+  - bug
+  - issue
   - link
   - url
   - fetch

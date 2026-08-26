@@ -1381,6 +1381,58 @@ class ReminderPlugin:
         )
 
 
+class BugLoggingPlugin:
+    """Logs user-reported bugs into the production-bug pipeline and GitHub issues."""
+
+    name = "bug_logging"
+    keywords = ["bug", "log it as a bug", "report a bug", "issue with the cockpit"]
+    description = "Logs bugs the user notices into the GitHub issue backlog."
+
+    async def execute(self, state: AssistantState) -> PluginOutput:
+        user_id = state["user_id"]
+        messages = state.get("messages", [])
+        last_text = str(messages[-1].content) if messages else ""
+
+        from capabilities.bug_logging.tools import (
+            _extract_bug_description,
+            _guess_subsystem,
+            log_user_bug,
+        )
+
+        description = _extract_bug_description(last_text)
+        subsystem = _guess_subsystem(description or last_text)
+        result = await log_user_bug(
+            user_id=user_id,
+            description=description or last_text,
+            subsystem=subsystem,
+        )
+        if not result.get("logged"):
+            return PluginOutput(
+                message=AIMessage(
+                    content=(
+                        "🐞 I couldn't log that bug right now — please try again "
+                        "in a moment, or describe what you saw in more detail."
+                    )
+                ),
+                state_update={"active_domain": self.name},
+            )
+        url = result.get("github_issue_url")
+        if url:
+            reply = (
+                f"🐞 Logged it as a bug — thank you! I filed it in the tracker:\n"
+                f"{url}"
+            )
+        else:
+            reply = (
+                "🐞 Logged it as a bug — thank you! It's recorded locally and "
+                "will sync to the issue tracker when GitHub is configured."
+            )
+        return PluginOutput(
+            message=AIMessage(content=reply),
+            state_update={"active_domain": self.name},
+        )
+
+
 class ScheduledContentDeliveryPlugin:
     """Schedules and delivers recurring content briefings (news, stock markets)."""
 
@@ -1991,6 +2043,7 @@ CAPABILITY_REGISTRY: Dict[str, CapabilityPlugin] = {
     "recipes": RecipePlugin(),
     "reminders": ReminderPlugin(),
     "scheduled_content_delivery": ScheduledContentDeliveryPlugin(),
+    "bug_logging": BugLoggingPlugin(),
     "whiteboard": WhiteboardPlugin(),
     "general": GeneralPlugin(),
 }
