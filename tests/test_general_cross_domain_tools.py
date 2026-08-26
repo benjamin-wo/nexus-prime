@@ -10,10 +10,13 @@ from app.dashboard_api import CreateWhiteboardRequest, create_whiteboard
 from core.db import async_session_factory, init_db
 from core.models import ScheduledJob, UserProfile
 from capabilities.general.tools import (
+    get_bus_timings,
     list_my_boards,
     list_my_reminders,
+    query_my_points_balances,
     search_my_email,
     summarize_board,
+    transit_journey,
 )
 
 
@@ -85,6 +88,117 @@ async def test_search_my_email_formats_results(monkeypatch):
     result = await search_my_email.ainvoke({"query": "flight", "user_id": 9105})
     assert "flights@airline.com" in result
     assert "Your booking confirmation" in result
+
+
+@pytest.mark.asyncio
+async def test_get_bus_timings_returns_live_message(monkeypatch):
+    import capabilities.routes.tools as routes_tools
+
+    async def fake_bus_query(text, pending_stops=None):
+        assert text == "next bus from Tampines West CC"
+        return {"kind": "arrivals", "message": "Tampines West CC (76161):\nBus 27: next 4 min"}
+
+    monkeypatch.setattr(routes_tools, "handle_bus_query", fake_bus_query)
+
+    result = await get_bus_timings.ainvoke({"query": "next bus from Tampines West CC"})
+    assert "Bus 27: next 4 min" in result
+
+
+@pytest.mark.asyncio
+async def test_get_bus_timings_handles_ambiguous(monkeypatch):
+    import capabilities.routes.tools as routes_tools
+
+    async def fake_bus_query(text, pending_stops=None):
+        return {"kind": "stop_ambiguous", "message": "Which stop did you mean?\n- Fullerton Sq (03011)"}
+
+    monkeypatch.setattr(routes_tools, "handle_bus_query", fake_bus_query)
+
+    result = await get_bus_timings.ainvoke({"query": "bus timing at Fullerton sq"})
+    assert "Which stop did you mean?" in result
+    assert "03011" in result
+
+
+@pytest.mark.asyncio
+async def test_transit_journey_formats_live_steps(monkeypatch):
+    import capabilities.routes.journey as journey_module
+
+    async def fake_journey(origin, destination):
+        return {
+            "origin": "Raffles Place",
+            "destination": "Changi Airport",
+            "total": "40 mins",
+            "distance": "18 km",
+            "steps": [{"kind": "transit", "line": "EWL", "departure_stop": "Raffles Place",
+                       "arrival_stop": "Changi Airport", "duration_text": "40 mins",
+                       "live_minutes": 2, "scheduled_time": None}],
+            "map_url": "https://maps.example/dir",
+        }
+
+    monkeypatch.setattr(journey_module, "plan_transit_journey", fake_journey)
+
+    result = await transit_journey.ainvoke({"origin": "Raffles Place", "destination": "Changi Airport"})
+    assert "Raffles Place" in result
+    assert "next in ~2 min" in result
+
+
+@pytest.mark.asyncio
+async def test_query_my_points_balances_formats_rows():
+    from capabilities.memory.tools import upsert_points_balance
+
+    await upsert_points_balance(user_id=9109, issuer="DBS", program="DBS Rewards", balance=12000)
+
+    result = await query_my_points_balances.ainvoke({"user_id": 9109})
+    assert "DBS Rewards" in result
+    assert "12,000" in result
+
+
+@pytest.mark.asyncio
+async def test_general_plugin_agent_calls_bus_tool(monkeypatch):
+    """The orchestrator agent can answer a bus-timing ask directly via its tools."""
+    from langchain_core.messages import AIMessage as _AIMessage
+
+    from orchestrator.router import GeneralPlugin
+    import orchestrator.router as router_module
+
+    class _FakeBusTool:
+        name = "get_bus_timings"
+
+        async def ainvoke(self, args):
+            return "Fullerton Sq (03011, Fullerton Rd):\nBus 10: next 3 min, Bus 75: next 8 min"
+
+    class _FakeToolCallingLLM:
+        def __init__(self):
+            self.calls = 0
+
+        def bind_tools(self, tools):
+            self.tools = tools
+            return self
+
+        async def ainvoke(self, messages):
+            self.calls += 1
+            if self.calls == 1:
+                return _AIMessage(content="", tool_calls=[{
+                    "name": "get_bus_timings",
+                    "args": {"query": "bus timing at Fullerton sq"},
+                    "id": "call_bus_1",
+                    "type": "tool_call",
+                }])
+            return _AIMessage(content="Bus 10 is due in 3 minutes at Fullerton Sq.")
+
+    import capabilities.general.tools as general_tools
+
+    monkeypatch.setattr(general_tools, "get_bus_timings", _FakeBusTool())
+    monkeypatch.setattr(router_module, "get_agent_llm", lambda *a, **k: _FakeToolCallingLLM())
+    monkeypatch.setattr(router_module.settings, "gemini_api_key", "fake-key-for-test")
+
+    output = await GeneralPlugin().execute({
+        "user_id": 9108,
+        "messages": [HumanMessage(content="what time is the next bus at fullerton sq")],
+    })
+
+    assert "Bus 10" in str(output.message.content)
+    tool_call_messages = [m for m in output.extra_messages if isinstance(m, _AIMessage) and m.tool_calls]
+    assert tool_call_messages and tool_call_messages[0].tool_calls[0]["name"] == "get_bus_timings"
 
 
 @pytest.mark.asyncio

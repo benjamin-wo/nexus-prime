@@ -312,3 +312,69 @@ async def search_my_email(query: str = "", latest: bool = False, user_id: int = 
         for r in results[:8]
     ]
     return "\n".join(lines)
+
+
+@tool
+async def get_bus_timings(query: str) -> str:
+    """
+    Get LIVE Singapore bus arrival times for a bus stop from LTA DataMall.
+
+    Use for any request about bus timings/arrivals at a stop: "next bus from
+    Tampines West CC", "bus timing at Fullerton Sq", "bus at 76161", or "next
+    bus 27". When the stop name is ambiguous, the reply lists the matching
+    stops — call again with the 5-digit stop code or exact stop name to get
+    the arrivals. Read-only; never fabricates a bus number.
+    """
+    from capabilities.routes.tools import handle_bus_query
+
+    try:
+        result = await handle_bus_query(query)
+    except Exception as exc:  # noqa: BLE001
+        return f"[routes] bus query failed: {exc}"
+    return result.get("message") or "No bus information returned."
+
+
+@tool
+async def transit_journey(origin: str, destination: str) -> str:
+    """
+    Plan a transit journey between two places with LIVE Singapore bus/MRT
+    next-departure times and a map link. Use for "how do I get from X to Y",
+    "bus from X to Y", "route to Y", "drive to Y". Returns ordered walking and
+    transit steps, total time, and a Google Maps link. Read-only.
+    Args:
+        origin: starting place name.
+        destination: destination place name.
+    """
+    from capabilities.routes.journey import format_journey, plan_transit_journey
+
+    try:
+        journey = await plan_transit_journey(origin, destination)
+    except Exception as exc:  # noqa: BLE001
+        return f"[routes] journey failed: {exc}"
+    if journey.get("error"):
+        return f"[routes] Couldn't plan that journey ({journey['error']}). Try different place names."
+    return format_journey(journey)
+
+
+@tool
+async def query_my_points_balances(user_id: int = 0) -> str:
+    """
+    List the user's stored loyalty points/miles balances (issuer, program,
+    balance, expiry) — e.g. DBS, Citibank, UOB, KrisFlyer. Use for "what are
+    my points balances?", "how many miles do I have?". Read-only; does not
+    record new balances.
+
+    Args:
+        user_id: ignored; the assistant injects the authenticated user's ID.
+    """
+    from capabilities.memory.tools import query_points_balances
+
+    rows = await query_points_balances(int(user_id or 0))
+    if not rows:
+        return "[memory] No points/miles balances saved yet."
+    lines = []
+    for row in rows:
+        label = row["program"] or row["issuer"]
+        expiry = f" · exp {row['expiry'][:10]}" if row.get("expiry") else ""
+        lines.append(f"• {label}: {row['balance']:,.0f}{expiry}")
+    return "\n".join(lines)
