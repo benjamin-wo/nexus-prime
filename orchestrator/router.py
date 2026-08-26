@@ -1032,13 +1032,17 @@ class GeneralPlugin:
         # late binding.
         from capabilities.general.tools import (
             fetch_url,
+            get_bus_timings,
             list_my_boards,
             list_my_reminders,
+            query_my_points_balances,
             query_transactions,
             search_my_email,
             search_web,
             summarize_board,
+            transit_journey,
         )
+        from capabilities.routes.tools import extract_route_request, plan_route
 
         available_tools = [
             search_web,
@@ -1048,6 +1052,11 @@ class GeneralPlugin:
             list_my_boards,
             summarize_board,
             search_my_email,
+            get_bus_timings,
+            transit_journey,
+            plan_route,
+            extract_route_request,
+            query_my_points_balances,
         ]
 
         # Tests and local runs use placeholder keys; skip network call if no provider is configured.
@@ -1059,7 +1068,7 @@ class GeneralPlugin:
                 state_update={"active_domain": self.name},
             )
 
-        MAX_TOOL_ROUNDS = 3
+        MAX_TOOL_ROUNDS = 5
 
         async def _run_tool_loop(hist: list) -> tuple[str, bool]:
             """Runs the bounded tool-call loop against `hist` in place and
@@ -1083,6 +1092,7 @@ class GeneralPlugin:
                         "list_my_boards",
                         "summarize_board",
                         "search_my_email",
+                        "query_my_points_balances",
                     ):
                         # Identity guard: never trust a model-supplied user_id.
                         call_args["user_id"] = int(user_id or 0)
