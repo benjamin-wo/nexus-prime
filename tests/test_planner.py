@@ -4,7 +4,13 @@ from langchain_core.messages import AIMessage
 
 from capabilities.registry import load_registry
 from capabilities.retrieval import BM25Index
-from orchestrator.planner import decision_from_dict, deterministic_plan, missing_policy, plan_with_llm
+from orchestrator.planner import (
+    decision_from_dict,
+    deterministic_plan,
+    is_termination_intent,
+    missing_policy,
+    plan_with_llm,
+)
 from orchestrator.graph import get_assistant_graph
 
 
@@ -54,6 +60,15 @@ def test_c3_probe4_ambiguity_asks_question():
     decision = deterministic_plan("how am I doing?", _state("how am I doing?"), retrieval=None)
     assert decision.question is not None
     assert decision.capabilities == []
+
+
+def test_termination_intent_detection():
+    assert is_termination_intent("Stop") is True
+    assert is_termination_intent("stop!") is True
+    assert is_termination_intent("that's enough") is True
+    assert is_termination_intent("never mind") is True
+    assert is_termination_intent("This is a problem") is False
+    assert is_termination_intent("fullerton sq") is False
 
 
 @pytest.mark.asyncio

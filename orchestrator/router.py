@@ -769,12 +769,20 @@ class RoutePlugin:
         # Bus-arrival queries (times at a stop) use LTA; directions with a
         # destination ("bus from X to Y") go through the Maps journey instead.
         lowered = last_text.lower()
-        from capabilities.routes.tools import handle_bus_query, is_bare_place_fragment, is_bus_arrival_query
+        from capabilities.routes.tools import (
+            handle_bus_query,
+            is_bare_place_fragment,
+            is_bus_arrival_query,
+            is_bus_disambiguation_answer,
+        )
 
-        if is_bus_arrival_query(last_text):
+        pending_stops = state.get("pending_bus_stops")
+        if is_bus_arrival_query(last_text) or (
+            pending_stops and is_bus_disambiguation_answer(last_text, pending_stops)
+        ):
 
             bus_result = await handle_bus_query(
-                last_text, pending_stops=state.get("pending_bus_stops")
+                last_text, pending_stops=pending_stops
             )
             return PluginOutput(
                 message=AIMessage(content=bus_result["message"]),
