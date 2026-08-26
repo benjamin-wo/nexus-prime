@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import List, Optional, Dict, Any
-from sqlmodel import SQLModel, Field, Column, JSON
+from sqlmodel import SQLModel, Field, Column, JSON, UniqueConstraint
 
 class UserProfile(SQLModel, table=True):
     user_id: int = Field(primary_key=True)  # Telegram User ID
@@ -96,6 +96,25 @@ class TaskItem(SQLModel, table=True):
     iou_amount: Optional[float] = Field(default=None)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     completed_at: Optional[datetime] = Field(default=None)
+
+
+class PointsBalance(SQLModel, table=True):
+    """Personal memory slice #1: loyalty points/miles balances per issuer+program.
+
+    Upserted by (user_id, issuer, program) so a fresh statement photo updates
+    the existing balance instead of appending a new row.
+    """
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="userprofile.user_id", index=True)
+    issuer: str = Field(index=True)  # e.g. "DBS", "Citibank", "UOB"
+    program: str = Field(default="", index=True)  # e.g. "DBS Rewards"; "" = issuer-level
+    balance: float = Field(default=0.0)
+    expiry_date: Optional[datetime] = Field(default=None)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "issuer", "program", name="uq_points_user_issuer_program"),
+    )
 
 
 class WhiteboardProject(SQLModel, table=True):

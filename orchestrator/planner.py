@@ -299,6 +299,13 @@ def _candidate_selections(text: str, missing: list[str]) -> list[CapabilitySelec
         "there seems to be an issue with", "there is an issue with",
     ], "bug logging intent")
 
+    add("memory", [
+        "points balance", "miles balance", "reward points", "my points",
+        "my miles", "dbs points", "citibank points", "uob points",
+        "krisflyer", "miles expiring", "points expiring", "how many points",
+        "how many miles", "what are my points", "what are my miles",
+    ], "personal memory points/miles intent")
+
     add("scheduled_content_delivery", [
         "daily morning summary", "news briefing", "stock market news",
         "daily briefing", "morning briefing", "news summary", "briefing of the",

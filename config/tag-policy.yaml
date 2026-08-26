@@ -26,6 +26,7 @@ allowed_tags:
   - briefing
   - bug
   - issue
+  - memory
   - link
   - url
   - fetch
