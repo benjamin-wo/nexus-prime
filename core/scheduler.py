@@ -38,6 +38,7 @@ async def _execute_scheduled_job(job_id: int, user_id: int, instruction_prompt: 
     try:
         chat_id = None
         tz_name = "Asia/Singapore"
+        job_name = ""
         async with async_session_factory() as session:
             profile = (
                 await session.execute(
@@ -53,6 +54,12 @@ async def _execute_scheduled_job(job_id: int, user_id: int, instruction_prompt: 
                 except Exception:
                     pass
             tz_name = profile.current_timezone if profile and profile.current_timezone else tz_name
+            job_row = (
+                await session.execute(
+                    select(ScheduledJob).where(ScheduledJob.id == job_id)
+                )
+            ).scalar_one_or_none()
+            job_name = job_row.job_name if job_row else ""
         if not chat_id:
             print(f"[SCHEDULER] Cannot deliver scheduled job {job_id}: no valid telegram chat_id found for user {user_id}")
             return
@@ -73,6 +80,20 @@ async def _execute_scheduled_job(job_id: int, user_id: int, instruction_prompt: 
             return
 
         from app.ingress import send_telegram_message
+
+        if job_name == "daily_briefing":
+            from capabilities.scheduled_content_delivery.tools import build_daily_briefing
+
+            try:
+                briefing = await build_daily_briefing()
+            except Exception as exc:  # noqa: BLE001
+                print(f"[SCHEDULER] briefing build failed for job {job_id}: {exc}")
+                briefing = None
+            if not briefing:
+                print(f"[SCHEDULER] empty briefing for job {job_id}; skipping delivery")
+                return
+            await send_telegram_message(chat_id, f"📰 *Morning Briefing*\n\n{briefing}")
+            return
 
         await send_telegram_message(
             chat_id,

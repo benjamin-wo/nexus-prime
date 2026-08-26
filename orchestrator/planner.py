@@ -293,6 +293,12 @@ def _candidate_selections(text: str, missing: list[str]) -> list[CapabilitySelec
 
     add("reminders", ["remind", "reminder", "cron"], "reminder/scheduling intent")
 
+    add("scheduled_content_delivery", [
+        "daily morning summary", "news briefing", "stock market news",
+        "daily briefing", "morning briefing", "news summary", "briefing of the",
+        "global news and stock", "send me a daily",
+    ], "scheduled content delivery intent")
+
     add("whiteboard", [
         "whiteboard", "white board", "planning board", " boards",
         "plan a trip", "plan my trip", "plan our trip", "plan a", "plan my",

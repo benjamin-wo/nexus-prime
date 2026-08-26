@@ -22,6 +22,8 @@ allowed_tags:
   - web
   - knowledge
   - chat
+  - news
+  - briefing
   - link
   - url
   - fetch
