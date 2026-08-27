@@ -190,6 +190,7 @@ def all_declared_tools(skills: Dict[str, Skill]) -> List[Any]:
     internal = {
         "search_email_messages", "search_gmail_messages", "search_outlook_messages",
         "apply_email_processed_tag", "apply_gmail_processed_label", "apply_outlook_processed_category",
+        "extract_expense_from_photo",
         "log_capability_gap",
     }
     # Compare against the FULL installed skill set, not the visible subset —
