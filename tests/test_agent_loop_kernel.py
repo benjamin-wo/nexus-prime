@@ -110,3 +110,95 @@ def test_gate_is_inert_when_no_admin_is_configured(monkeypatch):
     visible = _visible_skills(settings.is_admin(222))
     assert "code-exec" in visible
     assert "run_python_code" in {t.name for t in _build_tool_roster(visible)}
+
+
+@pytest.mark.asyncio
+async def test_history_carries_prior_turn_tool_results(monkeypatch):
+    """Regression (live incident, 'what other routes'): the history loop used
+    to drop every ToolMessage, so follow-up asks reached the model with zero
+    visibility into the data its own earlier answer was grounded in. Prior
+    tool-call provenance must reach the model, well-formed."""
+    import orchestrator.agent_loop as al
+    from langchain_core.messages import AIMessage, ToolMessage
+
+    captured = []
+
+    class _CapturingLLM:
+        def bind_tools(self, tools):
+            return self
+
+        async def ainvoke(self, messages):
+            captured.append(list(messages))
+            return AIMessage(content="here's another option: 51 mins via circle line")
+
+    monkeypatch.setattr(al, "get_agent_llm", lambda *a, **k: _CapturingLLM())
+
+    state = {
+        "user_id": 4242,
+        "current_timezone": "Asia/Singapore",
+        "messages": [
+            HumanMessage(content="route from tembusu grand to fullerton square"),
+            AIMessage(content="", tool_calls=[{
+                "name": "transit_journey",
+                "args": {"origin": "tembusu grand", "destination": "fullerton square"},
+                "id": "call_1",
+                "type": "tool_call",
+            }]),
+            ToolMessage(content="journey data: 40 mins via bus 10", tool_call_id="call_1"),
+            AIMessage(content="best route: 40 mins via bus 10"),
+            HumanMessage(content="what other routes"),
+        ],
+    }
+    result = await al.agent_loop(state)
+    assert "another option" in str(result.update["messages"][-1].content)
+
+    hist = captured[0]
+    assert any(
+        isinstance(m, ToolMessage) and "40 mins via bus 10" in str(m.content) for m in hist
+    ), "prior tool result must reach the model"
+    tool_call_msgs = [m for m in hist if isinstance(m, AIMessage) and m.tool_calls]
+    assert tool_call_msgs, "the paired tool_calls AIMessage must be preserved"
+    assert tool_call_msgs[0].tool_calls[0]["id"] == "call_1"
+    # well-formed: every preserved tool_call is immediately followed by its result
+    for i, m in enumerate(hist):
+        if isinstance(m, AIMessage) and m.tool_calls:
+            assert i + 1 < len(hist) and isinstance(hist[i + 1], ToolMessage)
+
+
+@pytest.mark.asyncio
+async def test_history_skips_orphaned_tool_results(monkeypatch):
+    """A ToolMessage whose request was pruned away (the -10 slice can split a
+    pair) must be skipped, not sent as an orphan — providers reject tool
+    results with no preceding tool_call."""
+    import orchestrator.agent_loop as al
+    from langchain_core.messages import AIMessage, ToolMessage
+
+    captured = []
+
+    class _CapturingLLM:
+        def bind_tools(self, tools):
+            return self
+
+        async def ainvoke(self, messages):
+            captured.append(list(messages))
+            return AIMessage(content="hi there")
+
+    monkeypatch.setattr(al, "get_agent_llm", lambda *a, **k: _CapturingLLM())
+
+    state = {
+        "user_id": 4242,
+        "current_timezone": "Asia/Singapore",
+        "messages": [
+            ToolMessage(content="orphan result", tool_call_id="call_gone"),
+            AIMessage(content="", tool_calls=[{
+                "name": "transit_journey", "args": {}, "id": "call_split",
+                "type": "tool_call",
+            }]),
+            HumanMessage(content="hi"),
+        ],
+    }
+    await al.agent_loop(state)
+    hist = captured[0]
+    assert not any(isinstance(m, ToolMessage) for m in hist), "orphan tool results must be skipped"
+    # the split-pair AIMessage was flattened to content-only (no dangling tool_calls)
+    assert not any(isinstance(m, AIMessage) and m.tool_calls for m in hist)

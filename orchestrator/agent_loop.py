@@ -133,7 +133,11 @@ def _build_system_prompt(is_admin: bool, now: str) -> str:
 # it interrupts a conversation the bot was just actively engaged in (reads
 # as total context loss). These stay distinct from that fallback and from
 # each other so each failure mode gets an honest, situation-appropriate reply.
-_EMPTY_REPLY_FALLBACK = "sorry, I didn't quite catch that — could you rephrase or try again?"
+# Regression (live incident, "what other routes"): the model blanked twice
+# in a row and the old fallback told the user to "rephrase" -- but the user's
+# identical re-send worked, so the phrasing was never the problem. The text
+# must own the blank, not imply user error.
+_EMPTY_REPLY_FALLBACK = "🫥 I blanked out for a second there — say that once more?"
 _ERROR_REPLY_FALLBACK = "😵‍💫 sorry, something glitched on my end there — mind trying that again?"
 
 
@@ -586,15 +590,50 @@ async def agent_loop(state: AssistantState) -> Command[str]:
     visible_skills = _visible_skills(is_admin)
     skill_index = _skill_index_text(visible_skills)
     history: List[BaseMessage] = [SystemMessage(content=_build_system_prompt(is_admin=is_admin, now=now_sg) + skill_index)]
-    for message in pruned:
+    # Rebuild provider-facing history WITH prior tool-call provenance: the
+    # #53 feature persists AIMessage(tool_calls) + ToolMessage pairs into
+    # state, but this loop used to drop every ToolMessage -- so follow-ups
+    # like "what other routes" reached the model with zero visibility into
+    # the data its own earlier answer was grounded in. The pairing guard
+    # keeps the provider history well-formed: a tool result whose request
+    # was pruned away (the -10 slice can split a pair) is skipped rather
+    # than sent as an orphan, and an AIMessage whose results were split off
+    # is flattened to content-only.
+    def _tool_ids(message: BaseMessage) -> set:
+        return {
+            str(c.get("id") or c.get("name") or "")
+            for c in (getattr(message, "tool_calls", None) or [])
+        }
+
+    expected_tool_ids: set = set()
+    for idx, message in enumerate(pruned):
         if isinstance(message, SystemMessage):
             history.append(SystemMessage(content=str(message.content)))
         elif isinstance(message, HumanMessage):
+            expected_tool_ids = set()
             history.append(
                 HumanMessage(content=message.content if isinstance(message.content, list) else str(message.content))
             )
         elif isinstance(message, AIMessage):
+            ids = _tool_ids(message)
+            if ids:
+                remaining_ids = {
+                    str(getattr(m, "tool_call_id", "") or "")
+                    for m in pruned[idx + 1:]
+                    if isinstance(m, ToolMessage)
+                }
+                if ids <= remaining_ids:
+                    history.append(message)  # well-formed pair: keep tool_calls
+                    expected_tool_ids = ids
+                    continue
             history.append(AIMessage(content=str(message.content)))
+            expected_tool_ids = set()
+        elif isinstance(message, ToolMessage):
+            tool_id = str(getattr(message, "tool_call_id", "") or "")
+            if tool_id in expected_tool_ids:
+                history.append(message)
+                expected_tool_ids.discard(tool_id)
+            # else: orphaned by pruning -- skip to keep provider history valid
 
     # Trusted, server-resolved identity for this turn -- every identity_bound
     # tool call below (however deep) reads this back, regardless of what a
