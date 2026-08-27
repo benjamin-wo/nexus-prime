@@ -802,6 +802,7 @@ class RoutePlugin:
         # destination ("bus from X to Y") go through the Maps journey instead.
         from capabilities.routes.tools import (
             handle_bus_query,
+            is_alternative_route_request,
             is_bare_place_fragment,
             is_bus_arrival_query,
             is_bus_disambiguation_answer,
@@ -853,7 +854,30 @@ class RoutePlugin:
             )
 
         if mode == "transit":
-            journey = await plan_transit_journey(origin, destination)
+            # Regression: Google Maps was called with alternatives=false, so
+            # "other bus"/"a different route" always got back the exact same
+            # single journey -- there was nothing else to offer. Cycle to
+            # the next Maps alternative when the request is recognizably
+            # asking for one AND it's still the same trip as last time
+            # (otherwise this is a fresh route, start back at index 0).
+            route_index = 0
+            if (
+                is_alternative_route_request(last_text)
+                and last_route.get("origin") == origin
+                and last_route.get("destination") == destination
+            ):
+                route_index = int(last_route.get("route_index") or 0) + 1
+
+            journey = await plan_transit_journey(origin, destination, route_index=route_index)
+            if journey.get("error") == "no_alternative_available":
+                return PluginOutput(
+                    message=AIMessage(content=(
+                        f"🤔 That's actually the only transit route I've got for "
+                        f"*{origin}* → *{destination}* right now — want to try a "
+                        "different starting point or destination?"
+                    )),
+                    state_update={"active_domain": self.name},
+                )
             if not journey.get("error"):
                 return PluginOutput(
                     message=AIMessage(content=format_journey(journey)),
@@ -863,6 +887,7 @@ class RoutePlugin:
                             "origin": origin,
                             "destination": destination,
                             "mode": mode,
+                            "route_index": journey.get("route_index", route_index),
                         },
                     },
                 )

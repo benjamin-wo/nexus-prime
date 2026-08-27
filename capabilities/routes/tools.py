@@ -232,6 +232,26 @@ def is_bare_place_fragment(text: str) -> bool:
     return True
 
 
+def is_alternative_route_request(text: str) -> bool:
+    """True when the user is asking for a different option than the journey
+    just shown ("other bus", "any other route", "something else", "a
+    different way") rather than a fresh place-to-place request.
+
+    Regression: Google Maps Directions was called with alternatives=false,
+    so plan_transit_journey() could only ever return one route -- asking
+    for "other bus" silently got back the exact same journey every time,
+    with no way to even detect the ask. This is the intent classifier that
+    lets RoutePlugin request (and track) the next alternative instead.
+    """
+    lowered = text.strip().lower()
+    if re.search(r"\b(anything|something)\s+else\b", lowered):
+        return True
+    return bool(
+        re.search(r"\b(other|another|different|alternate|alternative)\b", lowered)
+        and re.search(r"\b(bus|buses|route|routes|option|options|way|ways|one|choice|choices)\b", lowered)
+    )
+
+
 def is_bus_disambiguation_answer(
     text: str, pending_stops: Optional[list[Dict[str, Any]]] = None
 ) -> bool:
