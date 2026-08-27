@@ -22,6 +22,23 @@ from core.tool_guard import identity_bound
 from capabilities.expenses.schemas import ExtractedExpense
 from capabilities.email.tools import apply_gmail_processed_label, apply_email_processed_tag
 
+def _clamp_confidence(raw: Any) -> float:
+    """ExtractedExpense.confidence is constrained to [0.0, 1.0] (schemas.py),
+    but the LLM extraction occasionally returns an out-of-range value (e.g.
+    5.0, apparently scoring confidence out of 5 or 10 instead of as a
+    fraction) -- confirmed live: this crashed log_expenses_from_emails'
+    ExtractedExpense construction uncaught, aborting that user's entire
+    email sweep for the cycle (not just skipping the one bad email), and
+    since the offending email was never marked processed, it re-crashed on
+    every subsequent 10-minute sweep indefinitely. Clamp defensively at
+    every construction site rather than trusting the raw model output."""
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return 0.9
+    return max(0.0, min(1.0, value))
+
+
 async def is_duplicate_expense(source_message_id: Optional[str]) -> bool:
     """Layer 2 Deduplication: check if source_message_id is in PostgreSQL or was previously deleted."""
     if not source_message_id:
@@ -1249,7 +1266,7 @@ async def log_expenses_from_emails(
             merchant=merchant,
             category=extracted.get("category") or "General",
             date=expense_date,
-            confidence=float(extracted.get("confidence", 0.9)),
+            confidence=_clamp_confidence(extracted.get("confidence", 0.9)),
             needs_clarification=False,
         )
         tx = await save_expense_transaction(
@@ -1338,12 +1355,14 @@ async def process_extracted_expense(
         merchant=merchant,
         category=category,
         date=dt,
-        confidence=confidence,
+        confidence=_clamp_confidence(confidence),
         needs_clarification=needs_clarification,
     )
 
-    # Low confidence or ambiguous: pause execution and request user confirmation
-    if confidence < 0.8 or needs_clarification:
+    # Low confidence or ambiguous: pause execution and request user confirmation.
+    # Uses the clamped value (not the raw param) so an out-of-range model
+    # output can't accidentally dodge this check in either direction.
+    if expense.confidence < 0.8 or needs_clarification:
         hitl_payload = {
             "type": "confirm_action",
             "action": "confirm_expense",
