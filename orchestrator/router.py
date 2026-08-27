@@ -755,6 +755,20 @@ class ExpensePlugin:
         )
 
 
+# Regression (live incident, reported as repeated webhook-level "Still
+# working on that" messages): RoutePlugin.execute() chains multiple external
+# calls -- extract_route_request (LLM, up to LLM_REQUEST_TIMEOUT_SECONDS=30s),
+# then plan_transit_journey's Google Maps Directions call (its own 30s httpx
+# timeout) PLUS one live LTA arrivals lookup per transit leg in the journey
+# (each its own ~15s round-trip, done sequentially, not concurrently) -- with
+# no aggregate bound of its own. Individually-bounded calls whose SUM exceeds
+# the webhook's own 45s ceiling is the exact same bug shape already fixed for
+# whiteboard (#45/PLANNING_INTAKE_TIMEOUT_SECONDS) and GeneralPlugin's tool
+# loop (GENERAL_TOOL_LOOP_TIMEOUT_SECONDS) -- RoutePlugin was the one plugin
+# that never got an equivalent outer bound.
+ROUTE_RESOLUTION_TIMEOUT_SECONDS = 35.0
+
+
 class RoutePlugin:
     """Route capability plugin: plans travel routes and checks real-time Singapore LTA transit alerts."""
 
@@ -766,9 +780,26 @@ class RoutePlugin:
         messages = state.get("messages", [])
         last_text = str(messages[-1].content) if messages else ""
 
+        try:
+            return await asyncio.wait_for(
+                self._resolve(state, messages, last_text),
+                timeout=ROUTE_RESOLUTION_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            return PluginOutput(
+                message=AIMessage(content=(
+                    "🚇 Still pulling that route together — Maps/LTA are taking longer than "
+                    "expected. Try asking again in a moment, or be specific: "
+                    "*\"route from Raffles Place to Changi Airport\"*."
+                )),
+                state_update={"active_domain": self.name},
+            )
+
+    async def _resolve(
+        self, state: AssistantState, messages: List[Any], last_text: str
+    ) -> PluginOutput:
         # Bus-arrival queries (times at a stop) use LTA; directions with a
         # destination ("bus from X to Y") go through the Maps journey instead.
-        lowered = last_text.lower()
         from capabilities.routes.tools import (
             handle_bus_query,
             is_bare_place_fragment,

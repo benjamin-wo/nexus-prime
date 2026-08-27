@@ -133,6 +133,54 @@ async def test_general_plugin_tool_loop_never_exceeds_webhook_budget(monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_route_plugin_journey_never_exceeds_webhook_budget(monkeypatch):
+    """RoutePlugin.execute() chains extract_route_request (LLM, individually
+    bounded) into plan_transit_journey, which itself makes a Google Maps
+    Directions call PLUS one live LTA arrivals lookup per transit leg --
+    each individually bounded, but nothing bounded their SUM before this fix
+    (live incident: repeated webhook-level "Still working on that" replies).
+    Mock plan_transit_journey to sleep right at the real aggregate ceiling
+    (Maps ~30s + one LTA leg ~15s = 45s vs the 45s webhook ceiling), scaled
+    down 100x, and confirm the wrapped call still fails fast instead of
+    approaching the webhook's own timeout."""
+    import orchestrator.router as router_module
+    from orchestrator.router import RoutePlugin
+
+    SCALE = 100.0  # real: Maps ~30s + one LTA leg ~15s = 45s vs 45s webhook ceiling
+    monkeypatch.setattr(router_module, "ROUTE_RESOLUTION_TIMEOUT_SECONDS", 35.0 / SCALE)
+
+    async def fake_extract(**kwargs):
+        return {"origin": "Raffles Place", "destination": "Changi Airport", "mode": "transit"}
+
+    async def slow_journey(origin, destination):
+        # Stands in for _directions' own ~30s ceiling PLUS one transit leg's
+        # _live_minutes_for_stop call (~15s) -- individually each fits its
+        # own bound, but their sum (45s) exceeds ROUTE_RESOLUTION_TIMEOUT_SECONDS
+        # (35s), exactly the bug: nothing bounded the sum before this fix.
+        await asyncio.sleep(45.0 / SCALE)
+        return {"error": "should never get here"}
+
+    monkeypatch.setattr(router_module.extract_route_request, "coroutine", fake_extract)
+    monkeypatch.setattr(router_module, "plan_transit_journey", slow_journey)
+
+    plugin = RoutePlugin()
+    state = {
+        "user_id": 9204,
+        "messages": [HumanMessage(content="route from Raffles Place to Changi Airport")],
+    }
+
+    started = time.monotonic()
+    result = await plugin.execute(state)
+    elapsed = time.monotonic() - started
+
+    assert elapsed < WEBHOOK_CEILING_SECONDS / SCALE, (
+        f"route resolution took {elapsed:.2f}s (scaled) -- must fail fast at its own "
+        "bound rather than approach the webhook's own timeout"
+    )
+    assert "taking longer than expected" in result.message.content
+
+
+@pytest.mark.asyncio
 async def test_self_diagnostic_explanation_never_exceeds_webhook_budget(monkeypatch):
     """explain_last_turn() makes one LLM call; SELF_DIAGNOSTIC_TIMEOUT_SECONDS
     wraps it at the plan_dispatch() call site (not inside explain_last_turn
