@@ -223,9 +223,9 @@ async def test_general_plugin_binds_and_guards_all_cross_domain_tools(monkeypatc
     core.tool_guard.identity_bound path end-to-end via bind_user_id, not an
     introspection shortcut."""
     from core.tool_guard import bind_user_id, current_user_id
-    from orchestrator.agent_loop import _build_tool_roster
+    from orchestrator.agent_loop import _build_tool_roster, _visible_skills
 
-    tools_by_name = {t.name: t for t in _build_tool_roster()}
+    tools_by_name = {t.name: t for t in _build_tool_roster(_visible_skills(True))}
     for tool_name in ("list_my_reminders", "list_my_boards", "summarize_board", "search_my_email"):
         assert tool_name in tools_by_name, f"{tool_name} must be bound in agent_loop's tool roster"
 

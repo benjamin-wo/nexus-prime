@@ -169,7 +169,14 @@ def resolve_skill_tools(skill: Skill) -> List[Any]:
 
 
 def all_declared_tools(skills: Dict[str, Skill]) -> List[Any]:
-    """Every tool declared by any skill, deduplicated, in declaration order."""
+    """Every tool declared by the given (visible) skills, deduplicated, in
+    declaration order.
+
+    ``skills`` may be an admin-filtered subset (see agent_loop's
+    ``_visible_skills``); the undeclared-tool drift warning below therefore
+    compares against the FULL installed skill set, so a gated skill's tools
+    don't produce false "not declared" noise on non-admin turns.
+    """
     registry = build_tool_registry()
     resolved: List[Any] = []
     seen: set[str] = set()
@@ -179,17 +186,20 @@ def all_declared_tools(skills: Dict[str, Skill]) -> List[Any]:
                 continue
             seen.add(tool_obj.name)
             resolved.append(tool_obj)
-    # Guard against registry drift: tools loaded but not declared by any skill
-    # stay available to the agent so a forgotten frontmatter line never
-    # silently removes a capability.
     declared = {t.name for t in resolved}
     internal = {
         "search_email_messages", "search_gmail_messages", "search_outlook_messages",
         "apply_email_processed_tag", "apply_gmail_processed_label", "apply_outlook_processed_category",
         "log_capability_gap",
     }
-    for name, tool_obj in registry.items():
-        if name not in declared and name not in internal:
+    # Compare against the FULL installed skill set, not the visible subset —
+    # a gated skill's tools must not produce false "not declared" noise on
+    # non-admin turns.
+    all_declared: set[str] = set()
+    for skill in discover_skills().values():
+        all_declared.update(skill.tools)
+    for name in registry:
+        if name not in all_declared and name not in internal:
             print(f"[SKILLS] tool {name!r} is registered but not declared by any SKILL.md")
     return resolved
 
