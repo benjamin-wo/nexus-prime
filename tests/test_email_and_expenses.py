@@ -915,3 +915,85 @@ async def test_multimodal_turn_photo_falls_back_to_caption_expense(monkeypatch):
 
     assert "10.00" in result.content
     assert "Parking" in result.content
+
+
+@pytest.mark.asyncio
+async def test_log_expenses_from_emails_survives_out_of_range_confidence(monkeypatch):
+    """Live production bug (confirmed via Railway logs, present since before
+    this session's rewrite): the LLM extraction occasionally returns a
+    confidence value outside [0.0, 1.0] (e.g. 5.0 -- probably scoring
+    confidence out of 5/10 instead of as a fraction). ExtractedExpense's
+    schema constrains confidence to that range, and log_expenses_from_emails
+    constructed it directly from the raw extracted value with no clamping --
+    the resulting pydantic ValidationError propagated up UNCAUGHT out of the
+    per-email loop, aborting that user's entire sweep for the cycle (not
+    just skipping the one bad email). Because the offending email was never
+    marked processed, the same crash recurred every ~10-minute sweep
+    indefinitely for that user. Confirms _clamp_confidence in
+    capabilities/expenses/tools.py fixes it: fails with the old
+    unclamped `confidence=float(extracted.get("confidence", 0.9))` (raises
+    pydantic.ValidationError), passes once clamped."""
+    from core.models import ExpenseTransaction
+    from capabilities.expenses.tools import extract_expense_from_text, log_expenses_from_emails
+
+    async def fake_extract(**kwargs):
+        return {
+            "amount": 42.0,
+            "currency": "SGD",
+            "merchant": "Test Merchant",
+            "category": "General",
+            "date_iso": "",
+            "confidence": 5.0,  # out of range -- the exact reproduction
+            "needs_clarification": False,
+        }
+
+    monkeypatch.setattr(extract_expense_from_text, "coroutine", fake_extract)
+
+    result = await log_expenses_from_emails.ainvoke({
+        "user_id": 8801,
+        "emails": [{
+            "id": "msg-out-of-range-confidence",
+            "sender": "billing@example.com",
+            "subject": "Your receipt",
+            "body": "You paid $42.00 at Test Merchant.",
+            "date": "",
+        }],
+        "notify": False,
+    })
+
+    assert result["logged"], "the expense should have been logged, not crashed past"
+    assert result["logged"][0]["amount"] == 42.0
+
+    async with async_session_factory() as session:
+        tx = (await session.execute(
+            select(ExpenseTransaction).where(
+                ExpenseTransaction.user_id == 8801,
+                ExpenseTransaction.source_message_id == "msg-out-of-range-confidence",
+            )
+        )).scalar_one()
+    assert tx.amount == 42.0
+
+
+@pytest.mark.asyncio
+async def test_process_extracted_expense_clamps_out_of_range_confidence():
+    """Same guard, on the agent-callable path: the model can pass any
+    confidence value as a tool argument directly (more exposed than the
+    email-sweep path, since there's no upstream code shaping it first).
+    An out-of-range value must clamp to a valid ExtractedExpense.confidence
+    rather than crash process_extracted_expense."""
+    from capabilities.expenses.tools import process_extracted_expense
+
+    result = await process_extracted_expense.ainvoke({
+        "user_id": 8802,
+        "amount": 15.0,
+        "currency": "SGD",
+        "merchant": "Test Merchant",
+        "category": "General",
+        "date_iso": "",
+        "confidence": 5.0,  # out of range
+        "needs_clarification": False,
+        "source_message_id": "test-clamp-process-extracted-expense",
+    })
+    # Clamped to 1.0 (>= 0.8), so this takes the high-confidence silent-save
+    # path rather than pausing on interrupt() -- not a duplicate/HITL status.
+    assert result["status"] == "saved_silently"
