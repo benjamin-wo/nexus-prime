@@ -37,7 +37,6 @@ TOOL_MODULES: Tuple[str, ...] = (
     "capabilities.bug_logging.tools",
     "capabilities.scheduled_content_delivery.tools",
     "capabilities.code_exec.tools",
-    "orchestrator.recipes",
 )
 
 
@@ -115,14 +114,12 @@ def discover_skills(skills_dir: Optional[Path] = None) -> Dict[str, Skill]:
     return skills
 
 
-_TOOL_CACHE: Optional[Dict[str, Any]] = None
+def build_tool_registry() -> Dict[str, Any]:
+    """Import tool modules and index every @tool callable by name.
 
-
-def build_tool_registry(force: bool = False) -> Dict[str, Any]:
-    """Import tool modules and index every @tool callable by name."""
-    global _TOOL_CACHE
-    if _TOOL_CACHE is not None and not force:
-        return _TOOL_CACHE
+    Deliberately uncached: the roster is rebuilt per agent turn so tests (and
+    hot skill edits) see fresh module attributes via late binding. The module
+    imports themselves are cached by Python, so the rescan is trivial."""
     registry: Dict[str, Any] = {}
     for module_path in TOOL_MODULES:
         try:
@@ -135,7 +132,6 @@ def build_tool_registry(force: bool = False) -> Dict[str, Any]:
                 registry.setdefault(str(attr.name), attr)
     # A skill's own tools.py, when present, is loaded lazily via
     # load_skill_tools(); name collisions with core modules are ignored here.
-    _TOOL_CACHE = registry
     return registry
 
 
@@ -187,9 +183,14 @@ def all_declared_tools(skills: Dict[str, Skill]) -> List[Any]:
     # stay available to the agent so a forgotten frontmatter line never
     # silently removes a capability.
     declared = {t.name for t in resolved}
+    internal = {
+        "search_email_messages", "search_gmail_messages", "search_outlook_messages",
+        "apply_email_processed_tag", "apply_gmail_processed_label", "apply_outlook_processed_category",
+        "log_capability_gap",
+    }
     for name, tool_obj in registry.items():
-        if name not in declared and name not in {"search_email_messages", "search_gmail_messages", "search_outlook_messages", "apply_email_processed_tag", "apply_gmail_processed_label", "apply_outlook_processed_category", "get_user_expenses", "log_expenses_from_emails", "run_python_code"}:
-            resolved.append(tool_obj)
+        if name not in declared and name not in internal:
+            print(f"[SKILLS] tool {name!r} is registered but not declared by any SKILL.md")
     return resolved
 
 

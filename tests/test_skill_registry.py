@@ -3,7 +3,6 @@ import textwrap
 from pathlib import Path
 
 from core.skill_registry import (
-    Skill,
     build_tool_registry,
     discover_skills,
     load_skill_file,
@@ -63,23 +62,23 @@ def test_discover_skills_from_repo():
     assert {
         "web-research", "expenses", "transit", "email", "reminders",
         "recipes-groceries", "memory", "bug-logging", "daily-briefing",
-        "whiteboard-planning", "code-exec", "composed-recipes",
+        "whiteboard-planning", "code-exec",
     } <= names
 
 
-def test_tool_registry_resolves_declared_tools():
+def test_tool_registry_resolves_all_declared_skills():
     registry = build_tool_registry()
-    assert "search_web" in registry
-    assert "get_bus_timings" in registry
-    assert "log_expense" in registry
-    assert "create_reminder" in registry
-    assert "run_recipe" in registry
+    for name in (
+        "search_web", "get_bus_timings", "process_extracted_expense",
+        "create_one_time_reminder", "create_planning_board",
+        "record_points_balance", "log_bug_report", "schedule_daily_briefing",
+        "record_incoming_money", "sweep_email_for_expenses",
+    ):
+        assert name in registry, name
 
     skills = discover_skills()
-    transit = skills["transit"]
-    resolved = resolve_skill_tools(transit)
-    resolved_names = {t.name for t in resolved}
-    assert {"get_bus_timings", "transit_journey", "plan_route", "extract_route_request"} <= resolved_names
+    transit = resolve_skill_tools(skills["transit"])
+    assert {"get_bus_timings", "transit_journey", "plan_route", "extract_route_request"} <= {t.name for t in transit}
 
 
 def test_skill_index_lists_every_skill():

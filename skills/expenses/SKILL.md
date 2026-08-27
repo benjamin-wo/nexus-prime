@@ -4,19 +4,21 @@ description: Log and query the user's money — "spent $12 at Starbucks", "how m
 tags: [finance, spending, income, budget]
 side_effect: write
 tools:
-  - log_expense
-  - log_income
+  - process_extracted_expense
+  - record_incoming_money
   - query_transactions
   - split_bill_expense
   - extract_expense_from_text
+  - get_user_expenses
+  - log_expenses_from_emails
 ---
 
 # Expenses & income
 
 ## Logging
-- For clear spending statements call `log_expense` directly (confidence 0.95).
+- For clear spending statements call `process_extracted_expense` directly (confidence 0.95).
 - If the amount or merchant is ambiguous, ask ONE short clarifying question first — never guess an amount.
-- Incoming money ("salary", "paid me back", "refund") → `log_income`, category salary/repayment/reimbursement/claim.
+- Incoming money ("salary", "paid me back", "refund") → `record_incoming_money`, category salary/repayment/reimbursement/claim.
 - Never log a transaction the user did not clearly state. Never invent amounts.
 
 ## Queries
