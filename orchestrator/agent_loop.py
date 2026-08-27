@@ -106,7 +106,11 @@ def _build_system_prompt(is_admin: bool, now: str) -> str:
         "decide whether and how to use it, and call as many of them, in whatever order, as a "
         "request genuinely needs (e.g. researching a trip may mean search_web several times, "
         "then create_planning_board, then several pin_note_to_whiteboard/add_checklist_to_whiteboard "
-        "calls). You are not limited to one tool call per turn or one domain per turn.\n\n"
+        "calls). You are not limited to one tool call per turn or one domain per turn. "
+        "NEVER say you're about to look something up, search, or check without actually calling "
+        "the tool that does it in this same turn -- 'let me check that for you...' with no tool "
+        "call behind it leaves the user waiting on nothing. Call the tool, then answer from what "
+        "it returned, all in one turn.\n\n"
         "Tools tagged as writing money or board data enforce their own safety checks "
         "internally (ownership, confirmation, duplicate detection) -- call them as directly as "
         "any read-only tool; if one comes back asking for confirmation or reports a problem, "
@@ -119,6 +123,18 @@ def _build_system_prompt(is_admin: bool, now: str) -> str:
         f"Current Singapore time: {now}. "
         f"{capabilities_desc}"
     )
+
+
+# Regression (live incident): mid-conversation (e.g. mid a bus-stop
+# disambiguation), a genuinely empty model completion or a tool-loop
+# exception used to fall back to _generate_rule_based_response's canned
+# "here's what I can help with" capabilities blurb -- appropriate only for
+# a fresh/unclear message with no context, but jarring and misleading when
+# it interrupts a conversation the bot was just actively engaged in (reads
+# as total context loss). These stay distinct from that fallback and from
+# each other so each failure mode gets an honest, situation-appropriate reply.
+_EMPTY_REPLY_FALLBACK = "sorry, I didn't quite catch that — could you rephrase or try again?"
+_ERROR_REPLY_FALLBACK = "😵‍💫 sorry, something glitched on my end there — mind trying that again?"
 
 
 def _generate_rule_based_response(text: str) -> str:
@@ -440,7 +456,9 @@ async def _run_tool_loop(hist: List[BaseMessage], tools: List[Any], gap_calls: l
         ai_message = await llm_with_tools.ainvoke(hist)
 
     text = extract_llm_text(getattr(ai_message, "content", "")).strip()
+    round_budget_exhausted = False
     if not text and getattr(ai_message, "tool_calls", None):
+        round_budget_exhausted = True
         hist.append(ai_message)
         for call in ai_message.tool_calls:
             hist.append(
@@ -451,6 +469,59 @@ async def _run_tool_loop(hist: List[BaseMessage], tools: List[Any], gap_calls: l
             )
         final_message = await llm_with_tools.ainvoke(hist)
         text = extract_llm_text(getattr(final_message, "content", "")).strip()
+
+    # Regression (live incident): mid-conversation, the model sometimes
+    # returns a genuinely empty completion -- no text, no tool call at all
+    # (observed following up a bus-stop disambiguation: "That should be the
+    # name" got back nothing). Without this, the caller's fallback used to
+    # be the "no LLM key configured" canned capabilities blurb, which reads
+    # as the bot having completely forgotten the conversation -- worse than
+    # useless mid-thread. One corrective nudge first; a distinct honest
+    # "I missed that" message (not the capabilities blurb) is the caller's
+    # fallback if this still comes back empty. Skipped if we already hit
+    # the round-budget-exhausted branch above: that's a different, already-
+    # bounded situation (a genuinely runaway tool-calling loop, MAX_TOOL_ROUNDS'
+    # own concern) -- retrying again here would just add unbounded extra
+    # calls on top of an already-confirmed-broken loop.
+    if not text and not round_budget_exhausted:
+        hist.append(
+            SystemMessage(
+                content=(
+                    "Your last response was empty. Answer the user's most recent "
+                    "message directly -- either with a real reply, or by calling "
+                    "a tool if one is needed to answer it."
+                )
+            )
+        )
+        retry_message = await llm_with_tools.ainvoke(hist)
+        text = extract_llm_text(getattr(retry_message, "content", "")).strip()
+        if not text and getattr(retry_message, "tool_calls", None):
+            # The retry decided it needs a tool after all -- let the caller
+            # see that via link_tool_used bookkeeping is out of scope here;
+            # simplest correct move is one more direct answer pass after
+            # actually running that tool call.
+            hist.append(retry_message)
+            for call in retry_message.tool_calls:
+                call_name = str(call.get("name") or "")
+                call_args = dict(call.get("args") or {})
+                if call_name in ("search_web", "fetch_url"):
+                    link_tool_used = True
+                tool_obj = next((t for t in tools if t.name == call_name), None)
+                if tool_obj is None:
+                    observation: Any = f"[{call_name}] Unknown tool."
+                else:
+                    try:
+                        observation = await tool_obj.ainvoke(call_args)
+                    except GraphBubbleUp:
+                        raise
+                    except Exception as tool_exc:  # noqa: BLE001
+                        print(f"[AGENT_LOOP] tool {call_name} failed: {tool_exc}")
+                        observation = f"[{call_name}] failed: {tool_exc}"
+                hist.append(
+                    ToolMessage(content=str(observation), tool_call_id=str(call.get("id") or call_name))
+                )
+            final_retry_message = await llm_with_tools.ainvoke(hist)
+            text = extract_llm_text(getattr(final_retry_message, "content", "")).strip()
     return text, link_tool_used
 
 
@@ -550,13 +621,20 @@ async def agent_loop(state: AssistantState) -> Command[str]:
                 tools = _build_tool_roster()
                 try:
                     content, extra_messages = await _compose_reply(history, tools, gap_calls)
+                    # _run_tool_loop already retries once internally on a
+                    # genuinely empty completion -- if it's STILL empty here,
+                    # that's a real (if rare) model hiccup, not "no LLM
+                    # configured". _generate_rule_based_response's canned
+                    # capabilities blurb is jarring mid-conversation (reads as
+                    # the bot forgetting everything just discussed); a short,
+                    # honest miss is more true to what happened.
                     if not content:
-                        content = _generate_rule_based_response(text)
+                        content = _EMPTY_REPLY_FALLBACK
                 except GraphBubbleUp:
                     raise
                 except Exception as exc:  # noqa: BLE001 - never let an LLM error kill the turn
                     print(f"[AGENT_LOOP] tool loop failed, using fallback: {exc}")
-                    content = _generate_rule_based_response(text)
+                    content = _ERROR_REPLY_FALLBACK
     finally:
         current_user_id.reset(token)
 
