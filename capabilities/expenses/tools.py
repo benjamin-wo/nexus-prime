@@ -1745,3 +1745,94 @@ async def split_bill_expense(
         "reply_text": full_reply,
         "buttons": buttons,
     }
+
+
+@tool
+async def log_expense(
+    amount: float,
+    merchant: str,
+    category: str = "General",
+    currency: str = "SGD",
+    date_iso: str = "",
+    confidence: float = 0.95,
+    needs_clarification: bool = False,
+    source_message_id: str = "",
+    user_id: int = 0,
+) -> str:
+    """
+    Record an expense in the user's ledger. Use when the user clearly states
+    spending ("spent $12.50 at Starbucks", "paid 4.20 for kopi") or confirms
+    an expense you proposed. Deduplicates by source_message_id and routes
+    low-confidence/ambiguous entries through user confirmation automatically.
+
+    Args:
+        amount: the amount spent (positive number).
+        merchant: where the money went.
+        category: Dining | Groceries | Transport | Shopping | Bills | General | Leisure.
+        currency: ISO currency code (default SGD).
+        date_iso: optional ISO date of the spend; defaults to now.
+        confidence: how certain the extraction is (below 0.8 triggers user confirmation).
+        needs_clarification: set true when the merchant or amount is ambiguous.
+        source_message_id: optional dedup key for the originating message.
+        user_id: ignored; the assistant injects the authenticated user's ID.
+    """
+    from datetime import datetime as _dt
+
+    result = await process_extracted_expense(
+        user_id=int(user_id or 0),
+        amount=float(amount),
+        currency=(currency or "SGD").strip().upper(),
+        merchant=(merchant or "").strip() or "Unknown",
+        category=normalize_category_name(category),
+        date_iso=date_iso or _dt.now().isoformat(),
+        confidence=float(confidence),
+        needs_clarification=bool(needs_clarification),
+        source_message_id=source_message_id or None,
+    )
+    status = result.get("status")
+    if status == "duplicate":
+        return f"Skipped: {result.get('message', 'duplicate expense')}"
+    if status in {"confirmed_by_user", "saved_silently"}:
+        return f"Expense logged: {currency} {float(amount):.2f} at {merchant} ({category})."
+    return f"Expense processing status: {status} ({result})"
+
+
+@tool
+async def log_income(
+    amount: float,
+    source: str = "Other",
+    category: str = "Other",
+    currency: str = "SGD",
+    notes: str = "",
+    source_message_id: str = "",
+    user_id: int = 0,
+) -> str:
+    """
+    Record money the user RECEIVED (salary, repayment, reimbursement, refund).
+    Only use when the user clearly states money coming in — never for spending.
+
+    Args:
+        amount: the amount received (positive number).
+        source: employer | friend | insurer | other.
+        category: salary | repayment | reimbursement | claim | other.
+        currency: ISO currency code (default SGD).
+        notes: optional free-text note.
+        source_message_id: optional dedup key for the originating message.
+        user_id: ignored; the assistant injects the authenticated user's ID.
+    """
+    item = await save_income_transaction(
+        user_id=int(user_id or 0),
+        income={
+            "amount": float(amount),
+            "currency": (currency or "SGD").strip().upper(),
+            "source": (source or "Other").strip(),
+            "category": category,
+            "notes": notes or None,
+            "date": datetime.now(dt_timezone.utc).isoformat(),
+        },
+        source_message_id=source_message_id or None,
+    )
+    return (
+        f"Income logged: +{item.currency} {item.amount:.2f} from {item.source} "
+        f"({item.category}) as #{item.id}."
+    )

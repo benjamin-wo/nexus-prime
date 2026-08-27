@@ -82,8 +82,8 @@ class Settings(BaseSettings):
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         return os.path.join(base_dir, self.data_dir)
 
-    # Capability Access Control
-    admin_only_capabilities: set[str] = {"whiteboard"}
+    # Capability Access Control — skills a non-admin user must never reach.
+    admin_only_capabilities: set[str] = {"code-exec"}
 
     def is_admin(self, user_id: Optional[object]) -> bool:
         """

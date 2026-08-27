@@ -1,11 +1,58 @@
 # Nexus Prime — Personal Assistant Telegram Bot
 
-A high-performance, single-user **Personal Assistant Telegram Bot** deployed on **Railway** with
-built-in multi-user extensibility from day one. Nexus Prime orchestrates email, expenses, routes,
-recipes, reminders, general questions, and sandboxed code through a **manifest-first capability
-registry** and a **retrieve → plan → select-a-set** router powered by LangGraph.
+A **general-purpose agentic assistant** deployed on **Railway**, living on **Telegram** and a
+**web cockpit/dashboard**. One tool-chaining agent fulfils user requests using **skills declared
+as markdown files with frontmatter** — adding a skill means dropping a folder, no code changes.
 
 ## Architecture
+
+### The agent (`orchestrator/agent_node.py`)
+
+A single agentic loop is the brain. It receives the full conversation history, a skill index,
+and every tool declared by installed skills; it chains tools (bounded rounds) until the request
+is fulfilled. Around it sits a **deterministic safety kernel** that never delegates to the LLM:
+
+- termination/closing intents ("stop") end the turn;
+- media turns attempt receipt-expense extraction first, then describe via the vision model;
+- incoming-money statements are parsed and written deterministically (including IOU settlement
+  on friend repayments) — money writes never depend on the model;
+- pending bus-stop disambiguation answers stay inside the live bus-arrival handler;
+- unsupported transactional categories (bank transfers, bookings, smart home, ...) are refused
+  honestly and logged as capability-gap telemetry;
+- self-diagnosis questions ("why did you...", "is this broken?") are answered from the bot's own
+  integration health, not routed into a random skill's flow;
+- the identity guard overrides any model-supplied `user_id` with the authenticated one.
+
+Human-in-the-loop is preserved via LangGraph `interrupt()` / `Command(resume=...)` for ambiguous
+expenses and other consequential writes.
+
+### Skills (`skills/<name>/SKILL.md`)
+
+Skills are the authoring surface — **markdown with YAML frontmatter** (Claude-style):
+
+```markdown
+---
+name: transit
+description: Live Singapore bus timings and transit journeys.
+tags: [transit, bus]
+side_effect: read        # read | write | spend | irreversible
+tools:
+  - get_bus_timings      # resolved against the tool registry by name
+  - transit_journey
+---
+
+# Bus timings & routes
+Step-by-step guidance the agent loads on demand via the `load_skill` tool.
+```
+
+- `core/skill_registry.py` — parses frontmatter, discovers skills, resolves declared tools
+  against the **tool registry** (the `@tool` callables across `capabilities/*/tools.py` and a
+  skill's own optional `tools.py`), and exposes the skill index + progressive-disclosure loader.
+- Installed skills: web-research, expenses, transit, email, reminders, recipes-groceries,
+  memory (points/miles), bug-logging, daily-briefing, whiteboard-planning, composed-recipes,
+  code-exec (kernel-gated to admins).
+- **Adding a skill = dropping `skills/<name>/SKILL.md`** (plus `tools.py` if it needs new
+  executable actions). No registry edits, no redeploy.
 
 ### Layer 1 — Core (`core/`)
 
@@ -16,69 +63,21 @@ registry** and a **retrieve → plan → select-a-set** router powered by LangGr
 - `core/ambient.py` — Trigger policy: proactive delivery only from trigger records; quiet hours
   suppress non-urgent delivery before 09:00 local; urgent triggers still land.
 - `core/audit.py` — LLM-as-a-Judge quality observability and capability-gap telemetry. Whole
-  conversations are reviewed by Gemini 3.1 Pro every 5 user messages (`ConversationAuditLog`),
-  with a special focus on route/maps/bus correctness; `GEMINI_JUDGE_MODEL` overrides the default.
+  conversations are reviewed by Gemini 3.1 Pro every few user messages (`ConversationAuditLog`);
+  `GEMINI_JUDGE_MODEL` overrides the default.
 - `core/code_sandbox.py` — Isolated code execution: import allowlist, egress allowlist, secret
   redaction, hard timeout, credential vault unreachable. E2B provider for production; a
   process-isolated local provider for offline runs and tests.
-- `core/shared_tools/` — Date/time parsing, coordinate resolution, email presets.
 
-### Layer 2 — Capabilities (`capabilities/`)
+### Surfaces (`app/`)
 
-Capabilities are declared as **manifests** in `capabilities/manifests/*.yaml` and loaded by
-`capabilities/registry.py`. Each manifest declares an id, a retrieval-facing description in the
-user's phrasing, typed input/output schemas, a side-effect class (`read`/`write`/`spend`/
-`irreversible`), free-form multi-valued tags, preconditions, and a cost hint. Manager tags are
-**derived** from manifests — there is no manager enum, class, or routing hop.
+- **Telegram** (`app/ingress.py`) — webhook ingress, slash commands, media download, inline
+  keyboard HITL confirmations, proactive push delivery.
+- **Web cockpit** (`app/dashboard_api.py`, `showcase/`) — metrics cards, transaction ledger,
+  whiteboard canvas, and a Copilot drawer wired to the same agent graph.
 
-- Plugins: email, expenses, routes (live LTA bus arrivals when `LTA_ACCOUNT_KEY` is configured,
-  Google Maps + LTA composed into full journey answers with live next departures and a map link),
-  recipes, reminders, general, code_exec.
-- Retrieval: `capabilities/retrieval.py` — BM25 index over manifest content with top-k shortlists
-  and a recovery path when the correct capability sits outside `k`.
-- Advisory tag policy: `config/tag-policy.yaml` (unknown tags warn at load).
-
-### Layer 3 — Orchestration (`orchestrator/`)
-
-Routing is **retrieve → plan → select a set**, not a single-label `goto`:
-
-- `orchestrator/planner.py` — Decision object: capability set, ordering, explicit
-  `insufficient_capability` with reasons, confidence, and optional disambiguation question. An LLM
-  planner runs when API keys are configured, with the deterministic planner as the measured
-  offline fallback. Planning is backend-only: the plan and its internal rationale are stored in
-  state and logs, never shown to the user. The LLM planner receives recent conversation context,
-  and `orchestrator/verify.py` runs a bounded verify/re-plan check after tool execution.
-- `orchestrator/plan_router.py` — Executes a Decision through the plugin registry and returns
-  `Command(goto=END)` updates.
-- `orchestrator/fastpath.py` — Skips planner/insufficiency/composition stages for known, read-only,
-  single-capability requests (e.g. next-bus ETA).
-- `orchestrator/insufficiency.py` — First-class "I can't": distinct no-integration / needs-human
-  messages, gap records, never a fallback from a failed tool call.
-- `orchestrator/promotion.py` — Gap → draft → approval pipeline: security validation gates the
-  draft **before** any human approval is requested, provenance is recorded in `skills-lock.json`,
-  and rollback restores previous manifests.
-
-Human-in-the-loop is preserved via LangGraph `interrupt()` / `Command(resume=...)` for ambiguous
-expenses and other consequential writes. The legacy `CapabilityRouter` remains for direct unit
-testing.
-
-### CI/CD capability promotion
-
-`.github/workflows/promote-capability.yml` runs validation, then requires a manual approval
-environment before `python -m orchestrator.promotion promote <draft>` writes the manifest and
-records provenance in `skills-lock.json`.
-
-## Gauntlet loop (frozen benchmarks)
-
-The repository carries a full evaluation loop under `gauntlet/`:
-
-- **Replay set** — `gauntlet/replay-set.jsonl`, 70 trace-backed messages, frozen. Baselines:
-  `B_acc` 0.629, `B_cross` 0.214, webhook → first Telegram byte p50 7.3 ms / p95 12.6 ms (local,
-  mocked outbound network).
-- **Component benchmarks** — `gauntlet/c1/` through `gauntlet/c8/`, each with a frozen benchmark,
-  Builder brief, Blind Critic review, probe traces, and a lock file in `gauntlet/locks/`.
-- **Current planner result** — B_acc 0.986 (69/70), stated margin +0.357 over the 0.629 baseline;
-  fast path p50 ~8 ms; retrieval recall@5 ≥ 0.99 and precision@5 = 1.00 on the padded registry.
+Multi-tenant from day one: every tool is user-scoped through the identity guard, and
+`admin_only_capabilities` (config) gates sensitive skills such as `code-exec`.
 
 ## Running Tests
 
