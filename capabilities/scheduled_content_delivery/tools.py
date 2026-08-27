@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from langchain_core.tools import tool
+
 from core.config import settings
 from core.llm import ThinkingLevel, get_agent_llm
+from core.tool_guard import identity_bound
 
 
 async def _search(query: str) -> str:
@@ -65,3 +68,45 @@ async def build_daily_briefing() -> str:
     except Exception as exc:  # noqa: BLE001
         print(f"[BRIEFING] summary LLM failed, using fallback: {exc}")
         return fallback
+
+
+@tool
+async def get_daily_briefing() -> str:
+    """
+    Fetch and format a one-off morning briefing (top global news + stock
+    market headlines) right now. Use for "brief me on the markets" / "what's
+    the news today" as a one-time answer. For a RECURRING daily briefing, use
+    schedule_daily_briefing instead.
+    """
+    return await build_daily_briefing()
+
+
+@tool
+@identity_bound
+async def schedule_daily_briefing(time_hhmm: str = "09:00", user_id: int = 0) -> str:
+    """
+    Set up a recurring daily morning briefing (top global news + stock market
+    news) delivered automatically at a fixed local time (Asia/Singapore). Use
+    for "send me a daily news briefing every morning" / "brief me on the
+    markets daily".
+
+    Args:
+        time_hhmm: 24h local time to deliver it, e.g. "09:00".
+        user_id: ignored; the assistant injects the authenticated user's ID.
+    """
+    from core.scheduler import schedule_proactive_task
+
+    try:
+        hour, minute = (time_hhmm or "09:00").split(":")
+        cron = f"{int(minute)} {int(hour)} * * *"
+    except Exception:  # noqa: BLE001
+        cron = "0 9 * * *"
+        time_hhmm = "09:00"
+    job = await schedule_proactive_task(
+        user_id=int(user_id or 0),
+        job_name="daily_briefing",
+        cron_expression=cron,
+        instruction_prompt="Daily morning briefing: top global news and stock market news",
+        timezone_str="Asia/Singapore",
+    )
+    return f"Scheduled a daily briefing at {time_hhmm} (job #{job.id}, manage anytime with /jobs)."

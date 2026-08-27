@@ -37,7 +37,6 @@ def test_gap_body_reports_implementation_state():
     # The state checklist must reflect real repo facts: whiteboard exists, calendar doesn't
     assert "- [ ]" in body  # at least one missing layer checkbox
     assert "Manifest (capabilities/manifests/calendar.yaml)" in body
-    assert "Plugin registered" in body
     assert "Domain tools module" in body
 
 

@@ -10,6 +10,7 @@ from core.config import settings
 from core.db import async_session_factory
 from core.llm import ThinkingLevel, get_agent_llm
 from core.models import GroceryItem
+from core.tool_guard import identity_bound
 
 
 @tool
@@ -87,6 +88,7 @@ async def parse_recipe_and_extract_ingredients(
 
 
 @tool
+@identity_bound
 async def sync_to_grocery_list(user_id: int, items: List[Dict[str, str]]) -> List[int]:
     """Add extracted recipe ingredients to the user's PostgreSQL GroceryItem table."""
     added_ids = []
@@ -107,6 +109,7 @@ async def sync_to_grocery_list(user_id: int, items: List[Dict[str, str]]) -> Lis
 
 
 @tool
+@identity_bound
 async def get_user_grocery_list(user_id: int, include_purchased: bool = False) -> List[Dict[str, Any]]:
     """Retrieve the user's current grocery items."""
     async with async_session_factory() as session:

@@ -234,6 +234,26 @@ async def send_telegram_chat_action(chat_id: int, action: str = "typing") -> boo
 class TelegramIngress:
     """Deep ingress adapter for Telegram Bot API payloads, slash commands, callbacks, and profile lookup."""
 
+    # app/webhook.py now backgrounds handle_update() instead of awaiting it
+    # inline (fire-and-forget, ack Telegram immediately -- see webhook.py's
+    # docstring), so two updates for the same chat can now start concurrent
+    # graph invocations against the same checkpointer thread_id. One
+    # in-process lock per chat_id serializes just the graph-touching portion
+    # of a turn so a second message queues behind the first instead of
+    # racing it; different chat_ids stay fully concurrent. In-process only --
+    # fine for a single-instance deployment (no evidence of horizontal
+    # scaling here); a multi-instance deployment would need a distributed
+    # lock (e.g. a Postgres advisory lock keyed by chat_id) instead.
+    _chat_locks: Dict[int, asyncio.Lock] = {}
+
+    @classmethod
+    def _lock_for_chat(cls, chat_id: int) -> asyncio.Lock:
+        lock = cls._chat_locks.get(chat_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            cls._chat_locks[chat_id] = lock
+        return lock
+
     @staticmethod
     async def _typing_loop(chat_id: int, stop_event: asyncio.Event) -> None:
         """Repeat the typing indicator every ~4s until processing finishes."""
@@ -694,10 +714,11 @@ class TelegramIngress:
             typing_task = asyncio.create_task(self._typing_loop(chat_id, stop_event))
             try:
                 config = {"configurable": {"thread_id": str(chat_id)}}
-                result = await get_assistant_graph().ainvoke(
-                    Command(resume={"action": action}),
-                    config=config,
-                )
+                async with self._lock_for_chat(chat_id):
+                    result = await get_assistant_graph().ainvoke(
+                        Command(resume={"action": action}),
+                        config=config,
+                    )
                 if callback_query_id:
                     await answer_telegram_callback(callback_query_id, text="Done")
                 reply_text = self._extract_ai_reply(result)
@@ -1251,7 +1272,8 @@ class TelegramIngress:
                 "active_domain": None,
             }
 
-            result = await get_assistant_graph().ainvoke(initial_state, config=config)
+            async with self._lock_for_chat(chat_id):
+                result = await get_assistant_graph().ainvoke(initial_state, config=config)
             interrupts = result.get("__interrupt__")
             if interrupts:
                 for interrupt_item in interrupts:

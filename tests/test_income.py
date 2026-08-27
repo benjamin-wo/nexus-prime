@@ -143,16 +143,14 @@ async def test_telegram_credit_command_records_incoming_transaction():
 
 @pytest.mark.asyncio
 async def test_assistant_records_incoming_money_from_conversation():
-    from langchain_core.messages import HumanMessage
-    from orchestrator.router import ExpensePlugin
+    from capabilities.expenses.tools import record_incoming_money
 
-    result = await ExpensePlugin().execute({
-        "messages": [HumanMessage(content="Loren already paid me $13 yesterday")],
+    reply = await record_incoming_money.ainvoke({
         "user_id": 3013,
-        "active_domain": None,
+        "text": "Loren already paid me $13 yesterday",
     })
 
-    assert "Logged" in str(result.message.content)
+    assert "Logged" in reply
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         transactions = await client.get("/api/dashboard/transactions?user_id=3013")
     assert transactions.status_code == 200

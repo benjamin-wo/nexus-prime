@@ -10,12 +10,14 @@ import re
 from datetime import datetime, timezone as dt_timezone
 from typing import Any, Dict, List, Optional
 
+from langchain_core.tools import tool
 from sqlmodel import select
 
 from core.config import settings
 from core.db import async_session_factory
 from core.llm import ThinkingLevel, get_agent_llm
 from core.models import PointsBalance
+from core.tool_guard import identity_bound
 
 KNOWN_ISSUERS = ("dbs", "citibank", "citi", "uob", "ocbc", "maybank", "krisflyer", "sia", "amex", "american express")
 
@@ -171,3 +173,37 @@ async def query_points_balances(user_id: int) -> List[Dict[str, Any]]:
             }
             for r in rows
         ]
+
+
+@tool
+@identity_bound
+async def record_points_balance(text: str, user_id: int = 0) -> str:
+    """
+    Remember a loyalty points/miles balance the user just told you, e.g. "I
+    have 12000 DBS points" or "my Citibank miles balance is 45000". Extracts
+    issuer/program/balance/expiry from natural language and stores it,
+    updating the existing record for that issuer/program rather than
+    duplicating it. Use query_my_points_balances to recall stored balances --
+    this tool is for recording a NEW statement only.
+
+    Args:
+        text: the user's natural-language points/miles balance statement.
+        user_id: ignored; the assistant injects the authenticated user's ID.
+    """
+    extracted = await extract_points_balance(text)
+    if not extracted.get("balance"):
+        return "[memory] Couldn't find a points/miles balance in that message."
+    record = await upsert_points_balance(
+        user_id=int(user_id or 0),
+        issuer=extracted.get("issuer") or "Unknown",
+        program=extracted.get("program"),
+        balance=float(extracted["balance"]),
+        expiry=extracted.get("expiry"),
+    )
+    label = record.program or record.issuer
+    expiry_note = (
+        f", expiring {record.expiry_date.strftime('%d %b %Y')}"
+        if record.expiry_date
+        else ""
+    )
+    return f"Saved {label}: {record.balance:,.0f} points/miles{expiry_note}."

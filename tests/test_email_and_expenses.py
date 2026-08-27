@@ -48,28 +48,26 @@ async def test_expense_processing_and_hitl_trigger():
 
 
 @pytest.mark.asyncio
-async def test_finalize_expense_sets_active_domain_without_nameerror():
-    """Regression (#11): _finalize_expense was a @staticmethod that referenced
-    `self.name` for the active_domain state update, so every text/photo expense
-    (e.g. "Record a $15 lunch expense") crashed with NameError: name 'self' is
-    not defined once it reached the finalization step."""
-    from orchestrator.router import ExpensePlugin
+async def test_process_extracted_expense_tool_saves_and_reports_amount():
+    """orchestrator/router.py's ExpensePlugin._finalize_expense (deleted --
+    a @staticmethod that used to reference `self.name`, regression #11) is
+    superseded entirely by process_extracted_expense, which every agent-
+    initiated expense write (text or photo) now calls directly -- no
+    plugin/self indirection left for that class of bug to recur in."""
+    from capabilities.expenses.tools import process_extracted_expense
 
-    out = await ExpensePlugin._finalize_expense(
-        user_id=3060,
-        extracted={
-            "amount": 15.0,
-            "currency": "SGD",
-            "merchant": "Deli",
-            "category": "Food",
-            "date_iso": "",
-            "confidence": 0.95,
-            "needs_clarification": False,
-        },
-        source_id="test_finalize_expense_no_nameerror",
-    )
-    assert out.state_update["active_domain"] == "expenses"
-    assert "15.00" in out.message
+    result = await process_extracted_expense.ainvoke({
+        "user_id": 3060,
+        "amount": 15.0,
+        "currency": "SGD",
+        "merchant": "Deli",
+        "category": "Food",
+        "date_iso": "",
+        "confidence": 0.95,
+        "needs_clarification": False,
+        "source_message_id": "test_finalize_expense_no_nameerror",
+    })
+    assert result["status"] == "saved_silently"
 
 from core.shared_tools.email_presets import build_outlook_query
 from capabilities.email.tools import (
@@ -851,16 +849,17 @@ async def test_extract_expense_from_photo_classifies_non_receipt_images(monkeypa
 
 
 @pytest.mark.asyncio
-async def test_expense_plugin_photo_no_receipt_does_not_drop_caption(monkeypatch):
-    """Regression (#25): ExpensePlugin used to unconditionally treat a photo as
-    a receipt attempt and, on failure, discard the caption entirely with a
-    generic "I don't see a clear receipt" message — even when the vision model
-    correctly identified the image as something else (not a receipt) and the
-    caption held real information. The reply must now say what was actually
-    seen and must not silently drop the caption."""
-    import orchestrator.router as router_module
-    from orchestrator.router import ExpensePlugin
-    from langchain_core.messages import HumanMessage
+async def test_multimodal_turn_photo_no_receipt_does_not_drop_caption(monkeypatch):
+    """Regression (#25): a bare-photo turn used to unconditionally treat a
+    photo as a receipt attempt and, on failure, discard the caption entirely
+    with a generic "I don't see a clear receipt" message — even when the
+    vision model correctly identified the image as something else (not a
+    receipt) and the caption held real information. The reply must now say
+    what was actually seen and must not silently drop the caption. Carried
+    over into orchestrator/agent_loop.py's _handle_multimodal_turn when
+    ExpensePlugin was deleted."""
+    from capabilities.expenses import tools as expenses_tools
+    from orchestrator.agent_loop import _handle_multimodal_turn
 
     async def fake_photo_extract(**kwargs):
         return {"amount": None, "description": "a DBS rewards points balance screenshot"}
@@ -869,33 +868,30 @@ async def test_expense_plugin_photo_no_receipt_does_not_drop_caption(monkeypatch
     async def fake_text_extract(**kwargs):
         return {"amount": None}
 
-    monkeypatch.setattr(router_module.extract_expense_from_photo, "coroutine", fake_photo_extract)
-    monkeypatch.setattr(router_module.extract_expense_from_text, "coroutine", fake_text_extract)
+    monkeypatch.setattr(expenses_tools.extract_expense_from_photo, "coroutine", fake_photo_extract)
+    monkeypatch.setattr(expenses_tools.extract_expense_from_text, "coroutine", fake_text_extract)
 
-    caption = "Citibank and UOB points and their expiration dates"
-    out = await ExpensePlugin().execute({
-        "messages": [HumanMessage(content=[
-            {"type": "media", "mime_type": "image/jpeg", "data": "fake_b64"},
-            {"type": "text", "text": caption},
-        ])],
-        "user_id": 4001,
-        "current_timezone": "UTC",
-        "active_domain": None,
-    })
+    # Contains an expense-hint word ("cost") so this reaches the receipt/
+    # caption-extraction branch of _handle_multimodal_turn -- a captionless
+    # or expense-hinted photo always tries that path first (same routing
+    # CapabilityRouter used to apply before dispatching to ExpensePlugin);
+    # a caption with no expense hint at all goes to the generic Gemini
+    # description branch instead, covered by test_media_routing.py.
+    caption = "Citibank and UOB points and how much they cost to redeem"
+    media_blocks = [{"type": "media", "mime_type": "image/jpeg", "data": "fake_b64"}]
+    result = await _handle_multimodal_turn(4001, caption, media_blocks, history=[])
 
-    content = str(out.message.content)
-    assert "points" in content.lower()
-    assert caption in content
-    assert "well-lit shot" not in content  # not the generic bad-photo message
+    assert "points" in result.content.lower()
+    assert caption in result.content
+    assert "well-lit shot" not in result.content  # not the generic bad-photo message
 
 
 @pytest.mark.asyncio
-async def test_expense_plugin_photo_falls_back_to_caption_expense(monkeypatch):
+async def test_multimodal_turn_photo_falls_back_to_caption_expense(monkeypatch):
     """A caption CAN carry its own independent expense even when the photo
     itself isn't a legible receipt — that must still get logged, not lost."""
-    import orchestrator.router as router_module
-    from orchestrator.router import ExpensePlugin
-    from langchain_core.messages import HumanMessage
+    from capabilities.expenses import tools as expenses_tools
+    from orchestrator.agent_loop import _handle_multimodal_turn
 
     async def fake_photo_extract(**kwargs):
         return {"amount": None, "description": "a blurry photo"}
@@ -911,61 +907,11 @@ async def test_expense_plugin_photo_falls_back_to_caption_expense(monkeypatch):
             "needs_clarification": False,
         }
 
-    monkeypatch.setattr(router_module.extract_expense_from_photo, "coroutine", fake_photo_extract)
-    monkeypatch.setattr(router_module.extract_expense_from_text, "coroutine", fake_text_extract)
+    monkeypatch.setattr(expenses_tools.extract_expense_from_photo, "coroutine", fake_photo_extract)
+    monkeypatch.setattr(expenses_tools.extract_expense_from_text, "coroutine", fake_text_extract)
 
-    out = await ExpensePlugin().execute({
-        "messages": [HumanMessage(content=[
-            {"type": "media", "mime_type": "image/jpeg", "data": "fake_b64"},
-            {"type": "text", "text": "also spent $10 on parking"},
-        ])],
-        "user_id": 4002,
-        "current_timezone": "UTC",
-        "active_domain": None,
-    })
-    # _finalize_expense returns a plain string, not an AIMessage.
-    assert "10.00" in str(out.message)
-    assert "Parking" in str(out.message)
+    media_blocks = [{"type": "media", "mime_type": "image/jpeg", "data": "fake_b64"}]
+    result = await _handle_multimodal_turn(4002, "also spent $10 on parking", media_blocks, history=[])
 
-
-@pytest.mark.asyncio
-async def test_expense_plugin_threads_recent_conversation_into_text_extraction(monkeypatch):
-    """#35: a correction like "actually make that $20" only makes sense with
-    the prior turn in view. ExpensePlugin's main text-extraction call site
-    must pass recent_turns(messages) through to extract_expense_from_text so
-    the LLM can resolve the correction instead of guessing from "actually
-    make that $20" alone."""
-    import orchestrator.router as router_module
-    from orchestrator.router import ExpensePlugin
-    from langchain_core.messages import AIMessage, HumanMessage
-
-    captured = {}
-
-    async def fake_text_extract(**kwargs):
-        captured.update(kwargs)
-        return {
-            "amount": 20.0,
-            "currency": "USD",
-            "merchant": "Lunch",
-            "category": "Food",
-            "date_iso": "",
-            "confidence": 0.9,
-            "needs_clarification": False,
-        }
-
-    monkeypatch.setattr(router_module.extract_expense_from_text, "coroutine", fake_text_extract)
-
-    out = await ExpensePlugin().execute({
-        "messages": [
-            HumanMessage(content="spent $15 on lunch"),
-            AIMessage(content="Logged $15.00 for Lunch."),
-            HumanMessage(content="actually make that $20 instead"),
-        ],
-        "user_id": 4003,
-        "current_timezone": "UTC",
-        "active_domain": None,
-    })
-
-    assert "recent_context" in captured
-    assert "spent $15 on lunch" in captured["recent_context"]
-    assert "20.00" in str(out.message)
+    assert "10.00" in result.content
+    assert "Parking" in result.content

@@ -92,12 +92,11 @@ async def test_fetch_url_truncates_long_content(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_general_plugin_binds_fetch_url_alongside_search_web():
-    """The bounded tool loop the model can call from must include fetch_url,
-    not just search_web -- otherwise a user-pasted link still has nowhere
-    to go even though the tool exists."""
-    import inspect
+    """The agent's tool roster must include fetch_url, not just search_web --
+    otherwise a user-pasted link still has nowhere to go even though the
+    tool exists."""
+    from orchestrator.agent_loop import _build_tool_roster
 
-    import orchestrator.router as router_module
-
-    source = inspect.getsource(router_module.GeneralPlugin.execute)
-    assert "fetch_url" in source
+    tool_names = {t.name for t in _build_tool_roster()}
+    assert "fetch_url" in tool_names
+    assert "search_web" in tool_names

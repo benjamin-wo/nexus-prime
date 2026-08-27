@@ -122,7 +122,7 @@ async def test_get_bus_timings_handles_ambiguous(monkeypatch):
 async def test_transit_journey_formats_live_steps(monkeypatch):
     import capabilities.routes.journey as journey_module
 
-    async def fake_journey(origin, destination):
+    async def fake_journey(origin, destination, route_index=0):
         return {
             "origin": "Raffles Place",
             "destination": "Changi Airport",
@@ -157,8 +157,8 @@ async def test_general_plugin_agent_calls_bus_tool(monkeypatch):
     """The orchestrator agent can answer a bus-timing ask directly via its tools."""
     from langchain_core.messages import AIMessage as _AIMessage
 
-    from orchestrator.router import GeneralPlugin
-    import orchestrator.router as router_module
+    from orchestrator.agent_loop import agent_loop
+    import orchestrator.agent_loop as agent_loop_module
 
     class _FakeBusTool:
         name = "get_bus_timings"
@@ -188,16 +188,17 @@ async def test_general_plugin_agent_calls_bus_tool(monkeypatch):
     import capabilities.general.tools as general_tools
 
     monkeypatch.setattr(general_tools, "get_bus_timings", _FakeBusTool())
-    monkeypatch.setattr(router_module, "get_agent_llm", lambda *a, **k: _FakeToolCallingLLM())
-    monkeypatch.setattr(router_module.settings, "gemini_api_key", "fake-key-for-test")
+    monkeypatch.setattr(agent_loop_module, "get_agent_llm", lambda *a, **k: _FakeToolCallingLLM())
+    monkeypatch.setattr(agent_loop_module.settings, "gemini_api_key", "fake-key-for-test")
 
-    output = await GeneralPlugin().execute({
+    command = await agent_loop({
         "user_id": 9108,
         "messages": [HumanMessage(content="what time is the next bus at fullerton sq")],
     })
 
-    assert "Bus 10" in str(output.message.content)
-    tool_call_messages = [m for m in output.extra_messages if isinstance(m, _AIMessage) and m.tool_calls]
+    reply_messages = command.update["messages"]
+    assert "Bus 10" in str(reply_messages[-1].content)
+    tool_call_messages = [m for m in reply_messages if isinstance(m, _AIMessage) and m.tool_calls]
     assert tool_call_messages and tool_call_messages[0].tool_calls[0]["name"] == "get_bus_timings"
 
 
@@ -215,69 +216,35 @@ async def test_search_my_email_reports_none_found(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_general_plugin_binds_and_guards_all_cross_domain_tools():
-    """The bounded tool loop must include the new tools, and the identity
-    guard must force user_id for every one of them -- never trust a
-    model-supplied user_id (matches the existing query_transactions guard)."""
-    import inspect
+async def test_general_plugin_binds_and_guards_all_cross_domain_tools(monkeypatch):
+    """The bounded tool loop must include the cross-domain read tools, and
+    each one must actually override a model-supplied user_id (never trust
+    it) -- matches the existing query_transactions guard. Exercises the real
+    core.tool_guard.identity_bound path end-to-end via bind_user_id, not an
+    introspection shortcut."""
+    from core.tool_guard import bind_user_id, current_user_id
+    from orchestrator.agent_loop import _build_tool_roster
 
-    import orchestrator.router as router_module
-
-    source = inspect.getsource(router_module.GeneralPlugin.execute)
+    tools_by_name = {t.name: t for t in _build_tool_roster()}
     for tool_name in ("list_my_reminders", "list_my_boards", "summarize_board", "search_my_email"):
-        assert tool_name in source, f"{tool_name} must be bound in GeneralPlugin's tool loop"
-    assert '"list_my_reminders"' in source or "'list_my_reminders'" in source
+        assert tool_name in tools_by_name, f"{tool_name} must be bound in agent_loop's tool roster"
 
+    captured: dict = {}
 
-@pytest.mark.asyncio
-async def test_general_plugin_overrides_llm_supplied_user_id_for_new_tools(monkeypatch):
-    """End-to-end identity guard check for the new tools, mirroring
-    test_query_transactions.py's existing coverage for query_transactions."""
-    from langchain_core.messages import AIMessage
-    import orchestrator.router as router_module
-    from orchestrator.router import GeneralPlugin
+    async def _spy_list_active_jobs(user_id):
+        captured["user_id"] = user_id
+        return []
 
-    captured = {}
+    monkeypatch.setattr("core.scheduler.list_active_jobs", _spy_list_active_jobs)
 
-    class _SpyListReminders:
-        name = "list_my_reminders"
+    token = bind_user_id(9111)
+    try:
+        await tools_by_name["list_my_reminders"].ainvoke({"user_id": 666666})
+    finally:
+        current_user_id.reset(token)
 
-        async def ainvoke(self, args):
-            captured["user_id"] = args.get("user_id")
-            return "[reminders] spy observation"
-
-    class _FakeToolCallingLLM:
-        def __init__(self):
-            self.calls = 0
-
-        def bind_tools(self, tools):
-            return self
-
-        async def ainvoke(self, messages):
-            self.calls += 1
-            if self.calls == 1:
-                return AIMessage(content="", tool_calls=[{
-                    "name": "list_my_reminders",
-                    "args": {"user_id": 666666},
-                    "id": "call_1",
-                    "type": "tool_call",
-                }])
-            return AIMessage(content="here are your reminders")
-
-    import capabilities.general.tools as general_tools
-
-    monkeypatch.setattr(general_tools, "list_my_reminders", _SpyListReminders())
-    monkeypatch.setattr(router_module, "get_agent_llm", lambda *a, **k: _FakeToolCallingLLM())
-    monkeypatch.setattr(router_module.settings, "gemini_api_key", "fake-key-for-test")
-
-    output = await GeneralPlugin().execute({
-        "user_id": 9107,
-        "messages": [HumanMessage(content="what reminders do I have?")],
-    })
-
-    assert captured["user_id"] == 9107
+    assert captured["user_id"] == 9111, "identity_bound must override the model-supplied user_id"
     assert captured["user_id"] != 666666
-    assert "here are your reminders" in str(output.message.content)
 
 
 @pytest.mark.asyncio
@@ -289,11 +256,12 @@ async def test_general_plugin_surfaces_tool_call_provenance_for_persistence(monk
     showing a reply grounded in real board data with NO tool invocation
     anywhere in it, indistinguishable from a hallucination to any later
     reader (the audit pipeline included -- this is what got #53 filed as a
-    false-positive P1). PluginOutput.extra_messages must now carry the
-    genuine AIMessage(tool_calls=...)/ToolMessage pair produced this turn."""
+    false-positive P1). The Command update's "messages" list must now carry
+    the genuine AIMessage(tool_calls=...)/ToolMessage pair produced this
+    turn, ahead of the final reply, so it reaches checkpointed state."""
     from langchain_core.messages import AIMessage, ToolMessage
-    import orchestrator.router as router_module
-    from orchestrator.router import GeneralPlugin
+    import orchestrator.agent_loop as agent_loop_module
+    from orchestrator.agent_loop import agent_loop
 
     class _SpySummarizeBoard:
         name = "summarize_board"
@@ -322,19 +290,20 @@ async def test_general_plugin_surfaces_tool_call_provenance_for_persistence(monk
     import capabilities.general.tools as general_tools
 
     monkeypatch.setattr(general_tools, "summarize_board", _SpySummarizeBoard())
-    monkeypatch.setattr(router_module, "get_agent_llm", lambda *a, **k: _FakeToolCallingLLM())
-    monkeypatch.setattr(router_module.settings, "gemini_api_key", "fake-key-for-test")
+    monkeypatch.setattr(agent_loop_module, "get_agent_llm", lambda *a, **k: _FakeToolCallingLLM())
+    monkeypatch.setattr(agent_loop_module.settings, "gemini_api_key", "fake-key-for-test")
 
-    output = await GeneralPlugin().execute({
+    command = await agent_loop({
         "user_id": 9108,
         "messages": [HumanMessage(content="what is on my board")],
     })
 
-    assert "Here's what's on your Bali board" in str(output.message.content)
+    persisted = command.update["messages"]
+    assert "Here's what's on your Bali board" in str(persisted[-1].content)
     # The real tool call/result must be surfaced, not silently dropped.
-    tool_call_messages = [m for m in output.extra_messages if isinstance(m, AIMessage) and m.tool_calls]
-    tool_result_messages = [m for m in output.extra_messages if isinstance(m, ToolMessage)]
-    assert tool_call_messages, "the tool-calling AIMessage must be in extra_messages"
+    tool_call_messages = [m for m in persisted if isinstance(m, AIMessage) and m.tool_calls]
+    tool_result_messages = [m for m in persisted if isinstance(m, ToolMessage)]
+    assert tool_call_messages, "the tool-calling AIMessage must be persisted"
     assert tool_call_messages[0].tool_calls[0]["name"] == "summarize_board"
-    assert tool_result_messages, "the ToolMessage result must be in extra_messages"
+    assert tool_result_messages, "the ToolMessage result must be persisted"
     assert "Villa Samatha" in str(tool_result_messages[0].content)

@@ -9,6 +9,7 @@ from langchain_core.tools import tool
 
 from core.config import settings
 from core.llm import ThinkingLevel, get_agent_llm
+from core.tool_guard import identity_bound
 
 # A request must contain explicit repetition language before an eternal cron job may be created.
 _RECURRENCE_RE = re.compile(
@@ -305,4 +306,130 @@ async def parse_reminder_request(user_text: str, recent_context: str = "") -> Di
     except Exception as exc:  # noqa: BLE001
         print(f"[REMINDERS] parse failed: {exc}")
         return regex_res or {"action": None}
+
+
+# --- Agent-callable scheduling tools ----------------------------------------
+# parse_reminder_request above stays available as an optional deterministic
+# time-parsing assist, but the agent decides create/list/delete itself now --
+# these are the actual write actions, each independently agent-callable.
+# list is covered by capabilities/general/tools.py's list_my_reminders.
+
+
+def _format_delay(delay_seconds: int) -> str:
+    if delay_seconds < 60:
+        return f"{delay_seconds}s"
+    if delay_seconds < 3600:
+        mins = delay_seconds // 60
+        return f"{mins} minute{'s' if mins != 1 else ''}"
+    if delay_seconds < 86400:
+        hrs = delay_seconds // 3600
+        return f"{hrs} hour{'s' if hrs != 1 else ''}"
+    days = delay_seconds // 86400
+    return f"{days} day{'s' if days != 1 else ''}"
+
+
+@tool
+@identity_bound
+async def create_one_time_reminder(
+    message: str, delay_seconds: int, timezone: str = "Asia/Singapore", user_id: int = 0
+) -> str:
+    """
+    Set a one-time reminder that fires once, after a relative delay from now
+    (e.g. "remind me in 5 minutes to check the oven", "in 2 hours call mom").
+    Compute delay_seconds yourself from the user's phrasing. For a repeating
+    schedule (every/daily/weekly), use create_recurring_reminder instead.
+
+    Args:
+        message: what to remind the user about.
+        delay_seconds: seconds from now to fire, e.g. 300 for "5 minutes".
+        timezone: IANA timezone for display, default "Asia/Singapore".
+        user_id: ignored; the assistant injects the authenticated user's ID.
+    """
+    from datetime import datetime as _dt, timedelta as _td
+    import zoneinfo
+
+    from core.scheduler import schedule_one_shot_reminder
+
+    try:
+        tz = zoneinfo.ZoneInfo(timezone)
+    except Exception:  # noqa: BLE001
+        tz = zoneinfo.ZoneInfo("Asia/Singapore")
+        timezone = "Asia/Singapore"
+
+    delay = max(1, int(delay_seconds or 60))
+    run_time = _dt.now(tz) + _td(seconds=delay)
+    try:
+        task = await schedule_one_shot_reminder(
+            user_id=int(user_id or 0),
+            message=(message or "Reminder").strip(),
+            run_date=run_time,
+            timezone_str=timezone,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return f"[reminders] Couldn't schedule that: {exc}"
+    time_str = run_time.strftime("%I:%M %p").lstrip("0")
+    return (
+        f'Reminder set (#{task.id}): "{message}". '
+        f"I'll ping you in {_format_delay(delay)} (at {time_str})."
+    )
+
+
+@tool
+@identity_bound
+async def create_recurring_reminder(
+    message: str, cron_expression: str, timezone: str = "Asia/Singapore", user_id: int = 0
+) -> str:
+    """
+    Set a recurring reminder on a cron schedule (e.g. "remind me to drink
+    water every 2 hours", "daily standup reminder at 9am weekdays"). Only use
+    this when the user explicitly asked for repetition -- a one-off request
+    belongs in create_one_time_reminder instead.
+
+    Args:
+        message: what to remind the user about, repeated at each firing.
+        cron_expression: standard 5-field cron, e.g. "0 */2 * * *" for every
+            2 hours, "0 9 * * 1-5" for 9am weekdays.
+        timezone: IANA timezone the cron is evaluated in, default "Asia/Singapore".
+        user_id: ignored; the assistant injects the authenticated user's ID.
+    """
+    from core.scheduler import schedule_proactive_task, scheduler as _aps_scheduler
+
+    message = (message or "Reminder").strip()
+    try:
+        job = await schedule_proactive_task(
+            user_id=int(user_id or 0),
+            job_name=message[:50],
+            cron_expression=cron_expression,
+            instruction_prompt=message,
+            timezone_str=timezone,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return (
+            f'[reminders] Couldn\'t parse "{cron_expression}" as a schedule -- '
+            f"try something like \"every 2 hours\" or \"daily at 9pm\" ({exc})."
+        )
+    aps_job = _aps_scheduler.get_job(str(job.id))
+    next_run_time = getattr(aps_job, "next_run_time", None)
+    next_run = next_run_time.strftime("%a, %b %d at %I:%M %p") if next_run_time else "soon"
+    return (
+        f'Recurring reminder set (#{job.id}): "{message}". '
+        f"Schedule: {cron_expression} ({timezone}). Next run: {next_run}."
+    )
+
+
+@tool
+@identity_bound
+async def delete_reminder(job_id: int, user_id: int = 0) -> str:
+    """
+    Delete/cancel an existing reminder or scheduled job by its ID (from
+    list_my_reminders). Only deletes reminders owned by the requesting user.
+
+    Args:
+        job_id: the reminder/job ID to delete.
+        user_id: ignored; the assistant injects the authenticated user's ID.
+    """
+    from core.scheduler import delete_scheduled_job
+
+    deleted = await delete_scheduled_job(int(job_id), int(user_id or 0))
+    return f"Reminder #{job_id} deleted." if deleted else f"[reminders] No reminder #{job_id} found."
 

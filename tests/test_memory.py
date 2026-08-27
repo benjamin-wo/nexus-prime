@@ -61,44 +61,26 @@ async def test_query_returns_all_balances():
 
 
 @pytest.mark.asyncio
-async def test_memory_plugin_records_balance(monkeypatch):
-    from orchestrator.router import MemoryPlugin
+async def test_record_points_balance_tool(monkeypatch):
+    from capabilities.memory.tools import record_points_balance
 
     fake = AsyncMock(return_value={"balance": 12000.0, "issuer": "DBS", "program": "DBS Rewards"})
     monkeypatch.setattr("capabilities.memory.tools.extract_points_balance", fake)
-    state = {
+    reply = await record_points_balance.ainvoke({
         "user_id": 777003,
-        "messages": [HumanMessage(content="I have 12000 DBS points")],
-    }
-    output = await MemoryPlugin().execute(state)
-    assert "DBS Rewards" in output.message.content
-    assert "12,000" in output.message.content
+        "text": "I have 12000 DBS points",
+    })
+    assert "DBS Rewards" in reply
+    assert "12,000" in reply
 
 
 @pytest.mark.asyncio
-async def test_memory_plugin_recall_empty(monkeypatch):
-    from orchestrator.router import MemoryPlugin
+async def test_query_my_points_balances_tool_recall_empty(monkeypatch):
+    from capabilities.general.tools import query_my_points_balances
 
     monkeypatch.setattr(
         "capabilities.memory.tools.query_points_balances",
         AsyncMock(return_value=[]),
     )
-    state = {
-        "user_id": 777003,
-        "messages": [HumanMessage(content="what are my points balances?")],
-    }
-    output = await MemoryPlugin().execute(state)
-    assert "don't have any points" in output.message.content
-
-
-def test_deterministic_plan_routes_memory():
-    from orchestrator.planner import deterministic_plan
-
-    state = {
-        "user_id": 1,
-        "active_domain": None,
-        "last_decision": None,
-        "messages": [HumanMessage(content="what are my points balances?")],
-    }
-    decision = deterministic_plan("what are my points balances?", state, None)
-    assert "memory" in decision.capability_ids
+    reply = await query_my_points_balances.ainvoke({"user_id": 777003})
+    assert "no points/miles balances" in reply.lower()

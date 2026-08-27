@@ -212,34 +212,15 @@ async def test_selection_followup_resolves_pending_stop(monkeypatch):
     assert "Bus 27" in result["message"]
 
 
-@pytest.mark.asyncio
-async def test_route_plugin_honors_pending_bus_stop_answer(monkeypatch):
-    """A place-name answer to a bus disambiguation must stay in the bus handler,
-    not be hijacked into journey planning."""
-    from langchain_core.messages import HumanMessage
-
-    from orchestrator.router import RoutePlugin
-
-    pending = [
-        {"code": "03011", "description": "Fullerton Sq", "road_name": "Fullerton Rd"},
-        {"code": "01139", "description": "Bugis Stn/Parkview Sq", "road_name": "Nth Bridge Rd"},
-    ]
-    fake = AsyncMock(
-        return_value={
-            "kind": "arrivals",
-            "message": "Fullerton Sq (03011, Fullerton Rd):\nBus 10: next 3 min",
-        }
-    )
-    monkeypatch.setattr("capabilities.routes.tools.handle_bus_query", fake)
-    state = {
-        "user_id": 1,
-        "pending_bus_stops": pending,
-        "messages": [HumanMessage(content="Fullerton sq")],
-        "last_route": {"origin": "Fullerton hotel", "destination": "Tembusu grand"},
-    }
-    output = await RoutePlugin().execute(state)
-    fake.assert_awaited_once()
-    assert "Bus 10" in output.message.content
+# orchestrator/router.py's RoutePlugin (deleted) used a dedicated
+# `pending_bus_stops` AssistantState field to keep a place-name follow-up
+# ("Fullerton sq") answering a bus-stop disambiguation instead of being
+# hijacked into fresh journey planning. That field is gone: get_bus_timings'
+# own disambiguation reply already lists the candidate stops/codes in its
+# ToolMessage content, so the agent resolves a follow-up itself by reading
+# its own prior turn -- no dedicated state plumbing needed. See
+# test_get_bus_timings_handles_ambiguous above for the tool-level coverage
+# of that disambiguation reply shape.
 
 
 @pytest.mark.asyncio
@@ -366,6 +347,94 @@ async def test_journey_falls_back_to_schedule_without_lta(monkeypatch):
     assert journey["steps"][1]["live_minutes"] is None
     assert journey["steps"][1]["scheduled_time"] == "14:32"
     assert "departs 14:32" in format_journey(journey)
+
+
+def _two_route_directions_payload():
+    """Two distinct alternative routes -- regression coverage for PR #65
+    (Directions was called with alternatives="false", so a user asking for
+    "another route" always got back the exact same journey). Formerly
+    exercised via RoutePlugin's own tests (deleted with orchestrator/router.py
+    -- route_index/alternatives now live entirely in plan_transit_journey and
+    the agent-callable transit_journey tool, tested here and below)."""
+    payload = _journey_directions_payload()
+    second = _journey_directions_payload()
+    second["routes"][0]["legs"][0]["duration"] = {"text": "50 mins", "value": 3000}
+    second["routes"][0]["legs"][0]["steps"][1]["transit_details"]["line"]["short_name"] = "12"
+    payload["routes"].append(second["routes"][0])
+    return payload
+
+
+@pytest.mark.asyncio
+async def test_plan_transit_journey_cycles_to_next_alternative(monkeypatch):
+    monkeypatch.setattr(settings, "google_maps_api_key", "test-maps-key")
+    monkeypatch.setattr(settings, "lta_account_key", None)
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = _two_route_directions_payload()
+    mock_client = AsyncMock()
+    mock_client.get.return_value = mock_resp
+    mock_client_cls = MagicMock()
+    mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+    with patch("capabilities.routes.journey.httpx.AsyncClient", mock_client_cls):
+        default = await plan_transit_journey("Tampines MRT", "Changi Airport")
+        alternative = await plan_transit_journey("Tampines MRT", "Changi Airport", route_index=1)
+
+    assert default["route_count"] == 2
+    assert default["steps"][1]["line"] == "27"
+    assert alternative["route_count"] == 2
+    assert alternative["steps"][1]["line"] == "12"
+    # Confirms Directions is actually asked for alternatives (PR #65) rather
+    # than the two calls above coincidentally returning the same mock twice.
+    _, kwargs = mock_client.get.call_args
+    assert kwargs["params"]["alternatives"] == "true"
+
+
+@pytest.mark.asyncio
+async def test_plan_transit_journey_is_honest_when_no_alternative_exists(monkeypatch):
+    monkeypatch.setattr(settings, "google_maps_api_key", "test-maps-key")
+    monkeypatch.setattr(settings, "lta_account_key", None)
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = _journey_directions_payload()  # only one route
+    mock_client = AsyncMock()
+    mock_client.get.return_value = mock_resp
+    mock_client_cls = MagicMock()
+    mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+    with patch("capabilities.routes.journey.httpx.AsyncClient", mock_client_cls):
+        result = await plan_transit_journey("Tampines MRT", "Changi Airport", route_index=1)
+
+    assert result["error"] == "no_alternative_available"
+    assert result["route_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_transit_journey_tool_surfaces_route_count_for_the_agent(monkeypatch):
+    """The agent (not a deterministic plugin) now decides when to ask for
+    "another route" -- it can only do that honestly if the tool result tells
+    it how many alternatives exist and which index it just saw."""
+    from capabilities.general.tools import transit_journey
+
+    monkeypatch.setattr(settings, "google_maps_api_key", "test-maps-key")
+    monkeypatch.setattr(settings, "lta_account_key", None)
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = _two_route_directions_payload()
+    mock_client = AsyncMock()
+    mock_client.get.return_value = mock_resp
+    mock_client_cls = MagicMock()
+    mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+    with patch("capabilities.routes.journey.httpx.AsyncClient", mock_client_cls):
+        text = await transit_journey.ainvoke(
+            {"origin": "Tampines MRT", "destination": "Changi Airport"}
+        )
+    assert "2 routes available" in text
+    assert "route_index=0" in text
+
+    with patch("capabilities.routes.journey.httpx.AsyncClient", mock_client_cls):
+        no_more = await transit_journey.ainvoke(
+            {"origin": "Tampines MRT", "destination": "Changi Airport", "route_index": 5}
+        )
+    assert "No other route available" in no_more
 
 
 @pytest.mark.asyncio

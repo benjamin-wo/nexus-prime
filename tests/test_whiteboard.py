@@ -494,45 +494,6 @@ async def test_whiteboard_section_ops_and_reorder():
 
 
 @pytest.mark.asyncio
-async def test_whiteboard_plugin_conversational_flow():
-    """The chat capability can create boards, list them, summarize, and pin notes."""
-    from orchestrator.router import WhiteboardPlugin
-    from orchestrator.state import AssistantState
-    from langchain_core.messages import HumanMessage
-
-    plugin = WhiteboardPlugin()
-
-    def make_state(text):
-        return AssistantState(messages=[HumanMessage(content=text)], user_id=7301)
-
-    # 1. Create board from natural language
-    res = await plugin.execute(make_state("Plan my trip to Lisbon for the food scene"))
-    assert "Created" in res.message.content
-    assert "Trip to Lisbon" in res.message.content or "Lisbon" in res.message.content
-
-    boards = await list_whiteboards(user_id=7301)
-    board = next(p for p in boards["projects"] if "Lisbon" in p["title"])
-    assert board["category"] == "trip"
-
-    # 2. List boards
-    res = await plugin.execute(make_state("show my boards"))
-    assert "Your Planning Boards" in res.message.content
-    assert "Lisbon" in res.message.content
-
-    # 3. Pin a note to the board by name fragment
-    res = await plugin.execute(make_state("pin try Time Out Market on my Lisbon board"))
-    assert "Pinned" in res.message.content
-    detail = await get_whiteboard_details(board["id"])
-    pinned = [b for b in detail["blocks"] if b["title"].startswith("try Time Out Market")]
-    assert len(pinned) >= 1
-
-    # 4. Board summary
-    res = await plugin.execute(make_state("what's on my Lisbon board?"))
-    assert "Lisbon" in res.message.content
-    assert "try Time Out Market" in res.message.content
-
-
-@pytest.mark.asyncio
 async def test_telegram_pin_callback_with_pending_content():
     """pb:<project>:<token> writes the exact captured content as a real card."""
     from app.ingress import TelegramIngress, register_pending_pin
@@ -611,317 +572,130 @@ def test_planner_validate_brief():
     assert len(brief["research_queries"]) == 1
 
 
-@pytest.mark.asyncio
-async def test_planning_intake_threads_recent_conversation_into_comprehend_request(monkeypatch):
-    """Regression (#35): WhiteboardPlugin used to read only messages[-1],
-    so a reactive follow-up ("no budget but thinking of...") had no way to
-    resolve against what was actually just discussed. _planning_intake must
-    now pass the recent conversation through to comprehend_request."""
-    from capabilities.whiteboard import planner as wb_planner
-    from orchestrator.router import WhiteboardPlugin
-    from orchestrator.state import AssistantState
-    from langchain_core.messages import AIMessage, HumanMessage
 
-    captured = {}
 
-    async def fake_comprehend(text, board_context=None, recent_context=""):
-        captured["recent_context"] = recent_context
-        return {"action": "none"}
-
-    monkeypatch.setattr(wb_planner, "comprehend_request", fake_comprehend)
-
-    plugin = WhiteboardPlugin()
-    state = AssistantState(
-        messages=[
-            HumanMessage(content="thinking of a bachelor party in Bali sometime in September"),
-            AIMessage(content="Sounds fun! Want me to start a board for it?"),
-            HumanMessage(content="no budget yet but let's figure out venues"),
-        ],
-        user_id=7901,
-    )
-    await plugin.execute(state)
-
-    assert "bachelor party in Bali" in captured["recent_context"]
-    assert "Want me to start a board" in captured["recent_context"]
-    # The current message is the primary `text` argument, not duplicated here.
-    assert "no budget yet but let's figure out venues" not in captured["recent_context"]
+# --- Agent-callable whiteboard tools ----------------------------------------
+# The old WhiteboardPlugin (deleted with orchestrator/router.py) parsed
+# intent deterministically via regex (_parse_intent) and, for freeform
+# planning dumps, ran a single custom-prompted comprehend_request() call
+# that decomposed the whole request into every board/section/card at once.
+# That's exactly the "scripted" shape the agentic rewrite replaces: the
+# agent now composes the same outcome itself by calling these atomic tools
+# as many times as a request needs (create_planning_board once, then
+# pin_note_to_whiteboard/add_checklist_to_whiteboard per idea/entity) --
+# covered here at the tool level; orchestrator/agent_loop.py's own tests
+# (tests/test_general_url_guard.py, tests/test_query_transactions.py, ...)
+# cover the surrounding tool-calling loop mechanics.
 
 
 @pytest.mark.asyncio
-async def test_planning_intake_creates_board_with_entities(monkeypatch):
-    """A freeform planning dump becomes one board with status-badged cards."""
-    from capabilities.whiteboard import planner as wb_planner
-    from capabilities.whiteboard import tools as wb_tools
-    from orchestrator.router import WhiteboardPlugin
-    from orchestrator.state import AssistantState
-    from langchain_core.messages import HumanMessage
+async def test_create_planning_board_tool():
+    from capabilities.whiteboard.tools import create_planning_board
 
-    async def fake_comprehend(text, board_context=None, recent_context=""):
-        return {
-            "action": "create_board",
-            "board_title": "Bali Bachelor Party",
-            "category": "trip",
-            "summary": "Sept 3-6 getaway",
-            "destination": "Bali",
-            "date_range": "Sept 3-6",
-            "occasion": "bachelor party",
-            "entities": [
-                {"kind": "accommodation", "title": "Villa Samatha", "details": "Gang Anggrek, Tibubeneng", "status": "booked"},
-                {"kind": "event", "title": "Finn's Beach Club", "details": "Saturday", "status": "confirmed"},
-            ],
-            "follow_up_questions": ["How many people total?"],
-            "research_queries": [],
-        }
+    reply = await create_planning_board.ainvoke({
+        "user_id": 5501,
+        "title": "Bali Bachelor Party",
+        "category": "trip",
+    })
+    assert "Bali Bachelor Party" in reply
+    assert "trip" in reply
 
-    monkeypatch.setattr(wb_planner, "comprehend_request", fake_comprehend)
-
-    plugin = WhiteboardPlugin()
-    state = AssistantState(
-        messages=[HumanMessage(content=(
-            "I want to plan a trip to bali for the 3rd to 6th Sept\n"
-            "I already booked an Airbnb at Villa Samatha, Tibubeneng\n"
-            "It is for a bachelor party\nWe will be going to Finn's beach club on Saturday"
-        ))],
-        user_id=7501,
-    )
-    res = await plugin.execute(state)
-    body = res.message.content
-
-    assert "Created" in body and "Bali Bachelor Party" in body
-    assert "✅ Booked" not in body  # badges live on cards, not necessarily the reply
-    assert "Villa Samatha" in body
-    assert "Finn's Beach Club" in body
-    assert "How many people total?" in body
-
-    boards = await list_whiteboards(user_id=7501)
-    board = next(p for p in boards["projects"] if p["title"] == "Bali Bachelor Party")
-    detail = await get_whiteboard_details(board["id"])
-
-    by_title = {b["title"]: b for b in detail["blocks"]}
-    villa = by_title["Villa Samatha"]
-    assert villa["section_name"] == "Stays & Options"
-    assert "Booked" in json.dumps(villa["content_payload"])
-    assert "Tibubeneng" in json.dumps(villa["content_payload"])
-    finns = by_title["Finn's Beach Club"]
-    assert finns["section_name"] == "Itinerary"
-    # Date range triggers a skeleton itinerary card
-    assert any("Skeleton: Sept 3-6" in t for t in by_title)
-    # Sections tracked in order
-    assert "Stays & Options" in detail["project"]["section_order"]
-    assert "Itinerary" in detail["project"]["section_order"]
+    async with async_session_factory() as session:
+        board = (await session.execute(
+            select(WhiteboardProject).where(
+                WhiteboardProject.user_id == 5501,
+                WhiteboardProject.title == "Bali Bachelor Party",
+            )
+        )).scalar_one()
+    assert board.category == "trip"
 
 
 @pytest.mark.asyncio
-async def test_planning_intake_augments_recent_board_and_researches(monkeypatch):
-    """Follow-up messages land on the recent board and research runs concurrently."""
-    from types import SimpleNamespace
-    from capabilities.whiteboard import planner as wb_planner
-    from capabilities.general import tools as general_tools
-    from orchestrator.router import WhiteboardPlugin
-    from orchestrator.state import AssistantState
-    from langchain_core.messages import HumanMessage
-
-    create_res = await create_whiteboard(
-        payload=CreateWhiteboardRequest(title="Bali Bachelor Party", category="trip", template="blank"),
-        user_id=7601,
+async def test_pin_note_and_add_checklist_compose_a_full_board():
+    """The agent's own multi-tool-call composition, replacing the old single
+    comprehend_request() decomposition: create a board, then pin several
+    independent cards onto it via separate calls."""
+    from capabilities.whiteboard.tools import (
+        add_checklist_to_whiteboard,
+        create_planning_board,
+        pin_note_to_whiteboard,
     )
-    proj_id = create_res["project"]["id"]
 
-    async def fake_comprehend(text, board_context=None, recent_context=""):
-        assert board_context is not None
-        assert board_context["id"] == proj_id
-        return {
-            "action": "augment_board",
-            "board_title": "Bali Bachelor Party",
-            "category": "trip",
-            "destination": "Bali",
-            "date_range": None,
-            "occasion": None,
-            "entities": [
-                {"kind": "activity", "title": "Fitness social club", "details": "Friday daytime", "status": "tbd"},
-                {"kind": "food", "title": "Lunch & dinner near Tibubeneng", "status": "tbd"},
-            ],
-            "follow_up_questions": [],
-            "research_queries": ["fitness social club Canggu", "restaurants Tibubeneng Bali"],
-        }
+    await create_planning_board.ainvoke({
+        "user_id": 5502,
+        "title": "Tokyo Trip",
+        "category": "trip",
+    })
 
-    monkeypatch.setattr(wb_planner, "comprehend_request", fake_comprehend)
+    pin_reply = await pin_note_to_whiteboard.ainvoke({
+        "user_id": 5502,
+        "board_ref": "tokyo",
+        "content": "Try the ramen at Ichiran",
+    })
+    assert "Tokyo Trip" in pin_reply
 
-    async def fake_search(query):
-        return f"Summary: top picks for {query}\n- Result A (https://a.example)\n- Result B (https://b.example)"
+    checklist_reply = await add_checklist_to_whiteboard.ainvoke({
+        "user_id": 5502,
+        "board_ref": "tokyo",
+        "title": "Packing List",
+        "items": ["Passport", "Adapter", "Jacket"],
+    })
+    assert "Packing List" in checklist_reply
+    assert "Tokyo Trip" in checklist_reply
 
-    class FakeSearchTool:
-        async def ainvoke(self, payload):
-            return await fake_search(payload.get("query") if isinstance(payload, dict) else str(payload))
-
-    monkeypatch.setattr(general_tools, "search_web", FakeSearchTool())
-
-    plugin = WhiteboardPlugin()
-    state = AssistantState(
-        messages=[HumanMessage(content="No budget but thinking of some fitness social club Friday and we need lunch and dinner")],
-        user_id=7601,
-        active_domain="whiteboard",
-    )
-    res = await plugin.execute(state)
-    body = res.message.content
-
-    assert "Updated" in body
-    assert "Fitness social club" in body
-    assert "Research" in body
-
-    detail = await get_whiteboard_details(proj_id)
-    titles = [b["title"] for b in detail["blocks"]]
-    assert "Fitness social club" in titles
-    assert any(b["section_name"] == "🔍 Research" for b in detail["blocks"])
-    research_card = next(b for b in detail["blocks"] if b["section_name"] == "🔍 Research")
-    assert "fitness social club Canggu" in json.dumps(research_card["content_payload"])
-    assert research_card["content_payload"]["topics"][0]["query"] == "fitness social club Canggu"
-    assert research_card["content_payload"]["topics"][0]["sources"][0]["url"].startswith("https://")
-
-
-def test_parse_intent_does_not_misfire_on_location_substring():
-    """Regression (#48, production incident): "why is the bali bachelor
-    party whiteboard full of stubs, when i ask you to add the location can
-    you provide some details from the web and like google maps etc" -- a
-    conversational question/feature request, not a command -- got
-    misclassified as an actionable add_card request. Root cause: add_match's
-    (?:to|on) lacked word boundaries, so it matched the "on" inside
-    "locati|on|" as if the user had written "add X on Y board", producing
-    content="the locati" and board_ref="can you provide...". That garbage
-    board_ref never resolves, so the reply becomes the wrong "Which board?"
-    disambiguation instead of a real answer."""
-    from orchestrator.router import WhiteboardPlugin
-
-    plugin = WhiteboardPlugin()
-    intent = plugin._parse_intent(
-        "why is the bali bachelor party whiteboard full of stubs, when i ask "
-        "you to add the location can you provide some details from the web "
-        "and like google maps etc"
-    )
-    assert intent.get("action") is None, f"should not match any fast action, got: {intent}"
-
-    # Legitimate add/pin commands (including ones containing "location" as a
-    # real word) must still match correctly.
-    assert plugin._parse_intent("add lunch to my Bali board") == {
-        "action": "add_card",
-        "kind": "note",
-        "content": "lunch",
-        "board_ref": "Bali",
-    }
-    assert plugin._parse_intent("add the hotel location to my Bali board")["action"] == "add_card"
-    assert plugin._parse_intent("pin this to my Tokyo board")["action"] == "pin"
+    async with async_session_factory() as session:
+        board = (await session.execute(
+            select(WhiteboardProject).where(
+                WhiteboardProject.user_id == 5502,
+                WhiteboardProject.title == "Tokyo Trip",
+            )
+        )).scalar_one()
+        blocks = (await session.execute(
+            select(WhiteboardBlock).where(WhiteboardBlock.project_id == board.id)
+        )).scalars().all()
+    kinds = {b.block_type for b in blocks}
+    assert "note" in kinds
+    assert "checklist" in kinds
 
 
 @pytest.mark.asyncio
-async def test_whiteboard_feedback_message_reaches_planning_intake_not_which_board(monkeypatch):
-    """End-to-end version of the same regression: the exact reported message
-    must flow through to _planning_intake() (the real conversational/deep
-    path) rather than short-circuiting into the "Which board?" fallback."""
-    from capabilities.whiteboard import planner as wb_planner
-    from orchestrator.router import WhiteboardPlugin
-    from orchestrator.state import AssistantState
-    from langchain_core.messages import HumanMessage
+async def test_pin_note_to_whiteboard_reports_no_match_for_wrong_board():
+    from capabilities.whiteboard.tools import pin_note_to_whiteboard
 
-    async def fake_comprehend(text, board_context=None, recent_context=""):
-        return {"action": "none"}
-
-    monkeypatch.setattr(wb_planner, "comprehend_request", fake_comprehend)
-
-    plugin = WhiteboardPlugin()
-    state = AssistantState(
-        messages=[HumanMessage(content=(
-            "why is the bali bachelor party whiteboard full of stubs, when i ask "
-            "you to add the location can you provide some details from the web "
-            "and like google maps etc"
-        ))],
-        user_id=7801,
-    )
-    res = await plugin.execute(state)
-    body = res.message.content
-
-    assert "Which board?" not in body
-    assert "I can run your planning boards from chat" in body
+    reply = await pin_note_to_whiteboard.ainvoke({
+        "user_id": 5503,
+        "board_ref": "nonexistent board xyz",
+        "content": "some idea",
+    })
+    assert "No board matching" in reply
 
 
 @pytest.mark.asyncio
-async def test_planning_intake_fails_fast_instead_of_hanging_past_webhook_timeout(monkeypatch):
-    """Regression: a real production incident where "bring up the upcoming
-    bali trip" -- and then every unrelated follow-up message, since none
-    matched a fast _parse_intent path either -- got stuck re-running
-    _planning_intake() on every single turn, each one silently taking longer
-    than the webhook's own 45s timeout with zero real progress ("Still
-    working on that" forever). comprehend_request() and the research pass
-    were each individually bounded, but nothing bounded their sum, so a slow
-    (but within-budget) response from either could exceed the outer webhook
-    deadline. WhiteboardPlugin.execute() must now fail fast with an honest
-    message well under that ceiling instead of hanging."""
-    import asyncio
-    from capabilities.whiteboard import planner as wb_planner
-    import orchestrator.router as router_module
-    from orchestrator.router import WhiteboardPlugin
-    from orchestrator.state import AssistantState
-    from langchain_core.messages import HumanMessage
+async def test_pin_note_to_whiteboard_never_writes_to_another_users_board():
+    """Structural ownership check: board_ref is always resolved through
+    find_board(user_id, ...), so an agent-supplied board name never
+    resolves to a board owned by a different user -- there is no raw
+    project_id path an agent tool call could use to bypass this."""
+    from capabilities.whiteboard.tools import create_planning_board, pin_note_to_whiteboard
 
-    # Tiny bound so the test itself stays fast while still exercising real
-    # asyncio.wait_for cancellation, not a mock of it.
-    monkeypatch.setattr(router_module, "PLANNING_INTAKE_TIMEOUT_SECONDS", 0.05)
+    await create_planning_board.ainvoke({
+        "user_id": 5504,
+        "title": "Private Trip",
+        "category": "trip",
+    })
 
-    async def slow_comprehend(text, board_context=None, recent_context=""):
-        await asyncio.sleep(0.3)  # well past the 0.05s bound above
-        return {"action": "none"}  # never reached
+    reply = await pin_note_to_whiteboard.ainvoke({
+        "user_id": 5505,  # a different user
+        "board_ref": "private",
+        "content": "trying to write onto someone else's board",
+    })
+    assert "No board matching" in reply
 
-    monkeypatch.setattr(wb_planner, "comprehend_request", slow_comprehend)
-
-    plugin = WhiteboardPlugin()
-    state = AssistantState(
-        messages=[HumanMessage(content="can you bring up the upcoming bali trip for me to plan some stuff")],
-        user_id=7701,
-    )
-
-    loop = asyncio.get_event_loop()
-    started = loop.time()
-    res = await plugin.execute(state)
-    elapsed = loop.time() - started
-
-    assert elapsed < 0.2, f"execute() should fail fast at the bound, not wait out the full hang ({elapsed}s)"
-    body = res.message.content
-    assert "taking longer than expected" in body
-    assert "Created" not in body
-    assert res.state_update == {"active_domain": "whiteboard"}
-
-
-@pytest.mark.asyncio
-async def test_dispatch_reroutes_whiteboard_followups():
-    """With active_domain=whiteboard, planning-signal follow-ups stay on the board."""
-    from orchestrator.router import CapabilityRouter
-    from orchestrator.state import AssistantState
-    from langchain_core.messages import HumanMessage
-
-    router = CapabilityRouter()
-    captured = {}
-
-    class SpyPlugin:
-        name = "whiteboard"
-        keywords = []
-
-        async def execute(self, state):
-            captured["called"] = True
-            from langchain_core.messages import AIMessage
-            from orchestrator.router import PluginOutput
-            return PluginOutput(message=AIMessage(content="spy"), state_update={"active_domain": "whiteboard"})
-
-    router.registry["whiteboard"] = SpyPlugin()
-
-    state = AssistantState(
-        messages=[HumanMessage(content="we need a place for lunch near the villa")],
-        user_id=7701,
-        active_domain="whiteboard",
-    )
-
-    # Directly exercise the routing decision block via dispatch internals:
-    target = router.route_intent("we need a place for lunch near the villa")
-    if target == "general" and state.get("active_domain") == "whiteboard":
-        if router._has_planning_signal("we need a place for lunch near the villa"):
-            target = "whiteboard"
-    assert target == "whiteboard"
-    assert router._has_planning_signal("lol random meme stuff") is False
+    async with async_session_factory() as session:
+        board = (await session.execute(
+            select(WhiteboardProject).where(WhiteboardProject.title == "Private Trip")
+        )).scalar_one()
+        blocks = (await session.execute(
+            select(WhiteboardBlock).where(WhiteboardBlock.project_id == board.id)
+        )).scalars().all()
+    assert not blocks, "no block should have been written by the other user's call"

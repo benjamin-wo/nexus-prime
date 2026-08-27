@@ -1,8 +1,10 @@
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 from sqlmodel import select, desc
+from langchain_core.tools import tool
 from core.db import async_session_factory
 from core.models import WhiteboardProject, WhiteboardBlock, TaskItem, ExpenseTransaction
+from core.tool_guard import identity_bound
 
 DEFAULT_SECTION_TEMPLATES: Dict[str, List[str]] = {
     "trip": ["Before You Go", "Stays & Options", "Itinerary", "Budget", "Notes"],
@@ -240,3 +242,132 @@ async def board_summary_text(project_id: int) -> Optional[str]:
     if not blocks:
         lines.append("\n_(empty board — add cards via the web canvas or AI copilot)_")
     return "\n".join(lines)
+
+
+# --- Agent-callable tools ---------------------------------------------------
+# Thin @tool wrappers around the plain functions above -- DB logic is
+# unchanged, this just makes whiteboard writes directly agent-callable.
+# Every write here resolves its target board through find_board()/
+# list_user_boards(), both scoped to the trusted user_id -- an agent-supplied
+# board_ref is a fuzzy title match, never a raw project_id, so there is no
+# path for one user's tool call to write onto another user's board.
+
+_CATEGORY_EMOJI = {"trip": "✈️", "meal": "🛒", "event": "🎉", "project": "🚀", "general": "📋"}
+
+
+@tool
+@identity_bound
+async def create_planning_board(
+    title: str,
+    category: str = "general",
+    summary: Optional[str] = None,
+    user_id: int = 0,
+) -> str:
+    """
+    Create a new planning whiteboard -- a living canvas of structured cards --
+    for a trip, event, meal plan, or project. category picks the starting
+    sections (e.g. "trip" gets "Stays & Options", "Itinerary", "Budget").
+    Call list_my_boards first and reuse an existing board for the same plan
+    rather than creating a duplicate.
+
+    Args:
+        title: short board title, e.g. "Tokyo Trip" or "Sarah's Birthday".
+        category: one of "trip", "meal", "event", "project", "general".
+        summary: optional one-line description of the plan.
+        user_id: ignored; the assistant injects the authenticated user's ID.
+    """
+    category = category if category in DEFAULT_SECTION_TEMPLATES else "general"
+    board = await create_board(
+        user_id=int(user_id or 0),
+        title=(title or "").strip() or "Untitled",
+        category=category,
+        emoji_icon=_CATEGORY_EMOJI.get(category, "📋"),
+        summary=summary,
+    )
+    sections = ", ".join(board.section_order or [])
+    return (
+        f'Created {board.emoji_icon} "{board.title}" (board #{board.id}, {category}). '
+        f"Sections: {sections}."
+    )
+
+
+async def _resolve_board_or_hint(user_id: int, board_ref: str) -> tuple[Optional[WhiteboardProject], str]:
+    board = await find_board(user_id, board_ref)
+    if board:
+        return board, ""
+    boards = await list_user_boards(user_id)
+    names = ", ".join(f"{b.emoji_icon} {b.title}" for b in boards[:5]) or "none yet"
+    return None, f"[whiteboard] No board matching {board_ref!r}. Boards you have: {names}."
+
+
+@tool
+@identity_bound
+async def pin_note_to_whiteboard(
+    board_ref: str,
+    content: str,
+    section_name: str = "Pinned",
+    user_id: int = 0,
+) -> str:
+    """
+    Pin a freeform note/idea card onto an existing planning board (fuzzy
+    title match against the user's OWN boards only). Use for one-off ideas,
+    restaurant picks, links, or anything that isn't a checklist. Call
+    list_my_boards first if you aren't sure which board the user means.
+
+    Args:
+        board_ref: the board name or fragment the user referenced, e.g. "tokyo".
+        content: the note text to pin.
+        section_name: board section to file it under (default "Pinned").
+        user_id: ignored; the assistant injects the authenticated user's ID.
+    """
+    board, hint = await _resolve_board_or_hint(int(user_id or 0), board_ref)
+    if not board:
+        return hint
+    block = await add_block_to_whiteboard(
+        project_id=board.id,
+        section_name=section_name,
+        block_type="note",
+        title=(content or "").strip()[:200] or "Pinned note",
+        content_payload={"markdown": (content or "").strip()},
+    )
+    return f'Pinned to {board.emoji_icon} "{board.title}" (#{board.id}) as card #{block.id}.'
+
+
+@tool
+@identity_bound
+async def add_checklist_to_whiteboard(
+    board_ref: str,
+    title: str,
+    items: List[str],
+    section_name: str = "Checklist",
+    user_id: int = 0,
+) -> str:
+    """
+    Add a checklist card (packing list, todo list, shortlist) to an existing
+    planning board (fuzzy title match against the user's OWN boards only).
+    Call list_my_boards first if you aren't sure which board the user means.
+
+    Args:
+        board_ref: the board name or fragment the user referenced.
+        title: checklist card title, e.g. "Packing List".
+        items: the checklist line items.
+        section_name: board section to file it under (default "Checklist").
+        user_id: ignored; the assistant injects the authenticated user's ID.
+    """
+    board, hint = await _resolve_board_or_hint(int(user_id or 0), board_ref)
+    if not board:
+        return hint
+    clean_items = [str(i).strip("-*• ").strip() for i in (items or []) if str(i).strip()]
+    block = await add_block_to_whiteboard(
+        project_id=board.id,
+        section_name=section_name,
+        block_type="checklist",
+        title=(title or "").strip()[:200] or "Checklist",
+        content_payload={
+            "items": [
+                {"id": f"c-{i + 1}", "text": t, "checked": False}
+                for i, t in enumerate(clean_items)
+            ]
+        },
+    )
+    return f'Added checklist "{block.title}" to {board.emoji_icon} "{board.title}" (#{board.id}).'

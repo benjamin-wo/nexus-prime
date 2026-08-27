@@ -232,8 +232,7 @@ async def test_telegram_iou_button_settles_linked_repayment():
 
 @pytest.mark.asyncio
 async def test_assistant_repayment_settles_matching_iou():
-    from langchain_core.messages import HumanMessage
-    from orchestrator.router import ExpensePlugin
+    from capabilities.expenses.tools import record_incoming_money
 
     user_id = 998815
     exp = ExtractedExpense(
@@ -255,13 +254,12 @@ async def test_assistant_repayment_settles_matching_iou():
         "transaction_id": tx.id,
     })
 
-    result = await ExpensePlugin().execute({
-        "messages": [HumanMessage(content="Loren already paid me $13 yesterday")],
+    reply = await record_incoming_money.ainvoke({
         "user_id": user_id,
-        "active_domain": None,
+        "text": "Loren already paid me $13 yesterday",
     })
 
-    assert "marked their IOU as paid" in str(result.message.content)
+    assert "marked their IOU as paid" in reply
     async with async_session_factory() as session:
         updated_tx = (await session.execute(
             select(ExpenseTransaction).where(ExpenseTransaction.id == tx.id)
@@ -286,8 +284,7 @@ async def test_assistant_repayment_settles_matching_iou():
 
 @pytest.mark.asyncio
 async def test_assistant_repayment_settles_web_split_without_iou_task():
-    from langchain_core.messages import HumanMessage
-    from orchestrator.router import ExpensePlugin
+    from capabilities.expenses.tools import record_incoming_money
 
     user_id = 998816
     exp = ExtractedExpense(
@@ -313,13 +310,12 @@ async def test_assistant_repayment_settles_web_split_without_iou_task():
         session.add(saved_tx)
         await session.commit()
 
-    result = await ExpensePlugin().execute({
-        "messages": [HumanMessage(content="Loren already paid me $13 yesterday")],
+    reply = await record_incoming_money.ainvoke({
         "user_id": user_id,
-        "active_domain": None,
+        "text": "Loren already paid me $13 yesterday",
     })
 
-    assert "marked their IOU as paid" in str(result.message.content)
+    assert "marked their IOU as paid" in reply
     async with async_session_factory() as session:
         updated_tx = (await session.execute(
             select(ExpenseTransaction).where(ExpenseTransaction.id == tx.id)
