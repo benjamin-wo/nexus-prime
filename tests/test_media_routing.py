@@ -2,11 +2,9 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
 import app.ingress as ingress_module
-import orchestrator.plan_router as plan_router_module
-import orchestrator.router as router_module
+import orchestrator.agent_loop as agent_loop_module
 from app.ingress import TelegramIngress
-from orchestrator.plan_router import plan_dispatch
-from orchestrator.router import GeneralPlugin
+from orchestrator.agent_loop import agent_loop
 
 
 MEDIA_BLOCK = {"type": "media", "mime_type": "image/jpeg", "data": "aGVsbG8="}
@@ -55,74 +53,34 @@ class _FakeMultimodalLLM:
 
 @pytest.mark.asyncio
 async def test_multimodal_path_invokes_gemini_without_typeerror(monkeypatch):
-    fake_llm = _FakeMultimodalLLM()
-    monkeypatch.setattr(router_module, "get_multimodal_llm", lambda **k: fake_llm)
-    monkeypatch.setattr(router_module.settings, "gemini_api_key", "fake-key-for-test")
+    """A media message with a non-expense caption goes straight to Gemini
+    vision for a description -- orchestrator/agent_loop.py's
+    _handle_multimodal_turn(), the one deliberate exception to "the agent
+    decides which tool to call": the main agent model (DeepSeek) has no
+    vision, so it can't see the image to decide. This bypass happens before
+    the tool-calling loop even builds, so get_agent_llm (the text/tool-
+    calling model) must never be touched. (A captionless or expense-hinted
+    photo instead tries extract_expense_from_photo first -- same routing
+    CapabilityRouter used to apply before it dispatched to ExpensePlugin vs
+    GeneralPlugin; covered by capabilities/expenses tests.)"""
 
-    output = await GeneralPlugin().execute({
+    def _fail_if_called(*a, **k):
+        raise AssertionError("text tool-calling model must not run for a media-only message")
+
+    fake_llm = _FakeMultimodalLLM()
+    monkeypatch.setattr(agent_loop_module, "get_multimodal_llm", lambda **k: fake_llm)
+    monkeypatch.setattr(agent_loop_module, "get_agent_llm", _fail_if_called)
+    monkeypatch.setattr(agent_loop_module.settings, "gemini_api_key", "fake-key-for-test")
+
+    text_block = {"type": "text", "text": "what is this a screenshot of"}
+    command = await agent_loop({
         "user_id": 4242,
-        "messages": [HumanMessage(content=[MEDIA_BLOCK])],
+        "messages": [HumanMessage(content=[text_block, MEDIA_BLOCK])],
     })
 
     assert len(fake_llm.calls) == 1
-    assert "screenshot analyzed" in str(output.message.content)
-    assert output.state_update == {"active_domain": "general"}
-
-
-@pytest.mark.asyncio
-async def test_telegram_media_download_uses_file_api_path(monkeypatch):
-    _FakeTelegramHttpClient.requests = []
-    monkeypatch.setattr(ingress_module.httpx, "AsyncClient", _FakeTelegramHttpClient)
-    monkeypatch.setattr(ingress_module.settings, "telegram_bot_token", "test-token")
-
-    result = await TelegramIngress()._download_telegram_media("file-123")
-
-    assert result == ("photos/file_1.jpg", b"image-bytes")
-    assert _FakeTelegramHttpClient.requests == [
-        "https://api.telegram.org/bottest-token/getFile",
-        "https://api.telegram.org/file/bottest-token/photos/file_1.jpg",
-    ]
-
-
-class _SpyGeneralPlugin:
-    name = "general"
-    keywords = []
-    description = "spy"
-
-    def __init__(self):
-        self.executed = []
-
-    async def execute(self, state):
-        self.executed.append(state)
-        from orchestrator.router import PluginOutput
-
-        return PluginOutput(
-            message=AIMessage(content="media answer"),
-            state_update={"active_domain": "general"},
-        )
-
-
-@pytest.mark.asyncio
-async def test_plan_dispatch_routes_media_only_message_straight_to_general(monkeypatch):
-    from orchestrator.router import CAPABILITY_REGISTRY, PluginOutput
-
-    async def _fail(*args, **kwargs):
-        raise AssertionError("planner must not run for media-only messages")
-
-    monkeypatch.setattr(plan_router_module, "plan_with_llm", _fail, raising=False)
-    spy = _SpyGeneralPlugin()
-    monkeypatch.setitem(CAPABILITY_REGISTRY, "general", spy)
-
-    result = await plan_dispatch({
-        "user_id": 4242,
-        "messages": [HumanMessage(content=[MEDIA_BLOCK])],
-    })
-
-    update = result.update
-    assert len(spy.executed) == 1
-    assert "media answer" in str(update["messages"][0].content)
-    assert update["active_domain"] == "general"
-    assert update["plan"]["source"] == "deterministic-media"
+    assert "screenshot analyzed" in str(command.update["messages"][0].content)
+    assert command.update["active_domain"] == "agent"
 
 
 def _fake_graph_capture(captured):
@@ -193,3 +151,18 @@ async def test_ingress_names_unreadable_attachments(monkeypatch):
     assert captured, "graph should have been invoked"
     human = captured[0]["messages"][0]
     assert human.content == "(sent a sticker I can't read yet)"
+
+
+@pytest.mark.asyncio
+async def test_telegram_media_download_uses_file_api_path(monkeypatch):
+    _FakeTelegramHttpClient.requests = []
+    monkeypatch.setattr(ingress_module.httpx, "AsyncClient", _FakeTelegramHttpClient)
+    monkeypatch.setattr(ingress_module.settings, "telegram_bot_token", "test-token")
+
+    result = await TelegramIngress()._download_telegram_media("file-123")
+
+    assert result == ("photos/file_1.jpg", b"image-bytes")
+    assert _FakeTelegramHttpClient.requests == [
+        "https://api.telegram.org/bottest-token/getFile",
+        "https://api.telegram.org/file/bottest-token/photos/file_1.jpg",
+    ]

@@ -6,10 +6,11 @@ from core.db import async_session_factory
 from core.models import ExpenseTransaction, IncomeTransaction, UserProfile
 from capabilities.expenses.tools import query_unified_transactions
 from capabilities.general.tools import query_transactions
-from orchestrator.router import GeneralPlugin
+from orchestrator.agent_loop import agent_loop
 
 
 USER_ID = 4242
+OTHER_USER_ID = 666666
 
 
 async def _seed_ledger():
@@ -49,6 +50,17 @@ async def _seed_ledger():
             amount=500.00,
             currency="SGD",
             merchant="Other User Spend",
+            category="Shopping",
+            date=datetime(2026, 8, 20, 10, 0),
+        ))
+        # A real transaction under the id an attacker-controlled model arg
+        # would try to read below -- if identity_bound ever failed to
+        # override, this merchant name would leak into the reply.
+        session.add(ExpenseTransaction(
+            user_id=OTHER_USER_ID,
+            amount=9999.00,
+            currency="SGD",
+            merchant="Confidential Other-User Purchase",
             category="Shopping",
             date=datetime(2026, 8, 20, 10, 0),
         ))
@@ -106,7 +118,9 @@ async def test_query_transactions_tool_formats_summary():
 
 
 class _FakeToolCallingLLM:
-    """First call emits a tool_call with a fabricated user_id; second call answers."""
+    """First call emits a tool_call with a fabricated user_id belonging to a
+    DIFFERENT real user with real data; second call answers from whatever
+    the tool actually returned."""
 
     def __init__(self):
         self.calls = 0
@@ -119,39 +133,40 @@ class _FakeToolCallingLLM:
         if self.calls == 1:
             return AIMessage(content="", tool_calls=[{
                 "name": "query_transactions",
-                "args": {"direction": "all", "user_id": 666666},
+                "args": {"direction": "all", "user_id": OTHER_USER_ID},
                 "id": "call_1",
                 "type": "tool_call",
             }])
-        return AIMessage(content="ledger answered")
+        tool_result = str(messages[-1].content)
+        return AIMessage(content=f"here's your ledger: {tool_result}")
 
 
 @pytest.mark.asyncio
-async def test_general_plugin_overrides_llm_supplied_user_id(monkeypatch):
+async def test_agent_loop_overrides_llm_supplied_user_id(monkeypatch):
+    """End-to-end guardrail test for core/tool_guard.py's identity_bound:
+    drives a real tool call (the actual query_transactions @tool, decorated
+    with @identity_bound in capabilities/general/tools.py -- not a mock
+    standing in for it) through agent_loop with a model that tries to read
+    a different real user's ledger, and confirms the DB read actually lands
+    on the trusted caller's own data. This replaces the old GeneralPlugin
+    tool-loop's hardcoded allowlist override, deleted along with
+    orchestrator/router.py -- the guarantee now lives in the tool itself."""
     await _seed_ledger()
-    captured = []
 
-    class _SpyTool:
-        name = "query_transactions"
+    import orchestrator.agent_loop as agent_loop_module
 
-        async def ainvoke(self, args):
-            captured.append(dict(args))
-            return "[transactions] spy observation"
+    monkeypatch.setattr(agent_loop_module, "get_agent_llm", lambda *a, **k: _FakeToolCallingLLM())
+    monkeypatch.setattr(agent_loop_module.settings, "gemini_api_key", "fake-key-for-test")
 
-    import capabilities.general.tools as general_tools
-    import orchestrator.router as router_module
-
-    monkeypatch.setattr(general_tools, "query_transactions", _SpyTool())
-    monkeypatch.setattr(router_module, "get_agent_llm", lambda *a, **k: _FakeToolCallingLLM())
-    monkeypatch.setattr(router_module.settings, "gemini_api_key", "fake-key-for-test")
-
-    output = await GeneralPlugin().execute({
+    command = await agent_loop({
         "user_id": USER_ID,
         "messages": [HumanMessage(content="how much did I spend this month?")],
     })
 
-    assert captured, "query_transactions should have been invoked"
-    assert captured[0]["user_id"] == USER_ID
-    assert captured[0]["user_id"] != 666666
-    assert "ledger answered" in str(output.message.content)
-    assert output.state_update == {"active_domain": "general"}
+    reply = str(command.update["messages"][-1].content)
+    assert "Starbucks" in reply or "FairPrice" in reply, f"reply should reflect USER_ID's own ledger: {reply!r}"
+    assert "Confidential Other-User Purchase" not in reply, (
+        "identity_bound failed to override the model-supplied user_id -- "
+        "another user's transaction leaked into the reply"
+    )
+    assert command.update["active_domain"] == "agent"

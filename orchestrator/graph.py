@@ -1,6 +1,6 @@
 from langgraph.graph import StateGraph, START, END
 from orchestrator.state import AssistantState
-from orchestrator.router import capability_router_node
+from orchestrator.agent_loop import agent_loop
 from orchestrator.checkpointer import get_checkpointer
 
 
@@ -16,7 +16,7 @@ def get_assistant_graph():
     global _assistant_graph
     if _assistant_graph is None:
         builder = StateGraph(AssistantState)
-        builder.add_node("capability_router", capability_router_node)
-        builder.add_edge(START, "capability_router")
+        builder.add_node("agent_loop", agent_loop)
+        builder.add_edge(START, "agent_loop")
         _assistant_graph = builder.compile(checkpointer=get_checkpointer())
     return _assistant_graph

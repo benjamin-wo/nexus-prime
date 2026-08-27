@@ -7,6 +7,7 @@ from langchain_core.tools import tool
 from sqlmodel import select
 from core.db import async_session_factory
 from core.models import UserCredential, UserProfile
+from core.tool_guard import identity_bound
 from core.vault import decrypt_token
 from core.shared_tools.email_presets import build_gmail_query, build_outlook_query
 from capabilities.email.providers import (
@@ -169,6 +170,7 @@ def _sort_messages_newest_first(messages: List[Dict[str, Any]]) -> List[Dict[str
 
 
 @tool
+@identity_bound
 async def search_email_messages(
     user_id: int,
     custom_query: Optional[str] = None,
@@ -223,6 +225,7 @@ async def search_email_messages(
     return _sort_messages_newest_first(merged_messages)
 
 @tool
+@identity_bound
 async def search_gmail_messages(user_id: int, custom_query: Optional[str] = None, latest: bool = False) -> List[Dict[str, Any]]:
     """
     Search Gmail messages using the zero-friction smart financial query.
@@ -233,6 +236,7 @@ async def search_gmail_messages(user_id: int, custom_query: Optional[str] = None
     )
 
 @tool
+@identity_bound
 async def search_outlook_messages(user_id: int, custom_query: Optional[str] = None, latest: bool = False) -> List[Dict[str, Any]]:
     """
     Search Microsoft Outlook messages using OData $search and $filter financial queries.
@@ -243,6 +247,7 @@ async def search_outlook_messages(user_id: int, custom_query: Optional[str] = No
     )
 
 @tool
+@identity_bound
 async def apply_email_processed_tag(user_id: int, message_id: str, provider: str = "gmail") -> bool:
     """
     Apply the Assistant/Processed tag/label/category to a message in the specified email provider.
@@ -253,6 +258,7 @@ async def apply_email_processed_tag(user_id: int, message_id: str, provider: str
     return False
 
 @tool
+@identity_bound
 async def apply_gmail_processed_label(user_id: int, message_id: str) -> bool:
     """
     Apply the Assistant/Processed label to a message in Gmail (Layer 1 of deduplication).
@@ -263,6 +269,7 @@ async def apply_gmail_processed_label(user_id: int, message_id: str) -> bool:
     )
 
 @tool
+@identity_bound
 async def apply_outlook_processed_category(user_id: int, message_id: str) -> bool:
     """
     Apply the Assistant/Processed category to a message in Outlook (Layer 1 of deduplication).
@@ -271,3 +278,104 @@ async def apply_outlook_processed_category(user_id: int, message_id: str) -> boo
     return await apply_email_processed_tag.ainvoke(
         {"user_id": user_id, "message_id": message_id, "provider": "outlook"}
     )
+
+
+# --- Agent-callable connection/sweep tools ----------------------------------
+
+
+@tool
+@identity_bound
+async def get_email_connection_status(user_id: int = 0) -> str:
+    """
+    Check which mailboxes (Gmail/Outlook) are connected for the user, and
+    return sign-in link(s) for any that are configured on this deployment
+    but not yet connected. Call this before search_my_email or
+    sweep_email_for_expenses if you don't already know the connection state
+    this turn -- the bot cannot read email until the user grants access.
+
+    Args:
+        user_id: ignored; the assistant injects the authenticated user's ID.
+    """
+    import os
+
+    from core.config import settings
+
+    uid = int(user_id or 0)
+    gmail_token = await get_user_gmail_token(uid)
+    outlook_token = await get_user_outlook_token(uid)
+    needs_gmail = bool(settings.google_client_id and settings.google_client_secret) and not gmail_token
+    needs_outlook = bool(settings.microsoft_client_id and settings.microsoft_client_secret) and not outlook_token
+
+    if not needs_gmail and not needs_outlook:
+        connected = ", ".join(p for p, tok in (("Gmail", gmail_token), ("Outlook", outlook_token)) if tok)
+        return f"[email] Already connected: {connected or 'no provider configured on this deployment'}."
+
+    public_domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN") or ""
+    base = f"https://{public_domain}".rstrip("/") if public_domain else (settings.webapp_url or "").rstrip("/")
+    lines = ["[email] One-time access needed -- open a link and allow read-only access:"]
+    if needs_gmail:
+        lines.append(f"Gmail: {base}/auth/gmail?user_id={uid}")
+    if needs_outlook:
+        lines.append(f"Outlook: {base}/auth/outlook?user_id={uid}")
+    return "\n".join(lines)
+
+
+@tool
+@identity_bound
+async def disconnect_email(provider: str = "all", user_id: int = 0) -> str:
+    """
+    Disconnect a connected mailbox so the assistant stops reading it and
+    stops using it for automatic expense tracking.
+
+    Args:
+        provider: "gmail", "outlook", or "all".
+        user_id: ignored; the assistant injects the authenticated user's ID.
+    """
+    result = await disconnect_email_account(user_id=int(user_id or 0), provider=provider)
+    if result.get("count"):
+        names = ", ".join(result["disconnected"]).title()
+        return f"Disconnected {names}. I will no longer read that mailbox."
+    target = "your mailbox" if provider == "all" else f"your {provider} account"
+    return f"[email] No connected credential found for {target}."
+
+
+@tool
+@identity_bound
+async def sweep_email_for_expenses(provider: Optional[str] = None, user_id: int = 0) -> str:
+    """
+    Search the user's inbox for financial emails (receipts, bills, bank
+    alerts) and auto-log any expenses found (deduped by email ID; ambiguous
+    ones are skipped, never auto-logged). Use for "check my email for
+    expenses" / "did I get billed for anything". For "what's new in my
+    inbox" (no expense intent), use search_my_email instead -- it's
+    read-only and won't write anything.
+
+    Args:
+        provider: restrict to "gmail" or "outlook"; omit to search all connected.
+        user_id: ignored; the assistant injects the authenticated user's ID.
+    """
+    from capabilities.expenses.tools import log_expenses_from_emails
+
+    uid = int(user_id or 0)
+    results = await search_email_messages.ainvoke({"user_id": uid, "provider": provider})
+    if results:
+        for msg in results:
+            sender = msg.get("sender", "")
+            if sender:
+                await discover_and_track_bank_domain(uid, sender)
+
+    expense_result = await log_expenses_from_emails.ainvoke(
+        {"user_id": uid, "emails": results, "notify": False}
+    )
+    logged = expense_result.get("logged") or []
+    skipped = expense_result.get("skipped") or []
+    if not logged:
+        return "[email] Checked the inbox -- nothing expense-related found." + (
+            f" ({len(skipped)} ambiguous, skipped)" if skipped else ""
+        )
+    lines = [f"Checked the inbox -- auto-logged {len(logged)} expense(s):"]
+    for item in logged[:8]:
+        lines.append(f"• {item['currency']} {item['amount']:.2f} — {item['merchant']} ({item['category']})")
+    if skipped:
+        lines.append(f"…{len(skipped)} ambiguous skipped.")
+    return "\n".join(lines)

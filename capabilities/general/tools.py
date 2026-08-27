@@ -6,6 +6,7 @@ from sqlmodel import select
 from core.config import settings
 from core.db import async_session_factory
 from core.models import UserProfile
+from core.tool_guard import identity_bound
 
 
 @tool
@@ -120,26 +121,6 @@ async def fetch_url(url: str) -> str:
     )
 
 
-@tool
-async def get_current_time_in_user_tz(user_id: int) -> str:
-    """
-    Calculate the current local date and time in the user's configured timezone.
-    """
-    tz_name = "UTC"
-    async with async_session_factory() as session:
-        profile = await session.get(UserProfile, user_id)
-        if profile and profile.current_timezone:
-            tz_name = profile.current_timezone
-
-    try:
-        now_dt = datetime.now(ZoneInfo(tz_name))
-    except Exception:
-        tz_name = "UTC"
-        now_dt = datetime.now(ZoneInfo("UTC"))
-
-    return f"Current local time for user {user_id} ({tz_name}): {now_dt.strftime('%Y-%m-%d %H:%M:%S %Z')}"
-
-
 def _format_money_line(label: str, totals: dict, sign: str) -> str:
     if not totals:
         return f"{label}: —"
@@ -149,6 +130,7 @@ def _format_money_line(label: str, totals: dict, sign: str) -> str:
 
 
 @tool
+@identity_bound
 async def query_transactions(
     direction: str = "all",
     categories: list = [],
@@ -221,6 +203,7 @@ async def query_transactions(
 
 
 @tool
+@identity_bound
 async def list_my_reminders(user_id: int = 0) -> str:
     """
     List the user's active reminders and scheduled jobs (recurring or
@@ -246,6 +229,7 @@ async def list_my_reminders(user_id: int = 0) -> str:
 
 
 @tool
+@identity_bound
 async def list_my_boards(user_id: int = 0) -> str:
     """
     List the user's planning whiteboards (trips, events, projects, meal
@@ -264,6 +248,7 @@ async def list_my_boards(user_id: int = 0) -> str:
 
 
 @tool
+@identity_bound
 async def summarize_board(board_ref: str, user_id: int = 0) -> str:
     """
     Summarize a specific planning whiteboard by name, e.g. "what's on my
@@ -284,6 +269,7 @@ async def summarize_board(board_ref: str, user_id: int = 0) -> str:
 
 
 @tool
+@identity_bound
 async def search_my_email(query: str = "", latest: bool = False, user_id: int = 0) -> str:
     """
     Search the user's connected email (Gmail/Outlook) for messages matching
@@ -335,28 +321,45 @@ async def get_bus_timings(query: str) -> str:
 
 
 @tool
-async def transit_journey(origin: str, destination: str) -> str:
+async def transit_journey(origin: str, destination: str, route_index: int = 0) -> str:
     """
     Plan a transit journey between two places with LIVE Singapore bus/MRT
     next-departure times and a map link. Use for "how do I get from X to Y",
     "bus from X to Y", "route to Y", "drive to Y". Returns ordered walking and
-    transit steps, total time, and a Google Maps link. Read-only.
+    transit steps, total time, and a Google Maps link, plus how many
+    alternative routes exist. If the user then asks for "another route" /
+    "a different bus", call this again for the SAME origin/destination with
+    route_index incremented by 1 (0 = the default best route) -- read the
+    prior result's route count from this conversation rather than guessing.
+    Read-only.
+
     Args:
         origin: starting place name.
         destination: destination place name.
+        route_index: which alternative to return (0 = default best route).
     """
     from capabilities.routes.journey import format_journey, plan_transit_journey
 
     try:
-        journey = await plan_transit_journey(origin, destination)
+        journey = await plan_transit_journey(origin, destination, route_index=route_index)
     except Exception as exc:  # noqa: BLE001
         return f"[routes] journey failed: {exc}"
+    if journey.get("error") == "no_alternative_available":
+        return (
+            f"[routes] No other route available -- Maps only offers "
+            f"{journey.get('route_count', 1)} route(s) for this trip."
+        )
     if journey.get("error"):
         return f"[routes] Couldn't plan that journey ({journey['error']}). Try different place names."
-    return format_journey(journey)
+    formatted = format_journey(journey)
+    route_count = journey.get("route_count", 1)
+    if route_count > 1:
+        formatted += f"\n\n({route_count} routes available -- route_index={route_index} shown; ask for another if you'd like)"
+    return formatted
 
 
 @tool
+@identity_bound
 async def query_my_points_balances(user_id: int = 0) -> str:
     """
     List the user's stored loyalty points/miles balances (issuer, program,

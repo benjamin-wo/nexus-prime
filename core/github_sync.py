@@ -120,7 +120,6 @@ def _missing_area_status(tag: str) -> List[str]:
 
     checks = []
     checks.append(("Manifest (capabilities/manifests/{}.yaml)".format(clean_tag), os.path.exists(os.path.join(root, "capabilities", "manifests", f"{clean_tag}.yaml"))))
-    checks.append(("Plugin registered in CAPABILITY_REGISTRY", _plugin_exists(clean_tag)))
     checks.append(
         (
             "Domain tools module (capabilities/{}/tools.py)".format(clean_tag),
@@ -131,14 +130,6 @@ def _missing_area_status(tag: str) -> List[str]:
     for label, present in checks:
         lines.append(f"- [{'x' if present else ' '}] {label}")
     return lines
-
-
-def _plugin_exists(tag: str) -> bool:
-    try:
-        from orchestrator.router import CAPABILITY_REGISTRY, CapabilityPlugin  # noqa: F401
-        return tag in CAPABILITY_REGISTRY
-    except Exception:
-        return False
 
 
 def _build_capability_gap_body(

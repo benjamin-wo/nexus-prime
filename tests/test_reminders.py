@@ -132,66 +132,37 @@ async def test_schedule_and_list_one_shot_reminder():
 
 
 @pytest.mark.asyncio
-async def test_reminders_plugin_one_minute_execution():
-    """Verify ReminderPlugin.execute processes relative 1-minute reminders without NameError."""
-    from orchestrator.router import ReminderPlugin
-    from orchestrator.state import AssistantState
-    from langchain_core.messages import HumanMessage
+async def test_create_one_time_reminder_tool_execution():
+    """orchestrator/router.py's ReminderPlugin (deleted) used to parse
+    "in one minute" into delay_seconds itself via parse_reminder_request
+    before calling schedule_one_shot_reminder -- the agent now does that
+    parsing step itself and calls create_one_time_reminder directly with a
+    structured delay_seconds, so this exercises the tool with that
+    already-parsed input instead of the natural-language sentence."""
+    from capabilities.reminders.tools import create_one_time_reminder
 
-    plugin = ReminderPlugin()
-    state = AssistantState(
-        messages=[HumanMessage(content="can you remind me in one minute to take out the trash")],
-        user_id=149917165,
-        user_profile={"user_id": 149917165, "current_timezone": "Asia/Singapore"},
-    )
-    res = await plugin.execute(state)
-    assert res.message is not None
-    assert "Reminder set" in res.message.content
-    assert "1 minute" in res.message.content or "take out the trash" in res.message.content
+    reply = await create_one_time_reminder.ainvoke({
+        "user_id": 149917165,
+        "message": "take out the trash",
+        "delay_seconds": 60,
+        "timezone": "Asia/Singapore",
+    })
+    assert "Reminder set" in reply
+    assert "1 minute" in reply or "take out the trash" in reply
 
 
 @pytest.mark.asyncio
-async def test_reminder_plugin_threads_recent_conversation_into_parse(monkeypatch):
-    """Regression (#35): ReminderPlugin used to read only messages[-1], so a
-    follow-up correction ("actually make it every day instead") had no
-    reminder to resolve against. recent_turns(messages) must now reach
-    parse_reminder_request's LLM path (the deterministic regex fast path is
-    untouched, since this phrasing has no relative-time expression of its
-    own to match)."""
-    import orchestrator.router as router_module
-    from orchestrator.router import ReminderPlugin
-    from langchain_core.messages import AIMessage, HumanMessage
+async def test_create_recurring_reminder_tool_execution():
+    from capabilities.reminders.tools import create_recurring_reminder
 
-    captured: dict = {}
-
-    async def fake_parse(**kwargs):
-        captured.update(kwargs)
-        return {
-            "action": "create",
-            "reminder_type": "recurring",
-            "delay_seconds": None,
-            "message": "drink water",
-            "cron": "0 9 * * *",
-            "timezone": "Asia/Singapore",
-            "job_id": None,
-        }
-
-    monkeypatch.setattr(router_module.parse_reminder_request, "coroutine", fake_parse)
-
-    out = await ReminderPlugin().execute({
-        "messages": [
-            HumanMessage(content="remind me to drink water at 9am"),
-            AIMessage(content="Reminder set for 9:00 AM."),
-            HumanMessage(content="actually make it every day instead"),
-        ],
+    reply = await create_recurring_reminder.ainvoke({
         "user_id": 4005,
-        "current_timezone": "Asia/Singapore",
-        "active_domain": None,
+        "message": "drink water",
+        "cron_expression": "0 9 * * *",
+        "timezone": "Asia/Singapore",
     })
-
-    assert "recent_context" in captured
-    assert "remind me to drink water at 9am" in captured["recent_context"]
-    assert out.message is not None
+    assert "Recurring reminder set" in reply
+    assert "drink water" in reply
 
 
 @pytest.mark.asyncio

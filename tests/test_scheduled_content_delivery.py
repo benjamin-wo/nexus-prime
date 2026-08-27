@@ -37,8 +37,8 @@ async def test_build_daily_briefing_without_llm(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_plugin_registers_daily_briefing_job(monkeypatch):
-    from orchestrator.router import ScheduledContentDeliveryPlugin
+async def test_schedule_daily_briefing_tool_registers_job(monkeypatch):
+    from capabilities.scheduled_content_delivery.tools import schedule_daily_briefing
 
     class _FakeJob:
         id = 4242
@@ -46,46 +46,20 @@ async def test_plugin_registers_daily_briefing_job(monkeypatch):
     fake_schedule = AsyncMock(return_value=_FakeJob())
     monkeypatch.setattr("core.scheduler.schedule_proactive_task", fake_schedule)
 
-    state = {
-        "user_id": 1,
-        "messages": [HumanMessage(content="Can you send me a daily morning summary of the top global news and stock market news")],
-    }
-    output = await ScheduledContentDeliveryPlugin().execute(state)
-    assert "daily morning briefing" in output.message.content
-    assert "4242" in output.message.content
+    reply = await schedule_daily_briefing.ainvoke({"user_id": 1})
+    assert "4242" in reply
     args = fake_schedule.await_args.kwargs
     assert args["job_name"] == "daily_briefing"
     assert args["cron_expression"] == "0 9 * * *"
 
 
 @pytest.mark.asyncio
-async def test_plugin_one_shot_briefing(monkeypatch):
-    from orchestrator.router import ScheduledContentDeliveryPlugin
+async def test_get_daily_briefing_tool_one_shot(monkeypatch):
+    from capabilities.scheduled_content_delivery.tools import get_daily_briefing
 
     monkeypatch.setattr(
         "capabilities.scheduled_content_delivery.tools.build_daily_briefing",
         AsyncMock(return_value="📰 Today's briefing content"),
     )
-    state = {
-        "user_id": 1,
-        "messages": [HumanMessage(content="what's the market news today?")],
-    }
-    output = await ScheduledContentDeliveryPlugin().execute(state)
-    assert "Today's briefing content" in output.message.content
-
-
-def test_deterministic_plan_routes_daily_briefing():
-    from orchestrator.planner import deterministic_plan
-
-    state = {
-        "user_id": 1,
-        "active_domain": None,
-        "last_decision": None,
-        "messages": [HumanMessage(content="Can you send me a daily morning summary of the top global news and stock market news")],
-    }
-    decision = deterministic_plan(
-        "Can you send me a daily morning summary of the top global news and stock market news",
-        state,
-        None,
-    )
-    assert "scheduled_content_delivery" in decision.capability_ids
+    reply = await get_daily_briefing.ainvoke({})
+    assert "Today's briefing content" in reply

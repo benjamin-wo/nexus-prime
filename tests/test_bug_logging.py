@@ -57,8 +57,8 @@ async def test_log_user_bug_returns_issue_url():
 
 
 @pytest.mark.asyncio
-async def test_bug_logging_plugin_replies_with_url(monkeypatch):
-    from orchestrator.router import BugLoggingPlugin
+async def test_log_bug_report_tool_replies_with_url(monkeypatch):
+    from capabilities.bug_logging.tools import log_bug_report
 
     monkeypatch.setattr(
         "capabilities.bug_logging.tools.log_user_bug",
@@ -72,32 +72,12 @@ async def test_bug_logging_plugin_replies_with_url(monkeypatch):
             }
         ),
     )
-    state = {
+    reply = await log_bug_report.ainvoke({
         "user_id": 1,
-        "messages": [
-            HumanMessage(
-                content="There seems to be an issue with the cockpit. There is no icon "
-                "for transaction splitting beside the edit icon. Can you log it as a bug."
-            )
-        ],
-    }
-    output = await BugLoggingPlugin().execute(state)
-    assert "issues/88" in output.message.content
-    assert "Logged it as a bug" in output.message.content
-
-
-def test_deterministic_plan_routes_bug_logging():
-    from orchestrator.planner import deterministic_plan
-
-    state = {
-        "user_id": 1,
-        "active_domain": None,
-        "last_decision": None,
-        "messages": [HumanMessage(content="There seems to be an issue with the cockpit. Can you log it as a bug.")],
-    }
-    decision = deterministic_plan(
-        "There seems to be an issue with the cockpit. Can you log it as a bug.",
-        state,
-        None,
-    )
-    assert "bug_logging" in decision.capability_ids
+        "text": (
+            "There seems to be an issue with the cockpit. There is no icon "
+            "for transaction splitting beside the edit icon. Can you log it as a bug."
+        ),
+    })
+    assert "issues/88" in reply
+    assert "Logged as a bug" in reply

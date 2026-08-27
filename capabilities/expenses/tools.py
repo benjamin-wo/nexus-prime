@@ -18,6 +18,7 @@ from core.llm import (
     get_multimodal_llm,
 )
 from core.models import ExpenseTransaction, DeletedExpenseMessage, IncomeTransaction, UserProfile
+from core.tool_guard import identity_bound
 from capabilities.expenses.schemas import ExtractedExpense
 from capabilities.email.tools import apply_gmail_processed_label, apply_email_processed_tag
 
@@ -927,6 +928,7 @@ def expense_source_id(user_id: int, text: str) -> str:
 
 
 @tool
+@identity_bound
 async def get_user_expenses(
     user_id: int,
     limit: int = 10,
@@ -1128,6 +1130,7 @@ async def query_unified_transactions(
 
 
 @tool
+@identity_bound
 async def log_expenses_from_emails(
     user_id: int,
     emails: List[Dict[str, Any]],
@@ -1301,6 +1304,7 @@ async def log_expenses_from_emails(
     return {"logged": logged, "skipped": skipped, "deduped": deduped}
 
 @tool
+@identity_bound
 async def process_extracted_expense(
     user_id: int,
     amount: float,
@@ -1379,6 +1383,80 @@ async def process_extracted_expense(
 
 
 @tool
+@identity_bound
+async def record_incoming_money(text: str, user_id: int = 0) -> str:
+    """
+    Record money the user received (salary, refund, reimbursement, or a
+    friend repaying an IOU) -- e.g. "got my salary $4200", "Loren paid me
+    back $13", "received a $20 refund from Grab". Deterministically extracts
+    structured fields (amount/source/category) from the text; if the
+    category is a friend repayment, this settles the matching open IOU
+    (from split_bill_expense) instead of just logging a generic income row.
+    Deduped by message text, so re-processing the same message never
+    double-logs. Do NOT use this for the user's own spending -- that's
+    process_extracted_expense.
+
+    Args:
+        text: the user's natural-language incoming-money message.
+        user_id: ignored; the assistant injects the authenticated user's ID.
+    """
+    uid = int(user_id or 0)
+    parsed = parse_incoming_transaction_text(text)
+    if parsed is None:
+        return "[income] Couldn't find an incoming-money statement in that text."
+
+    source_id = income_source_id(uid, text)
+
+    if parsed.get("category") == "Friend Repayment":
+        from capabilities.expenses.settlement import settle_matching_iou
+
+        received_at = None
+        try:
+            received_at = datetime.fromisoformat(
+                str(parsed.get("date_iso") or "").replace("Z", "+00:00")
+            )
+        except ValueError:
+            pass
+        settlement = await settle_matching_iou(
+            user_id=uid,
+            participant=str(parsed.get("source") or ""),
+            amount=float(parsed.get("amount") or 0.0),
+            received_at=received_at,
+            notes=str(parsed.get("notes") or "").strip() or None,
+        )
+        if settlement is not None and settlement.get("status") in {
+            "settled",
+            "partially_settled",
+            "already_settled",
+        }:
+            status = settlement["status"]
+            if status == "already_settled":
+                return (
+                    f"{settlement['participant']}'s repayment is already marked as paid "
+                    f"({settlement['currency']} {settlement['amount_due']:.2f})."
+                )
+            if status == "partially_settled":
+                outstanding = settlement["amount_due"] - settlement["total_received"]
+                return (
+                    f"Logged {settlement['currency']} {settlement['amount_received']:.2f} from "
+                    f"{settlement['participant']}. Their IOU still has "
+                    f"{settlement['currency']} {outstanding:.2f} outstanding."
+                )
+            return (
+                f"Logged {settlement['currency']} {settlement['amount_received']:.2f} from "
+                f"{settlement['participant']} and marked their IOU as paid."
+            )
+        # No matching open IOU -- fall through to a plain income record below.
+
+    if await is_duplicate_income(source_id):
+        return "[income] That incoming transaction is already logged."
+
+    item = await save_income_transaction(user_id=uid, income=parsed, source_message_id=source_id)
+    return f"Logged {item.currency} {item.amount:.2f} from {item.source} ({item.category})."
+
+
+@tool
+@identity_bound
 async def split_bill_expense(
     user_id: int,
     total_amount: float,

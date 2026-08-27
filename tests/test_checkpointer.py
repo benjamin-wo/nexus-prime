@@ -50,33 +50,33 @@ class _CapturingLLM:
 
 
 @pytest.mark.asyncio
-async def test_general_plugin_carries_the_summary_into_llm_history(monkeypatch):
-    """Regression: GeneralPlugin.execute used to re-slice the already-bounded
-    `pruned` list with `[-8:]`, which cut off the summary SystemMessage sitting
-    at index 0 — and even when that note survived, the history-building loop's
-    if/elif only recognized HumanMessage/AIMessage, so a SystemMessage fell
-    through and was silently dropped either way. Net effect: once a
-    conversation passed ~12-20 messages, anything before the last ~8 turns
-    vanished from the assistant's context with no compensating summary — "the
-    chat cannot remember what they said earlier." """
-    import orchestrator.router as router_module
+async def test_agent_loop_carries_the_summary_into_llm_history(monkeypatch):
+    """Regression: GeneralPlugin.execute (deleted, logic now in
+    orchestrator/agent_loop.py's agent_loop()) used to re-slice the already-
+    bounded `pruned` list with `[-8:]`, which cut off the summary
+    SystemMessage sitting at index 0 — and even when that note survived, the
+    history-building loop's if/elif only recognized HumanMessage/AIMessage,
+    so a SystemMessage fell through and was silently dropped either way. Net
+    effect: once a conversation passed ~12-20 messages, anything before the
+    last ~8 turns vanished from the assistant's context with no compensating
+    summary — "the chat cannot remember what they said earlier." """
+    import orchestrator.agent_loop as agent_loop_module
+    from orchestrator.agent_loop import agent_loop
 
     fake_llm = _CapturingLLM()
-    monkeypatch.setattr(router_module, "get_agent_llm", lambda *a, **k: fake_llm)
-    monkeypatch.setattr(router_module.settings, "gemini_api_key", "fake-key-for-test")
+    monkeypatch.setattr(agent_loop_module, "get_agent_llm", lambda *a, **k: fake_llm)
+    monkeypatch.setattr(agent_loop_module.settings, "gemini_api_key", "fake-key-for-test")
 
     messages = _long_conversation("My dog is named Biscuit")
     messages.append(HumanMessage(content="what's my dog's name again?"))
 
-    output = await router_module.GeneralPlugin().execute(
-        {"user_id": 1, "messages": messages}
-    )
+    command = await agent_loop({"user_id": 1, "messages": messages})
 
     assert fake_llm.calls, "the LLM should have been invoked"
     history = fake_llm.calls[0]
     history_text = "\n".join(str(getattr(m, "content", "")) for m in history)
     assert "Biscuit" in history_text
-    assert output.message.content == "here's what I've got"
+    assert command.update["messages"][0].content == "here's what I've got"
 
 
 # --- recent_turns (#35) -------------------------------------------------

@@ -47,45 +47,72 @@ def test_webhook_text_message():
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
 
-def test_webhook_callback_query_resume():
-    payload = {
-        "update_id": 10002,
-        "callback_query": {
-            "id": "cb_001",
-            "from": {"id": 9001},
-            "message": {"chat": {"id": 9001}},
-            "data": '{"a": "confirm"}',
-        },
-    }
-    response = client.post("/api/webhook", json=payload, headers=_webhook_headers())
-    assert response.status_code == 200
-    assert response.json()["resumed"] is True
+@pytest.mark.asyncio
+async def test_webhook_callback_query_resume():
+    """app/webhook.py's endpoint itself is fire-and-forget now (see
+    test_webhook_endpoint_acks_immediately_and_backgrounds_the_turn below),
+    so its HTTP response can no longer carry a per-turn result like
+    "resumed" -- that contract moved entirely to TelegramIngress.
+    handle_callback_query()'s own return value, exercised directly here."""
+    from app.ingress import telegram_ingress
 
-def test_webhook_times_out_instead_of_hanging_forever(monkeypatch):
-    """Regression (P0, production incident): a hung downstream call (e.g. a
-    stalled LLM request -- see core/llm.py's LLM_REQUEST_TIMEOUT_SECONDS)
-    must not hang the webhook response forever. Before this fix,
-    receive_telegram_webhook fully awaited handle_update() with no
-    timeout anywhere in the chain -- if handle_update never completed,
-    the webhook never returned, Telegram never got its 200 OK, and it
-    redelivered the same update on its own backoff schedule indefinitely.
-    Verified against a real incident: the same chat was redelivered every
-    ~60-130s for 10+ minutes with zero replies ever sent, while each
-    redelivery's never-cancelled typing-indicator loop piled up until
-    Telegram's sendChatAction calls were failing with 429s dozens/sec."""
-    import asyncio
+    result = await telegram_ingress.handle_callback_query({
+        "id": "cb_001",
+        "from": {"id": 9001},
+        "message": {"chat": {"id": 9001}},
+        "data": '{"a": "confirm"}',
+    })
+    assert result["status"] == "ok"
+    assert result["resumed"] is True
+
+
+@pytest.mark.asyncio
+async def test_webhook_jobs_command(monkeypatch):
+    """Same reasoning as test_webhook_callback_query_resume: a slash
+    command's reply is delivered via send_telegram_message (asserted here),
+    not via the now-immediate webhook HTTP response."""
     from unittest.mock import AsyncMock
+
+    import app.ingress as ingress_module
+    from app.ingress import telegram_ingress
+
+    sent = AsyncMock(return_value=True)
+    monkeypatch.setattr(ingress_module, "send_telegram_message", sent)
+    await telegram_ingress.handle_update({
+        "update_id": 10003,
+        "message": {
+            "message_id": 502,
+            "from": {"id": 9001},
+            "chat": {"id": 9001},
+            "text": "/jobs",
+        },
+    })
+
+    assert sent.await_count >= 1
+    reply_text = sent.await_args.args[1]
+    assert "jobs" in reply_text.lower() or "reminder" in reply_text.lower()
+
+
+def test_webhook_endpoint_acks_immediately_and_backgrounds_the_turn(monkeypatch):
+    """The webhook response body has no bearing on message delivery -- every
+    reply goes through an explicit send_telegram_message() call inside
+    handle_update(), never through this endpoint's return value (see
+    app/webhook.py's docstring). So the endpoint just needs to ack Telegram
+    right away and hand the actual turn off to a background task, rather
+    than awaiting it inline -- confirmed here by making handle_update hang
+    indefinitely and asserting the HTTP response still returns promptly."""
+    import asyncio
 
     import app.webhook as webhook_module
     from app.ingress import telegram_ingress
 
-    monkeypatch.setattr(webhook_module, "WEBHOOK_PROCESSING_TIMEOUT_SECONDS", 0.05)
+    hang_started = asyncio.Event()
 
     async def _hang(payload):
+        hang_started.set()
         await asyncio.sleep(999)
 
     monkeypatch.setattr(telegram_ingress, "handle_update", _hang)
-    monkeypatch.setattr(webhook_module, "send_telegram_message", AsyncMock(return_value=True))
 
     payload = {
         "update_id": 10004,
@@ -98,68 +125,4 @@ def test_webhook_times_out_instead_of_hanging_forever(monkeypatch):
     }
     response = client.post("/api/webhook", json=payload, headers=_webhook_headers())
     assert response.status_code == 200
-    body = response.json()
-    assert body["status"] == "ok"
-    assert body.get("timeout") is True
-
-
-def test_webhook_timeout_reports_an_operation_event(monkeypatch):
-    """Regression: a webhook-level timeout cancels handle_update() before
-    plan_dispatch() ever reaches schedule_turn_audit(), so a run of repeated
-    timeouts was invisible to every audit/monitoring path (confirmed live:
-    5 consecutive timeouts for one chat, zero audit entries -- the owner
-    asked why the auto-audit never picked it up). The timeout handler must
-    now explicitly report the incident through record_operation_event so it
-    surfaces as a tracked (deduplicated) production bug instead of silently
-    vanishing."""
-    import asyncio
-    from unittest.mock import AsyncMock
-
-    import app.webhook as webhook_module
-    import core.audit as audit_module
-    from app.ingress import telegram_ingress
-
-    monkeypatch.setattr(webhook_module, "WEBHOOK_PROCESSING_TIMEOUT_SECONDS", 0.05)
-
-    async def _hang(payload):
-        await asyncio.sleep(999)
-
-    monkeypatch.setattr(telegram_ingress, "handle_update", _hang)
-    monkeypatch.setattr(webhook_module, "send_telegram_message", AsyncMock(return_value=True))
-    fake_record = AsyncMock(return_value=None)
-    monkeypatch.setattr(audit_module, "record_operation_event", fake_record)
-
-    payload = {
-        "update_id": 10005,
-        "message": {
-            "message_id": 504,
-            "from": {"id": 9003, "first_name": "Test"},
-            "chat": {"id": 9003, "type": "private"},
-            "text": "bring up the upcoming bali trip for me to plan some stuff",
-        },
-    }
-    response = client.post("/api/webhook", json=payload, headers=_webhook_headers())
-    assert response.status_code == 200
-    assert response.json().get("timeout") is True
-
-    assert fake_record.await_count == 1
-    call_kwargs = fake_record.await_args.kwargs
-    assert call_kwargs["detection_source"] == "webhook_timeout"
-    assert call_kwargs["user_id"] == 9003
-    assert call_kwargs["fingerprint"] == "op_webhook_processing_timeout"
-    assert call_kwargs["severity"] == "P1"
-
-
-def test_webhook_jobs_command():
-    payload = {
-        "update_id": 10003,
-        "message": {
-            "message_id": 502,
-            "from": {"id": 9001},
-            "chat": {"id": 9001},
-            "text": "/jobs",
-        },
-    }
-    response = client.post("/api/webhook", json=payload, headers=_webhook_headers())
-    assert response.status_code == 200
-    assert "jobs" in response.json()
+    assert response.json() == {"status": "ok", "queued": True}

@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from sqlmodel import select
 from core.db import async_session_factory
 from core.models import CapabilityRequestLog, UserProfile
@@ -103,9 +103,9 @@ async def test_github_issue_syncing_existing_issue(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_supervisor_fallback_and_guardrail_routing():
+    """Informational fallback: no LLM key configured in tests -> the
+    rule-based fallback, no tools ever bound/called."""
     config = {"configurable": {"thread_id": "test_thread_cap_1001"}}
-
-    # 1. Test Informational fallback -> general_subagent
     state_info = {
         "messages": [HumanMessage(content="What is the capital of France?")],
         "user_id": 9001,
@@ -113,25 +113,78 @@ async def test_supervisor_fallback_and_guardrail_routing():
         "active_domain": None,
     }
     result_info = await assistant_graph.ainvoke(state_info, config=config)
-    assert result_info.get("active_domain") == "general"
-    assert result_info.get("intent_type") == "informational_fallback"
+    assert result_info.get("active_domain") == "agent"
+    assert result_info.get("intent_type") is None
 
-    # 2. Test Unsupported transaction -> FINISH with refusal and telemetry tags
-    state_tx = {
+
+@pytest.mark.asyncio
+async def test_agent_loop_logs_capability_gap_when_agent_calls_the_tool(monkeypatch):
+    """Regression-shape coverage for the deleted GuardrailPolicy: unsupported
+    transactional requests (calendar, bank transfer, ...) used to be caught
+    by a hardcoded keyword matcher in orchestrator/router.py. That decision
+    is now the agent's own judgment (orchestrator/agent_loop.py's
+    log_capability_gap tool + system-prompt guidance) -- not deterministically
+    testable without an LLM, so this scripts the model's tool call and
+    verifies the WIRING: a log_capability_gap call actually reaches
+    core.audit.log_capability_request and sets intent_type/
+    missing_capability_tags on the returned Command for app/ingress.py's
+    "+ Log Feature Request" button."""
+    import orchestrator.agent_loop as agent_loop_module
+    from orchestrator.agent_loop import agent_loop
+
+    class _ScriptedLLM:
+        def __init__(self):
+            self.calls = 0
+
+        def bind_tools(self, tools):
+            return self
+
+        async def ainvoke(self, messages):
+            self.calls += 1
+            if self.calls == 1:
+                return AIMessage(content="", tool_calls=[{
+                    "name": "log_capability_gap",
+                    "args": {"tag": "calendar", "expectation": "Schedule a meeting tomorrow"},
+                    "id": "call_1",
+                    "type": "tool_call",
+                }])
+            return AIMessage(content="I can't do that yet, but I've logged it as a feature request!")
+
+    logged = []
+
+    async def _fake_log_capability_request(**kwargs):
+        logged.append(kwargs)
+
+    monkeypatch.setattr(agent_loop_module, "get_agent_llm", lambda *a, **k: _ScriptedLLM())
+    monkeypatch.setattr(agent_loop_module.settings, "gemini_api_key", "fake-key-for-test")
+    monkeypatch.setattr(agent_loop_module, "log_capability_request", _fake_log_capability_request)
+
+    command = await agent_loop({
         "messages": [HumanMessage(content="Schedule a meeting on my calendar tomorrow")],
         "user_id": 9001,
         "current_timezone": "UTC",
         "active_domain": None,
-    }
-    result_tx = await assistant_graph.ainvoke(state_tx, config=config)
-    assert result_tx.get("intent_type") == "unsupported_transaction"
-    assert "calendar" in result_tx.get("missing_capability_tags", [])
+    })
+
+    assert logged, "log_capability_gap should have called log_capability_request"
+    assert logged[0]["tags"] == ["calendar"]
+    assert command.update.get("intent_type") == "unsupported_transaction"
+    assert "calendar" in command.update.get("missing_capability_tags", [])
 
 
-def test_webhook_missing_capabilities_command():
-    from core.config import settings
-    headers = {"X-Telegram-Bot-Api-Secret-Token": settings.telegram_webhook_secret} if settings.telegram_webhook_secret else {}
-    payload = {
+@pytest.mark.asyncio
+async def test_webhook_missing_capabilities_command(monkeypatch):
+    """A slash command's reply is delivered via send_telegram_message, not
+    via the now-immediate (fire-and-forget) webhook HTTP response -- see
+    app/webhook.py's docstring."""
+    from unittest.mock import AsyncMock
+
+    import app.ingress as ingress_module
+    from app.ingress import telegram_ingress
+
+    sent = AsyncMock(return_value=True)
+    monkeypatch.setattr(ingress_module, "send_telegram_message", sent)
+    await telegram_ingress.handle_update({
         "update_id": 20001,
         "message": {
             "message_id": 601,
@@ -139,8 +192,8 @@ def test_webhook_missing_capabilities_command():
             "chat": {"id": 9001, "type": "private"},
             "text": "/missing_capabilities",
         },
-    }
-    response = client.post("/api/webhook", json=payload, headers=headers)
-    assert response.status_code == 200
-    assert response.json()["status"] == "ok"
-    assert "leaderboard" in response.json()
+    })
+
+    assert sent.await_count >= 1
+    reply_text = sent.await_args.args[1]
+    assert "missing capability" in reply_text.lower()
