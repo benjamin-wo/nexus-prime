@@ -317,7 +317,7 @@ async def test_route_plugin_threads_recent_conversation_into_extraction(monkeypa
         captured.update(kwargs)
         return {"origin": "Bugis", "destination": "Changi Airport", "mode": "transit"}
 
-    async def fake_journey(origin, destination):
+    async def fake_journey(origin, destination, route_index=0):
         return {"error": "no live feed"}
 
     async def fake_plan_route(**kwargs):
@@ -348,6 +348,97 @@ async def test_route_plugin_threads_recent_conversation_into_extraction(monkeypa
     assert "recent_context" in captured
     assert "route from Raffles Place to Changi Airport" in captured["recent_context"]
     assert "Bugis" in str(out.message.content)
+
+
+@pytest.mark.asyncio
+async def test_route_plugin_cycles_to_next_alternative_on_request(monkeypatch):
+    """Regression: Google Maps was called with alternatives=false, so
+    "other bus"/"a different route" always got back the exact same single
+    journey (reported live: "It still keeps defaulting to one route").
+    A recognizable "give me another one" ask for the SAME trip as last_route
+    must now advance route_index and pass it through to
+    plan_transit_journey(); a fresh trip (different origin/destination)
+    must NOT inherit the old route_index."""
+    import orchestrator.router as router_module
+    from orchestrator.router import RoutePlugin
+    from langchain_core.messages import AIMessage
+
+    captured_indexes = []
+
+    async def fake_extract(**kwargs):
+        return {"origin": "", "destination": "", "mode": "transit"}
+
+    async def fake_journey(origin, destination, route_index=0):
+        captured_indexes.append(route_index)
+        return {
+            "origin": origin,
+            "destination": destination,
+            "total": f"{20 + route_index} mins",
+            "distance": "10 km",
+            "steps": [],
+            "map_url": "https://maps.example/dir",
+            "route_index": route_index,
+            "route_count": 2,
+        }
+
+    monkeypatch.setattr(router_module.extract_route_request, "coroutine", fake_extract)
+    monkeypatch.setattr(router_module, "plan_transit_journey", fake_journey)
+
+    state = {
+        "messages": [HumanMessage(content="for other bus")],
+        "user_id": 4007,
+        "current_timezone": "UTC",
+        "active_domain": None,
+        "last_route": {"origin": "Raffles Place", "destination": "Changi Airport", "mode": "transit", "route_index": 0},
+    }
+    out = await RoutePlugin().execute(state)
+
+    assert captured_indexes == [1]
+    assert out.state_update["last_route"]["route_index"] == 1
+
+    # A fresh trip (different destination) must reset to index 0, not
+    # inherit the prior route_index just because the phrasing still
+    # matches is_alternative_route_request ("another route").
+    captured_indexes.clear()
+
+    async def fake_extract_fresh(**kwargs):
+        return {"origin": "Bugis", "destination": "Somewhere Else", "mode": "transit"}
+
+    monkeypatch.setattr(router_module.extract_route_request, "coroutine", fake_extract_fresh)
+    state["messages"] = [HumanMessage(content="give me another route from Bugis to somewhere else")]
+    await RoutePlugin().execute(state)
+    assert captured_indexes == [0]
+
+
+@pytest.mark.asyncio
+async def test_route_plugin_is_honest_when_no_alternative_exists(monkeypatch):
+    """When the user asks for another route but Maps only ever offered one,
+    RoutePlugin must say so honestly instead of silently re-sending the
+    same journey (or fabricating a fake alternative)."""
+    import orchestrator.router as router_module
+    from orchestrator.router import RoutePlugin
+    from langchain_core.messages import HumanMessage
+
+    async def fake_extract(**kwargs):
+        return {"origin": "", "destination": "", "mode": "transit"}
+
+    async def fake_journey(origin, destination, route_index=0):
+        return {"error": "no_alternative_available", "route_count": 1}
+
+    monkeypatch.setattr(router_module.extract_route_request, "coroutine", fake_extract)
+    monkeypatch.setattr(router_module, "plan_transit_journey", fake_journey)
+
+    out = await RoutePlugin().execute({
+        "messages": [HumanMessage(content="any other route?")],
+        "user_id": 4008,
+        "current_timezone": "UTC",
+        "active_domain": None,
+        "last_route": {"origin": "Raffles Place", "destination": "Changi Airport", "mode": "transit", "route_index": 0},
+    })
+
+    content = str(out.message.content)
+    assert "only" in content.lower()
+    assert "Raffles Place" in content and "Changi Airport" in content
 
 
 @pytest.mark.asyncio

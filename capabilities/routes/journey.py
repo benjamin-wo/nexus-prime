@@ -39,7 +39,12 @@ async def _directions(origin: str, destination: str) -> dict[str, Any]:
                     "destination": destination,
                     "mode": "transit",
                     "key": settings.google_maps_api_key,
-                    "alternatives": "false",
+                    # Regression: this was hard-coded to "false", so a user
+                    # asking for "other bus"/"a different route" always got
+                    # back the exact same single journey -- there was no
+                    # second option to even offer. plan_transit_journey()
+                    # now picks among data["routes"] via route_index.
+                    "alternatives": "true",
                 },
             )
             data = resp.json()
@@ -81,12 +86,25 @@ async def _live_minutes_for_stop(
     return minutes[0] if minutes else None
 
 
-async def plan_transit_journey(origin: str, destination: str) -> dict[str, Any]:
-    """Full journey: ordered steps, total time, live departures, map link."""
+async def plan_transit_journey(
+    origin: str, destination: str, route_index: int = 0
+) -> dict[str, Any]:
+    """Full journey: ordered steps, total time, live departures, map link.
+
+    route_index selects among Google's alternative routes (0 = the default
+    best route). If route_index is out of range -- the caller asked for
+    "another one" but Maps didn't offer one -- this returns
+    {"error": "no_alternative_available", "route_count": N} rather than
+    silently re-returning route 0, so the caller can be honest about it
+    instead of looking like it ignored the request.
+    """
     data = await _directions(origin, destination)
     if data.get("error"):
         return data
-    leg = data["routes"][0]["legs"][0]
+    routes = data["routes"]
+    if route_index >= len(routes):
+        return {"error": "no_alternative_available", "route_count": len(routes)}
+    leg = routes[route_index]["legs"][0]
     steps: list[dict[str, Any]] = []
     for step in leg.get("steps", []):
         transit = step.get("transit_details") or {}
@@ -137,6 +155,8 @@ async def plan_transit_journey(origin: str, destination: str) -> dict[str, Any]:
         "map_url": MAPS_LINK.format(
             origin=quote(origin), destination=quote(destination)
         ),
+        "route_index": route_index,
+        "route_count": len(routes),
     }
 
 

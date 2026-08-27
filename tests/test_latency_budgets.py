@@ -152,7 +152,7 @@ async def test_route_plugin_journey_never_exceeds_webhook_budget(monkeypatch):
     async def fake_extract(**kwargs):
         return {"origin": "Raffles Place", "destination": "Changi Airport", "mode": "transit"}
 
-    async def slow_journey(origin, destination):
+    async def slow_journey(origin, destination, route_index=0):
         # Stands in for _directions' own ~30s ceiling PLUS one transit leg's
         # _live_minutes_for_stop call (~15s) -- individually each fits its
         # own bound, but their sum (45s) exceeds ROUTE_RESOLUTION_TIMEOUT_SECONDS
