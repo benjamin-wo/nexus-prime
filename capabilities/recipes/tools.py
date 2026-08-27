@@ -128,3 +128,5 @@ async def get_user_grocery_list(user_id: int, include_purchased: bool = False) -
             }
             for idx in items
         ]
+
+

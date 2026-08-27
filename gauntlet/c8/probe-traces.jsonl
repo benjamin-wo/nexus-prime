@@ -1,5 +1,0 @@
-{"probe": 1, "trigger": {"kind": "expense_mismatch", "trigger_id": "t-1", "amount_diff": 4.0}, "local_time": "02:40 SGT", "deliver": false, "reason": "quiet hours before 09:00 Asia/Singapore and urgency=routine", "checks": {"expected": false, "matches": true}}
-{"probe": 2, "trigger": {"kind": "expense_mismatch", "trigger_id": "t-2", "amount_diff": 500.0}, "local_time": "02:40 SGT", "deliver": true, "reason": "deliverable (urgency=urgent)", "checks": {"expected": true, "matches": true}}
-{"probe": "2b", "trigger": {"kind": "scheduled_job", "trigger_id": "t-3", "message": "URGENT security alert from your bank"}, "local_time": "02:40 SGT", "deliver": true, "reason": "deliverable (urgency=urgent)", "checks": {"expected": true, "matches": true}}
-{"probe": 3, "trigger": null, "local_time": "14:00 SGT", "deliver": false, "reason": "no trigger record — proactivity never guesses", "checks": {"expected": false, "matches": true}}
-{"probe": 4, "trigger": {"kind": "expense_mismatch", "trigger_id": "t-4", "amount_diff": 4.0}, "local_time": "10:00 SGT", "deliver": true, "reason": "deliverable (urgency=routine)", "checks": {"expected": true, "matches": true}}

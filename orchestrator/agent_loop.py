@@ -189,101 +189,39 @@ async def log_capability_gap(tag: str, expectation: str) -> str:
     return await _log_capability_gap({"tag": tag, "expectation": expectation})
 
 
-def _build_tool_roster() -> List[Any]:
-    """The agent's full skill set. Deliberately flat and imported lazily:
-    tests monkeypatch several of these at their source module, which
-    requires late binding, and it keeps this module importable without
-    pulling in every capability's dependency chain at import time."""
-    from capabilities.general.tools import (
-        fetch_url,
-        get_bus_timings,
-        list_my_boards,
-        list_my_reminders,
-        query_my_points_balances,
-        query_transactions,
-        search_my_email,
-        search_web,
-        summarize_board,
-        transit_journey,
-    )
-    from capabilities.routes.tools import extract_route_request, plan_route
-    from capabilities.expenses.tools import (
-        extract_expense_from_text,
-        get_user_expenses,
-        log_expenses_from_emails,
-        process_extracted_expense,
-        record_incoming_money,
-        split_bill_expense,
-    )
-    from capabilities.email.tools import (
-        disconnect_email,
-        get_email_connection_status,
-        sweep_email_for_expenses,
-    )
-    from capabilities.reminders.tools import (
-        create_one_time_reminder,
-        create_recurring_reminder,
-        delete_reminder,
-        parse_reminder_request,
-    )
-    from capabilities.recipes.tools import (
-        get_user_grocery_list,
-        parse_recipe_and_extract_ingredients,
-        sync_to_grocery_list,
-    )
-    from capabilities.whiteboard.tools import (
-        add_checklist_to_whiteboard,
-        create_planning_board,
-        pin_note_to_whiteboard,
-    )
-    from capabilities.memory.tools import record_points_balance
-    from capabilities.bug_logging.tools import log_bug_report
-    from capabilities.scheduled_content_delivery.tools import get_daily_briefing, schedule_daily_briefing
-    from capabilities.code_exec.tools import run_python_code
+def _skill_index_text() -> str:
+    """Compact one-line-per-skill index appended to the system prompt."""
+    from core.skill_registry import discover_skills, skill_index_text
 
-    return [
-        # Read-only / research
-        search_web,
-        fetch_url,
-        query_transactions,
-        list_my_reminders,
-        list_my_boards,
-        summarize_board,
-        search_my_email,
-        get_bus_timings,
-        transit_journey,
-        plan_route,
-        extract_route_request,
-        query_my_points_balances,
-        get_user_expenses,
-        get_user_grocery_list,
-        get_daily_briefing,
-        get_email_connection_status,
-        run_python_code,
-        # Extraction helpers (no side effects, no user_id)
-        extract_expense_from_text,
-        parse_reminder_request,
-        parse_recipe_and_extract_ingredients,
-        # Writes -- each is self-guarding (core.tool_guard.identity_bound,
-        # plus its own ownership/confirmation/dedup checks internally)
-        process_extracted_expense,
-        record_incoming_money,
-        split_bill_expense,
-        log_expenses_from_emails,
-        sweep_email_for_expenses,
-        disconnect_email,
-        create_planning_board,
-        pin_note_to_whiteboard,
-        add_checklist_to_whiteboard,
-        record_points_balance,
-        log_bug_report,
-        schedule_daily_briefing,
-        create_one_time_reminder,
-        create_recurring_reminder,
-        delete_reminder,
-        sync_to_grocery_list,
-        log_capability_gap,
-    ]
+    return "\n\n## Skill index\n" + skill_index_text(discover_skills())
+
+
+def _build_tool_roster() -> List[Any]:
+    """The agent's full tool set, resolved from the installed skills.
+
+    Skills are declared in ``skills/<name>/SKILL.md`` (YAML frontmatter: name,
+    description, side_effect, tools) and ``core/skill_registry.py`` resolves
+    every declared tool name against the global tool registry. Adding a tool
+    to the agent = adding its name to a SKILL.md frontmatter; adding a whole
+    skill = dropping a folder. Late binding is preserved: the registry is
+    rebuilt each turn, so tests (and hot skill edits) see fresh modules.
+
+    Sensitive tools (money writes, board writes, ...) remain agent-callable
+    like any other; each guards itself via core.tool_guard.identity_bound.
+    """
+    from core.skill_registry import (
+        all_declared_tools,
+        discover_skills,
+        make_load_skill_tool,
+    )
+
+    skills = discover_skills()
+    tools = all_declared_tools(skills)
+    tools.append(make_load_skill_tool(lambda: discover_skills()))
+    # Loop machinery, not a skill: the agent self-reports capability gaps so
+    # telemetry keeps flowing without a deterministic intent matcher.
+    tools.append(log_capability_gap)
+    return tools
 
 
 def _user_text(state: AssistantState) -> tuple[str, bool, list]:
@@ -583,12 +521,45 @@ async def agent_loop(state: AssistantState) -> Command[str]:
     now_sg = datetime.now(ZoneInfo("Asia/Singapore")).strftime("%A, %d %b %Y %H:%M")
     is_admin = settings.is_admin(user_id)
 
+    # Safety kernel: deterministic checks that never reach the LLM.
+    from orchestrator.kernel import is_termination_intent
+
+    if is_termination_intent(text):
+        return Command(
+            goto=END,
+            update={
+                "messages": [AIMessage(content="Got it — I'll stop here. 👋")],
+                "active_domain": "agent",
+                "intent_type": "close",
+            },
+        )
+
+    pending_stops = state.get("pending_bus_stops")
+    if pending_stops:
+        from capabilities.routes.tools import (
+            handle_bus_query,
+            is_bus_arrival_query,
+            is_bus_disambiguation_answer,
+        )
+
+        if is_bus_arrival_query(text) or is_bus_disambiguation_answer(text, pending_stops):
+            bus_result = await handle_bus_query(text, pending_stops=pending_stops)
+            return Command(
+                goto=END,
+                update={
+                    "messages": [AIMessage(content=bus_result.get("message") or "No bus information returned.")],
+                    "active_domain": "agent",
+                    "pending_bus_stops": bus_result.get("pending_stops"),
+                },
+            )
+
     if len(messages) > 12:
         pruned, _ = prune_and_summarize_messages(messages, threshold=12)
     else:
         pruned = messages
 
-    history: List[BaseMessage] = [SystemMessage(content=_build_system_prompt(is_admin=is_admin, now=now_sg))]
+    skill_index = _skill_index_text()
+    history: List[BaseMessage] = [SystemMessage(content=_build_system_prompt(is_admin=is_admin, now=now_sg) + skill_index)]
     for message in pruned:
         if isinstance(message, SystemMessage):
             history.append(SystemMessage(content=str(message.content)))
