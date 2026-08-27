@@ -95,8 +95,8 @@ async def test_general_plugin_binds_fetch_url_alongside_search_web():
     """The agent's tool roster must include fetch_url, not just search_web --
     otherwise a user-pasted link still has nowhere to go even though the
     tool exists."""
-    from orchestrator.agent_loop import _build_tool_roster
+    from orchestrator.agent_loop import _build_tool_roster, _visible_skills
 
-    tool_names = {t.name for t in _build_tool_roster()}
+    tool_names = {t.name for t in _build_tool_roster(_visible_skills(True))}
     assert "fetch_url" in tool_names
     assert "search_web" in tool_names

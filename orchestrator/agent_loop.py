@@ -189,14 +189,36 @@ async def log_capability_gap(tag: str, expectation: str) -> str:
     return await _log_capability_gap({"tag": tag, "expectation": expectation})
 
 
-def _skill_index_text() -> str:
+def _visible_skills(is_admin: bool) -> dict:
+    """Skills this turn's user may see and call.
+
+    ``settings.admin_only_capabilities`` names skills that are hidden from
+    non-admin users entirely — no index entry, no bound tools, no loadable
+    body — so a gated skill's tools never reach a non-admin turn. Admins see
+    everything; with no admin configured (local/dev), every skill is visible.
+    """
+    from core.skill_registry import discover_skills
+
+    skills = discover_skills()
+    if is_admin or not settings.admin_only_capabilities:
+        return skills
+    return {
+        name: skill
+        for name, skill in skills.items()
+        if name not in settings.admin_only_capabilities
+    }
+
+
+def _skill_index_text(visible_skills: dict) -> str:
     """Compact one-line-per-skill index appended to the system prompt."""
-    from core.skill_registry import discover_skills, skill_index_text
+    from core.skill_registry import skill_index_text
 
-    return "\n\n## Skill index\n" + skill_index_text(discover_skills())
+    if not visible_skills:
+        return "\n\n## Skill index\n(none available)"
+    return "\n\n## Skill index\n" + skill_index_text(visible_skills)
 
 
-def _build_tool_roster() -> List[Any]:
+def _build_tool_roster(visible_skills: dict) -> List[Any]:
     """The agent's full tool set, resolved from the installed skills.
 
     Skills are declared in ``skills/<name>/SKILL.md`` (YAML frontmatter: name,
@@ -206,18 +228,21 @@ def _build_tool_roster() -> List[Any]:
     skill = dropping a folder. Late binding is preserved: the registry is
     rebuilt each turn, so tests (and hot skill edits) see fresh modules.
 
-    Sensitive tools (money writes, board writes, ...) remain agent-callable
-    like any other; each guards itself via core.tool_guard.identity_bound.
+    ``visible_skills`` is already filtered by ``_visible_skills`` for admin
+    gating, so tools only a gated skill declares are simply never bound for a
+    non-admin turn. Sensitive tools (money writes, board writes, ...) remain
+    agent-callable like any other; each guards itself via
+    core.tool_guard.identity_bound.
     """
     from core.skill_registry import (
         all_declared_tools,
-        discover_skills,
         make_load_skill_tool,
     )
 
-    skills = discover_skills()
-    tools = all_declared_tools(skills)
-    tools.append(make_load_skill_tool(lambda: discover_skills()))
+    tools = all_declared_tools(visible_skills)
+    tools.append(make_load_skill_tool(lambda: visible_skills))
+    # Loop machinery, not a skill: the agent self-reports capability gaps so
+    # telemetry keeps flowing without a deterministic intent matcher.
     # Loop machinery, not a skill: the agent self-reports capability gaps so
     # telemetry keeps flowing without a deterministic intent matcher.
     tools.append(log_capability_gap)
@@ -558,7 +583,8 @@ async def agent_loop(state: AssistantState) -> Command[str]:
     else:
         pruned = messages
 
-    skill_index = _skill_index_text()
+    visible_skills = _visible_skills(is_admin)
+    skill_index = _skill_index_text(visible_skills)
     history: List[BaseMessage] = [SystemMessage(content=_build_system_prompt(is_admin=is_admin, now=now_sg) + skill_index)]
     for message in pruned:
         if isinstance(message, SystemMessage):
@@ -589,7 +615,7 @@ async def agent_loop(state: AssistantState) -> Command[str]:
             if not has_key:
                 content = _generate_rule_based_response(text)
             else:
-                tools = _build_tool_roster()
+                tools = _build_tool_roster(visible_skills)
                 try:
                     content, extra_messages = await _compose_reply(history, tools, gap_calls)
                     # _run_tool_loop already retries once internally on a
