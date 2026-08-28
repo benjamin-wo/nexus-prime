@@ -10,6 +10,7 @@ from langchain_core.messages import AIMessage
 from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 from sqlmodel import select
+from core.background import fire_and_forget
 from core.config import settings
 from core.db import async_session_factory
 from core.llm import extract_llm_text
@@ -1339,7 +1340,7 @@ class TelegramIngress:
             try:
                 from core.audit import report_production_bug
 
-                asyncio.create_task(
+                fire_and_forget(
                     report_production_bug(
                         user_id=user_id,
                         thread_id=str(user_id or chat_id),

@@ -7,6 +7,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
 from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from core.background import fire_and_forget
 from core.config import settings
 from core.db import async_session_factory
 from core.models import ScheduledJob, UserProfile, UserCredential, TaskItem
@@ -280,7 +281,7 @@ async def trigger_task_alert_now(task_id: int, user_id: int) -> bool:
         if not task:
             return False
 
-    asyncio.create_task(_execute_task_reminder(task_id, task.user_id, is_test=True))
+    fire_and_forget(_execute_task_reminder(task_id, task.user_id, is_test=True))
     return True
 
 
