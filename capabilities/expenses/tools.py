@@ -657,7 +657,7 @@ async def extract_expense_from_text(user_text: str, recent_context: str = "") ->
             return _regex_extract_expense(user_text)
 
     try:
-        raw = str(getattr(ai_message, "content", "") or "").strip()
+        raw = extract_llm_text(getattr(ai_message, "content", "")).strip()
         raw = re.sub(r"^```(?:json)?|```$", "", raw, flags=re.MULTILINE).strip()
         parsed = json.loads(raw)
         if parsed.get("amount") is None:

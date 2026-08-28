@@ -8,7 +8,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools import tool
 
 from core.config import settings
-from core.llm import ThinkingLevel, get_agent_llm
+from core.llm import ThinkingLevel, get_agent_llm, extract_llm_text
 from core.tool_guard import identity_bound
 
 # A request must contain explicit repetition language before an eternal cron job may be created.
@@ -276,7 +276,7 @@ async def parse_reminder_request(user_text: str, recent_context: str = "") -> Di
                 ),
             ]
         )
-        raw = str(getattr(ai_message, "content", "") or "").strip()
+        raw = extract_llm_text(getattr(ai_message, "content", "")).strip()
         raw = re.sub(r"^```(?:json)?|```$", "", raw, flags=re.MULTILINE).strip()
     except Exception as exc:  # noqa: BLE001
         print(f"[REMINDERS] LLM call failed: {exc}")

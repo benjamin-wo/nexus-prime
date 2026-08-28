@@ -45,6 +45,7 @@ from core.scheduler import (
     trigger_task_alert_now,
 )
 from capabilities.expenses.settlement import IouSettlementCommand, settle_iou
+from core.llm import extract_llm_text
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
@@ -3018,7 +3019,7 @@ async def _llm_generate_block_json(prompt: str, board_context: Dict[str, Any]) -
         ai_message = await llm.ainvoke(
             [SystemMessage(content=system_prompt), HumanMessage(content=prompt[:1500])]
         )
-        raw = str(getattr(ai_message, "content", "") or "").strip()
+        raw = extract_llm_text(getattr(ai_message, "content", "")).strip()
         raw = _re.sub(r"^```(?:json)?|```$", "", raw, flags=_re.MULTILINE).strip()
         start, end = raw.find("{"), raw.rfind("}")
         if start == -1 or end <= start:

@@ -5,7 +5,7 @@ from __future__ import annotations
 from langchain_core.tools import tool
 
 from core.config import settings
-from core.llm import ThinkingLevel, get_agent_llm
+from core.llm import ThinkingLevel, get_agent_llm, extract_llm_text
 from core.tool_guard import identity_bound
 
 
@@ -63,7 +63,7 @@ async def build_daily_briefing() -> str:
                 },
             ]
         )
-        content = str(getattr(ai_message, "content", "") or "").strip()
+        content = extract_llm_text(getattr(ai_message, "content", "")).strip()
         return content or fallback
     except Exception as exc:  # noqa: BLE001
         print(f"[BRIEFING] summary LLM failed, using fallback: {exc}")

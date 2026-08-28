@@ -7,7 +7,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools import tool
 
 from core.config import settings
-from core.llm import ThinkingLevel, get_agent_llm
+from core.llm import ThinkingLevel, get_agent_llm, extract_llm_text
 from capabilities.routes import lta
 
 
@@ -145,7 +145,7 @@ async def extract_route_request(user_text: str, recent_context: str = "") -> Dic
                 ),
             ]
         )
-        raw = str(getattr(ai_message, "content", "") or "").strip()
+        raw = extract_llm_text(getattr(ai_message, "content", "")).strip()
         raw = re.sub(r"^```(?:json)?|```$", "", raw, flags=re.MULTILINE).strip()
         parsed = json.loads(raw)
         return {

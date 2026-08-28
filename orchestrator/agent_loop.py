@@ -881,7 +881,7 @@ async def agent_loop(state: AssistantState) -> Command[str]:
                     expected_tool_ids = ids
                     last_turn_kind = "ai_tc"
                     continue
-            history.append(AIMessage(content=str(message.content)))
+            history.append(AIMessage(content=extract_llm_text(message.content)))
             expected_tool_ids = set()
             last_turn_kind = "ai"
         elif isinstance(message, ToolMessage):
