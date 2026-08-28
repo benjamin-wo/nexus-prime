@@ -24,6 +24,7 @@ than being kept out of the agent's reach or special-cased here.
 
 from __future__ import annotations
 
+import asyncio
 import re
 from datetime import datetime
 from typing import Any, List
@@ -44,7 +45,7 @@ from langgraph.types import Command
 from core.audit import log_capability_request, perform_conversation_audit, should_audit_conversation
 from core.background import fire_and_forget
 from core.config import settings
-from core.llm import ThinkingLevel, extract_llm_text, get_agent_llm, get_multimodal_llm
+from core.llm import LLM_REQUEST_TIMEOUT_SECONDS, ThinkingLevel, extract_llm_text, get_agent_llm, get_multimodal_llm
 from core.tool_guard import bind_user_id, current_user_id
 from orchestrator.checkpointer import prune_and_summarize_messages, recent_turns
 from orchestrator.state import AssistantState
@@ -60,6 +61,36 @@ URL_PATTERN = re.compile(r"https?://\S+")
 # truly broken loop (a tool whose result always makes the model want to call
 # it again); a real multi-step request should never come remotely close.
 MAX_TOOL_ROUNDS = 40
+
+# Belt-and-suspenders backstop for a single model call -- NOT another
+# disguised wall-clock ceiling on the turn (that stays MAX_TOOL_ROUNDS'
+# job, unbounded per the docstring above). core/llm.py already configures
+# timeout=LLM_REQUEST_TIMEOUT_SECONDS on every LLM client constructor, but
+# live evidence (round-by-round tracing in _run_tool_loop below,
+# chat=149917165) showed a model call hang for 6+ minutes with that
+# client-level timeout never firing: "round 1: awaiting model completion"
+# printed, then total silence -- no TimeoutError, no reply, nothing.
+# Wrapping every ainvoke() here in an explicit asyncio.wait_for is a second,
+# independent enforcement of the same bound regardless of why the client's
+# own timeout didn't fire for that call. Padded above the client's own
+# timeout so the client's own (more specific) error has first chance to
+# fire; this is the fallback for when it doesn't.
+_MODEL_CALL_TIMEOUT_SECONDS = LLM_REQUEST_TIMEOUT_SECONDS + 15.0
+
+
+async def _invoke_model(llm: Any, messages: List[BaseMessage]) -> AIMessage:
+    """await llm.ainvoke(messages), hard-bounded so a stuck call surfaces as
+    a normal catchable exception (feeding the existing honest-error
+    fallback) instead of hanging the turn -- and the whole process, since
+    this always runs inside a fire-and-forget background task -- forever."""
+    try:
+        return await asyncio.wait_for(llm.ainvoke(messages), timeout=_MODEL_CALL_TIMEOUT_SECONDS)
+    except asyncio.TimeoutError as exc:
+        raise TimeoutError(
+            f"model call did not return within {_MODEL_CALL_TIMEOUT_SECONDS:.0f}s "
+            "(client-level timeout did not fire)"
+        ) from exc
+
 
 # Old GuardrailPolicy's tag vocabulary (orchestrator/router.py, deleted) --
 # kept only as illustrative examples in the system prompt, not as a matcher:
@@ -303,7 +334,7 @@ async def _handle_multimodal_turn(
             )
         try:
             llm = get_multimodal_llm(temperature=0.2)
-            ai_message = await llm.ainvoke(history)
+            ai_message = await _invoke_model(llm, history)
             content = extract_llm_text(getattr(ai_message, "content", "")).strip()
             content = content or "I processed your media message, but couldn't generate a description."
         except Exception as exc:  # noqa: BLE001
@@ -399,7 +430,7 @@ async def _run_tool_loop(hist: List[BaseMessage], tools: List[Any], gap_calls: l
     # if a turn does go silent, Railway logs show exactly which round and
     # which call it was last seen entering instead of nothing at all.
     print("[AGENT_LOOP] round 0: awaiting model completion")
-    ai_message = await llm_with_tools.ainvoke(hist)
+    ai_message = await _invoke_model(llm_with_tools, hist)
     for _round in range(MAX_TOOL_ROUNDS):
         tool_calls = getattr(ai_message, "tool_calls", None) or []
         if not tool_calls:
@@ -432,7 +463,7 @@ async def _run_tool_loop(hist: List[BaseMessage], tools: List[Any], gap_calls: l
                 ToolMessage(content=str(observation), tool_call_id=str(call.get("id") or call_name))
             )
         print(f"[AGENT_LOOP] round {_round + 1}: awaiting model completion")
-        ai_message = await llm_with_tools.ainvoke(hist)
+        ai_message = await _invoke_model(llm_with_tools, hist)
 
     text = extract_llm_text(getattr(ai_message, "content", "")).strip()
     round_budget_exhausted = False
@@ -446,7 +477,7 @@ async def _run_tool_loop(hist: List[BaseMessage], tools: List[Any], gap_calls: l
                     tool_call_id=str(call.get("id") or call.get("name") or ""),
                 )
             )
-        final_message = await llm_with_tools.ainvoke(hist)
+        final_message = await _invoke_model(llm_with_tools, hist)
         text = extract_llm_text(getattr(final_message, "content", "")).strip()
 
     # Regression (live incident): mid-conversation, the model sometimes
@@ -472,7 +503,7 @@ async def _run_tool_loop(hist: List[BaseMessage], tools: List[Any], gap_calls: l
                 )
             )
         )
-        retry_message = await llm_with_tools.ainvoke(hist)
+        retry_message = await _invoke_model(llm_with_tools, hist)
         text = extract_llm_text(getattr(retry_message, "content", "")).strip()
         if not text and getattr(retry_message, "tool_calls", None):
             # The retry decided it needs a tool after all -- let the caller
@@ -499,7 +530,7 @@ async def _run_tool_loop(hist: List[BaseMessage], tools: List[Any], gap_calls: l
                 hist.append(
                     ToolMessage(content=str(observation), tool_call_id=str(call.get("id") or call_name))
                 )
-            final_retry_message = await llm_with_tools.ainvoke(hist)
+            final_retry_message = await _invoke_model(llm_with_tools, hist)
             text = extract_llm_text(getattr(final_retry_message, "content", "")).strip()
     return text, link_tool_used
 
