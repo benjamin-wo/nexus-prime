@@ -13,10 +13,21 @@ from core.llm import (
 def test_multimodal_io_llm_initialization():
     """Verify that role='multimodal_io' returns a ChatGoogleGenerativeAI instance for Gemini Flash."""
     from core.config import settings
+    from core.llm import _rejects_sampling_params
+
     llm = get_llm(role="multimodal_io", temperature=0.2)
     assert isinstance(llm, ChatGoogleGenerativeAI)
     assert llm.model == settings.gemini_model
-    assert llm.temperature == 0.2
+    # Whether temperature is forwarded depends on the configured model:
+    # Gemini 3.x Flash 400s on sampling parameters and takes thinking_level
+    # instead (see core.llm._gemini_reasoning_kwargs). Asserted per-model so
+    # this stays a real check whichever model is configured, rather than
+    # hardcoding one era's behaviour.
+    if _rejects_sampling_params(settings.gemini_model):
+        assert llm.temperature is None
+        assert llm.thinking_level is not None
+    else:
+        assert llm.temperature == 0.2
 
     # Verify convenience helper
     helper_llm = get_multimodal_llm()
