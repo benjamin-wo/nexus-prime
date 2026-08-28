@@ -1,4 +1,5 @@
 import logging
+import re
 from enum import Enum
 from typing import Any, Dict, Union
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -49,6 +50,54 @@ THINKING_CONFIGS: Dict[str, Dict[str, Any]] = {
     },
 }
 
+# Gemini 3.x Flash models dropped the sampling parameters entirely: passing
+# temperature/top_p/top_k to them is a 400, not a silently-ignored field.
+# Google's own migration guidance for 3.7 Flash is explicit -- "remove
+# deprecated sampling parameters (temperature, top_p, top_k)" -- and directs
+# callers to thinking_level instead.
+#
+# langchain-google-genai carries its own copy of this list
+# (_FIXED_SAMPLING_AND_NO_PREFILL_MODELS) and would strip the parameters for
+# us, but 4.3.2 predates gemini-3.7-flash's 2026-08-13 GA and so knows only
+# 3.5-flash-lite and 3.6-flash. Ours is the superset. When the library
+# catches up this can defer to it instead.
+_NO_SAMPLING_PARAM_MODELS = frozenset(
+    {"gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-3.7-flash"}
+)
+
+
+def _rejects_sampling_params(model_name: str) -> bool:
+    """Whether `model_name` 400s on temperature/top_p/top_k."""
+    normalized = (model_name or "").lower().rsplit("/", 1)[-1]
+    normalized = re.sub(r"-\d{3}$", "", normalized)  # strip a -001 style suffix
+    return normalized in _NO_SAMPLING_PARAM_MODELS
+
+
+def _normalize_thinking_level(complexity: Union[ThinkingLevel, str]) -> str:
+    level = complexity.value if isinstance(complexity, ThinkingLevel) else str(complexity).lower()
+    if level not in THINKING_CONFIGS:
+        logger.warning(f"Unknown thinking complexity '{complexity}', falling back to 'medium'.")
+        level = ThinkingLevel.MEDIUM.value
+    return level
+
+
+def _gemini_reasoning_kwargs(
+    model_name: str, temperature: float, complexity: Union[ThinkingLevel, str]
+) -> Dict[str, Any]:
+    """Sampling/reasoning kwargs appropriate to `model_name`.
+
+    For a model that still takes sampling parameters, that is just the
+    temperature it was called with. For a Gemini 3.x Flash that rejects them,
+    reasoning depth is steered by thinking_level instead -- which this repo
+    already has a vocabulary for: ThinkingLevel's low/medium/high are exactly
+    the values 3.7 Flash accepts (it dropped "minimal"). Previously that enum
+    only ever reached DeepSeek; on Gemini it was computed and discarded.
+    """
+    if _rejects_sampling_params(model_name):
+        return {"thinking_level": _normalize_thinking_level(complexity)}
+    return {"temperature": temperature}
+
+
 def get_llm(
     role: str = "agent_core",
     complexity: Union[ThinkingLevel, str] = ThinkingLevel.MEDIUM,
@@ -71,9 +120,9 @@ def get_llm(
         return ChatGoogleGenerativeAI(
             model=settings.gemini_model,
             google_api_key=api_key,
-            temperature=temperature,
             timeout=LLM_REQUEST_TIMEOUT_SECONDS,
             max_retries=LLM_MAX_RETRIES,
+            **_gemini_reasoning_kwargs(settings.gemini_model, temperature, complexity),
         )
 
     elif role == "agent_core":
@@ -83,9 +132,9 @@ def get_llm(
             return ChatGoogleGenerativeAI(
                 model=settings.gemini_model,
                 google_api_key=api_key,
-                temperature=temperature,
                 timeout=LLM_REQUEST_TIMEOUT_SECONDS,
-            max_retries=LLM_MAX_RETRIES,
+                max_retries=LLM_MAX_RETRIES,
+                **_gemini_reasoning_kwargs(settings.gemini_model, temperature, complexity),
             )
 
         api_key = settings.deepseek_api_key or "test_deepseek_key"
