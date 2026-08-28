@@ -10,6 +10,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from core.config import settings
+from core.llm import extract_llm_text
 
 ALLOWED_ACTIONS = {"create_board", "augment_board", "none"}
 ALLOWED_CATEGORIES = {"trip", "event", "project", "meal", "general"}
@@ -170,7 +171,7 @@ async def comprehend_request(
         ai_message = await llm.ainvoke(
             [SystemMessage(content=COMPREHEND_SYSTEM_PROMPT), HumanMessage(content=user_content)]
         )
-        raw = str(getattr(ai_message, "content", "") or "").strip()
+        raw = extract_llm_text(getattr(ai_message, "content", "")).strip()
         raw = re.sub(r"^```(?:json)?|```$", "", raw, flags=re.MULTILINE).strip()
         start, end = raw.find("{"), raw.rfind("}")
         if start == -1 or end <= start:

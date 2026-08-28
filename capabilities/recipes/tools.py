@@ -8,7 +8,7 @@ from sqlmodel import select
 
 from core.config import settings
 from core.db import async_session_factory
-from core.llm import ThinkingLevel, get_agent_llm
+from core.llm import ThinkingLevel, get_agent_llm, extract_llm_text
 from core.models import GroceryItem
 from core.tool_guard import identity_bound
 
@@ -62,7 +62,7 @@ async def parse_recipe_and_extract_ingredients(
                 ),
             ]
         )
-        raw = str(getattr(ai_message, "content", "") or "").strip()
+        raw = extract_llm_text(getattr(ai_message, "content", "")).strip()
         raw = re.sub(r"^```(?:json)?|```$", "", raw, flags=re.MULTILINE).strip()
     except Exception as exc:  # noqa: BLE001
         print(f"[RECIPES] LLM call failed: {exc}, using canned fallback")

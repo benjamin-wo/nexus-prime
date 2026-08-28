@@ -15,7 +15,7 @@ from sqlmodel import select
 
 from core.config import settings
 from core.db import async_session_factory
-from core.llm import ThinkingLevel, get_agent_llm
+from core.llm import ThinkingLevel, get_agent_llm, extract_llm_text
 from core.models import PointsBalance
 from core.tool_guard import identity_bound
 
@@ -95,7 +95,7 @@ async def extract_points_balance(user_text: str) -> Dict[str, Any]:
                 HumanMessage(content=(user_text or "")[:2000]),
             ]
         )
-        raw = str(getattr(ai_message, "content", "") or "").strip()
+        raw = extract_llm_text(getattr(ai_message, "content", "")).strip()
         raw = re.sub(r"^```(?:json)?|```$", "", raw, flags=re.MULTILINE).strip()
         import json
 
