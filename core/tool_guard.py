@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import contextvars
 import functools
+import inspect
 from typing import Awaitable, Callable, Optional, TypeVar
 
 # Unset (None) outside of an agent-loop turn -- e.g. core/scheduler.py's
@@ -70,5 +71,46 @@ def identity_bound(fn: F) -> F:
         if bound is not None:
             kwargs["user_id"] = int(bound)
         return await fn(*args, **kwargs)
+
+    # Advertise `user_id` to schema generation as OPTIONAL, whatever the real
+    # function declares.
+    #
+    # Live incident (chat=149917165, "What are my recent expenses" ->
+    # get_user_expenses -> invalid_args): @tool builds its args_schema by
+    # inspecting the function it wraps, and LangChain validates the model's
+    # arguments against that schema BEFORE the function -- and therefore
+    # before this wrapper -- ever runs. Every one of these tools documents
+    # `user_id` as "ignored; the assistant injects the authenticated user's
+    # ID", so the model correctly omits it... and on the 12 tools that
+    # declared a bare `user_id: int` with no default, pydantic rejected the
+    # call outright with "Field required". get_user_expenses,
+    # process_extracted_expense, split_bill_expense and all of email search
+    # were unreachable whenever the model followed its own instructions.
+    # (The 19 tools that happened to write `user_id: int = 0` worked purely
+    # by accident of that default.)
+    #
+    # Patching __signature__ here fixes all of them at once, and keeps new
+    # tools correct by construction rather than relying on every author
+    # remembering the `= 0`. Runtime binding is unaffected: the wrapper takes
+    # *args/**kwargs and forwards to the real function, so __signature__ is
+    # metadata read by schema generation only. Security is unchanged -- the
+    # override above is still unconditional, so a model-supplied user_id is
+    # discarded exactly as before (verified: a forged id is still replaced).
+    try:
+        signature = inspect.signature(fn)
+    except (TypeError, ValueError):  # pragma: no cover - exotic callables
+        return wrapper  # type: ignore[return-value]
+
+    if "user_id" in signature.parameters:
+        others = [p for name, p in signature.parameters.items() if name != "user_id"]
+        # Moved last and keyword-only: a defaulted parameter may not precede a
+        # required one, and every caller of a @tool passes arguments by name.
+        user_id_param = signature.parameters["user_id"].replace(
+            default=0, kind=inspect.Parameter.KEYWORD_ONLY
+        )
+        try:
+            wrapper.__signature__ = signature.replace(parameters=others + [user_id_param])
+        except ValueError:  # pragma: no cover - e.g. an existing **kwargs tail
+            pass
 
     return wrapper  # type: ignore[return-value]

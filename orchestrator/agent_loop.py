@@ -47,7 +47,7 @@ from core.background import fire_and_forget
 from core.config import settings
 from core.llm import LLM_REQUEST_TIMEOUT_SECONDS, ThinkingLevel, extract_llm_text, get_agent_llm, get_multimodal_llm
 from core.tool_guard import bind_user_id, current_user_id
-from core.tool_safety import FailureLedger, ToolOutcome, execute_tool_safely
+from core.tool_safety import FailureLedger, ToolOutcome, bounded_call, execute_tool_safely
 from orchestrator.checkpointer import prune_and_summarize_messages, recent_turns
 from orchestrator.state import AssistantState
 
@@ -63,19 +63,21 @@ URL_PATTERN = re.compile(r"https?://\S+")
 # it again); a real multi-step request should never come remotely close.
 MAX_TOOL_ROUNDS = 40
 
-# Belt-and-suspenders backstop for a single model call -- NOT another
-# disguised wall-clock ceiling on the turn (that stays MAX_TOOL_ROUNDS'
-# job, unbounded per the docstring above). core/llm.py already configures
-# timeout=LLM_REQUEST_TIMEOUT_SECONDS on every LLM client constructor, but
-# live evidence (round-by-round tracing in _run_tool_loop below,
-# chat=149917165) showed a model call hang for 6+ minutes with that
-# client-level timeout never firing: "round 1: awaiting model completion"
-# printed, then total silence -- no TimeoutError, no reply, nothing.
-# Wrapping every ainvoke() here in an explicit asyncio.wait_for is a second,
-# independent enforcement of the same bound regardless of why the client's
-# own timeout didn't fire for that call. Padded above the client's own
-# timeout so the client's own (more specific) error has first chance to
-# fire; this is the fallback for when it doesn't.
+# Backstop for a single model call -- NOT another disguised wall-clock
+# ceiling on the turn (that stays MAX_TOOL_ROUNDS' job, unbounded per the
+# docstring above). Padded above core/llm.py's own client-level timeout so
+# the client's more specific error gets first chance to fire.
+#
+# Two earlier attempts at this bound did NOT work, and the reasons matter:
+#   1. core/llm.py's timeout= on the client. Never surfaced, because the
+#      Gemini SDK retried internally 6 times by default (now capped, see
+#      LLM_MAX_RETRIES) -- a ~3min worst case hidden inside one ainvoke().
+#   2. PR #74's asyncio.wait_for around ainvoke(). Deployed, correct-looking,
+#      and structurally incapable of firing: wait_for awaits the cancellation
+#      it issues, and a retrying client swallows CancelledError. Confirmed by
+#      direct reproduction -- a cancel-swallowing coroutine hung wait_for
+#      indefinitely, and an OUTER wait_for could not break it either.
+# Hence bounded_call (core/tool_safety.py), which abandons rather than awaits.
 _MODEL_CALL_TIMEOUT_SECONDS = LLM_REQUEST_TIMEOUT_SECONDS + 15.0
 
 
@@ -84,13 +86,13 @@ async def _invoke_model(llm: Any, messages: List[BaseMessage]) -> AIMessage:
     a normal catchable exception (feeding the existing honest-error
     fallback) instead of hanging the turn -- and the whole process, since
     this always runs inside a fire-and-forget background task -- forever."""
-    try:
-        return await asyncio.wait_for(llm.ainvoke(messages), timeout=_MODEL_CALL_TIMEOUT_SECONDS)
-    except asyncio.TimeoutError as exc:
-        raise TimeoutError(
-            f"model call did not return within {_MODEL_CALL_TIMEOUT_SECONDS:.0f}s "
-            "(client-level timeout did not fire)"
-        ) from exc
+    # bounded_call, NOT asyncio.wait_for: #74 used wait_for here and it never
+    # fired in production, because wait_for awaits the cancellation it issues
+    # and the Gemini SDK's internal retry loop swallows it. See
+    # core.tool_safety.bounded_call.
+    return await bounded_call(
+        llm.ainvoke(messages), _MODEL_CALL_TIMEOUT_SECONDS, "model call"
+    )
 
 
 # Old GuardrailPolicy's tag vocabulary (orchestrator/router.py, deleted) --

@@ -71,6 +71,35 @@ TOOL_CALL_TIMEOUT_SECONDS = 120.0
 MAX_REPEATED_FAILURES = 2
 
 
+async def bounded_call(coro, timeout: float, what: str):
+    """Await ``coro``, giving up after ``timeout`` EVEN IF it refuses to die.
+
+    asyncio.wait_for is not sufficient, and this is not theoretical -- it is
+    the root cause of the silent-reply incident. wait_for cancels the inner
+    task and then *awaits* that cancellation; a task that swallows
+    CancelledError therefore hangs wait_for forever, past its own timeout.
+    Reproduced directly: a coroutine looping `except CancelledError: continue`
+    hung wait_for indefinitely, and even an OUTER wait_for around it could not
+    break the deadlock.
+
+    That is exactly the shape of a retrying HTTP/gRPC client (the Gemini SDK
+    defaults to 6 internal retries), which is why PR #74's wait_for-based
+    bound never fired in production despite being deployed and correct-looking.
+
+    So: run it as a task, wait on the task, and on timeout cancel it
+    best-effort and ABANDON it -- never await the cancellation. The orphaned
+    task may linger until its own client-level timeout resolves it, which is
+    the deliberate trade: a leaked task is survivable, a wedged turn is not
+    (it holds the per-chat lock and silently swallows every later message).
+    """
+    task = asyncio.ensure_future(coro)
+    _done, pending = await asyncio.wait({task}, timeout=timeout)
+    if task in pending:
+        task.cancel()  # best effort; deliberately NOT awaited
+        raise TimeoutError(f"{what} did not complete within {timeout:.0f}s (abandoned)")
+    return task.result()
+
+
 @dataclass
 class ToolOutcome:
     """Structured result of one tool invocation.
@@ -199,14 +228,14 @@ async def execute_tool_safely(
         )
 
     try:
-        result = await asyncio.wait_for(tool_obj.ainvoke(args), timeout=timeout)
+        result = await bounded_call(tool_obj.ainvoke(args), timeout, f"tool {tool_name}")
         return ToolOutcome("success", str(result))
 
     except GraphBubbleUp:
         # interrupt() / Command routing -- must reach the graph runtime.
         raise
 
-    except asyncio.TimeoutError:
+    except TimeoutError:
         if ledger is not None:
             ledger.record_failure(tool_name, args)
         return ToolOutcome(
