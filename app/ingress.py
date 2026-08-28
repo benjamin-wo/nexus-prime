@@ -4,6 +4,7 @@ import html
 import json
 import os
 import re
+import time
 from typing import Dict, Any, List, Optional
 import httpx
 from langchain_core.messages import AIMessage
@@ -250,6 +251,13 @@ class TelegramIngress:
     # scaling here); a multi-instance deployment would need a distributed
     # lock (e.g. a Postgres advisory lock keyed by chat_id) instead.
     _chat_locks: Dict[int, asyncio.Lock] = {}
+    # When each currently-held chat lock was acquired (monotonic seconds).
+    # A turn is deliberately unbounded, so "holding the lock" is normal --
+    # holding it for many minutes is not, and that is precisely the shape of
+    # the silent-reply outage: one wedged turn, every later message for that
+    # chat queued invisibly behind it. Nothing could see that state, which is
+    # why the 15-minute operations sweep reported "0 issues" throughout.
+    _chat_lock_held_since: Dict[int, float] = {}
 
     @classmethod
     def _lock_for_chat(cls, chat_id: int) -> asyncio.Lock:
@@ -258,6 +266,20 @@ class TelegramIngress:
             lock = asyncio.Lock()
             cls._chat_locks[chat_id] = lock
         return lock
+
+    @classmethod
+    def wedged_chats(cls, threshold_seconds: float) -> List[Dict[str, Any]]:
+        """Chats whose turn has held the lock longer than `threshold_seconds`.
+
+        Read by core.scheduler's operations sweep. Returns plain data (no
+        locks) so the caller cannot accidentally mutate scheduling state.
+        """
+        now = time.monotonic()
+        return [
+            {"chat_id": chat_id, "held_seconds": now - since}
+            for chat_id, since in sorted(cls._chat_lock_held_since.items())
+            if now - since > threshold_seconds
+        ]
 
     @staticmethod
     async def _typing_loop(chat_id: int, stop_event: asyncio.Event) -> None:
@@ -1304,9 +1326,11 @@ class TelegramIngress:
                     "and send that again.",
                 )
                 return {"status": "ok", "processed": False, "reason": "chat_busy"}
+            self._chat_lock_held_since[chat_id] = time.monotonic()
             try:
                 result = await get_assistant_graph().ainvoke(initial_state, config=config)
             finally:
+                self._chat_lock_held_since.pop(chat_id, None)
                 lock.release()
             interrupts = result.get("__interrupt__")
             if interrupts:
