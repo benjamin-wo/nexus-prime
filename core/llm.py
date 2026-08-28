@@ -16,6 +16,14 @@ logger = logging.getLogger("nexus_prime.llm")
 # forever -- piling up duplicate in-flight work for one stuck chat.
 LLM_REQUEST_TIMEOUT_SECONDS = 30.0
 
+# The Gemini client retries internally SIX times by default. With a 30s
+# per-attempt timeout that is a ~3min worst case hidden inside a single
+# ainvoke(), far longer than any bound the caller thinks it has -- and each
+# retry is another chance to swallow an outer cancellation (see
+# core.tool_safety.bounded_call, and the silent-reply incident it documents).
+# 2 = the initial request plus one genuine retry for a transient blip.
+LLM_MAX_RETRIES = 2
+
 class ThinkingLevel(str, Enum):
     """
     Thinking complexity tiers for DeepSeek v4 Flash agent reasoning.
@@ -65,6 +73,7 @@ def get_llm(
             google_api_key=api_key,
             temperature=temperature,
             timeout=LLM_REQUEST_TIMEOUT_SECONDS,
+            max_retries=LLM_MAX_RETRIES,
         )
 
     elif role == "agent_core":
@@ -76,6 +85,7 @@ def get_llm(
                 google_api_key=api_key,
                 temperature=temperature,
                 timeout=LLM_REQUEST_TIMEOUT_SECONDS,
+            max_retries=LLM_MAX_RETRIES,
             )
 
         api_key = settings.deepseek_api_key or "test_deepseek_key"
@@ -101,6 +111,7 @@ def get_llm(
             reasoning_effort=thinking_config["reasoning_effort"],
             max_tokens=thinking_config["max_tokens"],
             timeout=LLM_REQUEST_TIMEOUT_SECONDS,
+            max_retries=LLM_MAX_RETRIES,
         )
 
     else:
@@ -121,6 +132,7 @@ def get_judge_llm(temperature: float = 0.0) -> ChatGoogleGenerativeAI:
         google_api_key=api_key,
         temperature=temperature,
         timeout=LLM_REQUEST_TIMEOUT_SECONDS,
+            max_retries=LLM_MAX_RETRIES,
     )
 
 def get_agent_llm(

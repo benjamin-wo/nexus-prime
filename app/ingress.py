@@ -232,6 +232,10 @@ async def send_telegram_chat_action(chat_id: int, action: str = "typing") -> boo
     )
 
 
+# How long a new message for a chat waits for an in-flight turn before telling
+# the user it is still busy, instead of queueing behind it in silence.
+CHAT_LOCK_WAIT_SECONDS = 90.0
+
 class TelegramIngress:
     """Deep ingress adapter for Telegram Bot API payloads, slash commands, callbacks, and profile lookup."""
 
@@ -1273,8 +1277,37 @@ class TelegramIngress:
                 "active_domain": None,
             }
 
-            async with self._lock_for_chat(chat_id):
+            # Serialize this chat's graph invocations -- but never queue
+            # behind a wedged one forever.
+            #
+            # Live incident (chat=149917165): a turn hung inside its model
+            # call while holding this lock, and the user's NEXT message
+            # ("Hello") produced no agent-loop output at all -- it was still
+            # waiting here. One stuck turn silently killed the entire chat,
+            # which is what made the bug look like "the bot is dead" rather
+            # than "one message failed".
+            #
+            # The turn itself stays deliberately unbounded (see
+            # agent_loop.MAX_TOOL_ROUNDS -- "time should not limit the
+            # agent"); what is bounded is how long a NEW message waits for
+            # its turn before saying so out loud. asyncio.wait_for is the
+            # right tool for exactly this one: asyncio.Lock.acquire is stdlib
+            # and honours cancellation cleanly, unlike the third-party client
+            # code that needs core.tool_safety.bounded_call.
+            lock = self._lock_for_chat(chat_id)
+            try:
+                await asyncio.wait_for(lock.acquire(), timeout=CHAT_LOCK_WAIT_SECONDS)
+            except asyncio.TimeoutError:
+                await send_telegram_message(
+                    chat_id,
+                    "⏳ I'm still working on your previous message — give me a moment "
+                    "and send that again.",
+                )
+                return {"status": "ok", "processed": False, "reason": "chat_busy"}
+            try:
                 result = await get_assistant_graph().ainvoke(initial_state, config=config)
+            finally:
+                lock.release()
             interrupts = result.get("__interrupt__")
             if interrupts:
                 for interrupt_item in interrupts:
