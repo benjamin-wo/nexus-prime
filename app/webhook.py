@@ -1,7 +1,6 @@
-import asyncio
-
 from fastapi import APIRouter, Request, HTTPException
 from app.ingress import telegram_ingress
+from core.background import fire_and_forget
 from core.config import settings
 
 router = APIRouter()
@@ -25,6 +24,16 @@ async def receive_telegram_webhook(request: Request):
     per-chat_id lock (see app/ingress.py) serializes overlapping updates for
     the same chat so two backgrounded turns never race the same checkpoint
     thread.
+
+    Regression (live incident, chat=149917165): a bare
+    asyncio.create_task(...) with the Task discarded is silently
+    GC-eligible mid-await (stdlib docs: "the event loop only keeps weak
+    references to tasks") -- confirmed via Railway logs, the turn's own
+    internal error fallback fired ("[AGENT_LOOP] tool loop failed, using
+    fallback") but the reply was never sent and nothing else was ever
+    logged, meaning the task itself stopped executing before it could get
+    that far. core.background.fire_and_forget keeps a strong reference
+    until the task actually completes.
     """
     if settings.telegram_webhook_secret:
         received_secret = request.headers.get("x-telegram-bot-api-secret-token")
@@ -36,5 +45,5 @@ async def receive_telegram_webhook(request: Request):
     except Exception as e:
         raise HTTPException(status_code=400, detail="Invalid JSON payload") from e
 
-    asyncio.create_task(telegram_ingress.handle_update(payload))
+    fire_and_forget(telegram_ingress.handle_update(payload))
     return {"status": "ok", "queued": True}

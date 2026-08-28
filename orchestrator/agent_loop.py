@@ -24,7 +24,6 @@ than being kept out of the agent's reach or special-cased here.
 
 from __future__ import annotations
 
-import asyncio
 import re
 from datetime import datetime
 from typing import Any, List
@@ -43,6 +42,7 @@ from langgraph.graph import END
 from langgraph.types import Command
 
 from core.audit import log_capability_request, perform_conversation_audit, should_audit_conversation
+from core.background import fire_and_forget
 from core.config import settings
 from core.llm import ThinkingLevel, extract_llm_text, get_agent_llm, get_multimodal_llm
 from core.tool_guard import bind_user_id, current_user_id
@@ -391,6 +391,14 @@ async def _run_tool_loop(hist: List[BaseMessage], tools: List[Any], gap_calls: l
     llm_with_tools = llm.bind_tools(tools)
     link_tool_used = False
 
+    # Round-progress tracing: with no per-turn wall-clock ceiling (by design,
+    # see MAX_TOOL_ROUNDS above), any single await here -- the model call or
+    # a tool call -- can in principle hang without ever raising, and a hung
+    # fire-and-forget turn (app/webhook.py) produces zero further log output
+    # to explain it. These lines cost one print per round/tool-call so that,
+    # if a turn does go silent, Railway logs show exactly which round and
+    # which call it was last seen entering instead of nothing at all.
+    print("[AGENT_LOOP] round 0: awaiting model completion")
     ai_message = await llm_with_tools.ainvoke(hist)
     for _round in range(MAX_TOOL_ROUNDS):
         tool_calls = getattr(ai_message, "tool_calls", None) or []
@@ -408,6 +416,7 @@ async def _run_tool_loop(hist: List[BaseMessage], tools: List[Any], gap_calls: l
             if tool_obj is None:
                 observation: Any = f"[{call_name}] Unknown tool."
             else:
+                print(f"[AGENT_LOOP] round {_round}: calling tool {call_name}")
                 try:
                     observation = await tool_obj.ainvoke(call_args)
                 except GraphBubbleUp:
@@ -417,9 +426,12 @@ async def _run_tool_loop(hist: List[BaseMessage], tools: List[Any], gap_calls: l
                 except Exception as tool_exc:  # noqa: BLE001
                     print(f"[AGENT_LOOP] tool {call_name} failed: {tool_exc}")
                     observation = f"[{call_name}] failed: {tool_exc}"
+                else:
+                    print(f"[AGENT_LOOP] round {_round}: tool {call_name} returned")
             hist.append(
                 ToolMessage(content=str(observation), tool_call_id=str(call.get("id") or call_name))
             )
+        print(f"[AGENT_LOOP] round {_round + 1}: awaiting model completion")
         ai_message = await llm_with_tools.ainvoke(hist)
 
     text = extract_llm_text(getattr(ai_message, "content", "")).strip()
@@ -717,7 +729,7 @@ async def agent_loop(state: AssistantState) -> Command[str]:
 
     if should_audit_conversation(sum(1 for m in messages if getattr(m, "type", "") == "human")):
         turn_messages: List[BaseMessage] = [HumanMessage(content=text), *extra_messages, AIMessage(content=content)]
-        asyncio.create_task(
+        fire_and_forget(
             perform_conversation_audit(
                 user_id=user_id,
                 thread_id=str(user_id),
