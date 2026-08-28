@@ -202,3 +202,68 @@ async def test_history_skips_orphaned_tool_results(monkeypatch):
     assert not any(isinstance(m, ToolMessage) for m in hist), "orphan tool results must be skipped"
     # the split-pair AIMessage was flattened to content-only (no dangling tool_calls)
     assert not any(isinstance(m, AIMessage) and m.tool_calls for m in hist)
+
+
+@pytest.mark.asyncio
+async def test_history_flattens_a_tool_call_that_opens_the_pruned_window(monkeypatch):
+    """Live incident (chat=149917165, 'Coffee at hive Adelphi Samuel paid me
+    5.50...'): Gemini rejected the very first model call of the turn with
+    400 INVALID_ARGUMENT, 'Please ensure that function call turn comes
+    immediately after a user turn or after a function response turn.'
+
+    Root cause: the -10 prune window can start mid-pair, landing an
+    AIMessage(tool_calls) as the first substantive message in the rebuilt
+    window -- the old pairing check only verified its ToolMessage result
+    existed *later* in the window, never that a valid user/tool anchor turn
+    came *before* it. SystemMessages (the pruning summary note included)
+    don't count as an anchor: langchain_google_genai merges every
+    non-first SystemMessage into system_instruction and drops it from the
+    turn sequence entirely, so a tool-calling AIMessage placed right after
+    one is effectively the opening turn of the conversation -- exactly the
+    shape Gemini's API rejects."""
+    import orchestrator.agent_loop as al
+    from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
+
+    captured = []
+
+    class _CapturingLLM:
+        def bind_tools(self, tools):
+            return self
+
+        async def ainvoke(self, messages):
+            captured.append(list(messages))
+            return AIMessage(content="ok")
+
+    monkeypatch.setattr(al, "get_agent_llm", lambda *a, **k: _CapturingLLM())
+    monkeypatch.setattr(al.settings, "gemini_api_key", "fake-key-for-test")
+
+    # 14 messages (> prune_and_summarize_messages' threshold=12) so the -10
+    # window kicks in and starts exactly at the tool-calling AIMessage below,
+    # cutting off its originating HumanMessage.
+    messages = [
+        HumanMessage(content="h0"), AIMessage(content="a0"),
+        HumanMessage(content="h1"), AIMessage(content="a1"),
+        AIMessage(content="", tool_calls=[{
+            "name": "get_bus_timings", "args": {}, "id": "c1", "type": "tool_call",
+        }]),  # position -10: first element of the pruned window
+        ToolMessage(content="tool result data", tool_call_id="c1"),
+        AIMessage(content="final answer using tool result"),
+        HumanMessage(content="h2"), AIMessage(content="a2"),
+        HumanMessage(content="h3"), AIMessage(content="a3"),
+        HumanMessage(content="h4"), AIMessage(content="a4"),
+        HumanMessage(content="h5 current"),
+    ]
+    state = {"user_id": 4242, "current_timezone": "Asia/Singapore", "messages": messages}
+    await al.agent_loop(state)
+
+    hist = captured[0]
+    turns = [m for m in hist if not isinstance(m, SystemMessage)]
+    assert turns, "some real turn must survive pruning"
+    assert isinstance(turns[0], AIMessage) and not turns[0].tool_calls, (
+        "the window-opening AIMessage must be flattened to content-only -- "
+        "sending it with tool_calls as the provider-facing history's "
+        "opening turn is exactly what Gemini's API rejected live"
+    )
+    # its orphaned-by-flattening ToolMessage pair must not be sent either --
+    # a tool result with no preceding tool_calls is equally invalid.
+    assert not any(isinstance(m, ToolMessage) and m.tool_call_id == "c1" for m in hist)

@@ -599,6 +599,23 @@ async def agent_loop(state: AssistantState) -> Command[str]:
     # was pruned away (the -10 slice can split a pair) is skipped rather
     # than sent as an orphan, and an AIMessage whose results were split off
     # is flattened to content-only.
+    #
+    # Regression (live incident, chat=149917165, "Coffee at hive ..."):
+    # Gemini rejected the very first call of the turn with 400 INVALID_ARGUMENT
+    # "function call turn comes immediately after a user turn or after a
+    # function response turn." Root cause -- the -10 prune window can start
+    # mid-pair, landing an AIMessage(tool_calls) as the FIRST substantive
+    # message in the rebuilt window, with no HumanMessage/ToolMessage turn
+    # in front of it at all (the old check only verified its ToolMessage
+    # pair existed somewhere *later*, never that a valid anchor turn came
+    # *before* it -- SystemMessages don't count, langchain_google_genai
+    # merges every non-first one into system_instruction and drops it from
+    # the turn sequence entirely, so a tool-calling AIMessage right after
+    # one is effectively the conversation's opening turn). Preserve
+    # tool_calls only when the turn immediately preceding it in the
+    # rebuilt history is itself a human/tool turn -- exactly Gemini's own
+    # rule -- otherwise flatten to content-only, same as any other
+    # malformed pair.
     def _tool_ids(message: BaseMessage) -> set:
         return {
             str(c.get("id") or c.get("name") or "")
@@ -606,17 +623,21 @@ async def agent_loop(state: AssistantState) -> Command[str]:
         }
 
     expected_tool_ids: set = set()
+    last_turn_kind: str | None = None  # "human" | "tool" | "ai" | "ai_tc" | None
     for idx, message in enumerate(pruned):
         if isinstance(message, SystemMessage):
             history.append(SystemMessage(content=str(message.content)))
+            # Not a turn a provider ever sees (see comment above) -- doesn't
+            # change what the *next* message can safely anchor against.
         elif isinstance(message, HumanMessage):
             expected_tool_ids = set()
             history.append(
                 HumanMessage(content=message.content if isinstance(message.content, list) else str(message.content))
             )
+            last_turn_kind = "human"
         elif isinstance(message, AIMessage):
             ids = _tool_ids(message)
-            if ids:
+            if ids and last_turn_kind in ("human", "tool"):
                 remaining_ids = {
                     str(getattr(m, "tool_call_id", "") or "")
                     for m in pruned[idx + 1:]
@@ -625,14 +646,17 @@ async def agent_loop(state: AssistantState) -> Command[str]:
                 if ids <= remaining_ids:
                     history.append(message)  # well-formed pair: keep tool_calls
                     expected_tool_ids = ids
+                    last_turn_kind = "ai_tc"
                     continue
             history.append(AIMessage(content=str(message.content)))
             expected_tool_ids = set()
+            last_turn_kind = "ai"
         elif isinstance(message, ToolMessage):
             tool_id = str(getattr(message, "tool_call_id", "") or "")
             if tool_id in expected_tool_ids:
                 history.append(message)
                 expected_tool_ids.discard(tool_id)
+                last_turn_kind = "tool"
             # else: orphaned by pruning -- skip to keep provider history valid
 
     # Trusted, server-resolved identity for this turn -- every identity_bound
