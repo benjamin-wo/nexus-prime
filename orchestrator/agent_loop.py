@@ -47,6 +47,7 @@ from core.background import fire_and_forget
 from core.config import settings
 from core.llm import LLM_REQUEST_TIMEOUT_SECONDS, ThinkingLevel, extract_llm_text, get_agent_llm, get_multimodal_llm
 from core.tool_guard import bind_user_id, current_user_id
+from core.tool_safety import FailureLedger, ToolOutcome, execute_tool_safely
 from orchestrator.checkpointer import prune_and_summarize_messages, recent_turns
 from orchestrator.state import AssistantState
 
@@ -113,7 +114,43 @@ When a request matches one of these shapes, use it as a starting point (not a fi
 """.strip()
 
 
-def _build_system_prompt(is_admin: bool, now: str) -> str:
+DEFAULT_TIMEZONE = "Asia/Singapore"
+
+
+def _runtime_anchors(timezone_name: str) -> str:
+    """Authoritative "what time is it, and where" block for the system prompt.
+
+    A model with no explicit clock has to guess "now", and a guessed timestamp
+    is the most common source of malformed datetime arguments to the reminder,
+    expense and transit tools -- the hallucinated-argument failure mode, at its
+    root.
+
+    This also fixes a live bug. The prompt used to hardcode Asia/Singapore and
+    label it "Current Singapore time", but ``current_timezone`` is genuinely
+    user-settable -- the /timezone command, a shared location pin, and "I just
+    landed in Tokyo" all write it through core.scheduler.update_user_timezone,
+    and app/ingress.py passes it into graph state on every turn. agent_loop
+    read it exactly zero times, so a travelling user kept being anchored to
+    Singapore's clock no matter what their profile said.
+    """
+    try:
+        tz = ZoneInfo(timezone_name)
+    except Exception:  # noqa: BLE001 - a bad stored tz must never break the turn
+        timezone_name = DEFAULT_TIMEZONE
+        tz = ZoneInfo(timezone_name)
+    now = datetime.now(tz)
+    return (
+        "\n\n## Runtime anchors (authoritative -- never guess these)\n"
+        f"- current_time_iso: {now.isoformat(timespec='seconds')}\n"
+        f"- current_day: {now.strftime('%A, %d %b %Y %H:%M')}\n"
+        f"- timezone: {timezone_name}\n"
+        "Resolve every relative time ('tonight', 'in 20 minutes', 'next Tuesday') "
+        "against current_time_iso, and pass absolute ISO-8601 datetimes to tools "
+        "instead of relative phrases."
+    )
+
+
+def _build_system_prompt(is_admin: bool, timezone_name: str) -> str:
     capabilities_desc = (
         "You can help with email, expenses, routes, recipes, reminders, whiteboard planning, and general questions."
         if is_admin
@@ -151,8 +188,8 @@ def _build_system_prompt(is_admin: bool, now: str) -> str:
         "and one-line description, then tell them plainly it isn't supported yet and that you've "
         "logged it as a feature request.\n\n"
         f"{_RECIPE_GUIDANCE}\n\n"
-        f"Current Singapore time: {now}. "
         f"{capabilities_desc}"
+        f"{_runtime_anchors(timezone_name)}"
     )
 
 
@@ -412,7 +449,111 @@ class PluginTurnResult:
         self.extra_messages = extra_messages
 
 
-async def _run_tool_loop(hist: List[BaseMessage], tools: List[Any], gap_calls: list) -> tuple[str, bool]:
+
+def _read_only_tool_names(visible_skills: dict) -> set:
+    """Tool names belonging to skills declared ``side_effect: read``.
+
+    This is the concurrency boundary. Read-only tools have no side effects and
+    never raise interrupt(), so a round's read-only calls are safe to run
+    under asyncio.gather -- three transit lookups become one wall-clock
+    round-trip instead of three. Anything a skill declares ``write``
+    (expenses, whiteboard, reminders, ...) stays sequential in the order the
+    model asked for, which is what preserves HITL semantics:
+    process_extracted_expense's interrupt() fires before any later write in
+    the same round has run, so a resume -- which re-enters this node from the
+    top -- cannot double-apply one.
+    """
+    names: set = set()
+    for skill in (visible_skills or {}).values():
+        if getattr(skill, "side_effect", "read") == "read":
+            names.update(getattr(skill, "tools", ()) or ())
+    return names
+
+
+async def _execute_tool_calls(
+    calls: List[dict],
+    tools: List[Any],
+    hist: List[BaseMessage],
+    gap_calls: list,
+    ledger: FailureLedger,
+    read_only: set,
+    *,
+    round_label: str,
+) -> bool:
+    """Run one round's tool calls, appending each result to ``hist`` in the
+    order the model requested them -- a provider rejects a tool_calls message
+    whose results are missing or reordered, so the ordering here is a
+    correctness requirement, not a nicety. Returns whether a link tool ran.
+
+    Every call goes through core.tool_safety.execute_tool_safely, so a bad
+    argument comes back as an actionable correction, a hung tool is bounded,
+    and a repeatedly-failing call is cut off instead of burning the whole
+    round budget. Read-only calls run concurrently; writes run sequentially
+    (see _read_only_tool_names).
+    """
+    link_tool_used = False
+    resolved = []
+    for call in calls:
+        name = str(call.get("name") or "")
+        args = dict(call.get("args") or {})
+        if name in ("search_web", "fetch_url"):
+            link_tool_used = True
+        if name == "log_capability_gap":
+            gap_calls.append(args)
+        resolved.append((call, name, args, next((t for t in tools if t.name == name), None)))
+
+    outcomes: dict = {}
+    concurrent = [i for i, (_c, n, _a, _t) in enumerate(resolved) if n in read_only]
+    concurrent_set = set(concurrent)
+    sequential = [i for i in range(len(resolved)) if i not in concurrent_set]
+
+    if concurrent:
+        print(
+            f"[AGENT_LOOP] {round_label}: {len(concurrent)} read-only tool(s) concurrently: "
+            + ", ".join(resolved[i][1] for i in concurrent)
+        )
+        results = await asyncio.gather(
+            *(
+                execute_tool_safely(
+                    resolved[i][3], resolved[i][2], tool_name=resolved[i][1], ledger=ledger
+                )
+                for i in concurrent
+            ),
+            return_exceptions=True,
+        )
+        for i, result in zip(concurrent, results):
+            if isinstance(result, GraphBubbleUp):
+                # A read-only tool should never interrupt, but if one does the
+                # signal still belongs to the graph runtime, not to us.
+                raise result
+            if isinstance(result, BaseException):
+                outcomes[i] = ToolOutcome("error", f"[{resolved[i][1]}] FAILED: {result}")
+            else:
+                outcomes[i] = result
+
+    for i in sequential:
+        _call, name, args, tool_obj = resolved[i]
+        print(f"[AGENT_LOOP] {round_label}: calling tool {name}")
+        outcomes[i] = await execute_tool_safely(tool_obj, args, tool_name=name, ledger=ledger)
+
+    for i, (call, name, _args, _tool) in enumerate(resolved):
+        outcome = outcomes[i]
+        status = "returned" if outcome.ok else f"-> {outcome.status}"
+        print(f"[AGENT_LOOP] {round_label}: tool {name} {status}")
+        hist.append(
+            ToolMessage(content=outcome.observation, tool_call_id=str(call.get("id") or name))
+        )
+
+    return link_tool_used
+
+
+async def _run_tool_loop(
+    hist: List[BaseMessage],
+    tools: List[Any],
+    gap_calls: list,
+    ledger: FailureLedger,
+    read_only: set,
+) -> tuple[str, bool]:
     """Bounded tool-call loop against `hist` in place. Returns (final_text,
     link_tool_used); link_tool_used is True only if search_web/fetch_url
     actually ran, so a raw URL in the reply with link_tool_used=False is
@@ -436,32 +577,11 @@ async def _run_tool_loop(hist: List[BaseMessage], tools: List[Any], gap_calls: l
         if not tool_calls:
             break
         hist.append(ai_message)
-        for call in tool_calls:
-            call_name = str(call.get("name") or "")
-            call_args = dict(call.get("args") or {})
-            if call_name in ("search_web", "fetch_url"):
-                link_tool_used = True
-            if call_name == "log_capability_gap":
-                gap_calls.append(call_args)
-            tool_obj = next((t for t in tools if t.name == call_name), None)
-            if tool_obj is None:
-                observation: Any = f"[{call_name}] Unknown tool."
-            else:
-                print(f"[AGENT_LOOP] round {_round}: calling tool {call_name}")
-                try:
-                    observation = await tool_obj.ainvoke(call_args)
-                except GraphBubbleUp:
-                    # interrupt() / Command routing -- must reach the
-                    # graph runtime, never be treated as a tool failure.
-                    raise
-                except Exception as tool_exc:  # noqa: BLE001
-                    print(f"[AGENT_LOOP] tool {call_name} failed: {tool_exc}")
-                    observation = f"[{call_name}] failed: {tool_exc}"
-                else:
-                    print(f"[AGENT_LOOP] round {_round}: tool {call_name} returned")
-            hist.append(
-                ToolMessage(content=str(observation), tool_call_id=str(call.get("id") or call_name))
-            )
+        if await _execute_tool_calls(
+            tool_calls, tools, hist, gap_calls, ledger, read_only,
+            round_label=f"round {_round}",
+        ):
+            link_tool_used = True
         print(f"[AGENT_LOOP] round {_round + 1}: awaiting model completion")
         ai_message = await _invoke_model(llm_with_tools, hist)
 
@@ -511,25 +631,11 @@ async def _run_tool_loop(hist: List[BaseMessage], tools: List[Any], gap_calls: l
             # simplest correct move is one more direct answer pass after
             # actually running that tool call.
             hist.append(retry_message)
-            for call in retry_message.tool_calls:
-                call_name = str(call.get("name") or "")
-                call_args = dict(call.get("args") or {})
-                if call_name in ("search_web", "fetch_url"):
-                    link_tool_used = True
-                tool_obj = next((t for t in tools if t.name == call_name), None)
-                if tool_obj is None:
-                    observation: Any = f"[{call_name}] Unknown tool."
-                else:
-                    try:
-                        observation = await tool_obj.ainvoke(call_args)
-                    except GraphBubbleUp:
-                        raise
-                    except Exception as tool_exc:  # noqa: BLE001
-                        print(f"[AGENT_LOOP] tool {call_name} failed: {tool_exc}")
-                        observation = f"[{call_name}] failed: {tool_exc}"
-                hist.append(
-                    ToolMessage(content=str(observation), tool_call_id=str(call.get("id") or call_name))
-                )
+            if await _execute_tool_calls(
+                retry_message.tool_calls, tools, hist, gap_calls, ledger, read_only,
+                round_label="empty-reply retry",
+            ):
+                link_tool_used = True
             final_retry_message = await _invoke_model(llm_with_tools, hist)
             text = extract_llm_text(getattr(final_retry_message, "content", "")).strip()
     return text, link_tool_used
@@ -550,9 +656,14 @@ async def _log_capability_gap(args: dict) -> str:
     return f"Logged as an unsupported capability request (#{tag})."
 
 
-async def _compose_reply(history: List[BaseMessage], tools: List[Any], gap_calls: list) -> tuple[str, List[BaseMessage]]:
+async def _compose_reply(
+    history: List[BaseMessage], tools: List[Any], gap_calls: list, read_only: set
+) -> tuple[str, List[BaseMessage]]:
     pre_loop_len = len(history)
-    content, link_tool_used = await _run_tool_loop(history, tools, gap_calls)
+    # One ledger for the whole turn, so a call that keeps failing is still
+    # recognised as the same failure across the URL-guard retry below.
+    ledger = FailureLedger()
+    content, link_tool_used = await _run_tool_loop(history, tools, gap_calls, ledger, read_only)
 
     # Regression (#42, #43, carried over from GeneralPlugin): a raw URL in
     # the reply that this pass never backed with a real search_web/fetch_url
@@ -570,7 +681,9 @@ async def _compose_reply(history: List[BaseMessage], tools: List[Any], gap_calls
                 )
             )
         )
-        retried_content, link_tool_used = await _run_tool_loop(history, tools, gap_calls)
+        retried_content, link_tool_used = await _run_tool_loop(
+            history, tools, gap_calls, ledger, read_only
+        )
         if retried_content:
             content = retried_content
         if URL_PATTERN.search(content) and not link_tool_used:
@@ -590,7 +703,7 @@ async def agent_loop(state: AssistantState) -> Command[str]:
 
     messages = state.get("messages", [])
     user_id = int(state.get("user_id") or 0)
-    now_sg = datetime.now(ZoneInfo("Asia/Singapore")).strftime("%A, %d %b %Y %H:%M")
+    timezone_name = str(state.get("current_timezone") or DEFAULT_TIMEZONE)
     is_admin = settings.is_admin(user_id)
 
     # Safety kernel: deterministic checks that never reach the LLM.
@@ -632,7 +745,7 @@ async def agent_loop(state: AssistantState) -> Command[str]:
 
     visible_skills = _visible_skills(is_admin)
     skill_index = _skill_index_text(visible_skills)
-    history: List[BaseMessage] = [SystemMessage(content=_build_system_prompt(is_admin=is_admin, now=now_sg) + skill_index)]
+    history: List[BaseMessage] = [SystemMessage(content=_build_system_prompt(is_admin=is_admin, timezone_name=timezone_name) + skill_index)]
     # Rebuild provider-facing history WITH prior tool-call provenance: the
     # #53 feature persists AIMessage(tool_calls) + ToolMessage pairs into
     # state, but this loop used to drop every ToolMessage -- so follow-ups
@@ -723,7 +836,9 @@ async def agent_loop(state: AssistantState) -> Command[str]:
             else:
                 tools = _build_tool_roster(visible_skills)
                 try:
-                    content, extra_messages = await _compose_reply(history, tools, gap_calls)
+                    content, extra_messages = await _compose_reply(
+                        history, tools, gap_calls, _read_only_tool_names(visible_skills)
+                    )
                     # _run_tool_loop already retries once internally on a
                     # genuinely empty completion -- if it's STILL empty here,
                     # that's a real (if rare) model hiccup, not "no LLM
