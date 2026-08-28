@@ -569,6 +569,13 @@ async def _scheduled_email_expense_sweep():
             print(f"[SWEEP] error for user {user_id}: {exc}")
 
 
+# A turn is deliberately unbounded (see agent_loop.MAX_TOOL_ROUNDS), so this
+# is not a limit -- nothing is cancelled. It is the point past which a still-
+# running turn is better explained by a wedge than by real work, and is worth
+# raising as an incident.
+WEDGED_CHAT_SECONDS = 300.0
+
+
 async def _run_operations_health_sweep():
     """Every 15 minutes, probe service health and record failures as GitHub issues.
 
@@ -621,7 +628,31 @@ async def _run_operations_health_sweep():
             "fingerprint": "scheduler_not_running",
         })
 
-    # 4. Telegram bot token presence (the ingress can't start at all without it)
+    # 4. Wedged chats -- a turn holding its per-chat lock far longer than any
+    #    real turn should. This is the probe that would have caught the
+    #    silent-reply outage: every config check below stayed green while the
+    #    bot answered nobody, because they check whether the service is
+    #    CONFIGURED, never whether it is WORKING.
+    #    Imported lazily: app.ingress imports from this module.
+    try:
+        from app.ingress import TelegramIngress
+
+        for wedged in TelegramIngress.wedged_chats(WEDGED_CHAT_SECONDS):
+            probes.append({
+                "subsystem": "agent_loop",
+                "severity": "P1",
+                "error_context": (
+                    f"Chat {wedged['chat_id']} has held its turn lock for "
+                    f"{wedged['held_seconds']:.0f}s. Its turn is wedged and every "
+                    "subsequent message from that chat is queued behind it."
+                ),
+                "detection_source": "operations_health",
+                "fingerprint": f"wedged_chat_{wedged['chat_id']}",
+            })
+    except Exception as exc:  # noqa: BLE001 - a probe must never kill the sweep
+        print(f"[OPS SWEEP] wedged-chat probe failed: {exc}")
+
+    # 5. Telegram bot token presence (the ingress can't start at all without it)
     if not settings.telegram_bot_token or settings.telegram_bot_token == "test_bot_token":
         probes.append({
             "subsystem": "telegram",

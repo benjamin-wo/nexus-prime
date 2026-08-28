@@ -42,7 +42,12 @@ from langgraph.errors import GraphBubbleUp
 from langgraph.graph import END
 from langgraph.types import Command
 
-from core.audit import log_capability_request, perform_conversation_audit, should_audit_conversation
+from core.audit import (
+    log_capability_request,
+    perform_conversation_audit,
+    record_operation_event,
+    should_audit_conversation,
+)
 from core.background import fire_and_forget
 from core.config import settings
 from core.llm import LLM_REQUEST_TIMEOUT_SECONDS, ThinkingLevel, extract_llm_text, get_agent_llm, get_multimodal_llm
@@ -62,6 +67,19 @@ URL_PATTERN = re.compile(r"https?://\S+")
 # truly broken loop (a tool whose result always makes the model want to call
 # it again); a real multi-step request should never come remotely close.
 MAX_TOOL_ROUNDS = 40
+
+# Tool outcomes worth filing an incident for, and at what severity. A tool the
+# model cannot successfully call is a defect in that tool -- a wrong schema, a
+# misleading description, a broken dependency -- not normal operation.
+# "success" and "unknown_tool" are excluded: the former is fine, the latter is
+# the model inventing a name, which is a prompt issue rather than a service
+# fault.
+_REPORTABLE_TOOL_FAILURES = {
+    "invalid_args": "P2",
+    "timeout": "P2",
+    "error": "P2",
+    "gave_up": "P1",
+}
 
 # Backstop for a single model call -- NOT another disguised wall-clock
 # ceiling on the turn (that stays MAX_TOOL_ROUNDS' job, unbounded per the
@@ -542,11 +560,68 @@ async def _execute_tool_calls(
         outcome = outcomes[i]
         status = "returned" if outcome.ok else f"-> {outcome.status}"
         print(f"[AGENT_LOOP] {round_label}: tool {name} {status}")
+        if outcome.status in _REPORTABLE_TOOL_FAILURES:
+            # A tool the model could not successfully call is a defect in that
+            # tool's schema, description or implementation -- never routine.
+            # The 12 identity_bound tools fixed in #76 returned invalid_args on
+            # every single call for as long as they existed, and nothing
+            # anywhere noticed. Deduped per (tool, failure kind), so this is
+            # one issue per broken tool carrying an occurrence count.
+            _report_agent_failure(
+                subsystem=f"tool:{name}",
+                error_context=f"Tool {name} returned {outcome.status}: {outcome.observation[:800]}",
+                severity=_REPORTABLE_TOOL_FAILURES[outcome.status],
+                fingerprint=f"agent_tool_{name}_{outcome.status}",
+                user_id=int(current_user_id.get() or 0),
+            )
         hist.append(
             ToolMessage(content=outcome.observation, tool_call_id=str(call.get("id") or name))
         )
 
     return link_tool_used
+
+
+def _report_agent_failure(
+    subsystem: str,
+    error_context: str,
+    *,
+    severity: str = "P2",
+    fingerprint: str,
+    user_id: int,
+    error_traceback: str | None = None,
+) -> None:
+    """File an operational incident for a failure the agent recovered from.
+
+    The detection gap this closes: agent_loop catches every exception from the
+    tool loop and answers with _ERROR_REPLY_FALLBACK, so a model timeout, a
+    provider 400 or a crashed tool became a friendly "something glitched"
+    message and nothing else. app/ingress.py's report_production_bug sits
+    OUTSIDE that catch, so it never fired for anything the agent loop handled
+    -- which is nearly everything. Meanwhile the 15-minute operations sweep
+    probes only static config (credentials present, DB reachable, scheduler
+    object running), all of which stayed green throughout a total
+    silent-reply outage.
+
+    record_operation_event dedups on `fingerprint`, so a failure that repeats
+    keeps ONE open issue with a recurrence count rather than filing hundreds.
+    Reporting is fire-and-forget and defensive: telemetry must never be able
+    to break the turn it is describing.
+    """
+    try:
+        fire_and_forget(
+            record_operation_event(
+                subsystem=subsystem,
+                error_context=error_context,
+                detection_source="agent_loop",
+                user_id=user_id or None,
+                thread_id=str(user_id) if user_id else None,
+                error_traceback=error_traceback,
+                fingerprint=fingerprint,
+                severity=severity,
+            )
+        )
+    except Exception as exc:  # noqa: BLE001 - telemetry must never break a turn
+        print(f"[AGENT_LOOP] failed to record incident {fingerprint}: {exc}")
 
 
 async def _run_tool_loop(
@@ -853,7 +928,21 @@ async def agent_loop(state: AssistantState) -> Command[str]:
                 except GraphBubbleUp:
                     raise
                 except Exception as exc:  # noqa: BLE001 - never let an LLM error kill the turn
+                    import traceback
+
                     print(f"[AGENT_LOOP] tool loop failed, using fallback: {exc}")
+                    # The user just got a non-answer. That is a P1 incident, and
+                    # until now it was only ever a print: this except swallows
+                    # the failure, so ingress's report_production_bug (which
+                    # sits outside it) never saw a single one of them.
+                    _report_agent_failure(
+                        subsystem="agent_loop",
+                        error_context=f"Agent turn failed and fell back to an error reply: {exc}",
+                        severity="P1",
+                        fingerprint=f"agent_loop_failure_{type(exc).__name__}",
+                        user_id=user_id,
+                        error_traceback=traceback.format_exc(),
+                    )
                     content = _ERROR_REPLY_FALLBACK
     finally:
         current_user_id.reset(token)
