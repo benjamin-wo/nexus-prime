@@ -15,6 +15,8 @@ from core.background import fire_and_forget
 from core.config import settings
 from core.db import async_session_factory
 from core.llm import extract_llm_text
+from core.tool_safety import bounded_call
+from orchestrator.checkpointer import reset_checkpointer
 from core.models import UserProfile
 from core.scheduler import list_active_jobs, run_now, update_user_timezone
 from orchestrator.graph import get_assistant_graph
@@ -1328,7 +1330,41 @@ class TelegramIngress:
                 return {"status": "ok", "processed": False, "reason": "chat_busy"}
             self._chat_lock_held_since[chat_id] = time.monotonic()
             try:
-                result = await get_assistant_graph().ainvoke(initial_state, config=config)
+                result = await bounded_call(
+                    get_assistant_graph().ainvoke(initial_state, config=config),
+                    settings.graph_turn_timeout_seconds,
+                    "agent turn",
+                )
+            except asyncio.TimeoutError:
+                # Live incident (chat=149917165, "Hi"): the checkpoint layer
+                # wedged and the turn hung forever -- no error, no reply, and
+                # the held lock starved every later message. The graph itself
+                # is unbounded by design; this outer bound exists so a wedged
+                # turn degrades into an honest error + a healed checkpointer
+                # instead of a dead chat.
+                from core.audit import report_production_bug
+
+                fire_and_forget(reset_checkpointer())
+                fire_and_forget(
+                    report_production_bug(
+                        user_id=user_id,
+                        thread_id=str(user_id or chat_id),
+                        error_context=(
+                            "Agent turn exceeded graph_turn_timeout_seconds; graph "
+                            "invocation abandoned (suspected wedged checkpoint I/O). "
+                            "Checkpointer reset triggered."
+                        ),
+                        detection_source="turn_timeout",
+                        severity="P1",
+                        fingerprint="agent_turn_checkpoint_hang",
+                    )
+                )
+                await send_telegram_message(
+                    chat_id,
+                    "⏳ that turn took me way too long — something snagged on my "
+                    "side and I've reset it. Please send that again.",
+                )
+                return {"status": "ok", "processed": False, "reason": "turn_timeout"}
             finally:
                 self._chat_lock_held_since.pop(chat_id, None)
                 lock.release()

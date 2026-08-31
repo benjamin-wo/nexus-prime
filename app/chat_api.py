@@ -15,9 +15,14 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.types import Command
 from sqlmodel import select, desc
 
+import asyncio
+
+from core.config import settings
 from core.db import async_session_factory
 from core.llm import extract_llm_text
 from core.models import UserProfile
+from core.tool_safety import bounded_call
+from core.background import fire_and_forget
 from orchestrator.graph import get_assistant_graph
 from app.ingress import telegram_ingress
 
@@ -134,7 +139,26 @@ async def handle_web_chat(request: ChatRequest) -> ChatResponse:
         }
 
         graph = get_assistant_graph()
-        result = await graph.ainvoke(initial_state, config=config)
+        try:
+            result = await bounded_call(
+                graph.ainvoke(initial_state, config=config),
+                settings.graph_turn_timeout_seconds,
+                "agent turn",
+            )
+        except asyncio.TimeoutError:
+            # Same wedged-checkpoint protection as the Telegram path: bound the
+            # turn, reset the checkpointer, tell the user honestly.
+            from orchestrator.checkpointer import reset_checkpointer
+
+            fire_and_forget(reset_checkpointer())
+            return ChatResponse(
+                status="error",
+                reply=(
+                    "⏳ that turn took me way too long — something snagged on my "
+                    "side and I've reset it. Please send that again."
+                ),
+                session_id=session_id,
+            )
 
         # Check for LangGraph Interrupts (e.g. HITL confirmation for spend/writes)
         interrupts = result.get("__interrupt__")
