@@ -89,6 +89,10 @@ class Settings(BaseSettings):
     # e.g. hung checkpoint I/O -- degrades into an honest error reply and a
     # checkpointer reset instead of a silently dead chat.
     graph_turn_timeout_seconds: float = 600.0
+    # Degraded-mode model: when the primary Gemini model fails at Google's
+    # edge (503 high-demand / 504 deadline), the agent loop finishes the turn
+    # on this model instead of shipping an error. Empty string disables.
+    llm_fallback_model: str = "gemini-2.5-flash"
 
     def is_admin(self, user_id: Optional[object]) -> bool:
         """

@@ -639,6 +639,31 @@ async def _run_tool_loop(
     llm = get_agent_llm(complexity=ThinkingLevel.MEDIUM, temperature=0.7)
     llm_with_tools = llm.bind_tools(tools)
     link_tool_used = False
+    degraded_to = ""  # set once this turn degrades to the fallback model
+
+    async def _invoke_model_bounded():
+        """One model call, with the capacity circuit breaker: when the primary
+        Gemini model is failing at Google's edge (503 high-demand / 504
+        deadline / 429), finish the turn on llm_fallback_model instead of
+        shipping an error. Degrades at most once per turn; a fallback failure
+        propagates to the honest-error path unchanged."""
+        nonlocal llm, llm_with_tools, degraded_to
+        try:
+            return await _invoke_model(llm_with_tools, hist)
+        except Exception as exc:  # noqa: BLE001 - classified below
+            if degraded_to or not settings.llm_fallback_model or settings.llm_provider != "gemini":
+                raise
+            err = f"{type(exc).__name__}: {exc}"
+            if not any(
+                marker in err
+                for marker in ("503", "504", "429", "UNAVAILABLE", "DEADLINE_EXCEEDED", "overloaded", "high demand")
+            ):
+                raise
+            degraded_to = settings.llm_fallback_model
+            print(f"[AGENT_LOOP] primary model unavailable ({err[:200]}); degrading to {degraded_to}")
+            llm = get_agent_llm(complexity=ThinkingLevel.MEDIUM, temperature=0.7, model=degraded_to)
+            llm_with_tools = llm.bind_tools(tools)
+            return await _invoke_model(llm_with_tools, hist)
 
     # Round-progress tracing: with no per-turn wall-clock ceiling (by design,
     # see MAX_TOOL_ROUNDS above), any single await here -- the model call or
@@ -648,7 +673,7 @@ async def _run_tool_loop(
     # if a turn does go silent, Railway logs show exactly which round and
     # which call it was last seen entering instead of nothing at all.
     print("[AGENT_LOOP] round 0: awaiting model completion")
-    ai_message = await _invoke_model(llm_with_tools, hist)
+    ai_message = await _invoke_model_bounded()
     for _round in range(MAX_TOOL_ROUNDS):
         tool_calls = getattr(ai_message, "tool_calls", None) or []
         if not tool_calls:
@@ -660,7 +685,7 @@ async def _run_tool_loop(
         ):
             link_tool_used = True
         print(f"[AGENT_LOOP] round {_round + 1}: awaiting model completion")
-        ai_message = await _invoke_model(llm_with_tools, hist)
+        ai_message = await _invoke_model_bounded()
 
     text = extract_llm_text(getattr(ai_message, "content", "")).strip()
     round_budget_exhausted = False
