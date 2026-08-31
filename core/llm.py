@@ -102,6 +102,7 @@ def get_llm(
     role: str = "agent_core",
     complexity: Union[ThinkingLevel, str] = ThinkingLevel.MEDIUM,
     temperature: float = 0.0,
+    model: Optional[str] = None,
 ) -> Any:
     """
     Factory function for Hybrid Multimodal (Gemini Flash) & Variable-Thinking (DeepSeek v4 Flash) LLM routing.
@@ -116,9 +117,10 @@ def get_llm(
     """
     if role == "multimodal_io":
         api_key = settings.active_gemini_api_key or "test_google_key"
-        logger.debug(f"Initializing Google Gemini ({settings.gemini_model}) for multimodal_io role.")
+        chosen_model = model or settings.gemini_model
+        logger.debug(f"Initializing Google Gemini ({chosen_model}) for multimodal_io role.")
         return ChatGoogleGenerativeAI(
-            model=settings.gemini_model,
+            model=chosen_model,
             google_api_key=api_key,
             timeout=LLM_REQUEST_TIMEOUT_SECONDS,
             max_retries=LLM_MAX_RETRIES,
@@ -128,9 +130,10 @@ def get_llm(
     elif role == "agent_core":
         if settings.llm_provider == "gemini" or (not settings.deepseek_api_key and settings.active_gemini_api_key):
             api_key = settings.active_gemini_api_key or "test_google_key"
-            logger.debug(f"Initializing Google Gemini ({settings.gemini_model}) for agent_core role.")
+            chosen_model = model or settings.gemini_model
+            logger.debug(f"Initializing Google Gemini ({chosen_model}) for agent_core role.")
             return ChatGoogleGenerativeAI(
-                model=settings.gemini_model,
+                model=chosen_model,
                 google_api_key=api_key,
                 timeout=LLM_REQUEST_TIMEOUT_SECONDS,
                 max_retries=LLM_MAX_RETRIES,
@@ -187,9 +190,11 @@ def get_judge_llm(temperature: float = 0.0) -> ChatGoogleGenerativeAI:
 def get_agent_llm(
     complexity: Union[ThinkingLevel, str] = ThinkingLevel.MEDIUM,
     temperature: float = 0.0,
+    model: Optional[str] = None,
 ) -> ChatOpenAI:
-    """Convenience helper to obtain DeepSeek v4 Flash with the specified thinking complexity level."""
-    return get_llm(role="agent_core", complexity=complexity, temperature=temperature)
+    """Convenience helper to obtain the agent-core LLM. `model` overrides the
+    provider's default -- used by the degraded-mode fallback path."""
+    return get_llm(role="agent_core", complexity=complexity, temperature=temperature, model=model)
 
 
 def extract_llm_text(content: Any) -> str:
