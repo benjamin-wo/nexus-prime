@@ -124,7 +124,7 @@ def get_llm(
             google_api_key=api_key,
             timeout=LLM_REQUEST_TIMEOUT_SECONDS,
             max_retries=LLM_MAX_RETRIES,
-            **_gemini_reasoning_kwargs(settings.gemini_model, temperature, complexity),
+            **_gemini_reasoning_kwargs(chosen_model, temperature, complexity),
         )
 
     elif role == "agent_core":
@@ -137,7 +137,7 @@ def get_llm(
                 google_api_key=api_key,
                 timeout=LLM_REQUEST_TIMEOUT_SECONDS,
                 max_retries=LLM_MAX_RETRIES,
-                **_gemini_reasoning_kwargs(settings.gemini_model, temperature, complexity),
+                **_gemini_reasoning_kwargs(chosen_model, temperature, complexity),
             )
 
         api_key = settings.deepseek_api_key or "test_deepseek_key"
