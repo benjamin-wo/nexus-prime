@@ -31,7 +31,15 @@ async def setup_checkpointer():
         conn_string = settings.database_url.replace(
             "postgresql+asyncpg://", "postgresql://"
         )
-        iterator = AsyncPostgresSaver.from_conn_string(conn_string, pipeline=True)
+        # DB-level hang bound (live incident, chat=149917165): a dead/stale
+        # pooled connection made checkpoint I/O hang forever and silently --
+        # the turn held the per-chat lock, every later message starved, and
+        # nothing printed. statement_timeout makes the SERVER kill a wedged
+        # statement after 30s so the pool surfaces an error instead. Delivered
+        # via the libpq `options` parameter because from_conn_string in the
+        # installed langgraph version accepts only a conninfo string.
+        bounded_conn_string = _with_statement_timeout(conn_string, CHECKPOINT_STATEMENT_TIMEOUT_MS)
+        iterator = AsyncPostgresSaver.from_conn_string(bounded_conn_string, pipeline=True)
         saver = await iterator.__aenter__()
         await _run_postgres_migrations(conn_string)
         _postgres_iterator = iterator
@@ -40,6 +48,40 @@ async def setup_checkpointer():
     except Exception as exc:  # noqa: BLE001
         print(f"[CHECKPOINTER] PostgresSaver unavailable, using MemorySaver: {exc}")
         _checkpointer = MemorySaver()
+
+
+CHECKPOINT_STATEMENT_TIMEOUT_MS = 30_000
+
+
+def _with_statement_timeout(conn_string: str, timeout_ms: int) -> str:
+    separator = "&" if "?" in conn_string else "?"
+    return f"{conn_string}{separator}options=-c%20statement_timeout%3D{timeout_ms}"
+
+
+async def reset_checkpointer() -> None:
+    """Rebuild the Postgres checkpointer from scratch.
+
+    Incident-driven: a wedged checkpoint connection hung every turn silently.
+    statement_timeout now bounds each statement, but a pool that already
+    handed out dead connections can keep doing so; rebuilding the saver gives
+    the next turn a fresh pool. Turns running during the rebuild fall back to
+    the in-memory checkpointer instead of hanging. Best-effort and bounded:
+    tearing down the old pool must never hang the heal itself.
+    """
+    global _checkpointer, _postgres_iterator
+    from core.tool_safety import bounded_call
+
+    old_iterator = _postgres_iterator
+    _checkpointer = MemorySaver()
+    _postgres_iterator = None
+    if old_iterator is not None:
+        try:
+            await bounded_call(
+                old_iterator.__aexit__(None, None, None), 10.0, "checkpointer teardown"
+            )
+        except Exception as exc:  # noqa: BLE001 - the old pool is the patient
+            print(f"[CHECKPOINTER] old pool teardown abandoned: {exc}")
+    await setup_checkpointer()
 
 
 async def _run_postgres_migrations(conn_string: str) -> None:
