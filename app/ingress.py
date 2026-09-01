@@ -1233,9 +1233,7 @@ class TelegramIngress:
         stop_event = asyncio.Event()
         typing_task = asyncio.create_task(self._typing_loop(chat_id, stop_event))
         try:
-            print(f"[INGRESS] {chat_id}: step=profile")
             profile = await self.ensure_profile(user_id=user_id, chat_id=chat_id)
-            print(f"[INGRESS] {chat_id}: step=slash")
             slash_res = await self.handle_slash_command(text, user_id=user_id)
             if slash_res is not None:
                 if chat_id:
@@ -1319,7 +1317,6 @@ class TelegramIngress:
             # and honours cancellation cleanly, unlike the third-party client
             # code that needs core.tool_safety.bounded_call.
             lock = self._lock_for_chat(chat_id)
-            print(f"[INGRESS] {chat_id}: step=lock-acquire")
             try:
                 await asyncio.wait_for(lock.acquire(), timeout=CHAT_LOCK_WAIT_SECONDS)
             except asyncio.TimeoutError:
@@ -1330,14 +1327,12 @@ class TelegramIngress:
                 )
                 return {"status": "ok", "processed": False, "reason": "chat_busy"}
             self._chat_lock_held_since[chat_id] = time.monotonic()
-            print(f"[INGRESS] {chat_id}: step=graph-invoke")
             try:
                 result = await bounded_call(
                     get_assistant_graph().ainvoke(initial_state, config=config),
                     settings.graph_turn_timeout_seconds,
                     "agent turn",
                 )
-                print(f"[INGRESS] {chat_id}: step=graph-done")
             except asyncio.TimeoutError:
                 # Live incident (chat=149917165, "Hi"): the checkpoint layer
                 # wedged and the turn hung forever -- no error, no reply, and
