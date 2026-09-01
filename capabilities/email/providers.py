@@ -353,7 +353,14 @@ class GmailProvider:
                         headers=headers,
                     )
                     if create_resp.status_code not in (200, 201):
-                        print(f"[GMAIL] label create failed: {create_resp.status_code}")
+                        if create_resp.status_code == 403:
+                            print(
+                                "[GMAIL] label create failed: 403 — the stored "
+                                "OAuth token lacks gmail.modify scope. Reconnect "
+                                "at /auth/gmail to re-consent."
+                            )
+                        else:
+                            print(f"[GMAIL] label create failed: {create_resp.status_code}")
                         return False
                     label_id = create_resp.json().get("id")
 

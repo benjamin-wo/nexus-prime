@@ -647,13 +647,32 @@ async def extract_expense_from_text(user_text: str, recent_context: str = "") ->
         llm = get_agent_llm(complexity=ThinkingLevel.LOW, temperature=0.1)
         ai_message = await llm.ainvoke(messages)
     except Exception as primary_exc:
-        # Fallback directly to Gemini if DeepSeek fails or lacks quota
+        # Degrade to the configured fallback MODEL (a different model, e.g.
+        # gemini-2.5-flash) rather than to get_multimodal_llm. When
+        # LLM_PROVIDER=gemini, get_multimodal_llm() returns the SAME
+        # settings.gemini_model as the primary -- so a provider-side overload
+        # (503 high demand) fails "both primary and fallback" with the
+        # identical error. Mirror the agent loop's circuit breaker instead.
         try:
-            from core.llm import get_multimodal_llm
-            fallback_llm = get_multimodal_llm(temperature=0.1)
+            if (
+                settings.llm_fallback_model
+                and settings.llm_fallback_model != settings.gemini_model
+            ):
+                fallback_llm = get_agent_llm(
+                    complexity=ThinkingLevel.LOW,
+                    temperature=0.1,
+                    model=settings.llm_fallback_model,
+                )
+            else:
+                from core.llm import get_multimodal_llm
+
+                fallback_llm = get_multimodal_llm(temperature=0.1)
             ai_message = await fallback_llm.ainvoke(messages)
         except Exception as exc:
-            print(f"[EXPENSES] extraction parse failed (both primary and fallback): {exc}")
+            print(
+                f"[EXPENSES] extraction parse failed (both primary and fallback): "
+                f"{exc}; falling back to regex"
+            )
             return _regex_extract_expense(user_text)
 
     try:
