@@ -47,6 +47,15 @@ BUILTIN_SCENARIOS: List[Scenario] = [
         tags=["expenses"],
     ),
     Scenario(
+        id="expense_delete",
+        name="Delete an expense by merchant",
+        description="User asks to delete an expense; bot must find it then call delete_expense.",
+        user_turns=["Can you delete the coinhako expense"],
+        checks=[TurnCheck(contains=["Coinhako"], not_contains=["can't", "cannot", "not able"])],
+        expected_tools=["get_user_expenses", "delete_expense"],
+        tags=["expenses"],
+    ),
+    Scenario(
         id="income_log",
         name="Log incoming money",
         description="User reports salary; bot must record it as incoming money.",

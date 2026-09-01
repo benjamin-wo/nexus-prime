@@ -1023,6 +1023,44 @@ async def get_user_expenses(
         ]
 
 
+@tool
+@identity_bound
+async def delete_expense(expense_id: int, user_id: int = 0) -> str:
+    """
+    Delete one of the user's expense transactions by its id (from
+    get_user_expenses or query_transactions). Permanent. Tombstones the
+    source_message_id so the email poller never re-logs the deleted expense.
+    """
+    merchant = ""
+    async with async_session_factory() as session:
+        result = await session.execute(
+            select(ExpenseTransaction).where(
+                ExpenseTransaction.id == expense_id,
+                ExpenseTransaction.user_id == user_id,
+            )
+        )
+        tx = result.scalar_one_or_none()
+        if tx is None:
+            return f"No expense with id {expense_id} was found for you."
+        merchant = tx.merchant or ""
+        if tx.source_message_id:
+            existing_tomb = await session.execute(
+                select(DeletedExpenseMessage).where(
+                    DeletedExpenseMessage.source_message_id == tx.source_message_id
+                )
+            )
+            if existing_tomb.scalar_one_or_none() is None:
+                session.add(
+                    DeletedExpenseMessage(
+                        user_id=tx.user_id,
+                        source_message_id=tx.source_message_id,
+                    )
+                )
+        await session.delete(tx)
+        await session.commit()
+    return f"Deleted {merchant} (id {expense_id})."
+
+
 async def _parse_ledger_date(value: Optional[str]) -> Optional[datetime]:
     """Normalize an ISO date string to naive UTC for TIMESTAMP WITHOUT TIME ZONE columns."""
     if not value:
