@@ -1,4 +1,5 @@
 import logging
+import os
 import re
 from enum import Enum
 from typing import Any, Dict, Optional, Union
@@ -8,22 +9,10 @@ from core.config import settings
 
 logger = logging.getLogger("nexus_prime.llm")
 
-# None of the four client constructions below set a request timeout, so a
-# stalled provider call (network stall, provider-side hang) can block an
-# ainvoke() indefinitely. That is fatal upstream: app/webhook.py awaits the
-# whole request-handling chain before responding to Telegram, so a single
-# hung LLM call there means the webhook never returns, Telegram never gets
-# its 200 OK, and it redelivers the same update on its own backoff schedule
-# forever -- piling up duplicate in-flight work for one stuck chat.
-LLM_REQUEST_TIMEOUT_SECONDS = 30.0
-
-# The Gemini client retries internally SIX times by default. With a 30s
-# per-attempt timeout that is a ~3min worst case hidden inside a single
-# ainvoke(), far longer than any bound the caller thinks it has -- and each
-# retry is another chance to swallow an outer cancellation (see
-# core.tool_safety.bounded_call, and the silent-reply incident it documents).
-# 2 = the initial request plus one genuine retry for a transient blip.
-LLM_MAX_RETRIES = 2
+# Ops-tunable via env; shorter values surface a stuck provider call to the
+# circuit breaker / honest-error path sooner (see the incident notes below).
+LLM_REQUEST_TIMEOUT_SECONDS = float(os.getenv("LLM_REQUEST_TIMEOUT_SECONDS", "30.0"))
+LLM_MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "2"))
 
 class ThinkingLevel(str, Enum):
     """

@@ -24,12 +24,22 @@ def get_engine():
             echo=False,
         )
     else:
+        # Every Postgres operation is hard-bounded: a stalled connection
+        # (managed-Postgres failover, network blip) or a starved pool used to
+        # hang the awaited query indefinitely -- the live "Hi" incident where
+        # the checkpoint write after a turn never returned, holding the per-
+        # chat lock forever with zero logs. timeout = connect timeout,
+        # command_timeout = per-statement timeout, pool_timeout = wait for a
+        # free connection; all surface as ordinary asyncpg errors the callers
+        # already handle.
         return create_async_engine(
             db_url,
             echo=False,
             pool_size=5,
             max_overflow=10,
             pool_pre_ping=True,
+            pool_timeout=15.0,
+            connect_args={"timeout": 15, "command_timeout": 30},
         )
 
 engine = get_engine()
