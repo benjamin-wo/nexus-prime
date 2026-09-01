@@ -65,6 +65,8 @@ def compute_metrics(
 
     tools_used: Set[str] = set().union(*tools_per_turn) if tools_per_turn else set()
     tools_ok = not scenario.expected_tools or bool(tools_used & set(scenario.expected_tools))
+    forbidden_hits = sorted(tools_used & set(scenario.forbidden_tools))
+    forbidden_ok = not scenario.forbidden_tools or not forbidden_hits
 
     slot_ok = slot_total == 0 or slot_passed == slot_total
     context_ok = context_total == 0 or context_passed == context_total
@@ -77,9 +79,11 @@ def compute_metrics(
         "tools_used": sorted(tools_used),
         "expected_tools": list(scenario.expected_tools),
         "tools_ok": tools_ok,
+        "forbidden_tools_hit": forbidden_hits,
+        "forbidden_tools_ok": forbidden_ok,
         "latency_total_s": round(total_latency, 2),
         "latency_mean_s": round(total_latency / len(latencies), 2) if latencies else 0.0,
-        "goal_completed": slot_ok and context_ok and tools_ok,
+        "goal_completed": slot_ok and context_ok and tools_ok and forbidden_ok,
         "turn_results": turn_results,
         "context_results": context_results,
     }

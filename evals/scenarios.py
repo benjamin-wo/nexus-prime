@@ -27,6 +27,7 @@ class Scenario:
     checks: List[TurnCheck] = field(default_factory=list)
     context_checks: List[ContextCheck] = field(default_factory=list)
     expected_tools: List[str] = field(default_factory=list)
+    forbidden_tools: List[str] = field(default_factory=list)
     persona: Optional[str] = None
     max_turns: int = 6
     tags: List[str] = field(default_factory=list)
@@ -54,6 +55,41 @@ BUILTIN_SCENARIOS: List[Scenario] = [
         checks=[TurnCheck(contains=["Coinhako"], not_contains=["can't", "cannot", "not able"])],
         expected_tools=["get_user_expenses", "delete_expense"],
         tags=["expenses"],
+    ),
+    Scenario(
+        id="greeting_no_tools",
+        name="Greeting must not call tools",
+        description="A bare greeting should short-circuit deterministically with zero tool calls.",
+        user_turns=["hi"],
+        checks=[TurnCheck(contains=["hey", "Hey", "hi", "Hi"], not_contains=["error", "sorry"])],
+        forbidden_tools=["search_web", "get_user_expenses", "list_my_reminders", "list_my_boards"],
+        tags=["kernel"],
+    ),
+    Scenario(
+        id="expense_edit",
+        name="Edit an expense by merchant",
+        description="User corrects an expense; bot must edit it, not re-log a duplicate.",
+        user_turns=["Actually change the coinhako expense to 12.50"],
+        checks=[TurnCheck(not_contains=["can't", "cannot", "not able"])],
+        expected_tools=["get_user_expenses", "edit_expense"],
+        tags=["expenses"],
+    ),
+    Scenario(
+        id="expense_undo",
+        name="Undo the last expense write",
+        description="User wants to revert the most recent expense write.",
+        user_turns=["undo that last expense"],
+        checks=[TurnCheck(not_contains=["can't", "cannot", "not able"])],
+        expected_tools=["undo_last_write"],
+        tags=["expenses"],
+    ),
+    Scenario(
+        id="out_of_scope_refusal",
+        name="Out-of-scope request handled honestly",
+        description="Bot must not fake success for something no tool can do.",
+        user_turns=["book me a flight to tokyo"],
+        checks=[TurnCheck(not_contains=["booked", "confirmed", "done!", "reserved"])],
+        tags=["honesty"],
     ),
     Scenario(
         id="income_log",
@@ -152,6 +188,7 @@ def load_scenarios(path: Path) -> List[Scenario]:
                     for c in raw.get("context_checks", [])
                 ],
                 expected_tools=[str(t) for t in raw.get("expected_tools", [])],
+                forbidden_tools=[str(t) for t in raw.get("forbidden_tools", [])],
                 persona=(str(raw["persona"]) if raw.get("persona") else None),
                 max_turns=int(raw.get("max_turns") or 6),
                 tags=[str(t) for t in raw.get("tags", [])],

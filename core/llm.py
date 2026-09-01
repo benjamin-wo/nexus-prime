@@ -2,7 +2,7 @@ import logging
 import os
 import re
 from enum import Enum
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 from core.config import settings
@@ -87,6 +87,108 @@ def _gemini_reasoning_kwargs(
     return {"temperature": temperature}
 
 
+def _valid_api_key(value: Optional[str]) -> bool:
+    """A real API key vs the repo's placeholder/test defaults."""
+    return bool(value) and value not in {
+        "test_google_key",
+        "test_deepseek_key",
+        "your_openai_api_key_here",
+    }
+
+
+def _deepseek_llm(complexity: Union[ThinkingLevel, str], temperature: float):
+    api_key = settings.deepseek_api_key or "test_deepseek_key"
+    base_url = settings.deepseek_base_url or "https://api.deepseek.com/v1"
+    level_key = complexity.value if isinstance(complexity, ThinkingLevel) else str(complexity).lower()
+    if level_key not in THINKING_CONFIGS:
+        level_key = ThinkingLevel.MEDIUM.value
+    thinking_config = THINKING_CONFIGS[level_key]
+    return ChatOpenAI(
+        model=settings.deepseek_model,
+        base_url=base_url,
+        api_key=api_key,
+        temperature=temperature,
+        reasoning_effort=thinking_config["reasoning_effort"],
+        max_tokens=thinking_config["max_tokens"],
+        timeout=LLM_REQUEST_TIMEOUT_SECONDS,
+        max_retries=LLM_MAX_RETRIES,
+    )
+
+
+def _openrouter_llm(temperature: float) -> Optional[ChatOpenAI]:
+    if not _valid_api_key(settings.openrouter_api_key) or not settings.openrouter_model:
+        return None
+    return ChatOpenAI(
+        model=settings.openrouter_model,
+        base_url="https://openrouter.ai/api/v1",
+        api_key=settings.openrouter_api_key,
+        temperature=temperature,
+        timeout=LLM_REQUEST_TIMEOUT_SECONDS,
+        max_retries=LLM_MAX_RETRIES,
+    )
+
+
+def _openai_llm(temperature: float) -> Optional[ChatOpenAI]:
+    if not _valid_api_key(settings.openai_api_key):
+        return None
+    return ChatOpenAI(
+        model=settings.openai_model,
+        api_key=settings.openai_api_key,
+        temperature=temperature,
+        timeout=LLM_REQUEST_TIMEOUT_SECONDS,
+        max_retries=LLM_MAX_RETRIES,
+    )
+
+
+def build_extra_provider_rungs(
+    complexity: Union[ThinkingLevel, str] = ThinkingLevel.MEDIUM,
+    temperature: float = 0.0,
+) -> List[Tuple[str, Any]]:
+    """Non-primary fallback rungs for the circuit breaker's provider chain.
+
+    Ordered deepseek -> openrouter -> openai, each included only when a real
+    key is configured (and the provider isn't already the primary). The agent
+    loop walks these after its own primary+gemini-fallback rungs, so a
+    provider-side outage degrades the bot instead of killing the turn.
+    """
+    rungs: List[Tuple[str, Any]] = []
+    if _valid_api_key(settings.deepseek_api_key) and settings.llm_provider != "deepseek":
+        rungs.append(("deepseek", _deepseek_llm(complexity, temperature)))
+    if _valid_api_key(settings.openrouter_api_key) and settings.openrouter_model:
+        client = _openrouter_llm(temperature)
+        if client is not None:
+            rungs.append(("openrouter", client))
+    if _valid_api_key(settings.openai_api_key):
+        client = _openai_llm(temperature)
+        if client is not None:
+            rungs.append(("openai", client))
+    return rungs
+
+
+def get_fallback_llm(
+    complexity: Union[ThinkingLevel, str] = ThinkingLevel.LOW,
+    temperature: float = 0.1,
+) -> Any:
+    """Best available fallback client when the primary model is failing:
+    the configured gemini fallback model first, then deepseek / openrouter /
+    openai, then (finally) the multimodal gemini client."""
+    if (
+        settings.llm_fallback_model
+        and settings.llm_fallback_model != settings.gemini_model
+        and _valid_api_key(settings.active_gemini_api_key)
+    ):
+        return get_llm(
+            role="agent_core",
+            complexity=complexity,
+            temperature=temperature,
+            model=settings.llm_fallback_model,
+        )
+    rungs = build_extra_provider_rungs(complexity=complexity, temperature=temperature)
+    if rungs:
+        return rungs[0][1]
+    return get_multimodal_llm(temperature=temperature)
+
+
 def get_llm(
     role: str = "agent_core",
     complexity: Union[ThinkingLevel, str] = ThinkingLevel.MEDIUM,
@@ -129,31 +231,17 @@ def get_llm(
                 **_gemini_reasoning_kwargs(chosen_model, temperature, complexity),
             )
 
-        api_key = settings.deepseek_api_key or "test_deepseek_key"
-        base_url = settings.deepseek_base_url or "https://api.deepseek.com/v1"
-        
-        # Normalize complexity level
         level_key = complexity.value if isinstance(complexity, ThinkingLevel) else str(complexity).lower()
         if level_key not in THINKING_CONFIGS:
             logger.warning(f"Unknown thinking complexity '{complexity}', falling back to 'medium'.")
             level_key = ThinkingLevel.MEDIUM.value
 
-        thinking_config = THINKING_CONFIGS[level_key]
         logger.debug(
             f"Initializing DeepSeek ({settings.deepseek_model}) for agent_core role "
-            f"with thinking level='{level_key}' ({thinking_config})."
+            f"with thinking level='{level_key}' ({THINKING_CONFIGS[level_key]})."
         )
 
-        return ChatOpenAI(
-            model=settings.deepseek_model,
-            base_url=base_url,
-            api_key=api_key,
-            temperature=temperature,
-            reasoning_effort=thinking_config["reasoning_effort"],
-            max_tokens=thinking_config["max_tokens"],
-            timeout=LLM_REQUEST_TIMEOUT_SECONDS,
-            max_retries=LLM_MAX_RETRIES,
-        )
+        return _deepseek_llm(complexity, temperature)
 
     else:
         raise ValueError(

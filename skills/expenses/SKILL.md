@@ -11,6 +11,9 @@ tools:
   - extract_expense_from_text
   - get_user_expenses
   - delete_expense
+  - edit_expense
+  - restore_expense
+  - undo_last_write
   - log_expenses_from_emails
 ---
 
@@ -22,10 +25,14 @@ tools:
 - Incoming money ("salary", "paid me back", "refund") → `record_incoming_money`, category salary/repayment/reimbursement/claim.
 - Never log a transaction the user did not clearly state. Never invent amounts.
 
-## Deleting
+## Editing
+- "change/correct/fix the [merchant] expense" → find it with `get_user_expenses` (or `query_transactions`), then call `edit_expense` with the id and only the fields the user wants changed.
+
+## Deleting / undoing
 - "delete/remove [merchant] expense" → find it with `get_user_expenses` (or `query_transactions`), then call `delete_expense` with the matching id.
-- Deletion is permanent; never delete a transaction the user did not clearly identify.
-- Also remove the entry from your reply on the dashboard/ledger — the delete takes effect immediately.
+- Deletion records an undo snapshot — if the user then says "undo that", "oops", "bring it back", call `undo_last_write` (most recent write) or `restore_expense` with the deleted expense's id.
+- "restore the [merchant] expense" → `restore_expense` with the id it had before deletion.
+- Never delete or edit a transaction the user did not clearly identify; if several match, ask which one.
 
 ## Queries
 - "how much did I spend..." → `query_transactions` with `categories`/`since_date`/`until_date` filters. Reply with the totals line first, then itemized rows (max ~10) and the count.

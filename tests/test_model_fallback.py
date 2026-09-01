@@ -41,7 +41,7 @@ async def test_capacity_error_degrades_to_fallback_model(monkeypatch):
     result = await agent_loop({
         "user_id": 4242,
         "current_timezone": "Asia/Singapore",
-        "messages": [HumanMessage(content="hi")],
+        "messages": [HumanMessage(content="what can you help me with today?")],
     })
 
     assert made == ["primary", "fallback"], made
@@ -73,7 +73,7 @@ async def test_non_capacity_error_does_not_degrade(monkeypatch):
     result = await agent_loop({
         "user_id": 4242,
         "current_timezone": "Asia/Singapore",
-        "messages": [HumanMessage(content="hi")],
+        "messages": [HumanMessage(content="what can you help me with today?")],
     })
 
     assert made == ["primary"], made
@@ -90,6 +90,6 @@ async def test_fallback_disabled_ships_error(monkeypatch):
     result = await agent_loop({
         "user_id": 4242,
         "current_timezone": "Asia/Singapore",
-        "messages": [HumanMessage(content="hi")],
+        "messages": [HumanMessage(content="what can you help me with today?")],
     })
     assert "glitched" in str(result.update["messages"][-1].content)

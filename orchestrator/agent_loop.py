@@ -203,6 +203,17 @@ def _build_system_prompt(is_admin: bool, timezone_name: str) -> str:
         "internally (ownership, confirmation, duplicate detection) -- call them as directly as "
         "any read-only tool; if one comes back asking for confirmation or reports a problem, "
         "relay that honestly rather than working around it.\n\n"
+        "Behavior rules for edge cases:\n"
+        "- Greetings, small talk, thanks, or acknowledgments: reply directly and warmly. "
+        "NEVER call any tool (search_web, get_user_expenses, list_my_reminders, ...) just to "
+        "respond to a greeting or a thank-you -- a bare 'hi' needs no data lookup.\n"
+        "- When a request is ambiguous (several matching expenses, unclear amount, multiple "
+        "records could fit), ask ONE short clarifying question listing the likely options -- "
+        "never guess, never pick the first match silently.\n"
+        "- Never claim an action succeeded that you did not actually perform (e.g. deleting an "
+        "expense you never found, or editing one the tool reported missing).\n"
+        "- 'undo that' / 'oops' / 'bring it back' after an expense write -> use undo_last_write "
+        "or restore_expense rather than re-creating a duplicate.\n\n"
         f"If the user asks for something no tool below can do (e.g. {_UNSUPPORTED_EXAMPLES}), "
         "don't attempt it or pretend it's done -- call log_capability_gap once with a short tag "
         "and one-line description, then tell them plainly it isn't supported yet and that you've "
@@ -639,31 +650,66 @@ async def _run_tool_loop(
     llm = get_agent_llm(complexity=ThinkingLevel.MEDIUM, temperature=0.7)
     llm_with_tools = llm.bind_tools(tools)
     link_tool_used = False
-    degraded_to = ""  # set once this turn degrades to the fallback model
+    degraded_to = ""  # set once this turn degrades to a fallback provider
+
+    def _model_rung_factory():
+        """Lazy generator of (label, bound-client) rungs for this turn:
+        primary, gemini fallback model, then any extra providers
+        (deepseek/openrouter/openai) with real keys configured. Built on
+        demand so a healthy primary never pays to construct fallbacks."""
+        yield "primary", llm_with_tools
+        if settings.llm_provider == "gemini":
+            fb = settings.llm_fallback_model
+            if fb and fb != settings.gemini_model:
+                yield (
+                    f"fallback:{fb}",
+                    get_agent_llm(
+                        complexity=ThinkingLevel.MEDIUM,
+                        temperature=0.7,
+                        model=fb,
+                    ).bind_tools(tools),
+                )
+        else:
+            if settings.active_gemini_api_key:
+                fb = settings.llm_fallback_model or settings.gemini_model
+                yield (
+                    f"fallback:gemini:{fb}",
+                    get_multimodal_llm(temperature=0.7).bind_tools(tools),
+                )
+        from core.llm import build_extra_provider_rungs
+
+        for label, client in build_extra_provider_rungs(
+            complexity=ThinkingLevel.MEDIUM, temperature=0.7
+        ):
+            yield label, client.bind_tools(tools)
 
     async def _invoke_model_bounded():
-        """One model call, with the capacity circuit breaker: when the primary
-        Gemini model is failing at Google's edge (503 high-demand / 504
-        deadline / 429), finish the turn on llm_fallback_model instead of
-        shipping an error. Degrades at most once per turn; a fallback failure
-        propagates to the honest-error path unchanged."""
-        nonlocal llm, llm_with_tools, degraded_to
-        try:
-            return await _invoke_model(llm_with_tools, hist)
-        except Exception as exc:  # noqa: BLE001 - classified below
-            if degraded_to or not settings.llm_fallback_model or settings.llm_provider != "gemini":
+        """One model call, with the multi-rung capacity circuit breaker: when
+        the primary model fails at the provider's edge (503 high-demand / 504
+        deadline / 429), walk the fallback chain (gemini fallback model ->
+        deepseek -> openrouter -> openai) instead of shipping an error. A
+        non-capacity failure propagates to the honest-error path unchanged."""
+        nonlocal degraded_to
+        last_err = ""
+        for label, bound_llm in _model_rung_factory():
+            try:
+                return await _invoke_model(bound_llm, hist)
+            except Exception as exc:  # noqa: BLE001 - classified below
+                last_err = f"{type(exc).__name__}: {exc}"
+                is_capacity = any(
+                    marker in last_err
+                    for marker in ("503", "504", "429", "UNAVAILABLE", "DEADLINE_EXCEEDED", "overloaded", "high demand")
+                )
+                if is_capacity:
+                    if not degraded_to:
+                        degraded_to = label
+                        print(
+                            f"[AGENT_LOOP] primary model unavailable ({last_err[:200]}); "
+                            f"degrading to {label}"
+                        )
+                    continue
                 raise
-            err = f"{type(exc).__name__}: {exc}"
-            if not any(
-                marker in err
-                for marker in ("503", "504", "429", "UNAVAILABLE", "DEADLINE_EXCEEDED", "overloaded", "high demand")
-            ):
-                raise
-            degraded_to = settings.llm_fallback_model
-            print(f"[AGENT_LOOP] primary model unavailable ({err[:200]}); degrading to {degraded_to}")
-            llm = get_agent_llm(complexity=ThinkingLevel.MEDIUM, temperature=0.7, model=degraded_to)
-            llm_with_tools = llm.bind_tools(tools)
-            return await _invoke_model(llm_with_tools, hist)
+        raise RuntimeError(f"all model rungs failed: {last_err}")
 
     # Round-progress tracing: with no per-turn wall-clock ceiling (by design,
     # see MAX_TOOL_ROUNDS above), any single await here -- the model call or
@@ -809,7 +855,7 @@ async def agent_loop(state: AssistantState) -> Command[str]:
     is_admin = settings.is_admin(user_id)
 
     # Safety kernel: deterministic checks that never reach the LLM.
-    from orchestrator.kernel import is_termination_intent
+    from orchestrator.kernel import is_termination_intent, is_trivial_message
 
     if is_termination_intent(text):
         return Command(
@@ -818,6 +864,20 @@ async def agent_loop(state: AssistantState) -> Command[str]:
                 "messages": [AIMessage(content="Got it — I'll stop here. 👋")],
                 "active_domain": "agent",
                 "intent_type": "close",
+            },
+        )
+
+    # Pure small talk (hi/thanks/bye/ok) short-circuits deterministically:
+    # no LLM call, no tool calls -- the "hi" incident called search_web
+    # twice before replying. is_trivial_message returns "" for anything
+    # request-shaped, so real tasks still reach the model.
+    trivial_reply = is_trivial_message(text)
+    if trivial_reply:
+        return Command(
+            goto=END,
+            update={
+                "messages": [AIMessage(content=trivial_reply)],
+                "active_domain": "agent",
             },
         )
 

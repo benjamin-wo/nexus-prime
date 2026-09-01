@@ -85,3 +85,28 @@ def test_compute_metrics_fails_when_expected_tool_missing():
     metrics = compute_metrics(scenario, ["Logged 25"], [set()], [1.0])
     assert metrics["goal_completed"] is False
     assert metrics["tools_ok"] is False
+
+
+def test_compute_metrics_fails_when_forbidden_tool_used():
+    scenario = Scenario(
+        id="t",
+        name="t",
+        user_turns=["hi"],
+        forbidden_tools=["search_web"],
+    )
+    metrics = compute_metrics(scenario, ["hey"], [{"search_web"}], [0.5])
+    assert metrics["goal_completed"] is False
+    assert metrics["forbidden_tools_hit"] == ["search_web"]
+    assert metrics["forbidden_tools_ok"] is False
+
+
+def test_compute_metrics_passes_without_forbidden_tools():
+    scenario = Scenario(
+        id="t",
+        name="t",
+        user_turns=["hi"],
+        forbidden_tools=["search_web"],
+    )
+    metrics = compute_metrics(scenario, ["hey"], [set()], [0.5])
+    assert metrics["goal_completed"] is True
+    assert metrics["forbidden_tools_ok"] is True

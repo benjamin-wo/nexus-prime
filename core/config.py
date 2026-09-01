@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     deepseek_model: str = "deepseek-v4-flash"
     llm_provider: str = "gemini"
     openai_api_key: Optional[str] = None
+    openai_model: str = "gpt-4o-mini"
     openrouter_api_key: Optional[str] = None
     openrouter_model: Optional[str] = None
 

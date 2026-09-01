@@ -194,7 +194,7 @@ async def test_history_skips_orphaned_tool_results(monkeypatch):
                 "name": "transit_journey", "args": {}, "id": "call_split",
                 "type": "tool_call",
             }]),
-            HumanMessage(content="hi"),
+            HumanMessage(content="what can you help me with today?"),
         ],
     }
     await al.agent_loop(state)

@@ -17,7 +17,13 @@ from core.llm import (
     get_agent_llm,
     get_multimodal_llm,
 )
-from core.models import ExpenseTransaction, DeletedExpenseMessage, IncomeTransaction, UserProfile
+from core.models import (
+    ExpenseTransaction,
+    DeletedExpenseMessage,
+    ExpenseUndoEntry,
+    IncomeTransaction,
+    UserProfile,
+)
 from core.tool_guard import identity_bound
 from capabilities.expenses.schemas import ExtractedExpense
 from capabilities.email.tools import apply_gmail_processed_label, apply_email_processed_tag
@@ -652,21 +658,14 @@ async def extract_expense_from_text(user_text: str, recent_context: str = "") ->
         # LLM_PROVIDER=gemini, get_multimodal_llm() returns the SAME
         # settings.gemini_model as the primary -- so a provider-side overload
         # (503 high demand) fails "both primary and fallback" with the
-        # identical error. Mirror the agent loop's circuit breaker instead.
+        # identical error. get_fallback_llm mirrors the agent loop's circuit
+        # breaker: gemini fallback model -> deepseek -> openrouter -> openai.
         try:
-            if (
-                settings.llm_fallback_model
-                and settings.llm_fallback_model != settings.gemini_model
-            ):
-                fallback_llm = get_agent_llm(
-                    complexity=ThinkingLevel.LOW,
-                    temperature=0.1,
-                    model=settings.llm_fallback_model,
-                )
-            else:
-                from core.llm import get_multimodal_llm
+            from core.llm import get_fallback_llm
 
-                fallback_llm = get_multimodal_llm(temperature=0.1)
+            fallback_llm = get_fallback_llm(
+                complexity=ThinkingLevel.LOW, temperature=0.1
+            )
             ai_message = await fallback_llm.ainvoke(messages)
         except Exception as exc:
             print(
@@ -1023,6 +1022,82 @@ async def get_user_expenses(
         ]
 
 
+def _expense_snapshot(tx: ExpenseTransaction) -> Dict[str, Any]:
+    """Serializable snapshot of one expense row for the undo table."""
+    return {
+        "amount": tx.amount,
+        "currency": tx.currency,
+        "merchant": tx.merchant,
+        "category": tx.category,
+        "date_iso": tx.date.isoformat() if tx.date else "",
+        "source_message_id": tx.source_message_id,
+        "source_sender_domain": tx.source_sender_domain,
+        "is_verified": tx.is_verified,
+        "notes": tx.notes,
+        "receipt_items": tx.receipt_items,
+        "split_data": tx.split_data,
+    }
+
+
+async def _record_undo(session, user_id: int, expense_id: int, kind: str, snapshot: Optional[Dict[str, Any]]) -> None:
+    session.add(
+        ExpenseUndoEntry(
+            user_id=user_id,
+            expense_id=expense_id,
+            kind=kind,
+            snapshot=snapshot,
+        )
+    )
+
+
+async def _record_create_undo(user_id: int, tx) -> None:
+    """Record a 'create' undo entry after a new expense row was saved."""
+    async with async_session_factory() as session:
+        await _record_undo(session, user_id, tx.id, "create", None)
+        await session.commit()
+
+
+async def _restore_from_snapshot(user_id: int, snapshot: Dict[str, Any]) -> Optional[int]:
+    """Reinsert an expense row from an undo snapshot. Clears the poller
+    tombstone if the original had a source_message_id. Returns the new id."""
+    async with async_session_factory() as session:
+        try:
+            restored_date = datetime.fromisoformat(str(snapshot.get("date_iso") or ""))
+        except ValueError:
+            restored_date = datetime.now(dt_timezone.utc).replace(tzinfo=None)
+        if restored_date.tzinfo is not None:
+            restored_date = restored_date.astimezone(dt_timezone.utc).replace(tzinfo=None)
+
+        src_msg_id = snapshot.get("source_message_id")
+        if src_msg_id:
+            existing_tomb = (await session.execute(
+                select(DeletedExpenseMessage).where(
+                    DeletedExpenseMessage.source_message_id == src_msg_id
+                )
+            )).scalar_one_or_none()
+            if existing_tomb is not None:
+                await session.delete(existing_tomb)
+
+        tx = ExpenseTransaction(
+            user_id=user_id,
+            amount=float(snapshot.get("amount") or 0.0),
+            currency=str(snapshot.get("currency") or "SGD"),
+            merchant=str(snapshot.get("merchant") or "Unknown"),
+            category=str(snapshot.get("category") or "General"),
+            date=restored_date,
+            source_message_id=src_msg_id,
+            source_sender_domain=snapshot.get("source_sender_domain"),
+            is_verified=bool(snapshot.get("is_verified", True)),
+            notes=snapshot.get("notes"),
+            receipt_items=snapshot.get("receipt_items") or [],
+            split_data=snapshot.get("split_data") or {},
+        )
+        session.add(tx)
+        await session.commit()
+        await session.refresh(tx)
+        return tx.id
+
+
 @tool
 @identity_bound
 async def delete_expense(expense_id: int, user_id: int = 0) -> str:
@@ -1043,6 +1118,7 @@ async def delete_expense(expense_id: int, user_id: int = 0) -> str:
         if tx is None:
             return f"No expense with id {expense_id} was found for you."
         merchant = tx.merchant or ""
+        await _record_undo(session, user_id, tx.id, "delete", _expense_snapshot(tx))
         if tx.source_message_id:
             existing_tomb = await session.execute(
                 select(DeletedExpenseMessage).where(
@@ -1058,7 +1134,172 @@ async def delete_expense(expense_id: int, user_id: int = 0) -> str:
                 )
         await session.delete(tx)
         await session.commit()
-    return f"Deleted {merchant} (id {expense_id})."
+    return f"Deleted {merchant} (id {expense_id}). Say 'undo that' if you meant to keep it."
+
+
+@tool
+@identity_bound
+async def edit_expense(
+    expense_id: int,
+    user_id: int = 0,
+    amount: Optional[float] = None,
+    currency: Optional[str] = None,
+    merchant: Optional[str] = None,
+    category: Optional[str] = None,
+    date_iso: Optional[str] = None,
+) -> str:
+    """
+    Edit one of the user's expense transactions by its id (from
+    get_user_expenses or query_transactions). Only the fields you pass are
+    changed. Records an undo snapshot so 'undo that' can revert it.
+    """
+    async with async_session_factory() as session:
+        result = await session.execute(
+            select(ExpenseTransaction).where(
+                ExpenseTransaction.id == expense_id,
+                ExpenseTransaction.user_id == user_id,
+            )
+        )
+        tx = result.scalar_one_or_none()
+        if tx is None:
+            return f"No expense with id {expense_id} was found for you."
+        await _record_undo(session, user_id, tx.id, "edit", _expense_snapshot(tx))
+        changed = []
+        if amount is not None:
+            tx.amount = round(float(amount), 2)
+            changed.append("amount")
+        if currency:
+            tx.currency = str(currency).strip().upper()
+            changed.append("currency")
+        if merchant:
+            tx.merchant = str(merchant).strip()
+            changed.append("merchant")
+        if category:
+            tx.category = normalize_category_name(str(category))
+            changed.append("category")
+        if date_iso:
+            try:
+                new_date = datetime.fromisoformat(str(date_iso).replace("Z", "+00:00"))
+                if new_date.tzinfo is not None:
+                    new_date = new_date.astimezone(dt_timezone.utc).replace(tzinfo=None)
+                tx.date = new_date
+                changed.append("date")
+            except ValueError:
+                return f"Couldn't parse '{date_iso}' as a date — nothing was changed."
+        if not changed:
+            return "Nothing to edit — pass at least one of amount, currency, merchant, category, or date_iso."
+        session.add(tx)
+        await session.commit()
+    return f"Updated {merchant or tx.merchant} (id {expense_id}): {', '.join(changed)}."
+
+
+@tool
+@identity_bound
+async def restore_expense(expense_id: int, user_id: int = 0) -> str:
+    """
+    Restore a previously deleted expense by its id. The id is the one the
+    expense had before deletion (shown when it was deleted). Returns the new id.
+    """
+    async with async_session_factory() as session:
+        entry = (await session.execute(
+            select(ExpenseUndoEntry).where(
+                ExpenseUndoEntry.user_id == user_id,
+                ExpenseUndoEntry.expense_id == expense_id,
+                ExpenseUndoEntry.kind == "delete",
+            ).order_by(ExpenseUndoEntry.id.desc())
+        )).scalars().first()
+    if entry is None or not entry.snapshot:
+        return f"No deleted expense with id {expense_id} was found for you."
+    new_id = await _restore_from_snapshot(user_id, entry.snapshot)
+    async with async_session_factory() as session:
+        await session.delete(entry)
+        await session.commit()
+    merchant = str(entry.snapshot.get("merchant") or "Unknown")
+    return f"Restored {merchant} (new id {new_id})."
+
+
+@tool
+@identity_bound
+async def undo_last_write(user_id: int = 0) -> str:
+    """
+    Revert the user's most recent expense write (logged, edited, or deleted
+    expense). Use when the user says 'undo that', 'oops undo', 'never mind
+    that expense', etc.
+    """
+    async with async_session_factory() as session:
+        entry = (await session.execute(
+            select(ExpenseUndoEntry).where(
+                ExpenseUndoEntry.user_id == user_id,
+            ).order_by(ExpenseUndoEntry.id.desc())
+        )).scalars().first()
+    if entry is None:
+        return "Nothing to undo — no recent expense write found."
+    kind = entry.kind
+    if kind == "delete" and entry.snapshot:
+        new_id = await _restore_from_snapshot(user_id, entry.snapshot)
+        merchant = str(entry.snapshot.get("merchant") or "Unknown")
+    elif kind == "edit" and entry.snapshot:
+        async with async_session_factory() as session:
+            result = await session.execute(
+                select(ExpenseTransaction).where(
+                    ExpenseTransaction.id == entry.expense_id,
+                    ExpenseTransaction.user_id == user_id,
+                )
+            )
+            tx = result.scalar_one_or_none()
+            if tx is None:
+                await session.delete(entry)
+                await session.commit()
+                return "That expense no longer exists, so there's nothing to undo."
+            snap = entry.snapshot
+            tx.amount = float(snap.get("amount") or 0.0)
+            tx.currency = str(snap.get("currency") or "SGD")
+            tx.merchant = str(snap.get("merchant") or "Unknown")
+            tx.category = str(snap.get("category") or "General")
+            try:
+                tx.date = datetime.fromisoformat(str(snap.get("date_iso") or ""))
+            except ValueError:
+                pass
+            tx.notes = snap.get("notes")
+            session.add(tx)
+            await session.commit()
+        merchant = str(entry.snapshot.get("merchant") or "Unknown")
+        new_id = entry.expense_id
+    elif kind == "create":
+        async with async_session_factory() as session:
+            result = await session.execute(
+                select(ExpenseTransaction).where(
+                    ExpenseTransaction.id == entry.expense_id,
+                    ExpenseTransaction.user_id == user_id,
+                )
+            )
+            tx = result.scalar_one_or_none()
+            if tx is None:
+                await session.delete(entry)
+                await session.commit()
+                return "That expense no longer exists, so there's nothing to undo."
+            merchant = tx.merchant or ""
+            if tx.source_message_id:
+                session.add(
+                    DeletedExpenseMessage(
+                        user_id=user_id,
+                        source_message_id=tx.source_message_id,
+                    )
+                )
+            await session.delete(tx)
+            await session.commit()
+        new_id = None
+    else:
+        async with async_session_factory() as session:
+            await session.delete(entry)
+            await session.commit()
+        return "Nothing undoable found for your last write."
+    async with async_session_factory() as session:
+        await session.delete(entry)
+        await session.commit()
+    if kind == "create":
+        return f"Removed the {merchant} expense you just logged."
+    return f"Undone — {merchant} is back the way it was (id {new_id})."
 
 
 async def _parse_ledger_date(value: Optional[str]) -> Optional[datetime]:
@@ -1443,6 +1684,7 @@ async def process_extracted_expense(
         # Once resumed, evaluate user response
         if isinstance(user_response, dict) and user_response.get("action") == "confirm":
             tx = await save_expense_transaction(user_id, expense, source_message_id, is_verified=True)
+            await _record_create_undo(user_id, tx)
             if source_message_id:
                 await apply_gmail_processed_label.ainvoke({"user_id": user_id, "message_id": source_message_id})
             return {"status": "confirmed_by_user", "transaction_id": tx.id}
@@ -1453,6 +1695,7 @@ async def process_extracted_expense(
 
     # High confidence (confidence >= 0.8 and not needs_clarification): log silently & tag
     tx = await save_expense_transaction(user_id, expense, source_message_id, is_verified=True)
+    await _record_create_undo(user_id, tx)
     if source_message_id:
         await apply_gmail_processed_label.ainvoke({"user_id": user_id, "message_id": source_message_id})
     return {"status": "saved_silently", "transaction_id": tx.id}

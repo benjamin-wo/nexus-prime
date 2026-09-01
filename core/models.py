@@ -59,6 +59,22 @@ class DeletedExpenseMessage(SQLModel, table=True):
     source_message_id: str = Field(index=True, unique=True)
     deleted_at: datetime = Field(default_factory=datetime.utcnow)
 
+
+class ExpenseUndoEntry(SQLModel, table=True):
+    """Undo snapshot for expense writes (create/edit/delete).
+
+    Every mutating expense tool records a snapshot here BEFORE applying its
+    change, so undo_last_write / restore_expense can revert it. kind:
+    "delete" (snapshot = the row before deletion), "edit" (snapshot = the row
+    before the edit), "create" (snapshot = None, undo deletes the row).
+    """
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(index=True)
+    expense_id: int = Field(index=True)
+    kind: str = Field(index=True)
+    snapshot: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
 class GroceryItem(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="userprofile.user_id", index=True)
