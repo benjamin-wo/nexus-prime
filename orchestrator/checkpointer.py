@@ -39,7 +39,16 @@ async def setup_checkpointer():
         # via the libpq `options` parameter because from_conn_string in the
         # installed langgraph version accepts only a conninfo string.
         bounded_conn_string = _with_statement_timeout(conn_string, CHECKPOINT_STATEMENT_TIMEOUT_MS)
-        iterator = AsyncPostgresSaver.from_conn_string(bounded_conn_string, pipeline=True)
+        # pipeline=False (deliberate): pipeline mode runs a background task
+        # that batches checkpoint statements over one connection. If that
+        # pipeline task wedges (silent connection death), every checkpoint
+        # read/write waits on the queue forever -- the statement is never
+        # sent, so statement_timeout never applies. That is the live "Hi"
+        # wedge (chat=149917165): graph.ainvoke stuck at the checkpoint
+        # layer with zero logs across multiple containers. Non-pipeline mode
+        # issues each statement directly on the pool, so statement_timeout
+        # bounds every op.
+        iterator = AsyncPostgresSaver.from_conn_string(bounded_conn_string, pipeline=False)
         saver = await iterator.__aenter__()
         await _run_postgres_migrations(conn_string)
         _postgres_iterator = iterator
