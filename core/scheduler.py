@@ -285,48 +285,6 @@ async def trigger_task_alert_now(task_id: int, user_id: int) -> bool:
     return True
 
 
-async def schedule_one_shot_reminder(
-    user_id: int,
-    message: str,
-    run_date: datetime,
-    timezone_str: str = "Asia/Singapore",
-) -> TaskItem:
-    """Schedule a one-off reminder via TaskItem and DateTrigger."""
-    # Convert run_date to naive UTC for safe DB storage in TIMESTAMP WITHOUT TIME ZONE
-    from datetime import timezone as dt_tz
-    if run_date.tzinfo is not None:
-        db_dt = run_date.astimezone(dt_tz.utc).replace(tzinfo=None)
-    else:
-        db_dt = run_date
-
-    async with async_session_factory() as session:
-        task = TaskItem(
-            user_id=user_id,
-            title=message[:200],
-            description=None,
-            status="todo",
-            priority="medium",
-            due_at=db_dt,
-            reminder_type="once",
-            reminder_time=db_dt,
-            timezone=timezone_str,
-            is_reminder_active=True,
-        )
-        session.add(task)
-        await session.commit()
-        await session.refresh(task)
-
-        job_id = f"task_{task.id}"
-        scheduler.add_job(
-            _execute_task_reminder,
-            trigger=DateTrigger(run_date=run_date),
-            args=[task.id, task.user_id],
-            id=job_id,
-            replace_existing=True,
-        )
-        return task
-
-
 async def delete_scheduled_job(job_id: int, user_id: int) -> bool:
     """Deactivate and remove a scheduled job or task reminder owned by the user."""
     deleted = False
@@ -728,39 +686,6 @@ async def shutdown_scheduler():
         _watchdog_task = None
     if scheduler.running:
         scheduler.shutdown(wait=False)
-
-async def schedule_proactive_task(
-    user_id: int,
-    job_name: str,
-    cron_expression: str,
-    instruction_prompt: str,
-    timezone_str: str = "UTC",
-    session: Optional[AsyncSession] = None,
-) -> ScheduledJob:
-    """Register a proactive cron job in Postgres and in-memory scheduler."""
-    close_session = False
-    if session is None:
-        session = async_session_factory()
-        close_session = True
-    try:
-        job = ScheduledJob(
-            user_id=user_id,
-            job_name=job_name,
-            cron_expression=cron_expression,
-            instruction_prompt=instruction_prompt,
-            timezone=timezone_str,
-            is_active=True,
-        )
-        session.add(job)
-        await session.commit()
-        await session.refresh(job)
-
-        # Register in-memory
-        _add_job_to_scheduler(job)
-        return job
-    finally:
-        if close_session:
-            await session.close()
 
 def _add_job_to_scheduler(job: ScheduledJob):
     """Compile cron trigger with ZoneInfo and add to APScheduler."""

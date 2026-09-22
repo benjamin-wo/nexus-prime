@@ -1,16 +1,16 @@
-# Wayfinder Map: Telegram Personal Assistant Bot Architecture Spec (RFC)
+# Wayfinder Map: Expense & Finance Telegram Bot Architecture Spec (RFC)
 
 ## Destination
 
-A Complete Technical & Functional Architecture Spec (RFC) detailing the bot's extensible 3-layer plugin architecture, LangGraph supervisor-subagent orchestration, Railway PostgreSQL storage, multimodal Telegram webhook I/O, and proactive APScheduler/timezone engine, ready for engineering execution.
+A Complete Technical & Functional Architecture Spec (RFC) detailing the bot's expense/finance agentic architecture, LangGraph agent loop, Railway PostgreSQL storage, multimodal Telegram webhook I/O, and skill-based extensibility, ready for engineering execution.
 
 ## Notes
 
 - **Hosting & Scope**: Single-User Architecture with Multi-User Extensibility (`user_id` scoped data models and modular auth/credentials from day one), deployed on Railway.
-- **Orchestration**: Python + LangGraph Supervisor-Subagent Multi-Agent Architecture (`create_agent`, Top-level Supervisor delegating to specialized domain Subagents).
-- **Storage & Memory**: Railway Managed PostgreSQL (`PostgresSaver` + SQLModel/SQLAlchemy + `pgvector`).
+- **Orchestration**: Python + LangGraph Agent Loop (`agent_turn` tool-chaining agent with deterministic safety kernel).
+- **Storage & Memory**: Railway Managed PostgreSQL (`PostgresSaver` + SQLModel/SQLAlchemy).
 - **Telegram I/O**: `python-telegram-bot` + Railway Webhook (via FastAPI) + Gemini Flash / Kimi k3 Native Multimodal Support (direct audio/image ingestion).
-- **Plugin Architecture**: 3-Layer Architecture (`core/shared_tools` + `capabilities/` plugins + `orchestrator/` Supervisor) with an encrypted credential vault in Postgres.
+- **Skill Architecture**: Skill-based extensibility (`skills/<name>/SKILL.md` with YAML frontmatter) with progressive-disclosure loading and a tool registry.
 - **Proactive Scheduling**: `APScheduler` in-process + Conversational Scheduling (`schedule_proactive_task`) + `/run_now` / Dry-Run Testing Engine + Dynamic IANA Timezone Adaptation.
 
 ## Decisions so far
@@ -31,7 +31,7 @@ A Complete Technical & Functional Architecture Spec (RFC) detailing the bot's ex
 
 ## Not yet specified
 
-- Detailed implementation of individual capability tools (e.g., specific Google Maps APIs for Route Planning, recipe scraping site parsers).
+- Detailed implementation of individual capability tools (e.g., specific expense categorization rules, email bank statement parsers).
 - End-to-end integration test suite and CI/CD pipeline on Railway.
 - Future multi-tenant user onboarding flow and Stripe/billing integration.
 

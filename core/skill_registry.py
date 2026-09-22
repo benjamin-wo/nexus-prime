@@ -27,16 +27,8 @@ VALID_SIDE_EFFECTS = {"read", "write", "spend", "irreversible"}
 # these by name in frontmatter; the registry resolves and validates them.
 TOOL_MODULES: Tuple[str, ...] = (
     "capabilities.general.tools",
-    "capabilities.routes.tools",
     "capabilities.email.tools",
     "capabilities.expenses.tools",
-    "capabilities.recipes.tools",
-    "capabilities.reminders.tools",
-    "capabilities.whiteboard.tools",
-    "capabilities.memory.tools",
-    "capabilities.bug_logging.tools",
-    "capabilities.scheduled_content_delivery.tools",
-    "capabilities.code_exec.tools",
 )
 
 

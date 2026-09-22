@@ -21,39 +21,7 @@ from core.models import UserProfile
 from core.scheduler import list_active_jobs, run_now, update_user_timezone
 from orchestrator.graph import get_assistant_graph
 
-# Short-lived store of content awaiting a "pin to board" button press.
-# Keyed by an 8-char token embedded in callback_data (Telegram caps it at 64 bytes).
-_pending_pins: Dict[str, Dict[str, Any]] = {}
-_PENDING_PIN_TTL_SECONDS = 3600
 
-
-def register_pending_pin(project_id: int, user_id: int, title: str, markdown: str) -> str:
-    """Store plannable content and return the token to embed in `pb:<project>:<token>` buttons."""
-    import time
-    import uuid
-
-    now = time.time()
-    for tok in [t for t, v in _pending_pins.items() if now - v.get("ts", 0) > _PENDING_PIN_TTL_SECONDS]:
-        _pending_pins.pop(tok, None)
-    token = uuid.uuid4().hex[:8]
-    _pending_pins[token] = {
-        "project_id": project_id,
-        "user_id": user_id,
-        "title": (title or "Pinned from Telegram")[:200],
-        "markdown": markdown or "",
-        "ts": now,
-    }
-    return token
-
-
-async def consume_pending_pin(token: str) -> Optional[Dict[str, Any]]:
-    """Pop stored pin content for a token, if present and fresh."""
-    import time
-
-    entry = _pending_pins.pop(token, None) if token else None
-    if not entry or time.time() - entry.get("ts", 0) > _PENDING_PIN_TTL_SECONDS:
-        return None
-    return entry
 
 
 def format_for_telegram(text: str) -> str:
@@ -209,7 +177,6 @@ async def setup_telegram_bot_commands() -> bool:
         {"command": "income", "description": "💵 View incoming money"},
         {"command": "credit", "description": "➕ Log money received"},
         {"command": "tasks", "description": "📋 View pending tasks & reminders"},
-        {"command": "groceries", "description": "🛒 View grocery shopping list"},
         {"command": "email", "description": "📬 Connect Gmail or Outlook for receipts"},
         {"command": "disconnect_email", "description": "🔌 Remove Gmail or Outlook access"},
         {"command": "jobs", "description": "⏰ Manage scheduled background alerts"},
@@ -469,10 +436,6 @@ class TelegramIngress:
                         "• Or simply text: *'Split $120 dinner at Haidilao with Chloe and Alex'*\n"
                         "• Or upload a receipt photo with the caption: *'Split 3 ways'*."
                     )
-            elif cmd == "groceries":
-                res = await self.handle_slash_command("/groceries", user_id=user_id or 0)
-                if res and chat_id:
-                    await send_telegram_message(chat_id, res.get("text", "Grocery list."))
             return {"status": "ok", "action": f"cmd_{cmd}"}
 
         if callback_data.startswith("log_req:"):
@@ -672,64 +635,7 @@ class TelegramIngress:
             except Exception as exc:
                 print(f"[CALLBACK] error snoozing task {callback_data}: {exc}")
 
-        if callback_data.startswith("pb:"):
-            # pb:<project_id>[:<token>] — pin content to a whiteboard board.
-            # With a token, the exact content captured when the button was sent is
-            # written as a note card. Without one, an honest placeholder card is
-            # still created so "Pinned!" never lies.
-            parts = callback_data.split(":", 2)
-            proj_id_str = parts[1] if len(parts) > 1 else "1"
-            token = parts[2] if len(parts) > 2 else ""
-            try:
-                proj_id = int(proj_id_str)
-                from core.models import WhiteboardProject
-                from core.db import async_session_factory
-                from sqlmodel import select as _select
-                from capabilities.whiteboard.tools import add_block_to_whiteboard
-
-                proj_title = "Whiteboard"
-                async with async_session_factory() as session:
-                    proj = (await session.execute(
-                        _select(WhiteboardProject).where(WhiteboardProject.id == proj_id)
-                    )).scalar_one_or_none()
-                    if proj:
-                        proj_title = f"{proj.emoji_icon} {proj.title}"
-
-                pin_entry = await consume_pending_pin(token)
-                if pin_entry and int(pin_entry.get("project_id") or 0) == proj_id:
-                    block_title = str(pin_entry.get("title") or "Pinned from Telegram")
-                    markdown = f"📌 **Pinned from Telegram**\n\n{pin_entry.get('markdown') or ''}".strip()
-                else:
-                    block_title = "📌 Pinned from Telegram"
-                    markdown = f"Pinned on {__import__('datetime').datetime.utcnow().strftime('%b %d, %H:%M')} UTC"
-
-                block = await add_block_to_whiteboard(
-                    project_id=proj_id,
-                    section_name="Pinned",
-                    block_type="note",
-                    title=block_title,
-                    content_payload={"markdown": markdown},
-                )
-
-                reply_text = (
-                    f"📌 Pinned *{block.title}* to <b>{proj_title}</b> (card #{block.id}).\n"
-                    f"View it anytime on your web canvas."
-                )
-                self._log_conversation("CALLBACK", chat_id, callback_data)
-                if callback_query_id:
-                    await answer_telegram_callback(callback_query_id, text=f"Pinned to {proj_title}!")
-                if chat_id:
-                    await send_telegram_message(chat_id, reply_text)
-                    self._log_conversation("OUT", chat_id, reply_text)
-                return {
-                    "status": "ok",
-                    "action": "pinned_to_whiteboard",
-                    "project_id": proj_id,
-                    "block_id": block.id,
-                    "reply": reply_text,
-                }
-            except Exception as exc:
-                print(f"[CALLBACK] error pinning to whiteboard {callback_data}: {exc}")
+        
 
         action = "confirm"
         try:
@@ -853,23 +759,7 @@ class TelegramIngress:
                     table_md += f'| {idx} | `#{row["tag"]}` | {row["count"]} | *"{row["sample_prompt"]}"* |\n'
             return {"status": "ok", "leaderboard": leaderboard, "text": table_md}
 
-        if text.startswith("/groceries"):
-            from capabilities.recipes.tools import get_user_grocery_list
-
-            items = await get_user_grocery_list.ainvoke({"user_id": user_id})
-            if not items:
-                return {"status": "ok", "groceries": [], "text": "🛒 Your grocery list is empty."}
-            lines = [
-                f"• {item['name']} × {item['quantity']} ({item['category']})"
-                for item in items[:15]
-            ]
-            return {
-                "status": "ok",
-                "groceries": items,
-                "text": "🛒 Grocery list:\n" + "\n".join(lines),
-            }
-
-        if text.startswith(("/income", "/incoming")):
+        
             from core.models import IncomeTransaction
 
             async with async_session_factory() as session:
@@ -938,7 +828,7 @@ class TelegramIngress:
 
             dash_url = f"{base_url}/?user_id={user_id}"
             help_text = (
-                "🤖 **Welcome to Nexus Prime — Your AI Life Copilot**\n\n"
+                "🤖 **Welcome to Nexus Prime — Your AI Finance Copilot**\n\n"
                 "Here are the core features & quick shortcuts you can use:\n\n"
                 "💳 **Expenses & Spending**\n"
                 "• Type or voice: *'Spent $12.50 at Starbucks'* or snap a receipt photo\n"
@@ -950,14 +840,6 @@ class TelegramIngress:
                 "• `/credit <amount> from <person or company>` — Log money received\n"
                 "• `/income` — View recent incoming money\n\n"
                 "• `/disconnect_email [gmail|outlook|all]` — Remove mailbox access\n\n"
-                "📋 **Tasks & Reminders**\n"
-                "• Type or voice: *'Remind me tomorrow at 9am to submit report'*\n"
-                "• `/tasks` — View your todo list & pending IOUs\n"
-                "• `/jobs` — View scheduled background alerts\n\n"
-                "🛒 **Groceries & Commute**\n"
-                "• Type: *'Add oat milk and eggs to grocery list'*\n"
-                "• `/groceries` — View shopping list\n"
-                "• Ask: *'Bus timings at 08057'* or *'Route to Orchard'*\n\n"
                 "🚀 **Web Cockpit & Analytics**\n"
                 "• `/dashboard` — Open your personal visual cockpit\n\n"
                 f"{dash_url}"
@@ -970,7 +852,6 @@ class TelegramIngress:
                     {"text": "📋 Pending Tasks", "callback_data": "cmd:tasks"},
                 ],
                 [
-                    {"text": "📬 Connect Gmail", "callback_data": "cmd:email"},
                     {"text": "👥 Split a Bill", "callback_data": "cmd:split"},
                 ],
             ]
@@ -1133,33 +1014,6 @@ class TelegramIngress:
                 "status": "ok",
                 "tasks": [t.model_dump() for t in tasks],
                 "text": "📋 <b>Pending Tasks:</b>\n" + "\n".join(lines),
-            }
-
-        if text.startswith(("/boards", "/whiteboards")):
-            from core.models import WhiteboardProject, WhiteboardBlock
-            from core.db import async_session_factory
-            from sqlmodel import select
-
-            async with async_session_factory() as session:
-                projects = (await session.execute(
-                    select(WhiteboardProject).where(WhiteboardProject.user_id == user_id).order_by(WhiteboardProject.updated_at.desc())
-                )).scalars().all()
-
-            if not projects:
-                return {
-                    "status": "ok",
-                    "projects": [],
-                    "text": "🎨 **Whiteboard & Planning Canvas**\n\nNo active boards yet! Create one on the dashboard or tell me what to plan (e.g. *\"Plan my trip to Tokyo\"*).",
-                }
-
-            lines = ["🎨 **Active Planning Whiteboards:**\n"]
-            for p in projects[:10]:
-                lines.append(f"• {p.emoji_icon} **{p.title}** (`#{p.id}` · *{p.category}*)")
-            lines.append("\n💡 *Ask me in chat to research options, build itineraries, or pin items to any board!*")
-            return {
-                "status": "ok",
-                "projects": [p.model_dump() for p in projects],
-                "text": "\n".join(lines),
             }
 
         if text.startswith("/del_job"):

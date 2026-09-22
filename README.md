@@ -1,8 +1,9 @@
-# Nexus Prime — Personal Assistant Telegram Bot
+# Nexus Prime — Expense & Finance Telegram Bot
 
-A **general-purpose agentic assistant** deployed on **Railway**, living on **Telegram** and a
-**web cockpit/dashboard**. One tool-chaining agent fulfils user requests using **skills declared
-as markdown files with frontmatter** — adding a skill means dropping a folder, no code changes.
+A **finance-focused agentic assistant** deployed on **Railway**, living on **Telegram** and a
+**web cockpit/dashboard**. One tool-chaining agent fulfils expense and finance requests using
+**skills declared as markdown files with frontmatter** — adding a skill means dropping a folder,
+no code changes.
 
 ## Architecture
 
@@ -16,7 +17,6 @@ is fulfilled. Around it sits a **deterministic safety kernel** that never delega
 - media turns attempt receipt-expense extraction first, then describe via the vision model;
 - incoming-money statements are parsed and written deterministically (including IOU settlement
   on friend repayments) — money writes never depend on the model;
-- pending bus-stop disambiguation answers stay inside the live bus-arrival handler;
 - unsupported transactional categories (bank transfers, bookings, smart home, ...) are refused
   honestly and logged as capability-gap telemetry;
 - self-diagnosis questions ("why did you...", "is this broken?") are answered from the bot's own
@@ -32,25 +32,23 @@ Skills are the authoring surface — **markdown with YAML frontmatter** (Claude-
 
 ```markdown
 ---
-name: transit
-description: Live Singapore bus timings and transit journeys.
-tags: [transit, bus]
-side_effect: read        # read | write | spend | irreversible
+name: expenses
+description: Track and categorize personal expenses.
+tags: [expenses, finance]
+side_effect: write       # read | write | spend | irreversible
 tools:
-  - get_bus_timings      # resolved against the tool registry by name
-  - transit_journey
+  - add_expense          # resolved against the tool registry by name
+  - list_expenses
 ---
 
-# Bus timings & routes
+# Expense tracking
 Step-by-step guidance the agent loads on demand via the `load_skill` tool.
 ```
 
 - `core/skill_registry.py` — parses frontmatter, discovers skills, resolves declared tools
   against the **tool registry** (the `@tool` callables across `capabilities/*/tools.py` and a
   skill's own optional `tools.py`), and exposes the skill index + progressive-disclosure loader.
-- Installed skills: web-research, expenses, transit, email, reminders, recipes-groceries,
-  memory (points/miles), bug-logging, daily-briefing, whiteboard-planning, composed-recipes,
-  code-exec (kernel-gated to admins).
+- Installed skills: expenses, email, web-research.
 - **Adding a skill = dropping `skills/<name>/SKILL.md`** (plus `tools.py` if it needs new
   executable actions). No registry edits, no redeploy.
 
@@ -65,19 +63,15 @@ Step-by-step guidance the agent loads on demand via the `load_skill` tool.
 - `core/audit.py` — LLM-as-a-Judge quality observability and capability-gap telemetry. Whole
   conversations are reviewed by Gemini 3.1 Pro every few user messages (`ConversationAuditLog`);
   `GEMINI_JUDGE_MODEL` overrides the default.
-- `core/code_sandbox.py` — Isolated code execution: import allowlist, egress allowlist, secret
-  redaction, hard timeout, credential vault unreachable. E2B provider for production; a
-  process-isolated local provider for offline runs and tests.
 
 ### Surfaces (`app/`)
 
 - **Telegram** (`app/ingress.py`) — webhook ingress, slash commands, media download, inline
   keyboard HITL confirmations, proactive push delivery.
 - **Web cockpit** (`app/dashboard_api.py`, `showcase/`) — metrics cards, transaction ledger,
-  whiteboard canvas, and a Copilot drawer wired to the same agent graph.
+  and a Copilot drawer wired to the same agent graph.
 
-Multi-tenant from day one: every tool is user-scoped through the identity guard, and
-`admin_only_capabilities` (config) gates sensitive skills such as `code-exec`.
+Multi-tenant from day one: every tool is user-scoped through the identity guard.
 
 ## Running Tests
 
