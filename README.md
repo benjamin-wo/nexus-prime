@@ -7,7 +7,7 @@ no code changes.
 
 ## Architecture
 
-### The agent (`orchestrator/agent_node.py`)
+### The agent (`orchestrator/agent_loop.py`)
 
 A single agentic loop is the brain. It receives the full conversation history, a skill index,
 and every tool declared by installed skills; it chains tools (bounded rounds) until the request
@@ -17,7 +17,7 @@ is fulfilled. Around it sits a **deterministic safety kernel** that never delega
 - media turns attempt receipt-expense extraction first, then describe via the vision model;
 - incoming-money statements are parsed and written deterministically (including IOU settlement
   on friend repayments) — money writes never depend on the model;
-- unsupported transactional categories (bank transfers, bookings, smart home, ...) are refused
+- unsupported transactional categories (bank transfers, bookings, ...) are refused
   honestly and logged as capability-gap telemetry;
 - self-diagnosis questions ("why did you...", "is this broken?") are answered from the bot's own
   integration health, not routed into a random skill's flow;
@@ -60,16 +60,14 @@ Step-by-step guidance the agent loads on demand via the `load_skill` tool.
   `run_now` testing triggers, and ambient delivery gating.
 - `core/ambient.py` — Trigger policy: proactive delivery only from trigger records; quiet hours
   suppress non-urgent delivery before 09:00 local; urgent triggers still land.
-- `core/audit.py` — LLM-as-a-Judge quality observability and capability-gap telemetry. Whole
-  conversations are reviewed by Gemini 3.1 Pro every few user messages (`ConversationAuditLog`);
-  `GEMINI_JUDGE_MODEL` overrides the default.
+- `core/audit.py` — Capability-gap telemetry logging for unsupported feature requests.
 
 ### Surfaces (`app/`)
 
 - **Telegram** (`app/ingress.py`) — webhook ingress, slash commands, media download, inline
   keyboard HITL confirmations, proactive push delivery.
 - **Web cockpit** (`app/dashboard_api.py`, `showcase/`) — metrics cards, transaction ledger,
-  and a Copilot drawer wired to the same agent graph.
+  and analytics dashboard wired to the same agent graph.
 
 Multi-tenant from day one: every tool is user-scoped through the identity guard.
 
@@ -93,10 +91,6 @@ Run the FastAPI Uvicorn server locally:
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-## Documentation & Architecture Specs
+## Documentation
 
-- v1.0 Core Architecture RFC: [spec.md](spec.md)
-- v2.0 Capability-Gap Handling & Telemetry RFC: [spec-capability-gaps.md](spec-capability-gaps.md)
 - Domain & architecture glossary: [CONTEXT.md](CONTEXT.md) and [map.md](map.md)
-- Capability orchestration recipes: [capabilities/RECIPES.md](capabilities/RECIPES.md)
-- Gauntlet loop status and lock files: [gauntlet/loop-status.md](gauntlet/loop-status.md)

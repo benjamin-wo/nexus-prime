@@ -26,6 +26,16 @@ const CATEGORY_MAP = {
   "General": { icon: "💳", color: "#71717a", bg: "rgba(113, 113, 122, 0.15)" }
 };
 
+function escapeHtml(str) {
+  if (!str) return "";
+  return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function escapeAttr(str) {
+  if (!str) return "";
+  return String(str).replace(/'/g, "&apos;").replace(/"/g, "&quot;");
+}
+
 function normalizeCategory(cat) {
   if (!cat) return "General";
   const c = cat.toString().trim().toLowerCase();
