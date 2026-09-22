@@ -191,12 +191,6 @@ async def handle_web_chat(request: ChatRequest) -> ChatResponse:
         if any(w in reply_lower for w in ["logged", "saved", "deleted", "restored", "expense", "transaction", "sgd", "spend", "spent"]):
             if not any(e.get("type") == "expenses_changed" for e in events):
                 events.append({"type": "expenses_changed", "domain": "expenses"})
-        if any(w in reply_lower for w in ["reminder", "scheduled", "job", "cron"]):
-            if not any(e.get("type") == "reminders_changed" for e in events):
-                events.append({"type": "reminders_changed", "domain": "reminders"})
-        if any(w in reply_lower for w in ["grocery", "groceries", "checklist", "pantry", "added to your"]):
-            if not any(e.get("type") == "groceries_changed" for e in events):
-                events.append({"type": "groceries_changed", "domain": "groceries"})
 
         return ChatResponse(
             status="ok",

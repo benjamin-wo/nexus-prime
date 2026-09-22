@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+
 from core.db import init_db
 from core.scheduler import start_scheduler, shutdown_scheduler
 from orchestrator.checkpointer import setup_checkpointer, close_checkpointer

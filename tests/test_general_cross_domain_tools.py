@@ -6,7 +6,6 @@ stay behind their own guarded plugins (expenses, whiteboard, reminders)."""
 import pytest
 from langchain_core.messages import HumanMessage
 
-from app.dashboard_api import CreateWhiteboardRequest, create_whiteboard
 from core.db import async_session_factory, init_db
 from core.models import ScheduledJob, UserProfile
 from capabilities.general.tools import (
@@ -53,20 +52,6 @@ async def test_list_my_reminders_reports_active_jobs():
 async def test_list_my_reminders_reports_none_when_empty():
     result = await list_my_reminders.ainvoke({"user_id": 9102})
     assert "No active reminders" in result
-
-
-@pytest.mark.asyncio
-async def test_list_my_boards_and_summarize_board():
-    await create_whiteboard(
-        payload=CreateWhiteboardRequest(title="Bali Bachelor Party", category="trip", template="blank"),
-        user_id=9103,
-    )
-
-    boards = await list_my_boards.ainvoke({"user_id": 9103})
-    assert "Bali Bachelor Party" in boards
-
-    summary = await summarize_board.ainvoke({"board_ref": "bali", "user_id": 9103})
-    assert "empty" in summary.lower() or "Bali" in summary
 
 
 @pytest.mark.asyncio

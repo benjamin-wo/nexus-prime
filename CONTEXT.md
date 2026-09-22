@@ -1,11 +1,11 @@
 # Nexus Prime Domain & Architecture Glossary
 
-This document records the Ubiquitous Language and Architectural Seams for `nexus-prime` (a general-purpose agentic assistant living on Telegram and a web cockpit).
+This document records the Ubiquitous Language and Architectural Seams for `nexus-prime` (an expense/finance assistant living on Telegram and a web cockpit).
 
 ## Core Architectural Modules & Seams
 
 ### 1. Dual-Surface Ingress Architecture
-- **Telegram (Ambient & Conversational Gateway)**: The always-on primary mobile chat interface. Handles conversational flows, photo/receipt snapshots, proactive reminder push notifications, ambient scheduled sweeps, and inline keyboard HITL confirmations.
+- **Telegram (Ambient & Conversational Gateway)**: The always-on primary mobile chat interface. Handles conversational flows, photo/receipt snapshots, and inline keyboard HITL confirmations.
 - **Web Cockpit (Visual Control Center & Copilot)**: The visual analytics and data control plane. Houses high-density metric cards, SVG breakdown charts, sortable/filterable transaction tables, batch operations, and a collapsible contextual AI Copilot Drawer that reactively synchronizes the visual dashboard in real time.
 - **TelegramIngress**: A deep adapter module (`app/ingress.py`) that encapsulates all Telegram Bot API concerns:
   - Verifies incoming webhook payloads and normalizes user/chat IDs.
@@ -21,7 +21,6 @@ This document records the Ubiquitous Language and Architectural Seams for `nexus
   - `TerminationIntent` — "stop"/"cancel"/"that's enough" end the turn.
   - `MediaTurn` — receipt-expense extraction first, multimodal description as fallback.
   - `IncomeWrite` — incoming-money parsing + persistence (and friend-repayment IOU settlement) stay deterministic; money writes never depend on the model.
-  - `BusContinuation` — a pending bus-stop disambiguation answer stays inside the live LTA arrivals handler.
   - `GuardrailPolicy` — unsupported transactional categories (bank transfers, bookings, smart home, email send) are refused honestly and logged as capability-gap telemetry.
   - `SelfDiagnosis` — "why did you..."/"is this broken?" questions are answered from the bot's own integration health (`orchestrator/self_diagnostics.py`), not routed into a skill flow.
   - `IdentityGuard` — any model-supplied `user_id` is overridden with the authenticated one before a tool runs.
@@ -32,5 +31,5 @@ This document records the Ubiquitous Language and Architectural Seams for `nexus
 - **SkillTool**: An optional `skills/<name>/tools.py` holding `@tool` callables owned by that skill; loaded lazily alongside core tools.
 - **ToolRegistry**: The name → callable index of every executable `@tool` across `capabilities/*/tools.py`, `orchestrator/recipes.py`, and skill-owned `tools.py` modules. Frontmatter `tools:` entries resolve against it; unknown names warn at load.
 - **SkillIndex**: The compact one-line-per-skill listing injected into the agent's system prompt.
-- **Capability**: The union of a Skill and the tools it declares. Instances: web-research, expenses, transit (live LTA bus arrivals + Google Maps journeys), email, reminders, recipes-groceries, memory (points/miles balances), bug-logging, daily-briefing, whiteboard-planning, composed-recipes, code-exec (kernel-gated to admins).
+- **Capability**: The union of a Skill and the tools it declares. Instances: expenses, email, web-research.
 - **Multi-tenancy**: Every tool is user-scoped via the IdentityGuard; `admin_only_capabilities` (config) gates sensitive skills.

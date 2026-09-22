@@ -29,11 +29,8 @@ class Settings(BaseSettings):
     openrouter_model: Optional[str] = None
 
     # Capability Plugin & External Service API Keys
-    tavily_api_key: Optional[str] = None
     google_client_id: Optional[str] = None
     google_client_secret: Optional[str] = None
-    google_maps_api_key: Optional[str] = None
-    lta_account_key: Optional[str] = None
     microsoft_client_id: Optional[str] = None
     microsoft_client_secret: Optional[str] = None
     microsoft_tenant: str = "consumers"  # Personal Microsoft accounts use /consumers, not /common
@@ -84,7 +81,7 @@ class Settings(BaseSettings):
         return os.path.join(base_dir, self.data_dir)
 
     # Capability Access Control — skills a non-admin user must never reach.
-    admin_only_capabilities: set[str] = {"code-exec"}
+    admin_only_capabilities: set[str] = set()
     # Outer bound on a whole graph turn (ingress + web chat). The agent loop
     # inside is deliberately unbounded; this exists only so a wedged turn --
     # e.g. hung checkpoint I/O -- degrades into an honest error reply and a
