@@ -50,3 +50,38 @@ async def test_expense_unique_source_message_id():
         session.add(tx2)
         with pytest.raises(IntegrityError):
             await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_user_profile_email_fields():
+    """Verify email_exclude_domains and email_content_type_presets store/read correctly,
+    and that empty defaults are [] not None."""
+    async with async_session_factory() as session:
+        user = UserProfile(
+            user_id=2002,
+            telegram_chat_id=6002,
+            email_exclude_domains=["noreply.com", "alerts.example.com"],
+            email_content_type_presets=["purchase", "receipt"],
+        )
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+
+        assert user.email_exclude_domains == ["noreply.com", "alerts.example.com"]
+        assert user.email_content_type_presets == ["purchase", "receipt"]
+
+
+@pytest.mark.asyncio
+async def test_user_profile_email_fields_defaults():
+    """Verify default values for email fields are [] not None."""
+    async with async_session_factory() as session:
+        user = UserProfile(
+            user_id=2003,
+            telegram_chat_id=6003,
+        )
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+
+        assert user.email_exclude_domains == []
+        assert user.email_content_type_presets == []

@@ -1,4 +1,5 @@
 import pytest
+import pytest_asyncio
 from pytest import MonkeyPatch
 from sqlmodel import select
 from core.shared_tools.email_presets import build_gmail_query
@@ -86,6 +87,69 @@ def test_outlook_query_builder():
 
     custom = build_outlook_query(custom_query="receipt")
     assert custom["$search"] == '"receipt"'
+
+
+def test_gmail_query_exclude_domains():
+    """Excluded domains produce -from: clauses and don't break normal query."""
+    # Excluding domains adds -from: clauses
+    query = build_gmail_query(
+        tracked_banks=["chase.com"],
+        exclude_domains=["nigerian-scam.com", "spam.example.com"],
+    )
+    assert "chase.com" in query
+    assert "-from:nigerian-scam.com" in query
+    assert "-from:spam.example.com" in query
+    assert "newer_than:7d" in query
+
+    # Empty exclude_domains = identical output
+    no_exclude = build_gmail_query(tracked_banks=["chase.com"])
+    with_exclude_empty = build_gmail_query(tracked_banks=["chase.com"], exclude_domains=[])
+    assert no_exclude == with_exclude_empty
+
+    # custom_query path unchanged — no exclusion applied
+    custom = build_gmail_query(custom_query="receipt", exclude_domains=["spam.com"])
+    assert custom == "receipt"
+
+
+def test_outlook_query_exclude_domains():
+    """Excluded domains produce $filter clauses and don't break normal query."""
+    odata_params = build_outlook_query(
+        tracked_banks=["chase.com"],
+        exclude_domains=["spam.com", "noreply.com"],
+    )
+    assert "chase.com" in odata_params["$search"]
+    assert "not(from/emailAddress/address eq 'spam.com')" in odata_params["$filter"]
+    assert "not(from/emailAddress/address eq 'noreply.com')" in odata_params["$filter"]
+    assert "not(categories/any(c:c eq 'Assistant/Processed'))" in odata_params["$filter"]
+
+    # Empty exclude_domains = identical output
+    no_exclude = build_outlook_query(tracked_banks=["chase.com"])
+    with_exclude_empty = build_outlook_query(tracked_banks=["chase.com"], exclude_domains=[])
+    assert no_exclude == with_exclude_empty
+
+    # custom_query path unchanged — exclusion appended to filter
+    custom = build_outlook_query(custom_query="receipt", exclude_domains=["spam.com"])
+    assert custom["$search"] == '"receipt"'
+    assert "not(from/emailAddress/address eq 'spam.com')" in custom["$filter"]
+
+
+@pytest.mark.asyncio
+async def test_mock_provider_body_field():
+    """Live invocation of mock providers returns dicts with 'body' key."""
+    from capabilities.email.providers import GmailProvider, OutlookProvider
+
+    gmail = GmailProvider()
+    outlook = OutlookProvider()
+
+    gmail_result = await gmail.search_messages(user_id=9999, tracked_banks=[], exclude_domains=[])
+    assert len(gmail_result) == 1
+    assert "body" in gmail_result[0]
+    assert isinstance(gmail_result[0]["body"], str)
+
+    outlook_result = await outlook.search_messages(user_id=9999, tracked_banks=[], exclude_domains=[])
+    assert len(outlook_result) == 1
+    assert "body" in outlook_result[0]
+    assert isinstance(outlook_result[0]["body"], str)
 
 @pytest.mark.asyncio
 async def test_search_email_messages_multi_provider():
@@ -994,6 +1058,487 @@ async def test_process_extracted_expense_clamps_out_of_range_confidence():
         "needs_clarification": False,
         "source_message_id": "test-clamp-process-extracted-expense",
     })
-    # Clamped to 1.0 (>= 0.8), so this takes the high-confidence silent-save
     # path rather than pausing on interrupt() -- not a duplicate/HITL status.
     assert result["status"] == "saved_silently"
+
+
+# --- Email presets tests -----------------------------------------------------
+
+
+@pytest_asyncio.fixture
+async def _seed_presets_profile():
+    """Create a UserProfile for the presets test user."""
+    from core.db import async_session_factory
+    from core.models import UserProfile
+
+    async with async_session_factory() as session:
+        session.add(UserProfile(user_id=4000, telegram_chat_id=4000))
+        await session.commit()
+    yield
+
+
+@pytest_asyncio.fixture
+async def _seed_presets_profile_4001():
+    from core.db import async_session_factory
+    from core.models import UserProfile
+
+    async with async_session_factory() as session:
+        session.add(UserProfile(user_id=4001, telegram_chat_id=4001))
+        await session.commit()
+    yield
+
+
+@pytest_asyncio.fixture
+async def _seed_presets_profile_4002():
+    from core.db import async_session_factory
+    from core.models import UserProfile
+
+    async with async_session_factory() as session:
+        session.add(UserProfile(user_id=4002, telegram_chat_id=4002))
+        await session.commit()
+    yield
+
+
+@pytest_asyncio.fixture
+async def _seed_presets_profile_4003():
+    from core.db import async_session_factory
+    from core.models import UserProfile
+
+    async with async_session_factory() as session:
+        session.add(UserProfile(user_id=4003, telegram_chat_id=4003))
+        await session.commit()
+    yield
+
+
+@pytest_asyncio.fixture
+async def _seed_presets_profile_4004():
+    from core.db import async_session_factory
+    from core.models import UserProfile
+
+    async with async_session_factory() as session:
+        session.add(UserProfile(user_id=4004, telegram_chat_id=4004))
+        await session.commit()
+    yield
+
+
+@pytest_asyncio.fixture
+async def _seed_presets_profile_4005():
+    from core.db import async_session_factory
+    from core.models import UserProfile
+
+    async with async_session_factory() as session:
+        session.add(UserProfile(user_id=4005, telegram_chat_id=4005))
+        await session.commit()
+    yield
+
+
+@pytest.mark.asyncio
+async def test_get_email_presets_default_empty(_seed_presets_profile):
+    """get_email_presets returns empty lists for a fresh profile."""
+    from capabilities.email.tools import get_email_presets
+
+    result = await get_email_presets.ainvoke({"user_id": 4000})
+    assert result["status"] == "ok"
+    assert result["exclude_domains"] == []
+    assert result["content_type_presets"] == []
+
+
+@pytest.mark.asyncio
+async def test_update_email_presets_set_both(_seed_presets_profile_4001):
+    """set both fields, read back, assert exact values."""
+    from capabilities.email.tools import update_email_presets
+
+    result = await update_email_presets.ainvoke({
+        "user_id": 4001,
+        "exclude_domains": ["noreply@spam.com", "marketing@ads.com"],
+        "content_type_presets": ["receipt", "invoice", "bank_statement"],
+    })
+    assert result["status"] == "ok"
+    assert result["exclude_domains"] == ["noreply@spam.com", "marketing@ads.com"]
+    assert result["content_type_presets"] == ["receipt", "invoice", "bank_statement"]
+
+
+@pytest.mark.asyncio
+async def test_update_email_presets_partial_exclude_only(_seed_presets_profile_4002):
+    """partial update: only exclude_domains changes, content_type_presets stays."""
+    from capabilities.email.tools import update_email_presets, get_email_presets
+
+    await update_email_presets.ainvoke({
+        "user_id": 4002,
+        "exclude_domains": ["a@x.com"],
+        "content_type_presets": ["receipt"],
+    })
+
+    result = await update_email_presets.ainvoke({
+        "user_id": 4002,
+        "exclude_domains": ["b@y.com", "c@z.com"],
+    })
+    assert result["status"] == "ok"
+    assert result["exclude_domains"] == ["b@y.com", "c@z.com"]
+    assert result["content_type_presets"] == ["receipt"]
+
+    read_back = await get_email_presets.ainvoke({"user_id": 4002})
+    assert read_back["exclude_domains"] == ["b@y.com", "c@z.com"]
+    assert read_back["content_type_presets"] == ["receipt"]
+
+
+@pytest.mark.asyncio
+async def test_update_email_presets_partial_presets_only(_seed_presets_profile_4003):
+    """partial update: only content_type_presets changes, exclude_domains stays."""
+    from capabilities.email.tools import update_email_presets, get_email_presets
+
+    await update_email_presets.ainvoke({
+        "user_id": 4003,
+        "exclude_domains": ["keep@me.com"],
+        "content_type_presets": ["bill"],
+    })
+
+    result = await update_email_presets.ainvoke({
+        "user_id": 4003,
+        "content_type_presets": ["receipt", "statement"],
+    })
+    assert result["status"] == "ok"
+    assert result["exclude_domains"] == ["keep@me.com"]
+    assert result["content_type_presets"] == ["receipt", "statement"]
+
+    read_back = await get_email_presets.ainvoke({"user_id": 4003})
+    assert read_back["exclude_domains"] == ["keep@me.com"]
+    assert read_back["content_type_presets"] == ["receipt", "statement"]
+
+
+@pytest.mark.asyncio
+async def test_update_email_presets_clear_fields(_seed_presets_profile_4004):
+    """passing empty list clears the field."""
+    from capabilities.email.tools import update_email_presets, get_email_presets
+
+    await update_email_presets.ainvoke({
+        "user_id": 4004,
+        "exclude_domains": ["a@b.com"],
+        "content_type_presets": ["receipt"],
+    })
+
+    result = await update_email_presets.ainvoke({
+        "user_id": 4004,
+        "exclude_domains": [],
+    })
+    assert result["exclude_domains"] == []
+    assert result["content_type_presets"] == ["receipt"]
+
+    read_back = await get_email_presets.ainvoke({"user_id": 4004})
+    assert read_back["exclude_domains"] == []
+
+
+@pytest.mark.asyncio
+async def test_update_email_presets_invalid_user_graceful():
+    """update on non-existent user returns error, doesn't crash."""
+    from capabilities.email.tools import update_email_presets
+
+    result = await update_email_presets.ainvoke({
+        "user_id": 99999,
+        "exclude_domains": ["test@x.com"],
+    })
+    assert result["status"] == "error"
+    assert "no profile found" in result["message"].lower()
+
+
+@pytest.mark.asyncio
+async def test_get_email_presets_invalid_user_graceful():
+    """get on non-existent user returns error, doesn't crash."""
+    from capabilities.email.tools import get_email_presets
+
+    result = await get_email_presets.ainvoke({"user_id": 99998})
+    assert result["status"] == "error"
+    assert "no profile found" in result["message"].lower()
+
+
+@pytest.mark.asyncio
+async def test_update_email_presets_db_persistence(_seed_presets_profile_4005):
+    """verify the data actually persists in the database, not just in-memory."""
+    from capabilities.email.tools import update_email_presets, get_email_presets
+    from core.db import async_session_factory
+    from sqlmodel import select
+    from core.models import UserProfile
+
+    await update_email_presets.ainvoke({
+        "user_id": 4005,
+        "exclude_domains": ["spam@example.com"],
+        "content_type_presets": ["receipt", "invoice"],
+    })
+
+    # Read directly from DB
+    async with async_session_factory() as session:
+        result = await session.execute(select(UserProfile).where(UserProfile.user_id == 4005))
+        profile = result.scalar_one_or_none()
+        assert profile is not None
+        assert profile.email_exclude_domains == ["spam@example.com"]
+        assert profile.email_content_type_presets == ["receipt", "invoice"]
+
+    # Also verify through the tool
+    result = await get_email_presets.ainvoke({"user_id": 4005})
+    assert result["exclude_domains"] == ["spam@example.com"]
+    assert result["content_type_presets"] == ["receipt", "invoice"]
+
+
+# --- Outlook IMAP body extraction tests ---------------------------------------
+
+
+def test_outlook_imap_fetch_body_and_snippet(monkeypatch):
+    """_fetch_outlook_imap returns dict with both 'body' (full text) and 'snippet' (truncated)."""
+    import imaplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+    from capabilities.email.providers import _fetch_outlook_imap
+    from core.config import settings
+
+    # 1. Set credentials so the function doesn't bail early
+    monkeypatch.setattr(settings, "outlook_email", "test@outlook.com")
+    monkeypatch.setattr(settings, "outlook_app_password", "fake-app-password")
+
+    # 2. Build a multipart email with a long plain-text body
+    long_body = "Payment receipt for your recent purchase. " * 20  # ~600 chars
+    assert len(long_body) > 220, "test body must exceed snippet limit"
+
+    msg = MIMEMultipart("alternative")
+    msg["From"] = "Amazon <auto-confirm@amazon.com>"
+    msg["Subject"] = "Your Amazon.in order #123-4567890-1234567"
+    msg["Date"] = "Tue, 22 Sep 2026 14:30:00 +0000"
+    msg.attach(MIMEText(long_body, "plain", "utf-8"))
+    msg.attach(MIMEText(f"<html><body><p>{long_body}</p></body></html>", "html", "utf-8"))
+    raw_bytes = msg.as_bytes()
+
+    # 3. Mock the IMAP connection
+    class MockIMAP:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def login(self, user, password):
+            return ("OK", [b"LOGIN completed"])
+
+        def select(self, mailbox, readonly=True):
+            return ("OK", [b"1"])
+
+        def search(self, charset, *criteria):
+            return ("OK", [b"1"])
+
+        def uid(self, command, uid_value, fetch_spec):
+            return ("OK", [(b"1 (BODY[] {999}", raw_bytes)])
+
+        def logout(self):
+            return ("OK", [b"LOGOUT completed"])
+
+    monkeypatch.setattr(imaplib, "IMAP4_SSL", MockIMAP)
+
+    # 4. Execute the synchronous IMAP fetch
+    results = _fetch_outlook_imap(tracked_banks=[])
+
+    # 5. Assertions
+    assert len(results) == 1
+    entry = results[0]
+
+    # --- 'body' key: full text, not truncated ---
+    assert "body" in entry, "dict must contain 'body' key"
+    assert len(entry["body"]) > 220, "full body should not be truncated to snippet limit"
+    assert entry["body"] == long_body.strip(), "body should contain the full plain text"
+
+    # --- 'snippet' key: unchanged behavior (truncated to 220 chars) ---
+    assert "snippet" in entry, "dict must contain 'snippet' key"
+    assert len(entry["snippet"]) <= 220, "snippet should still be truncated"
+    assert entry["snippet"] == " ".join(long_body.split())[:220]
+
+    # --- existing fields preserved ---
+    assert entry["provider"] == "outlook"
+    assert "Amazon" in entry["subject"]
+    assert "auto-confirm@amazon.com" in entry["sender"]
+
+
+def test_outlook_imap_fetch_singlepart_body(monkeypatch):
+    """Single-part (non-multipart) emails also get full body extraction."""
+    import imaplib
+    from email.mime.text import MIMEText
+    from capabilities.email.providers import _fetch_outlook_imap
+    from core.config import settings
+
+    monkeypatch.setattr(settings, "outlook_email", "test@outlook.com")
+    monkeypatch.setattr(settings, "outlook_app_password", "fake-app-password")
+
+    body_text = "Thank you for your order. Total paid: $15.00 on 2026-08-01."
+    msg = MIMEText(body_text, "plain", "utf-8")
+    msg["From"] = "receipts@starbucks.com"
+    msg["Subject"] = "Your receipt from Starbucks"
+    msg["Date"] = "Sat, 01 Aug 2026 10:00:00 +0000"
+    raw_bytes = msg.as_bytes()
+
+    class MockIMAP:
+        def __init__(self, *args, **kwargs):
+            pass
+        def login(self, user, password):
+            return ("OK", [])
+        def select(self, mailbox, readonly=True):
+            return ("OK", [b"1"])
+        def search(self, charset, *criteria):
+            return ("OK", [b"1"])
+        def uid(self, command, uid_value, fetch_spec):
+            return ("OK", [(b"1 (BODY[] {200}", raw_bytes)])
+        def logout(self):
+            return ("OK", [])
+
+    monkeypatch.setattr(imaplib, "IMAP4_SSL", MockIMAP)
+
+    results = _fetch_outlook_imap(tracked_banks=[])
+    assert len(results) == 1
+    entry = results[0]
+
+    assert entry["body"] == body_text
+    assert entry["snippet"] == body_text  # short enough to fit in 220 chars
+    assert "provider" in entry
+    assert entry["provider"] == "outlook"
+
+
+# ── Laya transaction validation gate tests ─────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_log_expenses_laya_high_confidence(monkeypatch):
+    """Mock is_transaction_email returns 0.95 → email processed normally."""
+    from capabilities.expenses.tools import extract_expense_from_text, log_expenses_from_emails
+
+    async def fake_extract(**kwargs):
+        return {"amount": 42.0, "currency": "SGD", "merchant": "TestCo",
+                "category": "General", "date_iso": "", "confidence": 0.95,
+                "needs_clarification": False}
+
+    monkeypatch.setattr(extract_expense_from_text, "coroutine", fake_extract)
+
+    async def mock_laya(sender, subject, body):
+        return 0.95
+
+    monkeypatch.setattr("capabilities.expenses.tools.is_transaction_email", mock_laya)
+
+    result = await log_expenses_from_emails.ainvoke({
+        "user_id": 8810,
+        "emails": [{
+            "id": "laya-high-001",
+            "sender": "billing@example.com",
+            "subject": "Your receipt",
+            "body": "You paid $42.00 at TestCo.",
+            "date": "",
+        }],
+        "notify": False,
+    })
+
+    assert len(result["logged"]) == 1
+    assert result["logged"][0]["amount"] == 42.0
+    assert len(result["skipped"]) == 0
+
+
+@pytest.mark.asyncio
+async def test_log_expenses_laya_low_confidence(monkeypatch):
+    """Mock is_transaction_email returns 0.30 → email skipped AND tagged processed."""
+    from capabilities.expenses.tools import extract_expense_from_text, log_expenses_from_emails
+
+    async def fake_extract(**kwargs):
+        return {"amount": 42.0, "currency": "SGD", "merchant": "TestCo",
+                "category": "General", "date_iso": "", "confidence": 0.95,
+                "needs_clarification": False}
+
+    monkeypatch.setattr(extract_expense_from_text, "coroutine", fake_extract)
+
+    async def mock_laya(sender, subject, body):
+        return 0.30
+
+    monkeypatch.setattr("capabilities.expenses.tools.is_transaction_email", mock_laya)
+
+    tagged = []
+    async def _mock_tag(user_id, message_id, provider):
+        tagged.append(message_id)
+        return True
+    _mock_tag.ainvoke = lambda payload: _mock_tag(**payload)
+    monkeypatch.setattr("capabilities.expenses.tools.apply_email_processed_tag", _mock_tag)
+
+    result = await log_expenses_from_emails.ainvoke({
+        "user_id": 8811,
+        "emails": [{
+            "id": "laya-low-001",
+            "sender": "newsletter@promo.com",
+            "subject": "Great deals this week!",
+            "body": "Check out our latest offers.",
+            "date": "",
+        }],
+        "notify": False,
+    })
+
+    assert len(result["logged"]) == 0
+    assert len(result["skipped"]) == 1
+    assert result["skipped"][0].get("reason") == "non-transaction"
+    assert "laya-low-001" in tagged
+
+
+@pytest.mark.asyncio
+async def test_log_expenses_laya_mid_confidence(monkeypatch):
+    """Mock is_transaction_email returns 0.55 → extraction called, confidence clamped (< 0.8 → skipped)."""
+    from capabilities.expenses.tools import extract_expense_from_text, log_expenses_from_emails
+
+    async def fake_extract(**kwargs):
+        return {"amount": 50.0, "currency": "SGD", "merchant": "MidMerchant",
+                "category": "General", "date_iso": "", "confidence": 0.95,
+                "needs_clarification": False}
+
+    monkeypatch.setattr(extract_expense_from_text, "coroutine", fake_extract)
+
+    async def mock_laya(sender, subject, body):
+        return 0.55
+
+    monkeypatch.setattr("capabilities.expenses.tools.is_transaction_email", mock_laya)
+
+    result = await log_expenses_from_emails.ainvoke({
+        "user_id": 8812,
+        "emails": [{
+            "id": "laya-mid-001",
+            "sender": "billing@midmerchant.com",
+            "subject": "Your invoice",
+            "body": "You paid $50.00.",
+            "date": "",
+        }],
+        "notify": False,
+    })
+
+    # After clamping: confidence = min(0.95, 0.55) = 0.55, 0.55 < 0.8 → skipped by low-confidence check
+    assert len(result["logged"]) == 0
+    assert len(result["skipped"]) == 1
+    assert result["skipped"][0]["amount"] == 50.0
+    # This skipped entry comes from the existing low-confidence check (line 1531), not the Laya gate
+    assert "reason" not in result["skipped"][0]
+
+
+@pytest.mark.asyncio
+async def test_log_expenses_laya_not_installed(monkeypatch):
+    """is_transaction_email returns 0.5 (Laya not installed fallback) → extraction proceeds as before."""
+    from capabilities.expenses.tools import extract_expense_from_text, log_expenses_from_emails
+
+    async def fake_extract(**kwargs):
+        return {"amount": 60.0, "currency": "SGD", "merchant": "DirectShop",
+                "category": "General", "date_iso": "", "confidence": 0.92,
+                "needs_clarification": False}
+
+    monkeypatch.setattr(extract_expense_from_text, "coroutine", fake_extract)
+
+    async def mock_laya(sender, subject, body):
+        return 0.5  # fallback value when Laya is not installed
+
+    monkeypatch.setattr("capabilities.expenses.tools.is_transaction_email", mock_laya)
+
+    result = await log_expenses_from_emails.ainvoke({
+        "user_id": 8813,
+        "emails": [{
+            "id": "laya-notinst-001",
+            "sender": "shop@direct.com",
+            "subject": "Order confirmation",
+            "body": "Your order for $60.00 is confirmed.",
+            "date": "",
+        }],
+        "notify": False,
+    })
+
+    # 0.5 is treated as "proceed normally" (same as >= 0.85) → logged
+    assert len(result["logged"]) == 1
+    assert result["logged"][0]["amount"] == 60.0

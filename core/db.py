@@ -125,6 +125,35 @@ async def init_db() -> None:
             if not _is_duplicate_column_error(exc):
                 logger.warning("Migration for expense notes skipped: %s", exc)
 
+        # Idempotent migration: email search configuration columns for UserProfile
+        try:
+            db_url = settings.resolved_database_url
+            if db_url.startswith("sqlite"):
+                await conn.execute(
+                    text("ALTER TABLE userprofile ADD COLUMN email_exclude_domains JSON DEFAULT '[]'")
+                )
+            else:
+                await conn.execute(
+                    text("ALTER TABLE userprofile ADD COLUMN IF NOT EXISTS email_exclude_domains JSON DEFAULT '[]'::json")
+                )
+        except (OperationalError, ProgrammingError) as exc:
+            if not _is_duplicate_column_error(exc):
+                logger.warning("Migration for email_exclude_domains skipped: %s", exc)
+
+        try:
+            db_url = settings.resolved_database_url
+            if db_url.startswith("sqlite"):
+                await conn.execute(
+                    text("ALTER TABLE userprofile ADD COLUMN email_content_type_presets JSON DEFAULT '[]'")
+                )
+            else:
+                await conn.execute(
+                    text("ALTER TABLE userprofile ADD COLUMN IF NOT EXISTS email_content_type_presets JSON DEFAULT '[]'::json")
+                )
+        except (OperationalError, ProgrammingError) as exc:
+            if not _is_duplicate_column_error(exc):
+                logger.warning("Migration for email_content_type_presets skipped: %s", exc)
+
         # Idempotent linkage fields keep repayments and IOU tasks synchronized
         # with the parent expense while preserving existing records.
         db_url = settings.resolved_database_url
