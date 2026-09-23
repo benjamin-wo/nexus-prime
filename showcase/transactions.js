@@ -166,7 +166,7 @@ window.settleUnifiedIou = async function settleUnifiedIou(key, participant) {
   }
 };
 
-window.deleteUnifiedTransaction = async function deleteUnifiedTransaction(key) {
+window.deleteRowTransaction = async function deleteRowTransaction(key) {
   const row = transactionLedgerState.rows.find((r) => r.id === key);
   const label = row ? row.title : key;
   if (!confirm(`Delete this transaction (${label})? This cannot be undone.`)) return false;
@@ -201,7 +201,7 @@ function initUnifiedTransactions() {
     if (button.dataset.action === "settle") window.settleUnifiedIou(key, decodeURIComponent(button.dataset.participant || ""));
     if (button.dataset.action === "edit") openTransactionEntry("outgoing", transactionLedgerState.rows.find((row) => row.id === key));
     if (button.dataset.action === "details") window.openTransactionDetailsModal(Number(button.dataset.recordId));
-    if (button.dataset.action === "delete") window.deleteUnifiedTransaction(key);
+    if (button.dataset.action === "delete") window.deleteRowTransaction(key);
   });
   transactionElement("pagination-nav-container")?.addEventListener("click", (event) => { const button = event.target.closest("button[data-page]"); if (button && !button.disabled) { transactionLedgerState.page = Number(button.dataset.page); renderUnifiedTransactions(); } });
   document.querySelectorAll(".transaction-direction-btn").forEach((button) => button.addEventListener("click", () => setTransactionDirection(button.dataset.direction)));
