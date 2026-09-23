@@ -120,8 +120,8 @@ async def find_cross_source_duplicate(
                 ExpenseTransaction.currency == currency,
                 ExpenseTransaction.amount >= amount - tolerance,
                 ExpenseTransaction.amount <= amount + tolerance,
-                ExpenseTransaction.date >= window_start.replace(tzinfo=None),
-                ExpenseTransaction.date <= window_end.replace(tzinfo=None),
+                ExpenseTransaction.date >= window_start.astimezone(dt_timezone.utc),
+                ExpenseTransaction.date <= window_end.astimezone(dt_timezone.utc),
             ).order_by(ExpenseTransaction.date.desc()).limit(20)
         )
         candidates = result.scalars().all()
@@ -1001,10 +1001,10 @@ async def get_user_expenses(
         if since_date:
             try:
                 cutoff = datetime.fromisoformat(since_date)
-                # DB column is TIMESTAMP WITHOUT TIME ZONE — strip tz to avoid asyncpg mismatch
+                # DB column is TIMESTAMP WITH TIME ZONE — keep tz-aware UTC
                 if cutoff.tzinfo is not None:
                     from datetime import timezone as _dt_tz
-                    cutoff = cutoff.astimezone(_dt_tz.utc).replace(tzinfo=None)
+                    cutoff = cutoff.astimezone(_dt_tz.utc)
             except ValueError:
                 cutoff = None
             if cutoff:
@@ -1014,7 +1014,7 @@ async def get_user_expenses(
                 cutoff_end = datetime.fromisoformat(until_date)
                 if cutoff_end.tzinfo is not None:
                     from datetime import timezone as _dt_tz
-                    cutoff_end = cutoff_end.astimezone(_dt_tz.utc).replace(tzinfo=None)
+                    cutoff_end = cutoff_end.astimezone(_dt_tz.utc)
             except ValueError:
                 cutoff_end = None
             if cutoff_end:
@@ -1320,7 +1320,7 @@ async def undo_last_write(user_id: int = 0) -> str:
 
 
 async def _parse_ledger_date(value: Optional[str]) -> Optional[datetime]:
-    """Normalize an ISO date string to naive UTC for TIMESTAMP WITHOUT TIME ZONE columns."""
+    """Normalize an ISO date string to tz-aware UTC for TIMESTAMP WITH TIME ZONE columns."""
     if not value:
         return None
     try:
@@ -1328,8 +1328,8 @@ async def _parse_ledger_date(value: Optional[str]) -> Optional[datetime]:
     except ValueError:
         return None
     if parsed.tzinfo is not None:
-        return parsed.astimezone(dt_timezone.utc).replace(tzinfo=None)
-    return parsed
+        return parsed.astimezone(dt_timezone.utc)
+    return parsed.replace(tzinfo=dt_timezone.utc)
 
 
 async def query_unified_transactions(
@@ -1573,8 +1573,10 @@ async def log_expenses_from_emails(
         # Trustworthy anchor (email receive time) + drift-guarded extracted date
         reconciled = _reconcile_expense_date(extracted_dt, email_dt)
         if hasattr(reconciled, "tzinfo") and reconciled.tzinfo:
-            reconciled = reconciled.astimezone(dt_timezone.utc).replace(tzinfo=None)
-        expense_date = _to_naive_utc(reconciled)
+            reconciled = reconciled.astimezone(dt_timezone.utc)
+        else:
+            reconciled = reconciled.replace(tzinfo=dt_timezone.utc)
+        expense_date = reconciled
 
         # Layer 3: the same purchase often arrives twice — a receipt from the
         # merchant AND a transaction alert from the bank. Log it once.
