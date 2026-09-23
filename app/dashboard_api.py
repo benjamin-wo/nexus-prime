@@ -618,7 +618,7 @@ async def create_transaction(
             await session.flush()
 
         transaction_date = _parse_iso_datetime(req.date) if req.date else None
-        transaction_date = transaction_date or datetime.utcnow()
+        transaction_date = transaction_date or datetime.now(timezone.utc)
         currency = req.currency.strip().upper()
 
         match req.direction:
@@ -1355,7 +1355,7 @@ def _parse_iso_datetime(dt_str: Optional[str]) -> Optional[datetime]:
         clean = dt_str.strip().replace("Z", "+00:00")
         dt = datetime.fromisoformat(clean)
         if dt.tzinfo is not None:
-            dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+            dt = dt.astimezone(timezone.utc)
         return dt
     except Exception:
         return None
