@@ -1017,6 +1017,15 @@ function initTransactionDetailsModal() {
     });
   }
 
+  // Fetch email context handler
+  const fetchCtxBtn = document.getElementById("btn-fetch-email-context");
+  if (fetchCtxBtn) {
+    fetchCtxBtn.addEventListener("click", () => {
+      const expenseId = fetchCtxBtn.dataset.expenseId;
+      if (expenseId) window.fetchEmailContext(expenseId);
+    });
+  }
+
   // Save details handler
   if (btnSave) {
     btnSave.addEventListener("click", saveTransactionDetails);
@@ -1299,6 +1308,27 @@ async function openTransactionDetailsModal(expenseId) {
   if (dateSub) dateSub.textContent = `Recorded on ${formatExpenseDateTime(expense.date)}`;
   if (totalVal) totalVal.textContent = `$${expense.amount.toFixed(2)}`;
 
+  // Payment context block
+  const contextBlock = document.getElementById("tx-payment-context-block");
+  const contextText = document.getElementById("tx-payment-context-text");
+  const fetchBtn = document.getElementById("btn-fetch-email-context");
+  if (contextBlock) {
+    if (expense.notes) {
+      if (contextText) contextText.textContent = expense.notes;
+      if (fetchBtn) fetchBtn.style.display = "none";
+      contextBlock.style.display = "flex";
+    } else if (expense.source === "gmail" || expense.from_email) {
+      if (contextText) contextText.textContent = "";
+      if (fetchBtn) {
+        fetchBtn.style.display = "";
+        fetchBtn.dataset.expenseId = expense.id;
+      }
+      contextBlock.style.display = "flex";
+    } else {
+      contextBlock.style.display = "none";
+    }
+  }
+
   // Meta inputs
   const merchantInput = document.getElementById("tx-detail-input-merchant");
   const catSelect = document.getElementById("tx-detail-input-category");
@@ -1399,6 +1429,25 @@ async function openTransactionDetailsModal(expenseId) {
 
   modal.style.display = "flex";
 }
+
+window.fetchEmailContext = async function fetchEmailContext(expenseId) {
+  try {
+    const res = await fetch(getApiUrl(`/api/dashboard/expenses/${expenseId}/email-context`));
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || `Server returned ${res.status}`);
+    if (data.context) {
+      const contextText = document.getElementById("tx-payment-context-text");
+      const fetchBtn = document.getElementById("btn-fetch-email-context");
+      if (contextText) contextText.textContent = data.context;
+      if (fetchBtn) fetchBtn.style.display = "none";
+      showToast("Email context loaded");
+    } else {
+      showToast("No email context found for this transaction");
+    }
+  } catch (error) {
+    showToast(`Could not fetch email context: ${error.message}`, "danger");
+  }
+};
 
 function closeTransactionDetailsModal() {
   const modal = document.getElementById("modal-transaction-details");

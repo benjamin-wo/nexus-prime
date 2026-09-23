@@ -28,6 +28,14 @@ from core.tool_guard import identity_bound
 from capabilities.expenses.schemas import ExtractedExpense
 from capabilities.email.tools import apply_gmail_processed_label, apply_email_processed_tag
 
+try:
+    from capabilities.email.validation import is_transaction_email
+except ImportError:
+    async def is_transaction_email(
+        sender: str, subject: str, body: str
+    ) -> float:
+        return 0.5
+
 def _clamp_confidence(raw: Any) -> float:
     """ExtractedExpense.confidence is constrained to [0.0, 1.0] (schemas.py),
     but the LLM extraction occasionally returns an out-of-range value (e.g.
@@ -442,6 +450,7 @@ async def save_expense_transaction(
     is_verified: bool = True,
     source_sender_domain: Optional[str] = None,
     logged_at: Optional[datetime] = None,
+    notes: Optional[str] = None,
 ) -> ExpenseTransaction:
     """Persist ExtractedExpense to PostgreSQL ExpenseTransaction table with normalized category."""
     async with async_session_factory() as session:
@@ -457,6 +466,7 @@ async def save_expense_transaction(
             source_sender_domain=(source_sender_domain or "").lower() or None,
             logged_at=logged_at,
             is_verified=is_verified,
+            notes=notes,
         )
         session.add(tx)
         await session.commit()
@@ -1481,10 +1491,43 @@ async def log_expenses_from_emails(
         if email_id and await is_duplicate_expense(email_id):
             continue
 
+        # Laya transaction validation gate
+        try:
+            laya_prob = await is_transaction_email(
+                sender=sender, subject=subject, body=body_text
+            )
+        except Exception:
+            laya_prob = 0.5
+
+        if laya_prob != 0.5 and laya_prob < 0.40:
+            skipped.append({
+                "amount": 0,
+                "currency": "SGD",
+                "merchant": _sender_domain(sender),
+                "reason": "non-transaction",
+            })
+            if email_id:
+                try:
+                    provider = email_msg.get("provider", "gmail")
+                    await apply_email_processed_tag.ainvoke(
+                        {"user_id": user_id, "message_id": email_id, "provider": provider}
+                    )
+                except Exception as tag_err:
+                    print(f"[EXPENSES] Failed to tag non-transaction email {email_id}: {tag_err}")
+            continue
+
+        needs_confidence_clamp = 0.40 <= laya_prob < 0.85 and laya_prob != 0.5
+
         text = f"Sender: {sender}\nSubject: {subject}\nBody: {body_text}"
         extracted = await extract_expense_from_text.ainvoke({"user_text": text})
         if not extracted or not extracted.get("amount"):
             continue
+
+        if needs_confidence_clamp:
+            extracted["confidence"] = min(
+                extracted.get("confidence", 0.9),
+                laya_prob,
+            )
 
         merchant = _resolve_email_merchant(
             extracted_merchant=extracted.get("merchant"),
@@ -1567,6 +1610,12 @@ async def log_expenses_from_emails(
             confidence=_clamp_confidence(extracted.get("confidence", 0.9)),
             needs_clarification=False,
         )
+        # Build compact email context for notes
+        context = ""
+        if subject or snippet:
+            context = f"{subject} — {snippet}".strip(" —")[:300]
+        elif subject or body_text:
+            context = f"{subject} — {body_text[:200]}".strip(" —")[:300]
         tx = await save_expense_transaction(
             user_id=user_id,
             expense=expense,
@@ -1574,6 +1623,7 @@ async def log_expenses_from_emails(
             is_verified=True,
             source_sender_domain=sender_domain or None,
             logged_at=datetime.utcnow(),
+            notes=context or None,
         )
         if email_id:
             try:

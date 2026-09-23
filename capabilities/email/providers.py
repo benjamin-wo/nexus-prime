@@ -51,10 +51,33 @@ def _body_snippet(message: email.message.Message, limit: int = 220) -> str:
     return ""
 
 
+def _extract_body_text(message: email.message.Message) -> str:
+    """Extract the full plain-text body from a parsed email message (no truncation)."""
+    if message.is_multipart():
+        for part in message.walk():
+            if part.get_content_type() == "text/plain" and part.get_payload(decode=True):
+                try:
+                    text = part.get_payload(decode=True).decode(
+                        part.get_content_charset() or "utf-8", errors="replace"
+                    )
+                except Exception:
+                    continue
+                return text.strip()
+    payload = message.get_payload(decode=True)
+    if payload:
+        try:
+            text = payload.decode(message.get_content_charset() or "utf-8", errors="replace")
+        except Exception:
+            return ""
+        return text.strip()
+    return ""
+
+
 def _fetch_outlook_imap(
     tracked_banks: List[str],
     custom_query: Optional[str] = None,
     latest: bool = False,
+    exclude_domains: Optional[List[str]] = None,
     limit: int = 10,
 ) -> List[Dict[str, Any]]:
     """
@@ -94,6 +117,7 @@ def _fetch_outlook_imap(
             sender = _decode_mime(msg.get("From"))
             subject = _decode_mime(msg.get("Subject"))
             body = _body_snippet(msg)
+            full_body_text = _extract_body_text(msg)
             date = _decode_mime(msg.get("Date"))
 
             sender_domain = sender.split("@")[-1].strip().lower() if "@" in sender else ""
@@ -106,7 +130,11 @@ def _fetch_outlook_imap(
                 not tracked_banks
                 or any(domain in sender_domain for domain in tracked_banks)
             )
-            if not latest and (not matches_custom or not matches_bank):
+            matches_exclude = (
+                not exclude_domains
+                or not any(domain in sender_domain for domain in exclude_domains)
+            )
+            if not latest and (not matches_custom or not matches_bank or not matches_exclude):
                 continue
 
             raw_date = _decode_mime(msg.get("Date"))
@@ -125,6 +153,7 @@ def _fetch_outlook_imap(
                     "provider": "outlook",
                     "subject": subject or "(no subject)",
                     "sender": sender,
+                    "body": full_body_text,
                     "snippet": body or "(no text body)",
                     "date": date_iso,
                     "query_used": custom_query or f"recent since {since}",
@@ -201,10 +230,14 @@ class EmailProvider(Protocol):
         tracked_banks: List[str],
         custom_query: Optional[str] = None,
         latest: bool = False,
+        exclude_domains: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
         ...
 
     async def apply_processed_label(self, user_id: int, message_id: str) -> bool:
+        ...
+
+    async def get_message_by_id(self, user_id: int, message_id: str) -> Optional[Dict[str, Any]]:
         ...
 
 class GmailProvider:
@@ -215,11 +248,12 @@ class GmailProvider:
         tracked_banks: List[str],
         custom_query: Optional[str] = None,
         latest: bool = False,
+        exclude_domains: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
         if settings.google_client_id:
-            return await self._search_real_gmail(user_id, tracked_banks, custom_query, latest)
+            return await self._search_real_gmail(user_id, tracked_banks, custom_query, latest, exclude_domains)
 
-        query = build_gmail_query(tracked_banks=tracked_banks, custom_query=custom_query)
+        query = build_gmail_query(tracked_banks=tracked_banks, custom_query=custom_query, exclude_domains=exclude_domains)
         # No OAuth client configured (local tests/dev): structured mock for pipeline tests.
         return [
             {
@@ -227,6 +261,7 @@ class GmailProvider:
                 "provider": "gmail",
                 "subject": "Your receipt from Starbucks",
                 "sender": "receipts@starbucks.com",
+                "body": "",
                 "snippet": "Thank you for your order. Total paid: $15.00 on 2026-08-01.",
                 "date": "2026-08-01T10:00:00Z",
                 "query_used": query,
@@ -239,6 +274,7 @@ class GmailProvider:
         tracked_banks: List[str],
         custom_query: Optional[str] = None,
         latest: bool = False,
+        exclude_domains: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
         """Fetch real messages from the Gmail API using the stored OAuth refresh token."""
         refresh_token = await _get_gmail_refresh_token(user_id)
@@ -248,7 +284,7 @@ class GmailProvider:
 
         # Informational "latest email" lookups fetch the newest messages with no
         # financial keyword filter; the Gmail API returns newest-first by default.
-        query = "" if latest else build_gmail_query(tracked_banks=tracked_banks, custom_query=custom_query)
+        query = "" if latest else build_gmail_query(tracked_banks=tracked_banks, custom_query=custom_query, exclude_domains=exclude_domains)
         async with httpx.AsyncClient(timeout=30.0) as client:
             access_token = await _refresh_gmail_access_token(client, refresh_token)
             if not access_token:
@@ -380,6 +416,42 @@ class GmailProvider:
             print(f"[GMAIL] label apply error: {exc}")
             return False
 
+    async def get_message_by_id(self, user_id: int, message_id: str) -> Optional[Dict[str, Any]]:
+        """Fetch a single Gmail message by ID and return subject/sender/snippet/date."""
+        refresh_token = await _get_gmail_refresh_token(user_id)
+        if not refresh_token:
+            return None
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                access_token = await _refresh_gmail_access_token(client, refresh_token)
+                if not access_token:
+                    return None
+                headers = {"Authorization": f"Bearer {access_token}"}
+                resp = await client.get(
+                    f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{message_id}",
+                    params={"format": "metadata", "metadataHeaders": ["Subject", "From", "Date"]},
+                    headers=headers,
+                )
+                if resp.status_code != 200:
+                    print(f"[GMAIL] get_message_by_id failed: {resp.status_code} {resp.text[:200]}")
+                    return None
+                data = resp.json()
+                payload = data.get("payload", {})
+                header_map = {
+                    (h.get("name") or "").lower(): h.get("value", "")
+                    for h in payload.get("headers", [])
+                }
+                return {
+                    "id": message_id,
+                    "subject": header_map.get("subject") or "(no subject)",
+                    "sender": header_map.get("from", ""),
+                    "snippet": data.get("snippet", ""),
+                    "date": header_map.get("date", ""),
+                }
+        except Exception as exc:  # noqa: BLE001
+            print(f"[GMAIL] get_message_by_id error: {exc}")
+            return None
+
 
 async def _get_gmail_refresh_token(user_id: int) -> Optional[str]:
     """Return the decrypted Gmail refresh token for a user, or None if not connected."""
@@ -430,19 +502,20 @@ class OutlookProvider:
         tracked_banks: List[str],
         custom_query: Optional[str] = None,
         latest: bool = False,
+        exclude_domains: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
         # 1. Per-user OAuth via Microsoft Graph (preferred)
         refresh_token = await _get_outlook_refresh_token(user_id)
         if refresh_token:
-            return await self._search_real_outlook(user_id, refresh_token, tracked_banks, custom_query, latest)
+            return await self._search_real_outlook(user_id, refresh_token, tracked_banks, custom_query, latest, exclude_domains)
 
         # 2. Single-mailbox IMAP fallback from environment credentials
         if settings.outlook_email and settings.outlook_app_password:
             return await asyncio.to_thread(
-                _fetch_outlook_imap, tracked_banks, custom_query, latest
+                _fetch_outlook_imap, tracked_banks, custom_query, latest, exclude_domains
             )
 
-        odata_params = build_outlook_query(tracked_banks=tracked_banks, custom_query=custom_query)
+        odata_params = build_outlook_query(tracked_banks=tracked_banks, custom_query=custom_query, exclude_domains=exclude_domains)
         # No mailbox credentials configured: keep the structured mock for local tests/dev.
         return [
             {
@@ -450,6 +523,7 @@ class OutlookProvider:
                 "provider": "outlook",
                 "subject": "Payment receipt from Amazon",
                 "sender": "auto-confirm@amazon.com",
+                "body": "",
                 "snippet": "Your order has been charged. Total paid: $42.50 on 2026-08-01.",
                 "date": "2026-08-01T11:30:00Z",
                 "query_used": odata_params,
@@ -463,9 +537,10 @@ class OutlookProvider:
         tracked_banks: List[str],
         custom_query: Optional[str] = None,
         latest: bool = False,
+        exclude_domains: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
         """Fetch real messages from Microsoft Graph using the stored OAuth refresh token."""
-        query_params = build_outlook_query(tracked_banks=tracked_banks, custom_query=custom_query)
+        query_params = build_outlook_query(tracked_banks=tracked_banks, custom_query=custom_query, exclude_domains=exclude_domains)
         since = (datetime.now(dt_timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -562,6 +637,42 @@ class OutlookProvider:
         except Exception as exc:  # noqa: BLE001
             print(f"[OUTLOOK] label apply error: {exc}")
             return False
+
+    async def get_message_by_id(self, user_id: int, message_id: str) -> Optional[Dict[str, Any]]:
+        """Fetch a single Outlook message by ID and return subject/sender/snippet/date."""
+        refresh_token = await _get_outlook_refresh_token(user_id)
+        if not refresh_token:
+            return None
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                access_token = await _refresh_outlook_access_token(client, refresh_token)
+                if not access_token:
+                    return None
+                headers = {"Authorization": f"Bearer {access_token}"}
+                resp = await client.get(
+                    f"https://graph.microsoft.com/v1.0/me/messages/{message_id}",
+                    params={"$select": "subject,from,receivedDateTime,bodyPreview"},
+                    headers=headers,
+                )
+                if resp.status_code != 200:
+                    print(f"[OUTLOOK] get_message_by_id failed: {resp.status_code} {resp.text[:200]}")
+                    return None
+                data = resp.json()
+                sender_raw = (data.get("from") or {}).get("emailAddress") or {}
+                sender = (
+                    f"{sender_raw.get('name', '')} <{sender_raw.get('address', '')}>".strip(" <>")
+                    or sender_raw.get("address", "")
+                )
+                return {
+                    "id": message_id,
+                    "subject": data.get("subject") or "(no subject)",
+                    "sender": sender,
+                    "snippet": data.get("bodyPreview") or "",
+                    "date": data.get("receivedDateTime") or "",
+                }
+        except Exception as exc:  # noqa: BLE001
+            print(f"[OUTLOOK] get_message_by_id error: {exc}")
+            return None
 
 
 def _html_to_text(html_body: str, limit: int = 4000) -> str:

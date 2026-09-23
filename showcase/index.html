@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="styles.css?v=2a8f1c73e4" />
+  <link rel="stylesheet" href="styles.css?v=3f9a1c7b2d" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>" />
 </head>
 <body>
@@ -422,6 +422,13 @@
         </div>
       </div>
 
+      <!-- Payment context block -->
+      <div class="tx-payment-context" id="tx-payment-context-block" style="display: none;">
+        <span class="tx-payment-context-label">Payment context</span>
+        <span id="tx-payment-context-text"></span>
+        <button type="button" class="btn-fetch-context" id="btn-fetch-email-context" style="display: none;">Fetch email context</button>
+      </div>
+
       <!-- Segmented Tab Navigation inside Modal -->
       <div class="tx-modal-tabs">
         <button type="button" class="tx-tab-btn active" id="btn-tx-tab-receipt" data-tab="tx-tab-pane-receipt">
@@ -620,8 +627,8 @@
   <!-- Toast Notification Overlay -->
   <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
-  <script src="app.js?v=42"></script>
-  <script src="transactions.js?v=3"></script>
+  <script src="app.js?v=43"></script>
+  <script src="transactions.js?v=4"></script>
   <script src="transaction-entry.js?v=1"></script>
 </body>
 </html>

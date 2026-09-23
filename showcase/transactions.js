@@ -119,12 +119,12 @@ function renderUnifiedTransactions() {
       : transactionStatusLabel(transaction.status);
     return `<tr data-key="${encodeURIComponent(transaction.id)}" class="transaction-row ${directionClass}">
       <td data-label="ID" class="td-txn-id">${transactionHtml(transaction.id)}</td>
-      <td data-label="Transaction"><div class="td-payment-name-cell"><span class="transaction-direction-mark ${directionClass}" aria-hidden="true">${isIncoming ? "↑" : "↓"}</span><div class="transaction-title-stack"><strong class="merchant-title-text">${transactionHtml(transaction.title)}</strong><span class="transaction-meta-line">${transactionHtml(transaction.category)} · ${transactionHtml(transaction.source)}</span></div></div></td>
+      <td data-label="Transaction"><div class="td-payment-name-cell"><span class="transaction-direction-mark ${directionClass}" aria-hidden="true">${isIncoming ? "↑" : "↓"}</span><div class="transaction-title-stack"><strong class="merchant-title-text">${transactionHtml(transaction.title)}</strong><span class="transaction-meta-line">${transactionHtml(transaction.category)} · ${transactionHtml(transaction.source)}</span>${transaction.notes ? `<span class="transaction-context-line" title="${transactionHtml(transaction.notes)}">${transactionHtml(transaction.notes.length > 70 ? transaction.notes.slice(0, 70) + "…" : transaction.notes)}</span>` : ""}</div></div></td>
       <td data-label="Direction"><span class="transaction-direction-label ${directionClass}">${transactionDirectionLabel(transaction.direction)}</span></td>
       <td data-label="Amount" class="td-amount-figure ${isIncoming ? "credit" : "debit"}">${amount}</td>
       <td data-label="Date" class="td-date-cell">${transactionHtml(formatExpenseDateTime(transaction.date))}</td>
       <td data-label="Status" class="transaction-status-cell"><span class="status-badge-pill ${transactionStatusClass(transaction.status)}">${transactionHtml(pendingLabel)}</span>${transactionSettlementActions(transaction)}</td>
-      <td data-label="Actions" class="transaction-actions-cell"><button type="button" class="row-action-btn" data-action="edit" data-key="${encodeURIComponent(transaction.id)}" aria-label="Edit ${transactionHtml(transaction.title)}" title="Edit transaction">${transactionActionIcon("edit")}<span class="row-action-label">Edit</span></button>${!isIncoming && transaction.split_data && transaction.split_data.friends ? `<button type="button" class="row-action-btn" data-action="details" data-record-id="${transaction.record_id}" aria-label="Open details for ${transactionHtml(transaction.title)}" title="Split details">${transactionActionIcon("split")}<span class="row-action-label">Split</span></button>` : ""}</td>
+      <td data-label="Actions" class="transaction-actions-cell"><button type="button" class="row-action-btn" data-action="edit" data-key="${encodeURIComponent(transaction.id)}" aria-label="Edit ${transactionHtml(transaction.title)}" title="Edit transaction">${transactionActionIcon("edit")}<span class="row-action-label">Edit</span></button>${!isIncoming && transaction.split_data && transaction.split_data.friends ? `<button type="button" class="row-action-btn" data-action="details" data-record-id="${transaction.record_id}" aria-label="Open details for ${transactionHtml(transaction.title)}" title="Split details">${transactionActionIcon("split")}<span class="row-action-label">Split</span></button>` : ""}<button type="button" class="row-action-btn row-action-delete" data-action="delete" data-key="${encodeURIComponent(transaction.id)}" aria-label="Delete ${transactionHtml(transaction.title)}" title="Delete transaction">${transactionActionIcon("delete")}<span class="row-action-label">Delete</span></button></td>
     </tr>`;
   }).join("");
 
@@ -144,7 +144,6 @@ window.loadUnifiedTransactions = async function loadUnifiedTransactions() {
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.detail || `Server returned ${response.status}`);
     transactionLedgerState.rows = data.transactions || [];
-    transactionLedgerState.page = 1;
     renderUnifiedTransactions();
   } catch (error) {
     if (body) body.innerHTML = `<tr><td colspan="7" class="transaction-empty-cell error"><strong>Could not load transactions</strong><span>${transactionHtml(error.message)}</span></td></tr>`;
@@ -167,6 +166,24 @@ window.settleUnifiedIou = async function settleUnifiedIou(key, participant) {
   }
 };
 
+window.deleteUnifiedTransaction = async function deleteUnifiedTransaction(key) {
+  const row = transactionLedgerState.rows.find((r) => r.id === key);
+  const label = row ? row.title : key;
+  if (!confirm(`Delete this transaction (${label})? This cannot be undone.`)) return false;
+  try {
+    const response = await fetch(getApiUrl(`/api/dashboard/transactions/${encodeURIComponent(key)}`), { method: "DELETE" });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.detail || `Server returned ${response.status}`);
+    showToast(`Deleted ${label}`, "danger");
+    loadDashboardSummary();
+    window.loadUnifiedTransactions();
+    return true;
+  } catch (error) {
+    showToast(`Could not delete ${label}: ${error.message}`, "danger");
+    return false;
+  }
+};
+
 function initUnifiedTransactions() {
   if (transactionLedgerState.initialized || !transactionElement("expenses-table-body")) return;
   transactionLedgerState.initialized = true;
@@ -175,7 +192,7 @@ function initUnifiedTransactions() {
   transactionElement("tx-direction-filter")?.addEventListener("change", (event) => { transactionLedgerState.direction = event.target.value; transactionLedgerState.page = 1; window.loadUnifiedTransactions(); });
   transactionElement("tx-category-filter")?.addEventListener("change", (event) => { transactionLedgerState.category = event.target.value; transactionLedgerState.page = 1; window.loadUnifiedTransactions(); });
   transactionElement("tx-sort-select")?.addEventListener("change", (event) => { transactionLedgerState.sort = event.target.value; renderUnifiedTransactions(); });
-  transactionElement("tx-search-input")?.addEventListener("input", (event) => { clearTimeout(transactionLedgerState.searchTimer); transactionLedgerState.search = event.target.value.trim(); transactionLedgerState.searchTimer = setTimeout(() => window.loadUnifiedTransactions(), 250); });
+  transactionElement("tx-search-input")?.addEventListener("input", (event) => { clearTimeout(transactionLedgerState.searchTimer); transactionLedgerState.search = event.target.value.trim(); transactionLedgerState.page = 1; transactionLedgerState.searchTimer = setTimeout(() => window.loadUnifiedTransactions(), 250); });
   transactionElement("page-size-select")?.addEventListener("change", (event) => { transactionLedgerState.pageSize = Number(event.target.value) || 10; transactionLedgerState.page = 1; renderUnifiedTransactions(); });
   transactionElement("expenses-table-body").addEventListener("click", (event) => {
     const button = event.target.closest("button[data-action]");
@@ -184,6 +201,7 @@ function initUnifiedTransactions() {
     if (button.dataset.action === "settle") window.settleUnifiedIou(key, decodeURIComponent(button.dataset.participant || ""));
     if (button.dataset.action === "edit") openTransactionEntry("outgoing", transactionLedgerState.rows.find((row) => row.id === key));
     if (button.dataset.action === "details") window.openTransactionDetailsModal(Number(button.dataset.recordId));
+    if (button.dataset.action === "delete") window.deleteUnifiedTransaction(key);
   });
   transactionElement("pagination-nav-container")?.addEventListener("click", (event) => { const button = event.target.closest("button[data-page]"); if (button && !button.disabled) { transactionLedgerState.page = Number(button.dataset.page); renderUnifiedTransactions(); } });
   document.querySelectorAll(".transaction-direction-btn").forEach((button) => button.addEventListener("click", () => setTransactionDirection(button.dataset.direction)));

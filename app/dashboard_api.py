@@ -1062,6 +1062,69 @@ async def get_expense_details(
         }
 
 
+@router.get("/expenses/{expense_id}/email-context")
+async def get_expense_email_context(
+    expense_id: int,
+    user_id: Optional[int] = Query(default=None),
+) -> Dict[str, Any]:
+    """Fetch and cache email context (subject — snippet) for an email-sourced expense.
+
+    If the expense already has notes, returns them immediately (cached=True).
+    Otherwise fetches the original email from the provider, builds the context
+    string, persists it to the expense's notes, and returns it (cached=False).
+    """
+    async with async_session_factory() as session:
+        query = select(ExpenseTransaction).where(ExpenseTransaction.id == expense_id)
+        if user_id is not None and user_id != 0:
+            query = query.where(ExpenseTransaction.user_id == user_id)
+        result = await session.execute(query)
+        tx = result.scalar_one_or_none()
+        if not tx:
+            raise HTTPException(status_code=404, detail="Expense not found")
+
+        # Not email-sourced — no context to fetch
+        if not tx.source_sender_domain:
+            return {"status": "ok", "context": None}
+
+        # Already cached in notes
+        if tx.notes:
+            return {"status": "ok", "context": tx.notes, "cached": True}
+
+        # Determine provider from domain
+        domain = tx.source_sender_domain.lower()
+        if any(k in domain for k in ("outlook", "microsoft", "hotmail", "live")):
+            provider_name = "outlook"
+        else:
+            provider_name = "gmail"
+
+        if not tx.source_message_id:
+            return {"status": "ok", "context": None}
+
+        try:
+            # Lazy import to avoid circular imports
+            from capabilities.email.providers import PROVIDER_REGISTRY
+
+            provider = PROVIDER_REGISTRY.get(provider_name)
+            if not provider:
+                return {"status": "ok", "context": None}
+
+            msg = await provider.get_message_by_id(user_id=tx.user_id, message_id=tx.source_message_id)
+            if not msg:
+                return {"status": "ok", "context": None}
+
+            subject = msg.get("subject") or ""
+            snippet = msg.get("snippet") or ""
+            context = f"{subject} — {snippet}".strip(" —")[:300]
+            if context:
+                tx.notes = context
+                session.add(tx)
+                await session.commit()
+                return {"status": "ok", "context": context, "cached": False}
+            return {"status": "ok", "context": None}
+        except Exception as exc:
+            return {"status": "error", "context": None, "message": str(exc)}
+
+
 @router.put("/expenses/{expense_id}/details")
 async def update_expense_details(
     expense_id: int,

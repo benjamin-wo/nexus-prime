@@ -143,6 +143,90 @@ async def discover_and_track_bank_domain(user_id: int, sender_email: str) -> boo
             return True
         return False
 
+
+@tool
+@identity_bound
+async def update_email_presets(
+    user_id: int,
+    exclude_domains: Optional[List[str]] = None,
+    content_type_presets: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """
+    Update the email filtering presets for the user.
+
+    These presets control which senders are excluded from email searches and
+    which content-type categories (e.g. "receipt", "bank_statement", "bill")
+    the search prioritises.  When a parameter is None, that field is left
+    unchanged (partial update).
+
+    Args:
+        user_id: ignored; the assistant injects the authenticated user's ID.
+        exclude_domains: Domain names to exclude from email search results
+            (e.g. ["noreply@newsletter.com", "marketing@spam.com"]).  Pass an
+            empty list to clear the exclusion list.
+        content_type_presets: Content-type tags to prioritise in searches
+            (e.g. ["receipt", "invoice"]).  Pass an empty list to clear.
+
+    Returns:
+        A dict with the current state of both fields after the update.
+    """
+    async with async_session_factory() as session:
+        result = await session.execute(select(UserProfile).where(UserProfile.user_id == user_id))
+        profile = result.scalar_one_or_none()
+        if not profile:
+            return {
+                "status": "error",
+                "message": f"No profile found for user {user_id}.",
+            }
+
+        if exclude_domains is not None:
+            profile.email_exclude_domains = list(exclude_domains)
+        if content_type_presets is not None:
+            profile.email_content_type_presets = list(content_type_presets)
+
+        session.add(profile)
+        await session.commit()
+        # Re-read so the returned state is authoritative (SQLite/Postgres)
+        await session.refresh(profile)
+
+    return {
+        "status": "ok",
+        "exclude_domains": list(profile.email_exclude_domains or []),
+        "content_type_presets": list(profile.email_content_type_presets or []),
+    }
+
+
+@tool
+@identity_bound
+async def get_email_presets(user_id: int) -> Dict[str, Any]:
+    """
+    Read the current email filtering presets for the user.
+
+    Returns the current exclude_domains and content_type_presets, or empty
+    lists if none are configured.
+
+    Args:
+        user_id: ignored; the assistant injects the authenticated user's ID.
+
+    Returns:
+        A dict with keys ``exclude_domains`` and ``content_type_presets``.
+    """
+    async with async_session_factory() as session:
+        result = await session.execute(select(UserProfile).where(UserProfile.user_id == user_id))
+        profile = result.scalar_one_or_none()
+        if not profile:
+            return {
+                "status": "error",
+                "message": f"No profile found for user {user_id}.",
+            }
+
+    return {
+        "status": "ok",
+        "exclude_domains": list(profile.email_exclude_domains or []),
+        "content_type_presets": list(profile.email_content_type_presets or []),
+    }
+
+
 def _parse_message_datetime(raw: Any) -> Optional[datetime]:
     """Parse an email date string into an aware UTC datetime, or None."""
     if not raw:
@@ -188,6 +272,7 @@ async def search_email_messages(
         result = await session.execute(select(UserProfile).where(UserProfile.user_id == user_id))
         profile = result.scalar_one_or_none()
         tracked_banks = profile.tracked_banks if profile else []
+        exclude_domains = profile.email_exclude_domains if profile else None
 
     if provider:
         providers_to_query = [provider.lower()]
@@ -201,6 +286,7 @@ async def search_email_messages(
             tracked_banks=tracked_banks,
             custom_query=custom_query,
             latest=latest,
+            exclude_domains=exclude_domains,
         )
         for p_name in queried_providers
     ]
@@ -278,6 +364,20 @@ async def apply_outlook_processed_category(user_id: int, message_id: str) -> boo
     return await apply_email_processed_tag.ainvoke(
         {"user_id": user_id, "message_id": message_id, "provider": "outlook"}
     )
+
+
+@tool
+@identity_bound
+async def get_email_message_by_id(user_id: int, message_id: str, provider: str = "gmail") -> Optional[Dict[str, Any]]:
+    """
+    Fetch a single email message by ID from the specified provider and return
+    its subject, sender, snippet, and date. Returns None if the provider is
+    unknown or the fetch fails.
+    """
+    p_name = provider.lower()
+    if p_name not in PROVIDER_REGISTRY:
+        return None
+    return await PROVIDER_REGISTRY[p_name].get_message_by_id(user_id=user_id, message_id=message_id)
 
 
 # --- Agent-callable connection/sweep tools ----------------------------------
