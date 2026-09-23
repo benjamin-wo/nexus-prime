@@ -8,6 +8,8 @@ tools:
   - get_email_connection_status
   - sweep_email_for_expenses
   - disconnect_email
+  - update_email_presets
+  - get_email_presets
 ---
 
 # Email
