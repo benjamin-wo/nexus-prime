@@ -618,7 +618,7 @@ async def create_transaction(
             await session.flush()
 
         transaction_date = _parse_iso_datetime(req.date) if req.date else None
-        transaction_date = transaction_date or datetime.utcnow()
+        transaction_date = transaction_date or datetime.now(dt_timezone.utc)
         currency = req.currency.strip().upper()
 
         match req.direction:
@@ -841,7 +841,7 @@ async def create_income(
             currency=(req.currency or "SGD").strip().upper(),
             source=req.source.strip(),
             category=(req.category or "Other").strip().title(),
-            date=income_date or datetime.utcnow(),
+            date=income_date or datetime.now(dt_timezone.utc),
             notes=req.notes.strip() if req.notes else None,
         )
         session.add(item)
@@ -916,10 +916,12 @@ async def create_expense(req: ExpenseCreateRequest) -> Dict[str, Any]:
             session.add(UserProfile(user_id=target_uid, telegram_chat_id=target_uid, current_timezone="Asia/Singapore"))
             await session.commit()
 
-        dt = datetime.utcnow()
+        dt = datetime.now(dt_timezone.utc)
         if req.date:
             try:
-                dt = datetime.fromisoformat(req.date.replace("Z", "+00:00")).replace(tzinfo=None)
+                dt = datetime.fromisoformat(req.date.replace("Z", "+00:00"))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=dt_timezone.utc)
             except ValueError:
                 pass
 
@@ -1151,7 +1153,10 @@ async def update_expense_details(
             tx.category = req.category
         if req.date is not None:
             try:
-                tx.date = datetime.fromisoformat(req.date.replace("Z", "+00:00")).replace(tzinfo=None)
+                parsed = datetime.fromisoformat(req.date.replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=dt_timezone.utc)
+                tx.date = parsed
             except ValueError:
                 pass
         if req.notes is not None:
@@ -1247,10 +1252,12 @@ async def restore_expenses(req: ExpenseRestoreRequest) -> Dict[str, Any]:
     async with async_session_factory() as session:
         target_uid = await get_primary_user_id(session)
         for item in req.expenses:
-            dt = datetime.utcnow()
+            dt = datetime.now(dt_timezone.utc)
             if item.get("date"):
                 try:
-                    dt = datetime.fromisoformat(str(item["date"]).replace("Z", "+00:00")).replace(tzinfo=None)
+                    dt = datetime.fromisoformat(str(item["date"]).replace("Z", "+00:00"))
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=dt_timezone.utc)
                 except ValueError:
                     pass
             
@@ -1289,14 +1296,14 @@ async def restore_expenses(req: ExpenseRestoreRequest) -> Dict[str, Any]:
 async def seed_demo_expenses(session: Any, user_id: int) -> None:
     """Seed initial demonstration expenses so the user has immediate rich data on first load."""
     sample_data = [
-        (45.50, "SGD", "FairPrice Finest", "Groceries", datetime(2026, 8, 14, 18, 30)),
-        (14.20, "SGD", "Amoy Street Food Centre", "Dining", datetime(2026, 8, 14, 12, 45)),
-        (22.80, "SGD", "Grab SG", "Transport", datetime(2026, 8, 13, 21, 15)),
-        (120.00, "SGD", "Uniqlo Orchard", "Shopping", datetime(2026, 8, 12, 16, 0)),
-        (5.80, "SGD", "Yakun Kaya Toast", "Dining", datetime(2026, 8, 12, 8, 30)),
-        (65.00, "SGD", "Singtel Utilities", "Bills", datetime(2026, 8, 10, 10, 0)),
-        (18.50, "SGD", "Cold Storage", "Groceries", datetime(2026, 8, 9, 19, 20)),
-        (32.00, "SGD", "Cedele Cafe", "Dining", datetime(2026, 8, 8, 13, 0)),
+        (45.50, "SGD", "FairPrice Finest", "Groceries", datetime(2026, 8, 14, 18, 30, tzinfo=dt_timezone.utc)),
+        (14.20, "SGD", "Amoy Street Food Centre", "Dining", datetime(2026, 8, 14, 12, 45, tzinfo=dt_timezone.utc)),
+        (22.80, "SGD", "Grab SG", "Transport", datetime(2026, 8, 13, 21, 15, tzinfo=dt_timezone.utc)),
+        (120.00, "SGD", "Uniqlo Orchard", "Shopping", datetime(2026, 8, 12, 16, 0, tzinfo=dt_timezone.utc)),
+        (5.80, "SGD", "Yakun Kaya Toast", "Dining", datetime(2026, 8, 12, 8, 30, tzinfo=dt_timezone.utc)),
+        (65.00, "SGD", "Singtel Utilities", "Bills", datetime(2026, 8, 10, 10, 0, tzinfo=dt_timezone.utc)),
+        (18.50, "SGD", "Cold Storage", "Groceries", datetime(2026, 8, 9, 19, 20, tzinfo=dt_timezone.utc)),
+        (32.00, "SGD", "Cedele Cafe", "Dining", datetime(2026, 8, 8, 13, 0, tzinfo=dt_timezone.utc)),
     ]
     for amount, currency, merchant, category, dt in sample_data:
         session.add(
@@ -1346,7 +1353,6 @@ async def delete_job(job_id: int, user_id: Optional[int] = Query(default=None)) 
 # 4. Tasks & Reminders To-Do Endpoints
 # ---------------------------------------------------------------------------
 
-from datetime import datetime, timezone
 
 def _parse_iso_datetime(dt_str: Optional[str]) -> Optional[datetime]:
     if not dt_str:
@@ -1355,7 +1361,7 @@ def _parse_iso_datetime(dt_str: Optional[str]) -> Optional[datetime]:
         clean = dt_str.strip().replace("Z", "+00:00")
         dt = datetime.fromisoformat(clean)
         if dt.tzinfo is not None:
-            dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+            dt = dt.astimezone(dt_timezone.utc)
         return dt
     except Exception:
         return None
@@ -1365,7 +1371,7 @@ def _format_iso(dt: Optional[datetime]) -> Optional[str]:
     if not dt:
         return None
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=dt_timezone.utc)
     return dt.isoformat()
 
 
@@ -1501,7 +1507,7 @@ async def update_task(task_id: int, req: TaskUpdateRequest) -> Dict[str, Any]:
             old_status = task.status
             task.status = req.status.lower()
             if task.status == "done" and old_status != "done":
-                task.completed_at = datetime.now(timezone.utc)
+                task.completed_at = datetime.now(dt_timezone.utc)
                 task.is_reminder_active = False
                 remove_task_reminder(task.id)
             elif task.status == "todo" and old_status == "done":

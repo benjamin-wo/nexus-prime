@@ -424,7 +424,9 @@ async def save_income_transaction(
         except ValueError:
             income_date = datetime.now(dt_timezone.utc)
         if income_date.tzinfo is not None:
-            income_date = income_date.astimezone(dt_timezone.utc).replace(tzinfo=None)
+            income_date = income_date.astimezone(dt_timezone.utc)
+        else:
+            income_date = income_date.replace(tzinfo=dt_timezone.utc)
 
         item = IncomeTransaction(
             user_id=user_id,
@@ -455,13 +457,16 @@ async def save_expense_transaction(
     """Persist ExtractedExpense to PostgreSQL ExpenseTransaction table with normalized category."""
     async with async_session_factory() as session:
         norm_cat = normalize_category_name(expense.category)
+        exp_date = expense.date
+        if exp_date is not None and exp_date.tzinfo is None:
+            exp_date = exp_date.replace(tzinfo=dt_timezone.utc)
         tx = ExpenseTransaction(
             user_id=user_id,
             amount=expense.amount,
             currency=expense.currency,
             merchant=expense.merchant,
             category=norm_cat,
-            date=expense.date,
+            date=exp_date,
             source_message_id=source_message_id,
             source_sender_domain=(source_sender_domain or "").lower() or None,
             logged_at=logged_at,
@@ -1074,9 +1079,11 @@ async def _restore_from_snapshot(user_id: int, snapshot: Dict[str, Any]) -> Opti
         try:
             restored_date = datetime.fromisoformat(str(snapshot.get("date_iso") or ""))
         except ValueError:
-            restored_date = datetime.now(dt_timezone.utc).replace(tzinfo=None)
+            restored_date = datetime.now(dt_timezone.utc)
         if restored_date.tzinfo is not None:
-            restored_date = restored_date.astimezone(dt_timezone.utc).replace(tzinfo=None)
+            restored_date = restored_date.astimezone(dt_timezone.utc)
+        else:
+            restored_date = restored_date.replace(tzinfo=dt_timezone.utc)
 
         src_msg_id = snapshot.get("source_message_id")
         if src_msg_id:

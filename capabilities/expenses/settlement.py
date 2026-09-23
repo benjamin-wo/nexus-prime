@@ -24,7 +24,7 @@ class IouSettlementCommand:
 
 
 def _utcnow_naive() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(timezone.utc)
 
 
 def _number(value: Any) -> float:
@@ -38,8 +38,8 @@ def _naive_utc(value: datetime | None) -> datetime:
     if value is None:
         return _utcnow_naive()
     if value.tzinfo is not None:
-        return value.astimezone(timezone.utc).replace(tzinfo=None)
-    return value
+        return value.astimezone(timezone.utc)
+    return value.replace(tzinfo=timezone.utc)
 
 
 def _participant_names_match(left: Any, right: Any) -> bool:
