@@ -8,6 +8,8 @@ class UserProfile(SQLModel, table=True):
     current_timezone: str = Field(default="UTC")
     home_currency: str = Field(default="SGD")
     tracked_banks: List[str] = Field(default=[], sa_column=Column(JSON))
+    email_exclude_domains: List[str] = Field(default=[], sa_column=Column(JSON))
+    email_content_type_presets: List[str] = Field(default=[], sa_column=Column(JSON))
     whiteboard_seeded: bool = Field(default=False)  # True after first-time board seeding — prevents re-seed on empty state
     last_whiteboard_id: Optional[int] = Field(default=None)  # Durable pointer to the most recently touched board
     last_email_digest_at: Optional[datetime] = Field(default=None)  # Last daily email-expense digest sent
