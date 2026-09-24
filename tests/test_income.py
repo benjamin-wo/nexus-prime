@@ -127,21 +127,6 @@ async def test_unified_transactions_exposes_both_directions():
 
 
 @pytest.mark.asyncio
-async def test_telegram_credit_command_records_incoming_transaction():
-    from app.ingress import TelegramIngress
-
-    result = await TelegramIngress().handle_slash_command(
-        "/credit 240 from insurer claim",
-        user_id=3012,
-    )
-
-    assert result is not None
-    assert result["status"] == "ok"
-    assert result["income"]["amount"] == 240.0
-    assert result["income"]["category"] == "Claim Payout"
-
-
-@pytest.mark.asyncio
 async def test_assistant_records_incoming_money_from_conversation():
     from capabilities.expenses.tools import record_incoming_money
 

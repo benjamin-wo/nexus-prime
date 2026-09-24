@@ -759,7 +759,7 @@ class TelegramIngress:
                     table_md += f'| {idx} | `#{row["tag"]}` | {row["count"]} | *"{row["sample_prompt"]}"* |\n'
             return {"status": "ok", "leaderboard": leaderboard, "text": table_md}
 
-        
+        if text.startswith("/income"):
             from core.models import IncomeTransaction
 
             async with async_session_factory() as session:
@@ -1088,36 +1088,10 @@ class TelegramIngress:
         typing_task = asyncio.create_task(self._typing_loop(chat_id, stop_event))
         try:
             profile = await self.ensure_profile(user_id=user_id, chat_id=chat_id)
-            slash_res = await self.handle_slash_command(text, user_id=user_id)
-            if slash_res is not None:
-                if chat_id:
-                    reply_text = self._format_slash_reply(slash_res, text)
-                    if reply_text:
-                        reply_markup = slash_res.get("reply_markup")
-                        sent = await send_telegram_message(
-                            chat_id, reply_text, reply_markup=reply_markup
-                        )
-                        self._log_conversation(
-                            "OUT" if sent else "SEND-FAIL", chat_id, reply_text
-                        )
-                return slash_res
 
-            # Conversational timezone changes: "I just landed in Tokyo".
-            if text and (
-                "timezone" in text.lower()
-                or "landed in" in text.lower()
-                or "arrived in" in text.lower()
-            ):
-                from core.shared_tools.location import resolve_timezone_from_location
-
-                detected_tz = resolve_timezone_from_location(text)
-                if detected_tz:
-                    tz_updated = await update_user_timezone(user_id, detected_tz)
-                    if tz_updated:
-                        await send_telegram_message(
-                            chat_id, f"✅ Timezone updated to *{detected_tz}*."
-                        )
-                        return {"status": "ok", "timezone": detected_tz, "updated": True}
+            # Pure LLM agent: text/slash messages all flow through the graph;
+            # only Telegram protocol events (callbacks, media, location pins)
+            # bypass the LLM.
 
             content_blocks = await self.process_multimodal_attachments(message)
             has_media = any(

@@ -117,17 +117,6 @@ async def handle_web_chat(request: ChatRequest) -> ChatResponse:
                 resumed=True,
             )
 
-        # 2. Check for deterministic slash commands
-        if raw_text.startswith("/"):
-            slash_res = await telegram_ingress.handle_slash_command(raw_text, user_id=user_id)
-            if slash_res is not None:
-                reply_text = telegram_ingress._format_slash_reply(slash_res, raw_text) or str(slash_res)
-                return ChatResponse(
-                    status="ok",
-                    reply=reply_text,
-                    session_id=session_id,
-                )
-
         # 3. Standard conversational execution through LangGraph
         human_msg = HumanMessage(content=raw_text)
         initial_state = {

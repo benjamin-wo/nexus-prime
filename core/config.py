@@ -86,7 +86,7 @@ class Settings(BaseSettings):
     # inside is deliberately unbounded; this exists only so a wedged turn --
     # e.g. hung checkpoint I/O -- degrades into an honest error reply and a
     # checkpointer reset instead of a silently dead chat.
-    graph_turn_timeout_seconds: float = 600.0
+    graph_turn_timeout_seconds: float = 300.0
     # Degraded-mode model: when the primary Gemini model fails at Google's
     # edge (503 high-demand / 504 deadline), the agent loop finishes the turn
     # on this model instead of shipping an error. Empty string disables.

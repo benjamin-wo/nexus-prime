@@ -16,23 +16,6 @@ def test_health_check_endpoint():
     assert response.json()["status"] == "ok"
 
 
-@pytest.mark.asyncio
-async def test_email_command_lists_only_configured_providers():
-    """The /email command must only link providers whose OAuth client credentials are configured."""
-    from app.ingress import TelegramIngress
-    from core.config import settings
-
-    res = await TelegramIngress().handle_slash_command("/email", user_id=9001)
-    assert res is not None
-    text = res["text"]
-    has_gmail_creds = bool(settings.google_client_id and settings.google_client_secret)
-    has_ms_creds = bool(settings.microsoft_client_id and settings.microsoft_client_secret)
-    if has_gmail_creds:
-        assert "/auth/gmail" in text
-    if has_ms_creds:
-        assert "/auth/outlook" in text
-    assert has_gmail_creds or has_ms_creds or "isn't configured" in text
-
 def test_webhook_text_message():
     payload = {
         "update_id": 10001,
@@ -46,6 +29,36 @@ def test_webhook_text_message():
     response = client.post("/api/webhook", json=payload, headers=_webhook_headers())
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_slash_command_routes_through_graph(monkeypatch):
+    """Pure LLM agent: /jobs must reach the agent graph (which replies via the
+    LLM or its honest fallback) instead of the old deterministic handler that
+    returned a jobs listing without any model call."""
+    from unittest.mock import AsyncMock
+
+    import app.ingress as ingress_module
+    from app.ingress import telegram_ingress
+
+    sent = AsyncMock(return_value=True)
+    monkeypatch.setattr(ingress_module, "send_telegram_message", sent)
+    monkeypatch.setattr(ingress_module, "send_telegram_chat_action", AsyncMock())
+
+    await telegram_ingress.handle_update({
+        "update_id": 10005,
+        "message": {
+            "message_id": 504,
+            "from": {"id": 9003},
+            "chat": {"id": 9003, "type": "private"},
+            "text": "/jobs",
+        },
+    })
+
+    assert sent.await_count >= 1
+    reply_text = sent.await_args.args[1]
+    assert "No jobs" not in reply_text
+    assert "usage" not in reply_text.lower()
 
 @pytest.mark.asyncio
 async def test_webhook_callback_query_resume():
@@ -68,9 +81,10 @@ async def test_webhook_callback_query_resume():
 
 @pytest.mark.asyncio
 async def test_webhook_jobs_command(monkeypatch):
-    """Same reasoning as test_webhook_callback_query_resume: a slash
-    command's reply is delivered via send_telegram_message (asserted here),
-    not via the now-immediate webhook HTTP response."""
+    """Slash commands reach the agent graph now; without a valid LLM key in
+    tests the loop's honest-error fallback answers instead of the old
+    deterministic jobs listing. The point of the assertion: the turn is
+    handled by the graph path and the user still gets a reply."""
     from unittest.mock import AsyncMock
 
     import app.ingress as ingress_module
@@ -90,7 +104,8 @@ async def test_webhook_jobs_command(monkeypatch):
 
     assert sent.await_count >= 1
     reply_text = sent.await_args.args[1]
-    assert "jobs" in reply_text.lower() or "reminder" in reply_text.lower()
+    assert reply_text  # some reply reached the user
+    assert "Usage: /run_now" not in reply_text  # old deterministic handler text
 
 
 def test_webhook_endpoint_acks_immediately_and_backgrounds_the_turn(monkeypatch):
