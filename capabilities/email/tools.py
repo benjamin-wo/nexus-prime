@@ -388,8 +388,11 @@ async def get_email_message_by_id(user_id: int, message_id: str, provider: str =
 async def get_email_connection_status(user_id: int = 0) -> str:
     """
     Check which mailboxes (Gmail/Outlook) are connected for the user, and
-    return sign-in link(s) for any that are configured on this deployment
-    but not yet connected. Call this before search_my_email or
+    return sign-in link(s) for every provider configured on this deployment.
+    A stored token does NOT suppress its link -- stale or scope-limited
+    tokens (e.g. granted before gmail.modify was requested) can only be
+    fixed by the user re-authorizing, so the link is always offered and the
+    connected state is labeled. Call this before search_my_email or
     sweep_email_for_expenses if you don't already know the connection state
     this turn -- the bot cannot read email until the user grants access.
 
@@ -403,20 +406,33 @@ async def get_email_connection_status(user_id: int = 0) -> str:
     uid = int(user_id or 0)
     gmail_token = await get_user_gmail_token(uid)
     outlook_token = await get_user_outlook_token(uid)
-    needs_gmail = bool(settings.google_client_id and settings.google_client_secret) and not gmail_token
-    needs_outlook = bool(settings.microsoft_client_id and settings.microsoft_client_secret) and not outlook_token
+    gmail_configured = bool(settings.google_client_id and settings.google_client_secret)
+    outlook_configured = bool(settings.microsoft_client_id and settings.microsoft_client_secret)
 
-    if not needs_gmail and not needs_outlook:
-        connected = ", ".join(p for p, tok in (("Gmail", gmail_token), ("Outlook", outlook_token)) if tok)
-        return f"[email] Already connected: {connected or 'no provider configured on this deployment'}."
+    if not gmail_configured and not outlook_configured:
+        return "[email] No email provider is configured on this deployment."
+
+    connected = ", ".join(
+        p for p, tok in (("Gmail", gmail_token), ("Outlook", outlook_token)) if tok
+    )
+    if gmail_configured and gmail_token and outlook_configured and outlook_token:
+        return f"[email] Already connected: {connected}. If access seems broken, use a re-authorize link below."
 
     public_domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN") or ""
     base = f"https://{public_domain}".rstrip("/") if public_domain else (settings.webapp_url or "").rstrip("/")
-    lines = ["[email] One-time access needed -- open a link and allow read-only access:"]
-    if needs_gmail:
-        lines.append(f"Gmail: {base}/auth/gmail?user_id={uid}")
-    if needs_outlook:
-        lines.append(f"Outlook: {base}/auth/outlook?user_id={uid}")
+    lines = [
+        "[email] Mailbox access -- open the link(s) in a browser (not the Telegram"
+        " in-app webview) and allow access. Re-authorizing refreshes an existing"
+        " connection and is always safe:"
+    ]
+    if gmail_configured:
+        state = "re-authorize -- already connected" if gmail_token else "connect"
+        lines.append(f"Gmail ({state}): {base}/auth/gmail?user_id={uid}")
+    if outlook_configured:
+        state = "re-authorize -- already connected" if outlook_token else "connect"
+        lines.append(f"Outlook ({state}): {base}/auth/outlook?user_id={uid}")
+    if connected:
+        lines.append(f"Currently connected: {connected}.")
     return "\n".join(lines)
 
 
