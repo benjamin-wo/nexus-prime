@@ -58,6 +58,31 @@ from orchestrator.state import AssistantState
 
 URL_PATTERN = re.compile(r"https?://\S+")
 
+
+def _norm_url(u: str) -> str:
+    """Normalize a regex-matched URL for set comparison: the greedy pattern
+    swallows trailing punctuation, so 'https://x?y=1.' and 'https://x?y=1'
+    must compare equal."""
+    return u.rstrip(".,!?;:'\")]}>")
+
+
+def _tool_backed_urls(history: List[BaseMessage], start: int) -> set:
+    """URLs that appeared in any message appended since `start` (i.e. any
+    tool output from this turn). A reply link matching one of these is
+    tool-provided, not invented."""
+    backed: set = set()
+    for m in history[start:]:
+        c = getattr(m, "content", "")
+        if isinstance(c, str):
+            backed.update(_norm_url(u) for u in URL_PATTERN.findall(c))
+        elif isinstance(c, list):
+            for part in c:
+                if isinstance(part, dict) and part.get("type") == "text":
+                    backed.update(
+                        _norm_url(u) for u in URL_PATTERN.findall(str(part.get("text", "")))
+                    )
+    return backed
+
 # Runaway-loop backstop, NOT a time limit. The old per-turn wall-clock
 # ceilings (GENERAL_TOOL_LOOP_TIMEOUT_SECONDS, WEBHOOK_PROCESSING_TIMEOUT_SECONDS,
 # PLANNING_INTAKE_TIMEOUT_SECONDS) are gone along with the deterministic
@@ -820,19 +845,32 @@ async def _compose_reply(
     ledger = FailureLedger()
     content, link_tool_used = await _run_tool_loop(history, tools, gap_calls, ledger, read_only)
 
+    def _unbacked_urls(text: str) -> list:
+        """URLs in the draft that no tool output from this turn backs."""
+        return [
+            u
+            for u in URL_PATTERN.findall(text)
+            if _norm_url(u) not in _tool_backed_urls(history, pre_loop_len)
+        ]
+
     # Regression (#42, #43, carried over from GeneralPlugin): a raw URL in
     # the reply that this pass never backed with a real search_web/fetch_url
     # call is unverifiable and very likely invented -- one corrective retry,
-    # then strip it.
-    if content and URL_PATTERN.search(content) and not link_tool_used:
+    # then strip it. Regression (live incident, Gmail re-auth): the guard
+    # only trusted search_web/fetch_url, so a URL legitimately produced by
+    # another tool (get_email_connection_status's OAuth link) was treated as
+    # invented, stripped, and replaced with "I don't have a verified link".
+    # The check is now per-URL: a link backed by ANY tool output this turn
+    # passes; only truly unbacked URLs get the retry-and-strip treatment.
+    if content and _unbacked_urls(content) and not link_tool_used:
         history.append(
             SystemMessage(
                 content=(
-                    "Your draft reply included a link, but you did not call "
-                    "search_web or fetch_url this turn -- that link is "
-                    "unverified and must not be sent as-is. Call search_web "
-                    "or fetch_url now to find a real link, or rewrite your "
-                    "reply without inventing one."
+                    "Your draft reply included a link, but no tool result this "
+                    "turn backs it -- that link is unverified and must not be "
+                    "sent as-is. Call the tool that produces the real link "
+                    "(or search_web/fetch_url to find one) now, or rewrite "
+                    "your reply without inventing one."
                 )
             )
         )
@@ -841,8 +879,10 @@ async def _compose_reply(
         )
         if retried_content:
             content = retried_content
-        if URL_PATTERN.search(content) and not link_tool_used:
-            content = URL_PATTERN.sub("", content).strip()
+        unbacked = _unbacked_urls(content) if not link_tool_used else []
+        for u in unbacked:
+            content = content.replace(u, "").strip()
+        if unbacked:
             content += "\n\n(I don't have a verified link for that right now — want me to search for one?)"
 
     extra_messages = [m for m in history[pre_loop_len:] if not isinstance(m, SystemMessage)]
