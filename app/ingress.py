@@ -440,30 +440,14 @@ class TelegramIngress:
 
         if callback_data.startswith("log_req:"):
             tag = callback_data.split(":", 1)[1]
-            from core.audit import log_capability_request
-
-            await log_capability_request(
-                user_id=user_id or 0,
-                requested_task=f"Feature wishlist confirmation for #{tag}",
-                intent_type="unsupported_transaction",
-                tags=[tag],
-                expectation=f"User explicitly requested a feature for `{tag}` via the Telegram wishlist button.",
-                block_reason="Capability does not exist yet — logged from explicit wishlist confirmation.",
-                channel="telegram",
-            )
-            reply_text = f"✅ Logged #{tag} to our feature wishlist!"
-            self._log_conversation("CALLBACK", chat_id, f"log_req:{tag}")
             if callback_query_id:
-                await answer_telegram_callback(callback_query_id, text="Logged")
+                await answer_telegram_callback(callback_query_id, text="Noted")
             if chat_id:
-                await send_telegram_message(chat_id, reply_text)
-                self._log_conversation("OUT", chat_id, reply_text)
-            return {
-                "status": "ok",
-                "action": "feature_request_logged",
-                "tag": tag,
-                "reply": reply_text,
-            }
+                await send_telegram_message(
+                    chat_id,
+                    f"✅ Noted — I've passed \"{tag}\" to the wishlist. No ticket needed.",
+                )
+            return {"status": "ok", "action": "feature_request_acknowledged", "tag": tag}
 
         if callback_data.startswith("sb:"):
             tx_id_str = callback_data.split(":", 1)[1]
@@ -1217,32 +1201,6 @@ class TelegramIngress:
                     self._log_conversation("OUT" if sent else "SEND-FAIL", chat_id, payload["prompt"])
                 return {"status": "ok", "interrupted": True}
             reply_text = self._extract_ai_reply(result)
-            reply_markup = None
-            if result.get("intent_type") == "unsupported_transaction":
-                tags = result.get("missing_capability_tags") or ["general"]
-                primary_tag = tags[0] if tags else "general"
-                reply_markup = {
-                    "inline_keyboard": [
-                        [
-                            {
-                                "text": f"+ Log Feature Request (#{primary_tag})",
-                                "callback_data": f"log_req:{primary_tag}",
-                            }
-                        ]
-                    ]
-                }
-                if chat_id and reply_text:
-                    sent = await send_telegram_message(chat_id, reply_text, reply_markup=reply_markup)
-                    self._log_conversation(
-                        "OUT" if sent else "SEND-FAIL", chat_id, reply_text
-                    )
-                return {
-                    "status": "ok",
-                    "processed": True,
-                    "intent_type": "unsupported_transaction",
-                    "inline_keyboard": reply_markup["inline_keyboard"],
-                }
-
             if chat_id and reply_text:
                 sent = await send_telegram_message(chat_id, reply_text)
                 self._log_conversation(

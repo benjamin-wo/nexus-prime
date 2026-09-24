@@ -1,6 +1,10 @@
-from datetime import datetime
+from datetime import datetime, timezone as dt_timezone
 from typing import List, Optional, Dict, Any
 from sqlmodel import SQLModel, Field, Column, JSON, UniqueConstraint
+
+
+def _utcnow() -> datetime:
+    return datetime.now(dt_timezone.utc)
 
 class UserProfile(SQLModel, table=True):
     user_id: int = Field(primary_key=True)  # Telegram User ID
@@ -13,14 +17,14 @@ class UserProfile(SQLModel, table=True):
     whiteboard_seeded: bool = Field(default=False)  # True after first-time board seeding — prevents re-seed on empty state
     last_whiteboard_id: Optional[int] = Field(default=None)  # Durable pointer to the most recently touched board
     last_email_digest_at: Optional[datetime] = Field(default=None)  # Last daily email-expense digest sent
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
 
 class UserCredential(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="userprofile.user_id", index=True)
     provider: str = Field(index=True)  # e.g., "gmail"
     encrypted_token_payload: str       # Ciphertext encrypted via Fernet
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
 
 class ExpenseTransaction(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -51,7 +55,7 @@ class IncomeTransaction(SQLModel, table=True):
     notes: Optional[str] = Field(default=None)
     source_message_id: Optional[str] = Field(default=None, unique=True, index=True)
     linked_expense_id: Optional[int] = Field(default=None, foreign_key="expensetransaction.id", index=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
 
 
 class DeletedExpenseMessage(SQLModel, table=True):
@@ -59,7 +63,7 @@ class DeletedExpenseMessage(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(index=True)
     source_message_id: str = Field(index=True, unique=True)
-    deleted_at: datetime = Field(default_factory=datetime.utcnow)
+    deleted_at: datetime = Field(default_factory=_utcnow)
 
 
 class ExpenseUndoEntry(SQLModel, table=True):
@@ -75,7 +79,7 @@ class ExpenseUndoEntry(SQLModel, table=True):
     expense_id: int = Field(index=True)
     kind: str = Field(index=True)
     snapshot: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
 
 class ScheduledJob(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -85,7 +89,7 @@ class ScheduledJob(SQLModel, table=True):
     instruction_prompt: str
     timezone: str = Field(default="UTC")
     is_active: bool = Field(default=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
 
 class TaskItem(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -103,7 +107,7 @@ class TaskItem(SQLModel, table=True):
     linked_expense_id: Optional[int] = Field(default=None, foreign_key="expensetransaction.id", index=True)
     iou_friend: Optional[str] = Field(default=None, index=True)
     iou_amount: Optional[float] = Field(default=None)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
     completed_at: Optional[datetime] = Field(default=None)
 
 class CapabilityRequestLog(SQLModel, table=True):
@@ -116,4 +120,4 @@ class CapabilityRequestLog(SQLModel, table=True):
     block_reason: Optional[str] = Field(default=None)  # Why the request could not be fulfilled
     agent_reply: Optional[str] = Field(default=None)  # What the assistant told the user
     channel: Optional[str] = Field(default=None)  # "telegram" | "web" | "api" | "unknown"
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
