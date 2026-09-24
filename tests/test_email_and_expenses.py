@@ -1542,3 +1542,136 @@ async def test_log_expenses_laya_not_installed(monkeypatch):
     # 0.5 is treated as "proceed normally" (same as >= 0.85) → logged
     assert len(result["logged"]) == 1
     assert result["logged"][0]["amount"] == 60.0
+
+
+@pytest.mark.asyncio
+async def test_extract_expense_from_text_returns_is_transaction_and_description(monkeypatch):
+    """extract_expense_from_text returns is_transaction and description keys
+    when the LLM provides them, and does not raise when they are missing."""
+    from capabilities.expenses.tools import extract_expense_from_text
+
+    calls = []
+
+    class FakeLLM:
+        async def ainvoke(self, messages):
+            calls.append(messages)
+            return type("Msg", (), {"content": '{"amount": 25.0, "currency": "SGD", "merchant": "Starbucks", "category": "Dining", "date_iso": "2026-09-24", "confidence": 0.95, "needs_clarification": false, "is_transaction": true, "description": "Bought a latte and a sandwich from Starbucks."}'})()
+
+    monkeypatch.setattr("capabilities.expenses.tools.get_agent_llm", lambda **kw: FakeLLM())
+
+    result = await extract_expense_from_text.ainvoke({"user_text": "Spent $25 at Starbucks today"})
+    assert result["is_transaction"] is True
+    assert result["description"] == "Bought a latte and a sandwich from Starbucks."
+    assert result["amount"] == 25.0
+    assert result["currency"] == "SGD"
+    assert result["merchant"] == "Starbucks"
+    assert result["category"] == "Dining"
+    assert result["date_iso"] == "2026-09-24"
+    assert result["confidence"] == 0.95
+    assert result["needs_clarification"] is False
+
+
+@pytest.mark.asyncio
+async def test_extract_expense_from_text_missing_is_transaction_and_description_does_not_raise(monkeypatch):
+    """When the LLM omits is_transaction and description, the function
+    returns sensible defaults without raising."""
+    from capabilities.expenses.tools import extract_expense_from_text
+
+    class FakeLLM:
+        async def ainvoke(self, messages):
+            return type("Msg", (), {"content": '{"amount": 12.0, "currency": "SGD", "merchant": "McDonalds", "category": "Dining", "date_iso": "", "confidence": 0.9, "needs_clarification": false}'})()
+
+    monkeypatch.setattr("capabilities.expenses.tools.get_agent_llm", lambda **kw: FakeLLM())
+
+    result = await extract_expense_from_text.ainvoke({"user_text": "$12 at McDonalds"})
+    assert result["is_transaction"] is True  # default
+    assert result["description"] == ""  # default
+    assert result["amount"] == 12.0
+    assert result["merchant"] == "McDonalds"
+
+
+@pytest.mark.asyncio
+async def test_log_expenses_is_transaction_false_skips_and_tags(monkeypatch):
+    """Email with is_transaction: False from LLM is skipped, tagged, and never written."""
+    from capabilities.expenses.tools import extract_expense_from_text, log_expenses_from_emails
+
+    async def fake_extract(**kwargs):
+        return {"amount": 42.0, "currency": "SGD", "merchant": "SpamCo",
+                "category": "General", "date_iso": "", "confidence": 0.95,
+                "needs_clarification": False, "is_transaction": False,
+                "description": "A promotional newsletter"}
+
+    monkeypatch.setattr(extract_expense_from_text, "coroutine", fake_extract)
+
+    async def mock_laya(sender, subject, body):
+        return 0.95  # passes the probability pre-filter
+
+    monkeypatch.setattr("capabilities.expenses.tools.is_transaction_email", mock_laya)
+
+    tagged = []
+    async def _mock_tag(user_id, message_id, provider):
+        tagged.append(message_id)
+        return True
+    _mock_tag.ainvoke = lambda payload: _mock_tag(**payload)
+    monkeypatch.setattr("capabilities.expenses.tools.apply_email_processed_tag", _mock_tag)
+
+    result = await log_expenses_from_emails.ainvoke({
+        "user_id": 8820,
+        "emails": [{
+            "id": "is-tx-false-001",
+            "sender": "promo@spamco.com",
+            "subject": "Great deals!",
+            "body": "Check out our amazing offers.",
+            "date": "",
+        }],
+        "notify": False,
+    })
+
+    assert len(result["logged"]) == 0
+    assert len(result["skipped"]) == 1
+    assert result["skipped"][0].get("reason") == "non-transaction"
+    assert "is-tx-false-001" in tagged
+
+
+@pytest.mark.asyncio
+async def test_log_expenses_description_stored_in_notes(monkeypatch):
+    """LLM description is stored in the transaction's notes field."""
+    from core.models import ExpenseTransaction
+    from capabilities.expenses.tools import extract_expense_from_text, log_expenses_from_emails
+
+    async def fake_extract(**kwargs):
+        return {"amount": 35.0, "currency": "SGD", "merchant": "FairPrice",
+                "category": "Groceries", "date_iso": "", "confidence": 0.95,
+                "needs_clarification": False, "is_transaction": True,
+                "description": "Bought weekly groceries including milk, bread, and eggs from FairPrice."}
+
+    monkeypatch.setattr(extract_expense_from_text, "coroutine", fake_extract)
+
+    async def mock_laya(sender, subject, body):
+        return 0.95
+
+    monkeypatch.setattr("capabilities.expenses.tools.is_transaction_email", mock_laya)
+
+    result = await log_expenses_from_emails.ainvoke({
+        "user_id": 8821,
+        "emails": [{
+            "id": "desc-notes-001",
+            "sender": "receipts@fairprice.com.sg",
+            "subject": "Your receipt from FairPrice",
+            "body": "Total paid: $35.00 at FairPrice.",
+            "date": "",
+        }],
+        "notify": False,
+    })
+
+    assert len(result["logged"]) == 1
+    assert result["logged"][0]["amount"] == 35.0
+
+    async with async_session_factory() as session:
+        tx = (await session.execute(
+            select(ExpenseTransaction).where(
+                ExpenseTransaction.user_id == 8821,
+                ExpenseTransaction.source_message_id == "desc-notes-001",
+            )
+        )).scalar_one()
+    assert tx.notes == "Bought weekly groceries including milk, bread, and eggs from FairPrice."

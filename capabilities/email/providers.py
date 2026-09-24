@@ -117,7 +117,7 @@ def _fetch_outlook_imap(
             sender = _decode_mime(msg.get("From"))
             subject = _decode_mime(msg.get("Subject"))
             body = _body_snippet(msg)
-            full_body_text = _extract_body_text(msg)
+            full_body_text = _extract_body_text(msg)[:12000]
             date = _decode_mime(msg.get("Date"))
 
             sender_domain = sender.split("@")[-1].strip().lower() if "@" in sender else ""
@@ -171,8 +171,12 @@ def _fetch_outlook_imap(
                 pass
 
 
-def _extract_gmail_body(payload: Dict[str, Any], limit: int = 4000) -> str:
-    """Extract plain text or cleanly stripped HTML body from Gmail message payload."""
+def _extract_gmail_body(payload: Dict[str, Any], limit: int = 12000) -> str:
+    """Extract plain text or cleanly stripped HTML body from Gmail message payload.
+
+    12000-char input limit (~3000 tokens) fits comfortably within the Jev 32K-token
+    and chat-model context windows while preventing abuse.
+    """
     if not payload:
         return ""
 
@@ -291,13 +295,35 @@ class GmailProvider:
                 return []
 
             headers = {"Authorization": f"Bearer {access_token}"}
-            list_resp = await client.get(
-                "https://gmail.googleapis.com/gmail/v1/users/me/messages",
-                params={"q": query, "maxResults": 10},
-                headers=headers,
-            )
-            if list_resp.status_code != 200:
-                print(f"[GMAIL] list failed: {list_resp.status_code} {list_resp.text[:200]}")
+
+            # Retry once on transient network timeouts
+            list_resp = None
+            for attempt in range(2):
+                try:
+                    list_resp = await client.get(
+                        "https://gmail.googleapis.com/gmail/v1/users/me/messages",
+                        params={"q": query, "maxResults": 10},
+                        headers=headers,
+                    )
+                    if list_resp.status_code == 200:
+                        break
+                except (httpx.ConnectTimeout, httpx.ReadTimeout) as exc:
+                    if attempt == 0:
+                        print(
+                            f"[GMAIL] list {type(exc).__name__} "
+                            f"(attempt 1/2), retrying in 5s..."
+                        )
+                        await asyncio.sleep(5)
+                        continue
+                    print(f"[GMAIL] list failed after retry: {type(exc).__name__}")
+                    return []
+
+            if list_resp is None or list_resp.status_code != 200:
+                print(
+                    f"[GMAIL] list failed: "
+                    f"{list_resp.status_code if list_resp else 'unknown'} "
+                    f"{list_resp.text[:200] if list_resp else ''}"
+                )
                 return []
 
             messages = []
@@ -334,7 +360,7 @@ class GmailProvider:
                     date_iso = datetime.now(dt_timezone.utc).isoformat()
 
                 # Extract the real full message text from MIME payload
-                full_body = _extract_gmail_body(payload, limit=4000)
+                full_body = _extract_gmail_body(payload, limit=12000)
                 snippet_text = full_body or meta.get("snippet", "")
 
                 messages.append(
@@ -353,6 +379,9 @@ class GmailProvider:
 
     async def apply_processed_label(self, user_id: int, message_id: str) -> bool:
         """Apply the Assistant/Processed label via the Gmail API (requires gmail.modify)."""
+        # Non-fatal by design: every code path (403, timeout, network error) is caught
+        # by the outer try/except and returns False — the sweep never aborts for a
+        # label operation.
         refresh_token = await _get_gmail_refresh_token(user_id)
         if not refresh_token:
             return False
@@ -486,10 +515,15 @@ async def _refresh_gmail_access_token(client: httpx.AsyncClient, refresh_token: 
     token_data = token_resp.json()
     access_token = token_data.get("access_token")
     if not access_token:
-        print(
-            f"[GMAIL] token refresh failed: "
-            f"{token_data.get('error_description') or token_data.get('error')}"
-        )
+        error = token_data.get("error") or ""
+        error_desc = token_data.get("error_description") or ""
+        if "invalid_grant" in error or "invalid_grant" in error_desc:
+            print(
+                "[GMAIL] token expired or revoked — reconnect at /auth/gmail "
+                "to mint a new one"
+            )
+        else:
+            print(f"[GMAIL] token refresh failed: {error_desc or error}")
         return None
     return access_token
 
@@ -586,7 +620,7 @@ class OutlookProvider:
                     or sender_raw.get("address", "")
                 )
                 body_content = ((item.get("body") or {}).get("content") or "")
-                body_text = _html_to_text(body_content, limit=4000)
+                body_text = _html_to_text(body_content, limit=12000)
 
                 messages.append(
                     {
@@ -675,8 +709,12 @@ class OutlookProvider:
             return None
 
 
-def _html_to_text(html_body: str, limit: int = 4000) -> str:
-    """Convert an HTML email body to clean plain text (also passes plain text through)."""
+def _html_to_text(html_body: str, limit: int = 12000) -> str:
+    """Convert an HTML email body to clean plain text (also passes plain text through).
+
+    12000-char input limit (~3000 tokens) fits comfortably within the Jev 32K-token
+    and chat-model context windows while preventing abuse.
+    """
     if not html_body:
         return ""
     if "<" not in html_body:

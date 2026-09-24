@@ -22,11 +22,13 @@ class Settings(BaseSettings):
     deepseek_api_key: Optional[str] = None
     deepseek_base_url: str = "https://api.deepseek.com/v1"
     deepseek_model: str = "deepseek-v4-flash"
+    jev_model: str = "typesafe/jev-1.13"
     llm_provider: str = "gemini"
     openai_api_key: Optional[str] = None
     openai_model: str = "gpt-4o-mini"
     openrouter_api_key: Optional[str] = None
     openrouter_model: Optional[str] = "deepseek/deepseek-v4.1-flash"
+    openrouter_decisions_url: str = "https://openrouter.ai/api/alpha/decisions"
 
     # Capability Plugin & External Service API Keys
     google_client_id: Optional[str] = None

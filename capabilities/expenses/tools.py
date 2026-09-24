@@ -469,7 +469,7 @@ async def save_expense_transaction(
             date=exp_date,
             source_message_id=source_message_id,
             source_sender_domain=(source_sender_domain or "").lower() or None,
-            logged_at=logged_at,
+            logged_at=logged_at.replace(tzinfo=dt_timezone.utc) if logged_at is not None and logged_at.tzinfo is None else logged_at,
             is_verified=is_verified,
             notes=notes,
         )
@@ -646,20 +646,29 @@ async def extract_expense_from_text(user_text: str, recent_context: str = "") ->
                 "3. Extract ONLY the total price or amount actually charged/spent.\n"
                 '4. date_iso: the transaction date must be within 14 days of the email\'s own timestamp or the current date. NEVER invent a year or copy a year from account numbers, membership dates (e.g. "member since 2022") or reference IDs. If the message shows only day/month (e.g. "22 Aug"), use the current year; if no transaction date is shown at all, return "".\n'
                 "5. Reply with ONLY a JSON object:\n"
-                '{"amount": number|null, "currency": string, "merchant": string, "category": string, "date_iso": string, "confidence": number, "needs_clarification": boolean}\n'
+                '{"is_transaction": boolean, "description": string, "amount": number|null, "currency": string, "merchant": string, "category": string, "date_iso": string, "confidence": number, "needs_clarification": boolean}\n'
                 "Default currency: SGD for Singapore.\n"
                 "6. A 'Recent conversation' block, if present below, is ONLY for resolving an "
                 "explicit correction to the CURRENT message (e.g. 'actually make that $20' "
                 "referring back to an amount just discussed). NEVER use it to extract an "
                 "expense the current message does not itself describe -- if the current "
                 "message alone has no genuine paid expense, return {\"amount\": null} "
-                "regardless of what the recent conversation contains."
+                "regardless of what the recent conversation contains.\n"
+                "7. is_transaction: true ONLY for a genuine record of money actually paid/spent "
+                "(receipt, payment confirmation, bank/card transaction alert, paid invoice). "
+                "False for promotions, newsletters, statements, refunds, incoming money, "
+                "payment reminders, OTP/security mail.\n"
+                "8. description: when is_transaction is true, ONE concise sentence of at most "
+                "50 words describing what was bought and from whom, drawn only from the text. "
+                "When false, describe what the email actually is."
             )
         ),
         HumanMessage(
+            # 12000-char input limit (~3000 tokens) fits comfortably within the Jev
+            # 32K-token and chat-model context windows while preventing abuse.
             content=(
                 (f"Recent conversation:\n{recent_context}\n\n---\n\n" if recent_context else "")
-                + user_text[:2000]
+                + user_text[:12000]
             )
         ),
     ]
@@ -711,6 +720,8 @@ async def extract_expense_from_text(user_text: str, recent_context: str = "") ->
             "date_iso": parsed.get("date_iso") or "",
             "confidence": float(parsed.get("confidence", 0.9)),
             "needs_clarification": bool(parsed.get("needs_clarification", False)),
+            "is_transaction": bool(parsed.get("is_transaction", True)),
+            "description": str(parsed.get("description") or ""),
         }
     except Exception as exc:  # noqa: BLE001
         print(f"[EXPENSES] JSON parse failed: {exc}")
@@ -1527,7 +1538,22 @@ async def log_expenses_from_emails(
 
         text = f"Sender: {sender}\nSubject: {subject}\nBody: {body_text}"
         extracted = await extract_expense_from_text.ainvoke({"user_text": text})
-        if not extracted or not extracted.get("amount"):
+        # Gate: the LLM is the final authority on whether this is a transaction
+        if not extracted or not extracted.get("amount") or extracted.get("is_transaction") is False:
+            skipped.append({
+                "amount": 0,
+                "currency": "SGD",
+                "merchant": _sender_domain(sender),
+                "reason": "non-transaction",
+            })
+            if email_id:
+                try:
+                    provider = email_msg.get("provider", "gmail")
+                    await apply_email_processed_tag.ainvoke(
+                        {"user_id": user_id, "message_id": email_id, "provider": provider}
+                    )
+                except Exception as tag_err:
+                    print(f"[EXPENSES] Failed to tag non-transaction email {email_id}: {tag_err}")
             continue
 
         if needs_confidence_clamp:
@@ -1619,19 +1645,23 @@ async def log_expenses_from_emails(
             confidence=_clamp_confidence(extracted.get("confidence", 0.9)),
             needs_clarification=False,
         )
-        # Build compact email context for notes
-        context = ""
-        if subject or snippet:
+        # Build compact email context for notes — prefer LLM description, fall back to subject/snippet
+        description = str(extracted.get("description") or "").strip()
+        if description:
+            context = description[:400]
+        elif subject or snippet:
             context = f"{subject} — {snippet}".strip(" —")[:300]
         elif subject or body_text:
             context = f"{subject} — {body_text[:200]}".strip(" —")[:300]
+        else:
+            context = ""
         tx = await save_expense_transaction(
             user_id=user_id,
             expense=expense,
             source_message_id=email_id or None,
             is_verified=True,
             source_sender_domain=sender_domain or None,
-            logged_at=datetime.utcnow(),
+            logged_at=datetime.now(dt_timezone.utc),
             notes=context or None,
         )
         if email_id:
@@ -1961,7 +1991,7 @@ async def split_bill_expense(
                 currency="SGD",
                 merchant=merchant,
                 category="Dining",
-                date=datetime.utcnow(),
+                date=datetime.now(dt_timezone.utc),
                 is_verified=True,
             )
             session.add(target_tx)
@@ -2046,7 +2076,7 @@ async def split_bill_expense(
             iou_task.iou_amount = owed_amount
             if paid_status[friend]:
                 iou_task.status = "done"
-                iou_task.completed_at = iou_task.completed_at or datetime.utcnow()
+                iou_task.completed_at = iou_task.completed_at or datetime.now(dt_timezone.utc)
                 iou_task.is_reminder_active = False
             session.add(iou_task)
             await session.flush()
