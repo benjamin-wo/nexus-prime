@@ -10,8 +10,8 @@ This document records the Ubiquitous Language and Architectural Seams for `nexus
 - **TelegramIngress**: A deep adapter module (`app/ingress.py`) that encapsulates all Telegram Bot API concerns:
   - Verifies incoming webhook payloads and normalizes user/chat IDs.
   - Resolves or provisions the `UserProfile` in PostgreSQL.
-  - Directly executes all deterministic slash commands (`/jobs`, `/timezone`, `/run_now`) without invoking LangGraph.
-  - Handles inline keyboard button callback resumption (`Command(resume=...)`) and telemetry feature request tagging (`log_req:<tag>`).
+  - Routes every text/slash message into the LangGraph agent (pure LLM chat agent); only Telegram protocol events (callback queries, media, location pins) bypass the LLM.
+  - Handles inline keyboard button callback resumption (`Command(resume=...)`) and telemetry feature request tagging (`log_req:<tag>`); `cmd:` button shortcuts still resolve through deterministic handlers.
   - Normalizes conversational prompts and multimodal media attachments into a clean `AssistantState` dictionary before handing off across the seam to LangGraph.
 - **The Seam**: Decouples external messaging channels (Telegram Webhook, Web Copilot REST/SSE) from the core agentic orchestrator.
 
