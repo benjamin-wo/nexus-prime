@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     openai_api_key: Optional[str] = None
     openai_model: str = "gpt-4o-mini"
     openrouter_api_key: Optional[str] = None
-    openrouter_model: Optional[str] = None
+    openrouter_model: Optional[str] = "deepseek/deepseek-v4.1-flash"
 
     # Capability Plugin & External Service API Keys
     google_client_id: Optional[str] = None

@@ -219,6 +219,14 @@ def get_llm(
         )
 
     elif role == "agent_core":
+        if settings.llm_provider == "openrouter" and _valid_api_key(settings.openrouter_api_key) and settings.openrouter_model:
+            client = _openrouter_llm(temperature)
+            if client is not None:
+                logger.debug(
+                    f"Initializing OpenRouter ({settings.openrouter_model}) for agent_core role."
+                )
+                return client
+
         if settings.llm_provider == "gemini" or (not settings.deepseek_api_key and settings.active_gemini_api_key):
             api_key = settings.active_gemini_api_key or "test_google_key"
             chosen_model = model or settings.gemini_model
