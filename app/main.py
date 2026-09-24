@@ -45,12 +45,6 @@ async def lifespan(app: FastAPI):
     except Exception as clean_err:
         print(f"[STARTUP] legacy cleanup error: {clean_err}")
     await start_scheduler()
-    # Report Laya (transaction-embedding) availability at startup
-    try:
-        import laya  # noqa: F401
-        print("[STARTUP] Laya available — transaction embedding enabled")
-    except ImportError:
-        print("[STARTUP] Laya not installed — transaction embedding disabled")
     try:
         from app.ingress import setup_telegram_bot_commands
         await setup_telegram_bot_commands()

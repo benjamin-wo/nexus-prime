@@ -33,3 +33,8 @@ This document records the Ubiquitous Language and Architectural Seams for `nexus
 - **SkillIndex**: The compact one-line-per-skill listing injected into the agent's system prompt.
 - **Capability**: The union of a Skill and the tools it declares. Instances: expenses, email, web-research.
 - **Multi-tenancy**: Every tool is user-scoped via the IdentityGuard; `admin_only_capabilities` (config) gates sensitive skills.
+
+### 4. Email Capability (`capabilities/email/`)
+- **Transaction Classifier (Jev)**: The email expense sweep uses `typesafe/jev-1.13` via the OpenRouter Decisions API (`/api/alpha/decisions`) as a System One pre-filter. It classifies each email as transaction/non-transaction and assigns an email type (receipt, bill, bank alert, etc.) with a confidence score. No local model, no CPU inference, no model download. Configured via `JEV_MODEL` (default `typesafe/jev-1.13`) and uses `OPENROUTER_API_KEY` for auth.
+- **LLM Extraction Gate**: After Jev flags a potential transaction, the chat model (`extract_expense_from_text`) performs the final extraction. It produces a `description` field — one concise sentence of ≤50 words describing what was bought and from whom. This description is stored in the transaction's `notes` field and surfaces in the web cockpit ledger.
+- **Fallback**: If Jev is unreachable (network error, missing API key, malformed response), the sweep returns a neutral fallback (`is_transaction=None`, `email_type="unknown"`) and continues without crashing.

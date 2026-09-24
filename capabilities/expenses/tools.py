@@ -1509,15 +1509,15 @@ async def log_expenses_from_emails(
         if email_id and await is_duplicate_expense(email_id):
             continue
 
-        # Laya transaction validation gate
+        # Transaction validation gate
         try:
-            laya_prob = await is_transaction_email(
+            jev_prob = await is_transaction_email(
                 sender=sender, subject=subject, body=body_text
             )
         except Exception:
-            laya_prob = 0.5
+            jev_prob = 0.5
 
-        if laya_prob != 0.5 and laya_prob < 0.40:
+        if jev_prob != 0.5 and jev_prob < 0.40:
             skipped.append({
                 "amount": 0,
                 "currency": "SGD",
@@ -1534,7 +1534,7 @@ async def log_expenses_from_emails(
                     print(f"[EXPENSES] Failed to tag non-transaction email {email_id}: {tag_err}")
             continue
 
-        needs_confidence_clamp = 0.40 <= laya_prob < 0.85 and laya_prob != 0.5
+        needs_confidence_clamp = 0.40 <= jev_prob < 0.85 and jev_prob != 0.5
 
         text = f"Sender: {sender}\nSubject: {subject}\nBody: {body_text}"
         extracted = await extract_expense_from_text.ainvoke({"user_text": text})
@@ -1559,7 +1559,7 @@ async def log_expenses_from_emails(
         if needs_confidence_clamp:
             extracted["confidence"] = min(
                 extracted.get("confidence", 0.9),
-                laya_prob,
+                jev_prob,
             )
 
         merchant = _resolve_email_merchant(

@@ -45,11 +45,6 @@ dev = [
     "httpx>=0.27.0",
     "hypothesis>=6.165.10",
 ]
-laya = [
-    "laya",
-    "torch",
-]
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"

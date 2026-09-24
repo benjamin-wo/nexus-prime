@@ -18,3 +18,4 @@ tools:
 - Summarize from exactly the returned sender/subject/date lines. NEVER invent a sender, subject, or amount not present in the results.
 - "connect my email / set up Gmail" or any email task failing because no mailbox is connected → `get_email_connection_status` and relay the links.
 - Finding a receipt is an email search, not an expense log — only log via the expenses skill when the user asks to log it or an expense-scan flow produced it.
+- The `sweep_email_for_expenses` tool runs periodically on a schedule. It uses a **Jev** classifier (OpenRouter Decisions API, model configured via `JEV_MODEL`) as a cheap pre-filter, then the chat model extracts a ≤50-word `description` stored in the transaction `notes`. The LLM's `is_transaction` flag is the final gate — non-transaction emails (promotions, newsletters, statements) are silently skipped and tagged as processed.

@@ -20,19 +20,16 @@ log = logging.getLogger(__name__)
 
 # ── Backward-compatible stub ────────────────────────────────────────────────
 # load_agent kept so existing imports (tests, callers) don't break when they
-# import it — always returns None since Laya has been replaced by Jev.
-
-_LAYA_AVAILABLE = False  # kept so ``patch.object(val_mod, "_LAYA_AVAILABLE")`` patterns still resolve
-_model: Optional[Any] = None  # kept for import compat; unused
+# import it — always returns None (deprecated stub kept for back-compat).
 
 
 async def load_agent(
-    model_id_or_path: str = "convaiinnovations/laya",
+    model_id_or_path: str = "legacy/stub",
     device: Optional[str] = None,
     token: Optional[str] = None,
     subfolder: Optional[str] = None,
 ) -> Any:
-    """No-op stub.  Laya has been replaced by Jev (OpenRouter Decisions).
+    """No-op stub.  Deprecated — replaced by Jev (OpenRouter Decisions).
 
     Always returns ``None``.  Kept so existing importers of ``load_agent``
     do not break.

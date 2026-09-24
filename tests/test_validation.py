@@ -248,7 +248,7 @@ async def test_is_transaction_email_low_value():
 
 @pytest.mark.asyncio
 async def test_load_agent_returns_none():
-    """load_agent always returns None (Laya has been replaced by Jev)."""
+    """load_agent always returns None (legacy stub kept for back-compat)."""
     agent = await load_agent()
     assert agent is None
 

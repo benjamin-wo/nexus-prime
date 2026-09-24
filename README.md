@@ -49,6 +49,13 @@ Step-by-step guidance the agent loads on demand via the `load_skill` tool.
   against the **tool registry** (the `@tool` callables across `capabilities/*/tools.py` and a
   skill's own optional `tools.py`), and exposes the skill index + progressive-disclosure loader.
 - Installed skills: expenses, email, web-research.
+- **Email sweep** (`capabilities/email/`): Periodically polls connected Gmail/Outlook mailboxes
+  for receipts and bills. A **Jev classifier** (`typesafe/jev-1.13` via the OpenRouter Decisions
+  API) pre-filters each email as transaction/non-transaction. Emails flagged as transactions
+  are then extracted by the chat model, which produces a concise ≤50-word description stored
+  in the transaction's `notes` field. The final `is_transaction` gate is the LLM itself — Jev
+  is the cheap System One pre-filter. Configured via `JEV_MODEL` (default `typesafe/jev-1.13`);
+  requires `OPENROUTER_API_KEY`.
 - **Adding a skill = dropping `skills/<name>/SKILL.md`** (plus `tools.py` if it needs new
   executable actions). No registry edits, no redeploy.
 

@@ -1394,11 +1394,11 @@ def test_outlook_imap_fetch_singlepart_body(monkeypatch):
     assert entry["provider"] == "outlook"
 
 
-# ── Laya transaction validation gate tests ─────────────────────────────────
+# ── Transaction validation gate tests ─────────────────────────────────────
 
 
 @pytest.mark.asyncio
-async def test_log_expenses_laya_high_confidence(monkeypatch):
+async def test_log_expenses_jev_high_confidence(monkeypatch):
     """Mock is_transaction_email returns 0.95 → email processed normally."""
     from capabilities.expenses.tools import extract_expense_from_text, log_expenses_from_emails
 
@@ -1409,15 +1409,15 @@ async def test_log_expenses_laya_high_confidence(monkeypatch):
 
     monkeypatch.setattr(extract_expense_from_text, "coroutine", fake_extract)
 
-    async def mock_laya(sender, subject, body):
+    async def mock_jev(sender, subject, body):
         return 0.95
 
-    monkeypatch.setattr("capabilities.expenses.tools.is_transaction_email", mock_laya)
+    monkeypatch.setattr("capabilities.expenses.tools.is_transaction_email", mock_jev)
 
     result = await log_expenses_from_emails.ainvoke({
         "user_id": 8810,
         "emails": [{
-            "id": "laya-high-001",
+            "id": "jev-high-001",
             "sender": "billing@example.com",
             "subject": "Your receipt",
             "body": "You paid $42.00 at TestCo.",
@@ -1432,7 +1432,7 @@ async def test_log_expenses_laya_high_confidence(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_log_expenses_laya_low_confidence(monkeypatch):
+async def test_log_expenses_jev_low_confidence(monkeypatch):
     """Mock is_transaction_email returns 0.30 → email skipped AND tagged processed."""
     from capabilities.expenses.tools import extract_expense_from_text, log_expenses_from_emails
 
@@ -1443,10 +1443,10 @@ async def test_log_expenses_laya_low_confidence(monkeypatch):
 
     monkeypatch.setattr(extract_expense_from_text, "coroutine", fake_extract)
 
-    async def mock_laya(sender, subject, body):
+    async def mock_jev(sender, subject, body):
         return 0.30
 
-    monkeypatch.setattr("capabilities.expenses.tools.is_transaction_email", mock_laya)
+    monkeypatch.setattr("capabilities.expenses.tools.is_transaction_email", mock_jev)
 
     tagged = []
     async def _mock_tag(user_id, message_id, provider):
@@ -1458,7 +1458,7 @@ async def test_log_expenses_laya_low_confidence(monkeypatch):
     result = await log_expenses_from_emails.ainvoke({
         "user_id": 8811,
         "emails": [{
-            "id": "laya-low-001",
+            "id": "jev-low-001",
             "sender": "newsletter@promo.com",
             "subject": "Great deals this week!",
             "body": "Check out our latest offers.",
@@ -1470,11 +1470,11 @@ async def test_log_expenses_laya_low_confidence(monkeypatch):
     assert len(result["logged"]) == 0
     assert len(result["skipped"]) == 1
     assert result["skipped"][0].get("reason") == "non-transaction"
-    assert "laya-low-001" in tagged
+    assert "jev-low-001" in tagged
 
 
 @pytest.mark.asyncio
-async def test_log_expenses_laya_mid_confidence(monkeypatch):
+async def test_log_expenses_jev_mid_confidence(monkeypatch):
     """Mock is_transaction_email returns 0.55 → extraction called, confidence clamped (< 0.8 → skipped)."""
     from capabilities.expenses.tools import extract_expense_from_text, log_expenses_from_emails
 
@@ -1485,15 +1485,15 @@ async def test_log_expenses_laya_mid_confidence(monkeypatch):
 
     monkeypatch.setattr(extract_expense_from_text, "coroutine", fake_extract)
 
-    async def mock_laya(sender, subject, body):
+    async def mock_jev(sender, subject, body):
         return 0.55
 
-    monkeypatch.setattr("capabilities.expenses.tools.is_transaction_email", mock_laya)
+    monkeypatch.setattr("capabilities.expenses.tools.is_transaction_email", mock_jev)
 
     result = await log_expenses_from_emails.ainvoke({
         "user_id": 8812,
         "emails": [{
-            "id": "laya-mid-001",
+            "id": "jev-mid-001",
             "sender": "billing@midmerchant.com",
             "subject": "Your invoice",
             "body": "You paid $50.00.",
@@ -1506,13 +1506,13 @@ async def test_log_expenses_laya_mid_confidence(monkeypatch):
     assert len(result["logged"]) == 0
     assert len(result["skipped"]) == 1
     assert result["skipped"][0]["amount"] == 50.0
-    # This skipped entry comes from the existing low-confidence check (line 1531), not the Laya gate
+    # This skipped entry comes from the existing low-confidence check (line 1531), not the transaction gate
     assert "reason" not in result["skipped"][0]
 
 
 @pytest.mark.asyncio
-async def test_log_expenses_laya_not_installed(monkeypatch):
-    """is_transaction_email returns 0.5 (Laya not installed fallback) → extraction proceeds as before."""
+async def test_log_expenses_is_tx_fallback(monkeypatch):
+    """is_transaction_email returns 0.5 (API unavailable fallback) → extraction proceeds as before."""
     from capabilities.expenses.tools import extract_expense_from_text, log_expenses_from_emails
 
     async def fake_extract(**kwargs):
@@ -1522,15 +1522,15 @@ async def test_log_expenses_laya_not_installed(monkeypatch):
 
     monkeypatch.setattr(extract_expense_from_text, "coroutine", fake_extract)
 
-    async def mock_laya(sender, subject, body):
-        return 0.5  # fallback value when Laya is not installed
+    async def mock_jev(sender, subject, body):
+        return 0.5  # fallback value when API is unavailable
 
-    monkeypatch.setattr("capabilities.expenses.tools.is_transaction_email", mock_laya)
+    monkeypatch.setattr("capabilities.expenses.tools.is_transaction_email", mock_jev)
 
     result = await log_expenses_from_emails.ainvoke({
         "user_id": 8813,
         "emails": [{
-            "id": "laya-notinst-001",
+            "id": "jev-fallback-001",
             "sender": "shop@direct.com",
             "subject": "Order confirmation",
             "body": "Your order for $60.00 is confirmed.",
@@ -1603,10 +1603,10 @@ async def test_log_expenses_is_transaction_false_skips_and_tags(monkeypatch):
 
     monkeypatch.setattr(extract_expense_from_text, "coroutine", fake_extract)
 
-    async def mock_laya(sender, subject, body):
+    async def mock_jev(sender, subject, body):
         return 0.95  # passes the probability pre-filter
 
-    monkeypatch.setattr("capabilities.expenses.tools.is_transaction_email", mock_laya)
+    monkeypatch.setattr("capabilities.expenses.tools.is_transaction_email", mock_jev)
 
     tagged = []
     async def _mock_tag(user_id, message_id, provider):
@@ -1647,10 +1647,10 @@ async def test_log_expenses_description_stored_in_notes(monkeypatch):
 
     monkeypatch.setattr(extract_expense_from_text, "coroutine", fake_extract)
 
-    async def mock_laya(sender, subject, body):
+    async def mock_jev(sender, subject, body):
         return 0.95
 
-    monkeypatch.setattr("capabilities.expenses.tools.is_transaction_email", mock_laya)
+    monkeypatch.setattr("capabilities.expenses.tools.is_transaction_email", mock_jev)
 
     result = await log_expenses_from_emails.ainvoke({
         "user_id": 8821,
