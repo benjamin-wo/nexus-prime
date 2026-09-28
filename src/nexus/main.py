@@ -1,28 +1,125 @@
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Callable
+from contextlib import AsyncExitStack, asynccontextmanager
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any
 
+import httpx
 from fastapi import FastAPI
+from langchain_core.language_models import BaseChatModel
+from langgraph.checkpoint.base import BaseCheckpointSaver
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncEngine
 
+from nexus.agent.graph import AgentDeps, AgentGraph
+from nexus.agent.receipts import LlmReceiptReader, ReceiptReader
+from nexus.agent.service import AgentService
+from nexus.agent.skills import SkillLibrary
+from nexus.agent.tools import build_tools
+from nexus.application.clock import utcnow
+from nexus.channels.telegram import webhook as telegram_webhook
+from nexus.channels.telegram.client import HttpTelegramClient, TelegramClient
 from nexus.channels.web import health
+from nexus.infra.db.checkpointer import postgres_checkpointer
 from nexus.infra.db.engine import make_engine
 from nexus.infra.db.migrations import assert_schema_at_head
+from nexus.infra.db.uow import SqlUnitOfWork
+from nexus.infra.llm.factory import ChatModels, build_chat_models
 from nexus.settings import Settings, get_settings
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+@dataclass(frozen=True, slots=True)
+class Overrides:
+    """Swap in fakes for tests. Anything left None is built from settings."""
+
+    models: ChatModels | None = None
+    receipts: ReceiptReader | None = None
+    telegram: TelegramClient | None = None
+    checkpointer: BaseCheckpointSaver[Any] | None = None
+    clock: Callable[[], datetime] | None = None
+
+
+def _health(engine: AsyncEngine, models: ChatModels) -> Callable[[], Any]:
+    async def report() -> str:
+        try:
+            async with engine.connect() as connection:
+                await connection.execute(text("SELECT 1"))
+            database = "the database is reachable"
+        except Exception:
+            database = "I can't reach the database"
+        return f"I'm running: {database}, and I'm using the {models.description} model."
+
+    return report
+
+
+async def _telegram_runtime(
+    settings: Settings, engine: AsyncEngine, overrides: Overrides, stack: AsyncExitStack
+) -> telegram_webhook.TelegramRuntime:
+    def uow() -> SqlUnitOfWork:
+        return SqlUnitOfWork(engine)
+
+    models = overrides.models or build_chat_models(settings)
+    skills = SkillLibrary.load()
+    tools = build_tools(skills.body)
+    skills.validate_tools(set(tools))
+    clock = overrides.clock or utcnow
+    checkpointer: BaseCheckpointSaver[Any]
+    if overrides.checkpointer is not None:
+        checkpointer = overrides.checkpointer
+    else:
+        checkpointer = await stack.enter_async_context(
+            postgres_checkpointer(settings.database_url_str)
+        )
+    graph = AgentGraph(
+        AgentDeps(
+            uow=uow,
+            tools=tools,
+            primary=models.primary,
+            fallbacks=models.fallbacks,
+            skill_index=skills.index(),
+            health=_health(engine, models),
+            clock=clock,
+        )
+    ).compile(checkpointer)
+    receipts: ReceiptReader | None = overrides.receipts
+    if receipts is None and models.vision is not None:
+        receipts = LlmReceiptReader(models.vision)
+    client = overrides.telegram
+    if client is None:
+        token = settings.telegram_bot_token
+        if token is None:  # pragma: no cover - guarded by telegram_enabled
+            raise RuntimeError("Telegram is not configured")
+        http = await stack.enter_async_context(httpx.AsyncClient())
+        client = HttpTelegramClient(token.get_secret_value(), http)
+    return telegram_webhook.TelegramRuntime(
+        settings=settings,
+        uow=uow,
+        service=AgentService(graph, uow, receipts, clock),
+        client=client,
+    )
+
+
+def create_app(settings: Settings | None = None, overrides: Overrides | None = None) -> FastAPI:
     resolved = settings or get_settings()
+    extra = overrides or Overrides()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         engine = make_engine(resolved.database_url_str)
-        try:
+        async with AsyncExitStack() as stack:
+            stack.push_async_callback(engine.dispose)
             await assert_schema_at_head(engine)
             app.state.engine = engine
+            if resolved.telegram_enabled:
+                app.state.telegram = await _telegram_runtime(resolved, engine, extra, stack)
             yield
-        finally:
-            await engine.dispose()
 
     app = FastAPI(title="Nexus Prime", lifespan=lifespan)
     app.state.settings = resolved
+    app.state.telegram = None
     app.include_router(health.router)
+    app.include_router(telegram_webhook.router)
     return app
+
+
+__all__ = ["BaseChatModel", "Overrides", "create_app"]
