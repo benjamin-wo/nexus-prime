@@ -5,14 +5,14 @@ from alembic import context
 from sqlalchemy import Connection
 
 from nexus.infra.db.engine import make_engine
+from nexus.infra.db.tables import metadata
 from nexus.settings import get_settings
 
 config = context.config
 if config.config_file_name is not None and config.attributes.get("configure_logger", True):
     fileConfig(config.config_file_name, disable_existing_loggers=False)
 
-# Populated with SQLAlchemy models from M1 onwards.
-target_metadata = None
+target_metadata = metadata
 
 
 def _database_url() -> str:
@@ -21,7 +21,9 @@ def _database_url() -> str:
 
 
 def _run(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection, target_metadata=target_metadata, compare_server_default=True
+    )
     with context.begin_transaction():
         context.run_migrations()
 

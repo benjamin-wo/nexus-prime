@@ -125,16 +125,16 @@ nexus-prime/
 ## 4. Data model (v1)
 
 - **Money** is `NUMERIC(19,4)` plus an ISO currency code. Never float.
-- **Every row** has a `user_id`, and every query is scoped to it.
+- **Every row** has a `user_id`, and every query is scoped to it. Child rows reference their parent by `(id, user_id)`, so the database itself rejects cross-tenant links.
 
 | Table | Key fields |
 |---|---|
 | `users` | id (uuid), telegram_user_id (unique), telegram_chat_id, timezone, home_currency, role (owner/member), created_at |
 | `transactions` | id, user_id, direction (in/out), amount, currency, occurred_at, merchant/counterparty, category_id, notes, status (confirmed/pending), source (text/photo/email/import/manual), deleted_at |
 | `transaction_sources` | user_id, source, external_id (unique per user+source), transaction_id nullable. Kept after a delete, so it also acts as the "don't re-import" tombstone. |
-| `transaction_revisions` | transaction_id, kind (create/edit/delete/restore), before (jsonb), created_at. Powers undo and history. |
-| `splits` | transaction_id, participant_name, share_amount, settled_amount, status |
-| `settlements` | split_id, income_transaction_id, amount |
+| `transaction_revisions` | transaction_id, kind (create/edit/delete/restore/split), before (jsonb), created_at, undone_at. Powers undo (newest open revision first) and history. |
+| `splits` | transaction_id, participant_name, share_amount. What is still owed is computed from settlements, never stored, so deleting or undoing a repayment reopens the IOU. |
+| `settlements` | split_id, income_transaction_id, amount. Settlements on a deleted income transaction don't count. |
 | `categories` / `category_rules` | name, active; rule pattern, priority, explanation |
 | `budgets` / `budget_alerts` | month-scoped limits; one alert row per (budget, period, threshold), which makes alerts idempotent |
 | `recurrence_rules` | pattern, cadence, status (proposed/accepted/rejected), variable_amount |
