@@ -16,12 +16,14 @@ type Tx = {
 /** An in-memory stand-in for the API, so journeys exercise the real UI in a browser. */
 export async function fakeApi(page: Page, { signedIn = true } = {}) {
   let session = signedIn;
-  const state: { txs: Tx[]; lastPress?: string } = {
+  type FakeBudget = { id: string; category_id: string | null; limit: number; spent: number };
+  const state: { txs: Tx[]; lastPress?: string; budgets: FakeBudget[] } = {
     txs: [
       mk("t1", "out", "12.40", "Maxwell Food Centre", "food"),
       mk("t2", "out", "25.00", "Grab", null),
       mk("t3", "in", "4200.00", "Employer", null),
     ],
+    budgets: [],
   };
   const live = () => state.txs.filter((t) => !t.deleted);
   const json = (route: Route, body: unknown, status = 200) =>
@@ -111,6 +113,38 @@ export async function fakeApi(page: Page, { signedIn = true } = {}) {
           },
         ],
       });
+    }
+    if (path === "/budgets" && method === "GET") {
+      const sgd = (amount: number) => ({ amount: amount.toFixed(4), currency: "SGD" });
+      return json(
+        route,
+        state.budgets.map((b) => ({
+          id: b.id,
+          category_id: b.category_id,
+          name: b.category_id ? "Food & Drink" : "Overall",
+          limit: sgd(b.limit),
+          spent: sgd(b.spent),
+          remaining: sgd(b.limit - b.spent),
+          percent: Math.floor((b.spent * 100) / b.limit),
+          unconverted: [],
+        })),
+      );
+    }
+    if (path === "/budgets" && method === "PUT") {
+      const existing = state.budgets.find((b) => b.category_id === (body.category_id ?? null));
+      if (existing) existing.limit = Number(body.amount);
+      else
+        state.budgets.push({
+          id: `b${state.budgets.length + 1}`,
+          category_id: body.category_id ?? null,
+          limit: Number(body.amount),
+          spent: body.category_id ? 90 : 37.4,
+        });
+      return route.fulfill({ status: 204 });
+    }
+    if (path.startsWith("/budgets/") && method === "DELETE") {
+      state.budgets = state.budgets.filter((b) => `/budgets/${b.id}` !== path);
+      return route.fulfill({ status: 204 });
     }
     if (path === "/ious") {
       return json(route, [

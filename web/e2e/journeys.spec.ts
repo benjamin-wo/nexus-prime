@@ -190,6 +190,30 @@ test("sign out returns to the sign-in page", async ({ page, isMobile }) => {
   await expect(page).toHaveURL(/\/login$/);
 });
 
+test("set a budget, see how much is used, change and remove it", async ({ page }) => {
+  await fakeApi(page);
+  await page.goto("/");
+  await page.getByRole("link", { name: "View budgets" }).click();
+  await expect(page.getByRole("heading", { name: "Budgets", level: 1 })).toBeVisible();
+  await expect(page.getByText("No budgets yet. Add one below.")).toBeVisible();
+
+  await page.getByLabel("For").selectOption({ label: "Food & Drink" });
+  await page.getByLabel("Monthly limit (SGD)").fill("100");
+  await page.getByRole("button", { name: "Add budget" }).click();
+  const meter = page.getByRole("meter", { name: "Food & Drink budget used" });
+  await expect(meter).toHaveAttribute("aria-valuetext", "90% used");
+  await expect(page.getByText(/90% used · SGD\s?10\.00 left/)).toBeVisible();
+
+  await page.getByRole("button", { name: "Change" }).click();
+  await page.getByLabel("Monthly limit (SGD)").first().fill("80");
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText(/112% used · Over by SGD\s?10\.00/)).toBeVisible();
+
+  await page.getByRole("button", { name: "Remove" }).click();
+  await page.getByRole("button", { name: "Remove" }).click(); // confirm
+  await expect(page.getByText("No budgets yet. Add one below.")).toBeVisible();
+});
+
 test("nothing spills sideways on a small phone", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 568 });
   await fakeApi(page);

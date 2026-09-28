@@ -142,6 +142,22 @@ label.field { display: grid; gap: var(--space-1); font-weight: 600; font-size: 0
 .iou { display: flex; justify-content: space-between; gap: var(--space-2); padding: var(--space-2) 0; border-bottom: 1px solid var(--border-subtle); }
 .iou:last-child { border-bottom: 0; }
 
+/* --- budgets --- */
+.budgets { display: grid; gap: var(--space-4); margin: 0; padding: 0; list-style: none; }
+.budget { display: grid; gap: var(--space-2); padding-bottom: var(--space-4); border-bottom: 1px solid var(--border-subtle); }
+.budget:last-child { border-bottom: 0; padding-bottom: 0; }
+.budget-head, .budget-foot { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-2); }
+.budget-head .num { white-space: nowrap; }
+.meter { height: 10px; border-radius: 999px; background: var(--bg-input); border: 1px solid var(--border-card); overflow: hidden; }
+.meter span { display: block; height: 100%; border-radius: 999px; background: var(--orange-primary); transition: width var(--t-standard); }
+.meter-warn span { background: var(--status-warning); }
+.meter-over span { background: var(--rose-accent); }
+.budget-state-warn { color: var(--status-warning); }
+.budget-state-over { color: var(--rose-accent); }
+.budget-foot .btn-ghost { min-height: 32px; padding: 0 var(--space-2); }
+.budget-edit, .budget-add { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-3); }
+.budget-edit .field, .budget-add .field { flex: 1 1 180px; }
+
 /* --- badges --- */
 .badge { display: inline-flex; align-items: center; padding: var(--space-1) var(--space-2); border-radius: 999px; font-size: 0.7rem; font-weight: 600; border: 1px solid; }
 .badge-out { color: var(--orange-primary); background: var(--orange-soft); border-color: var(--orange-border); }

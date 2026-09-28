@@ -49,6 +49,15 @@ The web API (`/api/...`) is on when Telegram is configured and the public origin
 - **Writes** must come from the app's own origin and carry the session's `X-CSRF-Token`.
 - **Every route** takes the user from the session. Another user's data returns 404.
 
+## Background jobs
+
+Budget alerts (and, later, bill reminders) run on a Postgres-backed job queue inside the app process: `JOBS_ENABLED`, which defaults to on only when `ENVIRONMENT=prod`.
+
+- **Exactly once:** each job is claimed with `FOR UPDATE SKIP LOCKED` under a 5-minute lease, and recurring work is queued once per time slot under a unique dedupe key. Overlapping instances during a deploy don't double-send, and no leader election is needed.
+- **Retries:** failures back off (2, 4, 8… minutes, capped at an hour) and stop after 5 attempts.
+- **Quiet hours:** Telegram messages wait out 22:00–08:00 in the user's timezone.
+- **Budgets:** monthly limits in the home currency, overall or per category, with no rollover. Every 10 minutes a sweep records each 50/80/100% threshold reached once per budget per month (`budget_alerts`), and messages the highest new one.
+
 ## Deploy (Railway)
 
 The `nexus-app` service builds from the `Dockerfile`. Its settings live on the service in Railway, not in the repo (Railway no longer reads `railway.toml`):

@@ -469,6 +469,41 @@ def response_lines(lines: list[str]) -> str:
     return "\n".join(lines)
 
 
+# --- budgets --------------------------------------------------------------------------
+
+
+async def test_budgets_round_trip(world: World) -> None:
+    owner, token = await owner_and_invite(world)
+    food = next(
+        c for c in (await owner.get("/api/categories")).json() if c["name"] == "Food & Drink"
+    )
+    assert (await owner.get("/api/budgets")).json() == []
+    for body in ({"amount": "1,000"}, {"category_id": food["id"], "amount": "100"}):
+        assert (await owner.send("PUT", "/api/budgets", body)).status_code == 204
+    await spend(owner, "85", "SGD", "2026-09-27", category_id=food["id"])
+    await spend(owner, "20", "USD", "2026-09-26", category_id=food["id"])  # 25.81 SGD
+    overall, meal = (await owner.get("/api/budgets")).json()
+    assert overall["name"] == "Overall" and overall["limit"]["amount"] == "1000.0000"
+    assert meal["name"] == "Food & Drink"
+    assert meal["spent"] == {"amount": "110.8100", "currency": "SGD"}
+    assert meal["percent"] == 110 and meal["remaining"]["amount"] == "-10.8100"
+
+    bad = await owner.send("PUT", "/api/budgets", {"amount": "0"})
+    assert bad.status_code == 422
+    csrf = await owner.client.put("/api/budgets", json={"amount": "5"}, headers={"Origin": ORIGIN})
+    assert csrf.status_code == 403
+
+    member = world.browser()
+    await member.login(MEMBER, invite=token)
+    assert (await member.get("/api/budgets")).json() == []
+    assert (await member.send("DELETE", f"/api/budgets/{meal['id']}")).status_code == 404
+    theirs = await member.send("PUT", "/api/budgets", {"category_id": food["id"], "amount": "5"})
+    assert theirs.status_code == 404  # someone else's category
+
+    assert (await owner.send("DELETE", f"/api/budgets/{meal['id']}")).status_code == 204
+    assert [b["name"] for b in (await owner.get("/api/budgets")).json()] == ["Overall"]
+
+
 # --- chat ---------------------------------------------------------------------------------
 
 

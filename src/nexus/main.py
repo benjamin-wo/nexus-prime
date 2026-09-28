@@ -81,7 +81,11 @@ def _health(engine: AsyncEngine, models: ChatModels) -> Callable[[], Any]:
 
 
 async def _telegram_runtime(
-    settings: Settings, engine: AsyncEngine, overrides: Overrides, stack: AsyncExitStack
+    settings: Settings,
+    engine: AsyncEngine,
+    overrides: Overrides,
+    stack: AsyncExitStack,
+    rates: RateSource,
 ) -> telegram_webhook.TelegramRuntime:
     def uow() -> SqlUnitOfWork:
         return SqlUnitOfWork(engine)
@@ -107,6 +111,7 @@ async def _telegram_runtime(
             skill_index=skills.index(),
             health=_health(engine, models),
             clock=clock,
+            rates=rates,
         )
     ).compile(checkpointer)
     receipts: ReceiptReader | None = overrides.receipts
@@ -147,14 +152,14 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
             await assert_schema_at_head(engine)
             app.state.engine = engine
             if resolved.telegram_enabled:
-                telegram = await _telegram_runtime(resolved, engine, extra, stack)
-                app.state.telegram = telegram
-                origin = resolved.public_origin
-                clock = extra.clock or utcnow
                 rates = extra.rates
                 if rates is None:
                     http = await stack.enter_async_context(httpx.AsyncClient())
                     rates = FrankfurterRates(http)
+                telegram = await _telegram_runtime(resolved, engine, extra, stack, rates)
+                app.state.telegram = telegram
+                origin = resolved.public_origin
+                clock = extra.clock or utcnow
                 if resolved.run_jobs:
                     runner = JobRunner(
                         engine,

@@ -7,6 +7,7 @@ import { ChatDrawer } from "./components/ChatDrawer";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { EntrySheet } from "./components/EntrySheet";
 import { Shell } from "./components/Shell";
+import { Budgets } from "./pages/Budgets";
 import { Dashboard } from "./pages/Dashboard";
 import { Ledger } from "./pages/Ledger";
 import { LoginPage } from "./pages/LoginPage";
@@ -49,7 +50,7 @@ function Cockpit({ me }: { me: Me }) {
   const [chat, setChat] = useState(false);
   const [sheet, setSheet] = useState<{ editing?: Transaction } | null>(null);
   const refresh = useCallback(() => {
-    for (const key of ["transactions", "summary", "ious"]) void client.invalidateQueries({ queryKey: [key] });
+    for (const key of ["transactions", "summary", "ious", "budgets"]) void client.invalidateQueries({ queryKey: [key] });
   }, [client]);
   const closeSheet = useCallback(() => setSheet(null), []);
   const closeChat = useCallback(() => setChat(false), []);
@@ -70,6 +71,7 @@ function Cockpit({ me }: { me: Me }) {
           path="/ledger"
           element={<Ledger me={me} onAdd={() => setSheet({})} onEdit={(tx) => setSheet({ editing: tx })} />}
         />
+        <Route path="/budgets" element={<Budgets me={me} />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       {sheet && (

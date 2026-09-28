@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 
 import { api, type Iou, type Me, type Money, type Summary } from "../api";
 import { CategoryBars } from "../components/CategoryBars";
@@ -55,9 +56,9 @@ export function Dashboard({ me, onLog, onOpenChat }: { me: Me; onLog: () => void
           <button type="button" className="btn" disabled title="Coming in a later update">
             Add bill
           </button>
-          <button type="button" className="btn" disabled title="Coming in a later update">
+          <Link className="btn" to="/budgets">
             View budgets
-          </button>
+          </Link>
         </div>
       </div>
 
