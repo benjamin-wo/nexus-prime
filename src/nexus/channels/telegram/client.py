@@ -19,6 +19,7 @@ class TelegramClient(Protocol):
     async def answer_callback(self, callback_id: str, text: str | None = None) -> None: ...
     async def clear_buttons(self, chat_id: int, message_id: int) -> None: ...
     async def download(self, file_id: str) -> bytes: ...
+    async def bot_username(self) -> str: ...
 
 
 def keyboard(buttons: list[list[Button]]) -> dict[str, Any]:
@@ -36,6 +37,7 @@ class HttpTelegramClient:
         self._base = f"https://api.telegram.org/bot{token}"
         self._files = f"https://api.telegram.org/file/bot{token}"
         self._http = http
+        self._username: str | None = None
 
     async def _call(self, method: str, payload: dict[str, Any]) -> Any:
         response = await self._http.post(f"{self._base}/{method}", json=payload, timeout=20)
@@ -75,6 +77,12 @@ class HttpTelegramClient:
         if len(response.content) > MAX_DOWNLOAD:
             raise TelegramError("file too large")
         return response.content
+
+    async def bot_username(self) -> str:
+        if self._username is None:
+            me = await self._call("getMe", {})
+            self._username = str(me["username"])
+        return self._username
 
     async def webhook_info(self) -> dict[str, Any]:
         info: dict[str, Any] = await self._call("getWebhookInfo", {})

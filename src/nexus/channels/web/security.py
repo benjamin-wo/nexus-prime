@@ -6,7 +6,7 @@ CSRF token in ``X-CSRF-Token``.
 """
 
 import hmac
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Annotated
@@ -31,6 +31,7 @@ class WebRuntime:
     uow: UowFactory
     service: AgentService
     clock: Callable[[], datetime]
+    bot_username: Callable[[], Awaitable[str]]
 
 
 @dataclass(frozen=True, slots=True)

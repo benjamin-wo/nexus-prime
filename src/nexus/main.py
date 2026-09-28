@@ -22,6 +22,7 @@ from nexus.channels.telegram.client import HttpTelegramClient, TelegramClient
 from nexus.channels.web import api as web_api
 from nexus.channels.web import health
 from nexus.channels.web.errors import install_error_handlers
+from nexus.channels.web.frontend import mount_frontend
 from nexus.channels.web.security import WebRuntime
 from nexus.infra.db.checkpointer import postgres_checkpointer
 from nexus.infra.db.engine import make_engine
@@ -124,6 +125,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                         uow=telegram.uow,
                         service=telegram.service,
                         clock=extra.clock or utcnow,
+                        bot_username=telegram.client.bot_username,
                     )
             yield
 
@@ -135,6 +137,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
     app.include_router(telegram_webhook.router)
     app.include_router(web_api.router)
     install_error_handlers(app)
+    mount_frontend(app)
     return app
 
 

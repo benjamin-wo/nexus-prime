@@ -4,5 +4,9 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   plugins: [react()],
   server: { proxy: { "/api": "http://localhost:8000", "/healthz": "http://localhost:8000" } },
-  test: { environment: "node" },
+  test: {
+    environment: "jsdom",
+    setupFiles: ["./src/test-setup.ts"],
+    include: ["src/**/*.test.{ts,tsx}"],
+  },
 });

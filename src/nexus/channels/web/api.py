@@ -6,6 +6,7 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from nexus.agent.service import Reply
@@ -20,12 +21,13 @@ from nexus.channels.web.security import (
     Auth,
     Authed,
     Runtime,
+    WebRuntime,
     check_origin,
     clear_session_cookie,
     set_session_cookie,
 )
 from nexus.channels.web.telegram_login import LoginRejected, verify_login
-from nexus.domain.errors import InvalidInput
+from nexus.domain.errors import Forbidden, InvalidInput
 from nexus.domain.ledger import (
     Category,
     Direction,
@@ -152,6 +154,16 @@ def _when(user: User, value: str | None, now: datetime) -> datetime:
     return parsed.replace(tzinfo=_tz(user))
 
 
+class ConfigOut(Model):
+    bot_username: str
+
+
+@router.get("/config")
+async def config(web: Runtime) -> ConfigOut:
+    """What the sign-in page needs before anyone is signed in."""
+    return ConfigOut(bot_username=await web.bot_username())
+
+
 # --- auth ---------------------------------------------------------------------------
 
 
@@ -160,21 +172,19 @@ class LoginIn(Model):
     invite: str | None = None
 
 
-@router.post("/auth/telegram")
-async def login(body: LoginIn, request: Request, response: Response, web: Runtime) -> MeOut:
-    check_origin(request, web)
+async def _log_in(web: WebRuntime, telegram: dict[str, Any], invite: str | None) -> access.LoggedIn:
     token = web.settings.telegram_bot_token
     if token is None:  # pragma: no cover - web is only enabled with Telegram
         raise HTTPException(status_code=404)
     now = web.clock()
     try:
-        identity = verify_login(body.telegram, token.get_secret_value(), now=now)
+        identity = verify_login(telegram, token.get_secret_value(), now=now)
     except LoginRejected as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
-    logged_in = await access.log_in(
+    return await access.log_in(
         web.uow(),
         identity.telegram_user_id,
-        invite_token=body.invite,
+        invite_token=invite,
         defaults=RegisterUser(
             telegram_user_id=identity.telegram_user_id,
             telegram_chat_id=identity.telegram_user_id,
@@ -185,8 +195,34 @@ async def login(body: LoginIn, request: Request, response: Response, web: Runtim
         owner_telegram_id=web.settings.admin_telegram_chat_id,
         now=now,
     )
+
+
+@router.post("/auth/telegram")
+async def login(body: LoginIn, request: Request, response: Response, web: Runtime) -> MeOut:
+    check_origin(request, web)
+    logged_in = await _log_in(web, body.telegram, body.invite)
     set_session_cookie(response, web, logged_in.token)
     return me_out(logged_in.user, logged_in.session.csrf_token)
+
+
+@router.get("/auth/telegram/callback", include_in_schema=False)
+async def login_callback(request: Request, web: Runtime) -> Response:
+    """The Login Widget's redirect mode: Telegram sends the signed fields here.
+
+    Redirect mode avoids the widget's JavaScript callback, which would need
+    'unsafe-eval' in the Content-Security-Policy.
+    """
+    params = dict(request.query_params)
+    invite = params.pop("invite", None)
+    try:
+        logged_in = await _log_in(web, params, invite)
+    except HTTPException:
+        return RedirectResponse("/login?error=signin", status_code=303)
+    except Forbidden:
+        return RedirectResponse("/login?error=access", status_code=303)
+    response = RedirectResponse("/", status_code=303)
+    set_session_cookie(response, web, logged_in.token)
+    return response
 
 
 @router.post("/auth/logout", status_code=204)

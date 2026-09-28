@@ -183,5 +183,4 @@ cards and sheets. Do not add a new shadow recipe to individual components.
 
 | Item | Location | Why accepted | Owner / Exit |
 |------|----------|--------------|--------------|
-| Existing emoji-based legacy surfaces | `showcase/index.html` | Outside the unified transaction slice | Replace during broader cockpit icon pass |
-| Query-string user identity | `showcase/app.js` and dashboard routes | Single-user-first prototype compatibility | Replace with authenticated session before multi-user launch |
+| None currently | — | The rebuilt cockpit (M4) replaced the legacy showcase and its query-string identity with authenticated sessions | — |

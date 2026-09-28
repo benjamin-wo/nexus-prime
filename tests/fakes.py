@@ -118,3 +118,6 @@ class FakeTelegram:
 
     async def download(self, file_id: str) -> bytes:
         return self.files[file_id]
+
+    async def bot_username(self) -> str:
+        return "nexus_test_bot"

@@ -338,3 +338,33 @@ async def test_telegram_invite_command(world: World, engine: AsyncEngine) -> Non
 
     token = link.rsplit("/", 1)[-1]
     assert (await world.browser().login(MEMBER, invite=token)).status_code == 200
+
+
+async def test_widget_redirect_login(world: World) -> None:
+    browser = world.browser()
+    signed = sign_for_tests({"id": OWNER, "auth_date": int(NOW.timestamp())}, TOKEN)
+    ok = await browser.get("/api/auth/telegram/callback", params=signed)
+    assert ok.status_code == 303 and ok.headers["location"] == "/"
+    assert (await browser.get("/api/me")).status_code == 200
+
+    forged = {**signed, "id": str(MEMBER)}
+    bad = await world.browser().get("/api/auth/telegram/callback", params=forged)
+    assert bad.headers["location"] == "/login?error=signin"
+
+    member = sign_for_tests({"id": MEMBER, "auth_date": int(NOW.timestamp())}, TOKEN)
+    denied = await world.browser().get("/api/auth/telegram/callback", params=member)
+    assert denied.headers["location"] == "/login?error=access"
+
+    _, token = await owner_and_invite(world)
+    invited = world.browser()
+    accepted = await invited.get("/api/auth/telegram/callback", params={**member, "invite": token})
+    assert accepted.headers["location"] == "/"
+    assert (await invited.get("/api/me")).json()["user"]["role"] == "member"
+
+
+async def test_config_and_security_headers(world: World) -> None:
+    response = await world.browser().get("/api/config")
+    assert response.json() == {"bot_username": "nexus_test_bot"}
+    csp = response.headers["content-security-policy"]
+    assert "default-src 'self'" in csp and "unsafe" not in csp
+    assert response.headers["x-frame-options"] == "DENY"
