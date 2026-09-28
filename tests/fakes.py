@@ -1,8 +1,9 @@
-"""Test doubles for the model, Telegram and receipt reading."""
+"""Test doubles for the model, Telegram, receipt reading and exchange rates."""
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from decimal import Decimal
 from typing import Any
 from uuid import uuid4
 
@@ -15,6 +16,7 @@ from pydantic import Field
 
 from nexus.agent.receipts import ReceiptDraft
 from nexus.agent.service import Button
+from nexus.application.fx import Rate
 from nexus.infra.llm.factory import ChatModels
 
 NOW = datetime(2026, 9, 28, 4, 0, tzinfo=UTC)  # noon in Singapore
@@ -121,3 +123,20 @@ class FakeTelegram:
 
     async def bot_username(self) -> str:
         return "nexus_test_bot"
+
+
+@dataclass
+class FakeRates:
+    """Published rates per (base, quote): {effective day: value}. Answers like the
+    real provider: the latest rate on or before the day asked for."""
+
+    published: dict[tuple[str, str], dict[date, str]] = field(default_factory=dict)
+    asked: list[tuple[str, str, date]] = field(default_factory=list)
+
+    async def rate(self, base: str, quote: str, on: date) -> Rate | None:
+        self.asked.append((base, quote, on))
+        days = [d for d in self.published.get((base, quote), {}) if d <= on]
+        if not days:
+            return None
+        day = max(days)
+        return Rate(base, quote, Decimal(self.published[(base, quote)][day]), day)

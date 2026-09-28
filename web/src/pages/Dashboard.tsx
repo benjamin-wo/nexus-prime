@@ -1,27 +1,35 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { api, type Iou, type Me, type Summary } from "../api";
+import { api, type Iou, type Me, type Money, type Summary } from "../api";
 import { CategoryBars } from "../components/CategoryBars";
 import { StatTile } from "../components/StatTile";
 import { formatDate, formatMoney } from "../format";
 
-function totalsIn(summary: Summary, direction: "in" | "out", home: string) {
-  const rows = summary.totals.filter((t) => t.direction === direction);
-  const main = rows.find((t) => t.total.currency === home);
-  const others = rows.filter((t) => t.total.currency !== home).map((t) => formatMoney(t.total));
-  return { main: main?.total.amount ?? "0", others };
+type Total = Summary["totals"][number];
+
+function list(amounts: Money[]): string {
+  return amounts.map(formatMoney).join(", ");
+}
+
+/** What went into a converted total, in words: foreign amounts included, and any left out. */
+export function conversionNote(total: Total | undefined): string | undefined {
+  if (!total) return undefined;
+  const parts = [];
+  if (total.converted.length) parts.push(`Includes ${list(total.converted)}, converted`);
+  if (total.unconverted.length) parts.push(`${list(total.unconverted)} left out: no rate`);
+  return parts.length ? parts.join(". ") : undefined;
 }
 
 export function Dashboard({ me, onLog, onOpenChat }: { me: Me; onLog: () => void; onOpenChat: () => void }) {
-  const home = me.user.home_currency;
   const summary = useQuery({ queryKey: ["summary"], queryFn: () => api<Summary>("/summary") });
   const ious = useQuery({ queryKey: ["ious"], queryFn: () => api<Iou[]>("/ious") });
 
-  const spent = summary.data ? totalsIn(summary.data, "out", home) : null;
-  const received = summary.data ? totalsIn(summary.data, "in", home) : null;
-  const net = spent && received ? Number(received.main) - Number(spent.main) : null;
-  const inHome = summary.data?.by_category.filter((c) => c.total.currency === home) ?? [];
-  const otherCurrencies = (summary.data?.by_category.length ?? 0) - inHome.length;
+  const home = summary.data?.currency ?? me.user.home_currency;
+  const spent = summary.data?.totals.find((t) => t.direction === "out");
+  const received = summary.data?.totals.find((t) => t.direction === "in");
+  const net = spent && received ? Number(received.total.amount) - Number(spent.total.amount) : null;
+  const partial = Boolean(spent?.unconverted.length || received?.unconverted.length);
+  const foreign = Boolean(spent?.converted.length || received?.converted.length);
 
   return (
     <>
@@ -55,20 +63,16 @@ export function Dashboard({ me, onLog, onOpenChat }: { me: Me; onLog: () => void
 
       {summary.isError && <p className="error-text">Couldn't load this month's totals.</p>}
       <div className="tiles">
-        <StatTile
-          label="Spent"
-          value={spent ? formatMoney({ amount: spent.main, currency: home }) : "…"}
-          extra={spent?.others.length ? `plus ${spent.others.join(", ")}` : undefined}
-        />
+        <StatTile label="Spent" value={spent ? formatMoney(spent.total) : "…"} extra={conversionNote(spent)} />
         <StatTile
           label="Received"
-          value={received ? formatMoney({ amount: received.main, currency: home }) : "…"}
-          extra={received?.others.length ? `plus ${received.others.join(", ")}` : undefined}
+          value={received ? formatMoney(received.total) : "…"}
+          extra={conversionNote(received)}
         />
         <StatTile
           label="Net"
           value={net === null ? "…" : formatMoney({ amount: String(net), currency: home })}
-          extra={`${home} only`}
+          extra={partial ? "Leaves out amounts with no rate" : undefined}
         />
       </div>
 
@@ -78,10 +82,15 @@ export function Dashboard({ me, onLog, onOpenChat }: { me: Me; onLog: () => void
             <h2 id="by-category">Spending by category</h2>
             <span className="caption">{home}</span>
           </div>
-          {summary.isLoading ? <p className="state">Loading…</p> : <CategoryBars rows={inHome} />}
-          {otherCurrencies > 0 && (
+          {summary.isLoading ? (
+            <p className="state">Loading…</p>
+          ) : (
+            <CategoryBars rows={summary.data?.by_category ?? []} />
+          )}
+          {foreign && (
             <p className="muted">
-              Spending in other currencies isn't shown here; see the ledger. Conversion arrives in a later update.
+              Foreign amounts are converted to {home} at the European Central Bank reference rate for their day (or
+              the last business day before it).
             </p>
           )}
         </section>

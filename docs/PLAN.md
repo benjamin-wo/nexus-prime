@@ -223,6 +223,7 @@ Every milestone ends deployed to Railway and usable. Development is test-first: 
 
 ### M7 — Multi-currency, recurrence, subscriptions, cash flow
 - Frankfurter client and cache: use the latest rate on or before the transaction date, and show the effective date. Wire it into metrics, budgets, export and cash flow.
+  - Pulled forward after M4: the client (in-memory cache for past days), dashboard totals and category bars in the home currency, per-row home amounts with the dated rate, and export columns. Still to do here: the agent's spending summary, budgets and cash flow, and a persistent rate cache if lookups become a cost.
 - Recurrence proposals (3 matches), subscription tracking with price-change flags, and the cash-flow calendar showing net movement only.
 
 ### M8 — Statement import

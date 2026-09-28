@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api, type Category, type LedgerFilters, ledgerParams, type Me, type Page, type Transaction } from "../api";
 import { DirectionBadge } from "../components/Badge";
 import { Toast } from "../components/Toast";
+import { Amount } from "../components/Amount";
 import { formatDate, formatMoney } from "../format";
 
 const PAGE = 50;
@@ -222,8 +223,7 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
                       <DirectionBadge tx={tx} />
                     </td>
                     <td className={`amount num amount-${tx.direction}`}>
-                      {tx.direction === "out" ? "−" : "+"}
-                      {formatMoney(tx.amount)}
+                      <Amount tx={tx} />
                     </td>
                   </tr>
                 ))}

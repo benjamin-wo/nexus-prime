@@ -3,9 +3,11 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
 import { ledgerParams, type Me, type Transaction } from "./api";
+import { Amount } from "./components/Amount";
 import { CategoryBars } from "./components/CategoryBars";
 import { ChatDrawer } from "./components/ChatDrawer";
 import { formatMoney } from "./format";
+import { conversionNote } from "./pages/Dashboard";
 import { Ledger } from "./pages/Ledger";
 import { mockApi, renderWithProviders } from "./testing";
 
@@ -32,10 +34,49 @@ function tx(id: string, amount: string, counterparty: string): Transaction {
 describe("formatting", () => {
   it("formats money exactly from strings", () => {
     expect(formatMoney({ amount: "1234.5000", currency: "SGD" })).toMatch(/1,234\.50/);
+    // Codes, never bare symbols: "$" would be ambiguous next to SGD.
+    expect(formatMoney({ amount: "33.8", currency: "USD" })).toMatch(/USD\s?33\.80/);
+    expect(formatMoney({ amount: "33.8", currency: "USD" })).not.toContain("$");
   });
 
   it("builds ledger query strings without empty values", () => {
     expect(ledgerParams({ direction: "out", search: "" }, { limit: 50 })).toBe("direction=out&limit=50");
+  });
+});
+
+describe("foreign currency", () => {
+  const usd: Transaction = { ...tx("u", "33.80", "Amazon"), amount: { amount: "33.8000", currency: "USD" } };
+
+  it("leads with the home amount and keeps the original and dated rate", () => {
+    renderWithProviders(
+      <Amount
+        tx={{
+          ...usd,
+          home: { amount: { amount: "43.6200", currency: "SGD" }, rate: "1.2905", rate_date: "2026-09-25" },
+        }}
+      />,
+    );
+    expect(screen.getByText(/SGD\s?43\.62/)).toBeInTheDocument();
+    expect(screen.getByText(/USD\s?33\.80 at 1\.2905 \(.*2026 rate\)/)).toBeInTheDocument();
+    expect(screen.getByText(/25/)).toBeInTheDocument();
+  });
+
+  it("says so when no rate was available", () => {
+    renderWithProviders(<Amount tx={{ ...usd, home: { amount: null, rate: null, rate_date: null } }} />);
+    expect(screen.getByText(/USD\s?33\.80/)).toBeInTheDocument();
+    expect(screen.getByText("No rate available to convert")).toBeInTheDocument();
+  });
+
+  it("describes what went into a converted total", () => {
+    const base = { direction: "out" as const, total: { amount: "74.81", currency: "SGD" }, count: 3 };
+    expect(conversionNote({ ...base, converted: [], unconverted: [] })).toBeUndefined();
+    expect(
+      conversionNote({
+        ...base,
+        converted: [{ amount: "50", currency: "USD" }],
+        unconverted: [{ amount: "5000", currency: "JPY" }],
+      }),
+    ).toMatch(/^Includes USD\s?50\.00, converted\. JPY\s?5,000 left out: no rate$/);
   });
 });
 

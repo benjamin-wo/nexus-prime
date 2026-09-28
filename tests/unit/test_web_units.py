@@ -78,9 +78,13 @@ def test_csv_rows() -> None:
         created_at=NOW,
         updated_at=NOW,
     )
-    text = to_csv([tx], {}, ZoneInfo("Asia/Singapore"))
+    text = to_csv([tx], {}, ZoneInfo("Asia/Singapore"), "SGD", {})
     header, row, _ = text.split("\r\n")
-    assert header == "date,direction,amount,currency,counterparty,category,notes,status,source"
-    assert (
-        row == '2026-09-28,out,5.5000,SGD,\'=cmd|\' /C calc\'!A0,,"says ""hi"", ok",confirmed,text'
+    assert header == (
+        "date,direction,amount,currency,home_amount,home_currency,fx_rate,fx_rate_date,"
+        "counterparty,category,notes,status,source"
+    )
+    assert row == (
+        "2026-09-28,out,5.5000,SGD,5.5000,SGD,,,"
+        '\'=cmd|\' /C calc\'!A0,,"says ""hi"", ok",confirmed,text'
     )

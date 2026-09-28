@@ -36,10 +36,15 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
 export type Money = { amount: string; currency: string };
 export type Direction = "in" | "out";
 
+/** A foreign amount in the home currency; amount is null when no rate was available. */
+export type HomeAmount = { amount: Money | null; rate: string | null; rate_date: string | null };
+
 export type Transaction = {
   id: string;
   direction: Direction;
   amount: Money;
+  /** Set on listings for rows not in the home currency. */
+  home?: HomeAmount | null;
   occurred_at: string;
   counterparty: string | null;
   category_id: string | null;
@@ -58,7 +63,9 @@ export type Me = {
 export type Summary = {
   start: string;
   end: string;
-  totals: { direction: Direction; total: Money; count: number }[];
+  /** Every total is in this (home) currency; foreign amounts are converted at their day's rate. */
+  currency: string;
+  totals: { direction: Direction; total: Money; count: number; converted: Money[]; unconverted: Money[] }[];
   by_category: { category_id: string | null; category_name: string | null; total: Money; count: number }[];
 };
 export type Iou = {

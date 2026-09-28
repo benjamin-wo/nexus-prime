@@ -5,7 +5,7 @@ Every method is scoped to one user. Implementations must filter on
 """
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 from types import TracebackType
 from typing import Any, Protocol, Self
@@ -66,6 +66,18 @@ class DirectionTotal:
 
 
 @dataclass(frozen=True, slots=True)
+class DayTotal:
+    """Confirmed totals for one direction, category, currency and local day."""
+
+    direction: Direction
+    category_id: UUID | None
+    category_name: str | None
+    day: date
+    total: Money
+    count: int
+
+
+@dataclass(frozen=True, slots=True)
 class CategoryTotal:
     category_id: UUID | None
     category_name: str | None
@@ -97,6 +109,9 @@ class LedgerRepository(Protocol):
     async def totals_by_direction(
         self, user_id: UserId, start: datetime, end: datetime
     ) -> list[DirectionTotal]: ...
+    async def totals_by_day(
+        self, user_id: UserId, start: datetime, end: datetime, timezone: str
+    ) -> list[DayTotal]: ...
     async def spending_by_category(
         self, user_id: UserId, start: datetime, end: datetime
     ) -> list[CategoryTotal]: ...

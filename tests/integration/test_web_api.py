@@ -2,7 +2,7 @@
 
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -13,7 +13,16 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from nexus.channels.web.telegram_login import sign_for_tests
 from nexus.main import Overrides, create_app
 from nexus.settings import Settings
-from tests.fakes import NOW, FakeTelegram, ScriptedModel, call, models, say, scripted
+from tests.fakes import (
+    NOW,
+    FakeRates,
+    FakeTelegram,
+    ScriptedModel,
+    call,
+    models,
+    say,
+    scripted,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -65,6 +74,7 @@ class World:
     clock: Clock
     model: ScriptedModel
     telegram: FakeTelegram
+    rates: FakeRates
 
     def browser(self) -> Browser:
         return Browser(self.app, self.clock)
@@ -75,6 +85,7 @@ async def world(engine: AsyncEngine, empty_database_url: str) -> AsyncIterator[W
     clock = Clock()
     model = scripted()
     telegram = FakeTelegram()
+    rates = FakeRates({("USD", "SGD"): {date(2026, 9, 25): "1.2905", date(2026, 9, 28): "1.3000"}})
     settings = Settings(
         _env_file=None,
         database_url=empty_database_url,
@@ -92,10 +103,11 @@ async def world(engine: AsyncEngine, empty_database_url: str) -> AsyncIterator[W
             telegram=telegram,
             checkpointer=InMemorySaver(),
             clock=lambda: clock.now,
+            rates=rates,
         ),
     )
     async with app.router.lifespan_context(app):
-        yield World(app, clock, model, telegram)
+        yield World(app, clock, model, telegram, rates)
 
 
 async def owner_and_invite(world: World) -> tuple[Browser, str]:
@@ -226,9 +238,24 @@ async def test_ledger_round_trip(world: World) -> None:
     assert page["total"] == 1
 
     summary = (await owner.get("/api/summary", params={"start": "2026-09-01"})).json()
+    assert summary["currency"] == "SGD"
     assert summary["totals"] == [
-        {"direction": "out", "total": {"amount": "12.4000", "currency": "SGD"}, "count": 1}
+        {
+            "direction": "out",
+            "total": {"amount": "12.4000", "currency": "SGD"},
+            "count": 1,
+            "converted": [],
+            "unconverted": [],
+        },
+        {
+            "direction": "in",
+            "total": {"amount": "0.0000", "currency": "SGD"},
+            "count": 0,
+            "converted": [],
+            "unconverted": [],
+        },
     ]
+    assert world.rates.asked == []  # nothing foreign, nothing looked up
 
     assert (await owner.send("DELETE", f"/api/transactions/{tx['id']}")).json()["deleted"]
     assert (await owner.get("/api/transactions")).json()["total"] == 0
@@ -299,6 +326,80 @@ async def test_csv_export(world: World) -> None:
     assert 'filename="nexus-ledger-20260928.csv"' in response.headers["content-disposition"]
     lines = response.text.strip().split("\r\n")
     assert len(lines) == 2 and ",'=1+1," in lines[1]
+
+
+# --- foreign currencies -----------------------------------------------------------------
+
+
+async def spend(owner: Browser, amount: str, currency: str, day: str, **extra: Any) -> Any:
+    body = {"direction": "out", "amount": amount, "currency": currency, "date": day, **extra}
+    made = await owner.send("POST", "/api/transactions", body)
+    assert made.status_code == 201
+    return made.json()
+
+
+async def test_foreign_rows_show_home_amount_at_their_days_rate(world: World) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+    await spend(owner, "10", "SGD", "2026-09-27")
+    await spend(owner, "33.80", "USD", "2026-09-26")  # a Saturday: Friday's rate
+    await spend(owner, "5000", "JPY", "2026-09-26")  # no rate published
+
+    rows = {
+        r["amount"]["currency"]: r for r in (await owner.get("/api/transactions")).json()["items"]
+    }
+    assert rows["SGD"]["home"] is None
+    assert rows["USD"]["amount"] == {"amount": "33.8000", "currency": "USD"}
+    assert rows["USD"]["home"] == {
+        "amount": {"amount": "43.6200", "currency": "SGD"},  # 33.80 x 1.2905 = 43.6189
+        "rate": "1.2905",
+        "rate_date": "2026-09-25",  # never the later 2026-09-28 rate
+    }
+    assert rows["JPY"]["home"] == {"amount": None, "rate": None, "rate_date": None}
+
+
+async def test_summary_is_in_home_currency(world: World) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+    food = next(
+        c for c in (await owner.get("/api/categories")).json() if c["name"] == "Food & Drink"
+    )
+    await spend(owner, "10", "SGD", "2026-09-27", category_id=food["id"])
+    await spend(owner, "20", "USD", "2026-09-26", category_id=food["id"])
+    await spend(owner, "30", "USD", "2026-09-28")
+    await spend(owner, "5000", "JPY", "2026-09-26")
+    await owner.send(
+        "POST",
+        "/api/transactions",
+        {"direction": "in", "amount": "100", "currency": "USD", "date": "2026-09-01"},
+    )  # before any published rate
+
+    summary = (await owner.get("/api/summary", params={"start": "2026-09-01"})).json()
+    out, received = summary["totals"]
+    # 10 + 20 x 1.2905 (25.81) + 30 x 1.3000 (39.00)
+    assert out["total"] == {"amount": "74.8100", "currency": "SGD"}
+    assert out["count"] == 3
+    assert out["converted"] == [{"amount": "50.0000", "currency": "USD"}]
+    assert out["unconverted"] == [{"amount": "5000.0000", "currency": "JPY"}]
+    assert received["total"] == {"amount": "0.0000", "currency": "SGD"}
+    assert received["unconverted"] == [{"amount": "100.0000", "currency": "USD"}]
+    by_cat = [(c["category_name"], c["total"]["amount"]) for c in summary["by_category"]]
+    assert by_cat == [(None, "39.0000"), ("Food & Drink", "35.8100")]
+
+
+async def test_export_has_home_currency_columns(world: World) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+    await spend(owner, "33.80", "USD", "2026-09-26")
+    await spend(owner, "5000", "JPY", "2026-09-26")
+    lines = (await owner.get("/api/export.csv")).text.strip().split("\r\n")
+    assert lines[0].startswith("date,direction,amount,currency,home_amount,home_currency,fx_rate,")
+    assert "2026-09-26,out,33.8000,USD,43.6200,SGD,1.2905,2026-09-25," in response_lines(lines)
+    assert "2026-09-26,out,5000.0000,JPY,,,,," in response_lines(lines)
+
+
+def response_lines(lines: list[str]) -> str:
+    return "\n".join(lines)
 
 
 # --- chat ---------------------------------------------------------------------------------

@@ -54,9 +54,22 @@ export async function fakeApi(page: Page, { signedIn = true } = {}) {
       return json(route, {
         start: "2026-09-01",
         end: "2026-09-28",
+        currency: "SGD",
         totals: [
-          { direction: "in", total: { amount: "4200.0000", currency: "SGD" }, count: 1 },
-          { direction: "out", total: { amount: total.toFixed(4), currency: "SGD" }, count: out.length },
+          {
+            direction: "out",
+            total: { amount: total.toFixed(4), currency: "SGD" },
+            count: out.length,
+            converted: [{ amount: "33.8000", currency: "USD" }],
+            unconverted: [],
+          },
+          {
+            direction: "in",
+            total: { amount: "4200.0000", currency: "SGD" },
+            count: 1,
+            converted: [],
+            unconverted: [],
+          },
         ],
         by_category: [
           { category_id: "food", category_name: "Food & Drink", total: { amount: "12.4000", currency: "SGD" }, count: 1 },
