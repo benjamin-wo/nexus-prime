@@ -76,7 +76,17 @@ export type Iou = {
   outstanding: Money;
   expense_occurred_at: string;
 };
-export type Reply = { text: string; buttons: { label: string; data: string }[][] };
+export type Budget = {
+  id: string;
+  category_id: string | null;
+  name: string;
+  limit: Money;
+  spent: Money;
+  remaining: Money;
+  percent: number;
+  unconverted: Money[];
+};
+export type Reply ={ text: string; buttons: { label: string; data: string }[][] };
 
 export type LedgerFilters = {
   direction?: Direction;

@@ -11,12 +11,15 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     Column,
+    Date,
     DateTime,
     ForeignKeyConstraint,
     Identity,
     Index,
+    Integer,
     MetaData,
     Numeric,
+    SmallInteger,
     String,
     Table,
     Text,
@@ -219,6 +222,74 @@ web_sessions = Table(
     Column("revoked_at", TZ),
     ForeignKeyConstraint(["user_id"], ["users.id"]),
     Index("ix_web_sessions_user_id", "user_id"),
+)
+
+# Monthly spending limits in the user's home currency: at most one overall
+# budget and one per category.
+budgets = Table(
+    "budgets",
+    metadata,
+    _uuid_pk(),
+    _user_fk(),
+    Column("category_id", UUID(as_uuid=True)),
+    Column("amount", MONEY, nullable=False),
+    Column("currency", CURRENCY, nullable=False),
+    Column("created_at", TZ, nullable=False),
+    Column("updated_at", TZ, nullable=False),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+    ForeignKeyConstraint(["category_id", "user_id"], ["categories.id", "categories.user_id"]),
+    UniqueConstraint("id", "user_id"),
+    CheckConstraint("amount > 0", name="amount_positive"),
+    CheckConstraint("currency ~ '^[A-Z]{3}$'", name="currency"),
+    Index(
+        "uq_budgets_user_id_overall",
+        "user_id",
+        unique=True,
+        postgresql_where=text("category_id IS NULL"),
+    ),
+    Index(
+        "uq_budgets_user_id_category_id",
+        "user_id",
+        "category_id",
+        unique=True,
+        postgresql_where=text("category_id IS NOT NULL"),
+    ),
+)
+
+# One row per (budget, month, threshold) reached: the row is the alert's
+# idempotency key, so an alert is sent at most once.
+budget_alerts = Table(
+    "budget_alerts",
+    metadata,
+    Column("budget_id", UUID(as_uuid=True), primary_key=True),
+    Column("period", Date, primary_key=True),
+    Column("threshold", SmallInteger, primary_key=True),
+    _user_fk(),
+    Column("reached_at", TZ, nullable=False),
+    ForeignKeyConstraint(
+        ["budget_id", "user_id"], ["budgets.id", "budgets.user_id"], ondelete="CASCADE"
+    ),
+    CheckConstraint("threshold IN (50, 80, 100)", name="threshold"),
+)
+
+# Background work. A job is claimed atomically (FOR UPDATE SKIP LOCKED) and
+# every job has a unique dedupe key, so none runs twice.
+jobs = Table(
+    "jobs",
+    metadata,
+    Column("id", BigInteger, Identity(), primary_key=True),
+    Column("kind", Text, nullable=False),
+    Column("dedupe_key", Text, nullable=False, unique=True),
+    Column("payload", JSONB, nullable=False),
+    Column("run_at", TZ, nullable=False),
+    Column("status", Text, nullable=False),
+    Column("attempts", Integer, nullable=False, server_default=text("0")),
+    Column("locked_until", TZ),
+    Column("last_error", Text),
+    Column("created_at", TZ, nullable=False, server_default=func.now()),
+    Column("finished_at", TZ),
+    CheckConstraint("status IN ('pending', 'running', 'done', 'failed')", name="status"),
+    Index("ix_jobs_status_run_at", "status", "run_at"),
 )
 
 # Tables LangGraph's Postgres checkpointer creates for itself (migration 0003).

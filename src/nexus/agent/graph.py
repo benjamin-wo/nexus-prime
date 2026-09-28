@@ -37,6 +37,7 @@ from nexus.agent.tools import ToolContext, ToolSpec, UowFactory, run_tool
 from nexus.application import splits as split_cases
 from nexus.application import transactions as tx_cases
 from nexus.application.categories import list_categories
+from nexus.application.fx import RateSource
 from nexus.application.inbound import log_capability_gap
 from nexus.application.users import get_user
 from nexus.domain.errors import DuplicateSource, InvalidInput, NexusError
@@ -79,6 +80,7 @@ class AgentDeps:
     skill_index: str
     health: Callable[[], Awaitable[str]]
     clock: Callable[[], datetime]
+    rates: RateSource | None = None
 
 
 def strip_ids(text: str) -> str:
@@ -124,7 +126,9 @@ class AgentGraph:
         if configurable.get("thread_id") != thread_id(actor):
             raise RuntimeError("thread does not belong to the acting user")
         user = await get_user(self.deps.uow(), actor)
-        return ToolContext(user=user, uow=self.deps.uow, now=self.deps.clock())
+        return ToolContext(
+            user=user, uow=self.deps.uow, now=self.deps.clock(), rates=self.deps.rates
+        )
 
     async def _prompt(self, ctx: ToolContext) -> str:
         local = ctx.now.astimezone(ctx.tz)

@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from nexus.agent.service import Reply
 from nexus.application import access, fx
+from nexus.application import budgets as budget_cases
 from nexus.application import categories as category_cases
 from nexus.application import splits as split_cases
 from nexus.application import transactions as tx_cases
@@ -673,6 +674,55 @@ async def ious(auth: Auth, web: Runtime) -> list[IouOut]:
         )
         for i in open_ious
     ]
+
+
+# --- budgets --------------------------------------------------------------------------
+
+
+class BudgetOut(Model):
+    id: UUID
+    category_id: UUID | None
+    name: str
+    limit: MoneyOut
+    spent: MoneyOut
+    remaining: MoneyOut
+    percent: int
+    unconverted: list[MoneyOut]
+
+
+@router.get("/budgets")
+async def budgets(auth: Auth, web: Runtime) -> list[BudgetOut]:
+    statuses = await budget_cases.budget_statuses(web.uow, web.rates, auth.user, now=web.clock())
+    return [
+        BudgetOut(
+            id=s.budget.id,
+            category_id=s.budget.category_id,
+            name=s.name,
+            limit=money(s.budget.limit),
+            spent=money(s.spent),
+            remaining=money(s.remaining),
+            percent=s.percent,
+            unconverted=[money(m) for m in s.unconverted],
+        )
+        for s in statuses
+    ]
+
+
+class BudgetIn(Model):
+    category_id: UUID | None = None
+    amount: str = Field(max_length=32)
+
+
+@router.put("/budgets", status_code=204)
+async def set_budget(body: BudgetIn, auth: Auth, web: Runtime) -> None:
+    user = auth.user
+    limit = Money.of(body.amount.replace(",", ""), user.home_currency)
+    await budget_cases.set_budget(web.uow(), user, body.category_id, limit, now=web.clock())
+
+
+@router.delete("/budgets/{budget_id}", status_code=204)
+async def remove_budget(budget_id: UUID, auth: Auth, web: Runtime) -> None:
+    await budget_cases.remove_budget(web.uow(), auth.user.id, budget_id)
 
 
 # --- chat -----------------------------------------------------------------------------
