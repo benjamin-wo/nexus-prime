@@ -32,6 +32,9 @@ function tx(id: string, amount: string, counterparty: string): Transaction {
 describe("formatting", () => {
   it("formats money exactly from strings", () => {
     expect(formatMoney({ amount: "1234.5000", currency: "SGD" })).toMatch(/1,234\.50/);
+    // Codes, never bare symbols: "$" would be ambiguous next to SGD.
+    expect(formatMoney({ amount: "33.8", currency: "USD" })).toMatch(/USD\s?33\.80/);
+    expect(formatMoney({ amount: "33.8", currency: "USD" })).not.toContain("$");
   });
 
   it("builds ledger query strings without empty values", () => {

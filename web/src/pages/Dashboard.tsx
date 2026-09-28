@@ -58,12 +58,12 @@ export function Dashboard({ me, onLog, onOpenChat }: { me: Me; onLog: () => void
         <StatTile
           label="Spent"
           value={spent ? formatMoney({ amount: spent.main, currency: home }) : "…"}
-          extra={spent?.others.length ? `plus ${spent.others.join(", ")}` : undefined}
+          extra={spent?.others.length ? `Also ${spent.others.join(", ")}, not converted` : undefined}
         />
         <StatTile
           label="Received"
           value={received ? formatMoney({ amount: received.main, currency: home }) : "…"}
-          extra={received?.others.length ? `plus ${received.others.join(", ")}` : undefined}
+          extra={received?.others.length ? `Also ${received.others.join(", ")}, not converted` : undefined}
         />
         <StatTile
           label="Net"

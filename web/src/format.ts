@@ -3,7 +3,13 @@ import type { Money } from "./api";
 export function formatMoney(money: Money): string {
   const value = Number(money.amount);
   try {
-    return new Intl.NumberFormat(undefined, { style: "currency", currency: money.currency }).format(value);
+    // Always the ISO code ("USD 33.80", never "$33.80"): symbols are ambiguous,
+    // and many currencies here share "$".
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: money.currency,
+      currencyDisplay: "code",
+    }).format(value);
   } catch {
     return `${value.toFixed(2)} ${money.currency}`;
   }
