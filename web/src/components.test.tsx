@@ -109,3 +109,21 @@ describe("ChatDrawer", () => {
     expect(calls.find((c) => c.path === "/chat/press")?.body).toEqual({ data: "hitl:abc:y" });
   });
 });
+
+describe("ChatDrawer in browsers where scrollIntoView returns a promise", () => {
+  it("keeps working across several messages", async () => {
+    // Chrome 153+ returns a promise here; an effect must not hand it to React as a cleanup.
+    Element.prototype.scrollIntoView = function () {
+      return Promise.resolve() as unknown as void;
+    };
+    mockApi({ "POST /chat": () => [{ text: "Noted.", buttons: [] }] });
+    renderWithProviders(<ChatDrawer onClose={() => {}} onChanged={() => {}} />);
+    const user = userEvent.setup();
+    for (const message of ["one", "two", "three"]) {
+      await user.type(screen.getByLabelText("Message"), message);
+      await user.click(screen.getByRole("button", { name: "Send" }));
+      await screen.findByText(message);
+    }
+    expect(await screen.findAllByText("Noted.")).toHaveLength(3);
+  });
+});

@@ -17,7 +17,8 @@ test.beforeEach(async ({ page }, info) => {
 test.afterEach(async ({ page }, info) => {
   if (info.status === info.expectedStatus) return;
   const log = (info as unknown as { pageLog: string[] }).pageLog ?? [];
-  const drawer = await page.locator(".drawer").innerText().catch(() => "(no drawer)");
+  const drawers = page.locator(".drawer");
+  const drawer = (await drawers.count()) ? await drawers.first().innerText() : "(no drawer)";
   console.log(`--- ${info.title} (${info.project.name})\n${log.join("\n")}\n--- drawer text:\n${drawer}`);
 });
 
@@ -87,6 +88,21 @@ test("chat asks before deleting and confirms", async ({ page }) => {
   await expect(chat.getByText("Deleted.")).toBeVisible();
   expect(state.lastPress).toBe("hitl:x:y");
   await expect(chat.getByRole("button", { name: "Confirm" })).toBeHidden();
+});
+
+test("the app never throws while chatting", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await fakeApi(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Open chat" }).first().click();
+  const chat = page.getByRole("dialog", { name: "Chat" });
+  for (const message of ["one", "two"]) {
+    await chat.getByLabel("Message").fill(message);
+    await chat.getByRole("button", { name: "Send" }).click();
+  }
+  await expect(chat.locator(".msg-bot")).toHaveCount(2);
+  expect(errors).toEqual([]);
 });
 
 test("export links carry the current filters", async ({ page }) => {

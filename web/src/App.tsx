@@ -4,6 +4,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import { api, ApiError, type Me, setCsrf, type Transaction } from "./api";
 import { ChatDrawer } from "./components/ChatDrawer";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { EntrySheet } from "./components/EntrySheet";
 import { Shell } from "./components/Shell";
 import { Dashboard } from "./pages/Dashboard";
@@ -89,7 +90,9 @@ export function App({ client }: { client?: QueryClient }) {
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <Gate />
+        <ErrorBoundary>
+          <Gate />
+        </ErrorBoundary>
       </BrowserRouter>
     </QueryClientProvider>
   );

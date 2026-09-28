@@ -12,8 +12,14 @@ export function ChatDrawer({ onClose, onChanged }: { onClose: () => void; onChan
   const input = useRef<HTMLInputElement>(null);
   const end = useRef<HTMLDivElement>(null);
 
-  useEffect(() => input.current?.focus(), []);
-  useEffect(() => end.current?.scrollIntoView?.({ block: "end" }), [messages]);
+  // Effects use braces so nothing is returned: React would call a returned value as a
+  // cleanup, and newer browsers return a promise from scrollIntoView().
+  useEffect(() => {
+    input.current?.focus();
+  }, []);
+  useEffect(() => {
+    end.current?.scrollIntoView?.({ block: "end" });
+  }, [messages]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
