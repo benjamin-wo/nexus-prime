@@ -2,6 +2,25 @@ import { expect, test } from "@playwright/test";
 
 import { fakeApi } from "./fake-api";
 
+// On failure, print what the page did: API calls, console errors and uncaught exceptions.
+test.beforeEach(async ({ page }, info) => {
+  const log: string[] = [];
+  page.on("request", (r) => r.url().includes("/api/") && log.push(`request ${r.method()} ${r.url()}`));
+  page.on("response", (r) => r.url().includes("/api/") && log.push(`response ${r.status()} ${r.url()}`));
+  page.on("requestfailed", (r) => log.push(`failed ${r.url()} ${r.failure()?.errorText}`));
+  page.on("console", (m) => m.type() === "error" && log.push(`console ${m.text()}`));
+  page.on("pageerror", (e) => log.push(`pageerror ${e.message}`));
+  info.attach("page-log", { body: "", contentType: "text/plain" });
+  (info as unknown as { pageLog: string[] }).pageLog = log;
+});
+
+test.afterEach(async ({ page }, info) => {
+  if (info.status === info.expectedStatus) return;
+  const log = (info as unknown as { pageLog: string[] }).pageLog ?? [];
+  const drawer = await page.locator(".drawer").innerText().catch(() => "(no drawer)");
+  console.log(`--- ${info.title} (${info.project.name})\n${log.join("\n")}\n--- drawer text:\n${drawer}`);
+});
+
 test("signed-out visitors get the Telegram sign-in", async ({ page }) => {
   await fakeApi(page, { signedIn: false });
   await page.goto("/ledger");
