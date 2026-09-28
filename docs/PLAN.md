@@ -249,4 +249,4 @@ Every milestone ends deployed to Railway and usable. Development is test-first: 
 1. ~~New database plus import, or keep the old Railway database?~~ **Decided:** new Railway Postgres plus a one-time read-only import. See §2.
 2. **Web hosting:** serve `web/` from FastAPI (one service, simpler) or as a separate static service? The default is FastAPI.
 3. **LLM provider:** keep the old setup (Gemini, plus OpenRouter for Jev) or standardise on one? The default is to keep it, behind the adapter.
-4. ~~Repo visibility~~ **Decided:** the repo becomes private. The pre-rebuild code (`3640ebb`) is archived on `archive/pre-rebuild` once it is.
+4. ~~Repo visibility~~ **Decided:** the repo stays public. Rule 7 applies in full: secrets, real financial data and logs never enter the repo. The pre-rebuild code is not republished on an archive branch.
