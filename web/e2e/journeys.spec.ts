@@ -62,7 +62,8 @@ test("chat asks before deleting and confirms", async ({ page }) => {
   const chat = page.getByRole("dialog", { name: "Chat" });
   await chat.getByLabel("Message").fill("delete the grab ride");
   await chat.getByRole("button", { name: "Send" }).click();
-  await expect(chat.getByText("Delete 2026-09-27")).toBeVisible();
+  // Asserting on the whole bot message makes a failure print what was shown instead.
+  await expect(chat.locator(".msg-bot").first()).toContainText("Delete 2026-09-27");
   await chat.getByRole("button", { name: "Confirm" }).click();
   await expect(chat.getByText("Deleted.")).toBeVisible();
   expect(state.lastPress).toBe("hitl:x:y");
