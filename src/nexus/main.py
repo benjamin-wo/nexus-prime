@@ -34,6 +34,8 @@ from nexus.infra.db.migrations import assert_schema_at_head
 from nexus.infra.db.uow import SqlUnitOfWork
 from nexus.infra.fx.frankfurter import FrankfurterRates
 from nexus.infra.llm.factory import ChatModels, build_chat_models
+from nexus.jobs.handlers import SCHEDULES, build_handlers
+from nexus.jobs.runner import JobRunner
 from nexus.settings import Settings, get_settings
 
 log = logging.getLogger(__name__)
@@ -49,6 +51,13 @@ class Overrides:
     checkpointer: BaseCheckpointSaver[Any] | None = None
     clock: Callable[[], datetime] | None = None
     rates: RateSource | None = None
+
+
+async def _stop_worker(stop: asyncio.Event, worker: "asyncio.Task[None]") -> None:
+    stop.set()
+    # wait_for cancels the worker if a job is still running after 30s.
+    with contextlib.suppress(asyncio.CancelledError, TimeoutError):
+        await asyncio.wait_for(worker, timeout=30)
 
 
 async def _finish(task: "asyncio.Task[None]") -> None:
@@ -141,17 +150,28 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                 telegram = await _telegram_runtime(resolved, engine, extra, stack)
                 app.state.telegram = telegram
                 origin = resolved.public_origin
+                clock = extra.clock or utcnow
+                rates = extra.rates
+                if rates is None:
+                    http = await stack.enter_async_context(httpx.AsyncClient())
+                    rates = FrankfurterRates(http)
+                if resolved.run_jobs:
+                    runner = JobRunner(
+                        engine,
+                        build_handlers(telegram.uow, telegram.client, rates, clock),
+                        schedules=SCHEDULES,
+                        clock=clock,
+                    )
+                    stop = asyncio.Event()
+                    worker = asyncio.create_task(runner.run(stop))
+                    stack.push_async_callback(_stop_worker, stop, worker)
                 if origin is not None:
-                    rates = extra.rates
-                    if rates is None:
-                        http = await stack.enter_async_context(httpx.AsyncClient())
-                        rates = FrankfurterRates(http)
                     app.state.web = WebRuntime(
                         settings=resolved,
                         origin=origin,
                         uow=telegram.uow,
                         service=telegram.service,
-                        clock=extra.clock or utcnow,
+                        clock=clock,
                         bot_username=telegram.client.bot_username,
                         rates=rates,
                     )

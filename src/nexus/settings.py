@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     web_origin: str | None = None
     railway_public_domain: str | None = None
 
+    # --- Background jobs (reminders, budget alerts). Unset: on in prod only, so
+    # tests and local runs don't send messages unless asked to. ---
+    jobs_enabled: bool | None = None
+
     # --- LLM. Names match the pre-rebuild deployment's variables. ---
     llm_provider: LlmProvider = LlmProvider.GEMINI
     gemini_api_key: SecretStr | None = None
@@ -128,6 +132,12 @@ class Settings(BaseSettings):
     def web_enabled(self) -> bool:
         """The web app needs Telegram (login) and a known origin (CSRF)."""
         return self.telegram_enabled and self.public_origin is not None
+
+    @property
+    def run_jobs(self) -> bool:
+        if self.jobs_enabled is not None:
+            return self.jobs_enabled
+        return self.environment is Environment.PROD
 
     @property
     def telegram_enabled(self) -> bool:

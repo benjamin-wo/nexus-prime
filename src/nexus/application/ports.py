@@ -27,6 +27,7 @@ from nexus.domain.ledger import (
     UserId,
 )
 from nexus.domain.money import Money
+from nexus.domain.planning import Budget
 
 
 class SortField(StrEnum):
@@ -164,11 +165,42 @@ class LedgerRepository(Protocol):
     ) -> None: ...
 
 
+class PlanningRepository(Protocol):
+    """Budgets and their alerts. Scoped to one user like the ledger."""
+
+    async def upsert_budget(self, budget: Budget) -> Budget:
+        """Insert, or replace the limit of the user's budget for the same category
+        (or the overall one). Returns the stored budget."""
+        ...
+
+    async def list_budgets(self, user_id: UserId) -> list[Budget]: ...
+    async def get_budget(self, user_id: UserId, budget_id: UUID) -> Budget | None: ...
+    async def delete_budget(self, user_id: UserId, budget_id: UUID) -> bool: ...
+    async def users_with_budgets(self) -> list[UserId]: ...
+    async def record_alerts(
+        self, user_id: UserId, budget_id: UUID, period: date, thresholds: list[int], at: datetime
+    ) -> list[int]:
+        """Record thresholds reached; returns only those not recorded before."""
+        ...
+
+
+class JobQueue(Protocol):
+    async def enqueue(
+        self, kind: str, payload: dict[str, Any], *, dedupe_key: str, run_at: datetime
+    ) -> bool:
+        """Queue a job in this transaction. False if the dedupe key was already used."""
+        ...
+
+
 class UnitOfWork(Protocol):
     """One database transaction. Single use: enter it once per use case."""
 
     @property
     def ledger(self) -> LedgerRepository: ...
+    @property
+    def planning(self) -> PlanningRepository: ...
+    @property
+    def jobs(self) -> JobQueue: ...
 
     async def __aenter__(self) -> Self: ...
     async def __aexit__(
