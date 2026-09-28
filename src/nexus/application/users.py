@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from nexus.application.clock import utcnow
 from nexus.application.ports import UnitOfWork
-from nexus.domain.errors import InvalidInput
+from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.ledger import Category, Role, User, UserId
 from nexus.domain.money import Money
 
@@ -66,3 +66,16 @@ async def register_user(uow: UnitOfWork, cmd: RegisterUser) -> Registration:
             raise RuntimeError("user vanished during registration")
         await uow.commit()
     return Registration(user, created)
+
+
+async def get_user(uow: UnitOfWork, actor: UserId) -> User:
+    async with uow:
+        user = await uow.ledger.get_user(actor)
+    if user is None:
+        raise NotFound("user not found")
+    return user
+
+
+async def find_telegram_user(uow: UnitOfWork, telegram_user_id: int) -> User | None:
+    async with uow:
+        return await uow.ledger.get_user_by_telegram_id(telegram_user_id)

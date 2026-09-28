@@ -1,0 +1,287 @@
+"""Agent trajectories: a scripted model drives the real graph, tools and database."""
+
+from decimal import Decimal
+
+import pytest
+from langchain_core.messages import BaseMessage, ToolMessage
+from langgraph.checkpoint.memory import InMemorySaver
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncEngine
+
+from nexus.agent.graph import MAX_STEPS, AgentDeps, AgentGraph
+from nexus.agent.receipts import ReceiptDraft, ReceiptReader
+from nexus.agent.service import AgentService, Reply
+from nexus.agent.skills import SkillLibrary
+from nexus.agent.tools import build_tools
+from nexus.application.ports import LedgerQuery
+from nexus.application.splits import list_open_ious, split_bill
+from nexus.application.transactions import NewTransaction, list_ledger, log_transaction
+from nexus.domain.ledger import Direction, ShareRequest, Source, UserId
+from nexus.domain.money import Money
+from nexus.infra.db.tables import capability_gaps
+from tests.fakes import NOW, FakeReceipts, ScriptedModel, call, say, scripted
+from tests.integration.conftest import UowFactory
+
+pytestmark = pytest.mark.integration
+
+
+def build(
+    uow: UowFactory, model: ScriptedModel, receipts: ReceiptReader | None = None
+) -> AgentService:
+    skills = SkillLibrary.load()
+
+    async def health() -> str:
+        return "All systems fine."
+
+    graph = AgentGraph(
+        AgentDeps(
+            uow=uow,
+            tools=build_tools(skills.body),
+            primary=model,
+            fallbacks=(),
+            skill_index=skills.index(),
+            health=health,
+            clock=lambda: NOW,
+        )
+    ).compile(InMemorySaver())
+    return AgentService(graph, uow, receipts, lambda: NOW)
+
+
+async def ledger(uow: UowFactory, user: UserId, **query: object) -> list[tuple[str, Decimal]]:
+    page = await list_ledger(uow(), user, LedgerQuery(**query))  # type: ignore[arg-type]
+    return [(t.direction.value, t.amount.amount) for t in page.items]
+
+
+def tool_results(model: ScriptedModel) -> list[str]:
+    last: list[BaseMessage] = model.seen[-1]
+    return [str(m.content) for m in last if isinstance(m, ToolMessage)]
+
+
+def only(replies: list[Reply]) -> Reply:
+    assert len(replies) == 1
+    return replies[0]
+
+
+async def test_logs_an_expense_and_offers_undo(uow: UowFactory, alice: UserId) -> None:
+    model = scripted(
+        call("log_expense", amount="5.50", merchant="Starbucks", category="Food & Drink"),
+        say("Logged 5.50 at Starbucks."),
+    )
+    reply = only(await build(uow, model).handle_text(alice, "starbucks 5.50", "tg:1:1"))
+    assert reply.text == "Logged 5.50 at Starbucks."
+    assert [b.data for row in reply.buttons for b in row] == ["act:undo"]
+    assert await ledger(uow, alice) == [("out", Decimal("5.5"))]
+    assert "Logged: 2026-09-28 · -5.50 SGD · Starbucks · Food & Drink" in tool_results(model)[0]
+
+
+async def test_model_cannot_act_for_another_user(
+    uow: UowFactory, alice: UserId, bob: UserId
+) -> None:
+    model = scripted(call("log_expense", amount="99", user_id=str(bob)), say("Done."))
+    await build(uow, model).handle_text(alice, "log 99 for bob", "tg:1:1")
+    assert await ledger(uow, alice) == [("out", Decimal("99"))]
+    assert await ledger(uow, bob) == []
+
+
+async def test_model_cannot_call_hidden_tools(uow: UowFactory, alice: UserId) -> None:
+    model = scripted(
+        call("log_receipt_expense", amount="10", external_id="x"), say("I couldn't do that.")
+    )
+    await build(uow, model).handle_text(alice, "log a receipt", "tg:1:1")
+    assert await ledger(uow, alice) == []
+    assert "no tool called 'log_receipt_expense'" in tool_results(model)[0]
+
+
+async def test_bad_arguments_come_back_as_errors(uow: UowFactory, alice: UserId) -> None:
+    model = scripted(
+        call("log_expense", amount="lots"),
+        call("log_expense", amount="5", category="Nonsense"),
+        say("Which category?"),
+    )
+    reply = only(await build(uow, model).handle_text(alice, "coffee", "tg:1:1"))
+    assert reply.text == "Which category?" and reply.buttons == []
+    results = tool_results(model)
+    assert results[0].startswith("Error: invalid amount")
+    assert "unknown category 'Nonsense'" in results[1]
+    assert await ledger(uow, alice) == []
+
+
+async def test_delete_waits_for_confirmation(uow: UowFactory, alice: UserId) -> None:
+    tx = await log_transaction(
+        uow(), alice, NewTransaction(Direction.OUT, Money.of("12", "SGD"), NOW, counterparty="Grab")
+    )
+    model = scripted(call("delete_transaction", transaction_id=str(tx.id)), say("Deleted it."))
+    agent = build(uow, model)
+
+    reply = only(await agent.handle_text(alice, "delete the grab ride", "tg:1:1"))
+    assert reply.text == "Delete 2026-09-28 · -12.00 SGD · Grab?"
+    confirm, cancel = reply.buttons[0]
+    assert confirm.label == "Confirm" and cancel.label == "Cancel"
+    assert await ledger(uow, alice) == [("out", Decimal("12"))]  # nothing yet
+
+    stale = confirm.data.split(":")[1]
+    assert (await agent.resolve(alice, "not-" + stale, True))[0].text.startswith(
+        "That confirmation"
+    )
+
+    done = only(await agent.resolve(alice, stale, True))
+    assert done.text == "Deleted it."
+    assert await ledger(uow, alice) == []
+    # The same button can't be pressed twice.
+    assert (await agent.resolve(alice, stale, True))[0].text.startswith("That confirmation")
+
+
+async def test_declining_changes_nothing(uow: UowFactory, alice: UserId) -> None:
+    tx = await log_transaction(
+        uow(), alice, NewTransaction(Direction.OUT, Money.of("12", "SGD"), NOW)
+    )
+    agent = build(uow, scripted(call("delete_transaction", transaction_id=str(tx.id))))
+    reply = only(await agent.handle_text(alice, "delete it", "tg:1:1"))
+    pending = reply.buttons[0][1].data.split(":")[1]
+    declined = only(await agent.resolve(alice, pending, False))
+    assert declined.text == "Okay, cancelled. Nothing was changed."
+    assert await ledger(uow, alice) == [("out", Decimal("12"))]
+
+
+async def test_a_new_message_declines_a_waiting_confirmation(
+    uow: UowFactory, alice: UserId
+) -> None:
+    tx = await log_transaction(
+        uow(), alice, NewTransaction(Direction.OUT, Money.of("12", "SGD"), NOW)
+    )
+    model = scripted(call("delete_transaction", transaction_id=str(tx.id)), say("Sure, what?"))
+    agent = build(uow, model)
+    await agent.handle_text(alice, "delete it", "tg:1:1")
+    reply = only(await agent.handle_text(alice, "actually wait", "tg:1:2"))
+    assert reply.text == "Sure, what?"
+    assert await ledger(uow, alice) == [("out", Decimal("12"))]
+
+    agent2 = build(uow, scripted(call("delete_transaction", transaction_id=str(tx.id))))
+    await agent2.handle_text(alice, "delete it", "tg:1:3")
+    assert only(await agent2.handle_text(alice, "cancel", "tg:1:4")).text.startswith("Cancelled")
+    assert await ledger(uow, alice) == [("out", Decimal("12"))]
+
+
+async def test_split_confirmation_shows_shares(uow: UowFactory, alice: UserId) -> None:
+    tx = await log_transaction(
+        uow(),
+        alice,
+        NewTransaction(Direction.OUT, Money.of("90", "SGD"), NOW, counterparty="Dinner"),
+    )
+    model = scripted(
+        call(
+            "split_bill",
+            transaction_id=str(tx.id),
+            participants=[{"name": "Ann"}, {"name": "Ben"}],
+        ),
+        say("Split done."),
+    )
+    agent = build(uow, model)
+    reply = only(await agent.handle_text(alice, "split dinner with ann and ben", "tg:1:1"))
+    assert reply.text == (
+        "Split 2026-09-28 · -90.00 SGD · Dinner: Ann owes 30.00 SGD, Ben owes 30.00 SGD; "
+        "your share 30.00 SGD?"
+    )
+    await agent.resolve(alice, reply.buttons[0][0].data.split(":")[1], True)
+    assert len(await list_open_ious(uow(), alice)) == 2
+
+
+async def test_repayment_settles_iou_without_the_model(uow: UowFactory, alice: UserId) -> None:
+    tx = await log_transaction(
+        uow(), alice, NewTransaction(Direction.OUT, Money.of("60", "SGD"), NOW)
+    )
+    await split_bill(uow(), alice, tx.id, [ShareRequest("Ann")])  # Ann owes 30
+    model = scripted()  # any model call fails the test
+    agent = build(uow, model)
+    reply = only(await agent.handle_text(alice, "Ann paid me back 20", "tg:1:9"))
+    assert reply.text == "Recorded 20.00 SGD from Ann. Ann still owes 10.00 SGD."
+    assert reply.buttons[0][0].data == "act:undo"
+    # A redelivered message is not recorded twice.
+    again = only(await agent.handle_text(alice, "Ann paid me back 20", "tg:1:9"))
+    assert again.text == "That was already recorded."
+    assert model.seen == []
+
+
+async def test_salary_is_recorded_deterministically(uow: UowFactory, alice: UserId) -> None:
+    reply = only(await build(uow, scripted()).handle_text(alice, "salary 4,200", "tg:1:1"))
+    assert reply.text == "Recorded 4200.00 SGD salary."
+    page = await list_ledger(uow(), alice, LedgerQuery(direction=Direction.IN))
+    assert page.items[0].notes == "Salary"
+    assert page.items[0].amount == Money.of("4200", "SGD")
+
+
+async def test_money_movement_is_refused_and_logged(
+    engine: AsyncEngine, uow: UowFactory, alice: UserId
+) -> None:
+    model = scripted()
+    reply = only(await build(uow, model).handle_text(alice, "transfer 50 to Ann", "tg:1:1"))
+    assert reply.text.startswith("I can't send or transfer money")
+    assert model.seen == []
+    async with engine.connect() as conn:
+        count = (await conn.execute(select(func.count()).select_from(capability_gaps))).scalar()
+    assert count == 1
+
+
+async def test_self_diagnosis_uses_health_check(uow: UowFactory, alice: UserId) -> None:
+    reply = only(await build(uow, scripted()).handle_text(alice, "are you working?", "tg:1:1"))
+    assert reply.text == "All systems fine."
+
+
+async def test_step_limit_stops_runaway_tool_loops(uow: UowFactory, alice: UserId) -> None:
+    model = scripted(*[call("list_categories") for _ in range(MAX_STEPS)])
+    reply = only(await build(uow, model).handle_text(alice, "loop", "tg:1:1"))
+    assert "too many steps" in reply.text
+    assert len(model.seen) == MAX_STEPS
+
+
+async def test_model_outage_is_reported_honestly(uow: UowFactory, alice: UserId) -> None:
+    model = scripted(RuntimeError("503"))
+    reply = only(await build(uow, model).handle_text(alice, "coffee 4", "tg:1:1"))
+    assert reply.text == "Sorry, I can't reach the AI model right now. Nothing was changed."
+    assert await ledger(uow, alice) == []
+
+
+async def test_receipt_photo_is_confirmed_then_logged_once(uow: UowFactory, alice: UserId) -> None:
+    receipts = FakeReceipts(
+        ReceiptDraft(is_receipt=True, amount="23.40", merchant="FairPrice", date="2026-09-27")
+    )
+    agent = build(uow, scripted(), receipts)
+    reply = only(await agent.handle_photo(alice, b"jpg", "image/jpeg", None, "telegram-photo:u1"))
+    assert reply.text == "Log 23.40 SGD at FairPrice on 2026-09-27 from this receipt?"
+    done = only(await agent.resolve(alice, reply.buttons[0][0].data.split(":")[1], True))
+    assert done.text == "Logged from receipt: 2026-09-27 · -23.40 SGD · FairPrice"
+    page = await list_ledger(uow(), alice, LedgerQuery())
+    assert page.items[0].source is Source.PHOTO
+
+    again = only(await agent.handle_photo(alice, b"jpg", "image/jpeg", None, "telegram-photo:u1"))
+    dup = only(await agent.resolve(alice, again.buttons[0][0].data.split(":")[1], True))
+    assert dup.text == "That receipt was already recorded."
+    assert (await list_ledger(uow(), alice, LedgerQuery())).total == 1
+
+
+async def test_unreadable_photo(uow: UowFactory, alice: UserId) -> None:
+    agent = build(uow, scripted(), FakeReceipts(ReceiptDraft(is_receipt=False)))
+    reply = only(await agent.handle_photo(alice, b"jpg", "image/jpeg", None, "p"))
+    assert reply.text.startswith("I couldn't read a total")
+
+
+async def test_quick_actions(uow: UowFactory, alice: UserId) -> None:
+    agent = build(uow, scripted())
+    assert (
+        only(await agent.quick_action(alice, "summary")).text == "Nothing recorded this month yet."
+    )
+    await log_transaction(uow(), alice, NewTransaction(Direction.OUT, Money.of("8", "SGD"), NOW))
+    summary = only(await agent.quick_action(alice, "summary")).text
+    assert summary.startswith("September so far:\nSpent 8.00 SGD")
+    assert only(await agent.quick_action(alice, "undo")).text == "Undone: the create of 8.00 SGD."
+    assert only(await agent.quick_action(alice, "undo")).text == "There is nothing to undo."
+    assert only(await agent.quick_action(alice, "ious")).text == "Nobody owes you anything."
+
+
+async def test_threads_are_per_user(uow: UowFactory, alice: UserId, bob: UserId) -> None:
+    model = scripted(say("hi alice"), say("hi bob"))
+    agent = build(uow, model)
+    await agent.handle_text(alice, "hello, I'm alice", "tg:1:1")
+    await agent.handle_text(bob, "hello", "tg:2:1")
+    bob_view = " ".join(str(m.content) for m in model.seen[-1])
+    assert "alice" not in bob_view

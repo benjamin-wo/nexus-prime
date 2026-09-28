@@ -6,9 +6,10 @@ process instead of falling back to a default.
 
 from enum import StrEnum
 from functools import lru_cache
+from typing import Annotated, Self
 
-from pydantic import Field, PostgresDsn, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, PostgresDsn, SecretStr, field_validator, model_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Environment(StrEnum):
@@ -17,12 +18,44 @@ class Environment(StrEnum):
     PROD = "prod"
 
 
+class LlmProvider(StrEnum):
+    GEMINI = "gemini"
+    OPENROUTER = "openrouter"
+    DEEPSEEK = "deepseek"
+    OPENAI = "openai"
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", frozen=True)
 
     environment: Environment = Environment.DEV
     # No default: the app must never start against an implicit database.
     database_url: PostgresDsn = Field(...)
+
+    # --- Telegram. Unset token = Telegram channel disabled. ---
+    telegram_bot_token: SecretStr | None = None
+    telegram_webhook_secret: SecretStr | None = None
+    # The owner's Telegram user id (same as their private chat id).
+    admin_telegram_chat_id: int | None = None
+    # Further Telegram user ids allowed to use the bot, comma separated.
+    telegram_allowed_user_ids: Annotated[tuple[int, ...], NoDecode] = ()
+    default_home_currency: str = "SGD"
+    default_timezone: str = "Asia/Singapore"
+
+    # --- LLM. Names match the pre-rebuild deployment's variables. ---
+    llm_provider: LlmProvider = LlmProvider.GEMINI
+    gemini_api_key: SecretStr | None = None
+    gemini_model: str = "gemini-3.7-flash"
+    llm_fallback_model: str | None = None
+    openrouter_api_key: SecretStr | None = None
+    openrouter_model: str | None = None
+    deepseek_api_key: SecretStr | None = None
+    deepseek_base_url: str = "https://api.deepseek.com/v1"
+    deepseek_model: str = "deepseek-v4-flash"
+    openai_api_key: SecretStr | None = None
+    openai_model: str = "gpt-4o-mini"
+    llm_request_timeout_seconds: float = Field(default=30.0, gt=0)
+    llm_max_retries: int = Field(default=2, ge=0)
 
     @field_validator("database_url", mode="before")
     @classmethod
@@ -41,9 +74,52 @@ class Settings(BaseSettings):
             raise ValueError("database_url must use the postgresql+asyncpg driver")
         return value
 
+    @field_validator("llm_provider", mode="before")
+    @classmethod
+    def _lowercase_provider(cls, value: object) -> object:
+        return value.strip().lower() if isinstance(value, str) else value
+
+    @field_validator("telegram_allowed_user_ids", mode="before")
+    @classmethod
+    def _split_ids(cls, value: object) -> object:
+        if isinstance(value, str):
+            return tuple(int(part) for part in value.replace(" ", "").split(",") if part)
+        return value
+
+    @field_validator(
+        "telegram_bot_token",
+        "telegram_webhook_secret",
+        "gemini_api_key",
+        "openrouter_api_key",
+        "deepseek_api_key",
+        "openai_api_key",
+        mode="before",
+    )
+    @classmethod
+    def _blank_is_unset(cls, value: object) -> object:
+        return None if isinstance(value, str) and not value.strip() else value
+
+    @model_validator(mode="after")
+    def _telegram_needs_its_guards(self) -> Self:
+        if self.telegram_bot_token is not None:
+            if self.telegram_webhook_secret is None:
+                raise ValueError("TELEGRAM_WEBHOOK_SECRET is required when Telegram is enabled")
+            if self.admin_telegram_chat_id is None:
+                raise ValueError("ADMIN_TELEGRAM_CHAT_ID is required when Telegram is enabled")
+        return self
+
     @property
     def database_url_str(self) -> str:
         return str(self.database_url)
+
+    @property
+    def telegram_enabled(self) -> bool:
+        return self.telegram_bot_token is not None
+
+    @property
+    def allowed_telegram_user_ids(self) -> frozenset[int]:
+        owner = {self.admin_telegram_chat_id} if self.admin_telegram_chat_id is not None else set()
+        return frozenset(owner | set(self.telegram_allowed_user_ids))
 
 
 @lru_cache

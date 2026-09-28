@@ -8,8 +8,16 @@ dependencies = [
     "alembic>=1.13",
     "asyncpg>=0.30",
     "fastapi>=0.115",
+    "langchain-core>=1.6.5",
+    "langchain-google-genai>=4.4.0",
+    "langchain-openai>=1.6.6",
+    "langgraph==1.2.12",
+    "langgraph-checkpoint==4.2.0",
+    "langgraph-checkpoint-postgres==3.1.2",
+    "psycopg[binary]>=3.3.6",
     "pydantic>=2.9",
     "pydantic-settings>=2.6",
+    "pyyaml>=6.0.3",
     "sqlalchemy[asyncio]>=2.0.36",
     "uvicorn[standard]>=0.32",
 ]
@@ -21,6 +29,7 @@ dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
     "ruff>=0.8",
+    "types-pyyaml>=6.0.12.20260906",
 ]
 
 [build-system]

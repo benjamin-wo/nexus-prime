@@ -170,3 +170,29 @@ settlements = Table(
     CheckConstraint("amount > 0", name="amount_positive"),
     Index("ix_settlements_split_id", "split_id"),
 )
+
+capability_gaps = Table(
+    "capability_gaps",
+    metadata,
+    Column("id", BigInteger, Identity(), primary_key=True),
+    _user_fk(),
+    Column("request", Text, nullable=False),
+    Column("intent", Text, nullable=False),
+    Column("channel", Text, nullable=False),
+    Column("created_at", TZ, nullable=False, server_default=func.now()),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+)
+
+# Inbound events already accepted, so a redelivered one is ignored.
+inbound_events = Table(
+    "inbound_events",
+    metadata,
+    Column("channel", Text, primary_key=True),
+    Column("event_id", Text, primary_key=True),
+    Column("received_at", TZ, nullable=False, server_default=func.now()),
+)
+
+# Tables LangGraph's Postgres checkpointer creates for itself (migration 0003).
+CHECKPOINT_TABLES = frozenset(
+    {"checkpoints", "checkpoint_blobs", "checkpoint_writes", "checkpoint_migrations"}
+)

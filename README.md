@@ -30,6 +30,14 @@ Integration tests create and drop a throwaway database per test on the `TEST_DAT
 
 Only through Alembic: `uv run alembic revision -m "..."`, then `uv run alembic upgrade head`.
 
+## Telegram
+
+The channel is on when `TELEGRAM_BOT_TOKEN` is set, which then also requires `TELEGRAM_WEBHOOK_SECRET` and `ADMIN_TELEGRAM_CHAT_ID` (the owner). Only the owner and `TELEGRAM_ALLOWED_USER_IDS` are served, in private chats. Updates arrive at `POST /telegram/webhook`, checked against the secret token and de-duplicated by `update_id`.
+
+The app never registers its own webhook. Pointing a bot at this service is a deliberate step (M3 cutover), so deploying the app can't take a bot away from another service.
+
+The model comes from `LLM_PROVIDER` (`gemini`, `openrouter`, `deepseek` or `openai`) with the matching key, plus an optional Gemini `LLM_FALLBACK_MODEL`. Receipt photos are read by Gemini. With Telegram on and no usable model configured, the app refuses to start.
+
 ## Deploy (Railway)
 
 The `nexus-app` service builds from the `Dockerfile`. Its settings live on the service in Railway, not in the repo (Railway no longer reads `railway.toml`):

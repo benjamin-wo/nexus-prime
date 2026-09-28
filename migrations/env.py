@@ -5,7 +5,7 @@ from alembic import context
 from sqlalchemy import Connection
 
 from nexus.infra.db.engine import make_engine
-from nexus.infra.db.tables import metadata
+from nexus.infra.db.tables import CHECKPOINT_TABLES, metadata
 from nexus.settings import get_settings
 
 config = context.config
@@ -15,6 +15,13 @@ if config.config_file_name is not None and config.attributes.get("configure_logg
 target_metadata = metadata
 
 
+def include_object(
+    obj: object, name: str | None, type_: str, reflected: bool, compare_to: object
+) -> bool:
+    """Leave LangGraph's checkpoint tables out of autogenerate comparisons."""
+    return not (type_ == "table" and name in CHECKPOINT_TABLES)
+
+
 def _database_url() -> str:
     url = config.attributes.get("database_url")
     return str(url) if url else get_settings().database_url_str
@@ -22,7 +29,10 @@ def _database_url() -> str:
 
 def _run(connection: Connection) -> None:
     context.configure(
-        connection=connection, target_metadata=target_metadata, compare_server_default=True
+        connection=connection,
+        target_metadata=target_metadata,
+        compare_server_default=True,
+        include_object=include_object,
     )
     with context.begin_transaction():
         context.run_migrations()

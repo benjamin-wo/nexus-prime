@@ -34,7 +34,9 @@ from nexus.domain.ledger import (
 )
 from nexus.domain.money import Money
 from nexus.infra.db.tables import (
+    capability_gaps,
     categories,
+    inbound_events,
     settlements,
     splits,
     transaction_revisions,
@@ -127,6 +129,10 @@ class SqlLedgerRepository:
                 select(users).where(users.c.telegram_user_id == telegram_user_id)
             )
         ).first()
+        return _user(row) if row else None
+
+    async def get_user(self, user_id: UserId) -> User | None:
+        row = (await self._db.execute(select(users).where(users.c.id == user_id))).first()
         return _user(row) if row else None
 
     # --- categories -------------------------------------------------------------
@@ -503,4 +509,24 @@ class SqlLedgerRepository:
                 }
                 for st in new_settlements
             ],
+        )
+
+    # --- channel bookkeeping --------------------------------------------------------
+
+    async def claim_inbound_event(self, channel: str, event_id: str) -> bool:
+        claimed = await self._db.execute(
+            pg_insert(inbound_events)
+            .values(channel=channel, event_id=event_id)
+            .on_conflict_do_nothing()
+            .returning(inbound_events.c.event_id)
+        )
+        return claimed.first() is not None
+
+    async def insert_capability_gap(
+        self, user_id: UserId, request: str, intent: str, channel: str
+    ) -> None:
+        await self._db.execute(
+            insert(capability_gaps).values(
+                user_id=user_id, request=request[:1000], intent=intent, channel=channel
+            )
         )
