@@ -10,7 +10,7 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from nexus.agent.service import Reply
-from nexus.application import access
+from nexus.application import access, fx
 from nexus.application import categories as category_cases
 from nexus.application import splits as split_cases
 from nexus.application import transactions as tx_cases
@@ -59,10 +59,19 @@ def money(value: Money) -> MoneyOut:
     return MoneyOut(amount=str(value.amount), currency=value.currency)
 
 
+class HomeAmountOut(Model):
+    """A foreign amount in the user's home currency; amount is None if no rate was available."""
+
+    amount: MoneyOut | None
+    rate: str | None  # one unit of the original currency in the home currency
+    rate_date: date | None  # the day that rate was published
+
+
 class TransactionOut(Model):
     id: UUID
     direction: str
     amount: MoneyOut
+    home: HomeAmountOut | None = None  # set on listings for foreign-currency rows
     occurred_at: datetime
     counterparty: str | None
     category_id: UUID | None
@@ -72,11 +81,21 @@ class TransactionOut(Model):
     deleted: bool
 
 
-def tx_out(tx: Transaction) -> TransactionOut:
+def home_out(conversion: fx.Conversion) -> HomeAmountOut:
+    rate = conversion.rate
+    return HomeAmountOut(
+        amount=money(conversion.home) if conversion.home else None,
+        rate=str(rate.value) if rate else None,
+        rate_date=rate.effective if rate else None,
+    )
+
+
+def tx_out(tx: Transaction, conversion: fx.Conversion | None = None) -> TransactionOut:
     return TransactionOut(
         id=tx.id,
         direction=tx.direction.value,
         amount=money(tx.amount),
+        home=home_out(conversion) if conversion else None,
         occurred_at=tx.occurred_at,
         counterparty=tx.counterparty,
         category_id=tx.category_id,
@@ -133,6 +152,16 @@ def replies_out(replies: list[Reply]) -> list[ReplyOut]:
 
 def _tz(user: User) -> ZoneInfo:
     return ZoneInfo(user.timezone)
+
+
+async def _conversions(
+    web: WebRuntime, user: User, txs: list[Transaction]
+) -> dict[UUID, fx.Conversion]:
+    """Home-currency views of the foreign-currency rows, each at its own day's rate."""
+    home, tz = user.home_currency, _tz(user)
+    foreign = [(t, t.occurred_at.astimezone(tz).date()) for t in txs if t.amount.currency != home]
+    found = await fx.rates_for(web.rates, home, ((t.amount.currency, d) for t, d in foreign))
+    return {t.id: fx.convert(t.amount, d, home, found) for t, d in foreign}
 
 
 def _day_start(user: User, day: date) -> datetime:
@@ -315,7 +344,8 @@ async def list_transactions(
         include_deleted, only_deleted, sort, descending, limit, offset,
     )  # fmt: skip
     page = await tx_cases.list_ledger(web.uow(), auth.user.id, query)
-    return PageOut(items=[tx_out(t) for t in page.items], total=page.total)
+    conversions = await _conversions(web, auth.user, page.items)
+    return PageOut(items=[tx_out(t, conversions.get(t.id)) for t in page.items], total=page.total)
 
 
 class TransactionIn(Model):
@@ -457,7 +487,9 @@ async def export_csv(
         if not page.items or offset >= page.total:
             break
     cats = await category_cases.list_categories(web.uow(), user.id, include_inactive=True)
-    body = to_csv(rows[:EXPORT_LIMIT], {c.id: c for c in cats}, _tz(user))
+    rows = rows[:EXPORT_LIMIT]
+    conversions = await _conversions(web, user, rows)
+    body = to_csv(rows, {c.id: c for c in cats}, _tz(user), user.home_currency, conversions)
     stamp = web.clock().astimezone(_tz(user)).strftime("%Y%m%d")
     return Response(
         content=body,
@@ -471,8 +503,10 @@ async def export_csv(
 
 class TotalOut(Model):
     direction: str
-    total: MoneyOut
+    total: MoneyOut  # home currency, foreign amounts converted at their day's rate
     count: int
+    converted: list[MoneyOut]  # foreign originals included in total
+    unconverted: list[MoneyOut]  # foreign amounts left out: no rate available
 
 
 class CategoryTotalOut(Model):
@@ -485,6 +519,7 @@ class CategoryTotalOut(Model):
 class SummaryOut(Model):
     start: date
     end: date
+    currency: str
     totals: list[TotalOut]
     by_category: list[CategoryTotalOut]
 
@@ -497,14 +532,25 @@ async def summary(
     today = web.clock().astimezone(_tz(user)).date()
     first = start or today.replace(day=1)
     last = end or today
-    result = await tx_cases.summarize(
-        web.uow(), user.id, _day_start(user, first), _day_start(user, last) + timedelta(days=1)
+    result = await tx_cases.summarize_in_home(
+        web.uow(),
+        web.rates,
+        user,
+        _day_start(user, first),
+        _day_start(user, last) + timedelta(days=1),
     )
     return SummaryOut(
         start=first,
         end=last,
+        currency=result.currency,
         totals=[
-            TotalOut(direction=t.direction.value, total=money(t.total), count=t.count)
+            TotalOut(
+                direction=t.direction.value,
+                total=money(t.total),
+                count=t.count,
+                converted=[money(m) for m in t.converted],
+                unconverted=[money(m) for m in t.unconverted],
+            )
             for t in result.totals
         ],
         by_category=[

@@ -17,6 +17,7 @@ from nexus.agent.service import AgentService
 from nexus.agent.skills import SkillLibrary
 from nexus.agent.tools import build_tools
 from nexus.application.clock import utcnow
+from nexus.application.fx import RateSource
 from nexus.channels.telegram import webhook as telegram_webhook
 from nexus.channels.telegram.client import HttpTelegramClient, TelegramClient
 from nexus.channels.web import api as web_api
@@ -28,6 +29,7 @@ from nexus.infra.db.checkpointer import postgres_checkpointer
 from nexus.infra.db.engine import make_engine
 from nexus.infra.db.migrations import assert_schema_at_head
 from nexus.infra.db.uow import SqlUnitOfWork
+from nexus.infra.fx.frankfurter import FrankfurterRates
 from nexus.infra.llm.factory import ChatModels, build_chat_models
 from nexus.settings import Settings, get_settings
 
@@ -41,6 +43,7 @@ class Overrides:
     telegram: TelegramClient | None = None
     checkpointer: BaseCheckpointSaver[Any] | None = None
     clock: Callable[[], datetime] | None = None
+    rates: RateSource | None = None
 
 
 def _health(engine: AsyncEngine, models: ChatModels) -> Callable[[], Any]:
@@ -119,6 +122,10 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                 app.state.telegram = telegram
                 origin = resolved.public_origin
                 if origin is not None:
+                    rates = extra.rates
+                    if rates is None:
+                        http = await stack.enter_async_context(httpx.AsyncClient())
+                        rates = FrankfurterRates(http)
                     app.state.web = WebRuntime(
                         settings=resolved,
                         origin=origin,
@@ -126,6 +133,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                         service=telegram.service,
                         clock=extra.clock or utcnow,
                         bot_username=telegram.client.bot_username,
+                        rates=rates,
                     )
             yield
 

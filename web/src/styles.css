@@ -150,6 +150,7 @@ table.ledger { width: 100%; border-collapse: collapse; }
 .ledger tbody tr:hover, .ledger tbody tr:focus-within { background: var(--bg-card-hover); }
 .ledger tr[aria-selected="true"] { background: var(--orange-soft); }
 .ledger .amount { text-align: right; white-space: nowrap; }
+.ledger .amount .fx { display: block; font-weight: 500; white-space: normal; }
 .ledger .wrap { overflow-wrap: anywhere; }
 .amount-out { color: var(--text-primary); }
 .amount-in { color: var(--emerald-accent); }

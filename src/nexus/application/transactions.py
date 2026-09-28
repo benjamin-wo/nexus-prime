@@ -4,8 +4,10 @@ from enum import Enum
 from typing import Literal
 from uuid import UUID, uuid4
 
+from nexus.application import fx
 from nexus.application.categories import require_category
 from nexus.application.clock import utcnow
+from nexus.application.fx import RateSource
 from nexus.application.ports import (
     CategoryTotal,
     DirectionTotal,
@@ -22,6 +24,7 @@ from nexus.domain.ledger import (
     Split,
     Transaction,
     TransactionStatus,
+    User,
     UserId,
     apply_snapshot,
     clean_name,
@@ -304,10 +307,92 @@ async def list_ledger(uow: UnitOfWork, actor: UserId, query: LedgerQuery) -> Pag
         return await uow.ledger.list_transactions(actor, cleaned)
 
 
+@dataclass(frozen=True, slots=True)
+class HomeTotal:
+    direction: Direction
+    total: Money  # in the home currency, including converted foreign amounts
+    count: int
+    converted: list[Money]  # foreign originals included in ``total``, per currency
+    unconverted: list[Money]  # foreign amounts left out for want of a rate
+
+
+@dataclass(frozen=True, slots=True)
+class HomeCategoryTotal:
+    category_id: UUID | None
+    category_name: str | None
+    total: Money
+    count: int
+
+
+@dataclass(frozen=True, slots=True)
+class HomeSummary:
+    start: datetime
+    end: datetime
+    currency: str
+    totals: list[HomeTotal]  # one per direction, out first
+    spending_by_category: list[HomeCategoryTotal]  # largest first
+
+
+def _by_currency(amounts: list[Money]) -> list[Money]:
+    merged: dict[str, Money] = {}
+    for m in amounts:
+        merged[m.currency] = merged[m.currency] + m if m.currency in merged else m
+    return [merged[c] for c in sorted(merged)]
+
+
+async def summarize_in_home(
+    uow: UnitOfWork, rates: RateSource, user: User, start: datetime, end: datetime
+) -> HomeSummary:
+    """Totals in [start, end) in the user's home currency.
+
+    Foreign amounts convert per local day at that day's rate (or the latest one
+    before it). Amounts with no available rate are reported, not guessed.
+    """
+    _check_range(start, end)
+    home = user.home_currency
+    async with uow:
+        days = await uow.ledger.totals_by_day(user.id, start, end, user.timezone)
+    found = await fx.rates_for(rates, home, ((d.total.currency, d.day) for d in days))
+    totals: list[HomeTotal] = []
+    for direction in (Direction.OUT, Direction.IN):
+        total, count = Money.zero(home), 0
+        converted: list[Money] = []
+        unconverted: list[Money] = []
+        for d in days:
+            if d.direction is not direction:
+                continue
+            result = fx.convert(d.total, d.day, home, found)
+            if result.home is None:
+                unconverted.append(d.total)
+                continue
+            total, count = total + result.home, count + d.count
+            if d.total.currency != home:
+                converted.append(d.total)
+        totals.append(
+            HomeTotal(direction, total, count, _by_currency(converted), _by_currency(unconverted))
+        )
+    categories: dict[UUID | None, HomeCategoryTotal] = {}
+    for d in days:
+        if d.direction is not Direction.OUT:
+            continue
+        amount = fx.convert(d.total, d.day, home, found).home
+        if amount is None:
+            continue
+        prior = categories.get(d.category_id)
+        categories[d.category_id] = HomeCategoryTotal(
+            d.category_id,
+            d.category_name,
+            prior.total + amount if prior else amount,
+            (prior.count if prior else 0) + d.count,
+        )
+    ranked = sorted(categories.values(), key=lambda c: (-c.total.amount, c.category_name or ""))
+    return HomeSummary(start, end, home, totals, ranked)
+
+
 async def summarize(uow: UnitOfWork, actor: UserId, start: datetime, end: datetime) -> Summary:
     """Confirmed, non-deleted totals in [start, end), per currency.
 
-    Currencies are never mixed; conversion arrives with FX rates (M7).
+    Currencies are never mixed; ``summarize_in_home`` converts to one currency.
     """
     _check_range(start, end)
     async with uow:

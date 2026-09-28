@@ -4,13 +4,27 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Row, and_, delete, exists, func, insert, literal, or_, select, update
+from sqlalchemy import (
+    Date,
+    Row,
+    and_,
+    cast,
+    delete,
+    exists,
+    func,
+    insert,
+    literal,
+    or_,
+    select,
+    update,
+)
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from nexus.application.ports import (
     CategoryTotal,
+    DayTotal,
     DirectionTotal,
     LedgerQuery,
     Page,
@@ -279,6 +293,36 @@ class SqlLedgerRepository:
         return [
             DirectionTotal(Direction(direction), Money(total, currency), count)
             for direction, currency, total, count in rows
+        ]
+
+    async def totals_by_day(
+        self, user_id: UserId, start: datetime, end: datetime, timezone: str
+    ) -> list[DayTotal]:
+        t = transactions.c
+        day = cast(func.timezone(timezone, t.occurred_at), Date)
+        rows = await self._db.execute(
+            select(
+                t.direction,
+                t.category_id,
+                categories.c.name,
+                day,
+                t.currency,
+                func.sum(t.amount),
+                func.count(),
+            )
+            .select_from(
+                transactions.outerjoin(
+                    categories,
+                    and_(categories.c.id == t.category_id, categories.c.user_id == t.user_id),
+                )
+            )
+            .where(self._counted(user_id, start, end))
+            .group_by(t.direction, t.category_id, categories.c.name, day, t.currency)
+            .order_by(day)
+        )
+        return [
+            DayTotal(Direction(direction), category_id, name, on, Money(total, currency), count)
+            for direction, category_id, name, on, currency, total, count in rows
         ]
 
     async def spending_by_category(

@@ -44,6 +44,7 @@ test("dashboard shows the month, categories and IOUs", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "This month" })).toBeVisible();
   await expect(page.getByLabel("Spent")).toContainText("37.40");
+  await expect(page.getByLabel("Spent")).toContainText("Includes USD 33.80, converted");
   await expect(page.getByLabel("Received")).toContainText("4,200.00");
   await expect(page.getByRole("list", { name: "Spending by category" })).toContainText("Food & Drink");
   await expect(page.getByText("Ann")).toBeVisible();
