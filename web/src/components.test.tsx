@@ -68,7 +68,8 @@ describe("foreign currency", () => {
       />,
     );
     expect(screen.getByText(/SGD\s?43\.62/)).toBeInTheDocument();
-    expect(screen.getByText(/USD\s?33\.80 at 1\.2905 \(.*2026 rate\)/)).toBeInTheDocument();
+    const caption = screen.getByTitle(/USD\s?33\.80 at 1\.2905, rate of .*2026/);
+    expect(caption).toHaveTextContent(/USD\s?33\.80\s*at 1\.2905 · (25 Sep|Sep 25)$/);
     expect(screen.getByText(/25/)).toBeInTheDocument();
   });
 

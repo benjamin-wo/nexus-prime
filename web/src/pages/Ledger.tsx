@@ -131,12 +131,12 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
               onChange={(e) => setSearch(e.target.value)}
             />
           </label>
-          <label>
-            <span className="sr-only">From</span>
+          <label className="date-field">
+            <span className="date-caption">From</span>
             <input className="input" type="date" value={start} onChange={(e) => setStart(e.target.value)} />
           </label>
-          <label>
-            <span className="sr-only">To</span>
+          <label className="date-field">
+            <span className="date-caption">To</span>
             <input className="input" type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
           </label>
         </div>
