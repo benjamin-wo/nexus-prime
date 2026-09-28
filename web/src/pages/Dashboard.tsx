@@ -53,10 +53,10 @@ export function Dashboard({ me, onLog, onOpenChat }: { me: Me; onLog: () => void
           <button type="button" className="btn" disabled title="Coming in a later update">
             Import statement
           </button>
-          <button type="button" className="btn" disabled title="Coming in a later update">
+          <Link className="btn" to="/plan">
             Add bill
-          </button>
-          <Link className="btn" to="/budgets">
+          </Link>
+          <Link className="btn" to="/plan">
             View budgets
           </Link>
         </div>

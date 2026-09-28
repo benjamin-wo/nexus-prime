@@ -4,14 +4,14 @@ from datetime import date, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Row, delete, select
+from sqlalchemy import Row, delete, insert, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from nexus.domain.ledger import UserId
 from nexus.domain.money import Money
-from nexus.domain.planning import Budget
-from nexus.infra.db.tables import budget_alerts, budgets, jobs
+from nexus.domain.planning import Bill, BillOccurrence, Budget, Cadence
+from nexus.infra.db.tables import bill_occurrences, bills, budget_alerts, budgets, jobs
 
 
 def _budget(row: Row[Any]) -> Budget:
@@ -22,6 +22,31 @@ def _budget(row: Row[Any]) -> Budget:
         limit=Money(row.amount, row.currency),
         created_at=row.created_at,
         updated_at=row.updated_at,
+    )
+
+
+def _bill(row: Row[Any]) -> Bill:
+    return Bill(
+        id=row.id,
+        user_id=UserId(row.user_id),
+        name=row.name,
+        amount=Money(row.amount, row.currency) if row.amount is not None else None,
+        cadence=Cadence(row.cadence),
+        anchor=row.anchor,
+        created_at=row.created_at,
+        archived_at=row.archived_at,
+    )
+
+
+def _occurrence(row: Row[Any]) -> BillOccurrence:
+    return BillOccurrence(
+        id=row.id,
+        user_id=UserId(row.user_id),
+        bill_id=row.bill_id,
+        due=row.due,
+        paid_at=row.paid_at,
+        snoozed_until=row.snoozed_until,
+        reminded_offset=row.reminded_offset,
     )
 
 
@@ -116,6 +141,97 @@ class SqlPlanningRepository:
             .returning(a.threshold)
         )
         return sorted(r.threshold for r in await self._db.execute(stmt))
+
+    # --- bills ------------------------------------------------------------------------
+
+    async def insert_bill(self, bill: Bill) -> None:
+        await self._db.execute(
+            insert(bills).values(
+                id=bill.id,
+                user_id=bill.user_id,
+                name=bill.name,
+                amount=bill.amount.amount if bill.amount else None,
+                currency=bill.amount.currency if bill.amount else None,
+                cadence=bill.cadence.value,
+                anchor=bill.anchor,
+                created_at=bill.created_at,
+                archived_at=bill.archived_at,
+            )
+        )
+
+    async def list_bills(self, user_id: UserId) -> list[Bill]:
+        b = bills.c
+        rows = await self._db.execute(
+            select(bills)
+            .where(b.user_id == user_id, b.archived_at.is_(None))
+            .order_by(b.anchor, b.name)
+        )
+        return [_bill(r) for r in rows]
+
+    async def get_bill(self, user_id: UserId, bill_id: UUID) -> Bill | None:
+        b = bills.c
+        row = (
+            await self._db.execute(select(bills).where(b.user_id == user_id, b.id == bill_id))
+        ).first()
+        return _bill(row) if row else None
+
+    async def archive_bill(self, user_id: UserId, bill_id: UUID, at: datetime) -> bool:
+        b = bills.c
+        result = await self._db.execute(
+            update(bills)
+            .where(b.user_id == user_id, b.id == bill_id, b.archived_at.is_(None))
+            .values(archived_at=at)
+        )
+        return bool(result.rowcount)
+
+    async def users_with_bills(self) -> list[UserId]:
+        b = bills.c
+        rows = await self._db.execute(select(b.user_id).where(b.archived_at.is_(None)).distinct())
+        return [UserId(r.user_id) for r in rows]
+
+    async def occurrences(
+        self, user_id: UserId, bill_id: UUID, since: date
+    ) -> list[BillOccurrence]:
+        o = bill_occurrences.c
+        rows = await self._db.execute(
+            select(bill_occurrences)
+            .where(o.user_id == user_id, o.bill_id == bill_id, o.due >= since)
+            .order_by(o.due)
+        )
+        return [_occurrence(r) for r in rows]
+
+    async def get_occurrence(self, user_id: UserId, occurrence_id: UUID) -> BillOccurrence | None:
+        o = bill_occurrences.c
+        row = (
+            await self._db.execute(
+                select(bill_occurrences).where(o.user_id == user_id, o.id == occurrence_id)
+            )
+        ).first()
+        return _occurrence(row) if row else None
+
+    async def save_occurrence(self, occurrence: BillOccurrence) -> BillOccurrence:
+        o = bill_occurrences.c
+        stmt = pg_insert(bill_occurrences).values(
+            id=occurrence.id,
+            user_id=occurrence.user_id,
+            bill_id=occurrence.bill_id,
+            due=occurrence.due,
+            paid_at=occurrence.paid_at,
+            snoozed_until=occurrence.snoozed_until,
+            reminded_offset=occurrence.reminded_offset,
+        )
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[o.bill_id, o.due],
+            set_={
+                "paid_at": stmt.excluded.paid_at,
+                "snoozed_until": stmt.excluded.snoozed_until,
+                "reminded_offset": stmt.excluded.reminded_offset,
+            },
+            # Only this user's row (the bill's foreign key includes user_id).
+            where=o.user_id == occurrence.user_id,
+        )
+        row = (await self._db.execute(stmt.returning(bill_occurrences))).one()
+        return _occurrence(row)
 
 
 class SqlJobQueue:

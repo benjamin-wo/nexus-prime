@@ -4,7 +4,16 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from nexus.domain.money import Money
-from nexus.domain.planning import month_start, next_month_start, quiet_until, reached
+from nexus.domain.planning import (
+    Cadence,
+    due_date,
+    due_dates,
+    month_start,
+    next_month_start,
+    quiet_until,
+    reached,
+    reminder_offset,
+)
 from nexus.jobs.runner import backoff, slot_start
 
 SGT = ZoneInfo("Asia/Singapore")
@@ -72,3 +81,41 @@ def test_slots_align_to_the_interval() -> None:
 def test_backoff_grows_and_caps() -> None:
     assert [backoff(n) for n in (1, 2, 3)] == [timedelta(minutes=m) for m in (2, 4, 8)]
     assert backoff(20) == timedelta(minutes=60)
+
+
+# --- bills --------------------------------------------------------------------------
+
+
+def test_monthly_bills_clamp_to_short_months_and_come_back() -> None:
+    anchor = date(2026, 1, 31)
+    assert [due_date(anchor, Cadence.MONTHLY, n) for n in range(4)] == [
+        date(2026, 1, 31),
+        date(2026, 2, 28),
+        date(2026, 3, 31),
+        date(2026, 4, 30),
+    ]
+    assert due_date(date(2027, 12, 15), Cadence.MONTHLY, 1) == date(2028, 1, 15)
+
+
+def test_yearly_leap_day_and_weekly_and_once() -> None:
+    assert due_date(date(2028, 2, 29), Cadence.YEARLY, 1) == date(2029, 2, 28)
+    assert due_date(date(2028, 2, 29), Cadence.YEARLY, 4) == date(2032, 2, 29)
+    assert due_date(date(2026, 9, 28), Cadence.WEEKLY, 2) == date(2026, 10, 12)
+    assert due_dates(date(2026, 9, 28), Cadence.ONCE, date(2026, 1, 1), date(2027, 1, 1)) == [
+        date(2026, 9, 28)
+    ]
+    with pytest.raises(ValueError):
+        due_date(date(2026, 9, 28), Cadence.ONCE, 1)
+
+
+def test_due_dates_in_a_window() -> None:
+    days = due_dates(date(2026, 1, 31), Cadence.MONTHLY, date(2026, 2, 1), date(2026, 4, 30))
+    assert days == [date(2026, 2, 28), date(2026, 3, 31), date(2026, 4, 30)]
+
+
+@pytest.mark.parametrize(
+    ("days_until", "offset"),
+    [(10, None), (8, None), (7, 7), (5, 7), (4, 7), (3, 3), (2, 3), (1, 1), (0, 1), (-1, None)],
+)
+def test_reminder_offsets(days_until: int, offset: int | None) -> None:
+    assert reminder_offset(days_until) == offset

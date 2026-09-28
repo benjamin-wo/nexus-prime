@@ -272,6 +272,44 @@ budget_alerts = Table(
     CheckConstraint("threshold IN (50, 80, 100)", name="threshold"),
 )
 
+# Bills to remember (never paid by the app). Amount and currency are both set or
+# both empty.
+bills = Table(
+    "bills",
+    metadata,
+    _uuid_pk(),
+    _user_fk(),
+    Column("name", Text, nullable=False),
+    Column("amount", MONEY),
+    Column("currency", CURRENCY),
+    Column("cadence", Text, nullable=False),
+    Column("anchor", Date, nullable=False),
+    Column("created_at", TZ, nullable=False),
+    Column("archived_at", TZ),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+    UniqueConstraint("id", "user_id"),
+    CheckConstraint("cadence IN ('once', 'weekly', 'monthly', 'yearly')", name="cadence"),
+    CheckConstraint("(amount IS NULL) = (currency IS NULL)", name="amount_with_currency"),
+    CheckConstraint("amount IS NULL OR amount > 0", name="amount_positive"),
+    Index("ix_bills_user_id", "user_id"),
+)
+
+# A due date of a bill, stored once it's reminded, snoozed or paid.
+bill_occurrences = Table(
+    "bill_occurrences",
+    metadata,
+    _uuid_pk(),
+    _user_fk(),
+    Column("bill_id", UUID(as_uuid=True), nullable=False),
+    Column("due", Date, nullable=False),
+    Column("paid_at", TZ),
+    Column("snoozed_until", TZ),
+    Column("reminded_offset", SmallInteger),
+    ForeignKeyConstraint(["bill_id", "user_id"], ["bills.id", "bills.user_id"], ondelete="CASCADE"),
+    UniqueConstraint("bill_id", "due"),
+    CheckConstraint("reminded_offset IN (7, 3, 1)", name="reminded_offset"),
+)
+
 # Background work. A job is claimed atomically (FOR UPDATE SKIP LOCKED) and
 # every job has a unique dedupe key, so none runs twice.
 jobs = Table(

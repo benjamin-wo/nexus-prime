@@ -10,9 +10,12 @@ from typing import Any
 import pytest
 from httpx import ASGITransport, AsyncClient, Response
 from langgraph.checkpoint.memory import InMemorySaver
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from nexus.application import bills as bill_cases
 from nexus.channels.web.telegram_login import sign_for_tests, sign_webapp_for_tests
+from nexus.infra.db.tables import jobs
 from nexus.main import Overrides, create_app
 from nexus.settings import Settings
 from tests.fakes import (
@@ -502,6 +505,54 @@ async def test_budgets_round_trip(world: World) -> None:
 
     assert (await owner.send("DELETE", f"/api/budgets/{meal['id']}")).status_code == 204
     assert [b["name"] for b in (await owner.get("/api/budgets")).json()] == ["Overall"]
+
+
+# --- bills ----------------------------------------------------------------------------
+
+
+async def test_bills_and_reminder_buttons(world: World) -> None:
+    owner, token = await owner_and_invite(world)
+    made = await owner.send(
+        "POST", "/api/bills", {"name": "Rent", "due": "2026-09-30", "amount": "1,800"}
+    )
+    assert made.status_code == 201
+    bill = made.json()
+    assert bill["amount"] == {"amount": "1800.0000", "currency": "SGD"}
+    assert (bill["cadence"], bill["days_until"], bill["snoozed"]) == ("monthly", 2, False)
+    once = {"name": "Visa", "due": "2026-10-10", "cadence": "once"}
+    assert (await owner.send("POST", "/api/bills", once)).status_code == 201
+    assert [b["name"] for b in (await owner.get("/api/bills")).json()] == ["Rent", "Visa"]
+
+    # The reminder sweep queues a message whose buttons work from the web chat too.
+    web = world.app.state.web
+    async with web.uow() as tx:
+        user = await tx.ledger.get_user_by_telegram_id(OWNER)
+    assert user is not None
+    assert await bill_cases.send_reminders(web.uow, user, now=world.clock.now) == 1
+    async with world.app.state.engine.connect() as db:
+        (payload,) = [r.payload for r in await db.execute(select(jobs))]
+    paid_button = payload["buttons"][0][0]["data"]
+
+    member = world.browser()
+    await member.login(MEMBER, invite=token)
+    stranger = (await member.send("POST", "/api/chat/press", {"data": paid_button})).json()
+    assert "out of date" in stranger[0]["text"]  # not their bill
+    assert (await member.send("POST", f"/api/bills/{bill['id']}/paid")).status_code == 404
+
+    done = (await owner.send("POST", "/api/chat/press", {"data": paid_button})).json()
+    assert done[0]["text"] == "Marked Rent (30 Sep) as paid."
+    again = (await owner.send("POST", "/api/chat/press", {"data": paid_button})).json()
+    assert "out of date" in again[0]["text"]
+    rent = next(b for b in (await owner.get("/api/bills")).json() if b["name"] == "Rent")
+    assert rent["due"] == "2026-10-30"
+
+    assert (await owner.send("POST", f"/api/bills/{bill['id']}/snooze")).status_code == 204
+    rent = next(b for b in (await owner.get("/api/bills")).json() if b["name"] == "Rent")
+    assert rent["snoozed"] is True
+    assert (await owner.send("DELETE", f"/api/bills/{bill['id']}")).status_code == 204
+    assert [b["name"] for b in (await owner.get("/api/bills")).json()] == ["Visa"]
+    bad = await owner.send("POST", "/api/bills", {"name": "X", "due": "2026-10-01", "amount": "-5"})
+    assert bad.status_code == 422
 
 
 # --- chat ---------------------------------------------------------------------------------

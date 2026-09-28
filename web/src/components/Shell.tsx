@@ -7,7 +7,7 @@ import { InviteButton } from "./InviteButton";
 const links = [
   { to: "/", label: "Dashboard" },
   { to: "/ledger", label: "Ledger" },
-  { to: "/budgets", label: "Budgets" },
+  { to: "/plan", label: "Plan" },
 ];
 
 export function Shell({

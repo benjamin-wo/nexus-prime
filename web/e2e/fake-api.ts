@@ -17,13 +17,23 @@ type Tx = {
 export async function fakeApi(page: Page, { signedIn = true } = {}) {
   let session = signedIn;
   type FakeBudget = { id: string; category_id: string | null; limit: number; spent: number };
-  const state: { txs: Tx[]; lastPress?: string; budgets: FakeBudget[] } = {
+  type FakeBill = {
+    id: string;
+    name: string;
+    amount: { amount: string; currency: string } | null;
+    cadence: string;
+    due: string;
+    days_until: number;
+    snoozed: boolean;
+  };
+  const state: { txs: Tx[]; lastPress?: string; budgets: FakeBudget[]; bills: FakeBill[] } = {
     txs: [
       mk("t1", "out", "12.40", "Maxwell Food Centre", "food"),
       mk("t2", "out", "25.00", "Grab", null),
       mk("t3", "in", "4200.00", "Employer", null),
     ],
     budgets: [],
+    bills: [],
   };
   const live = () => state.txs.filter((t) => !t.deleted);
   const json = (route: Route, body: unknown, status = 200) =>
@@ -144,6 +154,27 @@ export async function fakeApi(page: Page, { signedIn = true } = {}) {
     }
     if (path.startsWith("/budgets/") && method === "DELETE") {
       state.budgets = state.budgets.filter((b) => `/budgets/${b.id}` !== path);
+      return route.fulfill({ status: 204 });
+    }
+    if (path === "/bills" && method === "GET") return json(route, state.bills);
+    if (path === "/bills" && method === "POST") {
+      const bill = {
+        id: `bill${state.bills.length + 1}`,
+        name: body.name,
+        amount: body.amount ? { amount: Number(body.amount).toFixed(4), currency: "SGD" } : null,
+        cadence: body.cadence,
+        due: body.due,
+        days_until: Math.round((Date.parse(body.due) - Date.parse("2026-09-28")) / 86_400_000),
+        snoozed: false,
+      };
+      state.bills.push(bill);
+      return json(route, bill, 201);
+    }
+    const billAction = path.match(/^\/bills\/([^/]+)(\/paid|\/snooze)?$/);
+    if (billAction && method !== "GET") {
+      const [, id, action] = billAction;
+      if (action === "/snooze") state.bills = state.bills.map((b) => (b.id === id ? { ...b, snoozed: true } : b));
+      else state.bills = state.bills.filter((b) => b.id !== id); // paid (one-off) or removed
       return route.fulfill({ status: 204 });
     }
     if (path === "/ious") {
