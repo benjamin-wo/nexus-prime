@@ -314,3 +314,40 @@ async def summarize(uow: UnitOfWork, actor: UserId, start: datetime, end: dateti
         totals = await uow.ledger.totals_by_direction(actor, start, end)
         by_category = await uow.ledger.spending_by_category(actor, start, end)
     return Summary(start, end, totals, by_category)
+
+
+MAX_BULK = 500
+
+
+async def _bulk(
+    uow: UnitOfWork, actor: UserId, ids: list[UUID], *, delete: bool
+) -> list[Transaction]:
+    unique = list(dict.fromkeys(ids))
+    if not 1 <= len(unique) <= MAX_BULK:
+        raise InvalidInput(f"choose between 1 and {MAX_BULK} transactions")
+    changed: list[Transaction] = []
+    async with uow:
+        repo = uow.ledger
+        now = utcnow()
+        for tx_id in unique:
+            tx = await repo.get_transaction(actor, tx_id, for_update=True)
+            if tx is None:
+                raise NotFound("transaction not found")  # all or nothing
+            if tx.is_deleted == delete:
+                continue
+            updated = replace(tx, deleted_at=now if delete else None, updated_at=now)
+            await repo.update_transaction(updated)
+            kind = RevisionKind.DELETE if delete else RevisionKind.RESTORE
+            await repo.insert_revision(actor, tx.id, kind, snapshot(tx), now)
+            changed.append(updated)
+        await uow.commit()
+    return changed
+
+
+async def bulk_delete(uow: UnitOfWork, actor: UserId, ids: list[UUID]) -> list[Transaction]:
+    """Soft-delete several at once. Undo with bulk_restore on the same ids."""
+    return await _bulk(uow, actor, ids, delete=True)
+
+
+async def bulk_restore(uow: UnitOfWork, actor: UserId, ids: list[UUID]) -> list[Transaction]:
+    return await _bulk(uow, actor, ids, delete=False)

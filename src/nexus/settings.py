@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     default_home_currency: str = "SGD"
     default_timezone: str = "Asia/Singapore"
 
+    # --- Web. The origin browsers use; CSRF checks compare against it. ---
+    web_origin: str | None = None
+    railway_public_domain: str | None = None
+
     # --- LLM. Names match the pre-rebuild deployment's variables. ---
     llm_provider: LlmProvider = LlmProvider.GEMINI
     gemini_api_key: SecretStr | None = None
@@ -111,6 +115,19 @@ class Settings(BaseSettings):
     @property
     def database_url_str(self) -> str:
         return str(self.database_url)
+
+    @property
+    def public_origin(self) -> str | None:
+        if self.web_origin:
+            return self.web_origin.rstrip("/")
+        if self.railway_public_domain:
+            return f"https://{self.railway_public_domain.strip()}"
+        return None
+
+    @property
+    def web_enabled(self) -> bool:
+        """The web app needs Telegram (login) and a known origin (CSRF)."""
+        return self.telegram_enabled and self.public_origin is not None
 
     @property
     def telegram_enabled(self) -> bool:

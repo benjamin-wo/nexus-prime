@@ -55,6 +55,11 @@ class User:
     home_currency: str
     role: Role
     created_at: datetime
+    web_access_granted_at: datetime | None = None
+
+    @property
+    def has_web_access(self) -> bool:
+        return self.role is Role.OWNER or self.web_access_granted_at is not None
 
 
 @dataclass(frozen=True, slots=True)

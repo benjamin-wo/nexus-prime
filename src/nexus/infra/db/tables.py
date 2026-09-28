@@ -59,6 +59,8 @@ users = Table(
     Column("home_currency", CURRENCY, nullable=False),
     Column("role", Text, nullable=False),
     Column("created_at", TZ, nullable=False, server_default=func.now()),
+    # Set when a member redeems an invite; owners always have web access.
+    Column("web_access_granted_at", TZ),
     CheckConstraint("role IN ('owner', 'member')", name="role"),
     CheckConstraint("home_currency ~ '^[A-Z]{3}$'", name="home_currency"),
 )
@@ -190,6 +192,33 @@ inbound_events = Table(
     Column("channel", Text, primary_key=True),
     Column("event_id", Text, primary_key=True),
     Column("received_at", TZ, nullable=False, server_default=func.now()),
+)
+
+invites = Table(
+    "invites",
+    metadata,
+    _uuid_pk(),
+    Column("token_hash", Text, nullable=False, unique=True),
+    Column("created_by", UUID(as_uuid=True), nullable=False),
+    Column("created_at", TZ, nullable=False),
+    Column("expires_at", TZ, nullable=False),
+    Column("redeemed_at", TZ),
+    Column("redeemed_by", UUID(as_uuid=True)),
+    ForeignKeyConstraint(["created_by"], ["users.id"]),
+    ForeignKeyConstraint(["redeemed_by"], ["users.id"]),
+)
+
+web_sessions = Table(
+    "web_sessions",
+    metadata,
+    Column("token_hash", Text, primary_key=True),
+    _user_fk(),
+    Column("csrf_token", Text, nullable=False),
+    Column("created_at", TZ, nullable=False),
+    Column("expires_at", TZ, nullable=False),
+    Column("revoked_at", TZ),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+    Index("ix_web_sessions_user_id", "user_id"),
 )
 
 # Tables LangGraph's Postgres checkpointer creates for itself (migration 0003).

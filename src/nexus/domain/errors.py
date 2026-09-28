@@ -18,6 +18,10 @@ class NotFound(NexusError):
     """
 
 
+class Forbidden(NexusError):
+    """The actor may not do this."""
+
+
 class Conflict(NexusError):
     """The request clashes with existing state."""
 

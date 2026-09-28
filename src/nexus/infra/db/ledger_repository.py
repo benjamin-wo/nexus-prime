@@ -16,6 +16,7 @@ from nexus.application.ports import (
     Page,
     SortField,
 )
+from nexus.domain.access import Invite, Session
 from nexus.domain.errors import Conflict, DuplicateSource
 from nexus.domain.ledger import (
     Category,
@@ -37,12 +38,14 @@ from nexus.infra.db.tables import (
     capability_gaps,
     categories,
     inbound_events,
+    invites,
     settlements,
     splits,
     transaction_revisions,
     transaction_sources,
     transactions,
     users,
+    web_sessions,
 )
 
 
@@ -55,6 +58,7 @@ def _user(row: Row[Any]) -> User:
         home_currency=row.home_currency,
         role=Role(row.role),
         created_at=row.created_at,
+        web_access_granted_at=row.web_access_granted_at,
     )
 
 
@@ -538,4 +542,83 @@ class SqlLedgerRepository:
             insert(capability_gaps).values(
                 user_id=user_id, request=request[:1000], intent=intent, channel=channel
             )
+        )
+
+    # --- web access -------------------------------------------------------------------
+
+    async def grant_web_access(self, user_id: UserId, at: datetime) -> None:
+        await self._db.execute(
+            update(users)
+            .where(users.c.id == user_id, users.c.web_access_granted_at.is_(None))
+            .values(web_access_granted_at=at)
+        )
+
+    async def insert_invite(self, invite: Invite) -> None:
+        await self._db.execute(
+            insert(invites).values(
+                id=invite.id,
+                token_hash=invite.token_hash,
+                created_by=invite.created_by,
+                created_at=invite.created_at,
+                expires_at=invite.expires_at,
+            )
+        )
+
+    async def get_invite(self, token_hash: str, *, for_update: bool = False) -> Invite | None:
+        stmt = select(invites).where(invites.c.token_hash == token_hash)
+        if for_update:
+            stmt = stmt.with_for_update()
+        row = (await self._db.execute(stmt)).first()
+        if row is None:
+            return None
+        return Invite(
+            id=row.id,
+            token_hash=row.token_hash,
+            created_by=UserId(row.created_by),
+            created_at=row.created_at,
+            expires_at=row.expires_at,
+            redeemed_at=row.redeemed_at,
+            redeemed_by=UserId(row.redeemed_by) if row.redeemed_by else None,
+        )
+
+    async def redeem_invite(self, invite_id: UUID, user_id: UserId, at: datetime) -> None:
+        await self._db.execute(
+            update(invites)
+            .where(invites.c.id == invite_id, invites.c.redeemed_at.is_(None))
+            .values(redeemed_at=at, redeemed_by=user_id)
+        )
+
+    async def insert_session(self, session: Session) -> None:
+        await self._db.execute(
+            insert(web_sessions).values(
+                token_hash=session.token_hash,
+                user_id=session.user_id,
+                csrf_token=session.csrf_token,
+                created_at=session.created_at,
+                expires_at=session.expires_at,
+            )
+        )
+
+    async def get_session(self, token_hash: str) -> Session | None:
+        row = (
+            await self._db.execute(
+                select(web_sessions).where(web_sessions.c.token_hash == token_hash)
+            )
+        ).first()
+        if row is None:
+            return None
+        return Session(
+            token_hash=row.token_hash,
+            user_id=UserId(row.user_id),
+            csrf_token=row.csrf_token,
+            created_at=row.created_at,
+            expires_at=row.expires_at,
+            revoked_at=row.revoked_at,
+        )
+
+    async def revoke_session(self, token_hash: str, at: datetime) -> None:
+        await self._db.execute(
+            update(web_sessions)
+            .where(web_sessions.c.token_hash == token_hash, web_sessions.c.revoked_at.is_(None))
+            .values(revoked_at=at)
         )

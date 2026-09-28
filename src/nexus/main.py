@@ -19,7 +19,10 @@ from nexus.agent.tools import build_tools
 from nexus.application.clock import utcnow
 from nexus.channels.telegram import webhook as telegram_webhook
 from nexus.channels.telegram.client import HttpTelegramClient, TelegramClient
+from nexus.channels.web import api as web_api
 from nexus.channels.web import health
+from nexus.channels.web.errors import install_error_handlers
+from nexus.channels.web.security import WebRuntime
 from nexus.infra.db.checkpointer import postgres_checkpointer
 from nexus.infra.db.engine import make_engine
 from nexus.infra.db.migrations import assert_schema_at_head
@@ -111,14 +114,27 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
             await assert_schema_at_head(engine)
             app.state.engine = engine
             if resolved.telegram_enabled:
-                app.state.telegram = await _telegram_runtime(resolved, engine, extra, stack)
+                telegram = await _telegram_runtime(resolved, engine, extra, stack)
+                app.state.telegram = telegram
+                origin = resolved.public_origin
+                if origin is not None:
+                    app.state.web = WebRuntime(
+                        settings=resolved,
+                        origin=origin,
+                        uow=telegram.uow,
+                        service=telegram.service,
+                        clock=extra.clock or utcnow,
+                    )
             yield
 
     app = FastAPI(title="Nexus Prime", lifespan=lifespan)
     app.state.settings = resolved
     app.state.telegram = None
+    app.state.web = None
     app.include_router(health.router)
     app.include_router(telegram_webhook.router)
+    app.include_router(web_api.router)
+    install_error_handlers(app)
     return app
 
 
