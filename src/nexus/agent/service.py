@@ -7,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta
 from typing import Any
+from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
@@ -18,6 +19,7 @@ from nexus.agent import kernel
 from nexus.agent.graph import RECEIPT, REF, WROTE, strip_ids, thread_id
 from nexus.agent.receipts import ReceiptReader
 from nexus.agent.tools import UowFactory
+from nexus.application import bills as bill_cases
 from nexus.application import splits as split_cases
 from nexus.application import transactions as tx_cases
 from nexus.application.users import get_user
@@ -151,7 +153,32 @@ class AgentService:
             return await self.quick_action(actor, "undo")
         if data.startswith("qa:"):
             return await self.quick_action(actor, data.removeprefix("qa:"))
+        if data.startswith("bill:"):
+            _, action, occurrence_id = [*data.split(":"), "", ""][:3]
+            return [await self._bill_button(actor, action, occurrence_id)]
         return [Reply("I don't know that button.")]
+
+    async def _bill_button(self, actor: UserId, action: str, occurrence_id: str) -> Reply:
+        """Mark paid / Snooze on a bill reminder. Records the user's word only; nothing
+        is paid and the ledger isn't touched."""
+        try:
+            bill_id = await bill_cases.occurrence_bill(self._uow(), actor, UUID(occurrence_id))
+        except ValueError:
+            bill_id = None
+        if bill_id is None:
+            return Reply("That reminder is out of date: the bill is already paid or removed.")
+        user = await get_user(self._uow(), actor)
+        now = self._clock()
+        try:
+            if action == "paid":
+                view = await bill_cases.mark_paid(self._uow, user, bill_id, now=now)
+                return Reply(f"Marked {view.bill.name} ({view.due:%-d %b}) as paid.")
+            if action == "snooze":
+                view = await bill_cases.snooze(self._uow, user, bill_id, now=now)
+                return Reply(f"OK, I'll remind you about {view.bill.name} again tomorrow.")
+        except NexusError as exc:
+            return Reply(str(exc).capitalize() + ".")
+        return Reply("I don't know that button.")
 
     async def quick_action(self, actor: UserId, action: str) -> list[Reply]:
         """Buttons that don't need the model."""

@@ -194,10 +194,10 @@ test("set a budget, see how much is used, change and remove it", async ({ page }
   await fakeApi(page);
   await page.goto("/");
   await page.getByRole("link", { name: "View budgets" }).click();
-  await expect(page.getByRole("heading", { name: "Budgets", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Plan", level: 1 })).toBeVisible();
   await expect(page.getByText("No budgets yet. Add one below.")).toBeVisible();
 
-  await page.getByLabel("For").selectOption({ label: "Food & Drink" });
+  await page.getByLabel("Budget for").selectOption({ label: "Food & Drink" });
   await page.getByLabel("Monthly limit (SGD)").fill("100");
   await page.getByRole("button", { name: "Add budget" }).click();
   const meter = page.getByRole("meter", { name: "Food & Drink budget used" });
@@ -214,10 +214,33 @@ test("set a budget, see how much is used, change and remove it", async ({ page }
   await expect(page.getByText("No budgets yet. Add one below.")).toBeVisible();
 });
 
+test("add a bill, snooze its reminders and stop tracking it", async ({ page }) => {
+  await fakeApi(page);
+  await page.goto("/plan");
+  await expect(page.getByText("No bills yet. Add one below.")).toBeVisible();
+  const form = page.getByRole("form", { name: "Add a bill" });
+  await form.getByLabel("Bill").fill("Rent");
+  await form.getByLabel("Next due").fill("2026-10-01");
+  await form.getByLabel(/Amount/).fill("1800");
+  await form.getByRole("button", { name: "Add bill" }).click();
+  const bills = page.getByRole("region", { name: "Bills" });
+  await expect(bills.getByRole("heading", { name: "Rent" })).toBeVisible();
+  await expect(bills.getByText(/Due in 3 days, .* · Every month/)).toBeVisible();
+  await expect(bills.getByText(/SGD\s?1,800\.00/)).toBeVisible();
+
+  await bills.getByRole("button", { name: "Snooze" }).click();
+  await expect(bills.getByText(/reminders snoozed/)).toBeVisible();
+  await expect(bills.getByRole("button", { name: "Snooze" })).toBeDisabled();
+
+  await bills.getByRole("button", { name: "Remove" }).click();
+  await bills.getByRole("button", { name: "Remove" }).click(); // confirm
+  await expect(page.getByText("No bills yet. Add one below.")).toBeVisible();
+});
+
 test("nothing spills sideways on a small phone", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 568 });
   await fakeApi(page);
-  for (const path of ["/", "/ledger"]) {
+  for (const path of ["/", "/ledger", "/plan"]) {
     await page.goto(path);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     const offenders = await page.evaluate(() => {

@@ -118,7 +118,7 @@ function BudgetRow({ budget, onChanged }: { budget: Budget; onChanged: () => voi
   );
 }
 
-export function Budgets({ me }: { me: Me }) {
+export function BudgetsSection({ me }: { me: Me }) {
   const client = useQueryClient();
   const budgets = useQuery({ queryKey: ["budgets"], queryFn: () => api<Budget[]>("/budgets") });
   const categories = useQuery({ queryKey: ["categories"], queryFn: () => api<Category[]>("/categories") });
@@ -155,69 +155,54 @@ export function Budgets({ me }: { me: Me }) {
   }
 
   return (
-    <>
-      <div className="page-head">
-        <div>
-          <h1>Budgets</h1>
-          <p className="muted">Monthly limits in {home}. They reset on the 1st; nothing rolls over.</p>
-        </div>
+    <section className="card" aria-labelledby="budgets">
+      <div className="card-head">
+        <h2 id="budgets">Budgets</h2>
+        <span className="caption">Monthly in {home} · alerts at 50/80/100%</span>
       </div>
-
-      <section className="card" aria-labelledby="this-month">
-        <div className="card-head">
-          <h2 id="this-month">This month</h2>
-          <span className="caption">Alerts at 50%, 80% and 100% on Telegram</span>
-        </div>
-        {budgets.isLoading && <p className="state">Loading…</p>}
-        {budgets.isError && <p className="state error-text">Couldn't load budgets.</p>}
-        {budgets.data?.length === 0 && <p className="state">No budgets yet. Add one below.</p>}
-        {budgets.data && budgets.data.length > 0 && (
-          <ul className="budgets">
-            {budgets.data.map((b) => (
-              <BudgetRow key={b.id} budget={b} onChanged={refresh} />
-            ))}
-          </ul>
-        )}
-      </section>
-
-      {options.length > 0 && (
-        <section className="card" aria-labelledby="add-budget">
-          <div className="card-head">
-            <h2 id="add-budget">Add a budget</h2>
-          </div>
-          <form className="budget-add" onSubmit={add}>
-            <label className="field">
-              For
-              <select className="input" value={chosen} onChange={(e) => setTarget(e.target.value)}>
-                {options.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field">
-              Monthly limit ({home})
-              <input
-                className="input"
-                inputMode="decimal"
-                placeholder="400"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                required
-              />
-            </label>
-            <button type="submit" className="btn btn-primary" disabled={!amount.trim()}>
-              Add budget
-            </button>
-          </form>
-          {error && (
-            <p className="error-text" role="alert">
-              {error}
-            </p>
-          )}
-        </section>
+      {budgets.isLoading && <p className="state">Loading…</p>}
+      {budgets.isError && <p className="state error-text">Couldn't load budgets.</p>}
+      {budgets.data?.length === 0 && <p className="state">No budgets yet. Add one below.</p>}
+      {budgets.data && budgets.data.length > 0 && (
+        <ul className="budgets">
+          {budgets.data.map((b) => (
+            <BudgetRow key={b.id} budget={b} onChanged={refresh} />
+          ))}
+        </ul>
       )}
-    </>
+      {options.length > 0 && (
+        <form className="budget-add plan-add" onSubmit={add} aria-label="Add a budget">
+          <label className="field">
+            Budget for
+            <select className="input" value={chosen} onChange={(e) => setTarget(e.target.value)}>
+              {options.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            Monthly limit ({home})
+            <input
+              className="input"
+              inputMode="decimal"
+              placeholder="400"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              required
+            />
+          </label>
+          <button type="submit" className="btn btn-primary" disabled={!amount.trim()}>
+            Add budget
+          </button>
+        </form>
+      )}
+      {error && (
+        <p className="error-text" role="alert">
+          {error}
+        </p>
+      )}
+    </section>
   );
 }

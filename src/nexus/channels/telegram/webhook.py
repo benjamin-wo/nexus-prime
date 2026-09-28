@@ -199,6 +199,7 @@ async def _callback(runtime: TelegramRuntime, query: dict[str, Any]) -> None:
     if actor is None:
         return
     data = str(query.get("data") or "")
-    if data.startswith("hitl:") and message.get("message_id") is not None:
+    # One-shot buttons: take them off the message once pressed.
+    if data.startswith(("hitl:", "bill:")) and message.get("message_id") is not None:
         await runtime.client.clear_buttons(chat_id, int(message["message_id"]))
     await _send(runtime, chat_id, await runtime.service.press(actor, data))

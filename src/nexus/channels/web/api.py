@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from nexus.agent.service import Reply
 from nexus.application import access, fx
+from nexus.application import bills as bill_cases
 from nexus.application import budgets as budget_cases
 from nexus.application import categories as category_cases
 from nexus.application import splits as split_cases
@@ -44,6 +45,7 @@ from nexus.domain.ledger import (
     User,
 )
 from nexus.domain.money import Money
+from nexus.domain.planning import Cadence
 
 router = APIRouter(prefix="/api")
 EXPORT_LIMIT = 10_000
@@ -723,6 +725,76 @@ async def set_budget(body: BudgetIn, auth: Auth, web: Runtime) -> None:
 @router.delete("/budgets/{budget_id}", status_code=204)
 async def remove_budget(budget_id: UUID, auth: Auth, web: Runtime) -> None:
     await budget_cases.remove_budget(web.uow(), auth.user.id, budget_id)
+
+
+# --- bills ----------------------------------------------------------------------------
+
+
+class BillOut(Model):
+    id: UUID
+    name: str
+    amount: MoneyOut | None
+    cadence: str
+    due: date
+    days_until: int
+    snoozed: bool
+
+
+def bill_out(view: bill_cases.BillView, now: datetime) -> BillOut:
+    bill = view.bill
+    return BillOut(
+        id=bill.id,
+        name=bill.name,
+        amount=money(bill.amount) if bill.amount else None,
+        cadence=bill.cadence.value,
+        due=view.due,
+        days_until=view.days_until,
+        snoozed=view.snoozed(now),
+    )
+
+
+@router.get("/bills")
+async def bills(auth: Auth, web: Runtime) -> list[BillOut]:
+    now = web.clock()
+    return [bill_out(v, now) for v in await bill_cases.list_bills(web.uow, auth.user, now=now)]
+
+
+class BillIn(Model):
+    name: str = Field(min_length=1, max_length=100)
+    due: date
+    cadence: Literal["once", "weekly", "monthly", "yearly"] = "monthly"
+    amount: str | None = Field(None, max_length=32)
+    currency: str | None = Field(None, max_length=3)
+
+
+@router.post("/bills", status_code=201)
+async def add_bill(body: BillIn, auth: Auth, web: Runtime) -> BillOut:
+    user, now = auth.user, web.clock()
+    amount = (
+        Money.of(body.amount.replace(",", ""), body.currency or user.home_currency)
+        if body.amount and body.amount.strip()
+        else None
+    )
+    bill = await bill_cases.add_bill(
+        web.uow(), user, body.name, body.due, Cadence(body.cadence), amount, now=now
+    )
+    today = now.astimezone(_tz(user)).date()
+    return bill_out(bill_cases.BillView(bill, body.due, None, today), now)
+
+
+@router.post("/bills/{bill_id}/paid", status_code=204)
+async def bill_paid(bill_id: UUID, auth: Auth, web: Runtime) -> None:
+    await bill_cases.mark_paid(web.uow, auth.user, bill_id, now=web.clock())
+
+
+@router.post("/bills/{bill_id}/snooze", status_code=204)
+async def snooze_bill(bill_id: UUID, auth: Auth, web: Runtime) -> None:
+    await bill_cases.snooze(web.uow, auth.user, bill_id, now=web.clock())
+
+
+@router.delete("/bills/{bill_id}", status_code=204)
+async def remove_bill(bill_id: UUID, auth: Auth, web: Runtime) -> None:
+    await bill_cases.remove_bill(web.uow(), auth.user.id, bill_id, now=web.clock())
 
 
 # --- chat -----------------------------------------------------------------------------

@@ -1,7 +1,8 @@
-"""Budgets and notification timing. Pure rules, no I/O."""
+"""Budgets, bills and notification timing. Pure rules, no I/O."""
 
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
+from enum import StrEnum
 from uuid import UUID
 
 from nexus.domain.ledger import UserId
@@ -62,3 +63,96 @@ def quiet_until(local: datetime) -> datetime | None:
         return None
     day = local.date() if now < QUIET_END else local.date() + timedelta(days=1)
     return datetime.combine(day, QUIET_END, tzinfo=local.tzinfo)
+
+
+# --- bills --------------------------------------------------------------------------
+
+# Remind this many days before a bill is due.
+REMINDER_OFFSETS = (7, 3, 1)
+# An unpaid bill stays "overdue" this long before it rolls on to the next due date.
+OVERDUE_GRACE = timedelta(days=7)
+
+
+class Cadence(StrEnum):
+    ONCE = "once"
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
+    YEARLY = "yearly"
+
+
+@dataclass(frozen=True, slots=True)
+class Bill:
+    """A bill to remember. Never paid by the app, and never written to the ledger."""
+
+    id: UUID
+    user_id: UserId
+    name: str
+    amount: Money | None  # optional: many bills vary
+    cadence: Cadence
+    anchor: date  # the first due date; later ones follow the cadence from here
+    created_at: datetime
+    archived_at: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class BillOccurrence:
+    """One due date of a bill, stored once something happens to it (a reminder,
+    a snooze or a payment)."""
+
+    id: UUID
+    user_id: UserId
+    bill_id: UUID
+    due: date
+    paid_at: datetime | None = None
+    snoozed_until: datetime | None = None
+    reminded_offset: int | None = None  # the most urgent reminder sent (7, 3 or 1)
+
+
+def _add_months(anchor: date, months: int) -> date:
+    """The anchor's day ``months`` later, clamped to the end of shorter months
+    (31 Jan -> 28/29 Feb -> 31 Mar)."""
+    index = anchor.month - 1 + months
+    year, month = anchor.year + index // 12, index % 12 + 1
+    last = (date(year + (month == 12), month % 12 + 1, 1) - timedelta(days=1)).day
+    return date(year, month, min(anchor.day, last))
+
+
+def due_date(anchor: date, cadence: Cadence, n: int) -> date:
+    """The n-th due date (n = 0 is the anchor). Always computed from the anchor, so a
+    bill on the 31st comes back to the 31st after a short month."""
+    match cadence:
+        case Cadence.ONCE:
+            if n:
+                raise ValueError("a one-off bill has a single due date")
+            return anchor
+        case Cadence.WEEKLY:
+            return anchor + timedelta(weeks=n)
+        case Cadence.MONTHLY:
+            return _add_months(anchor, n)
+        case Cadence.YEARLY:
+            return _add_months(anchor, 12 * n)
+
+
+def due_dates(anchor: date, cadence: Cadence, start: date, end: date) -> list[date]:
+    """Due dates in [start, end]."""
+    found: list[date] = []
+    n = 0
+    while True:
+        try:
+            day = due_date(anchor, cadence, n)
+        except ValueError:
+            return found
+        if day > end:
+            return found
+        if day >= start:
+            found.append(day)
+        n += 1
+
+
+def reminder_offset(days_until: int) -> int | None:
+    """Which reminder applies ``days_until`` days before a due date: the most urgent
+    of 7/3/1 that has been reached (5 days before is the 7-day reminder, sent late)."""
+    if days_until < 0:
+        return None
+    reached = [k for k in REMINDER_OFFSETS if days_until <= k]
+    return min(reached) if reached else None

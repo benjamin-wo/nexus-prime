@@ -86,7 +86,16 @@ export type Budget = {
   percent: number;
   unconverted: Money[];
 };
-export type Reply ={ text: string; buttons: { label: string; data: string }[][] };
+export type Bill = {
+  id: string;
+  name: string;
+  amount: Money | null;
+  cadence: "once" | "weekly" | "monthly" | "yearly";
+  due: string;
+  days_until: number;
+  snoozed: boolean;
+};
+export type Reply = { text: string; buttons: { label: string; data: string }[][] };
 
 export type LedgerFilters = {
   direction?: Direction;

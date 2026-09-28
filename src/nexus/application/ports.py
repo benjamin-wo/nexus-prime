@@ -27,7 +27,7 @@ from nexus.domain.ledger import (
     UserId,
 )
 from nexus.domain.money import Money
-from nexus.domain.planning import Budget
+from nexus.domain.planning import Bill, BillOccurrence, Budget
 
 
 class SortField(StrEnum):
@@ -181,6 +181,28 @@ class PlanningRepository(Protocol):
         self, user_id: UserId, budget_id: UUID, period: date, thresholds: list[int], at: datetime
     ) -> list[int]:
         """Record thresholds reached; returns only those not recorded before."""
+        ...
+
+    # bills
+    async def insert_bill(self, bill: Bill) -> None: ...
+    async def list_bills(self, user_id: UserId) -> list[Bill]:
+        """Active (not archived) bills."""
+        ...
+
+    async def get_bill(self, user_id: UserId, bill_id: UUID) -> Bill | None: ...
+    async def archive_bill(self, user_id: UserId, bill_id: UUID, at: datetime) -> bool: ...
+    async def users_with_bills(self) -> list[UserId]: ...
+    async def occurrences(
+        self, user_id: UserId, bill_id: UUID, since: date
+    ) -> list[BillOccurrence]:
+        """Stored due dates on or after ``since``, earliest first."""
+        ...
+
+    async def get_occurrence(
+        self, user_id: UserId, occurrence_id: UUID
+    ) -> BillOccurrence | None: ...
+    async def save_occurrence(self, occurrence: BillOccurrence) -> BillOccurrence:
+        """Insert, or update the row for the same bill and due date. Returns the stored row."""
         ...
 
 

@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from nexus.application import bills as bill_cases
 from nexus.application import budgets as budget_cases
 from nexus.application import categories as category_cases
 from nexus.application import splits as split_cases
@@ -32,6 +33,7 @@ from nexus.domain.ledger import (
     plan_split,
 )
 from nexus.domain.money import Money
+from nexus.domain.planning import Cadence
 
 type UowFactory = Callable[[], UnitOfWork]
 
@@ -506,6 +508,84 @@ async def _remove_budget(ctx: ToolContext, a: BudgetTargetArgs) -> ToolResult:
     return ToolResult(f"Removed your {_budget_name(a.category)}.", wrote=True)
 
 
+class AddBillArgs(Args):
+    name: str = Field(description="What the bill is for, e.g. 'Electricity' or 'Rent'")
+    due_date: str = Field(description="Next due date, YYYY-MM-DD")
+    repeats: Literal["once", "weekly", "monthly", "yearly"] = "monthly"
+    amount: str | None = Field(None, description="Only if the user gave one")
+    currency: str | None = Field(None, description="Defaults to the home currency")
+
+
+class BillNameArgs(Args):
+    name: str = Field(description="The bill's name, as the user has it")
+
+
+async def _find_bill(ctx: ToolContext, name: str) -> bill_cases.BillView:
+    views = await bill_cases.list_bills(ctx.uow, ctx.user, now=ctx.now)
+    wanted = name.casefold().strip()
+    exact = [v for v in views if v.bill.name.casefold() == wanted]
+    matches = exact or [v for v in views if wanted in v.bill.name.casefold()]
+    if len(matches) == 1:
+        return matches[0]
+    names = ", ".join(v.bill.name for v in views) or "none yet"
+    if not matches:
+        raise NotFound(f"no bill called {name!r}; the user's bills: {names}")
+    raise InvalidInput(f"{name!r} matches several bills: {', '.join(v.bill.name for v in matches)}")
+
+
+def _bill_line(view: bill_cases.BillView, now: datetime) -> str:
+    bill = view.bill
+    amount = f" {bill.amount}" if bill.amount else ""
+    repeats = "" if bill.cadence is Cadence.ONCE else f", {bill.cadence.value}"
+    snoozed = ", reminders snoozed" if view.snoozed(now) else ""
+    return f"{bill.name}{amount}: {bill_cases.describe_due(view)}{repeats}{snoozed}"
+
+
+async def _add_bill(ctx: ToolContext, a: AddBillArgs) -> ToolResult:
+    due = parse_day(ctx, a.due_date).astimezone(ctx.tz).date()
+    amount = parse_money(ctx, a.amount, a.currency) if a.amount else None
+    bill = await bill_cases.add_bill(
+        ctx.uow(), ctx.user, a.name, due, Cadence(a.repeats), amount, now=ctx.now
+    )
+    view = bill_cases.BillView(bill, due, None, ctx.today())
+    return ToolResult(
+        f"Added {_bill_line(view, ctx.now)}. I'll remind you 7, 3 and 1 days before.", wrote=True
+    )
+
+
+async def _bills(ctx: ToolContext, _: NoArgs) -> ToolResult:
+    views = await bill_cases.list_bills(ctx.uow, ctx.user, now=ctx.now)
+    if not views:
+        return ToolResult("No bills yet.")
+    return ToolResult("\n".join(_bill_line(v, ctx.now) for v in views))
+
+
+async def _bill_paid(ctx: ToolContext, a: BillNameArgs) -> ToolResult:
+    view = await _find_bill(ctx, a.name)
+    await bill_cases.mark_paid(ctx.uow, ctx.user, view.bill.id, now=ctx.now)
+    return ToolResult(
+        f"Marked {view.bill.name} due {view.due.isoformat()} as paid (nothing was paid by me).",
+        wrote=True,
+    )
+
+
+async def _snooze_bill(ctx: ToolContext, a: BillNameArgs) -> ToolResult:
+    view = await _find_bill(ctx, a.name)
+    await bill_cases.snooze(ctx.uow, ctx.user, view.bill.id, now=ctx.now)
+    return ToolResult(f"Snoozed reminders for {view.bill.name} until tomorrow.", wrote=True)
+
+
+async def _describe_remove_bill(ctx: ToolContext, a: BillNameArgs) -> str:
+    view = await _find_bill(ctx, a.name)
+    return f"Remove the bill {view.bill.name} and stop its reminders?"
+
+
+async def _remove_bill(ctx: ToolContext, a: BillNameArgs) -> ToolResult:
+    view = await _find_bill(ctx, a.name)
+    await bill_cases.remove_bill(ctx.uow(), ctx.user.id, view.bill.id, now=ctx.now)
+    return ToolResult(f"Removed {view.bill.name}.", wrote=True)
+
+
 class SkillArgs(Args):
     name: str
 
@@ -565,6 +645,29 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
         ),
         ToolSpec(
             "list_budgets", "Budgets and how much of each is used this month.", NoArgs, _budgets
+        ),
+        ToolSpec(
+            "add_bill",
+            "Remember a bill and remind the user before it's due.",
+            AddBillArgs,
+            _add_bill,
+        ),
+        ToolSpec("list_bills", "The user's bills and when each is next due.", NoArgs, _bills),
+        ToolSpec(
+            "mark_bill_paid",
+            "Record that the user has paid a bill's current due date. Pays nothing.",
+            BillNameArgs,
+            _bill_paid,
+        ),
+        ToolSpec(
+            "snooze_bill", "Hold a bill's reminders until tomorrow.", BillNameArgs, _snooze_bill
+        ),
+        ToolSpec(
+            "remove_bill",
+            "Stop tracking a bill. Asks the user to confirm.",
+            BillNameArgs,
+            _remove_bill,
+            confirm=_describe_remove_bill,
         ),
         ToolSpec(
             "remove_budget",
