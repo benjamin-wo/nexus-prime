@@ -235,7 +235,12 @@ table.ledger { width: 100%; border-collapse: collapse; }
     background: var(--bg-frame); border-top: 1px solid var(--border-subtle);
     padding: var(--space-2) var(--space-2) calc(var(--space-2) + env(safe-area-inset-bottom));
   }
-  .bottom-nav .nav-link, .bottom-nav .btn { flex: 1; justify-content: center; min-height: 44px; }
+  /* Four equal tabs that may shrink below their label's natural width. */
+  .bottom-nav { gap: var(--space-1); }
+  .bottom-nav .nav-link, .bottom-nav .btn {
+    flex: 1 1 0; min-width: 0; justify-content: center; min-height: 44px;
+    padding: 0 var(--space-1); font-size: 0.8rem; white-space: nowrap; overflow: hidden;
+  }
   .toast { bottom: calc(76px + env(safe-area-inset-bottom)); }
 }
 @media (max-width: 720px) {
