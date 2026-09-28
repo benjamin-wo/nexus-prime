@@ -26,7 +26,12 @@ from nexus.channels.web.security import (
     clear_session_cookie,
     set_session_cookie,
 )
-from nexus.channels.web.telegram_login import LoginRejected, verify_login
+from nexus.channels.web.telegram_login import (
+    LoginRejected,
+    TelegramIdentity,
+    verify_login,
+    verify_webapp,
+)
 from nexus.domain.errors import Forbidden, InvalidInput
 from nexus.domain.ledger import (
     Category,
@@ -201,15 +206,25 @@ class LoginIn(Model):
     invite: str | None = None
 
 
-async def _log_in(web: WebRuntime, telegram: dict[str, Any], invite: str | None) -> access.LoggedIn:
+def _bot_token(web: WebRuntime) -> str:
     token = web.settings.telegram_bot_token
     if token is None:  # pragma: no cover - web is only enabled with Telegram
         raise HTTPException(status_code=404)
+    return token.get_secret_value()
+
+
+async def _log_in(web: WebRuntime, telegram: dict[str, Any], invite: str | None) -> access.LoggedIn:
     now = web.clock()
     try:
-        identity = verify_login(telegram, token.get_secret_value(), now=now)
+        identity = verify_login(telegram, _bot_token(web), now=now)
     except LoginRejected as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
+    return await _open_session(web, identity, invite, now)
+
+
+async def _open_session(
+    web: WebRuntime, identity: TelegramIdentity, invite: str | None, now: datetime
+) -> access.LoggedIn:
     return await access.log_in(
         web.uow(),
         identity.telegram_user_id,
@@ -231,6 +246,26 @@ async def login(body: LoginIn, request: Request, response: Response, web: Runtim
     check_origin(request, web)
     logged_in = await _log_in(web, body.telegram, body.invite)
     set_session_cookie(response, web, logged_in.token)
+    return me_out(logged_in.user, logged_in.session.csrf_token)
+
+
+class WebAppLoginIn(Model):
+    init_data: str = Field(min_length=1, max_length=4096)
+
+
+@router.post("/auth/webapp")
+async def login_webapp(
+    body: WebAppLoginIn, request: Request, response: Response, web: Runtime
+) -> MeOut:
+    """Sign in from inside Telegram (the Mini App), with no widget or phone number."""
+    check_origin(request, web)
+    now = web.clock()
+    try:
+        identity = verify_webapp(body.init_data, _bot_token(web), now=now)
+    except LoginRejected as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    logged_in = await _open_session(web, identity, None, now)
+    set_session_cookie(response, web, logged_in.token, embedded=True)
     return me_out(logged_in.user, logged_in.session.csrf_token)
 
 

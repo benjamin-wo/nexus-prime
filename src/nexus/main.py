@@ -1,3 +1,6 @@
+import asyncio
+import contextlib
+import logging
 from collections.abc import AsyncIterator, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
@@ -33,6 +36,8 @@ from nexus.infra.fx.frankfurter import FrankfurterRates
 from nexus.infra.llm.factory import ChatModels, build_chat_models
 from nexus.settings import Settings, get_settings
 
+log = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True, slots=True)
 class Overrides:
@@ -44,6 +49,13 @@ class Overrides:
     checkpointer: BaseCheckpointSaver[Any] | None = None
     clock: Callable[[], datetime] | None = None
     rates: RateSource | None = None
+
+
+async def _finish(task: "asyncio.Task[None]") -> None:
+    if not task.done():
+        task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
 
 
 def _health(engine: AsyncEngine, models: ChatModels) -> Callable[[], Any]:
@@ -106,6 +118,14 @@ async def _telegram_runtime(
     )
 
 
+async def _set_menu_button(client: TelegramClient, origin: str) -> None:
+    """Point the bot's menu button at the web app. Best effort: the bot works without it."""
+    try:
+        await client.set_menu_button(telegram_webhook.APP_LABEL, f"{origin}/")
+    except Exception:
+        log.warning("could not set the Telegram menu button", exc_info=True)
+
+
 def create_app(settings: Settings | None = None, overrides: Overrides | None = None) -> FastAPI:
     resolved = settings or get_settings()
     extra = overrides or Overrides()
@@ -135,6 +155,8 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                         bot_username=telegram.client.bot_username,
                         rates=rates,
                     )
+                    menu = asyncio.create_task(_set_menu_button(telegram.client, origin))
+                    stack.push_async_callback(_finish, menu)
             yield
 
     app = FastAPI(title="Nexus Prime", lifespan=lifespan)

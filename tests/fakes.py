@@ -106,6 +106,8 @@ class FakeTelegram:
     answered: list[str] = field(default_factory=list)
     cleared: list[tuple[int, int]] = field(default_factory=list)
     files: dict[str, bytes] = field(default_factory=dict)
+    app_buttons: list[tuple[int, str, str]] = field(default_factory=list)
+    menu_button: tuple[str, str] | None = None
 
     async def send_message(
         self, chat_id: int, text: str, buttons: list[list[Button]] | None = None
@@ -123,6 +125,12 @@ class FakeTelegram:
 
     async def bot_username(self) -> str:
         return "nexus_test_bot"
+
+    async def send_app_button(self, chat_id: int, text: str, label: str, url: str) -> None:
+        self.app_buttons.append((chat_id, label, url))
+
+    async def set_menu_button(self, label: str, url: str) -> None:
+        self.menu_button = (label, url)
 
 
 @dataclass

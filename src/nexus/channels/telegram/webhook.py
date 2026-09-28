@@ -119,6 +119,9 @@ async def handle_update(runtime: TelegramRuntime, update: dict[str, Any]) -> Non
             await runtime.client.send_message(chat_id, "I can read text and receipt photos.")
             return
         command = text.split()[0].split("@")[0]
+        if command == "/app":
+            await _open_app(runtime, chat_id)
+            return
         if command == "/invite":
             await runtime.client.send_message(chat_id, await _invite(runtime, actor))
             return
@@ -133,6 +136,22 @@ async def handle_update(runtime: TelegramRuntime, update: dict[str, Any]) -> Non
                 await runtime.client.send_message(chat_id, FAILED)
             except Exception:
                 log.exception("could not report the failure to the user")
+
+
+APP_LABEL = "Open Nexus"
+
+
+async def _open_app(runtime: TelegramRuntime, chat_id: int) -> None:
+    origin = runtime.settings.public_origin
+    if origin is None:
+        await runtime.client.send_message(chat_id, "The web app isn't set up yet.")
+        return
+    await runtime.client.send_app_button(
+        chat_id,
+        "Your dashboard and ledger. It opens here in Telegram, already signed in.",
+        APP_LABEL,
+        f"{origin}/",
+    )
 
 
 async def _invite(runtime: TelegramRuntime, actor: UserId) -> str:

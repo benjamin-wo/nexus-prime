@@ -63,15 +63,31 @@ def check_origin(request: Request, web: WebRuntime) -> None:
         raise HTTPException(status_code=403, detail="cross-origin request refused")
 
 
-def set_session_cookie(response: Response, web: WebRuntime, token: str) -> None:
+def set_session_cookie(
+    response: Response, web: WebRuntime, token: str, *, embedded: bool = False
+) -> None:
+    """``embedded`` is for the Telegram Mini App, which Telegram's web clients
+    show in an iframe: there the cookie must be SameSite=None (and Partitioned,
+    so it is kept only for that embedding). Cross-site requests are still
+    refused by the origin and CSRF checks."""
     secure = not (
         web.settings.environment in {Environment.DEV, Environment.TEST}
         and web.origin.startswith("http://")
     )
+    max_age = int(SESSION_TTL.total_seconds())
+    if embedded and secure:
+        # Built by hand: Starlette only writes Partitioned on Python 3.14+.
+        # The token is URL-safe base64, so it needs no quoting.
+        response.headers.append(
+            "set-cookie",
+            f"{COOKIE}={token}; HttpOnly; Max-Age={max_age}; Path=/; "
+            "SameSite=None; Secure; Partitioned",
+        )
+        return
     response.set_cookie(
         COOKIE,
         token,
-        max_age=int(SESSION_TTL.total_seconds()),
+        max_age=max_age,
         httponly=True,
         secure=secure,
         samesite="lax",

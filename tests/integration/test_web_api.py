@@ -1,5 +1,7 @@
 """The web API through the real app: login, invites, sessions, CSRF, ledger, export, chat."""
 
+import asyncio
+import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -10,7 +12,7 @@ from httpx import ASGITransport, AsyncClient, Response
 from langgraph.checkpoint.memory import InMemorySaver
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nexus.channels.web.telegram_login import sign_for_tests
+from nexus.channels.web.telegram_login import sign_for_tests, sign_webapp_for_tests
 from nexus.main import Overrides, create_app
 from nexus.settings import Settings
 from tests.fakes import (
@@ -130,6 +132,71 @@ async def test_owner_logs_in_with_a_hardened_cookie(world: World) -> None:
     assert "httponly" in cookie and "secure" in cookie and "samesite=lax" in cookie
     me = await owner.get("/api/me")
     assert me.json()["user"]["telegram_user_id"] == OWNER
+
+
+# --- Telegram Mini App ------------------------------------------------------------------
+
+
+def init_data(telegram_id: int, auth_date: datetime = NOW, token: str = TOKEN) -> str:
+    fields = {
+        "query_id": "AAH",
+        "user": json.dumps({"id": telegram_id, "first_name": "T", "username": "t"}),
+        "auth_date": str(int(auth_date.timestamp())),
+    }
+    return sign_webapp_for_tests(fields, token)
+
+
+async def test_mini_app_signs_in_without_the_widget(world: World) -> None:
+    browser = world.browser()
+    response = await browser.client.post(
+        "/api/auth/webapp", json={"init_data": init_data(OWNER)}, headers={"Origin": ORIGIN}
+    )
+    assert response.status_code == 200
+    assert response.json()["user"]["role"] == "owner"
+    cookie = response.headers["set-cookie"].lower()
+    # Telegram's web clients embed the app in an iframe.
+    assert "samesite=none" in cookie and "partitioned" in cookie and "secure" in cookie
+    browser.csrf = response.json()["csrf_token"]
+    assert (await browser.get("/api/me")).json()["user"]["telegram_user_id"] == OWNER
+    made = await browser.send("POST", "/api/transactions", {"direction": "out", "amount": "3"})
+    assert made.status_code == 201
+
+
+async def test_mini_app_rejects_forged_expired_uninvited_and_cross_site(world: World) -> None:
+    client = world.browser().client
+
+    async def attempt(data: str, origin: str = ORIGIN) -> Response:
+        return await client.post(
+            "/api/auth/webapp", json={"init_data": data}, headers={"Origin": origin}
+        )
+
+    assert (await attempt(init_data(OWNER, token="999:other"))).status_code == 401
+    assert (await attempt(init_data(OWNER, NOW - timedelta(days=2)))).status_code == 401
+    assert (await attempt(init_data(OWNER) + "&user=%7B%22id%22%3A1%7D")).status_code == 401
+    assert (await attempt("not-init-data")).status_code == 401
+    assert (await attempt(init_data(STRANGER))).status_code == 403
+    assert (await attempt(init_data(MEMBER))).status_code == 403  # allow-listed, no invite
+    assert (await attempt(init_data(OWNER), "https://evil.test")).status_code == 403
+
+
+async def test_bot_offers_the_mini_app(world: World) -> None:
+    await asyncio.sleep(0)  # the menu button is set in the background at startup
+    assert world.telegram.menu_button == ("Open Nexus", f"{ORIGIN}/")
+    async with AsyncClient(transport=ASGITransport(app=world.app), base_url=ORIGIN) as client:
+        update = {
+            "update_id": 1,
+            "message": {
+                "message_id": 1,
+                "from": {"id": OWNER},
+                "chat": {"id": OWNER, "type": "private"},
+                "text": "/app",
+            },
+        }
+        response = await client.post(
+            "/telegram/webhook", json=update, headers={"X-Telegram-Bot-Api-Secret-Token": "hook"}
+        )
+    assert response.status_code == 200
+    assert world.telegram.app_buttons == [(OWNER, "Open Nexus", f"{ORIGIN}/")]
 
 
 async def test_login_rejects_forged_expired_and_cross_site(world: World) -> None:
@@ -468,4 +535,4 @@ async def test_config_and_security_headers(world: World) -> None:
     assert response.json() == {"bot_username": "nexus_test_bot"}
     csp = response.headers["content-security-policy"]
     assert "default-src 'self'" in csp and "unsafe" not in csp
-    assert response.headers["x-frame-options"] == "DENY"
+    assert "frame-ancestors https://web.telegram.org" in csp  # only Telegram may embed us
