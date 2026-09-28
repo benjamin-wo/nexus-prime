@@ -1,15 +1,16 @@
 import os
 import uuid
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 import asyncpg
 import pytest
 from sqlalchemy.engine import make_url
 
 
-@pytest.fixture
-async def empty_database_url() -> AsyncIterator[str]:
-    """A freshly created, empty database, dropped after the test.
+@asynccontextmanager
+async def throwaway_database() -> AsyncIterator[str]:
+    """A freshly created, empty database (asyncpg URL), dropped afterwards.
 
     TEST_DATABASE_URL points at a server where the user may CREATE DATABASE.
     """
@@ -34,3 +35,9 @@ async def empty_database_url() -> AsyncIterator[str]:
             await conn.execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
         finally:
             await conn.close()
+
+
+@pytest.fixture
+async def empty_database_url() -> AsyncIterator[str]:
+    async with throwaway_database() as url:
+        yield url

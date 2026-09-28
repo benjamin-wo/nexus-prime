@@ -34,7 +34,7 @@ Only through Alembic: `uv run alembic revision -m "..."`, then `uv run alembic u
 
 The channel is on when `TELEGRAM_BOT_TOKEN` is set, which then also requires `TELEGRAM_WEBHOOK_SECRET` and `ADMIN_TELEGRAM_CHAT_ID` (the owner). Only the owner and `TELEGRAM_ALLOWED_USER_IDS` are served, in private chats. Updates arrive at `POST /telegram/webhook`, checked against the secret token and de-duplicated by `update_id`.
 
-The app never registers its own webhook. Pointing a bot at this service is a deliberate step (M3 cutover), so deploying the app can't take a bot away from another service.
+The app never registers its own webhook, so deploying it can't take a bot away from another service. `python -m nexus.channels.telegram.register` shows the current webhook and, with `--yes`, points the bot here. See [`docs/CUTOVER.md`](docs/CUTOVER.md) for moving from the old bot, including the one-time history import (`python -m nexus.legacy`).
 
 The model comes from `LLM_PROVIDER` (`gemini`, `openrouter`, `deepseek` or `openai`) with the matching key, plus an optional Gemini `LLM_FALLBACK_MODEL`. Receipt photos are read by Gemini. With Telegram on and no usable model configured, the app refuses to start.
 

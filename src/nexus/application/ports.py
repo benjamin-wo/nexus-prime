@@ -102,8 +102,9 @@ class LedgerRepository(Protocol):
 
     # external sources (also the "never re-import" tombstones)
     async def claim_source(
-        self, user_id: UserId, source: Source, external_id: str, transaction_id: UUID
+        self, user_id: UserId, source: Source, external_id: str, transaction_id: UUID | None
     ) -> None: ...
+    async def source_claimed(self, user_id: UserId, source: Source, external_id: str) -> bool: ...
 
     # revisions
     async def insert_revision(
