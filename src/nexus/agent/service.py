@@ -142,6 +142,17 @@ class AgentService:
                 return [Reply("That confirmation has expired. Nothing was changed.")]
             return await self._run(actor, Command(resume={"approved": approved}))
 
+    async def press(self, actor: UserId, data: str) -> list[Reply]:
+        """A button press from any channel: confirmations, Undo and quick actions."""
+        if data.startswith("hitl:"):
+            _, confirmation_id, choice = [*data.split(":"), "", ""][:3]
+            return await self.resolve(actor, confirmation_id, choice == "y")
+        if data == "act:undo":
+            return await self.quick_action(actor, "undo")
+        if data.startswith("qa:"):
+            return await self.quick_action(actor, data.removeprefix("qa:"))
+        return [Reply("I don't know that button.")]
+
     async def quick_action(self, actor: UserId, action: str) -> list[Reply]:
         """Buttons that don't need the model."""
         match action:

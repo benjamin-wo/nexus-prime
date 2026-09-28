@@ -12,3 +12,5 @@ node_modules/
 web/dist/
 web/coverage/
 .DS_Store
+web/test-results/
+web/playwright-report/

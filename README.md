@@ -38,6 +38,16 @@ The app never registers its own webhook, so deploying it can't take a bot away f
 
 The model comes from `LLM_PROVIDER` (`gemini`, `openrouter`, `deepseek` or `openai`) with the matching key, plus an optional Gemini `LLM_FALLBACK_MODEL`. Receipt photos are read by Gemini. With Telegram on and no usable model configured, the app refuses to start.
 
+## Web access
+
+The web API (`/api/...`) is on when Telegram is configured and the public origin is known (`WEB_ORIGIN`, or Railway's `RAILWAY_PUBLIC_DOMAIN`).
+
+- **Sign-in** uses the Telegram Login Widget. The signature is checked with the bot token and must be less than a day old. The bot's domain must be set with @BotFather `/setdomain`.
+- **Who can sign in:** the owner (`ADMIN_TELEGRAM_CHAT_ID`) always can. Anyone else needs a single-use invite, valid for 24 hours, from the owner (`/invite` in the bot, or `POST /api/invites`). Tokens are stored only as hashes.
+- **Sessions** are HttpOnly, Secure, SameSite=Lax cookies lasting 30 days, and can be revoked by logging out.
+- **Writes** must come from the app's own origin and carry the session's `X-CSRF-Token`.
+- **Every route** takes the user from the session. Another user's data returns 404.
+
 ## Deploy (Railway)
 
 The `nexus-app` service builds from the `Dockerfile`. Its settings live on the service in Railway, not in the repo (Railway no longer reads `railway.toml`):

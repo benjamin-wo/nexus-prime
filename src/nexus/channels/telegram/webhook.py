@@ -14,9 +14,12 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
 from nexus.agent.service import AgentService, Reply
 from nexus.agent.tools import UowFactory
+from nexus.application.access import create_invite
+from nexus.application.clock import utcnow
 from nexus.application.inbound import claim_event
 from nexus.application.users import RegisterUser, register_user
 from nexus.channels.telegram.client import MAX_DOWNLOAD, TelegramClient
+from nexus.domain.errors import Forbidden
 from nexus.domain.ledger import Role, UserId
 from nexus.settings import Settings
 
@@ -115,7 +118,11 @@ async def handle_update(runtime: TelegramRuntime, update: dict[str, Any]) -> Non
         if not text:
             await runtime.client.send_message(chat_id, "I can read text and receipt photos.")
             return
-        if text.split()[0].split("@")[0] in {"/start", "/menu", "/help"}:
+        command = text.split()[0].split("@")[0]
+        if command == "/invite":
+            await runtime.client.send_message(chat_id, await _invite(runtime, actor))
+            return
+        if command in {"/start", "/menu", "/help"}:
             await _send(runtime, chat_id, await runtime.service.quick_action(actor, "menu"))
             return
         await _send(runtime, chat_id, await runtime.service.handle_text(actor, text, ref))
@@ -126,6 +133,20 @@ async def handle_update(runtime: TelegramRuntime, update: dict[str, Any]) -> Non
                 await runtime.client.send_message(chat_id, FAILED)
             except Exception:
                 log.exception("could not report the failure to the user")
+
+
+async def _invite(runtime: TelegramRuntime, actor: UserId) -> str:
+    origin = runtime.settings.public_origin
+    if origin is None:
+        return "The web app isn't set up yet."
+    try:
+        issued = await create_invite(runtime.uow(), actor, now=utcnow())
+    except Forbidden:
+        return "Only the owner can invite people."
+    return (
+        "Invite link for the web app (single use, expires in 24 hours):\n"
+        f"{origin}/invite/{issued.token}"
+    )
 
 
 async def _photo(
@@ -159,15 +180,6 @@ async def _callback(runtime: TelegramRuntime, query: dict[str, Any]) -> None:
     if actor is None:
         return
     data = str(query.get("data") or "")
-    if data.startswith("hitl:"):
-        _, confirmation_id, choice = [*data.split(":"), "", ""][:3]
-        if message.get("message_id") is not None:
-            await runtime.client.clear_buttons(chat_id, int(message["message_id"]))
-        replies = await runtime.service.resolve(actor, confirmation_id, choice == "y")
-    elif data == "act:undo":
-        replies = await runtime.service.quick_action(actor, "undo")
-    elif data.startswith("qa:"):
-        replies = await runtime.service.quick_action(actor, data.removeprefix("qa:"))
-    else:
-        return
-    await _send(runtime, chat_id, replies)
+    if data.startswith("hitl:") and message.get("message_id") is not None:
+        await runtime.client.clear_buttons(chat_id, int(message["message_id"]))
+    await _send(runtime, chat_id, await runtime.service.press(actor, data))
