@@ -77,7 +77,7 @@ A clean start removes almost all of that. The plan therefore keeps the old **pro
 | Big-bang cutover with clone rehearsal | **One-time read-only import from the old DB, then move the webhook** | Far less risk and effort. |
 | 21 todos in 5 waves before anything ships | **Milestones, each deployable and usable** | Get feedback early. |
 
-**Decision to confirm:** use a **new Railway Postgres** for the new service, and bring history across with a one-time script that only *reads* the old database (§6, M3). The old database stays untouched as an archive. If you would rather keep building on the old database, most of the old plan's Wave 1 comes back into scope.
+**Decided (2026-09-28):** use a **new Railway Postgres** for the new service, and bring history across with a one-time script that only *reads* the old database (§6, M3). The old database stays untouched as an archive and as the rollback path.
 
 ---
 
@@ -246,7 +246,7 @@ Every milestone ends deployed to Railway and usable. Development is test-first: 
 
 ## 8. Open questions
 
-1. **New database plus import (recommended), or keep the old Railway database?** See §2.
+1. ~~New database plus import, or keep the old Railway database?~~ **Decided:** new Railway Postgres plus a one-time read-only import. See §2.
 2. **Web hosting:** serve `web/` from FastAPI (one service, simpler) or as a separate static service? The default is FastAPI.
 3. **LLM provider:** keep the old setup (Gemini, plus OpenRouter for Jev) or standardise on one? The default is to keep it, behind the adapter.
-4. **Repo visibility:** the GitHub repo is currently **public**. Should it be private for a finance app?
+4. ~~Repo visibility~~ **Decided:** the repo stays public. Rule 7 applies in full: secrets, real financial data and logs never enter the repo. The pre-rebuild code is not republished on an archive branch.
