@@ -1,5 +1,5 @@
 import type { Transaction } from "../api";
-import { formatDate, formatMoney } from "../format";
+import { formatDate, formatMoney, formatShortDate } from "../format";
 
 /**
  * A ledger amount. Foreign rows lead with the home-currency equivalent and keep
@@ -31,8 +31,13 @@ export function Amount({ tx }: { tx: Transaction }) {
       <span aria-hidden="true">≈ </span>
       {sign}
       {formatMoney(home.amount)}
-      <span className="caption fx">
-        {formatMoney(tx.amount)} at {home.rate} ({formatDate(home.rate_date, "UTC")} rate)
+      <span
+        className="caption fx"
+        title={`${formatMoney(tx.amount)} at ${home.rate}, rate of ${formatDate(home.rate_date, "UTC")}`}
+      >
+        {formatMoney(tx.amount)}
+        <br />
+        at {home.rate} · {formatShortDate(home.rate_date, "UTC")}
       </span>
     </>
   );

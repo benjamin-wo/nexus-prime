@@ -21,6 +21,11 @@ export function formatDate(iso: string, timeZone?: string): string {
   );
 }
 
+/** Day and month only ("25 Sep"), for tight spaces. */
+export function formatShortDate(iso: string, timeZone?: string): string {
+  return new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", timeZone }).format(new Date(iso));
+}
+
 /** YYYY-MM-DD of an instant in the user's timezone (for date inputs). */
 export function isoDay(iso: string, timeZone: string): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone }).format(new Date(iso));

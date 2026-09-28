@@ -155,6 +155,8 @@ label.field { display: grid; gap: var(--space-1); font-weight: 600; font-size: 0
 .tab { flex: none; min-height: 32px; padding: 0 var(--space-3); border-radius: 7px; border: 0; background: transparent; color: var(--text-secondary); font: inherit; font-weight: 600; cursor: pointer; }
 .tab[aria-pressed="true"] { background: var(--bg-card-hover); color: var(--text-white); }
 .filters .search { flex: 1 1 200px; }
+/* Date captions are for screen readers on wide screens, visible on phones. */
+.date-caption { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .table-wrap { overflow-x: auto; }
 table.ledger { width: 100%; border-collapse: collapse; }
 .ledger th { text-align: left; font-size: 0.7rem; font-weight: 600; color: var(--text-muted); padding: var(--space-2); border-bottom: 1px solid var(--border-card); }
@@ -244,12 +246,19 @@ table.ledger { width: 100%; border-collapse: collapse; }
     width: 100vw; max-height: 90dvh; border-radius: 14px 14px 0 0; animation: sheet-up var(--t-emphasis);
     padding: var(--space-4) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom));
   }
-  .filters .tabs { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); width: 100%; }
-  .filters .tab { padding: 0 var(--space-2); }
+  /* All four views on one row. */
+  .filters .tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); width: 100%; }
+  .filters .tab { padding: 0 var(--space-1); font-size: 0.78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .filters .search { flex-basis: 100%; }
-  /* The two dates share a row. */
-  .filters label:not(.search) { flex: 1 1 0; min-width: 0; }
-  .filters input[type="date"] { min-width: 0; padding-inline: var(--space-2); }
+  /* The two dates share a row, each with a visible caption. iOS draws date
+     inputs at its own size and blank when empty, so reset its appearance. */
+  .filters .date-field { flex: 1 1 0; min-width: 0; display: grid; gap: 2px; }
+  .date-caption { position: static; width: auto; height: auto; clip: auto; font-size: 0.7rem; font-weight: 600; color: var(--text-muted); }
+  .filters input[type="date"] {
+    -webkit-appearance: none; appearance: none; display: block; width: 100%; min-width: 0;
+    height: 40px; min-height: 40px; padding: 0 var(--space-2); line-height: 40px; text-align: left;
+  }
+  .filters input[type="date"]::-webkit-date-and-time-value { text-align: left; }
 
   /* Ledger: one readable column. Each row is merchant and date on the left,
      amount on the right; the column headings are for screen readers only. */
@@ -264,11 +273,19 @@ table.ledger { width: 100%; border-collapse: collapse; }
   .ledger td.select { grid-row: 1 / span 2; }
   .ledger td.merchant { grid-column: 2; grid-row: 1; }
   .ledger td.date { grid-column: 2; grid-row: 2; font-size: 0.75rem; font-weight: 500; color: var(--text-muted); }
-  .ledger td.amount { grid-column: 3; grid-row: 1 / span 2; max-width: 46vw; }
-  .ledger .amount .fx { font-size: 0.68rem; }
+  .ledger td.amount { grid-column: 3; grid-row: 1 / span 2; max-width: 36vw; }
+  .ledger .amount .fx { font-size: 0.68rem; line-height: 1.3; }
+  /* Long card-alert notes: two lines on a phone; the full text is in the edit sheet. */
+  .ledger td.merchant .caption {
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
+    font-weight: 500;
+  }
   .table-wrap { overflow-x: visible; }
   .bulkbar { flex-wrap: wrap; }
   .pager { flex-wrap: wrap; gap: var(--space-2); }
+}
+@media (max-width: 359px) {
+  .filters .tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @keyframes sheet-up { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
