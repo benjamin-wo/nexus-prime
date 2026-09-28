@@ -189,3 +189,22 @@ test("sign out returns to the sign-in page", async ({ page, isMobile }) => {
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page).toHaveURL(/\/login$/);
 });
+
+test("nothing spills sideways on a small phone", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 });
+  await fakeApi(page);
+  for (const path of ["/", "/ledger"]) {
+    await page.goto(path);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    const offenders = await page.evaluate(() => {
+      const width = document.documentElement.clientWidth;
+      return [...document.querySelectorAll("body *")]
+        .filter((el) => el.getBoundingClientRect().right > width + 1)
+        .map(
+          (el) =>
+            `${el.tagName.toLowerCase()}.${(el as HTMLElement).className}`,
+        );
+    });
+    expect(offenders, path).toEqual([]);
+  }
+});
