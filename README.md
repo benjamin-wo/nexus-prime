@@ -28,4 +28,12 @@ Integration tests create and drop a throwaway database per test on the `TEST_DAT
 
 ## Schema changes
 
-Only through Alembic: `uv run alembic revision -m "..."`, then `uv run alembic upgrade head`. On Railway, migrations run as the pre-deploy step before the new version starts.
+Only through Alembic: `uv run alembic revision -m "..."`, then `uv run alembic upgrade head`.
+
+## Deploy (Railway)
+
+The `nexus-app` service builds from the `Dockerfile`. Its settings live on the service in Railway, not in the repo (Railway no longer reads `railway.toml`):
+
+- Pre-deploy command: `alembic upgrade head`, so migrations run before the new version starts.
+- Health check: `/healthz`, timeout 60 s. Restart policy: on failure.
+- Variables: `DATABASE_URL` referencing the service's own Postgres, `ENVIRONMENT=prod`, `PORT=8000`.
