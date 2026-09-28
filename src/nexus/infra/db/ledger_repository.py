@@ -301,8 +301,17 @@ class SqlLedgerRepository:
 
     # --- sources --------------------------------------------------------------------
 
+    async def source_claimed(self, user_id: UserId, source: Source, external_id: str) -> bool:
+        s = transaction_sources.c
+        stmt = select(
+            exists().where(
+                s.user_id == user_id, s.source == source.value, s.external_id == external_id
+            )
+        )
+        return bool((await self._db.execute(stmt)).scalar_one())
+
     async def claim_source(
-        self, user_id: UserId, source: Source, external_id: str, transaction_id: UUID
+        self, user_id: UserId, source: Source, external_id: str, transaction_id: UUID | None
     ) -> None:
         s = transaction_sources.c
         claimed = (

@@ -75,3 +75,18 @@ class HttpTelegramClient:
         if len(response.content) > MAX_DOWNLOAD:
             raise TelegramError("file too large")
         return response.content
+
+    async def webhook_info(self) -> dict[str, Any]:
+        info: dict[str, Any] = await self._call("getWebhookInfo", {})
+        return info
+
+    async def set_webhook(self, url: str, secret_token: str) -> None:
+        await self._call(
+            "setWebhook",
+            {
+                "url": url,
+                "secret_token": secret_token,
+                "allowed_updates": ["message", "callback_query"],
+                "drop_pending_updates": False,
+            },
+        )
