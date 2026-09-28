@@ -10,19 +10,35 @@ import { Shell } from "./components/Shell";
 import { Dashboard } from "./pages/Dashboard";
 import { Ledger } from "./pages/Ledger";
 import { LoginPage } from "./pages/LoginPage";
+import { initData, miniApp } from "./telegram";
+
+/** Inside Telegram, sign in with the Mini App's launch data instead of the widget. */
+async function miniAppSignIn(): Promise<Me | null> {
+  if (!initData) return null;
+  try {
+    return await api<Me>("/auth/webapp", { method: "POST", body: { init_data: initData } });
+  } catch (e) {
+    if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
+      miniApp.error = e.status === 403 ? "access" : "signin";
+      return null;
+    }
+    throw e;
+  }
+}
 
 function useMe() {
   return useQuery({
     queryKey: ["me"],
     queryFn: async () => {
+      let me: Me | null;
       try {
-        const me = await api<Me>("/me");
-        setCsrf(me.csrf_token);
-        return me;
+        me = await api<Me>("/me");
       } catch (e) {
-        if (e instanceof ApiError && e.status === 401) return null;
-        throw e;
+        if (!(e instanceof ApiError && e.status === 401)) throw e;
+        me = await miniAppSignIn();
       }
+      if (me) setCsrf(me.csrf_token);
+      return me;
     },
     retry: false,
   });

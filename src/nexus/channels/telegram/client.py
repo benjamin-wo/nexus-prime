@@ -20,6 +20,8 @@ class TelegramClient(Protocol):
     async def clear_buttons(self, chat_id: int, message_id: int) -> None: ...
     async def download(self, file_id: str) -> bytes: ...
     async def bot_username(self) -> str: ...
+    async def send_app_button(self, chat_id: int, text: str, label: str, url: str) -> None: ...
+    async def set_menu_button(self, label: str, url: str) -> None: ...
 
 
 def keyboard(buttons: list[list[Button]]) -> dict[str, Any]:
@@ -83,6 +85,24 @@ class HttpTelegramClient:
             me = await self._call("getMe", {})
             self._username = str(me["username"])
         return self._username
+
+    async def send_app_button(self, chat_id: int, text: str, label: str, url: str) -> None:
+        """A message with one button that opens ``url`` as a Mini App inside Telegram."""
+        await self._call(
+            "sendMessage",
+            {
+                "chat_id": chat_id,
+                "text": text[:MAX_TEXT],
+                "reply_markup": {"inline_keyboard": [[{"text": label, "web_app": {"url": url}}]]},
+            },
+        )
+
+    async def set_menu_button(self, label: str, url: str) -> None:
+        """The default menu button (next to the message box) opens ``url`` as a Mini App."""
+        await self._call(
+            "setChatMenuButton",
+            {"menu_button": {"type": "web_app", "text": label, "web_app": {"url": url}}},
+        )
 
     async def webhook_info(self) -> dict[str, Any]:
         info: dict[str, Any] = await self._call("getWebhookInfo", {})

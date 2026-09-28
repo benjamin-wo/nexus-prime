@@ -43,8 +43,9 @@ The model comes from `LLM_PROVIDER` (`gemini`, `openrouter`, `deepseek` or `open
 The web API (`/api/...`) is on when Telegram is configured and the public origin is known (`WEB_ORIGIN`, or Railway's `RAILWAY_PUBLIC_DOMAIN`).
 
 - **Sign-in** uses the Telegram Login Widget. The signature is checked with the bot token and must be less than a day old. The bot's domain must be set with @BotFather `/setdomain`.
+- **Inside Telegram (Mini App):** the bot's menu button ("Open Nexus", set at startup) and the `/app` command open the web app inside Telegram. It signs in with the launch data Telegram signs for the Mini App (checked with the bot token, less than a day old), so there is no widget or phone number step. The same access rules apply. These sessions use a `SameSite=None; Partitioned` cookie because Telegram's web clients show the app in an iframe, and the CSP allows only `https://web.telegram.org` to embed it.
 - **Who can sign in:** the owner (`ADMIN_TELEGRAM_CHAT_ID`) always can. Anyone else needs a single-use invite, valid for 24 hours, from the owner (`/invite` in the bot, or `POST /api/invites`). Tokens are stored only as hashes.
-- **Sessions** are HttpOnly, Secure, SameSite=Lax cookies lasting 30 days, and can be revoked by logging out.
+- **Sessions** are HttpOnly, Secure, SameSite=Lax cookies (Mini App: see above) lasting 30 days, and can be revoked by logging out.
 - **Writes** must come from the app's own origin and carry the session's `X-CSRF-Token`.
 - **Every route** takes the user from the session. Another user's data returns 404.
 

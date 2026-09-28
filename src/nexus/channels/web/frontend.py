@@ -24,14 +24,14 @@ CSP = "; ".join(
         "connect-src 'self'",
         "base-uri 'none'",
         "form-action 'self'",
-        "frame-ancestors 'none'",
+        # Telegram's web clients show the Mini App in an iframe; nobody else may.
+        "frame-ancestors https://web.telegram.org",
     ]
 )
 SECURITY_HEADERS = {
     "Content-Security-Policy": CSP,
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "same-origin",
-    "X-Frame-Options": "DENY",
 }
 
 

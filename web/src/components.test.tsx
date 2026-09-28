@@ -9,6 +9,7 @@ import { ChatDrawer } from "./components/ChatDrawer";
 import { formatMoney } from "./format";
 import { conversionNote } from "./pages/Dashboard";
 import { Ledger } from "./pages/Ledger";
+import { readInitData } from "./telegram";
 import { mockApi, renderWithProviders } from "./testing";
 
 const me: Me = {
@@ -30,6 +31,16 @@ function tx(id: string, amount: string, counterparty: string): Transaction {
     deleted: false,
   };
 }
+
+describe("Telegram Mini App", () => {
+  it("reads the signed launch data from the URL fragment", () => {
+    const data = "query_id=AAH&user=%7B%22id%22%3A1%7D&auth_date=1&hash=abc";
+    const hash = `#${new URLSearchParams({ tgWebAppData: data, tgWebAppVersion: "8.0" })}`;
+    expect(readInitData(hash)).toBe(data);
+    expect(readInitData("")).toBeNull();
+    expect(readInitData("#section")).toBeNull();
+  });
+});
 
 describe("formatting", () => {
   it("formats money exactly from strings", () => {
