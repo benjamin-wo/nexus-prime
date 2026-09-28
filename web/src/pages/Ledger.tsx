@@ -196,7 +196,7 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
               <tbody>
                 {items.map((tx) => (
                   <tr key={tx.id} aria-selected={selected.has(tx.id)} onClick={() => onEdit(tx)}>
-                    <td onClick={(e) => e.stopPropagation()}>
+                    <td className="select" onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
                         aria-label={`Select ${tx.counterparty ?? "transaction"} ${formatMoney(tx.amount)}`}
@@ -204,8 +204,8 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
                         onChange={() => toggle(tx.id)}
                       />
                     </td>
-                    <td className="num">{formatDate(tx.occurred_at, me.user.timezone)}</td>
-                    <td className="wrap">
+                    <td className="num date">{formatDate(tx.occurred_at, me.user.timezone)}</td>
+                    <td className="wrap merchant">
                       <button
                         type="button"
                         className="btn btn-ghost"
