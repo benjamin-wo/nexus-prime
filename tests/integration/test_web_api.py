@@ -555,6 +555,52 @@ async def test_bills_and_reminder_buttons(world: World) -> None:
     assert bad.status_code == 422
 
 
+# --- salary -----------------------------------------------------------------------------
+
+
+async def test_salary_schedule_and_confirming_the_usual_amount(world: World) -> None:
+    owner, token = await owner_and_invite(world)
+    assert (await owner.get("/api/salary")).json() is None
+    body = {"rule": "monthly_day", "day": 25}
+    assert (await owner.send("PUT", "/api/salary", body)).status_code == 204
+    assert (await owner.send("PUT", "/api/salary/usual", {"amount": "5,000"})).status_code == 204
+    pay = (await owner.get("/api/salary")).json()
+    assert pay["description"] == "the 25th of each month"
+    assert pay["usual"] == {"amount": "5000.0000", "currency": "SGD"}
+    assert pay["next_payday"] == "2026-10-23"  # the 25th is a Sunday
+    bad = await owner.send("PUT", "/api/salary", {"rule": "monthly_day"})
+    assert bad.status_code == 422
+
+    # Reporting a different salary logs it, then asks before changing the usual amount.
+    (reply,) = (await owner.send("POST", "/api/chat", {"message": "salary 5200"})).json()
+    assert reply["text"] == (
+        "Recorded 5200.00 SGD salary. That's different from your usual 5000.00 SGD. "
+        "Make 5200.00 SGD your usual salary?"
+    )
+    yes, no = reply["buttons"][0]
+    assert (yes["label"], no["label"]) == ("Yes, update", "No")
+    assert (await owner.get("/api/salary")).json()["usual"]["amount"] == "5000.0000"
+    (done,) = (await owner.send("POST", "/api/chat/press", {"data": yes["data"]})).json()
+    assert done["text"] == "Your usual salary is now 5200.00 SGD."
+    assert (await owner.get("/api/salary")).json()["usual"]["amount"] == "5200.0000"
+    world.clock.now += timedelta(minutes=1)  # a new message, not a redelivery
+    (same,) = (await owner.send("POST", "/api/chat", {"message": "salary 5200"})).json()
+    assert same["text"] == "Recorded 5200.00 SGD salary."  # nothing to ask
+
+    # The payday button logs the usual salary once.
+    log = {"data": "salary:log:2026-10-23"}
+    (logged,) = (await owner.send("POST", "/api/chat/press", log)).json()
+    assert logged["text"].startswith("Logged 5200.00 SGD salary.")
+    (again,) = (await owner.send("POST", "/api/chat/press", log)).json()
+    assert again["text"] == "Your salary for that payday is already logged."
+
+    member = world.browser()
+    await member.login(MEMBER, invite=token)
+    assert (await member.get("/api/salary")).json() is None
+    assert (await member.send("DELETE", "/api/salary")).status_code == 404
+    assert (await owner.send("DELETE", "/api/salary")).status_code == 204
+
+
 # --- chat ---------------------------------------------------------------------------------
 
 

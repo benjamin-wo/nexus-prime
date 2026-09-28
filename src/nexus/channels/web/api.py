@@ -14,6 +14,7 @@ from nexus.application import access, fx
 from nexus.application import bills as bill_cases
 from nexus.application import budgets as budget_cases
 from nexus.application import categories as category_cases
+from nexus.application import salary as salary_cases
 from nexus.application import splits as split_cases
 from nexus.application import transactions as tx_cases
 from nexus.application.ports import LedgerQuery, SortField
@@ -45,7 +46,7 @@ from nexus.domain.ledger import (
     User,
 )
 from nexus.domain.money import Money
-from nexus.domain.planning import Cadence
+from nexus.domain.planning import Cadence, PayRule
 
 router = APIRouter(prefix="/api")
 EXPORT_LIMIT = 10_000
@@ -795,6 +796,66 @@ async def snooze_bill(bill_id: UUID, auth: Auth, web: Runtime) -> None:
 @router.delete("/bills/{bill_id}", status_code=204)
 async def remove_bill(bill_id: UUID, auth: Auth, web: Runtime) -> None:
     await bill_cases.remove_bill(web.uow(), auth.user.id, bill_id, now=web.clock())
+
+
+# --- salary ---------------------------------------------------------------------------
+
+
+class SalaryOut(Model):
+    rule: str
+    day: int | None
+    anchor: date | None
+    description: str
+    usual: MoneyOut | None
+    next_payday: date
+    days_until: int
+
+
+@router.get("/salary")
+async def salary(auth: Auth, web: Runtime) -> SalaryOut | None:
+    view = await salary_cases.view(web.uow(), auth.user, now=web.clock())
+    if view is None:
+        return None
+    s = view.schedule
+    return SalaryOut(
+        rule=s.rule.value,
+        day=s.day,
+        anchor=s.anchor,
+        description=salary_cases.describe_rule(s),
+        usual=money(s.baseline) if s.baseline else None,
+        next_payday=view.next_payday,
+        days_until=view.days_until,
+    )
+
+
+class SalaryIn(Model):
+    rule: Literal["monthly_day", "last_weekday", "biweekly"]
+    day: int | None = Field(None, ge=1, le=31)
+    anchor: date | None = None
+
+
+@router.put("/salary", status_code=204)
+async def set_salary_schedule(body: SalaryIn, auth: Auth, web: Runtime) -> None:
+    await salary_cases.set_schedule(
+        web.uow(), auth.user, PayRule(body.rule), day=body.day, anchor=body.anchor, now=web.clock()
+    )
+
+
+class UsualSalaryIn(Model):
+    amount: str = Field(max_length=32)
+
+
+@router.put("/salary/usual", status_code=204)
+async def set_usual_salary(body: UsualSalaryIn, auth: Auth, web: Runtime) -> None:
+    """Saving the form is the user's confirmation."""
+    user = auth.user
+    amount = Money.of(body.amount.replace(",", ""), user.home_currency)
+    await salary_cases.set_baseline(web.uow(), user, amount, now=web.clock())
+
+
+@router.delete("/salary", status_code=204)
+async def remove_salary(auth: Auth, web: Runtime) -> None:
+    await salary_cases.remove_schedule(web.uow(), auth.user.id)
 
 
 # --- chat -----------------------------------------------------------------------------

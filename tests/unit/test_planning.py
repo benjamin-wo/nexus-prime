@@ -1,18 +1,25 @@
 from datetime import UTC, date, datetime, timedelta
+from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 import pytest
 
+from nexus.domain.ledger import UserId
 from nexus.domain.money import Money
 from nexus.domain.planning import (
     Cadence,
+    PayRule,
+    SalarySchedule,
     due_date,
     due_dates,
     month_start,
     next_month_start,
+    next_payday,
+    paydays,
     quiet_until,
     reached,
     reminder_offset,
+    weekday_or_friday,
 )
 from nexus.jobs.runner import backoff, slot_start
 
@@ -119,3 +126,71 @@ def test_due_dates_in_a_window() -> None:
 )
 def test_reminder_offsets(days_until: int, offset: int | None) -> None:
     assert reminder_offset(days_until) == offset
+
+
+# --- salary -------------------------------------------------------------------------
+
+
+def schedule(rule: PayRule, day: int | None = None, anchor: date | None = None) -> SalarySchedule:
+    at = datetime(2026, 9, 28, tzinfo=UTC)
+    return SalarySchedule(UserId(uuid4()), rule, day, anchor, None, at, at)
+
+
+def test_monthly_paydays_move_off_weekends_and_clamp() -> None:
+    on_25th = schedule(PayRule.MONTHLY_DAY, day=25)
+    # 25 Oct 2026 is a Sunday: paid Friday 23rd.
+    assert paydays(on_25th, date(2026, 10, 1), date(2026, 11, 30)) == [
+        date(2026, 10, 23),
+        date(2026, 11, 25),
+    ]
+    on_31st = schedule(PayRule.MONTHLY_DAY, day=31)
+    # February has 28 days and the 28th is a Saturday: Friday 27th. April: the 30th.
+    assert paydays(on_31st, date(2026, 2, 1), date(2026, 4, 30)) == [
+        date(2026, 2, 27),
+        date(2026, 3, 31),
+        date(2026, 4, 30),
+    ]
+
+
+def test_last_weekday_of_the_month() -> None:
+    last = schedule(PayRule.LAST_WEEKDAY)
+    assert paydays(last, date(2026, 10, 1), date(2027, 1, 31)) == [
+        date(2026, 10, 30),  # the 31st is a Saturday
+        date(2026, 11, 30),
+        date(2026, 12, 31),
+        date(2027, 1, 29),  # the 31st is a Sunday
+    ]
+
+
+def test_fortnightly_pay_from_an_anchor() -> None:
+    fortnightly = schedule(PayRule.BIWEEKLY, anchor=date(2026, 10, 3))  # a Saturday
+    assert paydays(fortnightly, date(2026, 10, 1), date(2026, 10, 31)) == [
+        date(2026, 10, 2),
+        date(2026, 10, 16),
+        date(2026, 10, 30),
+    ]
+    assert next_payday(fortnightly, date(2026, 10, 17)) == date(2026, 10, 30)
+    assert next_payday(fortnightly, date(2026, 10, 16)) == date(2026, 10, 16)  # today
+
+
+def test_a_payday_shifted_into_the_previous_month_is_found() -> None:
+    first = schedule(PayRule.MONTHLY_DAY, day=1)
+    # 1 Aug 2026 is a Saturday, so it's paid on Friday 31 July.
+    assert paydays(first, date(2026, 7, 15), date(2026, 7, 31)) == [date(2026, 7, 31)]
+
+
+def test_schedules_need_the_right_detail() -> None:
+    with pytest.raises(ValueError, match="day of the month"):
+        schedule(PayRule.MONTHLY_DAY)
+    with pytest.raises(ValueError, match="1-31"):
+        schedule(PayRule.MONTHLY_DAY, day=32)
+    with pytest.raises(ValueError, match="first payday"):
+        schedule(PayRule.BIWEEKLY)
+    with pytest.raises(ValueError):
+        schedule(PayRule.LAST_WEEKDAY, day=5)
+
+
+def test_weekend_paydays_move_to_friday() -> None:
+    assert weekday_or_friday(date(2026, 10, 31)) == date(2026, 10, 30)  # Saturday
+    assert weekday_or_friday(date(2026, 11, 1)) == date(2026, 10, 30)  # Sunday
+    assert weekday_or_friday(date(2026, 11, 2)) == date(2026, 11, 2)  # Monday

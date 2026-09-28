@@ -10,8 +10,15 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from nexus.domain.ledger import UserId
 from nexus.domain.money import Money
-from nexus.domain.planning import Bill, BillOccurrence, Budget, Cadence
-from nexus.infra.db.tables import bill_occurrences, bills, budget_alerts, budgets, jobs
+from nexus.domain.planning import Bill, BillOccurrence, Budget, Cadence, PayRule, SalarySchedule
+from nexus.infra.db.tables import (
+    bill_occurrences,
+    bills,
+    budget_alerts,
+    budgets,
+    jobs,
+    salary_schedules,
+)
 
 
 def _budget(row: Row[Any]) -> Budget:
@@ -232,6 +239,48 @@ class SqlPlanningRepository:
         )
         row = (await self._db.execute(stmt.returning(bill_occurrences))).one()
         return _occurrence(row)
+
+    # --- salary -----------------------------------------------------------------------
+
+    async def get_salary_schedule(self, user_id: UserId) -> SalarySchedule | None:
+        s = salary_schedules.c
+        row = (await self._db.execute(select(salary_schedules).where(s.user_id == user_id))).first()
+        if row is None:
+            return None
+        return SalarySchedule(
+            user_id=UserId(row.user_id),
+            rule=PayRule(row.rule),
+            day=row.day,
+            anchor=row.anchor,
+            baseline=Money(row.amount, row.currency) if row.amount is not None else None,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+        )
+
+    async def save_salary_schedule(self, schedule: SalarySchedule) -> None:
+        values = {
+            "rule": schedule.rule.value,
+            "day": schedule.day,
+            "anchor": schedule.anchor,
+            "amount": schedule.baseline.amount if schedule.baseline else None,
+            "currency": schedule.baseline.currency if schedule.baseline else None,
+            "updated_at": schedule.updated_at,
+        }
+        stmt = pg_insert(salary_schedules).values(
+            user_id=schedule.user_id, created_at=schedule.created_at, **values
+        )
+        await self._db.execute(
+            stmt.on_conflict_do_update(index_elements=[salary_schedules.c.user_id], set_=values)
+        )
+
+    async def delete_salary_schedule(self, user_id: UserId) -> bool:
+        s = salary_schedules.c
+        result = await self._db.execute(delete(salary_schedules).where(s.user_id == user_id))
+        return bool(result.rowcount)
+
+    async def users_with_salary_schedules(self) -> list[UserId]:
+        rows = await self._db.execute(select(salary_schedules.c.user_id))
+        return [UserId(r.user_id) for r in rows]
 
 
 class SqlJobQueue:

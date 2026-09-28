@@ -50,7 +50,7 @@ function Cockpit({ me }: { me: Me }) {
   const [chat, setChat] = useState(false);
   const [sheet, setSheet] = useState<{ editing?: Transaction } | null>(null);
   const refresh = useCallback(() => {
-    for (const key of ["transactions", "summary", "ious", "budgets", "bills"]) void client.invalidateQueries({ queryKey: [key] });
+    for (const key of ["transactions", "summary", "ious", "budgets", "bills", "salary"]) void client.invalidateQueries({ queryKey: [key] });
   }, [client]);
   const closeSheet = useCallback(() => setSheet(null), []);
   const closeChat = useCallback(() => setChat(false), []);

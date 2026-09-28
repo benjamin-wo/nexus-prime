@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from nexus.application import bills as bill_cases
 from nexus.application import budgets as budget_cases
 from nexus.application import categories as category_cases
+from nexus.application import salary as salary_cases
 from nexus.application import splits as split_cases
 from nexus.application import transactions as tx_cases
 from nexus.application.fx import Rate, RateSource
@@ -33,7 +34,7 @@ from nexus.domain.ledger import (
     plan_split,
 )
 from nexus.domain.money import Money
-from nexus.domain.planning import Cadence
+from nexus.domain.planning import Cadence, PayRule
 
 type UowFactory = Callable[[], UnitOfWork]
 
@@ -586,6 +587,67 @@ async def _remove_bill(ctx: ToolContext, a: BillNameArgs) -> ToolResult:
     return ToolResult(f"Removed {view.bill.name}.", wrote=True)
 
 
+class PayScheduleArgs(Args):
+    rule: Literal["day_of_month", "last_weekday", "every_two_weeks"]
+    day: int | None = Field(None, description="1-31, for day_of_month")
+    next_payday: str | None = Field(None, description="YYYY-MM-DD, for every_two_weeks")
+
+
+class SalaryArgs(Args):
+    amount: str = Field(description="The usual salary, as the user stated it")
+    currency: str | None = None
+
+
+_RULES = {
+    "day_of_month": PayRule.MONTHLY_DAY,
+    "last_weekday": PayRule.LAST_WEEKDAY,
+    "every_two_weeks": PayRule.BIWEEKLY,
+}
+
+
+def _pay_line(view: salary_cases.PayView) -> str:
+    s = view.schedule
+    usual = f" Usual salary: {s.baseline}." if s.baseline else " No usual salary saved."
+    when = "today" if view.days_until == 0 else f"{view.next_payday:%a %-d %b}"
+    return (
+        f"Paid on {salary_cases.describe_rule(s)} (weekend paydays move to Friday). "
+        f"Next payday: {when}.{usual}"
+    )
+
+
+async def _set_pay_schedule(ctx: ToolContext, a: PayScheduleArgs) -> ToolResult:
+    anchor = parse_day(ctx, a.next_payday).astimezone(ctx.tz).date() if a.next_payday else None
+    await salary_cases.set_schedule(
+        ctx.uow(), ctx.user, _RULES[a.rule], day=a.day, anchor=anchor, now=ctx.now
+    )
+    view = await salary_cases.view(ctx.uow(), ctx.user, now=ctx.now)
+    return ToolResult(_pay_line(view) if view else "Saved.", wrote=True)
+
+
+async def _pay_schedule(ctx: ToolContext, _: NoArgs) -> ToolResult:
+    view = await salary_cases.view(ctx.uow(), ctx.user, now=ctx.now)
+    return ToolResult(_pay_line(view) if view else "No pay schedule set.")
+
+
+async def _describe_usual_salary(ctx: ToolContext, a: SalaryArgs) -> str:
+    return f"Make {parse_money(ctx, a.amount, a.currency)} your usual salary?"
+
+
+async def _set_usual_salary(ctx: ToolContext, a: SalaryArgs) -> ToolResult:
+    amount = parse_money(ctx, a.amount, a.currency)
+    await salary_cases.set_baseline(ctx.uow(), ctx.user, amount, now=ctx.now)
+    return ToolResult(f"Your usual salary is now {amount}.", wrote=True)
+
+
+async def _describe_remove_pay(ctx: ToolContext, _: NoArgs) -> str:
+    return "Remove your pay schedule and usual salary? Payday check-ins will stop."
+
+
+async def _remove_pay(ctx: ToolContext, _: NoArgs) -> ToolResult:
+    await salary_cases.remove_schedule(ctx.uow(), ctx.user.id)
+    return ToolResult("Removed your pay schedule.", wrote=True)
+
+
 class SkillArgs(Args):
     name: str
 
@@ -668,6 +730,27 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             BillNameArgs,
             _remove_bill,
             confirm=_describe_remove_bill,
+        ),
+        ToolSpec(
+            "set_pay_schedule",
+            "Set when the user is paid, as they told you.",
+            PayScheduleArgs,
+            _set_pay_schedule,
+        ),
+        ToolSpec("show_pay_schedule", "When the user is paid next.", NoArgs, _pay_schedule),
+        ToolSpec(
+            "set_usual_salary",
+            "Change the user's usual salary. Asks the user to confirm.",
+            SalaryArgs,
+            _set_usual_salary,
+            confirm=_describe_usual_salary,
+        ),
+        ToolSpec(
+            "remove_pay_schedule",
+            "Stop tracking the user's pay. Asks the user to confirm.",
+            NoArgs,
+            _remove_pay,
+            confirm=_describe_remove_pay,
         ),
         ToolSpec(
             "remove_budget",
