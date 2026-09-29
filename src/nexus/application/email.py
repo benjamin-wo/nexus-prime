@@ -52,6 +52,7 @@ from nexus.domain.email import (
 from nexus.domain.errors import Conflict, DuplicateSource, InvalidInput, NotFound
 from nexus.domain.ledger import Direction, Source, Transaction, User, UserId
 from nexus.domain.money import Money
+from nexus.domain.notifications import Frequency
 
 log = logging.getLogger(__name__)
 LOG_WINDOW_DAYS = 30
@@ -323,7 +324,9 @@ async def _ask(
     first: bool,
     review_url: str | None,
 ) -> None:
-    """One message per new receipt; after connecting, one summary of the look-back."""
+    """After connecting, one summary of the look-back. Later receipts are asked about
+    one by one only if the user wants updates as they happen; otherwise they're in
+    the user's next summary."""
     if not waiting:
         return
     tz = ZoneInfo(user.timezone)
@@ -341,6 +344,10 @@ async def _ask(
             run_at=waiting[0].created_at,
         )
         return
+    if not first:
+        settings = await tx.planning.get_notifications(user.id)
+        if settings.frequency is not Frequency.INSTANT:
+            return
     for email in waiting:
         await tx.jobs.enqueue(
             TELEGRAM_SEND,

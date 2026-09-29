@@ -339,6 +339,19 @@ test("email is out of sight until connected, then shows what happened to each em
   await expect(grab.getByRole("link", { name: "In your ledger" })).toBeVisible();
 });
 
+test("telegram updates default to an end-of-day summary and can be changed", async ({ page }) => {
+  await fakeApi(page);
+  await page.goto("/plan");
+  const card = page.getByRole("region", { name: "Telegram updates" });
+  const choice = card.getByLabel("Send me my transactions");
+  await expect(choice).toHaveValue("daily");
+  await expect(card.getByText("You get a summary of your transactions once a day at 9pm.")).toBeVisible();
+  await choice.selectOption("instant");
+  await expect(card.getByText("You get a message for each transaction as it happens.")).toBeVisible();
+  await page.reload();
+  await expect(card.getByLabel("Send me my transactions")).toHaveValue("instant");
+});
+
 test("nothing spills sideways on a small phone", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 568 });
   await fakeApi(page, { emailConnected: true });

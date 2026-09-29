@@ -765,6 +765,22 @@ async def test_bills_and_reminder_buttons(world: World) -> None:
     assert bad.status_code == 422
 
 
+# --- telegram updates -------------------------------------------------------------------
+
+
+async def test_telegram_updates_default_to_daily_and_can_be_changed(world: World) -> None:
+    owner, _ = await owner_and_invite(world)
+    current = (await owner.get("/api/notifications")).json()
+    assert current["frequency"] == "daily"
+    assert current["description"] == "You get a summary of your transactions once a day at 9pm."
+    assert list(current["options"]) == ["instant", "hourly", "thrice_daily", "daily", "off"]
+    changed = await owner.send("PUT", "/api/notifications", {"frequency": "hourly"})
+    assert changed.json()["frequency"] == "hourly"
+    assert (await owner.get("/api/notifications")).json()["frequency"] == "hourly"
+    bad = await owner.send("PUT", "/api/notifications", {"frequency": "weekly"})
+    assert bad.status_code == 422
+
+
 # --- salary -----------------------------------------------------------------------------
 
 

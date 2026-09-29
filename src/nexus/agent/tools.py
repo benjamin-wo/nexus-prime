@@ -20,6 +20,7 @@ from nexus.application import budgets as budget_cases
 from nexus.application import categories as category_cases
 from nexus.application import category_rules as rule_cases
 from nexus.application import email as email_cases
+from nexus.application import notifications as notify_cases
 from nexus.application import receipts as receipt_cases
 from nexus.application import salary as salary_cases
 from nexus.application import splits as split_cases
@@ -37,6 +38,7 @@ from nexus.domain.ledger import (
     plan_split,
 )
 from nexus.domain.money import Money
+from nexus.domain.notifications import Frequency
 from nexus.domain.planning import Cadence, PayRule
 from nexus.domain.rules import clean_pattern
 
@@ -511,6 +513,23 @@ async def _email_status(ctx: ToolContext, _: NoArgs) -> ToolResult:
     return ToolResult("\n".join(lines))
 
 
+class UpdatesArgs(Args):
+    frequency: Frequency | None = Field(
+        None,
+        description="instant: each transaction as it happens; hourly (8am-9pm); "
+        "thrice_daily (9am, 2pm, 8pm); daily: one summary at 9pm (the default); "
+        "off. Leave empty to only say what it is now.",
+    )
+
+
+async def _updates(ctx: ToolContext, a: UpdatesArgs) -> ToolResult:
+    if a.frequency is None:
+        current = await notify_cases.get_settings(ctx.uow(), ctx.user.id)
+        return ToolResult(notify_cases.describe(current.frequency))
+    updated = await notify_cases.set_frequency(ctx.uow(), ctx.user.id, a.frequency, now=ctx.now)
+    return ToolResult("Done. " + notify_cases.describe(updated.frequency), wrote=True)
+
+
 class Participant(Args):
     name: str
     amount: str | None = Field(
@@ -856,6 +875,14 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             "Which mailboxes are connected and what happened to recent receipt emails.",
             NoArgs,
             _email_status,
+        ),
+        ToolSpec(
+            "transaction_updates",
+            "How often the user gets Telegram messages about their transactions: each "
+            "one as it happens, or a summary hourly, 3 times a day or at the end of the "
+            "day (the default), or off. Shows or changes the setting.",
+            UpdatesArgs,
+            _updates,
         ),
         ToolSpec(
             "split_bill",

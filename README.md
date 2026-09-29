@@ -31,6 +31,7 @@ One LLM agent serves both surfaces, but the parts that must be right, like money
 - **Category rules you can see.** "grab" → Transport files new expenses automatically, and "why is this in Transport?" gets a real answer. Correcting a category offers a rule change, but never makes one without asking.
 - **Budgets:** monthly limits, overall or per category, with Telegram alerts at 50%, 80% and 100%, each sent once.
 - **Bills:** reminders 7, 3 and 1 days before, with Mark paid and Snooze buttons. It never pays anything.
+- **Telegram updates:** by default, a summary of the day's spending at 9pm. Users can switch to updates as they happen, hourly, 3 times a day, or off, in chat or on the Plan page.
 - **Payday:**
   - A check-in on payday, with weekend paydays moved to Friday.
   - Your usual salary changes only when you confirm it.

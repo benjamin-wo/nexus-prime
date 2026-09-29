@@ -146,6 +146,8 @@ export type EmailOverview = {
   connections: { id: string; address: string; status: "active" | "broken"; last_checked: string | null }[];
   emails: InboundEmail[];
 };
+export type Frequency = "instant" | "hourly" | "thrice_daily" | "daily" | "off";
+export type Updates = { frequency: Frequency; description: string; options: Record<Frequency, string> };
 export type Reply = { text: string; buttons: { label: string; data: string }[][] };
 
 export type LedgerFilters = {
