@@ -45,6 +45,7 @@ from nexus.domain.email import (
     InboundEmail,
     Provider,
     external_id,
+    read_amount,
     short,
     sweep_from,
 )
@@ -176,13 +177,7 @@ def _occurred(draft: ExpenseDraft, email: FetchedEmail, tz: ZoneInfo) -> datetim
 
 
 def _amount(draft: ExpenseDraft, home: str) -> Money | None:
-    if not draft.amount:
-        return None
-    try:
-        money = Money.of(draft.amount.replace(",", ""), (draft.currency or home).upper())
-    except (InvalidInput, ValueError):
-        return None
-    return money if money.is_positive else None
+    return read_amount(draft.amount, draft.currency, home)
 
 
 def prompt_text(email: InboundEmail, tz: ZoneInfo) -> str:
@@ -219,8 +214,10 @@ async def _read_one(
             expense = await asyncio.wait_for(reader.extract(fetched), READ_TIMEOUT.total_seconds())
             money = _amount(expense, user.home_currency)
             if money is None:
-                status, reason = EmailStatus.NO_AMOUNT, "no total found"
-                draft = expense.as_dict()
+                status = EmailStatus.NO_AMOUNT
+                raw = short(expense.amount or "", 40)
+                reason = f'couldn\'t read the amount "{raw}"' if raw else "no total found"
+                draft = replace(expense, amount=None).as_dict()
             else:
                 status, reason = EmailStatus.PENDING, None
                 draft = replace(
