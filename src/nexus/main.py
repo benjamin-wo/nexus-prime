@@ -222,7 +222,7 @@ async def _telegram_runtime(
     return telegram_webhook.TelegramRuntime(
         settings=settings,
         uow=uow,
-        service=AgentService(graph, uow, receipts, clock, archive),
+        service=AgentService(graph, uow, receipts, clock, archive, rates),
         client=client,
     )
 

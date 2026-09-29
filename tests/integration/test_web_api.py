@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from nexus.application import bills as bill_cases
 from nexus.application import email as email_cases
 from nexus.application import receipts as receipt_cases
+from nexus.application import subscriptions as subscription_cases
 from nexus.application.transactions import NewTransaction
 from nexus.channels.web.telegram_login import sign_for_tests, sign_webapp_for_tests
 from nexus.domain.ledger import Direction, Source, UserId
@@ -41,6 +42,7 @@ from tests.fakes import (
     say,
     scripted,
 )
+from tests.integration.conftest import UowFactory
 
 pytestmark = pytest.mark.integration
 
@@ -792,6 +794,48 @@ async def test_bills_and_reminder_buttons(world: World) -> None:
     assert [b["name"] for b in (await owner.get("/api/bills")).json()] == ["Visa"]
     bad = await owner.send("POST", "/api/bills", {"name": "X", "due": "2026-10-01", "amount": "-5"})
     assert bad.status_code == 422
+
+
+# --- subscriptions ----------------------------------------------------------------------
+
+
+async def test_subscriptions_are_proposed_then_tracked_or_turned_down(
+    world: World, uow: UowFactory
+) -> None:
+    owner, token = await owner_and_invite(world)
+    assert (await owner.get("/api/subscriptions")).json() == {
+        "tracked": [],
+        "proposed": [],
+        "monthly_totals": [],
+    }
+    for day in ("2026-07-10", "2026-08-10", "2026-09-10"):
+        await spend(owner, "15.98", "SGD", day, counterparty="Netflix")
+        await spend(owner, "10", "SGD", day, counterparty="Spotify")
+    async with uow() as tx:
+        user = await tx.ledger.get_user_by_telegram_id(OWNER)
+    assert user is not None
+    await subscription_cases.check(uow, user, now=world.clock.now)
+    found = (await owner.get("/api/subscriptions")).json()
+    proposed = {p["name"]: p for p in found["proposed"]}
+    assert set(proposed) == {"Netflix", "Spotify"}
+    netflix = proposed["Netflix"]
+    assert netflix["cadence"] == "monthly" and netflix["next_charge"] == "2026-10-10"
+
+    tracked = await owner.send("POST", f"/api/subscriptions/{netflix['id']}/track", {})
+    assert tracked.status_code == 204
+    skipped = await owner.send(
+        "POST", f"/api/subscriptions/{proposed['Spotify']['id']}/dismiss", {}
+    )
+    assert skipped.status_code == 204
+    found = (await owner.get("/api/subscriptions")).json()
+    assert [t["name"] for t in found["tracked"]] == ["Netflix"] and found["proposed"] == []
+    assert found["monthly_totals"] == [{"amount": "15.9800", "currency": "SGD"}]
+
+    # Someone else's subscription can't be touched.
+    member = world.browser()
+    assert (await member.login(MEMBER, invite=token)).status_code == 200
+    other = await member.send("POST", f"/api/subscriptions/{netflix['id']}/dismiss", {})
+    assert other.status_code == 404
 
 
 # --- telegram updates -------------------------------------------------------------------

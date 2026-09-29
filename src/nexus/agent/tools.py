@@ -24,6 +24,7 @@ from nexus.application import notifications as notify_cases
 from nexus.application import receipts as receipt_cases
 from nexus.application import salary as salary_cases
 from nexus.application import splits as split_cases
+from nexus.application import subscriptions as subscription_cases
 from nexus.application import transactions as tx_cases
 from nexus.application.fx import Rate, RateSource
 from nexus.application.ports import LedgerQuery, UnitOfWork
@@ -400,12 +401,20 @@ async def _summary(ctx: ToolContext, a: SummaryArgs) -> ToolResult:
         else datetime.combine(ctx.today().replace(day=1), time(), tzinfo=ctx.tz)
     )
     end = day_start(ctx, a.end_date or ctx.today().isoformat()) + timedelta(days=1)
-    summary = await tx_cases.summarize(ctx.uow(), ctx.user.id, start, end)
+    summary = await tx_cases.summarize_in_home(ctx.uow(), _rates(ctx), ctx.user, start, end)
     period = f"{start.date().isoformat()} to {(end - timedelta(days=1)).date().isoformat()}"
-    if not summary.totals:
+    if not any(t.count or t.unconverted for t in summary.totals):
         return ToolResult(f"Nothing recorded from {period}.")
-    lines = [f"From {period}:"]
-    lines += [f"money {t.direction.value}: {t.total} ({t.count})" for t in summary.totals]
+    lines = [f"From {period}, in {summary.currency}:"]
+    for t in summary.totals:
+        if not t.count and not t.unconverted:
+            continue
+        line = f"money {t.direction.value}: {t.total} ({t.count})"
+        if t.converted:
+            line += ", including " + ", ".join(str(m) for m in t.converted) + " converted"
+        if t.unconverted:
+            line += "; not included (no exchange rate): " + ", ".join(str(m) for m in t.unconverted)
+        lines.append(line)
     lines += [
         f"  {c.category_name or 'Uncategorised'}: {c.total}" for c in summary.spending_by_category
     ]
@@ -559,6 +568,28 @@ async def _email_status(ctx: ToolContext, _: NoArgs) -> ToolResult:
     lines.append(f"This week: {summary or 'no receipt-like emails'}.")
     lines += email_cases.sender_checklist(found.emails)
     lines.append("The Email page in the web app lists each one and what happened to it.")
+    return ToolResult("\n".join(lines))
+
+
+async def _subscriptions(ctx: ToolContext, _: NoArgs) -> ToolResult:
+    found = await subscription_cases.overview(ctx.uow(), ctx.user.id)
+    if not found.tracked and not found.proposed:
+        return ToolResult(
+            "No subscriptions are tracked. When the same merchant charges a similar amount "
+            "on a regular schedule three times in a row, I'll offer to track it."
+        )
+    lines = [subscription_cases.describe(v) for v in found.tracked]
+    if found.monthly_totals:
+        lines.append(
+            "About " + " + ".join(str(m) for m in found.monthly_totals) + " a month in all."
+        )
+    if found.proposed:
+        lines.append(
+            "Waiting for the user's answer: "
+            + ", ".join(v.subscription.name for v in found.proposed)
+            + " (Track it / No on the Plan page)."
+        )
+    lines.append("To stop tracking one, use the Plan page.")
     return ToolResult("\n".join(lines))
 
 
@@ -940,6 +971,13 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             "Which mailboxes are connected and what happened to recent receipt emails.",
             NoArgs,
             _email_status,
+        ),
+        ToolSpec(
+            "list_subscriptions",
+            "The user's tracked subscriptions and recurring payments: amount, how often, "
+            "the next expected charge, price changes and the monthly total.",
+            NoArgs,
+            _subscriptions,
         ),
         ToolSpec(
             "transaction_updates",

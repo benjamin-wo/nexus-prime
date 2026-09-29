@@ -25,7 +25,9 @@ from nexus.application import email as email_cases
 from nexus.application import receipts as receipt_cases
 from nexus.application import salary as salary_cases
 from nexus.application import splits as split_cases
+from nexus.application import subscriptions as subscription_cases
 from nexus.application import transactions as tx_cases
+from nexus.application.fx import RateSource
 from nexus.application.ports import ReceiptStore
 from nexus.application.users import get_user
 from nexus.domain.errors import DuplicateSource, NexusError
@@ -64,6 +66,11 @@ HELP = (
 )
 
 
+class _NoRates:
+    async def rate(self, base: str, quote: str, on: date) -> None:
+        return None
+
+
 class AgentService:
     def __init__(
         self,
@@ -72,8 +79,11 @@ class AgentService:
         receipts: ReceiptReader | None,
         clock: Callable[[], datetime],
         archive: ReceiptStore | None = None,
+        rates: RateSource | None = None,
     ) -> None:
         self._graph = graph
+        # For figures in the home currency; None leaves foreign amounts out.
+        self._rates = rates
         self._uow = uow
         self._receipts = receipts
         self._clock = clock
@@ -189,7 +199,31 @@ class AgentService:
         if data.startswith("bill:"):
             _, action, occurrence_id = [*data.split(":"), "", ""][:3]
             return [await self._bill_button(actor, action, occurrence_id)]
+        if data.startswith("sub:"):
+            _, action, subscription_id = [*data.split(":"), "", ""][:3]
+            return [await self._subscription_button(actor, action, subscription_id)]
         return [Reply("I don't know that button.")]
+
+    async def _subscription_button(self, actor: UserId, action: str, subscription_id: str) -> Reply:
+        """Track it / No on a proposed subscription."""
+        try:
+            found = UUID(subscription_id)
+        except ValueError:
+            return Reply("I don't know that button.")
+        now = self._clock()
+        try:
+            if action == "track":
+                tracked = await subscription_cases.track(self._uow(), actor, found, now=now)
+                return Reply(
+                    f"Tracking {tracked.name}. I'll tell you if the price changes. "
+                    "Your subscriptions are on the Plan page."
+                )
+            if action == "skip":
+                await subscription_cases.dismiss(self._uow(), actor, found, now=now)
+                return Reply("OK, I won't ask about that one again.")
+        except NexusError as exc:
+            return Reply(str(exc).capitalize() + ".")
+        return Reply("I don't know that button.")
 
     async def _salary_button(self, actor: UserId, data: str) -> Reply:
         """Payday check-in and usual-salary buttons. Each is the user's own answer."""
@@ -321,14 +355,18 @@ class AgentService:
         today = self._clock().astimezone(tz).date()
         start = datetime.combine(today.replace(day=1), time(), tzinfo=tz)
         end = datetime.combine(today + timedelta(days=1), time(), tzinfo=tz)
-        summary = await tx_cases.summarize(self._uow(), actor, start, end)
-        if not summary.totals:
+        rates = self._rates if self._rates is not None else _NoRates()
+        summary = await tx_cases.summarize_in_home(self._uow(), rates, user, start, end)
+        if not any(t.count or t.unconverted for t in summary.totals):
             return Reply("Nothing recorded this month yet.")
         lines = [f"{today:%B} so far:"]
-        lines += [
-            f"{'Spent' if t.direction.value == 'out' else 'Received'} {t.total}"
-            for t in summary.totals
-        ]
+        for t in summary.totals:
+            if not t.count and not t.unconverted:
+                continue
+            line = f"{'Spent' if t.direction.value == 'out' else 'Received'} {t.total}"
+            if t.unconverted:
+                line += " (plus " + ", ".join(str(m) for m in t.unconverted) + " not converted)"
+            lines.append(line)
         lines += [
             f"  {c.category_name or 'Uncategorised'}: {c.total}"
             for c in summary.spending_by_category[:6]

@@ -12,6 +12,7 @@ from nexus.domain.ledger import UserId
 from nexus.domain.money import Money
 from nexus.domain.notifications import Frequency, NotificationSettings
 from nexus.domain.planning import Bill, BillOccurrence, Budget, Cadence, PayRule, SalarySchedule
+from nexus.domain.recurring import Subscription, SubscriptionStatus
 from nexus.infra.db.tables import (
     bill_occurrences,
     bills,
@@ -20,6 +21,7 @@ from nexus.infra.db.tables import (
     jobs,
     notification_settings,
     salary_schedules,
+    subscriptions,
     users,
 )
 
@@ -57,6 +59,25 @@ def _occurrence(row: Row[Any]) -> BillOccurrence:
         paid_at=row.paid_at,
         snoozed_until=row.snoozed_until,
         reminded_offset=row.reminded_offset,
+    )
+
+
+def _subscription(row: Row[Any]) -> Subscription:
+    return Subscription(
+        id=row.id,
+        user_id=UserId(row.user_id),
+        key=row.key,
+        name=row.name,
+        cadence=Cadence(row.cadence),
+        amount=Money(row.amount, row.currency),
+        last_charged_on=row.last_charged_on,
+        status=SubscriptionStatus(row.status),
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+        previous_amount=(
+            Money(row.previous_amount, row.currency) if row.previous_amount is not None else None
+        ),
+        price_changed_on=row.price_changed_on,
     )
 
 
@@ -284,6 +305,71 @@ class SqlPlanningRepository:
     async def users_with_salary_schedules(self) -> list[UserId]:
         rows = await self._db.execute(select(salary_schedules.c.user_id))
         return [UserId(r.user_id) for r in rows]
+
+    # subscriptions
+
+    async def list_subscriptions(self, user_id: UserId) -> list[Subscription]:
+        rows = await self._db.execute(
+            select(subscriptions)
+            .where(subscriptions.c.user_id == user_id)
+            .order_by(subscriptions.c.name)
+        )
+        return [_subscription(r) for r in rows]
+
+    async def get_subscription(
+        self, user_id: UserId, subscription_id: UUID, *, for_update: bool = False
+    ) -> Subscription | None:
+        s = subscriptions.c
+        stmt = select(subscriptions).where(s.user_id == user_id, s.id == subscription_id)
+        row = (await self._db.execute(stmt.with_for_update() if for_update else stmt)).first()
+        return _subscription(row) if row else None
+
+    async def insert_subscription(self, subscription: Subscription) -> bool:
+        """False if this merchant already has a row (proposed, tracked or dismissed)."""
+        stmt = (
+            pg_insert(subscriptions)
+            .values(
+                id=subscription.id,
+                user_id=subscription.user_id,
+                key=subscription.key,
+                name=subscription.name,
+                cadence=subscription.cadence.value,
+                amount=subscription.amount.amount,
+                currency=subscription.amount.currency,
+                last_charged_on=subscription.last_charged_on,
+                status=subscription.status.value,
+                created_at=subscription.created_at,
+                updated_at=subscription.updated_at,
+            )
+            .on_conflict_do_nothing(
+                index_elements=[
+                    subscriptions.c.user_id,
+                    subscriptions.c.key,
+                    subscriptions.c.currency,
+                ]
+            )
+            .returning(subscriptions.c.id)
+        )
+        return (await self._db.execute(stmt)).first() is not None
+
+    async def update_subscription(self, subscription: Subscription) -> None:
+        s = subscriptions.c
+        await self._db.execute(
+            update(subscriptions)
+            .where(s.user_id == subscription.user_id, s.id == subscription.id)
+            .values(
+                name=subscription.name,
+                cadence=subscription.cadence.value,
+                amount=subscription.amount.amount,
+                last_charged_on=subscription.last_charged_on,
+                status=subscription.status.value,
+                previous_amount=(
+                    subscription.previous_amount.amount if subscription.previous_amount else None
+                ),
+                price_changed_on=subscription.price_changed_on,
+                updated_at=subscription.updated_at,
+            )
+        )
 
     # notifications
 

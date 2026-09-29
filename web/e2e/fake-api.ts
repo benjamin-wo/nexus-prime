@@ -37,6 +37,7 @@ export async function fakeApi(page: Page, { signedIn = true, emailConnected = fa
     salary: FakeSalary | null;
     rules: FakeRule[];
     frequency: string;
+    subs: { id: string; name: string; status: string; amount: string }[];
     email: {
       connections: {
         id: string;
@@ -59,6 +60,10 @@ export async function fakeApi(page: Page, { signedIn = true, emailConnected = fa
     salary: null,
     rules: [],
     frequency: "daily",
+    subs: [
+      { id: "s1", name: "Netflix", status: "active", amount: "17.98" },
+      { id: "s2", name: "Spotify", status: "proposed", amount: "10.98" },
+    ],
     email: {
       connections: [
         ...(emailConnected
@@ -242,6 +247,32 @@ export async function fakeApi(page: Page, { signedIn = true, emailConnected = fa
     }
     if (path.startsWith("/budgets/") && method === "DELETE") {
       state.budgets = state.budgets.filter((b) => `/budgets/${b.id}` !== path);
+      return route.fulfill({ status: 204 });
+    }
+    if (path === "/subscriptions" && method === "GET") {
+      const out = (s: { id: string; name: string; amount: string }) => ({
+        id: s.id,
+        name: s.name,
+        cadence: "monthly",
+        amount: { amount: s.amount, currency: "SGD" },
+        monthly: { amount: s.amount, currency: "SGD" },
+        last_charged_on: "2026-09-12",
+        next_charge: "2026-10-12",
+        previous_amount: s.id === "s1" ? { amount: "15.98", currency: "SGD" } : null,
+        price_changed_on: s.id === "s1" ? "2026-09-12" : null,
+      });
+      const tracked = state.subs.filter((s) => s.status === "active");
+      const total = tracked.reduce((sum, s) => sum + Number(s.amount), 0);
+      return json(route, {
+        tracked: tracked.map(out),
+        proposed: state.subs.filter((s) => s.status === "proposed").map(out),
+        monthly_totals: tracked.length ? [{ amount: total.toFixed(2), currency: "SGD" }] : [],
+      });
+    }
+    const sub = path.match(/^\/subscriptions\/(\w+)\/(track|dismiss)$/);
+    if (sub && method === "POST") {
+      const found = state.subs.find((s) => s.id === sub[1]);
+      if (found) found.status = sub[2] === "track" ? "active" : "dismissed";
       return route.fulfill({ status: 204 });
     }
     if (path === "/notifications") {

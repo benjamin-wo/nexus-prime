@@ -37,6 +37,7 @@ from nexus.domain.money import Money
 from nexus.domain.notifications import NotificationSettings
 from nexus.domain.planning import Bill, BillOccurrence, Budget, SalarySchedule
 from nexus.domain.receipts import Receipt
+from nexus.domain.recurring import Subscription
 from nexus.domain.rules import CategoryRule
 
 
@@ -146,6 +147,12 @@ class LedgerRepository(Protocol):
     ) -> Transaction | None: ...
     async def update_transaction(self, tx: Transaction) -> None: ...
     async def list_transactions(self, user_id: UserId, query: LedgerQuery) -> Page: ...
+    async def outgoing_since(
+        self, user_id: UserId, start: datetime, *, limit: int
+    ) -> list[Transaction]:
+        """Live expenses with a merchant, since ``start``, newest first."""
+        ...
+
     async def logged_between(
         self, user_id: UserId, start: datetime, end: datetime, *, limit: int
     ) -> list[Transaction]:
@@ -258,6 +265,15 @@ class PlanningRepository(Protocol):
 
     async def delete_salary_schedule(self, user_id: UserId) -> bool: ...
     async def users_with_salary_schedules(self) -> list[UserId]: ...
+    async def list_subscriptions(self, user_id: UserId) -> list[Subscription]: ...
+    async def get_subscription(
+        self, user_id: UserId, subscription_id: UUID, *, for_update: bool = False
+    ) -> Subscription | None: ...
+    async def insert_subscription(self, subscription: Subscription) -> bool:
+        """False if this merchant already has a row (proposed, tracked or dismissed)."""
+        ...
+
+    async def update_subscription(self, subscription: Subscription) -> None: ...
     async def get_notifications(
         self, user_id: UserId, *, for_update: bool = False
     ) -> NotificationSettings:

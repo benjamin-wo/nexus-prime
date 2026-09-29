@@ -13,10 +13,12 @@ from nexus.agent.receipts import ReceiptDraft, ReceiptReader
 from nexus.agent.service import AgentService, Reply
 from nexus.agent.skills import SkillLibrary
 from nexus.agent.tools import build_tools
+from nexus.application import subscriptions as subscription_cases
 from nexus.application.category_rules import list_rules
 from nexus.application.ports import LedgerQuery, ReceiptStore
 from nexus.application.splits import list_open_ious, split_bill
 from nexus.application.transactions import NewTransaction, list_ledger, log_transaction
+from nexus.application.users import get_user
 from nexus.domain.ledger import Direction, ShareRequest, Source, UserId
 from nexus.domain.money import Money
 from nexus.infra.db.tables import capability_gaps
@@ -277,9 +279,35 @@ async def test_quick_actions(uow: UowFactory, alice: UserId) -> None:
     await log_transaction(uow(), alice, NewTransaction(Direction.OUT, Money.of("8", "SGD"), NOW))
     summary = only(await agent.quick_action(alice, "summary")).text
     assert summary.startswith("September so far:\nSpent 8.00 SGD")
+    # A foreign amount with no rate is said, not silently mixed in or dropped.
+    await log_transaction(uow(), alice, NewTransaction(Direction.OUT, Money.of("5", "USD"), NOW))
+    summary = only(await agent.quick_action(alice, "summary")).text
+    assert summary.startswith("September so far:\nSpent 8.00 SGD (plus 5.00 USD not converted)")
+    assert only(await agent.quick_action(alice, "undo")).text == "Undone: the create of 5.00 USD."
     assert only(await agent.quick_action(alice, "undo")).text == "Undone: the create of 8.00 SGD."
     assert only(await agent.quick_action(alice, "undo")).text == "There is nothing to undo."
     assert only(await agent.quick_action(alice, "ious")).text == "Nobody owes you anything."
+
+
+async def test_subscription_buttons_track_or_turn_down(uow: UowFactory, alice: UserId) -> None:
+    agent = build(uow, scripted())
+    user = await get_user(uow(), alice)
+    for month in (7, 8, 9):
+        at = NOW.replace(month=month, day=12)
+        cmd = NewTransaction(Direction.OUT, Money.of("15.98", "SGD"), at, counterparty="Netflix")
+        await log_transaction(uow(), alice, cmd)
+    await subscription_cases.check(uow, user, now=NOW)
+    [proposal] = (await subscription_cases.overview(uow(), alice)).proposed
+    sub_id = proposal.subscription.id
+    reply = only(await agent.press(alice, f"sub:track:{sub_id}"))
+    assert reply.text.startswith("Tracking Netflix.")
+    assert [
+        v.subscription.id for v in (await subscription_cases.overview(uow(), alice)).tracked
+    ] == [sub_id]
+    reply = only(await agent.press(alice, f"sub:skip:{sub_id}"))
+    assert reply.text == "OK, I won't ask about that one again."
+    assert (await subscription_cases.overview(uow(), alice)).tracked == []
+    assert only(await agent.press(alice, "sub:track:nope")).text == "I don't know that button."
 
 
 async def test_threads_are_per_user(uow: UowFactory, alice: UserId, bob: UserId) -> None:

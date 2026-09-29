@@ -58,6 +58,7 @@ The shared language for code, tests and docs. When a term here and a name in cod
 - **Use case**: an application-layer function such as `log_expense` or `set_budget`. The only entry point for tools, routes and jobs.
 - **Tenant**: the user a request acts for, always taken from the authenticated principal, never from request or model arguments.
 - **Forwarding address**: a user's own AgentMail inbox (`nexus-…@agentmail.to`) they forward receipts to from any mail provider. Read by the email sweep like a connected mailbox; an email connection with provider `forward`.
+- **Subscription**: a recurring payment spotted in the ledger (three regular, similar charges from one merchant) and tracked once the user agrees. Stored in `subscriptions` as proposed, active or dismissed; a dismissed one is never proposed again. Different from a **bill**, which is a reminder the user sets up.
 - **Telegram updates**: how often a user hears about their transactions: as they happen, hourly, 3 times a day, once a day at 21:00 (the default), or off. Summaries are due at fixed local times outside quiet hours.
 - **Job**: a row in the `jobs` table, claimed by a worker with `FOR UPDATE SKIP LOCKED`. Its **dedupe key** makes every side effect (reminder, sweep, import) happen at most once.
 - **Leader lease**: a Postgres advisory lock held by one job runner so scheduling happens in one place.
