@@ -5,7 +5,7 @@ Every method is scoped to one user. Implementations must filter on
 """
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from enum import StrEnum
 from types import TracebackType
 from typing import Any, Protocol, Self
@@ -28,6 +28,7 @@ from nexus.domain.ledger import (
 )
 from nexus.domain.money import Money
 from nexus.domain.planning import Bill, BillOccurrence, Budget, SalarySchedule
+from nexus.domain.receipts import Receipt
 from nexus.domain.rules import CategoryRule
 
 
@@ -100,6 +101,21 @@ class LedgerRepository(Protocol):
         self, user_id: UserId, *, include_inactive: bool
     ) -> list[Category]: ...
     async def update_category(self, category: Category) -> None: ...
+
+    # receipts
+    async def insert_receipt(self, receipt: Receipt) -> None: ...
+    async def attach_receipt(
+        self, user_id: UserId, receipt_id: UUID, transaction_id: UUID, *, stashed_after: datetime
+    ) -> bool: ...
+    async def live_receipt(self, user_id: UserId, transaction_id: UUID) -> Receipt | None: ...
+    async def transactions_with_receipts(
+        self, user_id: UserId, transaction_ids: list[UUID]
+    ) -> set[UUID]: ...
+    async def receipts_to_purge(self, now: datetime, limit: int) -> list[Receipt]:
+        """Across all users: for the purge job only."""
+        ...
+
+    async def delete_receipt(self, user_id: UserId, receipt_id: UUID) -> None: ...
 
     # category rules
     async def insert_category_rule(self, rule: CategoryRule) -> None:
@@ -235,6 +251,16 @@ class JobQueue(Protocol):
         self, kind: str, payload: dict[str, Any], *, dedupe_key: str, run_at: datetime
     ) -> bool:
         """Queue a job in this transaction. False if the dedupe key was already used."""
+        ...
+
+
+class ReceiptStore(Protocol):
+    """Private object storage for receipt files."""
+
+    async def put(self, key: str, data: bytes, content_type: str) -> None: ...
+    async def delete(self, key: str) -> None: ...
+    def download_url(self, key: str, *, filename: str, expires: timedelta) -> str:
+        """A link that works for ``expires``, for someone already authorised."""
         ...
 
 

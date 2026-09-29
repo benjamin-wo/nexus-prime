@@ -54,7 +54,12 @@ export type Transaction = {
   status: "confirmed" | "pending";
   source: string;
   deleted: boolean;
+  /** A receipt is kept for it; open it at receiptUrl(id). */
+  has_receipt?: boolean;
 };
+
+/** The receipt's short-lived link; the server checks it's the owner asking. */
+export const receiptUrl = (id: string) => `/api/transactions/${id}/receipt`;
 
 /** Offered after a category correction; nothing changes unless the user accepts. */
 export type RuleSuggestion = {

@@ -21,9 +21,11 @@ from nexus.agent.receipts import ReceiptReader
 from nexus.agent.tools import UowFactory
 from nexus.application import bills as bill_cases
 from nexus.application import category_rules as rule_cases
+from nexus.application import receipts as receipt_cases
 from nexus.application import salary as salary_cases
 from nexus.application import splits as split_cases
 from nexus.application import transactions as tx_cases
+from nexus.application.ports import ReceiptStore
 from nexus.application.users import get_user
 from nexus.domain.errors import DuplicateSource, NexusError
 from nexus.domain.ledger import UserId
@@ -68,11 +70,14 @@ class AgentService:
         uow: UowFactory,
         receipts: ReceiptReader | None,
         clock: Callable[[], datetime],
+        archive: ReceiptStore | None = None,
     ) -> None:
         self._graph = graph
         self._uow = uow
         self._receipts = receipts
         self._clock = clock
+        # Where receipt photos are kept; None = they're read but not kept.
+        self._archive = archive
         # One turn at a time per user; a turn reads and writes the user's thread.
         self._locks: defaultdict[UserId, asyncio.Lock] = defaultdict(asyncio.Lock)
 
@@ -139,11 +144,21 @@ class AgentService:
         except Exception:
             log.exception("receipt reading failed")
             return [Reply("I couldn't read that photo right now. Type the amount instead.")]
+        details = draft.model_dump()
+        if self._archive is not None and draft.is_receipt and draft.amount:
+            try:
+                stored = await receipt_cases.stash(
+                    self._uow(), self._archive, actor, image, mime_type, now=self._clock()
+                )
+                details["receipt_id"] = str(stored.id)
+            except Exception:
+                # Keeping the photo is a bonus; the expense can still be logged without it.
+                log.exception("could not store a receipt photo")
         async with self._locks[actor]:
             await self._decline_pending(actor)
             message = HumanMessage(
                 content="[receipt photo]" + (f" {caption}" if caption else ""),
-                additional_kwargs={RECEIPT: draft.model_dump(), REF: ref},
+                additional_kwargs={RECEIPT: details, REF: ref},
             )
             return await self._run(actor, {"messages": [message]})
 

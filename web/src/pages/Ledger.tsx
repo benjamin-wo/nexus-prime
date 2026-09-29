@@ -9,6 +9,7 @@ import {
   ledgerParams,
   type Me,
   type Page,
+  receiptUrl,
   type Transaction,
 } from "../api";
 import { DirectionBadge } from "../components/Badge";
@@ -228,6 +229,17 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
                         {tx.counterparty ?? "No merchant"}
                       </button>
                       {tx.notes && <div className="caption">{tx.notes}</div>}
+                      {tx.has_receipt && (
+                        <a
+                          className="caption receipt-link"
+                          href={receiptUrl(tx.id)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          Receipt
+                        </a>
+                      )}
                     </td>
                     <td className="hide-mobile secondary">
                       {tx.category_id ? names.get(tx.category_id) : "—"}

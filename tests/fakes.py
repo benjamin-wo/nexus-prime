@@ -2,7 +2,7 @@
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from uuid import uuid4
@@ -148,3 +148,22 @@ class FakeRates:
             return None
         day = max(days)
         return Rate(base, quote, Decimal(self.published[(base, quote)][day]), day)
+
+
+@dataclass
+class FakeBucket:
+    """An in-memory private bucket. Download links name the key and expiry, unsigned."""
+
+    objects: dict[str, tuple[bytes, str]] = field(default_factory=dict)
+    fail_deletes: bool = False
+
+    async def put(self, key: str, data: bytes, content_type: str) -> None:
+        self.objects[key] = (data, content_type)
+
+    async def delete(self, key: str) -> None:
+        if self.fail_deletes:
+            raise OSError("bucket unavailable")
+        self.objects.pop(key, None)
+
+    def download_url(self, key: str, *, filename: str, expires: timedelta) -> str:
+        return f"https://bucket.test/{key}?expires={int(expires.total_seconds())}&name={filename}"

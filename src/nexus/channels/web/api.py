@@ -15,6 +15,7 @@ from nexus.application import bills as bill_cases
 from nexus.application import budgets as budget_cases
 from nexus.application import categories as category_cases
 from nexus.application import category_rules as rule_cases
+from nexus.application import receipts as receipt_cases
 from nexus.application import salary as salary_cases
 from nexus.application import splits as split_cases
 from nexus.application import transactions as tx_cases
@@ -36,7 +37,7 @@ from nexus.channels.web.telegram_login import (
     verify_login,
     verify_webapp,
 )
-from nexus.domain.errors import Forbidden, InvalidInput
+from nexus.domain.errors import Forbidden, InvalidInput, NotFound
 from nexus.domain.ledger import (
     Category,
     Direction,
@@ -90,6 +91,7 @@ class TransactionOut(Model):
     status: str
     source: str
     deleted: bool
+    has_receipt: bool = False  # set on listings
 
 
 def home_out(conversion: fx.Conversion) -> HomeAmountOut:
@@ -101,7 +103,9 @@ def home_out(conversion: fx.Conversion) -> HomeAmountOut:
     )
 
 
-def tx_out(tx: Transaction, conversion: fx.Conversion | None = None) -> TransactionOut:
+def tx_out(
+    tx: Transaction, conversion: fx.Conversion | None = None, *, has_receipt: bool = False
+) -> TransactionOut:
     return TransactionOut(
         id=tx.id,
         direction=tx.direction.value,
@@ -115,6 +119,7 @@ def tx_out(tx: Transaction, conversion: fx.Conversion | None = None) -> Transact
         status=tx.status.value,
         source=tx.source.value,
         deleted=tx.is_deleted,
+        has_receipt=has_receipt,
     )
 
 
@@ -387,7 +392,21 @@ async def list_transactions(
     )  # fmt: skip
     page = await tx_cases.list_ledger(web.uow(), auth.user.id, query)
     conversions = await _conversions(web, auth.user, page.items)
-    return PageOut(items=[tx_out(t, conversions.get(t.id)) for t in page.items], total=page.total)
+    kept = await receipt_cases.with_receipts(web.uow(), auth.user.id, [t.id for t in page.items])
+    items = [tx_out(t, conversions.get(t.id), has_receipt=t.id in kept) for t in page.items]
+    return PageOut(items=items, total=page.total)
+
+
+@router.get("/transactions/{transaction_id}/receipt", include_in_schema=False)
+async def receipt(transaction_id: UUID, auth: Auth, web: Runtime) -> RedirectResponse:
+    """Send the owner to a link to their receipt that expires in minutes."""
+    if web.archive is None:
+        raise NotFound("receipts aren't kept on this server")
+    url = await receipt_cases.download_link(web.uow(), web.archive, auth.user.id, transaction_id)
+    response = RedirectResponse(url, status_code=303)
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
 
 
 class TransactionIn(Model):

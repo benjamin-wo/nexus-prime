@@ -17,6 +17,7 @@ from nexus.agent.service import AgentService
 from nexus.agent.tools import UowFactory
 from nexus.application.access import SESSION_TTL, resolve_session
 from nexus.application.fx import RateSource
+from nexus.application.ports import ReceiptStore
 from nexus.domain.access import Session
 from nexus.domain.ledger import User
 from nexus.settings import Environment, Settings
@@ -34,6 +35,7 @@ class WebRuntime:
     clock: Callable[[], datetime]
     bot_username: Callable[[], Awaitable[str]]
     rates: RateSource
+    archive: ReceiptStore | None = None  # receipt files; None = not kept
 
 
 @dataclass(frozen=True, slots=True)

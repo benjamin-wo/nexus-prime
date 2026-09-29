@@ -48,6 +48,7 @@ from nexus.domain.ledger import (
     UserId,
 )
 from nexus.domain.money import Money
+from nexus.domain.receipts import RETENTION_AFTER_DELETE, UNCLAIMED_TTL, Receipt, purge_due
 from nexus.domain.rules import CategoryRule
 from nexus.infra.db.tables import (
     capability_gaps,
@@ -55,6 +56,7 @@ from nexus.infra.db.tables import (
     category_rules,
     inbound_events,
     invites,
+    receipts,
     settlements,
     splits,
     transaction_revisions,
@@ -111,6 +113,18 @@ def _rule(row: Row[Any]) -> CategoryRule:
         created_at=row.created_at,
         updated_at=row.updated_at,
         archived_at=row.archived_at,
+    )
+
+
+def _receipt(row: Row[Any]) -> Receipt:
+    return Receipt(
+        id=row.id,
+        user_id=UserId(row.user_id),
+        transaction_id=row.transaction_id,
+        object_key=row.object_key,
+        content_type=row.content_type,
+        size_bytes=row.size_bytes,
+        created_at=row.created_at,
     )
 
 
@@ -267,6 +281,100 @@ class SqlLedgerRepository:
             .order_by(category_rules.c.pattern)
         )
         return [_rule(row) for row in rows]
+
+    # --- receipts -------------------------------------------------------------------
+
+    async def insert_receipt(self, receipt: Receipt) -> None:
+        await self._db.execute(
+            insert(receipts).values(
+                id=receipt.id,
+                user_id=receipt.user_id,
+                transaction_id=receipt.transaction_id,
+                object_key=receipt.object_key,
+                content_type=receipt.content_type,
+                size_bytes=receipt.size_bytes,
+                created_at=receipt.created_at,
+            )
+        )
+
+    async def attach_receipt(
+        self, user_id: UserId, receipt_id: UUID, transaction_id: UUID, *, stashed_after: datetime
+    ) -> bool:
+        """Claim an unclaimed receipt stored after ``stashed_after`` (older ones are
+        about to be purged). False if there is none to claim."""
+        result = await self._db.execute(
+            update(receipts)
+            .where(
+                receipts.c.user_id == user_id,
+                receipts.c.id == receipt_id,
+                receipts.c.transaction_id.is_(None),
+                receipts.c.created_at > stashed_after,
+            )
+            .values(transaction_id=transaction_id)
+        )
+        return bool(result.rowcount)
+
+    async def live_receipt(self, user_id: UserId, transaction_id: UUID) -> Receipt | None:
+        """The receipt of a transaction that isn't deleted."""
+        row = (
+            await self._db.execute(
+                select(receipts)
+                .join(
+                    transactions,
+                    and_(
+                        transactions.c.id == receipts.c.transaction_id,
+                        transactions.c.user_id == receipts.c.user_id,
+                    ),
+                )
+                .where(
+                    receipts.c.user_id == user_id,
+                    receipts.c.transaction_id == transaction_id,
+                    transactions.c.deleted_at.is_(None),
+                )
+            )
+        ).first()
+        return _receipt(row) if row else None
+
+    async def transactions_with_receipts(
+        self, user_id: UserId, transaction_ids: list[UUID]
+    ) -> set[UUID]:
+        if not transaction_ids:
+            return set()
+        rows = await self._db.execute(
+            select(receipts.c.transaction_id).where(
+                receipts.c.user_id == user_id, receipts.c.transaction_id.in_(transaction_ids)
+            )
+        )
+        return {row[0] for row in rows}
+
+    async def receipts_to_purge(self, now: datetime, limit: int) -> list[Receipt]:
+        """Across all users: receipts due to be erased (see nexus.domain.receipts)."""
+        t = transactions.c
+        rows = await self._db.execute(
+            select(receipts, t.deleted_at.label("tx_deleted_at"))
+            .outerjoin(
+                transactions,
+                and_(t.id == receipts.c.transaction_id, t.user_id == receipts.c.user_id),
+            )
+            .where(
+                or_(
+                    and_(
+                        receipts.c.transaction_id.is_(None),
+                        receipts.c.created_at <= now - UNCLAIMED_TTL,
+                    ),
+                    t.deleted_at <= now - RETENTION_AFTER_DELETE,
+                )
+            )
+            .order_by(receipts.c.created_at)
+            .limit(limit)
+        )
+        found = [(_receipt(row), row.tx_deleted_at) for row in rows]
+        return [r for r, deleted_at in found if purge_due(r, deleted_at, now)]
+
+    async def delete_receipt(self, user_id: UserId, receipt_id: UUID) -> None:
+        await self._db.execute(
+            delete(receipts).where(receipts.c.user_id == user_id, receipts.c.id == receipt_id)
+        )
 
     # --- transactions -------------------------------------------------------------
 

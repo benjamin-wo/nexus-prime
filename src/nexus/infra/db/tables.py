@@ -142,6 +142,34 @@ transactions = Table(
     Index("ix_transactions_user_id_occurred_at", "user_id", "occurred_at"),
 )
 
+# A receipt file in the private bucket. Its visibility and purge follow its
+# transaction (see nexus.domain.receipts); an unclaimed one is a declined photo.
+receipts = Table(
+    "receipts",
+    metadata,
+    _uuid_pk(),
+    _user_fk(),
+    Column("transaction_id", UUID(as_uuid=True)),
+    Column("object_key", Text, nullable=False),
+    Column("content_type", Text, nullable=False),
+    Column("size_bytes", Integer, nullable=False),
+    Column("created_at", TZ, nullable=False),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+    ForeignKeyConstraint(
+        ["transaction_id", "user_id"], ["transactions.id", "transactions.user_id"]
+    ),
+    UniqueConstraint("object_key"),
+    CheckConstraint("size_bytes > 0", name="size_positive"),
+    CheckConstraint("object_key LIKE 'receipts/' || user_id || '/%'", name="key_owner"),
+    Index(
+        "uq_receipts_transaction_id",
+        "transaction_id",
+        unique=True,
+        postgresql_where=text("transaction_id IS NOT NULL"),
+    ),
+    Index("ix_receipts_created_at", "created_at"),
+)
+
 transaction_sources = Table(
     "transaction_sources",
     metadata,

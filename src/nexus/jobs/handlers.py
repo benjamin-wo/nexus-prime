@@ -10,9 +10,11 @@ from zoneinfo import ZoneInfo
 from nexus.agent.service import Button
 from nexus.application import bills as bill_cases
 from nexus.application import budgets as budget_cases
+from nexus.application import receipts as receipt_cases
 from nexus.application import salary as salary_cases
 from nexus.application.budgets import TELEGRAM_SEND, UowFactory
 from nexus.application.fx import RateSource
+from nexus.application.ports import ReceiptStore
 from nexus.channels.telegram.client import TelegramClient
 from nexus.domain.ledger import User, UserId
 from nexus.domain.planning import quiet_until
@@ -23,10 +25,12 @@ log = logging.getLogger(__name__)
 BUDGETS_SWEEP = "budgets.sweep"
 BILLS_SWEEP = "bills.sweep"
 PAYDAY_SWEEP = "salary.sweep"
+RECEIPTS_PURGE = "receipts.purge"
 SCHEDULES = (
     Schedule(BUDGETS_SWEEP, timedelta(minutes=10)),
     Schedule(BILLS_SWEEP, timedelta(minutes=30)),
     Schedule(PAYDAY_SWEEP, timedelta(minutes=30)),
+    Schedule(RECEIPTS_PURGE, timedelta(hours=1)),
 )
 
 
@@ -35,6 +39,7 @@ def build_handlers(
     telegram: TelegramClient,
     rates: RateSource,
     clock: Callable[[], datetime],
+    archive: ReceiptStore | None = None,
 ) -> dict[str, Handler]:
     async def send(payload: dict[str, Any]) -> Defer | None:
         """Message a user on Telegram, but not during their quiet hours."""
@@ -92,7 +97,14 @@ def build_handlers(
             lambda user: salary_cases.payday_checkin(uow, user, now=clock()),
         )
 
+    async def purge_receipts(_: dict[str, Any]) -> None:
+        if archive is not None:
+            erased = await receipt_cases.purge(uow, archive, now=clock())
+            if erased:
+                log.info("purged %d receipts", erased)
+
     return {
+        RECEIPTS_PURGE: purge_receipts,
         TELEGRAM_SEND: send,
         BUDGETS_SWEEP: sweep_budgets,
         BILLS_SWEEP: sweep_bills,

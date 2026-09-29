@@ -14,7 +14,7 @@ from nexus.agent.service import AgentService, Reply
 from nexus.agent.skills import SkillLibrary
 from nexus.agent.tools import build_tools
 from nexus.application.category_rules import list_rules
-from nexus.application.ports import LedgerQuery
+from nexus.application.ports import LedgerQuery, ReceiptStore
 from nexus.application.splits import list_open_ious, split_bill
 from nexus.application.transactions import NewTransaction, list_ledger, log_transaction
 from nexus.domain.ledger import Direction, ShareRequest, Source, UserId
@@ -27,7 +27,10 @@ pytestmark = pytest.mark.integration
 
 
 def build(
-    uow: UowFactory, model: ScriptedModel, receipts: ReceiptReader | None = None
+    uow: UowFactory,
+    model: ScriptedModel,
+    receipts: ReceiptReader | None = None,
+    archive: ReceiptStore | None = None,
 ) -> AgentService:
     skills = SkillLibrary.load()
 
@@ -45,7 +48,7 @@ def build(
             clock=lambda: NOW,
         )
     ).compile(InMemorySaver())
-    return AgentService(graph, uow, receipts, lambda: NOW)
+    return AgentService(graph, uow, receipts, lambda: NOW, archive)
 
 
 async def ledger(uow: UowFactory, user: UserId, **query: object) -> list[tuple[str, Decimal]]:

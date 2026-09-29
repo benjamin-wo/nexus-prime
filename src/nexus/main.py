@@ -21,6 +21,7 @@ from nexus.agent.skills import SkillLibrary
 from nexus.agent.tools import build_tools
 from nexus.application.clock import utcnow
 from nexus.application.fx import RateSource
+from nexus.application.ports import ReceiptStore
 from nexus.channels.telegram import webhook as telegram_webhook
 from nexus.channels.telegram.client import HttpTelegramClient, TelegramClient
 from nexus.channels.web import api as web_api
@@ -34,6 +35,7 @@ from nexus.infra.db.migrations import assert_schema_at_head
 from nexus.infra.db.uow import SqlUnitOfWork
 from nexus.infra.fx.frankfurter import FrankfurterRates
 from nexus.infra.llm.factory import ChatModels, build_chat_models
+from nexus.infra.storage.s3 import S3ReceiptStore
 from nexus.jobs.handlers import SCHEDULES, build_handlers
 from nexus.jobs.runner import JobRunner
 from nexus.settings import Settings, get_settings
@@ -51,6 +53,30 @@ class Overrides:
     checkpointer: BaseCheckpointSaver[Any] | None = None
     clock: Callable[[], datetime] | None = None
     rates: RateSource | None = None
+    receipt_store: ReceiptStore | None = None
+
+
+def _receipt_store(settings: Settings, overrides: Overrides) -> ReceiptStore | None:
+    if overrides.receipt_store is not None:
+        return overrides.receipt_store
+    if not settings.storage_enabled:
+        return None
+    key, secret = settings.storage_access_key_id, settings.storage_secret_access_key
+    if (
+        settings.storage_bucket is None
+        or settings.storage_endpoint is None
+        or key is None
+        or secret is None
+    ):  # pragma: no cover - the settings validator requires all of them
+        raise RuntimeError("receipt storage is half configured")
+    return S3ReceiptStore(
+        bucket=settings.storage_bucket,
+        endpoint=settings.storage_endpoint,
+        region=settings.storage_region,
+        access_key_id=key.get_secret_value(),
+        secret_access_key=secret.get_secret_value(),
+        path_style=settings.storage_path_style,
+    )
 
 
 async def _stop_worker(stop: asyncio.Event, worker: "asyncio.Task[None]") -> None:
@@ -86,6 +112,7 @@ async def _telegram_runtime(
     overrides: Overrides,
     stack: AsyncExitStack,
     rates: RateSource,
+    archive: ReceiptStore | None,
 ) -> telegram_webhook.TelegramRuntime:
     def uow() -> SqlUnitOfWork:
         return SqlUnitOfWork(engine)
@@ -127,7 +154,7 @@ async def _telegram_runtime(
     return telegram_webhook.TelegramRuntime(
         settings=settings,
         uow=uow,
-        service=AgentService(graph, uow, receipts, clock),
+        service=AgentService(graph, uow, receipts, clock, archive),
         client=client,
     )
 
@@ -156,14 +183,17 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                 if rates is None:
                     http = await stack.enter_async_context(httpx.AsyncClient())
                     rates = FrankfurterRates(http)
-                telegram = await _telegram_runtime(resolved, engine, extra, stack, rates)
+                archive = _receipt_store(resolved, extra)
+                if archive is None:
+                    log.warning("receipt storage is not configured; receipt photos won't be kept")
+                telegram = await _telegram_runtime(resolved, engine, extra, stack, rates, archive)
                 app.state.telegram = telegram
                 origin = resolved.public_origin
                 clock = extra.clock or utcnow
                 if resolved.run_jobs:
                     runner = JobRunner(
                         engine,
-                        build_handlers(telegram.uow, telegram.client, rates, clock),
+                        build_handlers(telegram.uow, telegram.client, rates, clock, archive),
                         schedules=SCHEDULES,
                         clock=clock,
                     )
@@ -179,6 +209,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                         clock=clock,
                         bot_username=telegram.client.bot_username,
                         rates=rates,
+                        archive=archive,
                     )
                     menu = asyncio.create_task(_set_menu_button(telegram.client, origin))
                     stack.push_async_callback(_finish, menu)

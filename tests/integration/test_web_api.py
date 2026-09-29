@@ -14,12 +14,18 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nexus.application import bills as bill_cases
+from nexus.application import receipts as receipt_cases
+from nexus.application.transactions import NewTransaction
 from nexus.channels.web.telegram_login import sign_for_tests, sign_webapp_for_tests
-from nexus.infra.db.tables import jobs
+from nexus.domain.ledger import Direction, Source, UserId
+from nexus.domain.money import Money
+from nexus.infra.db.tables import jobs, users
+from nexus.infra.db.uow import SqlUnitOfWork
 from nexus.main import Overrides, create_app
 from nexus.settings import Settings
 from tests.fakes import (
     NOW,
+    FakeBucket,
     FakeRates,
     FakeTelegram,
     ScriptedModel,
@@ -80,6 +86,8 @@ class World:
     model: ScriptedModel
     telegram: FakeTelegram
     rates: FakeRates
+    bucket: FakeBucket
+    engine: AsyncEngine
 
     def browser(self) -> Browser:
         return Browser(self.app, self.clock)
@@ -88,6 +96,7 @@ class World:
 @pytest.fixture
 async def world(engine: AsyncEngine, empty_database_url: str) -> AsyncIterator[World]:
     clock = Clock()
+    bucket = FakeBucket()
     model = scripted()
     telegram = FakeTelegram()
     rates = FakeRates({("USD", "SGD"): {date(2026, 9, 25): "1.2905", date(2026, 9, 28): "1.3000"}})
@@ -109,10 +118,11 @@ async def world(engine: AsyncEngine, empty_database_url: str) -> AsyncIterator[W
             checkpointer=InMemorySaver(),
             clock=lambda: clock.now,
             rates=rates,
+            receipt_store=bucket,
         ),
     )
     async with app.router.lifespan_context(app):
-        yield World(app, clock, model, telegram, rates)
+        yield World(app, clock, model, telegram, rates, bucket, engine)
 
 
 async def owner_and_invite(world: World) -> tuple[Browser, str]:
@@ -505,6 +515,49 @@ async def test_budgets_round_trip(world: World) -> None:
 
     assert (await owner.send("DELETE", f"/api/budgets/{meal['id']}")).status_code == 204
     assert [b["name"] for b in (await owner.get("/api/budgets")).json()] == ["Overall"]
+
+
+# --- receipts -------------------------------------------------------------------------
+
+
+async def user_id(world: World, telegram_id: int) -> UserId:
+    async with world.engine.connect() as db:
+        found = await db.scalar(select(users.c.id).where(users.c.telegram_user_id == telegram_id))
+    assert found is not None
+    return UserId(found)
+
+
+async def test_receipt_links_are_short_lived_and_private(world: World) -> None:
+    owner, token = await owner_and_invite(world)
+    me = await user_id(world, OWNER)
+
+    def uow() -> SqlUnitOfWork:
+        return SqlUnitOfWork(world.engine)
+
+    stored = await receipt_cases.stash(uow(), world.bucket, me, b"img", "image/png", now=NOW)
+    cmd = NewTransaction(Direction.OUT, Money.of("8", "SGD"), NOW, source=Source.PHOTO)
+    tx = await receipt_cases.log_with_receipt(uow(), me, cmd, stored.id, now=NOW)
+    await spend(owner, "3", "SGD", "2026-09-28")
+
+    rows = {
+        r["id"]: r["has_receipt"] for r in (await owner.get("/api/transactions")).json()["items"]
+    }
+    assert rows[str(tx.id)] is True and list(rows.values()).count(True) == 1
+
+    link = await owner.get(f"/api/transactions/{tx.id}/receipt")
+    assert link.status_code == 303
+    assert link.headers["location"].startswith(
+        f"https://bucket.test/{stored.object_key}?expires=300"
+    )
+    assert link.headers["cache-control"] == "no-store"
+
+    member = world.browser()
+    await member.login(MEMBER, invite=token)
+    assert (await member.get(f"/api/transactions/{tx.id}/receipt")).status_code == 404
+    assert (await world.browser().get(f"/api/transactions/{tx.id}/receipt")).status_code == 401
+
+    assert (await owner.send("DELETE", f"/api/transactions/{tx.id}")).status_code == 200
+    assert (await owner.get(f"/api/transactions/{tx.id}/receipt")).status_code == 404
 
 
 # --- category rules -------------------------------------------------------------------
