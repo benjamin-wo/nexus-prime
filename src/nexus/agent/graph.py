@@ -43,7 +43,7 @@ from nexus.application.fx import RateSource
 from nexus.application.inbound import log_capability_gap
 from nexus.application.users import get_user
 from nexus.domain.errors import DuplicateSource, InvalidInput, NexusError
-from nexus.domain.ledger import Direction, Source, UserId
+from nexus.domain.ledger import Direction, Source, User, UserId
 from nexus.domain.money import Money
 from nexus.infra.llm.factory import text_of
 
@@ -85,6 +85,7 @@ class AgentDeps:
     health: Callable[[], Awaitable[str]]
     clock: Callable[[], datetime]
     rates: RateSource | None = None
+    connect_link: Callable[[User], Awaitable[str]] | None = None
 
 
 def strip_ids(text: str) -> str:
@@ -137,7 +138,11 @@ class AgentGraph:
             raise RuntimeError("thread does not belong to the acting user")
         user = await get_user(self.deps.uow(), actor)
         return ToolContext(
-            user=user, uow=self.deps.uow, now=self.deps.clock(), rates=self.deps.rates
+            user=user,
+            uow=self.deps.uow,
+            now=self.deps.clock(),
+            rates=self.deps.rates,
+            connect_link=self.deps.connect_link,
         )
 
     async def _prompt(self, ctx: ToolContext) -> str:
@@ -165,6 +170,8 @@ class AgentGraph:
             "Say so plainly if asked.\n"
             "- You can't record income; ask the user to phrase it like "
             "'received 50 from Ann' or 'salary 3000'.\n"
+            "- Only bring up logging automatically from email when the user asks about "
+            "automating their logging; never suggest it otherwise.\n"
             "- Keep replies short and plain. Never show transaction ids.\n\n"
             f"Skills (call load_skill for details):\n{self.deps.skill_index}"
         )

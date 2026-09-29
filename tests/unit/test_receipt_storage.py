@@ -3,6 +3,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+from cryptography.fernet import Fernet
 
 from nexus.domain.errors import InvalidInput
 from nexus.domain.receipts import check_file
@@ -60,3 +61,15 @@ def test_storage_is_all_or_nothing() -> None:
         storage_secret_access_key="s",
     )
     assert full.storage_enabled
+
+
+def test_connecting_gmail_needs_an_encryption_key() -> None:
+    google = {"google_client_id": "cid", "google_client_secret": "s"}
+    with pytest.raises(ValueError, match="TOKEN_ENCRYPTION_KEY"):
+        settings(**google)
+    with pytest.raises(ValueError, match="Fernet"):
+        settings(**google, token_encryption_key="not-a-key")
+    with pytest.raises(ValueError, match="go together"):
+        settings(google_client_id="cid")
+    key = Fernet.generate_key().decode()
+    assert settings(**google, token_encryption_key=f"{key}, {Fernet.generate_key().decode()}")

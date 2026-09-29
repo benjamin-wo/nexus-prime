@@ -1,6 +1,7 @@
 import type { Me } from "../api";
 import { BillsSection } from "./Bills";
 import { BudgetsSection } from "./Budgets";
+import { EmailCard } from "./Email";
 import { PaydaySection } from "./Payday";
 import { RulesSection } from "./Rules";
 
@@ -19,6 +20,7 @@ export function Plan({ me }: { me: Me }) {
         <BillsSection me={me} />
         <PaydaySection me={me} />
         <RulesSection />
+        <EmailCard />
       </div>
     </>
   );

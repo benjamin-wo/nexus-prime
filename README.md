@@ -22,6 +22,7 @@ One LLM agent serves both surfaces, but the parts that must be right, like money
 - **Capture in a sentence.**
   - "grab 12 yesterday", "coffee 5.50 USD", "split dinner 120 with Ann and Ben", "Ann paid me back 40".
   - Receipt photos are read by a vision model and logged after you confirm. The photo is kept privately with the expense.
+  - Ask it to log automatically and it offers **Connect Gmail**: receipts in your inbox become Telegram questions (**Log it / Skip**), with an Email page showing what happened to each one.
 - **Anything consequential asks first.** Edits, deletes, splits and budget removal show a Confirm / Cancel prompt. It survives restarts, because the conversation state lives in Postgres.
 - **One currency view.**
   - Totals are in your home currency.
@@ -56,7 +57,7 @@ The code follows a clean, layered architecture. `domain` holds pure rules with n
 **Tenant isolation is enforced by the database.**
 - Every child row references its parent by `(id, user_id)`, so Postgres itself rejects a cross-tenant link.
 - Agent tools can't accept a `user_id`; any the model sends is dropped.
-- Dedicated cross-tenant tests cover the ledger, IOUs, budgets, bills, salary, category rules, receipts and the web API, plus a test that the database itself rejects a cross-tenant link.
+- Dedicated cross-tenant tests cover the ledger, IOUs, budgets, bills, salary, category rules, receipts, mailboxes and the web API, plus a test that the database itself rejects a cross-tenant link.
 
 **The LLM is not trusted with the important parts.**
 - A deterministic kernel runs before the model. It parses income ("salary 5000", "Ann paid me back 20") exactly, handles stop/cancel, and refuses money movement ("transfer $500 to…") with a logged capability gap.
@@ -75,6 +76,7 @@ The code follows a clean, layered architecture. `domain` holds pure rules with n
 - Invite and session tokens are stored only as hashes.
 - Writes need an origin check plus a CSRF token.
 - A strict CSP allows embedding only by Telegram's web client.
+- Mailbox refresh tokens are encrypted at rest (Fernet, with key rotation); connecting uses a hashed one-time link that names the account it joins, and a replayed callback connects nothing.
 - Receipts sit in a private bucket and are only reachable through 5-minute presigned links, handed out after an ownership check.
 - Missing configuration stops startup instead of falling back.
 - The repo is public, so no secret ever touches it.
@@ -90,7 +92,7 @@ The code follows a clean, layered architecture. `domain` holds pure rules with n
 | Backend | Python 3.12, FastAPI, SQLAlchemy 2 (async Core, asyncpg), Pydantic v2, Alembic |
 | Agent | LangGraph with a Postgres checkpointer, human-in-the-loop interrupts, skills loaded on demand, provider-agnostic LLM adapter |
 | Frontend | React 19, TypeScript, Vite, TanStack Query, React Router |
-| Data | PostgreSQL 16: 19 tables, 9 migrations, a job queue in the same database; receipts in a private S3-compatible bucket |
+| Data | PostgreSQL 16: 22 tables, 10 migrations, a job queue in the same database; receipts in a private S3-compatible bucket |
 | Channels | Telegram Bot API (webhook, inline buttons, Mini App), cookie sessions with CSRF |
 | Quality | ruff, mypy `--strict`, pytest, Vitest, Playwright, GitHub Actions |
 | Deploy | Docker multi-stage build on Railway; migrations run as a pre-deploy step and the app refuses to start on an unmigrated schema |
@@ -99,13 +101,13 @@ The code follows a clean, layered architecture. `domain` holds pure rules with n
 
 Every change goes through the same CI: lint, format, strict type-checking, and three test suites.
 
-- **312 Python tests.**
+- **330 Python tests.**
   - Unit tests cover pure rules: money arithmetic, budget thresholds at exact boundaries, due dates across short months and leap years, and paydays across weekends.
   - Integration tests run against a real Postgres, with a fresh database per test built by the real migrations.
   - A schema test fails if the migrations drift from the table definitions.
 - **Agent tests** use a scripted fake model, so conversations, confirmations and refusals are deterministic.
 - **Concurrency tests** race two job runners and assert each job runs exactly once.
-- **Playwright journeys**, 17 of them, run on desktop and phone viewports. They include a check that nothing overflows a 320px screen.
+- **Playwright journeys**, 19 of them, run on desktop and phone viewports. They include a check that nothing overflows a 320px screen.
 - **Vitest** covers the components, including a regression test for a React effect-cleanup crash found in production.
 
 ## Project layout
@@ -143,9 +145,9 @@ The operations guide ([`docs/OPERATIONS.md`](docs/OPERATIONS.md)) covers the res
 
 The build follows [`docs/PLAN.md`](docs/PLAN.md). Each milestone ships to production as it lands.
 
-- **Done:** foundations, ledger and agent, Telegram, the migration from the old bot, the web cockpit, multi-currency, the job runtime, budgets, bills, payday, category rules and the receipt archive.
+- **Done:** foundations, ledger and agent, Telegram, the migration from the old bot, the web cockpit, multi-currency, the job runtime, budgets, bills, payday, category rules, the receipt archive and Connect Gmail.
 - **Next:**
-  - email receipt ingestion;
+  - forwarding receipts from any mail provider;
   - recurring-spend and subscription detection;
   - a cash-flow calendar;
   - bank statement import (CSV, then PDF);

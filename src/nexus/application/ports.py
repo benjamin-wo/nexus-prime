@@ -12,6 +12,13 @@ from typing import Any, Protocol, Self
 from uuid import UUID
 
 from nexus.domain.access import Invite, Session
+from nexus.domain.email import (
+    EmailConnection,
+    ExpenseDraft,
+    FetchedEmail,
+    InboundEmail,
+    Screening,
+)
 from nexus.domain.ledger import (
     Category,
     Direction,
@@ -254,6 +261,77 @@ class JobQueue(Protocol):
         ...
 
 
+class EmailRepository(Protocol):
+    """Connected mailboxes and the emails swept from them."""
+
+    async def insert_link(
+        self, user_id: UserId, token_hash: str, *, expires_at: datetime, now: datetime
+    ) -> None: ...
+    async def link_owner(self, token_hash: str, now: datetime) -> UserId | None: ...
+    async def use_link(self, token_hash: str, now: datetime) -> UserId | None: ...
+    async def save_connection(self, connection: EmailConnection) -> EmailConnection: ...
+    async def get_connection(
+        self, user_id: UserId, connection_id: UUID, *, for_update: bool = False
+    ) -> EmailConnection | None: ...
+    async def list_connections(self, user_id: UserId) -> list[EmailConnection]: ...
+    async def connections_to_sweep(self) -> list[EmailConnection]:
+        """Across all users: for the sweep job only."""
+        ...
+
+    async def update_connection(self, connection: EmailConnection) -> None: ...
+    async def delete_connection(self, user_id: UserId, connection_id: UUID) -> None: ...
+    async def seen_message_ids(self, connection_id: UUID, ids: list[str]) -> set[str]: ...
+    async def insert_inbound(self, email: InboundEmail) -> bool: ...
+    async def get_inbound(
+        self, user_id: UserId, email_id: UUID, *, for_update: bool = False
+    ) -> InboundEmail | None: ...
+    async def update_inbound(self, email: InboundEmail) -> None: ...
+    async def list_inbound(
+        self, user_id: UserId, *, since: datetime, limit: int
+    ) -> list[InboundEmail]: ...
+
+
+class MailboxRevoked(Exception):
+    """The mailbox provider no longer accepts our access (revoked or expired)."""
+
+
+@dataclass(frozen=True, slots=True)
+class MailboxGrant:
+    address: str
+    refresh_token: str
+
+
+class Mailbox(Protocol):
+    """A mail provider's API (Gmail). Only receipt-like emails are ever fetched."""
+
+    def authorize_url(self, *, state: str, redirect_uri: str) -> str: ...
+    async def exchange(self, code: str, *, redirect_uri: str) -> MailboxGrant:
+        """Raises InvalidInput if the user didn't grant read access."""
+        ...
+
+    async def access_token(self, refresh_token: str) -> str:
+        """Raises MailboxRevoked if the grant is gone."""
+        ...
+
+    async def search(self, access_token: str, query: str, *, after: datetime) -> list[str]: ...
+    async def fetch(self, access_token: str, message_id: str) -> FetchedEmail: ...
+    async def revoke(self, refresh_token: str) -> None: ...
+
+
+class EmailReader(Protocol):
+    """Screens an email cheaply, then reads a likely receipt into a draft expense."""
+
+    async def triage(self, email: FetchedEmail) -> Screening: ...
+    async def extract(self, email: FetchedEmail) -> ExpenseDraft: ...
+
+
+class Cipher(Protocol):
+    """Encrypts secrets before they're stored."""
+
+    def encrypt(self, plaintext: str) -> bytes: ...
+    def decrypt(self, ciphertext: bytes) -> str: ...
+
+
 class ReceiptStore(Protocol):
     """Private object storage for receipt files."""
 
@@ -273,6 +351,8 @@ class UnitOfWork(Protocol):
     def planning(self) -> PlanningRepository: ...
     @property
     def jobs(self) -> JobQueue: ...
+    @property
+    def email(self) -> EmailRepository: ...
 
     async def __aenter__(self) -> Self: ...
     async def __aexit__(

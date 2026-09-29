@@ -16,6 +16,7 @@ from fastapi import Depends, HTTPException, Request, Response
 from nexus.agent.service import AgentService
 from nexus.agent.tools import UowFactory
 from nexus.application.access import SESSION_TTL, resolve_session
+from nexus.application.email import EmailRuntime
 from nexus.application.fx import RateSource
 from nexus.application.ports import ReceiptStore
 from nexus.domain.access import Session
@@ -36,6 +37,7 @@ class WebRuntime:
     bot_username: Callable[[], Awaitable[str]]
     rates: RateSource
     archive: ReceiptStore | None = None  # receipt files; None = not kept
+    email: EmailRuntime | None = None  # Connect Gmail; None = not offered
 
 
 @dataclass(frozen=True, slots=True)

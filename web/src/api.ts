@@ -127,6 +127,25 @@ export type Salary = {
   next_payday: string;
   days_until: number;
 };
+export type EmailStatus = "pending" | "logged" | "skipped" | "not_receipt" | "no_amount" | "duplicate" | "failed";
+export type InboundEmail = {
+  id: string;
+  received_at: string;
+  sender: string;
+  subject: string;
+  status: EmailStatus;
+  reason: string | null;
+  amount: string | null;
+  currency: string | null;
+  merchant: string | null;
+  transaction_id: string | null;
+  actionable: boolean;
+};
+export type EmailOverview = {
+  available: boolean;
+  connections: { id: string; address: string; status: "active" | "broken"; last_checked: string | null }[];
+  emails: InboundEmail[];
+};
 export type Reply = { text: string; buttons: { label: string; data: string }[][] };
 
 export type LedgerFilters = {

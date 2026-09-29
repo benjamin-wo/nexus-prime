@@ -19,6 +19,7 @@ from nexus.application import bills as bill_cases
 from nexus.application import budgets as budget_cases
 from nexus.application import categories as category_cases
 from nexus.application import category_rules as rule_cases
+from nexus.application import email as email_cases
 from nexus.application import receipts as receipt_cases
 from nexus.application import salary as salary_cases
 from nexus.application import splits as split_cases
@@ -48,6 +49,8 @@ class ToolContext:
     uow: UowFactory
     now: datetime
     rates: RateSource | None = None  # for home-currency figures; None converts nothing
+    # Makes a one-time Connect Gmail link; None when email isn't set up.
+    connect_link: Callable[[User], Awaitable[str]] | None = None
 
     @property
     def tz(self) -> ZoneInfo:
@@ -472,6 +475,42 @@ async def _explain_category(ctx: ToolContext, a: IdArgs) -> ToolResult:
     return ToolResult(result.text)
 
 
+async def _connect_email(ctx: ToolContext, _: NoArgs) -> ToolResult:
+    if ctx.connect_link is None:
+        return ToolResult("Connecting email isn't set up on this server yet.")
+    url = await ctx.connect_link(ctx.user)
+    return ToolResult(
+        "A one-time Connect Gmail link (it works for 10 minutes) is shown as a button. "
+        "Tell the user: Google will warn that Nexus isn't verified, because it's a private "
+        "app; they tap Advanced, then Go to Nexus, then Allow. Nexus only looks at "
+        "receipt-like emails, and nothing is logged until they confirm it.",
+        buttons=[[("Connect Gmail", f"url:{url}")]],
+    )
+
+
+async def _email_status(ctx: ToolContext, _: NoArgs) -> ToolResult:
+    found = await email_cases.overview(ctx.uow(), ctx.user.id, now=ctx.now)
+    if not found.connections:
+        return ToolResult("No email is connected.")
+    lines = []
+    for c in found.connections:
+        state = "working" if c.status.value == "active" else "needs reconnecting"
+        checked = (
+            f", last checked {c.synced_until.astimezone(ctx.tz):%-d %b %H:%M}"
+            if c.synced_until
+            else ", not checked yet"
+        )
+        lines.append(f"{c.address}: {state}{checked}")
+    week = [e for e in found.emails if (ctx.now - e.received_at).days < 7]
+    counts: dict[str, int] = {}
+    for e in week:
+        counts[e.status.value] = counts.get(e.status.value, 0) + 1
+    summary = ", ".join(f"{n} {s.replace('_', ' ')}" for s, n in sorted(counts.items()))
+    lines.append(f"This week: {summary or 'no receipt-like emails'}.")
+    lines.append("The Email page in the web app lists each one and what happened to it.")
+    return ToolResult("\n".join(lines))
+
+
 class Participant(Args):
     name: str
     amount: str | None = Field(
@@ -804,6 +843,19 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             "Why a transaction is in its category.",
             IdArgs,
             _explain_category,
+        ),
+        ToolSpec(
+            "connect_email",
+            "Give the user a link to connect Gmail so receipts are found automatically. "
+            "Only when the user asks how to log expenses automatically.",
+            NoArgs,
+            _connect_email,
+        ),
+        ToolSpec(
+            "email_status",
+            "Which mailboxes are connected and what happened to recent receipt emails.",
+            NoArgs,
+            _email_status,
         ),
         ToolSpec(
             "split_bill",

@@ -1,6 +1,7 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import { api, type Reply } from "../api";
+import { openExternal } from "../telegram";
 
 type Message = { from: "user" | "bot"; text: string; buttons: Reply["buttons"] };
 
@@ -75,11 +76,27 @@ export function ChatDrawer({ onClose, onChanged }: { onClose: () => void; onChan
             {m.text}
             {m.buttons.length > 0 && (
               <div className="choices">
-                {m.buttons.flat().map((b) => (
-                  <button key={b.data} type="button" className="btn" disabled={busy} onClick={() => press(i, b.data, b.label)}>
-                    {b.label}
-                  </button>
-                ))}
+                {m.buttons.flat().map((b) =>
+                  b.data.startsWith("url:") ? (
+                    <a
+                      key={b.data}
+                      className="btn btn-primary"
+                      href={b.data.slice(4)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        openExternal(b.data.slice(4));
+                      }}
+                    >
+                      {b.label}
+                    </a>
+                  ) : (
+                    <button key={b.data} type="button" className="btn" disabled={busy} onClick={() => press(i, b.data, b.label)}>
+                      {b.label}
+                    </button>
+                  ),
+                )}
               </div>
             )}
           </div>

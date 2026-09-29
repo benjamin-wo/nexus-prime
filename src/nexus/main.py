@@ -1,7 +1,7 @@
 import asyncio
 import contextlib
 import logging
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
@@ -14,27 +14,33 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from nexus.agent.email_reader import LlmEmailReader
 from nexus.agent.graph import AgentDeps, AgentGraph
 from nexus.agent.receipts import LlmReceiptReader, ReceiptReader
 from nexus.agent.service import AgentService
 from nexus.agent.skills import SkillLibrary
 from nexus.agent.tools import build_tools
+from nexus.application import email as email_cases
 from nexus.application.clock import utcnow
+from nexus.application.email import EmailRuntime
 from nexus.application.fx import RateSource
-from nexus.application.ports import ReceiptStore
+from nexus.application.ports import EmailReader, Mailbox, ReceiptStore
 from nexus.channels.telegram import webhook as telegram_webhook
 from nexus.channels.telegram.client import HttpTelegramClient, TelegramClient
 from nexus.channels.web import api as web_api
-from nexus.channels.web import health
+from nexus.channels.web import email_api, health
 from nexus.channels.web.errors import install_error_handlers
 from nexus.channels.web.frontend import mount_frontend
 from nexus.channels.web.security import WebRuntime
+from nexus.domain.ledger import User
+from nexus.infra.crypto.fernet import FernetCipher
 from nexus.infra.db.checkpointer import postgres_checkpointer
 from nexus.infra.db.engine import make_engine
 from nexus.infra.db.migrations import assert_schema_at_head
 from nexus.infra.db.uow import SqlUnitOfWork
+from nexus.infra.email.gmail import GmailMailbox
 from nexus.infra.fx.frankfurter import FrankfurterRates
-from nexus.infra.llm.factory import ChatModels, build_chat_models
+from nexus.infra.llm.factory import ChatModels, build_chat_models, build_screener
 from nexus.infra.storage.s3 import S3ReceiptStore
 from nexus.jobs.handlers import SCHEDULES, build_handlers
 from nexus.jobs.runner import JobRunner
@@ -54,6 +60,8 @@ class Overrides:
     clock: Callable[[], datetime] | None = None
     rates: RateSource | None = None
     receipt_store: ReceiptStore | None = None
+    mailbox: Mailbox | None = None
+    email_reader: EmailReader | None = None
 
 
 def _receipt_store(settings: Settings, overrides: Overrides) -> ReceiptStore | None:
@@ -76,6 +84,38 @@ def _receipt_store(settings: Settings, overrides: Overrides) -> ReceiptStore | N
         access_key_id=key.get_secret_value(),
         secret_access_key=secret.get_secret_value(),
         path_style=settings.storage_path_style,
+    )
+
+
+async def _email_runtime(
+    settings: Settings,
+    overrides: Overrides,
+    stack: AsyncExitStack,
+    models: ChatModels,
+    origin: str | None,
+) -> EmailRuntime | None:
+    """Connect Gmail, when Google and the encryption key are configured."""
+    if not settings.gmail_enabled or origin is None:
+        return None
+    client_id, secret, key = (
+        settings.google_client_id,
+        settings.google_client_secret,
+        settings.token_encryption_key,
+    )
+    if client_id is None or secret is None or key is None:  # pragma: no cover - validated
+        raise RuntimeError("Gmail is half configured")
+    mailbox = overrides.mailbox
+    if mailbox is None:
+        http = await stack.enter_async_context(httpx.AsyncClient(timeout=30))
+        mailbox = GmailMailbox(http, client_id=client_id, client_secret=secret.get_secret_value())
+    reader = overrides.email_reader or LlmEmailReader(
+        build_screener(settings, models.primary), models.primary
+    )
+    return EmailRuntime(
+        mailbox=mailbox,
+        reader=reader,
+        cipher=FernetCipher(key.get_secret_value()),
+        origin=origin,
     )
 
 
@@ -113,11 +153,12 @@ async def _telegram_runtime(
     stack: AsyncExitStack,
     rates: RateSource,
     archive: ReceiptStore | None,
+    models: ChatModels,
+    email: EmailRuntime | None,
 ) -> telegram_webhook.TelegramRuntime:
     def uow() -> SqlUnitOfWork:
         return SqlUnitOfWork(engine)
 
-    models = overrides.models or build_chat_models(settings)
     skills = SkillLibrary.load()
     tools = build_tools(skills.body)
     skills.validate_tools(set(tools))
@@ -139,6 +180,7 @@ async def _telegram_runtime(
             health=_health(engine, models),
             clock=clock,
             rates=rates,
+            connect_link=_connect_link(uow, email, clock),
         )
     ).compile(checkpointer)
     receipts: ReceiptReader | None = overrides.receipts
@@ -157,6 +199,19 @@ async def _telegram_runtime(
         service=AgentService(graph, uow, receipts, clock, archive),
         client=client,
     )
+
+
+def _connect_link(
+    uow: Callable[[], SqlUnitOfWork], email: EmailRuntime | None, clock: Callable[[], datetime]
+) -> Callable[[User], Awaitable[str]] | None:
+    if email is None:
+        return None
+
+    async def make(user: User) -> str:
+        token = await email_cases.create_link(uow(), user, now=clock())
+        return email.connect_url(token)
+
+    return make
 
 
 async def _set_menu_button(client: TelegramClient, origin: str) -> None:
@@ -186,14 +241,18 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                 archive = _receipt_store(resolved, extra)
                 if archive is None:
                     log.warning("receipt storage is not configured; receipt photos won't be kept")
-                telegram = await _telegram_runtime(resolved, engine, extra, stack, rates, archive)
+                models = extra.models or build_chat_models(resolved)
+                email = await _email_runtime(resolved, extra, stack, models, resolved.public_origin)
+                telegram = await _telegram_runtime(
+                    resolved, engine, extra, stack, rates, archive, models, email
+                )
                 app.state.telegram = telegram
                 origin = resolved.public_origin
                 clock = extra.clock or utcnow
                 if resolved.run_jobs:
                     runner = JobRunner(
                         engine,
-                        build_handlers(telegram.uow, telegram.client, rates, clock, archive),
+                        build_handlers(telegram.uow, telegram.client, rates, clock, archive, email),
                         schedules=SCHEDULES,
                         clock=clock,
                     )
@@ -210,6 +269,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                         bot_username=telegram.client.bot_username,
                         rates=rates,
                         archive=archive,
+                        email=email,
                     )
                     menu = asyncio.create_task(_set_menu_button(telegram.client, origin))
                     stack.push_async_callback(_finish, menu)
@@ -222,6 +282,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
     app.include_router(health.router)
     app.include_router(telegram_webhook.router)
     app.include_router(web_api.router)
+    app.include_router(email_api.router)
     install_error_handlers(app)
     mount_frontend(app)
     return app

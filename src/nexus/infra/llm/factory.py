@@ -116,6 +116,20 @@ def build_chat_models(settings: Settings) -> ChatModels:
     return ChatModels(primary, tuple(fallbacks), vision, settings.llm_provider.value)
 
 
+def build_screener(settings: Settings, primary: BaseChatModel) -> BaseChatModel:
+    """The cheap model that screens emails: EMAIL_CLASSIFIER_MODEL on OpenRouter when
+    set, otherwise the main model."""
+    if settings.email_classifier_model and settings.openrouter_api_key is not None:
+        return _openai_compatible(
+            settings,
+            model=settings.email_classifier_model,
+            api_key=settings.openrouter_api_key,
+            base_url="https://openrouter.ai/api/v1",
+            name="OpenRouter",
+        )
+    return primary
+
+
 def text_of(content: Any) -> str:
     """Plain text from a model reply; Gemini may return a list of typed parts."""
     if isinstance(content, str):

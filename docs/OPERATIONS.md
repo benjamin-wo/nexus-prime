@@ -89,6 +89,42 @@ Storage is all or nothing: a partial setup stops startup. With none, photos are 
 - **Downloads** go through `GET /api/transactions/{id}/receipt`, which checks the session's user owns the transaction, then redirects to a presigned link that expires in 5 minutes. Objects are never public.
 - **Lifecycle:** a receipt is attached when its expense is confirmed. It's hidden while the expense is deleted, and comes back if the expense is restored. An hourly job erases it 30 days after the delete, and erases photos that were never confirmed after a day. The file goes first, then the row, so a failed delete is retried.
 
+## Connect Gmail
+
+Offered only when a user asks to automate logging ("can you log my expenses automatically?"). Nothing in the app suggests it otherwise.
+
+**How it works.**
+1. The bot's `connect_email` tool, or `POST /api/email/link`, makes a one-time link, valid for 10 minutes and stored as a hash. It opens in the phone's browser, because Google refuses sign-in inside in-app web views.
+2. The `/connect/gmail` page names the Nexus account the mailbox will join, so nobody connects their mail through a link someone else sent. It explains Google's "unverified app" screen, then continues to Google's consent screen.
+3. The callback spends the link, so a replay connects nothing. It stores the refresh token encrypted, queues a sweep and tells the user in Telegram.
+
+**Sweeps.**
+- Every 15 minutes, Nexus asks Gmail only for receipt-like emails, checking at most 25 new ones per mailbox per run.
+- A cheap model screens each email, and the main model reads likely receipts into a draft.
+- Each new receipt is a Telegram question with **Log it / Skip**. The first sweep instead sends one summary of the last 30 days, linking to the Email page.
+- Logged expenses use the `email` source with a dedupe key naming the mailbox and message. An email whose expense was deleted is never imported again, even after disconnecting and reconnecting.
+- PDF attachments are kept in the receipt archive.
+- If Google revokes access, the mailbox is marked for reconnecting and the user is told once.
+
+**The Email page** (`/email`, and a card on Plan once connected) lists every checked email from the last 30 days with its outcome. It can log, skip, supply a missing amount, or disconnect (which also revokes the grant with Google).
+
+**One-time setup (owner).**
+1. In [Google Cloud Console](https://console.cloud.google.com/), create a project and enable the **Gmail API**.
+2. **OAuth consent screen:** choose External. Add the scope `https://www.googleapis.com/auth/gmail.readonly`. Then **Publish app** (In production).
+   - Left in Testing, a connection expires after 7 days.
+   - Unverified, users see Google's warning, and the app is capped at 100 users.
+3. **Credentials → Create OAuth client ID → Web application.** Set the authorised redirect URI to `https://<your domain>/api/email/gmail/callback`.
+4. On the service in Railway, set these variables:
+
+| Variable | Value |
+|---|---|
+| `GOOGLE_CLIENT_ID` | the client ID |
+| `GOOGLE_CLIENT_SECRET` | the client secret |
+| `TOKEN_ENCRYPTION_KEY` | a Fernet key: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. Comma-separate several to rotate; the first encrypts. |
+| `EMAIL_CLASSIFIER_MODEL` | optional: a cheap OpenRouter model for screening (needs `OPENROUTER_API_KEY`) |
+
+Gmail settings are all or nothing, and a missing or malformed encryption key stops startup.
+
 ## Deploy (Railway)
 
 The `nexus-app` service builds from the `Dockerfile`. Its settings live on the service in Railway, not in the repo (Railway no longer reads `railway.toml`):

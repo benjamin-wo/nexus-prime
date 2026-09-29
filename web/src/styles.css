@@ -323,3 +323,9 @@ a.btn { text-decoration: none; }
 .ledger .btn-ghost { min-height: 0; padding: 0; justify-content: flex-start; text-align: left; font-weight: 600; }
 .ledger td.num { white-space: nowrap; }
 .receipt-link { display: inline-block; color: var(--cyan-accent); text-decoration: underline; }
+.connect { max-width: 560px; margin: 0 auto; padding: var(--space-6) var(--space-4); }
+.connect-card { display: grid; gap: var(--space-4); }
+.connect-steps { margin: 0; padding-left: 1.25rem; display: grid; gap: var(--space-2); }
+.email-amount { align-items: flex-end; flex-wrap: wrap; margin-top: var(--space-2); }
+.email-pending, .email-broken { color: var(--status-warning); }
+.email-logged, .email-active { color: var(--emerald-accent); }

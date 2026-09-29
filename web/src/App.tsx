@@ -8,7 +8,9 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { EntrySheet } from "./components/EntrySheet";
 import { Shell } from "./components/Shell";
 import { Toast } from "./components/Toast";
+import { ConnectDone, ConnectGmail } from "./pages/Connect";
 import { Dashboard } from "./pages/Dashboard";
+import { EmailPage } from "./pages/Email";
 import { Ledger } from "./pages/Ledger";
 import { LoginPage } from "./pages/LoginPage";
 import { Plan } from "./pages/Plan";
@@ -56,7 +58,7 @@ function Cockpit({ me }: { me: Me }) {
   const closeOffer = useCallback(() => setOffer(null), []);
   const closeNotice = useCallback(() => setNotice(null), []);
   const refresh = useCallback(() => {
-    for (const key of ["transactions", "summary", "ious", "budgets", "bills", "salary", "category-explanation"]) void client.invalidateQueries({ queryKey: [key] });
+    for (const key of ["transactions", "summary", "ious", "budgets", "bills", "salary", "category-explanation", "email"]) void client.invalidateQueries({ queryKey: [key] });
   }, [client]);
   const closeSheet = useCallback(() => setSheet(null), []);
   const closeChat = useCallback(() => setChat(false), []);
@@ -78,6 +80,7 @@ function Cockpit({ me }: { me: Me }) {
           element={<Ledger me={me} onAdd={() => setSheet({})} onEdit={(tx) => setSheet({ editing: tx })} />}
         />
         <Route path="/plan" element={<Plan me={me} />} />
+        <Route path="/email" element={<EmailPage me={me} />} />
         <Route path="/budgets" element={<Navigate to="/plan" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
@@ -124,6 +127,9 @@ function Gate() {
   if (me.isError) return <p className="state error-text">Couldn't reach Nexus. Please reload.</p>;
   return (
     <Routes>
+      {/* Opened from a one-time link, often without a session. */}
+      <Route path="/connect/gmail" element={<ConnectGmail />} />
+      <Route path="/connect/gmail/done" element={<ConnectDone />} />
       <Route path="/invite/:token" element={me.data ? <Navigate to="/" replace /> : <LoginPage />} />
       <Route path="/login" element={me.data ? <Navigate to="/" replace /> : <LoginPage />} />
       <Route path="*" element={me.data ? <Cockpit me={me.data} /> : <Navigate to="/login" replace />} />

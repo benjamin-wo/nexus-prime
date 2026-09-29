@@ -15,7 +15,7 @@ type Tx = {
 };
 
 /** An in-memory stand-in for the API, so journeys exercise the real UI in a browser. */
-export async function fakeApi(page: Page, { signedIn = true } = {}) {
+export async function fakeApi(page: Page, { signedIn = true, emailConnected = false } = {}) {
   let session = signedIn;
   type FakeBudget = { id: string; category_id: string | null; limit: number; spent: number };
   type FakeBill = {
@@ -36,6 +36,7 @@ export async function fakeApi(page: Page, { signedIn = true } = {}) {
     bills: FakeBill[];
     salary: FakeSalary | null;
     rules: FakeRule[];
+    email: { connections: { id: string; address: string; status: string; last_checked: string | null }[]; emails: Record<string, unknown>[] };
   } = {
     txs: [
       { ...mk("t1", "out", "12.40", "Maxwell Food Centre", "food"), has_receipt: true },
@@ -46,6 +47,41 @@ export async function fakeApi(page: Page, { signedIn = true } = {}) {
     bills: [],
     salary: null,
     rules: [],
+    email: {
+      connections: emailConnected
+        ? [{ id: "c1", address: "ann@gmail.com", status: "active", last_checked: "2026-09-28T04:00:00Z" }]
+        : [],
+      emails: emailConnected
+        ? [
+            {
+              id: "e1",
+              received_at: "2026-09-27T04:00:00Z",
+              sender: "no-reply@grab.com",
+              subject: "Your Grab e-receipt",
+              status: "pending",
+              reason: null,
+              amount: "18.5000",
+              currency: "SGD",
+              merchant: "Grab",
+              transaction_id: null,
+              actionable: true,
+            },
+            {
+              id: "e2",
+              received_at: "2026-09-26T04:00:00Z",
+              sender: "deals@shop.com",
+              subject: "50% off everything",
+              status: "not_receipt",
+              reason: "promotion",
+              amount: null,
+              currency: null,
+              merchant: null,
+              transaction_id: null,
+              actionable: true,
+            },
+          ]
+        : [],
+    },
   };
   const categories = [
     { id: "food", name: "Food & Drink", active: true },
@@ -228,6 +264,17 @@ export async function fakeApi(page: Page, { signedIn = true } = {}) {
           expense_occurred_at: "2026-09-20T12:00:00Z",
         },
       ]);
+    }
+    if (path === "/email" && method === "GET") return json(route, { available: true, ...state.email });
+    if (path === "/email/link" && method === "GET")
+      return json(route, url.searchParams.get("t") === "good" ? { valid: true, account_hint: "9165" } : { valid: false, account_hint: null });
+    const emailAction = path.match(/^\/email\/(e\d+)\/(log|skip)$/);
+    if (emailAction && method === "POST") {
+      const email = state.email.emails.find((e) => e.id === emailAction[1])!;
+      Object.assign(email, emailAction[2] === "log"
+        ? { status: "logged", transaction_id: "t9", actionable: false }
+        : { status: "skipped", reason: "you skipped it" });
+      return route.fulfill({ status: 204 });
     }
     if (path === "/categories") return json(route, categories);
     if (path === "/category-rules" && method === "GET") return json(route, state.rules);
