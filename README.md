@@ -37,22 +37,11 @@ One LLM agent serves both surfaces, but the parts that must be right, like money
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    TG[Telegram bot<br/>webhook] --> CH
-    WEB[Web cockpit<br/>React SPA / Telegram Mini App] --> CH
-    subgraph App[FastAPI app]
-        CH[Channels<br/>auth · CSRF · dedupe] --> AG
-        AG[Agent<br/>deterministic kernel → LangGraph + LLM<br/>human-in-the-loop confirmations] --> UC
-        CH --> UC
-        JOBS[Job runner<br/>budgets · bills · payday] --> UC
-        UC[Use cases<br/>application layer] --> DOM[Domain<br/>Money · ledger · planning rules]
-        UC --> PORTS[Ports]
-    end
-    PORTS --> PG[(Postgres<br/>ledger · jobs · checkpoints)]
-    PORTS --> FX[Frankfurter<br/>ECB rates]
-    AG --> LLM[LLM provider<br/>Gemini / OpenRouter / DeepSeek / OpenAI]
-```
+<p align="center">
+  <img src="docs/diagrams/architecture.png" alt="Architecture: Telegram bot and web cockpit reach FastAPI channels; channels, agent and job runner call use cases; use cases use the domain and ports to Postgres and Frankfurter; the agent calls the LLM provider" width="720">
+</p>
+
+<sub>Source: [`docs/diagrams/architecture.mmd`](docs/diagrams/architecture.mmd). Regenerate with `npx @mermaid-js/mermaid-cli -i docs/diagrams/architecture.mmd -c docs/diagrams/mermaid-config.json -o docs/diagrams/architecture.png -s 2 -b white`.</sub>
 
 The code follows a clean, layered architecture. `domain` holds pure rules with no I/O. `application` holds use cases that talk to storage only through ports. `infra` implements those ports. The agent, the channels and the job runner only ever call use cases. The tenant always comes from the authenticated principal: never from a request body, and never from the model's arguments.
 
