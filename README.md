@@ -28,13 +28,13 @@ One LLM agent serves both surfaces, but the parts that must be right, like money
   - Totals are in your home currency.
   - Each foreign-currency row shows its converted amount, the rate used and the day that rate was published.
   - An amount with no rate is flagged, never guessed.
-- **Every expense has a category.** Eleven common ones to start (Dining Out, Groceries, Transport, Shopping, Bills & Utilities, Socialising, Health, Travel, Activities, Income, Other), and you can add, rename or archive your own from chat or the Plan page. A category you name wins, then a rule, then the model's best guess; anything left goes to Other.
+- **Every expense has a category.** Eleven common ones to start (Dining Out, Groceries, Transport, Shopping, Bills & Utilities, Socialising, Health, Travel, Activities, Income, Other), and you can add, rename or archive your own from chat or the Settings page (the cog in the nav). A category you name wins, then a rule, then the model's best guess; anything left goes to Other.
 - **Category rules you can see.** "grab" → Transport files new expenses automatically, and "why is this in Transport?" gets a real answer. Correcting a category offers a rule change, but never makes one without asking.
 - **Budgets:** monthly limits, overall or per category, with Telegram alerts at 50%, 80% and 100%, each sent once.
 - **Bills:** reminders 7, 3 and 1 days before, with Mark paid and Snooze buttons. It never pays anything.
 - **Subscriptions:** after three regular, similar charges from one merchant, Nexus asks whether to track it; tracked ones show on the Plan page with a monthly total, and a price change is flagged.
 - **Cash flow:** a month calendar of net money movement per day: what was logged so far, and what bills, tracked subscriptions and payday are expected to bring. Movement only, never a balance. Also in chat: "what's coming up?"
-- **Telegram updates:** by default, a summary of the day's spending at 9pm. Users can switch to updates as they happen, hourly, 3 times a day, or off, in chat or on the Plan page.
+- **Telegram updates:** by default, a summary of the day's spending at 9pm. Users can switch to updates as they happen, hourly, 3 times a day, or off, in chat or on the Settings page.
 - **Payday:**
   - A check-in on payday, with weekend paydays moved to Friday.
   - Your usual salary changes only when you confirm it.

@@ -273,7 +273,7 @@ test("a category correction offers a rule, saved only when accepted", async ({ p
   await offer.getByRole("button", { name: "Save rule" }).click();
   await expect(page.getByText("Saved. New expenses from “grab” will be filed the same way.")).toBeVisible();
 
-  await page.goto("/plan");
+  await page.goto("/settings");
   const rules = page.getByRole("region", { name: "Category rules" });
   await expect(rules.getByRole("heading", { name: "“grab”" })).toBeVisible();
   await expect(rules.getByText("Added on 28 Sep 2026 when you filed “Grab” under Transport.")).toBeVisible();
@@ -320,12 +320,12 @@ test("a Connect Gmail link explains Google's warning before sign-in", async ({ p
 
 test("email is out of sight until connected, then shows what happened to each email", async ({ page }) => {
   await fakeApi(page);
-  await page.goto("/plan");
+  await page.goto("/settings");
   await expect(page.getByRole("region", { name: "Category rules" })).toBeVisible();
   await expect(page.getByRole("region", { name: "Email receipts" })).toHaveCount(0);
 
   await fakeApi(page, { emailConnected: true });
-  await page.goto("/plan");
+  await page.goto("/settings");
   const card = page.getByRole("region", { name: "Email receipts" });
   await expect(card.getByText("ann@gmail.com · 1 waiting for you")).toBeVisible();
   await card.getByRole("link", { name: "Open" }).click();
@@ -382,7 +382,7 @@ test("cash flow shows logged and expected days, with detail on tap", async ({ pa
 
 test("telegram updates default to an end-of-day summary and can be changed", async ({ page }) => {
   await fakeApi(page);
-  await page.goto("/plan");
+  await page.goto("/settings");
   const card = page.getByRole("region", { name: "Telegram updates" });
   const choice = card.getByLabel("Send me my transactions");
   await expect(choice).toHaveValue("daily");
@@ -396,7 +396,7 @@ test("telegram updates default to an end-of-day summary and can be changed", asy
 test("nothing spills sideways on a small phone", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 568 });
   await fakeApi(page, { emailConnected: true });
-  for (const path of ["/", "/ledger", "/plan", "/email", "/cashflow", "/connect/gmail?t=good"]) {
+  for (const path of ["/", "/ledger", "/plan", "/settings", "/email", "/cashflow", "/connect/gmail?t=good"]) {
     await page.goto(path);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     const offenders = await page.evaluate(() => {
@@ -414,7 +414,7 @@ test("nothing spills sideways on a small phone", async ({ page }) => {
 
 test("add, rename, archive and bring back a category", async ({ page }) => {
   await fakeApi(page);
-  await page.goto("/plan");
+  await page.goto("/settings");
   const card = page.getByRole("region", { name: "Categories" });
   const yours = card.getByRole("list", { name: "Your categories" });
   await expect(yours.getByRole("heading", { name: "Dining Out" })).toBeVisible();
@@ -442,4 +442,16 @@ test("add, rename, archive and bring back a category", async ({ page }) => {
   await expect(archived.getByRole("heading", { name: "Pet care" })).toBeVisible();
   await archived.getByRole("button", { name: "Bring back" }).click();
   await expect(yours.getByRole("heading", { name: "Pet care" })).toBeVisible();
+});
+
+test("the cog opens Settings, and Plan keeps only planning", async ({ page }) => {
+  await fakeApi(page);
+  await page.goto("/plan");
+  await expect(page.getByRole("region", { name: "Budgets" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Categories" })).toHaveCount(0);
+  await page.getByRole("link", { name: "Settings" }).filter({ visible: true }).click();
+  await expect(page).toHaveURL(/\/settings$/);
+  await expect(page.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible();
+  for (const name of ["Telegram updates", "Categories", "Category rules"])
+    await expect(page.getByRole("region", { name })).toBeVisible();
 });

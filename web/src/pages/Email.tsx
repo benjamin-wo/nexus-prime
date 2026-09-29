@@ -258,7 +258,7 @@ export function EmailPage({ me }: { me: Me }) {
   );
 }
 
-/** On the Plan page, only once a mailbox is connected. */
+/** On the Settings page, only once a mailbox is connected. */
 export function EmailCard() {
   const overview = useQuery({ queryKey: ["email"], queryFn: () => api<EmailOverview>("/email") });
   const data = overview.data;

@@ -244,6 +244,7 @@ table.ledger { width: 100%; border-collapse: collapse; }
     flex: 1 1 0; min-width: 0; justify-content: center; min-height: 44px;
     padding: 0 var(--space-1); font-size: 0.8rem; white-space: nowrap; overflow: hidden;
   }
+  .bottom-nav .nav-icon { flex: 0 0 44px; }
   .toast { bottom: calc(76px + env(safe-area-inset-bottom)); }
 }
 @media (max-width: 720px) {
