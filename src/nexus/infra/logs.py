@@ -1,5 +1,6 @@
 """Logging setup: the app's own messages at INFO, and no secrets in access logs."""
 
+import json
 import logging
 import sys
 from typing import Any
@@ -20,6 +21,17 @@ class RedactQueries(logging.Filter):
         return True
 
 
+class JsonLines(logging.Formatter):
+    """One JSON object per line. Railway reads its ``level``, so INFO shows as info,
+    not as an error because it went to stderr."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        message = f"{record.name}: {record.getMessage()}"
+        if record.exc_info:
+            message += "\n" + self.formatException(record.exc_info)
+        return json.dumps({"level": record.levelname.lower(), "message": message})
+
+
 def configure_logging() -> None:
     """Idempotent: safe to call once per app created."""
     access = logging.getLogger("uvicorn.access")
@@ -27,8 +39,8 @@ def configure_logging() -> None:
         access.addFilter(RedactQueries())
     app = logging.getLogger("nexus")
     if not app.handlers:
-        handler = logging.StreamHandler(sys.stderr)
-        handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(JsonLines())
         app.addHandler(handler)
         app.setLevel(logging.INFO)
         app.propagate = False

@@ -29,6 +29,9 @@ MAX_TEXT = 8000
 MAX_LISTED = 200
 
 
+_HIDDEN = frozenset({"script", "style", "head", "title"})
+
+
 class _Text(HTMLParser):
     """The visible text of an HTML email."""
 
@@ -38,13 +41,15 @@ class _Text(HTMLParser):
         self._skip = 0
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag in {"script", "style", "head"}:
+        if tag == "body":
+            self._skip = 0  # a <head> left unclosed must not hide the whole email
+        elif tag in _HIDDEN:
             self._skip += 1
         elif tag in {"br", "p", "div", "tr", "li", "h1", "h2", "h3", "td"}:
             self.parts.append("\n" if tag != "td" else " ")
 
     def handle_endtag(self, tag: str) -> None:
-        if tag in {"script", "style", "head"} and self._skip:
+        if tag in _HIDDEN and self._skip:
             self._skip -= 1
 
     def handle_data(self, data: str) -> None:
@@ -61,6 +66,39 @@ def html_text(markup: str) -> str:
 
 def _decode(data: str) -> bytes:
     return base64.urlsafe_b64decode(data + "=" * (-len(data) % 4))
+
+
+def _charset(part: dict[str, Any]) -> str:
+    match = re.search(r'charset="?([\w.:-]+)', _header(part, "content-type"), re.IGNORECASE)
+    return match.group(1) if match else "utf-8"
+
+
+def _part_text(part: dict[str, Any]) -> str:
+    raw = _decode(part["body"]["data"])
+    try:
+        text = raw.decode(_charset(part), errors="replace")
+    except LookupError:  # a charset Python doesn't know
+        text = raw.decode(errors="replace")
+    return html_text(text) if part.get("mimeType") == "text/html" else text.strip()
+
+
+def _richness(text: str) -> tuple[bool, int]:
+    # A part with figures in it beats one without; then the longer one wins.
+    return any(c.isdigit() for c in text), len(text.split())
+
+
+def body_text(parts: list[dict[str, Any]], snippet: str) -> str:
+    """The email's readable text. Many receipts carry a stub plain-text part ("view
+    this email in your browser") next to the real HTML one, so the part that has
+    figures in it, then the longer one, is kept rather than always the plain one."""
+    found = [
+        _part_text(p)
+        for p in parts
+        if p.get("mimeType") in ("text/plain", "text/html")
+        and (p.get("body") or {}).get("data")
+        and not (p.get("filename") or "")  # an attached .txt or .html isn't the body
+    ]
+    return max(found, key=_richness, default="") or snippet
 
 
 def _walk(part: dict[str, Any]) -> list[dict[str, Any]]:
@@ -159,14 +197,7 @@ class GmailMailbox:
         data = await self._get(access_token, f"/messages/{message_id}", format="full")
         payload = data.get("payload") or {}
         parts = _walk(payload)
-        plain = [p for p in parts if p.get("mimeType") == "text/plain" and p["body"].get("data")]
-        markup = [p for p in parts if p.get("mimeType") == "text/html" and p["body"].get("data")]
-        if plain:
-            text = _decode(plain[0]["body"]["data"]).decode(errors="replace")
-        elif markup:
-            text = html_text(_decode(markup[0]["body"]["data"]).decode(errors="replace"))
-        else:
-            text = str(data.get("snippet", ""))
+        text = body_text(parts, html.unescape(str(data.get("snippet", ""))))
         pdf = None
         for part in parts:
             body = part.get("body") or {}
