@@ -48,10 +48,28 @@ export type Transaction = {
   occurred_at: string;
   counterparty: string | null;
   category_id: string | null;
+  /** The rule that chose the category, if one did. */
+  category_rule_id?: string | null;
   notes: string | null;
   status: "confirmed" | "pending";
   source: string;
   deleted: boolean;
+};
+
+/** Offered after a category correction; nothing changes unless the user accepts. */
+export type RuleSuggestion = {
+  question: string;
+  pattern: string;
+  category_id: string;
+  replaces_category_id: string | null;
+};
+export type EditedTransaction = Transaction & { rule_suggestion?: RuleSuggestion | null };
+export type CategoryRule = {
+  id: string;
+  pattern: string;
+  category_id: string;
+  category_name: string;
+  explanation: string;
 };
 
 export type Page = { items: Transaction[]; total: number };

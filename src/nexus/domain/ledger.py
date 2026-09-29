@@ -85,6 +85,9 @@ class Transaction:
     created_at: datetime
     updated_at: datetime
     deleted_at: datetime | None = None
+    # The category rule that chose the category, if one did. Cleared when the
+    # user picks a category themselves.
+    category_rule_id: UUID | None = None
 
     @property
     def is_deleted(self) -> bool:
@@ -171,6 +174,7 @@ def snapshot(tx: Transaction) -> dict[str, Any]:
         "occurred_at": tx.occurred_at.isoformat(),
         "counterparty": tx.counterparty,
         "category_id": str(tx.category_id) if tx.category_id else None,
+        "category_rule_id": str(tx.category_rule_id) if tx.category_rule_id else None,
         "notes": tx.notes,
         "status": tx.status.value,
         "deleted_at": tx.deleted_at.isoformat() if tx.deleted_at else None,
@@ -185,6 +189,7 @@ def apply_snapshot(tx: Transaction, data: dict[str, Any], *, now: datetime) -> T
         occurred_at=datetime.fromisoformat(data["occurred_at"]),
         counterparty=data["counterparty"],
         category_id=UUID(data["category_id"]) if data["category_id"] else None,
+        category_rule_id=UUID(rule) if (rule := data.get("category_rule_id")) else None,
         notes=data["notes"],
         status=TransactionStatus(data["status"]),
         deleted_at=datetime.fromisoformat(data["deleted_at"]) if data["deleted_at"] else None,

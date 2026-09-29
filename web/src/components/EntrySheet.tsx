@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 
-import { api, type Category, type Direction, type Me, type Transaction } from "../api";
+import { api, type Category, type Direction, type EditedTransaction, type Me, type Transaction } from "../api";
 import { isoDay } from "../format";
 
 export function EntrySheet({
@@ -13,10 +13,15 @@ export function EntrySheet({
   me: Me;
   editing?: Transaction;
   onClose: () => void;
-  onSaved: (tx: Transaction) => void;
+  onSaved: (tx: EditedTransaction) => void;
 }) {
   const tz = me.user.timezone;
   const categories = useQuery({ queryKey: ["categories"], queryFn: () => api<Category[]>("/categories") });
+  const why = useQuery({
+    queryKey: ["category-explanation", editing?.id],
+    queryFn: () => api<{ text: string }>(`/transactions/${editing?.id}/category-explanation`),
+    enabled: Boolean(editing?.category_id),
+  });
   const [direction, setDirection] = useState<Direction>(editing?.direction ?? "out");
   const [amount, setAmount] = useState(editing ? String(Number(editing.amount.amount)) : "");
   const [currency, setCurrency] = useState(editing?.amount.currency ?? me.user.home_currency);
@@ -52,7 +57,7 @@ export function EntrySheet({
     };
     try {
       const tx = editing
-        ? await api<Transaction>(`/transactions/${editing.id}`, { method: "PATCH", body })
+        ? await api<EditedTransaction>(`/transactions/${editing.id}`, { method: "PATCH", body })
         : await api<Transaction>("/transactions", { method: "POST", body });
       onSaved(tx);
     } catch (e) {
@@ -119,6 +124,9 @@ export function EntrySheet({
               </option>
             ))}
           </select>
+          {editing && categoryId === (editing.category_id ?? "") && why.data && (
+            <span className="caption">{why.data.text}</span>
+          )}
         </label>
         <label className="field">
           Date

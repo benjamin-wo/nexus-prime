@@ -14,6 +14,7 @@ from nexus.application import access, fx
 from nexus.application import bills as bill_cases
 from nexus.application import budgets as budget_cases
 from nexus.application import categories as category_cases
+from nexus.application import category_rules as rule_cases
 from nexus.application import salary as salary_cases
 from nexus.application import splits as split_cases
 from nexus.application import transactions as tx_cases
@@ -84,6 +85,7 @@ class TransactionOut(Model):
     occurred_at: datetime
     counterparty: str | None
     category_id: UUID | None
+    category_rule_id: UUID | None = None  # the rule that chose the category, if one did
     notes: str | None
     status: str
     source: str
@@ -108,6 +110,7 @@ def tx_out(tx: Transaction, conversion: fx.Conversion | None = None) -> Transact
         occurred_at=tx.occurred_at,
         counterparty=tx.counterparty,
         category_id=tx.category_id,
+        category_rule_id=tx.category_rule_id,
         notes=tx.notes,
         status=tx.status.value,
         source=tx.source.value,
@@ -427,10 +430,23 @@ class TransactionPatch(Model):
     status: Literal["confirmed", "pending"] | None = None
 
 
+class RuleSuggestionOut(Model):
+    """Offered after a category correction; nothing changes unless the user accepts."""
+
+    question: str
+    pattern: str
+    category_id: UUID
+    replaces_category_id: UUID | None
+
+
+class EditedTransactionOut(TransactionOut):
+    rule_suggestion: RuleSuggestionOut | None = None
+
+
 @router.patch("/transactions/{transaction_id}")
 async def edit_transaction(
     transaction_id: UUID, body: TransactionPatch, auth: Auth, web: Runtime
-) -> TransactionOut:
+) -> EditedTransactionOut:
     user = auth.user
     given = body.model_fields_set
     current = await tx_cases.get_transaction(web.uow(), user.id, transaction_id)
@@ -451,7 +467,17 @@ async def edit_transaction(
     tx = await tx_cases.edit_transaction(
         web.uow(), user.id, transaction_id, tx_cases.TransactionChanges(**changes)
     )
-    return tx_out(tx)
+    out = EditedTransactionOut(**tx_out(tx).model_dump())
+    if tx.category_id != current.category_id:
+        offer = await rule_cases.suggest_rule(web.uow(), user.id, tx)
+        if offer is not None:
+            out.rule_suggestion = RuleSuggestionOut(
+                question=offer.question,
+                pattern=offer.pattern,
+                category_id=offer.category.id,
+                replaces_category_id=offer.replaces.id if offer.replaces else None,
+            )
+    return out
 
 
 @router.delete("/transactions/{transaction_id}")
@@ -652,6 +678,61 @@ async def edit_category(
     if result is None:
         raise InvalidInput("nothing to change")
     return category_out(result)
+
+
+class RuleOut(Model):
+    id: UUID
+    pattern: str
+    category_id: UUID
+    category_name: str
+    explanation: str
+
+
+def rule_out(view: rule_cases.RuleView) -> RuleOut:
+    return RuleOut(
+        id=view.rule.id,
+        pattern=view.rule.pattern,
+        category_id=view.category.id,
+        category_name=view.category.name,
+        explanation=view.rule.explanation,
+    )
+
+
+@router.get("/category-rules")
+async def category_rules(auth: Auth, web: Runtime) -> list[RuleOut]:
+    return [rule_out(v) for v in await rule_cases.list_rules(web.uow(), auth.user.id)]
+
+
+class RuleIn(Model):
+    pattern: str = Field(min_length=1, max_length=100)
+    category_id: UUID
+
+
+@router.put("/category-rules", status_code=204)
+async def set_category_rule(body: RuleIn, auth: Auth, web: Runtime) -> None:
+    """Add a rule, or change the category of the rule for this pattern."""
+    await rule_cases.set_rule(web.uow(), auth.user, body.pattern, body.category_id, now=web.clock())
+
+
+class AcceptRuleIn(Model):
+    transaction_id: UUID
+
+
+@router.post("/category-rules/accept", status_code=204)
+async def accept_rule(body: AcceptRuleIn, auth: Auth, web: Runtime) -> None:
+    """The user accepted the rule offered after correcting this transaction."""
+    await rule_cases.accept_suggestion(web.uow(), auth.user, body.transaction_id, now=web.clock())
+
+
+@router.delete("/category-rules/{rule_id}", status_code=204)
+async def remove_category_rule(rule_id: UUID, auth: Auth, web: Runtime) -> None:
+    await rule_cases.remove_rule(web.uow(), auth.user.id, rule_id, now=web.clock())
+
+
+@router.get("/transactions/{transaction_id}/category-explanation")
+async def category_explanation(transaction_id: UUID, auth: Auth, web: Runtime) -> dict[str, str]:
+    result = await rule_cases.explain(web.uow(), auth.user.id, transaction_id)
+    return {"text": result.text}
 
 
 class IouOut(Model):

@@ -1,14 +1,15 @@
 ---
 name: expenses
-description: Logging, finding, fixing and splitting expenses, and who owes what.
-tools: [log_expense, find_transactions, edit_transaction, delete_transaction, restore_transaction, undo_last_change, spending_summary, list_categories, split_bill, list_ious]
+description: Logging, finding, fixing, categorising and splitting expenses, category rules, and who owes what.
+tools: [log_expense, find_transactions, edit_transaction, delete_transaction, restore_transaction, undo_last_change, spending_summary, list_categories, split_bill, list_ious, list_category_rules, set_category_rule, remove_category_rule, explain_category]
 ---
 # Expenses
 
 ## Logging
 - "coffee 5.50", "grab 12 yesterday", "lunch at Maxwell 8.40 SGD" are expenses. Call
-  `log_expense` straight away when the amount is clear. Pick a category only if one of
-  the user's categories obviously fits; otherwise leave it out.
+  `log_expense` straight away when the amount is clear. Pass a category only if the user
+  names one, or one obviously fits and no category rule covers the merchant. Leave it
+  out otherwise: the user's category rules fill it in.
 - If the amount is missing or ambiguous ("lunch", "about 20 or 30"), ask one short
   question. Never guess an amount, currency or date.
 - A price in another currency keeps that currency ("15 USD"). Don't convert.
@@ -19,6 +20,16 @@ tools: [log_expense, find_transactions, edit_transaction, delete_transaction, re
 - "undo" or "that was wrong" right after a change: `undo_last_change`.
 - Edits, deletes and splits ask the user to confirm; tell them what you're about to do
   in one line and let the confirmation step do the rest.
+
+## Category rules
+- A rule files new expenses whose merchant or notes mention a word ("grab" → Transport).
+  It never changes expenses already logged.
+- "always put grab under transport": `set_category_rule`. "stop filing netflix under
+  X": `remove_category_rule`. Both ask the user to confirm.
+- "why is this in Transport?": find the transaction, then `explain_category`, and pass
+  on what it says.
+- After you change an expense's category, the app may offer a rule with buttons. Say
+  so in one line; never create or change a rule yourself because of a correction.
 
 ## Splitting
 - "split dinner with Ann and Ben" splits the most recent matching expense equally,

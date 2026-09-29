@@ -81,6 +81,32 @@ categories = Table(
     Index("uq_categories_user_id_lower_name", "user_id", func.lower(text("name")), unique=True),
 )
 
+# A word or phrase that files new expenses under a category. Archived, never
+# deleted, so transactions it filed can still explain themselves.
+category_rules = Table(
+    "category_rules",
+    metadata,
+    _uuid_pk(),
+    _user_fk(),
+    Column("pattern", Text, nullable=False),
+    Column("category_id", UUID(as_uuid=True), nullable=False),
+    Column("explanation", Text, nullable=False),
+    Column("created_at", TZ, nullable=False),
+    Column("updated_at", TZ, nullable=False),
+    Column("archived_at", TZ),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+    ForeignKeyConstraint(["category_id", "user_id"], ["categories.id", "categories.user_id"]),
+    UniqueConstraint("id", "user_id"),
+    CheckConstraint("char_length(pattern) BETWEEN 2 AND 60", name="pattern_length"),
+    Index(
+        "uq_category_rules_user_id_pattern",
+        "user_id",
+        "pattern",
+        unique=True,
+        postgresql_where=text("archived_at IS NULL"),
+    ),
+)
+
 transactions = Table(
     "transactions",
     metadata,
@@ -98,9 +124,16 @@ transactions = Table(
     Column("created_at", TZ, nullable=False),
     Column("updated_at", TZ, nullable=False),
     Column("deleted_at", TZ),
+    Column("category_rule_id", UUID(as_uuid=True)),
     ForeignKeyConstraint(["user_id"], ["users.id"]),
     ForeignKeyConstraint(["category_id", "user_id"], ["categories.id", "categories.user_id"]),
+    ForeignKeyConstraint(
+        ["category_rule_id", "user_id"], ["category_rules.id", "category_rules.user_id"]
+    ),
     UniqueConstraint("id", "user_id"),
+    CheckConstraint(
+        "category_rule_id IS NULL OR category_id IS NOT NULL", name="rule_needs_category"
+    ),
     CheckConstraint("direction IN ('in', 'out')", name="direction"),
     CheckConstraint("amount > 0", name="amount_positive"),
     CheckConstraint("currency ~ '^[A-Z]{3}$'", name="currency"),

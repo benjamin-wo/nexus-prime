@@ -27,6 +27,7 @@ One LLM agent serves both surfaces, but the parts that must be right, like money
   - Totals are in your home currency.
   - Each foreign-currency row shows its converted amount, the rate used and the day that rate was published.
   - An amount with no rate is flagged, never guessed.
+- **Category rules you can see.** "grab" → Transport files new expenses automatically, and "why is this in Transport?" gets a real answer. Correcting a category offers a rule change, but never makes one without asking.
 - **Budgets:** monthly limits, overall or per category, with Telegram alerts at 50%, 80% and 100%, each sent once.
 - **Bills:** reminders 7, 3 and 1 days before, with Mark paid and Snooze buttons. It never pays anything.
 - **Payday:**
@@ -55,11 +56,12 @@ The code follows a clean, layered architecture. `domain` holds pure rules with n
 **Tenant isolation is enforced by the database.**
 - Every child row references its parent by `(id, user_id)`, so Postgres itself rejects a cross-tenant link.
 - Agent tools can't accept a `user_id`; any the model sends is dropped.
-- Dedicated cross-tenant tests cover the ledger, IOUs, budgets, bills, salary and the web API, plus a test that the database itself rejects a cross-tenant link.
+- Dedicated cross-tenant tests cover the ledger, IOUs, budgets, bills, salary, category rules and the web API, plus a test that the database itself rejects a cross-tenant link.
 
 **The LLM is not trusted with the important parts.**
 - A deterministic kernel runs before the model. It parses income ("salary 5000", "Ann paid me back 20") exactly, handles stop/cancel, and refuses money movement ("transfer $500 to…") with a logged capability gap.
 - Consequential tools pause the LangGraph run with `interrupt()` and wait for an explicit Confirm. The paused state is checkpointed in Postgres.
+- Categorisation is explainable. Rules, not the model, file known merchants; each transaction records the rule that filed it, and a correction offers a rule change instead of making one.
 - The model sits behind a provider-agnostic adapter with a fallback chain.
 
 **Background jobs run exactly once, with no leader.**
@@ -87,7 +89,7 @@ The code follows a clean, layered architecture. `domain` holds pure rules with n
 | Backend | Python 3.12, FastAPI, SQLAlchemy 2 (async Core, asyncpg), Pydantic v2, Alembic |
 | Agent | LangGraph with a Postgres checkpointer, human-in-the-loop interrupts, skills loaded on demand, provider-agnostic LLM adapter |
 | Frontend | React 19, TypeScript, Vite, TanStack Query, React Router |
-| Data | PostgreSQL 16: 17 tables, 7 migrations, a job queue in the same database |
+| Data | PostgreSQL 16: 18 tables, 8 migrations, a job queue in the same database |
 | Channels | Telegram Bot API (webhook, inline buttons, Mini App), cookie sessions with CSRF |
 | Quality | ruff, mypy `--strict`, pytest, Vitest, Playwright, GitHub Actions |
 | Deploy | Docker multi-stage build on Railway; migrations run as a pre-deploy step and the app refuses to start on an unmigrated schema |
@@ -96,13 +98,13 @@ The code follows a clean, layered architecture. `domain` holds pure rules with n
 
 Every change goes through the same CI: lint, format, strict type-checking, and three test suites.
 
-- **267 Python tests.**
+- **298 Python tests.**
   - Unit tests cover pure rules: money arithmetic, budget thresholds at exact boundaries, due dates across short months and leap years, and paydays across weekends.
   - Integration tests run against a real Postgres, with a fresh database per test built by the real migrations.
   - A schema test fails if the migrations drift from the table definitions.
 - **Agent tests** use a scripted fake model, so conversations, confirmations and refusals are deterministic.
 - **Concurrency tests** race two job runners and assert each job runs exactly once.
-- **Playwright journeys**, 15 of them, run on desktop and phone viewports. They include a check that nothing overflows a 320px screen.
+- **Playwright journeys**, 16 of them, run on desktop and phone viewports. They include a check that nothing overflows a 320px screen.
 - **Vitest** covers the components, including a regression test for a React effect-cleanup crash found in production.
 
 ## Project layout
@@ -140,9 +142,8 @@ The operations guide ([`docs/OPERATIONS.md`](docs/OPERATIONS.md)) covers the res
 
 The build follows [`docs/PLAN.md`](docs/PLAN.md). Each milestone ships to production as it lands.
 
-- **Done:** foundations, ledger and agent, Telegram, the migration from the old bot, the web cockpit, multi-currency, the job runtime, budgets, bills and payday.
+- **Done:** foundations, ledger and agent, Telegram, the migration from the old bot, the web cockpit, multi-currency, the job runtime, budgets, bills, payday and category rules.
 - **Next:**
-  - explainable category rules;
   - email receipt ingestion and a receipt archive;
   - recurring-spend and subscription detection;
   - a cash-flow calendar;

@@ -38,6 +38,7 @@ from nexus.application import salary as salary_cases
 from nexus.application import splits as split_cases
 from nexus.application import transactions as tx_cases
 from nexus.application.categories import list_categories
+from nexus.application.category_rules import list_rules
 from nexus.application.fx import RateSource
 from nexus.application.inbound import log_capability_gap
 from nexus.application.users import get_user
@@ -142,11 +143,20 @@ class AgentGraph:
     async def _prompt(self, ctx: ToolContext) -> str:
         local = ctx.now.astimezone(ctx.tz)
         cats = await list_categories(ctx.uow(), ctx.user.id)
+        rules = await list_rules(ctx.uow(), ctx.user.id)
+        rule_line = (
+            "Category rules (they file an expense when you leave its category out): "
+            + "; ".join(f"“{v.rule.pattern}” → {v.category.name}" for v in rules[:40])
+            + ".\n"
+            if rules
+            else ""
+        )
         return (
             "You are Nexus, a personal finance assistant chatting on a phone.\n"
             f"Now: {local:%A %Y-%m-%d %H:%M} ({ctx.user.timezone}). "
             f"Home currency: {ctx.user.home_currency}.\n"
-            f"Categories: {', '.join(c.name for c in cats)}.\n\n"
+            f"Categories: {', '.join(c.name for c in cats)}.\n"
+            f"{rule_line}\n"
             "Rules:\n"
             "- Use tools for every read or change. Never invent transactions, amounts, "
             "dates or results; report only what tools return.\n"
@@ -340,6 +350,7 @@ class AgentGraph:
         results: list[ToolMessage] = []
         for call in request.tool_calls:
             spec = self.deps.tools.get(call["name"])
+            buttons: list[list[tuple[str, str]]] | None = None
             if spec is None or not (spec.exposed or from_kernel):
                 content, wrote = f"Error: there is no tool called {call['name']!r}.", False
             else:
@@ -347,16 +358,19 @@ class AgentGraph:
                     log.warning("dropped model-supplied user_id on %s", call["name"])
                 try:
                     result = await run_tool(spec, ctx, dict(call["args"]))
-                    content, wrote = result.text, result.wrote
+                    content, wrote, buttons = result.text, result.wrote, result.buttons
                 except Exception:
                     log.exception("tool %s failed", call["name"])
                     content, wrote = "Error: something went wrong running that.", False
+            kwargs: dict[str, Any] = {WROTE: wrote}
+            if buttons:
+                kwargs[BUTTONS] = [[list(b) for b in row] for row in buttons]
             results.append(
                 ToolMessage(
                     content=content,
                     tool_call_id=call["id"],
                     name=call["name"],
-                    additional_kwargs={WROTE: wrote},
+                    additional_kwargs=kwargs,
                 )
             )
         return Command(

@@ -215,7 +215,7 @@ Every milestone ends deployed to Railway and usable. Development is test-first: 
 - The job runner (leader lease, `SKIP LOCKED`, dedupe keys, quiet hours).
 - Budgets and alerts, bills and 7/3/1 reminders, the salary schedule plus payday check-in, category rules.
 - **Tests:** exact threshold boundaries, timezone and month rollover, two runners firing exactly once, snooze/paid then next occurrence.
-- Shipped in parts: **M5a** the job runner plus budgets and alerts. Atomic claims and per-slot dedupe keys make a leader lease unnecessary. **M5b** bills and reminders, with Budgets and Bills together on one Plan page. **M5c** the salary schedule and payday check-in, on the same Plan page. Then M5d category rules.
+- Shipped in parts: **M5a** the job runner plus budgets and alerts. Atomic claims and per-slot dedupe keys make a leader lease unnecessary. **M5b** bills and reminders, with Budgets and Bills together on one Plan page. **M5c** the salary schedule and payday check-in, on the same Plan page. **M5d** category rules: a rule files new expenses by merchant or notes, every rule stores why it exists, each transaction records which rule filed it, and a correction only offers a rule change (buttons in Telegram, a prompt on the web) that is saved if the user accepts.
 
 ### M6 — Email ingestion + receipt archive
 - Gmail/Outlook OAuth connections (encrypted), a sweep job, the Jev pre-filter, LLM extraction, and dedupe through `transaction_sources`.

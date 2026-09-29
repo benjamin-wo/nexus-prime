@@ -28,6 +28,7 @@ from nexus.domain.ledger import (
 )
 from nexus.domain.money import Money
 from nexus.domain.planning import Bill, BillOccurrence, Budget, SalarySchedule
+from nexus.domain.rules import CategoryRule
 
 
 class SortField(StrEnum):
@@ -99,6 +100,20 @@ class LedgerRepository(Protocol):
         self, user_id: UserId, *, include_inactive: bool
     ) -> list[Category]: ...
     async def update_category(self, category: Category) -> None: ...
+
+    # category rules
+    async def insert_category_rule(self, rule: CategoryRule) -> None:
+        """Raises Conflict if an active rule already has this pattern."""
+        ...
+
+    async def update_category_rule(self, rule: CategoryRule) -> None: ...
+    async def get_category_rule(self, user_id: UserId, rule_id: UUID) -> CategoryRule | None:
+        """Archived rules too, so old transactions can still explain themselves."""
+        ...
+
+    async def list_category_rules(self, user_id: UserId) -> list[CategoryRule]:
+        """Active rules only."""
+        ...
 
     # transactions
     async def insert_transaction(self, tx: Transaction) -> None: ...

@@ -48,9 +48,11 @@ from nexus.domain.ledger import (
     UserId,
 )
 from nexus.domain.money import Money
+from nexus.domain.rules import CategoryRule
 from nexus.infra.db.tables import (
     capability_gaps,
     categories,
+    category_rules,
     inbound_events,
     invites,
     settlements,
@@ -95,6 +97,20 @@ def _transaction(row: Row[Any]) -> Transaction:
         created_at=row.created_at,
         updated_at=row.updated_at,
         deleted_at=row.deleted_at,
+        category_rule_id=row.category_rule_id,
+    )
+
+
+def _rule(row: Row[Any]) -> CategoryRule:
+    return CategoryRule(
+        id=row.id,
+        user_id=UserId(row.user_id),
+        pattern=row.pattern,
+        category_id=row.category_id,
+        explanation=row.explanation,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+        archived_at=row.archived_at,
     )
 
 
@@ -111,6 +127,7 @@ def _transaction_values(tx: Transaction) -> dict[str, Any]:
         "source": tx.source.value,
         "updated_at": tx.updated_at,
         "deleted_at": tx.deleted_at,
+        "category_rule_id": tx.category_rule_id,
     }
 
 
@@ -197,6 +214,59 @@ class SqlLedgerRepository:
             .where(categories.c.user_id == category.user_id, categories.c.id == category.id)
             .values(name=category.name, active=category.active)
         )
+
+    # --- category rules -----------------------------------------------------------
+
+    async def insert_category_rule(self, rule: CategoryRule) -> None:
+        try:
+            async with self._db.begin_nested():
+                await self._db.execute(
+                    insert(category_rules).values(
+                        id=rule.id,
+                        user_id=rule.user_id,
+                        pattern=rule.pattern,
+                        category_id=rule.category_id,
+                        explanation=rule.explanation,
+                        created_at=rule.created_at,
+                        updated_at=rule.updated_at,
+                        archived_at=rule.archived_at,
+                    )
+                )
+        except IntegrityError as exc:
+            if "uq_category_rules_user_id_pattern" in str(exc.orig):
+                raise Conflict(f"there is already a rule for {rule.pattern!r}") from exc
+            raise
+
+    async def update_category_rule(self, rule: CategoryRule) -> None:
+        await self._db.execute(
+            update(category_rules)
+            .where(category_rules.c.user_id == rule.user_id, category_rules.c.id == rule.id)
+            .values(
+                category_id=rule.category_id,
+                explanation=rule.explanation,
+                updated_at=rule.updated_at,
+                archived_at=rule.archived_at,
+            )
+        )
+
+    async def get_category_rule(self, user_id: UserId, rule_id: UUID) -> CategoryRule | None:
+        row = (
+            await self._db.execute(
+                select(category_rules).where(
+                    category_rules.c.user_id == user_id, category_rules.c.id == rule_id
+                )
+            )
+        ).first()
+        return _rule(row) if row else None
+
+    async def list_category_rules(self, user_id: UserId) -> list[CategoryRule]:
+        """Active rules, alphabetically by pattern."""
+        rows = await self._db.execute(
+            select(category_rules)
+            .where(category_rules.c.user_id == user_id, category_rules.c.archived_at.is_(None))
+            .order_by(category_rules.c.pattern)
+        )
+        return [_rule(row) for row in rows]
 
     # --- transactions -------------------------------------------------------------
 

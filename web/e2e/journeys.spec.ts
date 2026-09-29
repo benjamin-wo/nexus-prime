@@ -259,6 +259,36 @@ test("add a bill, snooze its reminders and stop tracking it", async ({ page }) =
   await expect(page.getByText("No bills yet. Add one below.")).toBeVisible();
 });
 
+test("a category correction offers a rule, saved only when accepted", async ({ page }) => {
+  const state = await fakeApi(page);
+  await page.goto("/ledger");
+  await page.getByRole("button", { name: "Grab", exact: true }).click();
+  const sheet = page.getByRole("dialog", { name: "Edit transaction" });
+  await sheet.getByLabel("Category").selectOption({ label: "Transport" });
+  await sheet.getByRole("button", { name: "Save" }).click();
+
+  const offer = page.getByRole("status").filter({ hasText: "Always file “grab” under Transport?" });
+  await expect(offer).toBeVisible();
+  expect(state.rules).toEqual([]); // nothing until the user accepts
+  await offer.getByRole("button", { name: "Save rule" }).click();
+  await expect(page.getByText("Saved. New expenses from “grab” will be filed the same way.")).toBeVisible();
+
+  await page.goto("/plan");
+  const rules = page.getByRole("region", { name: "Category rules" });
+  await expect(rules.getByRole("heading", { name: "“grab”" })).toBeVisible();
+  await expect(rules.getByText("Added on 28 Sep 2026 when you filed “Grab” under Transport.")).toBeVisible();
+
+  await rules.getByLabel("When it mentions").fill("Maxwell");
+  await rules.getByLabel("File under").selectOption({ label: "Food & Drink" });
+  await rules.getByRole("button", { name: "Save rule" }).click();
+  await expect(rules.getByRole("heading", { name: "“maxwell”" })).toBeVisible();
+
+  const grab = rules.getByRole("listitem").filter({ hasText: "“grab”" });
+  await grab.getByRole("button", { name: "Remove" }).click();
+  await grab.getByRole("button", { name: "Remove" }).click(); // confirm
+  await expect(rules.getByRole("heading", { name: "“grab”" })).toHaveCount(0);
+});
+
 test("nothing spills sideways on a small phone", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 568 });
   await fakeApi(page);
