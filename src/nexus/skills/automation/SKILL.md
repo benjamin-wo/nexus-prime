@@ -15,7 +15,7 @@ suggest it on your own.
   anything without a Confirm.
 - Then call `connect_email`. It returns a one-time button that works for 10 minutes.
 - Warn them once, plainly: Google will say Nexus isn't verified because it's a private
-  app. They tap **Advanced**, then **Go to Nexus**, then **Allow**.
+  app. They tap Advanced, then Go to Nexus, then Allow.
 - After they connect, Nexus looks back 30 days and messages them about what it finds.
 
 ## Other mail
