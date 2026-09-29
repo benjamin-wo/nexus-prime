@@ -14,6 +14,7 @@ from nexus.application import email as email_cases
 from nexus.application import notifications as notify_cases
 from nexus.application import receipts as receipt_cases
 from nexus.application import salary as salary_cases
+from nexus.application import subscriptions as subscription_cases
 from nexus.application.budgets import TELEGRAM_SEND, UowFactory
 from nexus.application.email import EmailRuntime
 from nexus.application.fx import RateSource
@@ -31,6 +32,7 @@ PAYDAY_SWEEP = "salary.sweep"
 RECEIPTS_PURGE = "receipts.purge"
 EMAIL_SWEEP = email_cases.SWEEP_JOB
 NOTIFY_SWEEP = "notify.sweep"
+SUBSCRIPTIONS_SWEEP = "subscriptions.sweep"
 SCHEDULES = (
     Schedule(BUDGETS_SWEEP, timedelta(minutes=10)),
     Schedule(BILLS_SWEEP, timedelta(minutes=30)),
@@ -38,6 +40,7 @@ SCHEDULES = (
     Schedule(RECEIPTS_PURGE, timedelta(hours=1)),
     Schedule(EMAIL_SWEEP, timedelta(minutes=15)),
     Schedule(NOTIFY_SWEEP, timedelta(minutes=5)),
+    Schedule(SUBSCRIPTIONS_SWEEP, timedelta(hours=6)),
 )
 
 
@@ -147,7 +150,17 @@ def build_handlers(
             lambda user: notify_cases.notify(uow, rates, user, now=clock(), review_url=review_url),
         )
 
+    async def sweep_subscriptions(_: dict[str, Any]) -> None:
+        async with uow() as tx:
+            user_ids = await tx.planning.users_to_notify()
+        await for_each_user(
+            user_ids,
+            "subscription check",
+            lambda user: subscription_cases.check(uow, user, now=clock()),
+        )
+
     return {
+        SUBSCRIPTIONS_SWEEP: sweep_subscriptions,
         NOTIFY_SWEEP: sweep_notifications,
         EMAIL_SWEEP: sweep_email,
         RECEIPTS_PURGE: purge_receipts,

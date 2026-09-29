@@ -393,6 +393,32 @@ salary_schedules = Table(
     CheckConstraint("amount IS NULL OR amount > 0", name="amount_positive"),
 )
 
+# Recurring payments: proposed from the ledger, tracked once the user agrees.
+# One row per merchant and currency, whatever its status, so a proposal the user
+# turned down isn't made again.
+subscriptions = Table(
+    "subscriptions",
+    metadata,
+    _uuid_pk(),
+    _user_fk(),
+    Column("key", Text, nullable=False),
+    Column("name", Text, nullable=False),
+    Column("cadence", Text, nullable=False),
+    Column("amount", MONEY, nullable=False),
+    Column("currency", CURRENCY, nullable=False),
+    Column("last_charged_on", Date, nullable=False),
+    Column("status", Text, nullable=False),
+    Column("previous_amount", MONEY),
+    Column("price_changed_on", Date),
+    Column("created_at", TZ, nullable=False),
+    Column("updated_at", TZ, nullable=False),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+    UniqueConstraint("user_id", "key", "currency"),
+    CheckConstraint("cadence IN ('weekly', 'monthly', 'yearly')", name="cadence"),
+    CheckConstraint("status IN ('proposed', 'active', 'dismissed')", name="status"),
+    CheckConstraint("amount > 0", name="amount_positive"),
+)
+
 # How often each user hears about their transactions. No row means the default
 # (an end-of-day summary), not yet started.
 notification_settings = Table(

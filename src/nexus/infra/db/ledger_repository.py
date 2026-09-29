@@ -403,6 +403,24 @@ class SqlLedgerRepository:
             .values(**_transaction_values(tx))
         )
 
+    async def outgoing_since(
+        self, user_id: UserId, start: datetime, *, limit: int
+    ) -> list[Transaction]:
+        t = transactions.c
+        rows = await self._db.execute(
+            select(transactions)
+            .where(
+                t.user_id == user_id,
+                t.deleted_at.is_(None),
+                t.direction == Direction.OUT.value,
+                t.counterparty.is_not(None),
+                t.occurred_at >= start,
+            )
+            .order_by(t.occurred_at.desc())
+            .limit(limit)
+        )
+        return [_transaction(r) for r in rows]
+
     async def logged_between(
         self, user_id: UserId, start: datetime, end: datetime, *, limit: int
     ) -> list[Transaction]:

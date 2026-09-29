@@ -15,6 +15,7 @@ tools: [add_bill, list_bills, mark_bill_paid, snooze_bill, remove_bill]
   transfer or schedule anything, and it doesn't log an expense. If they also want it
   in the ledger, log it as an expense separately.
 - "remind me tomorrow" about a bill: `snooze_bill`.
-- "stop tracking Netflix": `remove_bill`; the confirmation step asks the user.
+- "stop reminding me about rent": `remove_bill`; the confirmation step asks the user.
+  (Subscriptions spotted from the ledger are stopped on the Plan page instead.)
 - Reminders go out automatically 7, 3 and 1 days before the due date, with buttons to
   mark it paid or snooze it. You don't send them.

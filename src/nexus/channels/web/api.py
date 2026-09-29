@@ -19,6 +19,7 @@ from nexus.application import notifications as notify_cases
 from nexus.application import receipts as receipt_cases
 from nexus.application import salary as salary_cases
 from nexus.application import splits as split_cases
+from nexus.application import subscriptions as subscription_cases
 from nexus.application import transactions as tx_cases
 from nexus.application.ports import LedgerQuery, SortField
 from nexus.application.users import RegisterUser
@@ -958,6 +959,63 @@ async def set_usual_salary(body: UsualSalaryIn, auth: Auth, web: Runtime) -> Non
 @router.delete("/salary", status_code=204)
 async def remove_salary(auth: Auth, web: Runtime) -> None:
     await salary_cases.remove_schedule(web.uow(), auth.user.id)
+
+
+# --- subscriptions ----------------------------------------------------------------------
+
+
+class SubscriptionOut(Model):
+    id: UUID
+    name: str
+    cadence: str
+    amount: MoneyOut
+    monthly: MoneyOut
+    last_charged_on: date
+    next_charge: date
+    previous_amount: MoneyOut | None
+    price_changed_on: date | None
+
+
+class SubscriptionsOut(Model):
+    tracked: list[SubscriptionOut]
+    proposed: list[SubscriptionOut]
+    monthly_totals: list[MoneyOut]
+
+
+def _subscription_out(view: subscription_cases.SubscriptionView) -> SubscriptionOut:
+    s = view.subscription
+    return SubscriptionOut(
+        id=s.id,
+        name=s.name,
+        cadence=s.cadence.value,
+        amount=money(s.amount),
+        monthly=money(view.monthly),
+        last_charged_on=s.last_charged_on,
+        next_charge=view.next_charge,
+        previous_amount=money(s.previous_amount) if s.previous_amount else None,
+        price_changed_on=s.price_changed_on,
+    )
+
+
+@router.get("/subscriptions")
+async def subscriptions(auth: Auth, web: Runtime) -> SubscriptionsOut:
+    found = await subscription_cases.overview(web.uow(), auth.user.id)
+    return SubscriptionsOut(
+        tracked=[_subscription_out(v) for v in found.tracked],
+        proposed=[_subscription_out(v) for v in found.proposed],
+        monthly_totals=[money(m) for m in found.monthly_totals],
+    )
+
+
+@router.post("/subscriptions/{subscription_id}/track", status_code=204)
+async def track_subscription(subscription_id: UUID, auth: Auth, web: Runtime) -> None:
+    await subscription_cases.track(web.uow(), auth.user.id, subscription_id, now=web.clock())
+
+
+@router.post("/subscriptions/{subscription_id}/dismiss", status_code=204)
+async def dismiss_subscription(subscription_id: UUID, auth: Auth, web: Runtime) -> None:
+    """Turn down a proposal, or stop tracking one. It isn't proposed again."""
+    await subscription_cases.dismiss(web.uow(), auth.user.id, subscription_id, now=web.clock())
 
 
 # --- transaction updates on Telegram ----------------------------------------------------

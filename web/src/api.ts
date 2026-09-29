@@ -155,6 +155,18 @@ export type EmailOverview = {
   connections: EmailConnection[];
   emails: InboundEmail[];
 };
+export type Subscription = {
+  id: string;
+  name: string;
+  cadence: "weekly" | "monthly" | "yearly";
+  amount: Money;
+  monthly: Money;
+  last_charged_on: string;
+  next_charge: string;
+  previous_amount: Money | null;
+  price_changed_on: string | null;
+};
+export type Subscriptions = { tracked: Subscription[]; proposed: Subscription[]; monthly_totals: Money[] };
 export type Frequency = "instant" | "hourly" | "thrice_daily" | "daily" | "off";
 export type Updates = { frequency: Frequency; description: string; options: Record<Frequency, string> };
 export type Reply = { text: string; buttons: { label: string; data: string }[][] };

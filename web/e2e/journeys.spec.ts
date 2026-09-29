@@ -351,6 +351,19 @@ test("a forwarding address shows as one, with a way to copy it", async ({ page }
   await expect(row.getByText("Stop using this address?")).toBeVisible();
 });
 
+test("subscriptions: a proposal is tracked on request, and a price change shows", async ({ page }) => {
+  await fakeApi(page);
+  await page.goto("/plan");
+  const card = page.getByRole("region", { name: "Subscriptions" });
+  await expect(card.getByText(/^About SGD\s17\.98 a month$/)).toBeVisible();
+  const netflix = card.getByRole("list", { name: "Tracked subscriptions" }).getByRole("listitem");
+  await expect(netflix.getByText(/^Was SGD\s15\.98 until/)).toBeVisible();
+  const proposed = card.getByRole("list", { name: "Proposed subscriptions" });
+  await proposed.getByRole("button", { name: "Track it" }).click();
+  await expect(card.getByRole("list", { name: "Proposed subscriptions" })).toHaveCount(0);
+  await expect(card.getByText(/^About SGD\s28\.96 a month$/)).toBeVisible();
+});
+
 test("telegram updates default to an end-of-day summary and can be changed", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/plan");

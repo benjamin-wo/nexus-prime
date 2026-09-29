@@ -25,6 +25,15 @@ from nexus.agent.kernel import (
         ("I got 100 EUR from Grandma", IncomeKind.INCOME, "100", "EUR", "Grandma"),
         ("got refunded 23.90", IncomeKind.INCOME, "23.9", "SGD", None),
         ("refund 40 from Shopee", IncomeKind.INCOME, "40", "SGD", "Shopee"),
+        ("9397 as salary today", IncomeKind.SALARY, "9397", "SGD", None),
+        ("9397 salary", IncomeKind.SALARY, "9397", "SGD", None),
+        ("3k for my paycheck", IncomeKind.SALARY, "3000", "SGD", None),
+        ("I got 5000 as salary", IncomeKind.SALARY, "5000", "SGD", None),
+        ("my salary is 9,397", IncomeKind.SALARY, "9397", "SGD", None),
+        ("got my salary 9397", IncomeKind.SALARY, "9397", "SGD", None),
+        ("salary today 9397", IncomeKind.SALARY, "9397", "SGD", None),
+        ("salary 9397 yesterday", IncomeKind.SALARY, "9397", "SGD", None),
+        ("received 50 from Ann yesterday", IncomeKind.INCOME, "50", "SGD", "Ann"),
     ],
 )
 def test_recognises_income(
@@ -51,6 +60,9 @@ def test_recognises_income(
         "how much salary did I get last month?",
         "Ann paid 20",
         "received 50 US$ EUR",
+        "9397 as salary next month",
+        "is 9397 a good salary?",
+        "how much salary today",
     ],
 )
 def test_leaves_everything_else_to_the_model(text: str) -> None:
@@ -105,3 +117,20 @@ def test_replies_are_plain_text() -> None:
 
     reply = "Tap **Advanced**, then **Allow**. Logged [id 123e4567-e89b-12d3-a456-426614174000]"
     assert strip_ids(reply) == "Tap Advanced, then Allow. Logged"
+
+
+@pytest.mark.parametrize(
+    ("text", "days_ago", "note"),
+    [
+        ("salary 9397", 0, None),
+        ("9397 as salary today", 0, None),
+        ("salary 9397 yesterday", 1, None),
+        ("salary yesterday 9397", 1, None),
+        ("received 50 from Ann yesterday", 1, None),
+        ("got refunded 23.90 for the shoes yesterday", 1, "the shoes"),
+    ],
+)
+def test_today_or_yesterday(text: str, days_ago: int, note: str | None) -> None:
+    intent = parse_income(text, "SGD")
+    assert intent is not None
+    assert (intent.days_ago, intent.note) == (days_ago, note)
