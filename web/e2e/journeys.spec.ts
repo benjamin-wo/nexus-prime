@@ -455,3 +455,14 @@ test("the cog opens Settings, and Plan keeps only planning", async ({ page }) =>
   for (const name of ["Telegram updates", "Categories", "Category rules"])
     await expect(page.getByRole("region", { name })).toBeVisible();
 });
+
+test("the chat bubble floats on every page and opens the chat", async ({ page }) => {
+  await fakeApi(page);
+  await page.goto("/plan");
+  await expect(page.getByRole("navigation").getByRole("button", { name: /chat/i })).toHaveCount(0);
+  const bubble = page.locator(".chat-fab");
+  await expect(bubble).toHaveAccessibleName("Open chat");
+  await expect(bubble).toHaveCSS("position", "fixed");
+  await bubble.click();
+  await expect(page.getByRole("dialog", { name: "Chat" })).toBeVisible();
+});

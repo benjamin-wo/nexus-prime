@@ -21,6 +21,15 @@ function CogIcon() {
   );
 }
 
+function ChatIcon() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+      <path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.8 8.8 0 0 1-3.9-.9L3 20.5l1.5-4.6A8.1 8.1 0 0 1 3.5 11.5 8.5 8.5 0 0 1 12 3a8.5 8.5 0 0 1 9 8.5z" />
+    </svg>
+  );
+}
+
 export function Shell({
   me,
   onOpenChat,
@@ -55,9 +64,6 @@ export function Shell({
         </div>
         {nav}
         {settings}
-        <button type="button" className="btn btn-ghost" onClick={onOpenChat}>
-          Open chat
-        </button>
         <div className="spacer" />
         {me.user.role === "owner" && <InviteButton />}
         <button type="button" className="btn btn-ghost" onClick={onLogout}>
@@ -69,11 +75,12 @@ export function Shell({
       </main>
       <nav className="bottom-nav" aria-label="Main (mobile)">
         {nav}
-        <button type="button" className="btn btn-ghost" onClick={onOpenChat}>
-          Chat
-        </button>
         {settings}
       </nav>
+      {/* Chat floats over every page, clear of the tabs. */}
+      <button type="button" className="chat-fab" aria-label="Open chat" title="Chat" onClick={onOpenChat}>
+        <ChatIcon />
+      </button>
     </div>
   );
 }

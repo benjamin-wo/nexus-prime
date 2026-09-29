@@ -108,6 +108,17 @@ label.field { display: grid; gap: var(--space-1); font-weight: 600; font-size: 0
 .content { max-width: 1420px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-6); }
 .page-head { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: var(--space-4); }
 .bottom-nav { display: none; }
+/* Chat: a translucent bubble over every page, brighter when touched. */
+.chat-fab {
+  position: fixed; right: var(--space-6); bottom: var(--space-6); z-index: 16;
+  width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center;
+  border: 1px solid var(--orange-border); background: var(--orange-soft); color: var(--text-white);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  box-shadow: var(--shadow-frame); opacity: 0.8; cursor: pointer;
+  transition: opacity var(--t-micro), transform var(--t-micro);
+}
+.chat-fab:hover, .chat-fab:focus-visible { opacity: 1; }
+.chat-fab:active { transform: scale(0.95); }
 
 .card { background: var(--bg-card); border: 1px solid var(--border-card); border-radius: var(--radius); padding: var(--space-4); }
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-4); }
@@ -245,6 +256,9 @@ table.ledger { width: 100%; border-collapse: collapse; }
     padding: 0 var(--space-1); font-size: 0.8rem; white-space: nowrap; overflow: hidden;
   }
   .bottom-nav .nav-icon { flex: 0 0 44px; }
+  .chat-fab { right: var(--space-4); bottom: calc(76px + env(safe-area-inset-bottom)); width: 52px; height: 52px; }
+  /* Room below the last card so the bubble never hides it. */
+  .main-viewport { padding-bottom: calc(148px + env(safe-area-inset-bottom)); }
   .toast { bottom: calc(76px + env(safe-area-inset-bottom)); }
 }
 @media (max-width: 720px) {
