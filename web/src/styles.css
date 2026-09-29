@@ -329,3 +329,28 @@ a.btn { text-decoration: none; }
 .email-amount { align-items: flex-end; flex-wrap: wrap; margin-top: var(--space-2); }
 .email-pending, .email-broken { color: var(--status-warning); }
 .email-logged, .email-active { color: var(--emerald-accent); }
+
+/* Cash flow calendar */
+.cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: var(--space-1); }
+.cal-head { text-align: center; padding-bottom: var(--space-1); }
+.cal-day {
+  min-height: 64px; padding: var(--space-1); border: 1px solid var(--border-subtle); border-radius: 8px;
+  background: var(--bg-input); color: var(--text-primary); font: inherit; text-align: left; cursor: pointer;
+  display: flex; flex-direction: column; gap: 2px; min-width: 0;
+}
+.cal-day:hover { background: var(--bg-card-hover); }
+.cal-day[aria-pressed="true"] { border-color: var(--orange-border); background: var(--orange-soft); }
+.cal-day.is-today { border-color: var(--orange-primary); }
+.cal-day.is-empty { visibility: hidden; }
+.cal-date { font-size: 0.7rem; font-weight: 700; color: var(--text-secondary); }
+.cal-amount { font-size: 0.7rem; font-variant-numeric: tabular-nums; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cal-amount.in { color: var(--emerald-accent); }
+.cal-amount.out { color: var(--rose-accent); }
+.cal-amount.expected { opacity: 0.8; font-style: italic; }
+.cal-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--orange-primary); }
+.flow-totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--space-3); margin-bottom: var(--space-4); }
+.month-nav { display: flex; align-items: center; gap: var(--space-2); }
+@media (max-width: 480px) {
+  .cal-day { min-height: 52px; padding: 3px; }
+  .cal-amount { font-size: 0.62rem; }
+}

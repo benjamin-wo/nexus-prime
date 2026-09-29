@@ -32,6 +32,7 @@ One LLM agent serves both surfaces, but the parts that must be right, like money
 - **Budgets:** monthly limits, overall or per category, with Telegram alerts at 50%, 80% and 100%, each sent once.
 - **Bills:** reminders 7, 3 and 1 days before, with Mark paid and Snooze buttons. It never pays anything.
 - **Subscriptions:** after three regular, similar charges from one merchant, Nexus asks whether to track it; tracked ones show on the Plan page with a monthly total, and a price change is flagged.
+- **Cash flow:** a month calendar of net money movement per day: what was logged so far, and what bills, tracked subscriptions and payday are expected to bring. Movement only, never a balance. Also in chat: "what's coming up?"
 - **Telegram updates:** by default, a summary of the day's spending at 9pm. Users can switch to updates as they happen, hourly, 3 times a day, or off, in chat or on the Plan page.
 - **Payday:**
   - A check-in on payday, with weekend paydays moved to Friday.
@@ -147,7 +148,7 @@ The operations guide ([`docs/OPERATIONS.md`](docs/OPERATIONS.md)) covers the res
 
 The build follows [`docs/PLAN.md`](docs/PLAN.md). Each milestone ships to production as it lands.
 
-- **Done:** foundations, ledger and agent, Telegram, the migration from the old bot, the web cockpit, multi-currency, the job runtime, budgets, bills, payday, category rules, the receipt archive, Connect Gmail and forwarding addresses.
+- **Done:** foundations, ledger and agent, Telegram, the migration from the old bot, the web cockpit, multi-currency, the job runtime, budgets, bills, payday, category rules, the receipt archive, Connect Gmail and forwarding addresses, subscriptions and the cash-flow calendar.
 - **Next:**
   - forwarding receipts from any mail provider;
   - recurring-spend and subscription detection;

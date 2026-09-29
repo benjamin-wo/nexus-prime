@@ -14,6 +14,7 @@ from nexus.agent.receipts import ReceiptDraft, ReceiptReader
 from nexus.agent.service import AgentService, Reply
 from nexus.agent.skills import SkillLibrary
 from nexus.agent.tools import build_tools
+from nexus.application import bills as bill_cases
 from nexus.application import subscriptions as subscription_cases
 from nexus.application.category_rules import list_rules
 from nexus.application.ports import LedgerQuery, ReceiptStore
@@ -22,6 +23,7 @@ from nexus.application.transactions import NewTransaction, list_ledger, log_tran
 from nexus.application.users import get_user
 from nexus.domain.ledger import Direction, ShareRequest, Source, UserId
 from nexus.domain.money import Money
+from nexus.domain.planning import Cadence
 from nexus.infra.db.tables import capability_gaps
 from tests.fakes import NOW, FakeReceipts, ScriptedModel, call, say, scripted
 from tests.integration.conftest import UowFactory
@@ -373,6 +375,19 @@ async def test_subscription_buttons_track_or_turn_down(uow: UowFactory, alice: U
     assert reply.text == "OK, I won't ask about that one again."
     assert (await subscription_cases.overview(uow(), alice)).tracked == []
     assert only(await agent.press(alice, "sub:track:nope")).text == "I don't know that button."
+
+
+async def test_cash_flow_lists_what_is_coming(uow: UowFactory, alice: UserId) -> None:
+    user = await get_user(uow(), alice)
+    await bill_cases.add_bill(
+        uow(), user, "Rent", NOW.date() + timedelta(days=3), Cadence.MONTHLY,
+        Money.of("1800", "SGD"), now=NOW,
+    )  # fmt: skip
+    model = scripted(call("cash_flow", days=14), say("Rent is due soon."))
+    await build(uow, model).handle_text(alice, "what's coming up?", "tg:1:1")
+    [result] = tool_results(model)
+    assert "Rent (bill) -1800.00 SGD" in result
+    assert "net -1800.00 SGD" in result and "not a balance" in result
 
 
 async def test_threads_are_per_user(uow: UowFactory, alice: UserId, bob: UserId) -> None:

@@ -364,6 +364,22 @@ test("subscriptions: a proposal is tracked on request, and a price change shows"
   await expect(card.getByText(/^About SGD\s28\.96 a month$/)).toBeVisible();
 });
 
+test("cash flow shows logged and expected days, with detail on tap", async ({ page }) => {
+  await fakeApi(page);
+  await page.goto("/cashflow");
+  await expect(page.getByRole("heading", { name: "Cash flow", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "September 2026" })).toBeVisible();
+  const days = page.getByRole("group", { name: "Days" });
+  await expect(days.getByRole("button", { name: /^2026-09-25, net SGD\s4,200\.00/ })).toContainText("+4,200");
+  await expect(days.getByRole("button", { name: /^2026-09-12, net -SGD\s42\.10/ })).toContainText("-42.1");
+  await days.getByRole("button", { name: "2026-09-30, 1 expected" }).click();
+  const detail = page.getByRole("region", { name: /Wednesday, (30 September|September 30)/ });
+  await expect(detail.getByRole("listitem").filter({ hasText: "Rent" })).toContainText("Bill");
+  await page.getByRole("button", { name: "Next month" }).click();
+  await expect(page.getByRole("heading", { name: "October 2026" })).toBeVisible();
+  await expect(days.getByRole("button", { name: "2026-10-12, 1 expected" })).toContainText("-17.98");
+});
+
 test("telegram updates default to an end-of-day summary and can be changed", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/plan");
@@ -380,7 +396,7 @@ test("telegram updates default to an end-of-day summary and can be changed", asy
 test("nothing spills sideways on a small phone", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 568 });
   await fakeApi(page, { emailConnected: true });
-  for (const path of ["/", "/ledger", "/plan", "/email", "/connect/gmail?t=good"]) {
+  for (const path of ["/", "/ledger", "/plan", "/email", "/cashflow", "/connect/gmail?t=good"]) {
     await page.goto(path);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     const offenders = await page.evaluate(() => {

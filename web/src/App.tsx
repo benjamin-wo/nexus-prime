@@ -8,6 +8,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { EntrySheet } from "./components/EntrySheet";
 import { Shell } from "./components/Shell";
 import { Toast } from "./components/Toast";
+import { CashFlowPage } from "./pages/CashFlow";
 import { ConnectDone, ConnectGmail } from "./pages/Connect";
 import { Dashboard } from "./pages/Dashboard";
 import { EmailPage } from "./pages/Email";
@@ -81,6 +82,7 @@ function Cockpit({ me }: { me: Me }) {
         />
         <Route path="/plan" element={<Plan me={me} />} />
         <Route path="/email" element={<EmailPage me={me} />} />
+        <Route path="/cashflow" element={<CashFlowPage />} />
         <Route path="/budgets" element={<Navigate to="/plan" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

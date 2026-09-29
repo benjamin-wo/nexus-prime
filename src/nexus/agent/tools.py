@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from nexus.application import bills as bill_cases
 from nexus.application import budgets as budget_cases
+from nexus.application import cashflow as cashflow_cases
 from nexus.application import categories as category_cases
 from nexus.application import category_rules as rule_cases
 from nexus.application import email as email_cases
@@ -641,6 +642,37 @@ async def _subscriptions(ctx: ToolContext, _: NoArgs) -> ToolResult:
     return ToolResult("\n".join(lines))
 
 
+class CashFlowArgs(Args):
+    days: int = Field(30, ge=1, le=60, description="How many days ahead, from today")
+
+
+async def _cash_flow(ctx: ToolContext, a: CashFlowArgs) -> ToolResult:
+    today = ctx.today()
+    flow = await cashflow_cases.cash_flow(
+        ctx.uow, _rates(ctx), ctx.user, today, today + timedelta(days=a.days - 1), now=ctx.now
+    )
+    lines = []
+    for d in flow.days:
+        for e in d.expected:
+            sign = "+" if e.direction is Direction.IN else "-"
+            amount = f"{sign}{e.amount}" if e.amount else "amount not set"
+            lines.append(f"{d.day:%a %-d %b}: {e.name} ({e.kind.value}) {amount}")
+    if not lines:
+        return ToolResult(
+            f"Nothing expected in the next {a.days} days: no bills, tracked subscriptions "
+            "or payday fall in it."
+        )
+    net = flow.expected_in - flow.expected_out
+    lines.append(
+        f"Expected in the next {a.days} days: in {flow.expected_in}, out {flow.expected_out}, "
+        f"net {net}. Only bills, tracked subscriptions and payday; not everyday spending, "
+        "and not a balance."
+    )
+    if flow.unknown_amounts:
+        lines.append(f"{flow.unknown_amounts} item(s) have no amount set, so aren't counted.")
+    return ToolResult("\n".join(lines))
+
+
 class UpdatesArgs(Args):
     frequency: Frequency | None = Field(
         None,
@@ -1028,6 +1060,13 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             "Which mailboxes are connected and what happened to recent receipt emails.",
             NoArgs,
             _email_status,
+        ),
+        ToolSpec(
+            "cash_flow",
+            "What's expected to come in and go out over the next days: bills, tracked "
+            "subscriptions and payday, with the net. Not a balance.",
+            CashFlowArgs,
+            _cash_flow,
         ),
         ToolSpec(
             "list_subscriptions",

@@ -155,6 +155,34 @@ export type EmailOverview = {
   connections: EmailConnection[];
   emails: InboundEmail[];
 };
+export type Expected = {
+  kind: "bill" | "subscription" | "salary";
+  name: string;
+  direction: "in" | "out";
+  amount: Money | null;
+  home: Money | null;
+};
+export type CashDay = {
+  day: string;
+  money_in: Money;
+  money_out: Money;
+  net: Money;
+  expected: Expected[];
+  expected_net: Money;
+};
+export type CashFlow = {
+  start: string;
+  end: string;
+  today: string;
+  currency: string;
+  days: CashDay[];
+  logged_in: Money;
+  logged_out: Money;
+  expected_in: Money;
+  expected_out: Money;
+  unknown_amounts: number;
+  unconverted: Money[];
+};
 export type Subscription = {
   id: string;
   name: string;

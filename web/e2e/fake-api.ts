@@ -249,6 +249,38 @@ export async function fakeApi(page: Page, { signedIn = true, emailConnected = fa
       state.budgets = state.budgets.filter((b) => `/budgets/${b.id}` !== path);
       return route.fulfill({ status: 204 });
     }
+    if (path === "/cashflow" && method === "GET") {
+      const month = new URL(route.request().url()).searchParams.get("month") ?? "2026-09";
+      const [year, mon] = month.split("-").map(Number);
+      const last = new Date(Date.UTC(year, mon, 0)).getUTCDate();
+      const m = (amount: string) => ({ amount, currency: "SGD" });
+      const days = Array.from({ length: last }, (_, n) => {
+        const day = `${month}-${String(n + 1).padStart(2, "0")}`;
+        const logged = day === "2026-09-12" ? { in: "0", out: "42.10" } : day === "2026-09-25" ? { in: "4200", out: "0" } : { in: "0", out: "0" };
+        const expected =
+          day === "2026-09-30"
+            ? [{ kind: "bill", name: "Rent", direction: "out", amount: m("1800"), home: m("1800") }]
+            : day === "2026-10-12"
+              ? [{ kind: "subscription", name: "Netflix", direction: "out", amount: m("17.98"), home: m("17.98") }]
+              : [];
+        const net = (Number(logged.in) - Number(logged.out)).toFixed(2);
+        const expectedNet = expected.reduce((sum, e) => sum - Number(e.home.amount), 0).toFixed(2);
+        return { day, money_in: m(logged.in), money_out: m(logged.out), net: m(net), expected, expected_net: m(expectedNet) };
+      });
+      return json(route, {
+        start: `${month}-01`,
+        end: `${month}-${last}`,
+        today: "2026-09-28",
+        currency: "SGD",
+        days,
+        logged_in: m(month === "2026-09" ? "4200.00" : "0"),
+        logged_out: m(month === "2026-09" ? "42.10" : "0"),
+        expected_in: m("0"),
+        expected_out: m(month === "2026-09" ? "1800.00" : "17.98"),
+        unknown_amounts: 0,
+        unconverted: [],
+      });
+    }
     if (path === "/subscriptions" && method === "GET") {
       const out = (s: { id: string; name: string; amount: string }) => ({
         id: s.id,

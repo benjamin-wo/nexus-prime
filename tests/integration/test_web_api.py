@@ -796,6 +796,31 @@ async def test_bills_and_reminder_buttons(world: World) -> None:
     assert bad.status_code == 422
 
 
+# --- cash flow --------------------------------------------------------------------------
+
+
+async def test_cash_flow_month_by_month(world: World) -> None:
+    owner, token = await owner_and_invite(world)
+    await spend(owner, "12", "SGD", "2026-09-10")
+    await spend(owner, "10", "USD", "2026-09-26")  # a Saturday: Friday's rate
+    flow = (await owner.get("/api/cashflow")).json()
+    assert (flow["start"], flow["end"], flow["currency"]) == ("2026-09-01", "2026-09-30", "SGD")
+    by_day = {d["day"]: d for d in flow["days"]}
+    assert len(by_day) == 30
+    assert by_day["2026-09-10"]["net"] == {"amount": "-12.0000", "currency": "SGD"}
+    assert by_day["2026-09-26"]["money_out"]["amount"] == "12.9100"
+    assert flow["expected_out"] == {"amount": "0.0000", "currency": "SGD"}
+    october = (await owner.get("/api/cashflow?month=2026-10")).json()
+    assert (october["start"], len(october["days"])) == ("2026-10-01", 31)
+    assert (await owner.get("/api/cashflow?month=2026-13")).status_code == 422
+    assert (await owner.get("/api/cashflow?month=soon")).status_code == 422
+    # Each user sees only their own.
+    member = world.browser()
+    assert (await member.login(MEMBER, invite=token)).status_code == 200
+    theirs = (await member.get("/api/cashflow")).json()
+    assert theirs["logged_out"]["amount"] == "0.0000"
+
+
 # --- subscriptions ----------------------------------------------------------------------
 
 
