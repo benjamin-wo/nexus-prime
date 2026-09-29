@@ -50,6 +50,15 @@ class Settings(BaseSettings):
     # tests and local runs don't send messages unless asked to. ---
     jobs_enabled: bool | None = None
 
+    # --- Receipt archive: a private S3-compatible bucket (Railway bucket variables).
+    # All or nothing; unset = receipts aren't kept. ---
+    storage_bucket: str | None = None
+    storage_endpoint: str | None = None
+    storage_region: str = "auto"
+    storage_access_key_id: SecretStr | None = None
+    storage_secret_access_key: SecretStr | None = None
+    storage_path_style: bool = False
+
     # --- LLM. Names match the pre-rebuild deployment's variables. ---
     llm_provider: LlmProvider = LlmProvider.GEMINI
     gemini_api_key: SecretStr | None = None
@@ -101,6 +110,10 @@ class Settings(BaseSettings):
         "openrouter_api_key",
         "deepseek_api_key",
         "openai_api_key",
+        "storage_access_key_id",
+        "storage_secret_access_key",
+        "storage_bucket",
+        "storage_endpoint",
         mode="before",
     )
     @classmethod
@@ -115,6 +128,23 @@ class Settings(BaseSettings):
             if self.admin_telegram_chat_id is None:
                 raise ValueError("ADMIN_TELEGRAM_CHAT_ID is required when Telegram is enabled")
         return self
+
+    @model_validator(mode="after")
+    def _storage_all_or_nothing(self) -> Self:
+        parts = {
+            "STORAGE_BUCKET": self.storage_bucket,
+            "STORAGE_ENDPOINT": self.storage_endpoint,
+            "STORAGE_ACCESS_KEY_ID": self.storage_access_key_id,
+            "STORAGE_SECRET_ACCESS_KEY": self.storage_secret_access_key,
+        }
+        missing = [name for name, value in parts.items() if value is None]
+        if missing and len(missing) < len(parts):
+            raise ValueError(f"receipt storage is half configured; missing {', '.join(missing)}")
+        return self
+
+    @property
+    def storage_enabled(self) -> bool:
+        return self.storage_bucket is not None
 
     @property
     def database_url_str(self) -> str:

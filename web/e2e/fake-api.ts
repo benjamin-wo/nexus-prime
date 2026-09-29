@@ -11,6 +11,7 @@ type Tx = {
   status: "confirmed" | "pending";
   source: string;
   deleted: boolean;
+  has_receipt?: boolean;
 };
 
 /** An in-memory stand-in for the API, so journeys exercise the real UI in a browser. */
@@ -37,7 +38,7 @@ export async function fakeApi(page: Page, { signedIn = true } = {}) {
     rules: FakeRule[];
   } = {
     txs: [
-      mk("t1", "out", "12.40", "Maxwell Food Centre", "food"),
+      { ...mk("t1", "out", "12.40", "Maxwell Food Centre", "food"), has_receipt: true },
       mk("t2", "out", "25.00", "Grab", null),
       mk("t3", "in", "4200.00", "Employer", null),
     ],

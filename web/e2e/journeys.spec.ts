@@ -289,6 +289,19 @@ test("a category correction offers a rule, saved only when accepted", async ({ p
   await expect(rules.getByRole("heading", { name: "“grab”" })).toHaveCount(0);
 });
 
+test("a kept receipt opens through the app's own link", async ({ page }) => {
+  await fakeApi(page);
+  await page.goto("/ledger");
+  const link = page.getByRole("link", { name: "Receipt" });
+  await expect(link).toHaveCount(1);
+  await expect(link).toHaveAttribute("href", "/api/transactions/t1/receipt");
+  await page.getByRole("button", { name: "Maxwell Food Centre" }).click();
+  await expect(page.getByRole("link", { name: "View receipt" })).toHaveAttribute(
+    "href",
+    "/api/transactions/t1/receipt",
+  );
+});
+
 test("nothing spills sideways on a small phone", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 568 });
   await fakeApi(page);

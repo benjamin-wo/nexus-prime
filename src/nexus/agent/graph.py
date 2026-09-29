@@ -214,6 +214,7 @@ class AgentGraph:
                 "merchant": draft.get("merchant"),
                 "date": draft.get("date"),
                 "external_id": ref or f"receipt-{uuid4()}",
+                "receipt_id": draft.get("receipt_id"),
             },
         }
         message = AIMessage(content="", tool_calls=[call], additional_kwargs={KERNEL: True})

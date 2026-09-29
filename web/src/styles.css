@@ -322,3 +322,4 @@ a.btn { text-decoration: none; }
 .rail .btn:hover { color: var(--text-primary); }
 .ledger .btn-ghost { min-height: 0; padding: 0; justify-content: flex-start; text-align: left; font-weight: 600; }
 .ledger td.num { white-space: nowrap; }
+.receipt-link { display: inline-block; color: var(--cyan-accent); text-decoration: underline; }

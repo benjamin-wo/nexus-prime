@@ -70,6 +70,25 @@ A rule files new expenses whose merchant or notes mention a word or phrase (whol
 
 Rules change only when the user says so. Correcting an expense's category leaves the rules as they are and offers one ("Always file “grab” under Food?", or a change to an existing rule) that is saved only if accepted. Removing a rule archives it: expenses it filed keep their category and can still explain it. A rule never recategorises expenses already logged.
 
+## Receipt archive
+
+Receipt photos sent to the bot are kept in a private S3-compatible bucket. In production that's a Railway bucket, wired in with reference variables:
+
+| Variable | Value |
+|---|---|
+| `STORAGE_BUCKET` | `${{<bucket>.BUCKET}}` |
+| `STORAGE_ENDPOINT` | `${{<bucket>.ENDPOINT}}` |
+| `STORAGE_REGION` | `${{<bucket>.REGION}}` |
+| `STORAGE_ACCESS_KEY_ID` | `${{<bucket>.ACCESS_KEY_ID}}` |
+| `STORAGE_SECRET_ACCESS_KEY` | `${{<bucket>.SECRET_ACCESS_KEY}}` |
+| `STORAGE_PATH_STYLE` | `true` only if the bucket's Credentials tab says it uses path-style URLs |
+
+Storage is all or nothing: a partial setup stops startup. With none, photos are still read and logged, but not kept.
+
+- **Keys** are `receipts/<user id>/<receipt id>`, and the database checks that each key belongs to its row's user.
+- **Downloads** go through `GET /api/transactions/{id}/receipt`, which checks the session's user owns the transaction, then redirects to a presigned link that expires in 5 minutes. Objects are never public.
+- **Lifecycle:** a receipt is attached when its expense is confirmed. It's hidden while the expense is deleted, and comes back if the expense is restored. An hourly job erases it 30 days after the delete, and erases photos that were never confirmed after a day. The file goes first, then the row, so a failed delete is retried.
+
 ## Deploy (Railway)
 
 The `nexus-app` service builds from the `Dockerfile`. Its settings live on the service in Railway, not in the repo (Railway no longer reads `railway.toml`):

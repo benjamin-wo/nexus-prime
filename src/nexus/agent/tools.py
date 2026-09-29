@@ -19,6 +19,7 @@ from nexus.application import bills as bill_cases
 from nexus.application import budgets as budget_cases
 from nexus.application import categories as category_cases
 from nexus.application import category_rules as rule_cases
+from nexus.application import receipts as receipt_cases
 from nexus.application import salary as salary_cases
 from nexus.application import splits as split_cases
 from nexus.application import transactions as tx_cases
@@ -224,6 +225,7 @@ class ReceiptExpenseArgs(Args):
     merchant: str | None = None
     date: str | None = None
     external_id: str
+    receipt_id: str | None = None  # the stored photo, set by the kernel
 
 
 async def _describe_receipt(ctx: ToolContext, a: ReceiptExpenseArgs) -> str:
@@ -233,7 +235,7 @@ async def _describe_receipt(ctx: ToolContext, a: ReceiptExpenseArgs) -> str:
 
 
 async def _log_receipt_expense(ctx: ToolContext, a: ReceiptExpenseArgs) -> ToolResult:
-    tx = await tx_cases.log_transaction(
+    tx = await receipt_cases.log_with_receipt(
         ctx.uow(),
         ctx.user.id,
         tx_cases.NewTransaction(
@@ -244,6 +246,8 @@ async def _log_receipt_expense(ctx: ToolContext, a: ReceiptExpenseArgs) -> ToolR
             source=Source.PHOTO,
             external_id=a.external_id,
         ),
+        UUID(a.receipt_id) if a.receipt_id else None,
+        now=ctx.now,
     )
     return ToolResult(f"Logged from receipt: {describe(tx, {}, ctx.tz)}", wrote=True)
 

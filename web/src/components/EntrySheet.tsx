@@ -1,7 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 
-import { api, type Category, type Direction, type EditedTransaction, type Me, type Transaction } from "../api";
+import {
+  api,
+  type Category,
+  type Direction,
+  type EditedTransaction,
+  type Me,
+  receiptUrl,
+  type Transaction,
+} from "../api";
 import { isoDay } from "../format";
 
 export function EntrySheet({
@@ -132,6 +140,11 @@ export function EntrySheet({
           Date
           <input className="input" type="date" required value={date} onChange={(e) => setDate(e.target.value)} />
         </label>
+        {editing?.has_receipt && (
+          <a className="btn" href={receiptUrl(editing.id)} target="_blank" rel="noopener noreferrer">
+            View receipt
+          </a>
+        )}
         <label className="field">
           Notes
           <textarea className="input" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
