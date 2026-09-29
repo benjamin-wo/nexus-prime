@@ -1,69 +1,163 @@
 # Nexus Prime
 
-Personal finance assistant: quick capture on Telegram and a web cockpit for managing money, over one agent. See [`docs/PLAN.md`](docs/PLAN.md) for the build plan, [`CONTEXT.md`](CONTEXT.md) for the glossary and [`DESIGN.md`](DESIGN.md) for the design system.
+[![CI](https://github.com/benjamin-wo/nexus-prime/actions/workflows/ci.yml/badge.svg)](https://github.com/benjamin-wo/nexus-prime/actions/workflows/ci.yml)
+![Python 3.12](https://img.shields.io/badge/python-3.12-3776ab)
+![TypeScript](https://img.shields.io/badge/typescript-strict-3178c6)
+![mypy strict](https://img.shields.io/badge/mypy-strict-2a6db2)
+![Postgres 16](https://img.shields.io/badge/postgres-16-336791)
 
-## Local development
+**A personal finance assistant you talk to.** Text the Telegram bot "lunch at Maxwell 8.40" or send it a receipt photo, and it's in your ledger. Open the web cockpit, on desktop or inside Telegram as a Mini App, to see where the month went. Budgets, bills and payday take care of themselves in the background.
 
-Requires Python 3.12, [`uv`](https://docs.astral.sh/uv/), Node 22 and Docker.
+One LLM agent serves both surfaces, but the parts that must be right, like money, identity and who can see what, never depend on the model.
+
+<p align="center">
+  <img src="docs/screenshots/dashboard.png" alt="Dashboard on a phone: spent, received and net for the month in SGD, spending by category" width="30%">
+  <img src="docs/screenshots/ledger.png" alt="Ledger on a phone: transactions with a USD charge shown converted to SGD at its day's rate" width="30%">
+  <img src="docs/screenshots/plan.png" alt="Plan page on a phone: budget meters, upcoming bills and payday" width="30%">
+</p>
+<p align="center"><sub>Screenshots use sample data.</sub></p>
+
+## What it does
+
+- **Capture in a sentence.**
+  - "grab 12 yesterday", "coffee 5.50 USD", "split dinner 120 with Ann and Ben", "Ann paid me back 40".
+  - Receipt photos are read by a vision model and logged after you confirm.
+- **Anything consequential asks first.** Edits, deletes, splits and budget removal show a Confirm / Cancel prompt. It survives restarts, because the conversation state lives in Postgres.
+- **One currency view.**
+  - Totals are in your home currency.
+  - Each foreign-currency row shows its converted amount, the rate used and the day that rate was published.
+  - An amount with no rate is flagged, never guessed.
+- **Budgets:** monthly limits, overall or per category, with Telegram alerts at 50%, 80% and 100%, each sent once.
+- **Bills:** reminders 7, 3 and 1 days before, with Mark paid and Snooze buttons. It never pays anything.
+- **Payday:**
+  - A check-in on payday, with weekend paydays moved to Friday.
+  - Your usual salary changes only when you confirm it.
+- **Web cockpit:** dashboard, filterable ledger, CSV export, IOUs, and a chat drawer with the same agent. It is mobile-first and opens inside Telegram already signed in.
+- **Private by construction.** It is invite-only, and each user's data is isolated by the database schema itself, not just by application code.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    TG[Telegram bot<br/>webhook] --> CH
+    WEB[Web cockpit<br/>React SPA / Telegram Mini App] --> CH
+    subgraph App[FastAPI app]
+        CH[Channels<br/>auth · CSRF · dedupe] --> AG
+        AG[Agent<br/>deterministic kernel → LangGraph + LLM<br/>human-in-the-loop confirmations] --> UC
+        CH --> UC
+        JOBS[Job runner<br/>budgets · bills · payday] --> UC
+        UC[Use cases<br/>application layer] --> DOM[Domain<br/>Money · ledger · planning rules]
+        UC --> PORTS[Ports]
+    end
+    PORTS --> PG[(Postgres<br/>ledger · jobs · checkpoints)]
+    PORTS --> FX[Frankfurter<br/>ECB rates]
+    AG --> LLM[LLM provider<br/>Gemini / OpenRouter / DeepSeek / OpenAI]
+```
+
+The code follows a clean, layered architecture. `domain` holds pure rules with no I/O. `application` holds use cases that talk to storage only through ports. `infra` implements those ports. The agent, the channels and the job runner only ever call use cases. The tenant always comes from the authenticated principal: never from a request body, and never from the model's arguments.
+
+## Engineering highlights
+
+**Money is exact.**
+- Amounts are `Decimal` in Python and `NUMERIC(19,4)` in Postgres, always stored with a currency, and currencies are never mixed.
+- Splits allocate in minor units so they always sum back exactly.
+- Foreign amounts convert at the rate published *on or before* the transaction's own local date. A later rate is never substituted, even if the provider returns one.
+
+**Tenant isolation is enforced by the database.**
+- Every child row references its parent by `(id, user_id)`, so Postgres itself rejects a cross-tenant link.
+- Agent tools can't accept a `user_id`; any the model sends is dropped.
+- Dedicated cross-tenant tests cover the ledger, IOUs, budgets, bills, salary and the web API, plus a test that the database itself rejects a cross-tenant link.
+
+**The LLM is not trusted with the important parts.**
+- A deterministic kernel runs before the model. It parses income ("salary 5000", "Ann paid me back 20") exactly, handles stop/cancel, and refuses money movement ("transfer $500 to…") with a logged capability gap.
+- Consequential tools pause the LangGraph run with `interrupt()` and wait for an explicit Confirm. The paused state is checkpointed in Postgres.
+- The model sits behind a provider-agnostic adapter with a fallback chain.
+
+**Background jobs run exactly once, with no leader.**
+- A Postgres job queue claims work with `FOR UPDATE SKIP LOCKED` under a lease.
+- Recurring work is keyed per time slot, so two app instances overlapping during a deploy can't double-send an alert.
+- Retries back off exponentially.
+- Messages respect quiet hours in each user's timezone.
+
+**Security fails closed.**
+- Telegram Login and Mini App signatures are verified with HMAC.
+- Invite and session tokens are stored only as hashes.
+- Writes need an origin check plus a CSRF token.
+- A strict CSP allows embedding only by Telegram's web client.
+- Missing configuration stops startup instead of falling back.
+- The repo is public, so no secret ever touches it.
+
+**Idempotent everywhere.** Telegram updates, imports, alerts, reminders and payday logging all carry dedupe keys. A redelivered webhook or a double-tapped button is a no-op.
+
+**It replaced a live system without losing data.** A read-only importer migrated the previous bot's history and verified per-user totals. The webhook moved over by a written runbook, and the old database was kept as an archive.
+
+## Tech stack
+
+| Layer | Choices |
+|---|---|
+| Backend | Python 3.12, FastAPI, SQLAlchemy 2 (async Core, asyncpg), Pydantic v2, Alembic |
+| Agent | LangGraph with a Postgres checkpointer, human-in-the-loop interrupts, skills loaded on demand, provider-agnostic LLM adapter |
+| Frontend | React 19, TypeScript, Vite, TanStack Query, React Router |
+| Data | PostgreSQL 16: 17 tables, 7 migrations, a job queue in the same database |
+| Channels | Telegram Bot API (webhook, inline buttons, Mini App), cookie sessions with CSRF |
+| Quality | ruff, mypy `--strict`, pytest, Vitest, Playwright, GitHub Actions |
+| Deploy | Docker multi-stage build on Railway; migrations run as a pre-deploy step and the app refuses to start on an unmigrated schema |
+
+## Testing
+
+Every change goes through the same CI: lint, format, strict type-checking, and three test suites.
+
+- **267 Python tests.**
+  - Unit tests cover pure rules: money arithmetic, budget thresholds at exact boundaries, due dates across short months and leap years, and paydays across weekends.
+  - Integration tests run against a real Postgres, with a fresh database per test built by the real migrations.
+  - A schema test fails if the migrations drift from the table definitions.
+- **Agent tests** use a scripted fake model, so conversations, confirmations and refusals are deterministic.
+- **Concurrency tests** race two job runners and assert each job runs exactly once.
+- **Playwright journeys**, 15 of them, run on desktop and phone viewports. They include a check that nothing overflows a 320px screen.
+- **Vitest** covers the components, including a regression test for a React effect-cleanup crash found in production.
+
+## Project layout
+
+```
+src/nexus/
+  domain/        pure rules: Money, ledger policies, budgets, bills, paydays
+  application/   use cases (transactions, splits, budgets, bills, salary, FX, access) and ports
+  infra/         Postgres repositories and unit of work, Frankfurter client, LLM factory
+  agent/         kernel, LangGraph graph, tools, skills, service used by all channels
+  channels/      Telegram webhook and client; web API, security, Mini App sign-in
+  jobs/          job runner and handlers
+  skills/        agent skills (expenses, budgets, bills, salary) as Markdown
+web/             React cockpit, Vitest and Playwright tests
+migrations/      Alembic revisions
+tests/           unit and integration tests
+docs/            build plan, operations guide, cutover runbook
+```
+
+## Running it
 
 ```bash
-docker compose up -d db          # Postgres 16 on localhost:5432
-cp .env.example .env
-uv sync
-uv run alembic upgrade head      # the app refuses to start on an unmigrated database
+docker compose up -d db && cp .env.example .env
+uv sync && uv run alembic upgrade head
 uv run uvicorn --factory nexus.main:create_app --reload
-curl localhost:8000/healthz
 ```
 
-### Checks
+The operations guide ([`docs/OPERATIONS.md`](docs/OPERATIONS.md)) covers the rest:
+- configuration and the Telegram and web access model;
+- background jobs;
+- deployment;
+- the full set of checks.
 
-```bash
-uv run ruff check . && uv run ruff format --check .
-uv run mypy
-TEST_DATABASE_URL=postgresql://nexus:nexus@localhost:5432/postgres uv run pytest
-cd web && npm ci && npm run typecheck && npm test && npm run build
-```
+## Roadmap
 
-Integration tests create and drop a throwaway database per test on the `TEST_DATABASE_URL` server, and are skipped when it is unset.
+The build follows [`docs/PLAN.md`](docs/PLAN.md). Each milestone ships to production as it lands.
 
-## Schema changes
+- **Done:** foundations, ledger and agent, Telegram, the migration from the old bot, the web cockpit, multi-currency, the job runtime, budgets, bills and payday.
+- **Next:**
+  - explainable category rules;
+  - email receipt ingestion and a receipt archive;
+  - recurring-spend and subscription detection;
+  - a cash-flow calendar;
+  - bank statement import (CSV, then PDF);
+  - a hardening pass: security review, load tests and a restore drill.
 
-Only through Alembic: `uv run alembic revision -m "..."`, then `uv run alembic upgrade head`.
-
-## Telegram
-
-The channel is on when `TELEGRAM_BOT_TOKEN` is set, which then also requires `TELEGRAM_WEBHOOK_SECRET` and `ADMIN_TELEGRAM_CHAT_ID` (the owner). Only the owner and `TELEGRAM_ALLOWED_USER_IDS` are served, in private chats. Updates arrive at `POST /telegram/webhook`, checked against the secret token and de-duplicated by `update_id`.
-
-The app never registers its own webhook, so deploying it can't take a bot away from another service. `python -m nexus.channels.telegram.register` shows the current webhook and, with `--yes`, points the bot here. See [`docs/CUTOVER.md`](docs/CUTOVER.md) for moving from the old bot, including the one-time history import (`python -m nexus.legacy`).
-
-The model comes from `LLM_PROVIDER` (`gemini`, `openrouter`, `deepseek` or `openai`) with the matching key, plus an optional Gemini `LLM_FALLBACK_MODEL`. Receipt photos are read by Gemini. With Telegram on and no usable model configured, the app refuses to start.
-
-## Web access
-
-The web API (`/api/...`) is on when Telegram is configured and the public origin is known (`WEB_ORIGIN`, or Railway's `RAILWAY_PUBLIC_DOMAIN`).
-
-- **Sign-in** uses the Telegram Login Widget. The signature is checked with the bot token and must be less than a day old. The bot's domain must be set with @BotFather `/setdomain`.
-- **Inside Telegram (Mini App):** the bot's menu button ("Open Nexus", set at startup) and the `/app` command open the web app inside Telegram. It signs in with the launch data Telegram signs for the Mini App (checked with the bot token, less than a day old), so there is no widget or phone number step. The same access rules apply. These sessions use a `SameSite=None; Partitioned` cookie because Telegram's web clients show the app in an iframe, and the CSP allows only `https://web.telegram.org` to embed it.
-- **Who can sign in:** the owner (`ADMIN_TELEGRAM_CHAT_ID`) always can. Anyone else needs a single-use invite, valid for 24 hours, from the owner (`/invite` in the bot, or `POST /api/invites`). Tokens are stored only as hashes.
-- **Sessions** are HttpOnly, Secure, SameSite=Lax cookies (Mini App: see above) lasting 30 days, and can be revoked by logging out.
-- **Writes** must come from the app's own origin and carry the session's `X-CSRF-Token`.
-- **Every route** takes the user from the session. Another user's data returns 404.
-
-## Background jobs
-
-Budget alerts, bill reminders and the payday check-in run on a Postgres-backed job queue inside the app process: `JOBS_ENABLED`, which defaults to on only when `ENVIRONMENT=prod`.
-
-- **Exactly once:** each job is claimed with `FOR UPDATE SKIP LOCKED` under a 5-minute lease, and recurring work is queued once per time slot under a unique dedupe key. Overlapping instances during a deploy don't double-send, and no leader election is needed.
-- **Retries:** failures back off (2, 4, 8… minutes, capped at an hour) and stop after 5 attempts.
-- **Quiet hours:** Telegram messages wait out 22:00–08:00 in the user's timezone.
-- **Bills:** a name, an optional amount, a next due date, and a repeat of once, weekly, monthly or yearly. Monthly bills on the 29th–31st land on the last day of shorter months and come back afterwards. Every 30 minutes a sweep sends the most urgent reminder reached (7, 3 or 1 days before), once each. Reminders carry **Mark paid** and **Snooze 1 day** buttons. Snoozing re-sends the reminder a day later. An unpaid bill shows as overdue for a week, then rolls on to its next due date. Marking a bill paid only records it: nothing is paid and the ledger isn't touched.
-- **Salary:** only what the user reports. The pay schedule is one of three: a day of the month (clamped to short months), the last weekday, or every two weeks from a date. Weekend paydays move to the Friday before. On payday, from 09:00, there is one check-in. With a usual salary set, it has **Log** and **Not yet** buttons, and Log records the usual amount once per payday. When the user reports a different salary, the bot asks before changing the usual amount; nothing changes silently.
-- **Budgets:** monthly limits in the home currency, overall or per category, with no rollover. Every 10 minutes a sweep records each 50/80/100% threshold reached once per budget per month (`budget_alerts`), and messages the highest new one.
-
-## Deploy (Railway)
-
-The `nexus-app` service builds from the `Dockerfile`. Its settings live on the service in Railway, not in the repo (Railway no longer reads `railway.toml`):
-
-- Pre-deploy command: `alembic upgrade head`, so migrations run before the new version starts.
-- Health check: `/healthz`, timeout 60 s. Restart policy: on failure.
-- Variables: `DATABASE_URL` referencing the service's own Postgres, `ENVIRONMENT=prod`, `PORT=8000`.
+See also [`CONTEXT.md`](CONTEXT.md) (glossary) and [`DESIGN.md`](DESIGN.md) (design system).
