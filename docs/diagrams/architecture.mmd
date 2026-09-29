@@ -1,0 +1,27 @@
+flowchart TB
+    TG["<b>Telegram bot</b><br/>text · receipt photos · buttons"]
+    WEB["<b>Web cockpit</b><br/>React SPA · Telegram Mini App"]
+    subgraph App[" "]
+        direction TB
+        CH["<b>FastAPI channels</b><br/>auth · CSRF · dedupe"]
+        AG["<b>Agent</b><br/>deterministic kernel → LangGraph<br/>human-in-the-loop confirmations"]
+        JOBS["<b>Job runner</b><br/>budgets · bills · payday"]
+        UC["<b>Use cases</b><br/>application layer"]
+        DOM["<b>Domain</b><br/>Money · ledger · planning rules"]
+        PORTS["<b>Ports</b>"]
+        CH --> AG
+        CH --> UC
+        AG --> UC
+        JOBS --> UC
+        UC --> DOM
+        UC --> PORTS
+    end
+    TG --> CH
+    WEB --> CH
+    PORTS --> PG[("<b>Postgres</b><br/>ledger · jobs · checkpoints")]
+    PORTS --> FX["<b>Frankfurter</b><br/>ECB exchange rates"]
+    AG --> LLM["<b>LLM provider</b><br/>Gemini · OpenRouter<br/>DeepSeek · OpenAI"]
+    classDef ext fill:#ecfeff,stroke:#0891b2,color:#083344
+    classDef surface fill:#fef3c7,stroke:#d97706,color:#451a03
+    class PG,FX,LLM ext
+    class TG,WEB surface
