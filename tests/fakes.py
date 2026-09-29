@@ -209,6 +209,33 @@ class FakeMailbox:
         self.revocations.append(refresh_token)
 
 
+@dataclass
+class FakeForwarding:
+    """Forwarding addresses: one inbox per owner, holding ``emails`` once made."""
+
+    emails: dict[str, FetchedEmail] = field(default_factory=dict)
+    inboxes: dict[str, str] = field(default_factory=dict)  # owner -> inbox id
+    deleted: list[str] = field(default_factory=list)
+
+    async def create_inbox(self, owner: str) -> tuple[str, str]:
+        inbox = self.inboxes.setdefault(owner, f"inbox-{len(self.inboxes) + 1}")
+        return inbox, f"nexus-{inbox}@agentmail.test"
+
+    async def access_token(self, refresh_token: str) -> str:
+        if refresh_token in self.deleted:
+            raise MailboxRevoked("deleted")
+        return refresh_token
+
+    async def search(self, access_token: str, query: str, *, after: datetime) -> list[str]:
+        return [i for i, e in self.emails.items() if e.received_at > after]
+
+    async def fetch(self, access_token: str, message_id: str) -> FetchedEmail:
+        return self.emails[message_id]
+
+    async def revoke(self, refresh_token: str) -> None:
+        self.deleted.append(refresh_token)
+
+
 class FakeEmailReader:
     """Receipts are emails whose subject contains 'receipt'; the amount and merchant
     come from lines like 'Total: 18.50' and 'Merchant: Grab' in the text."""

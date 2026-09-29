@@ -30,6 +30,7 @@ from tests.fakes import (
     NOW,
     FakeBucket,
     FakeEmailReader,
+    FakeForwarding,
     FakeMailbox,
     FakeRates,
     FakeTelegram,
@@ -96,6 +97,7 @@ class World:
     bucket: FakeBucket
     engine: AsyncEngine
     mailbox: FakeMailbox
+    forwarding: FakeForwarding
 
     def browser(self) -> Browser:
         return Browser(self.app, self.clock)
@@ -106,6 +108,7 @@ async def world(engine: AsyncEngine, empty_database_url: str) -> AsyncIterator[W
     clock = Clock()
     bucket = FakeBucket()
     mailbox = FakeMailbox()
+    forwarding = FakeForwarding()
     model = scripted()
     telegram = FakeTelegram()
     rates = FakeRates({("USD", "SGD"): {date(2026, 9, 25): "1.2905", date(2026, 9, 28): "1.3000"}})
@@ -121,6 +124,7 @@ async def world(engine: AsyncEngine, empty_database_url: str) -> AsyncIterator[W
         google_client_id="cid",
         google_client_secret="secret",
         token_encryption_key=TEST_KEY,
+        agentmail_api_key="am_test",
     )
     app = create_app(
         settings,
@@ -132,11 +136,12 @@ async def world(engine: AsyncEngine, empty_database_url: str) -> AsyncIterator[W
             rates=rates,
             receipt_store=bucket,
             mailbox=mailbox,
+            forwarding=forwarding,
             email_reader=FakeEmailReader(),
         ),
     )
     async with app.router.lifespan_context(app):
-        yield World(app, clock, model, telegram, rates, bucket, engine, mailbox)
+        yield World(app, clock, model, telegram, rates, bucket, engine, mailbox, forwarding)
 
 
 async def owner_and_invite(world: World) -> tuple[Browser, str]:
@@ -649,6 +654,30 @@ async def test_the_bot_offers_connecting_through_its_tool(world: World) -> None:
     [[button]] = reply["buttons"]
     assert button["label"] == "Connect Gmail"
     assert button["data"].startswith(f"url:{ORIGIN}/connect/gmail?t=")
+
+
+async def test_the_bot_gives_a_forwarding_address_when_asked(world: World) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+    world.model.script += [
+        call("forward_email", provider="outlook"),
+        say("Here's your address and the steps."),
+    ]
+    ask = {"message": "I use outlook, can you log my receipts automatically?"}
+    [reply] = (await owner.send("POST", "/api/chat", ask)).json()
+    assert reply["text"] == "Here's your address and the steps."
+    result = world.model.seen[-1][-1].content
+    assert "nexus-inbox-1@agentmail.test" in result and "Subject includes" in result
+    overview = (await owner.get("/api/email")).json()
+    assert overview["available"] and overview["forwarding_available"]
+    [connection] = overview["connections"]
+    assert connection["provider"] == "forward"
+    assert connection["address"] == "nexus-inbox-1@agentmail.test"
+    assert connection["last_received"] is None
+
+    world.model.script += [call("test_email_setup"), say("Send the test email now.")]
+    [reply] = (await owner.send("POST", "/api/chat", {"message": "test my setup"})).json()
+    assert '"Nexus test receipt"' in world.model.seen[-1][-1].content
 
 
 # --- category rules -------------------------------------------------------------------

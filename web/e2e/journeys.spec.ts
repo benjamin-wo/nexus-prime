@@ -339,6 +339,18 @@ test("email is out of sight until connected, then shows what happened to each em
   await expect(grab.getByRole("link", { name: "In your ledger" })).toBeVisible();
 });
 
+test("a forwarding address shows as one, with a way to copy it", async ({ page }) => {
+  await fakeApi(page, { forwarding: true });
+  await page.goto("/email");
+  const mailboxes = page.getByRole("region", { name: "Connected" });
+  const row = mailboxes.getByRole("listitem").filter({ hasText: "nexus-3f9a2c7e1b04@agentmail.to" });
+  await expect(row.getByText("Your forwarding address: forward receipts here.")).toBeVisible();
+  await expect(row.getByText(/^Last email received/)).toBeVisible();
+  await expect(row.getByRole("button", { name: "Copy address" })).toBeVisible();
+  await row.getByRole("button", { name: "Disconnect" }).click();
+  await expect(row.getByText("Stop using this address?")).toBeVisible();
+});
+
 test("telegram updates default to an end-of-day summary and can be changed", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/plan");

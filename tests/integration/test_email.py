@@ -49,6 +49,10 @@ async def person(uow: UowFactory, telegram_id: int = 4242) -> User:
     return registration.user
 
 
+def runtime(mailbox: FakeMailbox) -> email_cases.EmailRuntime:
+    return email_cases.EmailRuntime(mailbox, FakeEmailReader(), CIPHER, "https://nexus.test")
+
+
 async def connect(uow: UowFactory, user: User, mailbox: FakeMailbox) -> EmailConnection:
     token = await email_cases.create_link(uow(), user, now=NOW)
     return await email_cases.finish_connect(
@@ -209,7 +213,7 @@ async def test_confirming_logs_it_once_and_never_again(uow: UowFactory) -> None:
 
     # Deleted, disconnected and reconnected: the email is still never imported again.
     await delete_transaction(uow(), user.id, tx.id)
-    await email_cases.disconnect(uow, mailbox, CIPHER, user.id, connection.id)
+    await email_cases.disconnect(uow, runtime(mailbox), user.id, connection.id)
     assert mailbox.revocations == ["refresh-token-1"]
     again = await connect(uow, user, mailbox)
     await sweep(uow, user, mailbox, again, at=NOW + timedelta(minutes=2))
@@ -289,7 +293,7 @@ async def test_mailboxes_are_private(uow: UowFactory) -> None:
     with pytest.raises(NotFound):
         await email_cases.skip_email(uow(), ben.id, email.id)
     with pytest.raises(NotFound):
-        await email_cases.disconnect(uow, mailbox, CIPHER, ben.id, connection.id)
+        await email_cases.disconnect(uow, runtime(mailbox), ben.id, connection.id)
     # Ann's link can only ever connect a mailbox to Ann.
     token = await email_cases.create_link(uow(), ann, now=NOW)
     mailbox.grant = MailboxGrant("ben@gmail.com", "refresh-token-1")

@@ -126,6 +126,35 @@ Offered only when a user asks to automate logging ("can you log my expenses auto
 
 Gmail settings are all or nothing, and a missing or malformed encryption key stops startup.
 
+## Forwarding addresses (other mail providers)
+
+For Outlook, iCloud, Yahoo, work email, or Gmail users who'd rather not sign in. Like Connect Gmail, it's offered only when a user asks to automate logging.
+
+**How it works.**
+1. The bot's `forward_email` tool makes the user's own inbox on [AgentMail](https://agentmail.to), with an unguessable address like `nexus-3f9a2c7e1b04@agentmail.to`. It's made the first time they ask; asking again gives the same address.
+2. The tool gives step-by-step instructions for their provider, including a rule that forwards only emails whose subject says receipt, invoice, order, payment, transaction, paid or purchase. Forwarding a single receipt by hand works too.
+3. The regular 15-minute sweep reads new mail at each address and treats it like Gmail: screened, read into a draft, and confirmed by the user. There's no 30-day look-back, because a new address starts empty.
+
+**Setup help.**
+- **Provider confirmations.** Gmail (and others) email the forwarding address to confirm it. Mail from Google, Microsoft or Apple whose subject mentions forwarding or confirming is passed on to the user in Telegram, with the code and a button for the provider's own link. Links to any other host are dropped.
+- **Test my setup.** The `test_email_setup` tool asks the user to email themselves "Nexus test receipt", which passes the suggested filter. It then checks the address 1, 3 and 6 minutes later, and the user is told in chat when the test arrives.
+- **Which senders to filter.** `email_status` lists which senders sent receipts and which sent other mail, for choosing what a filter keeps.
+- **Quiet addresses.** If an address receives nothing for 14 days, the user is told once, until mail arrives again.
+
+AgentMail leaves out spam and mail that fails sender authentication. Anyone who learns an address could send it mail, but nothing is logged without the user's confirmation. Disconnecting on the Email page deletes the inbox, so the address stops accepting mail.
+
+**One-time setup (owner).**
+1. Create an AgentMail account and an API key.
+2. On the service in Railway, set these variables:
+
+| Variable | Value |
+|---|---|
+| `AGENTMAIL_API_KEY` | the API key |
+| `AGENTMAIL_DOMAIN` | optional: a custom domain set up in AgentMail; unset uses AgentMail's own |
+| `TOKEN_ENCRYPTION_KEY` | as for Gmail (already set if Gmail is) |
+
+A missing encryption key stops startup when `AGENTMAIL_API_KEY` is set.
+
 ## Deploy (Railway)
 
 The `nexus-app` service builds from the `Dockerfile`. Its settings live on the service in Railway, not in the repo (Railway no longer reads `railway.toml`):

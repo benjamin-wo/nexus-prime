@@ -22,7 +22,7 @@ One LLM agent serves both surfaces, but the parts that must be right, like money
 - **Capture in a sentence.**
   - "grab 12 yesterday", "coffee 5.50 USD", "split dinner 120 with Ann and Ben", "Ann paid me back 40".
   - Receipt photos are read by a vision model and logged after you confirm. The photo is kept privately with the expense.
-  - Ask it to log automatically and it offers **Connect Gmail**: receipts in your inbox become Telegram questions (**Log it / Skip**), with an Email page showing what happened to each one.
+  - Ask it to log automatically and it offers **Connect Gmail**, or for other mail (Outlook, iCloud, work) your own **forwarding address** with steps for a receipts-only rule. Receipts become Telegram questions (**Log it / Skip**), with an Email page showing what happened to each one.
 - **Anything consequential asks first.** Edits, deletes, splits and budget removal show a Confirm / Cancel prompt. It survives restarts, because the conversation state lives in Postgres.
 - **One currency view.**
   - Totals are in your home currency.
@@ -146,7 +146,7 @@ The operations guide ([`docs/OPERATIONS.md`](docs/OPERATIONS.md)) covers the res
 
 The build follows [`docs/PLAN.md`](docs/PLAN.md). Each milestone ships to production as it lands.
 
-- **Done:** foundations, ledger and agent, Telegram, the migration from the old bot, the web cockpit, multi-currency, the job runtime, budgets, bills, payday, category rules, the receipt archive and Connect Gmail.
+- **Done:** foundations, ledger and agent, Telegram, the migration from the old bot, the web cockpit, multi-currency, the job runtime, budgets, bills, payday, category rules, the receipt archive, Connect Gmail and forwarding addresses.
 - **Next:**
   - forwarding receipts from any mail provider;
   - recurring-spend and subscription detection;

@@ -15,7 +15,7 @@ type Tx = {
 };
 
 /** An in-memory stand-in for the API, so journeys exercise the real UI in a browser. */
-export async function fakeApi(page: Page, { signedIn = true, emailConnected = false } = {}) {
+export async function fakeApi(page: Page, { signedIn = true, emailConnected = false, forwarding = false } = {}) {
   let session = signedIn;
   type FakeBudget = { id: string; category_id: string | null; limit: number; spent: number };
   type FakeBill = {
@@ -37,7 +37,17 @@ export async function fakeApi(page: Page, { signedIn = true, emailConnected = fa
     salary: FakeSalary | null;
     rules: FakeRule[];
     frequency: string;
-    email: { connections: { id: string; address: string; status: string; last_checked: string | null }[]; emails: Record<string, unknown>[] };
+    email: {
+      connections: {
+        id: string;
+        provider: string;
+        address: string;
+        status: string;
+        last_checked: string | null;
+        last_received: string | null;
+      }[];
+      emails: Record<string, unknown>[];
+    };
   } = {
     txs: [
       { ...mk("t1", "out", "12.40", "Maxwell Food Centre", "food"), has_receipt: true },
@@ -50,9 +60,32 @@ export async function fakeApi(page: Page, { signedIn = true, emailConnected = fa
     rules: [],
     frequency: "daily",
     email: {
-      connections: emailConnected
-        ? [{ id: "c1", address: "ann@gmail.com", status: "active", last_checked: "2026-09-28T04:00:00Z" }]
-        : [],
+      connections: [
+        ...(emailConnected
+          ? [
+              {
+                id: "c1",
+                provider: "gmail",
+                address: "ann@gmail.com",
+                status: "active",
+                last_checked: "2026-09-28T04:00:00Z",
+                last_received: null,
+              },
+            ]
+          : []),
+        ...(forwarding
+          ? [
+              {
+                id: "c2",
+                provider: "forward",
+                address: "nexus-3f9a2c7e1b04@agentmail.to",
+                status: "active",
+                last_checked: "2026-09-28T04:00:00Z",
+                last_received: "2026-09-27T09:30:00Z",
+              },
+            ]
+          : []),
+      ],
       emails: emailConnected
         ? [
             {
@@ -284,7 +317,7 @@ export async function fakeApi(page: Page, { signedIn = true, emailConnected = fa
         },
       ]);
     }
-    if (path === "/email" && method === "GET") return json(route, { available: true, ...state.email });
+    if (path === "/email" && method === "GET") return json(route, { available: true, forwarding_available: true, ...state.email });
     if (path === "/email/link" && method === "GET")
       return json(route, url.searchParams.get("t") === "good" ? { valid: true, account_hint: "9165" } : { valid: false, account_hint: null });
     const emailAction = path.match(/^\/email\/(e\d+)\/(log|skip)$/);

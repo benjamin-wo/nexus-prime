@@ -32,6 +32,8 @@ def _connection(row: Row[Any]) -> EmailConnection:
         created_at=row.created_at,
         updated_at=row.updated_at,
         last_error=row.last_error,
+        last_received_at=row.last_received_at,
+        nudged_at=row.nudged_at,
     )
 
 
@@ -169,6 +171,8 @@ class SqlEmailRepository:
                 synced_until=connection.synced_until,
                 last_error=connection.last_error,
                 updated_at=connection.updated_at,
+                last_received_at=connection.last_received_at,
+                nudged_at=connection.nudged_at,
             )
         )
 

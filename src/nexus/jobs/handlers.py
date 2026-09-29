@@ -29,7 +29,7 @@ BUDGETS_SWEEP = "budgets.sweep"
 BILLS_SWEEP = "bills.sweep"
 PAYDAY_SWEEP = "salary.sweep"
 RECEIPTS_PURGE = "receipts.purge"
-EMAIL_SWEEP = "email.sweep"
+EMAIL_SWEEP = email_cases.SWEEP_JOB
 NOTIFY_SWEEP = "notify.sweep"
 SCHEDULES = (
     Schedule(BUDGETS_SWEEP, timedelta(minutes=10)),
@@ -120,10 +120,11 @@ def build_handlers(
             try:
                 async with uow() as tx:
                     user = await tx.ledger.get_user(connection.user_id)
-                if user is not None:
+                mailbox = email.mailbox_for(connection.provider)
+                if user is not None and mailbox is not None:
                     await email_cases.sweep(
                         uow,
-                        email.mailbox,
+                        mailbox,
                         email.reader,
                         email.cipher,
                         archive,

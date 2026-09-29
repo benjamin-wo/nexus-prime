@@ -86,6 +86,7 @@ class AgentDeps:
     clock: Callable[[], datetime]
     rates: RateSource | None = None
     connect_link: Callable[[User], Awaitable[str]] | None = None
+    forward_address: Callable[[User], Awaitable[str]] | None = None
 
 
 def strip_ids(text: str) -> str:
@@ -144,6 +145,7 @@ class AgentGraph:
             now=self.deps.clock(),
             rates=self.deps.rates,
             connect_link=self.deps.connect_link,
+            forward_address=self.deps.forward_address,
         )
 
     async def _prompt(self, ctx: ToolContext) -> str:

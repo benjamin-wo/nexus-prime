@@ -73,3 +73,10 @@ def test_connecting_gmail_needs_an_encryption_key() -> None:
         settings(google_client_id="cid")
     key = Fernet.generate_key().decode()
     assert settings(**google, token_encryption_key=f"{key}, {Fernet.generate_key().decode()}")
+
+
+def test_forwarding_addresses_need_an_encryption_key() -> None:
+    with pytest.raises(ValueError, match="TOKEN_ENCRYPTION_KEY"):
+        settings(agentmail_api_key="am_key")
+    key = Fernet.generate_key().decode()
+    assert settings(agentmail_api_key="am_key", token_encryption_key=key).agentmail_api_key

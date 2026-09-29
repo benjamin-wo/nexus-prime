@@ -24,7 +24,12 @@ from nexus.application import email as email_cases
 from nexus.application.clock import utcnow
 from nexus.application.email import EmailRuntime
 from nexus.application.fx import RateSource
-from nexus.application.ports import EmailReader, Mailbox, ReceiptStore
+from nexus.application.ports import (
+    EmailReader,
+    ForwardingInboxes,
+    ReceiptStore,
+    SignInMailbox,
+)
 from nexus.channels.telegram import webhook as telegram_webhook
 from nexus.channels.telegram.client import HttpTelegramClient, TelegramClient
 from nexus.channels.web import api as web_api
@@ -38,6 +43,7 @@ from nexus.infra.db.checkpointer import postgres_checkpointer
 from nexus.infra.db.engine import make_engine
 from nexus.infra.db.migrations import assert_schema_at_head
 from nexus.infra.db.uow import SqlUnitOfWork
+from nexus.infra.email.agentmail import AgentMailInboxes
 from nexus.infra.email.gmail import GmailMailbox
 from nexus.infra.fx.frankfurter import FrankfurterRates
 from nexus.infra.llm.factory import ChatModels, build_chat_models, build_screener
@@ -61,7 +67,8 @@ class Overrides:
     clock: Callable[[], datetime] | None = None
     rates: RateSource | None = None
     receipt_store: ReceiptStore | None = None
-    mailbox: Mailbox | None = None
+    mailbox: SignInMailbox | None = None
+    forwarding: ForwardingInboxes | None = None
     email_reader: EmailReader | None = None
 
 
@@ -95,20 +102,36 @@ async def _email_runtime(
     models: ChatModels,
     origin: str | None,
 ) -> EmailRuntime | None:
-    """Connect Gmail, when Google and the encryption key are configured."""
-    if not settings.gmail_enabled or origin is None:
+    """Connect Gmail and forwarding addresses, each when configured (both need the
+    encryption key)."""
+    if not (settings.gmail_enabled or settings.forwarding_enabled) or origin is None:
         return None
-    client_id, secret, key = (
-        settings.google_client_id,
-        settings.google_client_secret,
-        settings.token_encryption_key,
-    )
-    if client_id is None or secret is None or key is None:  # pragma: no cover - validated
-        raise RuntimeError("Gmail is half configured")
+    key = settings.token_encryption_key
+    if key is None:  # pragma: no cover - validated
+        raise RuntimeError("email is configured without TOKEN_ENCRYPTION_KEY")
+    http: httpx.AsyncClient | None = None
+
+    async def client() -> httpx.AsyncClient:
+        nonlocal http
+        if http is None:
+            http = await stack.enter_async_context(httpx.AsyncClient(timeout=30))
+        return http
+
     mailbox = overrides.mailbox
-    if mailbox is None:
-        http = await stack.enter_async_context(httpx.AsyncClient(timeout=30))
-        mailbox = GmailMailbox(http, client_id=client_id, client_secret=secret.get_secret_value())
+    if mailbox is None and settings.gmail_enabled:
+        client_id, secret = settings.google_client_id, settings.google_client_secret
+        if client_id is None or secret is None:  # pragma: no cover - validated
+            raise RuntimeError("Gmail is half configured")
+        mailbox = GmailMailbox(
+            await client(), client_id=client_id, client_secret=secret.get_secret_value()
+        )
+    forwarding = overrides.forwarding
+    if forwarding is None and settings.forwarding_enabled and settings.agentmail_api_key:
+        forwarding = AgentMailInboxes(
+            await client(),
+            api_key=settings.agentmail_api_key.get_secret_value(),
+            domain=settings.agentmail_domain,
+        )
     reader = overrides.email_reader or LlmEmailReader(
         build_screener(settings, models.primary), models.primary
     )
@@ -117,6 +140,7 @@ async def _email_runtime(
         reader=reader,
         cipher=FernetCipher(key.get_secret_value()),
         origin=origin,
+        forwarding=forwarding,
     )
 
 
@@ -182,6 +206,7 @@ async def _telegram_runtime(
             clock=clock,
             rates=rates,
             connect_link=_connect_link(uow, email, clock),
+            forward_address=_forward_address(uow, email, clock),
         )
     ).compile(checkpointer)
     receipts: ReceiptReader | None = overrides.receipts
@@ -205,12 +230,28 @@ async def _telegram_runtime(
 def _connect_link(
     uow: Callable[[], SqlUnitOfWork], email: EmailRuntime | None, clock: Callable[[], datetime]
 ) -> Callable[[User], Awaitable[str]] | None:
-    if email is None:
+    if email is None or email.mailbox is None:
         return None
 
     async def make(user: User) -> str:
         token = await email_cases.create_link(uow(), user, now=clock())
         return email.connect_url(token)
+
+    return make
+
+
+def _forward_address(
+    uow: Callable[[], SqlUnitOfWork], email: EmailRuntime | None, clock: Callable[[], datetime]
+) -> Callable[[User], Awaitable[str]] | None:
+    if email is None or email.forwarding is None:
+        return None
+    inboxes = email.forwarding
+
+    async def make(user: User) -> str:
+        connection = await email_cases.set_up_forwarding(
+            uow, inboxes, email.cipher, user, now=clock()
+        )
+        return connection.address
 
     return make
 

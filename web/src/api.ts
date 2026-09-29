@@ -141,9 +141,18 @@ export type InboundEmail = {
   transaction_id: string | null;
   actionable: boolean;
 };
+export type EmailConnection = {
+  id: string;
+  provider: "gmail" | "forward";
+  address: string;
+  status: "active" | "broken";
+  last_checked: string | null;
+  last_received: string | null;
+};
 export type EmailOverview = {
   available: boolean;
-  connections: { id: string; address: string; status: "active" | "broken"; last_checked: string | null }[];
+  forwarding_available: boolean;
+  connections: EmailConnection[];
   emails: InboundEmail[];
 };
 export type Frequency = "instant" | "hourly" | "thrice_daily" | "daily" | "off";
