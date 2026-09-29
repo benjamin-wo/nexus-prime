@@ -17,7 +17,7 @@ from nexus.application.ports import LedgerQuery, MailboxGrant
 from nexus.application.receipts import with_receipts
 from nexus.application.transactions import delete_transaction, list_ledger
 from nexus.application.users import RegisterUser, register_user
-from nexus.domain.email import ConnectionStatus, EmailConnection
+from nexus.domain.email import ConnectionStatus, EmailConnection, FetchedEmail, Screening
 from nexus.domain.errors import Conflict, InvalidInput, NotFound
 from nexus.domain.ledger import Source, User
 from nexus.domain.money import Money
@@ -308,3 +308,38 @@ async def test_telegram_buttons_log_and_skip(uow: UowFactory) -> None:
     skipped = only(await bot.press(user.id, f"email:skip:{emails['m2']}"))
     assert skipped.text == "Skipped. Nothing was logged."
     assert only(await bot.press(user.id, "email:log:nope")).text == "I don't know that button."
+
+
+async def test_a_stuck_read_is_given_up_on(
+    uow: UowFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+
+    class StuckReader(FakeEmailReader):
+        async def triage(self, email: FetchedEmail) -> Screening:
+            if email.provider_message_id == "stuck":
+                await asyncio.sleep(10)
+            return await super().triage(email)
+
+    monkeypatch.setattr(email_cases, "READ_TIMEOUT", timedelta(milliseconds=50))
+    user = await person(uow)
+    mailbox = FakeMailbox(
+        {
+            "stuck": fake_email("stuck", "Receipt", GRAB, at=NOW - timedelta(hours=2)),
+            "m1": fake_email("m1", "Grab receipt", GRAB, at=NOW - timedelta(hours=1)),
+        }
+    )
+    connection = await connect(uow, user, mailbox)
+    result = await email_cases.sweep(
+        uow, mailbox, StuckReader(), CIPHER, None, user, connection, now=NOW
+    )
+    assert result.read == 2
+    found = {
+        e.provider_message_id: e
+        for e in (await email_cases.overview(uow(), user.id, now=NOW)).emails
+    }
+    assert (found["stuck"].status.value, found["stuck"].reason) == (
+        "failed",
+        "took too long to read",
+    )
+    assert found["m1"].status.value == "pending"
