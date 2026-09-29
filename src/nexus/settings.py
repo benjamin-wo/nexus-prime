@@ -68,6 +68,11 @@ class Settings(BaseSettings):
     # A cheap OpenRouter model that screens emails before the main model reads
     # them (needs OPENROUTER_API_KEY). Unset = the main model screens too.
     email_classifier_model: str | None = None
+    # --- Forwarding addresses on AgentMail, for other mail providers. Unset = not
+    # offered. Also requires TOKEN_ENCRYPTION_KEY. ---
+    agentmail_api_key: SecretStr | None = None
+    # A custom domain set up in AgentMail; unset = AgentMail's own (agentmail.to).
+    agentmail_domain: str | None = None
 
     # --- LLM. Names match the pre-rebuild deployment's variables. ---
     llm_provider: LlmProvider = LlmProvider.GEMINI
@@ -124,6 +129,8 @@ class Settings(BaseSettings):
         "google_client_secret",
         "token_encryption_key",
         "email_classifier_model",
+        "agentmail_api_key",
+        "agentmail_domain",
         "storage_access_key_id",
         "storage_secret_access_key",
         "storage_bucket",
@@ -162,6 +169,8 @@ class Settings(BaseSettings):
             raise ValueError("GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET go together")
         if self.google_client_id is not None and self.token_encryption_key is None:
             raise ValueError("TOKEN_ENCRYPTION_KEY is required to connect Gmail")
+        if self.agentmail_api_key is not None and self.token_encryption_key is None:
+            raise ValueError("TOKEN_ENCRYPTION_KEY is required for forwarding addresses")
         if self.token_encryption_key is not None:
             from nexus.infra.crypto.fernet import FernetCipher
 
@@ -171,6 +180,10 @@ class Settings(BaseSettings):
     @property
     def gmail_enabled(self) -> bool:
         return self.google_client_id is not None and self.web_enabled
+
+    @property
+    def forwarding_enabled(self) -> bool:
+        return self.agentmail_api_key is not None and self.web_enabled
 
     @property
     def storage_enabled(self) -> bool:

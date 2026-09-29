@@ -24,14 +24,17 @@ from nexus.application.budgets import TELEGRAM_SEND
 from nexus.application.ports import (
     Cipher,
     EmailReader,
+    ForwardingInboxes,
     Mailbox,
     MailboxRevoked,
     ReceiptStore,
+    SignInMailbox,
     UnitOfWork,
 )
 from nexus.application.transactions import NewTransaction
 from nexus.domain.email import (
     ACTIONABLE,
+    FILTER_WORDS,
     LINK_TTL,
     READ_TIMEOUT,
     RECEIPT_QUERY,
@@ -45,6 +48,9 @@ from nexus.domain.email import (
     InboundEmail,
     Provider,
     external_id,
+    forwarding_notice,
+    is_test_email,
+    needs_nudge,
     read_amount,
     short,
     sweep_from,
@@ -55,6 +61,7 @@ from nexus.domain.money import Money
 from nexus.domain.notifications import Frequency
 
 log = logging.getLogger(__name__)
+SWEEP_JOB = "email.sweep"
 LOG_WINDOW_DAYS = 30
 
 type UowFactory = Callable[[], UnitOfWork]
@@ -66,12 +73,13 @@ def _hash(token: str) -> str:
 
 @dataclass(frozen=True, slots=True)
 class EmailRuntime:
-    """What mailbox features need, when Gmail is configured."""
+    """What email features need: Gmail, forwarding addresses, or both."""
 
-    mailbox: Mailbox
+    mailbox: SignInMailbox | None  # Connect Gmail, when Google is configured
     reader: EmailReader
     cipher: Cipher
     origin: str  # the web app, e.g. https://nexus.example.com
+    forwarding: ForwardingInboxes | None = None  # forwarding addresses (AgentMail)
 
     @property
     def redirect_uri(self) -> str:
@@ -84,6 +92,9 @@ class EmailRuntime:
 
     def connect_url(self, token: str) -> str:
         return f"{self.origin}/connect/gmail?t={token}"
+
+    def mailbox_for(self, provider: Provider) -> Mailbox | None:
+        return self.forwarding if provider is Provider.FORWARD else self.mailbox
 
 
 # --- connecting ---------------------------------------------------------------------
@@ -106,7 +117,7 @@ async def link_owner(uow: UnitOfWork, token: str, *, now: datetime) -> UserId | 
 
 async def finish_connect(
     uow: UowFactory,
-    mailbox: Mailbox,
+    mailbox: SignInMailbox,
     cipher: Cipher,
     *,
     token: str,
@@ -140,17 +151,138 @@ async def finish_connect(
     return connection
 
 
+async def set_up_forwarding(
+    uow: UowFactory, inboxes: ForwardingInboxes, cipher: Cipher, user: User, *, now: datetime
+) -> EmailConnection:
+    """The user's own forwarding address, made the first time they ask for it."""
+    async with uow() as tx:
+        existing = [
+            c
+            for c in await tx.email.list_connections(user.id)
+            if c.provider is Provider.FORWARD and c.status is ConnectionStatus.ACTIVE
+        ]
+    if existing:
+        return existing[0]
+    inbox_id, address = await inboxes.create_inbox(str(user.id))
+    async with uow() as tx:
+        connection = await tx.email.save_connection(
+            EmailConnection(
+                id=uuid4(),
+                user_id=user.id,
+                provider=Provider.FORWARD,
+                address=address,
+                token=cipher.encrypt(inbox_id),
+                status=ConnectionStatus.ACTIVE,
+                # A new address has nothing in it: no look-back.
+                synced_until=now,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        await tx.commit()
+    return connection
+
+
+FORWARDING_PROVIDERS = ("gmail", "outlook", "icloud", "yahoo", "other")
+
+
+def forwarding_steps(provider: str, address: str) -> str:
+    """How to forward only receipts to ``address`` from the user's mail app."""
+    words = ", ".join(FILTER_WORDS)
+    either = " OR ".join(FILTER_WORDS)
+    steps = {
+        "gmail": [
+            "In Gmail on a computer: Settings, See all settings, Forwarding and POP/IMAP, "
+            f"Add a forwarding address: {address}",
+            "Gmail sends a confirmation to that address. I'll pass the code and link on to "
+            "you here; open the link to allow it.",
+            f"Then Filters and Blocked Addresses, Create a new filter. Subject: {either}. "
+            f"Create filter, tick Forward it to {address}, and save.",
+        ],
+        "outlook": [
+            "In Outlook (outlook.com or the app): Settings, Mail, Rules, Add new rule.",
+            f"Condition: Subject includes, and add these words: {words}.",
+            f"Action: Forward to {address}. Save.",
+        ],
+        "icloud": [
+            "On icloud.com: Mail, then the settings (gear), Rules, Add a Rule.",
+            f'If a message: Subject contains "receipt". Then: Forward to {address}.',
+            "Add one rule for each word you want: invoice, order, payment, transaction.",
+        ],
+        "yahoo": [
+            "Yahoo only forwards automatically on Yahoo Mail Plus: Settings, More "
+            f"settings, Mailboxes, then add the forwarding address {address}. It forwards "
+            "everything, not just receipts.",
+            "On free Yahoo Mail, forward receipts by hand instead.",
+        ],
+        "other": [
+            "In your mail app, find Rules or Filters.",
+            f"Make a rule: if the subject contains {words}, forward to {address}.",
+        ],
+    }[provider if provider in FORWARDING_PROVIDERS else "other"]
+    lines = [f"{n}. {step}" for n, step in enumerate(steps, 1)]
+    lines.append(f"You can also forward any receipt to {address} by hand.")
+    return "\n".join(lines)
+
+
+def sender_checklist(emails: list[InboundEmail]) -> list[str]:
+    """Who sent receipts and who sent other mail, for deciding what a filter keeps."""
+    receipts: dict[str, int] = {}
+    other: dict[str, int] = {}
+    for e in emails:
+        if e.status in (EmailStatus.FAILED,) or e.reason in (
+            "your test email",
+            "forwarding confirmation, sent to you",
+        ):
+            continue
+        domain = e.sender.rsplit("@", 1)[-1].casefold() or e.sender
+        bucket = other if e.status is EmailStatus.NOT_RECEIPT else receipts
+        bucket[domain] = bucket.get(domain, 0) + 1
+
+    def top(found: dict[str, int]) -> str:
+        ranked = sorted(found.items(), key=lambda kv: (-kv[1], kv[0]))[:8]
+        return ", ".join(f"{d} ({n})" for d, n in ranked)
+
+    lines = []
+    if receipts:
+        lines.append(f"Receipts came from: {top(receipts)}.")
+    if other:
+        lines.append(f"Not receipts (a filter can leave these out): {top(other)}.")
+    return lines
+
+
+async def forwarding_address(uow: UnitOfWork, user_id: UserId) -> EmailConnection | None:
+    async with uow:
+        found = await uow.email.list_connections(user_id)
+    return next((c for c in found if c.provider is Provider.FORWARD), None)
+
+
+async def test_setup(uow: UnitOfWork, user_id: UserId, *, now: datetime) -> None:
+    """Check a forwarding address a few times over the next minutes, so a test email
+    is answered quickly rather than at the next regular sweep."""
+    async with uow:
+        for minutes in (1, 3, 6):
+            at = now + timedelta(minutes=minutes)
+            await uow.jobs.enqueue(
+                SWEEP_JOB, {}, dedupe_key=f"email.test:{user_id}:{at.isoformat()}", run_at=at
+            )
+        await uow.commit()
+
+
 async def disconnect(
-    uow: UowFactory, mailbox: Mailbox, cipher: Cipher, user_id: UserId, connection_id: UUID
+    uow: UowFactory, runtime: EmailRuntime, user_id: UserId, connection_id: UUID
 ) -> None:
-    """Revoke our access with the provider and forget the mailbox. Expenses already
-    logged from it stay, and so does their dedupe key."""
+    """Revoke our access with the provider (or delete the forwarding address) and
+    forget the mailbox. Expenses already logged from it stay, and so does their
+    dedupe key."""
     async with uow() as tx:
         connection = await tx.email.get_connection(user_id, connection_id)
     if connection is None:
         raise NotFound("that mailbox isn't connected")
+    mailbox = runtime.mailbox_for(connection.provider)
     try:
-        await mailbox.revoke(cipher.decrypt(connection.token))
+        if mailbox is not None:
+            await mailbox.revoke(runtime.cipher.decrypt(connection.token))
     except Exception:
         log.warning("could not revoke a mailbox grant", exc_info=True)
     async with uow() as tx:
@@ -283,13 +415,17 @@ async def sweep(
     waiting: list[InboundEmail] = []
     started = monotonic()
     read = 0
+    newest: datetime | None = None  # the latest email to arrive, for a forwarding address
     for message_id in batch:
         if monotonic() - started > SWEEP_BUDGET.total_seconds():
             left = [*batch[read:], *left]  # the next sweep picks these up
             break
         read += 1
         fetched = await mailbox.fetch(access, message_id)
-        email = await _read_one(reader, archive, uow, user, connection, fetched, now)
+        if newest is None or fetched.received_at > newest:
+            newest = fetched.received_at
+        told = await _setup_email(uow, user, connection, fetched, now)
+        email = told or await _read_one(reader, archive, uow, user, connection, fetched, now)
         async with uow() as tx:
             if email.status is EmailStatus.PENDING and await tx.ledger.source_claimed(
                 user.id,
@@ -305,15 +441,97 @@ async def sweep(
         if current is not None:
             # Move the window on only once everything in it has been read.
             synced = now if not left else current.synced_until
-            await tx.email.update_connection(
-                replace(current, synced_until=synced, last_error=None, updated_at=now)
-            )
+            current = replace(current, synced_until=synced, last_error=None, updated_at=now)
+            if newest is not None and connection.provider is Provider.FORWARD:
+                current = replace(
+                    current, last_received_at=max(newest, current.last_received_at or newest)
+                )
+            if needs_nudge(current, now):
+                current = replace(current, nudged_at=now)
+                await _nudge(tx, user, current, now)
+            await tx.email.update_connection(current)
         await _ask(tx, user, waiting, first=first, review_url=review_url)
         await tx.commit()
     log.info(
         "email sweep: read %d, %d waiting, %d left for next time", read, len(waiting), len(left)
     )
     return SweepResult(read, len(waiting), first)
+
+
+async def _setup_email(
+    uow: UowFactory, user: User, connection: EmailConnection, fetched: FetchedEmail, now: datetime
+) -> InboundEmail | None:
+    """At a forwarding address, a provider's "confirm forwarding" email and the user's
+    own test email are answered straight away instead of being read as receipts."""
+    if connection.provider is not Provider.FORWARD:
+        return None
+    notice = forwarding_notice(fetched)
+    if notice is not None:
+        lines = [
+            f"📨 Your mail provider sent a confirmation to your Nexus address: {notice.subject}"
+        ]
+        if notice.code:
+            lines.append(f"Confirmation code: {notice.code}")
+        lines.append(
+            "Open the link or enter the code where you set up forwarding, then send a test."
+            if notice.link or notice.code
+            else "Check your mail app's forwarding settings to finish."
+        )
+        buttons = (
+            [[{"label": "Confirm forwarding", "data": f"url:{notice.link}"}]] if notice.link else []
+        )
+        reason = "forwarding confirmation, sent to you"
+    elif is_test_email(fetched):
+        lines = [
+            f"✅ Your test email from {fetched.sender} arrived. Forwarding works: "
+            "receipts forwarded to me will show up here for you to confirm."
+        ]
+        buttons = []
+        reason = "your test email"
+    else:
+        return None
+    async with uow() as tx:
+        payload: dict[str, Any] = {"user_id": str(user.id), "text": "\n".join(lines)}
+        if buttons:
+            payload["buttons"] = buttons
+        await tx.jobs.enqueue(
+            TELEGRAM_SEND,
+            payload,
+            dedupe_key=f"email.setup:{connection.id}:{fetched.provider_message_id}",
+            run_at=now,
+        )
+        await tx.commit()
+    return InboundEmail(
+        id=uuid4(),
+        user_id=user.id,
+        connection_id=connection.id,
+        provider_message_id=fetched.provider_message_id,
+        received_at=fetched.received_at,
+        sender=short(fetched.sender, 200),
+        subject=short(fetched.subject, 200),
+        status=EmailStatus.NOT_RECEIPT,
+        reason=reason,
+        draft=None,
+        transaction_id=None,
+        created_at=now,
+    )
+
+
+async def _nudge(tx: UnitOfWork, user: User, connection: EmailConnection, now: datetime) -> None:
+    heard = connection.last_received_at
+    since = "in the last 2 weeks" if heard else "since you set it up"
+    await tx.jobs.enqueue(
+        TELEGRAM_SEND,
+        {
+            "user_id": str(user.id),
+            "text": f"I haven't received any forwarded emails at {connection.address} {since}. "
+            "If you still want receipts logged from email, check your forwarding rule, or "
+            "ask me to test your email setup. If you've stopped, you can disconnect it on "
+            "the Email page.",
+        },
+        dedupe_key=f"email.quiet:{connection.id}:{now.date().isoformat()}",
+        run_at=now,
+    )
 
 
 async def _ask(

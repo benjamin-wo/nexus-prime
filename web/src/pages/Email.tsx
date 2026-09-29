@@ -2,7 +2,14 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { api, type EmailOverview, type EmailStatus, type InboundEmail, type Me } from "../api";
+import {
+  api,
+  type EmailConnection,
+  type EmailOverview,
+  type EmailStatus,
+  type InboundEmail,
+  type Me,
+} from "../api";
 import { formatDate } from "../format";
 
 const LABELS: Record<EmailStatus, string> = {
@@ -98,6 +105,78 @@ function EmailRow({ email, me, onChanged }: { email: InboundEmail; me: Me; onCha
   );
 }
 
+function ConnectionRow({
+  connection: c,
+  me,
+  confirming,
+  onConfirm,
+  onCancel,
+  onDisconnect,
+}: {
+  connection: EmailConnection;
+  me: Me;
+  confirming: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+  onDisconnect: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const forward = c.provider === "forward";
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(c.address);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  let seen = "Not checked yet";
+  if (forward) {
+    seen = c.last_received
+      ? `Last email received ${formatDate(c.last_received, me.user.timezone)}`
+      : "Nothing received yet";
+  } else if (c.last_checked) {
+    seen = `Last checked ${formatDate(c.last_checked, me.user.timezone)}`;
+  }
+
+  return (
+    <li className="budget">
+      <div className="budget-head">
+        <h3 className="wrap">{c.address}</h3>
+        <span className={`caption email-${c.status}`}>{c.status === "active" ? "Working" : "Needs reconnecting"}</span>
+      </div>
+      {forward && (
+        <p className="caption">
+          Your forwarding address: forward receipts here.{" "}
+          <button type="button" className="btn btn-ghost" onClick={copy}>
+            {copied ? "Copied" : "Copy address"}
+          </button>
+        </p>
+      )}
+      <div className="budget-foot">
+        <span className="caption">{seen}</span>
+        {confirming ? (
+          <span className="quick">
+            <span>{forward ? "Stop using this address?" : "Stop reading this mailbox?"}</span>
+            <button type="button" className="btn btn-danger" onClick={onDisconnect}>
+              Disconnect
+            </button>
+            <button type="button" className="btn" onClick={onCancel}>
+              Keep
+            </button>
+          </span>
+        ) : (
+          <button type="button" className="btn btn-ghost" onClick={onConfirm}>
+            Disconnect
+          </button>
+        )}
+      </div>
+    </li>
+  );
+}
+
 /** Every email Nexus checked in the last 30 days, and what became of it. */
 export function EmailPage({ me }: { me: Me }) {
   const client = useQueryClient();
@@ -142,39 +221,21 @@ export function EmailPage({ me }: { me: Me }) {
             </div>
             <ul className="budgets">
               {data.connections.map((c) => (
-                <li key={c.id} className="budget">
-                  <div className="budget-head">
-                    <h3 className="wrap">{c.address}</h3>
-                    <span className={`caption email-${c.status}`}>
-                      {c.status === "active" ? "Working" : "Needs reconnecting"}
-                    </span>
-                  </div>
-                  <div className="budget-foot">
-                    <span className="caption">
-                      {c.last_checked
-                        ? `Last checked ${formatDate(c.last_checked, me.user.timezone)}`
-                        : "Not checked yet"}
-                    </span>
-                    {confirming === c.id ? (
-                      <span className="quick">
-                        <span>Stop reading this mailbox?</span>
-                        <button type="button" className="btn btn-danger" onClick={() => disconnect(c.id)}>
-                          Disconnect
-                        </button>
-                        <button type="button" className="btn" onClick={() => setConfirming(null)}>
-                          Keep
-                        </button>
-                      </span>
-                    ) : (
-                      <button type="button" className="btn btn-ghost" onClick={() => setConfirming(c.id)}>
-                        Disconnect
-                      </button>
-                    )}
-                  </div>
-                </li>
+                <ConnectionRow
+                  key={c.id}
+                  connection={c}
+                  me={me}
+                  confirming={confirming === c.id}
+                  onConfirm={() => setConfirming(c.id)}
+                  onCancel={() => setConfirming(null)}
+                  onDisconnect={() => disconnect(c.id)}
+                />
               ))}
             </ul>
-            <p className="caption">Disconnecting removes Nexus's access. Expenses already logged stay.</p>
+            <p className="caption">
+              Disconnecting removes Nexus's access (a forwarding address stops working). Expenses already logged
+              stay.
+            </p>
           </section>
           <section className="card" aria-labelledby="checked">
             <div className="card-head">

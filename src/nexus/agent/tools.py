@@ -53,6 +53,8 @@ class ToolContext:
     rates: RateSource | None = None  # for home-currency figures; None converts nothing
     # Makes a one-time Connect Gmail link; None when email isn't set up.
     connect_link: Callable[[User], Awaitable[str]] | None = None
+    # The user's own forwarding address, made on first use; None when not set up.
+    forward_address: Callable[[User], Awaitable[str]] | None = None
 
     @property
     def tz(self) -> ZoneInfo:
@@ -490,6 +492,44 @@ async def _connect_email(ctx: ToolContext, _: NoArgs) -> ToolResult:
     )
 
 
+class ForwardArgs(Args):
+    provider: Literal["gmail", "outlook", "icloud", "yahoo", "other"] = Field(
+        description="The user's email provider; other for work email or anything else"
+    )
+
+
+async def _forward_email(ctx: ToolContext, a: ForwardArgs) -> ToolResult:
+    if ctx.forward_address is None:
+        return ToolResult("Forwarding to Nexus isn't set up on this server yet.")
+    address = await ctx.forward_address(ctx.user)
+    return ToolResult(
+        f"The user's own Nexus address is {address}. Nothing arrives there unless they "
+        "forward it, and nothing is logged until they confirm. Steps:\n"
+        + email_cases.forwarding_steps(a.provider, address)
+        + "\nAfterwards they can ask you to test the setup."
+    )
+
+
+async def _test_email_setup(ctx: ToolContext, _: NoArgs) -> ToolResult:
+    found = await email_cases.overview(ctx.uow(), ctx.user.id, now=ctx.now)
+    forward = next((c for c in found.connections if c.provider.value == "forward"), None)
+    if forward is None:
+        if found.connections:
+            return ToolResult(
+                "Gmail is connected and checked every 15 minutes; email_status shows what "
+                "was found. There's no forwarding address to test."
+            )
+        return ToolResult("No email is connected, so there's nothing to test.")
+    await email_cases.test_setup(ctx.uow(), ctx.user.id, now=ctx.now)
+    return ToolResult(
+        f"Tell the user: send an email to your usual address with the subject "
+        f'"Nexus test receipt", so it goes through your forwarding rule (or forward any '
+        f"email to {forward.address} by hand). I'll say here when it arrives, usually "
+        "within a few minutes. If nothing comes within 15 minutes, the rule isn't "
+        "forwarding yet."
+    )
+
+
 async def _email_status(ctx: ToolContext, _: NoArgs) -> ToolResult:
     found = await email_cases.overview(ctx.uow(), ctx.user.id, now=ctx.now)
     if not found.connections:
@@ -497,6 +537,14 @@ async def _email_status(ctx: ToolContext, _: NoArgs) -> ToolResult:
     lines = []
     for c in found.connections:
         state = "working" if c.status.value == "active" else "needs reconnecting"
+        if c.provider.value == "forward":
+            heard = (
+                f", last email received {c.last_received_at.astimezone(ctx.tz):%-d %b %H:%M}"
+                if c.last_received_at
+                else ", nothing received yet"
+            )
+            lines.append(f"Forwarding address {c.address}: {state}{heard}")
+            continue
         checked = (
             f", last checked {c.synced_until.astimezone(ctx.tz):%-d %b %H:%M}"
             if c.synced_until
@@ -509,6 +557,7 @@ async def _email_status(ctx: ToolContext, _: NoArgs) -> ToolResult:
         counts[e.status.value] = counts.get(e.status.value, 0) + 1
     summary = ", ".join(f"{n} {s.replace('_', ' ')}" for s, n in sorted(counts.items()))
     lines.append(f"This week: {summary or 'no receipt-like emails'}.")
+    lines += email_cases.sender_checklist(found.emails)
     lines.append("The Email page in the web app lists each one and what happened to it.")
     return ToolResult("\n".join(lines))
 
@@ -869,6 +918,22 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             "Only when the user asks how to log expenses automatically.",
             NoArgs,
             _connect_email,
+        ),
+        ToolSpec(
+            "forward_email",
+            "Give the user their own Nexus address to forward receipts to, with steps for "
+            "their mail provider. For Outlook, iCloud, Yahoo, work email, or Gmail users "
+            "who'd rather not connect. Only when the user asks to log expenses "
+            "automatically.",
+            ForwardArgs,
+            _forward_email,
+        ),
+        ToolSpec(
+            "test_email_setup",
+            "Check the user's email forwarding works: tells them what test email to send, "
+            "and Nexus confirms in chat when it arrives.",
+            NoArgs,
+            _test_email_setup,
         ),
         ToolSpec(
             "email_status",

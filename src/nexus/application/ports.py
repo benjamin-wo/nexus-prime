@@ -323,12 +323,8 @@ class MailboxGrant:
 
 
 class Mailbox(Protocol):
-    """A mail provider's API (Gmail). Only receipt-like emails are ever fetched."""
-
-    def authorize_url(self, *, state: str, redirect_uri: str) -> str: ...
-    async def exchange(self, code: str, *, redirect_uri: str) -> MailboxGrant:
-        """Raises InvalidInput if the user didn't grant read access."""
-        ...
+    """Reading a connected mailbox: Gmail, or a forwarding address. The stored
+    "refresh token" is whatever unlocks it (for a forwarding address, its inbox id)."""
 
     async def access_token(self, refresh_token: str) -> str:
         """Raises MailboxRevoked if the grant is gone."""
@@ -337,6 +333,23 @@ class Mailbox(Protocol):
     async def search(self, access_token: str, query: str, *, after: datetime) -> list[str]: ...
     async def fetch(self, access_token: str, message_id: str) -> FetchedEmail: ...
     async def revoke(self, refresh_token: str) -> None: ...
+
+
+class SignInMailbox(Mailbox, Protocol):
+    """A provider the user signs in to (Gmail). Only receipt-like emails are fetched."""
+
+    def authorize_url(self, *, state: str, redirect_uri: str) -> str: ...
+    async def exchange(self, code: str, *, redirect_uri: str) -> MailboxGrant:
+        """Raises InvalidInput if the user didn't grant read access."""
+        ...
+
+
+class ForwardingInboxes(Mailbox, Protocol):
+    """Addresses users forward receipts to (AgentMail)."""
+
+    async def create_inbox(self, owner: str) -> tuple[str, str]:
+        """A new inbox for ``owner``: (inbox id, address)."""
+        ...
 
 
 class EmailReader(Protocol):

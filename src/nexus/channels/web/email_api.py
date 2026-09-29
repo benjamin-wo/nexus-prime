@@ -21,6 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from nexus.application import email as email_cases
 from nexus.application.budgets import TELEGRAM_SEND
 from nexus.application.email import EmailRuntime
+from nexus.application.ports import SignInMailbox
 from nexus.application.users import get_user
 from nexus.channels.web.security import Auth, Runtime, WebRuntime
 from nexus.domain.email import ACTIONABLE, EmailStatus, ExpenseDraft
@@ -41,13 +42,20 @@ def _email(web: WebRuntime) -> EmailRuntime:
     return web.email
 
 
+def _gmail(web: WebRuntime) -> tuple[EmailRuntime, SignInMailbox]:
+    email = _email(web)
+    if email.mailbox is None:
+        raise NotFound("connecting Gmail isn't set up on this server")
+    return email, email.mailbox
+
+
 class LinkOut(Model):
     url: str
 
 
 @router.post("/link")
 async def link(auth: Auth, web: Runtime) -> LinkOut:
-    email = _email(web)
+    email, _ = _gmail(web)
     token = await email_cases.create_link(web.uow(), auth.user, now=web.clock())
     return LinkOut(url=email.connect_url(token))
 
@@ -70,10 +78,10 @@ async def check_link(web: Runtime, t: Annotated[str, Query(max_length=100)]) -> 
 
 @router.get("/gmail/start", include_in_schema=False)
 async def start(web: Runtime, t: Annotated[str, Query(max_length=100)]) -> RedirectResponse:
-    email = _email(web)
+    email, gmail = _gmail(web)
     if await email_cases.link_owner(web.uow(), t, now=web.clock()) is None:
         return RedirectResponse("/connect/gmail/done?error=expired", status_code=303)
-    url = email.mailbox.authorize_url(state=t, redirect_uri=email.redirect_uri)
+    url = gmail.authorize_url(state=t, redirect_uri=email.redirect_uri)
     return RedirectResponse(url, status_code=303)
 
 
@@ -84,14 +92,14 @@ async def callback(
     code: Annotated[str | None, Query(max_length=2000)] = None,
     error: Annotated[str | None, Query(max_length=200)] = None,
 ) -> RedirectResponse:
-    email = _email(web)
+    email, gmail = _gmail(web)
     if error or not code:
         return RedirectResponse("/connect/gmail/done?error=declined", status_code=303)
     now = web.clock()
     try:
         connection = await email_cases.finish_connect(
             web.uow,
-            email.mailbox,
+            gmail,
             email.cipher,
             token=state,
             code=code,
@@ -130,9 +138,11 @@ async def callback(
 
 class ConnectionOut(Model):
     id: UUID
+    provider: str  # gmail, or forward (a Nexus address the user forwards to)
     address: str
     status: str
     last_checked: datetime | None
+    last_received: datetime | None  # forwarding addresses only
 
 
 class EmailOut(Model):
@@ -151,6 +161,7 @@ class EmailOut(Model):
 
 class OverviewOut(Model):
     available: bool  # Connect Gmail is set up on this server
+    forwarding_available: bool  # forwarding addresses are set up on this server
     connections: list[ConnectionOut]
     emails: list[EmailOut]
 
@@ -177,10 +188,16 @@ async def overview(auth: Auth, web: Runtime) -> OverviewOut:
             )
         )
     return OverviewOut(
-        available=web.email is not None,
+        available=web.email is not None and web.email.mailbox is not None,
+        forwarding_available=web.email is not None and web.email.forwarding is not None,
         connections=[
             ConnectionOut(
-                id=c.id, address=c.address, status=c.status.value, last_checked=c.synced_until
+                id=c.id,
+                provider=c.provider.value,
+                address=c.address,
+                status=c.status.value,
+                last_checked=c.synced_until,
+                last_received=c.last_received_at,
             )
             for c in found.connections
         ],
@@ -209,4 +226,4 @@ async def disconnect(connection_id: UUID, auth: Auth, web: Runtime) -> None:
     email = web.email
     if email is None:
         raise HTTPException(status_code=404)
-    await email_cases.disconnect(web.uow, email.mailbox, email.cipher, auth.user.id, connection_id)
+    await email_cases.disconnect(web.uow, email, auth.user.id, connection_id)

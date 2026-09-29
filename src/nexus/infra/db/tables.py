@@ -442,10 +442,14 @@ email_connections = Table(
     Column("last_error", Text),
     Column("created_at", TZ, nullable=False),
     Column("updated_at", TZ, nullable=False),
+    # Forwarding addresses only: when mail last arrived, and when we last said
+    # it had gone quiet.
+    Column("last_received_at", TZ),
+    Column("nudged_at", TZ),
     ForeignKeyConstraint(["user_id"], ["users.id"]),
     UniqueConstraint("id", "user_id"),
     UniqueConstraint("user_id", "provider", "address"),
-    CheckConstraint("provider IN ('gmail')", name="provider"),
+    CheckConstraint("provider IN ('gmail', 'forward')", name="provider"),
     CheckConstraint("status IN ('active', 'broken')", name="status"),
 )
 

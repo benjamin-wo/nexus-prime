@@ -27,6 +27,12 @@ READ_TIMEOUT = timedelta(seconds=45)
 SWEEP_BUDGET = timedelta(minutes=3)
 # A connect link works this long, once.
 LINK_TTL = timedelta(minutes=10)
+# A forwarding address that hears nothing for this long gets one nudge.
+QUIET_NUDGE = timedelta(days=14)
+# The subject line of a test email ("Nexus test receipt" also passes a receipt filter).
+TEST_SUBJECT = "nexus test"
+# Subject words a forwarding filter should match: what a receipt usually says.
+FILTER_WORDS = ("receipt", "invoice", "order", "payment", "transaction", "paid", "purchase")
 
 # What Gmail is asked for: receipts, invoices, orders and card alerts. Anything
 # else in the mailbox is never fetched.
@@ -40,6 +46,7 @@ RECEIPT_QUERY = (
 
 class Provider(StrEnum):
     GMAIL = "gmail"
+    FORWARD = "forward"  # a Nexus address the user forwards receipts to (AgentMail)
 
 
 class ConnectionStatus(StrEnum):
@@ -73,6 +80,8 @@ class EmailConnection:
     created_at: datetime
     updated_at: datetime
     last_error: str | None = None
+    last_received_at: datetime | None = None  # forwarding: the latest email to arrive
+    nudged_at: datetime | None = None  # forwarding: when we last said it went quiet
 
 
 @dataclass(frozen=True, slots=True)
@@ -184,3 +193,61 @@ def _currency(text: str) -> str | None:
             return code
     found = _CODE.search(text)
     return found.group(0) if found else None
+
+
+def is_test_email(email: FetchedEmail) -> bool:
+    return TEST_SUBJECT in email.subject.casefold()
+
+
+# Mail providers whose "confirm this forwarding address" emails are passed on to
+# the user, and the only hosts a link in one may point to.
+_PROVIDER_DOMAINS = ("google.com", "microsoft.com", "outlook.com", "apple.com", "icloud.com")
+_LINK_HOSTS = ("google.com", "microsoft.com", "live.com", "outlook.com", "apple.com", "icloud.com")
+_CONFIRM_WORDS = re.compile(r"forward|confirm|verif", re.IGNORECASE)
+_URL = re.compile(r"https://[^\s<>\"')]+")
+_CONFIRM_CODE = re.compile(r"\b\d{6,9}\b")
+
+
+@dataclass(frozen=True, slots=True)
+class ForwardingNotice:
+    """A mail provider asking the owner of this address to confirm forwarding."""
+
+    subject: str
+    code: str | None
+    link: str | None
+
+
+def _domain_of(address: str) -> str:
+    return address.rsplit("@", 1)[-1].casefold()
+
+
+def _host_of(url: str) -> str:
+    return url.split("/", 3)[2].split(":", 1)[0].casefold()
+
+
+def _is_under(host: str, domains: tuple[str, ...]) -> bool:
+    return any(host == d or host.endswith("." + d) for d in domains)
+
+
+def forwarding_notice(email: FetchedEmail) -> ForwardingNotice | None:
+    """If this is a provider's forwarding confirmation, what the user needs from it.
+    Only the provider's own links are kept, so a lookalike can't steer the user."""
+    if not _is_under(_domain_of(email.sender), _PROVIDER_DOMAINS):
+        return None
+    if not _CONFIRM_WORDS.search(email.subject):
+        return None
+    link = next((u for u in _URL.findall(email.text) if _is_under(_host_of(u), _LINK_HOSTS)), None)
+    code = _CONFIRM_CODE.search(email.subject) or _CONFIRM_CODE.search(email.text)
+    return ForwardingNotice(short(email.subject, 120), code.group(0) if code else None, link)
+
+
+def needs_nudge(connection: EmailConnection, now: datetime) -> bool:
+    """A working forwarding address that has gone quiet, not yet nudged this time."""
+    if connection.provider is not Provider.FORWARD:
+        return False
+    if connection.status is not ConnectionStatus.ACTIVE:
+        return False
+    since = connection.last_received_at or connection.created_at
+    if now - since < QUIET_NUDGE:
+        return False
+    return connection.nudged_at is None or connection.nudged_at < since
