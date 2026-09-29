@@ -106,3 +106,13 @@ def test_access_logs_drop_secret_query_strings() -> None:
     assert line("/api/email/gmail/callback?state=t&code=4/secret") == "/api/email/gmail/callback?…"
     assert line("/connect/gmail?t=token") == "/connect/gmail?…"
     assert line("/api/transactions?limit=5") == "/api/transactions?limit=5"
+
+
+def test_app_logs_are_json_lines_with_a_level() -> None:
+    import json
+    import logging
+
+    from nexus.infra.logs import JsonLines
+
+    record = logging.LogRecord("nexus.x", logging.INFO, __file__, 1, "read %d", (3,), None)
+    assert json.loads(JsonLines().format(record)) == {"level": "info", "message": "nexus.x: read 3"}

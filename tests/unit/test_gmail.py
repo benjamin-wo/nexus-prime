@@ -11,7 +11,7 @@ from nexus.agent.service import Button
 from nexus.application.ports import MailboxRevoked
 from nexus.channels.telegram.client import keyboard
 from nexus.domain.errors import InvalidInput
-from nexus.infra.email.gmail import READ_SCOPE, GmailMailbox, html_text
+from nexus.infra.email.gmail import READ_SCOPE, GmailMailbox, body_text, html_text
 
 
 def b64(data: bytes) -> str:
@@ -107,6 +107,48 @@ async def test_fetch_reads_html_and_the_pdf() -> None:
 
 def test_html_text_skips_scripts_and_styles() -> None:
     assert html_text("<script>alert(1)</script><b>Paid</b> &amp; done") == "Paid & done"
+
+
+def test_html_text_survives_an_unclosed_head() -> None:
+    markup = "<html><head><title>Receipt</title><body><p>Total</p><p>$12.00</p></body>"
+    assert html_text(markup) == "Total\n$12.00"
+
+
+def _part(mime: str, text: str, charset: str = "utf-8", **extra: Any) -> dict[str, Any]:
+    return {
+        "mimeType": mime,
+        "headers": [{"name": "Content-Type", "value": f'{mime}; charset="{charset}"'}],
+        "body": {"data": b64(text.encode(charset))},
+        **extra,
+    }
+
+
+def test_a_stub_plain_part_loses_to_the_real_html_one() -> None:
+    parts = [
+        _part("text/plain", "View this email in your browser."),
+        _part("text/html", "<table><tr><td>Order total</td><td>SGD 42.10</td></tr></table>"),
+    ]
+    assert body_text(parts, "snippet") == "Order total SGD 42.10"
+
+
+def test_a_full_plain_part_is_kept() -> None:
+    parts = [
+        _part("text/plain", "Thanks for your order. Order total: SGD 42.10. Paid by Visa."),
+        _part("text/html", "<p>Thanks</p>"),
+    ]
+    assert body_text(parts, "snippet").startswith("Thanks for your order")
+
+
+def test_body_text_honours_the_charset_and_skips_attachments() -> None:
+    parts = [
+        _part("text/plain", "Total payé: 12,50 EUR", charset="iso-8859-1"),
+        _part("text/html", "<p>" + "attached " * 50 + "</p>", filename="terms.html"),
+    ]
+    assert body_text(parts, "snippet") == "Total payé: 12,50 EUR"
+
+
+def test_an_empty_body_falls_back_to_the_snippet() -> None:
+    assert body_text([], "Your total is $5") == "Your total is $5"
 
 
 def test_url_buttons_open_links_in_telegram() -> None:
