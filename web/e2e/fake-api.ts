@@ -26,6 +26,7 @@ export async function fakeApi(page: Page, { signedIn = true } = {}) {
     days_until: number;
     snoozed: boolean;
   };
+  type FakeRule = { id: string; pattern: string; category_id: string; category_name: string; explanation: string };
   type FakeSalary = { rule: string; day: number | null; anchor: string | null; usual: string | null };
   const state: {
     txs: Tx[];
@@ -33,6 +34,7 @@ export async function fakeApi(page: Page, { signedIn = true } = {}) {
     budgets: FakeBudget[];
     bills: FakeBill[];
     salary: FakeSalary | null;
+    rules: FakeRule[];
   } = {
     txs: [
       mk("t1", "out", "12.40", "Maxwell Food Centre", "food"),
@@ -42,7 +44,13 @@ export async function fakeApi(page: Page, { signedIn = true } = {}) {
     budgets: [],
     bills: [],
     salary: null,
+    rules: [],
   };
+  const categories = [
+    { id: "food", name: "Food & Drink", active: true },
+    { id: "transport", name: "Transport", active: true },
+  ];
+  const categoryName = (id: string) => categories.find((c) => c.id === id)?.name ?? id;
   const live = () => state.txs.filter((t) => !t.deleted);
   const json = (route: Route, body: unknown, status = 200) =>
     route.fulfill({
@@ -220,8 +228,56 @@ export async function fakeApi(page: Page, { signedIn = true } = {}) {
         },
       ]);
     }
-    if (path === "/categories")
-      return json(route, [{ id: "food", name: "Food & Drink", active: true }]);
+    if (path === "/categories") return json(route, categories);
+    if (path === "/category-rules" && method === "GET") return json(route, state.rules);
+    if (path === "/category-rules" && method === "PUT") {
+      const pattern = String(body.pattern).trim().toLowerCase();
+      state.rules = state.rules.filter((r) => r.pattern !== pattern);
+      state.rules.push({
+        id: `r${state.rules.length + 1}`,
+        pattern,
+        category_id: body.category_id,
+        category_name: categoryName(body.category_id),
+        explanation: "You added this rule on 28 Sep 2026.",
+      });
+      return route.fulfill({ status: 204 });
+    }
+    if (path === "/category-rules/accept" && method === "POST") {
+      const tx = state.txs.find((t) => t.id === body.transaction_id)!;
+      const pattern = String(tx.counterparty).toLowerCase();
+      state.rules.push({
+        id: `r${state.rules.length + 1}`,
+        pattern,
+        category_id: tx.category_id!,
+        category_name: categoryName(tx.category_id!),
+        explanation: `Added on 28 Sep 2026 when you filed “${tx.counterparty}” under ${categoryName(tx.category_id!)}.`,
+      });
+      return route.fulfill({ status: 204 });
+    }
+    if (path.startsWith("/category-rules/") && method === "DELETE") {
+      state.rules = state.rules.filter((r) => `/category-rules/${r.id}` !== path);
+      return route.fulfill({ status: 204 });
+    }
+    if (path.endsWith("/category-explanation")) {
+      return json(route, { text: "It's in Food & Drink because that was chosen for it, not by a rule." });
+    }
+    if (path.startsWith("/transactions/") && method === "PATCH") {
+      const tx = state.txs.find((t) => `/transactions/${t.id}` === path)!;
+      const changed = body.category_id !== tx.category_id;
+      tx.category_id = body.category_id;
+      tx.counterparty = body.counterparty;
+      const pattern = String(tx.counterparty ?? "").toLowerCase();
+      const offer =
+        changed && tx.category_id && pattern && !state.rules.some((r) => r.pattern === pattern)
+          ? {
+              question: `Always file “${pattern}” under ${categoryName(tx.category_id)}?`,
+              pattern,
+              category_id: tx.category_id,
+              replaces_category_id: null,
+            }
+          : null;
+      return json(route, { ...tx, rule_suggestion: offer });
+    }
     if (path === "/transactions" && method === "GET") {
       const direction = url.searchParams.get("direction");
       const items = live().filter(

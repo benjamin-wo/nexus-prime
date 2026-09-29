@@ -1,7 +1,16 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 
-import { api, type Category, type LedgerFilters, ledgerParams, type Me, type Page, type Transaction } from "../api";
+import {
+  api,
+  type Category,
+  type CategoryRule,
+  type LedgerFilters,
+  ledgerParams,
+  type Me,
+  type Page,
+  type Transaction,
+} from "../api";
 import { DirectionBadge } from "../components/Badge";
 import { Toast } from "../components/Toast";
 import { Amount } from "../components/Amount";
@@ -57,6 +66,8 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
     queryFn: () => api<Category[]>("/categories?include_inactive=true"),
   });
   const names = new Map(categories.data?.map((c) => [c.id, c.name]));
+  const rules = useQuery({ queryKey: ["category-rules"], queryFn: () => api<CategoryRule[]>("/category-rules") });
+  const patterns = new Map(rules.data?.map((r) => [r.id, r.pattern]));
 
   function refresh() {
     void client.invalidateQueries({ queryKey: ["transactions"] });
@@ -218,7 +229,12 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
                       </button>
                       {tx.notes && <div className="caption">{tx.notes}</div>}
                     </td>
-                    <td className="hide-mobile secondary">{tx.category_id ? names.get(tx.category_id) : "—"}</td>
+                    <td className="hide-mobile secondary">
+                      {tx.category_id ? names.get(tx.category_id) : "—"}
+                      {tx.category_rule_id && patterns.has(tx.category_rule_id) && (
+                        <div className="caption">by rule “{patterns.get(tx.category_rule_id)}”</div>
+                      )}
+                    </td>
                     <td className="hide-mobile">
                       <DirectionBadge tx={tx} />
                     </td>

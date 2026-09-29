@@ -20,6 +20,7 @@ from nexus.agent.graph import BUTTONS, RECEIPT, REF, WROTE, strip_ids, thread_id
 from nexus.agent.receipts import ReceiptReader
 from nexus.agent.tools import UowFactory
 from nexus.application import bills as bill_cases
+from nexus.application import category_rules as rule_cases
 from nexus.application import salary as salary_cases
 from nexus.application import splits as split_cases
 from nexus.application import transactions as tx_cases
@@ -104,9 +105,12 @@ class AgentService:
             (m for m in reversed(new) if isinstance(m, AIMessage) and not m.tool_calls), None
         )
         text = strip_ids(text_of(final.content)) if final else ""
+        # Buttons from this turn's tool results (e.g. a rule offer) and from the reply.
+        sources = [m for m in new if isinstance(m, ToolMessage)] + ([final] if final else [])
         extra = [
             [Button(str(label), str(data)) for label, data in row]
-            for row in (final.additional_kwargs.get(BUTTONS) or [] if final else [])
+            for m in sources
+            for row in m.additional_kwargs.get(BUTTONS) or []
         ]
         return [Reply(text or "Done.", extra + ([[UNDO]] if wrote else []))]
 
@@ -161,6 +165,8 @@ class AgentService:
             return await self.quick_action(actor, data.removeprefix("qa:"))
         if data.startswith("salary:"):
             return [await self._salary_button(actor, data.removeprefix("salary:"))]
+        if data.startswith("rule:"):
+            return [await self._rule_button(actor, data.removeprefix("rule:"))]
         if data.startswith("bill:"):
             _, action, occurrence_id = [*data.split(":"), "", ""][:3]
             return [await self._bill_button(actor, action, occurrence_id)]
@@ -193,6 +199,31 @@ class AgentService:
         except NexusError as exc:
             return Reply(str(exc).capitalize() + ".")
         return Reply("I don't know that button.")
+
+    async def _rule_button(self, actor: UserId, data: str) -> Reply:
+        """The answer to a rule offer after a category correction."""
+        action, _, transaction_id = data.partition(":")
+        if action == "skip":
+            return Reply("OK, just this once. Your rules are unchanged.")
+        if action != "save":
+            return Reply("I don't know that button.")
+        try:
+            tx_id = UUID(transaction_id)
+        except ValueError:
+            return Reply("I don't know that button.")
+        user = await get_user(self._uow(), actor)
+        try:
+            change = await rule_cases.accept_suggestion(self._uow(), user, tx_id, now=self._clock())
+        except NexusError as exc:
+            return Reply(str(exc).capitalize() + ".")
+        pattern, name = change.rule.pattern, change.category.name
+        if not change.changed:
+            return Reply(f"Your rule already files “{pattern}” under {name}.")
+        if change.previous:
+            return Reply(
+                f"Changed: “{pattern}” now files under {name} instead of {change.previous.name}."
+            )
+        return Reply(f"Saved: new expenses from “{pattern}” will go under {name}.")
 
     async def _bill_button(self, actor: UserId, action: str, occurrence_id: str) -> Reply:
         """Mark paid / Snooze on a bill reminder. Records the user's word only; nothing

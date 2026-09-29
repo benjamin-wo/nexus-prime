@@ -34,6 +34,7 @@ from nexus.domain.ledger import (
     snapshot,
 )
 from nexus.domain.money import Money
+from nexus.domain.rules import CategoryRule, best_rule
 
 MAX_PAGE = 500
 
@@ -58,6 +59,8 @@ class NewTransaction:
     source: Source = Source.MANUAL
     # Set for anything ingested from outside (an email, a statement row).
     external_id: str | None = None
+    # With no category given, file an expense by the user's category rules.
+    apply_rules: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,8 +98,13 @@ async def create_transaction(
     Shared by the use cases that create money movements; runs inside the
     caller's unit of work.
     """
-    if cmd.category_id is not None:
-        await require_category(repo, actor, cmd.category_id)
+    category_id, rule_id = cmd.category_id, None
+    if category_id is not None:
+        await require_category(repo, actor, category_id)
+    elif Direction(cmd.direction) is Direction.OUT and cmd.apply_rules:
+        rule = await matching_rule(repo, actor, cmd.counterparty, cmd.notes)
+        if rule is not None:
+            category_id, rule_id = rule.category_id, rule.id
     tx = Transaction(
         id=uuid4(),
         user_id=actor,
@@ -104,12 +112,13 @@ async def create_transaction(
         amount=require_positive(cmd.amount),
         occurred_at=require_aware(cmd.occurred_at, field_name="occurred_at"),
         counterparty=clean_text(cmd.counterparty, field_name="counterparty"),
-        category_id=cmd.category_id,
+        category_id=category_id,
         notes=clean_text(cmd.notes, field_name="notes"),
         status=TransactionStatus(cmd.status),
         source=Source(cmd.source),
         created_at=now,
         updated_at=now,
+        category_rule_id=rule_id,
     )
     await repo.insert_transaction(tx)
     if cmd.external_id is not None:
@@ -117,6 +126,17 @@ async def create_transaction(
         await repo.claim_source(actor, tx.source, external_id, tx.id)
     await repo.insert_revision(actor, tx.id, RevisionKind.CREATE, None, now)
     return tx
+
+
+async def matching_rule(
+    repo: LedgerRepository, actor: UserId, counterparty: str | None, notes: str | None
+) -> CategoryRule | None:
+    """The rule that would file an expense, skipping rules whose category is archived."""
+    rules = await repo.list_category_rules(actor)
+    if not rules:
+        return None
+    active = {c.id for c in await repo.list_categories(actor, include_inactive=False)}
+    return best_rule((r for r in rules if r.category_id in active), counterparty, notes)
 
 
 async def log_transaction(uow: UnitOfWork, actor: UserId, cmd: NewTransaction) -> Transaction:
@@ -171,7 +191,9 @@ async def edit_transaction(
         if changes.category_id is not UNSET:
             if changes.category_id is not None and changes.category_id != tx.category_id:
                 await require_category(repo, actor, changes.category_id)
-            updated = replace(updated, category_id=changes.category_id)
+            if changes.category_id != tx.category_id:
+                # The user chose the category, so no rule explains it any more.
+                updated = replace(updated, category_id=changes.category_id, category_rule_id=None)
         if changes.notes is not UNSET:
             updated = replace(updated, notes=clean_text(changes.notes, field_name="notes"))
         if changes.status is not UNSET:

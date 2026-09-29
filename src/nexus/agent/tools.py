@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from nexus.application import bills as bill_cases
 from nexus.application import budgets as budget_cases
 from nexus.application import categories as category_cases
+from nexus.application import category_rules as rule_cases
 from nexus.application import salary as salary_cases
 from nexus.application import splits as split_cases
 from nexus.application import transactions as tx_cases
@@ -35,6 +36,7 @@ from nexus.domain.ledger import (
 )
 from nexus.domain.money import Money
 from nexus.domain.planning import Cadence, PayRule
+from nexus.domain.rules import clean_pattern
 
 type UowFactory = Callable[[], UnitOfWork]
 
@@ -62,6 +64,8 @@ class Args(BaseModel):
 class ToolResult:
     text: str
     wrote: bool = False
+    # Extra reply buttons, rows of (label, data), shown under the agent's answer.
+    buttons: list[list[tuple[str, str]]] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -324,7 +328,24 @@ async def _edit(ctx: ToolContext, a: EditArgs) -> ToolResult:
     if a.category is not None:
         changes = replace(changes, category_id=await resolve_category(ctx, a.category))
     tx = await tx_cases.edit_transaction(ctx.uow(), ctx.user.id, current.id, changes)
-    return ToolResult(f"Updated: {describe(tx, await category_map(ctx), ctx.tz)}", wrote=True)
+    text = f"Updated: {describe(tx, await category_map(ctx), ctx.tz)}"
+    if tx.category_id == current.category_id:
+        return ToolResult(text, wrote=True)
+    # A correction never changes a rule by itself: offer it, and let the user decide.
+    offer = await rule_cases.suggest_rule(ctx.uow(), ctx.user.id, tx)
+    if offer is None:
+        return ToolResult(text, wrote=True)
+    return ToolResult(
+        f"{text}\nAsking the user with buttons: {offer.question} "
+        "Mention the question in your reply; don't ask it any other way.",
+        wrote=True,
+        buttons=rule_buttons(offer),
+    )
+
+
+def rule_buttons(offer: rule_cases.RuleSuggestion) -> list[list[tuple[str, str]]]:
+    save = "Change rule" if offer.replaces else "Save rule"
+    return [[(save, f"rule:save:{offer.transaction_id}"), ("Just this once", "rule:skip")]]
 
 
 class IdArgs(Args):
@@ -383,6 +404,68 @@ async def _summary(ctx: ToolContext, a: SummaryArgs) -> ToolResult:
 async def _categories(ctx: ToolContext, _: NoArgs) -> ToolResult:
     cats = await category_cases.list_categories(ctx.uow(), ctx.user.id)
     return ToolResult(", ".join(c.name for c in cats) or "No categories.")
+
+
+async def _rules(ctx: ToolContext, _: NoArgs) -> ToolResult:
+    views = await rule_cases.list_rules(ctx.uow(), ctx.user.id)
+    if not views:
+        return ToolResult("No category rules yet.")
+    return ToolResult(
+        "\n".join(f"“{v.rule.pattern}” → {v.category.name}. {v.rule.explanation}" for v in views)
+    )
+
+
+class RuleArgs(Args):
+    pattern: str = Field(description="Word or phrase in the merchant or notes, e.g. 'grab'")
+    category: str = Field(description="Exact category name from list_categories")
+
+
+async def _describe_rule(ctx: ToolContext, a: RuleArgs) -> str:
+    category_id = await resolve_category(ctx, a.category)
+    pattern = clean_pattern(a.pattern)
+    for view in await rule_cases.list_rules(ctx.uow(), ctx.user.id):
+        if view.rule.pattern == pattern and view.category.id != category_id:
+            return (
+                f"Change your rule for “{pattern}” from {view.category.name} to {a.category}? "
+                "Expenses already logged stay as they are."
+            )
+    return f"File new expenses mentioning “{pattern}” under {a.category}?"
+
+
+async def _set_rule(ctx: ToolContext, a: RuleArgs) -> ToolResult:
+    category_id = await resolve_category(ctx, a.category)
+    if category_id is None:
+        raise InvalidInput("a rule needs a category")
+    change = await rule_cases.set_rule(ctx.uow(), ctx.user, a.pattern, category_id, now=ctx.now)
+    name, pattern = change.category.name, change.rule.pattern
+    if not change.changed:
+        return ToolResult(f"Your rule already files “{pattern}” under {name}.")
+    if change.previous:
+        return ToolResult(f"Changed: “{pattern}” now files under {name}.", wrote=True)
+    return ToolResult(f"Saved: new expenses mentioning “{pattern}” go under {name}.", wrote=True)
+
+
+class RulePatternArgs(Args):
+    pattern: str = Field(description="The rule's word or phrase, as list_category_rules shows")
+
+
+async def _describe_remove_rule(ctx: ToolContext, a: RulePatternArgs) -> str:
+    view = await rule_cases.find_rule(ctx.uow(), ctx.user.id, a.pattern)
+    return f"Remove your rule filing “{view.rule.pattern}” under {view.category.name}?"
+
+
+async def _remove_rule(ctx: ToolContext, a: RulePatternArgs) -> ToolResult:
+    view = await rule_cases.find_rule(ctx.uow(), ctx.user.id, a.pattern)
+    await rule_cases.remove_rule(ctx.uow(), ctx.user.id, view.rule.id, now=ctx.now)
+    return ToolResult(
+        f"Removed the rule for “{view.rule.pattern}”. Expenses it filed keep their category.",
+        wrote=True,
+    )
+
+
+async def _explain_category(ctx: ToolContext, a: IdArgs) -> ToolResult:
+    result = await rule_cases.explain(ctx.uow(), ctx.user.id, parse_id(a.transaction_id))
+    return ToolResult(result.text)
 
 
 class Participant(Args):
@@ -691,6 +774,33 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
         ToolSpec("undo_last_change", "Undo the user's most recent change.", NoArgs, _undo),
         ToolSpec("spending_summary", "Totals for a period, by category.", SummaryArgs, _summary),
         ToolSpec("list_categories", "The user's active categories.", NoArgs, _categories),
+        ToolSpec(
+            "list_category_rules",
+            "The user's category rules and why each exists.",
+            NoArgs,
+            _rules,
+        ),
+        ToolSpec(
+            "set_category_rule",
+            "File new expenses mentioning a word under a category, when the user asks. "
+            "Asks the user to confirm.",
+            RuleArgs,
+            _set_rule,
+            confirm=_describe_rule,
+        ),
+        ToolSpec(
+            "remove_category_rule",
+            "Remove a category rule. Asks the user to confirm.",
+            RulePatternArgs,
+            _remove_rule,
+            confirm=_describe_remove_rule,
+        ),
+        ToolSpec(
+            "explain_category",
+            "Why a transaction is in its category.",
+            IdArgs,
+            _explain_category,
+        ),
         ToolSpec(
             "split_bill",
             "Split an expense the user paid with other people. Asks the user to confirm.",

@@ -2,8 +2,9 @@ import type { Me } from "../api";
 import { BillsSection } from "./Bills";
 import { BudgetsSection } from "./Budgets";
 import { PaydaySection } from "./Payday";
+import { RulesSection } from "./Rules";
 
-/** Planning: budgets, bills and payday. */
+/** Planning: budgets, bills, payday and category rules. */
 export function Plan({ me }: { me: Me }) {
   return (
     <>
@@ -17,6 +18,7 @@ export function Plan({ me }: { me: Me }) {
         <BudgetsSection me={me} />
         <BillsSection me={me} />
         <PaydaySection me={me} />
+        <RulesSection />
       </div>
     </>
   );

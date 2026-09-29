@@ -13,6 +13,7 @@ from nexus.agent.receipts import ReceiptDraft, ReceiptReader
 from nexus.agent.service import AgentService, Reply
 from nexus.agent.skills import SkillLibrary
 from nexus.agent.tools import build_tools
+from nexus.application.category_rules import list_rules
 from nexus.application.ports import LedgerQuery
 from nexus.application.splits import list_open_ious, split_bill
 from nexus.application.transactions import NewTransaction, list_ledger, log_transaction
@@ -285,3 +286,71 @@ async def test_threads_are_per_user(uow: UowFactory, alice: UserId, bob: UserId)
     await agent.handle_text(bob, "hello", "tg:2:1")
     bob_view = " ".join(str(m.content) for m in model.seen[-1])
     assert "alice" not in bob_view
+
+
+async def test_a_category_correction_offers_a_rule_and_waits_for_the_answer(
+    uow: UowFactory, alice: UserId
+) -> None:
+    ride = await log_transaction(
+        uow(), alice, NewTransaction(Direction.OUT, Money.of("12", "SGD"), NOW, counterparty="Grab")
+    )
+    model = scripted(
+        call("edit_transaction", transaction_id=str(ride.id), category="Transport"),
+        say("Moved it to Transport. Want me to always do that?"),
+    )
+    agent = build(uow, model)
+    confirm = only(await agent.handle_text(alice, "grab was transport", "tg:1:1"))
+    assert confirm.text == "Change 2026-09-28 · -12.00 SGD · Grab: category → Transport?"
+    done = only(await agent.resolve(alice, confirm.buttons[0][0].data.split(":")[1], True))
+    assert "Always file “grab” under Transport?" in tool_results(model)[-1]
+    save, skip = done.buttons[0]
+    assert (save.label, skip.label) == ("Save rule", "Just this once")
+    assert done.buttons[-1][0].label == "Undo"
+    assert await list_rules(uow(), alice) == []  # nothing until the user answers
+
+    assert only(await agent.press(alice, skip.data)).text == (
+        "OK, just this once. Your rules are unchanged."
+    )
+    assert await list_rules(uow(), alice) == []
+    saved = only(await agent.press(alice, save.data))
+    assert saved.text == "Saved: new expenses from “grab” will go under Transport."
+    assert only(await agent.press(alice, save.data)).text == (
+        "Your rule already files “grab” under Transport."
+    )
+    [rule] = await list_rules(uow(), alice)
+    nxt = await log_transaction(
+        uow(), alice, NewTransaction(Direction.OUT, Money.of("9", "SGD"), NOW, counterparty="grab")
+    )
+    assert nxt.category_rule_id == rule.rule.id
+    assert only(await agent.press(alice, "rule:save:not-a-uuid")).text == (
+        "I don't know that button."
+    )
+
+
+async def test_rule_changes_by_chat_are_confirmed(uow: UowFactory, alice: UserId) -> None:
+    model = scripted(
+        call("set_category_rule", pattern="Netflix", category="Entertainment"),
+        say("Done."),
+        call("set_category_rule", pattern="netflix", category="Bills & Utilities"),
+        say("Changed."),
+        call("remove_category_rule", pattern="NETFLIX"),
+        say("Removed."),
+    )
+    agent = build(uow, model)
+    ask = only(await agent.handle_text(alice, "netflix is entertainment", "tg:1:1"))
+    assert ask.text == "File new expenses mentioning “netflix” under Entertainment?"
+    assert await list_rules(uow(), alice) == []
+    await agent.resolve(alice, ask.buttons[0][0].data.split(":")[1], True)
+    [rule] = await list_rules(uow(), alice)
+    assert rule.category.name == "Entertainment"
+
+    ask = only(await agent.handle_text(alice, "actually it's a bill", "tg:1:2"))
+    assert ask.text == (
+        "Change your rule for “netflix” from Entertainment to Bills & Utilities? "
+        "Expenses already logged stay as they are."
+    )
+    await agent.resolve(alice, ask.buttons[0][0].data.split(":")[1], True)
+    ask = only(await agent.handle_text(alice, "forget the netflix rule", "tg:1:3"))
+    assert ask.text == "Remove your rule filing “netflix” under Bills & Utilities?"
+    await agent.resolve(alice, ask.buttons[0][0].data.split(":")[1], True)
+    assert await list_rules(uow(), alice) == []

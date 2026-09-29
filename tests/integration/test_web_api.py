@@ -507,6 +507,72 @@ async def test_budgets_round_trip(world: World) -> None:
     assert [b["name"] for b in (await owner.get("/api/budgets")).json()] == ["Overall"]
 
 
+# --- category rules -------------------------------------------------------------------
+
+
+async def test_category_rules_round_trip(world: World) -> None:
+    owner, token = await owner_and_invite(world)
+    cats = {c["name"]: c["id"] for c in (await owner.get("/api/categories")).json()}
+    ride = await spend(owner, "12", "SGD", "2026-09-27", counterparty="Grab")
+    assert ride["category_id"] is None and ride["category_rule_id"] is None
+
+    # Correcting the category offers a rule; nothing is saved until it's accepted.
+    edited = await owner.send(
+        "PATCH", f"/api/transactions/{ride['id']}", {"category_id": cats["Transport"]}
+    )
+    offer = edited.json()["rule_suggestion"]
+    assert offer == {
+        "question": "Always file “grab” under Transport?",
+        "pattern": "grab",
+        "category_id": cats["Transport"],
+        "replaces_category_id": None,
+    }
+    assert (await owner.get("/api/category-rules")).json() == []
+    # An edit that leaves the category alone offers nothing.
+    notes = await owner.send("PATCH", f"/api/transactions/{ride['id']}", {"notes": "airport"})
+    assert notes.json()["rule_suggestion"] is None
+
+    accepted = await owner.send(
+        "POST", "/api/category-rules/accept", {"transaction_id": ride["id"]}
+    )
+    assert accepted.status_code == 204
+    [rule] = (await owner.get("/api/category-rules")).json()
+    assert rule["pattern"] == "grab" and rule["category_name"] == "Transport"
+    assert rule["explanation"].startswith("Added on 28 Sep 2026 when you filed “Grab”")
+
+    nxt = await spend(owner, "9", "SGD", "2026-09-28", counterparty="GRAB")
+    assert (nxt["category_id"], nxt["category_rule_id"]) == (cats["Transport"], rule["id"])
+    why = await owner.get(f"/api/transactions/{nxt['id']}/category-explanation")
+    assert why.json()["text"].startswith("It's in Transport because of your rule “grab”.")
+
+    made = await owner.send(
+        "PUT", "/api/category-rules", {"pattern": "Netflix", "category_id": cats["Entertainment"]}
+    )
+    assert made.status_code == 204
+    assert [r["pattern"] for r in (await owner.get("/api/category-rules")).json()] == [
+        "grab",
+        "netflix",
+    ]
+    short = {"pattern": "x", "category_id": cats["Travel"]}
+    assert (await owner.send("PUT", "/api/category-rules", short)).status_code == 422
+
+    member = world.browser()
+    await member.login(MEMBER, invite=token)
+    assert (await member.get("/api/category-rules")).json() == []
+    assert (await member.send("DELETE", f"/api/category-rules/{rule['id']}")).status_code == 404
+    taxi = {"pattern": "taxi", "category_id": cats["Transport"]}  # the owner's category
+    assert (await member.send("PUT", "/api/category-rules", taxi)).status_code == 404
+    accept = {"transaction_id": ride["id"]}
+    assert (await member.send("POST", "/api/category-rules/accept", accept)).status_code == 404
+    explain = f"/api/transactions/{ride['id']}/category-explanation"
+    assert (await member.get(explain)).status_code == 404
+    theirs = await spend(member, "5", "SGD", "2026-09-28", counterparty="Grab")
+    assert theirs["category_id"] is None  # the owner's rules are theirs alone
+
+    assert (await owner.send("DELETE", f"/api/category-rules/{rule['id']}")).status_code == 204
+    assert [r["pattern"] for r in (await owner.get("/api/category-rules")).json()] == ["netflix"]
+
+
 # --- bills ----------------------------------------------------------------------------
 
 

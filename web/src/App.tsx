@@ -2,11 +2,12 @@ import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tan
 import { useCallback, useState } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
-import { api, ApiError, type Me, setCsrf, type Transaction } from "./api";
+import { api, ApiError, type EditedTransaction, type Me, type RuleSuggestion, setCsrf, type Transaction } from "./api";
 import { ChatDrawer } from "./components/ChatDrawer";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { EntrySheet } from "./components/EntrySheet";
 import { Shell } from "./components/Shell";
+import { Toast } from "./components/Toast";
 import { Dashboard } from "./pages/Dashboard";
 import { Ledger } from "./pages/Ledger";
 import { LoginPage } from "./pages/LoginPage";
@@ -49,8 +50,13 @@ function Cockpit({ me }: { me: Me }) {
   const client = useQueryClient();
   const [chat, setChat] = useState(false);
   const [sheet, setSheet] = useState<{ editing?: Transaction } | null>(null);
+  // After a category correction: offer a rule, and change nothing unless accepted.
+  const [offer, setOffer] = useState<{ transactionId: string; suggestion: RuleSuggestion } | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const closeOffer = useCallback(() => setOffer(null), []);
+  const closeNotice = useCallback(() => setNotice(null), []);
   const refresh = useCallback(() => {
-    for (const key of ["transactions", "summary", "ious", "budgets", "bills", "salary"]) void client.invalidateQueries({ queryKey: [key] });
+    for (const key of ["transactions", "summary", "ious", "budgets", "bills", "salary", "category-explanation"]) void client.invalidateQueries({ queryKey: [key] });
   }, [client]);
   const closeSheet = useCallback(() => setSheet(null), []);
   const closeChat = useCallback(() => setChat(false), []);
@@ -80,13 +86,34 @@ function Cockpit({ me }: { me: Me }) {
           me={me}
           editing={sheet.editing}
           onClose={closeSheet}
-          onSaved={() => {
+          onSaved={(tx: EditedTransaction) => {
             setSheet(null);
             refresh();
+            if (tx.rule_suggestion) setOffer({ transactionId: tx.id, suggestion: tx.rule_suggestion });
           }}
         />
       )}
       {chat && <ChatDrawer onClose={closeChat} onChanged={refresh} />}
+      {offer && (
+        <Toast
+          message={offer.suggestion.question}
+          action={{
+            label: offer.suggestion.replaces_category_id ? "Change rule" : "Save rule",
+            run: async () => {
+              setOffer(null);
+              try {
+                await api("/category-rules/accept", { method: "POST", body: { transaction_id: offer.transactionId } });
+                setNotice(`Saved. New expenses from “${offer.suggestion.pattern}” will be filed the same way.`);
+                void client.invalidateQueries({ queryKey: ["category-rules"] });
+              } catch (e) {
+                setNotice(e instanceof Error ? e.message : "Couldn't save the rule");
+              }
+            },
+          }}
+          onClose={closeOffer}
+        />
+      )}
+      {notice && <Toast message={notice} onClose={closeNotice} />}
     </Shell>
   );
 }
