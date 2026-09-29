@@ -24,12 +24,15 @@ class TelegramClient(Protocol):
     async def set_menu_button(self, label: str, url: str) -> None: ...
 
 
+def _button(button: Button) -> dict[str, str]:
+    """``url:`` buttons open a link (in the phone's browser); the rest call back."""
+    if button.data.startswith("url:"):
+        return {"text": button.label, "url": button.data.removeprefix("url:")}
+    return {"text": button.label, "callback_data": button.data}
+
+
 def keyboard(buttons: list[list[Button]]) -> dict[str, Any]:
-    return {
-        "inline_keyboard": [
-            [{"text": b.label, "callback_data": b.data} for b in row] for row in buttons
-        ]
-    }
+    return {"inline_keyboard": [[_button(b) for b in row] for row in buttons]}
 
 
 class HttpTelegramClient:

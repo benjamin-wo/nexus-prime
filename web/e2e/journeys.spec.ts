@@ -302,10 +302,47 @@ test("a kept receipt opens through the app's own link", async ({ page }) => {
   );
 });
 
+test("a Connect Gmail link explains Google's warning before sign-in", async ({ page }) => {
+  await fakeApi(page, { signedIn: false });
+  await page.goto("/connect/gmail?t=good");
+  await expect(page.getByRole("heading", { name: "Connect Gmail" })).toBeVisible();
+  await expect(page.getByText("Telegram user …9165")).toBeVisible();
+  await expect(page.getByText("Google hasn't verified this app")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Continue to Google" })).toHaveAttribute(
+    "href",
+    "/api/email/gmail/start?t=good",
+  );
+  await page.goto("/connect/gmail?t=old");
+  await expect(page.getByText("This link has expired or was already used.")).toBeVisible();
+  await page.goto("/connect/gmail/done?ok=1");
+  await expect(page.getByRole("heading", { name: "Gmail connected" })).toBeVisible();
+});
+
+test("email is out of sight until connected, then shows what happened to each email", async ({ page }) => {
+  await fakeApi(page);
+  await page.goto("/plan");
+  await expect(page.getByRole("region", { name: "Category rules" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Email receipts" })).toHaveCount(0);
+
+  await fakeApi(page, { emailConnected: true });
+  await page.goto("/plan");
+  const card = page.getByRole("region", { name: "Email receipts" });
+  await expect(card.getByText("ann@gmail.com · 1 waiting for you")).toBeVisible();
+  await card.getByRole("link", { name: "Open" }).click();
+
+  const checked = page.getByRole("region", { name: "Checked emails" });
+  const grab = checked.getByRole("listitem").filter({ hasText: "Grab" });
+  await expect(grab.getByText("Waiting for you")).toBeVisible();
+  await expect(checked.getByText("Not a receipt: promotion")).toBeVisible();
+  await grab.getByRole("button", { name: "Log it" }).click();
+  await expect(grab.getByText("Logged")).toBeVisible();
+  await expect(grab.getByRole("link", { name: "In your ledger" })).toBeVisible();
+});
+
 test("nothing spills sideways on a small phone", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 568 });
-  await fakeApi(page);
-  for (const path of ["/", "/ledger", "/plan"]) {
+  await fakeApi(page, { emailConnected: true });
+  for (const path of ["/", "/ledger", "/plan", "/email", "/connect/gmail?t=good"]) {
     await page.goto(path);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     const offenders = await page.evaluate(() => {

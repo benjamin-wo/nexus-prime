@@ -10,9 +10,11 @@ from zoneinfo import ZoneInfo
 from nexus.agent.service import Button
 from nexus.application import bills as bill_cases
 from nexus.application import budgets as budget_cases
+from nexus.application import email as email_cases
 from nexus.application import receipts as receipt_cases
 from nexus.application import salary as salary_cases
 from nexus.application.budgets import TELEGRAM_SEND, UowFactory
+from nexus.application.email import EmailRuntime
 from nexus.application.fx import RateSource
 from nexus.application.ports import ReceiptStore
 from nexus.channels.telegram.client import TelegramClient
@@ -26,11 +28,13 @@ BUDGETS_SWEEP = "budgets.sweep"
 BILLS_SWEEP = "bills.sweep"
 PAYDAY_SWEEP = "salary.sweep"
 RECEIPTS_PURGE = "receipts.purge"
+EMAIL_SWEEP = "email.sweep"
 SCHEDULES = (
     Schedule(BUDGETS_SWEEP, timedelta(minutes=10)),
     Schedule(BILLS_SWEEP, timedelta(minutes=30)),
     Schedule(PAYDAY_SWEEP, timedelta(minutes=30)),
     Schedule(RECEIPTS_PURGE, timedelta(hours=1)),
+    Schedule(EMAIL_SWEEP, timedelta(minutes=15)),
 )
 
 
@@ -40,6 +44,7 @@ def build_handlers(
     rates: RateSource,
     clock: Callable[[], datetime],
     archive: ReceiptStore | None = None,
+    email: EmailRuntime | None = None,
 ) -> dict[str, Handler]:
     async def send(payload: dict[str, Any]) -> Defer | None:
         """Message a user on Telegram, but not during their quiet hours."""
@@ -103,7 +108,33 @@ def build_handlers(
             if erased:
                 log.info("purged %d receipts", erased)
 
+    async def sweep_email(_: dict[str, Any]) -> None:
+        if email is None:
+            return
+        async with uow() as tx:
+            connections = await tx.email.connections_to_sweep()
+        for connection in connections:
+            try:
+                async with uow() as tx:
+                    user = await tx.ledger.get_user(connection.user_id)
+                if user is not None:
+                    await email_cases.sweep(
+                        uow,
+                        email.mailbox,
+                        email.reader,
+                        email.cipher,
+                        archive,
+                        user,
+                        connection,
+                        now=clock(),
+                        review_url=email.review_url,
+                    )
+            except Exception:
+                # One mailbox's failure must not stop the others; the next sweep retries.
+                log.exception("email sweep failed for a mailbox")
+
     return {
+        EMAIL_SWEEP: sweep_email,
         RECEIPTS_PURGE: purge_receipts,
         TELEGRAM_SEND: send,
         BUDGETS_SWEEP: sweep_budgets,

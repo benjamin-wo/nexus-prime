@@ -8,17 +8,20 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 import pytest
+from cryptography.fernet import Fernet
 from httpx import ASGITransport, AsyncClient, Response
 from langgraph.checkpoint.memory import InMemorySaver
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nexus.application import bills as bill_cases
+from nexus.application import email as email_cases
 from nexus.application import receipts as receipt_cases
 from nexus.application.transactions import NewTransaction
 from nexus.channels.web.telegram_login import sign_for_tests, sign_webapp_for_tests
 from nexus.domain.ledger import Direction, Source, UserId
 from nexus.domain.money import Money
+from nexus.infra.crypto.fernet import FernetCipher
 from nexus.infra.db.tables import jobs, users
 from nexus.infra.db.uow import SqlUnitOfWork
 from nexus.main import Overrides, create_app
@@ -26,10 +29,13 @@ from nexus.settings import Settings
 from tests.fakes import (
     NOW,
     FakeBucket,
+    FakeEmailReader,
+    FakeMailbox,
     FakeRates,
     FakeTelegram,
     ScriptedModel,
     call,
+    fake_email,
     models,
     say,
     scripted,
@@ -38,6 +44,7 @@ from tests.fakes import (
 pytestmark = pytest.mark.integration
 
 ORIGIN = "https://nexus.test"
+TEST_KEY = Fernet.generate_key().decode()
 TOKEN = "123:fake"
 OWNER, MEMBER, STRANGER = 555, 666, 777
 
@@ -88,6 +95,7 @@ class World:
     rates: FakeRates
     bucket: FakeBucket
     engine: AsyncEngine
+    mailbox: FakeMailbox
 
     def browser(self) -> Browser:
         return Browser(self.app, self.clock)
@@ -97,6 +105,7 @@ class World:
 async def world(engine: AsyncEngine, empty_database_url: str) -> AsyncIterator[World]:
     clock = Clock()
     bucket = FakeBucket()
+    mailbox = FakeMailbox()
     model = scripted()
     telegram = FakeTelegram()
     rates = FakeRates({("USD", "SGD"): {date(2026, 9, 25): "1.2905", date(2026, 9, 28): "1.3000"}})
@@ -109,6 +118,9 @@ async def world(engine: AsyncEngine, empty_database_url: str) -> AsyncIterator[W
         telegram_allowed_user_ids=(MEMBER,),
         web_origin=ORIGIN,
         default_timezone="UTC",
+        google_client_id="cid",
+        google_client_secret="secret",
+        token_encryption_key=TEST_KEY,
     )
     app = create_app(
         settings,
@@ -119,10 +131,12 @@ async def world(engine: AsyncEngine, empty_database_url: str) -> AsyncIterator[W
             clock=lambda: clock.now,
             rates=rates,
             receipt_store=bucket,
+            mailbox=mailbox,
+            email_reader=FakeEmailReader(),
         ),
     )
     async with app.router.lifespan_context(app):
-        yield World(app, clock, model, telegram, rates, bucket, engine)
+        yield World(app, clock, model, telegram, rates, bucket, engine, mailbox)
 
 
 async def owner_and_invite(world: World) -> tuple[Browser, str]:
@@ -558,6 +572,83 @@ async def test_receipt_links_are_short_lived_and_private(world: World) -> None:
 
     assert (await owner.send("DELETE", f"/api/transactions/{tx.id}")).status_code == 200
     assert (await owner.get(f"/api/transactions/{tx.id}/receipt")).status_code == 404
+
+
+# --- Connect Gmail -------------------------------------------------------------------
+
+
+async def test_connect_gmail_from_a_one_time_link(world: World) -> None:
+    owner, token = await owner_and_invite(world)
+    made = await owner.send("POST", "/api/email/link")
+    url = made.json()["url"]
+    assert url.startswith(f"{ORIGIN}/connect/gmail?t=")
+    link = url.split("t=", 1)[1]
+
+    # The link works in a browser with no Nexus session (opened from Telegram).
+    phone = world.browser()
+    check = (await phone.get(f"/api/email/link?t={link}")).json()
+    assert check == {"valid": True, "account_hint": str(OWNER)[-4:]}
+    start = await phone.get(f"/api/email/gmail/start?t={link}")
+    assert start.status_code == 303
+    assert start.headers["location"].startswith(f"https://accounts.test/auth?state={link}")
+    world.mailbox.emails["m1"] = fake_email(
+        "m1", "Your Grab e-receipt", "Merchant: Grab\nTotal: 18.50", at=NOW - timedelta(days=1)
+    )
+    done = await phone.get(f"/api/email/gmail/callback?state={link}&code=ok")
+    assert done.headers["location"] == "/connect/gmail/done?ok=1"
+    again = await phone.get(f"/api/email/gmail/callback?state={link}&code=ok")
+    assert again.headers["location"] == "/connect/gmail/done?error=expired"
+    assert (await phone.get(f"/api/email/link?t={link}")).json()["valid"] is False
+    declined = await phone.get("/api/email/gmail/callback?state=x&error=access_denied")
+    assert declined.headers["location"] == "/connect/gmail/done?error=declined"
+
+    # Connecting queues the look-back sweep and tells the user in Telegram.
+    async with world.engine.connect() as db:
+        kinds = [r[0] for r in await db.execute(select(jobs.c.kind).order_by(jobs.c.id))]
+    assert kinds[-2:] == ["email.sweep", "telegram.send"]
+
+    def uow() -> SqlUnitOfWork:
+        return SqlUnitOfWork(world.engine)
+
+    me = await user_id(world, OWNER)
+    async with uow() as tx:
+        [connection] = await tx.email.list_connections(me)
+        user = await tx.ledger.get_user(me)
+    assert user is not None
+    cipher = FernetCipher(TEST_KEY)
+    await email_cases.sweep(
+        uow, world.mailbox, FakeEmailReader(), cipher, None, user, connection, now=NOW
+    )
+    page = (await owner.get("/api/email")).json()
+    assert page["available"] is True
+    assert [c["address"] for c in page["connections"]] == ["ann@gmail.com"]
+    [email] = page["emails"]
+    assert (email["status"], email["merchant"], email["actionable"]) == ("pending", "Grab", True)
+
+    member = world.browser()
+    await member.login(MEMBER, invite=token)
+    assert (await member.get("/api/email")).json()["emails"] == []
+    assert (await member.send("POST", f"/api/email/{email['id']}/log", {})).status_code == 404
+    other = f"/api/email/connections/{connection.id}"
+    assert (await member.send("DELETE", other)).status_code == 404
+
+    assert (await owner.send("POST", f"/api/email/{email['id']}/log", {})).status_code == 204
+    [row] = (await owner.get("/api/transactions")).json()["items"]
+    assert (row["source"], row["counterparty"]) == ("email", "Grab")
+    assert (await owner.send("DELETE", other)).status_code == 204
+    assert (await owner.get("/api/email")).json()["connections"] == []
+    assert world.mailbox.revocations == ["refresh-token-1"]
+
+
+async def test_the_bot_offers_connecting_through_its_tool(world: World) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+    world.model.script += [call("connect_email"), say("Tap the button to connect Gmail.")]
+    ask = {"message": "can you log my expenses automatically?"}
+    [reply] = (await owner.send("POST", "/api/chat", ask)).json()
+    [[button]] = reply["buttons"]
+    assert button["label"] == "Connect Gmail"
+    assert button["data"].startswith(f"url:{ORIGIN}/connect/gmail?t=")
 
 
 # --- category rules -------------------------------------------------------------------

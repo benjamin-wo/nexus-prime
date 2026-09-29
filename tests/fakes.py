@@ -17,6 +17,9 @@ from pydantic import Field
 from nexus.agent.receipts import ReceiptDraft
 from nexus.agent.service import Button
 from nexus.application.fx import Rate
+from nexus.application.ports import MailboxGrant, MailboxRevoked
+from nexus.domain.email import ExpenseDraft, FetchedEmail, Screening
+from nexus.domain.errors import InvalidInput
 from nexus.infra.llm.factory import ChatModels
 
 NOW = datetime(2026, 9, 28, 4, 0, tzinfo=UTC)  # noon in Singapore
@@ -167,3 +170,68 @@ class FakeBucket:
 
     def download_url(self, key: str, *, filename: str, expires: timedelta) -> str:
         return f"https://bucket.test/{key}?expires={int(expires.total_seconds())}&name={filename}"
+
+
+@dataclass
+class FakeMailbox:
+    """A mailbox holding ``emails``; ``grant`` is what signing in returns."""
+
+    emails: dict[str, FetchedEmail] = field(default_factory=dict)
+    grant: MailboxGrant = field(
+        default_factory=lambda: MailboxGrant("ann@gmail.com", "refresh-token-1")
+    )
+    revoked: bool = False
+    fetched: list[str] = field(default_factory=list)
+    revocations: list[str] = field(default_factory=list)
+
+    def authorize_url(self, *, state: str, redirect_uri: str) -> str:
+        return f"https://accounts.test/auth?state={state}&redirect_uri={redirect_uri}"
+
+    async def exchange(self, code: str, *, redirect_uri: str) -> MailboxGrant:
+        if code == "no-permission":
+            raise InvalidInput("Nexus needs permission to read your email to find receipts")
+        return self.grant
+
+    async def access_token(self, refresh_token: str) -> str:
+        if self.revoked:
+            raise MailboxRevoked("revoked")
+        assert refresh_token == self.grant.refresh_token
+        return "access"
+
+    async def search(self, access_token: str, query: str, *, after: datetime) -> list[str]:
+        return [i for i, e in self.emails.items() if e.received_at > after]
+
+    async def fetch(self, access_token: str, message_id: str) -> FetchedEmail:
+        self.fetched.append(message_id)
+        return self.emails[message_id]
+
+    async def revoke(self, refresh_token: str) -> None:
+        self.revocations.append(refresh_token)
+
+
+class FakeEmailReader:
+    """Receipts are emails whose subject contains 'receipt'; the amount and merchant
+    come from lines like 'Total: 18.50' and 'Merchant: Grab' in the text."""
+
+    async def triage(self, email: FetchedEmail) -> Screening:
+        if "receipt" in email.subject.lower():
+            return Screening(True, "receipt")
+        return Screening(False, "promotion")
+
+    async def extract(self, email: FetchedEmail) -> ExpenseDraft:
+        fields = dict(line.split(": ", 1) for line in email.text.splitlines() if ": " in line)
+        return ExpenseDraft(
+            fields.get("Total"), fields.get("Currency"), fields.get("Merchant"), fields.get("Date")
+        )
+
+
+def fake_email(
+    message_id: str,
+    subject: str,
+    text: str = "",
+    *,
+    at: datetime = NOW,
+    sender: str = "no-reply@grab.com",
+    pdf: bytes | None = None,
+) -> FetchedEmail:
+    return FetchedEmail(message_id, at, sender, subject, text, pdf)

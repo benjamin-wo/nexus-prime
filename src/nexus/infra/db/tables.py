@@ -17,6 +17,7 @@ from sqlalchemy import (
     Identity,
     Index,
     Integer,
+    LargeBinary,
     MetaData,
     Numeric,
     SmallInteger,
@@ -410,6 +411,76 @@ jobs = Table(
     Column("finished_at", TZ),
     CheckConstraint("status IN ('pending', 'running', 'done', 'failed')", name="status"),
     Index("ix_jobs_status_run_at", "status", "run_at"),
+)
+
+# A mailbox the user connected. The refresh token is stored encrypted only.
+email_connections = Table(
+    "email_connections",
+    metadata,
+    _uuid_pk(),
+    _user_fk(),
+    Column("provider", Text, nullable=False),
+    Column("address", Text, nullable=False),
+    Column("token", LargeBinary, nullable=False),
+    Column("status", Text, nullable=False),
+    Column("synced_until", TZ),
+    Column("last_error", Text),
+    Column("created_at", TZ, nullable=False),
+    Column("updated_at", TZ, nullable=False),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+    UniqueConstraint("id", "user_id"),
+    UniqueConstraint("user_id", "provider", "address"),
+    CheckConstraint("provider IN ('gmail')", name="provider"),
+    CheckConstraint("status IN ('active', 'broken')", name="status"),
+)
+
+# Every email a sweep looked at and what became of it: sender, subject and
+# outcome, never the body. Unique per mailbox message, so none is read twice.
+inbound_emails = Table(
+    "inbound_emails",
+    metadata,
+    _uuid_pk(),
+    _user_fk(),
+    Column("connection_id", UUID(as_uuid=True), nullable=False),
+    Column("provider_message_id", Text, nullable=False),
+    Column("received_at", TZ, nullable=False),
+    Column("sender", Text, nullable=False),
+    Column("subject", Text, nullable=False),
+    Column("status", Text, nullable=False),
+    Column("reason", Text),
+    Column("draft", JSONB),
+    Column("transaction_id", UUID(as_uuid=True)),
+    Column("created_at", TZ, nullable=False),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+    ForeignKeyConstraint(
+        ["connection_id", "user_id"],
+        ["email_connections.id", "email_connections.user_id"],
+        ondelete="CASCADE",
+    ),
+    ForeignKeyConstraint(
+        ["transaction_id", "user_id"], ["transactions.id", "transactions.user_id"]
+    ),
+    UniqueConstraint("connection_id", "provider_message_id"),
+    CheckConstraint(
+        "status IN ('pending', 'logged', 'skipped', 'not_receipt', 'no_amount', "
+        "'duplicate', 'failed')",
+        name="status",
+    ),
+    Index("ix_inbound_emails_user_id_received_at", "user_id", "received_at"),
+)
+
+# One-time links that start connecting a mailbox, outside the web session (a
+# Telegram button opens the system browser). Stored only as a hash.
+email_links = Table(
+    "email_links",
+    metadata,
+    _uuid_pk(),
+    _user_fk(),
+    Column("token_hash", Text, nullable=False, unique=True),
+    Column("expires_at", TZ, nullable=False),
+    Column("used_at", TZ),
+    Column("created_at", TZ, nullable=False),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
 )
 
 # Tables LangGraph's Postgres checkpointer creates for itself (migration 0003).

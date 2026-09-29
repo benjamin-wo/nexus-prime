@@ -47,7 +47,9 @@ The shared language for code, tests and docs. When a term here and a name in cod
 
 ## Ingestion
 
-- **Email sweep**: a scheduled job that reads connected Gmail or Outlook inboxes. The **Jev classifier** (via OpenRouter) filters out non-transactions cheaply, then the LLM extracts the transaction.
+- **Mailbox connection**: a Gmail account the user connected, only when they asked to automate logging. Its refresh token is stored encrypted only.
+- **Email sweep**: a job every 15 minutes that asks each connected mailbox for receipt-like emails only. A cheap model screens them (EMAIL_CLASSIFIER_MODEL on OpenRouter, or the main model), the main model reads likely receipts into drafts, and the user confirms each one. The first sweep looks back 30 days.
+- **Email log**: what became of each email a sweep read (logged, waiting, skipped, not a receipt, no amount, already logged), kept as sender, subject and outcome only, never the body.
 - **Statement import**: upload → parse → preview (duplicates and unclear rows flagged) → confirm → save. Nothing is saved without confirmation.
 - **Receipt**: an image or file in the private bucket, attached to a transaction, downloadable only through a short-lived authorised link, and purged 30 days after its transaction is deleted.
 

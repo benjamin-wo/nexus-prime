@@ -21,6 +21,7 @@ from nexus.agent.receipts import ReceiptReader
 from nexus.agent.tools import UowFactory
 from nexus.application import bills as bill_cases
 from nexus.application import category_rules as rule_cases
+from nexus.application import email as email_cases
 from nexus.application import receipts as receipt_cases
 from nexus.application import salary as salary_cases
 from nexus.application import splits as split_cases
@@ -180,6 +181,9 @@ class AgentService:
             return await self.quick_action(actor, data.removeprefix("qa:"))
         if data.startswith("salary:"):
             return [await self._salary_button(actor, data.removeprefix("salary:"))]
+        if data.startswith("email:"):
+            _, action, email_id = [*data.split(":"), "", ""][:3]
+            return [await self._email_button(actor, action, email_id)]
         if data.startswith("rule:"):
             return [await self._rule_button(actor, data.removeprefix("rule:"))]
         if data.startswith("bill:"):
@@ -211,6 +215,27 @@ class AgentService:
             return Reply("Your salary for that payday is already logged.")
         except ValueError:
             pass
+        except NexusError as exc:
+            return Reply(str(exc).capitalize() + ".")
+        return Reply("I don't know that button.")
+
+    async def _email_button(self, actor: UserId, action: str, email_id: str) -> Reply:
+        """Log it / Skip on a receipt found in the user's email."""
+        try:
+            found = UUID(email_id)
+        except ValueError:
+            return Reply("I don't know that button.")
+        user = await get_user(self._uow(), actor)
+        try:
+            if action == "log":
+                tx = await email_cases.log_email(self._uow, user, found, now=self._clock())
+                where = f" at {tx.counterparty}" if tx.counterparty else ""
+                return Reply(f"Logged {tx.amount}{where}.", [[UNDO]])
+            if action == "skip":
+                await email_cases.skip_email(self._uow(), actor, found)
+                return Reply("Skipped. Nothing was logged.")
+        except DuplicateSource:
+            return Reply("That email was already logged.")
         except NexusError as exc:
             return Reply(str(exc).capitalize() + ".")
         return Reply("I don't know that button.")

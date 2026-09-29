@@ -9,6 +9,7 @@ type WebApp = {
   expand(): void;
   setHeaderColor?(color: string): void;
   setBackgroundColor?(color: string): void;
+  openLink?(url: string): void;
 };
 
 declare global {
@@ -32,6 +33,16 @@ export const miniApp: { error?: "access" | "signin" } = {};
 function forgetLaunchData(): void {
   // The launch data is a credential for a day; don't leave it in the address.
   window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search);
+}
+
+/**
+ * Open a link outside the app. Inside Telegram it opens in the phone's browser,
+ * which Google's sign-in requires (it refuses in-app web views).
+ */
+export function openExternal(url: string): void {
+  const app = window.Telegram?.WebApp;
+  if (app?.openLink) app.openLink(url);
+  else window.open(url, "_blank", "noopener,noreferrer");
 }
 
 /** Load Telegram's script (for the full-height panel and header colour), then tidy the URL. */

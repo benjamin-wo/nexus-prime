@@ -59,6 +59,16 @@ class Settings(BaseSettings):
     storage_secret_access_key: SecretStr | None = None
     storage_path_style: bool = False
 
+    # --- Connect Gmail (Google OAuth client). Unset = not offered. Requires
+    # TOKEN_ENCRYPTION_KEY: refresh tokens are never stored in the clear. ---
+    google_client_id: str | None = None
+    google_client_secret: SecretStr | None = None
+    # One or more Fernet keys, comma separated; the first encrypts.
+    token_encryption_key: SecretStr | None = None
+    # A cheap OpenRouter model that screens emails before the main model reads
+    # them (needs OPENROUTER_API_KEY). Unset = the main model screens too.
+    email_classifier_model: str | None = None
+
     # --- LLM. Names match the pre-rebuild deployment's variables. ---
     llm_provider: LlmProvider = LlmProvider.GEMINI
     gemini_api_key: SecretStr | None = None
@@ -110,6 +120,10 @@ class Settings(BaseSettings):
         "openrouter_api_key",
         "deepseek_api_key",
         "openai_api_key",
+        "google_client_id",
+        "google_client_secret",
+        "token_encryption_key",
+        "email_classifier_model",
         "storage_access_key_id",
         "storage_secret_access_key",
         "storage_bucket",
@@ -141,6 +155,22 @@ class Settings(BaseSettings):
         if missing and len(missing) < len(parts):
             raise ValueError(f"receipt storage is half configured; missing {', '.join(missing)}")
         return self
+
+    @model_validator(mode="after")
+    def _gmail_needs_encryption(self) -> Self:
+        if (self.google_client_id is None) != (self.google_client_secret is None):
+            raise ValueError("GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET go together")
+        if self.google_client_id is not None and self.token_encryption_key is None:
+            raise ValueError("TOKEN_ENCRYPTION_KEY is required to connect Gmail")
+        if self.token_encryption_key is not None:
+            from nexus.infra.crypto.fernet import FernetCipher
+
+            FernetCipher(self.token_encryption_key.get_secret_value())  # fails on a bad key
+        return self
+
+    @property
+    def gmail_enabled(self) -> bool:
+        return self.google_client_id is not None and self.web_enabled
 
     @property
     def storage_enabled(self) -> bool:
