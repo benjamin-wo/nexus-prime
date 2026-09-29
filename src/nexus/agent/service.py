@@ -27,6 +27,7 @@ from nexus.application import salary as salary_cases
 from nexus.application import splits as split_cases
 from nexus.application import subscriptions as subscription_cases
 from nexus.application import transactions as tx_cases
+from nexus.application.categories import list_categories
 from nexus.application.fx import RateSource
 from nexus.application.ports import ReceiptStore
 from nexus.application.users import get_user
@@ -151,7 +152,8 @@ class AgentService:
         if self._receipts is None:
             return [Reply("Reading receipt photos isn't set up yet. Type the amount instead.")]
         try:
-            draft = await self._receipts.read(image, mime_type, caption)
+            names = [c.name for c in await list_categories(self._uow(), actor)]
+            draft = await self._receipts.read(image, mime_type, caption, categories=names)
         except Exception:
             log.exception("receipt reading failed")
             return [Reply("I couldn't read that photo right now. Type the amount instead.")]

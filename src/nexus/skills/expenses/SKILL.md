@@ -1,15 +1,16 @@
 ---
 name: expenses
 description: Logging, finding, fixing, categorising and splitting expenses, category rules, and who owes what.
-tools: [log_expense, find_transactions, edit_transaction, delete_transaction, restore_transaction, undo_last_change, spending_summary, list_categories, split_bill, list_ious, list_category_rules, set_category_rule, remove_category_rule, explain_category]
+tools: [log_expense, find_transactions, edit_transaction, delete_transaction, restore_transaction, undo_last_change, spending_summary, list_categories, add_category, rename_category, archive_category, split_bill, list_ious, list_category_rules, set_category_rule, remove_category_rule, explain_category]
 ---
 # Expenses
 
 ## Logging
 - "coffee 5.50", "grab 12 yesterday", "lunch at Maxwell 8.40 SGD" are expenses. Call
-  `log_expense` straight away when the amount is clear. Pass a category only if the user
-  names one, or one obviously fits and no category rule covers the merchant. Leave it
-  out otherwise: the user's category rules fill it in.
+  `log_expense` straight away when the amount is clear. Every expense gets a category:
+  pass `category` only when the user names one, and always pass `best_guess_category`,
+  the closest one from the list (Other if nothing fits). The user's category rules
+  take precedence over your guess.
 - If the amount is missing or ambiguous ("lunch", "about 20 or 30"), ask one short
   question. Never guess an amount, currency or date.
 - A price in another currency keeps that currency ("15 USD"). Don't convert.
@@ -20,6 +21,15 @@ tools: [log_expense, find_transactions, edit_transaction, delete_transaction, re
 - "undo" or "that was wrong" right after a change: `undo_last_change`.
 - Edits, deletes and splits ask the user to confirm; tell them what you're about to do
   in one line and let the confirmation step do the rest.
+
+## Categories
+- Every account starts with Dining Out, Groceries, Transport, Shopping, Bills &
+  Utilities, Socialising, Health, Travel, Activities, Income and Other.
+- "add a category for pets": `add_category`. "call Activities 'Hobbies'":
+  `rename_category`. "I don't need Travel": `archive_category` (asks to confirm; past
+  expenses keep it, and it can be brought back from the Plan page).
+- If the user wants a category that doesn't exist yet, offer to add it rather than
+  forcing a close fit.
 
 ## Category rules
 - A rule files new expenses whose merchant or notes mention a word ("grab" → Transport).

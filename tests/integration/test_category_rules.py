@@ -72,7 +72,7 @@ async def test_rules_file_new_expenses_by_merchant_and_notes(
     uow: UowFactory, alice: UserId
 ) -> None:
     transport = await category(uow, alice, "Transport")
-    food = await category(uow, alice, "Food & Drink")
+    food = await category(uow, alice, "Dining Out")
     grab = (await add_rule(uow, alice, "  GRAB ", "Transport")).rule
     assert grab.pattern == "grab"
     assert grab.explanation == "You added this rule on 28 Sep 2026."
@@ -80,21 +80,25 @@ async def test_rules_file_new_expenses_by_merchant_and_notes(
     ride = await spend(uow, alice, "Grab ride")
     assert (ride.category_id, ride.category_rule_id) == (transport, grab.id)
     # Whole words only.
-    assert (await spend(uow, alice, "Grabbed a snack")).category_id is None
+    assert (await spend(uow, alice, "Grabbed a snack")).category_id == await category(
+        uow, alice, "Other"
+    )
     # Notes count too.
     by_notes = await spend(uow, alice, "Card payment", notes="grab to airport")
     assert by_notes.category_id == transport
     # A category the user gives wins over a rule, and income is never filed by rules.
     assert (await spend(uow, alice, "Grab", category_id=food)).category_rule_id is None
-    assert (await spend(uow, alice, "Grab", direction=Direction.IN)).category_id is None
+    # Income is never filed by rules; it goes to Income.
+    income = await spend(uow, alice, "Grab", direction=Direction.IN)
+    assert income.category_id == await category(uow, alice, "Income")
 
 
 async def test_the_most_specific_rule_wins(uow: UowFactory, alice: UserId) -> None:
     await add_rule(uow, alice, "grab", "Transport")
-    specific = (await add_rule(uow, alice, "grab food", "Food & Drink")).rule
+    specific = (await add_rule(uow, alice, "grab food", "Dining Out")).rule
     await add_rule(uow, alice, "lunch", "Groceries")
 
-    assert (await spend(uow, alice, "GrabFood")).category_id is None
+    assert (await spend(uow, alice, "GrabFood")).category_id == await category(uow, alice, "Other")
     delivery = await spend(uow, alice, "Grab Food")
     assert delivery.category_rule_id == specific.id
     # A merchant match beats a notes match, even a longer one.
@@ -103,9 +107,9 @@ async def test_the_most_specific_rule_wins(uow: UowFactory, alice: UserId) -> No
 
 
 async def test_rules_for_archived_categories_are_skipped(uow: UowFactory, alice: UserId) -> None:
-    change = await add_rule(uow, alice, "netflix", "Entertainment")
+    change = await add_rule(uow, alice, "netflix", "Activities")
     await set_category_active(uow(), alice, change.category.id, False)
-    assert (await spend(uow, alice, "Netflix")).category_id is None
+    assert (await spend(uow, alice, "Netflix")).category_id == await category(uow, alice, "Other")
 
 
 async def test_a_correction_offers_a_rule_change_but_never_makes_one(
@@ -114,13 +118,13 @@ async def test_a_correction_offers_a_rule_change_but_never_makes_one(
     grab = (await add_rule(uow, alice, "grab", "Transport")).rule
     ride = await spend(uow, alice, "Grab")
 
-    moved = await recategorise(uow, alice, ride, "Food & Drink")
+    moved = await recategorise(uow, alice, ride, "Dining Out")
     assert moved.category_rule_id is None  # the user chose it; the rule no longer explains it
     [view] = await rule_cases.list_rules(uow(), alice)
     assert view.rule == grab  # untouched
     offer = await rule_cases.suggest_rule(uow(), alice, moved)
     assert offer is not None
-    assert offer.question == "Change your rule for “grab” from Transport to Food & Drink?"
+    assert offer.question == "Change your rule for “grab” from Transport to Dining Out?"
 
     # The next Grab still follows the rule until the user accepts.
     assert (await spend(uow, alice, "Grab")).category_id == grab.category_id
@@ -129,32 +133,32 @@ async def test_a_correction_offers_a_rule_change_but_never_makes_one(
     later = NOW + timedelta(hours=1)
     change = await rule_cases.accept_suggestion(uow(), owner, moved.id, now=later)
     assert change.changed and change.previous is not None
-    assert change.rule.category_id == await category(uow, alice, "Food & Drink")
+    assert change.rule.category_id == await category(uow, alice, "Dining Out")
     assert change.rule.explanation == (
-        "Changed from Transport to Food & Drink on 28 Sep 2026 "
-        "when you filed “Grab” under Food & Drink."
+        "Changed from Transport to Dining Out on 28 Sep 2026 "
+        "when you filed “Grab” under Dining Out."
     )
     # Pressing the button again changes nothing.
     again = await rule_cases.accept_suggestion(uow(), owner, moved.id, now=later)
     assert not again.changed and again.rule == change.rule
     explained = await rule_cases.explain(uow(), alice, moved.id)
-    assert explained.text.startswith("It's in Food & Drink because of your rule “grab”.")
+    assert explained.text.startswith("It's in Dining Out because of your rule “grab”.")
     # Expenses the old rule filed keep their category; the rule only files new ones.
     assert (await rule_cases.explain(uow(), alice, ride.id)).category is not None
 
 
 async def test_a_new_merchant_is_offered_a_rule(uow: UowFactory, alice: UserId) -> None:
     tx = await spend(uow, alice, "Tiong Bahru Bakery")
-    moved = await recategorise(uow, alice, tx, "Food & Drink")
+    moved = await recategorise(uow, alice, tx, "Dining Out")
     offer = await rule_cases.suggest_rule(uow(), alice, moved)
     assert offer is not None
-    assert offer.question == "Always file “tiong bahru bakery” under Food & Drink?"
+    assert offer.question == "Always file “tiong bahru bakery” under Dining Out?"
 
     owner = await get_user(uow(), alice)
     change = await rule_cases.accept_suggestion(uow(), owner, moved.id, now=NOW)
     assert change.changed and change.previous is None
     assert change.rule.explanation == (
-        "Added on 28 Sep 2026 when you filed “Tiong Bahru Bakery” under Food & Drink."
+        "Added on 28 Sep 2026 when you filed “Tiong Bahru Bakery” under Dining Out."
     )
     assert (await spend(uow, alice, "Tiong Bahru Bakery")).category_rule_id == change.rule.id
     # Once the rule agrees, corrections to it aren't offered again.
@@ -164,16 +168,16 @@ async def test_a_new_merchant_is_offered_a_rule(uow: UowFactory, alice: UserId) 
 async def test_a_narrower_rule_leaves_the_broader_one_alone(uow: UowFactory, alice: UserId) -> None:
     grab = (await add_rule(uow, alice, "grab", "Transport")).rule
     delivery = await spend(uow, alice, "Grab Food")
-    moved = await recategorise(uow, alice, delivery, "Food & Drink")
+    moved = await recategorise(uow, alice, delivery, "Dining Out")
     offer = await rule_cases.suggest_rule(uow(), alice, moved)
     assert offer is not None
     assert offer.question == (
-        "Always file “grab food” under Food & Drink? Your rule for “grab” stays as it is."
+        "Always file “grab food” under Dining Out? Your rule for “grab” stays as it is."
     )
     owner = await get_user(uow(), alice)
     await rule_cases.accept_suggestion(uow(), owner, moved.id, now=NOW)
     rules = {v.rule.pattern: v.category.name for v in await rule_cases.list_rules(uow(), alice)}
-    assert rules == {"grab": "Transport", "grab food": "Food & Drink"}
+    assert rules == {"grab": "Transport", "grab food": "Dining Out"}
     assert (await spend(uow, alice, "Grab")).category_rule_id == grab.id
 
 
@@ -194,7 +198,7 @@ async def test_removed_rules_stop_filing_but_still_explain(uow: UowFactory, alic
     ride = await spend(uow, alice, "Grab")
     await rule_cases.remove_rule(uow(), alice, grab.id, now=NOW)
     assert await rule_cases.list_rules(uow(), alice) == []
-    assert (await spend(uow, alice, "Grab")).category_id is None
+    assert (await spend(uow, alice, "Grab")).category_id == await category(uow, alice, "Other")
     explained = await rule_cases.explain(uow(), alice, ride.id)
     assert explained.text == (
         "It's in Transport because of your rule “grab”. That rule has since been removed."
@@ -207,7 +211,8 @@ async def test_removed_rules_stop_filing_but_still_explain(uow: UowFactory, alic
 
 async def test_explanations(uow: UowFactory, alice: UserId) -> None:
     assert (await rule_cases.explain(uow(), alice, (await spend(uow, alice, "x")).id)).text == (
-        "It isn't in a category."
+        "It's in Other: no rule matched it and no other category was picked, or it was "
+        "filed there directly."
     )
     chosen = await spend(uow, alice, "Grab", category_id=await category(uow, alice, "Transport"))
     assert (await rule_cases.explain(uow(), alice, chosen.id)).text == (
@@ -227,7 +232,7 @@ async def test_explanations(uow: UowFactory, alice: UserId) -> None:
 async def test_undoing_a_correction_brings_the_rule_back(uow: UowFactory, alice: UserId) -> None:
     grab = (await add_rule(uow, alice, "grab", "Transport")).rule
     ride = await spend(uow, alice, "Grab")
-    await recategorise(uow, alice, ride, "Food & Drink")
+    await recategorise(uow, alice, ride, "Dining Out")
     restored = (await undo_last(uow(), alice)).transaction
     assert (restored.category_id, restored.category_rule_id) == (grab.category_id, grab.id)
 
@@ -236,7 +241,7 @@ async def test_rules_are_private(
     engine: AsyncEngine, uow: UowFactory, alice: UserId, bob: UserId
 ) -> None:
     grab = (await add_rule(uow, alice, "grab", "Transport")).rule
-    assert (await spend(uow, bob, "Grab")).category_id is None
+    assert (await spend(uow, bob, "Grab")).category_id == await category(uow, bob, "Other")
     assert await rule_cases.list_rules(uow(), bob) == []
     with pytest.raises(NotFound):
         await rule_cases.remove_rule(uow(), bob, grab.id, now=NOW)

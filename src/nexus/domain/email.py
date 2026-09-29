@@ -127,6 +127,7 @@ class ExpenseDraft:
     currency: str | None
     merchant: str | None
     date: str | None  # YYYY-MM-DD
+    category: str | None = None  # the reader's closest match among the user's categories
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -134,11 +135,18 @@ class ExpenseDraft:
             "currency": self.currency,
             "merchant": self.merchant,
             "date": self.date,
+            "category": self.category,
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ExpenseDraft":
-        return cls(data.get("amount"), data.get("currency"), data.get("merchant"), data.get("date"))
+        return cls(
+            data.get("amount"),
+            data.get("currency"),
+            data.get("merchant"),
+            data.get("date"),
+            data.get("category"),
+        )
 
 
 def external_id(provider: Provider, address: str, provider_message_id: str) -> str:

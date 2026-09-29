@@ -11,7 +11,7 @@ import asyncio
 import hashlib
 import logging
 import secrets
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta
 from time import monotonic
@@ -334,6 +334,7 @@ async def _read_one(
     connection: EmailConnection,
     fetched: FetchedEmail,
     now: datetime,
+    categories: Sequence[str] = (),
 ) -> InboundEmail:
     """Screen and read one email into its log entry."""
     status: EmailStatus = EmailStatus.FAILED
@@ -344,7 +345,9 @@ async def _read_one(
         if not screening.is_receipt:
             status, reason = EmailStatus.NOT_RECEIPT, short(screening.reason, 80)
         else:
-            expense = await asyncio.wait_for(reader.extract(fetched), READ_TIMEOUT.total_seconds())
+            expense = await asyncio.wait_for(
+                reader.extract(fetched, categories=categories), READ_TIMEOUT.total_seconds()
+            )
             money = _amount(expense, user.home_currency)
             if money is None:
                 status = EmailStatus.NO_AMOUNT
@@ -410,6 +413,9 @@ async def sweep(
         return SweepResult(0, 0, first)
     async with uow() as tx:
         seen = await tx.email.seen_message_ids(connection.id, ids)
+        categories = [
+            c.name for c in await tx.ledger.list_categories(user.id, include_inactive=False)
+        ]
     fresh = [i for i in ids if i not in seen]
     batch, left = fresh[:SWEEP_LIMIT], fresh[SWEEP_LIMIT:]
     waiting: list[InboundEmail] = []
@@ -425,7 +431,9 @@ async def sweep(
         if newest is None or fetched.received_at > newest:
             newest = fetched.received_at
         told = await _setup_email(uow, user, connection, fetched, now)
-        email = told or await _read_one(reader, archive, uow, user, connection, fetched, now)
+        email = told or await _read_one(
+            reader, archive, uow, user, connection, fetched, now, categories
+        )
         async with uow() as tx:
             if email.status is EmailStatus.PENDING and await tx.ledger.source_claimed(
                 user.id,
@@ -655,6 +663,7 @@ async def log_email(
             notes=email.subject or None,
             source=Source.EMAIL,
             external_id=key,
+            fallback_category_id=await _category_named(tx, user.id, draft.get("category")),
         )
     try:
         saved = await receipt_cases.log_with_receipt(
@@ -668,6 +677,15 @@ async def log_email(
         saved = await receipt_cases.log_with_receipt(uow(), user.id, cmd, None, now=now)
     await _set(uow(), user.id, email_id, EmailStatus.LOGGED, None, saved.id)
     return saved
+
+
+async def _category_named(tx: UnitOfWork, user_id: UserId, name: object) -> UUID | None:
+    if not isinstance(name, str) or not name.strip():
+        return None
+    for c in await tx.ledger.list_categories(user_id, include_inactive=False):
+        if c.name.casefold() == name.strip().casefold():
+            return c.id
+    return None
 
 
 async def _set(

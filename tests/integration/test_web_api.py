@@ -308,11 +308,36 @@ async def test_writes_need_csrf_token_and_our_origin(world: World) -> None:
 # --- ledger -----------------------------------------------------------------------------
 
 
+async def test_categories_add_rename_archive(world: World) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+    names = [c["name"] for c in (await owner.get("/api/categories")).json()]
+    assert len(names) == 11 and "Other" in names
+
+    made = await owner.send("POST", "/api/categories", {"name": "Pets"})
+    assert made.status_code == 201
+    pets = made.json()["id"]
+    # Names are unique regardless of case, for adding and renaming alike.
+    assert (await owner.send("POST", "/api/categories", {"name": "pets"})).status_code == 409
+    clash = await owner.send("PATCH", f"/api/categories/{pets}", {"name": "groceries"})
+    assert clash.status_code == 409
+
+    renamed = await owner.send("PATCH", f"/api/categories/{pets}", {"name": "Pet care"})
+    assert renamed.json()["name"] == "Pet care"
+    await owner.send("PATCH", f"/api/categories/{pets}", {"active": False})
+    active = [c["name"] for c in (await owner.get("/api/categories")).json()]
+    assert "Pet care" not in active
+    every = (await owner.get("/api/categories?include_inactive=true")).json()
+    assert {"name": "Pet care", "active": False} in [
+        {"name": c["name"], "active": c["active"]} for c in every
+    ]
+
+
 async def test_ledger_round_trip(world: World) -> None:
     owner = world.browser()
     await owner.login(OWNER)
     cats = (await owner.get("/api/categories")).json()
-    food = next(c for c in cats if c["name"] == "Food & Drink")
+    food = next(c for c in cats if c["name"] == "Dining Out")
 
     made = await owner.send(
         "POST",
@@ -462,9 +487,7 @@ async def test_foreign_rows_show_home_amount_at_their_days_rate(world: World) ->
 async def test_summary_is_in_home_currency(world: World) -> None:
     owner = world.browser()
     await owner.login(OWNER)
-    food = next(
-        c for c in (await owner.get("/api/categories")).json() if c["name"] == "Food & Drink"
-    )
+    food = next(c for c in (await owner.get("/api/categories")).json() if c["name"] == "Dining Out")
     await spend(owner, "10", "SGD", "2026-09-27", category_id=food["id"])
     await spend(owner, "20", "USD", "2026-09-26", category_id=food["id"])
     await spend(owner, "30", "USD", "2026-09-28")
@@ -485,7 +508,7 @@ async def test_summary_is_in_home_currency(world: World) -> None:
     assert received["total"] == {"amount": "0.0000", "currency": "SGD"}
     assert received["unconverted"] == [{"amount": "100.0000", "currency": "USD"}]
     by_cat = [(c["category_name"], c["total"]["amount"]) for c in summary["by_category"]]
-    assert by_cat == [(None, "39.0000"), ("Food & Drink", "35.8100")]
+    assert by_cat == [("Other", "39.0000"), ("Dining Out", "35.8100")]
 
 
 async def test_export_has_home_currency_columns(world: World) -> None:
@@ -508,9 +531,7 @@ def response_lines(lines: list[str]) -> str:
 
 async def test_budgets_round_trip(world: World) -> None:
     owner, token = await owner_and_invite(world)
-    food = next(
-        c for c in (await owner.get("/api/categories")).json() if c["name"] == "Food & Drink"
-    )
+    food = next(c for c in (await owner.get("/api/categories")).json() if c["name"] == "Dining Out")
     assert (await owner.get("/api/budgets")).json() == []
     for body in ({"amount": "1,000"}, {"category_id": food["id"], "amount": "100"}):
         assert (await owner.send("PUT", "/api/budgets", body)).status_code == 204
@@ -518,7 +539,7 @@ async def test_budgets_round_trip(world: World) -> None:
     await spend(owner, "20", "USD", "2026-09-26", category_id=food["id"])  # 25.81 SGD
     overall, meal = (await owner.get("/api/budgets")).json()
     assert overall["name"] == "Overall" and overall["limit"]["amount"] == "1000.0000"
-    assert meal["name"] == "Food & Drink"
+    assert meal["name"] == "Dining Out"
     assert meal["spent"] == {"amount": "110.8100", "currency": "SGD"}
     assert meal["percent"] == 110 and meal["remaining"]["amount"] == "-10.8100"
 
@@ -689,7 +710,7 @@ async def test_category_rules_round_trip(world: World) -> None:
     owner, token = await owner_and_invite(world)
     cats = {c["name"]: c["id"] for c in (await owner.get("/api/categories")).json()}
     ride = await spend(owner, "12", "SGD", "2026-09-27", counterparty="Grab")
-    assert ride["category_id"] is None and ride["category_rule_id"] is None
+    assert ride["category_id"] == cats["Other"] and ride["category_rule_id"] is None
 
     # Correcting the category offers a rule; nothing is saved until it's accepted.
     edited = await owner.send(
@@ -721,7 +742,7 @@ async def test_category_rules_round_trip(world: World) -> None:
     assert why.json()["text"].startswith("It's in Transport because of your rule “grab”.")
 
     made = await owner.send(
-        "PUT", "/api/category-rules", {"pattern": "Netflix", "category_id": cats["Entertainment"]}
+        "PUT", "/api/category-rules", {"pattern": "Netflix", "category_id": cats["Activities"]}
     )
     assert made.status_code == 204
     assert [r["pattern"] for r in (await owner.get("/api/category-rules")).json()] == [
@@ -742,7 +763,7 @@ async def test_category_rules_round_trip(world: World) -> None:
     explain = f"/api/transactions/{ride['id']}/category-explanation"
     assert (await member.get(explain)).status_code == 404
     theirs = await spend(member, "5", "SGD", "2026-09-28", counterparty="Grab")
-    assert theirs["category_id"] is None  # the owner's rules are theirs alone
+    assert theirs["category_rule_id"] is None  # the owner's rules are theirs alone
 
     assert (await owner.send("DELETE", f"/api/category-rules/{rule['id']}")).status_code == 204
     assert [r["pattern"] for r in (await owner.get("/api/category-rules")).json()] == ["netflix"]

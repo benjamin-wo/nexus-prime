@@ -85,8 +85,8 @@ async def test_everyone_gets_an_end_of_day_summary_by_default(
     user = await person(uow)
     assert not await check(uow, user, sg(28, 8))  # the first check only starts counting
     await log(uow, user, "12.40", sg(28, 9), counterparty="Grab", category="Transport")
-    await log(uow, user, "20.00", sg(28, 12), counterparty="Toast Box", category="Food & Drink")
-    await log(uow, user, "5.60", sg(28, 13), counterparty="Kopi", category="Food & Drink")
+    await log(uow, user, "20.00", sg(28, 12), counterparty="Toast Box", category="Dining Out")
+    await log(uow, user, "5.60", sg(28, 13), counterparty="Kopi", category="Dining Out")
     await log(uow, user, "10", sg(28, 14), currency="USD", counterparty="OpenRouter")
     await log(uow, user, "4200", sg(28, 15), direction=Direction.IN, counterparty="Employer")
     await log(uow, user, "999", sg(28, 16), source=Source.IMPORT)  # old data, not news
@@ -98,7 +98,7 @@ async def test_everyone_gets_an_end_of_day_summary_by_default(
     assert summary["text"] == (
         "🧾 Today\n"
         "You spent 51.00 SGD (4 transactions).\n"
-        "Food & Drink 25.60 SGD · Uncategorised 13.00 SGD · Transport 12.40 SGD\n"
+        "Dining Out 25.60 SGD · Other 13.00 SGD · Transport 12.40 SGD\n"
         "You received 4200.00 SGD (1 transaction).\n"
         "To change how often I send these, just tell me."
     )
@@ -169,12 +169,12 @@ async def test_instant_tells_what_the_chat_didnt(engine: AsyncEngine, uow: UowFa
     [message] = await sent(engine)
     assert message["text"] == (
         "🧾 2 new in your ledger:\n"
-        "Received 4200.00 SGD at Salary\n"
+        "Received 4200.00 SGD at Salary · Income\n"
         "Spent 12.40 SGD at Grab · Transport"
     )
     await log(uow, user, "6.00", sg(28, 9, 12), counterparty="Kopi")
     assert await check(uow, user, sg(28, 9, 15))
-    assert (await sent(engine))[-1]["text"] == "🧾 Spent 6.00 SGD at Kopi."
+    assert (await sent(engine))[-1]["text"] == "🧾 Spent 6.00 SGD at Kopi · Other."
 
 
 async def test_off_sends_nothing_and_turning_on_doesnt_replay(

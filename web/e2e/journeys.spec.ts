@@ -108,7 +108,7 @@ test("dashboard shows the month, categories and IOUs", async ({ page }) => {
   await expect(page.getByLabel("Received")).toContainText("4,200.00");
   await expect(
     page.getByRole("list", { name: "Spending by category" }),
-  ).toContainText("Food & Drink");
+  ).toContainText("Dining Out");
   await expect(page.getByText("Ann")).toBeVisible();
 });
 
@@ -198,10 +198,10 @@ test("set a budget, see how much is used, change and remove it", async ({ page }
   const budgets = page.getByRole("region", { name: "Budgets" });
   await expect(budgets.getByText("No budgets yet. Add one below.")).toBeVisible();
 
-  await budgets.getByLabel("Budget for").selectOption({ label: "Food & Drink" });
+  await budgets.getByLabel("Budget for").selectOption({ label: "Dining Out" });
   await budgets.getByLabel("Monthly limit (SGD)").fill("100");
   await budgets.getByRole("button", { name: "Add budget" }).click();
-  const meter = budgets.getByRole("meter", { name: "Food & Drink budget used" });
+  const meter = budgets.getByRole("meter", { name: "Dining Out budget used" });
   await expect(meter).toHaveAttribute("aria-valuetext", "90% used");
   await expect(budgets.getByText(/90% used · SGD\s?10\.00 left/)).toBeVisible();
 
@@ -279,7 +279,7 @@ test("a category correction offers a rule, saved only when accepted", async ({ p
   await expect(rules.getByText("Added on 28 Sep 2026 when you filed “Grab” under Transport.")).toBeVisible();
 
   await rules.getByLabel("When it mentions").fill("Maxwell");
-  await rules.getByLabel("File under").selectOption({ label: "Food & Drink" });
+  await rules.getByLabel("File under").selectOption({ label: "Dining Out" });
   await rules.getByRole("button", { name: "Save rule" }).click();
   await expect(rules.getByRole("heading", { name: "“maxwell”" })).toBeVisible();
 
@@ -410,4 +410,36 @@ test("nothing spills sideways on a small phone", async ({ page }) => {
     });
     expect(offenders, path).toEqual([]);
   }
+});
+
+test("add, rename, archive and bring back a category", async ({ page }) => {
+  await fakeApi(page);
+  await page.goto("/plan");
+  const card = page.getByRole("region", { name: "Categories" });
+  const yours = card.getByRole("list", { name: "Your categories" });
+  await expect(yours.getByRole("heading", { name: "Dining Out" })).toBeVisible();
+
+  const add = card.getByRole("form", { name: "Add a category" });
+  await add.getByLabel("New category").fill("Pets");
+  await add.getByRole("button", { name: "Add" }).click();
+  await expect(yours.getByRole("heading", { name: "Pets" })).toBeVisible();
+
+  await add.getByLabel("New category").fill("pets");
+  await add.getByRole("button", { name: "Add" }).click();
+  await expect(card.getByRole("alert")).toContainText("already exists");
+
+  const pets = yours.getByRole("listitem").filter({ hasText: "Pets" });
+  await pets.getByRole("button", { name: "Rename" }).click();
+  const rename = card.getByRole("form", { name: "Rename Pets" });
+  await rename.getByRole("textbox").fill("Pet care");
+  await rename.getByRole("button", { name: "Save" }).click();
+  await expect(yours.getByRole("heading", { name: "Pet care" })).toBeVisible();
+
+  const petCare = yours.getByRole("listitem").filter({ hasText: "Pet care" });
+  await petCare.getByRole("button", { name: "Archive" }).click();
+  await petCare.getByRole("button", { name: "Archive" }).click();
+  const archived = card.getByRole("list", { name: "Archived categories" });
+  await expect(archived.getByRole("heading", { name: "Pet care" })).toBeVisible();
+  await archived.getByRole("button", { name: "Bring back" }).click();
+  await expect(yours.getByRole("heading", { name: "Pet care" })).toBeVisible();
 });

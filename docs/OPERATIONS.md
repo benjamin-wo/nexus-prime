@@ -67,6 +67,12 @@ Budget alerts, bill reminders and the payday check-in run on a Postgres-backed j
 - **Bills:** a name, an optional amount, a next due date, and a repeat of once, weekly, monthly or yearly. Monthly bills on the 29th–31st land on the last day of shorter months and come back afterwards. Every 30 minutes a sweep sends the most urgent reminder reached (7, 3 or 1 days before), once each. Reminders carry **Mark paid** and **Snooze 1 day** buttons. Snoozing re-sends the reminder a day later. An unpaid bill shows as overdue for a week, then rolls on to its next due date. Marking a bill paid only records it: nothing is paid and the ledger isn't touched.
 - **Salary:** only what the user reports. The pay schedule is one of three: a day of the month (clamped to short months), the last weekday, or every two weeks from a date. Weekend paydays move to the Friday before. On payday, from 09:00, there is one check-in. With a usual salary set, it has **Log** and **Not yet** buttons, and Log records the usual amount once per payday. When the user reports a different salary, the bot asks before changing the usual amount; nothing changes silently.
 
+## Categories
+
+New users get eleven defaults: Dining Out, Groceries, Transport, Shopping, Bills & Utilities, Socialising, Health, Travel, Activities, Income and Other. Migration 0014 gives existing users the same set: Food & Drink becomes Dining Out and Entertainment becomes Activities (unless the user already has a category by the new name), and missing defaults are added. Names are unique per user regardless of case; a clash is a 409.
+
+Every new transaction gets a category, in this order: the one the user named, a matching rule, the model's (or the receipt or email reader's) best guess from the user's own categories, then Other for spending and Income for money in. Archived categories aren't used. Transactions logged before 0014 without a category keep none.
+
 ## Category rules
 
 A rule files new expenses whose merchant or notes mention a word or phrase (whole words, any case). A merchant match beats a notes match, then the longest pattern wins. A category the user gives always wins, rules never touch income, and rules for archived categories are skipped. Each transaction records the rule that filed it, and each rule stores why it exists, so "why is this in Transport?" has an exact answer.

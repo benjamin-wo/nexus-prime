@@ -180,6 +180,14 @@ async def resolve_category(ctx: ToolContext, name: str | None) -> UUID | None:
     raise InvalidInput(f"unknown category {name!r}; choose one of: {options}")
 
 
+async def guess_category(ctx: ToolContext, name: str | None) -> UUID | None:
+    """A best-guess category by name; an unknown one is simply no guess."""
+    try:
+        return await resolve_category(ctx, name)
+    except InvalidInput:
+        return None
+
+
 def describe(tx: Transaction, cats: dict[UUID, Category], tz: ZoneInfo) -> str:
     sign = "-" if tx.direction is Direction.OUT else "+"
     parts = [tx.occurred_at.astimezone(tz).date().isoformat(), f"{sign}{tx.amount}"]
@@ -207,7 +215,14 @@ class LogExpenseArgs(Args):
     amount: str = Field(description="Amount spent, e.g. '5.50'. Never guess it.")
     currency: str | None = Field(None, description="ISO code; omit for the home currency")
     merchant: str | None = Field(None, description="Where or who was paid")
-    category: str | None = Field(None, description="Exact category name from list_categories")
+    category: str | None = Field(
+        None, description="Only a category the user named; exact name from the list"
+    )
+    best_guess_category: str | None = Field(
+        None,
+        description="Always fill this: the closest category from the list for this "
+        "expense (Other if nothing fits). The user's category rules take precedence.",
+    )
     date: str | None = Field(None, description="YYYY-MM-DD, 'today' or 'yesterday'; omit for now")
     notes: str | None = None
 
@@ -224,6 +239,7 @@ async def _log_expense(ctx: ToolContext, a: LogExpenseArgs) -> ToolResult:
             category_id=await resolve_category(ctx, a.category),
             notes=a.notes,
             source=Source.TEXT,
+            fallback_category_id=await guess_category(ctx, a.best_guess_category),
         ),
     )
     return ToolResult(f"Logged: {describe(tx, await category_map(ctx), ctx.tz)}", wrote=True)
@@ -283,6 +299,7 @@ class ReceiptExpenseArgs(Args):
     date: str | None = None
     external_id: str
     receipt_id: str | None = None  # the stored photo, set by the kernel
+    best_guess_category: str | None = None  # the receipt reader's guess
 
 
 async def _describe_receipt(ctx: ToolContext, a: ReceiptExpenseArgs) -> str:
@@ -302,11 +319,14 @@ async def _log_receipt_expense(ctx: ToolContext, a: ReceiptExpenseArgs) -> ToolR
             counterparty=a.merchant,
             source=Source.PHOTO,
             external_id=a.external_id,
+            fallback_category_id=await guess_category(ctx, a.best_guess_category),
         ),
         UUID(a.receipt_id) if a.receipt_id else None,
         now=ctx.now,
     )
-    return ToolResult(f"Logged from receipt: {describe(tx, {}, ctx.tz)}", wrote=True)
+    return ToolResult(
+        f"Logged from receipt: {describe(tx, await category_map(ctx), ctx.tz)}", wrote=True
+    )
 
 
 class FindArgs(Args):
@@ -473,6 +493,63 @@ async def _summary(ctx: ToolContext, a: SummaryArgs) -> ToolResult:
 async def _categories(ctx: ToolContext, _: NoArgs) -> ToolResult:
     cats = await category_cases.list_categories(ctx.uow(), ctx.user.id)
     return ToolResult(", ".join(c.name for c in cats) or "No categories.")
+
+
+class CategoryNameArgs(Args):
+    category: str = Field(description="The category's name")
+
+
+class RenameCategoryArgs(Args):
+    category: str = Field(description="The category's current name")
+    new_name: str = Field(description="What to call it")
+
+
+async def _find_category(ctx: ToolContext, name: str) -> Category | None:
+    found = await category_cases.list_categories(ctx.uow(), ctx.user.id, include_inactive=True)
+    return next((c for c in found if c.name.casefold() == name.strip().casefold()), None)
+
+
+async def _add_category(ctx: ToolContext, a: CategoryNameArgs) -> ToolResult:
+    existing = await _find_category(ctx, a.category)
+    if existing is not None and existing.active:
+        return ToolResult(f"There's already a category called {existing.name}.")
+    if existing is not None:
+        await category_cases.set_category_active(ctx.uow(), ctx.user.id, existing.id, True)
+        return ToolResult(f"Brought back {existing.name}.", wrote=True)
+    made = await category_cases.create_category(ctx.uow(), ctx.user.id, a.category)
+    return ToolResult(f"Added the category {made.name}.", wrote=True)
+
+
+async def _rename_category(ctx: ToolContext, a: RenameCategoryArgs) -> ToolResult:
+    current = await _find_category(ctx, a.category)
+    if current is None:
+        raise NotFound(f"there's no category called {a.category!r}")
+    clash = await _find_category(ctx, a.new_name)
+    if clash is not None and clash.id != current.id:
+        raise InvalidInput(f"there's already a category called {clash.name}")
+    renamed = await category_cases.rename_category(ctx.uow(), ctx.user.id, current.id, a.new_name)
+    return ToolResult(
+        f"Renamed {current.name} to {renamed.name}. Everything filed under it moves with it.",
+        wrote=True,
+    )
+
+
+async def _describe_archive_category(ctx: ToolContext, a: CategoryNameArgs) -> str:
+    current = await _find_category(ctx, a.category)
+    if current is None or not current.active:
+        raise NotFound(f"there's no active category called {a.category!r}")
+    return (
+        f"Stop using the category {current.name}? Past expenses keep it, and it can be "
+        "brought back later."
+    )
+
+
+async def _archive_category(ctx: ToolContext, a: CategoryNameArgs) -> ToolResult:
+    current = await _find_category(ctx, a.category)
+    if current is None or not current.active:
+        raise NotFound(f"there's no active category called {a.category!r}")
+    await category_cases.set_category_active(ctx.uow(), ctx.user.id, current.id, False)
+    return ToolResult(f"{current.name} is archived. Past expenses keep it.", wrote=True)
 
 
 async def _rules(ctx: ToolContext, _: NoArgs) -> ToolResult:
@@ -1005,6 +1082,25 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
         ToolSpec("undo_last_change", "Undo the user's most recent change.", NoArgs, _undo),
         ToolSpec("spending_summary", "Totals for a period, by category.", SummaryArgs, _summary),
         ToolSpec("list_categories", "The user's active categories.", NoArgs, _categories),
+        ToolSpec(
+            "add_category",
+            "Add a category of the user's own (or bring back an archived one).",
+            CategoryNameArgs,
+            _add_category,
+        ),
+        ToolSpec(
+            "rename_category",
+            "Rename one of the user's categories; its expenses move with it.",
+            RenameCategoryArgs,
+            _rename_category,
+        ),
+        ToolSpec(
+            "archive_category",
+            "Stop using a category. Past expenses keep it. Asks the user to confirm.",
+            CategoryNameArgs,
+            _archive_category,
+            confirm=_describe_archive_category,
+        ),
         ToolSpec(
             "list_category_rules",
             "The user's category rules and why each exists.",

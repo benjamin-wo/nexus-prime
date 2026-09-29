@@ -124,7 +124,7 @@ export async function fakeApi(page: Page, { signedIn = true, emailConnected = fa
     },
   };
   const categories = [
-    { id: "food", name: "Food & Drink", active: true },
+    { id: "food", name: "Dining Out", active: true },
     { id: "transport", name: "Transport", active: true },
   ];
   const categoryName = (id: string) => categories.find((c) => c.id === id)?.name ?? id;
@@ -204,7 +204,7 @@ export async function fakeApi(page: Page, { signedIn = true, emailConnected = fa
         by_category: [
           {
             category_id: "food",
-            category_name: "Food & Drink",
+            category_name: "Dining Out",
             total: { amount: "12.4000", currency: "SGD" },
             count: 1,
           },
@@ -224,7 +224,7 @@ export async function fakeApi(page: Page, { signedIn = true, emailConnected = fa
         state.budgets.map((b) => ({
           id: b.id,
           category_id: b.category_id,
-          name: b.category_id ? "Food & Drink" : "Overall",
+          name: b.category_id ? "Dining Out" : "Overall",
           limit: sgd(b.limit),
           spent: sgd(b.spent),
           remaining: sgd(b.limit - b.spent),
@@ -391,7 +391,24 @@ export async function fakeApi(page: Page, { signedIn = true, emailConnected = fa
         : { status: "skipped", reason: "you skipped it" });
       return route.fulfill({ status: 204 });
     }
-    if (path === "/categories") return json(route, categories);
+    if (path === "/categories" && method === "GET") {
+      const all = url.searchParams.get("include_inactive") === "true";
+      return json(route, all ? categories : categories.filter((c) => c.active));
+    }
+    if (path === "/categories" && method === "POST") {
+      const name = String(body.name).trim();
+      if (categories.some((c) => c.name.toLowerCase() === name.toLowerCase()))
+        return json(route, { detail: "a category with that name already exists" }, 409);
+      const created = { id: `c${categories.length + 1}`, name, active: true };
+      categories.push(created);
+      return json(route, created, 201);
+    }
+    const categoryEdit = path.match(/^\/categories\/([\w-]+)$/);
+    if (categoryEdit && method === "PATCH") {
+      const category = categories.find((c) => c.id === categoryEdit[1])!;
+      Object.assign(category, body);
+      return json(route, category);
+    }
     if (path === "/category-rules" && method === "GET") return json(route, state.rules);
     if (path === "/category-rules" && method === "PUT") {
       const pattern = String(body.pattern).trim().toLowerCase();
@@ -422,7 +439,7 @@ export async function fakeApi(page: Page, { signedIn = true, emailConnected = fa
       return route.fulfill({ status: 204 });
     }
     if (path.endsWith("/category-explanation")) {
-      return json(route, { text: "It's in Food & Drink because that was chosen for it, not by a rule." });
+      return json(route, { text: "It's in Dining Out because that was chosen for it, not by a rule." });
     }
     if (path.startsWith("/transactions/") && method === "PATCH") {
       const tx = state.txs.find((t) => `/transactions/${t.id}` === path)!;

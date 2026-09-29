@@ -91,8 +91,18 @@ class FakeReceipts:
     draft: ReceiptDraft
     reads: int = 0
 
-    async def read(self, image: bytes, mime_type: str, caption: str | None) -> ReceiptDraft:
+    categories: list[str] = field(default_factory=list)
+
+    async def read(
+        self,
+        image: bytes,
+        mime_type: str,
+        caption: str | None,
+        *,
+        categories: Sequence[str] = (),
+    ) -> ReceiptDraft:
         self.reads += 1
+        self.categories = list(categories)
         return self.draft
 
 
@@ -245,10 +255,15 @@ class FakeEmailReader:
             return Screening(True, "receipt")
         return Screening(False, "promotion")
 
-    async def extract(self, email: FetchedEmail) -> ExpenseDraft:
+    async def extract(self, email: FetchedEmail, *, categories: Sequence[str] = ()) -> ExpenseDraft:
         fields = dict(line.split(": ", 1) for line in email.text.splitlines() if ": " in line)
+        category = fields.get("Category")
         return ExpenseDraft(
-            fields.get("Total"), fields.get("Currency"), fields.get("Merchant"), fields.get("Date")
+            fields.get("Total"),
+            fields.get("Currency"),
+            fields.get("Merchant"),
+            fields.get("Date"),
+            category if category in categories else None,
         )
 
 
