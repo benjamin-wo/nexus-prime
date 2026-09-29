@@ -40,7 +40,7 @@ The shared language for code, tests and docs. When a term here and a name in cod
   - **Identity guard**: overwrites any `user_id` the model supplies with the authenticated user.
   - **Termination intent**: "stop" or "cancel" ends the turn.
   - **Media turn**: a photo is treated as a receipt first.
-  - **Income write**: incoming money is parsed and saved deterministically.
+  - **Income write**: plain phrasings are parsed and saved deterministically; anything else goes to the model's `record_income` tool, which always asks the user to confirm, and the income skill tells it to ask rather than guess.
   - **Guardrail policy**: payments, transfers and cancellations are refused honestly and logged as a **capability gap**.
   - **Self-diagnosis**: "is this broken?" is answered from the app's own health checks.
 - **HITL (human in the loop)**: a confirmation step, using LangGraph `interrupt()` and resume, before consequential or ambiguous writes. Telegram shows buttons; the web shows a dialog.

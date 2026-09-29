@@ -62,7 +62,7 @@ The code follows a clean, layered architecture. `domain` holds pure rules with n
 - Dedicated cross-tenant tests cover the ledger, IOUs, budgets, bills, salary, category rules, receipts, mailboxes and the web API, plus a test that the database itself rejects a cross-tenant link.
 
 **The LLM is not trusted with the important parts.**
-- A deterministic kernel runs before the model. It parses income ("salary 5000", "Ann paid me back 20") exactly, handles stop/cancel, and refuses money movement ("transfer $500 to…") with a logged capability gap.
+- A deterministic kernel runs before the model. It records plain income ("salary 5000", "Ann paid me back 20") exactly, handles stop/cancel, and refuses money movement ("transfer $500 to…") with a logged capability gap. Income worded any other way goes to the model, which records it only after the user confirms, and asks a short question first when the amount, kind or payer is unclear.
 - Consequential tools pause the LangGraph run with `interrupt()` and wait for an explicit Confirm. The paused state is checkpointed in Postgres.
 - Categorisation is explainable. Rules, not the model, file known merchants; each transaction records the rule that filed it, and a correction offers a rule change instead of making one.
 - The model sits behind a provider-agnostic adapter with a fallback chain.

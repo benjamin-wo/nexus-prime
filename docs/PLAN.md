@@ -19,7 +19,7 @@ A clean start removes almost all of that. The plan therefore keeps the old **pro
 - Log expenses from free text ("coffee 5.50 at Starbucks").
 - Extract expenses from a receipt photo using a vision model, with confirmation for ambiguous cases.
 - Scan connected Gmail/Outlook inboxes for receipts. A cheap classifier (Jev via OpenRouter) filters emails first, then the LLM extracts the expense. Deleted emails must never be re-imported.
-- Record income (salary, repayments, reimbursements) through a deterministic parser rather than LLM guesswork.
+- Record income (salary, repayments, reimbursements) through a deterministic parser rather than LLM guesswork. *Revised after M7a:* the parser still handles plain phrasings; anything else goes to the model, which records income only after the user confirms and asks when unsure.
 - Split bills with friends and track IOUs. A friend's repayment settles their IOU.
 
 ### Manage

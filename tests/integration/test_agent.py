@@ -228,6 +228,59 @@ async def test_salary_with_the_amount_first_and_a_day(uow: UowFactory, alice: Us
     assert tx.occurred_at == NOW - timedelta(days=1)
 
 
+async def test_income_the_patterns_miss_goes_to_the_model_and_asks_first(
+    uow: UowFactory, alice: UserId
+) -> None:
+    model = scripted(
+        call("record_income", amount="2000", kind="other", note="bonus", date="yesterday"),
+        say("Recorded."),
+    )
+    agent = build(uow, model)
+    reply = only(await agent.handle_text(alice, "work gave me a 2k bonus yesterday", "tg:1:1"))
+    assert reply.text == "Record 2000.00 SGD income (bonus) on 27 Sep?"
+    assert await ledger(uow, alice) == []  # nothing until the user confirms
+    await agent.resolve(alice, reply.buttons[0][0].data.split(":")[1], True)
+    [tx] = (await list_ledger(uow(), alice, LedgerQuery(direction=Direction.IN))).items
+    assert (tx.amount, tx.notes) == (Money.of("2000", "SGD"), "bonus")
+    assert tx.occurred_at.date() == (NOW - timedelta(days=1)).date()
+
+
+async def test_a_confirmed_repayment_settles_the_iou(uow: UowFactory, alice: UserId) -> None:
+    tx = await log_transaction(
+        uow(), alice, NewTransaction(Direction.OUT, Money.of("60", "SGD"), NOW)
+    )
+    await split_bill(uow(), alice, tx.id, [ShareRequest("Ann")])  # Ann owes 30
+    model = scripted(
+        call("record_income", amount="30", kind="repayment", from_whom="Ann"),
+        say("Done."),
+    )
+    agent = build(uow, model)
+    reply = only(await agent.handle_text(alice, "ann sorted out her half of dinner", "tg:1:1"))
+    assert reply.text == "Record 30.00 SGD paid back by Ann on 28 Sep?"
+    await agent.resolve(alice, reply.buttons[0][0].data.split(":")[1], True)
+    assert "Recorded 30.00 SGD from Ann. Ann is all settled." in tool_results(model)
+    assert await list_open_ious(uow(), alice) == []
+
+
+async def test_a_declined_income_records_nothing(uow: UowFactory, alice: UserId) -> None:
+    model = scripted(call("record_income", amount="9397", kind="salary"), say("OK."))
+    agent = build(uow, model)
+    reply = only(await agent.handle_text(alice, "paid today, 9397 landed", "tg:1:1"))
+    assert reply.text == "Record 9397.00 SGD salary on 28 Sep?"
+    await agent.resolve(alice, reply.buttons[0][0].data.split(":")[1], False)
+    assert await ledger(uow, alice) == []
+
+
+async def test_unclear_income_gets_a_question_not_a_guess(uow: UowFactory, alice: UserId) -> None:
+    model = scripted(say("Was that Ann paying you back, or a gift?"))
+    agent = build(uow, model)
+    reply = only(await agent.handle_text(alice, "20 came in from Ann", "tg:1:1"))
+    assert reply.text == "Was that Ann paying you back, or a gift?"
+    assert await ledger(uow, alice) == []
+    system = str(model.seen[-1][0].content)
+    assert "ask one short question first" in system and "income skill" in system
+
+
 async def test_money_movement_is_refused_and_logged(
     engine: AsyncEngine, uow: UowFactory, alice: UserId
 ) -> None:

@@ -20,6 +20,7 @@ from nexus.application import budgets as budget_cases
 from nexus.application import categories as category_cases
 from nexus.application import category_rules as rule_cases
 from nexus.application import email as email_cases
+from nexus.application import income as income_cases
 from nexus.application import notifications as notify_cases
 from nexus.application import receipts as receipt_cases
 from nexus.application import salary as salary_cases
@@ -225,6 +226,53 @@ async def _log_expense(ctx: ToolContext, a: LogExpenseArgs) -> ToolResult:
         ),
     )
     return ToolResult(f"Logged: {describe(tx, await category_map(ctx), ctx.tz)}", wrote=True)
+
+
+class IncomeArgs(Args):
+    amount: str = Field(description="Amount received, e.g. '9397'. Never guess it.")
+    currency: str | None = Field(None, description="ISO code; omit for the home currency")
+    kind: Literal["salary", "repayment", "other"] = Field(
+        description="salary: pay from work; repayment: someone paying back money they owed "
+        "the user; other: anything else (a gift, a refund, a bonus, a sale)"
+    )
+    from_whom: str | None = Field(
+        None, description="Who paid it; required for a repayment. Omit for salary."
+    )
+    date: str | None = Field(None, description="YYYY-MM-DD, 'today' or 'yesterday'; omit for now")
+    note: str | None = Field(None, description="What it was for, if the user said")
+
+
+def _income_kind(a: IncomeArgs) -> income_cases.IncomeKind:
+    if a.kind == "repayment" and not a.from_whom:
+        raise InvalidInput("a repayment needs who paid it back")
+    return income_cases.IncomeKind(a.kind)
+
+
+async def _describe_income(ctx: ToolContext, a: IncomeArgs) -> str:
+    kind = _income_kind(a)
+    amount = parse_money(ctx, a.amount, a.currency)
+    day = parse_day(ctx, a.date).astimezone(ctx.tz)
+    what = {
+        income_cases.IncomeKind.SALARY: f"{amount} salary",
+        income_cases.IncomeKind.REPAYMENT: f"{amount} paid back by {a.from_whom}",
+        income_cases.IncomeKind.OTHER: f"{amount} income"
+        + (f" from {a.from_whom}" if a.from_whom else ""),
+    }[kind]
+    note = f" ({a.note})" if a.note else ""
+    return f"Record {what}{note} on {day:%-d %b}?"
+
+
+async def _record_income(ctx: ToolContext, a: IncomeArgs) -> ToolResult:
+    recorded = await income_cases.record_income(
+        ctx.uow,
+        ctx.user,
+        kind=_income_kind(a),
+        amount=parse_money(ctx, a.amount, a.currency),
+        occurred_at=parse_day(ctx, a.date),
+        counterparty=a.from_whom,
+        note=a.note,
+    )
+    return ToolResult(recorded.text, wrote=True, buttons=recorded.buttons or None)
 
 
 class ReceiptExpenseArgs(Args):
@@ -891,6 +939,15 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             "Record money the user spent. Only when the amount is stated.",
             LogExpenseArgs,
             _log_expense,
+        ),
+        ToolSpec(
+            "record_income",
+            "Record money the user received: salary, someone paying back what they owed, "
+            "or other income. Only when the amount and kind are clear; otherwise ask. "
+            "Asks the user to confirm.",
+            IncomeArgs,
+            _record_income,
+            confirm=_describe_income,
         ),
         ToolSpec(
             "find_transactions",

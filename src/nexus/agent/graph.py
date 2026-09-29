@@ -34,16 +34,14 @@ from langgraph.types import Command, interrupt
 
 from nexus.agent import kernel
 from nexus.agent.tools import ToolContext, ToolSpec, UowFactory, run_tool
-from nexus.application import salary as salary_cases
-from nexus.application import splits as split_cases
-from nexus.application import transactions as tx_cases
+from nexus.application import income as income_cases
 from nexus.application.categories import list_categories
 from nexus.application.category_rules import list_rules
 from nexus.application.fx import RateSource
 from nexus.application.inbound import log_capability_gap
 from nexus.application.users import get_user
 from nexus.domain.errors import DuplicateSource, InvalidInput, NexusError
-from nexus.domain.ledger import Direction, Source, User, UserId
+from nexus.domain.ledger import User, UserId
 from nexus.domain.money import Money
 from nexus.infra.llm.factory import text_of
 
@@ -168,12 +166,15 @@ class AgentGraph:
             "Rules:\n"
             "- Use tools for every read or change. Never invent transactions, amounts, "
             "dates or results; report only what tools return.\n"
-            "- If an amount or which transaction is meant is unclear, ask one short question.\n"
+            "- If anything a change needs is unclear (the amount, which transaction, what "
+            "kind, who, which day), ask one short question offering the likely answers. "
+            "Never guess.\n"
             "- You never move money: no payments, transfers or cancelling subscriptions. "
             "Say so plainly if asked.\n"
-            "- You can't record income yourself; income is recorded when the user says it "
-            "plainly, like 'salary 3000', '3000 as salary yesterday' or 'received 50 from "
-            "Ann'. If a message about income wasn't recorded, suggest one of those.\n"
+            "- Money received (salary, repayments, gifts, refunds): record it with "
+            "record_income, which asks the user to confirm. If the amount, the kind (salary, "
+            "repayment or other) or who paid is unclear, ask one short question first; see "
+            "the income skill.\n"
             "- Only bring up logging automatically from email when the user asks about "
             "automating their logging; never suggest it otherwise.\n"
             "- Keep replies short and plain. Never show transaction ids.\n"
@@ -235,74 +236,27 @@ class AgentGraph:
     async def _income(
         self, ctx: ToolContext, income: kernel.IncomeIntent, ref: str | None
     ) -> Command[Any]:
+        kind = {
+            kernel.IncomeKind.SALARY: income_cases.IncomeKind.SALARY,
+            kernel.IncomeKind.REPAYMENT: income_cases.IncomeKind.REPAYMENT,
+        }.get(income.kind, income_cases.IncomeKind.OTHER)
         try:
-            if income.counterparty is not None:
-                try:
-                    result = await split_cases.settle_iou(
-                        ctx.uow(),
-                        ctx.user.id,
-                        income.counterparty,
-                        income.amount,
-                        ctx.now,
-                        notes=income.note,
-                        source=Source.TEXT,
-                        external_id=ref,
-                    )
-                except InvalidInput:
-                    result = None  # no open IOU: plain income below
-                if result is not None:
-                    remaining = await split_cases.list_open_ious(
-                        ctx.uow(), ctx.user.id, participant_name=income.counterparty
-                    )
-                    left = [i.outstanding for i in remaining]
-                    status = (
-                        f"{income.counterparty} still owes {', '.join(map(str, left))}."
-                        if left
-                        else f"{income.counterparty} is all settled."
-                    )
-                    return _reply(
-                        f"Recorded {income.amount} from {income.counterparty}. {status}", wrote=True
-                    )
-
-            category = None
-            if income.kind is kernel.IncomeKind.SALARY:
-                cats = await list_categories(ctx.uow(), ctx.user.id)
-                category = next((c.id for c in cats if c.name.casefold() == "income"), None)
-            notes = income.note or ("Salary" if income.kind is kernel.IncomeKind.SALARY else None)
-            await tx_cases.log_transaction(
-                ctx.uow(),
-                ctx.user.id,
-                tx_cases.NewTransaction(
-                    direction=Direction.IN,
-                    amount=income.amount,
-                    occurred_at=ctx.now - timedelta(days=income.days_ago),
-                    counterparty=income.counterparty,
-                    category_id=category,
-                    notes=notes,
-                    source=Source.TEXT,
-                    external_id=ref,
-                ),
+            recorded = await income_cases.record_income(
+                ctx.uow,
+                ctx.user,
+                kind=kind,
+                amount=income.amount,
+                occurred_at=ctx.now - timedelta(days=income.days_ago),
+                counterparty=income.counterparty,
+                note=income.note,
+                external_id=ref,
+                settle_first=True,  # "received 20 from Ann" settles what Ann owes
             )
         except DuplicateSource:
             return _reply("That was already recorded.")
         except NexusError as exc:
             return _reply(f"I couldn't record that: {exc}")
-        what = "salary" if income.kind is kernel.IncomeKind.SALARY else "income"
-        source = f" from {income.counterparty}" if income.counterparty else ""
-        done = f"Recorded {income.amount} {what}{source}."
-        if income.kind is kernel.IncomeKind.SALARY:
-            async with ctx.uow() as tx:
-                schedule = await tx.planning.get_salary_schedule(ctx.user.id)
-            question = salary_cases.baseline_question(schedule, income.amount)
-            if question:
-                # The usual amount only changes if the user says so.
-                amount = f"{income.amount.amount}:{income.amount.currency}"
-                return _reply(
-                    f"{done} {question}",
-                    wrote=True,
-                    buttons=[[("Yes, update", f"salary:base:{amount}"), ("No", "salary:keep")]],
-                )
-        return _reply(done, wrote=True)
+        return _reply(recorded.text, wrote=True, buttons=recorded.buttons or None)
 
     async def agent_node(
         self, state: AgentState, config: RunnableConfig
