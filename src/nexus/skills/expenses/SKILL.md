@@ -27,7 +27,7 @@ tools: [log_expense, find_transactions, edit_transaction, delete_transaction, re
   Utilities, Socialising, Health, Travel, Activities, Income and Other.
 - "add a category for pets": `add_category`. "call Activities 'Hobbies'":
   `rename_category`. "I don't need Travel": `archive_category` (asks to confirm; past
-  expenses keep it, and it can be brought back from the Plan page).
+  expenses keep it, and it can be brought back from the Settings page).
 - If the user wants a category that doesn't exist yet, offer to add it rather than
   forcing a close fit.
 

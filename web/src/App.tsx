@@ -15,6 +15,7 @@ import { EmailPage } from "./pages/Email";
 import { Ledger } from "./pages/Ledger";
 import { LoginPage } from "./pages/LoginPage";
 import { Plan } from "./pages/Plan";
+import { Settings } from "./pages/Settings";
 import { initData, miniApp } from "./telegram";
 
 /** Inside Telegram, sign in with the Mini App's launch data instead of the widget. */
@@ -81,6 +82,7 @@ function Cockpit({ me }: { me: Me }) {
           element={<Ledger me={me} onAdd={() => setSheet({})} onEdit={(tx) => setSheet({ editing: tx })} />}
         />
         <Route path="/plan" element={<Plan me={me} />} />
+        <Route path="/settings" element={<Settings />} />
         <Route path="/email" element={<EmailPage me={me} />} />
         <Route path="/cashflow" element={<CashFlowPage />} />
         <Route path="/budgets" element={<Navigate to="/plan" replace />} />

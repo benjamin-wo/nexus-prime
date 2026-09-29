@@ -1,14 +1,10 @@
 import type { Me } from "../api";
 import { BillsSection } from "./Bills";
 import { BudgetsSection } from "./Budgets";
-import { CategoriesSection } from "./Categories";
-import { EmailCard } from "./Email";
 import { PaydaySection } from "./Payday";
-import { RulesSection } from "./Rules";
 import { SubscriptionsSection } from "./Subscriptions";
-import { UpdatesSection } from "./Updates";
 
-/** Planning: budgets, bills, payday, subscriptions, category rules and Telegram updates. */
+/** Planning: budgets, bills, payday and subscriptions. Settings has the rest. */
 export function Plan({ me }: { me: Me }) {
   return (
     <>
@@ -23,10 +19,6 @@ export function Plan({ me }: { me: Me }) {
         <BillsSection me={me} />
         <PaydaySection me={me} />
         <SubscriptionsSection />
-        <CategoriesSection />
-        <RulesSection />
-        <UpdatesSection />
-        <EmailCard />
       </div>
     </>
   );
