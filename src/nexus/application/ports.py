@@ -34,6 +34,7 @@ from nexus.domain.ledger import (
     UserId,
 )
 from nexus.domain.money import Money
+from nexus.domain.notifications import NotificationSettings
 from nexus.domain.planning import Bill, BillOccurrence, Budget, SalarySchedule
 from nexus.domain.receipts import Receipt
 from nexus.domain.rules import CategoryRule
@@ -145,6 +146,12 @@ class LedgerRepository(Protocol):
     ) -> Transaction | None: ...
     async def update_transaction(self, tx: Transaction) -> None: ...
     async def list_transactions(self, user_id: UserId, query: LedgerQuery) -> Page: ...
+    async def logged_between(
+        self, user_id: UserId, start: datetime, end: datetime, *, limit: int
+    ) -> list[Transaction]:
+        """Live transactions created (not occurred) in [start, end), oldest first."""
+        ...
+
     async def totals_by_direction(
         self, user_id: UserId, start: datetime, end: datetime
     ) -> list[DirectionTotal]: ...
@@ -251,6 +258,16 @@ class PlanningRepository(Protocol):
 
     async def delete_salary_schedule(self, user_id: UserId) -> bool: ...
     async def users_with_salary_schedules(self) -> list[UserId]: ...
+    async def get_notifications(
+        self, user_id: UserId, *, for_update: bool = False
+    ) -> NotificationSettings:
+        """The user's settings, or the defaults if they never changed them."""
+        ...
+
+    async def save_notifications(self, settings: NotificationSettings, now: datetime) -> None: ...
+    async def users_to_notify(self) -> list[UserId]:
+        """Across all users: everyone reachable on Telegram."""
+        ...
 
 
 class JobQueue(Protocol):
@@ -286,6 +303,10 @@ class EmailRepository(Protocol):
         self, user_id: UserId, email_id: UUID, *, for_update: bool = False
     ) -> InboundEmail | None: ...
     async def update_inbound(self, email: InboundEmail) -> None: ...
+    async def count_waiting(self, user_id: UserId, start: datetime, end: datetime) -> int:
+        """Receipts found in [start, end) still waiting for the user."""
+        ...
+
     async def list_inbound(
         self, user_id: UserId, *, since: datetime, limit: int
     ) -> list[InboundEmail]: ...

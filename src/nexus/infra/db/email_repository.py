@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import Row, delete, insert, select, update
+from sqlalchemy import Row, delete, func, insert, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -242,6 +242,18 @@ class SqlEmailRepository:
                 transaction_id=email.transaction_id,
             )
         )
+
+    async def count_waiting(self, user_id: UserId, start: datetime, end: datetime) -> int:
+        e = inbound_emails.c
+        found = await self._db.scalar(
+            select(func.count()).where(
+                e.user_id == user_id,
+                e.status == EmailStatus.PENDING.value,
+                e.created_at >= start,
+                e.created_at < end,
+            )
+        )
+        return int(found or 0)
 
     async def list_inbound(
         self, user_id: UserId, *, since: datetime, limit: int

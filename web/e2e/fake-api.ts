@@ -36,6 +36,7 @@ export async function fakeApi(page: Page, { signedIn = true, emailConnected = fa
     bills: FakeBill[];
     salary: FakeSalary | null;
     rules: FakeRule[];
+    frequency: string;
     email: { connections: { id: string; address: string; status: string; last_checked: string | null }[]; emails: Record<string, unknown>[] };
   } = {
     txs: [
@@ -47,6 +48,7 @@ export async function fakeApi(page: Page, { signedIn = true, emailConnected = fa
     bills: [],
     salary: null,
     rules: [],
+    frequency: "daily",
     email: {
       connections: emailConnected
         ? [{ id: "c1", address: "ann@gmail.com", status: "active", last_checked: "2026-09-28T04:00:00Z" }]
@@ -208,6 +210,23 @@ export async function fakeApi(page: Page, { signedIn = true, emailConnected = fa
     if (path.startsWith("/budgets/") && method === "DELETE") {
       state.budgets = state.budgets.filter((b) => `/budgets/${b.id}` !== path);
       return route.fulfill({ status: 204 });
+    }
+    if (path === "/notifications") {
+      if (method === "PUT") state.frequency = body.frequency;
+      const options = {
+        instant: "as it happens",
+        hourly: "every hour (8am to 9pm)",
+        thrice_daily: "3 times a day (9am, 2pm, 8pm)",
+        daily: "once a day at 9pm",
+        off: "off",
+      };
+      const description =
+        state.frequency === "off"
+          ? "Transaction updates are off."
+          : state.frequency === "instant"
+            ? "You get a message for each transaction as it happens."
+            : `You get a summary of your transactions ${options[state.frequency as keyof typeof options]}.`;
+      return json(route, { frequency: state.frequency, description, options });
     }
     if (path === "/salary" && method === "GET") {
       const pay = state.salary;

@@ -15,6 +15,7 @@ from nexus.application import bills as bill_cases
 from nexus.application import budgets as budget_cases
 from nexus.application import categories as category_cases
 from nexus.application import category_rules as rule_cases
+from nexus.application import notifications as notify_cases
 from nexus.application import receipts as receipt_cases
 from nexus.application import salary as salary_cases
 from nexus.application import splits as split_cases
@@ -48,6 +49,7 @@ from nexus.domain.ledger import (
     User,
 )
 from nexus.domain.money import Money
+from nexus.domain.notifications import LABELS, Frequency
 from nexus.domain.planning import Cadence, PayRule
 
 router = APIRouter(prefix="/api")
@@ -956,6 +958,39 @@ async def set_usual_salary(body: UsualSalaryIn, auth: Auth, web: Runtime) -> Non
 @router.delete("/salary", status_code=204)
 async def remove_salary(auth: Auth, web: Runtime) -> None:
     await salary_cases.remove_schedule(web.uow(), auth.user.id)
+
+
+# --- transaction updates on Telegram ----------------------------------------------------
+
+
+class UpdatesOut(Model):
+    frequency: Frequency
+    description: str
+    options: dict[Frequency, str]
+
+
+def _updates_out(frequency: Frequency) -> UpdatesOut:
+    return UpdatesOut(
+        frequency=frequency, description=notify_cases.describe(frequency), options=LABELS
+    )
+
+
+@router.get("/notifications")
+async def notifications(auth: Auth, web: Runtime) -> UpdatesOut:
+    current = await notify_cases.get_settings(web.uow(), auth.user.id)
+    return _updates_out(current.frequency)
+
+
+class UpdatesIn(Model):
+    frequency: Frequency
+
+
+@router.put("/notifications")
+async def set_notifications(body: UpdatesIn, auth: Auth, web: Runtime) -> UpdatesOut:
+    updated = await notify_cases.set_frequency(
+        web.uow(), auth.user.id, body.frequency, now=web.clock()
+    )
+    return _updates_out(updated.frequency)
 
 
 # --- chat -----------------------------------------------------------------------------

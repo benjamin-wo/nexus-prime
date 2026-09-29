@@ -393,6 +393,21 @@ salary_schedules = Table(
     CheckConstraint("amount IS NULL OR amount > 0", name="amount_positive"),
 )
 
+# How often each user hears about their transactions. No row means the default
+# (an end-of-day summary), not yet started.
+notification_settings = Table(
+    "notification_settings",
+    metadata,
+    Column("user_id", UUID(as_uuid=True), primary_key=True),
+    Column("frequency", Text, nullable=False),
+    Column("notified_until", TZ),
+    Column("updated_at", TZ, nullable=False),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+    CheckConstraint(
+        "frequency IN ('instant', 'hourly', 'thrice_daily', 'daily', 'off')", name="frequency"
+    ),
+)
+
 # Background work. A job is claimed atomically (FOR UPDATE SKIP LOCKED) and
 # every job has a unique dedupe key, so none runs twice.
 jobs = Table(

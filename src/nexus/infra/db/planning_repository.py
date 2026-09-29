@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from nexus.domain.ledger import UserId
 from nexus.domain.money import Money
+from nexus.domain.notifications import Frequency, NotificationSettings
 from nexus.domain.planning import Bill, BillOccurrence, Budget, Cadence, PayRule, SalarySchedule
 from nexus.infra.db.tables import (
     bill_occurrences,
@@ -17,7 +18,9 @@ from nexus.infra.db.tables import (
     budget_alerts,
     budgets,
     jobs,
+    notification_settings,
     salary_schedules,
+    users,
 )
 
 
@@ -281,6 +284,37 @@ class SqlPlanningRepository:
     async def users_with_salary_schedules(self) -> list[UserId]:
         rows = await self._db.execute(select(salary_schedules.c.user_id))
         return [UserId(r.user_id) for r in rows]
+
+    # notifications
+
+    async def get_notifications(
+        self, user_id: UserId, *, for_update: bool = False
+    ) -> NotificationSettings:
+        n = notification_settings.c
+        stmt = select(notification_settings).where(n.user_id == user_id)
+        row = (await self._db.execute(stmt.with_for_update() if for_update else stmt)).first()
+        if row is None:
+            return NotificationSettings(user_id)
+        return NotificationSettings(user_id, Frequency(row.frequency), row.notified_until)
+
+    async def save_notifications(self, settings: NotificationSettings, now: datetime) -> None:
+        values = {
+            "frequency": settings.frequency.value,
+            "notified_until": settings.notified_until,
+            "updated_at": now,
+        }
+        stmt = pg_insert(notification_settings).values(user_id=settings.user_id, **values)
+        await self._db.execute(
+            stmt.on_conflict_do_update(
+                index_elements=[notification_settings.c.user_id], set_=values
+            )
+        )
+
+    async def users_to_notify(self) -> list[UserId]:
+        rows = await self._db.execute(
+            select(users.c.id).where(users.c.telegram_chat_id.is_not(None))
+        )
+        return [UserId(r.id) for r in rows]
 
 
 class SqlJobQueue:

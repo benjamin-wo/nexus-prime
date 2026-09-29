@@ -11,6 +11,7 @@ from nexus.agent.service import Button
 from nexus.application import bills as bill_cases
 from nexus.application import budgets as budget_cases
 from nexus.application import email as email_cases
+from nexus.application import notifications as notify_cases
 from nexus.application import receipts as receipt_cases
 from nexus.application import salary as salary_cases
 from nexus.application.budgets import TELEGRAM_SEND, UowFactory
@@ -29,12 +30,14 @@ BILLS_SWEEP = "bills.sweep"
 PAYDAY_SWEEP = "salary.sweep"
 RECEIPTS_PURGE = "receipts.purge"
 EMAIL_SWEEP = "email.sweep"
+NOTIFY_SWEEP = "notify.sweep"
 SCHEDULES = (
     Schedule(BUDGETS_SWEEP, timedelta(minutes=10)),
     Schedule(BILLS_SWEEP, timedelta(minutes=30)),
     Schedule(PAYDAY_SWEEP, timedelta(minutes=30)),
     Schedule(RECEIPTS_PURGE, timedelta(hours=1)),
     Schedule(EMAIL_SWEEP, timedelta(minutes=15)),
+    Schedule(NOTIFY_SWEEP, timedelta(minutes=5)),
 )
 
 
@@ -133,7 +136,18 @@ def build_handlers(
                 # One mailbox's failure must not stop the others; the next sweep retries.
                 log.exception("email sweep failed for a mailbox")
 
+    async def sweep_notifications(_: dict[str, Any]) -> None:
+        async with uow() as tx:
+            user_ids = await tx.planning.users_to_notify()
+        review_url = email.review_url if email is not None else None
+        await for_each_user(
+            user_ids,
+            "transaction updates",
+            lambda user: notify_cases.notify(uow, rates, user, now=clock(), review_url=review_url),
+        )
+
     return {
+        NOTIFY_SWEEP: sweep_notifications,
         EMAIL_SWEEP: sweep_email,
         RECEIPTS_PURGE: purge_receipts,
         TELEGRAM_SEND: send,

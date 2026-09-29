@@ -4,8 +4,9 @@ import { BudgetsSection } from "./Budgets";
 import { EmailCard } from "./Email";
 import { PaydaySection } from "./Payday";
 import { RulesSection } from "./Rules";
+import { UpdatesSection } from "./Updates";
 
-/** Planning: budgets, bills, payday and category rules. */
+/** Planning: budgets, bills, payday, category rules and Telegram updates. */
 export function Plan({ me }: { me: Me }) {
   return (
     <>
@@ -20,6 +21,7 @@ export function Plan({ me }: { me: Me }) {
         <BillsSection me={me} />
         <PaydaySection me={me} />
         <RulesSection />
+        <UpdatesSection />
         <EmailCard />
       </div>
     </>

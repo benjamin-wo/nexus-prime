@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nexus.application import category_rules as rule_cases
 from nexus.application import email as email_cases
+from nexus.application import notifications as notify_cases
 from nexus.application.budgets import TELEGRAM_SEND
 from nexus.application.categories import list_categories
 from nexus.application.ports import LedgerQuery, MailboxGrant
@@ -22,6 +23,7 @@ from nexus.domain.email import ConnectionStatus, EmailConnection, FetchedEmail, 
 from nexus.domain.errors import Conflict, InvalidInput, NotFound
 from nexus.domain.ledger import Source, User
 from nexus.domain.money import Money
+from nexus.domain.notifications import Frequency
 from nexus.infra.crypto.fernet import FernetCipher
 from nexus.infra.db.tables import email_connections, jobs
 from tests.fakes import NOW, FakeBucket, FakeEmailReader, FakeMailbox, fake_email, scripted
@@ -167,12 +169,20 @@ async def test_the_first_sweep_looks_back_and_asks_once(
     ]
     assert (await list_ledger(uow(), user.id, LedgerQuery())).total == 0  # nothing yet
 
-    # A new receipt later gets its own question; old ones aren't read again.
+    # By default a later receipt waits for the end-of-day summary; old ones aren't
+    # read again.
     mailbox.emails["m5"] = fake_email("m5", "Grab receipt", GRAB, at=NOW + timedelta(minutes=20))
     mailbox.fetched.clear()
     result = await sweep(uow, user, mailbox, connection, at=NOW + timedelta(minutes=30))
     assert (result.read, result.waiting, result.first) == (1, 1, False)
     assert mailbox.fetched == ["m5"]
+    assert len(await messages(engine)) == 1
+
+    # With updates as they happen, it gets its own question.
+    await notify_cases.set_frequency(uow(), user.id, Frequency.INSTANT, now=NOW)
+    mailbox.emails["m6"] = fake_email("m6", "Grab receipt", GRAB, at=NOW + timedelta(minutes=40))
+    result = await sweep(uow, user, mailbox, connection, at=NOW + timedelta(minutes=45))
+    assert (result.read, result.waiting, result.first) == (1, 1, False)
     question = (await messages(engine))[-1]
     assert question["text"] == "📧 From your email: 18.50 SGD at Grab on 27 Sep. Log it?"
     [[log_it, skip]] = question["buttons"]

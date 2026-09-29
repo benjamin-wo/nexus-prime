@@ -403,6 +403,23 @@ class SqlLedgerRepository:
             .values(**_transaction_values(tx))
         )
 
+    async def logged_between(
+        self, user_id: UserId, start: datetime, end: datetime, *, limit: int
+    ) -> list[Transaction]:
+        t = transactions.c
+        rows = await self._db.execute(
+            select(transactions)
+            .where(
+                t.user_id == user_id,
+                t.deleted_at.is_(None),
+                t.created_at >= start,
+                t.created_at < end,
+            )
+            .order_by(t.created_at)
+            .limit(limit)
+        )
+        return [_transaction(r) for r in rows]
+
     async def list_transactions(self, user_id: UserId, query: LedgerQuery) -> Page:
         t = transactions.c
         conditions: list[Any] = [t.user_id == user_id]
