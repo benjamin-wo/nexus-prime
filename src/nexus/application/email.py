@@ -7,12 +7,14 @@ without that confirmation, and an email whose expense was deleted is never
 imported again.
 """
 
+import asyncio
 import hashlib
 import logging
 import secrets
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta
+from time import monotonic
 from typing import Any
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
@@ -31,7 +33,9 @@ from nexus.application.transactions import NewTransaction
 from nexus.domain.email import (
     ACTIONABLE,
     LINK_TTL,
+    READ_TIMEOUT,
     RECEIPT_QUERY,
+    SWEEP_BUDGET,
     SWEEP_LIMIT,
     ConnectionStatus,
     EmailConnection,
@@ -208,11 +212,11 @@ async def _read_one(
     reason: str | None = "couldn't be read"
     draft: dict[str, Any] | None = None
     try:
-        screening = await reader.triage(fetched)
+        screening = await asyncio.wait_for(reader.triage(fetched), READ_TIMEOUT.total_seconds())
         if not screening.is_receipt:
             status, reason = EmailStatus.NOT_RECEIPT, short(screening.reason, 80)
         else:
-            expense = await reader.extract(fetched)
+            expense = await asyncio.wait_for(reader.extract(fetched), READ_TIMEOUT.total_seconds())
             money = _amount(expense, user.home_currency)
             if money is None:
                 status, reason = EmailStatus.NO_AMOUNT, "no total found"
@@ -233,6 +237,9 @@ async def _read_one(
                         draft["receipt_id"] = str(kept.id)
                     except Exception:
                         log.warning("could not keep an email's PDF receipt", exc_info=True)
+    except TimeoutError:
+        reason = "took too long to read"
+        log.warning("reading an email timed out")
     except Exception:
         log.exception("could not read an email")
     return InboundEmail(
@@ -276,7 +283,13 @@ async def sweep(
     fresh = [i for i in ids if i not in seen]
     batch, left = fresh[:SWEEP_LIMIT], fresh[SWEEP_LIMIT:]
     waiting: list[InboundEmail] = []
+    started = monotonic()
+    read = 0
     for message_id in batch:
+        if monotonic() - started > SWEEP_BUDGET.total_seconds():
+            left = [*batch[read:], *left]  # the next sweep picks these up
+            break
+        read += 1
         fetched = await mailbox.fetch(access, message_id)
         email = await _read_one(reader, archive, uow, user, connection, fetched, now)
         async with uow() as tx:
@@ -299,7 +312,10 @@ async def sweep(
             )
         await _ask(tx, user, waiting, first=first, review_url=review_url)
         await tx.commit()
-    return SweepResult(len(batch), len(waiting), first)
+    log.info(
+        "email sweep: read %d, %d waiting, %d left for next time", read, len(waiting), len(left)
+    )
+    return SweepResult(read, len(waiting), first)
 
 
 async def _ask(

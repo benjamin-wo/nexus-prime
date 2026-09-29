@@ -16,6 +16,11 @@ from nexus.domain.ledger import UserId
 BACKFILL = timedelta(days=30)
 # At most this many new emails are read per mailbox per sweep.
 SWEEP_LIMIT = 25
+# One email is given up on (marked unreadable) if reading it takes longer than this.
+READ_TIMEOUT = timedelta(seconds=45)
+# A sweep stops starting new emails after this long, and leaves the rest for the
+# next one (a job's lease is 5 minutes).
+SWEEP_BUDGET = timedelta(minutes=3)
 # A connect link works this long, once.
 LINK_TTL = timedelta(minutes=10)
 

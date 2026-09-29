@@ -10,7 +10,7 @@ one-time link instead:
     GET  /api/email/gmail/callback -> spends the link, saves the encrypted grant
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Annotated
 from uuid import UUID
 
@@ -103,9 +103,13 @@ async def callback(
     except NexusError:
         return RedirectResponse("/connect/gmail/done?error=permission", status_code=303)
     async with web.uow() as tx:
-        # Look back 30 days now rather than at the next scheduled sweep.
+        # Tell the user first; the look-back sweep follows a moment later (jobs run in
+        # order of run_at, so a slow sweep can't hold up this message).
         await tx.jobs.enqueue(
-            EMAIL_SWEEP, {}, dedupe_key=f"email.connected:{connection.id}:{now}", run_at=now
+            EMAIL_SWEEP,
+            {},
+            dedupe_key=f"email.connected:{connection.id}:{now}",
+            run_at=now + timedelta(seconds=10),
         )
         await tx.jobs.enqueue(
             TELEGRAM_SEND,

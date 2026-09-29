@@ -88,3 +88,21 @@ def test_csv_rows() -> None:
         "2026-09-28,out,5.5000,SGD,5.5000,SGD,,,"
         '\'=cmd|\' /C calc\'!A0,,"says ""hi"", ok",confirmed,text'
     )
+
+
+def test_access_logs_drop_secret_query_strings() -> None:
+    import logging
+
+    from nexus.infra.logs import RedactQueries
+
+    def line(path: str) -> object:
+        record = logging.LogRecord(
+            "uvicorn.access", logging.INFO, "", 0, '%s - "%s %s HTTP/%s" %d',
+            ("1.2.3.4:5", "GET", path, "1.1", 303), None,
+        )  # fmt: skip
+        RedactQueries().filter(record)
+        return record.args[2]  # type: ignore[index]
+
+    assert line("/api/email/gmail/callback?state=t&code=4/secret") == "/api/email/gmail/callback?…"
+    assert line("/connect/gmail?t=token") == "/connect/gmail?…"
+    assert line("/api/transactions?limit=5") == "/api/transactions?limit=5"

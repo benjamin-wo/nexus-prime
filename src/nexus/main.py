@@ -41,6 +41,7 @@ from nexus.infra.db.uow import SqlUnitOfWork
 from nexus.infra.email.gmail import GmailMailbox
 from nexus.infra.fx.frankfurter import FrankfurterRates
 from nexus.infra.llm.factory import ChatModels, build_chat_models, build_screener
+from nexus.infra.logs import configure_logging
 from nexus.infra.storage.s3 import S3ReceiptStore
 from nexus.jobs.handlers import SCHEDULES, build_handlers
 from nexus.jobs.runner import JobRunner
@@ -223,6 +224,7 @@ async def _set_menu_button(client: TelegramClient, origin: str) -> None:
 
 
 def create_app(settings: Settings | None = None, overrides: Overrides | None = None) -> FastAPI:
+    configure_logging()
     resolved = settings or get_settings()
     extra = overrides or Overrides()
 
