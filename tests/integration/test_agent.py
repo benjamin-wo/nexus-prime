@@ -14,6 +14,7 @@ from nexus.agent.receipts import ReceiptDraft, ReceiptReader
 from nexus.agent.service import AgentService, Reply
 from nexus.agent.skills import SkillLibrary
 from nexus.agent.tools import build_tools
+from nexus.application import bills as bill_cases
 from nexus.application import subscriptions as subscription_cases
 from nexus.application.category_rules import list_rules
 from nexus.application.ports import LedgerQuery, ReceiptStore
@@ -22,6 +23,7 @@ from nexus.application.transactions import NewTransaction, list_ledger, log_tran
 from nexus.application.users import get_user
 from nexus.domain.ledger import Direction, ShareRequest, Source, UserId
 from nexus.domain.money import Money
+from nexus.domain.planning import Cadence
 from nexus.infra.db.tables import capability_gaps
 from tests.fakes import NOW, FakeReceipts, ScriptedModel, call, say, scripted
 from tests.integration.conftest import UowFactory
@@ -71,14 +73,14 @@ def only(replies: list[Reply]) -> Reply:
 
 async def test_logs_an_expense_and_offers_undo(uow: UowFactory, alice: UserId) -> None:
     model = scripted(
-        call("log_expense", amount="5.50", merchant="Starbucks", category="Food & Drink"),
+        call("log_expense", amount="5.50", merchant="Starbucks", category="Dining Out"),
         say("Logged 5.50 at Starbucks."),
     )
     reply = only(await build(uow, model).handle_text(alice, "starbucks 5.50", "tg:1:1"))
     assert reply.text == "Logged 5.50 at Starbucks."
     assert [b.data for row in reply.buttons for b in row] == ["act:undo"]
     assert await ledger(uow, alice) == [("out", Decimal("5.5"))]
-    assert "Logged: 2026-09-28 · -5.50 SGD · Starbucks · Food & Drink" in tool_results(model)[0]
+    assert "Logged: 2026-09-28 · -5.50 SGD · Starbucks · Dining Out" in tool_results(model)[0]
 
 
 async def test_model_cannot_act_for_another_user(
@@ -121,7 +123,7 @@ async def test_delete_waits_for_confirmation(uow: UowFactory, alice: UserId) -> 
     agent = build(uow, model)
 
     reply = only(await agent.handle_text(alice, "delete the grab ride", "tg:1:1"))
-    assert reply.text == "Delete 2026-09-28 · -12.00 SGD · Grab?"
+    assert reply.text == "Delete 2026-09-28 · -12.00 SGD · Grab · Other?"
     confirm, cancel = reply.buttons[0]
     assert confirm.label == "Confirm" and cancel.label == "Cancel"
     assert await ledger(uow, alice) == [("out", Decimal("12"))]  # nothing yet
@@ -186,7 +188,7 @@ async def test_split_confirmation_shows_shares(uow: UowFactory, alice: UserId) -
     agent = build(uow, model)
     reply = only(await agent.handle_text(alice, "split dinner with ann and ben", "tg:1:1"))
     assert reply.text == (
-        "Split 2026-09-28 · -90.00 SGD · Dinner: Ann owes 30.00 SGD, Ben owes 30.00 SGD; "
+        "Split 2026-09-28 · -90.00 SGD · Dinner · Other: Ann owes 30.00 SGD, Ben owes 30.00 SGD; "
         "your share 30.00 SGD?"
     )
     await agent.resolve(alice, reply.buttons[0][0].data.split(":")[1], True)
@@ -314,13 +316,20 @@ async def test_model_outage_is_reported_honestly(uow: UowFactory, alice: UserId)
 
 async def test_receipt_photo_is_confirmed_then_logged_once(uow: UowFactory, alice: UserId) -> None:
     receipts = FakeReceipts(
-        ReceiptDraft(is_receipt=True, amount="23.40", merchant="FairPrice", date="2026-09-27")
+        ReceiptDraft(
+            is_receipt=True,
+            amount="23.40",
+            merchant="FairPrice",
+            date="2026-09-27",
+            category="Groceries",
+        )
     )
     agent = build(uow, scripted(), receipts)
     reply = only(await agent.handle_photo(alice, b"jpg", "image/jpeg", None, "telegram-photo:u1"))
+    assert "Groceries" in receipts.categories  # the reader picks from the user's categories
     assert reply.text == "Log 23.40 SGD at FairPrice on 2026-09-27 from this receipt?"
     done = only(await agent.resolve(alice, reply.buttons[0][0].data.split(":")[1], True))
-    assert done.text == "Logged from receipt: 2026-09-27 · -23.40 SGD · FairPrice"
+    assert done.text == "Logged from receipt: 2026-09-27 · -23.40 SGD · FairPrice · Groceries"
     page = await list_ledger(uow(), alice, LedgerQuery())
     assert page.items[0].source is Source.PHOTO
 
@@ -375,6 +384,19 @@ async def test_subscription_buttons_track_or_turn_down(uow: UowFactory, alice: U
     assert only(await agent.press(alice, "sub:track:nope")).text == "I don't know that button."
 
 
+async def test_cash_flow_lists_what_is_coming(uow: UowFactory, alice: UserId) -> None:
+    user = await get_user(uow(), alice)
+    await bill_cases.add_bill(
+        uow(), user, "Rent", NOW.date() + timedelta(days=3), Cadence.MONTHLY,
+        Money.of("1800", "SGD"), now=NOW,
+    )  # fmt: skip
+    model = scripted(call("cash_flow", days=14), say("Rent is due soon."))
+    await build(uow, model).handle_text(alice, "what's coming up?", "tg:1:1")
+    [result] = tool_results(model)
+    assert "Rent (bill) -1800.00 SGD" in result
+    assert "net -1800.00 SGD" in result and "not a balance" in result
+
+
 async def test_threads_are_per_user(uow: UowFactory, alice: UserId, bob: UserId) -> None:
     model = scripted(say("hi alice"), say("hi bob"))
     agent = build(uow, model)
@@ -396,7 +418,7 @@ async def test_a_category_correction_offers_a_rule_and_waits_for_the_answer(
     )
     agent = build(uow, model)
     confirm = only(await agent.handle_text(alice, "grab was transport", "tg:1:1"))
-    assert confirm.text == "Change 2026-09-28 · -12.00 SGD · Grab: category → Transport?"
+    assert confirm.text == "Change 2026-09-28 · -12.00 SGD · Grab · Other: category → Transport?"
     done = only(await agent.resolve(alice, confirm.buttons[0][0].data.split(":")[1], True))
     assert "Always file “grab” under Transport?" in tool_results(model)[-1]
     save, skip = done.buttons[0]
@@ -425,7 +447,7 @@ async def test_a_category_correction_offers_a_rule_and_waits_for_the_answer(
 
 async def test_rule_changes_by_chat_are_confirmed(uow: UowFactory, alice: UserId) -> None:
     model = scripted(
-        call("set_category_rule", pattern="Netflix", category="Entertainment"),
+        call("set_category_rule", pattern="Netflix", category="Activities"),
         say("Done."),
         call("set_category_rule", pattern="netflix", category="Bills & Utilities"),
         say("Changed."),
@@ -434,15 +456,15 @@ async def test_rule_changes_by_chat_are_confirmed(uow: UowFactory, alice: UserId
     )
     agent = build(uow, model)
     ask = only(await agent.handle_text(alice, "netflix is entertainment", "tg:1:1"))
-    assert ask.text == "File new expenses mentioning “netflix” under Entertainment?"
+    assert ask.text == "File new expenses mentioning “netflix” under Activities?"
     assert await list_rules(uow(), alice) == []
     await agent.resolve(alice, ask.buttons[0][0].data.split(":")[1], True)
     [rule] = await list_rules(uow(), alice)
-    assert rule.category.name == "Entertainment"
+    assert rule.category.name == "Activities"
 
     ask = only(await agent.handle_text(alice, "actually it's a bill", "tg:1:2"))
     assert ask.text == (
-        "Change your rule for “netflix” from Entertainment to Bills & Utilities? "
+        "Change your rule for “netflix” from Activities to Bills & Utilities? "
         "Expenses already logged stay as they are."
     )
     await agent.resolve(alice, ask.buttons[0][0].data.split(":")[1], True)

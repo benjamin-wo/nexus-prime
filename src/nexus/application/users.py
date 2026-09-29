@@ -9,14 +9,15 @@ from nexus.domain.ledger import Category, Role, User, UserId
 from nexus.domain.money import Money
 
 DEFAULT_CATEGORIES = (
-    "Food & Drink",
+    "Dining Out",
     "Groceries",
     "Transport",
     "Shopping",
     "Bills & Utilities",
-    "Entertainment",
+    "Socialising",
     "Health",
     "Travel",
+    "Activities",
     "Income",
     "Other",
 )

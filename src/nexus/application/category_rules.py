@@ -64,6 +64,11 @@ class CategoryExplanation:
         if self.category is None:
             return "It isn't in a category."
         if self.rule is None:
+            if self.category.name.casefold() in ("other", "income"):
+                return (
+                    f"It's in {self.category.name}: no rule matched it and no other category "
+                    "was picked, or it was filed there directly."
+                )
             return f"It's in {self.category.name} because that was chosen for it, not by a rule."
         why = f"It's in {self.category.name} because of your rule “{self.rule.pattern}”."
         if not self.rule.active:

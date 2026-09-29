@@ -8,6 +8,7 @@ const links = [
   { to: "/", label: "Dashboard" },
   { to: "/ledger", label: "Ledger" },
   { to: "/plan", label: "Plan" },
+  { to: "/cashflow", label: "Cash flow" },
 ];
 
 export function Shell({

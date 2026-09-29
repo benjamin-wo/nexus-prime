@@ -13,6 +13,7 @@ from nexus.agent.service import Reply
 from nexus.application import access, fx
 from nexus.application import bills as bill_cases
 from nexus.application import budgets as budget_cases
+from nexus.application import cashflow as cashflow_cases
 from nexus.application import categories as category_cases
 from nexus.application import category_rules as rule_cases
 from nexus.application import notifications as notify_cases
@@ -51,7 +52,7 @@ from nexus.domain.ledger import (
 )
 from nexus.domain.money import Money
 from nexus.domain.notifications import LABELS, Frequency
-from nexus.domain.planning import Cadence, PayRule
+from nexus.domain.planning import Cadence, PayRule, next_month_start
 
 router = APIRouter(prefix="/api")
 EXPORT_LIMIT = 10_000
@@ -959,6 +960,92 @@ async def set_usual_salary(body: UsualSalaryIn, auth: Auth, web: Runtime) -> Non
 @router.delete("/salary", status_code=204)
 async def remove_salary(auth: Auth, web: Runtime) -> None:
     await salary_cases.remove_schedule(web.uow(), auth.user.id)
+
+
+# --- cash flow --------------------------------------------------------------------------
+
+
+class ExpectedOut(Model):
+    kind: str
+    name: str
+    direction: str
+    amount: MoneyOut | None
+    home: MoneyOut | None
+
+
+class CashDayOut(Model):
+    day: date
+    money_in: MoneyOut
+    money_out: MoneyOut
+    net: MoneyOut
+    expected: list[ExpectedOut]
+    expected_net: MoneyOut
+
+
+class CashFlowOut(Model):
+    start: date
+    end: date
+    today: date
+    currency: str
+    days: list[CashDayOut]
+    logged_in: MoneyOut
+    logged_out: MoneyOut
+    expected_in: MoneyOut
+    expected_out: MoneyOut
+    unknown_amounts: int
+    unconverted: list[MoneyOut]
+
+
+@router.get("/cashflow")
+async def cashflow(
+    auth: Auth,
+    web: Runtime,
+    month: Annotated[str | None, Query(pattern=r"^\d{4}-\d{2}$")] = None,
+) -> CashFlowOut:
+    """One month, day by day: what was logged so far, and what's expected ahead."""
+    user = auth.user
+    now = web.clock()
+    if month:
+        try:
+            first = date.fromisoformat(f"{month}-01")
+        except ValueError as exc:
+            raise InvalidInput("month must be a real month, like 2026-10") from exc
+    else:
+        first = now.astimezone(_tz(user)).date().replace(day=1)
+    last = next_month_start(first) - timedelta(days=1)
+    flow = await cashflow_cases.cash_flow(web.uow, web.rates, user, first, last, now=now)
+    return CashFlowOut(
+        start=flow.start,
+        end=flow.end,
+        today=flow.today,
+        currency=flow.currency,
+        days=[
+            CashDayOut(
+                day=d.day,
+                money_in=money(d.money_in),
+                money_out=money(d.money_out),
+                net=money(d.net),
+                expected=[
+                    ExpectedOut(
+                        kind=e.kind.value,
+                        name=e.name,
+                        direction=e.direction.value,
+                        amount=money(e.amount) if e.amount else None,
+                        home=money(e.home) if e.home else None,
+                    )
+                    for e in d.expected
+                ],
+                expected_net=money(d.expected_net),
+            )
+            for d in flow.days
+        ],
+        logged_in=money(flow.logged_in),
+        logged_out=money(flow.logged_out),
+        expected_in=money(flow.expected_in),
+        expected_out=money(flow.expected_out),
+        unknown_amounts=flow.unknown_amounts,
+        unconverted=[money(m) for m in flow.unconverted],
+    )
 
 
 # --- subscriptions ----------------------------------------------------------------------

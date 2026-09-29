@@ -19,6 +19,7 @@ The shared language for code, tests and docs. When a term here and a name in cod
 - **Soft delete**: setting `deleted_at` instead of removing the row, so a delete can be restored.
 - **Split**: one participant's share of a transaction paid by the user. An unpaid split is an **IOU**.
 - **Settlement**: money in that pays off all or part of a split.
+- **Category**: one per transaction, from the user's own list (eleven defaults to start, plus any they add). A named category wins, then a rule, then the model's best guess; anything left is **Other** (spending) or **Income** (money in). Archived categories stay on past transactions but aren't used for new ones.
 - **Category rule**: a pattern that suggests a category, with a stored explanation. A user's correction never silently rewrites a rule.
 
 ## Planning (forecasts, never ledger entries)
@@ -59,6 +60,7 @@ The shared language for code, tests and docs. When a term here and a name in cod
 - **Tenant**: the user a request acts for, always taken from the authenticated principal, never from request or model arguments.
 - **Forwarding address**: a user's own AgentMail inbox (`nexus-…@agentmail.to`) they forward receipts to from any mail provider. Read by the email sweep like a connected mailbox; an email connection with provider `forward`.
 - **Subscription**: a recurring payment spotted in the ledger (three regular, similar charges from one merchant) and tracked once the user agrees. Stored in `subscriptions` as proposed, active or dismissed; a dismissed one is never proposed again. Different from a **bill**, which is a reminder the user sets up.
+- **Cash flow**: net money movement per day in the home currency. Days so far show what was logged; days from today show what's expected from bills (unless marked paid), tracked subscriptions and payday. It is never a balance: Nexus doesn't know account balances.
 - **Telegram updates**: how often a user hears about their transactions: as they happen, hourly, 3 times a day, once a day at 21:00 (the default), or off. Summaries are due at fixed local times outside quiet hours.
 - **Job**: a row in the `jobs` table, claimed by a worker with `FOR UPDATE SKIP LOCKED`. Its **dedupe key** makes every side effect (reminder, sweep, import) happen at most once.
 - **Leader lease**: a Postgres advisory lock held by one job runner so scheduling happens in one place.

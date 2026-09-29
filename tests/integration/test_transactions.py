@@ -197,7 +197,8 @@ async def test_ledger_filters_search_sort_and_pages(uow: UowFactory, alice: User
 
     by_cat = await list_ledger(uow(), alice, LedgerQuery(category_id=food.id))
     assert [t.amount for t in by_cat.items] == [sgd("50")]
-    assert (await list_ledger(uow(), alice, LedgerQuery(uncategorized=True))).total == 2
+    # Every new transaction gets a category: "Other" or "Income" when nothing decides.
+    assert (await list_ledger(uow(), alice, LedgerQuery(uncategorized=True))).total == 0
 
     ranged = await list_ledger(
         uow(), alice, LedgerQuery(start=T0 + timedelta(days=1), end=T0 + timedelta(days=2))
@@ -240,6 +241,6 @@ async def test_summary_counts_confirmed_live_money_per_currency(
     }
     assert [(c.category_name, c.total) for c in summary.spending_by_category] == [
         ("Food", sgd("15.50")),
-        (None, sgd("2")),
-        (None, Money.of("20", "USD")),
+        ("Other", sgd("2")),
+        ("Other", Money.of("20", "USD")),
     ]

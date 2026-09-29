@@ -4,6 +4,7 @@ Every method is scoped to one user. Implementations must filter on
 ``user_id`` in the query itself, never after loading.
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from enum import StrEnum
@@ -372,7 +373,9 @@ class EmailReader(Protocol):
     """Screens an email cheaply, then reads a likely receipt into a draft expense."""
 
     async def triage(self, email: FetchedEmail) -> Screening: ...
-    async def extract(self, email: FetchedEmail) -> ExpenseDraft: ...
+    async def extract(
+        self, email: FetchedEmail, *, categories: Sequence[str] = ()
+    ) -> ExpenseDraft: ...
 
 
 class Cipher(Protocol):

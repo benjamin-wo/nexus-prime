@@ -1,6 +1,7 @@
 """Reading a receipt photo into a draft expense. The image is not stored."""
 
 import base64
+from collections.abc import Sequence
 from typing import Protocol
 
 from langchain_core.language_models import BaseChatModel
@@ -16,17 +17,27 @@ class ReceiptDraft(BaseModel):
     currency: str | None = Field(None, description="ISO 4217 code if printed, else null")
     merchant: str | None = Field(None, description="Shop or company name")
     date: str | None = Field(None, description="Purchase date as YYYY-MM-DD if printed")
+    category: str | None = Field(
+        None, description="The closest category from the list given, exactly as written"
+    )
 
 
 class ReceiptReader(Protocol):
-    async def read(self, image: bytes, mime_type: str, caption: str | None) -> ReceiptDraft: ...
+    async def read(
+        self,
+        image: bytes,
+        mime_type: str,
+        caption: str | None,
+        *,
+        categories: Sequence[str] = (),
+    ) -> ReceiptDraft: ...
 
 
 _PROMPT = (
     "Read this image. If it is a receipt, bill or invoice, extract the final total "
     "actually paid (after tax, service charge and discounts), its currency if printed, "
     "the merchant and the purchase date. Use null for anything you can't read clearly; "
-    "never guess.{caption}"
+    "never guess.{categories}{caption}"
 )
 
 
@@ -34,12 +45,24 @@ class LlmReceiptReader:
     def __init__(self, model: BaseChatModel) -> None:
         self._model = model.with_structured_output(ReceiptDraft)
 
-    async def read(self, image: bytes, mime_type: str, caption: str | None) -> ReceiptDraft:
+    async def read(
+        self,
+        image: bytes,
+        mime_type: str,
+        caption: str | None,
+        *,
+        categories: Sequence[str] = (),
+    ) -> ReceiptDraft:
         encoded = base64.b64encode(image).decode()
         hint = f" The user wrote: {caption!r}." if caption else ""
+        choose = (
+            " Also pick the closest category for this purchase from: " + ", ".join(categories) + "."
+            if categories
+            else ""
+        )
         message = HumanMessage(
             content=[
-                {"type": "text", "text": _PROMPT.format(caption=hint)},
+                {"type": "text", "text": _PROMPT.format(caption=hint, categories=choose)},
                 {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{encoded}"}},
             ]
         )

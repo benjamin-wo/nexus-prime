@@ -1,6 +1,8 @@
 """Reading an email into a draft expense: a cheap model screens it first, and only
 likely receipts reach the main model."""
 
+from collections.abc import Sequence
+
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, Field
@@ -31,6 +33,9 @@ class EmailExpense(BaseModel):
     currency: str | None = Field(None, description="ISO 4217 code, e.g. SGD, if stated")
     merchant: str | None = Field(None, description="Who was paid: the shop, company or payee")
     date: str | None = Field(None, description="Purchase or transaction date as YYYY-MM-DD")
+    category: str | None = Field(
+        None, description="The closest category from the list given, exactly as written"
+    )
 
 
 _EXTRACT = (
@@ -57,13 +62,17 @@ class LlmEmailReader:
         found = result if isinstance(result, Triage) else Triage.model_validate(result)
         return Screening(found.is_receipt, found.reason)
 
-    async def extract(self, email: FetchedEmail) -> ExpenseDraft:
+    async def extract(self, email: FetchedEmail, *, categories: Sequence[str] = ()) -> ExpenseDraft:
         prompt = _EXTRACT.format(
             sender=email.sender,
             subject=email.subject,
             received=email.received_at.date().isoformat(),
             text=email.text,
         )
+        if categories:
+            prompt += "\n\nAlso pick the closest category for it from: " + ", ".join(categories)
         result = await self._read.ainvoke([HumanMessage(content=prompt)])
         draft = result if isinstance(result, EmailExpense) else EmailExpense.model_validate(result)
-        return ExpenseDraft(draft.amount, draft.currency, draft.merchant, draft.date)
+        return ExpenseDraft(
+            draft.amount, draft.currency, draft.merchant, draft.date, draft.category
+        )

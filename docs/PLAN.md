@@ -43,6 +43,7 @@ A clean start removes almost all of that. The plan therefore keeps the old **pro
 ### New features (owner-approved)
 - Monthly budgets, overall and per category, with 50/80/100% alerts and no rollover.
 - Editable categories plus explainable suggestion rules. A correction never silently rewrites a rule.
+- Every expense gets a category: eleven defaults (users add, rename and archive their own), and anything unmatched goes to Other.
 - Recurrence detection: suggest a recurring rule after 3 similar transactions. Once approved, a rule creates forecasts and reminders only, never actual expenses.
 - Subscriptions: renewal date, annualised cost, reminders 7/3/1 days before, and a flag when the price changes. Never cancelled automatically.
 - Bills: due date, optional amount and recurrence, reminders 7/3/1 days before, snooze and mark-paid. Payments are never initiated.
@@ -225,9 +226,9 @@ Every milestone ends deployed to Railway and usable. Development is test-first: 
 
 ### M7 — Multi-currency, recurrence, subscriptions, cash flow
 - Frankfurter client and cache: use the latest rate on or before the transaction date, and show the effective date. Wire it into metrics, budgets, export and cash flow.
-  - Pulled forward after M4: the client (in-memory cache for past days), dashboard totals and category bars in the home currency, per-row home amounts with the dated rate, and export columns. Budgets already convert. **M7a** adds the chat's spending summary (and the month summary button) in the home currency, saying which foreign amounts had no rate. Still to do: cash flow, and a persistent rate cache if lookups become a cost.
+  - Pulled forward after M4: the client (in-memory cache for past days), dashboard totals and category bars in the home currency, per-row home amounts with the dated rate, and export columns. Budgets already convert. **M7a** adds the chat's spending summary (and the month summary button) in the home currency, saying which foreign amounts had no rate. Cash flow converts too (M7b). Still to do: a persistent rate cache if lookups become a cost.
 - Recurrence proposals (3 matches), subscription tracking with price-change flags, and the cash-flow calendar showing net movement only.
-  - **M7a** recurrence and subscriptions: three regular (weekly, monthly or yearly), similar charges from one merchant are proposed once (**Track it / No**); tracked ones follow new charges and flag a price change; a "no" is never asked again; the Plan page lists them with a monthly total. **M7b** the cash-flow calendar is next.
+  - **M7a** recurrence and subscriptions: three regular (weekly, monthly or yearly), similar charges from one merchant are proposed once (**Track it / No**); tracked ones follow new charges and flag a price change; a "no" is never asked again; the Plan page lists them with a monthly total. **M7b** the cash-flow calendar: a Cash flow page, month by month, with each day's logged in, out and net in the home currency, and from today on what's expected (bills not yet marked paid, tracked subscriptions, payday with the usual salary); items without an amount are listed but not counted; never a balance. A `cash_flow` chat tool covers "what's coming up?". Alongside M7b, **every expense gets a category**: eleven defaults (migration 0014 renames Food & Drink and Entertainment, adds the rest), a fallback to Other or Income, the model and receipt/email readers guessing from the user's own categories, and add/rename/archive in chat and a Categories card on the Plan page. Still open in M7: a persistent rate cache if lookups become a cost.
 
 ### M8 — Statement import
 - CSV first, with saved column mappings per bank. Then PDF with OCR.

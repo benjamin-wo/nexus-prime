@@ -206,7 +206,7 @@ def sgd(amount: str) -> Money:
 async def test_alerts_fire_once_at_exact_thresholds(engine: AsyncEngine, uow: UowFactory) -> None:
     user = await sgt_user(uow)
     rates = FakeRates()
-    food = next(c for c in await list_categories(uow(), user.id) if c.name == "Food & Drink")
+    food = next(c for c in await list_categories(uow(), user.id) if c.name == "Dining Out")
     await budget_cases.set_budget(uow(), user, food.id, sgd("100"), now=NOON_SGT)
 
     async def check() -> int:
@@ -221,8 +221,8 @@ async def test_alerts_fire_once_at_exact_thresholds(engine: AsyncEngine, uow: Uo
     assert await check() == 1
     texts = await queued_texts(engine)
     assert texts == [
-        "You've used 50% of your Food & Drink budget for September: 50.00 SGD of 100.00 SGD.",
-        "You've reached your Food & Drink budget for September: 110.00 SGD of 100.00 SGD (110%).",
+        "You've used 50% of your Dining Out budget for September: 50.00 SGD of 100.00 SGD.",
+        "You've reached your Dining Out budget for September: 110.00 SGD of 100.00 SGD (110%).",
     ]
     async with engine.connect() as db:
         recorded = [r.threshold for r in await db.execute(select(budget_alerts))]

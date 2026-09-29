@@ -61,6 +61,9 @@ class NewTransaction:
     external_id: str | None = None
     # With no category given, file an expense by the user's category rules.
     apply_rules: bool = True
+    # A best guess (e.g. the model's) used only when no category was given and no
+    # rule matched. Failing that, expenses go to "Other" and income to "Income".
+    fallback_category_id: UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +108,12 @@ async def create_transaction(
         rule = await matching_rule(repo, actor, cmd.counterparty, cmd.notes)
         if rule is not None:
             category_id, rule_id = rule.category_id, rule.id
+    if category_id is None and cmd.fallback_category_id is not None:
+        guess = await repo.get_category(actor, cmd.fallback_category_id)
+        if guess is not None and guess.active:
+            category_id = guess.id
+    if category_id is None:
+        category_id = await default_category(repo, actor, Direction(cmd.direction))
     tx = Transaction(
         id=uuid4(),
         user_id=actor,
@@ -126,6 +135,21 @@ async def create_transaction(
         await repo.claim_source(actor, tx.source, external_id, tx.id)
     await repo.insert_revision(actor, tx.id, RevisionKind.CREATE, None, now)
     return tx
+
+
+# Where a transaction goes when nothing else decides: every one gets a category.
+DEFAULT_FOR = {Direction.OUT: "other", Direction.IN: "income"}
+
+
+async def default_category(
+    repo: LedgerRepository, actor: UserId, direction: Direction
+) -> UUID | None:
+    """The user's "Other" (expenses) or "Income" category, if they still have it."""
+    wanted = DEFAULT_FOR[direction]
+    for c in await repo.list_categories(actor, include_inactive=False):
+        if c.name.casefold() == wanted:
+            return c.id
+    return None
 
 
 async def matching_rule(
