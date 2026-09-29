@@ -2,6 +2,7 @@
 the user's confirmation, and never importing an email twice."""
 
 from datetime import timedelta
+from decimal import Decimal
 from typing import Any
 
 import pytest
@@ -343,3 +344,29 @@ async def test_a_stuck_read_is_given_up_on(
         "took too long to read",
     )
     assert found["m1"].status.value == "pending"
+
+
+async def test_bank_alert_amounts_are_read_as_written(uow: UowFactory) -> None:
+    user = await person(uow)
+    mailbox = FakeMailbox(
+        {
+            "a1": fake_email("a1", "PayLah receipt", "Merchant: Juz Bread\nTotal: S$5.20"),
+            "a2": fake_email("a2", "Card receipt", "Merchant: Subway\nTotal: SGD 8.90"),
+            "a3": fake_email("a3", "Bill receipt", "Merchant: MyRepublic\nTotal: see invoice"),
+        }
+    )
+    connection = await connect(uow, user, mailbox)
+    await sweep(uow, user, mailbox, connection)
+    found = await email_cases.overview(uow(), user.id, now=NOW + timedelta(days=1))
+    by_id = {e.provider_message_id: e for e in found.emails}
+    assert by_id["a1"].status.value == "pending"
+    assert by_id["a1"].draft is not None
+    assert Decimal(by_id["a1"].draft["amount"]) == Decimal("5.20")
+    assert by_id["a1"].draft["currency"] == "SGD"
+    assert by_id["a2"].draft is not None
+    assert Decimal(by_id["a2"].draft["amount"]) == Decimal("8.90")
+    # What couldn't be read is said, so the Email page can show why.
+    assert by_id["a3"].status.value == "no_amount"
+    assert by_id["a3"].reason == 'couldn\'t read the amount "see invoice"'
+    assert by_id["a3"].draft is not None
+    assert by_id["a3"].draft["amount"] is None
