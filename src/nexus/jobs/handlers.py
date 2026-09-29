@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 from nexus.agent.service import Button
 from nexus.application import bills as bill_cases
 from nexus.application import budgets as budget_cases
+from nexus.application import salary as salary_cases
 from nexus.application.budgets import TELEGRAM_SEND, UowFactory
 from nexus.application.fx import RateSource
 from nexus.channels.telegram.client import TelegramClient
@@ -21,9 +22,11 @@ log = logging.getLogger(__name__)
 
 BUDGETS_SWEEP = "budgets.sweep"
 BILLS_SWEEP = "bills.sweep"
+PAYDAY_SWEEP = "salary.sweep"
 SCHEDULES = (
     Schedule(BUDGETS_SWEEP, timedelta(minutes=10)),
     Schedule(BILLS_SWEEP, timedelta(minutes=30)),
+    Schedule(PAYDAY_SWEEP, timedelta(minutes=30)),
 )
 
 
@@ -80,4 +83,18 @@ def build_handlers(
             lambda user: bill_cases.send_reminders(uow, user, now=clock()),
         )
 
-    return {TELEGRAM_SEND: send, BUDGETS_SWEEP: sweep_budgets, BILLS_SWEEP: sweep_bills}
+    async def sweep_paydays(_: dict[str, Any]) -> None:
+        async with uow() as tx:
+            user_ids = await tx.planning.users_with_salary_schedules()
+        await for_each_user(
+            user_ids,
+            "payday check-in",
+            lambda user: salary_cases.payday_checkin(uow, user, now=clock()),
+        )
+
+    return {
+        TELEGRAM_SEND: send,
+        BUDGETS_SWEEP: sweep_budgets,
+        BILLS_SWEEP: sweep_bills,
+        PAYDAY_SWEEP: sweep_paydays,
+    }

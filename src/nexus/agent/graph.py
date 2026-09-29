@@ -34,6 +34,7 @@ from langgraph.types import Command, interrupt
 
 from nexus.agent import kernel
 from nexus.agent.tools import ToolContext, ToolSpec, UowFactory, run_tool
+from nexus.application import salary as salary_cases
 from nexus.application import splits as split_cases
 from nexus.application import transactions as tx_cases
 from nexus.application.categories import list_categories
@@ -56,6 +57,8 @@ WROTE = "nexus_wrote"
 KERNEL = "nexus_kernel"
 RECEIPT = "nexus_receipt"
 REF = "nexus_ref"
+# Extra reply buttons: rows of [label, data].
+BUTTONS = "nexus_buttons"
 
 REFUSALS = {
     "transfer": "I can't send or transfer money. I only keep track of it.",
@@ -103,9 +106,15 @@ def _trim(messages: Sequence[AnyMessage]) -> list[AnyMessage]:
     return window[-1:]
 
 
-def _reply(text: str, *, wrote: bool = False) -> Command[Any]:
+def _reply(
+    text: str, *, wrote: bool = False, buttons: list[list[tuple[str, str]]] | None = None
+) -> Command[Any]:
+    """End the turn with ``text``; ``buttons`` are extra (label, data) rows under it."""
+    kwargs: dict[str, Any] = {WROTE: wrote}
+    if buttons:
+        kwargs[BUTTONS] = [[list(b) for b in row] for row in buttons]
     return Command(
-        goto=END, update={"messages": [AIMessage(content=text, additional_kwargs={WROTE: wrote})]}
+        goto=END, update={"messages": [AIMessage(content=text, additional_kwargs=kwargs)]}
     )
 
 
@@ -257,7 +266,20 @@ class AgentGraph:
             return _reply(f"I couldn't record that: {exc}")
         what = "salary" if income.kind is kernel.IncomeKind.SALARY else "income"
         source = f" from {income.counterparty}" if income.counterparty else ""
-        return _reply(f"Recorded {income.amount} {what}{source}.", wrote=True)
+        done = f"Recorded {income.amount} {what}{source}."
+        if income.kind is kernel.IncomeKind.SALARY:
+            async with ctx.uow() as tx:
+                schedule = await tx.planning.get_salary_schedule(ctx.user.id)
+            question = salary_cases.baseline_question(schedule, income.amount)
+            if question:
+                # The usual amount only changes if the user says so.
+                amount = f"{income.amount.amount}:{income.amount.currency}"
+                return _reply(
+                    f"{done} {question}",
+                    wrote=True,
+                    buttons=[[("Yes, update", f"salary:base:{amount}"), ("No", "salary:keep")]],
+                )
+        return _reply(done, wrote=True)
 
     async def agent_node(
         self, state: AgentState, config: RunnableConfig

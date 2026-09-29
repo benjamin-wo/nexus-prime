@@ -156,3 +156,83 @@ def reminder_offset(days_until: int) -> int | None:
         return None
     reached = [k for k in REMINDER_OFFSETS if days_until <= k]
     return min(reached) if reached else None
+
+
+# --- salary -------------------------------------------------------------------------
+
+# The payday check-in goes out from this time on payday (user's timezone).
+PAYDAY_CHECKIN = time(9)
+
+
+class PayRule(StrEnum):
+    MONTHLY_DAY = "monthly_day"  # a day of the month, clamped to short months
+    LAST_WEEKDAY = "last_weekday"  # the last Monday-to-Friday of the month
+    BIWEEKLY = "biweekly"  # every 14 days from an anchor date
+
+
+@dataclass(frozen=True, slots=True)
+class SalarySchedule:
+    """When the user is paid, and their usual salary once they've confirmed it.
+
+    Only ever set by the user; never inferred from transactions or statements.
+    """
+
+    user_id: UserId
+    rule: PayRule
+    day: int | None  # 1-31, for MONTHLY_DAY
+    anchor: date | None  # a known payday, for BIWEEKLY
+    baseline: Money | None
+    created_at: datetime
+    updated_at: datetime
+
+    def __post_init__(self) -> None:
+        if (self.rule is PayRule.MONTHLY_DAY) != (self.day is not None):
+            raise ValueError("a day of the month is needed exactly for monthly paydays")
+        if self.day is not None and not 1 <= self.day <= 31:
+            raise ValueError("day of the month must be 1-31")
+        if (self.rule is PayRule.BIWEEKLY) != (self.anchor is not None):
+            raise ValueError("a first payday is needed exactly for fortnightly pay")
+
+
+def weekday_or_friday(day: date) -> date:
+    """A Saturday or Sunday payday moves back to the Friday before."""
+    return day - timedelta(days=max(0, day.weekday() - 4))
+
+
+def _month_end(year: int, month: int) -> date:
+    return date(year + (month == 12), month % 12 + 1, 1) - timedelta(days=1)
+
+
+def paydays(schedule: SalarySchedule, start: date, end: date) -> list[date]:
+    """Paydays in [start, end], after moving weekend paydays to Friday."""
+    found: list[date] = []
+    if schedule.anchor is not None:  # BIWEEKLY
+        anchor = schedule.anchor
+        # Nominal dates from a little before ``start`` (a Sunday payday shifts back 2 days).
+        n = (start - anchor).days // 14 - 1
+        while True:
+            nominal = anchor + timedelta(days=14 * n)
+            if nominal - timedelta(days=2) > end:
+                return found
+            day = weekday_or_friday(nominal)
+            if start <= day <= end:
+                found.append(day)
+            n += 1
+    year, month = start.year, start.month
+    while True:
+        last = _month_end(year, month)
+        if schedule.day is not None:  # MONTHLY_DAY
+            nominal = date(year, month, min(schedule.day, last.day))
+        else:
+            nominal = last
+        day = weekday_or_friday(nominal)
+        if day > end:
+            return found
+        if day >= start:
+            found.append(day)
+        year, month = (year + 1, 1) if month == 12 else (year, month + 1)
+
+
+def next_payday(schedule: SalarySchedule, today: date) -> date:
+    """The first payday on or after ``today``."""
+    return paydays(schedule, today, today + timedelta(days=62))[0]

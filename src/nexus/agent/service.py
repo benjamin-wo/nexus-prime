@@ -5,7 +5,7 @@ import logging
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import Any
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -16,15 +16,17 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
 from nexus.agent import kernel
-from nexus.agent.graph import RECEIPT, REF, WROTE, strip_ids, thread_id
+from nexus.agent.graph import BUTTONS, RECEIPT, REF, WROTE, strip_ids, thread_id
 from nexus.agent.receipts import ReceiptReader
 from nexus.agent.tools import UowFactory
 from nexus.application import bills as bill_cases
+from nexus.application import salary as salary_cases
 from nexus.application import splits as split_cases
 from nexus.application import transactions as tx_cases
 from nexus.application.users import get_user
-from nexus.domain.errors import NexusError
+from nexus.domain.errors import DuplicateSource, NexusError
 from nexus.domain.ledger import UserId
+from nexus.domain.money import Money
 from nexus.infra.llm.factory import text_of
 
 log = logging.getLogger(__name__)
@@ -102,7 +104,11 @@ class AgentService:
             (m for m in reversed(new) if isinstance(m, AIMessage) and not m.tool_calls), None
         )
         text = strip_ids(text_of(final.content)) if final else ""
-        return [Reply(text or "Done.", [[UNDO]] if wrote else [])]
+        extra = [
+            [Button(str(label), str(data)) for label, data in row]
+            for row in (final.additional_kwargs.get(BUTTONS) or [] if final else [])
+        ]
+        return [Reply(text or "Done.", extra + ([[UNDO]] if wrote else []))]
 
     async def _decline_pending(self, actor: UserId) -> bool:
         if await self._pending(actor) is None:
@@ -153,10 +159,40 @@ class AgentService:
             return await self.quick_action(actor, "undo")
         if data.startswith("qa:"):
             return await self.quick_action(actor, data.removeprefix("qa:"))
+        if data.startswith("salary:"):
+            return [await self._salary_button(actor, data.removeprefix("salary:"))]
         if data.startswith("bill:"):
             _, action, occurrence_id = [*data.split(":"), "", ""][:3]
             return [await self._bill_button(actor, action, occurrence_id)]
         return [Reply("I don't know that button.")]
+
+    async def _salary_button(self, actor: UserId, data: str) -> Reply:
+        """Payday check-in and usual-salary buttons. Each is the user's own answer."""
+        action, _, rest = data.partition(":")
+        user = await get_user(self._uow(), actor)
+        now = self._clock()
+        try:
+            match action:
+                case "log":
+                    day = date.fromisoformat(rest)
+                    tx = await salary_cases.log_payday_salary(self._uow, user, day, now=now)
+                    return Reply(f"Logged {tx.amount} salary. Enjoy payday! 🎉", [[UNDO]])
+                case "later":
+                    return Reply("No problem. Tell me once it's in, like 'salary 5000'.")
+                case "base":
+                    amount, _, currency = rest.partition(":")
+                    usual = Money.of(amount, currency)
+                    await salary_cases.set_baseline(self._uow(), user, usual, now=now)
+                    return Reply(f"Your usual salary is now {usual}.")
+                case "keep":
+                    return Reply("OK, I've kept your usual salary as it was.")
+        except DuplicateSource:
+            return Reply("Your salary for that payday is already logged.")
+        except ValueError:
+            pass
+        except NexusError as exc:
+            return Reply(str(exc).capitalize() + ".")
+        return Reply("I don't know that button.")
 
     async def _bill_button(self, actor: UserId, action: str, occurrence_id: str) -> Reply:
         """Mark paid / Snooze on a bill reminder. Records the user's word only; nothing

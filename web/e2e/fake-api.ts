@@ -26,7 +26,14 @@ export async function fakeApi(page: Page, { signedIn = true } = {}) {
     days_until: number;
     snoozed: boolean;
   };
-  const state: { txs: Tx[]; lastPress?: string; budgets: FakeBudget[]; bills: FakeBill[] } = {
+  type FakeSalary = { rule: string; day: number | null; anchor: string | null; usual: string | null };
+  const state: {
+    txs: Tx[];
+    lastPress?: string;
+    budgets: FakeBudget[];
+    bills: FakeBill[];
+    salary: FakeSalary | null;
+  } = {
     txs: [
       mk("t1", "out", "12.40", "Maxwell Food Centre", "food"),
       mk("t2", "out", "25.00", "Grab", null),
@@ -34,6 +41,7 @@ export async function fakeApi(page: Page, { signedIn = true } = {}) {
     ],
     budgets: [],
     bills: [],
+    salary: null,
   };
   const live = () => state.txs.filter((t) => !t.deleted);
   const json = (route: Route, body: unknown, status = 200) =>
@@ -154,6 +162,29 @@ export async function fakeApi(page: Page, { signedIn = true } = {}) {
     }
     if (path.startsWith("/budgets/") && method === "DELETE") {
       state.budgets = state.budgets.filter((b) => `/budgets/${b.id}` !== path);
+      return route.fulfill({ status: 204 });
+    }
+    if (path === "/salary" && method === "GET") {
+      const pay = state.salary;
+      if (!pay) return json(route, null);
+      return json(route, {
+        ...pay,
+        description: pay.rule === "monthly_day" ? `the ${pay.day}th of each month` : "the last weekday of each month",
+        usual: pay.usual ? { amount: Number(pay.usual).toFixed(4), currency: "SGD" } : null,
+        next_payday: "2026-10-23",
+        days_until: 25,
+      });
+    }
+    if (path === "/salary" && method === "PUT") {
+      state.salary = { rule: body.rule, day: body.day, anchor: body.anchor, usual: state.salary?.usual ?? null };
+      return route.fulfill({ status: 204 });
+    }
+    if (path === "/salary/usual" && method === "PUT" && state.salary) {
+      state.salary.usual = body.amount;
+      return route.fulfill({ status: 204 });
+    }
+    if (path === "/salary" && method === "DELETE") {
+      state.salary = null;
       return route.fulfill({ status: 204 });
     }
     if (path === "/bills" && method === "GET") return json(route, state.bills);

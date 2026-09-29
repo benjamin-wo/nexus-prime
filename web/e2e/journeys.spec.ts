@@ -195,23 +195,45 @@ test("set a budget, see how much is used, change and remove it", async ({ page }
   await page.goto("/");
   await page.getByRole("link", { name: "View budgets" }).click();
   await expect(page.getByRole("heading", { name: "Plan", level: 1 })).toBeVisible();
-  await expect(page.getByText("No budgets yet. Add one below.")).toBeVisible();
+  const budgets = page.getByRole("region", { name: "Budgets" });
+  await expect(budgets.getByText("No budgets yet. Add one below.")).toBeVisible();
 
-  await page.getByLabel("Budget for").selectOption({ label: "Food & Drink" });
-  await page.getByLabel("Monthly limit (SGD)").fill("100");
-  await page.getByRole("button", { name: "Add budget" }).click();
-  const meter = page.getByRole("meter", { name: "Food & Drink budget used" });
+  await budgets.getByLabel("Budget for").selectOption({ label: "Food & Drink" });
+  await budgets.getByLabel("Monthly limit (SGD)").fill("100");
+  await budgets.getByRole("button", { name: "Add budget" }).click();
+  const meter = budgets.getByRole("meter", { name: "Food & Drink budget used" });
   await expect(meter).toHaveAttribute("aria-valuetext", "90% used");
-  await expect(page.getByText(/90% used · SGD\s?10\.00 left/)).toBeVisible();
+  await expect(budgets.getByText(/90% used · SGD\s?10\.00 left/)).toBeVisible();
 
-  await page.getByRole("button", { name: "Change" }).click();
-  await page.getByLabel("Monthly limit (SGD)").first().fill("80");
-  await page.getByRole("button", { name: "Save" }).click();
-  await expect(page.getByText(/112% used · Over by SGD\s?10\.00/)).toBeVisible();
+  await budgets.getByRole("button", { name: "Change" }).click();
+  await budgets.getByLabel("Monthly limit (SGD)").first().fill("80");
+  await budgets.getByRole("button", { name: "Save" }).click();
+  await expect(budgets.getByText(/112% used · Over by SGD\s?10\.00/)).toBeVisible();
 
-  await page.getByRole("button", { name: "Remove" }).click();
-  await page.getByRole("button", { name: "Remove" }).click(); // confirm
-  await expect(page.getByText("No budgets yet. Add one below.")).toBeVisible();
+  await budgets.getByRole("button", { name: "Remove" }).click();
+  await budgets.getByRole("button", { name: "Remove" }).click(); // confirm
+  await expect(budgets.getByText("No budgets yet. Add one below.")).toBeVisible();
+});
+
+test("set when you're paid and your usual salary", async ({ page }) => {
+  await fakeApi(page);
+  await page.goto("/plan");
+  const payday = page.getByRole("region", { name: "Payday" });
+  const when = payday.getByRole("form", { name: "When you're paid" });
+  await when.getByLabel("I'm paid on").selectOption({ label: "A day of the month" });
+  await when.getByLabel("Day", { exact: true }).fill("25");
+  await when.getByRole("button", { name: "Save" }).click();
+  await expect(payday.getByRole("heading", { name: "Paid on the 25th of each month" })).toBeVisible();
+  await expect(payday.getByText(/Next payday: In 25 days/)).toBeVisible();
+
+  const usual = payday.getByRole("form", { name: "Usual salary" });
+  await usual.getByLabel(/Usual salary/).fill("5000");
+  await usual.getByRole("button", { name: "Save" }).click();
+  await expect(payday.getByText(/SGD\s?5,000\.00/)).toBeVisible();
+
+  await payday.getByRole("button", { name: "Remove" }).click();
+  await payday.getByRole("button", { name: "Remove" }).click(); // confirm
+  await expect(payday.getByRole("form", { name: "When you're paid" })).toBeVisible();
 });
 
 test("add a bill, snooze its reminders and stop tracking it", async ({ page }) => {

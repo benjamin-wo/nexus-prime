@@ -1,8 +1,9 @@
 import type { Me } from "../api";
 import { BillsSection } from "./Bills";
 import { BudgetsSection } from "./Budgets";
+import { PaydaySection } from "./Payday";
 
-/** Planning: budgets and bills (and, later, the salary schedule). */
+/** Planning: budgets, bills and payday. */
 export function Plan({ me }: { me: Me }) {
   return (
     <>
@@ -15,6 +16,7 @@ export function Plan({ me }: { me: Me }) {
       <div className="plan-grid">
         <BudgetsSection me={me} />
         <BillsSection me={me} />
+        <PaydaySection me={me} />
       </div>
     </>
   );

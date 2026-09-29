@@ -95,6 +95,15 @@ export type Bill = {
   days_until: number;
   snoozed: boolean;
 };
+export type Salary = {
+  rule: "monthly_day" | "last_weekday" | "biweekly";
+  day: number | null;
+  anchor: string | null;
+  description: string;
+  usual: Money | null;
+  next_payday: string;
+  days_until: number;
+};
 export type Reply = { text: string; buttons: { label: string; data: string }[][] };
 
 export type LedgerFilters = {

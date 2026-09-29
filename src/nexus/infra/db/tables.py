@@ -310,6 +310,27 @@ bill_occurrences = Table(
     CheckConstraint("reminded_offset IN (7, 3, 1)", name="reminded_offset"),
 )
 
+# When the user is paid, and their usual (confirmed) salary. One per user.
+salary_schedules = Table(
+    "salary_schedules",
+    metadata,
+    Column("user_id", UUID(as_uuid=True), primary_key=True),
+    Column("rule", Text, nullable=False),
+    Column("day", SmallInteger),
+    Column("anchor", Date),
+    Column("amount", MONEY),
+    Column("currency", CURRENCY),
+    Column("created_at", TZ, nullable=False),
+    Column("updated_at", TZ, nullable=False),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+    CheckConstraint("rule IN ('monthly_day', 'last_weekday', 'biweekly')", name="rule"),
+    CheckConstraint("(rule = 'monthly_day') = (day IS NOT NULL)", name="day_for_monthly"),
+    CheckConstraint("day IS NULL OR day BETWEEN 1 AND 31", name="day_range"),
+    CheckConstraint("(rule = 'biweekly') = (anchor IS NOT NULL)", name="anchor_for_biweekly"),
+    CheckConstraint("(amount IS NULL) = (currency IS NULL)", name="amount_with_currency"),
+    CheckConstraint("amount IS NULL OR amount > 0", name="amount_positive"),
+)
+
 # Background work. A job is claimed atomically (FOR UPDATE SKIP LOCKED) and
 # every job has a unique dedupe key, so none runs twice.
 jobs = Table(

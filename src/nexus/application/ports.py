@@ -27,7 +27,7 @@ from nexus.domain.ledger import (
     UserId,
 )
 from nexus.domain.money import Money
-from nexus.domain.planning import Bill, BillOccurrence, Budget
+from nexus.domain.planning import Bill, BillOccurrence, Budget, SalarySchedule
 
 
 class SortField(StrEnum):
@@ -204,6 +204,15 @@ class PlanningRepository(Protocol):
     async def save_occurrence(self, occurrence: BillOccurrence) -> BillOccurrence:
         """Insert, or update the row for the same bill and due date. Returns the stored row."""
         ...
+
+    # salary
+    async def get_salary_schedule(self, user_id: UserId) -> SalarySchedule | None: ...
+    async def save_salary_schedule(self, schedule: SalarySchedule) -> None:
+        """Insert or replace the user's schedule."""
+        ...
+
+    async def delete_salary_schedule(self, user_id: UserId) -> bool: ...
+    async def users_with_salary_schedules(self) -> list[UserId]: ...
 
 
 class JobQueue(Protocol):
