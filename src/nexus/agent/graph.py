@@ -89,7 +89,8 @@ class AgentDeps:
 
 
 def strip_ids(text: str) -> str:
-    return _ID.sub("", text)
+    """Drop transaction ids, and the ** bold markers that plain-text chats would show."""
+    return _ID.sub("", text).replace("**", "")
 
 
 def _last(messages: Sequence[BaseMessage], kind: type[BaseMessage]) -> Any:
@@ -172,7 +173,8 @@ class AgentGraph:
             "'received 50 from Ann' or 'salary 3000'.\n"
             "- Only bring up logging automatically from email when the user asks about "
             "automating their logging; never suggest it otherwise.\n"
-            "- Keep replies short and plain. Never show transaction ids.\n\n"
+            "- Keep replies short and plain. Never show transaction ids.\n"
+            "- Replies are shown as plain text, so never use markdown such as ** or #.\n\n"
             f"Skills (call load_skill for details):\n{self.deps.skill_index}"
         )
 

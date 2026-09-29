@@ -98,3 +98,10 @@ def test_not_termination(text: str) -> None:
 )
 def test_self_diagnosis(text: str) -> None:
     assert is_self_diagnosis(text)
+
+
+def test_replies_are_plain_text() -> None:
+    from nexus.agent.graph import strip_ids
+
+    reply = "Tap **Advanced**, then **Allow**. Logged [id 123e4567-e89b-12d3-a456-426614174000]"
+    assert strip_ids(reply) == "Tap Advanced, then Allow. Logged"
