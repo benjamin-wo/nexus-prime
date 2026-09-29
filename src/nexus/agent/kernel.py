@@ -18,6 +18,8 @@ _MONEY = (
 _NAME = r"(?P<name>[A-Za-z][A-Za-z .'-]{0,38}[A-Za-z]|[A-Za-z])"
 _NOT_A_PERSON = {"i", "we", "you", "me", "it", "they", "he", "she", "someone"}
 _TAIL = r"(?:\s+(?:for|as)\s+(?P<note>.{1,120}?))?\s*[.!]*"
+_WHEN = r"(?:\s+(?P<when>today|yesterday))?"
+_PAY = r"(?:salary|pay ?check|paycheque)"
 
 _TERMINATION = re.compile(
     r"^\s*(?:stop|cancel|never ?mind|forget it|abort|quit|that'?s (?:enough|all))\s*[.!]*\s*$",
@@ -63,8 +65,18 @@ _INCOME: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "salary",
         re.compile(
-            rf"^\s*(?:i\s+)?(?:got paid|salary|payday|pay ?check|paycheque)"
-            rf"(?:\s+(?:of|is|was|came in|:))?\s*:?\s*{_MONEY}\s*[.!]*$",
+            rf"^\s*(?:i\s+)?(?:got\s+)?(?:my\s+)?(?:got paid|salary|payday|pay ?check|paycheque)"
+            rf"(?:\s+(?P<when_first>today|yesterday))?"
+            rf"(?:\s+(?:of|is|was|came in|:))?\s*:?\s*{_MONEY}{_WHEN}\s*[.!]*$",
+            re.I,
+        ),
+    ),
+    (
+        # The amount first: "9397 as salary today", "5000 salary", "3k for my paycheck".
+        "salary",
+        re.compile(
+            rf"^\s*(?:i\s+(?:got|received)\s+)?{_MONEY}\s+(?:(?:as|for|is)\s+)?(?:my\s+)?"
+            rf"{_PAY}(?:\s+(?:came in|in))?{_WHEN}\s*[.!]*$",
             re.I,
         ),
     ),
@@ -72,7 +84,7 @@ _INCOME: tuple[tuple[str, re.Pattern[str]], ...] = (
         "income",
         re.compile(
             rf"^\s*(?:i\s+)?(?:received|got|earned|was reimbursed|got reimbursed|got refunded)"
-            rf"\s+{_MONEY}(?:\s+from\s+{_NAME})?{_TAIL}$",
+            rf"\s+{_MONEY}(?:\s+from\s+{_NAME})?{_WHEN}{_TAIL}$",
             re.I,
         ),
     ),
@@ -99,6 +111,10 @@ class IncomeIntent:
     amount: Money
     counterparty: str | None
     note: str | None
+    days_ago: int = 0  # "yesterday" is 1
+
+
+_DAY_WORDS = {"today": 0, "yesterday": 1}
 
 
 def is_termination(text: str) -> bool:
@@ -139,6 +155,12 @@ def parse_income(text: str, home_currency: str) -> IncomeIntent | None:
             continue
         groups = match.groupdict()
         name = (groups.get("name") or "").strip() or None
+        when = groups.get("when") or groups.get("when_first")
+        if name:
+            # "received 50 from Ann yesterday": the day isn't part of the name.
+            head, _, last = name.rpartition(" ")
+            if head and last.casefold() in _DAY_WORDS:
+                name, when = head.strip(), when or last
         if name and name.casefold() in _NOT_A_PERSON:
             return None
         try:
@@ -148,5 +170,10 @@ def parse_income(text: str, home_currency: str) -> IncomeIntent | None:
         if not amount.is_positive:
             return None
         note = (groups.get("note") or "").strip() or None
-        return IncomeIntent(IncomeKind(kind), amount, name, note)
+        if note:
+            head, _, last = note.rpartition(" ")
+            if head and last.casefold() in _DAY_WORDS:
+                note, when = head.strip(), when or last
+        days_ago = _DAY_WORDS.get((when or "").casefold(), 0)
+        return IncomeIntent(IncomeKind(kind), amount, name, note, days_ago)
     return None

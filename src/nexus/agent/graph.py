@@ -12,7 +12,7 @@ import logging
 import re
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Annotated, Any, Literal, TypedDict
 from uuid import UUID, uuid4
 
@@ -171,8 +171,9 @@ class AgentGraph:
             "- If an amount or which transaction is meant is unclear, ask one short question.\n"
             "- You never move money: no payments, transfers or cancelling subscriptions. "
             "Say so plainly if asked.\n"
-            "- You can't record income; ask the user to phrase it like "
-            "'received 50 from Ann' or 'salary 3000'.\n"
+            "- You can't record income yourself; income is recorded when the user says it "
+            "plainly, like 'salary 3000', '3000 as salary yesterday' or 'received 50 from "
+            "Ann'. If a message about income wasn't recorded, suggest one of those.\n"
             "- Only bring up logging automatically from email when the user asks about "
             "automating their logging; never suggest it otherwise.\n"
             "- Keep replies short and plain. Never show transaction ids.\n"
@@ -274,7 +275,7 @@ class AgentGraph:
                 tx_cases.NewTransaction(
                     direction=Direction.IN,
                     amount=income.amount,
-                    occurred_at=ctx.now,
+                    occurred_at=ctx.now - timedelta(days=income.days_ago),
                     counterparty=income.counterparty,
                     category_id=category,
                     notes=notes,

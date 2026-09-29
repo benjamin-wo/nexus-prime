@@ -1,5 +1,6 @@
 """Agent trajectories: a scripted model drives the real graph, tools and database."""
 
+from datetime import timedelta
 from decimal import Decimal
 
 import pytest
@@ -214,6 +215,17 @@ async def test_salary_is_recorded_deterministically(uow: UowFactory, alice: User
     page = await list_ledger(uow(), alice, LedgerQuery(direction=Direction.IN))
     assert page.items[0].notes == "Salary"
     assert page.items[0].amount == Money.of("4200", "SGD")
+
+
+async def test_salary_with_the_amount_first_and_a_day(uow: UowFactory, alice: UserId) -> None:
+    model = scripted()
+    agent = build(uow, model)
+    reply = only(await agent.handle_text(alice, "9397 as salary yesterday", "tg:1:1"))
+    assert reply.text == "Recorded 9397.00 SGD salary."
+    assert model.seen == []  # recorded without the model
+    [tx] = (await list_ledger(uow(), alice, LedgerQuery(direction=Direction.IN))).items
+    assert tx.amount == Money.of("9397", "SGD") and tx.notes == "Salary"
+    assert tx.occurred_at == NOW - timedelta(days=1)
 
 
 async def test_money_movement_is_refused_and_logged(
