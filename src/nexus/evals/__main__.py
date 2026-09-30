@@ -126,6 +126,9 @@ async def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--case", action="append", default=[], help="case id or id prefix")
     parser.add_argument("--area", action="append", default=[])
     parser.add_argument("--concurrency", type=int, default=4)
+    parser.add_argument(
+        "--vision-model", help="another model for receipt photos (default: each --model)"
+    )
     parser.add_argument("--out", default="eval-results")
     args = parser.parse_args(argv)
 
@@ -162,9 +165,13 @@ async def main(argv: list[str] | None = None) -> int:
                     concurrency=args.concurrency,
                     first_telegram_id=1_000_000 + offset * 10_000,
                     on_result=progress,
+                    vision=openrouter_model(args.vision_model, api_key)
+                    if args.vision_model
+                    else None,
                 )
                 print(flush=True)
-                summary = Summary(name, results, prices.get(name))
+                label = f"{name} + {args.vision_model} (photos)" if args.vision_model else name
+                summary = Summary(label, results, prices.get(name))
                 summaries.append(summary)
                 safe = name.replace("/", "_").replace(":", "_")
                 await _write(

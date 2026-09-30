@@ -100,6 +100,7 @@ class FakeReceipts:
         caption: str | None,
         *,
         categories: Sequence[str] = (),
+        today: date | None = None,
     ) -> ReceiptDraft:
         self.reads += 1
         self.categories = list(categories)

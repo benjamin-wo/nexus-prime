@@ -17,7 +17,7 @@ from langgraph.types import Command
 
 from nexus.agent import kernel
 from nexus.agent.graph import BUTTONS, RECEIPT, REF, WROTE, strip_ids, thread_id
-from nexus.agent.receipts import ReceiptReader
+from nexus.agent.receipts import ReceiptReader, caption_date
 from nexus.agent.tools import UowFactory
 from nexus.application import bills as bill_cases
 from nexus.application import category_rules as rule_cases
@@ -153,11 +153,17 @@ class AgentService:
             return [Reply("Reading receipt photos isn't set up yet. Type the amount instead.")]
         try:
             names = [c.name for c in await list_categories(self._uow(), actor)]
-            draft = await self._receipts.read(image, mime_type, caption, categories=names)
+            user = await get_user(self._uow(), actor)
+            today = self._clock().astimezone(ZoneInfo(user.timezone)).date()
+            draft = await self._receipts.read(
+                image, mime_type, caption, categories=names, today=today
+            )
         except Exception:
             log.exception("receipt reading failed")
             return [Reply("I couldn't read that photo right now. Type the amount instead.")]
         details = draft.model_dump()
+        if not details.get("date"):  # none printed: the caption may say ("from yesterday")
+            details["date"] = caption_date(caption, today)
         if self._archive is not None and draft.is_receipt and draft.amount:
             try:
                 stored = await receipt_cases.stash(

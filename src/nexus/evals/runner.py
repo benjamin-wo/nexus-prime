@@ -107,11 +107,18 @@ class CaseResult:
 class Agent:
     """The production agent wired to one model, for one case's user."""
 
-    def __init__(self, engine: AsyncEngine, model: BaseChatModel, photo_cache: Path) -> None:
+    def __init__(
+        self,
+        engine: AsyncEngine,
+        model: BaseChatModel,
+        photo_cache: Path,
+        vision: BaseChatModel | None = None,
+    ) -> None:
         self.engine = engine
         self.model = model
         self.photo_cache = photo_cache
-        self.receipts = LlmReceiptReader(model)  # the same model reads receipt photos
+        # Receipt photos: a separate model if given, like OPENROUTER_VISION_MODEL.
+        self.receipts = LlmReceiptReader(vision or model)
         self.skills = SkillLibrary.load()
         self.tools = build_tools(self.skills.body)
         self.new_conversation()
@@ -270,10 +277,11 @@ async def run_case(
     case: Case,
     telegram_id: int,
     photo_cache: Path = Path("eval-results/photos"),
+    vision: BaseChatModel | None = None,
 ) -> CaseResult:
     seeded = await seed.seed_user(lambda: SqlUnitOfWork(engine), telegram_id)
     user = seeded.user
-    agent = Agent(engine, model, photo_cache)
+    agent = Agent(engine, model, photo_cache, vision)
     world = World(agent.uow, user, frozenset(t.id for t in await World(
         agent.uow, user, frozenset()
     ).transactions()))  # fmt: skip
@@ -296,13 +304,16 @@ async def run_cases(
     concurrency: int = 4,
     first_telegram_id: int = 900_000,
     on_result: Callable[[CaseResult], None] | None = None,
+    vision: BaseChatModel | None = None,
 ) -> list[CaseResult]:
     """Run the cases, a few at a time, each as its own user."""
     gate = asyncio.Semaphore(concurrency)
 
     async def one(n: int, case: Case) -> CaseResult:
         async with gate:
-            result = await run_case(engine, model_for(case), case, first_telegram_id + n)
+            result = await run_case(
+                engine, model_for(case), case, first_telegram_id + n, vision=vision
+            )
         if on_result:
             on_result(result)
         return result

@@ -848,6 +848,7 @@ CASES: tuple[Case, ...] = (
         _t("how much did chatgpt cost me in sgd"),
         unchanged=True,
         reply=(("27.00", "27 "),),
+        target="M8c",  # the search tool shows only the USD amount
     ),
     # --- longer conversations -------------------------------------------------------------
     Case(
@@ -866,7 +867,8 @@ CASES: tuple[Case, ...] = (
     Case(
         "multi-delete-several",
         "multistep",
-        _t("delete all my grab rides from august"),
+        # Asking "delete all three?" first is fine: the user says yes.
+        _t("delete all my grab rides from august", "yes"),
         checks=(
             Deleted("Grab", date(2026, 8, 3)),
             Deleted("Grab", date(2026, 8, 8)),

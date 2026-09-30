@@ -52,7 +52,9 @@ def test_openrouter_can_read_receipts_with_another_model() -> None:
     assert models.vision is not None and model_name(models.vision) == "google/gemini-3.8-flash"
 
 
-def test_openrouter_needs_its_key_and_model() -> None:
+def test_openrouter_needs_its_key_and_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ("OPENROUTER_API_KEY", "OPENROUTER_MODEL"):
+        monkeypatch.delenv(name, raising=False)  # set in some shells: use none here
     with pytest.raises(LlmNotConfigured):
         build_chat_models(settings(llm_provider="openrouter", openrouter_model="a/b"))
     with pytest.raises(LlmNotConfigured):
