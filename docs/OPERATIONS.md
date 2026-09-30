@@ -163,6 +163,17 @@ AgentMail leaves out spam and mail that fails sender authentication. Anyone who 
 
 A missing encryption key stops startup when `AGENTMAIL_API_KEY` is set.
 
+## Evaluating the assistant
+
+`src/nexus/evals` scores models on how well the assistant does what users mean. About 100 made-up requests (logging, clarifying questions, income, questions about money, edits, planning, categories, safety, follow-ups and memory) each start from the same seeded user: two months of invented Singapore spending, a split dinner, a budget, bills, a pay schedule, a rule and a subscription, with "now" fixed at Monday 28 September 2026, 2pm. The real agent (kernel, graph, tools and confirmations, which are approved unless a case says otherwise) handles each case, and grading checks the tool calls, confirmations, replies and the data afterwards. Cases the current assistant can't do yet name the M8 part expected to fix them.
+
+```bash
+OPENROUTER_API_KEY=... EVAL_DATABASE_URL=postgresql://nexus:nexus@localhost:5432/postgres \
+  uv run python -m nexus.evals --model <openrouter model id> [--model ...] [--case q-] [--area ask]
+```
+
+It creates and drops its own database on that server, and writes a Markdown report and a JSON file per model to `eval-results/` (ignored by git): pass rate by area and by expected fix, reply time per turn, tokens and cost (from OpenRouter's public price list). The key is read from the environment and never printed. CI runs `tests/integration/test_evals.py` instead, with a scripted model: the cases are well formed, the seed's figures match what the cases expect, and grading passes and fails the right things. Real models are only called on demand.
+
 ## Deploy (Railway)
 
 The `nexus-app` service builds from the `Dockerfile`. Its settings live on the service in Railway, not in the repo (Railway no longer reads `railway.toml`):
