@@ -14,6 +14,7 @@ from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel
@@ -23,13 +24,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nexus.agent.graph import KERNEL, AgentDeps, AgentGraph, thread_id
+from nexus.agent.receipts import LlmReceiptReader
 from nexus.agent.service import AgentService, Reply
 from nexus.agent.skills import SkillLibrary
 from nexus.agent.tools import build_tools
 from nexus.application.fx import Rate
 from nexus.application.ports import UnitOfWork
 from nexus.domain.ledger import User
-from nexus.evals import seed
+from nexus.evals import photos, seed
 from nexus.evals.cases import Call, Case, Has, Turn
 from nexus.evals.checks import World
 from nexus.infra.db import tables
@@ -105,9 +107,18 @@ class CaseResult:
 class Agent:
     """The production agent wired to one model, for one case's user."""
 
-    def __init__(self, engine: AsyncEngine, model: BaseChatModel) -> None:
+    def __init__(
+        self,
+        engine: AsyncEngine,
+        model: BaseChatModel,
+        photo_cache: Path,
+        vision: BaseChatModel | None = None,
+    ) -> None:
         self.engine = engine
         self.model = model
+        self.photo_cache = photo_cache
+        # Receipt photos: a separate model if given, like OPENROUTER_VISION_MODEL.
+        self.receipts = LlmReceiptReader(vision or model)
         self.skills = SkillLibrary.load()
         self.tools = build_tools(self.skills.body)
         self.new_conversation()
@@ -132,7 +143,7 @@ class Agent:
             )
         ).compile(InMemorySaver())
         self.service = AgentService(
-            self.graph, self.uow, None, lambda: seed.NOW, None, FixedRates()
+            self.graph, self.uow, self.receipts, lambda: seed.NOW, None, FixedRates()
         )
 
     async def messages(self, user: User) -> list[BaseMessage]:
@@ -157,7 +168,11 @@ async def _turn(agent: Agent, user: User, turn: Turn, ref: str) -> TurnLog:
     log = TurnLog(turn.text)
     before = len(await agent.messages(user))
     started = time.perf_counter()
-    replies = await agent.service.handle_text(user.id, turn.text, ref)
+    if turn.photo:
+        image, media = await photos.load(turn.photo, agent.photo_cache)
+        replies = await agent.service.handle_photo(user.id, image, media, turn.text or None, ref)
+    else:
+        replies = await agent.service.handle_text(user.id, turn.text, ref)
     all_replies = list(replies)
     for _ in range(MAX_CONFIRMATIONS):
         data = _confirmation(replies, turn.approve)
@@ -257,11 +272,16 @@ async def grade(case: Case, turns: list[TurnLog], world: World, changed: bool) -
 
 
 async def run_case(
-    engine: AsyncEngine, model: BaseChatModel, case: Case, telegram_id: int
+    engine: AsyncEngine,
+    model: BaseChatModel,
+    case: Case,
+    telegram_id: int,
+    photo_cache: Path = Path("eval-results/photos"),
+    vision: BaseChatModel | None = None,
 ) -> CaseResult:
     seeded = await seed.seed_user(lambda: SqlUnitOfWork(engine), telegram_id)
     user = seeded.user
-    agent = Agent(engine, model)
+    agent = Agent(engine, model, photo_cache, vision)
     world = World(agent.uow, user, frozenset(t.id for t in await World(
         agent.uow, user, frozenset()
     ).transactions()))  # fmt: skip
@@ -284,13 +304,16 @@ async def run_cases(
     concurrency: int = 4,
     first_telegram_id: int = 900_000,
     on_result: Callable[[CaseResult], None] | None = None,
+    vision: BaseChatModel | None = None,
 ) -> list[CaseResult]:
     """Run the cases, a few at a time, each as its own user."""
     gate = asyncio.Semaphore(concurrency)
 
     async def one(n: int, case: Case) -> CaseResult:
         async with gate:
-            result = await run_case(engine, model_for(case), case, first_telegram_id + n)
+            result = await run_case(
+                engine, model_for(case), case, first_telegram_id + n, vision=vision
+            )
         if on_result:
             on_result(result)
         return result

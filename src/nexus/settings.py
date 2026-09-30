@@ -81,6 +81,11 @@ class Settings(BaseSettings):
     llm_fallback_model: str | None = None
     openrouter_api_key: SecretStr | None = None
     openrouter_model: str | None = None
+    # With LLM_PROVIDER=openrouter everything goes through OpenRouter, and Gemini is
+    # never used: fallbacks, tried in order (comma separated), and the model that
+    # reads receipt photos (unset = OPENROUTER_MODEL, which must then take images).
+    openrouter_fallback_models: tuple[str, ...] = ()
+    openrouter_vision_model: str | None = None
     deepseek_api_key: SecretStr | None = None
     deepseek_base_url: str = "https://api.deepseek.com/v1"
     deepseek_model: str = "deepseek-v4-flash"
@@ -110,6 +115,13 @@ class Settings(BaseSettings):
     @classmethod
     def _lowercase_provider(cls, value: object) -> object:
         return value.strip().lower() if isinstance(value, str) else value
+
+    @field_validator("openrouter_fallback_models", mode="before")
+    @classmethod
+    def _split_models(cls, value: object) -> object:
+        if isinstance(value, str):
+            return tuple(part.strip() for part in value.split(",") if part.strip())
+        return value
 
     @field_validator("telegram_allowed_user_ids", mode="before")
     @classmethod

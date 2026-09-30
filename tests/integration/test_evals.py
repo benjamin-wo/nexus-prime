@@ -16,7 +16,7 @@ from nexus.application import splits as split_cases
 from nexus.application import transactions as tx_cases
 from nexus.application.ports import LedgerQuery
 from nexus.domain.ledger import Direction
-from nexus.evals import seed
+from nexus.evals import photos, seed
 from nexus.evals.cases import CASES, WRITES, Case
 from nexus.evals.runner import FixedRates, run_cases
 from nexus.infra.db.uow import SqlUnitOfWork
@@ -31,11 +31,21 @@ def test_cases_are_well_formed() -> None:
     assert len(ids) == len(set(ids)) and len(ids) >= 100
     for case in CASES:
         assert case.turns, case.id
+        for turn in case.turns:
+            assert turn.photo is None or photos.known(turn.photo), (case.id, turn.photo)
         for wanted in case.calls:
             assert wanted.tool in tools, (case.id, wanted.tool)
             assert set(wanted.args) <= set(tools[wanted.tool].args.model_fields), case.id
         assert set(case.forbid) <= set(tools), case.id
-        has_expectation = case.calls or case.asks or case.unchanged or case.reply or case.checks
+        has_expectation = (
+            case.calls
+            or case.asks
+            or case.unchanged
+            or case.reply
+            or case.checks
+            or case.forbid
+            or case.confirms is not None
+        )
         assert has_expectation, f"{case.id} expects nothing"
     assert set(WRITES) <= set(tools)
 
@@ -63,6 +73,18 @@ async def test_the_seed_matches_the_figures_the_cases_expect(engine: AsyncEngine
     assert sum(t.amount.amount for t in weekend) == Decimal(seed.SEPT_WEEKEND_GRAB)
     august = [t for t in page.items if aug <= t.occurred_at < sept]
     assert sum(t.amount.amount for t in august) == Decimal(seed.AUG_GRAB)
+
+    # The harder questions' figures.
+    in_sept = await tx_cases.summarize_in_home(uow(), FixedRates(), user, sept, end)
+    received = next(t.total.amount for t in in_sept.totals if t.direction is Direction.IN)
+    assert received - Decimal(seed.SEPT_SPENT) == Decimal("4539.97")
+    assert Decimal(seed.DINING_BUDGET) - Decimal(seed.SEPT_DINING) == Decimal("156.10")
+    kopi = await tx_cases.list_ledger(uow(), user.id, LedgerQuery(search="kopitiam", start=sept))
+    assert sum(t.amount.amount for t in kopi.items) == Decimal("11.40")
+    shops = [t for t in (await tx_cases.list_ledger(uow(), user.id, LedgerQuery(limit=100))).items]
+    shopping = [t for t in shops if t.counterparty in {"Uniqlo", "Shopee"}]
+    assert sum(t.amount.amount for t in shopping) == Decimal("94.80")
+    assert len(grab) == 4
 
     ious = await split_cases.list_open_ious(uow(), user.id)
     ann = [i for i in ious if i.split.participant_name == "Ann"]
