@@ -1,7 +1,7 @@
 ---
 name: expenses
 description: Logging, finding, fixing, categorising and splitting expenses, category rules, and who owes what.
-tools: [log_expense, find_transactions, edit_transaction, delete_transaction, restore_transaction, undo_last_change, spending_summary, list_categories, add_category, rename_category, archive_category, merge_category, split_bill, list_ious, list_category_rules, set_category_rule, remove_category_rule, explain_category]
+tools: [log_expense, find_transactions, edit_transaction, delete_transaction, restore_transaction, undo_last_change, spending_summary, query_ledger, list_categories, add_category, rename_category, archive_category, merge_category, split_bill, list_ious, list_category_rules, set_category_rule, remove_category_rule, explain_category]
 ---
 # Expenses
 
@@ -14,6 +14,13 @@ tools: [log_expense, find_transactions, edit_transaction, delete_transaction, re
 - If the amount is missing or ambiguous ("lunch", "about 20 or 30"), ask one short
   question. Never guess an amount, currency or date.
 - A price in another currency keeps that currency ("15 USD"). Don't convert.
+
+## Questions
+- "how much on grab on weekends", "top 3 merchants in August", "average coffee",
+  "compare with last month", "what did chatgpt cost in SGD": `query_ledger`, one call
+  with the filters, grouping and comparison the question needs. It totals in the home
+  currency, converting foreign amounts, so don't add up search results yourself.
+- Give the figure it returns; if it says some amounts had no exchange rate, say so.
 
 ## Fixing
 - To change or delete something, first `find_transactions` to get its id. If several
