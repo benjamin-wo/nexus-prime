@@ -65,3 +65,13 @@ def test_gemini_setup_is_unchanged() -> None:
     models = build_chat_models(settings(llm_provider="gemini", gemini_api_key="g-key"))
     assert isinstance(models.primary, ChatGoogleGenerativeAI)
     assert models.vision is models.primary
+
+
+@pytest.mark.parametrize(
+    "raw",
+    ["qwen/qwen3.8-flash, z-ai/glm-5.3-flash", '["qwen/qwen3.8-flash", "z-ai/glm-5.3-flash"]'],
+)
+def test_fallbacks_read_from_the_environment(monkeypatch: pytest.MonkeyPatch, raw: str) -> None:
+    # As Railway sets it: an environment variable, plain or JSON.
+    monkeypatch.setenv("OPENROUTER_FALLBACK_MODELS", raw)
+    assert settings().openrouter_fallback_models == ("qwen/qwen3.8-flash", "z-ai/glm-5.3-flash")

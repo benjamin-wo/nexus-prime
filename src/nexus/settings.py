@@ -4,6 +4,7 @@ Settings fail closed: a required value that is missing or malformed stops the
 process instead of falling back to a default.
 """
 
+import json
 from enum import StrEnum
 from functools import lru_cache
 from typing import Annotated, Self
@@ -84,7 +85,7 @@ class Settings(BaseSettings):
     # With LLM_PROVIDER=openrouter everything goes through OpenRouter, and Gemini is
     # never used: fallbacks, tried in order (comma separated), and the model that
     # reads receipt photos (unset = OPENROUTER_MODEL, which must then take images).
-    openrouter_fallback_models: tuple[str, ...] = ()
+    openrouter_fallback_models: Annotated[tuple[str, ...], NoDecode] = ()
     openrouter_vision_model: str | None = None
     deepseek_api_key: SecretStr | None = None
     deepseek_base_url: str = "https://api.deepseek.com/v1"
@@ -119,8 +120,13 @@ class Settings(BaseSettings):
     @field_validator("openrouter_fallback_models", mode="before")
     @classmethod
     def _split_models(cls, value: object) -> object:
+        """Comma separated ("a/b, c/d") or a JSON list (["a/b", "c/d"])."""
         if isinstance(value, str):
-            return tuple(part.strip() for part in value.split(",") if part.strip())
+            text = value.strip()
+            if text.startswith("["):
+                parsed = json.loads(text)
+                return tuple(str(v).strip() for v in parsed if str(v).strip())
+            return tuple(part.strip() for part in text.split(",") if part.strip())
         return value
 
     @field_validator("telegram_allowed_user_ids", mode="before")
