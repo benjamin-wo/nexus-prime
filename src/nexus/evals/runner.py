@@ -288,7 +288,12 @@ async def grade(case: Case, turns: list[TurnLog], world: World, changed: bool) -
     if case.max_reply is not None and len(last.last_reply) > case.max_reply:
         failures.append(f"reply longer than {case.max_reply} characters")
     for check in case.checks:
-        if not await check.holds(world):
+        try:
+            held = await check.holds(world)
+        except Exception as exc:  # one broken check fails its case, not the run
+            failures.append(f"couldn't check {check.describe()}: {type(exc).__name__}")
+            continue
+        if not held:
             failures.append(f"expected {check.describe()}")
     return failures
 

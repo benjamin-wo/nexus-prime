@@ -2,6 +2,7 @@
 to what Nexus remembers. It never sees tool results, emails or receipts, so a
 memory can only come from something the user said."""
 
+import asyncio
 import logging
 from collections.abc import Callable, Sequence
 from datetime import date, datetime
@@ -25,6 +26,10 @@ type UowFactory = Callable[[], UnitOfWork]
 KNOWN_LASTING = 60  # existing facts and preferences shown to the writer
 KNOWN_EPISODES = 10  # and episodes that match the message
 MAX_CHANGES = 5
+# A reply is a few short changes. Models now and then run away inside JSON (pages of
+# whitespace), so the reply is capped in length and time; a capped reply is retried.
+MAX_OUTPUT_TOKENS = 500
+TIMEOUT_SECONDS = 30
 
 _PROMPT = """You keep the long-term memory of Nexus, a personal finance assistant.
 Read the user's newest message and decide whether anything in it is worth remembering in
@@ -91,6 +96,8 @@ def _changes(update: MemoryUpdate, known: Sequence[Memory]) -> list[MemoryChange
 
 class MemoryWriter:
     def __init__(self, model: BaseChatModel) -> None:
+        if "max_tokens" in getattr(type(model), "model_fields", {}):
+            model = model.model_copy(update={"max_tokens": MAX_OUTPUT_TOKENS})
         self._model = model.with_structured_output(MemoryUpdate, include_raw=True)
         # Tokens used so far, for the evaluation runner's cost figures.
         self.input_tokens = 0
@@ -121,8 +128,11 @@ class MemoryWriter:
         )
         for attempt in (1, 2):  # a reply that doesn't parse gets one more try
             try:
-                reply = await self._model.ainvoke(
-                    [SystemMessage(content=system), HumanMessage(content=content)]
+                reply = await asyncio.wait_for(
+                    self._model.ainvoke(
+                        [SystemMessage(content=system), HumanMessage(content=content)]
+                    ),
+                    TIMEOUT_SECONDS,
                 )
                 result: dict[str, Any] = reply if isinstance(reply, dict) else {"parsed": reply}
                 usage = getattr(result.get("raw"), "usage_metadata", None) or {}
