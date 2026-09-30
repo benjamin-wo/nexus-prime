@@ -39,6 +39,7 @@ A clean start removes almost all of that. The plan therefore keeps the old **pro
   - refusal of unsupported transactions (payments, transfers) plus logging of capability gaps
   - self-diagnosis
 - Human-in-the-loop confirmation for consequential writes, using LangGraph `interrupt()` and resume. Telegram shows buttons; the web shows a dialog.
+- Memory of four kinds (M8): in-context (the conversation and a snapshot of the user's money), semantic (facts about the user), procedural (how they like things done) and episodic (what happened, when). Nexus keeps it quietly, without announcing it; users can see and delete it in Settings.
 
 ### New features (owner-approved)
 - Monthly budgets, overall and per category, with 50/80/100% alerts and no rollover.
@@ -230,14 +231,30 @@ Every milestone ends deployed to Railway and usable. Development is test-first: 
 - Recurrence proposals (3 matches), subscription tracking with price-change flags, and the cash-flow calendar showing net movement only.
   - **M7a** recurrence and subscriptions: three regular (weekly, monthly or yearly), similar charges from one merchant are proposed once (**Track it / No**); tracked ones follow new charges and flag a price change; a "no" is never asked again; the Plan page lists them with a monthly total. **M7b** the cash-flow calendar: a Cash flow page, month by month, with each day's logged in, out and net in the home currency, and from today on what's expected (bills not yet marked paid, tracked subscriptions, payday with the usual salary); items without an amount are listed but not counted; never a balance. A `cash_flow` chat tool covers "what's coming up?". Alongside M7b, **every expense gets a category**: eleven defaults (migration 0014 renames Food & Drink and Entertainment, adds the rest), a fallback to Other or Income, the model and receipt/email readers guessing from the user's own categories, and add/rename/archive in chat and a Categories card on the Plan page. Still open in M7: a persistent rate cache if lookups become a cost.
 
-### M8 — Statement import
+### M8 — A smarter assistant
+The goal: replies that follow what the user means, not the phrasing they used. The model decides and chains tools; it knows the user's current money picture and remembers them across conversations; and the guarantees stay where they are (tenant from the principal, confirmation before every change, no money movement, numbers only from tools, exact money). Shipped in parts, each judged by the evaluation set from M8a.
+
+- **M8a — Measure first.** An evaluation set of about 80 realistic, made-up phrasings (the repo is public: no real data), each with its expected outcome: the tool and key arguments, a clarifying question, or a refusal. Also multi-turn cases (a follow-up that relies on the previous answer) and memory cases (a preference stated earlier). An on-demand runner scores any model through OpenRouter, using the key from the environment (never stored in the repo or logs), with pass rate, latency and cost per reply. A cheap CI check keeps prompts and tool schemas valid. Baseline: today's production model, plus several candidates.
+- **M8b — In-context memory.** Each turn starts with a short, capped snapshot: the month's spent and received with top categories, budget usage, bills, subscriptions and payday in the next 7 days, open IOUs, and the last 5 transactions (no ids). Conversations longer than the message window keep a rolling summary of what came before, so a long thread doesn't lose its thread.
+- **M8c — Ask anything about the ledger.** A read-only `query_ledger` tool with structured arguments, never SQL from the model: filters (dates, merchant text, category, direction, amount range, weekday or weekend, source), grouping (category, merchant, day, week, month, weekday), measures (total, count, average, largest), top N, and an optional comparison with the previous period. Built from an allow-list, scoped to the acting user, converted to the home currency, capped in rows.
+- **M8d — Offer only the tools a request needs, and loosen the kernel.** A core set of about a dozen tools is always offered; the rest arrive with their skill (budgets, bills, email…), so the model chooses from a short, relevant list. The kernel keeps its exact fast paths (plain income, stop, receipts, self-diagnosis); money-movement refusals fire only on unmistakable transfer or payment requests ("pay rent 1800 on the 1st" becomes a bill question, not a refusal). There is no tool that moves money, so the model can't either.
+- **M8e — Long-term memory.** After each conversation turn, a background job (a small, cheap model) reads the user's own messages and quietly updates three stores; the assistant never announces it.
+  - Semantic: facts about the user and their world ("Ann is my sister", "salary comes from ACME", "SIM-only plan with Singtel").
+  - Procedural: how they like things done ("split dinners with Ann 50/50", "'the usual' means kopi 1.80", "keep replies short"). Category rules stay the way filing is learned.
+  - Episodic: dated summaries of what happened ("27 Sep: the 42.10 Grab ride was for work"), found again by relevance and recency.
+  - Relevant memories are given to the model each turn, capped. A newer fact replaces the one it contradicts; "forget that" removes it. Memories come only from the user's own words, never from emails, receipts or tool output, and they're treated as information, not instructions. Memory shapes answers and suggestions; any change to data still asks first. A Settings card, "What Nexus remembers", lists everything with delete.
+  - Storage: Postgres, per-user like every other table. Retrieval starts with full-text search plus recency; embeddings (pgvector) only if the evaluation shows a need.
+- **M8f — Choose the model by the numbers.** Rerun the evaluation set on the finished system across several OpenRouter models and pick the best balance of pass rate, speed and cost, with a fallback chain. The memory job gets its own cheaper model.
+- **Done when:** the evaluation set passes at about 90% or better (up from the M8a baseline), every existing test passes, and reply time and cost per reply are recorded before and after.
+
+### M9 — Statement import
 - CSV first, with saved column mappings per bank. Then PDF with OCR.
 - Flow: upload → parse → preview (flagged duplicates and unclear rows) → confirm → save. Nothing is saved without confirmation, and income from a statement is never auto-classified as salary.
 
-### M9 — Hardening
+### M10 — Hardening
 - Security review, load checks on the job runner, a backup and restore drill for the new database, and runbook docs.
 
-**Suggested order:** M0–M3 first. That replaces the old bot with better foundations and your history intact. M4–M8 then add features one by one, each shipped as it lands.
+**Suggested order:** M0–M3 first. That replaces the old bot with better foundations and your history intact. M4–M9 then add features one by one, each shipped as it lands.
 
 ---
 

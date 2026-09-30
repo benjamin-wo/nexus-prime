@@ -151,9 +151,7 @@ The build follows [`docs/PLAN.md`](docs/PLAN.md). Each milestone ships to produc
 
 - **Done:** foundations, ledger and agent, Telegram, the migration from the old bot, the web cockpit, multi-currency, the job runtime, budgets, bills, payday, category rules, the receipt archive, Connect Gmail and forwarding addresses, subscriptions and the cash-flow calendar.
 - **Next:**
-  - forwarding receipts from any mail provider;
-  - recurring-spend and subscription detection;
-  - a cash-flow calendar;
+  - a smarter assistant: a view of your money in every reply, questions about any part of the ledger, and memory of you across conversations (episodic, semantic and procedural), with the model chosen by an evaluation set;
   - bank statement import (CSV, then PDF);
   - a hardening pass: security review, load tests and a restore drill.
 
