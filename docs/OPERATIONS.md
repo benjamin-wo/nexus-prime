@@ -36,7 +36,7 @@ The channel is on when `TELEGRAM_BOT_TOKEN` is set, which then also requires `TE
 
 The app never registers its own webhook, so deploying it can't take a bot away from another service. `python -m nexus.channels.telegram.register` shows the current webhook and, with `--yes`, points the bot here. See [`CUTOVER.md`](CUTOVER.md) for moving from the old bot, including the one-time history import (`python -m nexus.legacy`).
 
-The model comes from `LLM_PROVIDER` (`gemini`, `openrouter`, `deepseek` or `openai`) with the matching key, plus an optional Gemini `LLM_FALLBACK_MODEL`. Receipt photos are read by Gemini. With Telegram on and no usable model configured, the app refuses to start.
+The model comes from `LLM_PROVIDER` (`openrouter`, `gemini`, `deepseek` or `openai`) with the matching key. With `openrouter`, everything goes through OpenRouter and Gemini is never used, even if a Gemini key is set: `OPENROUTER_MODEL` chats and reads emails, `OPENROUTER_FALLBACK_MODELS` (comma separated) are tried in order if it fails, and `OPENROUTER_VISION_MODEL` reads receipt photos (unset: `OPENROUTER_MODEL`, which must then accept images). With the other providers, the optional fallback is a Gemini `LLM_FALLBACK_MODEL` and receipt photos are read by Gemini. The "are you working?" reply names the model in use. With Telegram on and no usable model configured, the app refuses to start.
 
 ## Web access
 

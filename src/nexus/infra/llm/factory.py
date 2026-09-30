@@ -68,13 +68,7 @@ def _provider_model(settings: Settings, provider: LlmProvider) -> BaseChatModel:
         case LlmProvider.OPENROUTER:
             if not settings.openrouter_model:
                 raise LlmNotConfigured("OPENROUTER_MODEL is not set")
-            return _openai_compatible(
-                settings,
-                model=settings.openrouter_model,
-                api_key=settings.openrouter_api_key,
-                base_url="https://openrouter.ai/api/v1",
-                name="OpenRouter",
-            )
+            return _openrouter(settings, settings.openrouter_model)
         case LlmProvider.DEEPSEEK:
             return _openai_compatible(
                 settings,
@@ -93,13 +87,33 @@ def _provider_model(settings: Settings, provider: LlmProvider) -> BaseChatModel:
             )
 
 
+def _openrouter(settings: Settings, model: str) -> BaseChatModel:
+    return _openai_compatible(
+        settings,
+        model=model,
+        api_key=settings.openrouter_api_key,
+        base_url="https://openrouter.ai/api/v1",
+        name="OpenRouter",
+    )
+
+
 def build_chat_models(settings: Settings) -> ChatModels:
     """Build from settings, or raise LlmNotConfigured.
 
-    The fallback is LLM_FALLBACK_MODEL on Gemini, when a Gemini key is set.
-    Receipts are read by Gemini, which handles images.
+    On OpenRouter everything goes through OpenRouter: OPENROUTER_FALLBACK_MODELS in
+    order, and receipts read by OPENROUTER_VISION_MODEL (default: the main model).
+    Otherwise the fallback is LLM_FALLBACK_MODEL on Gemini, when a Gemini key is set,
+    and receipts are read by Gemini.
     """
     primary = _provider_model(settings, settings.llm_provider)
+    if settings.llm_provider is LlmProvider.OPENROUTER:
+        main = settings.openrouter_model
+        routed = tuple(
+            _openrouter(settings, m) for m in settings.openrouter_fallback_models if m != main
+        )
+        reader = settings.openrouter_vision_model
+        eyes = _openrouter(settings, reader) if reader else primary
+        return ChatModels(primary, routed, eyes, f"OpenRouter {main}")
     fallbacks: list[BaseChatModel] = []
     if settings.gemini_api_key is not None and settings.llm_fallback_model:
         is_same = (
@@ -120,13 +134,7 @@ def build_screener(settings: Settings, primary: BaseChatModel) -> BaseChatModel:
     """The cheap model that screens emails: EMAIL_CLASSIFIER_MODEL on OpenRouter when
     set, otherwise the main model."""
     if settings.email_classifier_model and settings.openrouter_api_key is not None:
-        return _openai_compatible(
-            settings,
-            model=settings.email_classifier_model,
-            api_key=settings.openrouter_api_key,
-            base_url="https://openrouter.ai/api/v1",
-            name="OpenRouter",
-        )
+        return _openrouter(settings, settings.email_classifier_model)
     return primary
 
 
