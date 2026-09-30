@@ -106,10 +106,13 @@ class AgentService:
 
     async def _run(self, actor: UserId, payload: Any) -> list[Reply]:
         config = self._config(actor)
-        before = len((await self._graph.aget_state(config)).values.get("messages", []))
+        # By id, not position: a long conversation drops its oldest messages mid-turn.
+        seen = {m.id for m in (await self._graph.aget_state(config)).values.get("messages", [])}
         await self._graph.ainvoke(payload, config)
         state = await self._graph.aget_state(config)
-        new: list[BaseMessage] = state.values.get("messages", [])[before:]
+        new: list[BaseMessage] = [
+            m for m in state.values.get("messages", []) if m.id is None or m.id not in seen
+        ]
         pending = await self._pending(actor)
         if pending is not None:
             pid, summary = pending

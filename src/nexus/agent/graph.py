@@ -13,7 +13,7 @@ import re
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Annotated, Any, Literal, TypedDict
+from typing import Annotated, Any, Literal, NotRequired, TypedDict
 from uuid import UUID, uuid4
 
 from langchain_core.language_models import BaseChatModel
@@ -22,6 +22,7 @@ from langchain_core.messages import (
     AnyMessage,
     BaseMessage,
     HumanMessage,
+    RemoveMessage,
     SystemMessage,
     ToolMessage,
 )
@@ -33,6 +34,7 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command, interrupt
 
 from nexus.agent import kernel
+from nexus.agent.snapshot import money_snapshot
 from nexus.agent.tools import ToolContext, ToolSpec, UowFactory, run_tool
 from nexus.application import income as income_cases
 from nexus.application.categories import list_categories
@@ -50,6 +52,10 @@ log = logging.getLogger(__name__)
 _END: Literal["__end__"] = "__end__"
 MAX_STEPS = 8
 HISTORY_LIMIT = 40
+# Past HISTORY_LIMIT messages, all but about the last KEEP are condensed into a
+# rolling summary and dropped from the conversation.
+KEEP = 20
+SUMMARY_WORDS = 150
 _ID = re.compile(r"\s*\[id [0-9a-f-]{36}\]")
 
 WROTE = "nexus_wrote"
@@ -71,6 +77,8 @@ REFUSALS = {
 class AgentState(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]
     steps: int
+    snapshot: NotRequired[str]  # the user's money picture, built once per turn
+    summary: NotRequired[str]  # what came before the messages kept
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,7 +154,7 @@ class AgentGraph:
             forward_address=self.deps.forward_address,
         )
 
-    async def _prompt(self, ctx: ToolContext) -> str:
+    async def _prompt(self, ctx: ToolContext, state: AgentState) -> str:
         local = ctx.now.astimezone(ctx.tz)
         cats = await list_categories(ctx.uow(), ctx.user.id)
         rules = await list_rules(ctx.uow(), ctx.user.id)
@@ -180,6 +188,15 @@ class AgentGraph:
             "- Keep replies short and plain. Never show transaction ids.\n"
             "- Replies are shown as plain text, so never use markdown such as ** or #.\n\n"
             f"Skills (call load_skill for details):\n{self.deps.skill_index}"
+            + _section(
+                "The user's money right now, from their own data. Use it directly for "
+                "quick answers; call tools for anything more detailed or older",
+                state.get("snapshot", ""),
+            )
+            + _section(
+                "Earlier in this conversation (a summary; the messages themselves are gone)",
+                state.get("summary", ""),
+            )
         )
 
     # --- nodes ------------------------------------------------------------------------
@@ -205,7 +222,48 @@ class AgentGraph:
         if intent is not None:
             await log_capability_gap(ctx.uow(), ctx.user.id, text, intent, "telegram")
             return _reply(REFUSALS[intent])
-        return Command(goto="agent", update={"steps": 0})
+        update: dict[str, Any] = {"steps": 0, "snapshot": await money_snapshot(ctx)}
+        update.update(await self._condense(state))
+        return Command(goto="agent", update=update)
+
+    async def _condense(self, state: AgentState) -> dict[str, Any]:
+        """Past HISTORY_LIMIT messages, fold the older ones into the summary."""
+        messages = state["messages"]
+        if len(messages) <= HISTORY_LIMIT:
+            return {}
+        # Keep about the last KEEP, starting at a user message so no tool result
+        # loses the call it answers. The newest message is always kept.
+        cut = next(
+            (
+                i
+                for i in range(len(messages) - KEEP, len(messages))
+                if isinstance(messages[i], HumanMessage)
+            ),
+            len(messages) - 1,
+        )
+        older = messages[:cut]
+        transcript = "\n".join(_line(m) for m in older)
+        request = (
+            f"Update the running summary of a chat between a user and Nexus, their "
+            f"personal finance assistant. Keep what the user said about themselves, "
+            f"people, plans and preferences; decisions made; amounts, dates and "
+            f"merchants they may refer back to; and anything left unanswered. Leave "
+            f"out greetings and anything routine. At most {SUMMARY_WORDS} words, "
+            f"plain text.\n\nSummary so far:\n{state.get('summary') or '(none)'}\n\n"
+            f"Messages to add:\n{transcript}"
+        )
+        try:
+            reply = await self.deps.primary.ainvoke([HumanMessage(content=request)])
+        except Exception:
+            log.exception("could not summarise the conversation; keeping it as is")
+            return {}
+        summary = text_of(reply.content)
+        if not summary:
+            return {}
+        return {
+            "summary": summary,
+            "messages": [RemoveMessage(id=m.id) for m in older if m.id],
+        }
 
     def _receipt(self, ctx: ToolContext, draft: dict[str, Any], ref: str | None) -> Command[Any]:
         amount = draft.get("amount")
@@ -268,7 +326,8 @@ class AgentGraph:
                 "Sorry, that's taking too many steps. Could you break it into smaller requests?"
             )
         ctx = await self._context(config)
-        prompt = [SystemMessage(content=await self._prompt(ctx)), *_trim(state["messages"])]
+        system = await self._prompt(ctx, state)
+        prompt = [SystemMessage(content=system), *_trim(state["messages"])]
         try:
             response = await self._model.ainvoke(prompt)
         except Exception:
@@ -365,6 +424,22 @@ class AgentGraph:
         graph.add_edge(START, "kernel")
         graph.add_edge("kernel_reply", END)
         return graph.compile(checkpointer=checkpointer)
+
+
+def _section(title: str, body: str) -> str:
+    return f"\n\n{title}:\n{body}" if body else ""
+
+
+def _line(message: BaseMessage) -> str:
+    """One line of transcript for the summariser; tool results kept short."""
+    text = strip_ids(text_of(message.content)).replace("\n", " ")
+    if isinstance(message, HumanMessage):
+        return f"User: {text}"
+    if isinstance(message, ToolMessage):
+        return f"(tool result: {text[:200]})"
+    if isinstance(message, AIMessage) and message.tool_calls and not text:
+        return "(Nexus used " + ", ".join(c["name"] for c in message.tool_calls) + ")"
+    return f"Nexus: {text}"
 
 
 def thread_id(actor: UserId) -> str:

@@ -166,7 +166,7 @@ async def _turn(agent: Agent, user: User, turn: Turn, ref: str) -> TurnLog:
     if turn.new_conversation:
         agent.new_conversation()
     log = TurnLog(turn.text)
-    before = len(await agent.messages(user))
+    before = {m.id for m in await agent.messages(user)}  # by id: long chats drop old ones
     started = time.perf_counter()
     if turn.photo:
         image, media = await photos.load(turn.photo, agent.photo_cache)
@@ -184,7 +184,7 @@ async def _turn(agent: Agent, user: User, turn: Turn, ref: str) -> TurnLog:
     log.seconds = time.perf_counter() - started
     log.replies = [r.text for r in all_replies]
     log.model_down = any(r.text.startswith(MODEL_DOWN) for r in all_replies)
-    for message in (await agent.messages(user))[before:]:
+    for message in [m for m in await agent.messages(user) if m.id not in before]:
         if not isinstance(message, AIMessage) or message.additional_kwargs.get(KERNEL):
             continue
         log.calls.extend((c["name"], dict(c["args"])) for c in message.tool_calls)
