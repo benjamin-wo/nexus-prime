@@ -114,6 +114,9 @@ def _as_json(result: CaseResult) -> dict[str, object]:
                 "seconds": round(t.seconds, 2),
                 "input_tokens": t.input_tokens,
                 "output_tokens": t.output_tokens,
+                "memory_input_tokens": t.memory_input_tokens,
+                "memory_output_tokens": t.memory_output_tokens,
+                "memory_failed": t.memory_failed,
             }
             for t in result.turns
         ],
@@ -129,6 +132,9 @@ async def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--vision-model", help="another model for receipt photos (default: each --model)"
     )
+    parser.add_argument(
+        "--memory-model", help="another model for the memory writer (default: each --model)"
+    )
     parser.add_argument("--out", default="eval-results")
     args = parser.parse_args(argv)
 
@@ -140,7 +146,7 @@ async def main(argv: list[str] | None = None) -> int:
         sys.exit("EVAL_DATABASE_URL is not set")
 
     cases = _pick(args.case, args.area)
-    prices = await pricing(args.model)
+    prices = await pricing([*args.model, *([args.memory_model] if args.memory_model else [])])
     out = Path(args.out)
     await asyncio.to_thread(out.mkdir, parents=True, exist_ok=True)
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
@@ -168,10 +174,18 @@ async def main(argv: list[str] | None = None) -> int:
                     vision=openrouter_model(args.vision_model, api_key)
                     if args.vision_model
                     else None,
+                    memory=openrouter_model(args.memory_model, api_key)
+                    if args.memory_model
+                    else None,
                 )
                 print(flush=True)
-                label = f"{name} + {args.vision_model} (photos)" if args.vision_model else name
-                summary = Summary(label, results, prices.get(name))
+                label = name
+                if args.vision_model:
+                    label += f" + {args.vision_model} (photos)"
+                if args.memory_model:
+                    label += f" + {args.memory_model} (memory)"
+                memory_price = prices.get(args.memory_model) if args.memory_model else None
+                summary = Summary(label, results, prices.get(name), memory_price)
                 summaries.append(summary)
                 safe = name.replace("/", "_").replace(":", "_")
                 await _write(
