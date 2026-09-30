@@ -69,7 +69,7 @@ Budget alerts, bill reminders and the payday check-in run on a Postgres-backed j
 
 ## Categories
 
-New users get eleven defaults: Dining Out, Groceries, Transport, Shopping, Bills & Utilities, Socialising, Health, Travel, Activities, Income and Other. Migration 0014 gives existing users the same set: Food & Drink becomes Dining Out and Entertainment becomes Activities (unless the user already has a category by the new name), and missing defaults are added. Names are unique per user regardless of case; a clash is a 409.
+New users get eleven defaults: Dining Out, Groceries, Transport, Shopping, Bills & Utilities, Socialising, Health, Travel, Activities, Income and Other. Migration 0014 gives existing users the same set: Food & Drink becomes Dining Out and Entertainment becomes Activities (unless the user already has a category by the new name), and missing defaults are added. Migration 0015 folds the old bot's Dining into Dining Out and General into Other: their transactions and rules move over (a budget too, unless the new category already has one), and the old category is archived. No undo history is written for it. Names are unique per user regardless of case; a clash is a 409.
 
 Every new transaction gets a category, in this order: the one the user named, a matching rule, the model's (or the receipt or email reader's) best guess from the user's own categories, then Other for spending and Income for money in. Archived categories aren't used. Transactions logged before 0014 without a category keep none.
 

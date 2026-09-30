@@ -1,7 +1,7 @@
 """Every transaction gets a category, the new defaults reach existing users, and
 users can add, rename and archive their own."""
 
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import text
@@ -65,6 +65,88 @@ async def test_existing_users_get_the_new_defaults(empty_database_url: str) -> N
     assert "Food & Drink" in ben_names and "dining out" in ben_names
     assert "Dining Out" not in ben_names  # no duplicate of his own
     assert {"Activities", "Socialising", "Health"} <= set(ben_names)
+
+
+async def test_the_old_bots_dining_and_general_fold_into_the_defaults(
+    empty_database_url: str,
+) -> None:
+    await upgrade(empty_database_url, "0014")
+    engine = make_engine(empty_database_url)
+    ann, ben = uuid4(), uuid4()
+    cat = {
+        name: uuid4()
+        for name in ("ann:Dining", "ann:Dining Out", "ann:General", "ann:Other", "ben:dining")
+    }
+    spent = [uuid4(), uuid4(), uuid4()]
+    rule = uuid4()
+    try:
+        async with engine.begin() as db:
+            for n, user in enumerate((ann, ben)):
+                await db.execute(
+                    text(
+                        "INSERT INTO users (id, telegram_user_id, timezone, home_currency, role) "
+                        "VALUES (:id, :tg, 'Asia/Singapore', 'SGD', 'owner')"
+                    ),
+                    {"id": user, "tg": 200 + n},
+                )
+            for key, cid in cat.items():
+                owner, name = key.split(":")
+                await db.execute(
+                    text("INSERT INTO categories (id, user_id, name) VALUES (:id, :u, :n)"),
+                    {"id": cid, "u": ann if owner == "ann" else ben, "n": name},
+                )
+            for tx, (user, category) in zip(
+                spent,
+                [(ann, cat["ann:Dining"]), (ann, cat["ann:General"]), (ben, cat["ben:dining"])],
+                strict=True,
+            ):
+                await db.execute(
+                    text(
+                        "INSERT INTO transactions (id, user_id, direction, amount, currency, "
+                        "occurred_at, category_id, status, source, created_at, updated_at) "
+                        "VALUES (:id, :u, 'out', 5, 'SGD', now(), :c, 'confirmed', 'text', "
+                        "now(), now())"
+                    ),
+                    {"id": tx, "u": user, "c": category},
+                )
+            await db.execute(
+                text(
+                    "INSERT INTO category_rules (id, user_id, pattern, category_id, explanation, "
+                    "created_at, updated_at) VALUES (:id, :u, 'kopi', :c, 'x', now(), now())"
+                ),
+                {"id": rule, "u": ann, "c": cat["ann:Dining"]},
+            )
+            # Ann budgets Dining; General and Other both have budgets already.
+            for category in (cat["ann:Dining"], cat["ann:General"], cat["ann:Other"]):
+                await db.execute(
+                    text(
+                        "INSERT INTO budgets (id, user_id, category_id, amount, currency, "
+                        "created_at, updated_at) VALUES (:id, :u, :c, 100, 'SGD', now(), now())"
+                    ),
+                    {"id": uuid4(), "u": ann, "c": category},
+                )
+        await upgrade(empty_database_url)
+        async with engine.connect() as db:
+            txs = await db.execute(text("SELECT id, category_id FROM transactions"))
+            tx_cats: dict[UUID, UUID] = {r.id: r.category_id for r in txs}
+            rules = await db.execute(text("SELECT category_id FROM category_rules"))
+            rule_cat: UUID = rules.scalar_one()
+            budgets = await db.execute(text("SELECT category_id FROM budgets"))
+            budget_cats = sorted(str(r.category_id) for r in budgets)
+            cats = await db.execute(text("SELECT id, active FROM categories"))
+            active: dict[UUID, bool] = {r.id: r.active for r in cats}
+    finally:
+        await engine.dispose()
+    assert tx_cats[spent[0]] == cat["ann:Dining Out"]
+    assert tx_cats[spent[1]] == cat["ann:Other"]
+    assert tx_cats[spent[2]] == cat["ben:dining"]  # Ben has no Dining Out: left alone
+    assert rule_cat == cat["ann:Dining Out"]
+    # Dining's budget moved; General's stayed, since Other already had one.
+    assert budget_cats == sorted(
+        str(c) for c in (cat["ann:Dining Out"], cat["ann:General"], cat["ann:Other"])
+    )
+    assert not active[cat["ann:Dining"]] and not active[cat["ann:General"]]
+    assert active[cat["ann:Dining Out"]] and active[cat["ben:dining"]]
 
 
 async def test_the_models_guess_files_an_expense_unless_a_rule_or_the_user_decides(
