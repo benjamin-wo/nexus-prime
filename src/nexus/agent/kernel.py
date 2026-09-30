@@ -32,13 +32,21 @@ _SELF_DIAGNOSIS = re.compile(
     r"|why (?:aren'?t|are not|didn'?t|did not|don'?t) you (?:work|respond|reply|answer))\b",
     re.I,
 )
+_BARE_PAY = r"pay(?!\s?(?:day|check|cheque))"
 _POLITE = r"^\s*(?:please\s+|pls\s+|can you\s+|could you\s+|would you\s+|help me\s+)?"
 _UNSUPPORTED: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("transfer", re.compile(_POLITE + rf"(?:transfer|wire|remit|send)\b.*{_MONEY}.*\bto\b", re.I)),
+    # Only a request for Nexus itself to pay. A bare "pay rent 1800 on the 1st" is
+    # usually a note of a bill, so it goes to the model, which has no way to pay.
     (
         "payment",
         re.compile(
-            _POLITE + r"(?:pay(?!\s?(?:day|check|cheque))|make (?:a )?payment|settle my)\b", re.I
+            r"^\s*(?:please|pls|can you|could you|would you|will you|help me)\s+"
+            rf"(?:{_BARE_PAY}|make (?:a )?payment|settle my)\b"
+            rf"|^\s*{_BARE_PAY}\b.*\b(?:now|right away|immediately|for me|from my|with my"
+            r"|using my)\b"
+            r"|^\s*(?:make (?:a )?payment|settle my)\b",
+            re.I,
         ),
     ),
     (

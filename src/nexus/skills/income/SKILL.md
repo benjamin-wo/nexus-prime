@@ -13,6 +13,10 @@ which asks the user to confirm before anything is saved.
 - "9397 as salary today", "got my pay, 4,200": kind salary.
 - "Ann sent over the 20 she owed", "Ben returned the 15 for dinner": kind repayment,
   from_whom the person. It settles what they owe first.
+- "Ann paid me back", "Ben settled up" with no amount: they paid back everything they
+  owe. Check `list_ious` (or use the figure already in the conversation) and record
+  that amount as a repayment; the confirm step shows it, so don't ask first. Ask only
+  if they owe nothing.
 - "mum gave me 100", "sold my old phone for 250", "refund of 40 from Shopee", "bonus
   2k": kind other, with from_whom and a short note when given.
 - Pass the date the user gave ("yesterday", "on the 25th" as YYYY-MM-DD); leave it out
@@ -21,7 +25,8 @@ which asks the user to confirm before anything is saved.
 ## When it isn't, ask one short question first
 Never guess. Ask exactly one question, offering the likely answers, then record once
 they reply. Ask when:
-- The amount is missing, a range, or unclear ("got paid", "about 3 or 4k").
+- The amount is missing, a range, or unclear ("got paid", "about 3 or 4k"), except a
+  repayment in full, above.
 - It could be a repayment or a gift ("20 came in from Ann"): "Was that Ann paying you
   back, or a gift?" If `list_ious` shows Ann owes the user money, mention it: "Ann owes you
   30. Was the 20 towards that?"

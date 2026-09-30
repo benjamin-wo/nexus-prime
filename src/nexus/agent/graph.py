@@ -10,7 +10,7 @@ and has no side effects of its own, so re-running it on resume is safe.
 
 import logging
 import re
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Annotated, Any, Literal, NotRequired, TypedDict
@@ -56,6 +56,22 @@ HISTORY_LIMIT = 40
 # rolling summary and dropped from the conversation.
 KEEP = 20
 SUMMARY_WORDS = 150
+# Offered every turn. The rest arrive with their skill (see load_skill) and stay
+# for SKILL_TURNS of the user's messages after it was last loaded.
+CORE_TOOLS = (
+    "log_expense",
+    "record_income",
+    "find_transactions",
+    "edit_transaction",
+    "delete_transaction",
+    "restore_transaction",
+    "undo_last_change",
+    "spending_summary",
+    "query_ledger",
+    "list_categories",
+    "load_skill",
+)
+SKILL_TURNS = 5
 _ID = re.compile(r"\s*\[id [0-9a-f-]{36}\]")
 
 WROTE = "nexus_wrote"
@@ -79,6 +95,7 @@ class AgentState(TypedDict):
     steps: int
     snapshot: NotRequired[str]  # the user's money picture, built once per turn
     summary: NotRequired[str]  # what came before the messages kept
+    skills: NotRequired[dict[str, int]]  # loaded skills: user messages left before they lapse
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,6 +110,8 @@ class AgentDeps:
     rates: RateSource | None = None
     connect_link: Callable[[User], Awaitable[str]] | None = None
     forward_address: Callable[[User], Awaitable[str]] | None = None
+    # Each skill's tools, offered once it's loaded; None offers every tool always.
+    skill_tools: Mapping[str, Sequence[str]] | None = None
 
 
 def strip_ids(text: str) -> str:
@@ -131,13 +150,30 @@ def _reply(
 class AgentGraph:
     def __init__(self, deps: AgentDeps) -> None:
         self.deps = deps
-        schemas = [spec.schema() for spec in deps.tools.values() if spec.exposed]
-        bound: Runnable[Any, Any] = deps.primary.bind_tools(schemas)
-        if deps.fallbacks:
-            bound = bound.with_fallbacks([m.bind_tools(schemas) for m in deps.fallbacks])
-        self._model = bound
+        self._models: dict[frozenset[str], Runnable[Any, Any]] = {}
 
     # --- helpers ------------------------------------------------------------------
+
+    def offered(self, state: AgentState) -> frozenset[str]:
+        """The tools the model sees this turn: the core set and loaded skills' tools."""
+        exposed = {name for name, spec in self.deps.tools.items() if spec.exposed}
+        if self.deps.skill_tools is None:
+            return frozenset(exposed)
+        names = set(CORE_TOOLS)
+        for skill in state.get("skills", {}):
+            names.update(self.deps.skill_tools.get(skill, ()))
+        return frozenset(names & exposed)
+
+    def _model(self, names: frozenset[str]) -> Runnable[Any, Any]:
+        bound = self._models.get(names)
+        if bound is None:
+            # In the tools' own order, so the same set always reads the same.
+            schemas = [spec.schema() for name, spec in self.deps.tools.items() if name in names]
+            bound = self.deps.primary.bind_tools(schemas)
+            if self.deps.fallbacks:
+                bound = bound.with_fallbacks([m.bind_tools(schemas) for m in self.deps.fallbacks])
+            self._models[names] = bound
+        return bound
 
     async def _context(self, config: RunnableConfig) -> ToolContext:
         configurable = config.get("configurable") or {}
@@ -186,8 +222,16 @@ class AgentGraph:
             "- Only bring up logging automatically from email when the user asks about "
             "automating their logging; never suggest it otherwise.\n"
             "- Keep replies short and plain. Never show transaction ids.\n"
-            "- Replies are shown as plain text, so never use markdown such as ** or #.\n\n"
-            f"Skills (call load_skill for details):\n{self.deps.skill_index}"
+            "- Replies are shown as plain text, so never use markdown such as ** or #.\n"
+            '- "Pay X on a future date" ("pay the town council 88 on 15 october") is a '
+            "bill to remember, not a payment for you to make: add it as a bill if the name, "
+            "amount and date are clear, otherwise ask. Money already spent on a bill "
+            '("64 for the electricity bill") is an expense to log.\n\n'
+            "Skills: you start with the core tools. Each skill below lists the tools it "
+            "adds; call load_skill to get them and the skill's instructions, then carry on "
+            "in the same turn. Never tell the user something can't be done before loading "
+            "the skill that covers it.\n"
+            f"{self.deps.skill_index}"
             + _section(
                 "The user's money right now, from their own data. Use it directly for "
                 "quick answers; call tools for anything more detailed or older. It doesn't "
@@ -225,7 +269,12 @@ class AgentGraph:
         if intent is not None:
             await log_capability_gap(ctx.uow(), ctx.user.id, text, intent, "telegram")
             return _reply(REFUSALS[intent])
-        update: dict[str, Any] = {"steps": 0, "snapshot": await money_snapshot(ctx)}
+        update: dict[str, Any] = {
+            "steps": 0,
+            "snapshot": await money_snapshot(ctx),
+            # Each new message brings every loaded skill a step closer to lapsing.
+            "skills": {k: n - 1 for k, n in state.get("skills", {}).items() if n > 1},
+        }
         update.update(await self._condense(state))
         return Command(goto="agent", update=update)
 
@@ -332,7 +381,7 @@ class AgentGraph:
         system = await self._prompt(ctx, state)
         prompt = [SystemMessage(content=system), *_trim(state["messages"])]
         try:
-            response = await self._model.ainvoke(prompt)
+            response = await self._model(self.offered(state)).ainvoke(prompt)
         except Exception:
             log.exception("model call failed")
             return _reply("Sorry, I can't reach the AI model right now. Nothing was changed.")
@@ -378,6 +427,7 @@ class AgentGraph:
         request: AIMessage = _last(state["messages"], AIMessage)
         from_kernel = bool(request.additional_kwargs.get(KERNEL))
         results: list[ToolMessage] = []
+        loaded = dict(state.get("skills", {}))
         for call in request.tool_calls:
             spec = self.deps.tools.get(call["name"])
             buttons: list[list[tuple[str, str]]] | None = None
@@ -389,6 +439,9 @@ class AgentGraph:
                 try:
                     result = await run_tool(spec, ctx, dict(call["args"]))
                     content, wrote, buttons = result.text, result.wrote, result.buttons
+                    skill = str(call["args"].get("name", "")).strip().lower()
+                    if call["name"] == "load_skill" and not content.startswith("Error:"):
+                        loaded[skill] = SKILL_TURNS
                 except Exception:
                     log.exception("tool %s failed", call["name"])
                     content, wrote = "Error: something went wrong running that.", False
@@ -403,9 +456,10 @@ class AgentGraph:
                     additional_kwargs=kwargs,
                 )
             )
-        return Command(
-            goto="kernel_reply" if from_kernel else "agent", update={"messages": results}
-        )
+        update: dict[str, Any] = {"messages": results}
+        if loaded != state.get("skills", {}):
+            update["skills"] = loaded
+        return Command(goto="kernel_reply" if from_kernel else "agent", update=update)
 
     async def kernel_reply_node(self, state: AgentState) -> dict[str, Any]:
         result: ToolMessage = _last(state["messages"], ToolMessage)

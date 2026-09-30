@@ -69,3 +69,17 @@ Seven harder questions added (165 in all): top 3 merchants, average Grab ride, d
 DeepSeek already answered most of these by adding up `find_transactions` results, so the gain is small: the clear one is "how much did chatgpt cost me in sgd", which failed two runs of three before and passes every run now, since the tool converts. With M8c the model called `query_ledger` 43–47 times a run instead of adding up search results itself, which matters more with a real ledger than with the seed's 25 transactions (a search shows at most 50). Reply times were slower than the M8b runs for both versions alike (OpenRouter load on the day), so they don't compare with earlier sections. Cost a case rose by about $0.00003 for the larger tool list.
 
 Failures left: the memory cases (M8e) and "pay the town council" (M8d) every run; the rest vary between runs and between versions (asking which "3rd" is meant, asking before deleting or archiving something plainly named, a receipt photo), the over-careful habit M8d's shorter tool list and M8f's model check are meant to address.
+
+## M8d: tool routing and a narrower "pay" refusal (30 September 2026)
+
+Two cases added (167 in all): "gotta pay aircon servicing 120 on 20 oct" (a bill) and "can you pay ann 40 for me" (still refused). Three runs each, the new cases also run against main:
+
+| | Passed | Outside memory, failed | "pay …" bills | Tokens in a case | Cost a case |
+|---|---|---|---|---|---|
+| Before (main) | 159, 157, 158 | 2, 3, 3 | 0, 0, 1 of 2 | about 14,600 | $0.00041 |
+| Routing, first try | 155, 151, 152 | 4, 8, 7 | 2/2 | about 10,400 | $0.00033 |
+| Routing, as merged | 158, 157, 157 | 2, 3, 2 | 2/2 | about 11,400 | $0.00035 |
+
+The first try offered the model 11 core tools and a skill list without tool names. Seeing no category tools, it told users it couldn't add, archive or merge a category rather than loading the skill that has them. It also treated "SGD 64 for the electricity bill" as a bill to remember. Listing each skill's tools in the index, telling the model to load a skill before saying something can't be done, and limiting the bill hint to a future date brought it level with main. The last change, after those runs, tells the income skill that "Ann paid me back" with no amount means everything she owes. Loading that skill had made the model ask for the amount (2 of 3 runs); the income cases passed 7/7 twice and that case 2/2 afterwards.
+
+So on this set routing is neutral on pass rate, fixes the "pay …" cases, and cuts input tokens by about a fifth. Reply times rose slightly, from a median of 3.4–3.5s to 3.4–4.1s, since a request outside the core now takes an extra model call to load its skill. The gain should grow as tools are added, since the core list stays the same size.

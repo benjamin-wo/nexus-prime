@@ -41,12 +41,16 @@ class ScriptedModel(BaseChatModel):
 
     script: list[Any] = Field(default_factory=list)
     seen: list[list[BaseMessage]] = Field(default_factory=list)
+    bound: list[set[str]] = Field(default_factory=list)  # each set of tools offered
 
     @property
     def _llm_type(self) -> str:
         return "scripted"
 
     def bind_tools(self, tools: Sequence[Any], **kwargs: Any) -> Runnable[Any, Any]:
+        names = {t["function"]["name"] for t in tools if isinstance(t, dict)}
+        if names:  # with_structured_output binds a class; only tool lists count
+            self.bound.append(names)
         return self
 
     def _next(self, messages: list[BaseMessage]) -> ChatResult:
@@ -79,7 +83,7 @@ class ScriptedModel(BaseChatModel):
 
 
 def scripted(*steps: Step) -> ScriptedModel:
-    return ScriptedModel(script=list(steps), seen=[])
+    return ScriptedModel(script=list(steps), seen=[], bound=[])
 
 
 def models(primary: BaseChatModel) -> ChatModels:

@@ -49,6 +49,7 @@ def build(
             primary=model,
             fallbacks=(),
             skill_index=skills.index(),
+            skill_tools=skills.tools(),
             health=health,
             clock=lambda: NOW,
         )

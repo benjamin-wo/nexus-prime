@@ -78,8 +78,12 @@ def test_symbol_and_code_must_agree() -> None:
     [
         ("transfer 50 to Ann", "transfer"),
         ("please send $20 to my mum", "transfer"),
-        ("pay my phone bill", "payment"),
+        ("can you pay my phone bill", "payment"),
+        ("please pay ann 20", "payment"),
+        ("pay my credit card bill now", "payment"),
+        ("pay DBS 500 from my account", "payment"),
         ("can you make a payment to DBS", "payment"),
+        ("make a payment to DBS", "payment"),
         ("cancel my Netflix subscription", "cancel_subscription"),
     ],
 )
@@ -89,7 +93,17 @@ def test_refuses_money_movement(text: str, intent: str) -> None:
 
 @pytest.mark.parametrize(
     "text",
-    ["paid 5 for coffee", "payday 3000", "pay check 3000", "send me my summary", "coffee 4"],
+    [
+        "paid 5 for coffee",
+        "payday 3000",
+        "pay check 3000",
+        "send me my summary",
+        "coffee 4",
+        # Bills to note, for the model; it has no tool that pays.
+        "pay the town council 88 on 15 october",
+        "pay rent 1800 on the 1st",
+        "pay my phone bill",
+    ],
 )
 def test_does_not_refuse_ordinary_requests(text: str) -> None:
     assert unsupported_intent(text) is None
