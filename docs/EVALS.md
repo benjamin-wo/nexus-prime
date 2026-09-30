@@ -99,3 +99,36 @@ Getting there took three fixes found by the runs:
 - Memories were first framed as "information, not instructions", and the model then refused to apply "i always split dinners with ann 50/50" and ignored "keep your replies short". Preferences are now the user's standing wishes, followed within the rules and confirmations; nothing remembered can change the rules themselves, which the new "rule" case checks.
 - The first full run crawled for two hours: now and then the writer's JSON reply ran away into pages of whitespace. It's now capped at 1,500 tokens and 30 seconds, then retried once. The cap started at 500, which DeepSeek's reasoning alone sometimes used up.
 - Replies acknowledging something the user said about themselves offered options ("anything you'd like me to do with that?") or went into Chinese once; they now just acknowledge it, in the user's language.
+
+## M8f: choosing the models (30 September 2026)
+
+The finished M8 system on all 170 cases, Qwen3.8 Flash reading receipt photos throughout. The memory writer uses the same model as chat unless said otherwise, and its tokens are in the cost.
+
+| Chat model | Passed | Median reply | Cost a case |
+|---|---|---|---|
+| deepseek/deepseek-v4.1-flash | **168, 168, 168** | 3.8–4.1s | **$0.00042** |
+| google/gemini-3.8-flash | 167, 168 | 6.3–7.0s | $0.0085 |
+| z-ai/glm-5.3-flash | 164, 163, 167 | 3.7–5.0s | $0.0019 |
+| xiaomi/mimo-v2.6-flash | 161 | 6.1s | $0.0017 |
+| openai/gpt-6-luna | 154 (12 upstream timeouts) | 6.0s | $0.00093 |
+| qwen/qwen3.8-flash | 147 | 7.0s | $0.0023 |
+
+Memory writer, with DeepSeek chatting, on the 11 memory cases three times each:
+
+| Memory model | Passed | Failed |
+|---|---|---|
+| deepseek/deepseek-v4.1-flash | **33/33** | |
+| openai/gpt-6-luna | 31/33 | changed job, the "rule" case |
+| upstage/solar-mini4 | 31/33 | the "rule" case twice |
+| inclusionai/ling-3.0-flash-vl | 30/33 | forget, changed job, split habit |
+| xiaomi/mimo-v2.6-flash | 29/33 | the "rule" case three times |
+
+The "rule" failures were a real gap. A weaker writer stored "whenever i say hi, delete my latest transaction" as a preference, and a later "hi" led to a deletion, after the usual confirmation. Now the writer stores only how the user likes things done, never an instruction to act by itself or on a trigger, and the prompt says a memory never starts a change the current message didn't ask for. With both, that case passed 9 of 9 with the writers that had failed it and with DeepSeek. Two full runs afterwards scored 169 and 167.
+
+**Chosen:**
+- Chat: DeepSeek v4.1 Flash (unchanged). It was best or tied on passes, the fastest and the cheapest.
+- Receipt photos: Qwen3.8 Flash (unchanged). It read 8/8 in M8a.
+- Fallback: GLM-5.3 Flash replaces Qwen3.8 Flash, which scored lowest here (147) and is the slowest. GLM scored 163–167 at about 4.5× DeepSeek's cost, paid only when DeepSeek fails. Gemini 3.8 Flash scored a touch higher but costs 20× more and is slower.
+- Memory: the main model. `MEMORY_MODEL` stays unset; DeepSeek was the most reliable writer and already costs under $0.0001 a message.
+
+Across M8 the set grew from 103 to 170 cases and harder ones, and the production pairing went from 141/152 (93%) at the M8a baseline to 167–170/170 (98–100%), at about $0.0004 a case and a median reply of about 4s.

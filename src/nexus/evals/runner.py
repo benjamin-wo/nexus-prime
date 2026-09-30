@@ -81,6 +81,8 @@ class TurnLog:
     model_calls: int = 0
     model_down: bool = False
     memory_failed: bool = False
+    memory_input_tokens: int = 0  # the memory writer's, priced as the memory model
+    memory_output_tokens: int = 0
 
     @property
     def last_reply(self) -> str:
@@ -105,6 +107,14 @@ class CaseResult:
     @property
     def output_tokens(self) -> int:
         return sum(t.output_tokens for t in self.turns)
+
+    @property
+    def memory_input_tokens(self) -> int:
+        return sum(t.memory_input_tokens for t in self.turns)
+
+    @property
+    def memory_output_tokens(self) -> int:
+        return sum(t.memory_output_tokens for t in self.turns)
 
 
 class Agent:
@@ -202,8 +212,8 @@ async def _turn(agent: Agent, user: User, turn: Turn, ref: str) -> TurnLog:
             )
         except Exception:
             log.memory_failed = True
-        log.input_tokens += agent.memory.input_tokens - before_tokens[0]
-        log.output_tokens += agent.memory.output_tokens - before_tokens[1]
+        log.memory_input_tokens += agent.memory.input_tokens - before_tokens[0]
+        log.memory_output_tokens += agent.memory.output_tokens - before_tokens[1]
     log.replies = [r.text for r in all_replies]
     log.model_down = any(r.text.startswith(MODEL_DOWN) for r in all_replies)
     for message in [m for m in await agent.messages(user) if m.id not in before]:
@@ -305,10 +315,11 @@ async def run_case(
     telegram_id: int,
     photo_cache: Path = Path("eval-results/photos"),
     vision: BaseChatModel | None = None,
+    memory: BaseChatModel | None = None,
 ) -> CaseResult:
     seeded = await seed.seed_user(lambda: SqlUnitOfWork(engine), telegram_id)
     user = seeded.user
-    agent = Agent(engine, model, photo_cache, vision)
+    agent = Agent(engine, model, photo_cache, vision, memory)
     world = World(agent.uow, user, frozenset(t.id for t in await World(
         agent.uow, user, frozenset()
     ).transactions()))  # fmt: skip
@@ -332,6 +343,7 @@ async def run_cases(
     first_telegram_id: int = 900_000,
     on_result: Callable[[CaseResult], None] | None = None,
     vision: BaseChatModel | None = None,
+    memory: BaseChatModel | None = None,
 ) -> list[CaseResult]:
     """Run the cases, a few at a time, each as its own user."""
     gate = asyncio.Semaphore(concurrency)
@@ -339,7 +351,12 @@ async def run_cases(
     async def one(n: int, case: Case) -> CaseResult:
         async with gate:
             result = await run_case(
-                engine, model_for(case), case, first_telegram_id + n, vision=vision
+                engine,
+                model_for(case),
+                case,
+                first_telegram_id + n,
+                vision=vision,
+                memory=memory,
             )
         if on_result:
             on_result(result)
@@ -359,6 +376,7 @@ class Summary:
     model: str
     results: list[CaseResult]
     pricing: Pricing | None
+    memory_pricing: Pricing | None = None  # the memory model's; None: priced as the main one
 
     @property
     def passed(self) -> int:
@@ -383,9 +401,13 @@ class Summary:
     def cost(self) -> Decimal | None:
         if self.pricing is None:
             return None
+        memory = self.memory_pricing or self.pricing
         return sum(
             (
-                r.input_tokens * self.pricing.prompt + r.output_tokens * self.pricing.completion
+                r.input_tokens * self.pricing.prompt
+                + r.output_tokens * self.pricing.completion
+                + r.memory_input_tokens * memory.prompt
+                + r.memory_output_tokens * memory.completion
                 for r in self.results
             ),
             Decimal(0),
@@ -404,7 +426,9 @@ class Summary:
             f"- Reply time per turn: median {median:.1f}s, p90 {p90:.1f}s",
             "- Tokens per case: "
             f"{sum(r.input_tokens for r in self.results) // n} in, "
-            f"{sum(r.output_tokens for r in self.results) // n} out",
+            f"{sum(r.output_tokens for r in self.results) // n} out; memory writer "
+            f"{sum(r.memory_input_tokens for r in self.results) // n} in, "
+            f"{sum(r.memory_output_tokens for r in self.results) // n} out",
             "- Cost: "
             + ("unknown" if cost is None else f"${cost:.4f} total, ${cost / n:.5f} a case"),
             f"- Errors: {sum(r.error is not None for r in self.results)}, model failures: "
