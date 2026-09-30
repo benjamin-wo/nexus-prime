@@ -452,8 +452,21 @@ test("the cog opens Settings, and Plan keeps only planning", async ({ page }) =>
   await page.getByRole("link", { name: "Settings" }).filter({ visible: true }).click();
   await expect(page).toHaveURL(/\/settings$/);
   await expect(page.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible();
-  for (const name of ["Telegram updates", "Categories", "Category rules"])
+  for (const name of ["Telegram updates", "Categories", "Category rules", "What Nexus remembers"])
     await expect(page.getByRole("region", { name })).toBeVisible();
+});
+
+test("see and forget what Nexus remembers", async ({ page }) => {
+  await fakeApi(page);
+  await page.goto("/settings");
+  const card = page.getByRole("region", { name: "What Nexus remembers" });
+  await expect(card.getByText("Ann is the user's sister.")).toBeVisible();
+  await expect(card.getByText(/27 Sep|Sep 27/)).toBeVisible();
+  await card.getByRole("button", { name: "Forget: Ann is the user's sister." }).click();
+  await expect(card.getByText("Ann is the user's sister.")).toHaveCount(0);
+  await card.getByRole("button", { name: "Forget everything" }).click();
+  await card.getByRole("button", { name: "Forget all" }).click();
+  await expect(card.getByText(/Nothing yet/)).toBeVisible();
 });
 
 test("the chat bubble floats on every page and opens the chat", async ({ page }) => {

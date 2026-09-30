@@ -1026,3 +1026,47 @@ async def test_config_and_security_headers(world: World) -> None:
     csp = response.headers["content-security-policy"]
     assert "default-src 'self'" in csp and "unsafe" not in csp
     assert "frame-ancestors https://web.telegram.org" in csp  # only Telegram may embed us
+
+
+async def test_what_nexus_remembers(world: World, engine: AsyncEngine) -> None:
+    from nexus.application import memory as memory_cases
+    from nexus.application.memory import Action, MemoryChange
+    from nexus.application.users import get_user
+    from nexus.domain.memory import MemoryKind
+
+    owner, invite = await owner_and_invite(world)
+    member = world.browser()
+    assert (await member.login(MEMBER, invite)).status_code == 200
+    # A chat turn queues the memory writer for the user's own words.
+    world.model.script += [say("Got it.")]
+    await owner.send("POST", "/api/chat", {"message": "ann is my sister"})
+    async with engine.connect() as db:
+        queued = (await db.execute(select(jobs).where(jobs.c.kind == "memory.update"))).all()
+    assert [j.payload["messages"] for j in queued] == [["ann is my sister"]]
+
+    async with engine.connect() as db:
+        owner_id: Any = (
+            await db.execute(select(users.c.id).where(users.c.telegram_user_id == OWNER))
+        ).scalar_one()
+    user = await get_user(SqlUnitOfWork(engine), UserId(owner_id))
+    await memory_cases.apply_changes(
+        SqlUnitOfWork(engine),
+        user,
+        [
+            MemoryChange(Action.ADD, MemoryKind.FACT, "Ann is the user's sister."),
+            MemoryChange(Action.ADD, MemoryKind.EPISODE, "Ride was for work.", date(2026, 9, 27)),
+        ],
+        now=NOW,
+    )
+    listed = (await owner.get("/api/memories")).json()
+    assert {(m["kind"], m["text"]) for m in listed} == {
+        ("fact", "Ann is the user's sister."),
+        ("episode", "Ride was for work."),
+    }
+    assert (await member.get("/api/memories")).json() == []
+    first = listed[0]["id"]
+    assert (await member.send("DELETE", f"/api/memories/{first}")).status_code == 404
+    assert (await owner.send("DELETE", f"/api/memories/{first}")).status_code == 204
+    assert len((await owner.get("/api/memories")).json()) == 1
+    assert (await owner.send("DELETE", "/api/memories")).status_code == 204
+    assert (await owner.get("/api/memories")).json() == []

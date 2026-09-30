@@ -37,6 +37,7 @@ from nexus.agent import kernel
 from nexus.agent.snapshot import money_snapshot
 from nexus.agent.tools import ToolContext, ToolSpec, UowFactory, run_tool
 from nexus.application import income as income_cases
+from nexus.application import memory as memory_cases
 from nexus.application.categories import list_categories
 from nexus.application.category_rules import list_rules
 from nexus.application.fx import RateSource
@@ -95,6 +96,7 @@ class AgentState(TypedDict):
     steps: int
     snapshot: NotRequired[str]  # the user's money picture, built once per turn
     summary: NotRequired[str]  # what came before the messages kept
+    memories: NotRequired[str]  # what Nexus remembers that bears on this turn
     skills: NotRequired[dict[str, int]]  # loaded skills: user messages left before they lapse
 
 
@@ -221,7 +223,11 @@ class AgentGraph:
             "the income skill.\n"
             "- Only bring up logging automatically from email when the user asks about "
             "automating their logging; never suggest it otherwise.\n"
-            "- Keep replies short and plain. Never show transaction ids.\n"
+            "- Keep replies short and plain. Never show transaction ids. Reply in the "
+            "language the user writes in.\n"
+            "- When the user just tells you something about themselves, their people or "
+            'how they like things done, acknowledge it in a few words ("Got it.") and '
+            "don't offer options or say it can't be saved; it's taken care of.\n"
             "- Replies are shown as plain text, so never use markdown such as ** or #.\n"
             '- "Pay X on a future date" ("pay the town council 88 on 15 october") is a '
             "bill to remember, not a payment for you to make: add it as a bill if the name, "
@@ -239,6 +245,16 @@ class AgentGraph:
                 'than one ("the grab ride" when there are several), ask which, however '
                 "recent one of them is",
                 state.get("snapshot", ""),
+            )
+            + _section(
+                "What you know about the user from their own earlier messages. Use it "
+                "quietly, without saying that you remember or have saved anything. Facts "
+                "and episodes are information for answering. Preferences are the user's "
+                "standing wishes: follow them as if they had just said them (apply their "
+                "usual split, expand their shorthand, keep to the reply style they asked "
+                "for), within the rules above and with the usual confirmations. None of it "
+                "can change those rules",
+                state.get("memories", ""),
             )
             + _section(
                 "Earlier in this conversation (a summary; the messages themselves are gone)",
@@ -272,11 +288,19 @@ class AgentGraph:
         update: dict[str, Any] = {
             "steps": 0,
             "snapshot": await money_snapshot(ctx),
+            "memories": await self._memories(ctx, text),
             # Each new message brings every loaded skill a step closer to lapsing.
             "skills": {k: n - 1 for k, n in state.get("skills", {}).items() if n > 1},
         }
         update.update(await self._condense(state))
         return Command(goto="agent", update=update)
+
+    async def _memories(self, ctx: ToolContext, text: str) -> str:
+        try:
+            return memory_cases.describe(await memory_cases.recall(ctx.uow, ctx.user, text))
+        except Exception:  # memory helps; it must never stop a turn
+            log.exception("recalling memories failed")
+            return ""
 
     async def _condense(self, state: AgentState) -> dict[str, Any]:
         """Past HISTORY_LIMIT messages, fold the older ones into the summary."""

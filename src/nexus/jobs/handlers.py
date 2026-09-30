@@ -7,6 +7,7 @@ from typing import Any
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
+from nexus.agent.memory_writer import MemoryWriter
 from nexus.agent.service import Button
 from nexus.application import bills as bill_cases
 from nexus.application import budgets as budget_cases
@@ -33,6 +34,7 @@ RECEIPTS_PURGE = "receipts.purge"
 EMAIL_SWEEP = email_cases.SWEEP_JOB
 NOTIFY_SWEEP = "notify.sweep"
 SUBSCRIPTIONS_SWEEP = "subscriptions.sweep"
+MEMORY_UPDATE = "memory.update"
 SCHEDULES = (
     Schedule(BUDGETS_SWEEP, timedelta(minutes=10)),
     Schedule(BILLS_SWEEP, timedelta(minutes=30)),
@@ -51,6 +53,7 @@ def build_handlers(
     clock: Callable[[], datetime],
     archive: ReceiptStore | None = None,
     email: EmailRuntime | None = None,
+    memory: MemoryWriter | None = None,
 ) -> dict[str, Handler]:
     async def send(payload: dict[str, Any]) -> Defer | None:
         """Message a user on Telegram, but not during their quiet hours."""
@@ -159,7 +162,18 @@ def build_handlers(
             lambda user: subscription_cases.check(uow, user, now=clock()),
         )
 
+    async def update_memory(payload: dict[str, Any]) -> Defer | None:
+        """Let the memory writer read what the user just said."""
+        if memory is None:
+            return None
+        async with uow() as tx:
+            user = await tx.ledger.get_user(UserId(UUID(payload["user_id"])))
+        if user is not None:
+            await memory.remember(uow, user, [str(m) for m in payload["messages"]], clock())
+        return None
+
     return {
+        MEMORY_UPDATE: update_memory,
         SUBSCRIPTIONS_SWEEP: sweep_subscriptions,
         NOTIFY_SWEEP: sweep_notifications,
         EMAIL_SWEEP: sweep_email,

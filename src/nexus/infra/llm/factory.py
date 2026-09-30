@@ -138,6 +138,14 @@ def build_screener(settings: Settings, primary: BaseChatModel) -> BaseChatModel:
     return primary
 
 
+def build_memory_model(settings: Settings, primary: BaseChatModel) -> BaseChatModel:
+    """The model that keeps long-term memory: MEMORY_MODEL on OpenRouter when set,
+    otherwise the main model."""
+    if settings.memory_model and settings.openrouter_api_key is not None:
+        return _openrouter(settings, settings.memory_model)
+    return primary
+
+
 def text_of(content: Any) -> str:
     """Plain text from a model reply; Gemini may return a list of typed parts."""
     if isinstance(content, str):

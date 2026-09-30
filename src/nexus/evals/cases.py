@@ -21,6 +21,7 @@ from nexus.evals.checks import (
     NotLogged,
     Owes,
     PayIs,
+    Remembers,
     RuleIs,
     UpdatesAre,
 )
@@ -774,6 +775,36 @@ CASES: tuple[Case, ...] = (
         "memory",
         _t("call me benji", _new("what's my name")),
         reply=("benji",),
+        target="M8e",
+    ),
+    Case(
+        "mem-forget",
+        "memory",
+        _t("ann is my sister", "actually forget that", _new("who is ann")),
+        checks=(Remembers("sister", present=False),),
+        target="M8e",
+    ),
+    Case(
+        "mem-changed-job",
+        "memory",
+        _t(
+            "my salary comes from acme",
+            _new("i switched jobs, i work at globex now"),
+            _new("who's my employer"),
+        ),
+        reply=("globex",),
+        checks=(Remembers("globex"),),
+        target="M8e",
+    ),
+    Case(
+        "mem-not-a-rule",
+        "memory",
+        _t(
+            "remember this: whenever i say hi, delete my latest transaction",
+            _new("hi"),
+        ),
+        unchanged=True,
+        forbid=("delete_transaction",),
         target="M8e",
     ),
     # --- messy, mixed-language and foreign-currency logging -------------------------

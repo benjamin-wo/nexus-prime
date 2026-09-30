@@ -77,6 +77,14 @@ export type CategoryRule = {
   explanation: string;
 };
 
+export type Memory = {
+  id: string;
+  kind: "fact" | "preference" | "episode";
+  text: string;
+  happened_on: string | null;
+  updated_at: string;
+};
+
 export type Page = { items: Transaction[]; total: number };
 export type Category = { id: string; name: string; active: boolean };
 export type Me = {

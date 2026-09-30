@@ -9,6 +9,7 @@ from typing import Protocol
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
+from nexus.application import memory as memory_cases
 from nexus.application import notifications as notification_cases
 from nexus.application import splits as split_cases
 from nexus.application import transactions as tx_cases
@@ -325,3 +326,19 @@ class UpdatesAre:
     async def holds(self, world: World) -> bool:
         settings = await notification_cases.get_settings(world.uow(), world.user.id)
         return settings.frequency.value == self.frequency
+
+
+@dataclass(frozen=True, slots=True)
+class Remembers:
+    """Some memory mentions ``text`` (or, with ``present=False``, none does)."""
+
+    text: str
+    present: bool = True
+
+    def describe(self) -> str:
+        return f"{'a' if self.present else 'no'} memory mentioning {self.text!r}"
+
+    async def holds(self, world: World) -> bool:
+        found = await memory_cases.list_memories(world.uow(), world.user.id)
+        mentioned = any(self.text.casefold() in m.text.casefold() for m in found)
+        return mentioned is self.present

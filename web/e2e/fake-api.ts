@@ -36,6 +36,7 @@ export async function fakeApi(page: Page, { signedIn = true, emailConnected = fa
     bills: FakeBill[];
     salary: FakeSalary | null;
     rules: FakeRule[];
+    memories: { id: string; kind: string; text: string; happened_on: string | null; updated_at: string }[];
     frequency: string;
     subs: { id: string; name: string; status: string; amount: string }[];
     email: {
@@ -59,6 +60,11 @@ export async function fakeApi(page: Page, { signedIn = true, emailConnected = fa
     bills: [],
     salary: null,
     rules: [],
+    memories: [
+      { id: "m1", kind: "fact", text: "Ann is the user's sister.", happened_on: null, updated_at: "2026-09-28T06:00:00Z" },
+      { id: "m2", kind: "preference", text: "Wants short replies.", happened_on: null, updated_at: "2026-09-28T06:00:00Z" },
+      { id: "m3", kind: "episode", text: "The Grab ride was for work.", happened_on: "2026-09-27", updated_at: "2026-09-28T06:00:00Z" },
+    ],
     frequency: "daily",
     subs: [
       { id: "s1", name: "Netflix", status: "active", amount: "17.98" },
@@ -417,6 +423,15 @@ export async function fakeApi(page: Page, { signedIn = true, emailConnected = fa
       const category = categories.find((c) => c.id === categoryEdit[1])!;
       Object.assign(category, body);
       return json(route, category);
+    }
+    if (path === "/memories" && method === "GET") return json(route, state.memories);
+    if (path === "/memories" && method === "DELETE") {
+      state.memories = [];
+      return route.fulfill({ status: 204 });
+    }
+    if (path.startsWith("/memories/") && method === "DELETE") {
+      state.memories = state.memories.filter((m) => `/memories/${m.id}` !== path);
+      return route.fulfill({ status: 204 });
     }
     if (path === "/category-rules" && method === "GET") return json(route, state.rules);
     if (path === "/category-rules" && method === "PUT") {
