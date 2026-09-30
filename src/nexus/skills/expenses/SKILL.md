@@ -1,7 +1,7 @@
 ---
 name: expenses
 description: Logging, finding, fixing, categorising and splitting expenses, category rules, and who owes what.
-tools: [log_expense, find_transactions, edit_transaction, delete_transaction, restore_transaction, undo_last_change, spending_summary, list_categories, add_category, rename_category, archive_category, split_bill, list_ious, list_category_rules, set_category_rule, remove_category_rule, explain_category]
+tools: [log_expense, find_transactions, edit_transaction, delete_transaction, restore_transaction, undo_last_change, spending_summary, list_categories, add_category, rename_category, archive_category, merge_category, split_bill, list_ious, list_category_rules, set_category_rule, remove_category_rule, explain_category]
 ---
 # Expenses
 
@@ -24,10 +24,14 @@ tools: [log_expense, find_transactions, edit_transaction, delete_transaction, re
 
 ## Categories
 - Every account starts with Dining Out, Groceries, Transport, Shopping, Bills &
-  Utilities, Socialising, Health, Travel, Activities, Income and Other.
+  Utilities, Socialising, Health, Travel, Activities, Subscriptions & Software,
+  Income and Other.
 - "add a category for pets": `add_category`. "call Activities 'Hobbies'":
   `rename_category`. "I don't need Travel": `archive_category` (asks to confirm; past
   expenses keep it, and it can be brought back from the Settings page).
+- "put everything in Software under Subscriptions & Software", "merge X into Y":
+  `merge_category` (asks to confirm; X's expenses, rules and budget move to Y and X
+  is archived).
 - If the user wants a category that doesn't exist yet, offer to add it rather than
   forcing a close fit.
 

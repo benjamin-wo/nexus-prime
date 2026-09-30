@@ -466,3 +466,17 @@ test("the chat bubble floats on every page and opens the chat", async ({ page })
   await bubble.click();
   await expect(page.getByRole("dialog", { name: "Chat" })).toBeVisible();
 });
+
+test("merge one category into another from Settings", async ({ page }) => {
+  await fakeApi(page);
+  await page.goto("/settings");
+  const card = page.getByRole("region", { name: "Categories" });
+  const yours = card.getByRole("list", { name: "Your categories" });
+  await yours.getByRole("listitem").filter({ hasText: "Transport" }).getByRole("button", { name: "Merge into…" }).click();
+  const form = card.getByRole("form", { name: "Merge Transport" });
+  await expect(form.getByRole("button", { name: "Merge" })).toBeDisabled();
+  await form.getByLabel("Move everything in Transport into").selectOption({ label: "Dining Out" });
+  await form.getByRole("button", { name: "Merge" }).click();
+  await expect(yours.getByRole("heading", { name: "Transport" })).toHaveCount(0);
+  await expect(card.getByRole("list", { name: "Archived categories" }).getByRole("heading", { name: "Transport" })).toBeVisible();
+});

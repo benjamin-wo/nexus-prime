@@ -19,7 +19,7 @@ The shared language for code, tests and docs. When a term here and a name in cod
 - **Soft delete**: setting `deleted_at` instead of removing the row, so a delete can be restored.
 - **Split**: one participant's share of a transaction paid by the user. An unpaid split is an **IOU**.
 - **Settlement**: money in that pays off all or part of a split.
-- **Category**: one per transaction, from the user's own list (eleven defaults to start, plus any they add). A named category wins, then a rule, then the model's best guess; anything left is **Other** (spending) or **Income** (money in). Archived categories stay on past transactions but aren't used for new ones.
+- **Category**: one per transaction, from the user's own list (twelve defaults to start, plus any they add; one can be merged into another). A named category wins, then a rule, then the model's best guess; anything left is **Other** (spending) or **Income** (money in). Archived categories stay on past transactions but aren't used for new ones.
 - **Category rule**: a pattern that suggests a category, with a stored explanation. A user's correction never silently rewrites a rule.
 
 ## Planning (forecasts, never ledger entries)

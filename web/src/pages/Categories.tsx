@@ -3,10 +3,20 @@ import { type FormEvent, useState } from "react";
 
 import { api, type Category } from "../api";
 
-function CategoryRow({ category, onChanged }: { category: Category; onChanged: () => void }) {
+function CategoryRow({
+  category,
+  others,
+  onChanged,
+}: {
+  category: Category;
+  others: Category[];
+  onChanged: () => void;
+}) {
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(category.name);
   const [confirming, setConfirming] = useState(false);
+  const [merging, setMerging] = useState(false);
+  const [into, setInto] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   async function patch(body: { name?: string; active?: boolean }) {
@@ -21,6 +31,18 @@ function CategoryRow({ category, onChanged }: { category: Category; onChanged: (
     }
   }
 
+  async function merge(event: FormEvent) {
+    event.preventDefault();
+    setError(null);
+    try {
+      await api(`/categories/${category.id}/merge`, { method: "POST", body: { into_id: into } });
+      setMerging(false);
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't merge");
+    }
+  }
+
   function rename(event: FormEvent) {
     event.preventDefault();
     void patch({ name: name.trim() });
@@ -28,7 +50,28 @@ function CategoryRow({ category, onChanged }: { category: Category; onChanged: (
 
   return (
     <li className="budget">
-      {renaming ? (
+      {merging ? (
+        <form className="quick" onSubmit={merge} aria-label={`Merge ${category.name}`}>
+          <label className="field">
+            Move everything in {category.name} into
+            <select className="input" value={into} onChange={(e) => setInto(e.target.value)} required>
+              <option value="">Pick a category</option>
+              {others.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="caption">Its expenses, rules and budget move over, and {category.name} is archived.</p>
+          <button type="submit" className="btn btn-primary" disabled={!into}>
+            Merge
+          </button>
+          <button type="button" className="btn" onClick={() => setMerging(false)}>
+            Cancel
+          </button>
+        </form>
+      ) : renaming ? (
         <form className="quick" onSubmit={rename} aria-label={`Rename ${category.name}`}>
           <input className="input" value={name} onChange={(e) => setName(e.target.value)} required />
           <button type="submit" className="btn btn-primary" disabled={!name.trim()}>
@@ -58,6 +101,9 @@ function CategoryRow({ category, onChanged }: { category: Category; onChanged: (
                   <button type="button" className="btn btn-ghost" onClick={() => setRenaming(true)}>
                     Rename
                   </button>
+                  <button type="button" className="btn btn-ghost" onClick={() => setMerging(true)}>
+                    Merge into…
+                  </button>
                   <button type="button" className="btn btn-ghost" onClick={() => setConfirming(true)}>
                     Archive
                   </button>
@@ -80,7 +126,7 @@ function CategoryRow({ category, onChanged }: { category: Category; onChanged: (
   );
 }
 
-/** The user's categories: the 11 defaults and their own. Every expense lands in one. */
+/** The user's categories: the 12 defaults and their own. Every expense lands in one. */
 export function CategoriesSection() {
   const client = useQueryClient();
   const all = useQuery({
@@ -119,7 +165,7 @@ export function CategoriesSection() {
       {active.length > 0 && (
         <ul className="budgets" aria-label="Your categories">
           {active.map((c) => (
-            <CategoryRow key={c.id} category={c} onChanged={refresh} />
+            <CategoryRow key={c.id} category={c} others={active.filter((o) => o.id !== c.id)} onChanged={refresh} />
           ))}
         </ul>
       )}
@@ -142,7 +188,7 @@ export function CategoriesSection() {
           <h3 className="caption">Archived (past expenses keep them)</h3>
           <ul className="budgets" aria-label="Archived categories">
             {archived.map((c) => (
-              <CategoryRow key={c.id} category={c} onChanged={refresh} />
+              <CategoryRow key={c.id} category={c} others={[]} onChanged={refresh} />
             ))}
           </ul>
         </>

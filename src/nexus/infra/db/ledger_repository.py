@@ -51,6 +51,7 @@ from nexus.domain.money import Money
 from nexus.domain.receipts import RETENTION_AFTER_DELETE, UNCLAIMED_TTL, Receipt, purge_due
 from nexus.domain.rules import CategoryRule
 from nexus.infra.db.tables import (
+    budgets,
     capability_gaps,
     categories,
     category_rules,
@@ -228,6 +229,36 @@ class SqlLedgerRepository:
             .where(categories.c.user_id == category.user_id, categories.c.id == category.id)
             .values(name=category.name, active=category.active)
         )
+
+    async def merge_category(
+        self, user_id: UserId, source_id: UUID, target_id: UUID, now: datetime
+    ) -> int:
+        moved = await self._db.execute(
+            update(transactions)
+            .where(transactions.c.user_id == user_id, transactions.c.category_id == source_id)
+            .values(category_id=target_id)
+        )
+        await self._db.execute(
+            update(category_rules)
+            .where(category_rules.c.user_id == user_id, category_rules.c.category_id == source_id)
+            .values(category_id=target_id, updated_at=now)
+        )
+        # The target keeps its own budget if it has one; else the source's moves over.
+        target_budget = exists().where(
+            budgets.c.user_id == user_id, budgets.c.category_id == target_id
+        )
+        await self._db.execute(
+            update(budgets)
+            .where(budgets.c.user_id == user_id, budgets.c.category_id == source_id)
+            .where(~target_budget)
+            .values(category_id=target_id, updated_at=now)
+        )
+        await self._db.execute(
+            update(categories)
+            .where(categories.c.user_id == user_id, categories.c.id == source_id)
+            .values(active=False)
+        )
+        return moved.rowcount
 
     # --- category rules -----------------------------------------------------------
 

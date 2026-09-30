@@ -703,6 +703,23 @@ async def edit_category(
     return category_out(result)
 
 
+class MergeIn(Model):
+    into_id: UUID
+
+
+class MergeOut(Model):
+    moved: int
+    into: CategoryOut
+
+
+@router.post("/categories/{category_id}/merge")
+async def merge_category(category_id: UUID, body: MergeIn, auth: Auth, web: Runtime) -> MergeOut:
+    merged = await category_cases.merge_category(
+        web.uow(), auth.user.id, category_id, body.into_id, now=web.clock()
+    )
+    return MergeOut(moved=merged.moved, into=category_out(merged.into))
+
+
 class RuleOut(Model):
     id: UUID
     pattern: str

@@ -28,7 +28,7 @@ One LLM agent serves both surfaces, but the parts that must be right, like money
   - Totals are in your home currency.
   - Each foreign-currency row shows its converted amount, the rate used and the day that rate was published.
   - An amount with no rate is flagged, never guessed.
-- **Every expense has a category.** Eleven common ones to start (Dining Out, Groceries, Transport, Shopping, Bills & Utilities, Socialising, Health, Travel, Activities, Income, Other), and you can add, rename or archive your own from chat or the Settings page (the cog in the nav). A category you name wins, then a rule, then the model's best guess; anything left goes to Other.
+- **Every expense has a category.** Twelve common ones to start (Dining Out, Groceries, Transport, Shopping, Bills & Utilities, Socialising, Health, Travel, Activities, Subscriptions & Software, Income, Other), and you can add, rename, archive or merge your own from chat or the Settings page (the cog in the nav). A category you name wins, then a rule, then the model's best guess; anything left goes to Other.
 - **Category rules you can see.** "grab" → Transport files new expenses automatically, and "why is this in Transport?" gets a real answer. Correcting a category offers a rule change, but never makes one without asking.
 - **Budgets:** monthly limits, overall or per category, with Telegram alerts at 50%, 80% and 100%, each sent once.
 - **Bills:** reminders 7, 3 and 1 days before, with Mark paid and Snooze buttons. It never pays anything.

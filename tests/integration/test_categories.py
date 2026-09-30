@@ -6,10 +6,12 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy import text
 
+from nexus.application import categories as category_cases
 from nexus.application import category_rules as rule_cases
 from nexus.application import email as email_cases
 from nexus.application.categories import list_categories
 from nexus.application.users import DEFAULT_CATEGORIES
+from nexus.domain.errors import InvalidInput
 from nexus.infra.db.engine import make_engine
 from tests.fakes import NOW, FakeEmailReader, FakeMailbox, call, fake_email, say, scripted
 from tests.integration.conftest import UowFactory, upgrade
@@ -23,10 +25,10 @@ async def names(uow: UowFactory, user_id: object) -> list[str]:
     return [c.name for c in await list_categories(uow(), user_id)]  # type: ignore[arg-type]
 
 
-async def test_new_users_get_the_eleven_defaults(uow: UowFactory) -> None:
+async def test_new_users_get_the_twelve_defaults(uow: UowFactory) -> None:
     user = await person(uow)
     assert sorted(await names(uow, user.id)) == sorted(DEFAULT_CATEGORIES)
-    assert len(DEFAULT_CATEGORIES) == 11
+    assert len(DEFAULT_CATEGORIES) == 12
 
 
 async def test_existing_users_get_the_new_defaults(empty_database_url: str) -> None:
@@ -235,3 +237,92 @@ async def test_users_add_rename_and_archive_their_own(uow: UowFactory) -> None:
     again = scripted(call("add_category", category="travel"), say("Back."))
     await build(uow, again).handle_text(user.id, "add travel back", "tg:1:6")
     assert tool_results(again) == ["Brought back Travel."]
+
+
+async def test_the_old_bots_other_categories_are_regrouped(empty_database_url: str) -> None:
+    await upgrade(empty_database_url, "0015")
+    engine = make_engine(empty_database_url)
+    ann = uuid4()
+    names_before = (*DEFAULT_CATEGORIES[:9], "Income", "Other")  # no Subscriptions & Software
+    legacy = ("Software", "Digital Goods & In-App Purchases", "Others", "Automotive",
+              "Personal Care")  # fmt: skip
+    cat = {name: uuid4() for name in (*names_before, *legacy, "Pets")}
+    txs: dict[str, UUID] = {}
+    try:
+        async with engine.begin() as db:
+            await db.execute(
+                text(
+                    "INSERT INTO users (id, telegram_user_id, timezone, home_currency, role) "
+                    "VALUES (:id, 300, 'Asia/Singapore', 'SGD', 'owner')"
+                ),
+                {"id": ann},
+            )
+            for name, cid in cat.items():
+                await db.execute(
+                    text("INSERT INTO categories (id, user_id, name) VALUES (:id, :u, :n)"),
+                    {"id": cid, "u": ann, "n": name},
+                )
+            # The old bot's categories have imported expenses; Pets is Ann's own.
+            for name in (*legacy, "Pets"):
+                txs[name] = uuid4()
+                await db.execute(
+                    text(
+                        "INSERT INTO transactions (id, user_id, direction, amount, currency, "
+                        "occurred_at, category_id, status, source, created_at, updated_at) "
+                        "VALUES (:id, :u, 'out', 5, 'SGD', now(), :c, 'confirmed', :src, "
+                        "now(), now())"
+                    ),
+                    {
+                        "id": txs[name],
+                        "u": ann,
+                        "c": cat[name],
+                        "src": "text" if name == "Pets" else "import",
+                    },
+                )
+        await upgrade(empty_database_url)
+        async with engine.connect() as db:
+            rows = await db.execute(
+                text(
+                    "SELECT t.id, c.name FROM transactions AS t "
+                    "JOIN categories AS c ON c.id = t.category_id"
+                )
+            )
+            filed: dict[UUID, str] = {r.id: r.name for r in rows}
+            cats = await db.execute(text("SELECT name, active FROM categories"))
+            active = {r.name for r in cats if r.active}
+    finally:
+        await engine.dispose()
+    assert filed[txs["Software"]] == "Subscriptions & Software"
+    assert filed[txs["Digital Goods & In-App Purchases"]] == "Subscriptions & Software"
+    assert filed[txs["Others"]] == "Other"
+    assert filed[txs["Automotive"]] == "Transport"
+    assert filed[txs["Personal Care"]] == "Personal Care"  # kept, as asked
+    assert filed[txs["Pets"]] == "Pets"  # Ann's own: left alone
+    assert active == {*DEFAULT_CATEGORIES, "Personal Care", "Pets"}
+
+
+async def test_merging_one_category_into_another(uow: UowFactory) -> None:
+    user = await person(uow)
+    software = await category_cases.create_category(uow(), user.id, "Software")
+    cats = {c.name: c.id for c in await list_categories(uow(), user.id)}
+    model = scripted(
+        call("log_expense", amount="20", merchant="Cursor", category="Software"),
+        say("ok"),
+        call("merge_category", category="Software", into="Subscriptions & Software"),
+        say("Merged."),
+    )
+    agent = build(uow, model)
+    await agent.handle_text(user.id, "cursor 20 software", "tg:1:1")
+    await rule_cases.set_rule(uow(), user, "cursor", software.id, now=NOW)
+    ask = only(await agent.handle_text(user.id, "merge software into subscriptions", "tg:1:2"))
+    assert ask.text.startswith("Move everything filed under Software into Subscriptions")
+    await agent.resolve(user.id, ask.buttons[0][0].data.split(":")[1], True)
+    assert tool_results(model)[-1] == (
+        "Merged Software into Subscriptions & Software: 1 transaction moved, and Software is "
+        "archived."
+    )
+    assert "Software" not in await names(uow, user.id)
+    [rule] = await rule_cases.list_rules(uow(), user.id)
+    assert rule.category.id == cats["Subscriptions & Software"]
+    with pytest.raises(InvalidInput):
+        await category_cases.merge_category(uow(), user.id, cats["Other"], cats["Other"], now=NOW)
