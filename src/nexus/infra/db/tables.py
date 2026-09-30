@@ -451,6 +451,36 @@ memories = Table(
     Index("ix_memories_user_id_updated_at", "user_id", "updated_at"),
 )
 
+# A bank's CSV layout the user saved, found again by its header row.
+statement_mappings = Table(
+    "statement_mappings",
+    metadata,
+    _uuid_pk(),
+    _user_fk(),
+    Column("name", Text, nullable=False),
+    Column("header_key", Text, nullable=False),
+    Column("mapping", JSONB, nullable=False),
+    Column("created_at", TZ, nullable=False),
+    Column("updated_at", TZ, nullable=False),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+    UniqueConstraint("user_id", "header_key"),
+    CheckConstraint("length(name) BETWEEN 1 AND 60", name="name_length"),
+)
+
+# One confirmed statement import, so it can be listed and undone as a whole.
+statement_imports = Table(
+    "statement_imports",
+    metadata,
+    _uuid_pk(),
+    _user_fk(),
+    Column("file_name", Text, nullable=False),
+    Column("transaction_ids", JSONB, nullable=False),
+    Column("created_at", TZ, nullable=False),
+    Column("undone_at", TZ),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+    Index("ix_statement_imports_user_id_created_at", "user_id", "created_at"),
+)
+
 # Background work. A job is claimed atomically (FOR UPDATE SKIP LOCKED) and
 # every job has a unique dedupe key, so none runs twice.
 jobs = Table(
