@@ -7,6 +7,8 @@ statement is filed as income, never as salary: payday and the usual salary are
 the user's to set.
 """
 
+import csv
+import io
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta
@@ -30,7 +32,9 @@ from nexus.domain.ledger import (
 )
 from nexus.domain.money import Money
 from nexus.domain.rules import best_rule
+from nexus.domain.statement_pdf import Kind, read_statement_lines
 from nexus.domain.statements import (
+    DateOrder,
     Mapping,
     RowStatus,
     SavedMapping,
@@ -290,3 +294,38 @@ async def forget_layout(uow: UnitOfWork, actor: UserId, mapping_id: UUID) -> Non
         if not await uow.statements.delete_mapping(actor, mapping_id):
             raise NotFound("no such saved layout")
         await uow.commit()
+
+
+# --- PDF statements -------------------------------------------------------------------------
+
+PDF_LAYOUT = Mapping(date=0, description=(1,), amount=2, date_order=DateOrder.YMD)
+
+
+@dataclass(frozen=True, slots=True)
+class PdfRead:
+    """A PDF statement's transactions as CSV, for the same preview and import."""
+
+    csv: str
+    kind: Kind
+    statement_date: date | None
+    rows: int
+    reconciles: bool | None  # the rows add up to the statement's own totals
+
+
+def read_pdf(lines: list[str]) -> PdfRead:
+    """From the PDF's text lines; InvalidInput when it has no readable transactions
+    (a scan, or a layout this reader doesn't know)."""
+    found = read_statement_lines(lines)
+    if not found.rows:
+        raise InvalidInput(
+            "couldn't find any transactions in that PDF. If it's a scan, your bank's CSV "
+            "export will work instead"
+        )
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(["Date", "Description", "Amount"])
+    for row in found.rows:
+        writer.writerow([row.day.isoformat(), row.description, str(row.amount)])
+    return PdfRead(
+        out.getvalue(), found.kind, found.statement_date, len(found.rows), found.reconciles
+    )

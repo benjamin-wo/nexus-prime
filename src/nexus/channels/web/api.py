@@ -1,5 +1,8 @@
 """JSON API for the web cockpit. Thin: parse, call a use case, shape the result."""
 
+import asyncio
+import base64
+import binascii
 from datetime import date, datetime, time, timedelta
 from typing import Annotated, Any, Literal
 from uuid import UUID
@@ -57,6 +60,7 @@ from nexus.domain.money import Money
 from nexus.domain.notifications import LABELS, Frequency
 from nexus.domain.planning import Cadence, PayRule, next_month_start
 from nexus.domain.statements import AmountSign, DateOrder, Mapping, StatementImport
+from nexus.infra.pdf.text import PasswordNeeded, pdf_lines
 
 router = APIRouter(prefix="/api")
 EXPORT_LIMIT = 10_000
@@ -881,6 +885,48 @@ async def preview_import(body: PreviewIn, auth: Auth, web: Runtime) -> PreviewOu
             )
             for p in shown.rows
         ],
+    )
+
+
+PDF_BASE64_CHARS = 14_000_000  # a 10 MB PDF, base64-encoded
+
+
+class PdfIn(Model):
+    pdf: str = Field(min_length=1, max_length=PDF_BASE64_CHARS)  # base64
+    password: str | None = Field(None, max_length=200)
+
+
+class PdfOut(Model):
+    needs_password: bool = False
+    wrong_password: bool = False
+    csv: str | None = None
+    layout: LayoutIn | None = None
+    kind: str | None = None
+    statement_date: date | None = None
+    rows: int = 0
+    reconciles: bool | None = None
+
+
+@router.post("/imports/pdf")
+async def read_pdf_statement(body: PdfIn, auth: Auth, web: Runtime) -> PdfOut:
+    """A PDF statement's transactions as CSV, previewed and imported like any CSV.
+    The PDF and its password are only held for this request."""
+    try:
+        data = base64.b64decode(body.pdf, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise InvalidInput("that file didn't arrive whole; try again") from exc
+    try:
+        lines = await asyncio.to_thread(pdf_lines, data, body.password)
+    except PasswordNeeded as locked:
+        return PdfOut(needs_password=True, wrong_password=locked.wrong)
+    found = statement_cases.read_pdf(lines)
+    return PdfOut(
+        csv=found.csv,
+        layout=layout_out(statement_cases.PDF_LAYOUT),
+        kind=found.kind.value,
+        statement_date=found.statement_date,
+        rows=found.rows,
+        reconciles=found.reconciles,
     )
 
 

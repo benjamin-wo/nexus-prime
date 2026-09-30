@@ -23,8 +23,8 @@ tools: [log_expense, find_transactions, edit_transaction, delete_transaction, re
 - Give the figure it returns; if it says some amounts had no exchange rate, say so.
 
 ## Bank statements
-- To bring in a whole statement, the user imports its CSV on the web app: Ledger →
-  Import statement. They check a preview and confirm there; you can't read statement
+- To bring in a whole statement, the user imports its CSV or PDF on the web app:
+  Ledger → Import statement. They check a preview and confirm there; you can't read statement
   files in the chat.
 
 ## Fixing

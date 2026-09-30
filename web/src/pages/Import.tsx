@@ -5,7 +5,25 @@ import { Link } from "react-router-dom";
 import { api, type ImportLayout, type ImportPreview, type ImportRecord, type ImportRow } from "../api";
 import { formatDate, formatMoney } from "../format";
 
-const MAX_BYTES = 2_000_000;
+const MAX_CSV_BYTES = 2_000_000;
+const MAX_PDF_BYTES = 10_000_000;
+
+type PdfRead = {
+  needs_password: boolean;
+  wrong_password: boolean;
+  csv: string | null;
+  layout: ImportLayout | null;
+  kind: "card" | "account" | null;
+  rows: number;
+  reconciles: boolean | null;
+};
+
+async function base64Of(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(binary);
+}
 const VERDICT: Record<ImportRow["verdict"], { label: string; className: string }> = {
   new: { label: "New", className: "badge badge-in" },
   duplicate: { label: "Possible duplicate", className: "badge badge-pending" },
@@ -168,7 +186,10 @@ function RowLine({ row, checked, onToggle }: { row: ImportRow; checked: boolean;
 export function ImportPage() {
   const client = useQueryClient();
   const history = useQuery({ queryKey: ["imports"], queryFn: () => api<ImportRecord[]>("/imports") });
-  const [file, setFile] = useState<{ name: string; text: string } | null>(null);
+  const [file, setFile] = useState<{ name: string; text: string; fromPdf: boolean } | null>(null);
+  const [locked, setLocked] = useState<{ name: string; pdf: string; wrong: boolean } | null>(null);
+  const [password, setPassword] = useState("");
+  const [check, setCheck] = useState<boolean | null>(null);
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [ticked, setTicked] = useState<Set<number>>(new Set());
   const [saveAs, setSaveAs] = useState("");
@@ -192,16 +213,45 @@ export function ImportPage() {
     }
   }
 
+  async function openPdf(name: string, pdf: string, pass: string | null) {
+    setBusy(true);
+    setError(null);
+    try {
+      const read = await api<PdfRead>("/imports/pdf", { method: "POST", body: { pdf, password: pass } });
+      if (read.needs_password || !read.csv || !read.layout) {
+        setLocked({ name, pdf, wrong: read.wrong_password });
+        setBusy(false);
+        return;
+      }
+      setLocked(null);
+      setPassword("");
+      setCheck(read.reconciles);
+      setFile({ name, text: read.csv, fromPdf: true });
+      await show(read.csv, read.layout);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't read that PDF");
+      setBusy(false);
+    }
+  }
+
   async function choose(event: ChangeEvent<HTMLInputElement>) {
     const picked = event.target.files?.[0];
     setDone(null);
+    setPreview(null);
+    setLocked(null);
+    setCheck(null);
     if (!picked) return;
-    if (picked.size > MAX_BYTES) {
-      setError("That file is larger than 2 MB.");
+    const isPdf = picked.type === "application/pdf" || picked.name.toLowerCase().endsWith(".pdf");
+    if (picked.size > (isPdf ? MAX_PDF_BYTES : MAX_CSV_BYTES)) {
+      setError(isPdf ? "That PDF is larger than 10 MB." : "That file is larger than 2 MB.");
+      return;
+    }
+    if (isPdf) {
+      await openPdf(picked.name, await base64Of(picked), null);
       return;
     }
     const text = await picked.text();
-    setFile({ name: picked.name, text });
+    setFile({ name: picked.name, text, fromPdf: false });
     await show(text, null);
   }
 
@@ -217,7 +267,7 @@ export function ImportPage() {
           layout: preview.layout,
           include: [...ticked],
           file_name: file.name,
-          save_as: save && saveAs.trim() ? saveAs.trim() : null,
+          save_as: save && saveAs.trim() && !file.fromPdf ? saveAs.trim() : null,
         },
       });
       setDone(record);
@@ -251,7 +301,9 @@ export function ImportPage() {
       <div className="page-head">
         <div>
           <h1>Import a statement</h1>
-          <p className="muted">A CSV from your bank or card. Nothing is added until you check it and confirm.</p>
+          <p className="muted">
+            A CSV or PDF statement from your bank or card. Nothing is added until you check it and confirm.
+          </p>
         </div>
         <Link className="btn" to="/ledger">
           Back to ledger
@@ -261,9 +313,39 @@ export function ImportPage() {
       <section className="card" aria-labelledby="import-file">
         <h2 id="import-file">Statement file</h2>
         <label className="field">
-          Choose a CSV file
-          <input className="input" type="file" accept=".csv,text/csv" onChange={choose} disabled={busy} />
+          Choose a CSV or PDF
+          <input
+            className="input"
+            type="file"
+            accept=".csv,.pdf,text/csv,application/pdf"
+            onChange={choose}
+            disabled={busy}
+          />
         </label>
+        {locked && (
+          <form
+            className="import-actions"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void openPdf(locked.name, locked.pdf, password);
+            }}
+          >
+            <label className="field">
+              {locked.wrong ? "That password didn't open it. Try again" : "This PDF is locked. Its password"}
+              <input
+                className="input"
+                type="password"
+                autoComplete="off"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </label>
+            <button type="submit" className="btn btn-primary" disabled={!password || busy}>
+              Open
+            </button>
+            <span className="caption">Used only to read this file; it isn't kept.</span>
+          </form>
+        )}
         {busy && <p className="state">Reading…</p>}
         {error && (
           <p className="error-text" role="alert">
@@ -294,7 +376,14 @@ export function ImportPage() {
               {preview.saved_as ? `Using your saved layout “${preview.saved_as}”` : file.name}
             </span>
           </div>
-          {preview.layout ? (
+          {file.fromPdf ? (
+            <p className={check === false ? "error-text" : "caption"} role="note">
+              {check === true && "Read from the PDF. These rows add up to the statement's own totals."}
+              {check === false &&
+                "Read from the PDF, but these rows don't add up to the statement's totals: some may be missing. Check them against the statement."}
+              {check === null && "Read from the PDF. The statement doesn't state totals to check against."}
+            </p>
+          ) : preview.layout ? (
             <LayoutEditor headers={preview.headers} layout={preview.layout} onChange={(l) => show(file.text, l)} />
           ) : (
             <>
@@ -338,18 +427,22 @@ export function ImportPage() {
                 </table>
               </div>
               <div className="import-actions">
-                <label className="check">
-                  <input type="checkbox" checked={save} onChange={(e) => setSave(e.target.checked)} /> Remember these
-                  columns as
-                </label>
-                <input
-                  className="input"
-                  placeholder="My bank"
-                  aria-label="Name for this layout"
-                  value={saveAs}
-                  onChange={(e) => setSaveAs(e.target.value)}
-                  disabled={!save}
-                />
+                {!file.fromPdf && (
+                  <>
+                    <label className="check">
+                      <input type="checkbox" checked={save} onChange={(e) => setSave(e.target.checked)} /> Remember
+                      these columns as
+                    </label>
+                    <input
+                      className="input"
+                      placeholder="My bank"
+                      aria-label="Name for this layout"
+                      value={saveAs}
+                      onChange={(e) => setSaveAs(e.target.value)}
+                      disabled={!save}
+                    />
+                  </>
+                )}
                 <button type="button" className="btn btn-primary" onClick={confirm} disabled={busy || ticked.size === 0}>
                   Import {ticked.size} transaction{ticked.size === 1 ? "" : "s"}
                 </button>

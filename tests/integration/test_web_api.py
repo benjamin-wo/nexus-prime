@@ -1117,3 +1117,38 @@ async def test_import_a_statement(world: World) -> None:
     assert (await owner.send("DELETE", f"/api/imports/layouts/{layout['id']}")).status_code == 204
     bad = await owner.send("POST", "/api/imports/preview", {"csv": "Date,Amount\n"})
     assert bad.status_code == 422
+
+
+async def test_import_a_pdf_statement(world: World) -> None:
+    import base64
+
+    from tests.pdfs import make_pdf
+    from tests.unit.test_statement_pdf import CARD
+
+    owner = world.browser()
+    await owner.login(OWNER)
+    locked = base64.b64encode(make_pdf(CARD, password="S1234567A")).decode()
+    asked = (await owner.send("POST", "/api/imports/pdf", {"pdf": locked})).json()
+    assert asked["needs_password"] and not asked["wrong_password"]
+    wrong = (await owner.send("POST", "/api/imports/pdf", {"pdf": locked, "password": "x"})).json()
+    assert wrong["wrong_password"]
+    read = (
+        await owner.send("POST", "/api/imports/pdf", {"pdf": locked, "password": "S1234567A"})
+    ).json()
+    assert read["rows"] == 5 and read["reconciles"] is True and read["kind"] == "card"
+    shown = (
+        await owner.send(
+            "POST", "/api/imports/preview", {"csv": read["csv"], "layout": read["layout"]}
+        )
+    ).json()
+    assert [r["verdict"] for r in shown["rows"]] == ["new"] * 5
+    done = await owner.send(
+        "POST",
+        "/api/imports",
+        {"csv": read["csv"], "layout": read["layout"], "include": [0, 1], "file_name": "e.pdf"},
+    )
+    assert done.json()["added"] == 2
+    bad = await owner.send("POST", "/api/imports/pdf", {"pdf": "%%%not base64"})
+    assert bad.status_code == 422
+    plain = base64.b64encode(make_pdf(["Dear customer, nothing to see."])).decode()
+    assert (await owner.send("POST", "/api/imports/pdf", {"pdf": plain})).status_code == 422

@@ -426,6 +426,16 @@ export async function fakeApi(page: Page, { signedIn = true, emailConnected = fa
       Object.assign(category, body);
       return json(route, category);
     }
+    if (path === "/imports/pdf" && method === "POST") {
+      if (body.password !== "secret") {
+        return json(route, { needs_password: true, wrong_password: Boolean(body.password), csv: null, layout: null, kind: null, rows: 0, reconciles: null });
+      }
+      return json(route, {
+        needs_password: false, wrong_password: false, kind: "card", rows: 2, reconciles: true,
+        csv: "Date,Description,Amount\n2026-09-05,Beach Cafe,-28.50\n2026-09-08,Online Refund,10.00\n",
+        layout: { date: 0, description: [1], amount: 2, debit: null, credit: null, currency: null, date_order: "ymd", sign: "negative_is_out" },
+      });
+    }
     if (path === "/imports/preview" && method === "POST") {
       const csv = String(body.csv);
       const layout = body.layout ?? {
