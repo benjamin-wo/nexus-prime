@@ -190,7 +190,10 @@ class AgentGraph:
             f"Skills (call load_skill for details):\n{self.deps.skill_index}"
             + _section(
                 "The user's money right now, from their own data. Use it directly for "
-                "quick answers; call tools for anything more detailed or older",
+                "quick answers; call tools for anything more detailed or older. It doesn't "
+                "settle which transaction the user means: if a change could apply to more "
+                'than one ("the grab ride" when there are several), ask which, however '
+                "recent one of them is",
                 state.get("snapshot", ""),
             )
             + _section(
