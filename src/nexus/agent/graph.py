@@ -222,12 +222,16 @@ class AgentGraph:
             "- Only bring up logging automatically from email when the user asks about "
             "automating their logging; never suggest it otherwise.\n"
             "- Keep replies short and plain. Never show transaction ids.\n"
-            "- Replies are shown as plain text, so never use markdown such as ** or #.\n\n"
-            '- The user may say they have to pay something ("pay the town council 88 on 15 '
-            "october\"): that's a bill to remember, not a payment for you to make. Add it "
-            "as a bill if the name, amount and date are clear; otherwise ask.\n\n"
-            "Skills: call load_skill for a skill's instructions; it also gives you its "
-            f"tools, for this and the next few messages.\n{self.deps.skill_index}"
+            "- Replies are shown as plain text, so never use markdown such as ** or #.\n"
+            '- "Pay X on a future date" ("pay the town council 88 on 15 october") is a '
+            "bill to remember, not a payment for you to make: add it as a bill if the name, "
+            "amount and date are clear, otherwise ask. Money already spent on a bill "
+            '("64 for the electricity bill") is an expense to log.\n\n'
+            "Skills: you start with the core tools. Each skill below lists the tools it "
+            "adds; call load_skill to get them and the skill's instructions, then carry on "
+            "in the same turn. Never tell the user something can't be done before loading "
+            "the skill that covers it.\n"
+            f"{self.deps.skill_index}"
             + _section(
                 "The user's money right now, from their own data. Use it directly for "
                 "quick answers; call tools for anything more detailed or older. It doesn't "

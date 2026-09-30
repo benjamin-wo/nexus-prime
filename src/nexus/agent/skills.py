@@ -55,7 +55,10 @@ class SkillLibrary:
         return {s.name: s.tools for s in self._skills.values()}
 
     def index(self) -> str:
-        return "\n".join(f"- {s.name}: {s.description}" for s in self._skills.values())
+        return "\n".join(
+            f"- {s.name}: {s.description} Tools: {', '.join(s.tools)}."
+            for s in self._skills.values()
+        )
 
     def body(self, name: str) -> str:
         skill = self._skills.get(name.strip().lower())
