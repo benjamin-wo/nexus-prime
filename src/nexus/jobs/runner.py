@@ -26,6 +26,9 @@ log = logging.getLogger(__name__)
 
 MAX_ATTEMPTS = 5
 KEEP_DONE = timedelta(days=7)
+# Jobs whose payload is the user's own words: emptied once the job is over, so the
+# jobs table never keeps a copy of what they said.
+PRIVATE_KINDS = frozenset({"memory.update"})
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 
@@ -178,6 +181,8 @@ class JobRunner:
         values: dict[str, Any] = {"status": status, "locked_until": None, "last_error": error}
         if status in {"done", "failed"}:
             values["finished_at"] = self._clock()
+            if job.kind in PRIVATE_KINDS:
+                values["payload"] = {}
         if run_at is not None:
             values["run_at"] = run_at
         if attempts is not None:

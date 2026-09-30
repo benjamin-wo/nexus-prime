@@ -19,7 +19,7 @@ from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.ledger import Direction, User, UserId
 from nexus.domain.money import Money
 from nexus.infra.db.tables import budget_alerts, jobs
-from nexus.jobs.handlers import BUDGETS_SWEEP, build_handlers
+from nexus.jobs.handlers import BUDGETS_SWEEP, MEMORY_UPDATE, build_handlers
 from nexus.jobs.runner import MAX_ATTEMPTS, Defer, JobRunner, Schedule
 from tests.fakes import FakeRates, FakeTelegram
 from tests.integration.conftest import UowFactory
@@ -69,6 +69,27 @@ async def test_two_runners_run_a_job_exactly_once(engine: AsyncEngine, uow: UowF
     await asyncio.gather(*(r.tick() for r in runners))
     assert sorted(c["n"] for c in calls) == [0, 1, 2, 3, 4]
     assert {r.status for r in await job_rows(engine)} == {"done"}
+
+
+async def test_a_private_jobs_payload_is_emptied_when_done(
+    engine: AsyncEngine, uow: UowFactory
+) -> None:
+    seen: list[dict[str, Any]] = []
+
+    async def remember(payload: dict[str, Any]) -> None:
+        seen.append(payload)
+
+    async def other(payload: dict[str, Any]) -> None:
+        return None
+
+    clock = Clock()
+    await enqueue(uow, MEMORY_UPDATE, "m-1", clock.now, messages=["ann is my sister"])
+    await enqueue(uow, "work", "w-1", clock.now, n=1)
+    await JobRunner(engine, {MEMORY_UPDATE: remember, "work": other}, clock=clock).tick()
+    assert seen == [{"messages": ["ann is my sister"]}]  # the handler got the words
+    rows = {r.kind: r for r in await job_rows(engine)}
+    assert rows[MEMORY_UPDATE].status == "done" and rows[MEMORY_UPDATE].payload == {}
+    assert rows["work"].payload == {"n": 1}  # other jobs keep theirs
 
 
 async def test_two_runners_schedule_one_job_per_slot(engine: AsyncEngine) -> None:
