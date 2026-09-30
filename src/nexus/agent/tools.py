@@ -9,6 +9,7 @@ import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -22,6 +23,7 @@ from nexus.application import categories as category_cases
 from nexus.application import category_rules as rule_cases
 from nexus.application import email as email_cases
 from nexus.application import income as income_cases
+from nexus.application import ledger_questions as question_cases
 from nexus.application import notifications as notify_cases
 from nexus.application import receipts as receipt_cases
 from nexus.application import salary as salary_cases
@@ -487,6 +489,146 @@ async def _summary(ctx: ToolContext, a: SummaryArgs) -> ToolResult:
     lines += [
         f"  {c.category_name or 'Uncategorised'}: {c.total}" for c in summary.spending_by_category
     ]
+    return ToolResult("\n".join(lines))
+
+
+_DAY_NAMES = {name.lower(): i for i, name in enumerate(question_cases.WEEKDAYS)}
+_RECURRING_GROUPS = {
+    question_cases.GroupBy.CATEGORY,
+    question_cases.GroupBy.MERCHANT,
+    question_cases.GroupBy.WEEKDAY,
+}
+_DAY_SETS = {"weekdays": range(5), "weekends": range(5, 7)}
+type DayName = Literal["mon", "tue", "wed", "thu", "fri", "sat", "sun", "weekdays", "weekends"]
+
+
+class QueryArgs(Args):
+    start_date: str | None = Field(None, description="YYYY-MM-DD; default: 1st of this month")
+    end_date: str | None = Field(None, description="YYYY-MM-DD inclusive; default: today")
+    direction: Literal["out", "in"] = Field("out", description="out: spending; in: money received")
+    merchant: str | None = Field(None, description="Text found in the merchant or notes")
+    category: str | None = Field(None, description="A category name, or 'uncategorised'")
+    source: Literal["text", "photo", "email", "import", "manual"] | None = None
+    min_amount: str | None = Field(None, description="In the home currency, inclusive")
+    max_amount: str | None = Field(None, description="In the home currency, inclusive")
+    days: list[DayName] | None = Field(None, description="Only these days of the week")
+    group_by: Literal["category", "merchant", "day", "week", "month", "weekday"] | None = None
+    measure: Literal["total", "count", "average", "largest"] = Field(
+        "total", description="What ranks the groups; 'largest' also lists the biggest items"
+    )
+    top: int = Field(10, ge=1, le=question_cases.MAX_TOP, description="How many groups or items")
+    compare_previous: bool = Field(
+        False, description="Also the period just before (the previous month for a month)"
+    )
+
+
+def _bound(value: str | None) -> Decimal | None:
+    if value is None:
+        return None
+    try:
+        return Decimal(value.replace(",", ""))
+    except InvalidOperation as exc:
+        raise InvalidInput(f"not an amount: {value!r}") from exc
+
+
+async def _question(ctx: ToolContext, a: QueryArgs) -> question_cases.LedgerQuestion:
+    start = (
+        day_start(ctx, a.start_date)
+        if a.start_date
+        else datetime.combine(ctx.today().replace(day=1), time(), tzinfo=ctx.tz)
+    )
+    end = day_start(ctx, a.end_date or ctx.today().isoformat()) + timedelta(days=1)
+    uncategorised = a.category is not None and a.category.casefold() in {
+        "uncategorised",
+        "uncategorized",
+    }
+    weekdays = None
+    if a.days:
+        weekdays = frozenset(i for d in a.days for i in (_DAY_SETS.get(d) or (_DAY_NAMES[d],)))
+    return question_cases.LedgerQuestion(
+        start=start,
+        end=end,
+        direction=Direction(a.direction),
+        search=a.merchant,
+        category_id=None if uncategorised else await resolve_category(ctx, a.category),
+        uncategorised=uncategorised,
+        source=Source(a.source) if a.source else None,
+        min_amount=_bound(a.min_amount),
+        max_amount=_bound(a.max_amount),
+        weekdays=weekdays,
+        group_by=question_cases.GroupBy(a.group_by) if a.group_by else None,
+        measure=question_cases.Measure(a.measure),
+        top=a.top,
+        compare_previous=a.compare_previous,
+    )
+
+
+def _period(f: question_cases.Figures, tz: ZoneInfo) -> str:
+    last = (f.end - timedelta(days=1)).astimezone(tz).date()
+    return f"{f.start.astimezone(tz).date().isoformat()} to {last.isoformat()}"
+
+
+def _change(now: Money, before: Money) -> str:
+    diff = now - before
+    sign = "+" if diff.amount >= 0 else ""
+    if not before.amount:
+        return f"{sign}{diff}"
+    pct = (diff.amount / before.amount * 100).quantize(Decimal(1))
+    return f"{sign}{diff}, {sign}{pct}%"
+
+
+def _figure_lines(f: question_cases.Figures, tz: ZoneInfo) -> list[str]:
+    lines = [
+        f"{_period(f, tz)}: {f.total} over {f.count} transaction{'s' * (f.count != 1)}"
+        + (f", average {f.average}" if f.count else "")
+    ]
+    if f.converted:
+        lines.append("includes " + ", ".join(str(m) for m in f.converted) + " converted")
+    if f.unconverted:
+        lines.append("not included (no exchange rate): " + ", ".join(map(str, f.unconverted)))
+    if f.truncated:
+        lines.append(f"only the latest {question_cases.MAX_ROWS} transactions were counted")
+    return lines
+
+
+def _group_line(g: question_cases.Group, measure: question_cases.Measure) -> str:
+    extra = {
+        question_cases.Measure.AVERAGE: f", average {g.average}",
+        question_cases.Measure.LARGEST: f", largest {g.largest}",
+    }.get(measure, "")
+    return f"  {g.key}: {g.total} ({g.count}{extra})"
+
+
+async def _query_ledger(ctx: ToolContext, a: QueryArgs) -> ToolResult:
+    q = await _question(ctx, a)
+    answer = await question_cases.ask_ledger(ctx.uow, _rates(ctx), ctx.user, q)
+    cats = await category_map(ctx)
+    now, before = answer.current, answer.previous
+    word = "Spent" if q.direction is Direction.OUT else "Received"
+    head, *notes = _figure_lines(now, ctx.tz)
+    lines = [f"{word}, in {answer.currency}, {head}", *notes]
+    if q.group_by:
+        lines.append(f"By {q.group_by.value}:")
+        lines += [_group_line(g, q.measure) for g in now.groups]
+        if now.more_groups:
+            lines.append(f"  ({now.more_groups} more not shown)")
+    if now.largest and (q.measure is question_cases.Measure.LARGEST or not q.group_by):
+        shown = now.largest if q.measure is question_cases.Measure.LARGEST else now.largest[:3]
+        lines.append("Largest:")
+        for item in shown:
+            tx = item.transaction
+            home = f" = {item.home}" if item.home.currency != tx.amount.currency else ""
+            lines.append(f"  {describe(tx, cats, ctx.tz)}{home}")
+    if before is not None:
+        head, *notes = _figure_lines(before, ctx.tz)
+        lines += [f"Period before, {head}; change {_change(now.total, before.total)}", *notes]
+        # Groups that recur across periods; a day, week or month never does.
+        if q.group_by in _RECURRING_GROUPS:
+            earlier = {g.key.casefold(): g.total for g in before.groups}
+            zero = Money.zero(answer.currency)
+            for g in now.groups:
+                was = earlier.get(g.key.casefold(), zero)
+                lines.append(f"  {g.key}: {was} before, {_change(g.total, was)}")
     return ToolResult("\n".join(lines))
 
 
@@ -1118,6 +1260,16 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
         ToolSpec("restore_transaction", "Bring back a deleted transaction.", IdArgs, _restore),
         ToolSpec("undo_last_change", "Undo the user's most recent change.", NoArgs, _undo),
         ToolSpec("spending_summary", "Totals for a period, by category.", SummaryArgs, _summary),
+        ToolSpec(
+            "query_ledger",
+            "Answer questions about the user's money in or out, in the home currency: filter "
+            "by dates, merchant, category, amount or day of the week; group by category, "
+            "merchant, day, week, month or weekday; rank by total, count, average or largest; "
+            "compare with the period before. Read-only. Prefer it for any 'how much', "
+            "'how often', 'biggest' or 'compare' question over adding up search results.",
+            QueryArgs,
+            _query_ledger,
+        ),
         ToolSpec("list_categories", "The user's active categories.", NoArgs, _categories),
         ToolSpec(
             "add_category",
