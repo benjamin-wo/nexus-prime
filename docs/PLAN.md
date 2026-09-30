@@ -43,7 +43,7 @@ A clean start removes almost all of that. The plan therefore keeps the old **pro
 ### New features (owner-approved)
 - Monthly budgets, overall and per category, with 50/80/100% alerts and no rollover.
 - Editable categories plus explainable suggestion rules. A correction never silently rewrites a rule.
-- Every expense gets a category: eleven defaults (users add, rename and archive their own), and anything unmatched goes to Other.
+- Every expense gets a category: twelve defaults (users add, rename, archive and merge their own), and anything unmatched goes to Other.
 - Recurrence detection: suggest a recurring rule after 3 similar transactions. Once approved, a rule creates forecasts and reminders only, never actual expenses.
 - Subscriptions: renewal date, annualised cost, reminders 7/3/1 days before, and a flag when the price changes. Never cancelled automatically.
 - Bills: due date, optional amount and recurrence, reminders 7/3/1 days before, snooze and mark-paid. Payments are never initiated.

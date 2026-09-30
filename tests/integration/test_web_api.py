@@ -312,7 +312,7 @@ async def test_categories_add_rename_archive(world: World) -> None:
     owner = world.browser()
     await owner.login(OWNER)
     names = [c["name"] for c in (await owner.get("/api/categories")).json()]
-    assert len(names) == 11 and "Other" in names
+    assert len(names) == 12 and "Other" in names
 
     made = await owner.send("POST", "/api/categories", {"name": "Pets"})
     assert made.status_code == 201
@@ -331,6 +331,19 @@ async def test_categories_add_rename_archive(world: World) -> None:
     assert {"name": "Pet care", "active": False} in [
         {"name": c["name"], "active": c["active"]} for c in every
     ]
+
+    # Merging moves its expenses over and archives it; merging into itself is refused.
+    await owner.send("PATCH", f"/api/categories/{pets}", {"active": True})
+    other = next(c["id"] for c in every if c["name"] == "Other")
+    await owner.send(
+        "POST", "/api/transactions",
+        {"direction": "out", "amount": "9", "category_id": pets, "date": "2026-09-27"},
+    )  # fmt: skip
+    merged = await owner.send("POST", f"/api/categories/{pets}/merge", {"into_id": other})
+    assert merged.status_code == 200
+    assert merged.json()["moved"] == 1 and merged.json()["into"]["name"] == "Other"
+    same = await owner.send("POST", f"/api/categories/{other}/merge", {"into_id": other})
+    assert same.status_code == 422
 
 
 async def test_ledger_round_trip(world: World) -> None:

@@ -403,6 +403,15 @@ export async function fakeApi(page: Page, { signedIn = true, emailConnected = fa
       categories.push(created);
       return json(route, created, 201);
     }
+    const categoryMerge = path.match(/^\/categories\/([\w-]+)\/merge$/);
+    if (categoryMerge && method === "POST") {
+      const source = categories.find((c) => c.id === categoryMerge[1])!;
+      const into = categories.find((c) => c.id === body.into_id)!;
+      source.active = false;
+      let moved = 0;
+      for (const tx of state.txs) if (tx.category_id === source.id) { tx.category_id = into.id; moved++; }
+      return json(route, { moved, into });
+    }
     const categoryEdit = path.match(/^\/categories\/([\w-]+)$/);
     if (categoryEdit && method === "PATCH") {
       const category = categories.find((c) => c.id === categoryEdit[1])!;

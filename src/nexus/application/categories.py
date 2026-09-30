@@ -1,4 +1,5 @@
-from dataclasses import replace
+from dataclasses import dataclass, replace
+from datetime import datetime
 from uuid import UUID, uuid4
 
 from nexus.application.ports import LedgerRepository, UnitOfWork
@@ -51,3 +52,25 @@ async def list_categories(
 ) -> list[Category]:
     async with uow:
         return await uow.ledger.list_categories(actor, include_inactive=include_inactive)
+
+
+@dataclass(frozen=True, slots=True)
+class Merged:
+    source: Category
+    into: Category
+    moved: int  # transactions refiled
+
+
+async def merge_category(
+    uow: UnitOfWork, actor: UserId, source_id: UUID, into_id: UUID, *, now: datetime
+) -> Merged:
+    """Fold one category into another: its expenses, rules and (if the other has none)
+    budget move over, and it's archived. Not undoable, but it can be brought back."""
+    if source_id == into_id:
+        raise InvalidInput("pick a different category to merge into")
+    async with uow:
+        source = await require_category(uow.ledger, actor, source_id, active=False)
+        into = await require_category(uow.ledger, actor, into_id)
+        moved = await uow.ledger.merge_category(actor, source.id, into.id, now)
+        await uow.commit()
+    return Merged(replace(source, active=False), into, moved)

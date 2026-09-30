@@ -18,6 +18,7 @@ DEFAULT_CATEGORIES = (
     "Health",
     "Travel",
     "Activities",
+    "Subscriptions & Software",
     "Income",
     "Other",
 )

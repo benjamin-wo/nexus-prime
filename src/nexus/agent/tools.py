@@ -552,6 +552,43 @@ async def _archive_category(ctx: ToolContext, a: CategoryNameArgs) -> ToolResult
     return ToolResult(f"{current.name} is archived. Past expenses keep it.", wrote=True)
 
 
+class MergeCategoryArgs(Args):
+    category: str = Field(description="The category to fold away")
+    into: str = Field(description="The category its expenses move into")
+
+
+async def _merge_pair(ctx: ToolContext, a: MergeCategoryArgs) -> tuple[Category, Category]:
+    source = await _find_category(ctx, a.category)
+    if source is None:
+        raise NotFound(f"there's no category called {a.category!r}")
+    into = await _find_category(ctx, a.into)
+    if into is None or not into.active:
+        raise NotFound(f"there's no active category called {a.into!r}")
+    if into.id == source.id:
+        raise InvalidInput("pick a different category to merge into")
+    return source, into
+
+
+async def _describe_merge_category(ctx: ToolContext, a: MergeCategoryArgs) -> str:
+    source, into = await _merge_pair(ctx, a)
+    return (
+        f"Move everything filed under {source.name} into {into.name} and archive "
+        f"{source.name}? This can't be undone automatically."
+    )
+
+
+async def _merge_category(ctx: ToolContext, a: MergeCategoryArgs) -> ToolResult:
+    source, into = await _merge_pair(ctx, a)
+    merged = await category_cases.merge_category(
+        ctx.uow(), ctx.user.id, source.id, into.id, now=ctx.now
+    )
+    count = f"{merged.moved} transaction{'' if merged.moved == 1 else 's'}"
+    return ToolResult(
+        f"Merged {source.name} into {into.name}: {count} moved, and {source.name} is archived.",
+        wrote=True,
+    )
+
+
 async def _rules(ctx: ToolContext, _: NoArgs) -> ToolResult:
     views = await rule_cases.list_rules(ctx.uow(), ctx.user.id)
     if not views:
@@ -1100,6 +1137,14 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             CategoryNameArgs,
             _archive_category,
             confirm=_describe_archive_category,
+        ),
+        ToolSpec(
+            "merge_category",
+            "Fold one category into another: its expenses, rules and budget move over and "
+            "it's archived. Asks the user to confirm.",
+            MergeCategoryArgs,
+            _merge_category,
+            confirm=_describe_merge_category,
         ),
         ToolSpec(
             "list_category_rules",
