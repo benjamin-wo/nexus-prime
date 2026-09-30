@@ -202,6 +202,7 @@ async def _telegram_runtime(
             primary=models.primary,
             fallbacks=models.fallbacks,
             skill_index=skills.index(),
+            skill_tools=skills.tools(),
             health=_health(engine, models),
             clock=clock,
             rates=rates,

@@ -50,6 +50,10 @@ class SkillLibrary:
             if unknown:
                 raise ValueError(f"skill {skill.name!r} names unknown tools {sorted(unknown)}")
 
+    def tools(self) -> dict[str, tuple[str, ...]]:
+        """Each skill's tools, which the model is offered once it loads the skill."""
+        return {s.name: s.tools for s in self._skills.values()}
+
     def index(self) -> str:
         return "\n".join(f"- {s.name}: {s.description}" for s in self._skills.values())
 

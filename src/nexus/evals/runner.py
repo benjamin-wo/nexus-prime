@@ -137,6 +137,7 @@ class Agent:
                 primary=self.model,
                 fallbacks=(),
                 skill_index=self.skills.index(),
+                skill_tools=self.skills.tools(),
                 health=health,
                 clock=lambda: seed.NOW,
                 rates=FixedRates(),
