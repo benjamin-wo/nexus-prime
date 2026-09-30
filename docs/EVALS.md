@@ -45,3 +45,14 @@ What still fails, and which part of M8 is meant to fix it:
 | "delete the netflix charge from september" | DeepSeek asks which one first (there is only one) | watch |
 
 Settings for production: `LLM_PROVIDER=openrouter`, `OPENROUTER_MODEL=deepseek/deepseek-v4.1-flash`, `OPENROUTER_VISION_MODEL=qwen/qwen3.8-flash`, `OPENROUTER_FALLBACK_MODELS=qwen/qwen3.8-flash`.
+
+## M8b: money snapshot and rolling summary (30 September 2026)
+
+Six cases added (158 in all): the last transaction, budget on track, anything due before payday, "move the last one to transport", and two long conversations (a detail from the first message, then 14 questions that push it out of the 40-message window, then the detail is needed). DeepSeek v4.1 Flash for chat, Qwen3.8 Flash for photos, three runs each:
+
+| | Passed | M8b cases | Median reply |
+|---|---|---|---|
+| Before (main) | 146, 146, 147 | 4/6 each run: both long conversations fail | 1.4s |
+| With M8b | 148, 149, 147 | 6/6 each run | 1.4s |
+
+Cost a case is unchanged (about $0.00035). The first M8b run had the model edit the newest Grab ride for "change the grab ride to 15" instead of asking which, a case the baseline passed; the prompt now says the snapshot doesn't settle which transaction is meant, and it didn't recur. Outside memory (M8e), the only failures left are the M8c and M8d cases, plus one run each of an over-careful date question and the real receipt photo.

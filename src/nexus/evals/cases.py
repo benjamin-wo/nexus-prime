@@ -105,6 +105,24 @@ def _new(text: str) -> Turn:
     return Turn(text, new_conversation=True)
 
 
+# Quick questions that fill a conversation past the model's message window.
+_FILLER = (
+    "how much did i spend yesterday",
+    "who owes me money",
+    "what bills are coming up",
+    "how's my dining budget",
+    "what subscriptions do i have",
+    "when's payday",
+    "what categories do i have",
+    "how much did i spend on grab this month",
+    "what was my biggest expense this month",
+    "how much did i spend in august",
+    "how much came in this month",
+    "list my grab rides this month",
+    "what did i spend at kopitiam this month",
+    "any bills this week",
+)
+
 _QUIET = ("remember", "noted", "i'll keep", "saved that", "memory")
 
 CASES: tuple[Case, ...] = (
@@ -1000,5 +1018,60 @@ CASES: tuple[Case, ...] = (
         _t(Turn("", photo="landscape")),
         unchanged=True,
         confirms=False,
+    ),
+    # --- the money snapshot and long conversations (M8b) ------------------------------
+    Case(
+        "ctx-last",
+        "context",
+        _t("what was my last transaction?"),
+        unchanged=True,
+        reply=("kopitiam", "4.20"),
+        target="M8b",
+    ),
+    Case(
+        "ctx-on-track",
+        "context",
+        _t("am i on track with my dining budget?"),
+        unchanged=True,
+        reply=(("156.10", "143.90"),),
+        target="M8b",
+    ),
+    Case(
+        "ctx-before-payday",
+        "context",
+        _t("anything i need to pay before payday?"),
+        unchanged=True,
+        reply=("rent",),
+        target="M8b",
+    ),
+    Case(
+        "ctx-move-last",
+        "context",
+        _t("move the last one to transport"),
+        checks=(Changed("Kopitiam", TODAY, category="Transport"),),
+        target="M8b",
+    ),
+    Case(
+        "ctx-long-recall",
+        "context",
+        _t(
+            "fyi i'm saving 800 for a bali trip in november",
+            *_FILLER,
+            "how much did i say i'm saving for bali?",
+        ),
+        unchanged=True,
+        reply=("800",),
+        target="M8b",
+    ),
+    Case(
+        "ctx-long-pending",
+        "context",
+        _t(
+            "dinner at jumbo tonight, probably about 80. i'll tell you the exact amount later",
+            *_FILLER,
+            "log that dinner now, it came to 85",
+        ),
+        checks=(Logged("85", "jumbo"),),
+        target="M8b",
     ),
 )
