@@ -26,9 +26,10 @@ type UowFactory = Callable[[], UnitOfWork]
 KNOWN_LASTING = 60  # existing facts and preferences shown to the writer
 KNOWN_EPISODES = 10  # and episodes that match the message
 MAX_CHANGES = 5
-# A reply is a few short changes. Models now and then run away inside JSON (pages of
-# whitespace), so the reply is capped in length and time; a capped reply is retried.
-MAX_OUTPUT_TOKENS = 500
+# A reply is a few short changes, but reasoning models think first (DeepSeek used up
+# to 500 tokens), and now and then a model runs away inside its JSON (pages of
+# whitespace). So the reply is capped in length and time; a capped reply is retried.
+MAX_OUTPUT_TOKENS = 1500
 TIMEOUT_SECONDS = 30
 
 _PROMPT = """You keep the long-term memory of Nexus, a personal finance assistant.
