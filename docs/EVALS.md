@@ -56,3 +56,16 @@ Six cases added (158 in all): the last transaction, budget on track, anything du
 | With M8b | 148, 149, 147 | 6/6 each run | 1.4s |
 
 Cost a case is unchanged (about $0.00035). The first M8b run had the model edit the newest Grab ride for "change the grab ride to 15" instead of asking which, a case the baseline passed; the prompt now says the snapshot doesn't settle which transaction is meant, and it didn't recur. Outside memory (M8e), the only failures left are the M8c and M8d cases, plus one run each of an over-careful date question and the real receipt photo.
+
+## M8c: `query_ledger` (30 September 2026)
+
+Seven harder questions added (165 in all): top 3 merchants, average Grab ride, dining out against last month, expenses over 50 since August, the busiest weekday, a category that includes a converted USD charge, and savings in August. Same models, three runs each, the new cases also run against main:
+
+| | Passed | M8c cases | Median reply | Cost a case |
+|---|---|---|---|---|
+| Before (main) | 153, 155, 157 | 11, 11, 12 of 12 | 2.9–3.3s | $0.00037 |
+| With M8c | 154, 157, 156 | 12/12 each run | 3.4s | $0.00040 |
+
+DeepSeek already answered most of these by adding up `find_transactions` results, so the gain is small: the clear one is "how much did chatgpt cost me in sgd", which failed two runs of three before and passes every run now, since the tool converts. With M8c the model called `query_ledger` 43–47 times a run instead of adding up search results itself, which matters more with a real ledger than with the seed's 25 transactions (a search shows at most 50). Reply times were slower than the M8b runs for both versions alike (OpenRouter load on the day), so they don't compare with earlier sections. Cost a case rose by about $0.00003 for the larger tool list.
+
+Failures left: the memory cases (M8e) and "pay the town council" (M8d) every run; the rest vary between runs and between versions (asking which "3rd" is meant, asking before deleting or archiving something plainly named, a receipt photo), the over-careful habit M8d's shorter tool list and M8f's model check are meant to address.
