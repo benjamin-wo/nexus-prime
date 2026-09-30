@@ -251,6 +251,7 @@ The goal: replies that follow what the user means, not the phrasing they used. T
 ### M9 — Statement import
 - CSV first, with saved column mappings per bank. Then PDF with OCR.
 - Flow: upload → parse → preview (flagged duplicates and unclear rows) → confirm → save. Nothing is saved without confirmation, and income from a statement is never auto-classified as salary.
+- M9a done: CSV import on the web (Ledger → Import statement) with saved layouts per bank, duplicate and repeat detection, and undo per import. M9b: PDF statements.
 
 ### M10 — Hardening
 - Security review, load checks on the job runner, a backup and restore drill for the new database, and runbook docs.

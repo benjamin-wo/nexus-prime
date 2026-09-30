@@ -456,6 +456,31 @@ test("the cog opens Settings, and Plan keeps only planning", async ({ page }) =>
     await expect(page.getByRole("region", { name })).toBeVisible();
 });
 
+test("import a bank statement: preview, tick, confirm, undo", async ({ page }) => {
+  await fakeApi(page);
+  await page.goto("/ledger");
+  await page.getByRole("link", { name: "Import statement" }).click();
+  await expect(page.getByRole("heading", { name: "Import a statement", level: 1 })).toBeVisible();
+  await page.getByLabel("Choose a CSV file").setInputFiles({
+    name: "sept.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from("Date,Description,Amount\n28/09/2026,Kopitiam,-4.20\n28/09/2026,Grab,-25.00\nsoon,Mystery,-1\n"),
+  });
+  const preview = page.getByRole("region", { name: "Check before importing" });
+  await expect(preview.getByText("1 new · 1 possible duplicates")).toBeVisible();
+  // New rows are ticked, a possible duplicate isn't, an unreadable row can't be.
+  await expect(preview.getByRole("checkbox", { name: "Import Kopitiam" })).toBeChecked();
+  await expect(preview.getByRole("checkbox", { name: "Import Grab" })).not.toBeChecked();
+  await expect(preview.getByRole("checkbox", { name: "Import Mystery" })).toBeDisabled();
+  await expect(preview.getByText(/Looks like/)).toBeVisible();
+  await preview.getByRole("button", { name: "Import 1 transaction" }).click();
+  await expect(page.getByRole("status").getByText("Imported 1 transaction.")).toBeVisible();
+  const history = page.getByRole("region", { name: "Past imports" });
+  await expect(history.getByText(/sept\.csv · 1 added/)).toBeVisible();
+  await page.getByRole("button", { name: "Undo import" }).click();
+  await expect(history.getByText("· undone")).toBeVisible();
+});
+
 test("see and forget what Nexus remembers", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/settings");
