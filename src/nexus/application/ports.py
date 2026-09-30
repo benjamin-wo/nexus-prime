@@ -34,6 +34,7 @@ from nexus.domain.ledger import (
     User,
     UserId,
 )
+from nexus.domain.memory import Memory, MemoryKind
 from nexus.domain.money import Money
 from nexus.domain.notifications import NotificationSettings
 from nexus.domain.planning import Bill, BillOccurrence, Budget, SalarySchedule
@@ -401,6 +402,26 @@ class ReceiptStore(Protocol):
         ...
 
 
+class MemoryRepository(Protocol):
+    """What Nexus remembers. Every call is scoped to one user."""
+
+    async def list_memories(
+        self, user_id: UserId, kinds: tuple[MemoryKind, ...] | None = None, limit: int = 500
+    ) -> list[Memory]:
+        """Newest first."""
+        ...
+
+    async def search_memories(
+        self, user_id: UserId, text: str, kinds: tuple[MemoryKind, ...], limit: int
+    ) -> list[Memory]: ...
+    async def insert_memory(self, memory: Memory) -> None: ...
+    async def update_memory(
+        self, user_id: UserId, memory_id: UUID, text: str, at: datetime
+    ) -> bool: ...
+    async def delete_memory(self, user_id: UserId, memory_id: UUID) -> bool: ...
+    async def prune_memories(self, user_id: UserId, keep: int) -> int: ...
+
+
 class UnitOfWork(Protocol):
     """One database transaction. Single use: enter it once per use case."""
 
@@ -412,6 +433,8 @@ class UnitOfWork(Protocol):
     def jobs(self) -> JobQueue: ...
     @property
     def email(self) -> EmailRepository: ...
+    @property
+    def memory(self) -> MemoryRepository: ...
 
     async def __aenter__(self) -> Self: ...
     async def __aexit__(

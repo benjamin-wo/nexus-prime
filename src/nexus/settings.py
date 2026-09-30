@@ -69,6 +69,9 @@ class Settings(BaseSettings):
     # A cheap OpenRouter model that screens emails before the main model reads
     # them (needs OPENROUTER_API_KEY). Unset = the main model screens too.
     email_classifier_model: str | None = None
+    # A cheap OpenRouter model that keeps Nexus's long-term memory after each turn
+    # (needs OPENROUTER_API_KEY). Unset = the main model.
+    memory_model: str | None = None
     # --- Forwarding addresses on AgentMail, for other mail providers. Unset = not
     # offered. Also requires TOKEN_ENCRYPTION_KEY. ---
     agentmail_api_key: SecretStr | None = None
@@ -147,6 +150,7 @@ class Settings(BaseSettings):
         "google_client_secret",
         "token_encryption_key",
         "email_classifier_model",
+        "memory_model",
         "agentmail_api_key",
         "agentmail_domain",
         "storage_access_key_id",

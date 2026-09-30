@@ -18,14 +18,15 @@ from pathlib import Path
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langgraph.checkpoint.memory import InMemorySaver
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nexus.agent.graph import KERNEL, AgentDeps, AgentGraph, thread_id
+from nexus.agent.memory_writer import MemoryWriter
 from nexus.agent.receipts import LlmReceiptReader
-from nexus.agent.service import AgentService, Reply
+from nexus.agent.service import RECENT_MESSAGES, AgentService, Reply
 from nexus.agent.skills import SkillLibrary
 from nexus.agent.tools import build_tools
 from nexus.application.fx import Rate
@@ -36,6 +37,7 @@ from nexus.evals.cases import Call, Case, Has, Turn
 from nexus.evals.checks import World
 from nexus.infra.db import tables
 from nexus.infra.db.uow import SqlUnitOfWork
+from nexus.infra.llm.factory import text_of
 
 MODEL_DOWN = "Sorry, I can't reach the AI model"
 MAX_CONFIRMATIONS = 3  # per turn
@@ -78,6 +80,7 @@ class TurnLog:
     output_tokens: int = 0
     model_calls: int = 0
     model_down: bool = False
+    memory_failed: bool = False
 
     @property
     def last_reply(self) -> str:
@@ -113,9 +116,12 @@ class Agent:
         model: BaseChatModel,
         photo_cache: Path,
         vision: BaseChatModel | None = None,
+        memory: BaseChatModel | None = None,
     ) -> None:
         self.engine = engine
         self.model = model
+        # Long-term memory, like MEMORY_MODEL: run after each turn, outside its timing.
+        self.memory = MemoryWriter(memory or model)
         self.photo_cache = photo_cache
         # Receipt photos: a separate model if given, like OPENROUTER_VISION_MODEL.
         self.receipts = LlmReceiptReader(vision or model)
@@ -183,6 +189,21 @@ async def _turn(agent: Agent, user: User, turn: Turn, ref: str) -> TurnLog:
         replies = await agent.service.press(user.id, data)
         all_replies.extend(replies)
     log.seconds = time.perf_counter() - started
+    if not turn.photo:  # production queues this as a job once the reply is sent
+        said = [
+            text_of(m.content)
+            for m in await agent.messages(user)
+            if isinstance(m, HumanMessage) and text_of(m.content)
+        ]
+        before_tokens = agent.memory.input_tokens, agent.memory.output_tokens
+        try:
+            await agent.memory.remember(
+                agent.uow, user, said[-RECENT_MESSAGES:] or [turn.text], seed.NOW
+            )
+        except Exception:
+            log.memory_failed = True
+        log.input_tokens += agent.memory.input_tokens - before_tokens[0]
+        log.output_tokens += agent.memory.output_tokens - before_tokens[1]
     log.replies = [r.text for r in all_replies]
     log.model_down = any(r.text.startswith(MODEL_DOWN) for r in all_replies)
     for message in [m for m in await agent.messages(user) if m.id not in before]:
@@ -267,7 +288,12 @@ async def grade(case: Case, turns: list[TurnLog], world: World, changed: bool) -
     if case.max_reply is not None and len(last.last_reply) > case.max_reply:
         failures.append(f"reply longer than {case.max_reply} characters")
     for check in case.checks:
-        if not await check.holds(world):
+        try:
+            held = await check.holds(world)
+        except Exception as exc:  # one broken check fails its case, not the run
+            failures.append(f"couldn't check {check.describe()}: {type(exc).__name__}")
+            continue
+        if not held:
             failures.append(f"expected {check.describe()}")
     return failures
 

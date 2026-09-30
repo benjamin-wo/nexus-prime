@@ -369,3 +369,18 @@ a.btn { text-decoration: none; }
   .cal-day { min-height: 52px; padding: 3px; }
   .cal-amount { font-size: 0.62rem; }
 }
+
+/* What Nexus remembers (Settings) */
+.memory-group + .memory-group { margin-top: 12px; }
+.memory-group h3 { margin: 0 0 4px; }
+.memory-list { list-style: none; margin: 0; padding: 0; }
+.memory-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.memory-row:last-child { border-bottom: none; }
+.memory-foot { margin-top: 12px; }

@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nexus.agent.email_reader import LlmEmailReader
 from nexus.agent.graph import AgentDeps, AgentGraph
+from nexus.agent.memory_writer import MemoryWriter
 from nexus.agent.receipts import LlmReceiptReader, ReceiptReader
 from nexus.agent.service import AgentService
 from nexus.agent.skills import SkillLibrary
@@ -37,7 +38,7 @@ from nexus.channels.web import email_api, health
 from nexus.channels.web.errors import install_error_handlers
 from nexus.channels.web.frontend import mount_frontend
 from nexus.channels.web.security import WebRuntime
-from nexus.domain.ledger import User
+from nexus.domain.ledger import User, UserId
 from nexus.infra.crypto.fernet import FernetCipher
 from nexus.infra.db.checkpointer import postgres_checkpointer
 from nexus.infra.db.engine import make_engine
@@ -46,10 +47,15 @@ from nexus.infra.db.uow import SqlUnitOfWork
 from nexus.infra.email.agentmail import AgentMailInboxes
 from nexus.infra.email.gmail import GmailMailbox
 from nexus.infra.fx.frankfurter import FrankfurterRates
-from nexus.infra.llm.factory import ChatModels, build_chat_models, build_screener
+from nexus.infra.llm.factory import (
+    ChatModels,
+    build_chat_models,
+    build_memory_model,
+    build_screener,
+)
 from nexus.infra.logs import configure_logging
 from nexus.infra.storage.s3 import S3ReceiptStore
-from nexus.jobs.handlers import SCHEDULES, build_handlers
+from nexus.jobs.handlers import MEMORY_UPDATE, SCHEDULES, build_handlers
 from nexus.jobs.runner import JobRunner
 from nexus.settings import Settings, get_settings
 
@@ -223,9 +229,29 @@ async def _telegram_runtime(
     return telegram_webhook.TelegramRuntime(
         settings=settings,
         uow=uow,
-        service=AgentService(graph, uow, receipts, clock, archive, rates),
+        service=AgentService(
+            graph, uow, receipts, clock, archive, rates, after_turn=_queue_memory(uow, clock)
+        ),
         client=client,
     )
+
+
+def _queue_memory(
+    uow: Callable[[], SqlUnitOfWork], clock: Callable[[], datetime]
+) -> Callable[[UserId, list[str], str], Awaitable[None]]:
+    """Queue the memory writer for a turn; the job runner does the work."""
+
+    async def queue(actor: UserId, messages: list[str], ref: str) -> None:
+        async with uow() as tx:
+            await tx.jobs.enqueue(
+                MEMORY_UPDATE,
+                {"user_id": str(actor), "messages": messages},
+                dedupe_key=f"memory:{actor}:{ref}",
+                run_at=clock(),
+            )
+            await tx.commit()
+
+    return queue
 
 
 def _connect_link(
@@ -296,7 +322,15 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                 if resolved.run_jobs:
                     runner = JobRunner(
                         engine,
-                        build_handlers(telegram.uow, telegram.client, rates, clock, archive, email),
+                        build_handlers(
+                            telegram.uow,
+                            telegram.client,
+                            rates,
+                            clock,
+                            archive,
+                            email,
+                            MemoryWriter(build_memory_model(resolved, models.primary)),
+                        ),
                         schedules=SCHEDULES,
                         clock=clock,
                     )

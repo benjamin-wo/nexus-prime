@@ -16,6 +16,7 @@ from nexus.application import budgets as budget_cases
 from nexus.application import cashflow as cashflow_cases
 from nexus.application import categories as category_cases
 from nexus.application import category_rules as rule_cases
+from nexus.application import memory as memory_cases
 from nexus.application import notifications as notify_cases
 from nexus.application import receipts as receipt_cases
 from nexus.application import salary as salary_cases
@@ -767,6 +768,42 @@ async def accept_rule(body: AcceptRuleIn, auth: Auth, web: Runtime) -> None:
 @router.delete("/category-rules/{rule_id}", status_code=204)
 async def remove_category_rule(rule_id: UUID, auth: Auth, web: Runtime) -> None:
     await rule_cases.remove_rule(web.uow(), auth.user.id, rule_id, now=web.clock())
+
+
+# --- what Nexus remembers ------------------------------------------------------------
+
+
+class MemoryOut(Model):
+    id: UUID
+    kind: str
+    text: str
+    happened_on: date | None
+    updated_at: datetime
+
+
+@router.get("/memories")
+async def memories(auth: Auth, web: Runtime) -> list[MemoryOut]:
+    found = await memory_cases.list_memories(web.uow(), auth.user.id)
+    return [
+        MemoryOut(
+            id=m.id,
+            kind=m.kind.value,
+            text=m.text,
+            happened_on=m.happened_on,
+            updated_at=m.updated_at,
+        )
+        for m in found
+    ]
+
+
+@router.delete("/memories/{memory_id}", status_code=204)
+async def forget_memory(memory_id: UUID, auth: Auth, web: Runtime) -> None:
+    await memory_cases.forget(web.uow(), auth.user.id, memory_id)
+
+
+@router.delete("/memories", status_code=204)
+async def forget_everything(auth: Auth, web: Runtime) -> None:
+    await memory_cases.forget_all(web.uow(), auth.user.id)
 
 
 @router.get("/transactions/{transaction_id}/category-explanation")

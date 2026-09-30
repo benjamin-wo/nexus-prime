@@ -434,6 +434,23 @@ notification_settings = Table(
     ),
 )
 
+# What Nexus remembers about a user, from their own words (see nexus.domain.memory).
+memories = Table(
+    "memories",
+    metadata,
+    _uuid_pk(),
+    _user_fk(),
+    Column("kind", Text, nullable=False),
+    Column("text", Text, nullable=False),
+    Column("happened_on", Date),
+    Column("created_at", TZ, nullable=False),
+    Column("updated_at", TZ, nullable=False),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+    CheckConstraint("kind IN ('fact', 'preference', 'episode')", name="kind"),
+    CheckConstraint("length(text) BETWEEN 1 AND 300", name="text_length"),
+    Index("ix_memories_user_id_updated_at", "user_id", "updated_at"),
+)
+
 # Background work. A job is claimed atomically (FOR UPDATE SKIP LOCKED) and
 # every job has a unique dedupe key, so none runs twice.
 jobs = Table(

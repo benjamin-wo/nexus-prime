@@ -3,7 +3,7 @@
 import asyncio
 import logging
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 from typing import Any
@@ -67,6 +67,9 @@ HELP = (
 )
 
 
+RECENT_MESSAGES = 3  # the newest, and two before it for context
+
+
 class _NoRates:
     async def rate(self, base: str, quote: str, on: date) -> None:
         return None
@@ -81,6 +84,7 @@ class AgentService:
         clock: Callable[[], datetime],
         archive: ReceiptStore | None = None,
         rates: RateSource | None = None,
+        after_turn: Callable[[UserId, list[str], str], Awaitable[None]] | None = None,
     ) -> None:
         self._graph = graph
         # For figures in the home currency; None leaves foreign amounts out.
@@ -90,6 +94,9 @@ class AgentService:
         self._clock = clock
         # Where receipt photos are kept; None = they're read but not kept.
         self._archive = archive
+        # Given the user's recent messages after each text turn (the memory writer's
+        # job is queued from here); its failures never reach the user.
+        self._after_turn = after_turn
         # One turn at a time per user; a turn reads and writes the user's thread.
         self._locks: defaultdict[UserId, asyncio.Lock] = defaultdict(asyncio.Lock)
 
@@ -147,7 +154,24 @@ class AgentService:
             if declined and kernel.is_termination(text):
                 return [Reply("Cancelled. Nothing was changed.")]
             message = HumanMessage(content=text, additional_kwargs={REF: ref})
-            return await self._run(actor, {"messages": [message]})
+            replies = await self._run(actor, {"messages": [message]})
+            await self._remember(actor, ref)
+            return replies
+
+    async def _remember(self, actor: UserId, ref: str) -> None:
+        """Hand the user's last few messages (their own words only) to ``after_turn``."""
+        if self._after_turn is None:
+            return
+        try:
+            state = await self._graph.aget_state(self._config(actor))
+            said = [
+                text_of(m.content)
+                for m in state.values.get("messages", [])
+                if isinstance(m, HumanMessage) and RECEIPT not in m.additional_kwargs
+            ]
+            await self._after_turn(actor, [t for t in said if t][-RECENT_MESSAGES:], ref)
+        except Exception:
+            log.exception("after-turn hook failed")
 
     async def handle_photo(
         self, actor: UserId, image: bytes, mime_type: str, caption: str | None, ref: str
