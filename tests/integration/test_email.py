@@ -384,3 +384,31 @@ async def test_bank_alert_amounts_are_read_as_written(uow: UowFactory) -> None:
     assert by_id["a3"].reason == 'couldn\'t read the amount "see invoice"'
     assert by_id["a3"].draft is not None
     assert by_id["a3"].draft["amount"] is None
+
+
+async def test_a_card_alert_the_model_misreads_still_gets_its_amount(uow: UowFactory) -> None:
+    # The model once answered the amount field with "currency"; the alert's own
+    # wording states one amount, so that's used instead.
+    user = await person(uow)
+    alert = (
+        "Total: currency\nA transaction of SGD 12.40 was made with your Example Card ending "
+        "0000 on 03/09/26 at KOPI CORNER. If unauthorised, call our hotline now"
+    )
+    mailbox = FakeMailbox(
+        {
+            "a1": fake_email("a1", "Card receipt alert", alert, at=NOW - timedelta(hours=1)),
+            "a2": fake_email(
+                "a2",
+                "Receipt",
+                "Total: currency\nSubtotal SGD 10.00, Total SGD 10.90",
+                at=NOW - timedelta(hours=2),
+            ),
+        }
+    )
+    connection = await connect(uow, user, mailbox)
+    await sweep(uow, user, mailbox, connection)
+    assert await statuses(uow, user) == {"a1": "pending", "a2": "no_amount"}
+    found = await email_cases.overview(uow(), user.id, now=NOW + timedelta(days=1))
+    [email] = [e for e in found.emails if e.provider_message_id == "a1"]
+    assert email.draft is not None
+    assert (Decimal(email.draft["amount"]), email.draft["currency"]) == (Decimal("12.40"), "SGD")
