@@ -13,6 +13,7 @@ import {
   receiptUrl,
   type Transaction,
 } from "../api";
+import { MoneyTrail } from "../components/MoneyTrail";
 import { DirectionBadge } from "../components/Badge";
 import { Toast } from "../components/Toast";
 import { Amount } from "../components/Amount";
@@ -233,6 +234,7 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
                         {tx.counterparty ?? "No merchant"}
                       </button>
                       {tx.notes && <div className="caption">{tx.notes}</div>}
+                      <MoneyTrail tx={tx} timezone={me.user.timezone} onOpen={onEdit} />
                       {tx.has_receipt && (
                         <a
                           className="caption receipt-link"

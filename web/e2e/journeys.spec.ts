@@ -546,3 +546,15 @@ test("mark that someone paid back what they owe", async ({ page }) => {
   await owed.getByRole("button", { name: /Ann paid back/ }).click();
   await expect(owed.getByText("Nobody owes you anything.")).toBeVisible();
 });
+
+test("follow a split bill to its repayment and back", async ({ page }) => {
+  await fakeApi(page, { splitBill: true });
+  await page.goto("/ledger");
+  await expect(page.getByText(/Split · your share SGD\s10\.00/)).toBeVisible();
+  await expect(page.getByText(/Ann owes SGD\s10\.00/)).toBeVisible();
+  await page.getByRole("button", { name: "Open the bill Wei Ming paid back: Hotpot Place" }).click();
+  const sheet = page.getByRole("dialog");
+  await expect(sheet.getByLabel("Paid to")).toHaveValue("Hotpot Place");
+  await sheet.getByRole("button", { name: "Open Wei Ming's repayment" }).click();
+  await expect(sheet.getByLabel("Received from")).toHaveValue("Wei Ming");
+});

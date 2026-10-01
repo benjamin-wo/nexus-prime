@@ -23,6 +23,7 @@ from nexus.domain.email import (
 from nexus.domain.ledger import (
     Category,
     Direction,
+    Lineage,
     OpenIou,
     Revision,
     RevisionKind,
@@ -168,14 +169,17 @@ class LedgerRepository(Protocol):
         """Live transactions created (not occurred) in [start, end), oldest first."""
         ...
 
+    # Totals count the user's own money: with ``net``, what friends paid back
+    # comes off the bill it repaid, and isn't counted as money in. Without it, the
+    # amounts as they left and reached the account (cash flow).
     async def totals_by_direction(
-        self, user_id: UserId, start: datetime, end: datetime
+        self, user_id: UserId, start: datetime, end: datetime, *, net: bool = True
     ) -> list[DirectionTotal]: ...
     async def totals_by_day(
-        self, user_id: UserId, start: datetime, end: datetime, timezone: str
+        self, user_id: UserId, start: datetime, end: datetime, timezone: str, *, net: bool = True
     ) -> list[DayTotal]: ...
     async def spending_by_category(
-        self, user_id: UserId, start: datetime, end: datetime
+        self, user_id: UserId, start: datetime, end: datetime, *, net: bool = True
     ) -> list[CategoryTotal]: ...
 
     # external sources (also the "never re-import" tombstones)
@@ -199,6 +203,11 @@ class LedgerRepository(Protocol):
     # splits and settlements
     async def list_splits(self, user_id: UserId, transaction_id: UUID) -> list[Split]: ...
     async def has_settlements(self, user_id: UserId, transaction_id: UUID) -> bool: ...
+    async def lineage(self, user_id: UserId, transaction_ids: list[UUID]) -> dict[UUID, Lineage]:
+        """For each of these transactions that was split or repaid something: its
+        shares and the repayments that link it to other transactions."""
+        ...
+
     async def has_settlements_for_income(self, user_id: UserId, income_id: UUID) -> bool:
         """Whether this money in paid off any IOU."""
         ...

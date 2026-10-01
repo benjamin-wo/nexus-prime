@@ -12,10 +12,16 @@ type Tx = {
   source: string;
   deleted: boolean;
   has_receipt?: boolean;
+  split?: unknown;
+  links?: unknown[];
+  own?: unknown;
 };
 
 /** An in-memory stand-in for the API, so journeys exercise the real UI in a browser. */
-export async function fakeApi(page: Page, { signedIn = true, emailConnected = false, forwarding = false } = {}) {
+export async function fakeApi(
+  page: Page,
+  { signedIn = true, emailConnected = false, forwarding = false, splitBill = false } = {},
+) {
   let session = signedIn;
   type FakeBudget = { id: string; category_id: string | null; limit: number; spent: number };
   type FakeBill = {
@@ -134,6 +140,27 @@ export async function fakeApi(page: Page, { signedIn = true, emailConnected = fa
         : [],
     },
   };
+  if (splitBill) {
+    const bill = { ...mk("t4", "out", "30.00", "Hotpot Place", "food"), occurred_at: "2026-09-25T12:00:00Z" };
+    const back = { ...mk("t5", "in", "10.00", "Wei Ming", null), notes: "Paid back" };
+    const sgd = (amount: string) => ({ amount, currency: "SGD" });
+    bill.split = {
+      own_share: sgd("10.0000"),
+      people: [
+        { name: "Wei Ming", share: sgd("10.0000"), repaid: sgd("10.0000") },
+        { name: "Ann", share: sgd("10.0000"), repaid: sgd("0") },
+      ],
+    };
+    bill.links = [
+      { transaction_id: "t5", counterparty: null, occurred_at: back.occurred_at, name: "Wei Ming", amount: sgd("10.0000") },
+    ];
+    bill.own = sgd("20.0000");
+    back.links = [
+      { transaction_id: "t4", counterparty: "Hotpot Place", occurred_at: bill.occurred_at, name: "Wei Ming", amount: sgd("10.0000") },
+    ];
+    back.own = sgd("0.0000");
+    state.txs.push(bill, back);
+  }
   const categories = [
     { id: "food", name: "Dining Out", active: true },
     { id: "transport", name: "Transport", active: true },
@@ -551,6 +578,8 @@ export async function fakeApi(page: Page, { signedIn = true, emailConnected = fa
           : null;
       return json(route, { ...tx, rule_suggestion: offer });
     }
+    const one = path.match(/^\/transactions\/(t\d+)$/);
+    if (one && method === "GET") return json(route, state.txs.find((t) => t.id === one[1]));
     if (path === "/transactions" && method === "GET") {
       const direction = url.searchParams.get("direction");
       const items = live().filter(

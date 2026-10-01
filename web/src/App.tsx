@@ -92,8 +92,10 @@ function Cockpit({ me }: { me: Me }) {
       </Routes>
       {sheet && (
         <EntrySheet
+          key={sheet.editing?.id ?? "new"}
           me={me}
           editing={sheet.editing}
+          onOpen={(tx) => setSheet({ editing: tx })}
           onClose={closeSheet}
           onSaved={(tx: EditedTransaction) => {
             setSheet(null);

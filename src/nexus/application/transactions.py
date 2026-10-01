@@ -19,6 +19,7 @@ from nexus.application.ports import (
 from nexus.domain.errors import Conflict, InvalidInput, NotFound, NothingToUndo
 from nexus.domain.ledger import (
     Direction,
+    Lineage,
     RevisionKind,
     Source,
     Split,
@@ -329,6 +330,12 @@ async def get_transaction(uow: UnitOfWork, actor: UserId, transaction_id: UUID) 
     if tx is None:
         raise NotFound("transaction not found")
     return tx
+
+
+async def lineage(uow: UnitOfWork, actor: UserId, ids: list[UUID]) -> dict[UUID, Lineage]:
+    """How money moved around these transactions: shares and repayments."""
+    async with uow:
+        return await uow.ledger.lineage(actor, ids)
 
 
 def _check_range(start: datetime | None, end: datetime | None) -> None:
