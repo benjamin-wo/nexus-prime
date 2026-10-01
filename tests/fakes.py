@@ -123,20 +123,25 @@ class FakeTelegram:
     sent: list[Sent] = field(default_factory=list)
     answered: list[str] = field(default_factory=list)
     cleared: list[tuple[int, int]] = field(default_factory=list)
+    edited: list[tuple[int, int, list[list[Button]]]] = field(default_factory=list)
     files: dict[str, bytes] = field(default_factory=dict)
     app_buttons: list[tuple[int, str, str]] = field(default_factory=list)
     menu_button: tuple[str, str] | None = None
 
     async def send_message(
         self, chat_id: int, text: str, buttons: list[list[Button]] | None = None
-    ) -> None:
+    ) -> int:
         self.sent.append(Sent(chat_id, text, buttons))
+        return 1000 + len(self.sent)  # the message id
 
     async def answer_callback(self, callback_id: str, text: str | None = None) -> None:
         self.answered.append(callback_id)
 
     async def clear_buttons(self, chat_id: int, message_id: int) -> None:
         self.cleared.append((chat_id, message_id))
+
+    async def set_buttons(self, chat_id: int, message_id: int, buttons: list[list[Button]]) -> None:
+        self.edited.append((chat_id, message_id, buttons))
 
     async def download(self, file_id: str) -> bytes:
         return self.files[file_id]

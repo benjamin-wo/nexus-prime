@@ -20,7 +20,8 @@ from nexus.application.budgets import TELEGRAM_SEND, UowFactory
 from nexus.application.email import EmailRuntime
 from nexus.application.fx import RateSource
 from nexus.application.ports import ReceiptStore
-from nexus.channels.telegram.client import TelegramClient
+from nexus.channels.telegram.client import TelegramClient, TelegramError
+from nexus.channels.telegram.webhook import UNDO_EXPIRE, kept_buttons
 from nexus.domain.ledger import User, UserId
 from nexus.domain.planning import quiet_until
 from nexus.jobs.runner import Defer, Handler, Schedule
@@ -172,7 +173,18 @@ def build_handlers(
             await memory.remember(uow, user, [str(m) for m in payload["messages"]], clock())
         return None
 
+    async def expire_undo(payload: dict[str, Any]) -> None:
+        """Take the Undo button off a reply, leaving any others on it."""
+        try:
+            await telegram.set_buttons(
+                int(payload["chat_id"]), int(payload["message_id"]), kept_buttons(payload)
+            )
+        except TelegramError as exc:
+            # Deleted, too old, or already without it: nothing to retry for a button.
+            log.info("could not take Undo off a message: %s", exc)
+
     return {
+        UNDO_EXPIRE: expire_undo,
         MEMORY_UPDATE: update_memory,
         SUBSCRIPTIONS_SWEEP: sweep_subscriptions,
         NOTIFY_SWEEP: sweep_notifications,

@@ -231,6 +231,7 @@ async def _telegram_runtime(
     return telegram_webhook.TelegramRuntime(
         settings=settings,
         uow=uow,
+        clock=clock,
         service=AgentService(
             graph,
             uow,

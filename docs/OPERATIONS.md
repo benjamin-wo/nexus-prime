@@ -32,7 +32,7 @@ Only through Alembic: `uv run alembic revision -m "..."`, then `uv run alembic u
 
 ## Telegram
 
-The channel is on when `TELEGRAM_BOT_TOKEN` is set, which then also requires `TELEGRAM_WEBHOOK_SECRET` and `ADMIN_TELEGRAM_CHAT_ID` (the owner). Only the owner and `TELEGRAM_ALLOWED_USER_IDS` are served, in private chats. Updates arrive at `POST /telegram/webhook`, checked against the secret token and de-duplicated by `update_id`.
+The channel is on when `TELEGRAM_BOT_TOKEN` is set, which then also requires `TELEGRAM_WEBHOOK_SECRET` and `ADMIN_TELEGRAM_CHAT_ID` (the owner). Only the owner and `TELEGRAM_ALLOWED_USER_IDS` are served, in private chats. Updates arrive at `POST /telegram/webhook`, checked against the secret token and de-duplicated by `update_id`. The Undo button under a reply comes off after 5 minutes (a `telegram.undo_expire` job; any other buttons on the message stay), so an old message doesn't offer to undo whatever change is now the latest; typing "undo" still works.
 
 The app never registers its own webhook, so deploying it can't take a bot away from another service. `python -m nexus.channels.telegram.register` shows the current webhook and, with `--yes`, points the bot here. See [`CUTOVER.md`](CUTOVER.md) for moving from the old bot, including the one-time history import (`python -m nexus.legacy`).
 
