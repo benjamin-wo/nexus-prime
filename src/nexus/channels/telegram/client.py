@@ -15,9 +15,12 @@ class TelegramError(RuntimeError):
 class TelegramClient(Protocol):
     async def send_message(
         self, chat_id: int, text: str, buttons: list[list[Button]] | None = None
-    ) -> None: ...
+    ) -> int | None: ...
     async def answer_callback(self, callback_id: str, text: str | None = None) -> None: ...
     async def clear_buttons(self, chat_id: int, message_id: int) -> None: ...
+    async def set_buttons(
+        self, chat_id: int, message_id: int, buttons: list[list[Button]]
+    ) -> None: ...
     async def download(self, file_id: str) -> bytes: ...
     async def bot_username(self) -> str: ...
     async def send_app_button(self, chat_id: int, text: str, label: str, url: str) -> None: ...
@@ -54,11 +57,14 @@ class HttpTelegramClient:
 
     async def send_message(
         self, chat_id: int, text: str, buttons: list[list[Button]] | None = None
-    ) -> None:
+    ) -> int | None:
+        """Returns the sent message's id, for changing its buttons later."""
         payload: dict[str, Any] = {"chat_id": chat_id, "text": text[:MAX_TEXT]}
         if buttons:
             payload["reply_markup"] = keyboard(buttons)
-        await self._call("sendMessage", payload)
+        sent = await self._call("sendMessage", payload)
+        message_id = sent.get("message_id") if isinstance(sent, dict) else None
+        return message_id if isinstance(message_id, int) else None
 
     async def answer_callback(self, callback_id: str, text: str | None = None) -> None:
         payload: dict[str, Any] = {"callback_query_id": callback_id}
@@ -67,9 +73,12 @@ class HttpTelegramClient:
         await self._call("answerCallbackQuery", payload)
 
     async def clear_buttons(self, chat_id: int, message_id: int) -> None:
+        await self.set_buttons(chat_id, message_id, [])
+
+    async def set_buttons(self, chat_id: int, message_id: int, buttons: list[list[Button]]) -> None:
         await self._call(
             "editMessageReplyMarkup",
-            {"chat_id": chat_id, "message_id": message_id, "reply_markup": {"inline_keyboard": []}},
+            {"chat_id": chat_id, "message_id": message_id, "reply_markup": keyboard(buttons)},
         )
 
     async def download(self, file_id: str) -> bytes:

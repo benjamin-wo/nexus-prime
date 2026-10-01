@@ -419,3 +419,11 @@ class SqlJobQueue:
             .returning(jobs.c.id)
         )
         return (await self._db.execute(stmt)).first() is not None
+
+    async def cancel(self, dedupe_key: str) -> bool:
+        stmt = (
+            delete(jobs)
+            .where(jobs.c.dedupe_key == dedupe_key, jobs.c.status == "pending")
+            .returning(jobs.c.id)
+        )
+        return (await self._db.execute(stmt)).first() is not None

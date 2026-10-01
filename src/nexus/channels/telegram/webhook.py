@@ -7,12 +7,14 @@ Only allow-listed users in private chats are served.
 
 import hmac
 import logging
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
-from nexus.agent.service import AgentService, Reply
+from nexus.agent.service import UNDO, AgentService, Button, Reply
 from nexus.agent.tools import UowFactory
 from nexus.application.access import create_invite
 from nexus.application.clock import utcnow
@@ -29,6 +31,12 @@ router = APIRouter()
 PRIVATE = "This is a private assistant."
 FAILED = "Sorry, something went wrong on my side. Please try again."
 
+# The Undo button comes off a reply after this long (typing "undo" still works),
+# so old messages don't keep offering to undo whatever happens to be latest.
+UNDO_FOR = timedelta(minutes=5)
+UNDO_EXPIRE = "telegram.undo_expire"
+ONE_SHOT = ("hitl:", "bill:", "salary:", "rule:", "email:")
+
 
 @dataclass(frozen=True, slots=True)
 class TelegramRuntime:
@@ -36,6 +44,7 @@ class TelegramRuntime:
     uow: UowFactory
     service: AgentService
     client: TelegramClient
+    clock: Callable[[], datetime] = field(default=utcnow)
 
 
 def _runtime(request: Request) -> TelegramRuntime:
@@ -88,9 +97,36 @@ async def _actor(runtime: TelegramRuntime, sender: dict[str, Any], chat_id: int)
     return registration.user.id
 
 
+def _undo_key(chat_id: int, message_id: int) -> str:
+    return f"undo-expire:{chat_id}:{message_id}"
+
+
 async def _send(runtime: TelegramRuntime, chat_id: int, replies: list[Reply]) -> None:
     for reply in replies:
-        await runtime.client.send_message(chat_id, reply.text, reply.buttons or None)
+        message_id = await runtime.client.send_message(chat_id, reply.text, reply.buttons or None)
+        if message_id is not None and any(UNDO in row for row in reply.buttons):
+            keep = [[b for b in row if b != UNDO] for row in reply.buttons]
+            async with runtime.uow() as tx:
+                await tx.jobs.enqueue(
+                    UNDO_EXPIRE,
+                    {
+                        "chat_id": chat_id,
+                        "message_id": message_id,
+                        "keep": [
+                            [{"label": b.label, "data": b.data} for b in row] for row in keep if row
+                        ],
+                    },
+                    dedupe_key=_undo_key(chat_id, message_id),
+                    run_at=runtime.clock() + UNDO_FOR,
+                )
+                await tx.commit()
+
+
+def kept_buttons(payload: dict[str, Any]) -> list[list[Button]]:
+    """The buttons an Undo-expiry job leaves on its message."""
+    return [
+        [Button(str(b["label"]), str(b["data"])) for b in row] for row in payload.get("keep") or []
+    ]
 
 
 async def handle_update(runtime: TelegramRuntime, update: dict[str, Any]) -> None:
@@ -199,10 +235,12 @@ async def _callback(runtime: TelegramRuntime, query: dict[str, Any]) -> None:
     if actor is None:
         return
     data = str(query.get("data") or "")
-    # One-shot buttons: take them off the message once pressed.
-    if (
-        data.startswith(("hitl:", "bill:", "salary:", "rule:", "email:"))
-        and message.get("message_id") is not None
-    ):
-        await runtime.client.clear_buttons(chat_id, int(message["message_id"]))
+    # One-shot buttons: take them off the message once pressed, Undo included, and
+    # drop the job that would later put the rest back without Undo.
+    if data.startswith(ONE_SHOT) and message.get("message_id") is not None:
+        message_id = int(message["message_id"])
+        await runtime.client.clear_buttons(chat_id, message_id)
+        async with runtime.uow() as tx:
+            await tx.jobs.cancel(_undo_key(chat_id, message_id))
+            await tx.commit()
     await _send(runtime, chat_id, await runtime.service.press(actor, data))

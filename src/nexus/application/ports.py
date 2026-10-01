@@ -302,6 +302,10 @@ class JobQueue(Protocol):
         """Queue a job in this transaction. False if the dedupe key was already used."""
         ...
 
+    async def cancel(self, dedupe_key: str) -> bool:
+        """Drop the job queued under this key if it hasn't started. False if none was."""
+        ...
+
 
 class EmailRepository(Protocol):
     """Connected mailboxes and the emails swept from them."""
