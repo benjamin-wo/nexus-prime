@@ -195,6 +195,40 @@ def read_amount(amount: str | None, currency: str | None, home: str) -> Money | 
     return money if money.is_positive else None
 
 
+# An amount the email itself marks with its currency: "SGD 12.40", "S$12.40", "USD12.00".
+_MARKED = re.compile(
+    r"(?<![A-Za-z$])("
+    + "|".join(re.escape(s) for s in sorted(_SYMBOLS, key=len, reverse=True) if s != "RP")
+    + r"|[A-Z]{3})\s?(\d{1,3}(?:,\d{3})+\.\d{2}|\d+\.\d{2})(?![\d.])"
+)
+
+
+# Codes a stated amount may carry: anything else in capitals ("GST 0.90") isn't money.
+_STATED = frozenset(
+    "SGD USD EUR GBP JPY MYR AUD NZD CAD CHF CNY HKD TWD KRW THB IDR PHP VND INR AED SAR "
+    "SEK NOK DKK PLN CZK HUF TRY ILS ZAR BRL MXN".split()
+)
+
+
+def amount_in_text(text: str) -> Money | None:
+    """The one amount an email states with its currency, as on a card alert ("A
+    transaction of SGD 12.40 was made..."). None unless there's exactly one, so a
+    receipt with a subtotal, tax and total is never guessed at."""
+    found = set()
+    for mark, figure in _MARKED.findall(text):
+        code = _SYMBOLS.get(mark, mark)
+        if code not in _STATED:
+            continue
+        try:
+            found.add(Money(Decimal(figure.replace(",", "")), code))
+        except (InvalidInput, InvalidOperation):
+            continue
+    if len(found) != 1:
+        return None
+    money = found.pop()
+    return money if money.is_positive else None
+
+
 def _currency(text: str) -> str | None:
     for symbol, code in sorted(_SYMBOLS.items(), key=lambda kv: -len(kv[0])):
         if symbol in text:

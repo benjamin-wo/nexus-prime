@@ -47,6 +47,7 @@ from nexus.domain.email import (
     FetchedEmail,
     InboundEmail,
     Provider,
+    amount_in_text,
     external_id,
     forwarding_notice,
     is_test_email,
@@ -348,7 +349,9 @@ async def _read_one(
             expense = await asyncio.wait_for(
                 reader.extract(fetched, categories=categories), READ_TIMEOUT.total_seconds()
             )
-            money = _amount(expense, user.home_currency)
+            # When the model's figure can't be read (once it gave the field's name,
+            # "currency"), the one amount the email states with its currency will do.
+            money = _amount(expense, user.home_currency) or amount_in_text(fetched.text)
             if money is None:
                 status = EmailStatus.NO_AMOUNT
                 raw = short(expense.amount or "", 40)

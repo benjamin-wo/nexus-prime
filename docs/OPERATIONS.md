@@ -112,7 +112,7 @@ Offered only when a user asks to automate logging ("can you log my expenses auto
 
 **Sweeps.**
 - Every 15 minutes, Nexus asks Gmail only for receipt-like emails, checking at most 25 new ones per mailbox per run.
-- A cheap model screens each email, and the main model reads likely receipts into a draft.
+- A cheap model screens each email, and the main model reads likely receipts into a draft. If the amount it reads can't be used, the one amount the email states with its currency ("A transaction of SGD 12.40 was made…", as on a card alert) is taken instead; with several or none, the email waits on the Email page for an amount.
 - Each new receipt is a Telegram question with **Log it / Skip**. The first sweep instead sends one summary of the last 30 days, linking to the Email page.
 - Logged expenses use the `email` source with a dedupe key naming the mailbox and message. An email whose expense was deleted is never imported again, even after disconnecting and reconnecting.
 - PDF attachments are kept in the receipt archive.
