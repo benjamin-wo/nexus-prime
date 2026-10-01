@@ -717,6 +717,15 @@ class SqlLedgerRepository:
         )
         return bool((await self._db.execute(stmt)).scalar_one())
 
+    async def has_settlements_for_income(self, user_id: UserId, income_id: UUID) -> bool:
+        stmt = select(
+            exists().where(
+                settlements.c.user_id == user_id,
+                settlements.c.income_transaction_id == income_id,
+            )
+        )
+        return bool((await self._db.execute(stmt)).scalar_one())
+
     async def replace_splits(
         self, user_id: UserId, transaction_id: UUID, new_splits: list[Split]
     ) -> None:

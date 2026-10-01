@@ -183,7 +183,8 @@ export type InboundEmail = {
   reason: string | null;
   amount: string | null;
   currency: string | null;
-  merchant: string | null;
+  merchant: string | null; // who was paid; for money received, who sent it
+  received: boolean; // money in, not money spent
   transaction_id: string | null;
   actionable: boolean;
 };

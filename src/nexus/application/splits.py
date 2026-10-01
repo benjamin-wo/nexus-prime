@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID, uuid4
@@ -19,6 +20,7 @@ from nexus.domain.ledger import (
     allocate_repayment,
     clean_name,
     plan_split,
+    same_person,
     splits_snapshot,
 )
 from nexus.domain.money import Money
@@ -75,9 +77,47 @@ async def split_bill(
 async def list_open_ious(
     uow: UnitOfWork, actor: UserId, *, participant_name: str | None = None
 ) -> list[OpenIou]:
-    name = None if participant_name is None else clean_name(participant_name, field_name="name")
+    """Who owes the user; with a name, that person's IOUs, the name matched as in
+    ``owing_person``."""
     async with uow:
-        return await uow.ledger.open_ious(actor, participant_name=name)
+        everyone = await uow.ledger.open_ious(actor)
+    if participant_name is None:
+        return everyone
+    person = owing_person(everyone, clean_name(participant_name, field_name="name"))
+    return [iou for iou in everyone if iou.split.participant_name == person]
+
+
+def owing_person(open_ious: list[OpenIou], name: str) -> str | None:
+    """Who, among the people with open IOUs, ``name`` refers to: the exact name if
+    someone has it, else the one person it plainly matches ("Wei Ming" for "TAN WEI
+    MING"). None if nobody or more than one person matches."""
+    people = {iou.split.participant_name for iou in open_ious}
+    exact = [p for p in people if p.casefold() == name.strip().casefold()]
+    if exact:
+        return exact[0]
+    loose = [p for p in people if same_person(p, name)]
+    return loose[0] if len(loose) == 1 else None
+
+
+async def mark_repaid(
+    uow: Callable[[], UnitOfWork], actor: UserId, split_id: UUID, *, now: datetime
+) -> SettlementResult:
+    """One IOU paid back in full, today: its outstanding amount is recorded as money
+    in from that person."""
+    async with uow() as tx:
+        ious = await tx.ledger.open_ious(actor)
+    iou = next((i for i in ious if i.split.id == split_id), None)
+    if iou is None:
+        raise NotFound("that IOU isn't open")
+    return await settle_iou(
+        uow(),
+        actor,
+        iou.split.participant_name,
+        iou.outstanding,
+        now,
+        notes="Paid back",
+        split_id=split_id,
+    )
 
 
 async def settle_iou(
@@ -90,13 +130,22 @@ async def settle_iou(
     notes: str | None = None,
     source: Source = Source.MANUAL,
     external_id: str | None = None,
+    split_id: UUID | None = None,
 ) -> SettlementResult:
-    """Record a friend's repayment as income and pay off their IOUs, oldest first."""
+    """Record a friend's repayment as income and pay off their IOUs, oldest first.
+    The name can be written as the bank writes it: see ``owing_person``."""
     name = clean_name(participant_name, field_name="name")
     async with uow:
         repo = uow.ledger
-        ious = await repo.open_ious(actor, participant_name=name, for_update=True)
-        matching = [iou for iou in ious if iou.outstanding.currency == amount.currency]
+        everyone = await repo.open_ious(actor, for_update=True)
+        person = owing_person(everyone, name) or name
+        ious = [iou for iou in everyone if iou.split.participant_name == person]
+        matching = [
+            iou
+            for iou in ious
+            if iou.outstanding.currency == amount.currency
+            and (split_id is None or iou.split.id == split_id)
+        ]
         if not matching:
             raise InvalidInput(f"{name} has no open IOU in {amount.currency}")
 

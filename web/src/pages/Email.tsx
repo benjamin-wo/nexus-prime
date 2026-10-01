@@ -45,9 +45,12 @@ function EmailRow({ email, me, onChanged }: { email: InboundEmail; me: Me; onCha
   return (
     <li className="budget email-row">
       <div className="budget-head">
-        <h3 className="wrap">{email.merchant ?? email.subject}</h3>
+        <h3 className="wrap">
+          {email.received && email.merchant ? `From ${email.merchant}` : (email.merchant ?? email.subject)}
+        </h3>
         {email.amount && (
-          <span className="num">
+          <span className={email.received ? "num amount-in" : "num"}>
+            {email.received ? "+" : ""}
             {Number(email.amount).toFixed(2)} {email.currency}
           </span>
         )}

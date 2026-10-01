@@ -1,5 +1,6 @@
 """Ledger entities and the rules that don't need a database."""
 
+import re
 from dataclasses import dataclass, replace
 from datetime import datetime
 from enum import StrEnum
@@ -149,6 +150,22 @@ def clean_name(value: str, *, field_name: str) -> str:
     if cleaned is None:
         raise InvalidInput(f"{field_name} must not be empty")
     return cleaned
+
+
+def _name_words(name: str) -> list[str]:
+    return re.findall(r"[^\W_]+", name.casefold())
+
+
+def same_person(known: str, given: str) -> bool:
+    """Whether two ways of writing a name are the same person: any case or word
+    order, and a name the user shortened ("Wei Ming") matches the full one a bank
+    prints ("TAN WEI MING"), as long as every word of the shorter is in the
+    longer."""
+    a, b = _name_words(known), _name_words(given)
+    if not a or not b:
+        return False
+    short, long = sorted((a, b), key=len)
+    return set(short) <= set(long)
 
 
 def require_aware(value: datetime, *, field_name: str) -> datetime:

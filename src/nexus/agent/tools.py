@@ -32,6 +32,7 @@ from nexus.application import subscriptions as subscription_cases
 from nexus.application import transactions as tx_cases
 from nexus.application.fx import Rate, RateSource
 from nexus.application.ports import LedgerQuery, UnitOfWork
+from nexus.domain.email import InboundEmail
 from nexus.domain.errors import InvalidInput, NexusError, NotFound
 from nexus.domain.ledger import (
     Category,
@@ -844,6 +845,69 @@ async def _test_email_setup(ctx: ToolContext, _: NoArgs) -> ToolResult:
     )
 
 
+class AnswerEmailArgs(Args):
+    number: int = Field(
+        ge=1, le=email_cases.WAITING_SHOWN, description="The email's number in the waiting list"
+    )
+    action: Literal["log", "repayment", "income", "skip"] = Field(
+        description="log: save it as it was read (money in from someone who owes the user "
+        "pays that back). repayment: money in that pays back what the sender owes. income: "
+        "money in kept as plain income. skip: log nothing"
+    )
+    amount: str | None = Field(
+        None,
+        description="The user's own figure, only when no amount was found or they corrected it",
+    )
+    currency: str | None = None
+
+
+async def _waiting_email(ctx: ToolContext, number: int) -> InboundEmail:
+    emails = await email_cases.waiting(ctx.uow(), ctx.user.id, now=ctx.now)
+    if number > len(emails):
+        raise InvalidInput("there's no such email waiting; they may have been answered already")
+    return emails[number - 1]
+
+
+async def _describe_answer(ctx: ToolContext, a: AnswerEmailArgs) -> str:
+    email = await _waiting_email(ctx, a.number)
+    line = email_cases.describe(email, ctx.tz)
+    if a.action == "skip":
+        return f"Skip this email and log nothing? {line}"
+    figure = f" as {parse_money(ctx, a.amount, a.currency)}" if a.amount else ""
+    how = {
+        "log": "Log it",
+        "repayment": "Log it as paying back what they owe",
+        "income": "Log it as income (not a repayment)",
+    }[a.action]
+    return f"{how}{figure}? {line}"
+
+
+async def _answer_email(ctx: ToolContext, a: AnswerEmailArgs) -> ToolResult:
+    email = await _waiting_email(ctx, a.number)
+    if a.action == "skip":
+        await email_cases.skip_email(ctx.uow(), ctx.user.id, email.id)
+        return ToolResult("Skipped; nothing was logged.", wrote=True)
+    tx = await email_cases.log_email(
+        ctx.uow,
+        ctx.user,
+        email.id,
+        now=ctx.now,
+        amount=parse_money(ctx, a.amount, a.currency) if a.amount else None,
+        repayment={"log": None, "repayment": True, "income": False}[a.action],
+    )
+    if tx.direction is Direction.OUT:
+        where = f" at {tx.counterparty}" if tx.counterparty else ""
+        return ToolResult(f"Logged {tx.amount}{where}.", wrote=True)
+    left = (
+        await split_cases.list_open_ious(ctx.uow(), ctx.user.id, participant_name=tx.counterparty)
+        if tx.counterparty
+        else []
+    )
+    owed = ", ".join(str(i.outstanding) for i in left)
+    status = f" {tx.counterparty} still owes {owed}." if left else ""
+    return ToolResult(f"Logged {tx.amount} received from {tx.counterparty}.{status}", wrote=True)
+
+
 async def _email_status(ctx: ToolContext, _: NoArgs) -> ToolResult:
     found = await email_cases.overview(ctx.uow(), ctx.user.id, now=ctx.now)
     if not found.connections:
@@ -1256,6 +1320,15 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             IdArgs,
             _delete,
             confirm=_describe_delete,
+        ),
+        ToolSpec(
+            "answer_email",
+            "Answer an email waiting for the user (listed with numbers in their money "
+            "snapshot): log it, log money in as a repayment or as income, or skip it. "
+            "Asks the user to confirm.",
+            AnswerEmailArgs,
+            _answer_email,
+            confirm=_describe_answer,
         ),
         ToolSpec("restore_transaction", "Bring back a deleted transaction.", IdArgs, _restore),
         ToolSpec("undo_last_change", "Undo the user's most recent change.", NoArgs, _undo),

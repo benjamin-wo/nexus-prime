@@ -154,7 +154,8 @@ class EmailOut(Model):
     reason: str | None
     amount: str | None
     currency: str | None
-    merchant: str | None
+    merchant: str | None  # who was paid; for money received, who sent it
+    received: bool  # money in, not money spent
     transaction_id: UUID | None
     actionable: bool
 
@@ -183,6 +184,7 @@ async def overview(auth: Auth, web: Runtime) -> OverviewOut:
                 amount=draft.amount,
                 currency=draft.currency,
                 merchant=draft.merchant,
+                received=draft.received,
                 transaction_id=e.transaction_id,
                 actionable=e.status in ACTIONABLE or e.status is EmailStatus.SKIPPED,
             )

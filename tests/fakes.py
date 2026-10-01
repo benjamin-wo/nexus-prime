@@ -257,23 +257,29 @@ class FakeForwarding:
 
 
 class FakeEmailReader:
-    """Receipts are emails whose subject contains 'receipt'; the amount and merchant
-    come from lines like 'Total: 18.50' and 'Merchant: Grab' in the text."""
+    """Receipts are emails whose subject contains 'receipt', and money received is
+    one whose subject says 'received'; the amount and the other party come from
+    lines like 'Total: 18.50' and 'Merchant: Grab' (or 'From: Ann') in the text."""
 
     async def triage(self, email: FetchedEmail) -> Screening:
+        if "received" in email.subject.lower():
+            return Screening(True, "money received", received=True)
         if "receipt" in email.subject.lower():
             return Screening(True, "receipt")
         return Screening(False, "promotion")
 
-    async def extract(self, email: FetchedEmail, *, categories: Sequence[str] = ()) -> ExpenseDraft:
+    async def extract(
+        self, email: FetchedEmail, *, categories: Sequence[str] = (), received: bool = False
+    ) -> ExpenseDraft:
         fields = dict(line.split(": ", 1) for line in email.text.splitlines() if ": " in line)
         category = fields.get("Category")
         return ExpenseDraft(
             fields.get("Total"),
             fields.get("Currency"),
-            fields.get("Merchant"),
+            fields.get("From") if received else fields.get("Merchant"),
             fields.get("Date"),
-            category if category in categories else None,
+            None if received else category if category in categories else None,
+            received,
         )
 
 

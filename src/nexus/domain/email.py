@@ -39,8 +39,10 @@ FILTER_WORDS = ("receipt", "invoice", "order", "payment", "transaction", "paid",
 RECEIPT_QUERY = (
     "-in:chats -in:spam -in:trash -category:promotions -category:social ("
     "subject:(receipt OR invoice OR order OR payment OR paid OR transaction OR purchase "
-    'OR booking OR "e-receipt" OR "tax invoice" OR "you paid" OR "card alert") '
-    'OR "total paid" OR "amount paid" OR "order total" OR "transaction alert")'
+    'OR booking OR "e-receipt" OR "tax invoice" OR "you paid" OR "card alert" '
+    "OR received OR transfer OR paynow) "
+    'OR "total paid" OR "amount paid" OR "order total" OR "transaction alert" '
+    'OR "you have received")'
 )
 
 
@@ -117,26 +119,33 @@ class FetchedEmail:
 class Screening:
     is_receipt: bool
     reason: str
+    # Money that came in (a transfer or PayNow to the user), not money spent.
+    received: bool = False
 
 
 @dataclass(frozen=True, slots=True)
 class ExpenseDraft:
-    """What was read from a receipt email. Anything unclear is None, never a guess."""
+    """What was read from a receipt email, or from an email about money received.
+    Anything unclear is None, never a guess."""
 
     amount: str | None
     currency: str | None
-    merchant: str | None
+    merchant: str | None  # who was paid; for money received, who sent it
     date: str | None  # YYYY-MM-DD
     category: str | None = None  # the reader's closest match among the user's categories
+    received: bool = False  # money in, not money spent
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        found = {
             "amount": self.amount,
             "currency": self.currency,
             "merchant": self.merchant,
             "date": self.date,
             "category": self.category,
         }
+        if self.received:
+            found["direction"] = "in"
+        return found
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ExpenseDraft":
@@ -146,6 +155,7 @@ class ExpenseDraft:
             data.get("merchant"),
             data.get("date"),
             data.get("category"),
+            data.get("direction") == "in",
         )
 
 

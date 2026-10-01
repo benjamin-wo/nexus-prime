@@ -29,6 +29,7 @@ export async function fakeApi(page: Page, { signedIn = true, emailConnected = fa
   };
   type FakeRule = { id: string; pattern: string; category_id: string; category_name: string; explanation: string };
   type FakeSalary = { rule: string; day: number | null; anchor: string | null; usual: string | null };
+  let annRepaid = false;
   const state: {
     txs: Tx[];
     lastPress?: string;
@@ -111,6 +112,7 @@ export async function fakeApi(page: Page, { signedIn = true, emailConnected = fa
               amount: "18.5000",
               currency: "SGD",
               merchant: "Grab",
+              received: false,
               transaction_id: null,
               actionable: true,
             },
@@ -124,6 +126,7 @@ export async function fakeApi(page: Page, { signedIn = true, emailConnected = fa
               amount: null,
               currency: null,
               merchant: null,
+              received: false,
               transaction_id: null,
               actionable: true,
             },
@@ -377,16 +380,25 @@ export async function fakeApi(page: Page, { signedIn = true, emailConnected = fa
       return route.fulfill({ status: 204 });
     }
     if (path === "/ious") {
-      return json(route, [
-        {
-          split_id: "s1",
-          transaction_id: "t9",
-          participant_name: "Ann",
-          share: { amount: "30.0000", currency: "SGD" },
-          outstanding: { amount: "20.0000", currency: "SGD" },
-          expense_occurred_at: "2026-09-20T12:00:00Z",
-        },
-      ]);
+      return json(
+        route,
+        annRepaid
+          ? []
+          : [
+              {
+                split_id: "s1",
+                transaction_id: "t9",
+                participant_name: "Ann",
+                share: { amount: "30.0000", currency: "SGD" },
+                outstanding: { amount: "20.0000", currency: "SGD" },
+                expense_occurred_at: "2026-09-20T12:00:00Z",
+              },
+            ],
+      );
+    }
+    if (path === "/ious/s1/repaid" && method === "POST") {
+      annRepaid = true;
+      return route.fulfill({ status: 204 });
     }
     if (path === "/email" && method === "GET") return json(route, { available: true, forwarding_available: true, ...state.email });
     if (path === "/email/link" && method === "GET")

@@ -1079,6 +1079,12 @@ async def ious(auth: Auth, web: Runtime) -> list[IouOut]:
     ]
 
 
+@router.post("/ious/{split_id}/repaid", status_code=204)
+async def iou_repaid(split_id: UUID, auth: Auth, web: Runtime) -> None:
+    """Paid back in full, today; deleting the money-in transaction undoes it."""
+    await split_cases.mark_repaid(web.uow, auth.user.id, split_id, now=web.clock())
+
+
 # --- budgets --------------------------------------------------------------------------
 
 

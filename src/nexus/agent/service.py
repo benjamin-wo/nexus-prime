@@ -33,7 +33,7 @@ from nexus.application.limits import RateLimiter
 from nexus.application.ports import ReceiptStore
 from nexus.application.users import get_user
 from nexus.domain.errors import DuplicateSource, NexusError
-from nexus.domain.ledger import UserId
+from nexus.domain.ledger import Direction, Transaction, UserId
 from nexus.domain.money import Money
 from nexus.infra.llm.factory import text_of
 
@@ -301,15 +301,21 @@ class AgentService:
         return Reply("I don't know that button.")
 
     async def _email_button(self, actor: UserId, action: str, email_id: str) -> Reply:
-        """Log it / Skip on a receipt found in the user's email."""
+        """Log it / Skip on a receipt found in the user's email; for money received,
+        also Yes, paid back / Just income."""
         try:
             found = UUID(email_id)
         except ValueError:
             return Reply("I don't know that button.")
         user = await get_user(self._uow(), actor)
+        repayment = {"log": None, "repay": True, "income": False}
         try:
-            if action == "log":
-                tx = await email_cases.log_email(self._uow, user, found, now=self._clock())
+            if action in repayment:
+                tx = await email_cases.log_email(
+                    self._uow, user, found, now=self._clock(), repayment=repayment[action]
+                )
+                if tx.direction is Direction.IN:
+                    return Reply(await self._money_in(actor, tx), [[UNDO]])
                 where = f" at {tx.counterparty}" if tx.counterparty else ""
                 return Reply(f"Logged {tx.amount}{where}.", [[UNDO]])
             if action == "skip":
@@ -320,6 +326,20 @@ class AgentService:
         except NexusError as exc:
             return Reply(str(exc).capitalize() + ".")
         return Reply("I don't know that button.")
+
+    async def _money_in(self, actor: UserId, tx: Transaction) -> str:
+        """What logging money received did: a repayment says who still owes what."""
+        who = tx.counterparty
+        if who is None:
+            return f"Logged {tx.amount} received."
+        async with self._uow() as uow:
+            settled = await uow.ledger.has_settlements_for_income(actor, tx.id)
+        if not settled:
+            return f"Logged {tx.amount} received from {who}."
+        left = await split_cases.list_open_ious(self._uow(), actor, participant_name=who)
+        owed = ", ".join(str(i.outstanding) for i in left)
+        status = f"{who} still owes {owed}." if left else f"{who} is all settled. 🎉"
+        return f"Recorded {tx.amount} from {who} as paid back. {status}"
 
     async def _rule_button(self, actor: UserId, data: str) -> Reply:
         """The answer to a rule offer after a category correction."""
