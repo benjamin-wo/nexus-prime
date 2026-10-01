@@ -537,3 +537,12 @@ test("merge one category into another from Settings", async ({ page }) => {
   await expect(yours.getByRole("heading", { name: "Transport" })).toHaveCount(0);
   await expect(card.getByRole("list", { name: "Archived categories" }).getByRole("heading", { name: "Transport" })).toBeVisible();
 });
+
+test("mark that someone paid back what they owe", async ({ page }) => {
+  await fakeApi(page);
+  await page.goto("/");
+  const owed = page.getByRole("region", { name: "Who owes you" });
+  await expect(owed.getByText("Ann")).toBeVisible();
+  await owed.getByRole("button", { name: /Ann paid back/ }).click();
+  await expect(owed.getByText("Nobody owes you anything.")).toBeVisible();
+});

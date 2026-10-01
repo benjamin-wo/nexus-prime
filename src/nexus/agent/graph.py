@@ -70,6 +70,7 @@ CORE_TOOLS = (
     "spending_summary",
     "query_ledger",
     "list_categories",
+    "answer_email",
     "load_skill",
 )
 SKILL_TURNS = 5
@@ -226,6 +227,10 @@ class AgentGraph:
             "record_income, which asks the user to confirm. If the amount, the kind (salary, "
             "repayment or other) or who paid is unclear, ask one short question first; see "
             "the income skill.\n"
+            '- Something that just came in from email ("that transfer", "the one just '
+            'now", "log it" right after an email question) is in the waiting list in '
+            "the snapshot: answer it with answer_email and its number. Money in from "
+            "someone who owes the user is their repayment unless the user says otherwise.\n"
             "- Only bring up logging automatically from email when the user asks about "
             "automating their logging; never suggest it otherwise.\n"
             '- Reply style: lead with the answer or what you did ("Logged 4.50 at Kopi '

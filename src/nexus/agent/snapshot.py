@@ -14,6 +14,7 @@ from decimal import Decimal
 from nexus.agent.tools import ToolContext, _rates
 from nexus.application import budgets as budget_cases
 from nexus.application import cashflow as cashflow_cases
+from nexus.application import email as email_cases
 from nexus.application import splits as split_cases
 from nexus.application import transactions as tx_cases
 from nexus.application.categories import list_categories
@@ -32,7 +33,7 @@ AHEAD_DAYS = 7
 async def money_snapshot(ctx: ToolContext) -> str:
     """The snapshot as plain lines, or "" if nothing could be read."""
     parts: list[str] = []
-    for build in (_month, _budgets, _ahead, _ious, _recent):
+    for build in (_emails, _month, _budgets, _ahead, _ious, _recent):
         try:
             text = await build(ctx)
         except Exception:
@@ -109,6 +110,17 @@ async def _ious(ctx: ToolContext) -> str:
         for name, amounts in sorted(owed.items())
     ]
     return "Owed to the user: " + ", ".join(items) + "."
+
+
+async def _emails(ctx: ToolContext) -> str:
+    """Emails waiting for an answer, newest first and numbered for answer_email, so
+    "log that transfer just now" has something to point at. First, because it's what
+    the user is most likely asking about right after a notification."""
+    waiting = await email_cases.waiting(ctx.uow(), ctx.user.id, now=ctx.now)
+    if not waiting:
+        return ""
+    lines = [f"{n}) {email_cases.describe(e, ctx.tz)}" for n, e in enumerate(waiting, 1)]
+    return "From email, waiting for the user's answer, newest first: " + "; ".join(lines) + "."
 
 
 async def _recent(ctx: ToolContext) -> str:

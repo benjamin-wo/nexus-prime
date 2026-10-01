@@ -46,7 +46,7 @@ async def record_income(
     person) settles that person's open IOUs first; without one it's plain income."""
     if counterparty and (kind is IncomeKind.REPAYMENT or settle_first):
         try:
-            await split_cases.settle_iou(
+            settled = await split_cases.settle_iou(
                 uow(),
                 user.id,
                 counterparty,
@@ -59,6 +59,7 @@ async def record_income(
         except InvalidInput:
             pass  # no open IOU with them: plain income below
         else:
+            counterparty = settled.transaction.counterparty or counterparty
             remaining = await split_cases.list_open_ious(
                 uow(), user.id, participant_name=counterparty
             )

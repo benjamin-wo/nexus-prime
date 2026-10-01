@@ -1,4 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 
 import { api, type Iou, type Me, type Money, type Summary } from "../api";
 import { CategoryBars } from "../components/CategoryBars";
@@ -23,6 +24,20 @@ export function conversionNote(total: Total | undefined): string | undefined {
 export function Dashboard({ me, onLog }: { me: Me; onLog: () => void }) {
   const summary = useQuery({ queryKey: ["summary"], queryFn: () => api<Summary>("/summary") });
   const ious = useQuery({ queryKey: ["ious"], queryFn: () => api<Iou[]>("/ious") });
+  const client = useQueryClient();
+  const [repayError, setRepayError] = useState<string | null>(null);
+
+  async function paidBack(iou: Iou) {
+    setRepayError(null);
+    try {
+      await api(`/ious/${iou.split_id}/repaid`, { method: "POST", body: {} });
+      void client.invalidateQueries({ queryKey: ["ious"] });
+      void client.invalidateQueries({ queryKey: ["summary"] });
+      void client.invalidateQueries({ queryKey: ["transactions"] });
+    } catch (e) {
+      setRepayError(e instanceof Error ? e.message : "Couldn't mark that paid back");
+    }
+  }
 
   const home = summary.data?.currency ?? me.user.home_currency;
   const spent = summary.data?.totals.find((t) => t.direction === "out");
@@ -95,12 +110,23 @@ export function Dashboard({ me, onLog }: { me: Me; onLog: () => void }) {
                 <br />
                 <span className="caption">since {formatDate(iou.expense_occurred_at, me.user.timezone)}</span>
               </span>
-              <span className="num">
-                {formatMoney(iou.outstanding)}
-                <span className="sr-only"> still owed</span>
+              <span className="iou-end">
+                <span className="num">
+                  {formatMoney(iou.outstanding)}
+                  <span className="sr-only"> still owed</span>
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-small"
+                  aria-label={`${iou.participant_name} paid back ${formatMoney(iou.outstanding)}`}
+                  onClick={() => void paidBack(iou)}
+                >
+                  Paid back
+                </button>
               </span>
             </div>
           ))}
+          {repayError && <p className="error-text">{repayError}</p>}
         </section>
       </div>
     </>

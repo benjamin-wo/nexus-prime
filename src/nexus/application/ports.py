@@ -199,6 +199,10 @@ class LedgerRepository(Protocol):
     # splits and settlements
     async def list_splits(self, user_id: UserId, transaction_id: UUID) -> list[Split]: ...
     async def has_settlements(self, user_id: UserId, transaction_id: UUID) -> bool: ...
+    async def has_settlements_for_income(self, user_id: UserId, income_id: UUID) -> bool:
+        """Whether this money in paid off any IOU."""
+        ...
+
     async def replace_splits(
         self, user_id: UserId, transaction_id: UUID, splits: list[Split]
     ) -> None: ...
@@ -382,11 +386,12 @@ class ForwardingInboxes(Mailbox, Protocol):
 
 
 class EmailReader(Protocol):
-    """Screens an email cheaply, then reads a likely receipt into a draft expense."""
+    """Screens an email cheaply, then reads a likely receipt, or an alert of money
+    received, into a draft."""
 
     async def triage(self, email: FetchedEmail) -> Screening: ...
     async def extract(
-        self, email: FetchedEmail, *, categories: Sequence[str] = ()
+        self, email: FetchedEmail, *, categories: Sequence[str] = (), received: bool = False
     ) -> ExpenseDraft: ...
 
 

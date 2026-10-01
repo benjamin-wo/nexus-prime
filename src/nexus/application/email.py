@@ -20,6 +20,8 @@ from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 from nexus.application import receipts as receipt_cases
+from nexus.application import splits as split_cases
+from nexus.application import transactions as tx_cases
 from nexus.application.budgets import TELEGRAM_SEND
 from nexus.application.ports import (
     Cipher,
@@ -31,6 +33,7 @@ from nexus.application.ports import (
     SignInMailbox,
     UnitOfWork,
 )
+from nexus.application.splits import owing_person
 from nexus.application.transactions import NewTransaction
 from nexus.domain.email import (
     ACTIONABLE,
@@ -57,7 +60,7 @@ from nexus.domain.email import (
     sweep_from,
 )
 from nexus.domain.errors import Conflict, DuplicateSource, InvalidInput, NotFound
-from nexus.domain.ledger import Direction, Source, Transaction, User, UserId
+from nexus.domain.ledger import Direction, OpenIou, Source, Transaction, User, UserId
 from nexus.domain.money import Money
 from nexus.domain.notifications import Frequency
 
@@ -314,17 +317,53 @@ def _amount(draft: ExpenseDraft, home: str) -> Money | None:
     return read_amount(draft.amount, draft.currency, home)
 
 
-def prompt_text(email: InboundEmail, tz: ZoneInfo) -> str:
-    draft = ExpenseDraft.from_dict(email.draft or {})
-    where = f" at {draft.merchant}" if draft.merchant else ""
-    day = email.received_at.astimezone(tz).date()
+def _day(email: InboundEmail, draft: ExpenseDraft, tz: ZoneInfo) -> date:
     if draft.date:
         try:
-            day = date.fromisoformat(draft.date)
+            return date.fromisoformat(draft.date)
         except ValueError:
             pass
+    return email.received_at.astimezone(tz).date()
+
+
+def prompt_text(email: InboundEmail, tz: ZoneInfo) -> str:
+    draft = ExpenseDraft.from_dict(email.draft or {})
     money = _amount(draft, draft.currency or "")
+    day = _day(email, draft, tz)
+    if draft.received:
+        sender = f" from {draft.merchant}" if draft.merchant else ""
+        return f"📧 From your email: {money} came in{sender} on {day:%-d %b}. Log it as money in?"
+    where = f" at {draft.merchant}" if draft.merchant else ""
     return f"📧 From your email: {money}{where} on {day:%-d %b}. Log it?"
+
+
+def question(
+    email: InboundEmail, tz: ZoneInfo, open_ious: list[OpenIou]
+) -> tuple[str, list[list[dict[str, str]]]]:
+    """What to ask about an email, and its buttons. Money in from someone who owes
+    the user is offered as their repayment."""
+    draft = ExpenseDraft.from_dict(email.draft or {})
+    skip = {"label": "Skip", "data": f"email:skip:{email.id}"}
+    person = owing_person(open_ious, draft.merchant) if draft.received and draft.merchant else None
+    if person is None:
+        return prompt_text(email, tz), [
+            [{"label": "Log it", "data": f"email:log:{email.id}"}, skip]
+        ]
+    money = _amount(draft, draft.currency or "")
+    owed = [i.outstanding for i in open_ious if i.split.participant_name == person]
+    total = sum(owed[1:], owed[0])
+    text = (
+        f"📧 From your email: {money} came in from {draft.merchant} on "
+        f"{_day(email, draft, tz):%-d %b}. {person} owes you {total}. Count it as paying "
+        "that back?"
+    )
+    return text, [
+        [
+            {"label": "Yes, paid back", "data": f"email:repay:{email.id}"},
+            {"label": "Just income", "data": f"email:income:{email.id}"},
+        ],
+        [skip],
+    ]
 
 
 async def _read_one(
@@ -347,7 +386,8 @@ async def _read_one(
             status, reason = EmailStatus.NOT_RECEIPT, short(screening.reason, 80)
         else:
             expense = await asyncio.wait_for(
-                reader.extract(fetched, categories=categories), READ_TIMEOUT.total_seconds()
+                reader.extract(fetched, categories=categories, received=screening.received),
+                READ_TIMEOUT.total_seconds(),
             )
             # When the model's figure can't be read (once it gave the field's name,
             # "currency"), the one amount the email states with its currency will do.
@@ -577,19 +617,12 @@ async def _ask(
         settings = await tx.planning.get_notifications(user.id)
         if settings.frequency is not Frequency.INSTANT:
             return
+    open_ious = await tx.ledger.open_ious(user.id)
     for email in waiting:
+        text, buttons = question(email, tz, open_ious)
         await tx.jobs.enqueue(
             TELEGRAM_SEND,
-            {
-                "user_id": str(user.id),
-                "text": prompt_text(email, tz),
-                "buttons": [
-                    [
-                        {"label": "Log it", "data": f"email:log:{email.id}"},
-                        {"label": "Skip", "data": f"email:skip:{email.id}"},
-                    ]
-                ],
-            },
+            {"user_id": str(user.id), "text": text, "buttons": buttons},
             dedupe_key=f"email.ask:{email.id}",
             run_at=email.created_at,
         )
@@ -643,9 +676,12 @@ async def log_email(
     *,
     now: datetime,
     amount: Money | None = None,
+    repayment: bool | None = None,
 ) -> Transaction:
     """The user said yes: save the expense (and its PDF, if kept). ``amount`` is the
-    user's own figure, for an email where none was found."""
+    user's own figure, for an email where none was found. Money received is saved as
+    money in; ``repayment`` says whether it pays off what the sender owes (True),
+    is plain income (False), or, left out, pays it off if they owe anything."""
     async with uow() as tx:
         email = await _pending(tx, user.id, email_id)
         connection = await tx.email.get_connection(user.id, email.connection_id)
@@ -656,12 +692,28 @@ async def log_email(
         if money is None:
             raise InvalidInput("no amount was found in that email; tell me the amount")
         occurred = draft.get("occurred_at")
+        when = datetime.fromisoformat(occurred) if occurred else email.received_at
         receipt = draft.get("receipt_id")
         key = external_id(connection.provider, connection.address, email.provider_message_id)
+        read = ExpenseDraft.from_dict(draft)
+        owes = (
+            owing_person(await tx.ledger.open_ious(user.id), read.merchant)
+            if read.received and read.merchant
+            else None
+        )
+    if read.received:
+        try:
+            saved = await _log_received(uow, user, read, money, when, email, key, owes, repayment)
+        except DuplicateSource:
+            await _set(uow(), user.id, email_id, EmailStatus.DUPLICATE, "already logged")
+            raise
+        await _set(uow(), user.id, email_id, EmailStatus.LOGGED, None, saved.id)
+        return saved
+    async with uow() as tx:
         cmd = NewTransaction(
             direction=Direction.OUT,
             amount=money,
-            occurred_at=datetime.fromisoformat(occurred) if occurred else email.received_at,
+            occurred_at=when,
             counterparty=draft.get("merchant"),
             notes=email.subject or None,
             source=Source.EMAIL,
@@ -680,6 +732,46 @@ async def log_email(
         saved = await receipt_cases.log_with_receipt(uow(), user.id, cmd, None, now=now)
     await _set(uow(), user.id, email_id, EmailStatus.LOGGED, None, saved.id)
     return saved
+
+
+async def _log_received(
+    uow: UowFactory,
+    user: User,
+    draft: ExpenseDraft,
+    money: Money,
+    when: datetime,
+    email: InboundEmail,
+    key: str,
+    owes: str | None,
+    repayment: bool | None,
+) -> Transaction:
+    if repayment is True and owes is None:
+        raise InvalidInput(f"{draft.merchant or 'the sender'} doesn't owe you anything")
+    if owes is not None and repayment is not False:
+        settled = await split_cases.settle_iou(
+            uow(),
+            user.id,
+            owes,
+            money,
+            when,
+            notes=email.subject or None,
+            source=Source.EMAIL,
+            external_id=key,
+        )
+        return settled.transaction
+    return await tx_cases.log_transaction(
+        uow(),
+        user.id,
+        NewTransaction(
+            direction=Direction.IN,
+            amount=money,
+            occurred_at=when,
+            counterparty=draft.merchant,
+            notes=email.subject or None,
+            source=Source.EMAIL,
+            external_id=key,
+        ),
+    )
 
 
 async def _category_named(tx: UnitOfWork, user_id: UserId, name: object) -> UUID | None:
@@ -733,3 +825,33 @@ async def overview(uow: UnitOfWork, user_id: UserId, *, now: datetime) -> Overvi
             user_id, since=now - timedelta(days=LOG_WINDOW_DAYS), limit=200
         )
     return Overview(connections, emails)
+
+
+WAITING_DAYS = 14
+WAITING_SHOWN = 5
+
+
+async def waiting(uow: UnitOfWork, user_id: UserId, *, now: datetime) -> list[InboundEmail]:
+    """Emails from the last two weeks still waiting for the user's answer, newest
+    first: what the chat can talk about ("log that transfer just now")."""
+    async with uow:
+        emails = await uow.email.list_inbound(
+            user_id, since=now - timedelta(days=WAITING_DAYS), limit=200
+        )
+    open_ = [e for e in emails if e.status in (EmailStatus.PENDING, EmailStatus.NO_AMOUNT)]
+    return sorted(open_, key=lambda e: e.received_at, reverse=True)[:WAITING_SHOWN]
+
+
+def describe(email: InboundEmail, tz: ZoneInfo) -> str:
+    """One line about an email waiting for an answer, for the chat."""
+    draft = ExpenseDraft.from_dict(email.draft or {})
+    when = email.received_at.astimezone(tz)
+    money = _amount(draft, draft.currency or "") if draft.amount else None
+    figure = str(money) if money else "no amount found"
+    if draft.received:
+        sender = f" from {draft.merchant}" if draft.merchant else ""
+        what = f"{figure} came in{sender}"
+    else:
+        where = f" at {draft.merchant}" if draft.merchant else ""
+        what = f"{figure} spent{where}"
+    return f"{when:%a %-d %b %H:%M}, {what} (email: {short(email.subject, 60)})"
