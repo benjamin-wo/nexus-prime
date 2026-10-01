@@ -7,7 +7,7 @@ CSRF token in ``X-CSRF-Token``.
 
 import hmac
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Annotated
 
@@ -18,6 +18,7 @@ from nexus.agent.tools import UowFactory
 from nexus.application.access import SESSION_TTL, resolve_session
 from nexus.application.email import EmailRuntime
 from nexus.application.fx import RateSource
+from nexus.application.limits import RateLimiter
 from nexus.application.ports import ReceiptStore
 from nexus.domain.access import Session
 from nexus.domain.ledger import User
@@ -38,6 +39,8 @@ class WebRuntime:
     rates: RateSource
     archive: ReceiptStore | None = None  # receipt files; None = not kept
     email: EmailRuntime | None = None  # Connect Gmail; None = not offered
+    # Per-user limits on heavy requests (statement imports).
+    limits: RateLimiter = field(default_factory=RateLimiter)
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,3 +123,9 @@ async def authenticated(request: Request, web: Runtime) -> Authed:
 
 
 Auth = Annotated[Authed, Depends(authenticated)]
+
+
+def limit(web: WebRuntime, auth: Authed, kind: str) -> None:
+    """429 when this user has done ``kind`` too often lately."""
+    if not web.limits.allow(kind, auth.user.id):
+        raise HTTPException(status_code=429, detail="Too many at once. Try again in a few minutes.")

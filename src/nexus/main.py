@@ -25,6 +25,7 @@ from nexus.application import email as email_cases
 from nexus.application.clock import utcnow
 from nexus.application.email import EmailRuntime
 from nexus.application.fx import RateSource
+from nexus.application.limits import RateLimiter
 from nexus.application.ports import (
     EmailReader,
     ForwardingInboxes,
@@ -37,6 +38,7 @@ from nexus.channels.web import api as web_api
 from nexus.channels.web import email_api, health
 from nexus.channels.web.errors import install_error_handlers
 from nexus.channels.web.frontend import mount_frontend
+from nexus.channels.web.hardening import install_hardening
 from nexus.channels.web.security import WebRuntime
 from nexus.domain.ledger import User, UserId
 from nexus.infra.crypto.fernet import FernetCipher
@@ -57,7 +59,7 @@ from nexus.infra.logs import configure_logging
 from nexus.infra.storage.s3 import S3ReceiptStore
 from nexus.jobs.handlers import MEMORY_UPDATE, SCHEDULES, build_handlers
 from nexus.jobs.runner import JobRunner
-from nexus.settings import Settings, get_settings
+from nexus.settings import Environment, Settings, get_settings
 
 log = logging.getLogger(__name__)
 
@@ -230,7 +232,14 @@ async def _telegram_runtime(
         settings=settings,
         uow=uow,
         service=AgentService(
-            graph, uow, receipts, clock, archive, rates, after_turn=_queue_memory(uow, clock)
+            graph,
+            uow,
+            receipts,
+            clock,
+            archive,
+            rates,
+            after_turn=_queue_memory(uow, clock),
+            limiter=RateLimiter(clock=clock),
         ),
         client=client,
     )
@@ -353,7 +362,15 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                     stack.push_async_callback(_finish, menu)
             yield
 
-    app = FastAPI(title="Nexus Prime", lifespan=lifespan)
+    # The API's own docs map every route; they aren't served in production.
+    hidden = resolved.environment is Environment.PROD
+    app = FastAPI(
+        title="Nexus Prime",
+        lifespan=lifespan,
+        docs_url=None if hidden else "/docs",
+        redoc_url=None if hidden else "/redoc",
+        openapi_url=None if hidden else "/openapi.json",
+    )
     app.state.settings = resolved
     app.state.telegram = None
     app.state.web = None
@@ -362,6 +379,8 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
     app.include_router(web_api.router)
     app.include_router(email_api.router)
     install_error_handlers(app)
+    origin = resolved.public_origin
+    install_hardening(app, https=bool(origin and origin.startswith("https://")))
     mount_frontend(app)
     return app
 

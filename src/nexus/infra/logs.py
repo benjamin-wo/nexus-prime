@@ -34,6 +34,10 @@ class JsonLines(logging.Formatter):
 
 def configure_logging() -> None:
     """Idempotent: safe to call once per app created."""
+    # HTTP client libraries log request URLs at INFO, and Telegram's carry the bot
+    # token: they're held to warnings.
+    for noisy in ("httpx", "httpcore", "openai", "urllib3"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
     access = logging.getLogger("uvicorn.access")
     if not any(isinstance(f, RedactQueries) for f in access.filters):
         access.addFilter(RedactQueries())
