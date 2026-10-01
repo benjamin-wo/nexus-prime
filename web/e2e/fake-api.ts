@@ -36,6 +36,7 @@ export async function fakeApi(page: Page, { signedIn = true, emailConnected = fa
     bills: FakeBill[];
     salary: FakeSalary | null;
     rules: FakeRule[];
+    imports: { id: string; file_name: string; added: number; created_at: string; undone_at: string | null }[];
     memories: { id: string; kind: string; text: string; happened_on: string | null; updated_at: string }[];
     frequency: string;
     subs: { id: string; name: string; status: string; amount: string }[];
@@ -60,6 +61,7 @@ export async function fakeApi(page: Page, { signedIn = true, emailConnected = fa
     bills: [],
     salary: null,
     rules: [],
+    imports: [],
     memories: [
       { id: "m1", kind: "fact", text: "Ann is the user's sister.", happened_on: null, updated_at: "2026-09-28T06:00:00Z" },
       { id: "m2", kind: "preference", text: "Wants short replies.", happened_on: null, updated_at: "2026-09-28T06:00:00Z" },
@@ -423,6 +425,61 @@ export async function fakeApi(page: Page, { signedIn = true, emailConnected = fa
       const category = categories.find((c) => c.id === categoryEdit[1])!;
       Object.assign(category, body);
       return json(route, category);
+    }
+    if (path === "/imports/pdf" && method === "POST") {
+      if (body.password !== "secret") {
+        return json(route, { needs_password: true, wrong_password: Boolean(body.password), csv: null, layout: null, kind: null, rows: 0, reconciles: null });
+      }
+      return json(route, {
+        needs_password: false, wrong_password: false, kind: "card", rows: 2, reconciles: true,
+        csv: "Date,Description,Amount\n2026-09-05,Beach Cafe,-28.50\n2026-09-08,Online Refund,10.00\n",
+        layout: { date: 0, description: [1], amount: 2, debit: null, credit: null, currency: null, date_order: "ymd", sign: "negative_is_out" },
+      });
+    }
+    if (path === "/imports/preview" && method === "POST") {
+      const csv = String(body.csv);
+      const layout = body.layout ?? {
+        date: 0, description: [1], amount: 2, debit: null, credit: null, currency: null,
+        date_order: "dmy", sign: "negative_is_out",
+      };
+      const lines = csv.trim().split("\n").slice(1).map((l) => l.split(","));
+      return json(route, {
+        headers: ["Date", "Description", "Amount"],
+        layout,
+        saved_as: null,
+        rows: lines.map((cells, index) => {
+          const amount = Number(cells[2]);
+          const readable = !Number.isNaN(amount) && /\d/.test(cells[0]);
+          return {
+            index,
+            verdict: !readable ? "unclear" : cells[1] === "Grab" ? "duplicate" : "new",
+            cells,
+            date: readable ? "2026-09-28" : null,
+            description: cells[1],
+            amount: readable ? Math.abs(amount).toFixed(2) : null,
+            currency: readable ? "SGD" : null,
+            direction: readable ? (amount < 0 ? "out" : "in") : null,
+            category: readable ? (amount < 0 ? "Other" : "Income") : null,
+            problem: readable ? null : "can't read the date",
+            matches: cells[1] === "Grab" ? { date: "2026-09-28", description: "Grab", amount: "25.00" } : null,
+          };
+        }),
+      });
+    }
+    if (path === "/imports" && method === "POST") {
+      const record = {
+        id: `i${state.imports.length + 1}`, file_name: body.file_name, added: body.include.length,
+        created_at: "2026-09-28T06:00:00Z", undone_at: null,
+      };
+      state.imports.unshift(record);
+      return json(route, { ...record, skipped: 0 }, 201);
+    }
+    if (path === "/imports" && method === "GET") return json(route, state.imports);
+    const undo = path.match(/^\/imports\/(\w+)\/undo$/);
+    if (undo && method === "POST") {
+      const record = state.imports.find((i) => i.id === undo[1])!;
+      record.undone_at = "2026-09-28T06:05:00Z";
+      return json(route, { removed: record.added });
     }
     if (path === "/memories" && method === "GET") return json(route, state.memories);
     if (path === "/memories" && method === "DELETE") {

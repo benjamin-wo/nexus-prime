@@ -7,6 +7,7 @@ from nexus.infra.db.email_repository import SqlEmailRepository
 from nexus.infra.db.ledger_repository import SqlLedgerRepository
 from nexus.infra.db.memory_repository import SqlMemoryRepository
 from nexus.infra.db.planning_repository import SqlJobQueue, SqlPlanningRepository
+from nexus.infra.db.statement_repository import SqlStatementRepository
 
 
 class SqlUnitOfWork:
@@ -22,6 +23,7 @@ class SqlUnitOfWork:
         self._jobs: SqlJobQueue | None = None
         self._email: SqlEmailRepository | None = None
         self._memory: SqlMemoryRepository | None = None
+        self._statements: SqlStatementRepository | None = None
 
     @property
     def ledger(self) -> SqlLedgerRepository:
@@ -53,6 +55,12 @@ class SqlUnitOfWork:
             raise RuntimeError("unit of work is not active")
         return self._memory
 
+    @property
+    def statements(self) -> SqlStatementRepository:
+        if self._statements is None:
+            raise RuntimeError("unit of work is not active")
+        return self._statements
+
     async def __aenter__(self) -> Self:
         if self._used:
             raise RuntimeError("a unit of work can only be used once")
@@ -64,6 +72,7 @@ class SqlUnitOfWork:
         self._jobs = SqlJobQueue(self._connection)
         self._email = SqlEmailRepository(self._connection)
         self._memory = SqlMemoryRepository(self._connection)
+        self._statements = SqlStatementRepository(self._connection)
         return self
 
     async def commit(self) -> None:

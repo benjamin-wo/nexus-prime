@@ -85,6 +85,44 @@ export type Memory = {
   updated_at: string;
 };
 
+export type ImportLayout = {
+  date: number;
+  description: number[];
+  amount: number | null;
+  debit: number | null;
+  credit: number | null;
+  currency: number | null;
+  date_order: "dmy" | "mdy" | "ymd";
+  sign: "negative_is_out" | "positive_is_out";
+};
+export type ImportRow = {
+  index: number;
+  verdict: "new" | "duplicate" | "imported" | "unclear";
+  cells: string[];
+  date: string | null;
+  description: string;
+  amount: string | null;
+  currency: string | null;
+  direction: "in" | "out" | null;
+  category: string | null;
+  problem: string | null;
+  matches: { date: string; description: string | null; amount: string } | null;
+};
+export type ImportPreview = {
+  headers: string[];
+  layout: ImportLayout | null;
+  saved_as: string | null;
+  rows: ImportRow[];
+};
+export type ImportRecord = {
+  id: string;
+  file_name: string;
+  added: number;
+  created_at: string;
+  undone_at: string | null;
+  skipped?: number;
+};
+
 export type Page = { items: Transaction[]; total: number };
 export type Category = { id: string; name: string; active: boolean };
 export type Me = {

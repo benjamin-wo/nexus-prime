@@ -12,6 +12,7 @@ import { CashFlowPage } from "./pages/CashFlow";
 import { ConnectDone, ConnectGmail } from "./pages/Connect";
 import { Dashboard } from "./pages/Dashboard";
 import { EmailPage } from "./pages/Email";
+import { ImportPage } from "./pages/Import";
 import { Ledger } from "./pages/Ledger";
 import { LoginPage } from "./pages/LoginPage";
 import { Plan } from "./pages/Plan";
@@ -83,6 +84,7 @@ function Cockpit({ me }: { me: Me }) {
         />
         <Route path="/plan" element={<Plan me={me} />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/import" element={<ImportPage />} />
         <Route path="/email" element={<EmailPage me={me} />} />
         <Route path="/cashflow" element={<CashFlowPage />} />
         <Route path="/budgets" element={<Navigate to="/plan" replace />} />

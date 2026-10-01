@@ -1070,3 +1070,85 @@ async def test_what_nexus_remembers(world: World, engine: AsyncEngine) -> None:
     assert len((await owner.get("/api/memories")).json()) == 1
     assert (await owner.send("DELETE", "/api/memories")).status_code == 204
     assert (await owner.get("/api/memories")).json() == []
+
+
+async def test_import_a_statement(world: World) -> None:
+    owner, invite = await owner_and_invite(world)
+    member = world.browser()
+    assert (await member.login(MEMBER, invite)).status_code == 200
+    csv = (
+        "Transaction Date,Reference,Debit Amount,Credit Amount,Transaction Ref1\n"
+        "28 Sep 2026,POS,4.20,,KOPITIAM\n"
+        "27 Sep 2026,POS,,50.00,ANN\n"
+        "someday,POS,1.00,,MYSTERY\n"
+    )
+    shown = (await owner.send("POST", "/api/imports/preview", {"csv": csv})).json()
+    assert shown["headers"][0] == "Transaction Date"
+    assert [r["verdict"] for r in shown["rows"]] == ["new", "new", "unclear"]
+    assert shown["rows"][1]["direction"] == "in" and shown["rows"][1]["category"] == "Income"
+    assert (await owner.get("/api/transactions")).json()["total"] == 0  # nothing saved yet
+
+    body = {
+        "csv": csv,
+        "layout": shown["layout"],
+        "include": [0, 1],
+        "file_name": "sept.csv",
+        "save_as": "Everyday",
+    }
+    done = await owner.send("POST", "/api/imports", body)
+    assert done.status_code == 201 and done.json()["added"] == 2
+    assert (await owner.get("/api/transactions")).json()["total"] == 2
+    [record] = (await owner.get("/api/imports")).json()
+    assert record["file_name"] == "sept.csv"
+    [layout] = (await owner.get("/api/imports/layouts")).json()
+    assert layout["name"] == "Everyday"
+
+    # Another user sees none of it and can't undo it.
+    assert (await member.get("/api/imports")).json() == []
+    assert (await member.send("POST", f"/api/imports/{record['id']}/undo")).status_code == 404
+    assert (await member.send("DELETE", f"/api/imports/layouts/{layout['id']}")).status_code == 404
+    # A request without the CSRF token is refused.
+    bare = await owner.client.post("/api/imports/preview", json={"csv": csv})
+    assert bare.status_code == 403
+
+    undone = (await owner.send("POST", f"/api/imports/{record['id']}/undo")).json()
+    assert undone == {"removed": 2}
+    assert (await owner.get("/api/transactions")).json()["total"] == 0
+    assert (await owner.send("DELETE", f"/api/imports/layouts/{layout['id']}")).status_code == 204
+    bad = await owner.send("POST", "/api/imports/preview", {"csv": "Date,Amount\n"})
+    assert bad.status_code == 422
+
+
+async def test_import_a_pdf_statement(world: World) -> None:
+    import base64
+
+    from tests.pdfs import make_pdf
+    from tests.unit.test_statement_pdf import CARD
+
+    owner = world.browser()
+    await owner.login(OWNER)
+    locked = base64.b64encode(make_pdf(CARD, password="S1234567A")).decode()
+    asked = (await owner.send("POST", "/api/imports/pdf", {"pdf": locked})).json()
+    assert asked["needs_password"] and not asked["wrong_password"]
+    wrong = (await owner.send("POST", "/api/imports/pdf", {"pdf": locked, "password": "x"})).json()
+    assert wrong["wrong_password"]
+    read = (
+        await owner.send("POST", "/api/imports/pdf", {"pdf": locked, "password": "S1234567A"})
+    ).json()
+    assert read["rows"] == 5 and read["reconciles"] is True and read["kind"] == "card"
+    shown = (
+        await owner.send(
+            "POST", "/api/imports/preview", {"csv": read["csv"], "layout": read["layout"]}
+        )
+    ).json()
+    assert [r["verdict"] for r in shown["rows"]] == ["new"] * 5
+    done = await owner.send(
+        "POST",
+        "/api/imports",
+        {"csv": read["csv"], "layout": read["layout"], "include": [0, 1], "file_name": "e.pdf"},
+    )
+    assert done.json()["added"] == 2
+    bad = await owner.send("POST", "/api/imports/pdf", {"pdf": "%%%not base64"})
+    assert bad.status_code == 422
+    plain = base64.b64encode(make_pdf(["Dear customer, nothing to see."])).decode()
+    assert (await owner.send("POST", "/api/imports/pdf", {"pdf": plain})).status_code == 422

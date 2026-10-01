@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 
 import {
   api,
@@ -115,6 +116,9 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
       <div className="page-head">
         <h1>Ledger</h1>
         <div className="quick">
+          <Link className="btn" to="/import">
+            Import statement
+          </Link>
           <a className="btn" href={exportHref} download>
             Export CSV
           </a>

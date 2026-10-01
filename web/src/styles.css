@@ -384,3 +384,16 @@ a.btn { text-decoration: none; }
 }
 .memory-row:last-child { border-bottom: none; }
 .memory-foot { margin-top: 12px; }
+
+/* Statement import */
+.import-layout { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--space-3); margin-bottom: var(--space-4); }
+.import-table tbody tr { cursor: default; }
+.import-table .fx { display: block; }
+@media (max-width: 720px) {
+  .import-table tbody tr { grid-template-rows: auto auto auto; }
+  .import-table td.select { grid-row: 1 / span 3; }
+  .import-table td.status { grid-column: 2; grid-row: 3; }
+}
+.import-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-top: var(--space-4); }
+.import-actions .input { flex: 1 1 160px; max-width: 240px; }
+.import-actions .btn-primary { margin-left: auto; }
