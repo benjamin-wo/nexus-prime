@@ -255,6 +255,7 @@ The goal: replies that follow what the user means, not the phrasing they used. T
 
 ### M10 — Hardening
 - Security review, load checks on the job runner, a backup and restore drill for the new database, and runbook docs.
+- Done: a security review ([`SECURITY.md`](SECURITY.md)) with per-user rate limits on messages and imports, a request size cap, security headers, API docs off in production and quieter HTTP client logs; the job runner went from 2 to 172 quick jobs a second (jobs run side by side, one user's in order, with a 90-second limit each) and never ran a job twice under load; a dump-and-restore drill (`scripts/backup_drill.py`) that restores every table identically; and a [runbook](RUNBOOK.md) for outages, deploys, secrets and restores.
 
 **Suggested order:** M0–M3 first. That replaces the old bot with better foundations and your history intact. M4–M9 then add features one by one, each shipped as it lands.
 
