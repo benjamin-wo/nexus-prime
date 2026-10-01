@@ -250,7 +250,17 @@ async def _figures(
                 limit=MAX_ROWS,
             ),
         )
-    local = [(tx, tx.occurred_at.astimezone(tz).date()) for tx in page.items]
+        lineage = await uow.ledger.lineage(user.id, [tx.id for tx in page.items])
+    local = []
+    for tx in page.items:
+        # The user's own money: what friends paid back comes off the bill, and
+        # money in that only repaid a bill isn't income.
+        moved = lineage.get(tx.id)
+        repaid = moved.repaid(tx.id) if moved else Decimal(0)
+        if repaid >= tx.amount.amount:
+            continue
+        own = replace(tx, amount=Money(tx.amount.amount - repaid, tx.amount.currency))
+        local.append((own, own.occurred_at.astimezone(tz).date()))
     if q.weekdays is not None:
         local = [(tx, day) for tx, day in local if day.weekday() in q.weekdays]
     found = await fx.rates_for(rates, home, ((tx.amount.currency, day) for tx, day in local))

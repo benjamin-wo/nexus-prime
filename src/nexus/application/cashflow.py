@@ -130,6 +130,7 @@ async def cash_flow(
                 datetime.combine(start, time(), tzinfo=tz),
                 datetime.combine(last_logged + timedelta(days=1), time(), tzinfo=tz),
                 user.timezone,
+                net=False,  # cash flow is money as it moved
             )
         found = await fx.rates_for(rates, home, ((t.total.currency, t.day) for t in totals))
         for t in totals:

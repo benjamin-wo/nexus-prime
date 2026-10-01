@@ -3,6 +3,7 @@
 import re
 from dataclasses import dataclass, replace
 from datetime import datetime
+from decimal import Decimal
 from enum import StrEnum
 from typing import Any, NewType
 from uuid import UUID
@@ -111,6 +112,41 @@ class OpenIou:
     split: Split
     outstanding: Money
     expense_occurred_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class Link:
+    """One repayment against one share of a bill, seen from either side: the bill
+    it paid back, and the money in that paid it."""
+
+    bill_id: UUID
+    bill_counterparty: str | None
+    bill_occurred_at: datetime
+    income_id: UUID
+    income_occurred_at: datetime
+    participant_name: str
+    amount: Money
+
+
+@dataclass(frozen=True, slots=True)
+class Lineage:
+    """How money moved around one transaction. For a bill: who it was split with
+    and what each has paid back. For money in: which bills it paid back."""
+
+    shares: list[Split]
+    links: list[Link]
+
+    def repaid(self, transaction_id: UUID) -> Decimal:
+        """The part of this transaction that's a friend's money, not the user's:
+        what was paid back on a bill, or what money in paid back."""
+        return sum(
+            (
+                link.amount.amount
+                for link in self.links
+                if transaction_id in (link.bill_id, link.income_id)
+            ),
+            Decimal(0),
+        )
 
 
 @dataclass(frozen=True, slots=True)

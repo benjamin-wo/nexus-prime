@@ -11,15 +11,19 @@ import {
   type Transaction,
 } from "../api";
 import { isoDay } from "../format";
+import { MoneyTrail } from "./MoneyTrail";
 
 export function EntrySheet({
   me,
   editing,
+  onOpen,
   onClose,
   onSaved,
 }: {
   me: Me;
   editing?: Transaction;
+  /** Open another transaction, the other side of a repayment. */
+  onOpen?: (tx: Transaction) => void;
   onClose: () => void;
   onSaved: (tx: EditedTransaction) => void;
 }) {
@@ -140,6 +144,7 @@ export function EntrySheet({
           Date
           <input className="input" type="date" required value={date} onChange={(e) => setDate(e.target.value)} />
         </label>
+        {editing && onOpen && <MoneyTrail tx={editing} timezone={tz} onOpen={onOpen} />}
         {editing?.has_receipt && (
           <a className="btn" href={receiptUrl(editing.id)} target="_blank" rel="noopener noreferrer">
             View receipt

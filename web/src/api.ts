@@ -56,6 +56,13 @@ export type Transaction = {
   deleted: boolean;
   /** A receipt is kept for it; open it at receiptUrl(id). */
   has_receipt?: boolean;
+  /** A bill shared with others: the user's share and each person's. */
+  split?: { own_share: Money; people: { name: string; share: Money; repaid: Money }[] } | null;
+  /** Repayments linking it to other transactions: for a bill, the money in that
+   * paid part of it back; for money in, the bill it paid back. */
+  links?: { transaction_id: string; counterparty: string | null; occurred_at: string; name: string; amount: Money }[];
+  /** The user's own money in it, when friends paid part of it back. */
+  own?: Money | null;
 };
 
 /** The receipt's short-lived link; the server checks it's the owner asking. */

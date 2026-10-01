@@ -397,3 +397,12 @@ a.btn { text-decoration: none; }
 .import-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-top: var(--space-4); }
 .import-actions .input { flex: 1 1 160px; max-width: 240px; }
 .import-actions .btn-primary { margin-left: auto; }
+
+/* --- the trail of a split bill and its repayments --- */
+.trail { display: grid; gap: 2px; margin-top: 2px; }
+.trail-link { padding: 0; min-height: 0; font: inherit; color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.trail-settled { color: var(--emerald-accent); }
+.trail-owed { color: var(--status-warning); }
+/* Every line of the trail shows, on phones too (notes above clamp to two). */
+.ledger td.merchant .trail { display: grid; -webkit-line-clamp: none; line-clamp: none; overflow: visible; }
+.trail .trail-link { display: inline; white-space: normal; text-align: left; font-weight: 600; }

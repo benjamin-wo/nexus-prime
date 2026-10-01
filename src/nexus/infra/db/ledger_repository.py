@@ -5,9 +5,11 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import (
+    ColumnElement,
     Date,
     Row,
     and_,
+    case,
     cast,
     delete,
     exists,
@@ -35,6 +37,8 @@ from nexus.domain.errors import Conflict, DuplicateSource
 from nexus.domain.ledger import (
     Category,
     Direction,
+    Lineage,
+    Link,
     OpenIou,
     Revision,
     RevisionKind,
@@ -148,6 +152,39 @@ def _transaction_values(tx: Transaction) -> dict[str, Any]:
 
 def _escape_like(term: str) -> str:
     return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _net_amount() -> ColumnElement[Any]:
+    """A transaction's amount less what friends paid back on it: on a bill, the
+    repayments against its shares; on money in, the part that repaid a bill. Only
+    live transactions on the other side count, so deleting either undoes it."""
+    t, sp, st = transactions.c, splits.c, settlements.c
+    other = transactions.alias("other")
+    shares = settlements.join(splits, and_(sp.id == st.split_id, sp.user_id == st.user_id))
+    on_bill = (
+        select(func.coalesce(func.sum(st.amount), 0))
+        .select_from(
+            shares.join(
+                other,
+                and_(other.c.id == st.income_transaction_id, other.c.user_id == st.user_id),
+            )
+        )
+        .where(sp.transaction_id == t.id, sp.user_id == t.user_id, other.c.deleted_at.is_(None))
+        .scalar_subquery()
+    )
+    by_income = (
+        select(func.coalesce(func.sum(st.amount), 0))
+        .select_from(
+            shares.join(other, and_(other.c.id == sp.transaction_id, other.c.user_id == sp.user_id))
+        )
+        .where(
+            st.income_transaction_id == t.id,
+            st.user_id == t.user_id,
+            other.c.deleted_at.is_(None),
+        )
+        .scalar_subquery()
+    )
+    return t.amount - case((t.direction == Direction.OUT.value, on_bill), else_=by_income)
 
 
 class SqlLedgerRepository:
@@ -525,12 +562,13 @@ class SqlLedgerRepository:
         )
 
     async def totals_by_direction(
-        self, user_id: UserId, start: datetime, end: datetime
+        self, user_id: UserId, start: datetime, end: datetime, *, net: bool = True
     ) -> list[DirectionTotal]:
         t = transactions.c
+        amount = _net_amount() if net else t.amount
         rows = await self._db.execute(
-            select(t.direction, t.currency, func.sum(t.amount), func.count())
-            .where(self._counted(user_id, start, end))
+            select(t.direction, t.currency, func.sum(amount), func.count())
+            .where(self._counted(user_id, start, end), *([amount != 0] if net else []))
             .group_by(t.direction, t.currency)
             .order_by(t.direction, t.currency)
         )
@@ -540,9 +578,10 @@ class SqlLedgerRepository:
         ]
 
     async def totals_by_day(
-        self, user_id: UserId, start: datetime, end: datetime, timezone: str
+        self, user_id: UserId, start: datetime, end: datetime, timezone: str, *, net: bool = True
     ) -> list[DayTotal]:
         t = transactions.c
+        amount = _net_amount() if net else t.amount
         day = cast(func.timezone(timezone, t.occurred_at), Date)
         rows = await self._db.execute(
             select(
@@ -551,7 +590,7 @@ class SqlLedgerRepository:
                 categories.c.name,
                 day,
                 t.currency,
-                func.sum(t.amount),
+                func.sum(amount),
                 func.count(),
             )
             .select_from(
@@ -560,7 +599,7 @@ class SqlLedgerRepository:
                     and_(categories.c.id == t.category_id, categories.c.user_id == t.user_id),
                 )
             )
-            .where(self._counted(user_id, start, end))
+            .where(self._counted(user_id, start, end), *([amount != 0] if net else []))
             .group_by(t.direction, t.category_id, categories.c.name, day, t.currency)
             .order_by(day)
         )
@@ -570,10 +609,11 @@ class SqlLedgerRepository:
         ]
 
     async def spending_by_category(
-        self, user_id: UserId, start: datetime, end: datetime
+        self, user_id: UserId, start: datetime, end: datetime, *, net: bool = True
     ) -> list[CategoryTotal]:
         t = transactions.c
-        total = func.sum(t.amount)
+        amount = _net_amount() if net else t.amount
+        total = func.sum(amount)
         rows = await self._db.execute(
             select(t.category_id, categories.c.name, t.currency, total, func.count())
             .select_from(
@@ -582,7 +622,11 @@ class SqlLedgerRepository:
                     and_(categories.c.id == t.category_id, categories.c.user_id == t.user_id),
                 )
             )
-            .where(self._counted(user_id, start, end), t.direction == Direction.OUT.value)
+            .where(
+                self._counted(user_id, start, end),
+                t.direction == Direction.OUT.value,
+                *([amount != 0] if net else []),
+            )
             .group_by(t.category_id, categories.c.name, t.currency)
             .order_by(t.currency, total.desc())
         )
@@ -716,6 +760,67 @@ class SqlLedgerRepository:
             )
         )
         return bool((await self._db.execute(stmt)).scalar_one())
+
+    async def lineage(self, user_id: UserId, transaction_ids: list[UUID]) -> dict[UUID, Lineage]:
+        if not transaction_ids:
+            return {}
+        sp, st = splits.c, settlements.c
+        bill, income = transactions.alias("bill"), transactions.alias("income")
+        t = transactions.c
+        share_rows = await self._db.execute(
+            select(splits, t.currency)
+            .join(transactions, and_(t.id == sp.transaction_id, t.user_id == sp.user_id))
+            .where(sp.user_id == user_id, sp.transaction_id.in_(transaction_ids))
+            .order_by(sp.created_at, sp.participant_name)
+        )
+        link_rows = await self._db.execute(
+            select(
+                bill.c.id,
+                bill.c.counterparty,
+                bill.c.occurred_at,
+                income.c.id,
+                income.c.occurred_at,
+                sp.participant_name,
+                st.amount,
+                bill.c.currency,
+            )
+            .select_from(
+                settlements.join(splits, and_(sp.id == st.split_id, sp.user_id == st.user_id))
+                .join(bill, and_(bill.c.id == sp.transaction_id, bill.c.user_id == sp.user_id))
+                .join(
+                    income,
+                    and_(income.c.id == st.income_transaction_id, income.c.user_id == st.user_id),
+                )
+            )
+            .where(
+                st.user_id == user_id,
+                bill.c.deleted_at.is_(None),
+                income.c.deleted_at.is_(None),
+                or_(bill.c.id.in_(transaction_ids), income.c.id.in_(transaction_ids)),
+            )
+            .order_by(income.c.occurred_at)
+        )
+        found: dict[UUID, Lineage] = {}
+
+        def entry(tx_id: UUID) -> Lineage:
+            return found.setdefault(tx_id, Lineage([], []))
+
+        for r in share_rows:
+            entry(r.transaction_id).shares.append(
+                Split(
+                    r.id,
+                    UserId(r.user_id),
+                    r.transaction_id,
+                    r.participant_name,
+                    Money(r.share_amount, r.currency),
+                )
+            )
+        wanted = set(transaction_ids)
+        for b_id, b_who, b_at, i_id, i_at, name, amount, currency in link_rows:
+            link = Link(b_id, b_who, b_at, i_id, i_at, name, Money(amount, currency))
+            for tx_id in {b_id, i_id} & wanted:
+                entry(tx_id).links.append(link)
+        return found
 
     async def has_settlements_for_income(self, user_id: UserId, income_id: UUID) -> bool:
         stmt = select(

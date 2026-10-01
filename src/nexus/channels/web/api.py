@@ -51,6 +51,7 @@ from nexus.domain.errors import Forbidden, InvalidInput, NotFound
 from nexus.domain.ledger import (
     Category,
     Direction,
+    Lineage,
     Role,
     Source,
     Transaction,
@@ -91,6 +92,28 @@ class HomeAmountOut(Model):
     rate_date: date | None  # the day that rate was published
 
 
+class ShareOut(Model):
+    name: str
+    share: MoneyOut
+    repaid: MoneyOut
+
+
+class SplitOut(Model):
+    own_share: MoneyOut  # what the bill cost the user, if everyone pays back
+    people: list[ShareOut]
+
+
+class LinkOut(Model):
+    """The transaction on the other side of a repayment: for a bill, the money in
+    that paid part of it back; for money in, the bill it paid back."""
+
+    transaction_id: UUID
+    counterparty: str | None
+    occurred_at: datetime
+    name: str  # who paid back
+    amount: MoneyOut
+
+
 class TransactionOut(Model):
     id: UUID
     direction: str
@@ -105,6 +128,9 @@ class TransactionOut(Model):
     source: str
     deleted: bool
     has_receipt: bool = False  # set on listings
+    split: SplitOut | None = None  # a bill shared with others
+    links: list[LinkOut] = []  # repayments to or from other transactions
+    own: MoneyOut | None = None  # the user's own money in it, when friends paid part back
 
 
 def home_out(conversion: fx.Conversion) -> HomeAmountOut:
@@ -116,8 +142,55 @@ def home_out(conversion: fx.Conversion) -> HomeAmountOut:
     )
 
 
+def _moved(tx: Transaction, moved: Lineage | None) -> dict[str, Any]:
+    if moved is None:
+        return {}
+    found: dict[str, Any] = {}
+    if moved.shares:
+        people = [
+            ShareOut(
+                name=s.participant_name,
+                share=money(s.share),
+                repaid=money(
+                    sum(
+                        (
+                            link.amount
+                            for link in moved.links
+                            if link.bill_id == tx.id and link.participant_name == s.participant_name
+                        ),
+                        Money.zero(s.share.currency),
+                    )
+                ),
+            )
+            for s in moved.shares
+        ]
+        others = sum((s.share for s in moved.shares), Money.zero(tx.amount.currency))
+        found["split"] = SplitOut(own_share=money(tx.amount - others), people=people)
+    links = []
+    for link in moved.links:
+        mine_is_bill = link.bill_id == tx.id
+        links.append(
+            LinkOut(
+                transaction_id=link.income_id if mine_is_bill else link.bill_id,
+                counterparty=None if mine_is_bill else link.bill_counterparty,
+                occurred_at=link.income_occurred_at if mine_is_bill else link.bill_occurred_at,
+                name=link.participant_name,
+                amount=money(link.amount),
+            )
+        )
+    found["links"] = links
+    repaid = moved.repaid(tx.id)
+    if repaid:
+        found["own"] = money(Money(tx.amount.amount - repaid, tx.amount.currency))
+    return found
+
+
 def tx_out(
-    tx: Transaction, conversion: fx.Conversion | None = None, *, has_receipt: bool = False
+    tx: Transaction,
+    conversion: fx.Conversion | None = None,
+    *,
+    has_receipt: bool = False,
+    moved: Lineage | None = None,
 ) -> TransactionOut:
     return TransactionOut(
         id=tx.id,
@@ -133,6 +206,7 @@ def tx_out(
         source=tx.source.value,
         deleted=tx.is_deleted,
         has_receipt=has_receipt,
+        **_moved(tx, moved),
     )
 
 
@@ -405,9 +479,24 @@ async def list_transactions(
     )  # fmt: skip
     page = await tx_cases.list_ledger(web.uow(), auth.user.id, query)
     conversions = await _conversions(web, auth.user, page.items)
-    kept = await receipt_cases.with_receipts(web.uow(), auth.user.id, [t.id for t in page.items])
-    items = [tx_out(t, conversions.get(t.id), has_receipt=t.id in kept) for t in page.items]
+    ids = [t.id for t in page.items]
+    kept = await receipt_cases.with_receipts(web.uow(), auth.user.id, ids)
+    moved = await tx_cases.lineage(web.uow(), auth.user.id, ids)
+    items = [
+        tx_out(t, conversions.get(t.id), has_receipt=t.id in kept, moved=moved.get(t.id))
+        for t in page.items
+    ]
     return PageOut(items=items, total=page.total)
+
+
+@router.get("/transactions/{transaction_id}")
+async def get_transaction(transaction_id: UUID, auth: Auth, web: Runtime) -> TransactionOut:
+    """One transaction with how money moved around it, to follow a repayment's link."""
+    tx = await tx_cases.get_transaction(web.uow(), auth.user.id, transaction_id)
+    conversions = await _conversions(web, auth.user, [tx])
+    kept = await receipt_cases.with_receipts(web.uow(), auth.user.id, [tx.id])
+    moved = await tx_cases.lineage(web.uow(), auth.user.id, [tx.id])
+    return tx_out(tx, conversions.get(tx.id), has_receipt=tx.id in kept, moved=moved.get(tx.id))
 
 
 @router.get("/transactions/{transaction_id}/receipt", include_in_schema=False)

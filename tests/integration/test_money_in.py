@@ -162,3 +162,65 @@ async def test_the_chat_sees_and_answers_a_waiting_email(uow: UowFactory) -> Non
     assert await email_cases.waiting(uow(), user.id, now=NOW) == []
     with pytest.raises(InvalidInput):
         await tool.run(ctx, AnswerEmailArgs(number=1, action="skip"))
+
+
+async def test_totals_count_the_users_own_money_and_keep_the_trail(uow: UowFactory) -> None:
+    """A bill of 40 split with Wei Ming (20) and Ann (10): once Wei Ming pays back,
+    spending is 20 (Ann's 10 still counts until she pays), the repayment isn't
+    income, cash flow still sees 40 out and 20 in, and each side links to the other."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from nexus.application.ledger_questions import LedgerQuestion, ask_ledger
+    from nexus.application.transactions import delete_transaction, summarize_in_home
+    from tests.fakes import FakeRates
+
+    user = await person(uow)
+    dinner = await log_transaction(
+        uow(),
+        user.id,
+        NewTransaction(
+            direction=Direction.OUT,
+            amount=sgd("40"),
+            occurred_at=NOW - timedelta(days=2),
+            counterparty="Hotpot place",
+        ),
+    )
+    await split_cases.split_bill(
+        uow(),
+        user.id,
+        dinner.id,
+        [ShareRequest("Wei Ming", sgd("20")), ShareRequest("Ann", sgd("10"))],
+    )
+    back = await split_cases.settle_iou(uow(), user.id, "Wei Ming", sgd("20"), NOW)
+    tz = ZoneInfo(user.timezone)
+    start, end = datetime(2026, 9, 1, tzinfo=tz), datetime(2026, 10, 1, tzinfo=tz)
+
+    async def totals() -> tuple[Money, Money, int]:
+        summary = await summarize_in_home(uow(), FakeRates(), user, start, end)
+        by = {t.direction: t for t in summary.totals}
+        out, in_ = by[Direction.OUT], by[Direction.IN]
+        return out.total, in_.total, in_.count
+
+    assert await totals() == (sgd("20"), sgd("0"), 0)
+    answer = await ask_ledger(uow, FakeRates(), user, LedgerQuestion(start=start, end=end))
+    assert answer.current.total == sgd("20")
+    async with uow() as tx:
+        gross = await tx.ledger.totals_by_direction(user.id, start, end, net=False)
+        moved = await tx.ledger.lineage(user.id, [dinner.id, back.transaction.id])
+    assert {(t.direction, t.total) for t in gross} == {
+        (Direction.OUT, sgd("40")),
+        (Direction.IN, sgd("20")),
+    }
+    bill_side, money_in_side = moved[dinner.id], moved[back.transaction.id]
+    assert [s.participant_name for s in bill_side.shares] == ["Ann", "Wei Ming"]
+    [link] = bill_side.links
+    assert (link.bill_id, link.income_id, link.participant_name, link.amount) == (
+        dinner.id, back.transaction.id, "Wei Ming", sgd("20"),
+    )  # fmt: skip
+    assert money_in_side.links == [link]
+    assert bill_side.repaid(dinner.id) == Decimal("20")
+
+    # Deleting the repayment puts it all back: the bill counts in full again.
+    await delete_transaction(uow(), user.id, back.transaction.id)
+    assert await totals() == (sgd("40"), sgd("0"), 0)
