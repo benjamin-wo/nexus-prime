@@ -257,7 +257,24 @@ The goal: replies that follow what the user means, not the phrasing they used. T
 - Security review, load checks on the job runner, a backup and restore drill for the new database, and runbook docs.
 - Done: a security review ([`SECURITY.md`](SECURITY.md)) with per-user rate limits on messages and imports, a request size cap, security headers, API docs off in production and quieter HTTP client logs; the job runner went from 2 to 172 quick jobs a second (jobs run side by side, one user's in order, with a 90-second limit each) and never ran a job twice under load; a dump-and-restore drill (`scripts/backup_drill.py`) that restores every table identically; and a [runbook](RUNBOOK.md) for outages, deploys, secrets and restores.
 
-**Suggested order:** M0–M3 first. That replaces the old bot with better foundations and your history intact. M4–M9 then add features one by one, each shipped as it lands.
+### M11 — Trip planning
+The first step from expense tracker towards a lifestyle assistant: "I want to go to Japan in January 2027" becomes a costed plan. Nexus researches when to go, flights, places to stay and things to do, and ties the trip to the user's own money. It never books or buys anything: every result links to the seller's own site.
+
+- **M11a — Research jobs.** A second kind of job for work that takes minutes, not seconds: steps saved as they finish (in Postgres, so a redeploy resumes rather than restarts), a cancel button, per-user limits on steps, pages and spend, and one Telegram message edited in place to show progress. The existing 90-second jobs stay as they are.
+- **M11b — A quarantined web agent.** Searching and reading the web happen in a separate agent with read-only web tools and nothing else: no ledger, memory, email or write tools. It hands back structured results that are validated before the chat agent sees them, so instructions hidden in a web page can't reach the user's data or start a change; anything Nexus then changes still goes through Confirm. Search and page fetching go through OpenRouter's web tools; pages that need scripts are read with Lightpanda (a light headless browser) inside research jobs only. No bot-check bypassing, no form submission, no crawling sites that forbid automated access, internal addresses blocked. Eval cases for prompt injection and for when to search.
+- **M11c — Trip planner.** A few questions first (dates or month, budget, who's going, style), with remembered preferences filled in. Then a short plan with Start / Edit / Cancel, run as a research job. Back come:
+  - when to go and why (climate, public holidays and closures, peak-price dates, events);
+  - two or three flight options (Google Flights results via a search-results API, price trends from Travelpayouts);
+  - a hotel shortlist with photos and why each fits (Google Hotels results, Rakuten Travel for Japan, Google Places reviews). The vision model describes what the photos show; code checks that against room size, price and reviews rather than letting the model judge suitability alone;
+  - a budget card from the user's own data: estimated cost in the home currency at today's rate, whether it fits, and how much to set aside each payday.
+
+  Every price shows where it came from and when it was checked. Plans are kept on a Trips page in the web app.
+- **M11d — Days and extras.** Things to do from Google Places and web search, laid out day by day with opening hours and holiday closures checked in code. Rental-car guidance: whether a car makes sense where they're going, which companies, a rough daily cost, the licence needed, and links to compare. This is guidance, not live prices, because there's no open car-rental price source.
+- **M11e — Price watches.** A user can ask Nexus to watch a flight or hotel. It checks daily within the search API's free tier and sends one message when the price drops, with a one-tap stop. After the trip, spending in the trip's currency and dates is tagged to it, and planned is compared with actual.
+
+Needs a search-results API key (SerpApi's free tier to start) and, optionally, Google Places and Rakuten Travel keys. About S$0.15–0.30 of searches and model calls per plan. Done when the Japan example produces a plan whose dates, flights, hotels and budget can each be traced to a source, and the injection evals pass.
+
+**Suggested order:** M0–M3 first. That replaces the old bot with better foundations and your history intact. M4–M10 then add features one by one, each shipped as it lands. M11 starts the move towards a lifestyle assistant, travel first.
 
 ---
 

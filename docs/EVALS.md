@@ -132,3 +132,19 @@ The "rule" failures were a real gap. A weaker writer stored "whenever i say hi, 
 - Memory: the main model. `MEMORY_MODEL` stays unset; DeepSeek was the most reliable writer and already costs under $0.0001 a message.
 
 Across M8 the set grew from 103 to 170 cases and harder ones, and the production pairing went from 141/152 (93%) at the M8a baseline to 167–170/170 (98–100%), at about $0.0004 a case and a median reply of about 4s.
+
+## Personality and reply style (after M10)
+
+Nexus now has a character: a warm, sharp friend who's good with money. Replies lead with the answer, break figures into short • lines, use at most one or two meaningful emoji, offer a next step only when one is clearly useful, and match the user's Singlish if they use it. A reply style the user asks for wins over all of this.
+
+The first full run scored 166/170 and showed what a friendlier style breaks:
+- The friendlier acknowledgement became "Got it — salary from ACME noted."
+- A "keep replies short" request was ignored in favour of a seven-line category list.
+- After deleting three rides, the reply offered "say the word if you want any back", and the user's next "yes" restored them all.
+
+The rules now say a next step is something new, never an offer to undo or redo what was just done; a question about a total gets the total and at most the top three behind it; and acknowledgements don't say "noted". One more case, "taxi 18 on the 3rd", sometimes asked "3 Sep or 3 Oct?" on the old prompt as well (2 of 3 runs on main). A day of the month on its own now means the latest one not in the future (5 of 5 afterwards).
+
+| Run | Passed | Median reply | Cost a case |
+|---|---|---|---|
+| New style, first draft | 166/170 | 2.8s | $0.00060 |
+| With the fixes | **170, 169, 170** | 2.0–2.4s | $0.00060 |
