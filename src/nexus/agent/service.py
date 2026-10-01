@@ -29,6 +29,7 @@ from nexus.application import subscriptions as subscription_cases
 from nexus.application import transactions as tx_cases
 from nexus.application.categories import list_categories
 from nexus.application.fx import RateSource
+from nexus.application.limits import RateLimiter
 from nexus.application.ports import ReceiptStore
 from nexus.application.users import get_user
 from nexus.domain.errors import DuplicateSource, NexusError
@@ -67,6 +68,7 @@ HELP = (
 )
 
 
+SLOW_DOWN = "That's a lot of messages at once. Give me a minute, then try again."
 RECENT_MESSAGES = 3  # the newest, and two before it for context
 
 
@@ -85,6 +87,7 @@ class AgentService:
         archive: ReceiptStore | None = None,
         rates: RateSource | None = None,
         after_turn: Callable[[UserId, list[str], str], Awaitable[None]] | None = None,
+        limiter: RateLimiter | None = None,
     ) -> None:
         self._graph = graph
         # For figures in the home currency; None leaves foreign amounts out.
@@ -97,6 +100,8 @@ class AgentService:
         # Given the user's recent messages after each text turn (the memory writer's
         # job is queued from here); its failures never reach the user.
         self._after_turn = after_turn
+        # Messages that reach the model, per user; None: no limit (tests, evals).
+        self._limiter = limiter
         # One turn at a time per user; a turn reads and writes the user's thread.
         self._locks: defaultdict[UserId, asyncio.Lock] = defaultdict(asyncio.Lock)
 
@@ -147,7 +152,12 @@ class AgentService:
         await self._graph.ainvoke(Command(resume={"approved": False}), self._config(actor))
         return True
 
+    def _over_limit(self, actor: UserId) -> bool:
+        return self._limiter is not None and not self._limiter.allow("message", actor)
+
     async def handle_text(self, actor: UserId, text: str, ref: str) -> list[Reply]:
+        if self._over_limit(actor):
+            return [Reply(SLOW_DOWN)]
         async with self._locks[actor]:
             # A new message instead of a button press means "no" to a waiting confirmation.
             declined = await self._decline_pending(actor)
@@ -178,6 +188,8 @@ class AgentService:
     ) -> list[Reply]:
         if self._receipts is None:
             return [Reply("Reading receipt photos isn't set up yet. Type the amount instead.")]
+        if self._over_limit(actor):
+            return [Reply(SLOW_DOWN)]
         try:
             names = [c.name for c in await list_categories(self._uow(), actor)]
             user = await get_user(self._uow(), actor)

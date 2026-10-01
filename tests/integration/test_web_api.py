@@ -1152,3 +1152,42 @@ async def test_import_a_pdf_statement(world: World) -> None:
     assert bad.status_code == 422
     plain = base64.b64encode(make_pdf(["Dear customer, nothing to see."])).decode()
     assert (await owner.send("POST", "/api/imports/pdf", {"pdf": plain})).status_code == 422
+
+
+async def test_security_headers_size_cap_and_import_limit(world: World) -> None:
+    from nexus.application.limits import RateLimiter
+
+    owner = world.browser()
+    await owner.login(OWNER)
+    me = await owner.get("/api/me")
+    assert me.headers["cache-control"] == "no-store"
+    assert me.headers["x-content-type-options"] == "nosniff"
+    assert me.headers["x-frame-options"] == "DENY"
+    assert me.headers["strict-transport-security"].startswith("max-age=")
+    huge = await owner.client.post(
+        "/api/chat",
+        content=b"{}",
+        headers={"Content-Length": str(17 * 1024 * 1024), "Origin": ORIGIN},
+    )
+    assert huge.status_code == 413
+    # Statement imports: a few at once is fine, a flood isn't.
+    web = world.app.state.web
+    object.__setattr__(web, "limits", RateLimiter({"import": ((2, timedelta(minutes=10)),)}))
+    csv = "Date,Description,Amount\n28/09/2026,Kopi,-1.80\n"
+    codes = [
+        (await owner.send("POST", "/api/imports/preview", {"csv": csv})).status_code
+        for _ in range(3)
+    ]
+    assert codes == [200, 200, 429]
+
+
+async def test_api_docs_are_not_served_in_production(engine: AsyncEngine) -> None:
+    from nexus.settings import Environment
+
+    app = create_app(
+        Settings(_env_file=None, database_url="postgresql://u:p@h/db", environment=Environment.PROD)
+    )
+    client = AsyncClient(transport=ASGITransport(app=app), base_url=ORIGIN)
+    for path in ("/docs", "/redoc", "/openapi.json"):
+        page = await client.get(path)  # the web app's own page may answer; the docs don't
+        assert "swagger" not in page.text.lower() and '"openapi"' not in page.text

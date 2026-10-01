@@ -1,6 +1,6 @@
 # Operations
 
-How Nexus Prime is configured, secured and deployed. For the product and architecture overview, see the [README](../README.md).
+How Nexus Prime is configured, secured and deployed. For the product and architecture overview, see the [README](../README.md). When something breaks, see the [runbook](RUNBOOK.md).
 
 ## Local development
 
@@ -59,7 +59,8 @@ Foreign amounts convert to the user's home currency at the [Frankfurter](https:/
 
 Budget alerts, bill reminders and the payday check-in run on a Postgres-backed job queue inside the app process: `JOBS_ENABLED`, which defaults to on only when `ENVIRONMENT=prod`.
 
-- **Exactly once:** each job is claimed with `FOR UPDATE SKIP LOCKED` under a 5-minute lease, and recurring work is queued once per time slot under a unique dedupe key. Overlapping instances during a deploy don't double-send, and no leader election is needed.
+- **Exactly once:** each job is claimed with `FOR UPDATE SKIP LOCKED` under a 20-minute lease, and recurring work is queued once per time slot under a unique dedupe key. Overlapping instances during a deploy don't double-send, and no leader election is needed.
+- **Throughput:** up to 5 jobs run at once, one user's jobs always in order, and a full batch is followed straight away by the next. Each job has 90 seconds; one that runs longer is abandoned and retried like a failure. Measured numbers are in [`RUNBOOK.md`](RUNBOOK.md).
 - **Retries:** failures back off (2, 4, 8… minutes, capped at an hour) and stop after 5 attempts.
 - **Quiet hours:** Telegram messages wait out 22:00–08:00 in the user's timezone.
 - **Subscriptions:** every 6 hours a sweep looks at each user's expenses from the last 800 days. When a merchant's latest three charges (reference numbers ignored, one per day, same currency) came weekly, monthly or yearly, each within 20% of the latest, and the next is still due, the user is asked once: **Track it / No**. At most 3 new questions per sweep. A tracked subscription follows new charges; a change of more than 1% is a price change, told once. A "No" or "Stop tracking" keeps the row as dismissed so it's never proposed again. Nothing is ever cancelled.

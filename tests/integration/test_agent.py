@@ -473,3 +473,16 @@ async def test_rule_changes_by_chat_are_confirmed(uow: UowFactory, alice: UserId
     assert ask.text == "Remove your rule filing “netflix” under Bills & Utilities?"
     await agent.resolve(alice, ask.buttons[0][0].data.split(":")[1], True)
     assert await list_rules(uow(), alice) == []
+
+
+async def test_a_flood_of_messages_is_slowed_down(uow: UowFactory, alice: UserId) -> None:
+    from datetime import timedelta
+
+    from nexus.agent.service import SLOW_DOWN
+    from nexus.application.limits import RateLimiter
+
+    model = scripted(say("one"), say("two"))
+    agent = build(uow, model)
+    agent._limiter = RateLimiter({"message": ((2, timedelta(minutes=1)),)})
+    replies = [(await agent.handle_text(alice, f"hi {n}", f"tg:9:{n}"))[0].text for n in range(3)]
+    assert replies == ["one", "two", SLOW_DOWN]  # the third never reached the model

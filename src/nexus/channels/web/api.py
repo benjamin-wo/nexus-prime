@@ -38,6 +38,7 @@ from nexus.channels.web.security import (
     WebRuntime,
     check_origin,
     clear_session_cookie,
+    limit,
     set_session_cookie,
 )
 from nexus.channels.web.telegram_login import (
@@ -855,6 +856,7 @@ class PreviewOut(Model):
 
 @router.post("/imports/preview")
 async def preview_import(body: PreviewIn, auth: Auth, web: Runtime) -> PreviewOut:
+    limit(web, auth, "import")
     shown = await statement_cases.preview(
         web.uow, auth.user, body.csv, body.layout.mapping() if body.layout else None
     )
@@ -888,6 +890,7 @@ async def preview_import(body: PreviewIn, auth: Auth, web: Runtime) -> PreviewOu
     )
 
 
+PDF_SECONDS = 30
 PDF_BASE64_CHARS = 14_000_000  # a 10 MB PDF, base64-encoded
 
 
@@ -911,12 +914,18 @@ class PdfOut(Model):
 async def read_pdf_statement(body: PdfIn, auth: Auth, web: Runtime) -> PdfOut:
     """A PDF statement's transactions as CSV, previewed and imported like any CSV.
     The PDF and its password are only held for this request."""
+    limit(web, auth, "import")
     try:
         data = base64.b64decode(body.pdf, validate=True)
     except (binascii.Error, ValueError) as exc:
         raise InvalidInput("that file didn't arrive whole; try again") from exc
     try:
-        lines = await asyncio.to_thread(pdf_lines, data, body.password)
+        # A crafted PDF can be slow to read; the request gives up rather than hang.
+        lines = await asyncio.wait_for(
+            asyncio.to_thread(pdf_lines, data, body.password), PDF_SECONDS
+        )
+    except TimeoutError as exc:
+        raise InvalidInput("that PDF took too long to read") from exc
     except PasswordNeeded as locked:
         return PdfOut(needs_password=True, wrong_password=locked.wrong)
     found = statement_cases.read_pdf(lines)
@@ -962,6 +971,7 @@ def import_out(record: StatementImport) -> ImportOut:
 
 @router.post("/imports", status_code=201)
 async def import_statement(body: ImportIn, auth: Auth, web: Runtime) -> ImportedOut:
+    limit(web, auth, "import")
     done = await statement_cases.confirm(
         web.uow,
         auth.user,
