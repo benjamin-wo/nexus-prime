@@ -71,6 +71,58 @@ async def test_two_runners_run_a_job_exactly_once(engine: AsyncEngine, uow: UowF
     assert {r.status for r in await job_rows(engine)} == {"done"}
 
 
+async def test_a_stuck_job_times_out_and_is_retried(engine: AsyncEngine, uow: UowFactory) -> None:
+    async def hang(payload: dict[str, Any]) -> None:
+        await asyncio.sleep(60)
+
+    clock = Clock()
+    await enqueue(uow, "hang", "h-1", clock.now)
+    runner = JobRunner(engine, {"hang": hang}, clock=clock, timeout=timedelta(milliseconds=50))
+    assert await runner.tick() == 1
+    [row] = await job_rows(engine)
+    assert row.status == "pending" and row.attempts == 1  # back in the queue, for later
+    assert row.last_error.startswith("TimeoutError")
+
+
+async def test_one_users_jobs_run_in_order_others_side_by_side(
+    engine: AsyncEngine, uow: UowFactory
+) -> None:
+    events: list[str] = []
+
+    async def step(payload: dict[str, Any]) -> None:
+        events.append(f"start {payload['tag']}")
+        await asyncio.sleep(0.05)
+        events.append(f"end {payload['tag']}")
+
+    clock = Clock()
+    for tag, user in (("a1", "ann"), ("a2", "ann"), ("b1", "ben")):
+        await enqueue(uow, "step", tag, clock.now, tag=tag, user_id=user)
+    assert await JobRunner(engine, {"step": step}, clock=clock).tick() == 3
+    assert events.index("end a1") < events.index("start a2")  # Ann's in order
+    assert events.index("start b1") < events.index("end a1")  # Ben's alongside
+
+
+async def test_a_full_batch_is_followed_straight_away(engine: AsyncEngine, uow: UowFactory) -> None:
+    done: list[int] = []
+
+    async def quick(payload: dict[str, Any]) -> None:
+        done.append(payload["n"])
+
+    clock = Clock()
+    for n in range(25):
+        await enqueue(uow, "quick", f"q-{n}", clock.now, n=n)
+    stop = asyncio.Event()
+    runner = JobRunner(engine, {"quick": quick}, clock=clock, batch=10)
+    task = asyncio.create_task(runner.run(stop, interval=60))  # a long idle wait
+    for _ in range(100):
+        if len(done) == 25:
+            break
+        await asyncio.sleep(0.05)
+    stop.set()
+    await task
+    assert sorted(done) == list(range(25))  # three batches, without the 60s waits
+
+
 async def test_a_private_jobs_payload_is_emptied_when_done(
     engine: AsyncEngine, uow: UowFactory
 ) -> None:
@@ -171,9 +223,10 @@ async def test_an_expired_lease_is_taken_over(engine: AsyncEngine, uow: UowFacto
         ran.append("second runner")
 
     await enqueue(uow, "job", "job-1", clock.now)
-    first = asyncio.create_task(JobRunner(engine, {"job": hang}, clock=clock).tick())
+    lease = timedelta(minutes=5)
+    first = asyncio.create_task(JobRunner(engine, {"job": hang}, clock=clock, lease=lease).tick())
     await asyncio.sleep(0.1)  # first runner has claimed it and "died"
-    second = JobRunner(engine, {"job": finish}, clock=clock)
+    second = JobRunner(engine, {"job": finish}, clock=clock, lease=lease)
     await second.tick()
     assert ran == []  # still leased
     clock.now += timedelta(minutes=6)

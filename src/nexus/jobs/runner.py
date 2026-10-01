@@ -25,6 +25,11 @@ from nexus.infra.db.tables import jobs
 log = logging.getLogger(__name__)
 
 MAX_ATTEMPTS = 5
+# A job that runs longer is abandoned and retried later, so one stuck call (a
+# model that never answers) can't hold up the queue.
+JOB_TIMEOUT = timedelta(seconds=90)
+# Jobs run at once within a batch. One user's jobs still run in order.
+CONCURRENCY = 5
 KEEP_DONE = timedelta(days=7)
 # Jobs whose payload is the user's own words: emptied once the job is over, so the
 # jobs table never keeps a copy of what they said.
@@ -74,7 +79,9 @@ class JobRunner:
         schedules: Sequence[Schedule] = (),
         clock: Callable[[], datetime] = utcnow,
         batch: int = 10,
-        lease: timedelta = timedelta(minutes=5),
+        lease: timedelta = timedelta(minutes=20),
+        concurrency: int = CONCURRENCY,
+        timeout: timedelta = JOB_TIMEOUT,
     ) -> None:
         self._engine = engine
         self._handlers = handlers
@@ -82,22 +89,39 @@ class JobRunner:
         self._clock = clock
         self._batch = batch
         self._lease = lease
+        self._concurrency = concurrency
+        self._timeout = timeout
 
     async def tick(self) -> int:
         """Queue due recurring jobs, then claim and run what's due. Returns jobs run."""
         now = self._clock()
         await self._schedule(now)
         claimed = await self._claim(now)
+        # Jobs for the same user stay in order (two memory updates mustn't race);
+        # different users' jobs, and jobs for no user, run side by side.
+        lanes: dict[str, list[Claimed]] = {}
         for job in claimed:
-            await self._run(job)
+            owner = job.payload.get("user_id") if isinstance(job.payload, dict) else None
+            lanes.setdefault(str(owner) if owner else f"job:{job.id}", []).append(job)
+        gate = asyncio.Semaphore(self._concurrency)
+
+        async def lane(queue: list[Claimed]) -> None:
+            async with gate:
+                for job in queue:
+                    await self._run(job)
+
+        await asyncio.gather(*(lane(q) for q in lanes.values()))
         return len(claimed)
 
     async def run(self, stop: asyncio.Event, interval: float = 5.0) -> None:
         while not stop.is_set():
+            ran = 0
             try:
-                await self.tick()
+                ran = await self.tick()
             except Exception:
                 log.exception("job runner tick failed")
+            if ran >= self._batch:
+                continue  # a full batch: more are probably waiting, so no pause
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(stop.wait(), interval)
 
@@ -150,7 +174,7 @@ class JobRunner:
             await self._finish(job, status="failed", error=f"no handler for {job.kind!r}")
             return
         try:
-            outcome = await handler(job.payload)
+            outcome = await asyncio.wait_for(handler(job.payload), self._timeout.total_seconds())
         except Exception as exc:
             log.exception("job %s (%s) failed", job.id, job.kind)
             error = f"{type(exc).__name__}: {exc}"[:500]
