@@ -76,7 +76,7 @@ function Cockpit({ me }: { me: Me }) {
       <Routes>
         <Route
           path="/"
-          element={<Dashboard me={me} onLog={() => setSheet({})} onOpenChat={() => setChat(true)} />}
+          element={<Dashboard me={me} onLog={() => setSheet({})} />}
         />
         <Route
           path="/ledger"

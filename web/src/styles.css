@@ -267,8 +267,6 @@ table.ledger { width: 100%; border-collapse: collapse; }
   /* iOS (and Telegram's webview) zoom into inputs under 16px and stay zoomed. */
   .input, select.input, textarea.input { font-size: 16px; }
   .page-head { align-items: center; }
-  /* Placeholders for later updates just take room on a phone. */
-  .page-head .quick .btn:disabled { display: none; }
   /* Spent and received side by side, net underneath: the month fits on one screen. */
   .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
   .tiles > :last-child { grid-column: 1 / -1; }

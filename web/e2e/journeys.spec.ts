@@ -192,8 +192,7 @@ test("sign out returns to the sign-in page", async ({ page, isMobile }) => {
 
 test("set a budget, see how much is used, change and remove it", async ({ page }) => {
   await fakeApi(page);
-  await page.goto("/");
-  await page.getByRole("link", { name: "View budgets" }).click();
+  await page.goto("/plan");
   await expect(page.getByRole("heading", { name: "Plan", level: 1 })).toBeVisible();
   const budgets = page.getByRole("region", { name: "Budgets" });
   await expect(budgets.getByText("No budgets yet. Add one below.")).toBeVisible();

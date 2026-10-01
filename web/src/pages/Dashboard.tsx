@@ -1,5 +1,4 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
 
 import { api, type Iou, type Me, type Money, type Summary } from "../api";
 import { CategoryBars } from "../components/CategoryBars";
@@ -21,7 +20,7 @@ export function conversionNote(total: Total | undefined): string | undefined {
   return parts.length ? parts.join(". ") : undefined;
 }
 
-export function Dashboard({ me, onLog, onOpenChat }: { me: Me; onLog: () => void; onOpenChat: () => void }) {
+export function Dashboard({ me, onLog }: { me: Me; onLog: () => void }) {
   const summary = useQuery({ queryKey: ["summary"], queryFn: () => api<Summary>("/summary") });
   const ious = useQuery({ queryKey: ["ious"], queryFn: () => api<Iou[]>("/ious") });
 
@@ -47,18 +46,6 @@ export function Dashboard({ me, onLog, onOpenChat }: { me: Me; onLog: () => void
           <button type="button" className="btn btn-primary" onClick={onLog}>
             Log expense
           </button>
-          <button type="button" className="btn" onClick={onOpenChat}>
-            Open chat
-          </button>
-          <button type="button" className="btn" disabled title="Coming in a later update">
-            Import statement
-          </button>
-          <Link className="btn" to="/plan">
-            Add bill
-          </Link>
-          <Link className="btn" to="/plan">
-            View budgets
-          </Link>
         </div>
       </div>
 
