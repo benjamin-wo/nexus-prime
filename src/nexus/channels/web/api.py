@@ -59,7 +59,7 @@ from nexus.domain.ledger import (
     User,
 )
 from nexus.domain.money import Money
-from nexus.domain.notifications import LABELS, Frequency
+from nexus.domain.notifications import Frequency, NotificationSettings, label
 from nexus.domain.planning import Cadence, PayRule, next_month_start
 from nexus.domain.statements import AmountSign, DateOrder, Mapping, StatementImport
 from nexus.infra.pdf.text import PasswordNeeded, pdf_lines
@@ -1501,32 +1501,36 @@ async def dismiss_subscription(subscription_id: UUID, auth: Auth, web: Runtime) 
 
 class UpdatesOut(Model):
     frequency: Frequency
+    daily_at: str  # HH:MM, the daily summary's time
     description: str
     options: dict[Frequency, str]
 
 
-def _updates_out(frequency: Frequency) -> UpdatesOut:
+def _updates_out(settings: NotificationSettings) -> UpdatesOut:
     return UpdatesOut(
-        frequency=frequency, description=notify_cases.describe(frequency), options=LABELS
+        frequency=settings.frequency,
+        daily_at=settings.daily_at.strftime("%H:%M"),
+        description=notify_cases.describe(settings),
+        options={f: label(f, settings.daily_at) for f in Frequency},
     )
 
 
 @router.get("/notifications")
 async def notifications(auth: Auth, web: Runtime) -> UpdatesOut:
-    current = await notify_cases.get_settings(web.uow(), auth.user.id)
-    return _updates_out(current.frequency)
+    return _updates_out(await notify_cases.get_settings(web.uow(), auth.user.id))
 
 
 class UpdatesIn(Model):
     frequency: Frequency
+    daily_at: time | None = None  # only with daily
 
 
 @router.put("/notifications")
 async def set_notifications(body: UpdatesIn, auth: Auth, web: Runtime) -> UpdatesOut:
     updated = await notify_cases.set_frequency(
-        web.uow(), auth.user.id, body.frequency, now=web.clock()
+        web.uow(), auth.user.id, body.frequency, now=web.clock(), daily_at=body.daily_at
     )
-    return _updates_out(updated.frequency)
+    return _updates_out(updated)
 
 
 # --- chat -----------------------------------------------------------------------------

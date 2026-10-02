@@ -100,7 +100,7 @@ async def test_everyone_gets_an_end_of_day_summary_by_default(
         "You spent 51.00 SGD (4 transactions).\n"
         "Dining Out 25.60 SGD · Other 13.00 SGD · Transport 12.40 SGD\n"
         "You received 4200.00 SGD (1 transaction).\n"
-        "To change how often I send these, just tell me."
+        "To change how often or when I send these, just tell me."
     )
     assert "buttons" not in summary
 
@@ -192,7 +192,7 @@ async def test_off_sends_nothing_and_turning_on_doesnt_replay(
     assert "You spent 3.00 SGD (1 transaction)." in summary["text"]
     current = await notify_cases.get_settings(uow(), user.id)
     assert current.frequency is Frequency.DAILY
-    assert notify_cases.describe(current.frequency) == (
+    assert notify_cases.describe(current) == (
         "You get a summary of your transactions once a day at 9pm."
     )
 
@@ -208,3 +208,36 @@ async def test_one_users_summary_never_includes_anothers(
     assert await check(uow, ben, sg(28, 21, 1))
     [summary] = await sent(engine)
     assert summary["user_id"] == str(ben.id)
+
+
+async def test_a_daily_summary_at_the_users_own_time(engine: AsyncEngine, uow: UowFactory) -> None:
+    """11:59pm: due after the user's time, not at 9pm, labelled as that day's even
+    when the check runs just after midnight, and sent through quiet hours."""
+    from datetime import time
+
+    from nexus.domain.errors import InvalidInput
+
+    user = await person(uow)
+    await check(uow, user, sg(28, 8))  # starts counting
+    chosen = await notify_cases.set_frequency(
+        uow(), user.id, Frequency.DAILY, now=sg(28, 9), daily_at=time(23, 59)
+    )
+    assert notify_cases.describe(chosen) == (
+        "You get a summary of your transactions once a day at 11:59pm."
+    )
+    await log(uow, user, "12.40", sg(28, 12))
+    assert not await check(uow, user, sg(28, 21, 1))  # 9pm no longer
+    assert await check(uow, user, sg(29, 0, 2))  # the first check after 11:59pm
+    [summary] = await sent(engine)
+    assert summary["text"].startswith("🧾 Monday")  # 28 Sep, not "Today" on the 29th
+    assert summary["anytime"] is True  # the job sends it inside quiet hours
+    assert (await notify_cases.get_settings(uow(), user.id)).daily_at == time(23, 59)
+
+    with pytest.raises(InvalidInput):
+        await notify_cases.set_frequency(
+            uow(), user.id, Frequency.HOURLY, now=sg(29, 9), daily_at=time(7)
+        )
+    # Switching away and back keeps the chosen time.
+    await notify_cases.set_frequency(uow(), user.id, Frequency.OFF, now=sg(29, 9))
+    back = await notify_cases.set_frequency(uow(), user.id, Frequency.DAILY, now=sg(29, 9))
+    assert back.daily_at == time(23, 59)

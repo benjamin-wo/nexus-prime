@@ -36,6 +36,7 @@ export async function fakeApi(
   type FakeRule = { id: string; pattern: string; category_id: string; category_name: string; explanation: string };
   type FakeSalary = { rule: string; day: number | null; anchor: string | null; usual: string | null };
   let annRepaid = false;
+  let dailyAt = "21:00";
   const state: {
     txs: Tx[];
     lastPress?: string;
@@ -346,12 +347,17 @@ export async function fakeApi(
       return route.fulfill({ status: 204 });
     }
     if (path === "/notifications") {
-      if (method === "PUT") state.frequency = body.frequency;
+      if (method === "PUT") {
+        state.frequency = body.frequency;
+        if (body.daily_at) dailyAt = body.daily_at;
+      }
+      const [h, m] = dailyAt.split(":").map(Number);
+      const at = `${h % 12 || 12}${m ? `:${String(m).padStart(2, "0")}` : ""}${h < 12 ? "am" : "pm"}`;
       const options = {
         instant: "as it happens",
         hourly: "every hour (8am to 9pm)",
         thrice_daily: "3 times a day (9am, 2pm, 8pm)",
-        daily: "once a day at 9pm",
+        daily: `once a day at ${at}`,
         off: "off",
       };
       const description =
@@ -360,7 +366,7 @@ export async function fakeApi(
           : state.frequency === "instant"
             ? "You get a message for each transaction as it happens."
             : `You get a summary of your transactions ${options[state.frequency as keyof typeof options]}.`;
-      return json(route, { frequency: state.frequency, description, options });
+      return json(route, { frequency: state.frequency, daily_at: dailyAt, description, options });
     }
     if (path === "/salary" && method === "GET") {
       const pay = state.salary;

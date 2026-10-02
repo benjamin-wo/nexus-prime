@@ -997,17 +997,30 @@ class UpdatesArgs(Args):
     frequency: Frequency | None = Field(
         None,
         description="instant: each transaction as it happens; hourly (8am-9pm); "
-        "thrice_daily (9am, 2pm, 8pm); daily: one summary at 9pm (the default); "
-        "off. Leave empty to only say what it is now.",
+        "thrice_daily (9am, 2pm, 8pm); daily: one summary a day, at 9pm unless the user "
+        "picks a time (the default); off. Leave empty to only say what it is now.",
+    )
+    at: str | None = Field(
+        None,
+        description="For daily only: the time the user wants it, 24-hour HH:MM in their "
+        'own timezone ("11:59pm" is 23:59, "7am" is 07:00)',
     )
 
 
 async def _updates(ctx: ToolContext, a: UpdatesArgs) -> ToolResult:
-    if a.frequency is None:
+    if a.frequency is None and a.at is None:
         current = await notify_cases.get_settings(ctx.uow(), ctx.user.id)
-        return ToolResult(notify_cases.describe(current.frequency))
-    updated = await notify_cases.set_frequency(ctx.uow(), ctx.user.id, a.frequency, now=ctx.now)
-    return ToolResult("Done. " + notify_cases.describe(updated.frequency), wrote=True)
+        return ToolResult(notify_cases.describe(current))
+    daily_at = None
+    if a.at is not None:
+        try:
+            daily_at = time.fromisoformat(a.at.strip())
+        except ValueError as exc:
+            raise InvalidInput("give the time as HH:MM, 24-hour, e.g. 23:59") from exc
+    updated = await notify_cases.set_frequency(
+        ctx.uow(), ctx.user.id, a.frequency or Frequency.DAILY, now=ctx.now, daily_at=daily_at
+    )
+    return ToolResult("Done. " + notify_cases.describe(updated), wrote=True)
 
 
 class Participant(Args):

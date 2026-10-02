@@ -567,6 +567,12 @@ CASES: tuple[Case, ...] = (
         checks=(UpdatesAre("hourly"),),
     ),
     Case(
+        "plan-updates-daily-time",
+        "plan",
+        _t("can you send my daily summary at 11:59pm instead"),
+        checks=(UpdatesAre("daily", at="23:59"),),
+    ),
+    Case(
         "plan-remove-bill",
         "plan",
         _t("don't remind me about singtel any more"),

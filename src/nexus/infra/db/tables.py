@@ -24,6 +24,7 @@ from sqlalchemy import (
     String,
     Table,
     Text,
+    Time,
     UniqueConstraint,
     func,
     text,
@@ -427,6 +428,7 @@ notification_settings = Table(
     Column("user_id", UUID(as_uuid=True), primary_key=True),
     Column("frequency", Text, nullable=False),
     Column("notified_until", TZ),
+    Column("daily_at", Time),  # when the daily summary goes, local time; NULL is 21:00
     Column("updated_at", TZ, nullable=False),
     ForeignKeyConstraint(["user_id"], ["users.id"]),
     CheckConstraint(

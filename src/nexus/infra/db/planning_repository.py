@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from nexus.domain.ledger import UserId
 from nexus.domain.money import Money
-from nexus.domain.notifications import Frequency, NotificationSettings
+from nexus.domain.notifications import DAILY_AT, Frequency, NotificationSettings
 from nexus.domain.planning import Bill, BillOccurrence, Budget, Cadence, PayRule, SalarySchedule
 from nexus.domain.recurring import Subscription, SubscriptionStatus
 from nexus.infra.db.tables import (
@@ -381,12 +381,18 @@ class SqlPlanningRepository:
         row = (await self._db.execute(stmt.with_for_update() if for_update else stmt)).first()
         if row is None:
             return NotificationSettings(user_id)
-        return NotificationSettings(user_id, Frequency(row.frequency), row.notified_until)
+        return NotificationSettings(
+            user_id,
+            Frequency(row.frequency),
+            row.notified_until,
+            row.daily_at if row.daily_at is not None else DAILY_AT,
+        )
 
     async def save_notifications(self, settings: NotificationSettings, now: datetime) -> None:
         values = {
             "frequency": settings.frequency.value,
             "notified_until": settings.notified_until,
+            "daily_at": settings.daily_at,
             "updated_at": now,
         }
         stmt = pg_insert(notification_settings).values(user_id=settings.user_id, **values)

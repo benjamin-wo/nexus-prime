@@ -62,7 +62,13 @@ def build_handlers(
             user = await tx.ledger.get_user(UserId(UUID(payload["user_id"])))
         if user is None or user.telegram_chat_id is None:
             return None  # nobody to tell; nothing to retry
-        later = quiet_until(clock().astimezone(ZoneInfo(user.timezone)))
+        # A message the user timed themselves (their daily summary) goes when they
+        # asked, quiet hours or not.
+        later = (
+            None
+            if payload.get("anytime")
+            else quiet_until(clock().astimezone(ZoneInfo(user.timezone)))
+        )
         if later is not None:
             return Defer(later)
         buttons = [
