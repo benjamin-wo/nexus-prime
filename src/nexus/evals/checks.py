@@ -319,12 +319,15 @@ class PayIs:
 @dataclass(frozen=True, slots=True)
 class UpdatesAre:
     frequency: str
+    at: str | None = None  # the daily summary's time, HH:MM
 
     def describe(self) -> str:
-        return f"Telegram updates {self.frequency}"
+        return f"Telegram updates {self.frequency}" + (f" at {self.at}" if self.at else "")
 
     async def holds(self, world: World) -> bool:
         settings = await notification_cases.get_settings(world.uow(), world.user.id)
+        if self.at is not None and settings.daily_at.strftime("%H:%M") != self.at:
+            return False
         return settings.frequency.value == self.frequency
 
 

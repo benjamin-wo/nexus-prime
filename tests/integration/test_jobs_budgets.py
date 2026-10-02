@@ -380,3 +380,15 @@ async def test_sweep_sends_alerts_outside_quiet_hours(engine: AsyncEngine, uow: 
     assert [(s.chat_id, s.text) for s in telegram.sent] == [
         (4242, "You've used 80% of your overall budget for September: 85.00 SGD of 100.00 SGD.")
     ]
+
+
+async def test_a_message_the_user_timed_goes_in_quiet_hours(uow: UowFactory) -> None:
+    """At 23:59 in Singapore a summary the user timed is sent; anything else waits."""
+    user = await sgt_user(uow)
+    late = Clock(datetime(2026, 9, 28, 15, 59, tzinfo=UTC))  # 23:59 SGT
+    telegram, handlers = handlers_for(uow, late)
+    send = handlers()[TELEGRAM_SEND]
+    waited = await send({"user_id": str(user.id), "text": "budget alert"})
+    assert isinstance(waited, Defer) and telegram.sent == []
+    assert await send({"user_id": str(user.id), "text": "🧾 Today", "anytime": True}) is None
+    assert [s.text for s in telegram.sent] == ["🧾 Today"]

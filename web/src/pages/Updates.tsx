@@ -11,10 +11,11 @@ export function UpdatesSection() {
   const updates = useQuery({ queryKey: ["notifications"], queryFn: () => api<Updates>("/notifications") });
   const [error, setError] = useState<string | null>(null);
 
-  async function choose(frequency: Frequency) {
+  async function choose(frequency: Frequency, dailyAt?: string) {
     setError(null);
     try {
-      const saved = await api<Updates>("/notifications", { method: "PUT", body: { frequency } });
+      const body = dailyAt ? { frequency, daily_at: dailyAt } : { frequency };
+      const saved = await api<Updates>("/notifications", { method: "PUT", body });
       client.setQueryData(["notifications"], saved);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't save");
@@ -46,8 +47,25 @@ export function UpdatesSection() {
               ))}
             </select>
           </label>
+          {data.frequency === "daily" && (
+            <label className="field">
+              Daily summary at
+              <input
+                className="input"
+                type="time"
+                step={60}
+                value={data.daily_at}
+                onChange={(e) => {
+                  if (e.target.value) void choose("daily", e.target.value);
+                }}
+              />
+            </label>
+          )}
           <p className="caption">
-            {data.description} Nothing is sent between 10pm and 8am, or when nothing happened.
+            {data.description}{" "}
+            {data.frequency === "daily"
+              ? "It goes at the time you pick, any hour; nothing is sent when nothing happened."
+              : "Nothing is sent between 10pm and 8am, or when nothing happened."}
           </p>
         </>
       )}

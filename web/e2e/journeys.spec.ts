@@ -386,7 +386,10 @@ test("telegram updates default to an end-of-day summary and can be changed", asy
   const choice = card.getByLabel("Send me my transactions");
   await expect(choice).toHaveValue("daily");
   await expect(card.getByText("You get a summary of your transactions once a day at 9pm.")).toBeVisible();
+  await card.getByLabel("Daily summary at").fill("23:59");
+  await expect(card.getByText("You get a summary of your transactions once a day at 11:59pm.")).toBeVisible();
   await choice.selectOption("instant");
+  await expect(card.getByLabel("Daily summary at")).toBeHidden();
   await expect(card.getByText("You get a message for each transaction as it happens.")).toBeVisible();
   await page.reload();
   await expect(card.getByLabel("Send me my transactions")).toHaveValue("instant");

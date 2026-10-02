@@ -4,7 +4,7 @@ summary every hour, three times a day, or (the default) at the end of the day.""
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, time
 from typing import Any
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -13,14 +13,15 @@ from nexus.application import fx
 from nexus.application.budgets import TELEGRAM_SEND
 from nexus.application.fx import RateSource
 from nexus.application.ports import UnitOfWork
+from nexus.domain.errors import InvalidInput
 from nexus.domain.ledger import Direction, Source, Transaction, User, UserId
 from nexus.domain.money import Money
 from nexus.domain.notifications import (
-    LABELS,
     Frequency,
     NotificationSettings,
     heading,
     is_due,
+    label,
 )
 
 type UowFactory = Callable[[], UnitOfWork]
@@ -39,25 +40,40 @@ async def get_settings(uow: UnitOfWork, user_id: UserId) -> NotificationSettings
 
 
 async def set_frequency(
-    uow: UnitOfWork, user_id: UserId, frequency: Frequency, *, now: datetime
+    uow: UnitOfWork,
+    user_id: UserId,
+    frequency: Frequency,
+    *,
+    now: datetime,
+    daily_at: time | None = None,
 ) -> NotificationSettings:
+    """Change how often updates come. ``daily_at`` sets the daily summary's time
+    (and only goes with the daily summary); left out, it stays as it was."""
+    if daily_at is not None and frequency is not Frequency.DAILY:
+        raise InvalidInput("a time can only be set for the daily summary")
     async with uow:
         current = await uow.planning.get_notifications(user_id, for_update=True)
         since = current.notified_until
         if since is None or current.frequency is Frequency.OFF:
             since = now  # turning them on doesn't replay what happened while off
-        updated = replace(current, frequency=frequency, notified_until=since)
+        updated = replace(
+            current,
+            frequency=frequency,
+            notified_until=since,
+            daily_at=(daily_at or current.daily_at).replace(second=0, microsecond=0),
+        )
         await uow.planning.save_notifications(updated, now)
         await uow.commit()
     return updated
 
 
-def describe(frequency: Frequency) -> str:
+def describe(settings: NotificationSettings) -> str:
+    frequency = settings.frequency
     if frequency is Frequency.OFF:
         return "Transaction updates are off."
     if frequency is Frequency.INSTANT:
         return "You get a message for each transaction as it happens."
-    return f"You get a summary of your transactions {LABELS[frequency]}."
+    return f"You get a summary of your transactions {label(frequency, settings.daily_at)}."
 
 
 async def notify(
@@ -96,9 +112,7 @@ async def notify(
         text = _instant([t for t in logged if t.source not in _TOLD_IN_CHAT], names)
         buttons: list[list[dict[str, str]]] = []
     else:
-        text = await _summary(
-            rates, user, logged, names, waiting, settings.frequency, start, now, tz
-        )
+        text = await _summary(rates, user, logged, names, waiting, settings, start, now, tz)
         buttons = (
             [[{"label": "Review them", "data": f"url:{review_url}"}]]
             if waiting and review_url
@@ -112,6 +126,8 @@ async def notify(
         sent = False
         if text:
             payload: dict[str, Any] = {"user_id": str(user.id), "text": text}
+            if settings.frequency is Frequency.DAILY:
+                payload["anytime"] = True  # the user chose the time, quiet hours or not
             if buttons:
                 payload["buttons"] = buttons
             sent = await tx.jobs.enqueue(
@@ -150,7 +166,7 @@ async def _summary(
     logged: list[Transaction],
     names: dict[UUID, str],
     waiting: int,
-    frequency: Frequency,
+    settings: NotificationSettings,
     start: datetime,
     now: datetime,
     tz: ZoneInfo,
@@ -176,7 +192,7 @@ async def _summary(
         else:
             received, received_count = received + amount, received_count + 1
 
-    lines = [f"🧾 {heading(frequency, start, now, tz)}"]
+    lines = [f"🧾 {heading(settings.frequency, start, now, tz, settings.daily_at)}"]
     if spent_count:
         lines.append(f"You spent {spent} ({_count(spent_count)}).")
         top = sorted(by_category.items(), key=lambda kv: kv[1].amount, reverse=True)[:3]
@@ -192,8 +208,8 @@ async def _summary(
             f"📧 {waiting} receipt{'s' if waiting != 1 else ''} from your email "
             f"{'are' if waiting != 1 else 'is'} waiting for you."
         )
-    if frequency is Frequency.DAILY:
-        lines.append("To change how often I send these, just tell me.")
+    if settings.frequency is Frequency.DAILY:
+        lines.append("To change how often or when I send these, just tell me.")
     return "\n".join(lines)
 
 

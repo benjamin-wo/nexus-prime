@@ -250,7 +250,13 @@ export type Subscription = {
 };
 export type Subscriptions = { tracked: Subscription[]; proposed: Subscription[]; monthly_totals: Money[] };
 export type Frequency = "instant" | "hourly" | "thrice_daily" | "daily" | "off";
-export type Updates = { frequency: Frequency; description: string; options: Record<Frequency, string> };
+export type Updates = {
+  frequency: Frequency;
+  /** HH:MM, local time: when the daily summary goes. */
+  daily_at: string;
+  description: string;
+  options: Record<Frequency, string>;
+};
 export type Reply = { text: string; buttons: { label: string; data: string }[][] };
 
 export type LedgerFilters = {
