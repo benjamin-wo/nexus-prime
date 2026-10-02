@@ -20,11 +20,16 @@ from nexus.domain.money import Money
 BACKFILL = timedelta(days=30)
 # At most this many new emails are read per mailbox per sweep.
 SWEEP_LIMIT = 25
-# One email is given up on (marked unreadable) if reading it takes longer than this.
-READ_TIMEOUT = timedelta(seconds=45)
-# A sweep stops starting new emails after this long, and leaves the rest for the
-# next one (a job's lease is 5 minutes).
-SWEEP_BUDGET = timedelta(minutes=3)
+# Each of the two model calls that read an email (screen, then read the amount) is
+# given up on after this long.
+READ_TIMEOUT = timedelta(seconds=25)
+# An email that couldn't be read (a slow or failing model) is tried again on later
+# sweeps, up to this many reads in all, before it's left for the user to log by hand.
+MAX_READS = 3
+# A sweep stops starting new emails after this long and leaves the rest for the
+# next one. With an email's two calls at most 2 x READ_TIMEOUT, a sweep stays inside
+# a job's 90 seconds.
+SWEEP_BUDGET = timedelta(seconds=30)
 # A connect link works this long, once.
 LINK_TTL = timedelta(minutes=10)
 # A forwarding address that hears nothing for this long gets one nudge.
@@ -66,8 +71,11 @@ class EmailStatus(StrEnum):
     FAILED = "failed"
 
 
-# Statuses the user can still act on from the Email page.
-ACTIONABLE = frozenset({EmailStatus.PENDING, EmailStatus.NOT_RECEIPT, EmailStatus.NO_AMOUNT})
+# Statuses the user can still act on from the Email page. One that couldn't be read
+# can be logged with the amount the user gives (or the one the email states).
+ACTIONABLE = frozenset(
+    {EmailStatus.PENDING, EmailStatus.NOT_RECEIPT, EmailStatus.NO_AMOUNT, EmailStatus.FAILED}
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,6 +111,14 @@ class InboundEmail:
     draft: dict[str, Any] | None  # the expense read from it, while it waits
     transaction_id: UUID | None
     created_at: datetime
+
+    @property
+    def reads(self) -> int:
+        """How many times reading it was tried: one that failed is tried again."""
+        return int((self.draft or {}).get("reads", 1))
+
+    def retry_reading(self) -> bool:
+        return self.status is EmailStatus.FAILED and self.reads < MAX_READS
 
 
 @dataclass(frozen=True, slots=True)

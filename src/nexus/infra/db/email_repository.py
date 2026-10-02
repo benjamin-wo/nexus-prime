@@ -10,6 +10,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from nexus.domain.email import (
+    MAX_READS,
     ConnectionStatus,
     EmailConnection,
     EmailStatus,
@@ -223,6 +224,21 @@ class SqlEmailRepository:
             )
         )
         return bool(result.rowcount)
+
+    async def unread(self, user_id: UserId, connection_id: UUID, limit: int) -> list[InboundEmail]:
+        e = inbound_emails.c
+        rows = await self._db.execute(
+            select(inbound_emails)
+            .where(
+                e.user_id == user_id,
+                e.connection_id == connection_id,
+                e.status == EmailStatus.FAILED.value,
+                func.coalesce(e.draft["reads"].as_integer(), 1) < MAX_READS,
+            )
+            .order_by(e.received_at)
+            .limit(limit)
+        )
+        return [_inbound(r) for r in rows]
 
     async def get_inbound(
         self, user_id: UserId, email_id: UUID, *, for_update: bool = False

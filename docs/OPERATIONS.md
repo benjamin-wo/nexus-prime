@@ -113,12 +113,13 @@ Offered only when a user asks to automate logging ("can you log my expenses auto
 **Sweeps.**
 - Every 15 minutes, Nexus asks Gmail only for receipt-like emails, checking at most 25 new ones per mailbox per run.
 - A cheap model screens each email, and the main model reads likely receipts into a draft. If the amount it reads can't be used, the one amount the email states with its currency ("A transaction of SGD 12.40 was made…", as on a card alert) is taken instead; with several or none, the email waits on the Email page for an amount.
+- Each of the two model calls gets 25 seconds, and a run stops starting new emails after 30 seconds so it finishes inside a job's 90. An email that couldn't be read (the model was slow or failed) is tried again on the next sweeps, up to three reads in all; a read that works then asks the user as usual. Meanwhile, and after the third try, it can be logged from the Email page or the chat: with the one amount the email states, if it has one, or with the user's own.
 - Each new receipt is a Telegram question with **Log it / Skip**. Bank alerts of money received ("You've received SGD 20.00 via PayNow… From: …") are read too, as money in. When the sender is someone who owes the user (names match in any case or order, and a shortened name like "Wei Ming" matches the bank's "TAN WEI MING"), the question is **Yes, paid back / Just income / Skip**, and "paid back" settles their IOUs oldest first. The first sweep instead sends one summary of the last 30 days, linking to the Email page.
 - Logged expenses use the `email` source with a dedupe key naming the mailbox and message. An email whose expense was deleted is never imported again, even after disconnecting and reconnecting.
 - PDF attachments are kept in the receipt archive.
 - If Google revokes access, the mailbox is marked for reconnecting and the user is told once.
 
-**The Email page** (`/email`, and a card on Plan once connected) lists every checked email from the last 30 days with its outcome. It can log, skip, supply a missing amount, or disconnect (which also revokes the grant with Google).
+**The Email page** (`/email`, and a card on Plan once connected) lists every checked email from the last 30 days with its outcome. It can log, skip, supply a missing amount (also for an email that couldn't be read), or disconnect (which also revokes the grant with Google).
 
 **One-time setup (owner).**
 1. In [Google Cloud Console](https://console.cloud.google.com/), create a project and enable the **Gmail API**.
