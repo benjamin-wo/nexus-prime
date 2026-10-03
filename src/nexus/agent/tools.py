@@ -1005,7 +1005,7 @@ class MergeDuplicatesArgs(Args):
     other_id: str = Field(description="The other one")
 
 
-async def _describe_merge_duplicates(ctx: ToolContext, a: MergeDuplicatesArgs) -> str:
+async def _describe_combine_duplicates(ctx: ToolContext, a: MergeDuplicatesArgs) -> str:
     first, second = await _load(ctx, a.transaction_id), await _load(ctx, a.other_id)
     names = await category_map(ctx)
     one = describe(first, names, ctx.tz).split(" [id")[0]
@@ -1013,7 +1013,7 @@ async def _describe_merge_duplicates(ctx: ToolContext, a: MergeDuplicatesArgs) -
     return f"Merge these into one, deleting the extra (it can be restored)? {one} / {other}"
 
 
-async def _merge_duplicates(ctx: ToolContext, a: MergeDuplicatesArgs) -> ToolResult:
+async def _combine_duplicates(ctx: ToolContext, a: MergeDuplicatesArgs) -> ToolResult:
     merged = await duplicate_cases.merge(
         ctx.uow, ctx.user.id, parse_id(a.transaction_id), parse_id(a.other_id)
     )
@@ -1415,13 +1415,13 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             _duplicates,
         ),
         ToolSpec(
-            "merge_duplicates",
-            "Merge two records of the same payment into one, keeping the readable name and "
-            "deleting the extra. Only when the user says they're the same. Asks the user to "
-            "confirm.",
+            "combine_duplicate_transactions",
+            "Two transactions that are one payment recorded twice: keep one, under the more "
+            "readable name, and delete the extra. Only when the user says they're the same "
+            "payment; not for categories. Asks the user to confirm.",
             MergeDuplicatesArgs,
-            _merge_duplicates,
-            confirm=_describe_merge_duplicates,
+            _combine_duplicates,
+            confirm=_describe_combine_duplicates,
         ),
         ToolSpec("restore_transaction", "Bring back a deleted transaction.", IdArgs, _restore),
         ToolSpec("undo_last_change", "Undo the user's most recent change.", NoArgs, _undo),
