@@ -158,6 +158,7 @@ class EmailOut(Model):
     received: bool  # money in, not money spent
     transaction_id: UUID | None
     actionable: bool
+    duplicate_of: str | None = None  # the payment it looks like a second record of
 
 
 class OverviewOut(Model):
@@ -187,6 +188,9 @@ async def overview(auth: Auth, web: Runtime) -> OverviewOut:
                 received=draft.received,
                 transaction_id=e.transaction_id,
                 actionable=e.status in ACTIONABLE or e.status is EmailStatus.SKIPPED,
+                duplicate_of=twin["label"]
+                if e.status is EmailStatus.PENDING and (twin := email_cases.duplicate_of(e))
+                else None,
             )
         )
     return OverviewOut(
@@ -216,6 +220,12 @@ async def log_email(email_id: UUID, body: LogIn, auth: Auth, web: Runtime) -> No
     user = auth.user
     amount = Money.of(body.amount, user.home_currency) if body.amount else None
     await email_cases.log_email(web.uow, user, email_id, now=web.clock(), amount=amount)
+
+
+@router.post("/{email_id}/same", status_code=204)
+async def same_payment(email_id: UUID, auth: Auth, web: Runtime) -> None:
+    """It's the same payment as the one it looks like: nothing new is logged."""
+    await email_cases.same_payment(web.uow, auth.user, email_id, now=web.clock())
 
 
 @router.post("/{email_id}/skip", status_code=204)

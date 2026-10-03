@@ -15,12 +15,13 @@ type Tx = {
   split?: unknown;
   links?: unknown[];
   own?: unknown;
+  duplicate?: unknown;
 };
 
 /** An in-memory stand-in for the API, so journeys exercise the real UI in a browser. */
 export async function fakeApi(
   page: Page,
-  { signedIn = true, emailConnected = false, forwarding = false, splitBill = false } = {},
+  { signedIn = true, emailConnected = false, forwarding = false, splitBill = false, twins = false } = {},
 ) {
   let session = signedIn;
   type FakeBudget = { id: string; category_id: string | null; limit: number; spent: number };
@@ -175,6 +176,14 @@ export async function fakeApi(
     ];
     back.own = sgd("0.0000");
     state.txs.push(bill, back);
+  }
+  if (twins) {
+    const alert = { ...mk("t6", "out", "23.40", "Grab* A-7KXPLMQZRTWB", "transport"), notes: "Card alert" };
+    const receipt = { ...mk("t7", "out", "23.40", "Grab Singapore", "transport"), notes: "Your Grab e-receipt" };
+    const twin = (t: Tx) => ({ transaction_id: t.id, counterparty: t.counterparty, occurred_at: t.occurred_at, amount: t.amount });
+    alert.duplicate = twin(receipt);
+    receipt.duplicate = twin(alert);
+    state.txs.push(alert, receipt);
   }
   const categories = [
     { id: "food", name: "Dining Out", active: true },
@@ -606,6 +615,18 @@ export async function fakeApi(
         (t) => !direction || t.direction === direction,
       );
       return json(route, { items, total: items.length });
+    }
+    const pair = path.match(/^\/transactions\/(t\d+)\/(merge|not-duplicate)$/);
+    if (pair && method === "POST") {
+      const mine = state.txs.find((t) => t.id === pair[1])!;
+      const other = state.txs.find((t) => t.id === body.other_id)!;
+      mine.duplicate = null;
+      other.duplicate = null;
+      if (pair[2] === "not-duplicate") return route.fulfill({ status: 204 });
+      const [kept, removed] = mine.counterparty?.includes("*") ? [mine, other] : [other, mine];
+      kept.counterparty = "Grab Singapore";
+      removed.deleted = true;
+      return json(route, { kept, removed });
     }
     if (path === "/transactions" && method === "POST") {
       const tx = mk(

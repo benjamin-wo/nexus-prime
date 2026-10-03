@@ -568,3 +568,23 @@ test("follow a split bill to its repayment and back", async ({ page }) => {
   await sheet.getByRole("button", { name: "Open Wei Ming's repayment" }).click();
   await expect(sheet.getByLabel("Received from")).toHaveValue("Wei Ming");
 });
+
+test("one payment recorded twice is merged, or kept as two", async ({ page }) => {
+  await fakeApi(page, { twins: true });
+  await page.goto("/ledger");
+  const alert = page.getByRole("row").filter({ hasText: "Card alert" });
+  await expect(alert.getByText(/^Possible duplicate of Grab Singapore/)).toBeVisible();
+  await alert.getByRole("button", { name: "Merge" }).click();
+  await expect(page.getByText(/^Merged into one: Grab Singapore/)).toBeVisible();
+  await expect(page.getByRole("row").filter({ hasText: "Grab Singapore" })).toHaveCount(1);
+  await expect(page.getByText(/^Possible duplicate/)).toHaveCount(0);
+});
+
+test("two payments flagged as one can be marked as two", async ({ page }) => {
+  await fakeApi(page, { twins: true });
+  await page.goto("/ledger");
+  const receipt = page.getByRole("row").filter({ hasText: "Your Grab e-receipt" });
+  await receipt.getByRole("button", { name: "Not a duplicate" }).click();
+  await expect(page.getByText(/^Possible duplicate/)).toHaveCount(0);
+  await expect(page.getByRole("row").filter({ hasText: "23.40" })).toHaveCount(2);
+});

@@ -19,6 +19,7 @@ from nexus.application import budgets as budget_cases
 from nexus.application import cashflow as cashflow_cases
 from nexus.application import categories as category_cases
 from nexus.application import category_rules as rule_cases
+from nexus.application import duplicates as duplicate_cases
 from nexus.application import memory as memory_cases
 from nexus.application import notifications as notify_cases
 from nexus.application import receipts as receipt_cases
@@ -114,6 +115,15 @@ class LinkOut(Model):
     amount: MoneyOut
 
 
+class TwinOut(Model):
+    """Another transaction that looks like the same payment."""
+
+    transaction_id: UUID
+    counterparty: str | None
+    occurred_at: datetime
+    amount: MoneyOut
+
+
 class TransactionOut(Model):
     id: UUID
     direction: str
@@ -131,6 +141,7 @@ class TransactionOut(Model):
     split: SplitOut | None = None  # a bill shared with others
     links: list[LinkOut] = []  # repayments to or from other transactions
     own: MoneyOut | None = None  # the user's own money in it, when friends paid part back
+    duplicate: TwinOut | None = None  # set on listings: a possible second record of it
 
 
 def home_out(conversion: fx.Conversion) -> HomeAmountOut:
@@ -191,6 +202,7 @@ def tx_out(
     *,
     has_receipt: bool = False,
     moved: Lineage | None = None,
+    twin: Transaction | None = None,
 ) -> TransactionOut:
     return TransactionOut(
         id=tx.id,
@@ -206,6 +218,14 @@ def tx_out(
         source=tx.source.value,
         deleted=tx.is_deleted,
         has_receipt=has_receipt,
+        duplicate=TwinOut(
+            transaction_id=twin.id,
+            counterparty=twin.counterparty,
+            occurred_at=twin.occurred_at,
+            amount=money(twin.amount),
+        )
+        if twin
+        else None,
         **_moved(tx, moved),
     )
 
@@ -482,8 +502,15 @@ async def list_transactions(
     ids = [t.id for t in page.items]
     kept = await receipt_cases.with_receipts(web.uow(), auth.user.id, ids)
     moved = await tx_cases.lineage(web.uow(), auth.user.id, ids)
+    twins = await duplicate_cases.matches(web.uow(), auth.user, page.items)
     items = [
-        tx_out(t, conversions.get(t.id), has_receipt=t.id in kept, moved=moved.get(t.id))
+        tx_out(
+            t,
+            conversions.get(t.id),
+            has_receipt=t.id in kept,
+            moved=moved.get(t.id),
+            twin=twins.get(t.id),
+        )
         for t in page.items
     ]
     return PageOut(items=items, total=page.total)
@@ -609,6 +636,32 @@ async def delete_transaction(transaction_id: UUID, auth: Auth, web: Runtime) -> 
 @router.post("/transactions/{transaction_id}/restore")
 async def restore_transaction(transaction_id: UUID, auth: Auth, web: Runtime) -> TransactionOut:
     return tx_out(await tx_cases.restore_transaction(web.uow(), auth.user.id, transaction_id))
+
+
+class OtherIn(Model):
+    other_id: UUID
+
+
+class MergedOut(Model):
+    kept: TransactionOut
+    removed: TransactionOut
+
+
+@router.post("/transactions/{transaction_id}/merge")
+async def merge_duplicates(
+    transaction_id: UUID, body: OtherIn, auth: Auth, web: Runtime
+) -> MergedOut:
+    """Two records of one payment become one: the other is deleted (and restorable)."""
+    merged = await duplicate_cases.merge(web.uow, auth.user.id, transaction_id, body.other_id)
+    return MergedOut(kept=tx_out(merged.kept), removed=tx_out(merged.removed))
+
+
+@router.post("/transactions/{transaction_id}/not-duplicate", status_code=204)
+async def not_duplicate(transaction_id: UUID, body: OtherIn, auth: Auth, web: Runtime) -> None:
+    """Two payments after all: never flag this pair again."""
+    await duplicate_cases.dismiss(
+        web.uow(), auth.user.id, transaction_id, body.other_id, now=web.clock()
+    )
 
 
 class IdsIn(Model):

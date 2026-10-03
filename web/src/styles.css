@@ -406,3 +406,8 @@ a.btn { text-decoration: none; }
 /* Every line of the trail shows, on phones too (notes above clamp to two). */
 .ledger td.merchant .trail { display: grid; -webkit-line-clamp: none; line-clamp: none; overflow: visible; }
 .trail .trail-link { display: inline; white-space: normal; text-align: left; font-weight: 600; }
+
+/* --- one payment recorded twice --- */
+.duplicate { display: grid; gap: 4px; margin-top: 6px; padding: 6px 8px; border-radius: 8px; background: var(--status-warning-soft); }
+.duplicate .caption { color: var(--status-warning); }
+.ledger td.merchant .duplicate .caption { display: block; -webkit-line-clamp: none; line-clamp: none; overflow: visible; white-space: normal; }

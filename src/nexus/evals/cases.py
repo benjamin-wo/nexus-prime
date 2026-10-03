@@ -596,6 +596,13 @@ CASES: tuple[Case, ...] = (
         reply=("grab",),
     ),
     Case(
+        "dup-find",
+        "ask",
+        _t("did anything get logged twice this week?"),
+        calls=(Call("find_duplicates"),),
+        unchanged=True,
+    ),
+    Case(
         "cat-add",
         "categories",
         _t("add a category for pets"),

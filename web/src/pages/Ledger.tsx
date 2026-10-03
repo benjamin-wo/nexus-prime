@@ -98,6 +98,45 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
     }
   }
 
+  async function mergeTwins(tx: Transaction) {
+    const twin = tx.duplicate;
+    if (!twin) return;
+    try {
+      const done = await api<{ kept: Transaction; removed: Transaction }>(`/transactions/${tx.id}/merge`, {
+        method: "POST",
+        body: { other_id: twin.transaction_id },
+      });
+      const before = done.kept.id === tx.id ? tx.counterparty : twin.counterparty;
+      refresh();
+      setToast({
+        message: `Merged into one: ${done.kept.counterparty ?? "no merchant"} ${formatMoney(done.kept.amount)}.`,
+        undo: async () => {
+          await api(`/transactions/${done.removed.id}/restore`, { method: "POST" });
+          if (before !== done.kept.counterparty) {
+            await api(`/transactions/${done.kept.id}`, { method: "PATCH", body: { counterparty: before } });
+          }
+          setToast({ message: "Restored both." });
+          refresh();
+        },
+      });
+    } catch (e) {
+      setToast({ message: e instanceof Error ? e.message : "Couldn't merge" });
+    }
+  }
+
+  async function notDuplicate(tx: Transaction) {
+    if (!tx.duplicate) return;
+    try {
+      await api(`/transactions/${tx.id}/not-duplicate`, {
+        method: "POST",
+        body: { other_id: tx.duplicate.transaction_id },
+      });
+      refresh();
+    } catch (e) {
+      setToast({ message: e instanceof Error ? e.message : "Couldn't save that" });
+    }
+  }
+
   function toggle(id: string) {
     setSelected((s) => {
       const next = new Set(s);
@@ -235,6 +274,22 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
                       </button>
                       {tx.notes && <div className="caption">{tx.notes}</div>}
                       <MoneyTrail tx={tx} timezone={me.user.timezone} onOpen={onEdit} />
+                      {tx.duplicate && (
+                        <div className="duplicate" onClick={(e) => e.stopPropagation()}>
+                          <span className="caption">
+                            Possible duplicate of {tx.duplicate.counterparty ?? "an entry"},{" "}
+                            {formatDate(tx.duplicate.occurred_at, me.user.timezone)}
+                          </span>
+                          <span className="quick">
+                            <button type="button" className="btn btn-small" onClick={() => void mergeTwins(tx)}>
+                              Merge
+                            </button>
+                            <button type="button" className="btn btn-small" onClick={() => void notDuplicate(tx)}>
+                              Not a duplicate
+                            </button>
+                          </span>
+                        </div>
+                      )}
                       {tx.has_receipt && (
                         <a
                           className="caption receipt-link"
