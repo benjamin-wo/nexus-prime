@@ -26,6 +26,8 @@ function EmailRow({ email, me, onChanged }: { email: InboundEmail; me: Me; onCha
   const [amount, setAmount] = useState("");
   const [error, setError] = useState<string | null>(null);
   const needsAmount = !email.amount;
+  // Waiting for an answer: these can also be dismissed.
+  const skippable = email.status === "pending" || email.status === "failed";
 
   async function act(path: string, body?: unknown) {
     setError(null);
@@ -69,7 +71,7 @@ function EmailRow({ email, me, onChanged }: { email: InboundEmail; me: Me; onCha
             <button type="button" className="btn btn-primary" onClick={() => act("log")}>
               Log it
             </button>
-            {email.status === "pending" && (
+            {skippable && (
               <button type="button" className="btn" onClick={() => act("skip")}>
                 Skip
               </button>
@@ -97,6 +99,11 @@ function EmailRow({ email, me, onChanged }: { email: InboundEmail; me: Me; onCha
           <button type="submit" className="btn" disabled={!amount.trim()}>
             Log it
           </button>
+          {skippable && (
+            <button type="button" className="btn" onClick={() => act("skip")}>
+              Skip
+            </button>
+          )}
         </form>
       )}
       {error && (

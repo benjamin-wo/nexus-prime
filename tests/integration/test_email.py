@@ -4,6 +4,7 @@ the user's confirmation, and never importing an email twice."""
 from datetime import timedelta
 from decimal import Decimal
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pytest
 from cryptography.fernet import Fernet
@@ -21,7 +22,7 @@ from nexus.application.transactions import delete_transaction, list_ledger
 from nexus.application.users import RegisterUser, register_user
 from nexus.domain.email import ConnectionStatus, EmailConnection, FetchedEmail, Screening
 from nexus.domain.errors import Conflict, InvalidInput, NotFound
-from nexus.domain.ledger import Source, User
+from nexus.domain.ledger import Direction, Source, User
 from nexus.domain.money import Money
 from nexus.domain.notifications import Frequency
 from nexus.infra.crypto.fernet import FernetCipher
@@ -358,6 +359,99 @@ async def test_a_stuck_read_is_given_up_on(
         "took too long to read",
     )
     assert found["m1"].status.value == "pending"
+
+
+class SlowReader(FakeEmailReader):
+    """Stalls on the first ``stalls`` tries at reading "slow", like a model that
+    hangs now and then."""
+
+    def __init__(self, stalls: int) -> None:
+        self.stalls = stalls
+
+    async def triage(self, email: FetchedEmail) -> Screening:
+        import asyncio
+
+        if email.provider_message_id == "slow" and self.stalls > 0:
+            self.stalls -= 1
+            await asyncio.sleep(10)
+        return await super().triage(email)
+
+
+async def test_an_email_that_couldnt_be_read_is_tried_again(
+    engine: AsyncEngine, uow: UowFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(email_cases, "READ_TIMEOUT", timedelta(milliseconds=50))
+    user = await person(uow)
+    mailbox = FakeMailbox(
+        {"slow": fake_email("slow", "Card receipt", GRAB, at=NOW - timedelta(hours=1))}
+    )
+    connection = await connect(uow, user, mailbox)
+    reader = SlowReader(stalls=1)
+    await email_cases.sweep(uow, mailbox, reader, CIPHER, None, user, connection, now=NOW)
+    assert await statuses(uow, user) == {"slow": "failed"}
+    assert await messages(engine) == []
+
+    later = NOW + timedelta(minutes=15)
+    result = await email_cases.sweep(
+        uow, mailbox, reader, CIPHER, None, user, connection, now=later
+    )
+    assert result.read == 1 and result.waiting == 1
+    assert await statuses(uow, user) == {"slow": "pending"}
+    [question] = await messages(engine)
+    assert "18.50 SGD at Grab" in question["text"]
+
+
+async def test_after_three_tries_it_waits_for_the_user(
+    uow: UowFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(email_cases, "READ_TIMEOUT", timedelta(milliseconds=50))
+    user = await person(uow)
+    alert = "A transaction of SGD 42.10 was made with your card."
+    mailbox = FakeMailbox(
+        {"slow": fake_email("slow", "Card receipt", alert, at=NOW - timedelta(hours=1))}
+    )
+    connection = await connect(uow, user, mailbox)
+    reader = SlowReader(stalls=10)
+    for n in range(5):
+        at = NOW + timedelta(minutes=15 * n)
+        await email_cases.sweep(uow, mailbox, reader, CIPHER, None, user, connection, now=at)
+    assert mailbox.fetched == ["slow", "slow", "slow"]  # three reads, then left alone
+    [email] = await email_cases.waiting(uow(), user.id, now=NOW)
+    assert (email.status.value, email.reads) == ("failed", 3)
+    line = email_cases.describe(email, ZoneInfo("Asia/Singapore"))
+    assert "couldn't be read, it states 42.10 SGD" in line
+
+    # The amount the email states can be logged with one tap.
+    tx = await email_cases.log_email(uow, user, email.id, now=NOW)
+    assert (tx.amount, tx.direction) == (Money(Decimal("42.10"), "SGD"), Direction.OUT)
+    assert await statuses(uow, user) == {"slow": "logged"}
+
+
+async def test_an_unreadable_email_without_an_amount_takes_the_users(
+    uow: UowFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(email_cases, "READ_TIMEOUT", timedelta(milliseconds=50))
+    user = await person(uow)
+    mailbox = FakeMailbox(
+        {"slow": fake_email("slow", "Card receipt", GRAB, at=NOW - timedelta(hours=1))}
+    )
+    connection = await connect(uow, user, mailbox)
+    await email_cases.sweep(
+        uow, mailbox, SlowReader(stalls=1), CIPHER, None, user, connection, now=NOW
+    )
+    [email] = await email_cases.waiting(uow(), user.id, now=NOW)
+    with pytest.raises(InvalidInput):
+        await email_cases.log_email(uow, user, email.id, now=NOW)
+    tx = await email_cases.log_email(
+        uow, user, email.id, now=NOW, amount=Money(Decimal("18.50"), "SGD")
+    )
+    assert tx.amount == Money(Decimal("18.50"), "SGD")
+    # Logged by hand, it isn't read again.
+    await email_cases.sweep(
+        uow, mailbox, FakeEmailReader(), CIPHER, None, user, connection, now=NOW
+    )
+    assert mailbox.fetched == ["slow"]
+    assert await statuses(uow, user) == {"slow": "logged"}
 
 
 async def test_bank_alert_amounts_are_read_as_written(uow: UowFactory) -> None:

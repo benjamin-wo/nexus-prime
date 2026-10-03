@@ -336,6 +336,13 @@ test("email is out of sight until connected, then shows what happened to each em
   await grab.getByRole("button", { name: "Log it" }).click();
   await expect(grab.getByText("Logged")).toBeVisible();
   await expect(grab.getByRole("link", { name: "In your ledger" })).toBeVisible();
+
+  // One the model couldn't read can still be logged with the amount it states, or skipped.
+  const alert = checked.getByRole("listitem").filter({ hasText: "Card transaction alert" });
+  await expect(alert.getByText("Couldn't be read: took too long to read")).toBeVisible();
+  await expect(alert.getByRole("button", { name: "Log it" })).toBeVisible();
+  await alert.getByRole("button", { name: "Skip" }).click();
+  await expect(alert.getByText("Skipped: you skipped it")).toBeVisible();
 });
 
 test("a forwarding address shows as one, with a way to copy it", async ({ page }) => {

@@ -375,8 +375,11 @@ async def _read_one(
     fetched: FetchedEmail,
     now: datetime,
     categories: Sequence[str] = (),
+    reads: int = 1,
 ) -> InboundEmail:
-    """Screen and read one email into its log entry."""
+    """Screen and read one email into its log entry. ``reads`` counts this try; one
+    that fails keeps the count, and the one amount the email states if it has one,
+    so a later sweep can try again and the user can log it meanwhile."""
     status: EmailStatus = EmailStatus.FAILED
     reason: str | None = "couldn't be read"
     draft: dict[str, Any] | None = None
@@ -418,6 +421,11 @@ async def _read_one(
         log.warning("reading an email timed out")
     except Exception:
         log.exception("could not read an email")
+    if status is EmailStatus.FAILED:
+        draft = {"reads": reads}
+        stated = amount_in_text(fetched.text)
+        if stated is not None:
+            draft |= {"amount": str(stated.amount), "currency": stated.currency}
     return InboundEmail(
         id=uuid4(),
         user_id=user.id,
@@ -477,16 +485,30 @@ async def sweep(
         email = told or await _read_one(
             reader, archive, uow, user, connection, fetched, now, categories
         )
-        async with uow() as tx:
-            if email.status is EmailStatus.PENDING and await tx.ledger.source_claimed(
-                user.id,
-                Source.EMAIL,
-                external_id(connection.provider, connection.address, message_id),
-            ):
-                email = replace(email, status=EmailStatus.DUPLICATE, reason="already logged")
-            if await tx.email.insert_inbound(email) and email.status is EmailStatus.PENDING:
-                waiting.append(email)
-            await tx.commit()
+        if await _record(uow, user, connection, email, new=True):
+            waiting.append(email)
+    # Then emails a slow or failing model couldn't read on an earlier sweep, while
+    # time is left.
+    async with uow() as tx:
+        unread = await tx.email.unread(user.id, connection.id, SWEEP_LIMIT)
+    for before in (e for e in unread if e.provider_message_id not in batch):
+        if monotonic() - started > SWEEP_BUDGET.total_seconds():
+            break
+        read += 1
+        try:
+            fetched = await mailbox.fetch(access, before.provider_message_id)
+        except MailboxRevoked:
+            raise
+        except Exception:
+            log.warning("could not fetch an email again to read it", exc_info=True)
+            again = replace(before, draft={**(before.draft or {}), "reads": before.reads + 1})
+        else:
+            result = await _read_one(
+                reader, archive, uow, user, connection, fetched, now, categories, before.reads + 1
+            )
+            again = replace(before, status=result.status, reason=result.reason, draft=result.draft)
+        if await _record(uow, user, connection, again, new=False):
+            waiting.append(again)
     async with uow() as tx:
         current = await tx.email.get_connection(user.id, connection.id, for_update=True)
         if current is not None:
@@ -507,6 +529,30 @@ async def sweep(
         "email sweep: read %d, %d waiting, %d left for next time", read, len(waiting), len(left)
     )
     return SweepResult(read, len(waiting), first)
+
+
+async def _record(
+    uow: UowFactory, user: User, connection: EmailConnection, email: InboundEmail, *, new: bool
+) -> bool:
+    """Save what a read found; True if it's a receipt now waiting for the user."""
+    async with uow() as tx:
+        if not new:
+            current = await tx.email.get_inbound(user.id, email.id, for_update=True)
+            if current is None or current.status is not EmailStatus.FAILED:
+                return False  # the user logged or skipped it while it was being read
+        if email.status is EmailStatus.PENDING and await tx.ledger.source_claimed(
+            user.id,
+            Source.EMAIL,
+            external_id(connection.provider, connection.address, email.provider_message_id),
+        ):
+            email = replace(email, status=EmailStatus.DUPLICATE, reason="already logged")
+        if new:
+            saved = await tx.email.insert_inbound(email)
+        else:
+            await tx.email.update_inbound(email)
+            saved = True
+        await tx.commit()
+    return saved and email.status is EmailStatus.PENDING
 
 
 async def _setup_email(
@@ -838,7 +884,11 @@ async def waiting(uow: UnitOfWork, user_id: UserId, *, now: datetime) -> list[In
         emails = await uow.email.list_inbound(
             user_id, since=now - timedelta(days=WAITING_DAYS), limit=200
         )
-    open_ = [e for e in emails if e.status in (EmailStatus.PENDING, EmailStatus.NO_AMOUNT)]
+    open_ = [
+        e
+        for e in emails
+        if e.status in (EmailStatus.PENDING, EmailStatus.NO_AMOUNT, EmailStatus.FAILED)
+    ]
     return sorted(open_, key=lambda e: e.received_at, reverse=True)[:WAITING_SHOWN]
 
 
@@ -848,6 +898,12 @@ def describe(email: InboundEmail, tz: ZoneInfo) -> str:
     when = email.received_at.astimezone(tz)
     money = _amount(draft, draft.currency or "") if draft.amount else None
     figure = str(money) if money else "no amount found"
+    if email.status is EmailStatus.FAILED:
+        stated = f", it states {money}" if money else ""
+        return (
+            f"{when:%a %-d %b %H:%M}, couldn't be read{stated} "
+            f"(email from {short(email.sender, 40)}: {short(email.subject, 60)})"
+        )
     if draft.received:
         sender = f" from {draft.merchant}" if draft.merchant else ""
         what = f"{figure} came in{sender}"
