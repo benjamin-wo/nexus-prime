@@ -19,6 +19,7 @@ from typing import Any
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
+from nexus.application import duplicates as duplicate_cases
 from nexus.application import receipts as receipt_cases
 from nexus.application import splits as split_cases
 from nexus.application import transactions as tx_cases
@@ -35,6 +36,7 @@ from nexus.application.ports import (
 )
 from nexus.application.splits import owing_person
 from nexus.application.transactions import NewTransaction
+from nexus.domain.duplicates import Candidate, better_name, likely_same
 from nexus.domain.email import (
     ACTIONABLE,
     FILTER_WORDS,
@@ -63,6 +65,7 @@ from nexus.domain.errors import Conflict, DuplicateSource, InvalidInput, NotFoun
 from nexus.domain.ledger import Direction, OpenIou, Source, Transaction, User, UserId
 from nexus.domain.money import Money
 from nexus.domain.notifications import Frequency
+from nexus.domain.receipts import UNCLAIMED_TTL
 
 log = logging.getLogger(__name__)
 SWEEP_JOB = "email.sweep"
@@ -344,6 +347,20 @@ def question(
     the user is offered as their repayment."""
     draft = ExpenseDraft.from_dict(email.draft or {})
     skip = {"label": "Skip", "data": f"email:skip:{email.id}"}
+    twin = duplicate_of(email)
+    if twin is not None:
+        where = "already in your ledger" if "transaction_id" in twin else "in another email"
+        return (
+            f"{prompt_text(email, tz).rsplit('. ', 1)[0]}. This looks like {twin['label']}, "
+            f"{where}. Same payment?",
+            [
+                [
+                    {"label": "Same one", "data": f"email:same:{email.id}"},
+                    {"label": "It's another", "data": f"email:log:{email.id}"},
+                ],
+                [skip],
+            ],
+        )
     person = owing_person(open_ious, draft.merchant) if draft.received and draft.merchant else None
     if person is None:
         return prompt_text(email, tz), [
@@ -364,6 +381,12 @@ def question(
         ],
         [skip],
     ]
+
+
+def duplicate_of(email: InboundEmail) -> dict[str, str] | None:
+    """What this email looks like a second record of, if anything."""
+    found = (email.draft or {}).get("duplicate_of")
+    return found if isinstance(found, dict) else None
 
 
 async def _read_one(
@@ -485,8 +508,8 @@ async def sweep(
         email = told or await _read_one(
             reader, archive, uow, user, connection, fetched, now, categories
         )
-        if await _record(uow, user, connection, email, new=True):
-            waiting.append(email)
+        if saved := await _record(uow, user, connection, email, new=True):
+            waiting.append(saved)
     # Then emails a slow or failing model couldn't read on an earlier sweep, while
     # time is left.
     async with uow() as tx:
@@ -507,8 +530,8 @@ async def sweep(
                 reader, archive, uow, user, connection, fetched, now, categories, before.reads + 1
             )
             again = replace(before, status=result.status, reason=result.reason, draft=result.draft)
-        if await _record(uow, user, connection, again, new=False):
-            waiting.append(again)
+        if saved := await _record(uow, user, connection, again, new=False):
+            waiting.append(saved)
     async with uow() as tx:
         current = await tx.email.get_connection(user.id, connection.id, for_update=True)
         if current is not None:
@@ -533,13 +556,15 @@ async def sweep(
 
 async def _record(
     uow: UowFactory, user: User, connection: EmailConnection, email: InboundEmail, *, new: bool
-) -> bool:
-    """Save what a read found; True if it's a receipt now waiting for the user."""
+) -> InboundEmail | None:
+    """Save what a read found; the email if it's a receipt now waiting for the user."""
+    if email.status is EmailStatus.PENDING:
+        email = await _flag_duplicate(uow, user, email)
     async with uow() as tx:
         if not new:
             current = await tx.email.get_inbound(user.id, email.id, for_update=True)
             if current is None or current.status is not EmailStatus.FAILED:
-                return False  # the user logged or skipped it while it was being read
+                return None  # the user logged or skipped it while it was being read
         if email.status is EmailStatus.PENDING and await tx.ledger.source_claimed(
             user.id,
             Source.EMAIL,
@@ -552,7 +577,62 @@ async def _record(
             await tx.email.update_inbound(email)
             saved = True
         await tx.commit()
-    return saved and email.status is EmailStatus.PENDING
+    return email if saved and email.status is EmailStatus.PENDING else None
+
+
+def _candidate(email: InboundEmail, home: str) -> Candidate | None:
+    draft = ExpenseDraft.from_dict(email.draft or {})
+    money = _amount(draft, home)
+    if money is None:
+        return None
+    occurred = (email.draft or {}).get("occurred_at")
+    return Candidate(
+        Direction.IN if draft.received else Direction.OUT,
+        money,
+        datetime.fromisoformat(occurred) if occurred else email.received_at,
+        draft.merchant,
+        Source.EMAIL,
+        email.subject,
+    )
+
+
+def _label(merchant: str | None, money: Money, when: datetime, tz: ZoneInfo) -> str:
+    return f"{merchant or 'no name'}, {money} on {when.astimezone(tz):%-d %b}"
+
+
+async def _flag_duplicate(uow: UowFactory, user: User, email: InboundEmail) -> InboundEmail:
+    """Note in the draft the ledger entry, or another email still waiting, that looks
+    like this same payment (a card alert and the shop's receipt), so the user is
+    asked "same one?" rather than logging it twice."""
+    mine = _candidate(email, user.home_currency)
+    if mine is None:
+        return email
+    tz = ZoneInfo(user.timezone)
+    found: dict[str, str] | None = None
+    tx = await duplicate_cases.check(uow(), user, mine)
+    if tx is not None:
+        found = {
+            "transaction_id": str(tx.id),
+            "label": _label(tx.counterparty, tx.amount, tx.occurred_at, tz),
+        }
+    else:
+        async with uow() as db:
+            recent = await db.email.list_inbound(
+                user.id, since=mine.occurred_at - timedelta(days=3), limit=200
+            )
+        for other in recent:
+            if other.id == email.id or other.status is not EmailStatus.PENDING:
+                continue
+            theirs = _candidate(other, user.home_currency)
+            if theirs is not None and likely_same(mine, theirs, tz):
+                found = {
+                    "email_id": str(other.id),
+                    "label": _label(theirs.merchant, theirs.amount, theirs.occurred_at, tz),
+                }
+                break
+    if found is None:
+        return email
+    return replace(email, draft={**(email.draft or {}), "duplicate_of": found})
 
 
 async def _setup_email(
@@ -846,6 +926,71 @@ async def _set(
             await uow.commit()
 
 
+async def same_payment(
+    uow: UowFactory, user: User, email_id: UUID, *, now: datetime
+) -> Transaction | None:
+    """The user says this email is the same payment as the one it looks like. Nothing
+    new is logged: a ledger entry takes the more readable name (and this email's PDF
+    receipt, if it has none), or the other waiting email does. Returns the ledger
+    entry, or None when the other email is still waiting for an answer."""
+    async with uow() as tx:
+        email = await _pending(tx, user.id, email_id)
+    twin = duplicate_of(email)
+    if twin is None:
+        raise InvalidInput("that email doesn't look like anything already logged")
+    draft = ExpenseDraft.from_dict(email.draft or {})
+    target = twin.get("transaction_id")
+    if "email_id" in twin:
+        async with uow() as tx:
+            other = await tx.email.get_inbound(user.id, UUID(twin["email_id"]), for_update=True)
+            if other is None or other.status is EmailStatus.SKIPPED:
+                raise InvalidInput("the other email was skipped; log this one instead")
+            if other.status is EmailStatus.LOGGED and other.transaction_id is not None:
+                target = str(other.transaction_id)
+            else:
+                theirs = ExpenseDraft.from_dict(other.draft or {})
+                named = better_name(theirs.merchant, draft.merchant)
+                if named != theirs.merchant:
+                    await tx.email.update_inbound(
+                        replace(other, draft={**(other.draft or {}), "merchant": named})
+                    )
+                await tx.email.update_inbound(
+                    replace(
+                        email,
+                        status=EmailStatus.DUPLICATE,
+                        reason="the same payment as another email",
+                    )
+                )
+                await tx.commit()
+                return None
+    if target is None:  # pragma: no cover - a draft always names one or the other
+        raise InvalidInput("that email doesn't look like anything already logged")
+    current = await tx_cases.get_transaction(uow(), user.id, UUID(target))
+    if current.is_deleted:
+        raise InvalidInput("that entry was deleted; log this email instead")
+    named = better_name(current.counterparty, draft.merchant)
+    if named != current.counterparty:
+        current = await tx_cases.edit_transaction(
+            uow(), user.id, current.id, tx_cases.TransactionChanges(counterparty=named)
+        )
+    receipt = (email.draft or {}).get("receipt_id")
+    async with uow() as tx:
+        if receipt and await tx.ledger.live_receipt(user.id, current.id) is None:
+            await tx.ledger.attach_receipt(
+                user.id, UUID(receipt), current.id, stashed_after=now - UNCLAIMED_TTL
+            )
+        await tx.email.update_inbound(
+            replace(
+                email,
+                status=EmailStatus.LOGGED,
+                reason="the same payment as one already logged",
+                transaction_id=current.id,
+            )
+        )
+        await tx.commit()
+    return current
+
+
 async def skip_email(uow: UnitOfWork, user_id: UserId, email_id: UUID) -> None:
     async with uow:
         email = await _pending(uow, user_id, email_id)
@@ -910,4 +1055,6 @@ def describe(email: InboundEmail, tz: ZoneInfo) -> str:
     else:
         where = f" at {draft.merchant}" if draft.merchant else ""
         what = f"{figure} spent{where}"
-    return f"{when:%a %-d %b %H:%M}, {what} (email: {short(email.subject, 60)})"
+    twin = duplicate_of(email)
+    same = f"; looks like the same payment as {twin['label']}" if twin else ""
+    return f"{when:%a %-d %b %H:%M}, {what} (email: {short(email.subject, 60)}){same}"

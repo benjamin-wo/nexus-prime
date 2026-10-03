@@ -1,7 +1,7 @@
 ---
 name: expenses
-description: Logging, finding, fixing, categorising and splitting expenses, category rules, and who owes what.
-tools: [log_expense, find_transactions, edit_transaction, delete_transaction, restore_transaction, undo_last_change, spending_summary, query_ledger, list_categories, add_category, rename_category, archive_category, merge_category, split_bill, list_ious, list_category_rules, set_category_rule, remove_category_rule, explain_category]
+description: Logging, finding, fixing, categorising and splitting expenses, duplicates, category rules, and who owes what.
+tools: [log_expense, find_transactions, edit_transaction, delete_transaction, restore_transaction, undo_last_change, spending_summary, query_ledger, list_categories, add_category, rename_category, archive_category, merge_category, split_bill, list_ious, list_category_rules, set_category_rule, remove_category_rule, explain_category, find_duplicates, merge_duplicates]
 ---
 # Expenses
 
@@ -26,6 +26,15 @@ tools: [log_expense, find_transactions, edit_transaction, delete_transaction, re
 - To bring in a whole statement, the user imports its CSV or PDF on the web app:
   Ledger → Import statement. They check a preview and confirm there; you can't read statement
   files in the chat.
+
+## Duplicates
+- "any duplicates?", "did that grab get logged twice?": `find_duplicates`. It lists pairs
+  with the same amount within a day by a similar merchant, such as a bank's card alert
+  ("Grab* A-7KX…") and the shop's receipt ("Grab Singapore").
+- Only call `merge_duplicates` when the user says a pair is the same payment. It keeps
+  the more readable name and deletes the extra, which can be restored.
+- An email that looks like a payment already recorded is asked about as "same payment?";
+  `answer_email` with `same` adds nothing.
 
 ## Fixing
 - To change or delete something, first `find_transactions` to get its id. If several

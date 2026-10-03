@@ -63,6 +63,8 @@ export type Transaction = {
   links?: { transaction_id: string; counterparty: string | null; occurred_at: string; name: string; amount: Money }[];
   /** The user's own money in it, when friends paid part of it back. */
   own?: Money | null;
+  /** Set on listings: another transaction that looks like the same payment. */
+  duplicate?: { transaction_id: string; counterparty: string | null; occurred_at: string; amount: Money } | null;
 };
 
 /** The receipt's short-lived link; the server checks it's the owner asking. */
@@ -194,6 +196,8 @@ export type InboundEmail = {
   received: boolean; // money in, not money spent
   transaction_id: string | null;
   actionable: boolean;
+  /** The payment it looks like a second record of, while it waits. */
+  duplicate_of?: string | null;
 };
 export type EmailConnection = {
   id: string;

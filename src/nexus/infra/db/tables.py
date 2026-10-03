@@ -20,6 +20,7 @@ from sqlalchemy import (
     LargeBinary,
     MetaData,
     Numeric,
+    PrimaryKeyConstraint,
     SmallInteger,
     String,
     Table,
@@ -451,6 +452,20 @@ memories = Table(
     CheckConstraint("kind IN ('fact', 'preference', 'episode')", name="kind"),
     CheckConstraint("length(text) BETWEEN 1 AND 300", name="text_length"),
     Index("ix_memories_user_id_updated_at", "user_id", "updated_at"),
+)
+
+# Two transactions the user said aren't the same payment, so they're never flagged
+# as a possible duplicate again. The pair is stored in a fixed order.
+duplicate_dismissals = Table(
+    "duplicate_dismissals",
+    metadata,
+    _user_fk(),
+    Column("first_id", UUID(as_uuid=True), nullable=False),
+    Column("second_id", UUID(as_uuid=True), nullable=False),
+    Column("created_at", TZ, nullable=False),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+    PrimaryKeyConstraint("user_id", "first_id", "second_id"),
+    CheckConstraint("first_id < second_id", name="ordered"),
 )
 
 # A bank's CSV layout the user saved, found again by its header row.

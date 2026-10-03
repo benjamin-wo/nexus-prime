@@ -302,7 +302,8 @@ class AgentService:
 
     async def _email_button(self, actor: UserId, action: str, email_id: str) -> Reply:
         """Log it / Skip on a receipt found in the user's email; for money received,
-        also Yes, paid back / Just income."""
+        also Yes, paid back / Just income; for one that looks like a payment already
+        recorded, Same one / It's another."""
         try:
             found = UUID(email_id)
         except ValueError:
@@ -321,6 +322,14 @@ class AgentService:
             if action == "skip":
                 await email_cases.skip_email(self._uow(), actor, found)
                 return Reply("Skipped. Nothing was logged.")
+            if action == "same":
+                kept = await email_cases.same_payment(self._uow, user, found, now=self._clock())
+                if kept is None:
+                    return Reply(
+                        "Got it, one payment. Answer the other email to log it, and only once."
+                    )
+                where = f" as {kept.counterparty}" if kept.counterparty else ""
+                return Reply(f"Got it, one payment: kept {kept.amount}{where}. Nothing added.")
         except DuplicateSource:
             return Reply("That email was already logged.")
         except NexusError as exc:

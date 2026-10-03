@@ -185,11 +185,12 @@ async def test_the_first_sweep_looks_back_and_asks_once(
 
     # With updates as they happen, it gets its own question.
     await notify_cases.set_frequency(uow(), user.id, Frequency.INSTANT, now=NOW)
-    mailbox.emails["m6"] = fake_email("m6", "Grab receipt", GRAB, at=NOW + timedelta(minutes=40))
+    ride = GRAB.replace("18.50", "12.00")  # not the same payment as one still waiting
+    mailbox.emails["m6"] = fake_email("m6", "Grab receipt", ride, at=NOW + timedelta(minutes=40))
     result = await sweep(uow, user, mailbox, connection, at=NOW + timedelta(minutes=45))
     assert (result.read, result.waiting, result.first) == (1, 1, False)
     question = (await messages(engine))[-1]
-    assert question["text"] == "📧 From your email: 18.50 SGD at Grab on 27 Sep. Log it?"
+    assert question["text"] == "📧 From your email: 12.00 SGD at Grab on 27 Sep. Log it?"
     [[log_it, skip]] = question["buttons"]
     assert (log_it["label"], skip["label"]) == ("Log it", "Skip")
     assert log_it["data"].startswith("email:log:")

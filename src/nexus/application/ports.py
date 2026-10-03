@@ -212,6 +212,14 @@ class LedgerRepository(Protocol):
         """Whether this money in paid off any IOU."""
         ...
 
+    # possible duplicates
+    async def dismissed_pairs(self, user_id: UserId, ids: list[UUID]) -> set[tuple[str, str]]:
+        """Pairs (as duplicates.pair_key) the user said aren't one payment, among
+        any that include one of these transactions."""
+        ...
+
+    async def dismiss_pair(self, user_id: UserId, pair: tuple[str, str], at: datetime) -> None: ...
+
     async def replace_splits(
         self, user_id: UserId, transaction_id: UUID, splits: list[Split]
     ) -> None: ...

@@ -28,6 +28,7 @@ function EmailRow({ email, me, onChanged }: { email: InboundEmail; me: Me; onCha
   const needsAmount = !email.amount;
   // Waiting for an answer: these can also be dismissed.
   const skippable = email.status === "pending" || email.status === "failed";
+  const twin = email.status === "pending" ? email.duplicate_of : null;
 
   async function act(path: string, body?: unknown) {
     setError(null);
@@ -61,6 +62,7 @@ function EmailRow({ email, me, onChanged }: { email: InboundEmail; me: Me; onCha
         {email.sender} · {formatDate(email.received_at, me.user.timezone)}
         {email.merchant ? ` · ${email.subject}` : ""}
       </p>
+      {twin && <p className="caption email-twin">Looks like {twin}, already recorded or in another email. Same payment?</p>}
       <div className="budget-foot">
         <span className={`caption email-status email-${email.status}`}>
           {LABELS[email.status]}
@@ -68,8 +70,13 @@ function EmailRow({ email, me, onChanged }: { email: InboundEmail; me: Me; onCha
         </span>
         {email.actionable && !needsAmount && (
           <span className="quick">
-            <button type="button" className="btn btn-primary" onClick={() => act("log")}>
-              Log it
+            {twin && (
+              <button type="button" className="btn btn-primary" onClick={() => act("same")}>
+                Same one
+              </button>
+            )}
+            <button type="button" className={twin ? "btn" : "btn btn-primary"} onClick={() => act("log")}>
+              {twin ? "It's another" : "Log it"}
             </button>
             {skippable && (
               <button type="button" className="btn" onClick={() => act("skip")}>

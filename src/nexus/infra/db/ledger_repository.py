@@ -59,6 +59,7 @@ from nexus.infra.db.tables import (
     capability_gaps,
     categories,
     category_rules,
+    duplicate_dismissals,
     inbound_events,
     invites,
     receipts,
@@ -821,6 +822,24 @@ class SqlLedgerRepository:
             for tx_id in {b_id, i_id} & wanted:
                 entry(tx_id).links.append(link)
         return found
+
+    async def dismissed_pairs(self, user_id: UserId, ids: list[UUID]) -> set[tuple[str, str]]:
+        if not ids:
+            return set()
+        d = duplicate_dismissals.c
+        rows = await self._db.execute(
+            select(d.first_id, d.second_id).where(
+                d.user_id == user_id, or_(d.first_id.in_(ids), d.second_id.in_(ids))
+            )
+        )
+        return {(str(r.first_id), str(r.second_id)) for r in rows}
+
+    async def dismiss_pair(self, user_id: UserId, pair: tuple[str, str], at: datetime) -> None:
+        await self._db.execute(
+            pg_insert(duplicate_dismissals)
+            .values(user_id=user_id, first_id=UUID(pair[0]), second_id=UUID(pair[1]), created_at=at)
+            .on_conflict_do_nothing()
+        )
 
     async def has_settlements_for_income(self, user_id: UserId, income_id: UUID) -> bool:
         stmt = select(

@@ -4,7 +4,8 @@ import asyncio
 import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from typing import Any
 
 import pytest
@@ -18,7 +19,7 @@ from nexus.application import bills as bill_cases
 from nexus.application import email as email_cases
 from nexus.application import receipts as receipt_cases
 from nexus.application import subscriptions as subscription_cases
-from nexus.application.transactions import NewTransaction
+from nexus.application.transactions import NewTransaction, log_transaction
 from nexus.channels.web.telegram_login import sign_for_tests, sign_webapp_for_tests
 from nexus.domain.ledger import Direction, Source, UserId
 from nexus.domain.money import Money
@@ -1191,3 +1192,57 @@ async def test_api_docs_are_not_served_in_production(engine: AsyncEngine) -> Non
     for path in ("/docs", "/redoc", "/openapi.json"):
         page = await client.get(path)  # the web app's own page may answer; the docs don't
         assert "swagger" not in page.text.lower() and '"openapi"' not in page.text
+
+
+async def test_possible_duplicates_merge_or_stay_two(world: World) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+
+    made = await owner.send(
+        "POST",
+        "/api/transactions",
+        {
+            "direction": "out",
+            "amount": "23.40",
+            "counterparty": "Grab Singapore",
+            "date": "2026-09-27",
+        },
+    )
+    receipt = str(made.json()["id"])
+    # The bank's card alert, logged from email.
+    async with world.engine.connect() as db:
+        user_id = await db.scalar(select(users.c.id).where(users.c.telegram_user_id == OWNER))
+    assert user_id is not None
+    logged = await log_transaction(
+        SqlUnitOfWork(world.engine),
+        UserId(user_id),
+        NewTransaction(
+            direction=Direction.OUT,
+            amount=Money(Decimal("23.40"), "SGD"),
+            occurred_at=datetime(2026, 9, 27, 2, tzinfo=UTC),
+            counterparty="Grab* A-7KXPLMQZRTWB",
+            source=Source.EMAIL,
+            external_id="gmail:ann@gmail.com:a1",
+            notes="Card alert",
+        ),
+    )
+    alert = str(logged.id)
+    rows = {t["id"]: t for t in (await owner.get("/api/transactions")).json()["items"]}
+    assert rows[alert]["duplicate"]["transaction_id"] == receipt
+    assert rows[receipt]["duplicate"]["counterparty"] == "Grab* A-7KXPLMQZRTWB"
+
+    merged = await owner.send("POST", f"/api/transactions/{receipt}/merge", {"other_id": alert})
+    assert merged.status_code == 200
+    assert merged.json()["kept"]["id"] == receipt  # logged first
+    assert merged.json()["kept"]["counterparty"] == "Grab Singapore"
+    assert merged.json()["removed"]["deleted"]
+    [left] = (await owner.get("/api/transactions")).json()["items"]
+    assert left["duplicate"] is None
+
+    await owner.send("POST", f"/api/transactions/{alert}/restore")
+    gone = await owner.send(
+        "POST", f"/api/transactions/{alert}/not-duplicate", {"other_id": receipt}
+    )
+    assert gone.status_code == 204
+    items = (await owner.get("/api/transactions")).json()["items"]
+    assert [t["duplicate"] for t in items] == [None, None]

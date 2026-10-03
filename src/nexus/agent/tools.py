@@ -21,6 +21,7 @@ from nexus.application import budgets as budget_cases
 from nexus.application import cashflow as cashflow_cases
 from nexus.application import categories as category_cases
 from nexus.application import category_rules as rule_cases
+from nexus.application import duplicates as duplicate_cases
 from nexus.application import email as email_cases
 from nexus.application import income as income_cases
 from nexus.application import ledger_questions as question_cases
@@ -849,10 +850,11 @@ class AnswerEmailArgs(Args):
     number: int = Field(
         ge=1, le=email_cases.WAITING_SHOWN, description="The email's number in the waiting list"
     )
-    action: Literal["log", "repayment", "income", "skip"] = Field(
+    action: Literal["log", "repayment", "income", "skip", "same"] = Field(
         description="log: save it as it was read (money in from someone who owes the user "
         "pays that back). repayment: money in that pays back what the sender owes. income: "
-        "money in kept as plain income. skip: log nothing"
+        "money in kept as plain income. skip: log nothing. same: it's the same payment as "
+        "the one it looks like (already logged or in another email), so add nothing"
     )
     amount: str | None = Field(
         None,
@@ -873,6 +875,8 @@ async def _describe_answer(ctx: ToolContext, a: AnswerEmailArgs) -> str:
     line = email_cases.describe(email, ctx.tz)
     if a.action == "skip":
         return f"Skip this email and log nothing? {line}"
+    if a.action == "same":
+        return f"Treat this email as the same payment, adding nothing? {line}"
     figure = f" as {parse_money(ctx, a.amount, a.currency)}" if a.amount else ""
     how = {
         "log": "Log it",
@@ -887,6 +891,17 @@ async def _answer_email(ctx: ToolContext, a: AnswerEmailArgs) -> ToolResult:
     if a.action == "skip":
         await email_cases.skip_email(ctx.uow(), ctx.user.id, email.id)
         return ToolResult("Skipped; nothing was logged.", wrote=True)
+    if a.action == "same":
+        kept = await email_cases.same_payment(ctx.uow, ctx.user, email.id, now=ctx.now)
+        if kept is None:
+            return ToolResult(
+                "Marked as the same payment as the other waiting email; answer that one to log it.",
+                wrote=True,
+            )
+        return ToolResult(
+            f"Same payment: kept {kept.amount} ({kept.counterparty or 'no name'}); nothing added.",
+            wrote=True,
+        )
     tx = await email_cases.log_email(
         ctx.uow,
         ctx.user,
@@ -960,6 +975,54 @@ async def _subscriptions(ctx: ToolContext, _: NoArgs) -> ToolResult:
         )
     lines.append("To stop tracking one, use the Plan page.")
     return ToolResult("\n".join(lines))
+
+
+class DuplicatesArgs(Args):
+    start_date: str | None = Field(None, description="YYYY-MM-DD; default: 30 days ago")
+    end_date: str | None = Field(None, description="YYYY-MM-DD inclusive; default: today")
+
+
+async def _duplicates(ctx: ToolContext, a: DuplicatesArgs) -> ToolResult:
+    start = day_start(ctx, a.start_date or (ctx.today() - timedelta(days=30)).isoformat())
+    end = day_start(ctx, a.end_date or ctx.today().isoformat()) + timedelta(days=1)
+    pairs = await duplicate_cases.find_pairs(ctx.uow, ctx.user, start, end)
+    if not pairs:
+        return ToolResult("No possible duplicates in that period.")
+    names = await category_map(ctx)
+    lines = ["Possible duplicates (the same amount within a day, by a similar merchant):"]
+    for n, p in enumerate(pairs[:10], 1):
+        lines.append(f"{n}. {describe(p.first, names, ctx.tz)}")
+        lines.append(f"   and {describe(p.second, names, ctx.tz)}")
+    lines.append(
+        "Merge a pair only when the user says they're the same payment. The Ledger shows "
+        "each with Merge and Not a duplicate too."
+    )
+    return ToolResult("\n".join(lines))
+
+
+class MergeDuplicatesArgs(Args):
+    transaction_id: str = Field(description="One of the pair (from find_duplicates)")
+    other_id: str = Field(description="The other one")
+
+
+async def _describe_merge_duplicates(ctx: ToolContext, a: MergeDuplicatesArgs) -> str:
+    first, second = await _load(ctx, a.transaction_id), await _load(ctx, a.other_id)
+    names = await category_map(ctx)
+    one = describe(first, names, ctx.tz).split(" [id")[0]
+    other = describe(second, names, ctx.tz).split(" [id")[0]
+    return f"Merge these into one, deleting the extra (it can be restored)? {one} / {other}"
+
+
+async def _merge_duplicates(ctx: ToolContext, a: MergeDuplicatesArgs) -> ToolResult:
+    merged = await duplicate_cases.merge(
+        ctx.uow, ctx.user.id, parse_id(a.transaction_id), parse_id(a.other_id)
+    )
+    names = await category_map(ctx)
+    return ToolResult(
+        f"Kept {describe(merged.kept, names, ctx.tz)}; deleted the extra "
+        f"{describe(merged.removed, names, ctx.tz)}.",
+        wrote=True,
+    )
 
 
 class CashFlowArgs(Args):
@@ -1337,11 +1400,28 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
         ToolSpec(
             "answer_email",
             "Answer an email waiting for the user (listed with numbers in their money "
-            "snapshot): log it, log money in as a repayment or as income, or skip it. "
+            "snapshot): log it, log money in as a repayment or as income, skip it, or, when "
+            "it looks like a payment already recorded, mark it the same payment. "
             "Asks the user to confirm.",
             AnswerEmailArgs,
             _answer_email,
             confirm=_describe_answer,
+        ),
+        ToolSpec(
+            "find_duplicates",
+            "Possible duplicates: one payment recorded twice (a card alert and a receipt, "
+            "or a typed entry and an email). Read-only.",
+            DuplicatesArgs,
+            _duplicates,
+        ),
+        ToolSpec(
+            "merge_duplicates",
+            "Merge two records of the same payment into one, keeping the readable name and "
+            "deleting the extra. Only when the user says they're the same. Asks the user to "
+            "confirm.",
+            MergeDuplicatesArgs,
+            _merge_duplicates,
+            confirm=_describe_merge_duplicates,
         ),
         ToolSpec("restore_transaction", "Bring back a deleted transaction.", IdArgs, _restore),
         ToolSpec("undo_last_change", "Undo the user's most recent change.", NoArgs, _undo),
