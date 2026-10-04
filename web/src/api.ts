@@ -298,3 +298,11 @@ export type Run = {
   created_at: string;
   finished_at: string | null;
 };
+
+export type Position = { symbol: string; quantity: string; average_cost: Money; cost: Money };
+export type HoldingsDraft = { id: string; positions: Position[]; changes: string[]; first: boolean };
+export type Portfolio = {
+  holdings: (Position & { updated_at: string })[];
+  draft: HoldingsDraft | null;
+  screenshots: boolean;
+};

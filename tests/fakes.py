@@ -14,6 +14,7 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.runnables import Runnable
 from pydantic import Field
 
+from nexus.agent.holdings_reader import ScreenshotHoldings, ScreenshotPosition
 from nexus.agent.receipts import ReceiptDraft
 from nexus.agent.service import Button
 from nexus.application.fx import Rate
@@ -299,3 +300,24 @@ def fake_email(
     pdf: bytes | None = None,
 ) -> FetchedEmail:
     return FetchedEmail(message_id, at, sender, subject, text, pdf)
+
+
+@dataclass
+class FakeHoldings:
+    """Reads every image as the same portfolio screenshot (made-up positions)."""
+
+    holdings: ScreenshotHoldings | None = None
+    reads: int = 0
+
+    async def read(self, image: bytes, mime_type: str) -> ScreenshotHoldings:
+        self.reads += 1
+        if self.holdings is not None:
+            return self.holdings
+        return ScreenshotHoldings(
+            is_portfolio=True,
+            positions=[
+                ScreenshotPosition(symbol="NVDA", quantity="10", average_cost="$118.40"),
+                ScreenshotPosition(symbol="aapl", quantity="5", average_cost="190", currency="USD"),
+                ScreenshotPosition(symbol="Total", quantity=None, average_cost=None),
+            ],
+        )

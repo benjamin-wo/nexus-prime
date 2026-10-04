@@ -1,6 +1,7 @@
 """The web API through the real app: login, invites, sessions, CSRF, ledger, export, chat."""
 
 import asyncio
+import base64
 import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -33,6 +34,7 @@ from tests.fakes import (
     FakeBucket,
     FakeEmailReader,
     FakeForwarding,
+    FakeHoldings,
     FakeMailbox,
     FakeRates,
     FakeTelegram,
@@ -141,6 +143,7 @@ async def world(engine: AsyncEngine, empty_database_url: str) -> AsyncIterator[W
             mailbox=mailbox,
             forwarding=forwarding,
             email_reader=FakeEmailReader(),
+            holdings=FakeHoldings(),
         ),
     )
     async with app.router.lifespan_context(app):
@@ -1252,7 +1255,7 @@ async def test_departments_and_runs(world: World) -> None:
     owner = world.browser()
     await owner.login(OWNER)
     departments = (await owner.get("/api/departments")).json()
-    assert [d["name"] for d in departments] == ["accounting"]
+    assert [d["name"] for d in departments] == ["accounting", "investment"]
     assert departments[0]["label"] == "Accounting"
     assert (await owner.get("/api/runs")).json() == []
     missing = "/api/runs/00000000-0000-0000-0000-000000000000"
@@ -1279,3 +1282,33 @@ async def test_home_lists_what_needs_the_user(world: World) -> None:
         ),
         ("bill", "Rent (1800.00 SGD) due tomorrow", "/accounting/plan", False),
     ]
+
+
+async def test_holdings_from_a_screenshot_on_the_web(world: World) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+    empty = (await owner.get("/api/investments")).json()
+    assert empty == {"holdings": [], "draft": None, "screenshots": True}
+    image = base64.b64encode(b"a screenshot").decode()
+    draft = await owner.send(
+        "POST", "/api/investments/screenshot", {"image": image, "mime_type": "image/png"}
+    )
+    assert draft.status_code == 200
+    body = draft.json()
+    assert body["first"] and [p["symbol"] for p in body["positions"]] == ["AAPL", "NVDA"]
+    assert (await owner.get("/api/investments")).json()["draft"]["id"] == body["id"]
+    saved = await owner.send("POST", f"/api/investments/drafts/{body['id']}/save")
+    assert [p["quantity"] for p in saved.json()] == ["5", "10"]
+
+    edit = {"quantity": "12", "average_cost": "120.50", "currency": "USD"}
+    assert (await owner.send("PUT", "/api/investments/holdings/nvda", edit)).status_code == 204
+    assert (await owner.send("DELETE", "/api/investments/holdings/AAPL")).status_code == 204
+    after = (await owner.get("/api/investments")).json()
+    assert [(h["symbol"], h["quantity"], h["cost"]["amount"]) for h in after["holdings"]] == [
+        ("NVDA", "12", "1446.0000")
+    ]
+    assert after["draft"] is None
+    bad = await owner.send("PUT", "/api/investments/holdings/NOT A TICKER", edit)
+    assert bad.status_code == 422
+    gone = await owner.send("DELETE", "/api/investments/holdings/AMD")
+    assert gone.status_code == 404

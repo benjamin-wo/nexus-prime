@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nexus.agent.graph import MAX_STEPS, AgentDeps, AgentGraph
+from nexus.agent.holdings_reader import HoldingsReader
 from nexus.agent.receipts import ReceiptDraft, ReceiptReader
 from nexus.agent.service import AgentService, Reply
 from nexus.agent.skills import SkillLibrary
@@ -36,6 +37,7 @@ def build(
     model: ScriptedModel,
     receipts: ReceiptReader | None = None,
     archive: ReceiptStore | None = None,
+    holdings: HoldingsReader | None = None,
 ) -> AgentService:
     skills = SkillLibrary.load()
 
@@ -54,7 +56,7 @@ def build(
             clock=lambda: NOW,
         )
     ).compile(InMemorySaver())
-    return AgentService(graph, uow, receipts, lambda: NOW, archive)
+    return AgentService(graph, uow, receipts, lambda: NOW, archive, holdings=holdings)
 
 
 async def ledger(uow: UowFactory, user: UserId, **query: object) -> list[tuple[str, Decimal]]:

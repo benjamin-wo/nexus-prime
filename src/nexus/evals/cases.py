@@ -602,6 +602,21 @@ CASES: tuple[Case, ...] = (
         calls=(Call("find_duplicates"),),
         unchanged=True,
     ),
+    # --- the Investment department: routing from the front desk ----------------------
+    Case(
+        "inv-holdings",
+        "ask",
+        _t("what stocks do I hold?"),
+        calls=(Call("show_portfolio"),),
+        unchanged=True,
+    ),
+    Case(
+        "inv-trade",
+        "log",
+        _t("I bought 10 NVDA at 118 today"),
+        calls=(Call("record_trade", {"side": "buy", "symbol": Has("nvda")}),),
+        confirms=True,
+    ),
     Case(
         "cat-add",
         "categories",

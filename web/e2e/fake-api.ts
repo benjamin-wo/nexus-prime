@@ -49,6 +49,9 @@ export async function fakeApi(
     txs: Tx[];
     lastPress?: string;
     runs: { id: string; status: string; progress: string; [key: string]: unknown }[];
+    holdings: { symbol: string; quantity: string; average_cost: { amount: string; currency: string }; cost: { amount: string; currency: string }; updated_at: string }[];
+    draft: Record<string, unknown> | null;
+    screenshots: number;
     cancelled: string[];
     budgets: FakeBudget[];
     bills: FakeBill[];
@@ -89,6 +92,9 @@ export async function fakeApi(
         ]
       : [],
     cancelled: [],
+    holdings: [],
+    draft: null,
+    screenshots: 0,
     txs: [
       { ...mk("t1", "out", "12.40", "Maxwell Food Centre", "food"), has_receipt: true },
       mk("t2", "out", "25.00", "Grab", null),
@@ -266,6 +272,46 @@ export async function fakeApi(
     }
     if (path === "/auth/logout") {
       session = false;
+      return route.fulfill({ status: 204 });
+    }
+    const usd = (amount: string) => ({ amount, currency: "USD" });
+    const position = (symbol: string, quantity: string, cost: string) => ({
+      symbol,
+      quantity,
+      average_cost: usd(cost),
+      cost: usd((Number(quantity) * Number(cost)).toFixed(4)),
+      updated_at: new Date().toISOString(),
+    });
+    if (path === "/investments" && method === "GET") {
+      return json(route, { holdings: state.holdings, draft: state.draft, screenshots: true });
+    }
+    if (path === "/investments/screenshot" && method === "POST") {
+      state.screenshots += 1;
+      state.draft = {
+        id: "d1",
+        positions: [position("AAPL", "5", "190.0000"), position("NVDA", "10", "118.4000")],
+        changes: [],
+        first: true,
+      };
+      return json(route, state.draft);
+    }
+    const draftAction = path.match(/^\/investments\/drafts\/(\w+)\/(save|discard)$/);
+    if (draftAction && method === "POST") {
+      const positions = (state.draft?.positions ?? []) as typeof state.holdings;
+      if (draftAction[2] === "save") state.holdings = positions;
+      state.draft = null;
+      return draftAction[2] === "save" ? json(route, positions) : route.fulfill({ status: 204 });
+    }
+    const holding = path.match(/^\/investments\/holdings\/([A-Z.]+)$/);
+    if (holding && method === "PUT") {
+      state.holdings = [
+        ...state.holdings.filter((h) => h.symbol !== holding[1]),
+        position(holding[1], body.quantity, body.average_cost),
+      ].sort((a, b) => a.symbol.localeCompare(b.symbol));
+      return route.fulfill({ status: 204 });
+    }
+    if (holding && method === "DELETE") {
+      state.holdings = state.holdings.filter((h) => h.symbol !== holding[1]);
       return route.fulfill({ status: 204 });
     }
     if (path === "/home" && method === "GET") {

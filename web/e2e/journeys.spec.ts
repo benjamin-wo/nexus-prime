@@ -405,7 +405,7 @@ test("telegram updates default to an end-of-day summary and can be changed", asy
 test("nothing spills sideways on a small phone", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 568 });
   await fakeApi(page, { emailConnected: true });
-  const pages = ["/", "/accounting", "/ledger", "/plan", "/settings", "/email", "/cashflow", "/investment"];
+  const pages = ["/", "/accounting", "/ledger", "/plan", "/settings", "/email", "/cashflow", "/investment", "/travel"];
   for (const path of [...pages, "/connect/gmail?t=good"]) {
     await page.goto(path);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
@@ -606,7 +606,7 @@ test("home is the front desk: what needs you, what's running, and each departmen
   await expect(working.getByText("Cancelled")).toBeVisible();
   expect(state.cancelled).toEqual(["r1"]);
   await expect(page.getByRole("link", { name: /^Accounting:/ })).toContainText("This month: SGD");
-  await expect(page.getByRole("link", { name: /^Investment:/ })).toContainText("Coming next");
+  await expect(page.getByRole("link", { name: /^Travel:/ })).toContainText("Coming next");
 });
 
 test("asking on home opens the chat with the question", async ({ page }) => {
@@ -627,9 +627,35 @@ test("departments have their own pages, and old links still work", async ({ page
   await tabs.getByRole("link", { name: "Plan" }).click();
   await expect(page.getByRole("heading", { name: "Plan", level: 1 })).toBeVisible();
   const nav = page.getByRole("navigation", { name: isMobile ? "Main (mobile)" : "Main", exact: true });
-  await nav.getByRole("link", { name: "Investment" }).click();
-  await expect(page.getByRole("region", { name: "About Investment" })).toContainText("IBKR");
+  await nav.getByRole("link", { name: "Travel" }).click();
+  await expect(page.getByRole("region", { name: "About Travel" })).toContainText("never books");
   await expect(page.getByRole("navigation", { name: "Accounting pages" })).toHaveCount(0);
   await nav.getByRole("link", { name: "Home" }).click();
   await expect(page.getByRole("heading", { name: "Needs you" })).toBeVisible();
+});
+
+test("holdings from a screenshot are checked, saved, edited and removed", async ({ page }) => {
+  const state = await fakeApi(page);
+  await page.goto("/investment");
+  await expect(page.getByText(/No holdings yet/)).toBeVisible();
+  await page.getByLabel("Upload screenshot").setInputFiles({
+    name: "portfolio.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("not really a png"),
+  });
+  const draft = page.getByRole("region", { name: "From your screenshot" });
+  await expect(draft.getByRole("list", { name: "Positions read" })).toContainText("NVDA · 10 at USD");
+  await draft.getByRole("button", { name: "Save holdings" }).click();
+  await expect(page.getByRole("status")).toHaveText("Saved 2 positions.");
+  expect(state.screenshots).toBe(1);
+  const holdings = page.getByRole("region", { name: "Holdings" });
+  await expect(holdings.getByRole("rowheader", { name: "NVDA" })).toBeVisible();
+
+  await holdings.getByRole("button", { name: "Edit NVDA" }).click();
+  const edit = holdings.getByRole("form", { name: "Edit NVDA" });
+  await edit.getByLabel("Shares").fill("12");
+  await edit.getByRole("button", { name: "Save" }).click();
+  await expect(holdings.getByRole("row").filter({ hasText: "NVDA" })).toContainText("12");
+  await holdings.getByRole("button", { name: "Remove AAPL" }).click();
+  await expect(holdings.getByRole("rowheader", { name: "AAPL" })).toHaveCount(0);
 });

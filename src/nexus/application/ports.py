@@ -21,6 +21,7 @@ from nexus.domain.email import (
     InboundEmail,
     Screening,
 )
+from nexus.domain.investments import DraftStatus, Holding, HoldingsDraft, Position
 from nexus.domain.ledger import (
     Category,
     Direction,
@@ -487,6 +488,23 @@ class RunRepository(Protocol):
         ...
 
 
+class InvestmentRepository(Protocol):
+    async def list_holdings(self, user_id: UserId) -> list[Holding]: ...
+    async def save_position(self, user_id: UserId, position: Position, at: datetime) -> None:
+        """Insert or replace the user's position in this stock."""
+        ...
+
+    async def remove_position(self, user_id: UserId, symbol: str) -> bool: ...
+    async def insert_draft(self, draft: HoldingsDraft) -> None: ...
+    async def get_draft(
+        self, user_id: UserId, draft_id: UUID, *, for_update: bool = False
+    ) -> HoldingsDraft | None: ...
+    async def latest_waiting_draft(self, user_id: UserId) -> HoldingsDraft | None: ...
+    async def set_draft_status(
+        self, user_id: UserId, draft_id: UUID, status: DraftStatus
+    ) -> None: ...
+
+
 class UnitOfWork(Protocol):
     """One database transaction. Single use: enter it once per use case."""
 
@@ -504,6 +522,8 @@ class UnitOfWork(Protocol):
     def statements(self) -> StatementRepository: ...
     @property
     def runs(self) -> RunRepository: ...
+    @property
+    def investments(self) -> InvestmentRepository: ...
 
     async def __aenter__(self) -> Self: ...
     async def __aexit__(

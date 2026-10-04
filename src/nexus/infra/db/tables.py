@@ -454,6 +454,38 @@ memories = Table(
     Index("ix_memories_user_id_updated_at", "user_id", "updated_at"),
 )
 
+# What a user holds: one row per stock, with the quantity and average cost per share.
+holdings = Table(
+    "holdings",
+    metadata,
+    _uuid_pk(),
+    _user_fk(),
+    Column("symbol", Text, nullable=False),
+    Column("quantity", Numeric(24, 8), nullable=False),
+    Column("average_cost", MONEY, nullable=False),
+    Column("currency", CURRENCY, nullable=False),
+    Column("created_at", TZ, nullable=False),
+    Column("updated_at", TZ, nullable=False),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+    UniqueConstraint("user_id", "symbol"),
+    CheckConstraint("quantity > 0", name="quantity_positive"),
+    CheckConstraint("average_cost >= 0", name="cost_not_negative"),
+)
+
+# Positions read from a broker screenshot, waiting for the user to save or drop them.
+holding_drafts = Table(
+    "holding_drafts",
+    metadata,
+    _uuid_pk(),
+    _user_fk(),
+    Column("positions", JSONB, nullable=False),
+    Column("status", Text, nullable=False),
+    Column("created_at", TZ, nullable=False),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+    CheckConstraint("status IN ('waiting', 'saved', 'discarded')", name="status"),
+    Index("ix_holding_drafts_user_id_created_at", "user_id", "created_at"),
+)
+
 # A department's long piece of work (a research plan, a trip), saved step by step.
 department_runs = Table(
     "department_runs",

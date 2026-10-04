@@ -444,3 +444,14 @@ a.btn { text-decoration: none; }
 .duplicate .caption { color: var(--status-warning); }
 .ledger td.merchant .duplicate .caption { display: block; -webkit-line-clamp: none; line-clamp: none; overflow: visible; white-space: normal; }
 .section-title { margin: var(--space-2) 0 calc(-1 * var(--space-2)); font-size: 1rem; color: var(--text-secondary); }
+.holdings { width: 100%; border-collapse: collapse; }
+.holdings th, .holdings td { padding: var(--space-2); border-bottom: 1px solid var(--border-subtle); text-align: left; }
+.holdings .num { text-align: right; }
+.add-holding { flex-wrap: wrap; margin-top: var(--space-3); }
+.add-holding .field { flex: 1 1 120px; }
+@media (max-width: 900px) {
+  .holdings thead { display: none; }
+  .holdings tr { display: grid; grid-template-columns: 1fr auto; gap: 2px var(--space-3); padding: var(--space-2) 0; border-bottom: 1px solid var(--border-subtle); }
+  .holdings th, .holdings td { border: 0; padding: 0; }
+  .holdings td.quick, .holdings td[colspan] { grid-column: 1 / -1; }
+}

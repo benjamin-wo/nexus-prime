@@ -14,6 +14,7 @@ import { DEPARTMENTS } from "./departments";
 import { Dashboard } from "./pages/Dashboard";
 import { EmailPage } from "./pages/Email";
 import { Home } from "./pages/Home";
+import { InvestmentPage } from "./pages/Investment";
 import { ImportPage } from "./pages/Import";
 import { Ledger } from "./pages/Ledger";
 import { LoginPage } from "./pages/LoginPage";
@@ -65,7 +66,7 @@ function Cockpit({ me }: { me: Me }) {
   const closeOffer = useCallback(() => setOffer(null), []);
   const closeNotice = useCallback(() => setNotice(null), []);
   const refresh = useCallback(() => {
-    for (const key of ["transactions", "summary", "ious", "budgets", "bills", "salary", "category-explanation", "email", "home", "runs"]) void client.invalidateQueries({ queryKey: [key] });
+    for (const key of ["transactions", "summary", "ious", "budgets", "bills", "salary", "category-explanation", "email", "home", "runs", "investments"]) void client.invalidateQueries({ queryKey: [key] });
   }, [client]);
   const closeSheet = useCallback(() => setSheet(null), []);
   const closeChat = useCallback(() => setChat(null), []);
@@ -88,6 +89,7 @@ function Cockpit({ me }: { me: Me }) {
         <Route path="/accounting/cashflow" element={<CashFlowPage />} />
         <Route path="/accounting/email" element={<EmailPage me={me} />} />
         <Route path="/accounting/import" element={<ImportPage />} />
+        <Route path="/investment" element={<InvestmentPage />} />
         {DEPARTMENTS.filter((d) => d.upcoming).map((d) => (
           <Route key={d.name} path={d.path} element={<Upcoming department={d} />} />
         ))}

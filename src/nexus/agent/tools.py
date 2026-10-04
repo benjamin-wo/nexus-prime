@@ -24,6 +24,7 @@ from nexus.application import category_rules as rule_cases
 from nexus.application import duplicates as duplicate_cases
 from nexus.application import email as email_cases
 from nexus.application import income as income_cases
+from nexus.application import investments as investment_cases
 from nexus.application import ledger_questions as question_cases
 from nexus.application import notifications as notify_cases
 from nexus.application import receipts as receipt_cases
@@ -35,6 +36,7 @@ from nexus.application.fx import Rate, RateSource
 from nexus.application.ports import LedgerQuery, UnitOfWork
 from nexus.domain.email import InboundEmail
 from nexus.domain.errors import InvalidInput, NexusError, NotFound
+from nexus.domain.investments import clean_quantity, clean_symbol, describe_position
 from nexus.domain.ledger import (
     Category,
     Direction,
@@ -1025,6 +1027,49 @@ async def _combine_duplicates(ctx: ToolContext, a: MergeDuplicatesArgs) -> ToolR
     )
 
 
+async def _portfolio(ctx: ToolContext, _: NoArgs) -> ToolResult:
+    held = await investment_cases.portfolio(ctx.uow(), ctx.user.id)
+    if not held:
+        return ToolResult(
+            "No holdings yet. The user can send a screenshot of their broker's portfolio "
+            'screen, or tell you a trade ("I bought 10 NVDA at 118").'
+        )
+    lines = ["Holdings (cost basis; prices aren't fetched yet):"]
+    for h in held:
+        lines.append(f"{describe_position(h.position)}, cost {h.position.cost}")
+    return ToolResult("\n".join(lines))
+
+
+class TradeArgs(Args):
+    side: Literal["buy", "sell"] = Field(description="buy or sell, as the user did at their broker")
+    symbol: str = Field(description="The ticker, e.g. NVDA")
+    quantity: str = Field(description="Number of shares")
+    price: str | None = Field(None, description="Price paid per share; needed for a buy")
+    currency: str | None = Field(None, description="Currency of the price; US stocks are USD")
+
+
+def _trade(a: TradeArgs) -> tuple[str, Decimal, Money | None]:
+    symbol = clean_symbol(a.symbol)
+    price = Money.of(a.price.replace(",", ""), (a.currency or "USD").upper()) if a.price else None
+    return symbol, clean_quantity(a.quantity), price
+
+
+async def _describe_trade(ctx: ToolContext, a: TradeArgs) -> str:
+    symbol, quantity, price = _trade(a)
+    at = f" at {price}" if price else ""
+    return f"Record that you {'bought' if a.side == 'buy' else 'sold'} {quantity} {symbol}{at}?"
+
+
+async def _record_trade(ctx: ToolContext, a: TradeArgs) -> ToolResult:
+    symbol, quantity, price = _trade(a)
+    after = await investment_cases.record_trade(
+        ctx.uow(), ctx.user.id, investment_cases.Side(a.side), symbol, quantity, price, now=ctx.now
+    )
+    if after is None:
+        return ToolResult(f"Recorded: sold all your {symbol}.", wrote=True)
+    return ToolResult(f"Recorded. You now hold {describe_position(after)}.", wrote=True)
+
+
 class CashFlowArgs(Args):
     days: int = Field(30, ge=1, le=60, description="How many days ahead, from today")
 
@@ -1422,6 +1467,20 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             MergeDuplicatesArgs,
             _combine_duplicates,
             confirm=_describe_combine_duplicates,
+        ),
+        ToolSpec(
+            "show_portfolio",
+            "The user's stock holdings: shares and average cost. Read-only.",
+            NoArgs,
+            _portfolio,
+        ),
+        ToolSpec(
+            "record_trade",
+            "Record a stock trade the user made at their broker (Nexus never trades), "
+            "updating their holdings. Asks the user to confirm.",
+            TradeArgs,
+            _record_trade,
+            confirm=_describe_trade,
         ),
         ToolSpec("restore_transaction", "Bring back a deleted transaction.", IdArgs, _restore),
         ToolSpec("undo_last_change", "Undo the user's most recent change.", NoArgs, _undo),

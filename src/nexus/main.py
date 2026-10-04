@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nexus.agent.email_reader import LlmEmailReader
 from nexus.agent.graph import AgentDeps, AgentGraph
+from nexus.agent.holdings_reader import HoldingsReader, LlmHoldingsReader
 from nexus.agent.memory_writer import MemoryWriter
 from nexus.agent.receipts import LlmReceiptReader, ReceiptReader
 from nexus.agent.service import AgentService
@@ -36,7 +37,7 @@ from nexus.application.ports import (
 from nexus.channels.telegram import webhook as telegram_webhook
 from nexus.channels.telegram.client import HttpTelegramClient, TelegramClient
 from nexus.channels.web import api as web_api
-from nexus.channels.web import email_api, health
+from nexus.channels.web import email_api, health, investments_api
 from nexus.channels.web.errors import install_error_handlers
 from nexus.channels.web.frontend import mount_frontend
 from nexus.channels.web.hardening import install_hardening
@@ -72,6 +73,7 @@ class Overrides:
     models: ChatModels | None = None
     departments: Departments | None = None  # the registry, with test run kinds
     receipts: ReceiptReader | None = None
+    holdings: HoldingsReader | None = None
     telegram: TelegramClient | None = None
     checkpointer: BaseCheckpointSaver[Any] | None = None
     clock: Callable[[], datetime] | None = None
@@ -223,6 +225,9 @@ async def _telegram_runtime(
     receipts: ReceiptReader | None = overrides.receipts
     if receipts is None and models.vision is not None:
         receipts = LlmReceiptReader(models.vision)
+    holdings: HoldingsReader | None = overrides.holdings
+    if holdings is None and models.vision is not None:
+        holdings = LlmHoldingsReader(models.vision)
     client = overrides.telegram
     if client is None:
         token = settings.telegram_bot_token
@@ -243,6 +248,7 @@ async def _telegram_runtime(
             rates,
             after_turn=_queue_memory(uow, clock),
             limiter=RateLimiter(clock=clock),
+            holdings=holdings,
         ),
         client=client,
     )
@@ -384,6 +390,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
     app.include_router(telegram_webhook.router)
     app.include_router(web_api.router)
     app.include_router(email_api.router)
+    app.include_router(investments_api.router)
     install_error_handlers(app)
     origin = resolved.public_origin
     install_hardening(app, https=bool(origin and origin.startswith("https://")))
