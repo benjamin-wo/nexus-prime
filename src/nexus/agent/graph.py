@@ -36,6 +36,7 @@ from langgraph.types import Command, interrupt
 from nexus.agent import kernel
 from nexus.agent.snapshot import money_snapshot
 from nexus.agent.tools import ToolContext, ToolSpec, UowFactory, run_tool
+from nexus.application import departments as department_cases
 from nexus.application import income as income_cases
 from nexus.application import memory as memory_cases
 from nexus.application.categories import list_categories
@@ -304,6 +305,10 @@ class AgentGraph:
             return self._receipt(ctx, meta[RECEIPT], meta.get(REF))
         if kernel.is_termination(text):
             return _reply("Okay, stopped.")
+        if kernel.is_jobs_question(text):
+            runs = await department_cases.list_runs(ctx.uow(), ctx.user.id, now=ctx.now)
+            listing, cancels = department_cases.describe_runs(runs, ctx.tz)
+            return _reply(listing, buttons=cancels)
         if kernel.is_self_diagnosis(text):
             return _reply(await self.deps.health())
         income = kernel.parse_income(text, ctx.user.home_currency)
