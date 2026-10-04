@@ -47,7 +47,13 @@ def _gemini(settings: Settings, model: str) -> BaseChatModel:
 
 
 def _openai_compatible(
-    settings: Settings, *, model: str, api_key: SecretStr | None, base_url: str | None, name: str
+    settings: Settings,
+    *,
+    model: str,
+    api_key: SecretStr | None,
+    base_url: str | None,
+    name: str,
+    extra_body: dict[str, Any] | None = None,
 ) -> BaseChatModel:
     if api_key is None:
         raise LlmNotConfigured(f"the {name} API key is not set")
@@ -58,7 +64,22 @@ def _openai_compatible(
         temperature=0.0,
         timeout=settings.llm_request_timeout_seconds,
         max_retries=settings.llm_max_retries,
+        extra_body=extra_body,
     )
+
+
+def openrouter_routing(settings: Settings) -> dict[str, Any] | None:
+    """OpenRouter's provider preferences: only the listed providers, in that order,
+    and only those that support every parameter sent (tools)."""
+    if not settings.openrouter_providers:
+        return None
+    return {
+        "provider": {
+            "order": list(settings.openrouter_providers),
+            "only": list(settings.openrouter_providers),
+            "require_parameters": True,
+        }
+    }
 
 
 def _provider_model(settings: Settings, provider: LlmProvider) -> BaseChatModel:
@@ -68,7 +89,7 @@ def _provider_model(settings: Settings, provider: LlmProvider) -> BaseChatModel:
         case LlmProvider.OPENROUTER:
             if not settings.openrouter_model:
                 raise LlmNotConfigured("OPENROUTER_MODEL is not set")
-            return _openrouter(settings, settings.openrouter_model)
+            return _openrouter(settings, settings.openrouter_model, routed=True)
         case LlmProvider.DEEPSEEK:
             return _openai_compatible(
                 settings,
@@ -87,13 +108,16 @@ def _provider_model(settings: Settings, provider: LlmProvider) -> BaseChatModel:
             )
 
 
-def _openrouter(settings: Settings, model: str) -> BaseChatModel:
+def _openrouter(settings: Settings, model: str, *, routed: bool = False) -> BaseChatModel:
+    """``routed``: send OPENROUTER_PROVIDERS with the request (the main model only;
+    other models may not be served by those providers)."""
     return _openai_compatible(
         settings,
         model=model,
         api_key=settings.openrouter_api_key,
         base_url="https://openrouter.ai/api/v1",
         name="OpenRouter",
+        extra_body=openrouter_routing(settings) if routed else None,
     )
 
 

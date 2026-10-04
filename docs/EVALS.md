@@ -44,7 +44,9 @@ What still fails, and which part of M8 is meant to fix it:
 | "how much did chatgpt cost me in sgd" | `find_transactions` shows the USD amount only | M8c |
 | "delete the netflix charge from september" | DeepSeek asks which one first (there is only one) | watch |
 
-Settings for production: `LLM_PROVIDER=openrouter`, `OPENROUTER_MODEL=deepseek/deepseek-v4.1-flash`, `OPENROUTER_VISION_MODEL=qwen/qwen3.8-flash`, `OPENROUTER_FALLBACK_MODELS=qwen/qwen3.8-flash`.
+Settings for production: `LLM_PROVIDER=openrouter`, `OPENROUTER_MODEL=deepseek/deepseek-v4.1-flash`, `OPENROUTER_VISION_MODEL=qwen/qwen3.8-flash`, `OPENROUTER_FALLBACK_MODELS=qwen/qwen3.8-flash`, `OPENROUTER_PROVIDERS=deepinfra,fireworks,atlas-cloud,streamlake`.
+
+`--providers <slugs>` pins the main model to OpenRouter providers, as `OPENROUTER_PROVIDERS` does in production. On 4 October 2026 the eight cases that had started failing (`edit-correction`, `log-dollar-sign` and others) passed on DeepInfra, Fireworks, AtlasCloud, StreamLake, Wafer, Relace, InferenceNet, Decart, Ionstream and DekaLLM (8/8 each; Together and Morph 7/8). They failed on Sail Research, an fp4 host (1/8), which sent tool calls without their arguments. DeepSeek's own endpoint refused the requests when every parameter had to be supported. Pinned to the recommended four, the full set scored 175/177, against 169/177 unpinned, at the same cost.
 
 ## M8b: money snapshot and rolling summary (30 September 2026)
 
