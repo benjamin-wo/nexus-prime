@@ -279,3 +279,22 @@ export function ledgerParams(filters: LedgerFilters, extra: Record<string, strin
   }
   return params.toString();
 }
+
+/** One thing a department is waiting on the user for, on Home. */
+export type FeedItem = { department: string; kind: string; text: string; link: string; urgent: boolean };
+
+/** A department's long piece of work, saved step by step. */
+export type Run = {
+  id: string;
+  department: string;
+  kind: string;
+  title: string;
+  status: "queued" | "running" | "done" | "failed" | "cancelled";
+  progress: string;
+  steps_done: number;
+  steps_total: number;
+  result: Record<string, unknown> | null;
+  error: string | null;
+  created_at: string;
+  finished_at: string | null;
+};

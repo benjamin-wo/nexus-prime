@@ -1,15 +1,9 @@
 import type { ReactNode } from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 
 import type { Me } from "../api";
+import { DEPARTMENTS, departmentFor } from "../departments";
 import { InviteButton } from "./InviteButton";
-
-const links = [
-  { to: "/", label: "Dashboard" },
-  { to: "/ledger", label: "Ledger" },
-  { to: "/plan", label: "Plan" },
-  { to: "/cashflow", label: "Cash flow" },
-];
 
 function CogIcon() {
   return (
@@ -30,6 +24,9 @@ function ChatIcon() {
   );
 }
 
+/** The front desk (Home), a switcher for the departments behind it, and Settings:
+ * a rail on wide screens and a bottom bar on phones. A department's own pages are
+ * tabs along the top of its section. */
 export function Shell({
   me,
   onOpenChat,
@@ -41,11 +38,19 @@ export function Shell({
   onLogout: () => void;
   children: ReactNode;
 }) {
-  const nav = links.map((link) => (
-    <NavLink key={link.to} to={link.to} end className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
-      {link.label}
-    </NavLink>
-  ));
+  const here = departmentFor(useLocation().pathname);
+  const links = [
+    <NavLink key="home" to="/" end className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
+      <span className="nav-glyph" aria-hidden="true">🏠</span>
+      <span className="nav-label">Home</span>
+    </NavLink>,
+    ...DEPARTMENTS.map((d) => (
+      <NavLink key={d.name} to={d.path} className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
+        <span className="nav-glyph" aria-hidden="true">{d.icon}</span>
+        <span className="nav-label">{d.label}</span>
+      </NavLink>
+    )),
+  ];
   const settings = (
     <NavLink
       to="/settings"
@@ -62,7 +67,7 @@ export function Shell({
         <div className="brand">
           Nexus <span>Prime</span>
         </div>
-        {nav}
+        {links}
         {settings}
         <div className="spacer" />
         {me.user.role === "owner" && <InviteButton />}
@@ -71,10 +76,26 @@ export function Shell({
         </button>
       </nav>
       <main className="main-viewport">
-        <div className="content">{children}</div>
+        <div className="content">
+          {here && here.tabs.length > 0 && (
+            <nav className="dept-tabs" aria-label={`${here.label} pages`}>
+              {here.tabs.map((tab) => (
+                <NavLink
+                  key={tab.to}
+                  to={tab.to}
+                  end={tab.end}
+                  className={({ isActive }) => `dept-tab${isActive ? " active" : ""}`}
+                >
+                  {tab.label}
+                </NavLink>
+              ))}
+            </nav>
+          )}
+          {children}
+        </div>
       </main>
       <nav className="bottom-nav" aria-label="Main (mobile)">
-        {nav}
+        {links}
         {settings}
       </nav>
       {/* Chat floats over every page, clear of the tabs. */}

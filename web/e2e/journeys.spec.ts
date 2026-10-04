@@ -74,7 +74,7 @@ test("inside Telegram the Mini App signs in by itself", async ({ page }) => {
     tgWebAppVersion: "8.0",
   });
   await page.goto(`/#${launch}`);
-  await expect(page.getByRole("heading", { name: "This month" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Needs you" })).toBeVisible();
   await expect.poll(() => page.evaluate(() => window.location.hash)).toBe(""); // launch data not left in the URL
   const calls = await page.evaluate(
     () => (window as unknown as { tgCalls: string[] }).tgCalls,
@@ -99,7 +99,7 @@ test("a refused Mini App sign-in explains itself instead of showing the widget",
 
 test("dashboard shows the month, categories and IOUs", async ({ page }) => {
   await fakeApi(page);
-  await page.goto("/");
+  await page.goto("/accounting");
   await expect(page.getByRole("heading", { name: "This month" })).toBeVisible();
   await expect(page.getByLabel("Spent")).toContainText("37.40");
   await expect(page.getByLabel("Spent")).toContainText(
@@ -114,7 +114,7 @@ test("dashboard shows the month, categories and IOUs", async ({ page }) => {
 
 test("log an expense from the entry sheet", async ({ page }) => {
   await fakeApi(page);
-  await page.goto("/");
+  await page.goto("/accounting");
   await page.getByRole("button", { name: "Log expense" }).click();
   const sheet = page.getByRole("dialog", { name: "Log money out" });
   await expect(sheet.getByLabel("Amount")).toBeFocused();
@@ -142,7 +142,7 @@ test("bulk delete asks first and can be undone", async ({ page }) => {
 
 test("chat asks before deleting and confirms", async ({ page }) => {
   const state = await fakeApi(page);
-  await page.goto("/");
+  await page.goto("/accounting");
   await page.getByRole("button", { name: "Open chat" }).first().click();
   const chat = page.getByRole("dialog", { name: "Chat" });
   await chat.getByLabel("Message").fill("delete the grab ride");
@@ -161,7 +161,7 @@ test("the app never throws while chatting", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await fakeApi(page);
-  await page.goto("/");
+  await page.goto("/accounting");
   await page.getByRole("button", { name: "Open chat" }).first().click();
   const chat = page.getByRole("dialog", { name: "Chat" });
   for (const message of ["one", "two"]) {
@@ -185,7 +185,7 @@ test("export links carry the current filters", async ({ page }) => {
 test("sign out returns to the sign-in page", async ({ page, isMobile }) => {
   test.skip(isMobile, "sign-out lives in the desktop rail");
   await fakeApi(page);
-  await page.goto("/");
+  await page.goto("/accounting");
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page).toHaveURL(/\/login$/);
 });
@@ -405,7 +405,8 @@ test("telegram updates default to an end-of-day summary and can be changed", asy
 test("nothing spills sideways on a small phone", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 568 });
   await fakeApi(page, { emailConnected: true });
-  for (const path of ["/", "/ledger", "/plan", "/settings", "/email", "/cashflow", "/connect/gmail?t=good"]) {
+  const pages = ["/", "/accounting", "/ledger", "/plan", "/settings", "/email", "/cashflow", "/investment"];
+  for (const path of [...pages, "/connect/gmail?t=good"]) {
     await page.goto(path);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     const offenders = await page.evaluate(() => {
@@ -550,7 +551,7 @@ test("merge one category into another from Settings", async ({ page }) => {
 
 test("mark that someone paid back what they owe", async ({ page }) => {
   await fakeApi(page);
-  await page.goto("/");
+  await page.goto("/accounting");
   const owed = page.getByRole("region", { name: "Who owes you" });
   await expect(owed.getByText("Ann")).toBeVisible();
   await owed.getByRole("button", { name: /Ann paid back/ }).click();
@@ -587,4 +588,48 @@ test("two payments flagged as one can be marked as two", async ({ page }) => {
   await receipt.getByRole("button", { name: "Not a duplicate" }).click();
   await expect(page.getByText(/^Possible duplicate/)).toHaveCount(0);
   await expect(page.getByRole("row").filter({ hasText: "23.40" })).toHaveCount(2);
+});
+
+test("home is the front desk: what needs you, what's running, and each department", async ({ page }) => {
+  const state = await fakeApi(page, { running: true });
+  await page.goto("/");
+  const needs = page.getByRole("region", { name: "Needs you" });
+  await expect(needs.getByRole("link", { name: /2 receipts from email waiting for you/ })).toHaveAttribute(
+    "href",
+    "/accounting/email",
+  );
+  await expect(needs.getByRole("link", { name: /Rent \(SGD 1,800\.00\) due tomorrow/ })).toBeVisible();
+  const working = page.getByRole("region", { name: "Working on" });
+  await expect(working.getByText("Plan for NVDA")).toBeVisible();
+  await expect(working.getByText("1/3 · reading the news")).toBeVisible();
+  await working.getByRole("button", { name: "Cancel" }).click();
+  await expect(working.getByText("Cancelled")).toBeVisible();
+  expect(state.cancelled).toEqual(["r1"]);
+  await expect(page.getByRole("link", { name: /^Accounting:/ })).toContainText("This month: SGD");
+  await expect(page.getByRole("link", { name: /^Investment:/ })).toContainText("Coming next");
+});
+
+test("asking on home opens the chat with the question", async ({ page }) => {
+  await fakeApi(page);
+  await page.goto("/");
+  await page.getByRole("textbox", { name: "Ask Nexus" }).fill("how much on grab?");
+  await page.getByRole("button", { name: "Ask" }).click();
+  const chat = page.getByRole("dialog", { name: "Chat" });
+  await expect(chat.locator(".msg-user").first()).toHaveText("how much on grab?");
+  await expect(chat.locator(".msg-bot")).toHaveCount(1);
+});
+
+test("departments have their own pages, and old links still work", async ({ page, isMobile }) => {
+  await fakeApi(page);
+  await page.goto("/ledger");
+  await expect(page).toHaveURL(/\/accounting\/ledger$/);
+  const tabs = page.getByRole("navigation", { name: "Accounting pages" });
+  await tabs.getByRole("link", { name: "Plan" }).click();
+  await expect(page.getByRole("heading", { name: "Plan", level: 1 })).toBeVisible();
+  const nav = page.getByRole("navigation", { name: isMobile ? "Main (mobile)" : "Main", exact: true });
+  await nav.getByRole("link", { name: "Investment" }).click();
+  await expect(page.getByRole("region", { name: "About Investment" })).toContainText("IBKR");
+  await expect(page.getByRole("navigation", { name: "Accounting pages" })).toHaveCount(0);
+  await nav.getByRole("link", { name: "Home" }).click();
+  await expect(page.getByRole("heading", { name: "Needs you" })).toBeVisible();
 });

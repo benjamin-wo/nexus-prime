@@ -156,7 +156,7 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
       <div className="page-head">
         <h1>Ledger</h1>
         <div className="quick">
-          <Link className="btn" to="/import">
+          <Link className="btn" to="/accounting/import">
             Import statement
           </Link>
           <a className="btn" href={exportHref} download>

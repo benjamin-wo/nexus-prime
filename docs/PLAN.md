@@ -297,6 +297,7 @@ The structure from §3 "Agent departments", built before the first new team so I
   - **Investment and Travel dashboards** are added by M13 and M11 as their pages (portfolio, plans, watchlist, track record; trips, price watches).
   - **Settings** split by department plus account-wide (notifications, memory, connections).
   - The same design system, light and dark, inside the Telegram mini app as well as a browser. Playwright journeys for each dashboard on phone and desktop widths.
+  - Done: Home with Ask Nexus, Needs you (`/api/home`), Working on (runs with Cancel) and department cards; the switcher (rail and bottom bar, icon over label on phones); Accounting's pages as tabs under `/accounting`, with redirects from the old paths; Investment and Travel intro pages; Settings split into Account and Accounting. Playwright covers Home, asking from Home, the switcher and redirects, and every page at 320px wide.
 - **M12c — Front-desk Telegram.** Telegram messages show which department answered when it isn't Accounting ("📈 Investment: …"), department jobs report progress in one edited message, and "what are you working on?" lists running jobs.
 
 Done when the web app opens on Home with the department switcher, Accounting's pages work as before under its dashboard, the registry runs Accounting with the evaluation set at its previous score, and a department job can run, resume after a restart, and be cancelled.
