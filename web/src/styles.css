@@ -103,6 +103,35 @@ label.field { display: grid; gap: var(--space-1); font-weight: 600; font-size: 0
 }
 .nav-link:hover { background: var(--bg-card-hover); color: var(--text-primary); }
 .nav-link.active { background: var(--orange-soft); color: var(--text-white); }
+.nav-glyph { width: 24px; margin-right: var(--space-2); text-align: center; }
+/* A department's own pages, as tabs along the top of its section. */
+.dept-tabs {
+  display: flex; flex-wrap: wrap; gap: 0 var(--space-1);
+  border-bottom: 1px solid var(--border-subtle); margin-bottom: calc(-1 * var(--space-2));
+}
+.dept-tab {
+  flex: 0 0 auto; padding: var(--space-2) var(--space-3); color: var(--text-secondary); text-decoration: none;
+  font-weight: 600; border-bottom: 2px solid transparent; white-space: nowrap;
+}
+.dept-tab:hover { color: var(--text-primary); }
+.dept-tab.active { color: var(--text-white); border-bottom-color: var(--orange-primary); }
+/* Home: the front desk. */
+.ask { display: flex; gap: var(--space-2); }
+.ask .input { flex: 1; min-width: 0; }
+.feed { display: grid; gap: var(--space-2); list-style: none; margin: 0; padding: 0; }
+.feed-item {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+  padding: var(--space-3); border-radius: 10px; background: var(--bg-card-hover); color: var(--text-primary);
+  text-decoration: none;
+}
+.feed-item.urgent { border-left: 3px solid var(--status-warning); }
+.feed-item .caption { white-space: nowrap; }
+.dept-cards { display: grid; gap: var(--space-4); grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.dept-card { display: grid; gap: var(--space-2); align-content: start; text-decoration: none; color: inherit; }
+.dept-card h2 { margin: 0; }
+.run-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.progress { height: 6px; border-radius: 3px; background: var(--border-subtle); overflow: hidden; }
+.progress > span { display: block; height: 100%; background: var(--orange-primary); }
 .rail .spacer { flex: 1; }
 .main-viewport { overflow-y: auto; overflow-x: hidden; padding: var(--space-8) var(--space-8) 96px; }
 .content { max-width: 1420px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-6); }
@@ -251,13 +280,16 @@ table.ledger { width: 100%; border-collapse: collapse; }
     background: var(--bg-frame); border-top: 1px solid var(--border-subtle);
     padding: var(--space-2) var(--space-2) calc(var(--space-2) + env(safe-area-inset-bottom));
   }
-  /* Four equal tabs that may shrink below their label's natural width. */
+  /* Equal tabs that may shrink below their label's natural width. */
   .bottom-nav { gap: var(--space-1); }
   .bottom-nav .nav-link, .bottom-nav .btn {
     flex: 1 1 0; min-width: 0; justify-content: center; min-height: 44px;
     padding: 0 var(--space-1); font-size: 0.8rem; white-space: nowrap; overflow: hidden;
   }
   .bottom-nav .nav-icon { flex: 0 0 44px; }
+  /* On a phone each tab is its icon over a short label. */
+  .bottom-nav .nav-link { flex-direction: column; gap: 2px; font-size: 0.7rem; line-height: 1.1; }
+  .bottom-nav .nav-glyph { margin: 0; font-size: 1.05rem; }
   .chat-fab { right: var(--space-4); bottom: calc(76px + env(safe-area-inset-bottom)); width: 52px; height: 52px; }
   /* Room below the last card so the bubble never hides it. */
   .main-viewport { padding-bottom: calc(148px + env(safe-area-inset-bottom)); }
@@ -411,3 +443,4 @@ a.btn { text-decoration: none; }
 .duplicate { display: grid; gap: 4px; margin-top: 6px; padding: 6px 8px; border-radius: 8px; background: var(--status-warning-soft); }
 .duplicate .caption { color: var(--status-warning); }
 .ledger td.merchant .duplicate .caption { display: block; -webkit-line-clamp: none; line-clamp: none; overflow: visible; white-space: normal; }
+.section-title { margin: var(--space-2) 0 calc(-1 * var(--space-2)); font-size: 1rem; color: var(--text-secondary); }

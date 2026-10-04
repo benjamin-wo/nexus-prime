@@ -10,13 +10,16 @@ import { Shell } from "./components/Shell";
 import { Toast } from "./components/Toast";
 import { CashFlowPage } from "./pages/CashFlow";
 import { ConnectDone, ConnectGmail } from "./pages/Connect";
+import { DEPARTMENTS } from "./departments";
 import { Dashboard } from "./pages/Dashboard";
 import { EmailPage } from "./pages/Email";
+import { Home } from "./pages/Home";
 import { ImportPage } from "./pages/Import";
 import { Ledger } from "./pages/Ledger";
 import { LoginPage } from "./pages/LoginPage";
 import { Plan } from "./pages/Plan";
 import { Settings } from "./pages/Settings";
+import { Upcoming } from "./pages/Upcoming";
 import { initData, miniApp } from "./telegram";
 
 /** Inside Telegram, sign in with the Mini App's launch data instead of the widget. */
@@ -53,7 +56,8 @@ function useMe() {
 
 function Cockpit({ me }: { me: Me }) {
   const client = useQueryClient();
-  const [chat, setChat] = useState(false);
+  // The chat drawer, opened empty or with a question asked on Home.
+  const [chat, setChat] = useState<{ ask?: string } | null>(null);
   const [sheet, setSheet] = useState<{ editing?: Transaction } | null>(null);
   // After a category correction: offer a rule, and change nothing unless accepted.
   const [offer, setOffer] = useState<{ transactionId: string; suggestion: RuleSuggestion } | null>(null);
@@ -61,10 +65,10 @@ function Cockpit({ me }: { me: Me }) {
   const closeOffer = useCallback(() => setOffer(null), []);
   const closeNotice = useCallback(() => setNotice(null), []);
   const refresh = useCallback(() => {
-    for (const key of ["transactions", "summary", "ious", "budgets", "bills", "salary", "category-explanation", "email"]) void client.invalidateQueries({ queryKey: [key] });
+    for (const key of ["transactions", "summary", "ious", "budgets", "bills", "salary", "category-explanation", "email", "home", "runs"]) void client.invalidateQueries({ queryKey: [key] });
   }, [client]);
   const closeSheet = useCallback(() => setSheet(null), []);
-  const closeChat = useCallback(() => setChat(false), []);
+  const closeChat = useCallback(() => setChat(null), []);
 
   async function logout() {
     await api("/auth/logout", { method: "POST" }).catch(() => undefined);
@@ -72,22 +76,27 @@ function Cockpit({ me }: { me: Me }) {
   }
 
   return (
-    <Shell me={me} onOpenChat={() => setChat(true)} onLogout={logout}>
+    <Shell me={me} onOpenChat={() => setChat({})} onLogout={logout}>
       <Routes>
+        <Route path="/" element={<Home me={me} onAsk={(ask) => setChat({ ask })} />} />
+        <Route path="/accounting" element={<Dashboard me={me} onLog={() => setSheet({})} />} />
         <Route
-          path="/"
-          element={<Dashboard me={me} onLog={() => setSheet({})} />}
-        />
-        <Route
-          path="/ledger"
+          path="/accounting/ledger"
           element={<Ledger me={me} onAdd={() => setSheet({})} onEdit={(tx) => setSheet({ editing: tx })} />}
         />
-        <Route path="/plan" element={<Plan me={me} />} />
+        <Route path="/accounting/plan" element={<Plan me={me} />} />
+        <Route path="/accounting/cashflow" element={<CashFlowPage />} />
+        <Route path="/accounting/email" element={<EmailPage me={me} />} />
+        <Route path="/accounting/import" element={<ImportPage />} />
+        {DEPARTMENTS.filter((d) => d.upcoming).map((d) => (
+          <Route key={d.name} path={d.path} element={<Upcoming department={d} />} />
+        ))}
         <Route path="/settings" element={<Settings />} />
-        <Route path="/import" element={<ImportPage />} />
-        <Route path="/email" element={<EmailPage me={me} />} />
-        <Route path="/cashflow" element={<CashFlowPage />} />
-        <Route path="/budgets" element={<Navigate to="/plan" replace />} />
+        {/* Where pages used to live, so old links and bookmarks still work. */}
+        {["ledger", "plan", "cashflow", "email", "import"].map((page) => (
+          <Route key={page} path={`/${page}`} element={<Navigate to={`/accounting/${page}`} replace />} />
+        ))}
+        <Route path="/budgets" element={<Navigate to="/accounting/plan" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       {sheet && (
@@ -104,7 +113,7 @@ function Cockpit({ me }: { me: Me }) {
           }}
         />
       )}
-      {chat && <ChatDrawer onClose={closeChat} onChanged={refresh} />}
+      {chat && <ChatDrawer ask={chat.ask} onClose={closeChat} onChanged={refresh} />}
       {offer && (
         <Toast
           message={offer.suggestion.question}

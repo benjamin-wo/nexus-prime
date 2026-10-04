@@ -6,7 +6,15 @@ import { openExternal } from "../telegram";
 type Message = { from: "user" | "bot"; text: string; buttons: Reply["buttons"] };
 
 /** The same agent and conversation as Telegram, with the same confirmation buttons. */
-export function ChatDrawer({ onClose, onChanged }: { onClose: () => void; onChanged: () => void }) {
+export function ChatDrawer({
+  ask,
+  onClose,
+  onChanged,
+}: {
+  ask?: string; // a question asked on Home, sent as soon as the chat opens
+  onClose: () => void;
+  onChanged: () => void;
+}) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
@@ -41,13 +49,26 @@ export function ChatDrawer({ onClose, onChanged }: { onClose: () => void; onChan
     }
   }
 
+  function say(text: string) {
+    setMessages((m) => [...m, { from: "user", text, buttons: [] }]);
+    void run(api<Reply[]>("/chat", { method: "POST", body: { message: text } }));
+  }
+
+  const asked = useRef(false);
+  useEffect(() => {
+    // Once, even when React runs effects twice in development.
+    if (ask && !asked.current) {
+      asked.current = true;
+      say(ask);
+    }
+  }, [ask]);
+
   function send(event: FormEvent) {
     event.preventDefault();
     const text = draft.trim();
     if (!text || busy) return;
     setDraft("");
-    setMessages((m) => [...m, { from: "user", text, buttons: [] }]);
-    void run(api<Reply[]>("/chat", { method: "POST", body: { message: text } }));
+    say(text);
   }
 
   function press(index: number, data: string, label: string) {

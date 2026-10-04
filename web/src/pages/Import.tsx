@@ -305,7 +305,7 @@ export function ImportPage() {
             A CSV or PDF statement from your bank or card. Nothing is added until you check it and confirm.
           </p>
         </div>
-        <Link className="btn" to="/ledger">
+        <Link className="btn" to="/accounting/ledger">
           Back to ledger
         </Link>
       </div>
@@ -361,7 +361,7 @@ export function ImportPage() {
             <button type="button" className="btn" onClick={() => undo(done)}>
               Undo import
             </button>
-            <Link className="btn btn-ghost" to="/ledger">
+            <Link className="btn btn-ghost" to="/accounting/ledger">
               See the ledger
             </Link>
           </div>

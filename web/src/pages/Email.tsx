@@ -86,7 +86,7 @@ function EmailRow({ email, me, onChanged }: { email: InboundEmail; me: Me; onCha
           </span>
         )}
         {email.status === "logged" && email.transaction_id && (
-          <Link className="caption" to="/ledger">
+          <Link className="caption" to="/accounting/ledger">
             In your ledger
           </Link>
         )}
@@ -285,7 +285,7 @@ export function EmailCard() {
     <section className="card" aria-labelledby="email-card">
       <div className="card-head">
         <h2 id="email-card">Email receipts</h2>
-        <Link className="btn" to="/email">
+        <Link className="btn" to="/accounting/email">
           Open
         </Link>
       </div>

@@ -1258,3 +1258,24 @@ async def test_departments_and_runs(world: World) -> None:
     missing = "/api/runs/00000000-0000-0000-0000-000000000000"
     assert (await owner.get(missing)).status_code == 404
     assert (await owner.send("POST", f"{missing}/cancel")).status_code == 404
+
+
+async def test_home_lists_what_needs_the_user(world: World) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+    assert (await owner.get("/api/home")).json() == []
+    food = next(c for c in (await owner.get("/api/categories")).json() if c["name"] == "Dining Out")
+    await owner.send("PUT", "/api/budgets", {"category_id": food["id"], "amount": "100"})
+    await spend(owner, "85", "SGD", "2026-09-27", category_id=food["id"])
+    await owner.send("POST", "/api/bills", {"name": "Rent", "due": "2026-09-29", "amount": "1,800"})
+    await owner.send("POST", "/api/bills", {"name": "Visa", "due": "2026-10-20"})  # weeks away
+    feed = (await owner.get("/api/home")).json()
+    assert [(i["kind"], i["text"], i["link"], i["urgent"]) for i in feed] == [
+        (
+            "budget",
+            "Dining Out budget is at 85% (85.00 SGD of 100.00 SGD)",
+            "/accounting/plan",
+            False,
+        ),
+        ("bill", "Rent (1800.00 SGD) due tomorrow", "/accounting/plan", False),
+    ]

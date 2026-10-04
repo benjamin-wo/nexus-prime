@@ -21,6 +21,7 @@ from nexus.application import categories as category_cases
 from nexus.application import category_rules as rule_cases
 from nexus.application import departments as department_cases
 from nexus.application import duplicates as duplicate_cases
+from nexus.application import home as home_cases
 from nexus.application import memory as memory_cases
 from nexus.application import notifications as notify_cases
 from nexus.application import receipts as receipt_cases
@@ -1604,6 +1605,24 @@ async def list_departments(auth: Auth, web: Runtime) -> list[DepartmentOut]:
     return [
         DepartmentOut(name=d.name, label=d.label, emoji=d.emoji, blurb=d.blurb)
         for d in web.departments.departments.values()
+    ]
+
+
+class FeedItemOut(Model):
+    department: str
+    kind: str
+    text: str
+    link: str
+    urgent: bool
+
+
+@router.get("/home")
+async def home(auth: Auth, web: Runtime) -> list[FeedItemOut]:
+    """The front desk's "needs you" list across departments."""
+    items = await home_cases.needs_you(web.uow, web.rates, auth.user, now=web.clock())
+    return [
+        FeedItemOut(department=i.department, kind=i.kind, text=i.text, link=i.link, urgent=i.urgent)
+        for i in items
     ]
 
 

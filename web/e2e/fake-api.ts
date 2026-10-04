@@ -21,7 +21,14 @@ type Tx = {
 /** An in-memory stand-in for the API, so journeys exercise the real UI in a browser. */
 export async function fakeApi(
   page: Page,
-  { signedIn = true, emailConnected = false, forwarding = false, splitBill = false, twins = false } = {},
+  {
+    signedIn = true,
+    emailConnected = false,
+    forwarding = false,
+    splitBill = false,
+    twins = false,
+    running = false,
+  } = {},
 ) {
   let session = signedIn;
   type FakeBudget = { id: string; category_id: string | null; limit: number; spent: number };
@@ -41,6 +48,8 @@ export async function fakeApi(
   const state: {
     txs: Tx[];
     lastPress?: string;
+    runs: { id: string; status: string; progress: string; [key: string]: unknown }[];
+    cancelled: string[];
     budgets: FakeBudget[];
     bills: FakeBill[];
     salary: FakeSalary | null;
@@ -61,6 +70,25 @@ export async function fakeApi(
       emails: Record<string, unknown>[];
     };
   } = {
+    runs: running
+      ? [
+          {
+            id: "r1",
+            department: "investment",
+            kind: "investment.plan",
+            title: "Plan for NVDA",
+            status: "running",
+            progress: "reading the news",
+            steps_done: 1,
+            steps_total: 3,
+            result: null,
+            error: null,
+            created_at: "2026-09-28T03:00:00Z",
+            finished_at: null,
+          },
+        ]
+      : [],
+    cancelled: [],
     txs: [
       { ...mk("t1", "out", "12.40", "Maxwell Food Centre", "food"), has_receipt: true },
       mk("t2", "out", "25.00", "Grab", null),
@@ -239,6 +267,23 @@ export async function fakeApi(
     if (path === "/auth/logout") {
       session = false;
       return route.fulfill({ status: 204 });
+    }
+    if (path === "/home" && method === "GET") {
+      return json(route, [
+        { department: "accounting", kind: "email", text: "2 receipts from email waiting for you", link: "/accounting/email", urgent: false },
+        { department: "accounting", kind: "bill", text: "Rent (SGD 1,800.00) due tomorrow", link: "/accounting/plan", urgent: false },
+      ]);
+    }
+    if (path === "/departments" && method === "GET") {
+      return json(route, [{ name: "accounting", label: "Accounting", emoji: "🧾", blurb: "Spending." }]);
+    }
+    if (path === "/runs" && method === "GET") return json(route, state.runs);
+    const runCancel = path.match(/^\/runs\/(\w+)\/cancel$/);
+    if (runCancel && method === "POST") {
+      const run = state.runs.find((r) => r.id === runCancel[1])!;
+      Object.assign(run, { status: "cancelled", progress: "cancelled" });
+      state.cancelled.push(run.id);
+      return json(route, run);
     }
     if (path === "/summary") {
       const out = live().filter((t) => t.direction === "out");
