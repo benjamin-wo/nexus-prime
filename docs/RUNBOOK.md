@@ -57,6 +57,7 @@ where status = 'failed' order by finished_at desc limit 20;
 
 - **A backlog that isn't shrinking:** check that `JOBS_ENABLED` isn't off and the logs show the runner. Measured capacity is far above our load (below), so a backlog means jobs are failing or the runner is stopped, not that it's slow.
 - **A job failed for good** after a fix is deployed: requeue it with `update jobs set status = 'pending', attempts = 0, run_at = now() where id = ...;`. Recurring sweeps don't need this; the next slot runs anyway.
+- **Department runs** (long work such as an investment plan) are rows in `department_runs`; each step is a `department.step` job. A stuck run: `select id, kind, status, progress, steps_done, steps_total, error from department_runs where status in ('queued', 'running') order by created_at;`. Cancelling it from the app (or `update department_runs set status = 'cancelled', finished_at = now() where id = ...;`) stops it after the step that's going.
 - **Messages arriving late at night** don't happen by design: Telegram messages wait out 22:00–08:00 in the user's timezone.
 
 **Measured capacity** (M10, `scripts/load_jobs.py` on a throwaway local database):

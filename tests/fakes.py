@@ -124,6 +124,7 @@ class FakeTelegram:
     answered: list[str] = field(default_factory=list)
     cleared: list[tuple[int, int]] = field(default_factory=list)
     edited: list[tuple[int, int, list[list[Button]]]] = field(default_factory=list)
+    texts: list[tuple[int, int, str, list[list[Button]]]] = field(default_factory=list)
     files: dict[str, bytes] = field(default_factory=dict)
     app_buttons: list[tuple[int, str, str]] = field(default_factory=list)
     menu_button: tuple[str, str] | None = None
@@ -142,6 +143,11 @@ class FakeTelegram:
 
     async def set_buttons(self, chat_id: int, message_id: int, buttons: list[list[Button]]) -> None:
         self.edited.append((chat_id, message_id, buttons))
+
+    async def edit_text(
+        self, chat_id: int, message_id: int, text: str, buttons: list[list[Button]]
+    ) -> None:
+        self.texts.append((chat_id, message_id, text, buttons))
 
     async def download(self, file_id: str) -> bytes:
         return self.files[file_id]

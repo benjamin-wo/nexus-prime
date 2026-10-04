@@ -11,6 +11,7 @@ from nexus.agent.memory_writer import MemoryWriter
 from nexus.agent.service import Button
 from nexus.application import bills as bill_cases
 from nexus.application import budgets as budget_cases
+from nexus.application import departments as department_cases
 from nexus.application import email as email_cases
 from nexus.application import notifications as notify_cases
 from nexus.application import receipts as receipt_cases
@@ -22,6 +23,7 @@ from nexus.application.fx import RateSource
 from nexus.application.ports import ReceiptStore
 from nexus.channels.telegram.client import TelegramClient, TelegramError
 from nexus.channels.telegram.webhook import UNDO_EXPIRE, kept_buttons
+from nexus.domain.departments import Run
 from nexus.domain.ledger import User, UserId
 from nexus.domain.planning import quiet_until
 from nexus.jobs.runner import Defer, Handler, Schedule
@@ -47,6 +49,28 @@ SCHEDULES = (
 )
 
 
+class TelegramProgress:
+    """A run's progress as one Telegram message, edited in place, with Cancel while
+    it runs. Progress goes even in quiet hours: the user just asked for the work."""
+
+    def __init__(self, telegram: TelegramClient) -> None:
+        self._telegram = telegram
+
+    async def show(self, run: Run, user: User, text: str) -> tuple[int | None, int | None]:
+        chat_id = run.chat_id or user.telegram_chat_id
+        if chat_id is None:
+            return None, None
+        buttons = [] if run.finished else [[Button("Cancel", f"run:cancel:{run.id}")]]
+        if run.message_id is None:
+            return chat_id, await self._telegram.send_message(chat_id, text, buttons or None)
+        try:
+            await self._telegram.edit_text(chat_id, run.message_id, text, buttons)
+        except TelegramError as exc:
+            # Unchanged text, or a message the user deleted: nothing to retry.
+            log.info("could not edit a run's progress: %s", exc)
+        return chat_id, run.message_id
+
+
 def build_handlers(
     uow: UowFactory,
     telegram: TelegramClient,
@@ -55,6 +79,7 @@ def build_handlers(
     archive: ReceiptStore | None = None,
     email: EmailRuntime | None = None,
     memory: MemoryWriter | None = None,
+    departments: department_cases.Departments | None = None,
 ) -> dict[str, Handler]:
     async def send(payload: dict[str, Any]) -> Defer | None:
         """Message a user on Telegram, but not during their quiet hours."""
@@ -189,7 +214,26 @@ def build_handlers(
             # Deleted, too old, or already without it: nothing to retry for a button.
             log.info("could not take Undo off a message: %s", exc)
 
+    registry = departments or department_cases.default_registry()
+    progress = TelegramProgress(telegram)
+
+    async def department_step(payload: dict[str, Any]) -> None:
+        """One step of a department's run; the step queues the next itself."""
+        async with uow() as tx:
+            user = await tx.ledger.get_user(UserId(UUID(payload["user_id"])))
+        if user is not None:
+            await department_cases.advance(
+                uow,
+                registry,
+                progress,
+                user,
+                UUID(payload["run_id"]),
+                now=clock(),
+                tries=int(payload.get("tries", 0)),
+            )
+
     return {
+        department_cases.STEP_JOB: department_step,
         UNDO_EXPIRE: expire_undo,
         MEMORY_UPDATE: update_memory,
         SUBSCRIPTIONS_SWEEP: sweep_subscriptions,

@@ -19,6 +19,7 @@ from nexus.application import budgets as budget_cases
 from nexus.application import cashflow as cashflow_cases
 from nexus.application import categories as category_cases
 from nexus.application import category_rules as rule_cases
+from nexus.application import departments as department_cases
 from nexus.application import duplicates as duplicate_cases
 from nexus.application import memory as memory_cases
 from nexus.application import notifications as notify_cases
@@ -48,6 +49,7 @@ from nexus.channels.web.telegram_login import (
     verify_login,
     verify_webapp,
 )
+from nexus.domain.departments import Run
 from nexus.domain.errors import Forbidden, InvalidInput, NotFound
 from nexus.domain.ledger import (
     Category,
@@ -1584,6 +1586,75 @@ async def set_notifications(body: UpdatesIn, auth: Auth, web: Runtime) -> Update
         web.uow(), auth.user.id, body.frequency, now=web.clock(), daily_at=body.daily_at
     )
     return _updates_out(updated)
+
+
+# --- departments and their runs --------------------------------------------------------
+
+
+class DepartmentOut(Model):
+    name: str
+    label: str
+    emoji: str
+    blurb: str
+
+
+@router.get("/departments")
+async def list_departments(auth: Auth, web: Runtime) -> list[DepartmentOut]:
+    """The teams behind the front desk, for the web app's switcher."""
+    return [
+        DepartmentOut(name=d.name, label=d.label, emoji=d.emoji, blurb=d.blurb)
+        for d in web.departments.departments.values()
+    ]
+
+
+class RunOut(Model):
+    id: UUID
+    department: str
+    kind: str
+    title: str
+    status: str
+    progress: str
+    steps_done: int
+    steps_total: int
+    result: dict[str, Any] | None
+    error: str | None
+    created_at: datetime
+    finished_at: datetime | None
+
+
+def _run_out(run: Run) -> RunOut:
+    return RunOut(
+        id=run.id,
+        department=run.department,
+        kind=run.kind,
+        title=run.title,
+        status=run.status.value,
+        progress=run.progress,
+        steps_done=run.steps_done,
+        steps_total=run.steps_total,
+        result=run.result,
+        error=run.error,
+        created_at=run.created_at,
+        finished_at=run.finished_at,
+    )
+
+
+@router.get("/runs")
+async def list_runs(auth: Auth, web: Runtime) -> list[RunOut]:
+    """Department jobs going now, then the last week's finished ones."""
+    runs = await department_cases.list_runs(web.uow(), auth.user.id, now=web.clock())
+    return [_run_out(r) for r in runs]
+
+
+@router.get("/runs/{run_id}")
+async def get_run(run_id: UUID, auth: Auth, web: Runtime) -> RunOut:
+    return _run_out(await department_cases.get_run(web.uow(), auth.user.id, run_id))
+
+
+@router.post("/runs/{run_id}/cancel")
+async def cancel_run(run_id: UUID, auth: Auth, web: Runtime) -> RunOut:
+    run = await department_cases.cancel_run(web.uow(), auth.user.id, run_id, now=web.clock())
+    return _run_out(run)
 
 
 # --- chat -----------------------------------------------------------------------------

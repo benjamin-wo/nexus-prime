@@ -21,6 +21,9 @@ class TelegramClient(Protocol):
     async def set_buttons(
         self, chat_id: int, message_id: int, buttons: list[list[Button]]
     ) -> None: ...
+    async def edit_text(
+        self, chat_id: int, message_id: int, text: str, buttons: list[list[Button]]
+    ) -> None: ...
     async def download(self, file_id: str) -> bytes: ...
     async def bot_username(self) -> str: ...
     async def send_app_button(self, chat_id: int, text: str, label: str, url: str) -> None: ...
@@ -79,6 +82,20 @@ class HttpTelegramClient:
         await self._call(
             "editMessageReplyMarkup",
             {"chat_id": chat_id, "message_id": message_id, "reply_markup": keyboard(buttons)},
+        )
+
+    async def edit_text(
+        self, chat_id: int, message_id: int, text: str, buttons: list[list[Button]]
+    ) -> None:
+        """Change a message we sent, as a run's progress message does."""
+        await self._call(
+            "editMessageText",
+            {
+                "chat_id": chat_id,
+                "message_id": message_id,
+                "text": text[:MAX_TEXT],
+                "reply_markup": keyboard(buttons),
+            },
         )
 
     async def download(self, file_id: str) -> bytes:
