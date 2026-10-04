@@ -20,9 +20,11 @@ from nexus.agent.service import Button
 from nexus.application.fx import Rate
 from nexus.application.market import PriceSourceError
 from nexus.application.ports import MailboxGrant, MailboxRevoked
+from nexus.application.research import NewsSourceError
 from nexus.domain.email import ExpenseDraft, FetchedEmail, Screening
 from nexus.domain.errors import InvalidInput
 from nexus.domain.market import Bar
+from nexus.domain.news import EarningsDate, NewsItem
 from nexus.infra.llm.factory import ChatModels
 
 NOW = datetime(2026, 9, 28, 4, 0, tzinfo=UTC)  # noon in Singapore
@@ -184,6 +186,35 @@ class FakePrices:
             bar(symbol, day, close)
             for day, close in sorted(self.closes[symbol].items())
             if start <= day <= end
+        ]
+
+
+@dataclass
+class FakeNews:
+    """Made-up headlines and earnings dates per ticker."""
+
+    headlines: dict[str, list[tuple[datetime, str]]] = field(default_factory=dict)
+    earnings_days: dict[str, list[date]] = field(default_factory=dict)
+    failing: set[str] = field(default_factory=set)
+    asked: list[str] = field(default_factory=list)
+
+    async def news(self, symbol: str, start: date, end: date) -> list[NewsItem]:
+        self.asked.append(symbol)
+        if symbol in self.failing:
+            raise NewsSourceError("HTTP 500")
+        return [
+            NewsItem(
+                symbol, f"{symbol}-{i}", text, "Wire", f"https://n.example/{symbol}/{i}", "", at
+            )
+            for i, (at, text) in enumerate(self.headlines.get(symbol, []))
+            if start <= at.date() <= end
+        ]
+
+    async def earnings(self, symbol: str, start: date, end: date) -> list[EarningsDate]:
+        return [
+            EarningsDate(symbol, d, "after close")
+            for d in self.earnings_days.get(symbol, [])
+            if start <= d <= end
         ]
 
 

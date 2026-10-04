@@ -618,6 +618,20 @@ CASES: tuple[Case, ...] = (
         confirms=True,
     ),
     Case(
+        "inv-levels",
+        "ask",
+        _t("where's support on AMD? is it overbought?"),
+        calls=(Call("stock_levels", {"symbol": Has("amd")}),),
+        unchanged=True,
+    ),
+    Case(
+        "inv-watch",
+        "log",
+        _t("watch AMD for me"),
+        calls=(Call("watch_stock", {"symbol": Has("amd")}),),
+        confirms=True,
+    ),
+    Case(
         "cat-add",
         "categories",
         _t("add a category for pets"),

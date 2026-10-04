@@ -1,6 +1,6 @@
 """Keeping daily prices for the stocks people hold. End-of-day data only.
 
-A refresh fetches each held stock once its trading day's prices are due (after
+A refresh fetches each held or watched stock once its trading day's prices are due (after
 the US close), a few days back so a corrected close replaces the old one. A
 stock fetched for the first time gets a long history, which M13b's moving
 averages need. One stock's failure doesn't stop the others.
@@ -20,6 +20,7 @@ log = logging.getLogger(__name__)
 type UowFactory = Callable[[], UnitOfWork]
 
 REFRESH_JOB = "prices.refresh"
+NEWS_JOB = "news.refresh"  # see research.py
 # Enough trading days for a 200-day average, with room to spare.
 HISTORY_DAYS = 450
 # Days re-fetched before the last one stored, for corrections.
@@ -46,18 +47,18 @@ class PriceSource(Protocol):
 
 
 async def queue_refresh(uow: UnitOfWork, now: datetime) -> None:
-    """Fetch prices soon (a stock was just added), inside the caller's transaction.
-    One job per minute, however many saves."""
+    """Fetch prices, news and earnings dates soon (a stock was just added), inside
+    the caller's transaction. One job of each per minute, however many saves."""
     minute = now.replace(second=0, microsecond=0)
-    await uow.jobs.enqueue(
-        REFRESH_JOB, {}, dedupe_key=f"{REFRESH_JOB}@{minute.isoformat()}", run_at=now
-    )
+    for kind in (REFRESH_JOB, NEWS_JOB):
+        await uow.jobs.enqueue(kind, {}, dedupe_key=f"{kind}@{minute.isoformat()}", run_at=now)
 
 
 async def refresh(uow: UowFactory, source: PriceSource, *, now: datetime) -> int:
-    """Fetch prices for held stocks that are due. Returns how many were fetched."""
+    """Fetch prices for held and watched stocks that are due. Returns how many were
+    fetched."""
     async with uow() as tx:
-        symbols = await tx.investments.held_symbols()
+        symbols = await tx.investments.tracked_symbols()
         fetched = await tx.investments.fetched(symbols)
     wanted = [s for s in symbols if due(fetched.get(s), now)][:MAX_PER_REFRESH]
     done = 0

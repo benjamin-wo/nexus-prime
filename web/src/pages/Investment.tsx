@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ChangeEvent, type FormEvent, useState } from "react";
+import { Link } from "react-router-dom";
 
 import { api, type Holding, type HoldingsDraft, type Portfolio, type PortfolioTotals } from "../api";
 import { formatChange, formatMoney, formatPercent, formatShortDate } from "../format";
@@ -135,7 +136,12 @@ function HoldingRow({ position, onChanged }: { position: Holding; onChanged: () 
 
   return (
     <tr>
-      <th scope="row">{position.symbol}</th>
+      <th scope="row">
+        <Link to={`/investment/stocks/${position.symbol}`}>{position.symbol}</Link>
+        {position.earnings && (
+          <span className="caption"> · earnings {formatShortDate(position.earnings.day, "UTC")}</span>
+        )}
+      </th>
       {editing ? (
         <td colSpan={5}>
           <form className="quick" onSubmit={save} aria-label={`Edit ${position.symbol}`}>
@@ -189,7 +195,7 @@ function priceNote(data: Portfolio | undefined): string {
   if (!data.prices) return "Prices aren't set up";
   const t = data.totals;
   const parts = [];
-  if (t.as_of) parts.push(`Closing prices of ${formatShortDate(t.as_of)}`);
+  if (t.as_of) parts.push(`Closing prices of ${formatShortDate(t.as_of, "UTC")}`);
   if (t.missing.length) parts.push(`no price yet for ${t.missing.join(", ")}`);
   return parts.join("; ") || "Fetching prices…";
 }

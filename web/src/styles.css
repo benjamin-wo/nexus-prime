@@ -450,6 +450,15 @@ a.btn { text-decoration: none; }
 .add-holding { flex-wrap: wrap; margin-top: var(--space-3); }
 .up { color: var(--emerald-accent); }
 .down { color: var(--rose-accent); }
+.ladder { list-style: none; margin: 0 0 var(--space-2); padding: 0; }
+.ladder li { display: flex; justify-content: space-between; padding: var(--space-1) var(--space-2); border-left: 3px solid var(--border-card); }
+.ladder li.down { border-left-color: var(--rose-accent); }
+.ladder li.up { border-left-color: var(--emerald-accent); }
+.ladder li.close { border-left-color: var(--orange-primary); font-weight: 600; background: var(--orange-soft); }
+.range { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-3); }
+.range-bar { position: relative; flex: 1; height: 6px; border-radius: 3px; background: var(--border-card); }
+.range-bar span { position: absolute; top: -3px; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: var(--orange-primary); }
+.news a { color: var(--text-primary); }
 .totals { display: flex; flex-wrap: wrap; gap: var(--space-3) var(--space-6); margin: 0 0 var(--space-3); }
 .totals div { min-width: 0; }
 .totals dt { font-size: 0.75rem; color: var(--text-muted); }

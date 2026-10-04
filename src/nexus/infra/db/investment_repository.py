@@ -4,7 +4,7 @@ from datetime import date, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import Row, delete, func, insert, select, update
+from sqlalchemy import Row, delete, func, insert, select, union, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -12,7 +12,17 @@ from nexus.domain.investments import DraftStatus, Holding, HoldingsDraft, Positi
 from nexus.domain.ledger import UserId
 from nexus.domain.market import Bar
 from nexus.domain.money import Money
-from nexus.infra.db.tables import holding_drafts, holdings, market_bars, market_symbols
+from nexus.domain.news import EarningsDate, NewsItem
+from nexus.infra.db.tables import (
+    holding_drafts,
+    holdings,
+    market_bars,
+    market_earnings,
+    market_news,
+    market_symbols,
+    news_fetches,
+    watchlist,
+)
 
 
 def _holding(row: Row[Any]) -> Holding:
@@ -125,6 +135,12 @@ class SqlInvestmentRepository:
         rows = await self._db.execute(select(holdings.c.symbol).distinct().order_by("symbol"))
         return [r.symbol for r in rows]
 
+    async def tracked_symbols(self) -> list[str]:
+        """Across all users: every stock someone holds or watches."""
+        both = union(select(holdings.c.symbol), select(watchlist.c.symbol)).subquery()
+        rows = await self._db.execute(select(both.c.symbol).order_by(both.c.symbol))
+        return [r.symbol for r in rows]
+
     async def fetched(self, symbols: list[str]) -> dict[str, datetime]:
         m = market_symbols.c
         rows = await self._db.execute(select(m.symbol, m.fetched_at).where(m.symbol.in_(symbols)))
@@ -194,4 +210,133 @@ class SqlInvestmentRepository:
             found.setdefault(r.symbol, []).append(
                 Bar(r.symbol, r.day, r.open, r.high, r.low, r.close, r.adj_close, r.volume)
             )
+        return found
+
+    async def bars(self, symbol: str, count: int) -> list[Bar]:
+        """A stock's last ``count`` days of prices, oldest first."""
+        b = market_bars.c
+        rows = await self._db.execute(
+            select(market_bars).where(b.symbol == symbol).order_by(b.day.desc()).limit(count)
+        )
+        found = [
+            Bar(r.symbol, r.day, r.open, r.high, r.low, r.close, r.adj_close, r.volume)
+            for r in rows
+        ]
+        return found[::-1]
+
+    # --- watchlist ---
+
+    async def list_watch(self, user_id: UserId) -> list[str]:
+        w = watchlist.c
+        rows = await self._db.execute(
+            select(w.symbol).where(w.user_id == user_id).order_by(w.symbol)
+        )
+        return [r.symbol for r in rows]
+
+    async def add_watch(self, user_id: UserId, symbol: str, at: datetime) -> bool:
+        """False when the user already watches it."""
+        stmt = (
+            pg_insert(watchlist)
+            .values(id=uuid4(), user_id=user_id, symbol=symbol, created_at=at)
+            .on_conflict_do_nothing(index_elements=[watchlist.c.user_id, watchlist.c.symbol])
+            .returning(watchlist.c.id)
+        )
+        return (await self._db.execute(stmt)).first() is not None
+
+    async def remove_watch(self, user_id: UserId, symbol: str) -> bool:
+        w = watchlist.c
+        result = await self._db.execute(
+            delete(watchlist).where(w.user_id == user_id, w.symbol == symbol)
+        )
+        return bool(result.rowcount)
+
+    # --- news and earnings dates, shared by every user ---
+
+    async def news_fetched(self, symbols: list[str]) -> dict[str, datetime]:
+        n = news_fetches.c
+        rows = await self._db.execute(select(n.symbol, n.fetched_at).where(n.symbol.in_(symbols)))
+        return {r.symbol: r.fetched_at for r in rows}
+
+    async def save_news(
+        self,
+        symbol: str,
+        items: list[NewsItem],
+        earnings: list[EarningsDate],
+        *,
+        at: datetime,
+    ) -> None:
+        """Add news not seen before, replace the stock's upcoming earnings dates, and
+        note when they were fetched."""
+        if items:
+            await self._db.execute(
+                pg_insert(market_news)
+                .values(
+                    [
+                        {
+                            "symbol": symbol,
+                            "external_id": i.external_id,
+                            "headline": i.headline,
+                            "source": i.source,
+                            "url": i.url,
+                            "summary": i.summary,
+                            "published_at": i.published_at,
+                        }
+                        for i in items
+                    ]
+                )
+                .on_conflict_do_nothing(
+                    index_elements=[market_news.c.symbol, market_news.c.external_id]
+                )
+            )
+        e = market_earnings.c
+        await self._db.execute(
+            delete(market_earnings).where(e.symbol == symbol, e.day >= at.date())
+        )
+        if earnings:
+            await self._db.execute(
+                pg_insert(market_earnings)
+                .values([{"symbol": symbol, "day": d.day, "timing": d.timing} for d in earnings])
+                .on_conflict_do_nothing(index_elements=[e.symbol, e.day])
+            )
+        stmt = pg_insert(news_fetches).values(symbol=symbol, fetched_at=at)
+        await self._db.execute(
+            stmt.on_conflict_do_update(
+                index_elements=[news_fetches.c.symbol], set_={"fetched_at": at}
+            )
+        )
+
+    async def purge_news(self, before: datetime) -> int:
+        result = await self._db.execute(
+            delete(market_news).where(market_news.c.published_at < before)
+        )
+        return int(result.rowcount or 0)
+
+    async def recent_news(self, symbol: str, limit: int) -> list[NewsItem]:
+        n = market_news.c
+        rows = await self._db.execute(
+            select(market_news)
+            .where(n.symbol == symbol)
+            .order_by(n.published_at.desc())
+            .limit(limit)
+        )
+        return [
+            NewsItem(
+                r.symbol, r.external_id, r.headline, r.source, r.url, r.summary, r.published_at
+            )
+            for r in rows
+        ]
+
+    async def upcoming_earnings(self, symbols: list[str], since: date) -> dict[str, EarningsDate]:
+        """Each stock's next earnings date on or after ``since``."""
+        if not symbols:
+            return {}
+        e = market_earnings.c
+        rows = await self._db.execute(
+            select(market_earnings)
+            .where(e.symbol.in_(symbols), e.day >= since)
+            .order_by(e.symbol, e.day)
+        )
+        found: dict[str, EarningsDate] = {}
+        for r in rows:
+            found.setdefault(r.symbol, EarningsDate(r.symbol, r.day, r.timing))
         return found

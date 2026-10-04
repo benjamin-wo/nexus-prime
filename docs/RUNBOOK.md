@@ -100,6 +100,7 @@ All secrets are Railway variables on `nexus-app`; none live in the repo. Changin
 | `GOOGLE_CLIENT_SECRET` | Add a secret in Google Cloud, set it, delete the old one |
 | `AGENTMAIL_API_KEY` | New key in AgentMail, set it, delete the old one |
 | `TIINGO_API_KEY` | Regenerate the token in Tiingo's account settings and set it; the old one stops working |
+| `FINNHUB_API_KEY` | Regenerate the key on Finnhub's dashboard and set it |
 | Bucket credentials | Reset them on the bucket in Railway; the reference variables pick them up |
 | Web sessions | To sign everyone out: `delete from web_sessions;` (they sign in again with Telegram) |
 

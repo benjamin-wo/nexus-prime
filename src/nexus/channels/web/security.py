@@ -44,6 +44,7 @@ class WebRuntime:
     limits: RateLimiter = field(default_factory=RateLimiter)
     departments: Departments = field(default_factory=default_registry)
     prices: bool = False  # daily stock prices are set up
+    news: bool = False  # company news and earnings dates are set up
 
 
 @dataclass(frozen=True, slots=True)

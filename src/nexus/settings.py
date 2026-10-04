@@ -80,6 +80,8 @@ class Settings(BaseSettings):
 
     # --- Daily stock prices (Tiingo end-of-day). Unset = holdings aren't valued. ---
     tiingo_api_key: SecretStr | None = None
+    # --- Company news and earnings dates (Finnhub). Unset = none are fetched. ---
+    finnhub_api_key: SecretStr | None = None
 
     # --- LLM. Names match the pre-rebuild deployment's variables. ---
     llm_provider: LlmProvider = LlmProvider.GEMINI
@@ -157,6 +159,7 @@ class Settings(BaseSettings):
         "agentmail_api_key",
         "agentmail_domain",
         "tiingo_api_key",
+        "finnhub_api_key",
         "storage_access_key_id",
         "storage_secret_access_key",
         "storage_bucket",
