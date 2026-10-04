@@ -4,6 +4,7 @@ import pytest
 
 from nexus.agent.kernel import (
     IncomeKind,
+    is_jobs_question,
     is_self_diagnosis,
     is_termination,
     parse_income,
@@ -148,3 +149,31 @@ def test_today_or_yesterday(text: str, days_ago: int, note: str | None) -> None:
     intent = parse_income(text, "SGD")
     assert intent is not None
     assert (intent.days_ago, intent.note) == (days_ago, note)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "what are you working on?",
+        "What's running",
+        "anything running?",
+        "any jobs running",
+        "show my jobs",
+    ],
+)
+def test_jobs_questions(text: str) -> None:
+    assert is_jobs_question(text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "are you working?",
+        "is the bot working",
+        "running shoes 89",
+        "what is running over budget?",
+        "what's running low this month",
+    ],
+)
+def test_not_jobs_questions(text: str) -> None:
+    assert not is_jobs_question(text)

@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any, Protocol
 from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ValidationError
 
@@ -344,6 +345,9 @@ async def announce(
     that can't be shown never stops the run. A finished run's message carries its
     one-line result."""
     text = progress_text(run)
+    department = registry.departments.get(run.department)
+    if department is not None and department.name != ACCOUNTING.name:
+        text = f"{department.emoji} {department.label}: {text}"
     if run.status is RunStatus.DONE and run.result is not None and run.kind in registry.kinds:
         kind = registry.kinds[run.kind]
         text = f"{text}\n{kind.summary(kind.result.model_validate(run.result))}"
@@ -362,3 +366,25 @@ async def announce(
         await tx.runs.update_run(current)
         await tx.commit()
     return replace(run, chat_id=chat_id, message_id=message_id)
+
+
+def describe_runs(runs: Sequence[Run], tz: ZoneInfo) -> tuple[str, list[list[tuple[str, str]]]]:
+    """ "What are you working on?": jobs going now, then the last few finished, with a
+    Cancel button for each one going."""
+    going = [r for r in runs if not r.finished]
+    done = [r for r in runs if r.finished][:3]
+    if not going and not done:
+        return "Nothing's running right now. Accounting work happens as you ask.", []
+    lines = []
+    if going:
+        lines.append("Working on:")
+        lines += [f"• {r.title} ({r.steps_done}/{r.steps_total}): {r.progress}" for r in going]
+    else:
+        lines.append("Nothing's running right now.")
+    if done:
+        lines.append("Recently:")
+        for r in done:
+            when = (r.finished_at or r.updated_at).astimezone(tz)
+            lines.append(f"• {r.title}: {r.status.value}, {when:%-d %b %H:%M}")
+    cancels = [[(f"Cancel {r.title}", f"run:cancel:{r.id}")] for r in going]
+    return "\n".join(lines), cancels

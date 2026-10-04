@@ -32,6 +32,18 @@ _SELF_DIAGNOSIS = re.compile(
     r"|why (?:aren'?t|are not|didn'?t|did not|don'?t) you (?:work|respond|reply|answer))\b",
     re.I,
 )
+# "What are you working on?": the department jobs going now. Checked before the
+# self-diagnosis question, which "are you working" would otherwise match.
+_JOBS = re.compile(
+    r"^\s*(?:hey\s+|so\s+)?(?:"
+    r"what(?:'?s| is| are)(?: you)? (?:working on|running|busy with)"
+    r"|(?:is )?anything (?:running|going on)"
+    r"|(?:any|my) (?:jobs?|runs?|research) (?:running|going|status)"
+    r"|(?:job|research) status"
+    r"|(?:show|list) (?:my )?(?:jobs|runs)"
+    r")(?:\s+(?:now|right now|at the moment|today))?\s*[?.!]*\s*$",
+    re.I,
+)
 _BARE_PAY = r"pay(?!\s?(?:day|check|cheque))"
 _POLITE = r"^\s*(?:please\s+|pls\s+|can you\s+|could you\s+|would you\s+|help me\s+)?"
 _UNSUPPORTED: tuple[tuple[str, re.Pattern[str]], ...] = (
@@ -127,6 +139,10 @@ _DAY_WORDS = {"today": 0, "yesterday": 1}
 
 def is_termination(text: str) -> bool:
     return bool(_TERMINATION.match(text))
+
+
+def is_jobs_question(text: str) -> bool:
+    return bool(_JOBS.search(text))
 
 
 def is_self_diagnosis(text: str) -> bool:

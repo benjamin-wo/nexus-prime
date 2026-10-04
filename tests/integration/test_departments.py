@@ -140,8 +140,8 @@ async def test_a_run_goes_step_by_step_to_a_checked_result(
     assert done.result == {"ticker": "NVDA", "view": "wait for 115"}
     assert done.spent == Decimal("0.03")
     assert (done.chat_id, done.message_id) == (4242, 77)
-    assert shown.texts[0] == "⏳ Plan for NVDA (0/2): step 1"
-    assert shown.texts[-1] == "✅ Plan for NVDA: done.\nNVDA: wait for 115"
+    assert shown.texts[0] == "🧪 Lab: ⏳ Plan for NVDA (0/2): step 1"
+    assert shown.texts[-1] == "🧪 Lab: ✅ Plan for NVDA: done.\nNVDA: wait for 115"
     # Finished: running it again changes nothing.
     again = await department_cases.advance(uow, registry, shown, user, run.id, now=NOW)
     assert again is not None and again.status is RunStatus.DONE
@@ -179,7 +179,7 @@ async def test_cancelling_stops_what_comes_next(uow: UowFactory) -> None:
     after = await department_cases.advance(uow, registry, shown, user, run.id, now=NOW)
     assert after is not None and after.status is RunStatus.CANCELLED
     assert after.outputs == {"s1": {"close": 120}}  # the step that was going keeps its work
-    assert shown.texts[-1] == "⏹ Plan for NVDA: cancelled."
+    assert shown.texts[-1] == "🧪 Lab: ⏹ Plan for NVDA: cancelled."
     nothing = await department_cases.advance(uow, registry, shown, user, run.id, now=NOW)
     assert nothing is not None and nothing.steps_done == 1
     runs = await department_cases.list_runs(uow(), user.id, now=NOW)
@@ -208,7 +208,7 @@ async def test_a_failing_step_is_tried_twice_then_the_run_gives_up(
     second = await department_cases.advance(uow, registry, shown, user, run.id, now=NOW, tries=1)
     assert second is not None
     assert (second.status, second.error) == (RunStatus.FAILED, "a step failed")
-    assert shown.texts[-1] == "⚠️ Plan for NVDA: couldn't finish (a step failed)."
+    assert shown.texts[-1] == "🧪 Lab: ⚠️ Plan for NVDA: couldn't finish (a step failed)."
 
 
 async def test_overspending_or_a_bad_result_fails_the_run(uow: UowFactory) -> None:
@@ -257,9 +257,30 @@ async def test_progress_is_one_telegram_message_edited_in_place(uow: UowFactory)
     run = await start(uow, registry, user)
     done = await run_all(uow, registry, user, run, TelegramProgress(telegram))
     [sent] = telegram.sent
-    assert sent.text == "⏳ Plan for NVDA (0/2): step 1"
+    assert sent.text == "🧪 Lab: ⏳ Plan for NVDA (0/2): step 1"
     assert [[b.label for b in row] for row in sent.buttons or []] == [["Cancel"]]
     assert done.message_id == 1001
     *_, (chat_id, message_id, text, buttons) = telegram.texts
     assert (chat_id, message_id, buttons) == (4242, 1001, [])  # no Cancel once done
-    assert text == "✅ Plan for NVDA: done.\nNVDA: wait for 115"
+    assert text == "🧪 Lab: ✅ Plan for NVDA: done.\nNVDA: wait for 115"
+
+
+async def test_what_are_you_working_on(uow: UowFactory) -> None:
+    from zoneinfo import ZoneInfo
+
+    user = await person(uow)
+    bot = build(uow, scripted())  # no model turn: the kernel answers
+    quiet = only(await bot.handle_text(user.id, "what are you working on?", "m1"))
+    assert quiet.text == "Nothing's running right now. Accounting work happens as you ask."
+    registry = lab(gather, decide)
+    run = await start(uow, registry, user)
+    busy = only(await bot.handle_text(user.id, "anything running?", "m2"))
+    assert busy.text == "Working on:\n• Plan for NVDA (0/2): starting"
+    assert [[b.label for b in row] for row in busy.buttons] == [["Cancel Plan for NVDA"]]
+    await department_cases.cancel_run(uow(), user.id, run.id, now=NOW)
+    runs = await department_cases.list_runs(uow(), user.id, now=NOW)
+    text, buttons = department_cases.describe_runs(runs, ZoneInfo("Asia/Singapore"))
+    assert (
+        text == "Nothing's running right now.\nRecently:\n• Plan for NVDA: cancelled, 28 Sep 12:00"
+    )
+    assert buttons == []
