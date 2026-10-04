@@ -27,12 +27,14 @@ from nexus.application import income as income_cases
 from nexus.application import investments as investment_cases
 from nexus.application import ledger_questions as question_cases
 from nexus.application import notifications as notify_cases
+from nexus.application import plans as plan_cases
 from nexus.application import receipts as receipt_cases
 from nexus.application import research as research_cases
 from nexus.application import salary as salary_cases
 from nexus.application import splits as split_cases
 from nexus.application import subscriptions as subscription_cases
 from nexus.application import transactions as tx_cases
+from nexus.application.departments import Departments
 from nexus.application.fx import Rate, RateSource
 from nexus.application.ports import LedgerQuery, UnitOfWork
 from nexus.domain.email import InboundEmail
@@ -66,6 +68,8 @@ class ToolContext:
     connect_link: Callable[[User], Awaitable[str]] | None = None
     # The user's own forwarding address, made on first use; None when not set up.
     forward_address: Callable[[User], Awaitable[str]] | None = None
+    # The departments, for tools that start a department's run (a research plan).
+    departments: Departments | None = None
 
     @property
     def tz(self) -> ZoneInfo:
@@ -1145,6 +1149,34 @@ async def _show_watchlist(ctx: ToolContext, _: NoArgs) -> ToolResult:
     return ToolResult("\n".join(lines))
 
 
+async def _research_plan(ctx: ToolContext, a: SymbolArgs) -> ToolResult:
+    if ctx.departments is None:
+        return ToolResult("Research plans aren't set up.")
+    run = await plan_cases.start_plan(ctx.uow, ctx.departments, ctx.user, a.symbol, now=ctx.now)
+    return ToolResult(
+        f"Started '{run.title}': {run.steps_total} steps (levels, technical, news, bull and "
+        "bear, lead analyst), usually a minute or two. Progress shows in one Telegram "
+        "message with a Cancel button, and the plan arrives there and on the web app's "
+        "Plans page. Don't guess the plan's levels meanwhile."
+    )
+
+
+async def _show_plan(ctx: ToolContext, a: SymbolArgs) -> ToolResult:
+    symbol = clean_symbol(a.symbol)
+    saved = await plan_cases.list_plans(ctx.uow(), ctx.user.id, symbol=symbol)
+    if not saved:
+        return ToolResult(
+            f'No plan for {symbol} yet. The user can ask for one ("plan for {symbol}").'
+        )
+    latest = saved[0]
+    stale = " (expired: ask for a fresh one)" if latest.valid_until < ctx.today() else ""
+    return ToolResult(
+        f"Latest plan for {symbol}, made {latest.created_at.astimezone(ctx.tz):%d %b}{stale}. "
+        "Its figures were worked out in code; quote them as they are:\n"
+        + plan_cases.describe_plan(latest.body)
+    )
+
+
 class CashFlowArgs(Args):
     days: int = Field(30, ge=1, le=60, description="How many days ahead, from today")
 
@@ -1565,6 +1597,20 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             "recent headlines. Read-only; works for any US ticker the user holds or watches.",
             SymbolArgs,
             _stock_levels,
+        ),
+        ToolSpec(
+            "research_plan",
+            "Start the research team on a swing-trade plan for one stock (entry zone, stop, "
+            "targets, valid-until, with news and bull and bear cases). Runs in the background "
+            "for a minute or two. Research only, never an order.",
+            SymbolArgs,
+            _research_plan,
+        ),
+        ToolSpec(
+            "show_plan",
+            "The latest research plan made for a stock. Read-only.",
+            SymbolArgs,
+            _show_plan,
         ),
         ToolSpec(
             "show_watchlist", "The stocks the user watches. Read-only.", NoArgs, _show_watchlist

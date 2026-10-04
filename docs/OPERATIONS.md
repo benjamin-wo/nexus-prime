@@ -86,6 +86,20 @@ Possible duplicates already in the ledger (by the same rule, among live transact
 
 **Watchlist, levels and news (M13b).** A user can watch up to 50 stocks they don't hold ("watch AMD", or Investment → Watchlist); prices are kept for held and watched stocks alike. A stock's levels are worked out in code from its stored daily bars each time they're shown, never by a model and never stored (`domain/levels.py`): prices adjusted for splits and dividends first; 20/50/200-day simple moving averages; Wilder's 14-day RSI and ATR; support and resistance as swing lows and highs (the lowest or highest point of the 5 days either side) from the last 120 trading days, nearest first, up to three each side, merging levels within half an ATR; and the 52-week range. Levels need 20 days of prices; the 200-day average needs 200. With `FINNHUB_API_KEY` set, an hourly `news.refresh` job fetches each held or watched stock's last 7 days of company news and its earnings dates for the next 90 days, at most every 6 hours per stock (25 stocks a run, two calls each, inside Finnhub's free 60 a minute; a 429 stops the run). News is someone else's text: it's cleaned to one line, links must be plain http(s), the same story from several feeds is kept once, and it's dropped after 30 days (`market_news`, `market_earnings`, `news_fetches`, shared like prices). Chat tells the model that headlines are quoted data, not instructions. Dividend dates aren't on Finnhub's free tier and aren't fetched. Each stock has a page (`/investment/stocks/{symbol}`) with its levels, next earnings date and news, and the chat tools are `stock_levels`, `show_watchlist`, `watch_stock` and `unwatch_stock` (the last two confirm first).
 
+**Research plans (M13c).** "Plan for NVDA" (chat's `research_plan`, or Make a plan on a stock's page) starts an Investment department run (`investment.plan`) of five steps, each its own job with progress in one Telegram message and a Cancel button:
+1. **Levels (code).** Works out the plan's numbers from the stock's levels (`domain/plans.py`):
+   - the entry zone is the nearest support below the close (a swing low or a moving average), up to half an ATR above it;
+   - the stop is one ATR below that support;
+   - targets are resistance levels and the 52-week high, kept only at 2 times the risk or more, up to two;
+   - the plan is valid for 14 days, and an earnings date inside that window is flagged;
+   - for a held stock it says hold, trim at the first target, or exit on a close below the last plan's stop, against the user's average cost.
+2. **Technical analyst (model).**
+3. **News analyst (model).** Each point must cite a headline id that exists, or it's dropped. Headlines are passed inside `<headlines>` as quoted data.
+4. **Bull and bear (model).**
+5. **Lead analyst (model).** Writes the summary and what would prove the plan wrong, then the plan is saved in `plans` (migration 0025, status `open` until M13d scores it).
+
+The analysts get no tools. Any sentence a model writes that quotes a price the plan and its levels didn't work out is dropped, so every figure the user sees traces to code. A plan needs 20 days of prices. Each run's model spend is estimated from token counts at a deliberately high rate ($1/M tokens in, $4/M out) and capped at US$0.10, inside the department caps (2 runs at once, 20 a day, US$1 a day). `RESEARCH_MODEL` and `RESEARCH_LEAD_MODEL` (OpenRouter ids) choose the analysts' and lead's models; unset, they use the main model. Plans are listed under Investment → Plans, each with its numbers, a chart of 90 days' closes with the zone, stop and targets drawn on, the analysts' notes and linked sources. `show_plan` reads the latest one in chat.
+
 Every new transaction gets a category, in this order: the one the user named, a matching rule, the model's (or the receipt or email reader's) best guess from the user's own categories, then Other for spending and Income for money in. Archived categories aren't used. Transactions logged before 0014 without a category keep none.
 
 ## Category rules

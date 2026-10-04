@@ -18,6 +18,7 @@ from nexus.agent.tools import build_tools
 from nexus.application import bills as bill_cases
 from nexus.application import subscriptions as subscription_cases
 from nexus.application.category_rules import list_rules
+from nexus.application.departments import Departments
 from nexus.application.ports import LedgerQuery, ReceiptStore
 from nexus.application.splits import list_open_ious, split_bill
 from nexus.application.transactions import NewTransaction, list_ledger, log_transaction
@@ -38,6 +39,7 @@ def build(
     receipts: ReceiptReader | None = None,
     archive: ReceiptStore | None = None,
     holdings: HoldingsReader | None = None,
+    departments: Departments | None = None,
 ) -> AgentService:
     skills = SkillLibrary.load()
 
@@ -54,6 +56,7 @@ def build(
             skill_tools=skills.tools(),
             health=health,
             clock=lambda: NOW,
+            departments=departments,
         )
     ).compile(InMemorySaver())
     return AgentService(graph, uow, receipts, lambda: NOW, archive, holdings=holdings)

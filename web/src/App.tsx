@@ -15,6 +15,7 @@ import { Dashboard } from "./pages/Dashboard";
 import { EmailPage } from "./pages/Email";
 import { Home } from "./pages/Home";
 import { InvestmentPage } from "./pages/Investment";
+import { PlanPage, PlansPage } from "./pages/Plans";
 import { StockPage } from "./pages/Stock";
 import { WatchlistPage } from "./pages/Watchlist";
 import { ImportPage } from "./pages/Import";
@@ -68,7 +69,7 @@ function Cockpit({ me }: { me: Me }) {
   const closeOffer = useCallback(() => setOffer(null), []);
   const closeNotice = useCallback(() => setNotice(null), []);
   const refresh = useCallback(() => {
-    for (const key of ["transactions", "summary", "ious", "budgets", "bills", "salary", "category-explanation", "email", "home", "runs", "investments", "watchlist", "stock"]) void client.invalidateQueries({ queryKey: [key] });
+    for (const key of ["transactions", "summary", "ious", "budgets", "bills", "salary", "category-explanation", "email", "home", "runs", "investments", "watchlist", "stock", "plans", "plan"]) void client.invalidateQueries({ queryKey: [key] });
   }, [client]);
   const closeSheet = useCallback(() => setSheet(null), []);
   const closeChat = useCallback(() => setChat(null), []);
@@ -94,6 +95,8 @@ function Cockpit({ me }: { me: Me }) {
         <Route path="/investment" element={<InvestmentPage />} />
         <Route path="/investment/watchlist" element={<WatchlistPage />} />
         <Route path="/investment/stocks/:symbol" element={<StockPage />} />
+        <Route path="/investment/plans" element={<PlansPage />} />
+        <Route path="/investment/plans/:id" element={<PlanPage />} />
         {DEPARTMENTS.filter((d) => d.upcoming).map((d) => (
           <Route key={d.name} path={d.path} element={<Upcoming department={d} />} />
         ))}

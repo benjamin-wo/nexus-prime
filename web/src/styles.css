@@ -459,6 +459,20 @@ a.btn { text-decoration: none; }
 .range-bar { position: relative; flex: 1; height: 6px; border-radius: 3px; background: var(--border-card); }
 .range-bar span { position: absolute; top: -3px; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: var(--orange-primary); }
 .news a { color: var(--text-primary); }
+.plan-chart { margin: var(--space-3) 0 0; }
+.plan-chart svg { width: 100%; height: auto; display: block; }
+.plan-chart .price { fill: none; stroke: var(--orange-primary); stroke-width: 2; stroke-linejoin: round; }
+.plan-chart .zone rect { fill: var(--emerald-soft); }
+.plan-chart .level line { stroke-width: 1.5; stroke-dasharray: 4 3; }
+.plan-chart .level.stop line { stroke: var(--rose-accent); }
+.plan-chart .level.target line { stroke: var(--emerald-accent); }
+.plan-chart text { font-size: 10px; fill: var(--text-secondary); }
+.plan-chart .crosshair line { stroke: var(--text-muted); stroke-width: 1; }
+.plan-chart .crosshair circle { fill: var(--orange-primary); stroke: var(--bg-card); stroke-width: 2; }
+.plan-chart .hit { fill: transparent; cursor: crosshair; }
+.debate { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--space-3); }
+.cite { font-size: 0.8em; margin-left: 2px; }
+.warning-text { color: var(--status-warning); }
 .totals { display: flex; flex-wrap: wrap; gap: var(--space-3) var(--space-6); margin: 0 0 var(--space-3); }
 .totals div { min-width: 0; }
 .totals dt { font-size: 0.75rem; color: var(--text-muted); }

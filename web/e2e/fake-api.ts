@@ -19,6 +19,18 @@ type Tx = {
 };
 
 /** An in-memory stand-in for the API, so journeys exercise the real UI in a browser. */
+const PLAN_BRIEF = {
+  id: "p1",
+  symbol: "AMD",
+  verdict: "wait",
+  verdict_text: "Wait for a pullback to the entry zone",
+  summary_line: "AMD: Wait for a pullback to the entry zone. Entry 124.75 to 125.65, stop 122.95, target 131.00. Valid until 12 Oct.",
+  created_at: "2026-09-28T04:00:00Z",
+  valid_until: "2026-10-12",
+  expired: false,
+  status: "open",
+};
+
 export async function fakeApi(
   page: Page,
   {
@@ -53,6 +65,7 @@ export async function fakeApi(
     draft: Record<string, unknown> | null;
     screenshots: number;
     watching: string[];
+    planStarted: boolean;
     cancelled: string[];
     budgets: FakeBudget[];
     bills: FakeBill[];
@@ -95,6 +108,7 @@ export async function fakeApi(
     cancelled: [],
     holdings: [],
     watching: [],
+    planStarted: false,
     draft: null,
     screenshots: 0,
     txs: [
@@ -387,6 +401,54 @@ export async function fakeApi(
             : [],
         prices: true,
         news_enabled: true,
+        plan: symbol === "AMD" && state.planStarted ? PLAN_BRIEF : null,
+        plans_enabled: true,
+      });
+    }
+    const startPlan = path.match(/^\/investments\/stocks\/([A-Za-z.]+)\/plan$/);
+    if (startPlan && method === "POST") {
+      state.planStarted = true;
+      return json(route, { run_id: "r9", title: `Plan for ${startPlan[1].toUpperCase()}` });
+    }
+    if (path === "/investments/plans" && method === "GET") {
+      return json(route, state.planStarted ? [PLAN_BRIEF] : []);
+    }
+    if (path === "/investments/plans/p1" && method === "GET") {
+      const closes = Array.from({ length: 60 }, (_, i) => ({
+        day: new Date(Date.UTC(2026, 6, 28 + i)).toISOString().slice(0, 10),
+        close: (100 + i * 0.5).toFixed(2),
+      }));
+      return json(route, {
+        brief: PLAN_BRIEF,
+        closes,
+        plan: {
+          symbol: "AMD",
+          as_of: "2026-09-25",
+          close: "129.50",
+          verdict: "wait",
+          verdict_text: "Wait for a pullback to the entry zone",
+          reason: "The close is above the entry zone; it starts at the 20-day average.",
+          entry_low: "124.75",
+          entry_high: "125.65",
+          entry_why: "20-day average",
+          stop: "122.95",
+          risk: "2.25",
+          targets: [{ price: "131.00", reward_risk: "2.67", why: "resistance" }],
+          valid_until: "2026-10-12",
+          earnings_in_window: "2026-10-08",
+          trend: null,
+          held: null,
+          held_gain_percent: null,
+          levels: ["Close 129.50 on 25 Sep 2026", "RSI(14): 71.20"],
+          technical: "A steady climb above both averages.",
+          news: [{ text: "A rival opened a plant.", sources: [1] }],
+          risks: ["Earnings on 08 Oct 2026."],
+          bull: ["The trend is intact."],
+          bear: ["It's stretched."],
+          summary: "Wait for a pullback to the entry zone. The trend is up.",
+          invalidation: "A daily close below 122.95.",
+          sources: [{ id: 1, headline: "Acme rival opens a plant", source: "Wire", url: "https://news.example/1", published_at: "2026-09-27T09:00:00Z" }],
+        },
       });
     }
     if (path === "/investments/screenshot" && method === "POST") {

@@ -13,6 +13,7 @@ from nexus.domain.ledger import UserId
 from nexus.domain.market import Bar
 from nexus.domain.money import Money
 from nexus.domain.news import EarningsDate, NewsItem
+from nexus.domain.plans import PlanStatus, SavedPlan, Verdict
 from nexus.infra.db.tables import (
     holding_drafts,
     holdings,
@@ -21,6 +22,7 @@ from nexus.infra.db.tables import (
     market_news,
     market_symbols,
     news_fetches,
+    plans,
     watchlist,
 )
 
@@ -41,6 +43,25 @@ def _draft(row: Row[Any]) -> HoldingsDraft:
         user_id=UserId(row.user_id),
         positions=[Position.from_dict(p) for p in row.positions],
         status=DraftStatus(row.status),
+        created_at=row.created_at,
+    )
+
+
+def _plan(row: Row[Any]) -> SavedPlan:
+    return SavedPlan(
+        id=row.id,
+        user_id=UserId(row.user_id),
+        run_id=row.run_id,
+        symbol=row.symbol,
+        verdict=Verdict(row.verdict),
+        as_of=row.as_of,
+        valid_until=row.valid_until,
+        close=row.close,
+        entry_low=row.entry_low,
+        entry_high=row.entry_high,
+        stop=row.stop,
+        body=row.body,
+        status=PlanStatus(row.status),
         created_at=row.created_at,
     )
 
@@ -340,3 +361,43 @@ class SqlInvestmentRepository:
         for r in rows:
             found.setdefault(r.symbol, EarningsDate(r.symbol, r.day, r.timing))
         return found
+
+    # --- research plans ---
+
+    async def insert_plan(self, plan: SavedPlan) -> None:
+        await self._db.execute(
+            insert(plans).values(
+                id=plan.id,
+                user_id=plan.user_id,
+                run_id=plan.run_id,
+                symbol=plan.symbol,
+                verdict=plan.verdict.value,
+                as_of=plan.as_of,
+                valid_until=plan.valid_until,
+                close=plan.close,
+                entry_low=plan.entry_low,
+                entry_high=plan.entry_high,
+                stop=plan.stop,
+                body=plan.body,
+                status=plan.status.value,
+                created_at=plan.created_at,
+            )
+        )
+
+    async def list_plans(
+        self, user_id: UserId, *, symbol: str | None = None, limit: int = 50
+    ) -> list[SavedPlan]:
+        """Newest first."""
+        p = plans.c
+        stmt = select(plans).where(p.user_id == user_id)
+        if symbol is not None:
+            stmt = stmt.where(p.symbol == symbol)
+        rows = await self._db.execute(stmt.order_by(p.created_at.desc()).limit(limit))
+        return [_plan(r) for r in rows]
+
+    async def get_plan(self, user_id: UserId, plan_id: UUID) -> SavedPlan | None:
+        p = plans.c
+        row = (
+            await self._db.execute(select(plans).where(p.user_id == user_id, p.id == plan_id))
+        ).first()
+        return _plan(row) if row else None

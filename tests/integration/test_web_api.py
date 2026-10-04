@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
+from uuid import UUID
 
 import pytest
 from cryptography.fernet import Fernet
@@ -17,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nexus.application import bills as bill_cases
+from nexus.application import departments as department_cases
 from nexus.application import email as email_cases
 from nexus.application import market as market_cases
 from nexus.application import receipts as receipt_cases
@@ -50,6 +52,7 @@ from tests.fakes import (
     scripted,
 )
 from tests.integration.conftest import UowFactory
+from tests.integration.test_departments import Shown
 
 pytestmark = pytest.mark.integration
 
@@ -1375,3 +1378,50 @@ async def test_watchlist_and_a_stock_page_on_the_web(world: World) -> None:
     assert unknown["levels"] is None and unknown["news"] == []
     assert (await owner.send("DELETE", "/api/investments/watchlist/AMD")).status_code == 204
     assert (await owner.send("DELETE", "/api/investments/watchlist/AMD")).status_code == 404
+
+
+async def test_research_plans_on_the_web(world: World) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+    early = await owner.send("POST", "/api/investments/stocks/AMD/plan")
+    assert early.status_code == 422 and "a month of prices" in early.json()["detail"]
+
+    await owner.send("POST", "/api/investments/watchlist", {"symbol": "AMD"})
+    last = date(2026, 9, 25)
+    closes = {last - timedelta(days=79 - i): f"{100 + i * 0.5:.2f}" for i in range(80)}
+    web = world.app.state.web
+    await market_cases.refresh(web.uow, FakePrices({"AMD": closes}), now=NOW)
+    page = (await owner.get("/api/investments/stocks/AMD")).json()
+    assert page["plans_enabled"] and page["plan"] is None
+
+    started = await owner.send("POST", "/api/investments/stocks/amd/plan")
+    assert started.status_code == 200 and started.json()["title"] == "Plan for AMD"
+    world.model.script.extend(
+        [
+            call("TechnicalView", summary="A steady climb."),
+            call("Debate", bull=["Trend intact."], bear=["Stretched."]),
+            call(
+                "LeadView", summary="Wait for a pullback.", invalidation="A close below the stop."
+            ),
+        ]
+    )  # no headlines, so the news analyst isn't asked
+    run_id = UUID(started.json()["run_id"])
+    async with web.uow() as tx:
+        user = await tx.ledger.get_user_by_telegram_id(OWNER)
+    assert user is not None
+    for _ in range(5):
+        await department_cases.advance(
+            web.uow, web.departments, Shown(), user, run_id, now=world.clock.now
+        )
+    listed = (await owner.get("/api/investments/plans")).json()
+    assert len(listed) == 1 and listed[0]["summary_line"].startswith("AMD: Wait for a pullback")
+    detail = (await owner.get(f"/api/investments/plans/{listed[0]['id']}")).json()
+    assert (
+        detail["plan"]["verdict"] == "wait" and detail["plan"]["summary"] == "Wait for a pullback."
+    )
+    assert len(detail["closes"]) == 80 and detail["closes"][-1] == {
+        "day": "2026-09-25",
+        "close": "139.50",
+    }
+    assert (await owner.get("/api/investments/stocks/AMD")).json()["plan"]["id"] == listed[0]["id"]
+    assert (await owner.get("/api/investments/plans/not-a-plan")).status_code == 404
