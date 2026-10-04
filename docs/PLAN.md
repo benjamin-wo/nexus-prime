@@ -60,6 +60,7 @@ A clean start removes almost all of that. The plan therefore keeps the old **pro
 ### Explicitly out
 - Live bank sync or aggregators.
 - Making payments.
+- Placing trades or connecting to a broker account (M12 is research only).
 - Automatically cancelling subscriptions.
 - Shared household ledgers.
 - Public sign-up.
@@ -274,7 +275,24 @@ The first step from expense tracker towards a lifestyle assistant: "I want to go
 
 Needs a search-results API key (SerpApi's free tier to start) and, optionally, Google Places and Rakuten Travel keys. About S$0.15–0.30 of searches and model calls per plan. Done when the Japan example produces a plan whose dates, flights, hotels and budget can each be traced to a source, and the injection evals pass.
 
-**Suggested order:** M0–M3 first. That replaces the old bot with better foundations and your history intact. M4–M10 then add features one by one, each shipped as it lands. M11 starts the move towards a lifestyle assistant, travel first.
+### M12 — Investment tracking and research
+Holdings and swing-trade research for US stocks, on a horizon of days to weeks, not day trading. The user sends a screenshot of their IBKR portfolio; Nexus keeps the positions, values them daily in the home currency, and a small team of agents proposes entry, stop and target levels from price history and news. It is research, never orders: there is no broker connection, no trading tool and no broker credentials, and every plan says what would prove it wrong. Other markets (SGX first) come later, behind the same data adapter.
+
+- **M12a — Holdings from a screenshot.** A screenshot of IBKR's portfolio screen (Telegram or web) is read by the vision model into positions: ticker, quantity, average cost, currency. The user checks the list before anything is saved, as with receipts. A later screenshot shows what changed ("+10 NVDA, AAPL gone") and asks before applying it. Typing works too ("I bought 10 NVDA at 118"). Daily closing prices from a market-data API (picked in M12a after checking current free tiers and terms; end-of-day data is enough), values and profit or loss in the home currency with the dated rates Nexus already keeps, a Portfolio card and page on the web, and "how's my portfolio?" in chat. Tests use made-up screenshots in IBKR's layout, never a real one.
+- **M12b — Levels from price history, and news.** A daily job after the US close stores each held or watched stock's daily bars and works out, in code: 20/50/200-day moving averages, RSI, ATR (the typical daily move), recent swing highs and lows as support and resistance, and upcoming earnings and dividend dates. News per stock from the same provider or a news API, deduplicated, with links. A watchlist ("watch AMD") adds stocks the user doesn't hold.
+- **M12c — The research team.** "Plan for NVDA" (or a weekly review of all holdings) runs as a research job (M11a; if M12 lands first, M12c builds that job kind): a technical analyst reading trend, momentum and the computed levels; a news analyst on what changed, with sources, flagging anything inside the holding window (earnings, ex-dividend, lawsuits); bull and bear cases argued against the levels; and a lead analyst who writes the plan. Every number comes from M12b, never from a model:
+  - entry zone at a pullback to support (a recent low or a moving average);
+  - stop just below support, or about 2× ATR under the entry;
+  - targets at the next resistance levels, offered only when the reward is at least about twice the risk;
+  - valid until a date (usually 2–3 weeks), then recomputed;
+  - for a stock already held: hold, trim at a target, or exit on a close below the stop, against the user's own average cost.
+
+  The plan comes back as a short Telegram message and a full page with the levels on a chart, the reasons and the sources. Agents get only read tools over prices, levels, news and the user's holdings; news text is treated as data, never instructions.
+- **M12d — Alerts and a track record.** After each close: a message when a stock reaches its entry zone, a target or its stop, or when a plan expires, with a one-tap stop. Each plan is kept and scored when it ends (target hit, stopped out, or expired), and the Plans page shows the record honestly, misses included, so the user can judge whether the levels are worth following.
+
+Needs a market-data API key (free tier to start) and about S$0.02–0.05 of model calls per plan. Done when an IBKR screenshot becomes confirmed holdings valued in SGD, a plan for a held stock traces every level to a calculation and every news point to a source, and alerts fire on the day's close.
+
+**Suggested order:** M0–M3 first. That replaces the old bot with better foundations and your history intact. M4–M10 then add features one by one, each shipped as it lands. M11 starts the move towards a lifestyle assistant, travel first; M12 adds investment tracking and research.
 
 ---
 
