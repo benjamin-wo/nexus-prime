@@ -116,6 +116,8 @@ class AgentDeps:
     forward_address: Callable[[User], Awaitable[str]] | None = None
     # Each skill's tools, offered once it's loaded; None offers every tool always.
     skill_tools: Mapping[str, Sequence[str]] | None = None
+    # The departments, for tools that start a department's run; None: none can.
+    departments: department_cases.Departments | None = None
 
 
 def strip_ids(text: str) -> str:
@@ -192,6 +194,7 @@ class AgentGraph:
             rates=self.deps.rates,
             connect_link=self.deps.connect_link,
             forward_address=self.deps.forward_address,
+            departments=self.deps.departments,
         )
 
     async def _prompt(self, ctx: ToolContext, state: AgentState) -> str:

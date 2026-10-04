@@ -625,6 +625,12 @@ CASES: tuple[Case, ...] = (
         unchanged=True,
     ),
     Case(
+        "inv-plan",
+        "ask",
+        _t("should I buy AMD here? work out a plan with entry and stop"),
+        calls=(Call("research_plan", {"symbol": Has("amd")}),),
+    ),
+    Case(
         "inv-watch",
         "log",
         _t("watch AMD for me"),

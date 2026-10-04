@@ -43,6 +43,7 @@ from nexus.domain.money import Money
 from nexus.domain.news import EarningsDate, NewsItem
 from nexus.domain.notifications import NotificationSettings
 from nexus.domain.planning import Bill, BillOccurrence, Budget, SalarySchedule
+from nexus.domain.plans import SavedPlan
 from nexus.domain.receipts import Receipt
 from nexus.domain.recurring import Subscription
 from nexus.domain.rules import CategoryRule
@@ -548,6 +549,14 @@ class InvestmentRepository(Protocol):
     async def upcoming_earnings(
         self, symbols: list[str], since: date
     ) -> dict[str, EarningsDate]: ...
+    async def insert_plan(self, plan: SavedPlan) -> None: ...
+    async def list_plans(
+        self, user_id: UserId, *, symbol: str | None = None, limit: int = 50
+    ) -> list[SavedPlan]:
+        """Newest first."""
+        ...
+
+    async def get_plan(self, user_id: UserId, plan_id: UUID) -> SavedPlan | None: ...
 
 
 class UnitOfWork(Protocol):

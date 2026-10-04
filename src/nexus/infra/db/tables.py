@@ -556,6 +556,31 @@ news_fetches = Table(
     Column("fetched_at", TZ, nullable=False),
 )
 
+# A research plan for one stock: its numbers (worked out in code) and the
+# analysts' write-up, kept so it can be scored when it ends (M13d).
+plans = Table(
+    "plans",
+    metadata,
+    _uuid_pk(),
+    _user_fk(),
+    Column("run_id", UUID(as_uuid=True)),
+    Column("symbol", Text, nullable=False),
+    Column("verdict", Text, nullable=False),
+    Column("as_of", Date, nullable=False),
+    Column("valid_until", Date, nullable=False),
+    Column("close", Numeric(19, 4), nullable=False),
+    Column("entry_low", Numeric(19, 4)),
+    Column("entry_high", Numeric(19, 4)),
+    Column("stop", Numeric(19, 4)),
+    Column("body", JSONB, nullable=False),
+    Column("status", Text, nullable=False),
+    Column("created_at", TZ, nullable=False),
+    Column("closed_at", TZ),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+    CheckConstraint("status IN ('open', 'target', 'stopped', 'expired')", name="status"),
+    Index("ix_plans_user_id_created_at", "user_id", "created_at"),
+)
+
 # A department's long piece of work (a research plan, a trip), saved step by step.
 department_runs = Table(
     "department_runs",

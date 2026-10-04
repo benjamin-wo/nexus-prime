@@ -29,6 +29,7 @@ from nexus.application.email import EmailRuntime
 from nexus.application.fx import RateSource
 from nexus.application.limits import RateLimiter
 from nexus.application.market import PriceSource
+from nexus.application.plans import plan_kind
 from nexus.application.ports import (
     EmailReader,
     ForwardingInboxes,
@@ -57,6 +58,7 @@ from nexus.infra.llm.factory import (
     ChatModels,
     build_chat_models,
     build_memory_model,
+    build_research_models,
     build_screener,
 )
 from nexus.infra.logs import configure_logging
@@ -226,6 +228,7 @@ async def _telegram_runtime(
     archive: ReceiptStore | None,
     models: ChatModels,
     email: EmailRuntime | None,
+    departments: Departments | None = None,
 ) -> telegram_webhook.TelegramRuntime:
     def uow() -> SqlUnitOfWork:
         return SqlUnitOfWork(engine)
@@ -254,6 +257,7 @@ async def _telegram_runtime(
             rates=rates,
             connect_link=_connect_link(uow, email, clock),
             forward_address=_forward_address(uow, email, clock),
+            departments=departments,
         )
     ).compile(checkpointer)
     receipts: ReceiptReader | None = overrides.receipts
@@ -286,6 +290,12 @@ async def _telegram_runtime(
         ),
         client=client,
     )
+
+
+def _registry(settings: Settings, engine: AsyncEngine, models: ChatModels) -> Departments:
+    """The departments, with the Investment research team."""
+    analyst, lead = build_research_models(settings, models.primary)
+    return default_registry([plan_kind(lambda: SqlUnitOfWork(engine), analyst, lead)])
 
 
 def _queue_memory(
@@ -367,13 +377,13 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                     log.warning("receipt storage is not configured; receipt photos won't be kept")
                 models = extra.models or build_chat_models(resolved)
                 email = await _email_runtime(resolved, extra, stack, models, resolved.public_origin)
+                departments = extra.departments or _registry(resolved, engine, models)
                 telegram = await _telegram_runtime(
-                    resolved, engine, extra, stack, rates, archive, models, email
+                    resolved, engine, extra, stack, rates, archive, models, email, departments
                 )
                 app.state.telegram = telegram
                 origin = resolved.public_origin
                 clock = extra.clock or utcnow
-                departments = extra.departments or default_registry()
                 if resolved.run_jobs:
                     runner = JobRunner(
                         engine,

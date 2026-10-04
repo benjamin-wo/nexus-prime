@@ -5,12 +5,14 @@ import base64
 import binascii
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field
 
 from nexus.application import investments as investment_cases
+from nexus.application import plans as plan_cases
 from nexus.application import research as research_cases
 from nexus.channels.web.api import MoneyOut, money
 from nexus.channels.web.security import Auth, Runtime, limit
@@ -26,6 +28,7 @@ from nexus.domain.levels import Levels
 from nexus.domain.market import percent
 from nexus.domain.money import Money
 from nexus.domain.news import EarningsDate
+from nexus.domain.plans import SavedPlan
 
 router = APIRouter(prefix="/api/investments")
 
@@ -325,6 +328,33 @@ class NewsOut(Model):
     published_at: datetime
 
 
+class PlanBrief(Model):
+    id: UUID
+    symbol: str
+    verdict: str
+    verdict_text: str
+    summary_line: str
+    created_at: datetime
+    valid_until: date
+    expired: bool
+    status: str
+
+
+def _brief(p: SavedPlan, today: date) -> PlanBrief:
+    result = plan_cases.PlanResult.model_validate(p.body)
+    return PlanBrief(
+        id=p.id,
+        symbol=p.symbol,
+        verdict=p.verdict.value,
+        verdict_text=result.verdict_text,
+        summary_line=plan_cases.summary_line(result),
+        created_at=p.created_at,
+        valid_until=p.valid_until,
+        expired=p.valid_until < today,
+        status=p.status.value,
+    )
+
+
 class StockOut(Model):
     symbol: str
     held: PositionOut | None
@@ -334,13 +364,15 @@ class StockOut(Model):
     news: list[NewsOut]
     prices: bool
     news_enabled: bool
+    plan: PlanBrief | None  # the latest research plan
+    plans_enabled: bool
 
 
 @router.get("/stocks/{symbol}")
 async def stock(symbol: str, auth: Auth, web: Runtime) -> StockOut:
-    view = await research_cases.stock(
-        web.uow(), auth.user, clean_symbol(symbol), today=web.clock().date()
-    )
+    today = web.clock().date()
+    view = await research_cases.stock(web.uow(), auth.user, clean_symbol(symbol), today=today)
+    saved = await plan_cases.list_plans(web.uow(), auth.user.id, symbol=view.symbol)
     return StockOut(
         symbol=view.symbol,
         held=_position(view.held) if view.held else None,
@@ -359,6 +391,56 @@ async def stock(symbol: str, auth: Auth, web: Runtime) -> StockOut:
         ],
         prices=web.prices,
         news_enabled=web.news,
+        plan=_brief(saved[0], today) if saved else None,
+        plans_enabled=plan_cases.KIND in web.departments.kinds,
+    )
+
+
+class StartedOut(Model):
+    run_id: UUID
+    title: str
+
+
+@router.post("/stocks/{symbol}/plan")
+async def start_plan(symbol: str, auth: Auth, web: Runtime) -> StartedOut:
+    """Start the research team on a plan; it runs in the background."""
+    run = await plan_cases.start_plan(web.uow, web.departments, auth.user, symbol, now=web.clock())
+    return StartedOut(run_id=run.id, title=run.title)
+
+
+@router.get("/plans")
+async def plans(auth: Auth, web: Runtime) -> list[PlanBrief]:
+    today = web.clock().date()
+    return [_brief(p, today) for p in await plan_cases.list_plans(web.uow(), auth.user.id)]
+
+
+class ClosePoint(Model):
+    day: date
+    close: Decimal
+
+
+class PlanOut(Model):
+    brief: PlanBrief
+    plan: dict[str, Any]  # the full write-up, as the research team returned it
+    closes: list[ClosePoint]  # recent daily closes, for the chart
+
+
+CHART_DAYS = 90
+
+
+@router.get("/plans/{plan_id}")
+async def plan(plan_id: str, auth: Auth, web: Runtime) -> PlanOut:
+    try:
+        key = UUID(plan_id)
+    except ValueError as exc:
+        raise NotFound("that plan isn't in your list") from exc
+    saved = await plan_cases.get_plan(web.uow(), auth.user.id, key)
+    async with web.uow() as tx:
+        bars = await tx.investments.bars(saved.symbol, CHART_DAYS)
+    return PlanOut(
+        brief=_brief(saved, web.clock().date()),
+        plan=saved.body,
+        closes=[ClosePoint(day=b.day, close=b.close.quantize(Decimal("0.01"))) for b in bars],
     )
 
 

@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { api, type Levels, type Stock } from "../api";
@@ -91,6 +92,20 @@ export function StockPage() {
   const client = useQueryClient();
   const stock = useQuery({ queryKey: ["stock", symbol], queryFn: () => api<Stock>(`/investments/stocks/${symbol}`) });
   const data = stock.data;
+  const [started, setStarted] = useState<string | null>(null);
+  const [planError, setPlanError] = useState<string | null>(null);
+
+  async function startPlan() {
+    if (!data) return;
+    setPlanError(null);
+    try {
+      const run = await api<{ run_id: string; title: string }>(`/investments/stocks/${data.symbol}/plan`, { method: "POST" });
+      setStarted(`${run.title} started. It takes a minute or two; progress shows on Home and in Telegram.`);
+      void client.invalidateQueries({ queryKey: ["runs"] });
+    } catch (e) {
+      setPlanError(e instanceof Error ? e.message : "Couldn't start a plan");
+    }
+  }
 
   async function toggleWatch() {
     if (!data) return;
@@ -140,6 +155,38 @@ export function StockPage() {
           </p>
         </section>
       ))}
+      {data && data.plans_enabled && data.levels && (
+        <section className="card" aria-labelledby="plan">
+          <div className="card-head">
+            <h2 id="plan">Research plan</h2>
+          </div>
+          {data.plan ? (
+            <p>
+              <Link to={`/investment/plans/${data.plan.id}`}>{data.plan.summary_line}</Link>
+              <br />
+              <span className="caption">
+                Made {formatShortDate(data.plan.created_at)}
+                {data.plan.expired && " · expired"}
+              </span>
+            </p>
+          ) : (
+            <p className="muted">The research team works out an entry zone, stop and targets, then weighs the news and both sides.</p>
+          )}
+          <button type="button" className="btn btn-primary" onClick={() => void startPlan()} disabled={started !== null}>
+            {data.plan ? "Make a fresh plan" : "Make a plan"}
+          </button>
+          {started && (
+            <p className="muted" role="status">
+              {started}
+            </p>
+          )}
+          {planError && (
+            <p className="error-text" role="alert">
+              {planError}
+            </p>
+          )}
+        </section>
+      )}
       {data?.earnings && (
         <section className="card" aria-labelledby="earnings">
           <div className="card-head">

@@ -83,6 +83,11 @@ class Settings(BaseSettings):
     # --- Company news and earnings dates (Finnhub). Unset = none are fetched. ---
     finnhub_api_key: SecretStr | None = None
 
+    # --- The Investment research team (OpenRouter model ids). Unset: the analysts use
+    # the main model, and the lead analyst uses RESEARCH_MODEL. ---
+    research_model: str | None = None
+    research_lead_model: str | None = None
+
     # --- LLM. Names match the pre-rebuild deployment's variables. ---
     llm_provider: LlmProvider = LlmProvider.GEMINI
     gemini_api_key: SecretStr | None = None
@@ -156,6 +161,8 @@ class Settings(BaseSettings):
         "token_encryption_key",
         "email_classifier_model",
         "memory_model",
+        "research_model",
+        "research_lead_model",
         "agentmail_api_key",
         "agentmail_domain",
         "tiingo_api_key",

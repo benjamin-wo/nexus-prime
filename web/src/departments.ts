@@ -37,6 +37,7 @@ export const DEPARTMENTS: DepartmentView[] = [
     tabs: [
       { to: "/investment", label: "Portfolio", end: true },
       { to: "/investment/watchlist", label: "Watchlist" },
+      { to: "/investment/plans", label: "Plans" },
     ],
   },
   {

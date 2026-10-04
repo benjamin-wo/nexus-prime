@@ -405,7 +405,7 @@ test("telegram updates default to an end-of-day summary and can be changed", asy
 test("nothing spills sideways on a small phone", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 568 });
   await fakeApi(page, { emailConnected: true });
-  const pages = ["/", "/accounting", "/ledger", "/plan", "/settings", "/email", "/cashflow", "/investment", "/investment/watchlist", "/investment/stocks/AMD", "/travel"];
+  const pages = ["/", "/accounting", "/ledger", "/plan", "/settings", "/email", "/cashflow", "/investment", "/investment/watchlist", "/investment/stocks/AMD", "/investment/plans", "/investment/plans/p1", "/travel"];
   for (const path of [...pages, "/connect/gmail?t=good"]) {
     await page.goto(path);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
@@ -691,4 +691,28 @@ test("a watched stock shows its levels, earnings date and news", async ({ page }
   await page.getByRole("button", { name: "Stop watching" }).click();
   await expect(page.getByRole("button", { name: "Watch" })).toBeVisible();
   expect(state.watching).toEqual([]);
+});
+
+test("a research plan is started from a stock and read with its chart and sources", async ({ page }) => {
+  const state = await fakeApi(page);
+  state.watching = ["AMD"];
+  await page.goto("/investment/stocks/AMD");
+  const card = page.getByRole("region", { name: "Research plan" });
+  await card.getByRole("button", { name: "Make a plan" }).click();
+  await expect(card.getByRole("status")).toContainText("Plan for AMD started");
+  expect(state.planStarted).toBe(true);
+
+  await page.goto("/investment/plans");
+  await page.getByRole("link", { name: /AMD: Wait for a pullback/ }).click();
+  await expect(page).toHaveURL(/\/investment\/plans\/p1$/);
+  await expect(page.getByRole("heading", { name: "Plan for AMD", level: 1 })).toBeVisible();
+  const levels = page.getByLabel("Plan levels");
+  await expect(levels).toContainText("124.75–125.65");
+  await expect(levels).toContainText("122.95");
+  await expect(page.getByText(/Earnings on .*inside the plan's window/)).toBeVisible();
+  await expect(page.getByRole("img", { name: /AMD daily closes over 60 days/ })).toBeVisible();
+  const cite = page.getByRole("link", { name: "[Wire]" });
+  await expect(cite).toHaveAttribute("href", "https://news.example/1");
+  await expect(cite).toHaveAttribute("rel", /noopener/);
+  await expect(page.getByText("What would prove it wrong:")).toBeVisible();
 });
