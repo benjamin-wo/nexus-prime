@@ -60,6 +60,7 @@ A clean start removes almost all of that. The plan therefore keeps the old **pro
 ### Explicitly out
 - Live bank sync or aggregators.
 - Making payments.
+- Placing trades or connecting to a broker account (M13 is research only).
 - Automatically cancelling subscriptions.
 - Shared household ledgers.
 - Public sign-up.
@@ -121,6 +122,17 @@ nexus-prime/
 ```
 
 **Dependency rule:** `domain` ← `application` ← (`agent`, `channels`, `jobs`) → `infra`. Tools and routes only ever call use cases. The tenant always comes from the authenticated principal, never from request or model arguments.
+
+### Agent departments
+Nexus grows as a front desk with departments behind it, like a small firm: Accounting (expenses, bills, budgets, email, statements), then Investment (M13) and Travel (M11). Telegram and the web chat only ever talk to the front desk.
+
+- **Front desk.** The chat agent: the fast, cheap model, always on. It does quick work itself ("kopi 4.20", "how much on Grab", "pay rent on the 1st"), holds what every department shares (memory, the money snapshot, rate limits, cost caps, Confirm before any change), and hands bigger work to a department, then explains the result. It can escalate one hard question to a stronger model without a department.
+- **Departments.** Each has its own instructions, tools, model choice and web dashboard. Accounting runs in-process in seconds, as today's skills do. Teams whose work takes minutes (Investment, Travel) run as department jobs: steps saved in Postgres as they finish (a redeploy resumes, not restarts), a cancel button, per-user limits on steps and spend, and one Telegram message edited in place to show progress. Stronger models are used inside departments where depth pays off (a lead analyst, a trip planner), never for routine chat.
+- **Handoffs are structured.** A department receives a typed task and returns typed results (an investment plan's entry, stop, targets and sources; a trip's dates, flights and budget) that code validates before the front desk words them. No free-text relay between agents, so details aren't lost or invented in the passing.
+- **Least privilege.** A department gets only the tools it needs. Research departments read the user's data but can't change the ledger; anything that reads the web is quarantined (M11b). Every change still goes through Confirm at the front desk.
+- **One place for shared state.** Memory, the snapshot, jobs, limits and Confirm live in the front desk layer; departments never keep their own copies.
+- **Measured.** Each department has its own evaluation cases, plus routing cases that check the front desk sends a request to the right place.
+- **A registry.** A department is one module that declares its name, tools, skills, job steps, dashboard routes and a summary card for the front desk. Adding a team doesn't touch the others.
 
 ---
 
@@ -260,7 +272,7 @@ The goal: replies that follow what the user means, not the phrasing they used. T
 ### M11 — Trip planning
 The first step from expense tracker towards a lifestyle assistant: "I want to go to Japan in January 2027" becomes a costed plan. Nexus researches when to go, flights, places to stay and things to do, and ties the trip to the user's own money. It never books or buys anything: every result links to the seller's own site.
 
-- **M11a — Research jobs.** A second kind of job for work that takes minutes, not seconds: steps saved as they finish (in Postgres, so a redeploy resumes rather than restarts), a cancel button, per-user limits on steps, pages and spend, and one Telegram message edited in place to show progress. The existing 90-second jobs stay as they are.
+- **M11a — Research jobs.** Travel becomes a department (M12) and runs on its department jobs: work that takes minutes, not seconds, with steps saved as they finish (in Postgres, so a redeploy resumes rather than restarts), a cancel button, per-user limits on steps, pages and spend, and one Telegram message edited in place to show progress. The existing 90-second jobs stay as they are.
 - **M11b — A quarantined web agent.** Searching and reading the web happen in a separate agent with read-only web tools and nothing else: no ledger, memory, email or write tools. It hands back structured results that are validated before the chat agent sees them, so instructions hidden in a web page can't reach the user's data or start a change; anything Nexus then changes still goes through Confirm. Search and page fetching go through OpenRouter's web tools; pages that need scripts are read with Lightpanda (a light headless browser) inside research jobs only. No bot-check bypassing, no form submission, no crawling sites that forbid automated access, internal addresses blocked. Eval cases for prompt injection and for when to search.
 - **M11c — Trip planner.** A few questions first (dates or month, budget, who's going, style), with remembered preferences filled in. Then a short plan with Start / Edit / Cancel, run as a research job. Back come:
   - when to go and why (climate, public holidays and closures, peak-price dates, events);
@@ -274,7 +286,39 @@ The first step from expense tracker towards a lifestyle assistant: "I want to go
 
 Needs a search-results API key (SerpApi's free tier to start) and, optionally, Google Places and Rakuten Travel keys. About S$0.15–0.30 of searches and model calls per plan. Done when the Japan example produces a plan whose dates, flights, hotels and budget can each be traced to a source, and the injection evals pass.
 
-**Suggested order:** M0–M3 first. That replaces the old bot with better foundations and your history intact. M4–M10 then add features one by one, each shipped as it lands. M11 starts the move towards a lifestyle assistant, travel first.
+### M12 — Departments: front desk, framework and web redesign
+The structure from §3 "Agent departments", built before the first new team so Investment and Travel are born into it. No new money features; everything that works today keeps working.
+
+- **M12a — The department framework.** A registry (name, tools, skills, job steps, dashboard routes, summary card), department jobs for long work (saved steps, resume after a redeploy, cancel, per-user step and spend caps, one Telegram message edited in place for progress), and typed task and result schemas checked in code. Today's expense skills become the Accounting department with no change in behaviour. Routing evaluation cases added; the full evaluation set must score as before.
+- **M12b — The web app as a front desk with department dashboards.**
+  - **Home (front desk):** the chat, front and centre, and a feed of what needs the user across departments: emails waiting, possible duplicates, budget alerts, bills due, and later price alerts and finished trip plans. Each department adds one summary card (Accounting: this month's spending and budgets; Investment: portfolio value and day change; Travel: the next trip). Department jobs in progress show here with their progress and Cancel.
+  - **A department switcher:** a bottom bar on phones (Home, Accounting, Investment, Travel, Settings, with the chat bubble on every page) and a side rail on wide screens. Departments not set up yet show a short intro and a "Set up" button instead of empty pages.
+  - **Accounting dashboard:** today's Dashboard, Ledger, Plan (budgets, bills, subscriptions), Cash flow, Email and Import, regrouped as its own pages with one overview. Old links redirect.
+  - **Investment and Travel dashboards** are added by M13 and M11 as their pages (portfolio, plans, watchlist, track record; trips, price watches).
+  - **Settings** split by department plus account-wide (notifications, memory, connections).
+  - The same design system, light and dark, inside the Telegram mini app as well as a browser. Playwright journeys for each dashboard on phone and desktop widths.
+- **M12c — Front-desk Telegram.** Telegram messages show which department answered when it isn't Accounting ("📈 Investment: …"), department jobs report progress in one edited message, and "what are you working on?" lists running jobs.
+
+Done when the web app opens on Home with the department switcher, Accounting's pages work as before under its dashboard, the registry runs Accounting with the evaluation set at its previous score, and a department job can run, resume after a restart, and be cancelled.
+
+### M13 — Investment tracking and research
+Holdings and swing-trade research for US stocks, on a horizon of days to weeks, not day trading. The user sends a screenshot of their IBKR portfolio; Nexus keeps the positions, values them daily in the home currency, and a small team of agents proposes entry, stop and target levels from price history and news. It is research, never orders: there is no broker connection, no trading tool and no broker credentials, and every plan says what would prove it wrong. Other markets (SGX first) come later, behind the same data adapter.
+
+- **M13a — Holdings from a screenshot.** A screenshot of IBKR's portfolio screen (Telegram or web) is read by the vision model into positions: ticker, quantity, average cost, currency. The user checks the list before anything is saved, as with receipts. A later screenshot shows what changed ("+10 NVDA, AAPL gone") and asks before applying it. Typing works too ("I bought 10 NVDA at 118"). Daily closing prices from a market-data API (picked in M13a after checking current free tiers and terms; end-of-day data is enough), values and profit or loss in the home currency with the dated rates Nexus already keeps, the Investment dashboard on the web (M12), with a Portfolio card on Home, and "how's my portfolio?" in chat. Tests use made-up screenshots in IBKR's layout, never a real one.
+- **M13b — Levels from price history, and news.** A daily job after the US close stores each held or watched stock's daily bars and works out, in code: 20/50/200-day moving averages, RSI, ATR (the typical daily move), recent swing highs and lows as support and resistance, and upcoming earnings and dividend dates. News per stock from the same provider or a news API, deduplicated, with links. A watchlist ("watch AMD") adds stocks the user doesn't hold.
+- **M13c — The research team.** "Plan for NVDA" (or a weekly review of all holdings) runs as an Investment department job (M12): a technical analyst reading trend, momentum and the computed levels; a news analyst on what changed, with sources, flagging anything inside the holding window (earnings, ex-dividend, lawsuits); bull and bear cases argued against the levels; and a lead analyst who writes the plan. Every number comes from M13b, never from a model:
+  - entry zone at a pullback to support (a recent low or a moving average);
+  - stop just below support, or about 2× ATR under the entry;
+  - targets at the next resistance levels, offered only when the reward is at least about twice the risk;
+  - valid until a date (usually 2–3 weeks), then recomputed;
+  - for a stock already held: hold, trim at a target, or exit on a close below the stop, against the user's own average cost.
+
+  The plan comes back as a short Telegram message and a full page with the levels on a chart, the reasons and the sources. Agents get only read tools over prices, levels, news and the user's holdings; news text is treated as data, never instructions.
+- **M13d — Alerts and a track record.** After each close: a message when a stock reaches its entry zone, a target or its stop, or when a plan expires, with a one-tap stop. Each plan is kept and scored when it ends (target hit, stopped out, or expired), and the Plans page shows the record honestly, misses included, so the user can judge whether the levels are worth following.
+
+Needs a market-data API key (free tier to start) and about S$0.02–0.05 of model calls per plan. Done when an IBKR screenshot becomes confirmed holdings valued in SGD, a plan for a held stock traces every level to a calculation and every news point to a source, and alerts fire on the day's close.
+
+**Suggested order:** M0–M3 first. That replaces the old bot with better foundations and your history intact. M4–M10 then add features one by one, each shipped as it lands. Then M12 sets up the departments (front desk, framework and web redesign), M13 adds Investment, and M11 Travel follows on the same framework.
 
 ---
 
