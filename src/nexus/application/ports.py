@@ -13,6 +13,7 @@ from typing import Any, Protocol, Self
 from uuid import UUID
 
 from nexus.domain.access import Invite, Session
+from nexus.domain.departments import Run, Usage
 from nexus.domain.email import (
     EmailConnection,
     ExpenseDraft,
@@ -471,6 +472,21 @@ class StatementRepository(Protocol):
     async def mark_undone(self, user_id: UserId, import_id: UUID, at: datetime) -> None: ...
 
 
+class RunRepository(Protocol):
+    async def insert_run(self, run: Run) -> None: ...
+    async def get_run(
+        self, user_id: UserId, run_id: UUID, *, for_update: bool = False
+    ) -> Run | None: ...
+    async def update_run(self, run: Run) -> None: ...
+    async def list_runs(self, user_id: UserId, *, since: datetime, limit: int) -> list[Run]:
+        """Unfinished runs, then the latest finished since ``since``, newest first."""
+        ...
+
+    async def usage(self, user_id: UserId, since: datetime) -> Usage:
+        """Runs going now, and started and spent since ``since``."""
+        ...
+
+
 class UnitOfWork(Protocol):
     """One database transaction. Single use: enter it once per use case."""
 
@@ -486,6 +502,8 @@ class UnitOfWork(Protocol):
     def memory(self) -> MemoryRepository: ...
     @property
     def statements(self) -> StatementRepository: ...
+    @property
+    def runs(self) -> RunRepository: ...
 
     async def __aenter__(self) -> Self: ...
     async def __aexit__(

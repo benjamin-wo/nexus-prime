@@ -23,6 +23,7 @@ from nexus.agent.skills import SkillLibrary
 from nexus.agent.tools import build_tools
 from nexus.application import email as email_cases
 from nexus.application.clock import utcnow
+from nexus.application.departments import Departments, default_registry
 from nexus.application.email import EmailRuntime
 from nexus.application.fx import RateSource
 from nexus.application.limits import RateLimiter
@@ -69,6 +70,7 @@ class Overrides:
     """Swap in fakes for tests. Anything left None is built from settings."""
 
     models: ChatModels | None = None
+    departments: Departments | None = None  # the registry, with test run kinds
     receipts: ReceiptReader | None = None
     telegram: TelegramClient | None = None
     checkpointer: BaseCheckpointSaver[Any] | None = None
@@ -329,6 +331,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                 app.state.telegram = telegram
                 origin = resolved.public_origin
                 clock = extra.clock or utcnow
+                departments = extra.departments or default_registry()
                 if resolved.run_jobs:
                     runner = JobRunner(
                         engine,
@@ -340,6 +343,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                             archive,
                             email,
                             MemoryWriter(build_memory_model(resolved, models.primary)),
+                            departments,
                         ),
                         schedules=SCHEDULES,
                         clock=clock,
@@ -358,6 +362,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                         rates=rates,
                         archive=archive,
                         email=email,
+                        departments=departments,
                     )
                     menu = asyncio.create_task(_set_menu_button(telegram.client, origin))
                     stack.push_async_callback(_finish, menu)

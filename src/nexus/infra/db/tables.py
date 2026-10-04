@@ -454,6 +454,36 @@ memories = Table(
     Index("ix_memories_user_id_updated_at", "user_id", "updated_at"),
 )
 
+# A department's long piece of work (a research plan, a trip), saved step by step.
+department_runs = Table(
+    "department_runs",
+    metadata,
+    _uuid_pk(),
+    _user_fk(),
+    Column("department", Text, nullable=False),
+    Column("kind", Text, nullable=False),
+    Column("title", Text, nullable=False),
+    Column("status", Text, nullable=False),
+    Column("task", JSONB, nullable=False),
+    Column("outputs", JSONB, nullable=False),
+    Column("steps_done", Integer, nullable=False),
+    Column("steps_total", Integer, nullable=False),
+    Column("progress", Text, nullable=False),
+    Column("spent", MONEY, nullable=False),
+    Column("result", JSONB),
+    Column("error", Text),
+    Column("chat_id", BigInteger),
+    Column("message_id", BigInteger),
+    Column("created_at", TZ, nullable=False),
+    Column("updated_at", TZ, nullable=False),
+    Column("finished_at", TZ),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+    CheckConstraint(
+        "status IN ('queued', 'running', 'done', 'failed', 'cancelled')", name="status"
+    ),
+    Index("ix_department_runs_user_id_created_at", "user_id", "created_at"),
+)
+
 # Two transactions the user said aren't the same payment, so they're never flagged
 # as a possible duplicate again. The pair is stored in a fixed order.
 duplicate_dismissals = Table(

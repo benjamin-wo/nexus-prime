@@ -21,6 +21,7 @@ from nexus.agent.receipts import ReceiptReader, caption_date
 from nexus.agent.tools import UowFactory
 from nexus.application import bills as bill_cases
 from nexus.application import category_rules as rule_cases
+from nexus.application import departments as department_cases
 from nexus.application import email as email_cases
 from nexus.application import receipts as receipt_cases
 from nexus.application import salary as salary_cases
@@ -32,6 +33,7 @@ from nexus.application.fx import RateSource
 from nexus.application.limits import RateLimiter
 from nexus.application.ports import ReceiptStore
 from nexus.application.users import get_user
+from nexus.domain.departments import RunStatus
 from nexus.domain.errors import DuplicateSource, NexusError
 from nexus.domain.ledger import Direction, Transaction, UserId
 from nexus.domain.money import Money
@@ -249,7 +251,27 @@ class AgentService:
         if data.startswith("sub:"):
             _, action, subscription_id = [*data.split(":"), "", ""][:3]
             return [await self._subscription_button(actor, action, subscription_id)]
+        if data.startswith("run:cancel:"):
+            return [await self._cancel_run(actor, data.removeprefix("run:cancel:"))]
         return [Reply("I don't know that button.")]
+
+    async def _cancel_run(self, actor: UserId, run_id: str) -> Reply:
+        """Cancel on a department job's progress message."""
+        try:
+            found = UUID(run_id)
+        except ValueError:
+            return Reply("I don't know that button.")
+        try:
+            before = await department_cases.get_run(self._uow(), actor, found)
+            if before.finished:
+                ended = "been cancelled" if before.status is RunStatus.CANCELLED else "finished"
+                return Reply(f"{before.title} has already {ended}.")
+            run = await department_cases.cancel_run(self._uow(), actor, found, now=self._clock())
+        except NexusError as exc:
+            return Reply(str(exc).capitalize() + ".")
+        if run.status is not RunStatus.CANCELLED:  # pragma: no cover - finished in between
+            return Reply(f"{run.title} has already finished.")
+        return Reply(f"⏹ Cancelled {run.title}. Nothing more will run.")
 
     async def _subscription_button(self, actor: UserId, action: str, subscription_id: str) -> Reply:
         """Track it / No on a proposed subscription."""

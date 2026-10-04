@@ -1246,3 +1246,15 @@ async def test_possible_duplicates_merge_or_stay_two(world: World) -> None:
     assert gone.status_code == 204
     items = (await owner.get("/api/transactions")).json()["items"]
     assert [t["duplicate"] for t in items] == [None, None]
+
+
+async def test_departments_and_runs(world: World) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+    departments = (await owner.get("/api/departments")).json()
+    assert [d["name"] for d in departments] == ["accounting"]
+    assert departments[0]["label"] == "Accounting"
+    assert (await owner.get("/api/runs")).json() == []
+    missing = "/api/runs/00000000-0000-0000-0000-000000000000"
+    assert (await owner.get(missing)).status_code == 404
+    assert (await owner.send("POST", f"{missing}/cancel")).status_code == 404

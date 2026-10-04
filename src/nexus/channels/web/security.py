@@ -16,6 +16,7 @@ from fastapi import Depends, HTTPException, Request, Response
 from nexus.agent.service import AgentService
 from nexus.agent.tools import UowFactory
 from nexus.application.access import SESSION_TTL, resolve_session
+from nexus.application.departments import Departments, default_registry
 from nexus.application.email import EmailRuntime
 from nexus.application.fx import RateSource
 from nexus.application.limits import RateLimiter
@@ -41,6 +42,7 @@ class WebRuntime:
     email: EmailRuntime | None = None  # Connect Gmail; None = not offered
     # Per-user limits on heavy requests (statement imports).
     limits: RateLimiter = field(default_factory=RateLimiter)
+    departments: Departments = field(default_factory=default_registry)
 
 
 @dataclass(frozen=True, slots=True)
