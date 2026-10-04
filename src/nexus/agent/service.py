@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -17,12 +18,14 @@ from langgraph.types import Command
 
 from nexus.agent import kernel
 from nexus.agent.graph import BUTTONS, RECEIPT, REF, WROTE, strip_ids, thread_id
+from nexus.agent.holdings_reader import HoldingsReader, ScreenshotHoldings
 from nexus.agent.receipts import ReceiptReader, caption_date
 from nexus.agent.tools import UowFactory
 from nexus.application import bills as bill_cases
 from nexus.application import category_rules as rule_cases
 from nexus.application import departments as department_cases
 from nexus.application import email as email_cases
+from nexus.application import investments as investment_cases
 from nexus.application import receipts as receipt_cases
 from nexus.application import salary as salary_cases
 from nexus.application import splits as split_cases
@@ -34,7 +37,8 @@ from nexus.application.limits import RateLimiter
 from nexus.application.ports import ReceiptStore
 from nexus.application.users import get_user
 from nexus.domain.departments import RunStatus
-from nexus.domain.errors import DuplicateSource, NexusError
+from nexus.domain.errors import DuplicateSource, InvalidInput, NexusError
+from nexus.domain.investments import Position, clean_quantity, clean_symbol
 from nexus.domain.ledger import Direction, Transaction, UserId
 from nexus.domain.money import Money
 from nexus.infra.llm.factory import text_of
@@ -79,6 +83,31 @@ class _NoRates:
         return None
 
 
+# A caption that says the photo is a portfolio screenshot, not a receipt.
+_PORTFOLIO = re.compile(r"\b(?:portfolio|holdings?|positions?|ibkr|interactive brokers)\b", re.I)
+_NO_POSITIONS = Reply(
+    "I couldn't find any positions in that screenshot. Send your broker's Portfolio "
+    "screen, with the tickers, quantities and average costs showing."
+)
+
+
+def _positions(read: ScreenshotHoldings) -> list[Position]:
+    """The positions a screenshot showed clearly; anything unreadable is left out."""
+    found = []
+    for p in read.positions:
+        try:
+            found.append(
+                Position(
+                    clean_symbol(p.symbol),
+                    clean_quantity(p.quantity or ""),
+                    Money.of(p.average_cost or "", (p.currency or "USD").upper()),
+                )
+            )
+        except NexusError:
+            continue
+    return found
+
+
 class AgentService:
     def __init__(
         self,
@@ -90,8 +119,11 @@ class AgentService:
         rates: RateSource | None = None,
         after_turn: Callable[[UserId, list[str], str], Awaitable[None]] | None = None,
         limiter: RateLimiter | None = None,
+        holdings: HoldingsReader | None = None,
     ) -> None:
         self._graph = graph
+        # Reads broker portfolio screenshots; None: photos are only read as receipts.
+        self._holdings = holdings
         # For figures in the home currency; None leaves foreign amounts out.
         self._rates = rates
         self._uow = uow
@@ -188,20 +220,27 @@ class AgentService:
     async def handle_photo(
         self, actor: UserId, image: bytes, mime_type: str, caption: str | None, ref: str
     ) -> list[Reply]:
-        if self._receipts is None:
+        receipts = self._receipts
+        if receipts is None and self._holdings is None:
             return [Reply("Reading receipt photos isn't set up yet. Type the amount instead.")]
         if self._over_limit(actor):
             return [Reply(SLOW_DOWN)]
+        if receipts is None or (self._holdings is not None and _PORTFOLIO.search(caption or "")):
+            found = await self._holdings_photo(actor, image, mime_type, asked=True)
+            return [found or _NO_POSITIONS]
         try:
             names = [c.name for c in await list_categories(self._uow(), actor)]
             user = await get_user(self._uow(), actor)
             today = self._clock().astimezone(ZoneInfo(user.timezone)).date()
-            draft = await self._receipts.read(
-                image, mime_type, caption, categories=names, today=today
-            )
+            draft = await receipts.read(image, mime_type, caption, categories=names, today=today)
         except Exception:
             log.exception("receipt reading failed")
             return [Reply("I couldn't read that photo right now. Type the amount instead.")]
+        if not draft.is_receipt and self._holdings is not None:
+            # Not a receipt: it may be a portfolio screenshot sent without a caption.
+            found = await self._holdings_photo(actor, image, mime_type, asked=False)
+            if found is not None:
+                return [found]
         details = draft.model_dump()
         if not details.get("date"):  # none printed: the caption may say ("from yesterday")
             details["date"] = caption_date(caption, today)
@@ -221,6 +260,75 @@ class AgentService:
                 additional_kwargs={RECEIPT: details, REF: ref},
             )
             return await self._run(actor, {"messages": [message]})
+
+    async def _holdings_photo(
+        self, actor: UserId, image: bytes, mime_type: str, *, asked: bool
+    ) -> Reply | None:
+        """A broker screenshot read into positions, kept as a draft for the user to
+        save. None when the image isn't one (and the user didn't say it was)."""
+        try:
+            proposal = await self.read_portfolio(actor, image, mime_type, asked=asked)
+        except InvalidInput as exc:
+            # Unasked, a photo that couldn't be read as a portfolio goes on as a receipt.
+            return Reply(str(exc)) if asked else None
+        if proposal is None:
+            return None
+        text = investment_cases.describe_proposal(proposal)
+        if proposal.first or proposal.changes:
+            draft = proposal.draft.id
+            return Reply(
+                text,
+                [[Button("Save", f"hold:save:{draft}"), Button("Cancel", f"hold:skip:{draft}")]],
+            )
+        await investment_cases.discard_draft(self._uow(), actor, proposal.draft.id)
+        return Reply(text)
+
+    @property
+    def reads_portfolios(self) -> bool:
+        return self._holdings is not None
+
+    async def read_portfolio(
+        self, actor: UserId, image: bytes, mime_type: str, *, asked: bool = True
+    ) -> investment_cases.Proposal | None:
+        """Read a broker screenshot into a draft for the user to save. None when it
+        isn't one and the user didn't say it was; InvalidInput when nothing usable
+        was found or it couldn't be read."""
+        if self._holdings is None:
+            raise InvalidInput("reading screenshots isn't set up yet")
+        try:
+            read = await self._holdings.read(image, mime_type)
+        except Exception as exc:
+            log.exception("portfolio screenshot reading failed")
+            raise InvalidInput(
+                "I couldn't read that screenshot right now. Try again in a bit."
+            ) from exc
+        if not read.is_portfolio and not asked:
+            return None
+        positions = _positions(read)
+        if not positions:
+            raise InvalidInput(_NO_POSITIONS.text)
+        return await investment_cases.propose(self._uow(), actor, positions, now=self._clock())
+
+    async def _holdings_button(self, actor: UserId, action: str, draft_id: str) -> Reply:
+        """Save / Cancel on positions read from a screenshot."""
+        try:
+            found = UUID(draft_id)
+        except ValueError:
+            return Reply("I don't know that button.")
+        try:
+            if action == "save":
+                saved = await investment_cases.save_draft(
+                    self._uow(), actor, found, now=self._clock()
+                )
+                return Reply(
+                    f"Saved {len(saved)} positions. They're on the Investment page in the web app."
+                )
+            if action == "skip":
+                await investment_cases.discard_draft(self._uow(), actor, found)
+                return Reply("OK, I've left your holdings as they were.")
+        except NexusError as exc:
+            return Reply(str(exc).capitalize() + ".")
+        return Reply("I don't know that button.")
 
     async def resolve(self, actor: UserId, confirmation_id: str, approved: bool) -> list[Reply]:
         async with self._locks[actor]:
@@ -251,6 +359,9 @@ class AgentService:
         if data.startswith("sub:"):
             _, action, subscription_id = [*data.split(":"), "", ""][:3]
             return [await self._subscription_button(actor, action, subscription_id)]
+        if data.startswith("hold:"):
+            _, action, draft_id = [*data.split(":"), "", ""][:3]
+            return [await self._holdings_button(actor, action, draft_id)]
         if data.startswith("run:cancel:"):
             return [await self._cancel_run(actor, data.removeprefix("run:cancel:"))]
         return [Reply("I don't know that button.")]

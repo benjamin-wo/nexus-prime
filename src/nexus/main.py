@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nexus.agent.email_reader import LlmEmailReader
 from nexus.agent.graph import AgentDeps, AgentGraph
+from nexus.agent.holdings_reader import HoldingsReader, LlmHoldingsReader
 from nexus.agent.memory_writer import MemoryWriter
 from nexus.agent.receipts import LlmReceiptReader, ReceiptReader
 from nexus.agent.service import AgentService
@@ -27,6 +28,7 @@ from nexus.application.departments import Departments, default_registry
 from nexus.application.email import EmailRuntime
 from nexus.application.fx import RateSource
 from nexus.application.limits import RateLimiter
+from nexus.application.market import PriceSource
 from nexus.application.ports import (
     EmailReader,
     ForwardingInboxes,
@@ -36,7 +38,7 @@ from nexus.application.ports import (
 from nexus.channels.telegram import webhook as telegram_webhook
 from nexus.channels.telegram.client import HttpTelegramClient, TelegramClient
 from nexus.channels.web import api as web_api
-from nexus.channels.web import email_api, health
+from nexus.channels.web import email_api, health, investments_api
 from nexus.channels.web.errors import install_error_handlers
 from nexus.channels.web.frontend import mount_frontend
 from nexus.channels.web.hardening import install_hardening
@@ -57,6 +59,7 @@ from nexus.infra.llm.factory import (
     build_screener,
 )
 from nexus.infra.logs import configure_logging
+from nexus.infra.market.tiingo import TiingoPrices
 from nexus.infra.storage.s3 import S3ReceiptStore
 from nexus.jobs.handlers import MEMORY_UPDATE, SCHEDULES, build_handlers
 from nexus.jobs.runner import JobRunner
@@ -72,10 +75,12 @@ class Overrides:
     models: ChatModels | None = None
     departments: Departments | None = None  # the registry, with test run kinds
     receipts: ReceiptReader | None = None
+    holdings: HoldingsReader | None = None
     telegram: TelegramClient | None = None
     checkpointer: BaseCheckpointSaver[Any] | None = None
     clock: Callable[[], datetime] | None = None
     rates: RateSource | None = None
+    prices: PriceSource | None = None
     receipt_store: ReceiptStore | None = None
     mailbox: SignInMailbox | None = None
     forwarding: ForwardingInboxes | None = None
@@ -103,6 +108,19 @@ def _receipt_store(settings: Settings, overrides: Overrides) -> ReceiptStore | N
         secret_access_key=secret.get_secret_value(),
         path_style=settings.storage_path_style,
     )
+
+
+async def _prices(
+    settings: Settings, overrides: Overrides, stack: AsyncExitStack
+) -> PriceSource | None:
+    """Daily stock prices, when a Tiingo key is set."""
+    if overrides.prices is not None:
+        return overrides.prices
+    key = settings.tiingo_api_key
+    if key is None:
+        return None
+    http = await stack.enter_async_context(httpx.AsyncClient())
+    return TiingoPrices(http, key.get_secret_value())
 
 
 async def _email_runtime(
@@ -223,6 +241,9 @@ async def _telegram_runtime(
     receipts: ReceiptReader | None = overrides.receipts
     if receipts is None and models.vision is not None:
         receipts = LlmReceiptReader(models.vision)
+    holdings: HoldingsReader | None = overrides.holdings
+    if holdings is None and models.vision is not None:
+        holdings = LlmHoldingsReader(models.vision)
     client = overrides.telegram
     if client is None:
         token = settings.telegram_bot_token
@@ -243,6 +264,7 @@ async def _telegram_runtime(
             rates,
             after_turn=_queue_memory(uow, clock),
             limiter=RateLimiter(clock=clock),
+            holdings=holdings,
         ),
         client=client,
     )
@@ -320,6 +342,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                 if rates is None:
                     http = await stack.enter_async_context(httpx.AsyncClient())
                     rates = FrankfurterRates(http)
+                prices = await _prices(resolved, extra, stack)
                 archive = _receipt_store(resolved, extra)
                 if archive is None:
                     log.warning("receipt storage is not configured; receipt photos won't be kept")
@@ -344,6 +367,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                             email,
                             MemoryWriter(build_memory_model(resolved, models.primary)),
                             departments,
+                            prices,
                         ),
                         schedules=SCHEDULES,
                         clock=clock,
@@ -363,6 +387,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                         archive=archive,
                         email=email,
                         departments=departments,
+                        prices=prices is not None,
                     )
                     menu = asyncio.create_task(_set_menu_button(telegram.client, origin))
                     stack.push_async_callback(_finish, menu)
@@ -384,6 +409,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
     app.include_router(telegram_webhook.router)
     app.include_router(web_api.router)
     app.include_router(email_api.router)
+    app.include_router(investments_api.router)
     install_error_handlers(app)
     origin = resolved.public_origin
     install_hardening(app, https=bool(origin and origin.startswith("https://")))

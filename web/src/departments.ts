@@ -34,9 +34,7 @@ export const DEPARTMENTS: DepartmentView[] = [
     icon: "📈",
     path: "/investment",
     blurb: "Your holdings, and research on when to buy and sell.",
-    tabs: [],
-    upcoming:
-      "Send a screenshot of your IBKR portfolio and Nexus keeps your holdings, values them daily in your home currency, and has a research team suggest entry, stop and target levels for days-to-weeks trades, with every number and news point traced to its source. Research only: it never places a trade.",
+    tabs: [{ to: "/investment", label: "Portfolio", end: true }],
   },
   {
     name: "travel",

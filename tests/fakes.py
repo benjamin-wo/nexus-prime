@@ -14,12 +14,15 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.runnables import Runnable
 from pydantic import Field
 
+from nexus.agent.holdings_reader import ScreenshotHoldings, ScreenshotPosition
 from nexus.agent.receipts import ReceiptDraft
 from nexus.agent.service import Button
 from nexus.application.fx import Rate
+from nexus.application.market import PriceSourceError
 from nexus.application.ports import MailboxGrant, MailboxRevoked
 from nexus.domain.email import ExpenseDraft, FetchedEmail, Screening
 from nexus.domain.errors import InvalidInput
+from nexus.domain.market import Bar
 from nexus.infra.llm.factory import ChatModels
 
 NOW = datetime(2026, 9, 28, 4, 0, tzinfo=UTC)  # noon in Singapore
@@ -163,6 +166,33 @@ class FakeTelegram:
 
 
 @dataclass
+class FakePrices:
+    """Made-up daily closes per ticker: {symbol: {day: close}}. A ticker not listed
+    is unknown; one in ``failing`` raises like a provider that's down."""
+
+    closes: dict[str, dict[date, str]] = field(default_factory=dict)
+    failing: set[str] = field(default_factory=set)
+    asked: list[tuple[str, date, date]] = field(default_factory=list)
+
+    async def daily(self, symbol: str, start: date, end: date) -> list[Bar] | None:
+        self.asked.append((symbol, start, end))
+        if symbol in self.failing:
+            raise PriceSourceError("HTTP 503")
+        if symbol not in self.closes:
+            return None
+        return [
+            bar(symbol, day, close)
+            for day, close in sorted(self.closes[symbol].items())
+            if start <= day <= end
+        ]
+
+
+def bar(symbol: str, day: date, close: str) -> Bar:
+    price = Decimal(close)
+    return Bar(symbol, day, price, price, price, price, price, 1_000)
+
+
+@dataclass
 class FakeRates:
     """Published rates per (base, quote): {effective day: value}. Answers like the
     real provider: the latest rate on or before the day asked for."""
@@ -299,3 +329,24 @@ def fake_email(
     pdf: bytes | None = None,
 ) -> FetchedEmail:
     return FetchedEmail(message_id, at, sender, subject, text, pdf)
+
+
+@dataclass
+class FakeHoldings:
+    """Reads every image as the same portfolio screenshot (made-up positions)."""
+
+    holdings: ScreenshotHoldings | None = None
+    reads: int = 0
+
+    async def read(self, image: bytes, mime_type: str) -> ScreenshotHoldings:
+        self.reads += 1
+        if self.holdings is not None:
+            return self.holdings
+        return ScreenshotHoldings(
+            is_portfolio=True,
+            positions=[
+                ScreenshotPosition(symbol="NVDA", quantity="10", average_cost="$118.40"),
+                ScreenshotPosition(symbol="aapl", quantity="5", average_cost="190", currency="USD"),
+                ScreenshotPosition(symbol="Total", quantity=None, average_cost=None),
+            ],
+        )

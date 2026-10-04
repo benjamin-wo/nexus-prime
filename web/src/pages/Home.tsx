@@ -2,9 +2,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { api, type FeedItem, type Me, type Run, type Summary } from "../api";
+import { api, type FeedItem, type Me, type Portfolio, type Run, type Summary } from "../api";
 import { DEPARTMENTS } from "../departments";
-import { formatMoney } from "../format";
+import { formatChange, formatMoney, formatPercent } from "../format";
 
 function greeting(timezone: string): string {
   const hour = Number(new Intl.DateTimeFormat("en-GB", { hour: "numeric", hourCycle: "h23", timeZone: timezone }).format(new Date()));
@@ -52,6 +52,8 @@ export function Home({ me, onAsk }: { me: Me; onAsk: (text: string) => void }) {
     refetchInterval: (query) => (query.state.data?.some((r) => RUNNING.has(r.status)) ? 5000 : false),
   });
   const summary = useQuery({ queryKey: ["summary"], queryFn: () => api<Summary>("/summary") });
+  const portfolio = useQuery({ queryKey: ["investments"], queryFn: () => api<Portfolio>("/investments") });
+  const worth = portfolio.data?.totals;
   const spent = summary.data?.totals.find((t) => t.direction === "out");
   const received = summary.data?.totals.find((t) => t.direction === "in");
 
@@ -144,6 +146,16 @@ export function Home({ me, onAsk }: { me: Me; onAsk: (text: string) => void }) {
               <p className="muted">
                 This month: {spent ? formatMoney(spent.total) : "…"} spent
                 {received ? `, ${formatMoney(received.total)} received` : ""}
+              </p>
+            ) : d.name === "investment" && worth?.value ? (
+              <p className="muted">
+                Portfolio {formatMoney(worth.value)}
+                {worth.day_change && (
+                  <>
+                    , {formatChange(worth.day_change)}
+                    {worth.day_percent !== null && ` (${formatPercent(worth.day_percent)})`} on the day
+                  </>
+                )}
               </p>
             ) : (
               <p className="muted">{d.blurb}</p>

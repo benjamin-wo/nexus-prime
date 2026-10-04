@@ -298,3 +298,35 @@ export type Run = {
   created_at: string;
   finished_at: string | null;
 };
+
+export type Position = { symbol: string; quantity: string; average_cost: Money; cost: Money };
+export type HoldingsDraft = { id: string; positions: Position[]; changes: string[]; first: boolean };
+/** A holding at the last daily close; the price fields are null until it has a price. */
+export type Holding = Position & {
+  updated_at: string;
+  price: Money | null;
+  price_day: string | null;
+  value: Money | null;
+  gain: Money | null;
+  gain_percent: string | null;
+  day_change: Money | null;
+  day_percent: string | null;
+  value_home: Money | null;
+};
+export type PortfolioTotals = {
+  value: Money | null;
+  cost: Money | null;
+  gain: Money | null;
+  gain_percent: string | null;
+  day_change: Money | null;
+  day_percent: string | null;
+  as_of: string | null;
+  missing: string[];
+};
+export type Portfolio = {
+  holdings: Holding[];
+  totals: PortfolioTotals;
+  draft: HoldingsDraft | null;
+  screenshots: boolean;
+  prices: boolean;
+};

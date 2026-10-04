@@ -78,6 +78,9 @@ class Settings(BaseSettings):
     # A custom domain set up in AgentMail; unset = AgentMail's own (agentmail.to).
     agentmail_domain: str | None = None
 
+    # --- Daily stock prices (Tiingo end-of-day). Unset = holdings aren't valued. ---
+    tiingo_api_key: SecretStr | None = None
+
     # --- LLM. Names match the pre-rebuild deployment's variables. ---
     llm_provider: LlmProvider = LlmProvider.GEMINI
     gemini_api_key: SecretStr | None = None
@@ -153,6 +156,7 @@ class Settings(BaseSettings):
         "memory_model",
         "agentmail_api_key",
         "agentmail_domain",
+        "tiingo_api_key",
         "storage_access_key_id",
         "storage_secret_access_key",
         "storage_bucket",

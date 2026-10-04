@@ -1,6 +1,7 @@
 """The web API through the real app: login, invites, sessions, CSRF, ledger, export, chat."""
 
 import asyncio
+import base64
 import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -17,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nexus.application import bills as bill_cases
 from nexus.application import email as email_cases
+from nexus.application import market as market_cases
 from nexus.application import receipts as receipt_cases
 from nexus.application import subscriptions as subscription_cases
 from nexus.application.transactions import NewTransaction, log_transaction
@@ -33,7 +35,9 @@ from tests.fakes import (
     FakeBucket,
     FakeEmailReader,
     FakeForwarding,
+    FakeHoldings,
     FakeMailbox,
+    FakePrices,
     FakeRates,
     FakeTelegram,
     ScriptedModel,
@@ -141,6 +145,8 @@ async def world(engine: AsyncEngine, empty_database_url: str) -> AsyncIterator[W
             mailbox=mailbox,
             forwarding=forwarding,
             email_reader=FakeEmailReader(),
+            holdings=FakeHoldings(),
+            prices=FakePrices(),
         ),
     )
     async with app.router.lifespan_context(app):
@@ -1252,7 +1258,7 @@ async def test_departments_and_runs(world: World) -> None:
     owner = world.browser()
     await owner.login(OWNER)
     departments = (await owner.get("/api/departments")).json()
-    assert [d["name"] for d in departments] == ["accounting"]
+    assert [d["name"] for d in departments] == ["accounting", "investment"]
     assert departments[0]["label"] == "Accounting"
     assert (await owner.get("/api/runs")).json() == []
     missing = "/api/runs/00000000-0000-0000-0000-000000000000"
@@ -1279,3 +1285,48 @@ async def test_home_lists_what_needs_the_user(world: World) -> None:
         ),
         ("bill", "Rent (1800.00 SGD) due tomorrow", "/accounting/plan", False),
     ]
+
+
+async def test_holdings_from_a_screenshot_on_the_web(world: World) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+    empty = (await owner.get("/api/investments")).json()
+    assert empty["holdings"] == [] and empty["draft"] is None and empty["screenshots"]
+    assert empty["totals"]["value"] is None and empty["prices"] is True
+    image = base64.b64encode(b"a screenshot").decode()
+    draft = await owner.send(
+        "POST", "/api/investments/screenshot", {"image": image, "mime_type": "image/png"}
+    )
+    assert draft.status_code == 200
+    body = draft.json()
+    assert body["first"] and [p["symbol"] for p in body["positions"]] == ["AAPL", "NVDA"]
+    assert (await owner.get("/api/investments")).json()["draft"]["id"] == body["id"]
+    saved = await owner.send("POST", f"/api/investments/drafts/{body['id']}/save")
+    assert [p["quantity"] for p in saved.json()] == ["5", "10"]
+
+    edit = {"quantity": "12", "average_cost": "120.50", "currency": "USD"}
+    assert (await owner.send("PUT", "/api/investments/holdings/nvda", edit)).status_code == 204
+    assert (await owner.send("DELETE", "/api/investments/holdings/AAPL")).status_code == 204
+    after = (await owner.get("/api/investments")).json()
+    assert [(h["symbol"], h["quantity"], h["cost"]["amount"]) for h in after["holdings"]] == [
+        ("NVDA", "12", "1446.0000")
+    ]
+    assert after["draft"] is None
+    assert after["holdings"][0]["price"] is None and after["totals"]["missing"] == ["NVDA"]
+
+    prices = FakePrices({"NVDA": {date(2026, 9, 24): "128", date(2026, 9, 25): "130.25"}})
+    await market_cases.refresh(world.app.state.web.uow, prices, now=NOW)
+    valued = (await owner.get("/api/investments")).json()
+    nvda = valued["holdings"][0]
+    assert (nvda["price"]["amount"], nvda["value"]["amount"], nvda["gain"]["amount"]) == (
+        "130.2500",
+        "1563.0000",
+        "117.0000",
+    )
+    assert nvda["price_day"] == "2026-09-25" and nvda["day_percent"] == "1.76"
+    assert valued["totals"]["value"] == {"amount": "2017.0500", "currency": "SGD"}
+    assert valued["totals"]["missing"] == [] and valued["totals"]["as_of"] == "2026-09-25"
+    bad = await owner.send("PUT", "/api/investments/holdings/NOT A TICKER", edit)
+    assert bad.status_code == 422
+    gone = await owner.send("DELETE", "/api/investments/holdings/AMD")
+    assert gone.status_code == 404

@@ -4,6 +4,7 @@ from typing import Self
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncTransaction
 
 from nexus.infra.db.email_repository import SqlEmailRepository
+from nexus.infra.db.investment_repository import SqlInvestmentRepository
 from nexus.infra.db.ledger_repository import SqlLedgerRepository
 from nexus.infra.db.memory_repository import SqlMemoryRepository
 from nexus.infra.db.planning_repository import SqlJobQueue, SqlPlanningRepository
@@ -26,6 +27,7 @@ class SqlUnitOfWork:
         self._memory: SqlMemoryRepository | None = None
         self._statements: SqlStatementRepository | None = None
         self._runs: SqlRunRepository | None = None
+        self._investments: SqlInvestmentRepository | None = None
 
     @property
     def ledger(self) -> SqlLedgerRepository:
@@ -69,6 +71,12 @@ class SqlUnitOfWork:
             raise RuntimeError("unit of work is not active")
         return self._runs
 
+    @property
+    def investments(self) -> SqlInvestmentRepository:
+        if self._investments is None:
+            raise RuntimeError("unit of work is not active")
+        return self._investments
+
     async def __aenter__(self) -> Self:
         if self._used:
             raise RuntimeError("a unit of work can only be used once")
@@ -82,6 +90,7 @@ class SqlUnitOfWork:
         self._memory = SqlMemoryRepository(self._connection)
         self._statements = SqlStatementRepository(self._connection)
         self._runs = SqlRunRepository(self._connection)
+        self._investments = SqlInvestmentRepository(self._connection)
         return self
 
     async def commit(self) -> None:

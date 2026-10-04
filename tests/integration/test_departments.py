@@ -112,7 +112,8 @@ async def run_all(
 def test_every_skill_belongs_to_one_department() -> None:
     owners = department_cases.default_registry().skill_owner
     skills = set(SkillLibrary.load().tools())
-    assert skills == set(owners) and set(owners.values()) == {"accounting"}
+    assert skills == set(owners) and set(owners.values()) == {"accounting", "investment"}
+    assert owners["investments"] == "investment"
     with pytest.raises(ValueError, match="belongs to"):
         Departments([ACCOUNTING, Department("x", "X", "x", ("budgets",), "")])
 

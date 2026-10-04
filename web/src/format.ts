@@ -30,3 +30,17 @@ export function formatShortDate(iso: string, timeZone?: string): string {
 export function isoDay(iso: string, timeZone: string): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone }).format(new Date(iso));
 }
+
+/** A signed change: "+USD 12.30", "−SGD 4.00". */
+export function formatChange(money: Money): string {
+  const value = Number(money.amount);
+  const text = formatMoney({ ...money, amount: String(Math.abs(value)) });
+  return value > 0 ? `+${text}` : value < 0 ? `−${text}` : text;
+}
+
+/** A signed percentage: "+4.2%", "−0.8%". */
+export function formatPercent(percent: string): string {
+  const value = Number(percent);
+  const text = `${Math.abs(value).toLocaleString(undefined, { maximumFractionDigits: 2 })}%`;
+  return value > 0 ? `+${text}` : value < 0 ? `−${text}` : text;
+}
