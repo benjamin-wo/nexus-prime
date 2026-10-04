@@ -301,6 +301,8 @@ export type Run = {
 
 export type Position = { symbol: string; quantity: string; average_cost: Money; cost: Money };
 export type HoldingsDraft = { id: string; positions: Position[]; changes: string[]; first: boolean };
+export type EarningsDate = { day: string; timing: string | null };
+
 /** A holding at the last daily close; the price fields are null until it has a price. */
 export type Holding = Position & {
   updated_at: string;
@@ -312,6 +314,7 @@ export type Holding = Position & {
   day_change: Money | null;
   day_percent: string | null;
   value_home: Money | null;
+  earnings: EarningsDate | null;
 };
 export type PortfolioTotals = {
   value: Money | null;
@@ -329,4 +332,39 @@ export type Portfolio = {
   draft: HoldingsDraft | null;
   screenshots: boolean;
   prices: boolean;
+};
+
+export type Watched = {
+  symbol: string;
+  price: string | null;
+  price_day: string | null;
+  day_percent: string | null;
+  earnings: EarningsDate | null;
+};
+export type Watchlist = { stocks: Watched[]; prices: boolean; news: boolean };
+
+export type Levels = {
+  as_of: string;
+  close: string;
+  averages: Record<string, string>;
+  trend: "uptrend" | "downtrend" | "mixed" | null;
+  rsi: string | null;
+  atr: string | null;
+  atr_percent: string | null;
+  support: string[];
+  resistance: string[];
+  year_high: string;
+  year_low: string;
+  days: number;
+};
+export type NewsItem = { headline: string; source: string; url: string; summary: string; published_at: string };
+export type Stock = {
+  symbol: string;
+  held: Position | null;
+  watching: boolean;
+  levels: Levels | null;
+  earnings: EarningsDate | null;
+  news: NewsItem[];
+  prices: boolean;
+  news_enabled: boolean;
 };

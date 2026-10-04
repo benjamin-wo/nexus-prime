@@ -52,6 +52,7 @@ export async function fakeApi(
     holdings: { symbol: string; quantity: string; average_cost: { amount: string; currency: string }; cost: { amount: string; currency: string }; updated_at: string }[];
     draft: Record<string, unknown> | null;
     screenshots: number;
+    watching: string[];
     cancelled: string[];
     budgets: FakeBudget[];
     bills: FakeBill[];
@@ -93,6 +94,7 @@ export async function fakeApi(
       : [],
     cancelled: [],
     holdings: [],
+    watching: [],
     draft: null,
     screenshots: 0,
     txs: [
@@ -293,7 +295,7 @@ export async function fakeApi(
         const close = closes[h.symbol];
         if (!close) {
           missing.push(h.symbol);
-          return { ...h, price: null, price_day: null, value: null, gain: null, gain_percent: null, day_change: null, day_percent: null, value_home: null };
+          return { ...h, price: null, price_day: null, value: null, gain: null, gain_percent: null, day_change: null, day_percent: null, value_home: null, earnings: null };
         }
         const value = Number(h.quantity) * Number(close[0]);
         const up = value - Number(h.cost.amount);
@@ -309,6 +311,7 @@ export async function fakeApi(
           day_change: usd((Number(h.quantity) * (Number(close[0]) - Number(close[1]))).toFixed(4)),
           day_percent: "1.76",
           value_home: sgd(value * 1.3),
+          earnings: { day: "2026-10-29", timing: "after close" },
         };
       });
       const priced = holdings.length > missing.length;
@@ -327,6 +330,63 @@ export async function fakeApi(
         draft: state.draft,
         screenshots: true,
         prices: true,
+      });
+    }
+    if (path === "/investments/watchlist" && method === "GET") {
+      return json(route, {
+        stocks: state.watching.map((symbol) => ({
+          symbol,
+          price: symbol === "AMD" ? "129.50" : null,
+          price_day: symbol === "AMD" ? "2026-09-25" : null,
+          day_percent: symbol === "AMD" ? "0.39" : null,
+          earnings: null,
+        })),
+        prices: true,
+        news: true,
+      });
+    }
+    if (path === "/investments/watchlist" && method === "POST") {
+      const symbol = String(body.symbol).toUpperCase();
+      const added = !state.watching.includes(symbol);
+      if (added) state.watching = [...state.watching, symbol].sort();
+      return json(route, { added });
+    }
+    const unwatch = path.match(/^\/investments\/watchlist\/([A-Z.]+)$/);
+    if (unwatch && method === "DELETE") {
+      state.watching = state.watching.filter((s) => s !== unwatch[1]);
+      return route.fulfill({ status: 204 });
+    }
+    const stockPage = path.match(/^\/investments\/stocks\/([A-Za-z.]+)$/);
+    if (stockPage && method === "GET") {
+      const symbol = stockPage[1].toUpperCase();
+      return json(route, {
+        symbol,
+        held: null,
+        watching: state.watching.includes(symbol),
+        levels:
+          symbol === "AMD"
+            ? {
+                as_of: "2026-09-25",
+                close: "129.50",
+                averages: { "20": "124.75", "50": "117.25" },
+                trend: null,
+                rsi: "71.20",
+                atr: "1.80",
+                atr_percent: "1.39",
+                support: ["121.00", "112.40"],
+                resistance: ["131.00"],
+                year_high: "131.00",
+                year_low: "99.00",
+                days: 60,
+              }
+            : null,
+        earnings: symbol === "AMD" ? { day: "2026-10-29", timing: "after close" } : null,
+        news:
+          symbol === "AMD"
+            ? [{ headline: "Acme rival opens a plant", source: "Wire", url: "https://news.example/1", summary: "", published_at: "2026-09-27T09:00:00Z" }]
+            : [],
+        prices: true,
+        news_enabled: true,
       });
     }
     if (path === "/investments/screenshot" && method === "POST") {

@@ -20,6 +20,7 @@ from nexus.application import bills as bill_cases
 from nexus.application import email as email_cases
 from nexus.application import market as market_cases
 from nexus.application import receipts as receipt_cases
+from nexus.application import research as research_cases
 from nexus.application import subscriptions as subscription_cases
 from nexus.application.transactions import NewTransaction, log_transaction
 from nexus.channels.web.telegram_login import sign_for_tests, sign_webapp_for_tests
@@ -37,6 +38,7 @@ from tests.fakes import (
     FakeForwarding,
     FakeHoldings,
     FakeMailbox,
+    FakeNews,
     FakePrices,
     FakeRates,
     FakeTelegram,
@@ -147,6 +149,7 @@ async def world(engine: AsyncEngine, empty_database_url: str) -> AsyncIterator[W
             email_reader=FakeEmailReader(),
             holdings=FakeHoldings(),
             prices=FakePrices(),
+            news=FakeNews(),
         ),
     )
     async with app.router.lifespan_context(app):
@@ -1330,3 +1333,45 @@ async def test_holdings_from_a_screenshot_on_the_web(world: World) -> None:
     assert bad.status_code == 422
     gone = await owner.send("DELETE", "/api/investments/holdings/AMD")
     assert gone.status_code == 404
+
+
+async def test_watchlist_and_a_stock_page_on_the_web(world: World) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+    empty = (await owner.get("/api/investments/watchlist")).json()
+    assert empty == {"stocks": [], "prices": True, "news": True}
+    added = await owner.send("POST", "/api/investments/watchlist", {"symbol": "amd"})
+    assert added.json() == {"added": True}
+    again = await owner.send("POST", "/api/investments/watchlist", {"symbol": "AMD"})
+    assert again.json() == {"added": False}
+    bad = await owner.send("POST", "/api/investments/watchlist", {"symbol": "NOT A TICKER"})
+    assert bad.status_code == 422
+
+    last = date(2026, 9, 25)
+    closes = {last - timedelta(days=59 - i): f"{100 + i * 0.5:.2f}" for i in range(60)}
+    web = world.app.state.web
+    await market_cases.refresh(web.uow, FakePrices({"AMD": closes}), now=NOW)
+    news = FakeNews(
+        headlines={"AMD": [(NOW - timedelta(hours=5), "Acme rival opens a plant")]},
+        earnings_days={"AMD": [date(2026, 10, 29)]},
+    )
+    await research_cases.refresh_news(web.uow, news, now=NOW)
+    listed = (await owner.get("/api/investments/watchlist")).json()["stocks"]
+    assert listed == [
+        {
+            "symbol": "AMD",
+            "price": "129.50",
+            "price_day": "2026-09-25",
+            "day_percent": "0.39",
+            "earnings": {"day": "2026-10-29", "timing": "after close"},
+        }
+    ]
+    page = (await owner.get("/api/investments/stocks/amd")).json()
+    assert page["symbol"] == "AMD" and page["watching"] and page["held"] is None
+    assert page["levels"]["close"] == "129.50" and page["levels"]["averages"]["50"] == "117.25"
+    assert [n["headline"] for n in page["news"]] == ["Acme rival opens a plant"]
+    assert page["news"][0]["url"].startswith("https://")
+    unknown = (await owner.get("/api/investments/stocks/ZZZ")).json()
+    assert unknown["levels"] is None and unknown["news"] == []
+    assert (await owner.send("DELETE", "/api/investments/watchlist/AMD")).status_code == 204
+    assert (await owner.send("DELETE", "/api/investments/watchlist/AMD")).status_code == 404

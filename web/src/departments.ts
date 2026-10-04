@@ -34,7 +34,10 @@ export const DEPARTMENTS: DepartmentView[] = [
     icon: "📈",
     path: "/investment",
     blurb: "Your holdings, and research on when to buy and sell.",
-    tabs: [{ to: "/investment", label: "Portfolio", end: true }],
+    tabs: [
+      { to: "/investment", label: "Portfolio", end: true },
+      { to: "/investment/watchlist", label: "Watchlist" },
+    ],
   },
   {
     name: "travel",

@@ -35,6 +35,7 @@ from nexus.application.ports import (
     ReceiptStore,
     SignInMailbox,
 )
+from nexus.application.research import NewsSource
 from nexus.channels.telegram import webhook as telegram_webhook
 from nexus.channels.telegram.client import HttpTelegramClient, TelegramClient
 from nexus.channels.web import api as web_api
@@ -59,6 +60,7 @@ from nexus.infra.llm.factory import (
     build_screener,
 )
 from nexus.infra.logs import configure_logging
+from nexus.infra.market.finnhub import FinnhubNews
 from nexus.infra.market.tiingo import TiingoPrices
 from nexus.infra.storage.s3 import S3ReceiptStore
 from nexus.jobs.handlers import MEMORY_UPDATE, SCHEDULES, build_handlers
@@ -81,6 +83,7 @@ class Overrides:
     clock: Callable[[], datetime] | None = None
     rates: RateSource | None = None
     prices: PriceSource | None = None
+    news: NewsSource | None = None
     receipt_store: ReceiptStore | None = None
     mailbox: SignInMailbox | None = None
     forwarding: ForwardingInboxes | None = None
@@ -118,9 +121,24 @@ async def _prices(
         return overrides.prices
     key = settings.tiingo_api_key
     if key is None:
+        log.warning("TIINGO_API_KEY is not set; holdings won't be valued")
         return None
     http = await stack.enter_async_context(httpx.AsyncClient())
     return TiingoPrices(http, key.get_secret_value())
+
+
+async def _news(
+    settings: Settings, overrides: Overrides, stack: AsyncExitStack
+) -> NewsSource | None:
+    """Company news and earnings dates, when a Finnhub key is set."""
+    if overrides.news is not None:
+        return overrides.news
+    key = settings.finnhub_api_key
+    if key is None:
+        log.warning("FINNHUB_API_KEY is not set; no news or earnings dates will be fetched")
+        return None
+    http = await stack.enter_async_context(httpx.AsyncClient())
+    return FinnhubNews(http, key.get_secret_value())
 
 
 async def _email_runtime(
@@ -343,6 +361,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                     http = await stack.enter_async_context(httpx.AsyncClient())
                     rates = FrankfurterRates(http)
                 prices = await _prices(resolved, extra, stack)
+                news = await _news(resolved, extra, stack)
                 archive = _receipt_store(resolved, extra)
                 if archive is None:
                     log.warning("receipt storage is not configured; receipt photos won't be kept")
@@ -368,6 +387,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                             MemoryWriter(build_memory_model(resolved, models.primary)),
                             departments,
                             prices,
+                            news,
                         ),
                         schedules=SCHEDULES,
                         clock=clock,
@@ -388,6 +408,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                         email=email,
                         departments=departments,
                         prices=prices is not None,
+                        news=news is not None,
                     )
                     menu = asyncio.create_task(_set_menu_button(telegram.client, origin))
                     stack.push_async_callback(_finish, menu)

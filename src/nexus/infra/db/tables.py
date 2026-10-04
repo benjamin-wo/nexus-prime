@@ -511,6 +511,51 @@ market_symbols = Table(
     Column("known", Boolean, nullable=False),
 )
 
+# Stocks a user follows without holding them.
+watchlist = Table(
+    "watchlist",
+    metadata,
+    _uuid_pk(),
+    _user_fk(),
+    Column("symbol", Text, nullable=False),
+    Column("created_at", TZ, nullable=False),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+    UniqueConstraint("user_id", "symbol"),
+)
+
+# News per stock, shared by every user, kept for a month. Someone else's text.
+market_news = Table(
+    "market_news",
+    metadata,
+    Column("symbol", Text, nullable=False),
+    Column("external_id", Text, nullable=False),
+    Column("headline", Text, nullable=False),
+    Column("source", Text, nullable=False),
+    Column("url", Text, nullable=False),
+    Column("summary", Text, nullable=False),
+    Column("published_at", TZ, nullable=False),
+    PrimaryKeyConstraint("symbol", "external_id"),
+    Index("ix_market_news_symbol_published_at", "symbol", "published_at"),
+)
+
+# Upcoming earnings dates per stock, shared by every user.
+market_earnings = Table(
+    "market_earnings",
+    metadata,
+    Column("symbol", Text, nullable=False),
+    Column("day", Date, nullable=False),
+    Column("timing", Text),
+    PrimaryKeyConstraint("symbol", "day"),
+)
+
+# When each stock's news and earnings dates were last fetched.
+news_fetches = Table(
+    "news_fetches",
+    metadata,
+    Column("symbol", Text, primary_key=True),
+    Column("fetched_at", TZ, nullable=False),
+)
+
 # A department's long piece of work (a research plan, a trip), saved step by step.
 department_runs = Table(
     "department_runs",

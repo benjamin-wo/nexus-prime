@@ -405,7 +405,7 @@ test("telegram updates default to an end-of-day summary and can be changed", asy
 test("nothing spills sideways on a small phone", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 568 });
   await fakeApi(page, { emailConnected: true });
-  const pages = ["/", "/accounting", "/ledger", "/plan", "/settings", "/email", "/cashflow", "/investment", "/travel"];
+  const pages = ["/", "/accounting", "/ledger", "/plan", "/settings", "/email", "/cashflow", "/investment", "/investment/watchlist", "/investment/stocks/AMD", "/travel"];
   for (const path of [...pages, "/connect/gmail?t=good"]) {
     await page.goto(path);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
@@ -664,4 +664,31 @@ test("holdings from a screenshot are checked, saved, edited and removed", async 
   await expect(holdings.getByRole("rowheader", { name: "AAPL" })).toHaveCount(0);
   await page.goto("/");
   await expect(page.getByRole("link", { name: /^Investment: / })).toContainText("Portfolio SGD");
+});
+
+test("a watched stock shows its levels, earnings date and news", async ({ page }) => {
+  const state = await fakeApi(page);
+  await page.goto("/investment/watchlist");
+  await expect(page.getByText(/Nothing on your watchlist yet/)).toBeVisible();
+  const form = page.getByRole("form", { name: "Watch a stock" });
+  await form.getByLabel("Ticker").fill("amd");
+  await form.getByRole("button", { name: "Watch" }).click();
+  const list = page.getByRole("list", { name: "Watched stocks" });
+  await expect(list).toContainText("AMD · USD 129.50");
+  expect(state.watching).toEqual(["AMD"]);
+
+  await list.getByRole("link", { name: "AMD" }).click();
+  await expect(page).toHaveURL(/\/investment\/stocks\/AMD$/);
+  await expect(page.getByRole("heading", { name: "AMD", level: 1 })).toBeVisible();
+  const ladder = page.getByRole("list", { name: "Support and resistance" });
+  await expect(ladder.getByRole("listitem")).toHaveText([/Resistance\s*131.00/, /Close\s*129.50/, /Support\s*121.00/, /Support\s*112.40/]);
+  await expect(page.getByText("Momentum: stretched after a run up.")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Next earnings" })).toContainText("after close");
+  const story = page.getByRole("link", { name: "Acme rival opens a plant" });
+  await expect(story).toHaveAttribute("rel", /noopener/);
+  await expect(story).toHaveAttribute("target", "_blank");
+
+  await page.getByRole("button", { name: "Stop watching" }).click();
+  await expect(page.getByRole("button", { name: "Watch" })).toBeVisible();
+  expect(state.watching).toEqual([]);
 });

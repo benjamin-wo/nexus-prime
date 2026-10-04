@@ -40,6 +40,7 @@ from nexus.domain.ledger import (
 from nexus.domain.market import Bar
 from nexus.domain.memory import Memory, MemoryKind
 from nexus.domain.money import Money
+from nexus.domain.news import EarningsDate, NewsItem
 from nexus.domain.notifications import NotificationSettings
 from nexus.domain.planning import Bill, BillOccurrence, Budget, SalarySchedule
 from nexus.domain.receipts import Receipt
@@ -518,6 +519,35 @@ class InvestmentRepository(Protocol):
     async def latest_bars(self, symbols: list[str], count: int = 2) -> dict[str, list[Bar]]:
         """Each stock's last ``count`` days of prices, newest first."""
         ...
+
+    async def tracked_symbols(self) -> list[str]:
+        """Across all users: every stock someone holds or watches."""
+        ...
+
+    async def bars(self, symbol: str, count: int) -> list[Bar]:
+        """A stock's last ``count`` days of prices, oldest first."""
+        ...
+
+    async def list_watch(self, user_id: UserId) -> list[str]: ...
+    async def add_watch(self, user_id: UserId, symbol: str, at: datetime) -> bool:
+        """False when the user already watches it."""
+        ...
+
+    async def remove_watch(self, user_id: UserId, symbol: str) -> bool: ...
+    async def news_fetched(self, symbols: list[str]) -> dict[str, datetime]: ...
+    async def save_news(
+        self,
+        symbol: str,
+        items: list[NewsItem],
+        earnings: list[EarningsDate],
+        *,
+        at: datetime,
+    ) -> None: ...
+    async def purge_news(self, before: datetime) -> int: ...
+    async def recent_news(self, symbol: str, limit: int) -> list[NewsItem]: ...
+    async def upcoming_earnings(
+        self, symbols: list[str], since: date
+    ) -> dict[str, EarningsDate]: ...
 
 
 class UnitOfWork(Protocol):
