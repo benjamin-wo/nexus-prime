@@ -283,7 +283,51 @@ export async function fakeApi(
       updated_at: new Date().toISOString(),
     });
     if (path === "/investments" && method === "GET") {
-      return json(route, { holdings: state.holdings, draft: state.draft, screenshots: true });
+      // Made-up closes: NVDA has one, AAPL doesn't yet. 1 USD = 1.30 SGD.
+      const closes: Record<string, [string, string]> = { NVDA: ["130.25", "128.00"] };
+      const sgd = (amount: number) => ({ amount: amount.toFixed(4), currency: "SGD" });
+      let total = 0;
+      let gain = 0;
+      const missing: string[] = [];
+      const holdings = state.holdings.map((h) => {
+        const close = closes[h.symbol];
+        if (!close) {
+          missing.push(h.symbol);
+          return { ...h, price: null, price_day: null, value: null, gain: null, gain_percent: null, day_change: null, day_percent: null, value_home: null };
+        }
+        const value = Number(h.quantity) * Number(close[0]);
+        const up = value - Number(h.cost.amount);
+        total += value * 1.3;
+        gain += up * 1.3;
+        return {
+          ...h,
+          price: usd(close[0]),
+          price_day: "2026-09-25",
+          value: usd(value.toFixed(4)),
+          gain: usd(up.toFixed(4)),
+          gain_percent: ((up / Number(h.cost.amount)) * 100).toFixed(2),
+          day_change: usd((Number(h.quantity) * (Number(close[0]) - Number(close[1]))).toFixed(4)),
+          day_percent: "1.76",
+          value_home: sgd(value * 1.3),
+        };
+      });
+      const priced = holdings.length > missing.length;
+      return json(route, {
+        holdings,
+        totals: {
+          value: priced ? sgd(total) : null,
+          cost: priced ? sgd(total - gain) : null,
+          gain: priced ? sgd(gain) : null,
+          gain_percent: priced ? ((gain / (total - gain)) * 100).toFixed(2) : null,
+          day_change: null,
+          day_percent: null,
+          as_of: priced ? "2026-09-25" : null,
+          missing,
+        },
+        draft: state.draft,
+        screenshots: true,
+        prices: true,
+      });
     }
     if (path === "/investments/screenshot" && method === "POST") {
       state.screenshots += 1;

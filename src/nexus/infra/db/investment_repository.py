@@ -1,17 +1,18 @@
 """PostgreSQL storage for holdings. Every query filters on user_id."""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import Row, delete, insert, select, update
+from sqlalchemy import Row, delete, func, insert, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from nexus.domain.investments import DraftStatus, Holding, HoldingsDraft, Position, plain
 from nexus.domain.ledger import UserId
+from nexus.domain.market import Bar
 from nexus.domain.money import Money
-from nexus.infra.db.tables import holding_drafts, holdings
+from nexus.infra.db.tables import holding_drafts, holdings, market_bars, market_symbols
 
 
 def _holding(row: Row[Any]) -> Holding:
@@ -116,3 +117,81 @@ class SqlInvestmentRepository:
             .where(d.user_id == user_id, d.id == draft_id)
             .values(status=status.value)
         )
+
+    # --- market data, shared by every user ---
+
+    async def held_symbols(self) -> list[str]:
+        """Across all users: every stock someone holds."""
+        rows = await self._db.execute(select(holdings.c.symbol).distinct().order_by("symbol"))
+        return [r.symbol for r in rows]
+
+    async def fetched(self, symbols: list[str]) -> dict[str, datetime]:
+        m = market_symbols.c
+        rows = await self._db.execute(select(m.symbol, m.fetched_at).where(m.symbol.in_(symbols)))
+        return {r.symbol: r.fetched_at for r in rows}
+
+    async def last_bar_day(self, symbol: str) -> date | None:
+        b = market_bars.c
+        day: date | None = (
+            await self._db.execute(select(func.max(b.day)).where(b.symbol == symbol))
+        ).scalar()
+        return day
+
+    async def save_bars(self, symbol: str, bars: list[Bar], *, known: bool, at: datetime) -> None:
+        """Store a stock's daily prices (a day already stored is replaced: providers
+        correct a close now and then) and when they were fetched."""
+        if bars:
+            stmt = pg_insert(market_bars).values(
+                [
+                    {
+                        "symbol": symbol,
+                        "day": b.day,
+                        "open": b.open,
+                        "high": b.high,
+                        "low": b.low,
+                        "close": b.close,
+                        "adj_close": b.adj_close,
+                        "volume": b.volume,
+                    }
+                    for b in bars
+                ]
+            )
+            await self._db.execute(
+                stmt.on_conflict_do_update(
+                    index_elements=[market_bars.c.symbol, market_bars.c.day],
+                    set_={
+                        c: stmt.excluded[c]
+                        for c in ("open", "high", "low", "close", "adj_close", "volume")
+                    },
+                )
+            )
+        stmt2 = pg_insert(market_symbols).values(symbol=symbol, fetched_at=at, known=known)
+        await self._db.execute(
+            stmt2.on_conflict_do_update(
+                index_elements=[market_symbols.c.symbol],
+                set_={"fetched_at": at, "known": known},
+            )
+        )
+
+    async def latest_bars(self, symbols: list[str], count: int = 2) -> dict[str, list[Bar]]:
+        """Each stock's last ``count`` days of prices, newest first."""
+        if not symbols:
+            return {}
+        b = market_bars.c
+        ranked = (
+            select(
+                market_bars,
+                func.row_number().over(partition_by=b.symbol, order_by=b.day.desc()).label("n"),
+            )
+            .where(b.symbol.in_(symbols))
+            .subquery()
+        )
+        rows = await self._db.execute(
+            select(ranked).where(ranked.c.n <= count).order_by(ranked.c.symbol, ranked.c.n)
+        )
+        found: dict[str, list[Bar]] = {}
+        for r in rows:
+            found.setdefault(r.symbol, []).append(
+                Bar(r.symbol, r.day, r.open, r.high, r.low, r.close, r.adj_close, r.volume)
+            )
+        return found

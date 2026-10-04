@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nexus.application import bills as bill_cases
 from nexus.application import email as email_cases
+from nexus.application import market as market_cases
 from nexus.application import receipts as receipt_cases
 from nexus.application import subscriptions as subscription_cases
 from nexus.application.transactions import NewTransaction, log_transaction
@@ -36,6 +37,7 @@ from tests.fakes import (
     FakeForwarding,
     FakeHoldings,
     FakeMailbox,
+    FakePrices,
     FakeRates,
     FakeTelegram,
     ScriptedModel,
@@ -144,6 +146,7 @@ async def world(engine: AsyncEngine, empty_database_url: str) -> AsyncIterator[W
             forwarding=forwarding,
             email_reader=FakeEmailReader(),
             holdings=FakeHoldings(),
+            prices=FakePrices(),
         ),
     )
     async with app.router.lifespan_context(app):
@@ -1288,7 +1291,8 @@ async def test_holdings_from_a_screenshot_on_the_web(world: World) -> None:
     owner = world.browser()
     await owner.login(OWNER)
     empty = (await owner.get("/api/investments")).json()
-    assert empty == {"holdings": [], "draft": None, "screenshots": True}
+    assert empty["holdings"] == [] and empty["draft"] is None and empty["screenshots"]
+    assert empty["totals"]["value"] is None and empty["prices"] is True
     image = base64.b64encode(b"a screenshot").decode()
     draft = await owner.send(
         "POST", "/api/investments/screenshot", {"image": image, "mime_type": "image/png"}
@@ -1308,6 +1312,20 @@ async def test_holdings_from_a_screenshot_on_the_web(world: World) -> None:
         ("NVDA", "12", "1446.0000")
     ]
     assert after["draft"] is None
+    assert after["holdings"][0]["price"] is None and after["totals"]["missing"] == ["NVDA"]
+
+    prices = FakePrices({"NVDA": {date(2026, 9, 24): "128", date(2026, 9, 25): "130.25"}})
+    await market_cases.refresh(world.app.state.web.uow, prices, now=NOW)
+    valued = (await owner.get("/api/investments")).json()
+    nvda = valued["holdings"][0]
+    assert (nvda["price"]["amount"], nvda["value"]["amount"], nvda["gain"]["amount"]) == (
+        "130.2500",
+        "1563.0000",
+        "117.0000",
+    )
+    assert nvda["price_day"] == "2026-09-25" and nvda["day_percent"] == "1.76"
+    assert valued["totals"]["value"] == {"amount": "2017.0500", "currency": "SGD"}
+    assert valued["totals"]["missing"] == [] and valued["totals"]["as_of"] == "2026-09-25"
     bad = await owner.send("PUT", "/api/investments/holdings/NOT A TICKER", edit)
     assert bad.status_code == 422
     gone = await owner.send("DELETE", "/api/investments/holdings/AMD")

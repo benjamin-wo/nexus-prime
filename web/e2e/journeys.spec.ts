@@ -650,6 +650,10 @@ test("holdings from a screenshot are checked, saved, edited and removed", async 
   expect(state.screenshots).toBe(1);
   const holdings = page.getByRole("region", { name: "Holdings" });
   await expect(holdings.getByRole("rowheader", { name: "NVDA" })).toBeVisible();
+  // Valued at the last close where there's a price; the rest wait for one.
+  await expect(holdings.getByRole("row").filter({ hasText: "NVDA" })).toContainText("130.25");
+  await expect(holdings.getByLabel("Portfolio totals")).toContainText("SGD");
+  await expect(holdings).toContainText("no price yet for AAPL");
 
   await holdings.getByRole("button", { name: "Edit NVDA" }).click();
   const edit = holdings.getByRole("form", { name: "Edit NVDA" });
@@ -658,4 +662,6 @@ test("holdings from a screenshot are checked, saved, edited and removed", async 
   await expect(holdings.getByRole("row").filter({ hasText: "NVDA" })).toContainText("12");
   await holdings.getByRole("button", { name: "Remove AAPL" }).click();
   await expect(holdings.getByRole("rowheader", { name: "AAPL" })).toHaveCount(0);
+  await page.goto("/");
+  await expect(page.getByRole("link", { name: /^Investment: / })).toContainText("Portfolio SGD");
 });

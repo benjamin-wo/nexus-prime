@@ -13,6 +13,7 @@ from nexus.application import bills as bill_cases
 from nexus.application import budgets as budget_cases
 from nexus.application import departments as department_cases
 from nexus.application import email as email_cases
+from nexus.application import market as market_cases
 from nexus.application import notifications as notify_cases
 from nexus.application import receipts as receipt_cases
 from nexus.application import salary as salary_cases
@@ -20,6 +21,7 @@ from nexus.application import subscriptions as subscription_cases
 from nexus.application.budgets import TELEGRAM_SEND, UowFactory
 from nexus.application.email import EmailRuntime
 from nexus.application.fx import RateSource
+from nexus.application.market import PriceSource
 from nexus.application.ports import ReceiptStore
 from nexus.channels.telegram.client import TelegramClient, TelegramError
 from nexus.channels.telegram.webhook import UNDO_EXPIRE, kept_buttons
@@ -46,6 +48,7 @@ SCHEDULES = (
     Schedule(EMAIL_SWEEP, timedelta(minutes=15)),
     Schedule(NOTIFY_SWEEP, timedelta(minutes=5)),
     Schedule(SUBSCRIPTIONS_SWEEP, timedelta(hours=6)),
+    Schedule(market_cases.REFRESH_JOB, timedelta(hours=1)),
 )
 
 
@@ -80,6 +83,7 @@ def build_handlers(
     email: EmailRuntime | None = None,
     memory: MemoryWriter | None = None,
     departments: department_cases.Departments | None = None,
+    prices: PriceSource | None = None,
 ) -> dict[str, Handler]:
     async def send(payload: dict[str, Any]) -> Defer | None:
         """Message a user on Telegram, but not during their quiet hours."""
@@ -214,6 +218,12 @@ def build_handlers(
             # Deleted, too old, or already without it: nothing to retry for a button.
             log.info("could not take Undo off a message: %s", exc)
 
+    async def refresh_prices(_: dict[str, Any]) -> None:
+        if prices is not None:
+            fetched = await market_cases.refresh(uow, prices, now=clock())
+            if fetched:
+                log.info("fetched prices for %d stocks", fetched)
+
     registry = departments or department_cases.default_registry()
     progress = TelegramProgress(telegram)
 
@@ -233,6 +243,7 @@ def build_handlers(
             )
 
     return {
+        market_cases.REFRESH_JOB: refresh_prices,
         department_cases.STEP_JOB: department_step,
         UNDO_EXPIRE: expire_undo,
         MEMORY_UPDATE: update_memory,

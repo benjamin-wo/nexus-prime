@@ -99,6 +99,7 @@ All secrets are Railway variables on `nexus-app`; none live in the repo. Changin
 | `TOKEN_ENCRYPTION_KEY` | Put a new Fernet key **first**, keeping the old one after a comma; new tokens use the first and old ones still decrypt. Remove the old key only after every mailbox has reconnected or refreshed |
 | `GOOGLE_CLIENT_SECRET` | Add a secret in Google Cloud, set it, delete the old one |
 | `AGENTMAIL_API_KEY` | New key in AgentMail, set it, delete the old one |
+| `TIINGO_API_KEY` | Regenerate the token in Tiingo's account settings and set it; the old one stops working |
 | Bucket credentials | Reset them on the bucket in Railway; the reference variables pick them up |
 | Web sessions | To sign everyone out: `delete from web_sessions;` (they sign in again with Telegram) |
 

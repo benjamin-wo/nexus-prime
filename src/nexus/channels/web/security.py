@@ -43,6 +43,7 @@ class WebRuntime:
     # Per-user limits on heavy requests (statement imports).
     limits: RateLimiter = field(default_factory=RateLimiter)
     departments: Departments = field(default_factory=default_registry)
+    prices: bool = False  # daily stock prices are set up
 
 
 @dataclass(frozen=True, slots=True)

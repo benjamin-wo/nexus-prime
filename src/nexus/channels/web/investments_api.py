@@ -3,7 +3,7 @@ screenshot waiting to be saved. Research only: nothing here trades."""
 
 import base64
 import binascii
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -15,7 +15,6 @@ from nexus.channels.web.api import MoneyOut, money
 from nexus.channels.web.security import Auth, Runtime, limit
 from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.investments import (
-    Holding,
     HoldingsDraft,
     Position,
     changes,
@@ -44,6 +43,15 @@ class PositionOut(Model):
 
 class HoldingOut(PositionOut):
     updated_at: datetime
+    # At the last close; all None until the stock has a price.
+    price: MoneyOut | None = None
+    price_day: date | None = None
+    value: MoneyOut | None = None
+    gain: MoneyOut | None = None
+    gain_percent: Decimal | None = None
+    day_change: MoneyOut | None = None
+    day_percent: Decimal | None = None
+    value_home: MoneyOut | None = None  # None also when there's no exchange rate yet
 
 
 class DraftOut(Model):
@@ -53,10 +61,25 @@ class DraftOut(Model):
     first: bool  # no holdings yet: it would be the whole portfolio
 
 
+class TotalsOut(Model):
+    """The portfolio in the home currency, at the last close."""
+
+    value: MoneyOut | None
+    cost: MoneyOut | None
+    gain: MoneyOut | None
+    gain_percent: Decimal | None
+    day_change: MoneyOut | None
+    day_percent: Decimal | None
+    as_of: date | None
+    missing: list[str]  # stocks left out (no price or exchange rate yet)
+
+
 class PortfolioOut(Model):
     holdings: list[HoldingOut]
+    totals: TotalsOut
     draft: DraftOut | None  # a screenshot waiting to be saved
     screenshots: bool  # reading screenshots is set up
+    prices: bool  # daily prices are set up
 
 
 def _position(p: Position) -> PositionOut:
@@ -68,8 +91,40 @@ def _position(p: Position) -> PositionOut:
     )
 
 
-def _holding(h: Holding) -> HoldingOut:
-    return HoldingOut(**_position(h.position).model_dump(), updated_at=h.updated_at)
+def _optional(value: Money | None) -> MoneyOut | None:
+    return money(value) if value is not None else None
+
+
+def _holding(row: investment_cases.Row) -> HoldingOut:
+    h, v = row.holding, row.valued
+    out = HoldingOut(**_position(h.position).model_dump(), updated_at=h.updated_at)
+    if v is None:
+        return out
+    return out.model_copy(
+        update={
+            "price": money(v.price),
+            "price_day": v.price_day,
+            "value": money(v.value),
+            "gain": money(v.gain),
+            "gain_percent": v.gain_percent,
+            "day_change": _optional(v.day_change),
+            "day_percent": v.day_percent,
+            "value_home": _optional(row.value_home),
+        }
+    )
+
+
+def _totals(v: investment_cases.Valuation) -> TotalsOut:
+    return TotalsOut(
+        value=_optional(v.value),
+        cost=_optional(v.cost),
+        gain=_optional(v.gain),
+        gain_percent=v.gain_percent,
+        day_change=_optional(v.day_change),
+        day_percent=v.day_percent,
+        as_of=v.as_of,
+        missing=v.missing,
+    )
 
 
 def _draft(draft: HoldingsDraft, held: list[Position]) -> DraftOut:
@@ -83,12 +138,15 @@ def _draft(draft: HoldingsDraft, held: list[Position]) -> DraftOut:
 
 @router.get("")
 async def portfolio(auth: Auth, web: Runtime) -> PortfolioOut:
-    held = await investment_cases.portfolio(web.uow(), auth.user.id)
+    valued = await investment_cases.valuation(web.uow(), web.rates, auth.user)
     draft = await investment_cases.waiting_draft(web.uow(), auth.user.id)
+    held = [row.holding.position for row in valued.rows]
     return PortfolioOut(
-        holdings=[_holding(h) for h in held],
-        draft=_draft(draft, [h.position for h in held]) if draft else None,
+        holdings=[_holding(row) for row in valued.rows],
+        totals=_totals(valued),
+        draft=_draft(draft, held) if draft else None,
         screenshots=web.service.reads_portfolios,
+        prices=web.prices,
     )
 
 

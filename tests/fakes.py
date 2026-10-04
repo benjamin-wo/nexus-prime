@@ -18,9 +18,11 @@ from nexus.agent.holdings_reader import ScreenshotHoldings, ScreenshotPosition
 from nexus.agent.receipts import ReceiptDraft
 from nexus.agent.service import Button
 from nexus.application.fx import Rate
+from nexus.application.market import PriceSourceError
 from nexus.application.ports import MailboxGrant, MailboxRevoked
 from nexus.domain.email import ExpenseDraft, FetchedEmail, Screening
 from nexus.domain.errors import InvalidInput
+from nexus.domain.market import Bar
 from nexus.infra.llm.factory import ChatModels
 
 NOW = datetime(2026, 9, 28, 4, 0, tzinfo=UTC)  # noon in Singapore
@@ -161,6 +163,33 @@ class FakeTelegram:
 
     async def set_menu_button(self, label: str, url: str) -> None:
         self.menu_button = (label, url)
+
+
+@dataclass
+class FakePrices:
+    """Made-up daily closes per ticker: {symbol: {day: close}}. A ticker not listed
+    is unknown; one in ``failing`` raises like a provider that's down."""
+
+    closes: dict[str, dict[date, str]] = field(default_factory=dict)
+    failing: set[str] = field(default_factory=set)
+    asked: list[tuple[str, date, date]] = field(default_factory=list)
+
+    async def daily(self, symbol: str, start: date, end: date) -> list[Bar] | None:
+        self.asked.append((symbol, start, end))
+        if symbol in self.failing:
+            raise PriceSourceError("HTTP 503")
+        if symbol not in self.closes:
+            return None
+        return [
+            bar(symbol, day, close)
+            for day, close in sorted(self.closes[symbol].items())
+            if start <= day <= end
+        ]
+
+
+def bar(symbol: str, day: date, close: str) -> Bar:
+    price = Decimal(close)
+    return Bar(symbol, day, price, price, price, price, price, 1_000)
 
 
 @dataclass

@@ -1,6 +1,7 @@
 """Holdings from a broker screenshot (checked by the user before saving) and from
 trades the user tells Nexus about. Every ticker and figure here is made up."""
 
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
@@ -9,11 +10,12 @@ from langchain_core.messages import AIMessage
 from nexus.agent.holdings_reader import ScreenshotHoldings, ScreenshotPosition
 from nexus.agent.receipts import ReceiptDraft
 from nexus.application import investments as investment_cases
+from nexus.application import market as market_cases
 from nexus.domain.errors import Conflict, InvalidInput, NotFound
 from nexus.domain.investments import Position
 from nexus.domain.ledger import UserId
 from nexus.domain.money import Money
-from tests.fakes import NOW, FakeHoldings, FakeReceipts, call, scripted
+from tests.fakes import NOW, FakeHoldings, FakePrices, FakeRates, FakeReceipts, call, scripted
 from tests.integration.conftest import UowFactory
 from tests.integration.test_agent import build, only
 from tests.integration.test_email import person
@@ -168,3 +170,64 @@ async def test_trades_the_user_tells_nexus_about(uow: UowFactory) -> None:
         )
     with pytest.raises(NotFound):
         await investment_cases.remove(uow(), user.id, "AMD")
+
+
+async def test_prices_are_fetched_for_held_stocks_once_due(uow: UowFactory) -> None:
+    first, second = await person(uow), await person(uow, 4343)
+    await trade(uow, first.id, "buy", "NVDA", "10", "118.40")
+    await trade(uow, second.id, "buy", "NVDA", "1", "100")
+    await trade(uow, second.id, "buy", "ZZZZ", "1", "5")
+    await trade(uow, second.id, "buy", "DOWN", "1", "5")
+    prices = FakePrices(
+        {"NVDA": {date(2026, 9, 24): "128", date(2026, 9, 25): "130.255"}}, failing={"DOWN"}
+    )
+    assert await market_cases.refresh(uow, prices, now=NOW) == 2  # NVDA, and ZZZZ (unknown)
+    # One fetch per stock, however many people hold it, with a long first history.
+    assert sorted(prices.asked) == [
+        ("DOWN", date(2025, 7, 5), NOW.date()),
+        ("NVDA", date(2025, 7, 5), NOW.date()),
+        ("ZZZZ", date(2025, 7, 5), NOW.date()),
+    ]
+    # Nothing more is due until the next US close; the one that failed is retried.
+    prices.asked.clear()
+    assert await market_cases.refresh(uow, prices, now=NOW) == 0
+    assert prices.asked == [("DOWN", date(2025, 7, 5), NOW.date())]
+    # After the close, only a week before the last stored day is fetched again.
+    prices.asked.clear()
+    later = NOW + timedelta(days=1)
+    await market_cases.refresh(uow, prices, now=later)
+    assert ("NVDA", date(2026, 9, 18), later.date()) in prices.asked
+    async with uow() as tx:
+        bars = await tx.investments.latest_bars(["NVDA", "ZZZZ"])
+    assert [b.close for b in bars["NVDA"]] == [Decimal("130.255"), Decimal("128")]
+    assert "ZZZZ" not in bars
+
+
+async def test_holdings_are_valued_in_the_home_currency(uow: UowFactory) -> None:
+    user = await person(uow)
+    await trade(uow, user.id, "buy", "NVDA", "10", "118.40")
+    await trade(uow, user.id, "buy", "AAPL", "5", "190")
+    prices = FakePrices({"NVDA": {date(2026, 9, 24): "128", date(2026, 9, 25): "130.255"}})
+    await market_cases.refresh(uow, prices, now=NOW)
+    rates = FakeRates({("USD", "SGD"): {date(2026, 9, 25): "1.2905"}})
+    v = await investment_cases.valuation(uow(), rates, user)
+    nvda = next(r for r in v.rows if r.holding.position.symbol == "NVDA")
+    assert nvda.valued is not None and nvda.valued.value == usd("1302.55")
+    assert nvda.value_home == Money(Decimal("1680.94"), "SGD")
+    assert v.value == Money(Decimal("1680.94"), "SGD")
+    assert v.gain == Money(Decimal("152.99"), "SGD")
+    assert v.cost == Money(Decimal("1527.95"), "SGD")
+    assert v.gain_percent == Decimal("10.01")
+    assert v.day_change == Money(Decimal("29.10"), "SGD")
+    assert v.day_percent == Decimal("1.76")
+    assert v.as_of == date(2026, 9, 25)
+    assert v.missing == ["AAPL"]
+    text = investment_cases.describe_valuation(v)
+    assert "• NVDA: 10 at 118.40 USD avg; 130.26 USD on 25 Sep, worth 1302.55 USD (+10.01%)" in (
+        text
+    )
+    assert "Total 1680.94 SGD, up 152.99 (+10.01%); +29.10 (+1.76%) on the day." in text
+    assert text.endswith("No price yet for AAPL.")
+    # Without an exchange rate the stock is shown but left out of the totals.
+    bare = await investment_cases.valuation(uow(), FakeRates(), user)
+    assert bare.value is None and bare.missing == ["AAPL", "NVDA"]

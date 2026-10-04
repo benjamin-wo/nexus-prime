@@ -486,6 +486,31 @@ holding_drafts = Table(
     Index("ix_holding_drafts_user_id_created_at", "user_id", "created_at"),
 )
 
+# Daily prices, shared by every user: market data, not anyone's own. A stock is
+# fetched while someone holds it.
+market_bars = Table(
+    "market_bars",
+    metadata,
+    Column("symbol", Text, nullable=False),
+    Column("day", Date, nullable=False),
+    Column("open", Numeric(19, 6), nullable=False),
+    Column("high", Numeric(19, 6), nullable=False),
+    Column("low", Numeric(19, 6), nullable=False),
+    Column("close", Numeric(19, 6), nullable=False),
+    Column("adj_close", Numeric(19, 6), nullable=False),
+    Column("volume", BigInteger, nullable=False),
+    PrimaryKeyConstraint("symbol", "day"),
+)
+
+# When each stock's prices were last fetched, and whether the provider knows it.
+market_symbols = Table(
+    "market_symbols",
+    metadata,
+    Column("symbol", Text, primary_key=True),
+    Column("fetched_at", TZ, nullable=False),
+    Column("known", Boolean, nullable=False),
+)
+
 # A department's long piece of work (a research plan, a trip), saved step by step.
 department_runs = Table(
     "department_runs",

@@ -28,6 +28,7 @@ from nexus.application.departments import Departments, default_registry
 from nexus.application.email import EmailRuntime
 from nexus.application.fx import RateSource
 from nexus.application.limits import RateLimiter
+from nexus.application.market import PriceSource
 from nexus.application.ports import (
     EmailReader,
     ForwardingInboxes,
@@ -58,6 +59,7 @@ from nexus.infra.llm.factory import (
     build_screener,
 )
 from nexus.infra.logs import configure_logging
+from nexus.infra.market.tiingo import TiingoPrices
 from nexus.infra.storage.s3 import S3ReceiptStore
 from nexus.jobs.handlers import MEMORY_UPDATE, SCHEDULES, build_handlers
 from nexus.jobs.runner import JobRunner
@@ -78,6 +80,7 @@ class Overrides:
     checkpointer: BaseCheckpointSaver[Any] | None = None
     clock: Callable[[], datetime] | None = None
     rates: RateSource | None = None
+    prices: PriceSource | None = None
     receipt_store: ReceiptStore | None = None
     mailbox: SignInMailbox | None = None
     forwarding: ForwardingInboxes | None = None
@@ -105,6 +108,19 @@ def _receipt_store(settings: Settings, overrides: Overrides) -> ReceiptStore | N
         secret_access_key=secret.get_secret_value(),
         path_style=settings.storage_path_style,
     )
+
+
+async def _prices(
+    settings: Settings, overrides: Overrides, stack: AsyncExitStack
+) -> PriceSource | None:
+    """Daily stock prices, when a Tiingo key is set."""
+    if overrides.prices is not None:
+        return overrides.prices
+    key = settings.tiingo_api_key
+    if key is None:
+        return None
+    http = await stack.enter_async_context(httpx.AsyncClient())
+    return TiingoPrices(http, key.get_secret_value())
 
 
 async def _email_runtime(
@@ -326,6 +342,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                 if rates is None:
                     http = await stack.enter_async_context(httpx.AsyncClient())
                     rates = FrankfurterRates(http)
+                prices = await _prices(resolved, extra, stack)
                 archive = _receipt_store(resolved, extra)
                 if archive is None:
                     log.warning("receipt storage is not configured; receipt photos won't be kept")
@@ -350,6 +367,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                             email,
                             MemoryWriter(build_memory_model(resolved, models.primary)),
                             departments,
+                            prices,
                         ),
                         schedules=SCHEDULES,
                         clock=clock,
@@ -369,6 +387,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                         archive=archive,
                         email=email,
                         departments=departments,
+                        prices=prices is not None,
                     )
                     menu = asyncio.create_task(_set_menu_button(telegram.client, origin))
                     stack.push_async_callback(_finish, menu)

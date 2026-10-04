@@ -1,8 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ChangeEvent, type FormEvent, useState } from "react";
 
-import { api, type HoldingsDraft, type Portfolio, type Position } from "../api";
-import { formatMoney } from "../format";
+import { api, type Holding, type HoldingsDraft, type Portfolio, type PortfolioTotals } from "../api";
+import { formatChange, formatMoney, formatPercent, formatShortDate } from "../format";
 
 const shares = (quantity: string) => Number(quantity).toLocaleString("en-US", { maximumFractionDigits: 8 });
 
@@ -69,7 +69,45 @@ function DraftCard({ draft, onDone }: { draft: HoldingsDraft; onDone: (message: 
   );
 }
 
-function HoldingRow({ position, onChanged }: { position: Position; onChanged: () => void }) {
+/** "+USD 120.00 (+4.2%)", coloured by direction. */
+function Change({ amount, percent }: { amount: Holding["gain"]; percent: string | null }) {
+  if (!amount) return <span className="muted">—</span>;
+  const value = Number(amount.amount);
+  return (
+    <span className={value > 0 ? "up" : value < 0 ? "down" : undefined}>
+      {formatChange(amount)}
+      {percent !== null && ` (${formatPercent(percent)})`}
+    </span>
+  );
+}
+
+function Totals({ totals }: { totals: PortfolioTotals }) {
+  if (!totals.value) return null;
+  return (
+    <dl className="totals" aria-label="Portfolio totals">
+      <div>
+        <dt>Value</dt>
+        <dd className="num">{formatMoney(totals.value)}</dd>
+      </div>
+      <div>
+        <dt>Gain or loss</dt>
+        <dd className="num">
+          <Change amount={totals.gain} percent={totals.gain_percent} />
+        </dd>
+      </div>
+      {totals.day_change && (
+        <div>
+          <dt>Last day</dt>
+          <dd className="num">
+            <Change amount={totals.day_change} percent={totals.day_percent} />
+          </dd>
+        </div>
+      )}
+    </dl>
+  );
+}
+
+function HoldingRow({ position, onChanged }: { position: Holding; onChanged: () => void }) {
   const [editing, setEditing] = useState(false);
   const [quantity, setQuantity] = useState(position.quantity);
   const [cost, setCost] = useState(position.average_cost.amount);
@@ -99,7 +137,7 @@ function HoldingRow({ position, onChanged }: { position: Position; onChanged: ()
     <tr>
       <th scope="row">{position.symbol}</th>
       {editing ? (
-        <td colSpan={3}>
+        <td colSpan={5}>
           <form className="quick" onSubmit={save} aria-label={`Edit ${position.symbol}`}>
             <label className="field">
               Shares
@@ -116,9 +154,18 @@ function HoldingRow({ position, onChanged }: { position: Position; onChanged: ()
         </td>
       ) : (
         <>
-          <td className="num">{shares(position.quantity)}</td>
-          <td className="num">{formatMoney(position.average_cost)}</td>
-          <td className="num">{formatMoney(position.cost)}</td>
+          <td className="num" data-label="Shares">{shares(position.quantity)}</td>
+          <td className="num" data-label="Avg cost">{formatMoney(position.average_cost)}</td>
+          <td className="num" data-label="Last close">
+            {position.price ? formatMoney(position.price) : <span className="muted">—</span>}
+          </td>
+          <td className="num" data-label="Value">
+            {position.value ? formatMoney(position.value) : formatMoney(position.cost)}
+            {!position.value && <span className="caption"> cost</span>}
+          </td>
+          <td className="num" data-label="Gain">
+            <Change amount={position.gain} percent={position.gain_percent} />
+          </td>
         </>
       )}
       <td className="quick">
@@ -135,6 +182,16 @@ function HoldingRow({ position, onChanged }: { position: Position; onChanged: ()
       </td>
     </tr>
   );
+}
+
+function priceNote(data: Portfolio | undefined): string {
+  if (!data || data.holdings.length === 0) return "";
+  if (!data.prices) return "Prices aren't set up";
+  const t = data.totals;
+  const parts = [];
+  if (t.as_of) parts.push(`Closing prices of ${formatShortDate(t.as_of)}`);
+  if (t.missing.length) parts.push(`no price yet for ${t.missing.join(", ")}`);
+  return parts.join("; ") || "Fetching prices…";
 }
 
 /** The Investment department: holdings, from a broker screenshot or typed in. */
@@ -188,7 +245,7 @@ export function InvestmentPage() {
       <div className="page-head">
         <div>
           <h1>Portfolio</h1>
-          <p className="muted">What you hold and what it cost. Research only: Nexus never trades.</p>
+          <p className="muted">What you hold and what it's worth at the last close. Research only: Nexus never trades.</p>
         </div>
         {portfolio.data?.screenshots && (
           <label className="btn btn-primary">
@@ -212,8 +269,9 @@ export function InvestmentPage() {
       <section className="card" aria-labelledby="holdings">
         <div className="card-head">
           <h2 id="holdings">Holdings</h2>
-          <span className="caption">Prices and values come next</span>
+          <span className="caption">{priceNote(portfolio.data)}</span>
         </div>
+        {portfolio.data && <Totals totals={portfolio.data.totals} />}
         {portfolio.isLoading && <p className="state">Loading…</p>}
         {portfolio.data && holdings.length === 0 && (
           <p className="state">
@@ -229,7 +287,9 @@ export function InvestmentPage() {
                   <th scope="col">Stock</th>
                   <th scope="col" className="num">Shares</th>
                   <th scope="col" className="num">Avg cost</th>
-                  <th scope="col" className="num">Cost</th>
+                  <th scope="col" className="num">Last close</th>
+                  <th scope="col" className="num">Value</th>
+                  <th scope="col" className="num">Gain</th>
                   <th scope="col"><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>

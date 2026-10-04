@@ -1028,16 +1028,16 @@ async def _combine_duplicates(ctx: ToolContext, a: MergeDuplicatesArgs) -> ToolR
 
 
 async def _portfolio(ctx: ToolContext, _: NoArgs) -> ToolResult:
-    held = await investment_cases.portfolio(ctx.uow(), ctx.user.id)
-    if not held:
+    valued = await investment_cases.valuation(ctx.uow(), _rates(ctx), ctx.user)
+    if not valued.rows:
         return ToolResult(
             "No holdings yet. The user can send a screenshot of their broker's portfolio "
             'screen, or tell you a trade ("I bought 10 NVDA at 118").'
         )
-    lines = ["Holdings (cost basis; prices aren't fetched yet):"]
-    for h in held:
-        lines.append(f"{describe_position(h.position)}, cost {h.position.cost}")
-    return ToolResult("\n".join(lines))
+    return ToolResult(
+        "Holdings at the last daily close (not live prices):\n"
+        + investment_cases.describe_valuation(valued)
+    )
 
 
 class TradeArgs(Args):
@@ -1470,7 +1470,8 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
         ),
         ToolSpec(
             "show_portfolio",
-            "The user's stock holdings: shares and average cost. Read-only.",
+            "The user's stock holdings: shares, average cost, last close, value and gain "
+            "or loss in their home currency. Read-only.",
             NoArgs,
             _portfolio,
         ),

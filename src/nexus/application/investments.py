@@ -3,11 +3,13 @@ or changed one trade at a time. Research only: nothing here trades."""
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
 from uuid import UUID, uuid4
 
+from nexus.application.fx import RateSource, convert, rates_for
+from nexus.application.market import PRICE_CURRENCY, queue_refresh
 from nexus.application.ports import UnitOfWork
 from nexus.domain.errors import Conflict, InvalidInput, NotFound
 from nexus.domain.investments import (
@@ -21,7 +23,8 @@ from nexus.domain.investments import (
     merge_positions,
     sell,
 )
-from nexus.domain.ledger import UserId
+from nexus.domain.ledger import User, UserId
+from nexus.domain.market import Valued, percent, value
 from nexus.domain.money import Money
 
 type UowFactory = Callable[[], UnitOfWork]
@@ -97,6 +100,7 @@ async def save_draft(
         for position in draft.positions:
             await uow.investments.save_position(user_id, position, now)
         await uow.investments.set_draft_status(user_id, draft_id, DraftStatus.SAVED)
+        await queue_refresh(uow, now)
         await uow.commit()
     return draft.positions
 
@@ -142,6 +146,7 @@ async def record_trade(
             await uow.investments.remove_position(user_id, symbol)
         else:
             await uow.investments.save_position(user_id, after, now)
+            await queue_refresh(uow, now)
         await uow.commit()
     return after
 
@@ -152,6 +157,7 @@ async def set_position(
     """Set a position outright, as the web app's edit does."""
     async with uow:
         await uow.investments.save_position(user_id, position, now)
+        await queue_refresh(uow, now)
         await uow.commit()
 
 
@@ -160,3 +166,111 @@ async def remove(uow: UnitOfWork, user_id: UserId, symbol: str) -> None:
         if not await uow.investments.remove_position(user_id, symbol):
             raise NotFound(f"you don't hold any {symbol}")
         await uow.commit()
+
+
+@dataclass(frozen=True, slots=True)
+class Row:
+    holding: Holding
+    valued: Valued | None  # None until the stock has a price
+    value_home: Money | None  # the value in the home currency; None without a rate
+    gain_home: Money | None
+    day_change_home: Money | None
+
+
+@dataclass(frozen=True, slots=True)
+class Valuation:
+    """The portfolio at the last close, in the user's home currency. Gains use
+    today's exchange rate for cost and value alike: Nexus doesn't know when each
+    share was bought, so it can't know the rate paid."""
+
+    rows: list[Row]
+    home: str
+    value: Money | None  # None when nothing could be valued
+    cost: Money | None
+    gain: Money | None
+    gain_percent: Decimal | None
+    day_change: Money | None
+    day_percent: Decimal | None
+    as_of: date | None  # the latest close used
+    missing: list[str]  # stocks left out of the totals (no price or no rate yet)
+
+
+async def valuation(uow: UnitOfWork, rates: RateSource, user: User) -> Valuation:
+    async with uow:
+        held = await uow.investments.list_holdings(user.id)
+        bars = await uow.investments.latest_bars([h.position.symbol for h in held])
+    home = user.home_currency
+    valued: list[tuple[Holding, Valued | None]] = []
+    for h in held:
+        # Prices are in USD; a position kept in another currency can't be valued
+        # against them.
+        same = h.position.average_cost.currency == PRICE_CURRENCY
+        found = bars.get(h.position.symbol, []) if same else []
+        previous = found[1] if len(found) > 1 else None
+        valued.append((h, value(h.position, found[0], previous) if found else None))
+    wanted = [(v.price.currency, v.price_day) for _, v in valued if v is not None]
+    looked_up = await rates_for(rates, home, wanted)
+
+    def at_home(amount: Money | None, v: Valued) -> Money | None:
+        return None if amount is None else convert(amount, v.price_day, home, looked_up).home
+
+    rows: list[Row] = []
+    total = cost = gain = change = before = Money.zero(home)
+    missing: list[str] = []
+    changed = False
+    for h, v in valued:
+        if v is None:
+            rows.append(Row(h, None, None, None, None))
+            missing.append(h.position.symbol)
+            continue
+        row = Row(h, v, at_home(v.value, v), at_home(v.gain, v), at_home(v.day_change, v))
+        rows.append(row)
+        if row.value_home is None or row.gain_home is None:
+            missing.append(h.position.symbol)
+            continue
+        total += row.value_home
+        gain += row.gain_home
+        cost += row.value_home - row.gain_home
+        if row.day_change_home is not None:
+            change += row.day_change_home
+            before += row.value_home - row.day_change_home
+            changed = True
+    counted = len(held) > len(missing)
+    return Valuation(
+        rows=rows,
+        home=home,
+        value=total if counted else None,
+        cost=cost if counted else None,
+        gain=gain if counted else None,
+        gain_percent=percent(gain.amount, cost.amount) if counted else None,
+        day_change=change if changed else None,
+        day_percent=percent(change.amount, before.amount) if changed else None,
+        as_of=max((v.price_day for _, v in valued if v is not None), default=None),
+        missing=missing,
+    )
+
+
+def describe_valuation(v: Valuation) -> str:
+    """The portfolio in a few lines, for the chat."""
+    if not v.rows:
+        return "You don't have any holdings saved yet. Send a screenshot of your portfolio."
+    lines = []
+    for row in v.rows:
+        line = describe_position(row.holding.position)
+        p = row.valued
+        if p is not None:
+            line += f"; {p.price} on {p.price_day:%d %b}, worth {p.value}"
+            if p.gain_percent is not None:
+                line += f" ({p.gain_percent:+}%)"
+        lines.append(f"• {line}")
+    if v.value is not None and v.gain is not None:
+        way = "up" if v.gain.amount >= 0 else "down"
+        summary = f"Total {v.value}, {way} {abs(v.gain.amount):,.2f}"
+        if v.gain_percent is not None:
+            summary += f" ({v.gain_percent:+}%)"
+        if v.day_change is not None and v.day_percent is not None:
+            summary += f"; {v.day_change.amount:+,.2f} ({v.day_percent:+}%) on the day"
+        lines.append(summary + ".")
+    if v.missing:
+        lines.append(f"No price yet for {', '.join(v.missing)}.")
+    return "\n".join(lines)
