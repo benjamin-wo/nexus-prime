@@ -48,10 +48,12 @@ class PriceSource(Protocol):
 
 async def queue_refresh(uow: UnitOfWork, now: datetime) -> None:
     """Fetch prices, news and earnings dates soon (a stock was just added), inside
-    the caller's transaction. One job of each per minute, however many saves."""
+    the caller's transaction. One job of each per minute, however many saves. The
+    key mustn't look like the hourly schedule's ("prices.refresh@<slot>"): a save
+    in the slot's first minute would otherwise be dropped as the run already done."""
     minute = now.replace(second=0, microsecond=0)
     for kind in (REFRESH_JOB, NEWS_JOB):
-        await uow.jobs.enqueue(kind, {}, dedupe_key=f"{kind}@{minute.isoformat()}", run_at=now)
+        await uow.jobs.enqueue(kind, {}, dedupe_key=f"{kind}:soon@{minute.isoformat()}", run_at=now)
 
 
 async def refresh(uow: UowFactory, source: PriceSource, *, now: datetime) -> int:

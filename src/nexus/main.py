@@ -121,6 +121,7 @@ async def _prices(
         return overrides.prices
     key = settings.tiingo_api_key
     if key is None:
+        log.warning("TIINGO_API_KEY is not set; holdings won't be valued")
         return None
     http = await stack.enter_async_context(httpx.AsyncClient())
     return TiingoPrices(http, key.get_secret_value())
@@ -134,6 +135,7 @@ async def _news(
         return overrides.news
     key = settings.finnhub_api_key
     if key is None:
+        log.warning("FINNHUB_API_KEY is not set; no news or earnings dates will be fetched")
         return None
     http = await stack.enter_async_context(httpx.AsyncClient())
     return FinnhubNews(http, key.get_secret_value())

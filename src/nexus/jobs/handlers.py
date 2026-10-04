@@ -225,14 +225,12 @@ def build_handlers(
     async def refresh_prices(_: dict[str, Any]) -> None:
         if prices is not None:
             fetched = await market_cases.refresh(uow, prices, now=clock())
-            if fetched:
-                log.info("fetched prices for %d stocks", fetched)
+            log.info("price refresh: fetched %d stocks", fetched)
 
     async def refresh_news(_: dict[str, Any]) -> None:
         if news is not None:
             fetched = await research_cases.refresh_news(uow, news, now=clock())
-            if fetched:
-                log.info("fetched news for %d stocks", fetched)
+            log.info("news refresh: fetched %d stocks", fetched)
 
     registry = departments or department_cases.default_registry()
     progress = TelegramProgress(telegram)

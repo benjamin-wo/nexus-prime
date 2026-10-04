@@ -6,6 +6,8 @@ from decimal import Decimal
 
 import pytest
 from langchain_core.messages import AIMessage
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nexus.agent.holdings_reader import ScreenshotHoldings, ScreenshotPosition
 from nexus.agent.receipts import ReceiptDraft
@@ -15,6 +17,9 @@ from nexus.domain.errors import Conflict, InvalidInput, NotFound
 from nexus.domain.investments import Position
 from nexus.domain.ledger import UserId
 from nexus.domain.money import Money
+from nexus.infra.db.tables import jobs
+from nexus.jobs.handlers import SCHEDULES
+from nexus.jobs.runner import JobRunner
 from tests.fakes import NOW, FakeHoldings, FakePrices, FakeRates, FakeReceipts, call, scripted
 from tests.integration.conftest import UowFactory
 from tests.integration.test_agent import build, only
@@ -231,3 +236,25 @@ async def test_holdings_are_valued_in_the_home_currency(uow: UowFactory) -> None
     # Without an exchange rate the stock is shown but left out of the totals.
     bare = await investment_cases.valuation(uow(), FakeRates(), user)
     assert bare.value is None and bare.missing == ["AAPL", "NVDA"]
+
+
+async def test_a_save_in_the_hourly_slots_first_minute_still_fetches_prices(
+    uow: UowFactory, engine: AsyncEngine
+) -> None:
+    """The hourly refresh at 18:00 ran before holdings were saved at 18:00:47; the
+    save's own refresh mustn't be dropped as that same run."""
+    user = await person(uow)
+    slot = NOW.replace(minute=0, second=0)
+    hourly = JobRunner(engine, {}, schedules=SCHEDULES, clock=lambda: slot)
+    await hourly.tick()
+    saved_at = slot + timedelta(seconds=47)
+    await investment_cases.set_position(uow(), user.id, pos("NVDA", "1", "100"), now=saved_at)
+    async with engine.connect() as db:
+        found = await db.execute(
+            select(jobs.c.dedupe_key).where(jobs.c.kind == market_cases.REFRESH_JOB)
+        )
+        keys = [str(row.dedupe_key) for row in found]
+    assert sorted(keys) == [
+        f"prices.refresh:soon@{slot.isoformat()}",
+        f"prices.refresh@{slot.isoformat()}",
+    ]
