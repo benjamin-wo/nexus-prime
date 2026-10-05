@@ -81,7 +81,14 @@ a { color: var(--orange-primary); }
   font-weight: 400;
 }
 .input:focus { border-color: var(--orange-border); outline: none; box-shadow: 0 0 0 2px var(--orange-soft); }
-label.field { display: grid; gap: var(--space-1); font-weight: 600; font-size: 0.8rem; color: var(--text-secondary); }
+label.field { display: grid; gap: var(--space-1); min-width: 0; font-weight: 600; font-size: 0.8rem; color: var(--text-secondary); }
+/* iOS (and the Telegram mini app) gives date and time pickers a fixed minimum width
+   and centred text, so they spill out of narrow columns: let them shrink to the
+   column and read left-aligned like the other fields. */
+input[type="date"].input, input[type="time"].input, input[type="datetime-local"].input {
+  -webkit-appearance: none; appearance: none; display: block; min-width: 0; max-width: 100%; text-align: left;
+}
+.input::-webkit-date-and-time-value { text-align: left; margin: 0; }
 .error-text { color: var(--rose-accent); font-size: 0.8rem; }
 
 /* --- shell --- */
