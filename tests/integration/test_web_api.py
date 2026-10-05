@@ -1414,7 +1414,7 @@ async def test_research_plans_on_the_web(world: World) -> None:
             web.uow, web.departments, Shown(), user, run_id, now=world.clock.now
         )
     listed = (await owner.get("/api/investments/plans")).json()
-    assert len(listed) == 1 and listed[0]["summary_line"].startswith("AMD: Wait for a pullback")
+    assert len(listed) == 1 and listed[0]["headline"] == "AMD: Wait for a dip to buy"
     detail = (await owner.get(f"/api/investments/plans/{listed[0]['id']}")).json()
     assert (
         detail["plan"]["verdict"] == "wait" and detail["plan"]["summary"] == "Wait for a pullback."

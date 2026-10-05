@@ -97,7 +97,9 @@ async def test_a_plan_traces_every_price_to_code_and_every_point_to_a_source(
     assert len(saved) == 1 and saved[0].id == result.plan_id
     assert saved[0].stop == result.stop
     line = plan_cases.summary_line(result)
-    assert line.startswith("AMD: Wait for a pullback to the entry zone. Entry ")
+    assert line.startswith("AMD: Wait for a dip to buy. It's above the buy zone")
+    assert "\n🟢 Buy at " in line and "\n🎯 Sell part at " in line
+    assert "\n🛑 Sell if a day closes below " in line and "\n📅 Valid until" in line
 
 
 async def test_a_plan_needs_a_month_of_prices(uow: UowFactory) -> None:
@@ -128,5 +130,5 @@ async def test_asking_for_a_plan_in_chat(uow: UowFactory) -> None:
     only(await agent.handle_text(user.id, "show me the AMD plan", "m2"))
     shown = str(chat.seen[-1][-1].content)
     assert shown.startswith("Latest plan for AMD, made 28 Sep.")
-    assert "AMD: Wait for a pullback to the entry zone. Entry " in shown
+    assert "AMD: Wait for a dip to buy." in shown and "🛑 Sell if a day closes below" in shown
     assert "What would prove it wrong: A close below the stop." in shown

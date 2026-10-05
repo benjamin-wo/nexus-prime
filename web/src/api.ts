@@ -376,6 +376,8 @@ export type PlanBrief = {
   symbol: string;
   verdict: string;
   verdict_text: string;
+  headline: string;
+  reason: string;
   summary_line: string;
   created_at: string;
   valid_until: string;
@@ -383,6 +385,13 @@ export type PlanBrief = {
   status: string;
 };
 export type PlanTarget = { price: string; reward_risk: string; why: string };
+export type PlanStep = {
+  kind: "buy" | "take_profit" | "cut_loss" | "trail" | "review";
+  title: string;
+  price: string | null;
+  detail: string;
+  change: string[];
+};
 export type PlanSource = { id: number; headline: string; source: string; url: string; published_at: string };
 export type PlanBody = {
   symbol: string;
@@ -397,6 +406,10 @@ export type PlanBody = {
   stop: string | null;
   risk: string | null;
   targets: PlanTarget[];
+  stop_why?: string | null;
+  trail_to?: string | null;
+  average_cost?: string | null;
+  playbook?: PlanStep[];
   valid_until: string;
   earnings_in_window: string | null;
   trend: string | null;

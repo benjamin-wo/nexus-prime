@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { type PointerEvent, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
-import { api, type PlanBody, type PlanBrief, type PlanDetail } from "../api";
+import { api, type PlanBody, type PlanBrief, type PlanDetail, type PlanStep } from "../api";
 import { formatDate, formatShortDate } from "../format";
 
 const usd = (amount: string | number) =>
@@ -35,7 +35,11 @@ export function PlansPage() {
             {plans.data.map((p) => (
               <li key={p.id}>
                 <Link className="feed-item" to={`/investment/plans/${p.id}`}>
-                  <span className="wrap">{p.summary_line}</span>
+                  <span className="wrap">
+                    <strong>{p.headline}</strong>
+                    <br />
+                    <span className="muted">{p.reason}</span>
+                  </span>
                   <span className="caption">
                     {formatShortDate(p.created_at)}
                     {p.expired && " · expired"}
@@ -50,7 +54,7 @@ export function PlansPage() {
   );
 }
 
-type Line = { label: string; price: number; kind: "stop" | "target" | "close" };
+type Line = { label: string; price: number; kind: "stop" | "target" | "cost" };
 
 /** Recent closes with the plan's levels drawn across: the entry zone as a band, the
  * stop and targets as lines, each labelled. One series, so no legend. */
@@ -61,8 +65,9 @@ function PlanChart({ closes, plan }: { closes: PlanDetail["closes"]; plan: PlanB
   const height = 240;
   const pad = { top: 12, right: 112, bottom: 22, left: 8 };
   const lines: Line[] = [
-    ...(plan.stop ? [{ label: `Stop ${usd(plan.stop)}`, price: Number(plan.stop), kind: "stop" as const }] : []),
-    ...plan.targets.map((t, i) => ({ label: `Target ${i + 1} ${usd(t.price)}`, price: Number(t.price), kind: "target" as const })),
+    ...(plan.stop ? [{ label: `Cut losses ${usd(plan.stop)}`, price: Number(plan.stop), kind: "stop" as const }] : []),
+    ...plan.targets.map((t, i) => ({ label: `Profit ${i + 1}: ${usd(t.price)}`, price: Number(t.price), kind: "target" as const })),
+    ...(plan.average_cost ? [{ label: `Your cost ${usd(plan.average_cost)}`, price: Number(plan.average_cost), kind: "cost" as const }] : []),
   ];
   const values = [
     ...closes.map((c) => Number(c.close)),
@@ -99,7 +104,7 @@ function PlanChart({ closes, plan }: { closes: PlanDetail["closes"]; plan: PlanB
               height={Math.max(2, y(Number(plan.entry_low)) - y(Number(plan.entry_high)))}
             />
             <text x={width - pad.right + 6} y={(y(Number(plan.entry_high)) + y(Number(plan.entry_low))) / 2 + 4}>
-              Entry zone
+              {plan.held ? "Add-more zone" : "Buy zone"}
             </text>
           </g>
         )}
@@ -147,10 +152,69 @@ function PlanChart({ closes, plan }: { closes: PlanDetail["closes"]; plan: PlanB
   );
 }
 
-function List({ title, items }: { title: string; items: string[] }) {
+const ICONS: Record<PlanStep["kind"], string> = {
+  buy: "🟢",
+  take_profit: "🎯",
+  cut_loss: "🛑",
+  trail: "↗️",
+  review: "📅",
+};
+
+/** How the headline is coloured: go, wait or stop. */
+export function verdictTone(verdict: string): "good" | "wait" | "bad" {
+  if (verdict === "in_zone" || verdict === "hold" || verdict === "trim") return "good";
+  if (verdict === "wait") return "wait";
+  return "bad";
+}
+
+/** The steps for a plan saved before the game plan existed. */
+function fallbackSteps(plan: PlanBody): PlanStep[] {
+  const steps: PlanStep[] = [];
+  if (plan.entry_low)
+    steps.push({ kind: "buy", title: "Buy", price: `${usd(plan.entry_low)} to ${usd(plan.entry_high!)}`, detail: `At the ${plan.entry_why}.`, change: [] });
+  if (plan.targets.length)
+    steps.push({ kind: "take_profit", title: "Take profit", price: plan.targets.map((t) => usd(t.price)).join(" / "), detail: "Sell part at the first price, the rest at the second.", change: [] });
+  if (plan.stop)
+    steps.push({ kind: "cut_loss", title: "Cut losses", price: usd(plan.stop), detail: `Sell if a day closes below ${usd(plan.stop)}.`, change: [] });
+  steps.push({ kind: "review", title: `Valid until ${formatShortDate(plan.valid_until, "UTC")}`, price: null, detail: "Then ask for a fresh plan.", change: [] });
+  return steps;
+}
+
+export function planSteps(plan: PlanBody): PlanStep[] {
+  return plan.playbook && plan.playbook.length ? plan.playbook : fallbackSteps(plan);
+}
+
+/** The game plan: what to do, at what price, and how far that is from today. */
+export function GamePlan({ steps, compact = false }: { steps: PlanStep[]; compact?: boolean }) {
+  return (
+    <ol className={`game-plan${compact ? " compact" : ""}`} aria-label="Game plan">
+      {steps.map((step) => (
+        <li key={step.kind} className={`step ${step.kind}`}>
+          <span className="step-icon" aria-hidden="true">
+            {ICONS[step.kind]}
+          </span>
+          <div className="step-body">
+            <div className="step-head">
+              <span className="step-title">{step.title}</span>
+              {step.price && <span className="step-price num">{step.price}</span>}
+              {step.change.map((c) => (
+                <span key={c} className={`chip ${step.kind === "take_profit" ? "up" : step.kind === "cut_loss" ? "down" : ""}`}>
+                  {c}
+                </span>
+              ))}
+            </div>
+            {!compact && <p className="step-detail">{step.detail}</p>}
+          </div>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function List({ title, items, tone }: { title: string; items: string[]; tone?: "up" | "down" }) {
   if (items.length === 0) return null;
   return (
-    <div>
+    <div className={`why-list ${tone ?? ""}`}>
       <h3>{title}</h3>
       <ul>
         {items.map((item) => (
@@ -161,14 +225,15 @@ function List({ title, items }: { title: string; items: string[] }) {
   );
 }
 
-/** One plan: the numbers (worked out in code), the chart, and the analysts' notes
- * with their sources. */
+/** One plan: the headline, the game plan with its prices (worked out in code), the
+ * chart, then why, with sources. */
 export function PlanPage() {
   const { id = "" } = useParams();
   const detail = useQuery({ queryKey: ["plan", id], queryFn: () => api<PlanDetail>(`/investments/plans/${id}`) });
   const data = detail.data;
   const plan = data?.plan;
   const sources = new Map((plan?.sources ?? []).map((s) => [s.id, s]));
+  const risks = plan ? [...plan.bear, ...plan.risks] : [];
   return (
     <>
       <div className="page-head">
@@ -182,12 +247,11 @@ export function PlanPage() {
               </>
             )}
           </p>
-          <h1>{plan ? `Plan for ${plan.symbol}` : "Plan"}</h1>
-          {data && (
+          <h1>{plan ? `${plan.symbol} plan` : "Plan"}</h1>
+          {data && plan && (
             <p className="muted">
-              Made {formatDate(data.brief.created_at)} from the close of {formatShortDate(plan!.as_of, "UTC")} · valid until{" "}
-              {formatShortDate(plan!.valid_until, "UTC")}
-              {data.brief.expired && " (expired: ask for a fresh one)"}
+              Closing price {usd(plan.close)} on {formatShortDate(plan.as_of, "UTC")} · made {formatDate(data.brief.created_at)}
+              {data.brief.expired && " · expired: ask for a fresh one"}
             </p>
           )}
         </div>
@@ -200,62 +264,56 @@ export function PlanPage() {
       )}
       {data && plan && (
         <>
-          <section className="card" aria-labelledby="verdict">
-            <div className="card-head">
-              <h2 id="verdict">{plan.verdict_text}</h2>
-            </div>
-            <p>{plan.summary}</p>
-            <dl className="totals" aria-label="Plan levels">
-              <div>
-                <dt>Close</dt>
-                <dd className="num">{usd(plan.close)}</dd>
-              </div>
-              {plan.entry_low && (
-                <div>
-                  <dt>Entry zone ({plan.entry_why})</dt>
-                  <dd className="num">
-                    {usd(plan.entry_low)}–{usd(plan.entry_high!)}
-                  </dd>
-                </div>
-              )}
-              {plan.stop && (
-                <div>
-                  <dt>Stop</dt>
-                  <dd className="num">{usd(plan.stop)}</dd>
-                </div>
-              )}
-              {plan.targets.map((t, i) => (
-                <div key={t.price}>
-                  <dt>
-                    Target {i + 1} ({t.why}, {t.reward_risk}× risk)
-                  </dt>
-                  <dd className="num">{usd(t.price)}</dd>
-                </div>
-              ))}
-            </dl>
-            <p className="caption">{plan.reason}</p>
+          <section className={`card verdict ${verdictTone(plan.verdict)}`} aria-labelledby="verdict">
+            <p className="caption">The verdict</p>
+            <h2 id="verdict">{plan.verdict_text}</h2>
+            <p className="verdict-reason">{plan.reason}</p>
             {plan.held && (
               <p className="muted">
                 You hold {plan.held}
-                {plan.held_gain_percent !== null && `, ${Number(plan.held_gain_percent) >= 0 ? "+" : ""}${plan.held_gain_percent}% against your cost`}.
+                {plan.held_gain_percent !== null && (
+                  <>
+                    {" "}
+                    ·{" "}
+                    <span className={Number(plan.held_gain_percent) >= 0 ? "up" : "down"}>
+                      {Number(plan.held_gain_percent) >= 0 ? "+" : ""}
+                      {plan.held_gain_percent}%
+                    </span>{" "}
+                    on what you paid
+                  </>
+                )}
               </p>
             )}
-            {plan.earnings_in_window && (
-              <p className="warning-text">⚠️ Earnings on {formatShortDate(plan.earnings_in_window, "UTC")}, inside the plan's window.</p>
-            )}
-            <p>
+            <p>{plan.summary}</p>
+          </section>
+
+          <section className="card" aria-labelledby="game-plan">
+            <div className="card-head">
+              <h2 id="game-plan">Your game plan</h2>
+              <span className="caption">Prices worked out from daily closes</span>
+            </div>
+            <GamePlan steps={planSteps(plan)} />
+            <p className="callout">
               <strong>What would prove it wrong:</strong> {plan.invalidation}
             </p>
+          </section>
+
+          <section className="card" aria-labelledby="chart">
+            <div className="card-head">
+              <h2 id="chart">Where those prices sit</h2>
+            </div>
             <PlanChart closes={data.closes} plan={plan} />
           </section>
 
-          <section className="card" aria-labelledby="analysts">
+          <section className="card" aria-labelledby="why">
             <div className="card-head">
-              <h2 id="analysts">The analysts</h2>
+              <h2 id="why">Why</h2>
             </div>
-            <h3>Technical</h3>
-            <p>{plan.technical}</p>
-            <h3>News</h3>
+            <div className="debate">
+              <List title="What's going for it" items={plan.bull} tone="up" />
+              <List title="What could go wrong" items={risks} tone="down" />
+            </div>
+            <h3>In the news</h3>
             {plan.news.length === 0 ? (
               <p className="muted">No recent news to weigh.</p>
             ) : (
@@ -275,12 +333,15 @@ export function PlanPage() {
                 ))}
               </ul>
             )}
-            <List title="Risks in the window" items={plan.risks} />
-            <div className="debate">
-              <List title="Bull case" items={plan.bull} />
-              <List title="Bear case" items={plan.bear} />
-            </div>
-            <List title="Levels used" items={plan.levels} />
+            <details className="more">
+              <summary>The chart reading and the numbers behind it</summary>
+              <p>{plan.technical}</p>
+              <ul>
+                {plan.levels.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            </details>
             <p className="caption">
               Every price here was worked out in code from daily closes; the analysts only wrote the words. Research, not
               advice.

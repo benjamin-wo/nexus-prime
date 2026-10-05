@@ -4,6 +4,7 @@ import { Link, useParams } from "react-router-dom";
 
 import { api, type Levels, type Stock } from "../api";
 import { formatShortDate } from "../format";
+import { verdictTone } from "./Plans";
 
 const usd = (amount: string) => Number(amount).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -161,16 +162,21 @@ export function StockPage() {
             <h2 id="plan">Research plan</h2>
           </div>
           {data.plan ? (
-            <p>
-              <Link to={`/investment/plans/${data.plan.id}`}>{data.plan.summary_line}</Link>
+            <div className={`plan-brief ${verdictTone(data.plan.verdict)}`}>
+              <strong>{data.plan.verdict_text}</strong>
+              <p className="muted">{data.plan.reason}</p>
+              <Link to={`/investment/plans/${data.plan.id}`}>See the game plan: when to buy, take profit and cut losses</Link>
               <br />
               <span className="caption">
                 Made {formatShortDate(data.plan.created_at)}
                 {data.plan.expired && " · expired"}
               </span>
-            </p>
+            </div>
           ) : (
-            <p className="muted">The research team works out an entry zone, stop and targets, then weighs the news and both sides.</p>
+            <p className="muted">
+              The research team works out when to buy, where to take profit and where to cut losses, then weighs the news and
+              both sides.
+            </p>
           )}
           <button type="button" className="btn btn-primary" onClick={() => void startPlan()} disabled={started !== null}>
             {data.plan ? "Make a fresh plan" : "Make a plan"}

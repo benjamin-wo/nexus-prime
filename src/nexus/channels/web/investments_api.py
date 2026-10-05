@@ -333,7 +333,9 @@ class PlanBrief(Model):
     symbol: str
     verdict: str
     verdict_text: str
-    summary_line: str
+    headline: str  # "NVDA: Keep holding"
+    reason: str
+    summary_line: str  # the headline and the game plan, as lines
     created_at: datetime
     valid_until: date
     expired: bool
@@ -347,6 +349,8 @@ def _brief(p: SavedPlan, today: date) -> PlanBrief:
         symbol=p.symbol,
         verdict=p.verdict.value,
         verdict_text=result.verdict_text,
+        headline=plan_cases.headline(result),
+        reason=result.reason,
         summary_line=plan_cases.summary_line(result),
         created_at=p.created_at,
         valid_until=p.valid_until,
