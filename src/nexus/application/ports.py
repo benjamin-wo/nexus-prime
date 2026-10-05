@@ -48,6 +48,7 @@ from nexus.domain.receipts import Receipt
 from nexus.domain.recurring import Subscription
 from nexus.domain.rules import CategoryRule
 from nexus.domain.statements import SavedMapping, StatementImport
+from nexus.domain.trips import Trip
 
 
 class SortField(StrEnum):
@@ -491,6 +492,33 @@ class RunRepository(Protocol):
         ...
 
 
+@dataclass(frozen=True, slots=True)
+class TripExpense:
+    """Money out on a trip, with the shares of it that others owe the user."""
+
+    transaction: Transaction
+    others: Money
+    category: str | None
+    linked: bool  # added to the trip by hand
+    day: date  # local
+
+
+class TripRepository(Protocol):
+    async def insert_trip(self, trip: Trip, home: str) -> None: ...
+    async def update_trip(self, trip: Trip, home: str) -> None: ...
+    async def delete_trip(self, user_id: UserId, trip_id: UUID) -> bool: ...
+    async def get_trip(self, user_id: UserId, trip_id: UUID) -> Trip | None: ...
+    async def list_trips(self, user_id: UserId) -> list[Trip]: ...
+    async def set_link(
+        self, user_id: UserId, trip_id: UUID, transaction_id: UUID, *, included: bool, at: datetime
+    ) -> None: ...
+    async def remove_link(self, user_id: UserId, trip_id: UUID, transaction_id: UUID) -> None: ...
+    async def trip_expenses(
+        self, user_id: UserId, trip: Trip, timezone: str, *, limit: int
+    ) -> list[TripExpense]: ...
+    async def trips_on(self, user_id: UserId, day: date) -> list[Trip]: ...
+
+
 class InvestmentRepository(Protocol):
     async def list_holdings(self, user_id: UserId) -> list[Holding]: ...
     async def save_position(self, user_id: UserId, position: Position, at: datetime) -> None:
@@ -586,6 +614,8 @@ class UnitOfWork(Protocol):
     def runs(self) -> RunRepository: ...
     @property
     def investments(self) -> InvestmentRepository: ...
+    @property
+    def trips(self) -> TripRepository: ...
 
     async def __aenter__(self) -> Self: ...
     async def __aexit__(

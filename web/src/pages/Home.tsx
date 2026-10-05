@@ -2,9 +2,10 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { api, type FeedItem, type Me, type Portfolio, type Run, type Summary } from "../api";
+import { api, type FeedItem, type Me, type Portfolio, type Run, type Summary, type TripDetail } from "../api";
 import { DEPARTMENTS } from "../departments";
 import { formatChange, formatMoney, formatPercent } from "../format";
+import { tripWhen } from "./Trips";
 
 function greeting(timezone: string): string {
   const hour = Number(new Intl.DateTimeFormat("en-GB", { hour: "numeric", hourCycle: "h23", timeZone: timezone }).format(new Date()));
@@ -54,6 +55,7 @@ export function Home({ me, onAsk }: { me: Me; onAsk: (text: string) => void }) {
   const summary = useQuery({ queryKey: ["summary"], queryFn: () => api<Summary>("/summary") });
   const portfolio = useQuery({ queryKey: ["investments"], queryFn: () => api<Portfolio>("/investments") });
   const worth = portfolio.data?.totals;
+  const trip = useQuery({ queryKey: ["next-trip"], queryFn: () => api<TripDetail | null>("/travel/next") }).data;
   const spent = summary.data?.totals.find((t) => t.direction === "out");
   const received = summary.data?.totals.find((t) => t.direction === "in");
 
@@ -157,6 +159,25 @@ export function Home({ me, onAsk }: { me: Me; onAsk: (text: string) => void }) {
                   </>
                 )}
               </p>
+            ) : d.name === "travel" && trip ? (
+              <>
+                <p className="muted">
+                  {trip.trip.destination}: {tripWhen(trip.trip).toLowerCase()}
+                  {trip.trip.budget && (
+                    <>
+                      , {formatMoney(trip.spending.spent)} of {formatMoney(trip.trip.budget)} spent
+                    </>
+                  )}
+                  {trip.trip.status === "upcoming" && trip.saving.per_payday && trip.saving.by_start && (
+                    <>, {formatMoney(trip.saving.by_start)} set aside by then</>
+                  )}
+                </p>
+                {trip.spending.percent !== null && (
+                  <div className="meter trip-card-meter" aria-hidden="true">
+                    <span style={{ width: `${Math.min(100, trip.spending.percent)}%` }} />
+                  </div>
+                )}
+              </>
             ) : (
               <p className="muted">{d.blurb}</p>
             )}

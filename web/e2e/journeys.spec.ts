@@ -606,7 +606,7 @@ test("home is the front desk: what needs you, what's running, and each departmen
   await expect(working.getByText("Cancelled")).toBeVisible();
   expect(state.cancelled).toEqual(["r1"]);
   await expect(page.getByRole("link", { name: /^Accounting:/ })).toContainText("This month: SGD");
-  await expect(page.getByRole("link", { name: /^Travel:/ })).toContainText("Coming next");
+  await expect(page.getByRole("link", { name: /^Travel:/ })).toContainText("Your trips");
 });
 
 test("asking on home opens the chat with the question", async ({ page }) => {
@@ -628,7 +628,8 @@ test("departments have their own pages, and old links still work", async ({ page
   await expect(page.getByRole("heading", { name: "Plan", level: 1 })).toBeVisible();
   const nav = page.getByRole("navigation", { name: isMobile ? "Main (mobile)" : "Main", exact: true });
   await nav.getByRole("link", { name: "Travel" }).click();
-  await expect(page.getByRole("region", { name: "About Travel" })).toContainText("never books");
+  await expect(page.getByRole("heading", { name: "Trips", level: 1 })).toBeVisible();
+  await expect(page.getByText(/never books anything/)).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Accounting pages" })).toHaveCount(0);
   await nav.getByRole("link", { name: "Home" }).click();
   await expect(page.getByRole("heading", { name: "Needs you" })).toBeVisible();
@@ -731,4 +732,42 @@ test("a research plan is started from a stock and read with its chart and source
   const cite = page.getByRole("link", { name: "[Wire]" });
   await expect(cite).toHaveAttribute("href", "https://news.example/1");
   await expect(cite).toHaveAttribute("rel", /noopener/);
+});
+
+test("a trip is added and shows its spending, set-aside and settle-up", async ({ page }) => {
+  const state = await fakeApi(page);
+  await page.goto("/travel");
+  await expect(page.getByText(/No trips yet/)).toBeVisible();
+  await page.getByRole("button", { name: "Add a trip" }).click();
+  const form = page.getByRole("form", { name: "Add a trip" });
+  await form.getByLabel("Where").fill("Tokyo");
+  await form.getByLabel("From").fill("2026-11-10");
+  await form.getByLabel("To").fill("2026-11-19");
+  await form.getByLabel("Currency there").fill("jpy");
+  await form.getByLabel(/^Budget/).fill("3000");
+  await form.getByLabel(/^Set aside each payday/).fill("500");
+  await form.getByLabel("Who's going").fill("Ann, Ben");
+  await form.getByRole("button", { name: "Add a category" }).click();
+  await form.getByLabel("Category").fill("Dining Out");
+  await form.getByLabel("Planned amount").fill("600");
+  await form.getByRole("button", { name: "Add trip" }).click();
+
+  await expect(page).toHaveURL(/\/travel\/trips\/trip1$/);
+  await expect(page.getByRole("heading", { name: "Tokyo", level: 1 })).toBeVisible();
+  expect(state.trips[0]).toMatchObject({ currency: "JPY", companions: ["Ann", "Ben"], planned: { "Dining Out": { amount: "600.0000" } } });
+  const spending = page.getByRole("region", { name: "Trip spending" });
+  await expect(spending).toContainText("SGD 818.00 of SGD 3,000.00");
+  await expect(spending).toContainText("SGD 800.00 before the trip");
+  await expect(page.getByRole("region", { name: "Setting money aside" })).toContainText("SGD 1,500.00 each payday would cover it");
+  await expect(page.getByRole("region", { name: "Settle up" })).toContainText("Ann");
+  const expenses = page.getByRole("region", { name: "Expenses" });
+  await expect(expenses.getByText("added by hand")).toBeVisible();
+  await expenses.getByRole("button", { name: "Take Air ticket off the trip" }).click();
+  await expect(expenses.getByText("Air ticket")).toHaveCount(0);
+  expect(state.tripItems).toEqual(["k1"]);
+
+  await page.goto("/");
+  await expect(page.getByRole("link", { name: /^Travel:/ })).toContainText("Tokyo: in 43 days");
+  await page.goto("/travel");
+  await expect(page.getByRole("region", { name: "Coming up" }).getByRole("link", { name: "Tokyo" })).toBeVisible();
 });

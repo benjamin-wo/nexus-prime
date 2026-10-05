@@ -17,6 +17,7 @@ import { Home } from "./pages/Home";
 import { InvestmentPage } from "./pages/Investment";
 import { PlanPage, PlansPage } from "./pages/Plans";
 import { StockPage } from "./pages/Stock";
+import { TripPage, TripsPage } from "./pages/Trips";
 import { WatchlistPage } from "./pages/Watchlist";
 import { ImportPage } from "./pages/Import";
 import { Ledger } from "./pages/Ledger";
@@ -97,6 +98,8 @@ function Cockpit({ me }: { me: Me }) {
         <Route path="/investment/stocks/:symbol" element={<StockPage />} />
         <Route path="/investment/plans" element={<PlansPage />} />
         <Route path="/investment/plans/:id" element={<PlanPage />} />
+        <Route path="/travel" element={<TripsPage />} />
+        <Route path="/travel/trips/:id" element={<TripPage />} />
         {DEPARTMENTS.filter((d) => d.upcoming).map((d) => (
           <Route key={d.name} path={d.path} element={<Upcoming department={d} />} />
         ))}

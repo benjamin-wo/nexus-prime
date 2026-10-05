@@ -1,7 +1,8 @@
 """The cash-flow calendar: net money movement per day, in the home currency.
 
 Days so far show what was logged. Days ahead show what's expected: bills (unless
-already marked paid), tracked subscriptions and payday. It shows movement only,
+already marked paid), tracked subscriptions, payday, and money set aside each payday
+for a trip. It shows movement only,
 never a balance: Nexus doesn't know what's in the user's accounts.
 """
 
@@ -30,6 +31,7 @@ class ExpectedKind(StrEnum):
     BILL = "bill"
     SUBSCRIPTION = "subscription"
     SALARY = "salary"
+    TRIP = "trip"  # money set aside for a trip, on each payday before it
 
 
 @dataclass(frozen=True, slots=True)
@@ -192,6 +194,7 @@ async def _expected(
                     paid.add((bill.id, o.due))
         subscriptions = await tx.planning.list_subscriptions(user.id)
         schedule = await tx.planning.get_salary_schedule(user.id)
+        trips = [t for t in await tx.trips.list_trips(user.id) if t.set_aside is not None]
 
     for bill in bills:
         for due in due_dates(bill.anchor, bill.cadence, start, end):
@@ -227,4 +230,18 @@ async def _expected(
                         ),
                     )
                 )
+            for trip in trips:
+                if today < payday < trip.start:
+                    found.append(
+                        (
+                            payday,
+                            Expected(
+                                ExpectedKind.TRIP,
+                                f"Set aside for {trip.destination}",
+                                Direction.OUT,
+                                trip.set_aside,
+                                None,
+                            ),
+                        )
+                    )
     return found

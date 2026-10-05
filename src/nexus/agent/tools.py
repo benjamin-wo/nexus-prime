@@ -34,6 +34,7 @@ from nexus.application import salary as salary_cases
 from nexus.application import splits as split_cases
 from nexus.application import subscriptions as subscription_cases
 from nexus.application import transactions as tx_cases
+from nexus.application import trips as trip_cases
 from nexus.application.departments import Departments
 from nexus.application.fx import Rate, RateSource
 from nexus.application.ports import LedgerQuery, UnitOfWork
@@ -54,6 +55,7 @@ from nexus.domain.money import Money
 from nexus.domain.notifications import Frequency
 from nexus.domain.planning import Cadence, PayRule
 from nexus.domain.rules import clean_pattern
+from nexus.domain.trips import Trip, describe_trip
 
 type UowFactory = Callable[[], UnitOfWork]
 
@@ -1520,6 +1522,172 @@ async def _remove_pay(ctx: ToolContext, _: NoArgs) -> ToolResult:
     return ToolResult("Removed your pay schedule.", wrote=True)
 
 
+# --- trips ------------------------------------------------------------------------
+
+
+class TripArgs(Args):
+    destination: str = Field(description="Where, as the user says it: Tokyo, Japan, Bali")
+    start: str = Field(description="First day, like 2027-01-10")
+    end: str = Field(description="Last day, like 2027-01-19")
+    currency: str = Field(description="The currency spent there, e.g. JPY for Japan")
+    budget: str | None = Field(None, description="Total budget, in the user's home currency")
+    companions: list[str] = Field(default_factory=list, description="Who's going with them")
+    set_aside: str | None = Field(
+        None, description="Amount to put aside each payday until the trip, home currency"
+    )
+
+
+def _home_money(ctx: ToolContext, amount: str | None) -> Money | None:
+    if amount is None or amount.strip().lower() in {"", "none", "0", "no"}:
+        return None
+    return parse_money(ctx, amount, None)
+
+
+def _trip_draft(ctx: ToolContext, a: TripArgs) -> trip_cases.TripDraft:
+    return trip_cases.TripDraft(
+        destination=a.destination,
+        start=parse_day(ctx, a.start).date(),
+        end=parse_day(ctx, a.end).date(),
+        currency=a.currency,
+        budget=_home_money(ctx, a.budget),
+        companions=a.companions,
+        set_aside=_home_money(ctx, a.set_aside),
+    )
+
+
+def _draft_line(d: trip_cases.TripDraft) -> str:
+    line = (
+        f"{d.destination}, {d.start:%a %d %b %Y} to {d.end:%a %d %b %Y}, spending in {d.currency}"
+    )
+    if d.budget:
+        line += f", budget {d.budget}"
+    if d.companions:
+        line += ", with " + ", ".join(d.companions)
+    if d.set_aside:
+        line += f", setting aside {d.set_aside} each payday"
+    return line
+
+
+async def _describe_create_trip(ctx: ToolContext, a: TripArgs) -> str:
+    return f"Add a trip: {_draft_line(_trip_draft(ctx, a))}?"
+
+
+async def _create_trip(ctx: ToolContext, a: TripArgs) -> ToolResult:
+    trip = await trip_cases.create_trip(ctx.uow(), ctx.user, _trip_draft(ctx, a), now=ctx.now)
+    return ToolResult(
+        f"Trip saved: {_draft_line(trip_cases.draft_of(trip))}. Expenses in {trip.currency} "
+        "on its days count towards it; the trip page is under Travel on the web app.",
+        wrote=True,
+    )
+
+
+class TripNameArgs(Args):
+    trip: str | None = Field(
+        None, description="The trip's destination; leave out for the one that's on or next"
+    )
+
+
+class TripChangeArgs(TripNameArgs):
+    destination: str | None = None
+    start: str | None = Field(None, description="New first day, like 2027-01-10")
+    end: str | None = Field(None, description="New last day")
+    currency: str | None = None
+    budget: str | None = Field(None, description="New budget in the home currency; none clears")
+    companions: list[str] | None = Field(None, description="Everyone going, replacing the list")
+    set_aside: str | None = Field(None, description="New amount each payday; none stops it")
+
+
+async def _changed_trip(ctx: ToolContext, a: TripChangeArgs) -> tuple[UUID, trip_cases.TripDraft]:
+    trip = await trip_cases.find_trip(ctx.uow(), ctx.user, a.trip, now=ctx.now)
+    d = trip_cases.draft_of(trip)
+    changed = replace(
+        d,
+        destination=a.destination or d.destination,
+        start=parse_day(ctx, a.start).date() if a.start else d.start,
+        end=parse_day(ctx, a.end).date() if a.end else d.end,
+        currency=a.currency or d.currency,
+        budget=_home_money(ctx, a.budget) if a.budget is not None else d.budget,
+        companions=a.companions if a.companions is not None else d.companions,
+        set_aside=_home_money(ctx, a.set_aside) if a.set_aside is not None else d.set_aside,
+    )
+    return trip.id, changed
+
+
+async def _describe_update_trip(ctx: ToolContext, a: TripChangeArgs) -> str:
+    _, changed = await _changed_trip(ctx, a)
+    return f"Change the trip to: {_draft_line(changed)}?"
+
+
+async def _update_trip(ctx: ToolContext, a: TripChangeArgs) -> ToolResult:
+    trip_id, changed = await _changed_trip(ctx, a)
+    trip = await trip_cases.update_trip(ctx.uow(), ctx.user, trip_id, changed, now=ctx.now)
+    return ToolResult(f"Trip updated: {_draft_line(trip_cases.draft_of(trip))}.", wrote=True)
+
+
+async def _describe_delete_trip(ctx: ToolContext, a: TripNameArgs) -> str:
+    trip = await trip_cases.find_trip(ctx.uow(), ctx.user, a.trip, now=ctx.now)
+    return (
+        f"Delete the trip to {trip.destination} ({trip.start:%d %b} to {trip.end:%d %b})? "
+        "Its expenses stay in the ledger."
+    )
+
+
+async def _delete_trip(ctx: ToolContext, a: TripNameArgs) -> ToolResult:
+    trip = await trip_cases.find_trip(ctx.uow(), ctx.user, a.trip, now=ctx.now)
+    await trip_cases.delete_trip(ctx.uow(), ctx.user.id, trip.id)
+    return ToolResult(f"Deleted the trip to {trip.destination}.", wrote=True)
+
+
+async def _list_trips(ctx: ToolContext, _: NoArgs) -> ToolResult:
+    trips = await trip_cases.list_trips(ctx.uow(), ctx.user.id)
+    if not trips:
+        return ToolResult(
+            'No trips yet. The user can say "I\'m going to Tokyo 10-20 Jan, budget 3000".'
+        )
+    today = ctx.today()
+    return ToolResult("Trips:\n" + "\n".join(f"- {describe_trip(t, today)}" for t in trips))
+
+
+async def _trip_status(ctx: ToolContext, a: TripNameArgs) -> ToolResult:
+    trip = await trip_cases.find_trip(ctx.uow(), ctx.user, a.trip, now=ctx.now)
+    view = await trip_cases.trip_view(ctx.uow, _rates(ctx), ctx.user, trip.id, now=ctx.now)
+    return ToolResult(
+        "Trip figures, worked out in code (quote them as they are):\n"
+        + "\n".join(trip_cases.describe_view(view))
+    )
+
+
+class TripExpenseArgs(TripNameArgs):
+    transaction_id: str = Field(description="The expense's id, from find_transactions")
+
+
+async def _trip_and_expense(ctx: ToolContext, a: TripExpenseArgs) -> tuple[Trip, Transaction]:
+    trip = await trip_cases.find_trip(ctx.uow(), ctx.user, a.trip, now=ctx.now)
+    return trip, await _load(ctx, a.transaction_id)
+
+
+async def _describe_add_to_trip(ctx: ToolContext, a: TripExpenseArgs) -> str:
+    trip, tx = await _trip_and_expense(ctx, a)
+    return f"Count {describe(tx, await category_map(ctx), ctx.tz)} towards {trip.destination}?"
+
+
+async def _add_to_trip(ctx: ToolContext, a: TripExpenseArgs) -> ToolResult:
+    trip, tx = await _trip_and_expense(ctx, a)
+    await trip_cases.add_expense(ctx.uow(), ctx.user.id, trip.id, tx.id, now=ctx.now)
+    return ToolResult(f"Added to the {trip.destination} trip.", wrote=True)
+
+
+async def _describe_remove_from_trip(ctx: ToolContext, a: TripExpenseArgs) -> str:
+    trip, tx = await _trip_and_expense(ctx, a)
+    return f"Take {describe(tx, await category_map(ctx), ctx.tz)} off {trip.destination}?"
+
+
+async def _remove_from_trip(ctx: ToolContext, a: TripExpenseArgs) -> ToolResult:
+    trip, tx = await _trip_and_expense(ctx, a)
+    await trip_cases.remove_expense(ctx.uow(), ctx.user.id, trip.id, tx.id, now=ctx.now)
+    return ToolResult(f"Taken off the {trip.destination} trip; it stays in the ledger.", wrote=True)
+
+
 class SkillArgs(Args):
     name: str
 
@@ -1820,6 +1988,53 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             "Set when the user is paid, as they told you.",
             PayScheduleArgs,
             _set_pay_schedule,
+        ),
+        ToolSpec(
+            "create_trip",
+            "Save a trip the user is planning or on: destination, dates, the currency "
+            "spent there, and optionally a budget, who's going and an amount to set aside "
+            "each payday. Asks the user to confirm.",
+            TripArgs,
+            _create_trip,
+            confirm=_describe_create_trip,
+        ),
+        ToolSpec(
+            "update_trip",
+            "Change a saved trip's dates, budget, companions, currency or set-aside. Asks "
+            "the user to confirm.",
+            TripChangeArgs,
+            _update_trip,
+            confirm=_describe_update_trip,
+        ),
+        ToolSpec(
+            "delete_trip",
+            "Delete a saved trip (its expenses stay). Asks the user to confirm.",
+            TripNameArgs,
+            _delete_trip,
+            confirm=_describe_delete_trip,
+        ),
+        ToolSpec("list_trips", "The user's trips, past and coming up.", NoArgs, _list_trips),
+        ToolSpec(
+            "trip_status",
+            "One trip's money: spent so far, left in the budget, per day, by category, "
+            "money set aside, and who still owes what for it.",
+            TripNameArgs,
+            _trip_status,
+        ),
+        ToolSpec(
+            "add_to_trip",
+            "Count an expense towards a trip though its date or currency don't match "
+            "(flights booked months before). Asks the user to confirm.",
+            TripExpenseArgs,
+            _add_to_trip,
+            confirm=_describe_add_to_trip,
+        ),
+        ToolSpec(
+            "remove_from_trip",
+            "Stop counting an expense towards a trip. Asks the user to confirm.",
+            TripExpenseArgs,
+            _remove_from_trip,
+            confirm=_describe_remove_from_trip,
         ),
         ToolSpec("show_pay_schedule", "When the user is paid next.", NoArgs, _pay_schedule),
         ToolSpec(

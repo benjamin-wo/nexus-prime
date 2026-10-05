@@ -87,6 +87,8 @@ export async function fakeApi(
     draft: Record<string, unknown> | null;
     screenshots: number;
     watching: string[];
+    trips: Record<string, unknown>[];
+    tripItems: string[];
     planStarted: boolean;
     planAlerts: boolean;
     cancelled: string[];
@@ -131,6 +133,8 @@ export async function fakeApi(
     cancelled: [],
     holdings: [],
     watching: [],
+    trips: [],
+    tripItems: ["k1", "k2"],
     planStarted: false,
     planAlerts: true,
     draft: null,
@@ -531,6 +535,83 @@ export async function fakeApi(
     }
     if (holding && method === "DELETE") {
       state.holdings = state.holdings.filter((h) => h.symbol !== holding[1]);
+      return route.fulfill({ status: 204 });
+    }
+    const home = (amount: number) => ({ amount: amount.toFixed(4), currency: "SGD" });
+    if (path === "/travel/trips" && method === "GET") return json(route, state.trips);
+    if (path === "/travel/trips" && method === "POST") {
+      const sgdOrNull = (v: unknown) => (v ? home(Number(v)) : null);
+      const trip = {
+        id: `trip${state.trips.length + 1}`,
+        destination: body.destination,
+        start: body.start,
+        end: body.end,
+        days: Math.round((Date.parse(String(body.end)) - Date.parse(String(body.start))) / 86400000) + 1,
+        currency: String(body.currency).toUpperCase(),
+        budget: sgdOrNull(body.budget),
+        companions: body.companions,
+        set_aside: sgdOrNull(body.set_aside),
+        planned: Object.fromEntries(Object.entries(body.planned as Record<string, string>).map(([k, v]) => [k, home(Number(v))])),
+        status: Date.parse(String(body.start)) > Date.parse("2026-09-28") ? "upcoming" : "ongoing",
+        days_until: Math.round((Date.parse(String(body.start)) - Date.parse("2026-09-28")) / 86400000),
+        day_number: null,
+      };
+      state.trips = [trip, ...state.trips];
+      return json(route, trip, 201);
+    }
+    const tripDetail = (trip: Record<string, unknown>) => {
+      const items = [
+        { transaction_id: "k1", day: "2026-09-28", counterparty: "Ichiran", category: "Dining Out", amount: { amount: "2000.0000", currency: "JPY" }, home: home(18), linked: false },
+        { transaction_id: "k2", day: "2026-08-01", counterparty: "Air ticket", category: "Travel", amount: home(800), home: home(800), linked: true },
+      ].filter((i) => state.tripItems.includes(i.transaction_id));
+      const spent = items.reduce((total, i) => total + Number(i.home.amount), 0);
+      const budget = trip.budget as { amount: string } | null;
+      return {
+        trip,
+        spending: {
+          spent: home(spent),
+          left: budget ? home(Number(budget.amount) - spent) : null,
+          percent: budget ? Math.floor((spent * 100) / Number(budget.amount)) : null,
+          before: home(state.tripItems.includes("k2") ? 800 : 0),
+          today: null,
+          per_day: null,
+          per_day_left: null,
+          categories: items.map((i) => ({ name: i.category, planned: null, spent: i.home })),
+          unconverted: 0,
+        },
+        saving: {
+          per_payday: trip.set_aside,
+          paydays_done: 0,
+          paydays_left: 2,
+          saved: trip.set_aside ? home(0) : null,
+          by_start: trip.set_aside ? home(Number((trip.set_aside as { amount: string }).amount) * 2) : null,
+          covers_budget: trip.set_aside ? false : null,
+          suggested: budget ? home(Math.ceil(Number(budget.amount) / 2)) : null,
+          fits: trip.set_aside ? true : null,
+          next_payday: "2026-10-30",
+          pay_schedule: true,
+        },
+        owed: [{ name: "Ann", amounts: [{ amount: "15000.0000", currency: "JPY" }], home: home(135) }],
+        items,
+      };
+    };
+    if (path === "/travel/next" && method === "GET") {
+      const next = state.trips.find((t) => t.status !== "finished");
+      return json(route, next ? tripDetail(next) : null);
+    }
+    const tripMatch = path.match(/^\/travel\/trips\/([^/]+)$/);
+    if (tripMatch) {
+      const trip = state.trips.find((t) => t.id === tripMatch[1]);
+      if (!trip) return json(route, { detail: "no trip with that id" }, 404);
+      if (method === "GET") return json(route, tripDetail(trip));
+      if (method === "DELETE") {
+        state.trips = state.trips.filter((t) => t !== trip);
+        return route.fulfill({ status: 204 });
+      }
+    }
+    const tripExpense = path.match(/^\/travel\/trips\/([^/]+)\/expenses\/([^/]+)$/);
+    if (tripExpense && method === "DELETE") {
+      state.tripItems = state.tripItems.filter((i) => i !== tripExpense[2]);
       return route.fulfill({ status: 204 });
     }
     if (path === "/home" && method === "GET") {
