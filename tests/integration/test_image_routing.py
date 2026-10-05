@@ -3,6 +3,7 @@ anything else (or a question) is answered by the chat agent from what was read, 
 nothing read from an image acts on its own. Every shop, name and figure is made up."""
 
 import pytest
+from langchain_core.messages import AIMessage
 
 from nexus.agent.image_look import ImageKind, ImageLook
 from nexus.agent.receipts import ReceiptDraft
@@ -188,3 +189,58 @@ async def test_a_ticket_with_a_price_goes_on_the_trip(uow: UowFactory, alice: Us
     replies = await agent.handle_photo(alice, IMG, "image/png", None, "telegram-photo:t1")
     assert trips.reads == 1
     assert "ZZ12" in replies[0].text and await expenses(uow, alice) == 0
+
+
+BILL = ImageLook(
+    ImageKind.BILL,
+    "SGD",
+    "An electricity bill.",
+    "Example Power / Amount due: SGD 88.40 / Pay by 15 Oct",
+)
+
+
+def add_bill() -> AIMessage:
+    """The model calling add_bill (call() can't pass a ``name`` argument)."""
+    args = {"name": "Electricity", "due_date": "2026-10-15", "amount": "88.40"}
+    return AIMessage(content="", tool_calls=[{"name": "add_bill", "args": args, "id": "c1"}])
+
+
+async def bills(uow: UowFactory, user: UserId) -> list[str]:
+    async with uow() as tx:
+        return [b.name for b in await tx.planning.list_bills(user)]
+
+
+async def test_nothing_in_an_image_changes_data_unless_asked(
+    uow: UowFactory, alice: UserId
+) -> None:
+    # Shown a bill with no words, the model tries to add it anyway: the tool isn't
+    # offered, and if called it's refused, so it can only offer.
+    model = scripted(
+        add_bill(),
+        say("That's your electricity bill: 88.40 due 15 Oct. Want me to add it?"),
+    )
+    agent = build(uow, model, FakeReceipts(ReceiptDraft(is_receipt=False)),
+                  looker=FakeImageLooker([BILL]))  # fmt: skip
+    reply = only(await agent.handle_photo(alice, IMG, "image/png", None, "tg:20"))
+    assert reply.text.endswith("Want me to add it?")
+    assert "log_expense" not in model.bound[0] and "find_transactions" in model.bound[0]
+    refused = str(model.seen[-1][-1].content)
+    assert refused.startswith("Error: add_bill wasn't run: nothing changes from an image")
+    assert await bills(uow, alice) == []
+    # "Yes, add it" is the user's own request: the bill is added.
+    model.script += [add_bill(),
+                     say("Added.")]  # fmt: skip
+    await agent.handle_text(alice, "yes add it", "tg:21")
+    assert await bills(uow, alice) == ["Electricity"]
+
+
+async def test_a_caption_that_asks_lets_it_act(uow: UowFactory, bob: UserId) -> None:
+    model = scripted(
+        add_bill(),
+        say("Added your electricity bill."),
+    )
+    agent = build(uow, model, FakeReceipts(ReceiptDraft(is_receipt=False)),
+                  looker=FakeImageLooker([BILL]))  # fmt: skip
+    await agent.handle_photo(bob, IMG, "image/png", "add this bill", "tg:22")
+    assert "log_expense" in model.bound[0]
+    assert await bills(uow, bob) == ["Electricity"]

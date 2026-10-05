@@ -173,6 +173,18 @@ _QUESTION = re.compile(
 _LOG = re.compile(r"\b(?:log|add|record|save|track|expense|spent|paid)\b", re.I)
 
 
+_ACT = re.compile(
+    r"\b(?:log|add|record|save|track|set|mark|remind|put|split|pay(?:ed)?|paid)\b", re.I
+)
+
+
+def acts(caption: str | None) -> bool:
+    """Whether the user's own words with an image ask Nexus to do something with it
+    ("add this bill", "log it", "split with Ann"). Without that, nothing read from an
+    image may change their data."""
+    return bool(caption and _ACT.search(caption))
+
+
 def asks(caption: str | None) -> bool:
     """Whether the caption asks something about the image, rather than saying what to
     do with it ("log this", "from yesterday")."""

@@ -34,8 +34,9 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command, interrupt
 
 from nexus.agent import kernel
+from nexus.agent.image_look import acts
 from nexus.agent.snapshot import money_snapshot
-from nexus.agent.tools import ToolContext, ToolSpec, UowFactory, run_tool
+from nexus.agent.tools import ToolContext, ToolSpec, UowFactory, run_tool, safe_for_images
 from nexus.application import departments as department_cases
 from nexus.application import income as income_cases
 from nexus.application import memory as memory_cases
@@ -146,6 +147,17 @@ def _trim(messages: Sequence[AnyMessage]) -> list[AnyMessage]:
     return window[-1:]
 
 
+def _hands_off(state: AgentState) -> bool:
+    """Whether this turn is about an image whose caption didn't ask to act on it."""
+    messages = state.get("messages", [])
+    human = next((m for m in reversed(messages) if isinstance(m, HumanMessage)), None)
+    return (
+        human is not None
+        and IMAGE in human.additional_kwargs
+        and not acts(str(human.additional_kwargs[IMAGE]))
+    )
+
+
 def _reply(
     text: str, *, wrote: bool = False, buttons: list[list[tuple[str, str]]] | None = None
 ) -> Command[Any]:
@@ -166,8 +178,12 @@ class AgentGraph:
     # --- helpers ------------------------------------------------------------------
 
     def offered(self, state: AgentState) -> frozenset[str]:
-        """The tools the model sees this turn: the core set and loaded skills' tools."""
+        """The tools the model sees this turn: the core set and loaded skills' tools.
+        On a turn about an image the user didn't ask to act on, only tools that read
+        or confirm first."""
         exposed = {name for name, spec in self.deps.tools.items() if spec.exposed}
+        if _hands_off(state):
+            exposed = {n for n in exposed if safe_for_images(self.deps.tools[n])}
         if self.deps.skill_tools is None:
             return frozenset(exposed)
         names = set(CORE_TOOLS)
@@ -522,6 +538,12 @@ class AgentGraph:
             buttons: list[list[tuple[str, str]]] | None = None
             if spec is None or not (spec.exposed or from_kernel):
                 content, wrote = f"Error: there is no tool called {call['name']!r}.", False
+            elif not from_kernel and _hands_off(state) and not safe_for_images(spec):
+                content, wrote = (
+                    f"Error: {call['name']} wasn't run: nothing changes from an image unless "
+                    "the user asks. Offer it, and they can say yes in their next message.",
+                    False,
+                )
             else:
                 if "user_id" in call["args"]:
                     log.warning("dropped model-supplied user_id on %s", call["name"])

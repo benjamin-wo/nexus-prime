@@ -2169,6 +2169,28 @@ def _skill_tool(load: Callable[[str], str]) -> ToolSpec:
     return ToolSpec("load_skill", "Read the full instructions for a skill by name.", SkillArgs, run)
 
 
+# Tools that only read. With these and the tools that confirm first, the agent can
+# answer about an image without anything in the image changing the user's data;
+# every other tool waits until the user asks (see AgentGraph.offered). A new tool is
+# withheld from image turns until it's listed here or confirms first.
+READ_ONLY = frozenset(
+    {
+        "cash_flow", "email_status", "explain_category", "find_duplicates", "find_places",
+        "find_transactions", "list_bills", "list_budgets", "list_categories",
+        "list_category_rules", "list_ious", "list_subscriptions", "list_trips", "load_skill",
+        "place_info", "plan_record", "query_ledger", "show_dividends", "show_pay_schedule",
+        "show_plan", "show_portfolio", "show_watchlist", "spending_summary", "stock_levels",
+        "trade_history", "trip_status",
+    }
+)  # fmt: skip
+
+
+def safe_for_images(spec: ToolSpec) -> bool:
+    """Whether the agent may use this tool on a turn about an image the user hasn't
+    asked it to act on: it only reads, or it asks the user to confirm first."""
+    return spec.confirm is not None or spec.name in READ_ONLY
+
+
 def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
     specs = [
         ToolSpec(

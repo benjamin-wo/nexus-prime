@@ -128,3 +128,18 @@ async def test_when_neither_can_look() -> None:
         await looker(Model(fails=True), Model("no")).look(b"img", "image/png", None)
     with pytest.raises(LookFailed):
         await looker(Model(fails=True), None).look(b"img", "image/png", None)
+
+
+def test_the_read_only_list_is_honest() -> None:
+    import inspect
+
+    from nexus.agent.tools import READ_ONLY, build_tools, safe_for_images
+
+    tools = build_tools(lambda _: "")
+    assert READ_ONLY <= set(tools)  # no stale names
+    for name in READ_ONLY:
+        spec = tools[name]
+        assert "wrote=True" not in inspect.getsource(spec.run), f"{name} writes"
+    for name in ("log_expense", "add_bill", "set_budget", "undo_last_change", "research_trip"):
+        assert not safe_for_images(tools[name])
+    assert safe_for_images(tools["record_income"])  # confirms first
