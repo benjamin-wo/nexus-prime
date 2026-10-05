@@ -37,6 +37,7 @@ from nexus.domain.investments import clean_symbol, describe_position
 from nexus.domain.ledger import User, UserId
 from nexus.domain.levels import Levels
 from nexus.domain.levels import describe as describe_levels
+from nexus.domain.odds import PlanOdds, describe_odds, describe_ranges, plan_odds, trading_days
 from nexus.domain.plans import (
     FOLLOWED,
     VERDICT_TEXT,
@@ -92,6 +93,24 @@ class NewsPoint(BaseModel):
     sources: list[int]
 
 
+class TargetOddsOut(BaseModel):
+    price: Decimal
+    chance: int  # % of replays reaching it before the stop
+    typical_days: int | None
+
+
+class OddsOut(BaseModel):
+    """The plan replayed over the stock's past year of daily moves (see domain.odds)."""
+
+    reference: Decimal
+    stop: Decimal
+    days: int
+    targets: list[TargetOddsOut]
+    stop_first: int
+    neither: int
+    paths: int
+
+
 class StepOut(BaseModel):
     """One line of the game plan (see domain.plans.playbook)."""
 
@@ -137,6 +156,8 @@ class PlanResult(BaseModel):
     summary: str
     invalidation: str  # what would prove the plan wrong
     sources: list[SourceOut]
+    odds: OddsOut | None = None
+    ranges: list[str] = []  # likely ranges in a week, a month and three months
 
 
 # --- what each analyst returns -----------------------------------------------------
@@ -241,6 +262,7 @@ def gather_step(uow: UowFactory) -> Callable[[StepContext], Any]:
             previous_stop=earlier[0].stop if earlier and view.held else None,
             previous_target=_first_target(earlier[0].body) if earlier and view.held else None,
         )
+        odds = _odds(numbers, view.moves)
         sources = [
             {
                 "id": i,
@@ -254,14 +276,66 @@ def gather_step(uow: UowFactory) -> Callable[[StepContext], Any]:
         return {
             "numbers": _numbers_json(numbers),
             "levels": describe_levels(view.levels),
-            "figures": [str(f) for f in _figures(numbers, view.levels)],
-            "plan": _plan_lines(numbers),
+            "figures": [
+                str(f)
+                for f in sorted(
+                    {*_figures(numbers, view.levels), *([odds.reference] if odds else [])}
+                )
+            ],
+            "plan": _plan_lines(numbers)
+            + (
+                [
+                    "Odds from replaying the last year's daily moves (no view on direction):",
+                    *describe_odds(odds),
+                ]
+                if odds
+                else []
+            ),
+            "odds": _odds_json(odds),
+            "ranges": describe_ranges(view.ranges),
             "held": describe_position(view.held) if view.held else None,
             "earnings": view.earnings.day.isoformat() if view.earnings else None,
             "sources": sources,
         }
 
     return gather
+
+
+def _odds(numbers: PlanNumbers, moves: Sequence[float]) -> PlanOdds | None:
+    """For a plan that's followed (buy or hold): how often its targets closed before
+    its stop when the past year's moves are replayed from the buy price (or the close,
+    for a stock held)."""
+    if numbers.verdict not in FOLLOWED or numbers.stop is None or not numbers.targets:
+        return None
+    if (
+        numbers.entry_low is not None
+        and numbers.entry_high is not None
+        and not numbers.average_cost
+    ):
+        reference = (numbers.entry_low + numbers.entry_high) / 2
+    else:
+        reference = numbers.close
+    return plan_odds(
+        reference, numbers.stop, [t.price for t in numbers.targets], moves,
+        trading_days(numbers.as_of, numbers.valid_until), seed=f"{numbers.symbol}:{numbers.as_of}",
+    )  # fmt: skip
+
+
+def _odds_json(o: PlanOdds | None) -> dict[str, Any] | None:
+    if o is None:
+        return None
+    return {
+        "reference": str(o.reference),
+        "stop": str(o.stop),
+        "days": o.days,
+        "targets": [
+            {"price": str(t.price), "chance": t.chance, "typical_days": t.typical_days}
+            for t in o.targets
+        ],
+        "stop_first": o.stop_first,
+        "neither": o.neither,
+        "paths": o.paths,
+    }
 
 
 def _first_target(body: dict[str, Any]) -> Decimal | None:
@@ -498,6 +572,8 @@ def lead_step(uow: UowFactory, model: BaseChatModel) -> Callable[[StepContext], 
             or f"{VERDICT_TEXT[numbers.verdict]}. {numbers.reason}",
             invalidation=_clean(view.invalidation, ctx) or stop_line,
             sources=[SourceOut(**s) for s in facts["sources"]],
+            odds=OddsOut.model_validate(facts["odds"]) if facts.get("odds") else None,
+            ranges=facts.get("ranges") or [],
         )
         body = result.model_dump(mode="json")
         async with uow() as tx:
@@ -547,10 +623,26 @@ def game_plan(r: PlanResult) -> list[str]:
     return lines
 
 
+def odds_line(r: PlanResult) -> str | None:
+    """ "🎲 Odds: target 1 closed before the stop in 42% of replays...", or None."""
+    o = r.odds
+    if o is None or not o.targets:
+        return None
+    first = o.targets[0]
+    return (
+        f"🎲 Odds from the last year's moves: the first target closed before the stop in "
+        f"{first.chance}% of replays, the stop came first in {o.stop_first}%, neither in "
+        f"{o.neither}% (within {o.days} trading days). Not a forecast."
+    )
+
+
 def summary_line(result: BaseModel) -> str:
     """What the user gets when a plan is done: the headline, then the game plan."""
     r = PlanResult.model_validate(result.model_dump())
-    return "\n".join([f"{r.symbol}: {r.verdict_text}. {r.reason}", *game_plan(r)])
+    odds = odds_line(r)
+    return "\n".join(
+        [f"{r.symbol}: {r.verdict_text}. {r.reason}", *game_plan(r), *([odds] if odds else [])]
+    )
 
 
 def headline(r: PlanResult) -> str:
@@ -738,4 +830,11 @@ def describe_record(r: Record) -> str:
         line += f" Average result {r.average_result:+}% per plan that was bought or held."
     if r.open:
         line += f" {r.open} still open."
+    c = r.calibration
+    if c is not None:
+        line += (
+            f" Odds check: the {c.plans} finished plan{'s' if c.plans != 1 else ''} with odds "
+            f"gave their first target about {c.said}% on average, and {c.happened}% reached it"
+        )
+        line += " (too few to judge yet)." if c.plans < 10 else "."
     return line

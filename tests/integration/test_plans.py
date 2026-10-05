@@ -193,3 +193,45 @@ async def test_alerts_can_be_turned_off_from_the_alert(uow: UowFactory) -> None:
     # A plan that ran out still finishes, quietly.
     assert await plan_cases.follow_plans(uow, now=NOW + timedelta(days=20)) == 0
     assert (await plan_cases.list_plans(uow(), user.id))[0].status is PlanStatus.EXPIRED
+
+
+def uneven(days: int) -> dict[date, str]:
+    """A made-up climb by uneven daily steps, ending the Friday before NOW."""
+    last = date(2026, 9, 25)
+    steps = [0.1, 1.2, 0.3, 0.9, 0.05, 1.5, 0.2, 0.6]
+    price, closes = 100.0, {}
+    for i in range(days):
+        price += steps[i % len(steps)]
+        closes[last - timedelta(days=days - 1 - i)] = f"{price:.2f}"
+    return closes
+
+
+async def test_a_plan_carries_odds_from_replaying_past_moves(uow: UowFactory) -> None:
+    user = await person(uow)
+    await research_cases.watch(uow(), user.id, "AMD", now=NOW)
+    await market_cases.refresh(uow, FakePrices({"AMD": uneven(120)}), now=NOW)
+    view = await research_cases.stock(uow(), user, "AMD", today=NOW.date())
+    assert [r.label for r in view.ranges] == ["1 week", "1 month", "3 months"]
+    assert view.levels is not None and view.ranges[1].low_68 < view.levels.close
+    team = analysts()
+    registry = department_cases.default_registry([plan_cases.plan_kind(uow, team)])
+    run = await plan_cases.start_plan(uow, registry, user, "AMD", now=NOW)
+    done = await finish(uow, registry, user, run)
+    assert done.status is RunStatus.DONE, done.error
+    result = plan_cases.PlanResult.model_validate(done.result)
+    # The analysts were shown the odds with the plan.
+    assert "Odds from replaying the last year's daily moves" in str(team.seen[0][-1].content)
+    assert result.ranges[1].startswith("In 1 month: ")
+    odds = result.odds
+    assert odds is not None and result.stop is not None
+    assert odds.stop == result.stop
+    assert [t.price for t in odds.targets] == [t.price for t in result.targets]
+    assert odds.days == 11  # Friday 25 Sep to Monday 12 Oct, weekdays only
+    assert abs(odds.targets[0].chance + odds.stop_first + odds.neither - 100) <= 1
+    # The same prices always give the same odds.
+    registry = department_cases.default_registry([plan_cases.plan_kind(uow, analysts())])
+    run = await plan_cases.start_plan(uow, registry, user, "AMD", now=NOW)
+    again = await finish(uow, registry, user, run)
+    assert plan_cases.PlanResult.model_validate(again.result).odds == odds
+    line = plan_cases.summary_line(result)
+    assert "\n🎲 " in line and "Not a forecast." in line

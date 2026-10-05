@@ -98,8 +98,20 @@ async def test_levels_and_watching_in_chat(uow: UowFactory) -> None:
     assert tool_output.startswith("AMD (USD, daily closes; levels worked out in code")
     assert "On the user's watchlist." in tool_output
     assert "Moving averages: 20-day 124.75, 50-day 117.25" in tool_output
+    assert "Likely closes" not in tool_output  # under three months of moves: no ranges
     ask = only(await agent.handle_text(user.id, "watch TSLA", "m2"))
     assert ask.text == "Add TSLA to your watchlist?"
     done = only(await agent.resolve(user.id, ask.buttons[0][0].data.split(":")[1], True))
     assert "Watching TSLA" in done.text
     assert await research_cases.watchlist(uow(), user.id) == ["AMD", "TSLA"]
+
+
+async def test_likely_ranges_in_chat(uow: UowFactory) -> None:
+    user = await person(uow)
+    await research_cases.watch(uow(), user.id, "AMD", now=NOW)
+    await market_cases.refresh(uow, FakePrices({"AMD": history(90)}), now=NOW)
+    model = scripted(call("stock_levels", symbol="amd"), AIMessage(content="About that."))
+    only(await build(uow, model).handle_text(user.id, "where could AMD be in a month?", "m1"))
+    tool_output = str(model.seen[-1][-1].content)
+    assert "Likely closes from its own past volatility (not a forecast" in tool_output
+    assert "\nIn 1 month: " in tool_output and "two times in three" in tool_output

@@ -1404,6 +1404,8 @@ async def test_research_plans_on_the_web(world: World) -> None:
     await market_cases.refresh(web.uow, FakePrices({"AMD": closes}), now=NOW)
     page = (await owner.get("/api/investments/stocks/AMD")).json()
     assert page["plans_enabled"] and page["plan"] is None
+    assert [r["label"] for r in page["ranges"]] == ["1 week", "1 month", "3 months"]
+    assert set(page["ranges"][0]) == {"days", "label", "low_68", "high_68", "low_90", "high_90"}
 
     started = await owner.send("POST", "/api/investments/stocks/amd/plan")
     assert started.status_code == 200 and started.json()["title"] == "Plan for AMD"
@@ -1434,6 +1436,9 @@ async def test_research_plans_on_the_web(world: World) -> None:
         "day": "2026-09-25",
         "close": "139.50",
     }
+    odds = detail["plan"]["odds"]  # a steady climb has hardly any swings to replay
+    assert odds["paths"] == 2000 and odds["stop"] == detail["plan"]["stop"]
+    assert detail["plan"]["ranges"][0].startswith("In 1 week: ")
     assert (await owner.get("/api/investments/stocks/AMD")).json()["plan"]["id"] == listed[0]["id"]
     assert (await owner.get("/api/investments/plans/not-a-plan")).status_code == 404
     plan_id = listed[0]["id"]
@@ -1443,6 +1448,7 @@ async def test_research_plans_on_the_web(world: World) -> None:
     assert not (await owner.get("/api/investments/plans")).json()[0]["alerts"]
     record = (await owner.get("/api/investments/plans/record")).json()
     assert record["finished"] == 0 and record["open"] == 1
+    assert (record["odds_plans"], record["odds_said"], record["odds_happened"]) == (0, None, None)
     assert record["text"].startswith("No plans have finished yet (1 still open)")
 
 

@@ -9,7 +9,7 @@ with whatever has arrived; nothing here asks a model anything.
 import logging
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Protocol
 
@@ -21,6 +21,7 @@ from nexus.domain.ledger import User, UserId
 from nexus.domain.levels import YEAR_DAYS, Levels, compute
 from nexus.domain.market import Bar
 from nexus.domain.news import EarningsDate, NewsItem, dedupe
+from nexus.domain.odds import Range, ranges, returns
 
 log = logging.getLogger(__name__)
 
@@ -126,6 +127,10 @@ class StockView:
     levels: Levels | None  # None until there's a month of prices
     earnings: EarningsDate | None  # the next one
     news: list[NewsItem]
+    # Where the price ends up in a week, a month and three months, from its own
+    # volatility; empty until there are a few months of prices.
+    ranges: list[Range] = field(default_factory=list)
+    moves: list[float] = field(default_factory=list)  # the last year's daily log returns
 
 
 async def stock(uow: UnitOfWork, user: User, symbol: str, *, today: date) -> StockView:
@@ -136,13 +141,17 @@ async def stock(uow: UnitOfWork, user: User, symbol: str, *, today: date) -> Sto
         earnings = await uow.investments.upcoming_earnings([symbol], today)
         # Twice as many as shown: the same story fetched on two days has two ids.
         news = await uow.investments.recent_news(symbol, NEWS_SHOWN * 2)
+    levels = compute(bars)
+    moves = returns(bars)
     return StockView(
         symbol=symbol,
         held=held.get(symbol),
         watching=watching,
-        levels=compute(bars),
+        levels=levels,
         earnings=earnings.get(symbol),
         news=dedupe(news)[:NEWS_SHOWN],
+        ranges=ranges(levels.close, moves) if levels else [],
+        moves=moves,
     )
 
 

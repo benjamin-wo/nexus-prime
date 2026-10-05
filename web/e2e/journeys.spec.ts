@@ -740,6 +740,12 @@ test("a research plan is started from a stock and read with its chart and source
   const state = await fakeApi(page);
   state.watching = ["AMD"];
   await page.goto("/investment/stocks/AMD");
+  // Likely ranges come from the stock's own volatility, with no view on direction.
+  const ranges = page.getByRole("region", { name: "Likely range" });
+  await expect(ranges).toContainText("not a forecast");
+  const month = ranges.getByRole("row", { name: /1 month/ });
+  await expect(month).toContainText("118.90 – 141.05");
+  await expect(month).toContainText("112.50 – 149.07");
   const card = page.getByRole("region", { name: "Research plan" });
   await card.getByRole("button", { name: "Make a plan" }).click();
   await expect(card.getByRole("status")).toContainText("Plan for AMD started");
@@ -750,6 +756,8 @@ test("a research plan is started from a stock and read with its chart and source
   const record = page.getByRole("region", { name: "Track record" });
   await expect(record.getByLabel("Plan results")).toContainText("Hit target1");
   await expect(record).toContainText("Average result+4.6%");
+  await expect(record.getByLabel("Plan results")).toContainText("Odds gave target 141%");
+  await expect(record.getByLabel("Plan results")).toContainText("Reached it100%");
   await expect(page.getByRole("link", { name: /MSFT: Keep holding/ })).toContainText("🎯 Hit target +4.6%");
   await expect(page.getByRole("link", { name: /AMD: Wait for a dip to buy/ })).toContainText("⏳ Open, waiting to buy");
   await page.getByRole("link", { name: /AMD: Wait for a dip to buy/ }).click();
@@ -769,6 +777,13 @@ test("a research plan is started from a stock and read with its chart and source
   await expect(steps.nth(2)).toContainText("Sell if a day closes below 122.95");
   await expect(steps.nth(4)).toContainText("Earnings are on 08 Oct");
   await expect(page.getByText("What would prove it wrong:")).toBeVisible();
+  // The odds replay the last year's moves: target 1, the stop or neither, about 100% together.
+  const odds = page.getByRole("region", { name: "Odds" });
+  await expect(odds.getByRole("img", { name: "Target 1 first 41%, Stop first 38%, Neither in time 21%" })).toBeVisible();
+  const chances = odds.getByRole("list", { name: "Chance of each target" }).getByRole("listitem");
+  await expect(chances.nth(0)).toContainText("Target 1 at 131.00 · typically 6 trading days41%");
+  await expect(chances.nth(2)).toContainText("Stop at 122.95 before target 138%");
+  await expect(odds).toContainText("not a forecast");
   await expect(page.getByRole("img", { name: /AMD daily closes over 60 days/ })).toBeVisible();
   await expect(page.getByRole("heading", { name: "What could go wrong" })).toBeVisible();
   const cite = page.getByRole("link", { name: "[Wire]" });

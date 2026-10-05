@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
-import { api, type Levels, type Stock } from "../api";
+import { api, type Levels, type PriceRange, type Stock } from "../api";
 import { formatShortDate } from "../format";
 import { verdictTone } from "./Plans";
 
@@ -86,6 +86,49 @@ function LevelsCard({ levels }: { levels: Levels }) {
   );
 }
 
+/** Where the close could be after a week, a month and three months, from the stock's
+ * own day-to-day swings. Worked out in code with no view on direction. */
+function RangesCard({ ranges }: { ranges: PriceRange[] }) {
+  return (
+    <section className="card" aria-labelledby="ranges">
+      <div className="card-head">
+        <h2 id="ranges">Likely range</h2>
+        <span className="caption">From its own past volatility · not a forecast</span>
+      </div>
+      <table className="holdings" aria-label="Likely closing prices">
+        <thead>
+          <tr>
+            <th scope="col">In</th>
+            <th scope="col" className="num">
+              2 times in 3
+            </th>
+            <th scope="col" className="num">
+              9 times in 10
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {ranges.map((r) => (
+            <tr key={r.days}>
+              <th scope="row">{r.label}</th>
+              <td className="num" data-label="2 times in 3">
+                {usd(r.low_68)} – {usd(r.high_68)}
+              </td>
+              <td className="num" data-label="9 times in 10">
+                {usd(r.low_90)} – {usd(r.high_90)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="caption">
+        How far the price has typically swung over the last year, centred on today&apos;s close. It says how wide the
+        moves could be, not which way.
+      </p>
+    </section>
+  );
+}
+
 /** One stock: levels from daily prices, the next earnings date and recent news.
  * Research only: nothing here is advice to buy or sell. */
 export function StockPage() {
@@ -156,6 +199,7 @@ export function StockPage() {
           </p>
         </section>
       ))}
+      {data && data.ranges.length > 0 && <RangesCard ranges={data.ranges} />}
       {data && data.plans_enabled && data.levels && (
         <section className="card" aria-labelledby="plan">
           <div className="card-head">

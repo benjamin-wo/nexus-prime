@@ -381,12 +381,15 @@ export type Levels = {
   year_low: string;
   days: number;
 };
+/** Where the close lands after a week, month or quarter, from the stock's own volatility. */
+export type PriceRange = { days: number; label: string; low_68: string; high_68: string; low_90: string; high_90: string };
 export type NewsItem = { headline: string; source: string; url: string; summary: string; published_at: string };
 export type Stock = {
   symbol: string;
   held: Position | null;
   watching: boolean;
   levels: Levels | null;
+  ranges: PriceRange[];
   earnings: EarningsDate | null;
   news: NewsItem[];
   prices: boolean;
@@ -422,6 +425,9 @@ export type PlanRecord = {
   never_entered: number;
   average_result: string | null;
   open: number;
+  odds_plans: number;
+  odds_said: number | null;
+  odds_happened: number | null;
   text: string;
 };
 export type PlanTarget = { price: string; reward_risk: string; why: string };
@@ -431,6 +437,16 @@ export type PlanStep = {
   price: string | null;
   detail: string;
   change: string[];
+};
+/** Replays of the last year's daily moves: how often each target closed before the stop. */
+export type PlanOdds = {
+  reference: string;
+  stop: string;
+  days: number;
+  targets: { price: string; chance: number; typical_days: number | null }[];
+  stop_first: number;
+  neither: number;
+  paths: number;
 };
 export type PlanSource = { id: number; headline: string; source: string; url: string; published_at: string };
 export type PlanBody = {
@@ -464,6 +480,8 @@ export type PlanBody = {
   summary: string;
   invalidation: string;
   sources: PlanSource[];
+  odds?: PlanOdds | null;
+  ranges?: string[];
 };
 export type PlanDetail = { brief: PlanBrief; plan: PlanBody; closes: { day: string; close: string }[] };
 

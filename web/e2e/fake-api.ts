@@ -477,6 +477,14 @@ export async function fakeApi(
                 days: 60,
               }
             : null,
+        ranges:
+          symbol === "AMD"
+            ? [
+                { days: 5, label: "1 week", low_68: "124.10", high_68: "135.14", low_90: "120.86", high_90: "138.76" },
+                { days: 21, label: "1 month", low_68: "118.90", high_68: "141.05", low_90: "112.50", high_90: "149.07" },
+                { days: 63, label: "3 months", low_68: "111.20", high_68: "150.81", low_90: "100.98", high_90: "166.08" },
+              ]
+            : [],
         earnings: symbol === "AMD" ? { day: "2026-10-29", timing: "after close" } : null,
         news:
           symbol === "AMD"
@@ -502,6 +510,9 @@ export async function fakeApi(
         never_entered: 0,
         average_result: "4.6",
         open: state.planStarted ? 1 : 0,
+        odds_plans: 1,
+        odds_said: 41,
+        odds_happened: 100,
         text: "1 finished: 1 hit their target, 0 were stopped out, 0 ran out. Average result +4.6% per plan that was bought or held.",
       });
     }
@@ -560,6 +571,19 @@ export async function fakeApi(
           summary: "Wait for a pullback to the entry zone. The trend is up.",
           invalidation: "A daily close below 122.95.",
           sources: [{ id: 1, headline: "Acme rival opens a plant", source: "Wire", url: "https://news.example/1", published_at: "2026-09-27T09:00:00Z" }],
+          odds: {
+            reference: "125.20",
+            stop: "122.95",
+            days: 11,
+            targets: [
+              { price: "131.00", chance: 41, typical_days: 6 },
+              { price: "132.00", chance: 35, typical_days: 7 },
+            ],
+            stop_first: 38,
+            neither: 21,
+            paths: 2000,
+          },
+          ranges: ["In 1 month: 118.90 to 141.05 two times in three, 112.50 to 149.07 nine times in ten"],
         },
       });
     }

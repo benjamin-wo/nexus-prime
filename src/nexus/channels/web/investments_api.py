@@ -484,6 +484,15 @@ def _brief(p: SavedPlan, today: date) -> PlanBrief:
     )
 
 
+class RangeOut(Model):
+    days: int
+    label: str
+    low_68: Decimal
+    high_68: Decimal
+    low_90: Decimal
+    high_90: Decimal
+
+
 class StockOut(Model):
     symbol: str
     held: PositionOut | None
@@ -495,6 +504,7 @@ class StockOut(Model):
     news_enabled: bool
     plan: PlanBrief | None  # the latest research plan
     plans_enabled: bool
+    ranges: list[RangeOut]  # likely closes in a week, a month and three months
 
 
 @router.get("/stocks/{symbol}")
@@ -503,6 +513,17 @@ async def stock(symbol: str, auth: Auth, web: Runtime) -> StockOut:
     view = await research_cases.stock(web.uow(), auth.user, clean_symbol(symbol), today=today)
     saved = await plan_cases.list_plans(web.uow(), auth.user.id, symbol=view.symbol)
     return StockOut(
+        ranges=[
+            RangeOut(
+                days=r.days,
+                label=r.label,
+                low_68=r.low_68,
+                high_68=r.high_68,
+                low_90=r.low_90,
+                high_90=r.high_90,
+            )
+            for r in view.ranges
+        ],
         symbol=view.symbol,
         held=_position(view.held) if view.held else None,
         watching=view.watching,
@@ -546,6 +567,9 @@ class RecordOut(Model):
     average_result: Decimal | None
     open: int
     text: str
+    odds_plans: int  # finished plans that had odds
+    odds_said: int | None  # the average chance they gave the first target, %
+    odds_happened: int | None  # how many reached it, %
 
 
 @router.get("/plans/record")
@@ -561,6 +585,9 @@ async def plan_record(auth: Auth, web: Runtime) -> RecordOut:
         average_result=r.average_result,
         open=r.open,
         text=plan_cases.describe_record(r),
+        odds_plans=r.calibration.plans if r.calibration else 0,
+        odds_said=r.calibration.said if r.calibration else None,
+        odds_happened=r.calibration.happened if r.calibration else None,
     )
 
 

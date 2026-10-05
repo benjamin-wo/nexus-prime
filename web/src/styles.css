@@ -463,6 +463,14 @@ a.btn { text-decoration: none; }
 .ladder li.up { border-left-color: var(--emerald-accent); }
 .ladder li.close { border-left-color: var(--orange-primary); font-weight: 600; background: var(--orange-soft); }
 .range { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-3); }
+.odds-bar { display: flex; height: 12px; border-radius: 999px; overflow: hidden; background: var(--border-card); margin-bottom: var(--space-2); }
+.odds-bar span { display: block; height: 100%; }
+.odds-target { background: var(--emerald-accent); }
+.odds-stop { background: var(--rose-accent); }
+.odds-neither { background: var(--text-muted); }
+.odds-key { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); list-style: none; margin: 0 0 var(--space-3); padding: 0; }
+.odds-key li { display: flex; align-items: center; gap: var(--space-1); }
+.odds-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
 .range-bar { position: relative; flex: 1; height: 6px; border-radius: 3px; background: var(--border-card); }
 .range-bar span { position: absolute; top: -3px; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: var(--orange-primary); }
 .news a { color: var(--text-primary); }
