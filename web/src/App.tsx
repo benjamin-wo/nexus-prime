@@ -100,7 +100,7 @@ function Cockpit({ me }: { me: Me }) {
         <Route path="/investment/plans" element={<PlansPage />} />
         <Route path="/investment/plans/:id" element={<PlanPage />} />
         <Route path="/travel" element={<TripsPage />} />
-        <Route path="/travel/trips/:id" element={<TripPage />} />
+        <Route path="/travel/trips/:id" element={<TripPage onAsk={(ask) => setChat({ ask })} />} />
         <Route path="/travel/research/:id" element={<ResearchPage />} />
         {DEPARTMENTS.filter((d) => d.upcoming).map((d) => (
           <Route key={d.name} path={d.path} element={<Upcoming department={d} />} />

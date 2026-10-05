@@ -714,6 +714,27 @@ CASES: tuple[Case, ...] = (
         confirms=True,
     ),
     Case(
+        "itinerary-place-to-visit",
+        "log",
+        _t("save teamLab Planets to my Tokyo list, it's a museum"),
+        checks=(Booked("teamLab", scheduled=False),),
+        confirms=True,
+    ),
+    Case(
+        "itinerary-label-days",
+        "log",
+        _t("we're in Kyoto on 15 Dec"),
+        calls=(Call("label_trip_day", {"day": Has("2026-12-15"), "label": Has("kyoto")}),),
+    ),
+    Case(
+        "trip-nights-missing",
+        "ask",
+        _t("is my Japan trip all sorted for places to stay?"),
+        calls=(Call("trip_status"),),
+        reply=(("14 dec", "14th", "night of"),),
+        unchanged=True,
+    ),
+    Case(
         "trip-note",
         "log",
         _t("note for the Japan trip: bring a power adapter"),

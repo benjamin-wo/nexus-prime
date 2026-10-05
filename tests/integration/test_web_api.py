@@ -1519,8 +1519,13 @@ async def test_trips_on_the_web(world: World) -> None:
         "PUT", f"/api/travel/bookings/{item['id']}", {**plan, "day": "2026-09-30"}
     )
     assert moved.json()["day"] == "2026-09-30"
-    bad = await owner.send("POST", f"{path}/bookings", {"kind": "activity", "name": "No day"})
-    assert bad.status_code == 422
+    bad = await owner.send("POST", f"{path}/bookings", {"kind": "activity", "day": "2026-09-30"})
+    assert bad.status_code == 422  # no name
+    place = await owner.send("POST", f"{path}/bookings", {"kind": "activity", "name": "Market"})
+    assert place.json()["scheduled"] is False  # a place to visit, without a day
+    assert (
+        await owner.send("DELETE", f"/api/travel/bookings/{place.json()['id']}")
+    ).status_code == 204
     assert [b["title"] for b in (await owner.get(path)).json()["bookings"]] == ["Palace tour"]
     assert (await owner.send("DELETE", f"/api/travel/bookings/{item['id']}")).status_code == 204
 
@@ -1550,7 +1555,22 @@ async def test_a_booking_screenshot_onto_a_trip_on_the_web(world: World) -> None
     hotel = next(b for b in body["added"] if b["kind"] == "hotel")
     assert (hotel["reference"], hotel["booked_via"]) == ("9876543210", "Agoda")
     detail = (await owner.get(f"/api/travel/trips/{trip['id']}")).json()
-    assert {b["reference"] for b in detail["bookings"]} == {"9876543210", "R-55821", "ZK4P7Q"}
+    assert {b["reference"] for b in detail["bookings"]} == {
+        "9876543210", "R-55821", "ZK4P7Q", None,
+    }  # fmt: skip
+    place = next(b for b in detail["bookings"] if not b["scheduled"])
+    assert (place["title"], place["category"]) == ("Senso-ji Temple", "Sight")
+    # The hotel covers 10 to 13 Dec; the nights of the 13th to the 17th still need one.
+    assert detail["ready"]["nights_without_stay"] == [f"2026-12-{d}" for d in range(13, 18)]
+    assert (detail["ready"]["has_transport"], detail["ready"]["done"]) == (True, 1)
+    labelled = await owner.send(
+        "PUT", f"/api/travel/trips/{trip['id']}/days/2026-12-12", {"label": "Asakusa"}
+    )
+    assert labelled.json()["day_labels"] == {"2026-12-12": "Asakusa"}
+    outside = await owner.send(
+        "PUT", f"/api/travel/trips/{trip['id']}/days/2027-01-01", {"label": "No"}
+    )
+    assert outside.status_code == 422
     bad = await owner.send("POST", path, {"image": "not base64!", "mime_type": "image/png"})
     assert bad.status_code == 422
     member = world.browser()

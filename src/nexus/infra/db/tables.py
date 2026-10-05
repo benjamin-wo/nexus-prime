@@ -775,6 +775,8 @@ trips = Table(
     Column("created_at", TZ, nullable=False),
     Column("updated_at", TZ, nullable=False),
     Column("notes", Text),  # the user's own: what to pack, who to meet (M11 follow-up)
+    # A label per day, {"2026-12-12": "Busan"} (migration 0030).
+    Column("day_labels", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
     ForeignKeyConstraint(["user_id"], ["users.id"]),
     UniqueConstraint("id", "user_id"),
     CheckConstraint("end_on >= start_on", name="dates"),
@@ -814,7 +816,7 @@ trip_bookings = Table(
     Column("email_id", UUID(as_uuid=True)),
     Column("kind", Text, nullable=False),
     Column("title", Text, nullable=False),
-    Column("start_on", Date, nullable=False),
+    Column("start_on", Date),  # None: a place to visit without a day yet (0030)
     Column("end_on", Date),
     Column("details", JSONB, nullable=False),
     Column("amount", MONEY),

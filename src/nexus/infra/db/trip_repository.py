@@ -42,6 +42,7 @@ def _trip(row: Row[Any]) -> Trip:
         created_at=row.created_at,
         updated_at=row.updated_at,
         notes=row.notes,
+        day_labels={date.fromisoformat(k): v for k, v in (row.day_labels or {}).items()},
     )
 
 
@@ -57,6 +58,7 @@ def _values(trip: Trip, home: str) -> dict[str, Any]:
         "companions": list(trip.companions),
         "planned": {k: str(v.amount) for k, v in trip.planned.items()},
         "notes": trip.notes,
+        "day_labels": {k.isoformat(): v for k, v in sorted(trip.day_labels.items())},
         "updated_at": trip.updated_at,
     }
 
@@ -212,7 +214,7 @@ class SqlTripRepository:
                 email_id=booking.email_id,
                 kind=d.kind.value,
                 title=d.title,
-                start_on=booking.starts,
+                start_on=d.starts,
                 end_on=d.ends,
                 details=d.as_dict(),
                 amount=booking.cost.amount if booking.cost else None,
@@ -290,7 +292,7 @@ class SqlTripRepository:
             .values(
                 kind=d.kind.value,
                 title=d.title,
-                start_on=booking.starts,
+                start_on=d.starts,
                 end_on=d.ends,
                 details=d.as_dict(),
                 amount=booking.cost.amount if booking.cost else None,

@@ -20,7 +20,7 @@ from nexus.domain.bookings import Booking
 from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.ledger import User
 from nexus.domain.money import Money
-from nexus.domain.trips import MAX_COMPANIONS, MAX_NOTES, MAX_PLANNED, Trip
+from nexus.domain.trips import MAX_COMPANIONS, MAX_DAY_LABEL, MAX_NOTES, MAX_PLANNED, Trip
 
 router = APIRouter(prefix="/api/travel")
 
@@ -55,6 +55,7 @@ class TripOut(Model):
     days_until: int  # below zero once it has started
     day_number: int | None  # day 3 of 10, while it's on
     notes: str | None
+    day_labels: dict[date, str]  # a label per day, such as the city
 
 
 def _trip(trip: Trip, today: date) -> TripOut:
@@ -73,6 +74,7 @@ def _trip(trip: Trip, today: date) -> TripOut:
         days_until=(trip.start - today).days,
         day_number=trip.day_number(today),
         notes=trip.notes,
+        day_labels=dict(sorted(trip.day_labels.items())),
     )
 
 
@@ -150,6 +152,8 @@ class BookingOut(Model):
     note: str | None
     reference: str | None  # the booking or confirmation number: the user's own
     booked_via: str | None  # the airline, Agoda, Klook
+    category: str | None  # a plan's kind: Food, Sight
+    scheduled: bool  # on a day; false for a place to visit without one yet
     cost: MoneyOut | None
     logged: bool  # its cost is in the ledger
     manual: bool  # added by hand, not read from email
@@ -185,10 +189,22 @@ def _booking(b: Booking) -> BookingOut:
         note=d.note,
         reference=d.reference,
         booked_via=d.booked_via,
+        category=d.category,
+        scheduled=b.scheduled,
         cost=_m(b.cost),
         logged=b.transaction_id is not None,
         manual=b.email_id is None,
     )
+
+
+class ReadyOut(Model):
+    """What the trip still needs, checked in code."""
+
+    nights_without_stay: list[date]
+    has_transport: bool
+    has_budget: bool
+    done: int
+    total: int
 
 
 class TripDetailOut(Model):
@@ -201,6 +217,7 @@ class TripDetailOut(Model):
     booked: MoneyOut | None
     booked_unlogged: MoneyOut | None
     to_spend: MoneyOut | None
+    ready: ReadyOut
 
 
 def _detail(view: trip_cases.TripView) -> TripDetailOut:
@@ -253,6 +270,13 @@ def _detail(view: trip_cases.TripView) -> TripDetailOut:
         booked=_m(view.booked),
         booked_unlogged=_m(view.booked_unlogged),
         to_spend=_m(view.to_spend),
+        ready=ReadyOut(
+            nights_without_stay=view.ready.nights_without_stay,
+            has_transport=view.ready.has_transport,
+            has_budget=view.ready.has_budget,
+            done=view.ready.done,
+            total=view.ready.TOTAL,
+        ),
     )
 
 
@@ -330,6 +354,19 @@ async def get_trip(trip_id: str, auth: Auth, web: Runtime) -> TripDetailOut:
 async def update_trip(trip_id: str, body: TripIn, auth: Auth, web: Runtime) -> TripOut:
     trip = await trip_cases.update_trip(
         web.uow(), auth.user, _uuid(trip_id), _draft(auth.user, body), now=web.clock()
+    )
+    return _trip(trip, _today(auth, web))
+
+
+class DayLabelIn(Model):
+    label: str | None = Field(None, max_length=MAX_DAY_LABEL)
+
+
+@router.put("/trips/{trip_id}/days/{day}")
+async def label_day(trip_id: str, day: date, body: DayLabelIn, auth: Auth, web: Runtime) -> TripOut:
+    """Names a day of the trip, such as the city ("Busan"); blank clears it."""
+    trip = await trip_cases.set_day_label(
+        web.uow(), auth.user, _uuid(trip_id), day, body.label, now=web.clock()
     )
     return _trip(trip, _today(auth, web))
 
@@ -426,6 +463,7 @@ class BookingIn(Model):
     note: str | None = Field(None, max_length=300)
     reference: str | None = Field(None, max_length=40)
     booked_via: str | None = Field(None, max_length=80)
+    category: str | None = Field(None, max_length=30)
     cost: str | None = Field(None, max_length=32)
     currency: str | None = Field(None, pattern="^[A-Za-z]{3}$")
 
@@ -454,6 +492,7 @@ def _details(body: BookingIn) -> dict[str, object]:
         "note": body.note,
         "reference": body.reference,
         "booked_via": body.booked_via,
+        "category": body.category,
     }
 
 

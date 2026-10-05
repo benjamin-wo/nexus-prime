@@ -141,6 +141,15 @@ All spacing derives from a 4px base unit.
 - **Motion**: none unless status changes, then opacity crossfade
 - **Layout**: inline cluster item
 
+### Trip page
+- **Structure**: header card (title, meta row, companion initials, actions), sticky tabs (Overview, Itinerary, Money), tab content, quick-add button above the chat button
+- **Variants**: Overview (getting-ready check, reservation counts, notes, collapsible sections), Itinerary (sticky day strip, labelled days, timeline of strips and numbered stops), Money (existing spending cards)
+- **Spacing**: `--space-6` header padding, `--space-4` card padding, `--space-2` timeline gaps
+- **States**: loading, error, empty sections ("None yet"), imported (banner asking whether it looks right), adding, editing
+- **Accessibility**: tabs are `role="tab"` with `aria-selected`; the day strip and reservation counts are labelled navigation; check-in and check-out are text badges; the quick-add menu is a labelled menu with an `aria-expanded` trigger
+- **Motion**: tab colour and underline at Standard timing; quick-add press scale at Micro, removed for reduced motion
+- **Layout**: tabs and day strip stick to the top of the scroll area; the quick-add button sits above the chat button (higher on mobile, above the bottom navigation)
+
 ## 6. Motion & Interaction
 
 ### Timing

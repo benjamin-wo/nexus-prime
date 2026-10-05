@@ -46,6 +46,7 @@ MASK = "•••"
 
 
 MAX_REFERENCE = 40
+MAX_CATEGORY = 30
 
 
 def _text(value: object, *, limit: int = MAX_TEXT) -> str | None:
@@ -177,6 +178,7 @@ class BookingDraft:
     note: str | None = None  # the user's own note, on any kind
     reference: str | None = None  # the booking or confirmation number, the user's own
     booked_via: str | None = None  # where it was booked: the airline, Agoda, Klook
+    category: str | None = None  # a plan's kind: Food, Sight, Shopping
 
     @property
     def starts(self) -> date | None:
@@ -232,6 +234,7 @@ class BookingDraft:
             "note": self.note,
             "reference": self.reference,
             "booked_via": self.booked_via,
+            "category": self.category,
         }
 
     @classmethod
@@ -257,8 +260,10 @@ class BookingDraft:
                 note=_note(data.get("note")),
                 reference=_reference(data.get("reference")),
                 booked_via=_text(data.get("booked_via")),
+                category=_text(data.get("category"), limit=MAX_CATEGORY),
             )
-            return plan if plan.day and plan.name else None
+            # Without a day, it's a place to visit on the trip, not yet on a day.
+            return plan if plan.name else None
         number = flight_number if kind is BookingKind.FLIGHT else train_number
         raw = data.get("segments")
         segments = tuple(
@@ -306,6 +311,10 @@ class BookingDraft:
         return f"{text[:-1]}; {extra})" if extra else text
 
     def _what(self) -> str:
+        if self.kind is BookingKind.ACTIVITY and self.day is None:
+            tag = f", {self.category}" if self.category else ""
+            where = f", {self.address}" if self.address else ""
+            return f"place to visit ({self.title}{tag}{where})"
         if self.kind is BookingKind.ACTIVITY:
             when = f"{self.day:%a %d %b}" if self.day else ""
             if self.at:
@@ -338,6 +347,11 @@ class Booking:
     def starts(self) -> date:
         found = self.draft.starts
         return found if found else self.created_at.date()
+
+    @property
+    def scheduled(self) -> bool:
+        """On a day of the itinerary; a place to visit without a day isn't yet."""
+        return self.draft.starts is not None
 
 
 def matching_trips(trips: Sequence[Trip], starts: date, today: date) -> list[Trip]:

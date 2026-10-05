@@ -428,6 +428,7 @@ class FakeTripReader:
                 ShotEntry(kind="flight", provider="Acme Air", reference="ZK4P7Q",
                           legs=[ShotLeg(number="ZZ12", origin="SIN", destination="NRT",
                                         departs="2026-12-10T08:25")]),
-                ShotEntry(kind="activity", name="Some day, no date"),  # dropped: no date
+                ShotEntry(kind="activity", name="Senso-ji Temple", category="Sight"),  # no day
+                ShotEntry(kind="flight", provider="Acme Air"),  # dropped: a flight needs a date
             ],
         )  # fmt: skip
