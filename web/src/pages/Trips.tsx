@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { type ChangeEvent, type FormEvent, type ReactNode, useState } from "react";
+import { type FormEvent, type ReactNode, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { api, type Booking, type Me, type Money, type ScreenshotRead, type Trip, type TripDetail } from "../api";
@@ -446,16 +446,16 @@ function BookedWith({ booking }: { booking: Booking }) {
   );
 }
 
-function BookingLines({ booking }: { booking: Booking }) {
+function BookingLines({ booking, noTime = false }: { booking: Booking; noTime?: boolean }) {
   return (
     <>
-      <KindLines booking={booking} />
+      <KindLines booking={booking} noTime={noTime} />
       <BookedWith booking={booking} />
     </>
   );
 }
 
-function KindLines({ booking }: { booking: Booking }) {
+function KindLines({ booking, noTime }: { booking: Booking; noTime: boolean }) {
   const note = booking.note && (
     <span className="caption">
       {booking.note}
@@ -466,9 +466,9 @@ function KindLines({ booking }: { booking: Booking }) {
     return (
       <>
         <span className="caption">
-          {booking.at && `${booking.at} · `}
+          {booking.at && !noTime && `${booking.at} · `}
           {booking.address}
-          {(booking.at || booking.address) && <br />}
+          {((booking.at && !noTime) || booking.address) && <br />}
         </span>
         {note}
       </>
@@ -521,8 +521,12 @@ function BookingRow({ booking, children }: { booking: Booking; children?: ReactN
   );
 }
 
+/** What the editor adds: a booking kind, or a place to visit (a plan without a day). */
+export type EntryKind = Booking["kind"] | "place";
+
 type EntryForm = {
-  kind: Booking["kind"];
+  kind: EntryKind;
+  category: string;
   name: string;
   day: string;
   at: string;
@@ -541,15 +545,18 @@ type EntryForm = {
   currency: string;
 };
 
+const PLACE_KINDS = ["Food", "Sight", "Shopping", "Nature", "Nightlife", "Museum", "Activity"];
+
 const EMPTY: EntryForm = {
-  kind: "activity", name: "", day: "", at: "", until: "", address: "", number: "", origin: "", destination: "",
+  kind: "activity", category: "", name: "", day: "", at: "", until: "", address: "", number: "", origin: "", destination: "",
   departs: "", arrives: "", provider: "", note: "", reference: "", bookedVia: "", cost: "", currency: "",
 };
 
 function formOf(b: Booking): EntryForm {
   const leg = b.segments[0];
   return {
-    kind: b.kind,
+    kind: b.kind === "activity" && !b.scheduled ? "place" : b.kind,
+    category: b.category ?? "",
     name: b.kind === "hotel" ? (b.hotel ?? "") : (b.name ?? ""),
     day: (b.kind === "hotel" ? b.check_in : b.day) ?? "",
     at: b.at ?? "",
@@ -572,7 +579,9 @@ function formOf(b: Booking): EntryForm {
 function bodyOf(f: EntryForm, home: string) {
   const blank = (v: string) => v.trim() || null;
   const base = { kind: f.kind, note: blank(f.note), reference: blank(f.reference), booked_via: blank(f.bookedVia), cost: blank(f.cost), currency: f.cost.trim() ? f.currency.trim() || home : null };
-  if (f.kind === "activity") return { ...base, name: blank(f.name), day: blank(f.day), at: blank(f.at), address: blank(f.address) };
+  if (f.kind === "activity") return { ...base, name: blank(f.name), day: blank(f.day), at: blank(f.at), address: blank(f.address), category: blank(f.category) };
+  // A place given a day goes onto the itinerary as a plan on that day.
+  if (f.kind === "place") return { ...base, kind: "activity", name: blank(f.name), day: blank(f.day), at: null, address: blank(f.address), category: blank(f.category) };
   if (f.kind === "hotel") return { ...base, hotel: blank(f.name), check_in: blank(f.day), check_out: blank(f.until), address: blank(f.address) };
   return {
     ...base,
@@ -582,11 +591,21 @@ function bodyOf(f: EntryForm, home: string) {
 }
 
 /** Add or change an itinerary entry by hand: a plan, a flight, a hotel or a train. */
-function EntryEditor({ trip, home, entry, onDone }: { trip: Trip; home: string; entry?: Booking; onDone: (saved: boolean) => void }) {
+function EntryEditor({ trip, home, entry, preset, onDone }: {
+  trip: Trip;
+  home: string;
+  entry?: Booking;
+  preset?: { kind: EntryKind; day?: string };
+  onDone: (saved: boolean) => void;
+}) {
   const tripId = trip.id;
-  // New entries start on the trip's dates, so the date pickers open on the right month.
+  // New entries start on the trip's dates (or the day they're added from), so the date
+  // pickers open on the right month.
+  const start = preset?.day ?? trip.start;
   const [f, setF] = useState<EntryForm>(
-    entry ? formOf(entry) : { ...EMPTY, day: trip.start, until: trip.end, departs: `${trip.start}T09:00` },
+    entry
+      ? formOf(entry)
+      : { ...EMPTY, kind: preset?.kind ?? "activity", day: preset?.kind === "place" ? "" : start, until: trip.end, departs: `${start}T09:00` },
   );
   const [error, setError] = useState<string | null>(null);
   const set = (key: keyof EntryForm) => (e: { target: { value: string } }) => {
@@ -616,7 +635,8 @@ function EntryEditor({ trip, home, entry, onDone }: { trip: Trip; home: string; 
         <label className="field">
           What
           <select className="input" value={f.kind} onChange={set("kind")}>
-            <option value="activity">Plan (dinner, tour, day trip)</option>
+            <option value="activity">Plan on a day (dinner, tour, day trip)</option>
+            <option value="place">Place to visit, no day yet</option>
             <option value="flight">Flight</option>
             <option value="hotel">Hotel</option>
             <option value="rail">Train</option>
@@ -637,6 +657,29 @@ function EntryEditor({ trip, home, entry, onDone }: { trip: Trip; home: string; 
             Time
             <input className="input" type="time" value={f.at} onChange={set("at")} />
           </label>
+        </div>
+      )}
+      {f.kind === "place" && (
+        <div className="trip-form-row">
+          <label className="field">
+            Name
+            <input className="input" value={f.name} maxLength={120} onChange={set("name")} required />
+          </label>
+          <label className="field">
+            Kind
+            <input className="input" value={f.category} maxLength={30} list="place-kinds" onChange={set("category")} placeholder="Food, Sight…" />
+            <datalist id="place-kinds">
+              {PLACE_KINDS.map((k) => (
+                <option key={k} value={k} />
+              ))}
+            </datalist>
+          </label>
+          {entry && (
+            <label className="field">
+              Day (puts it on the itinerary)
+              <input className="input" type="date" value={f.day} onChange={set("day")} />
+            </label>
+          )}
         </div>
       )}
       {f.kind === "hotel" && (
@@ -687,7 +730,7 @@ function EntryEditor({ trip, home, entry, onDone }: { trip: Trip; home: string; 
           </div>
         </>
       )}
-      {(f.kind === "activity" || f.kind === "hotel") && (
+      {(f.kind === "activity" || f.kind === "hotel" || f.kind === "place") && (
         <label className="field">
           {f.kind === "hotel" ? "Address" : "Where"}
           <input className="input" value={f.address} maxLength={200} onChange={set("address")} />
@@ -735,50 +778,119 @@ function EntryEditor({ trip, home, entry, onDone }: { trip: Trip; home: string; 
 }
 
 const sortKey = (b: Booking) => `${b.starts}T${b.at ?? b.segments[0]?.departs?.slice(11) ?? (b.kind === "hotel" ? "15:00" : "00:00")}`;
+const DAY_MS = 86400000;
+const isoDay = (t: number) => new Date(t).toISOString().slice(0, 10);
+const dayPill = (iso: string) =>
+  new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric", month: "numeric", timeZone: "UTC" }).format(new Date(iso));
 
-/** The trip day by day: bookings from email and entries added by hand. */
-function Itinerary({ detail, onChange }: { detail: TripDetail; onChange: () => void }) {
-  const home = useHome();
-  const [adding, setAdding] = useState(false);
-  const [reading, setReading] = useState(false);
-  const [shotNotice, setShotNotice] = useState<string | null>(null);
-  const [shotError, setShotError] = useState<string | null>(null);
+/** Every day from the trip's first to its last, plus any day outside it with an entry. */
+function tripDays(detail: TripDetail): string[] {
+  const days = new Set<string>();
+  for (let t = Date.parse(detail.trip.start); t <= Date.parse(detail.trip.end); t += DAY_MS) days.add(isoDay(t));
+  for (const b of detail.bookings) if (b.scheduled) days.add(b.starts);
+  return [...days].sort();
+}
 
-  async function upload(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-    setShotError(null);
-    setShotNotice(null);
-    setReading(true);
-    try {
-      const read = await api<ScreenshotRead>(`/travel/trips/${detail.trip.id}/screenshot`, {
-        method: "POST",
-        body: { image: await base64(file), mime_type: file.type || "image/png" },
-      });
-      setShotNotice(read.message);
-      onChange();
-    } catch (e) {
-      setShotError(e instanceof Error ? e.message : "Couldn't read that screenshot");
-    } finally {
-      setReading(false);
-    }
+/** Nights of a hotel stay after its check-in night, before check-out. */
+function nightsOf(b: Booking): string[] {
+  const nights: string[] = [];
+  if (!b.check_in || !b.check_out) return nights;
+  for (let t = Date.parse(b.check_in) + DAY_MS; t < Date.parse(b.check_out); t += DAY_MS) nights.push(isoDay(t));
+  return nights;
+}
+
+/** One day's label ("Busan"), edited in place. */
+function DayLabel({ trip, iso, onChange }: { trip: Trip; iso: string; onChange: () => void }) {
+  const current = (trip.day_labels ?? {})[iso] ?? "";
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(current);
+  const inTrip = iso >= trip.start && iso <= trip.end;
+  if (!inTrip) return null;
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    await api(`/travel/trips/${trip.id}/days/${iso}`, { method: "PUT", body: { label: text.trim() || null } }).catch(() => undefined);
+    setEditing(false);
+    onChange();
   }
+  if (editing) {
+    return (
+      <form className="day-label-form" onSubmit={save} aria-label={`Label for ${dayPill(iso)}`}>
+        <input className="input" value={text} maxLength={40} autoFocus onChange={(e) => setText(e.target.value)} placeholder="City or plan, e.g. Busan" />
+        <button type="submit" className="btn btn-small">
+          Save
+        </button>
+      </form>
+    );
+  }
+  return (
+    <button type="button" className="btn btn-ghost btn-small day-label" onClick={() => setEditing(true)} aria-label={current ? `Change the label ${current}` : `Add a label for ${dayPill(iso)}`}>
+      {current || "+ Add a label"}
+    </button>
+  );
+}
+
+/** A flight or train as a slim strip, a hotel check-in or check-out, or a numbered stop. */
+function TimelineEntry({ booking, iso, stop, children }: { booking: Booking; iso: string; stop: number | null; children?: ReactNode }) {
+  if (booking.kind === "hotel") {
+    const out = booking.check_out === iso && booking.check_in !== iso;
+    return (
+      <li className="timeline-strip">
+        <span aria-hidden="true">🏨</span>
+        <span className="wrap">
+          <strong>{booking.hotel ?? booking.title}</strong>
+          {!out && <BookingLines booking={booking} />}
+        </span>
+        <span className={`badge ${out ? "badge-pending" : "badge-in"}`}>{out ? "Check out" : "Check in"}</span>
+        {!out && children}
+      </li>
+    );
+  }
+  if (booking.kind === "flight" || booking.kind === "rail") {
+    return (
+      <li className="timeline-strip">
+        <span aria-hidden="true">{KIND_ICON[booking.kind]}</span>
+        <span className="wrap">
+          <strong>{booking.title}</strong>
+          {booking.provider && <span className="caption"> · {booking.provider}</span>}
+          <br />
+          <BookingLines booking={booking} />
+        </span>
+        {booking.cost && <span className="num">{formatMoney(booking.cost)}</span>}
+        {children}
+      </li>
+    );
+  }
+  return (
+    <li className="timeline-stop">
+      <span className="stop-number" aria-hidden="true">
+        {stop}
+      </span>
+      <span className="wrap">
+        <strong>{booking.title}</strong>
+        {booking.at && <span className="time-pill">{booking.at}</span>}
+        {booking.category && <span className="caption"> · {booking.category}</span>}
+        <br />
+        <BookingLines booking={booking} noTime />
+      </span>
+      {booking.cost && <span className="num">{formatMoney(booking.cost)}</span>}
+      {children}
+    </li>
+  );
+}
+
+/** The trip day by day: a strip of days to jump between, each day's label, its
+ * flights, trains and hotel check-ins and check-outs, and numbered plans in time order. */
+function Itinerary({ detail, onChange, onAdd }: { detail: TripDetail; onChange: () => void; onAdd: (preset: { kind: EntryKind; day?: string }) => void }) {
+  const home = useHome();
   const [editing, setEditing] = useState<string | null>(null);
-  const sorted = [...detail.bookings].sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
+  const scheduled = detail.bookings.filter((b) => b.scheduled);
+  const sorted = [...scheduled].sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
   const stays = sorted.filter((b) => b.kind === "hotel" && b.check_in && b.check_out);
-  // A hotel shows on its check-in day, then as "staying at" on each night after it.
-  const nightsOf = (b: Booking) => {
-    const nights: string[] = [];
-    for (let t = Date.parse(b.check_in!) + 86400000; t < Date.parse(b.check_out!); t += 86400000) {
-      nights.push(new Date(t).toISOString().slice(0, 10));
-    }
-    return nights;
-  };
   const staying = (d: string) => stays.filter((b) => nightsOf(b).includes(d));
-  const days = [...new Set([...sorted.map((b) => b.starts), ...stays.flatMap(nightsOf)])].sort();
+  const checkingOut = (d: string) => stays.filter((b) => b.check_out === d);
+  const days = tripDays(detail);
   const dayLabel = (iso: string) => {
-    const n = Math.round((Date.parse(iso) - Date.parse(detail.trip.start)) / 86400000) + 1;
+    const n = Math.round((Date.parse(iso) - Date.parse(detail.trip.start)) / DAY_MS) + 1;
     const when = new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(iso));
     return n >= 1 && n <= detail.trip.days ? `Day ${n} · ${when}` : when;
   };
@@ -789,57 +901,178 @@ function Itinerary({ detail, onChange }: { detail: TripDetail; onChange: () => v
     onChange();
   }
 
+  function jump(iso: string) {
+    document.getElementById(`day-${iso}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  const actions = (b: Booking) => (
+    <span className="row-actions">
+      <button type="button" className="btn btn-small" onClick={() => setEditing(b.id)} aria-label={`Edit ${b.title}`}>
+        Edit
+      </button>
+      <button type="button" className="btn btn-small" onClick={() => void remove(b)} aria-label={`Remove ${b.title}`}>
+        Remove
+      </button>
+    </span>
+  );
+
   return (
     <section className="card" aria-labelledby="itinerary">
       <div className="card-head">
         <h2 id="itinerary">Itinerary</h2>
-        {!adding && (
-          <span className="quick">
-            <label className="btn btn-small">
-              {reading ? "Reading…" : "From a screenshot"}
-              <input className="sr-only" type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => void upload(e)} disabled={reading} />
-            </label>
-            <button type="button" className="btn btn-small" onClick={() => setAdding(true)}>
-              Add to itinerary
-            </button>
-          </span>
-        )}
+        <button type="button" className="btn btn-small" onClick={() => onAdd({ kind: "activity" })}>
+          Add to itinerary
+        </button>
       </div>
-      {shotError && (
-        <p className="error-text" role="alert">
-          {shotError}
-        </p>
-      )}
-      {shotNotice && (
-        <p className="state" role="status" style={{ whiteSpace: "pre-line" }}>
-          {shotNotice}
-        </p>
-      )}
-      {adding && (
-        <EntryEditor
-          trip={detail.trip}
-          home={home}
-          onDone={(saved) => {
-            setAdding(false);
-            if (saved) onChange();
-          }}
-        />
-      )}
-      {sorted.length === 0 && !adding && (
-        <p className="state">Nothing yet. Booking emails land here by themselves; send a screenshot of a booking or plan, or add them by hand.</p>
-      )}
-      {days.map((d) => (
-        <div key={d} className="itinerary-day">
-          <h3 className="caption">{dayLabel(d)}</h3>
-          {staying(d).map((b) => (
-            <p key={b.id} className="caption">
-              <span aria-hidden="true">🏨</span> Staying at {b.hotel ?? b.title}
-            </p>
-          ))}
-          <ul className="feed" aria-label={dayLabel(d)}>
-            {sorted
-              .filter((b) => b.starts === d)
-              .map((b) =>
+      <nav className="day-strip" aria-label="Days">
+        {days.map((d) => (
+          <button key={d} type="button" className="day-pill" onClick={() => jump(d)}>
+            {dayPill(d)}
+          </button>
+        ))}
+      </nav>
+      {days.map((d) => {
+        const entries = sorted.filter((b) => b.starts === d);
+        const outs = checkingOut(d).filter((b) => b.starts !== d);
+        let stop = 0;
+        return (
+          <div key={d} id={`day-${d}`} className="itinerary-day">
+            <div className="day-head">
+              <h3>{dayLabel(d)}</h3>
+              <DayLabel trip={detail.trip} iso={d} onChange={onChange} />
+            </div>
+            {staying(d).map((b) => (
+              <p key={b.id} className="caption">
+                <span aria-hidden="true">🏨</span> Staying at {b.hotel ?? b.title}
+              </p>
+            ))}
+            <ul className="timeline" aria-label={dayLabel(d)}>
+              {outs.map((b) => (
+                <TimelineEntry key={`out-${b.id}`} booking={b} iso={d} stop={null} />
+              ))}
+              {entries.map((b) => {
+                if (b.kind === "activity") stop += 1;
+                return editing === b.id ? (
+                  <li key={b.id}>
+                    <EntryEditor
+                      trip={detail.trip}
+                      home={home}
+                      entry={b}
+                      onDone={(saved) => {
+                        setEditing(null);
+                        if (saved) onChange();
+                      }}
+                    />
+                  </li>
+                ) : (
+                  <TimelineEntry key={b.id} booking={b} iso={d} stop={b.kind === "activity" ? stop : null}>
+                    {actions(b)}
+                  </TimelineEntry>
+                );
+              })}
+            </ul>
+            <button type="button" className="btn btn-ghost btn-small" onClick={() => onAdd({ kind: "activity", day: d })} aria-label={`Add a plan on ${dayPill(d)}`}>
+              + Add a plan
+            </button>
+          </div>
+        );
+      })}
+      <p className="caption">Times are local. Booking emails add themselves.</p>
+    </section>
+  );
+}
+
+const SECTIONS: { kind: EntryKind; title: string; one: string; icon: string }[] = [
+  { kind: "flight", title: "Flights", one: "flight", icon: "✈️" },
+  { kind: "hotel", title: "Hotels and lodging", one: "lodging", icon: "🏨" },
+  { kind: "rail", title: "Trains", one: "train", icon: "🚆" },
+  { kind: "place", title: "Places to visit", one: "place", icon: "📍" },
+];
+
+const inSection = (kind: EntryKind) => (b: Booking) =>
+  kind === "place" ? b.kind === "activity" && !b.scheduled : b.kind === kind;
+
+/** What the trip still needs: somewhere to stay each night, a way there, a budget. */
+function ReadyCheck({ detail, onAdd }: { detail: TripDetail; onAdd: (preset: { kind: EntryKind; day?: string }) => void }) {
+  const r = detail.ready;
+  if (detail.trip.status === "finished") return null;
+  const nights = r.nights_without_stay;
+  return (
+    <section className="card" aria-labelledby="trip-ready">
+      <div className="card-head">
+        <h2 id="trip-ready">Getting ready</h2>
+        <span className="caption">
+          {r.done} of {r.total}
+        </span>
+      </div>
+      <div className="meter" aria-hidden="true">
+        <span style={{ width: `${(r.done / r.total) * 100}%` }} />
+      </div>
+      <ul className="checklist">
+        <li className={nights.length ? "todo" : "done"}>
+          {nights.length === 0
+            ? "✓ A place to stay every night"
+            : `${nights.length} night${nights.length === 1 ? "" : "s"} with no place to stay: ${nights.map(day).join(", ")}`}
+          {nights.length > 0 && (
+            <button type="button" className="btn btn-ghost btn-small" onClick={() => onAdd({ kind: "hotel", day: nights[0] })}>
+              Add lodging
+            </button>
+          )}
+        </li>
+        <li className={r.has_transport ? "done" : "todo"}>
+          {r.has_transport ? "✓ Getting there is booked" : "No flight or train yet"}
+          {!r.has_transport && (
+            <button type="button" className="btn btn-ghost btn-small" onClick={() => onAdd({ kind: "flight" })}>
+              Add a flight
+            </button>
+          )}
+        </li>
+        <li className={r.has_budget ? "done" : "todo"}>{r.has_budget ? "✓ A budget is set" : "No budget yet: set one with Edit"}</li>
+      </ul>
+    </section>
+  );
+}
+
+/** Reservations at a glance, Wanderlog-style: counts that jump to their section. */
+function ReservationBar({ detail }: { detail: TripDetail }) {
+  return (
+    <nav className="reservation-bar" aria-label="Reservations">
+      {SECTIONS.map((s) => {
+        const n = detail.bookings.filter(inSection(s.kind)).length;
+        return (
+          <a key={s.kind} className="reservation-chip" href={`#section-${s.kind}`}>
+            <span aria-hidden="true">{s.icon}</span> {s.title}
+            {n > 0 && <span className="count">{n}</span>}
+          </a>
+        );
+      })}
+    </nav>
+  );
+}
+
+/** The trip's bookings and places, grouped, each section collapsible with its own add. */
+function Sections({ detail, onChange, onAdd }: { detail: TripDetail; onChange: () => void; onAdd: (preset: { kind: EntryKind; day?: string }) => void }) {
+  const home = useHome();
+  const [editing, setEditing] = useState<string | null>(null);
+  async function remove(b: Booking) {
+    if (!window.confirm(`Take ${b.title} off the trip?`)) return;
+    await api(`/travel/bookings/${b.id}`, { method: "DELETE" }).catch(() => undefined);
+    onChange();
+  }
+  return (
+    <>
+      {SECTIONS.map((s) => {
+        const items = detail.bookings.filter(inSection(s.kind)).sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
+        return (
+          <details key={s.kind} id={`section-${s.kind}`} className="card section" open>
+            <summary>
+              <h2>
+                <span aria-hidden="true">{s.icon}</span> {s.title}
+              </h2>
+              <span className="caption">{items.length || "None yet"}</span>
+            </summary>
+            <ul className="feed" aria-label={s.title}>
+              {items.map((b, n) =>
                 editing === b.id ? (
                   <li key={b.id}>
                     <EntryEditor
@@ -853,23 +1086,44 @@ function Itinerary({ detail, onChange }: { detail: TripDetail; onChange: () => v
                     />
                   </li>
                 ) : (
-                  <BookingRow key={b.id} booking={b}>
+                  <li key={b.id} className="run-row">
+                    {s.kind === "place" && (
+                      <span className="stop-number" aria-hidden="true">
+                        {n + 1}
+                      </span>
+                    )}
+                    <span className="wrap">
+                      <strong>{b.title}</strong>
+                      {b.category && <span className="caption"> · {b.category}</span>}
+                      {b.scheduled && <span className="caption"> · {day(b.starts)}</span>}
+                      <br />
+                      <BookingLines booking={b} />
+                    </span>
+                    {b.cost && (
+                      <span className="num">
+                        {formatMoney(b.cost)}
+                        {b.scheduled && !b.logged && <span className="caption"> not logged</span>}
+                      </span>
+                    )}
                     <span className="row-actions">
-                      <button type="button" className="btn btn-small" onClick={() => setEditing(b.id)} aria-label={`Edit ${b.title}`}>
-                        Edit
+                      <button type="button" className="btn btn-small" onClick={() => setEditing(b.id)} aria-label={s.kind === "place" ? `Plan a day for ${b.title}` : `Edit ${b.title}`}>
+                        {s.kind === "place" ? "Pick a day" : "Edit"}
                       </button>
                       <button type="button" className="btn btn-small" onClick={() => void remove(b)} aria-label={`Remove ${b.title}`}>
                         Remove
                       </button>
                     </span>
-                  </BookingRow>
+                  </li>
                 ),
               )}
-          </ul>
-        </div>
-      ))}
-      <p className="caption">Times are local. Booking emails add themselves.</p>
-    </section>
+            </ul>
+            <button type="button" className="btn btn-ghost btn-small" onClick={() => onAdd({ kind: s.kind })}>
+              + Add {items.length ? "another" : "a"} {s.one}
+            </button>
+          </details>
+        );
+      })}
+    </>
   );
 }
 
@@ -988,18 +1242,153 @@ function SettleUp({ detail }: { detail: TripDetail }) {
 }
 
 /** One trip: its budget, spending, set-aside, settle-up and expenses. */
-export function TripPage() {
+const TABS = [
+  { id: "overview", label: "Overview" },
+  { id: "itinerary", label: "Itinerary" },
+  { id: "money", label: "Money" },
+] as const;
+type Tab = (typeof TABS)[number]["id"];
+
+const initials = (name: string) =>
+  name
+    .split(/\s+/)
+    .map((w) => w[0] ?? "")
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
+/** Companions as overlapping initials, like a collaborator stack. */
+function Companions({ names }: { names: string[] }) {
+  if (names.length === 0) return null;
+  const shown = names.slice(0, 3);
+  return (
+    <span className="avatars" aria-label={`With ${names.join(", ")}`} title={names.join(", ")}>
+      {shown.map((n) => (
+        <span key={n} className="avatar" aria-hidden="true">
+          {initials(n)}
+        </span>
+      ))}
+      {names.length > shown.length && (
+        <span className="avatar more" aria-hidden="true">
+          +{names.length - shown.length}
+        </span>
+      )}
+    </span>
+  );
+}
+
+const ADD_CHOICES: { kind: EntryKind; label: string }[] = [
+  { kind: "flight", label: "✈️ Flight" },
+  { kind: "hotel", label: "🏨 Lodging" },
+  { kind: "rail", label: "🚆 Train" },
+  { kind: "activity", label: "🗓️ Plan on a day" },
+  { kind: "place", label: "📍 Place to visit" },
+];
+
+/** The trip's quick-add button, above the chat button: add anything, read a
+ * screenshot, or ask Nexus about the trip. */
+function QuickAdd({ onAdd, onScreenshot, onAsk, reading }: {
+  onAdd: (preset: { kind: EntryKind }) => void;
+  onScreenshot: (file: File) => void;
+  onAsk?: () => void;
+  reading: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="trip-fab">
+      {open && (
+        <div className="trip-fab-menu" role="menu" aria-label="Add to the trip">
+          {ADD_CHOICES.map((c) => (
+            <button
+              key={c.kind}
+              type="button"
+              role="menuitem"
+              className="btn btn-ghost"
+              onClick={() => {
+                setOpen(false);
+                onAdd({ kind: c.kind });
+              }}
+            >
+              {c.label}
+            </button>
+          ))}
+          <label className="btn btn-ghost" role="menuitem">
+            {reading ? "Reading…" : "🖼️ From a screenshot"}
+            <input
+              className="sr-only"
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              disabled={reading}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                setOpen(false);
+                if (file) onScreenshot(file);
+              }}
+            />
+          </label>
+          {onAsk && (
+            <button
+              type="button"
+              role="menuitem"
+              className="btn btn-ghost"
+              onClick={() => {
+                setOpen(false);
+                onAsk();
+              }}
+            >
+              ✨ Ask Nexus about this trip
+            </button>
+          )}
+        </div>
+      )}
+      <button type="button" className="trip-fab-button" aria-expanded={open} aria-label={open ? "Close the add menu" : "Add to the trip"} onClick={() => setOpen(!open)}>
+        {open ? "×" : "+"}
+      </button>
+    </div>
+  );
+}
+
+export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
   const { id = "" } = useParams();
   const client = useQueryClient();
   const navigate = useNavigate();
   const home = useHome();
   const detail = useQuery({ queryKey: ["trip", id], queryFn: () => api<TripDetail>(`/travel/trips/${id}`) });
   const [editing, setEditing] = useState(false);
+  const [tab, setTab] = useState<Tab>("overview");
+  const [adding, setAdding] = useState<{ kind: EntryKind; day?: string } | null>(null);
+  const [reading, setReading] = useState(false);
+  const [imported, setImported] = useState<string | null>(null);
+  const [shotError, setShotError] = useState<string | null>(null);
   const data = detail.data;
   const refresh = () => {
     void client.invalidateQueries({ queryKey: ["trip", id] });
     void client.invalidateQueries({ queryKey: ["trips"] });
   };
+
+  function add(preset: { kind: EntryKind; day?: string }) {
+    setAdding(preset);
+    window.setTimeout(() => document.getElementById("trip-adding")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  }
+
+  async function screenshot(file: File) {
+    setShotError(null);
+    setImported(null);
+    setReading(true);
+    try {
+      const read = await api<ScreenshotRead>(`/travel/trips/${id}/screenshot`, {
+        method: "POST",
+        body: { image: await base64(file), mime_type: file.type || "image/png" },
+      });
+      setImported(read.message);
+      refresh();
+    } catch (e) {
+      setShotError(e instanceof Error ? e.message : "Couldn't read that screenshot");
+    } finally {
+      setReading(false);
+    }
+  }
 
   async function takeOff(transactionId: string) {
     await api(`/travel/trips/${id}/expenses/${transactionId}`, { method: "DELETE" }).catch(() => undefined);
@@ -1015,21 +1404,34 @@ export function TripPage() {
 
   return (
     <>
-      <div className="page-head">
-        <div>
-          <p className="caption">
-            <Link to="/travel">Trips</Link>
-          </p>
+      <p className="caption">
+        <Link to="/travel">Trips</Link>
+      </p>
+      <header className="card trip-hero">
+        <div className="trip-hero-main">
           <h1>{data?.trip.destination ?? "Trip"}</h1>
           {data && (
-            <p className="muted">
-              {day(data.trip.start)} to {day(data.trip.end)} · {data.trip.days} days · {tripWhen(data.trip)} · spending in {data.trip.currency}
-              {data.trip.companions.length > 0 && ` · with ${data.trip.companions.join(", ")}`}
+            <p className="trip-meta">
+              <span>
+                <span aria-hidden="true">📅</span> {day(data.trip.start)} – {day(data.trip.end)}
+              </span>
+              <span>{data.trip.days} days</span>
+              <span>{tripWhen(data.trip)}</span>
+              <span>spending in {data.trip.currency}</span>
+              <Companions names={data.trip.companions} />
             </p>
           )}
         </div>
         {data && !editing && (
           <div className="actions">
+            <label className="btn">
+              {reading ? "Reading…" : "From a screenshot"}
+              <input className="sr-only" type="file" accept="image/png,image/jpeg,image/webp" disabled={reading} onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (file) void screenshot(file);
+              }} />
+            </label>
             <button type="button" className="btn" onClick={() => setEditing(true)}>
               Edit
             </button>
@@ -1038,7 +1440,7 @@ export function TripPage() {
             </button>
           </div>
         )}
-      </div>
+      </header>
       {detail.isLoading && <p className="state">Loading…</p>}
       {detail.isError && (
         <p className="error-text" role="alert">
@@ -1062,44 +1464,111 @@ export function TripPage() {
       )}
       {data && (
         <>
-          <Spending detail={data} />
-          <Notes trip={data.trip} />
-          <Itinerary detail={data} onChange={refresh} />
-          <PlannedVsActual detail={data} />
-          <SetAside detail={data} />
-          <SettleUp detail={data} />
-          <section className="card" aria-labelledby="trip-expenses">
-            <div className="card-head">
-              <h2 id="trip-expenses">Expenses</h2>
-              <span className="caption">To count something else, like flights paid earlier, tell Nexus "add it to {data.trip.destination}"</span>
-            </div>
-            {data.items.length === 0 ? (
-              <p className="state">None yet.</p>
-            ) : (
-              <ul className="feed" aria-label="Trip expenses">
-                {data.items.map((i) => (
-                  <li key={i.transaction_id} className="run-row">
-                    <span className="wrap">
-                      {i.counterparty ?? "Expense"}
-                      <br />
-                      <span className="caption">
-                        {day(i.day)}
-                        {i.category && ` · ${i.category}`}
-                        {i.linked && " · added by hand"}
-                      </span>
-                    </span>
-                    <span className="num">
-                      {formatMoney(i.amount)}
-                      {i.home && i.home.currency !== i.amount.currency && <span className="caption"> ({formatMoney(i.home)})</span>}
-                    </span>
-                    <button type="button" className="btn btn-small" onClick={() => void takeOff(i.transaction_id)} aria-label={`Take ${i.counterparty ?? "this expense"} off the trip`}>
-                      Take off
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
+          <nav className="trip-tabs" role="tablist" aria-label="Trip views">
+            {TABS.map((t) => (
+              <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} className="trip-tab" onClick={() => setTab(t.id)}>
+                {t.label}
+              </button>
+            ))}
+          </nav>
+          {shotError && (
+            <p className="error-text" role="alert">
+              {shotError}
+            </p>
+          )}
+          {imported && (
+            <section className="card import-banner" role="status" aria-label="Imported from a screenshot">
+              <p style={{ whiteSpace: "pre-line", margin: 0 }}>{imported}</p>
+              <p className="caption">Does everything look right?</p>
+              <span className="quick">
+                <button type="button" className="btn btn-small" onClick={() => setImported(null)}>
+                  👍 Looks right
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-small"
+                  onClick={() => {
+                    setImported(null);
+                    setTab("itinerary");
+                  }}
+                >
+                  👎 Fix something
+                </button>
+              </span>
+            </section>
+          )}
+          {adding && (
+            <section id="trip-adding" className="card" aria-labelledby="trip-adding-title">
+              <div className="card-head">
+                <h2 id="trip-adding-title">Add to the trip</h2>
+              </div>
+              <EntryEditor
+                key={`${adding.kind}-${adding.day ?? ""}`}
+                trip={data.trip}
+                home={home}
+                preset={adding}
+                onDone={(saved) => {
+                  setAdding(null);
+                  if (saved) refresh();
+                }}
+              />
+            </section>
+          )}
+          {tab === "overview" && (
+            <>
+              <ReadyCheck detail={data} onAdd={add} />
+              <ReservationBar detail={data} />
+              <Notes trip={data.trip} />
+              <Sections detail={data} onChange={refresh} onAdd={add} />
+            </>
+          )}
+          {tab === "itinerary" && <Itinerary detail={data} onChange={refresh} onAdd={add} />}
+          {tab === "money" && (
+            <>
+              <Spending detail={data} />
+              <PlannedVsActual detail={data} />
+              <SetAside detail={data} />
+              <SettleUp detail={data} />
+              <section className="card" aria-labelledby="trip-expenses">
+                <div className="card-head">
+                  <h2 id="trip-expenses">Expenses</h2>
+                  <span className="caption">To count something else, like flights paid earlier, tell Nexus "add it to {data.trip.destination}"</span>
+                </div>
+                {data.items.length === 0 ? (
+                  <p className="state">None yet.</p>
+                ) : (
+                  <ul className="feed" aria-label="Trip expenses">
+                    {data.items.map((i) => (
+                      <li key={i.transaction_id} className="run-row">
+                        <span className="wrap">
+                          {i.counterparty ?? "Expense"}
+                          <br />
+                          <span className="caption">
+                            {day(i.day)}
+                            {i.category && ` · ${i.category}`}
+                            {i.linked && " · added by hand"}
+                          </span>
+                        </span>
+                        <span className="num">
+                          {formatMoney(i.amount)}
+                          {i.home && i.home.currency !== i.amount.currency && <span className="caption"> ({formatMoney(i.home)})</span>}
+                        </span>
+                        <button type="button" className="btn btn-small" onClick={() => void takeOff(i.transaction_id)} aria-label={`Take ${i.counterparty ?? "this expense"} off the trip`}>
+                          Take off
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            </>
+          )}
+          <QuickAdd
+            onAdd={add}
+            onScreenshot={(file) => void screenshot(file)}
+            onAsk={onAsk ? () => onAsk(`How's my ${data.trip.destination} trip looking? What's booked, what's missing and what's left in the budget?`) : undefined}
+            reading={reading}
+          />
         </>
       )}
     </>

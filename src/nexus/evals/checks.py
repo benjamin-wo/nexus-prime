@@ -357,6 +357,7 @@ class Booked:
     starts: date | None = None
     cost: str | None = None  # the amount, in any currency
     absent: tuple[str, ...] = ()  # text that must not be stored anywhere in it
+    scheduled: bool | None = None  # on a day (True), or a place to visit without one
 
     def describe(self) -> str:
         parts = [f"an itinerary entry '{self.title}'"]
@@ -370,6 +371,8 @@ class Booked:
             parts.append(f"costing {self.cost}")
         if self.absent:
             parts.append("without " + ", ".join(self.absent))
+        if self.scheduled is False:
+            parts.append("as a place to visit, not on a day")
         return ", ".join(parts)
 
     async def holds(self, world: World) -> bool:
@@ -387,6 +390,8 @@ class Booked:
             ):
                 continue
             if self.starts and d.starts != self.starts:
+                continue
+            if self.scheduled is not None and b.scheduled != self.scheduled:
                 continue
             if self.cost and (b.cost is None or b.cost.amount != Decimal(self.cost)):
                 continue

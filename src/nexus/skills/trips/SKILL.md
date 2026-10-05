@@ -1,7 +1,7 @@
 ---
 name: trips
 description: "Trips (Travel department): trips the user is planning or on, with dates, the currency spent there, a budget in the home currency, who's going and money set aside each payday; what's been spent on a trip, what's left, and who still owes what afterwards. Nexus never books or buys anything."
-tools: [research_trip, add_to_itinerary, change_itinerary_entry, remove_from_itinerary, create_trip, update_trip, delete_trip, list_trips, trip_status, add_to_trip, remove_from_trip, find_transactions, split_bill, list_ious]
+tools: [research_trip, add_to_itinerary, change_itinerary_entry, remove_from_itinerary, label_trip_day, create_trip, update_trip, delete_trip, list_trips, trip_status, add_to_trip, remove_from_trip, find_transactions, split_bill, list_ious]
 ---
 # Trips
 
@@ -30,6 +30,11 @@ tools: [research_trip, add_to_itinerary, change_itinerary_entry, remove_from_iti
   "I check out of Hotel Sakura on the 15th instead", "move dinner to 8pm", "the flight
   now leaves at 9:10": `change_itinerary_entry` with the entry and only what changed.
   "cancel the Nikko trip" (an entry): `remove_from_itinerary`.
+- "save Namdaemun Market for Seoul", "places to eat in Tokyo: Ichiran, Afuri":
+  `add_to_itinerary` with kind activity, no day, and a category (Food, Sight,
+  Shopping...): it's kept as a place to visit on the trip. "let's do Namdaemun on
+  Tuesday": `change_itinerary_entry` with that day.
+- "we're in Busan on the 12th and 13th": `label_trip_day` for each day.
 - "note for Tokyo: pack an adapter": `update_trip` with `notes`, keeping what's already in
   the notes (`trip_status` shows them). Card and passport numbers aren't kept in notes;
   booking references are, and are the user's own to see.

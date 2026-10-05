@@ -65,9 +65,9 @@ async def test_plans_flights_and_notes_added_by_hand(uow: UowFactory) -> None:
     )  # fmt: skip
     assert (moved.draft.day, moved.cost) == (date(2026, 12, 13), None)
 
-    with pytest.raises(InvalidInput, match="name and a day"):
+    with pytest.raises(InvalidInput, match="needs a name"):
         await booking_cases.add_manual(
-            uow(), user.id, trip.id, {"kind": "activity", "name": "x"}, None, now=NOW
+            uow(), user.id, trip.id, {"kind": "activity", "day": "2026-12-12"}, None, now=NOW
         )
     with pytest.raises(InvalidInput, match="departure date"):
         await booking_cases.add_manual(
@@ -128,3 +128,61 @@ async def test_hotels_in_chat_default_to_the_trip_and_can_be_changed(uow: UowFac
     assert (hotel.draft.check_in, hotel.draft.check_out) == (date(2026, 12, 10), date(2026, 12, 13))
     missing = await use("change_itinerary_entry", {"item": "museum", "time": "09:00"})
     assert "no single itinerary entry matches 'museum'" in missing
+
+
+async def test_places_to_visit_days_and_what_the_trip_still_needs(uow: UowFactory) -> None:
+    user = await person(uow)
+    trip = await trip_cases.create_trip(
+        uow(),
+        user,
+        trip_cases.TripDraft("Seoul", date(2026, 12, 7), date(2026, 12, 10), "KRW", None),
+        now=NOW,
+    )
+    tools = build_tools(lambda _: "")
+    ctx = ToolContext(user, uow, NOW, RATES)
+
+    async def use(name: str, args: dict[str, object]) -> str:
+        return (await run_tool(tools[name], ctx, args)).text
+
+    # A place without a day is kept on the trip, not on the itinerary.
+    saved = await use(
+        "add_to_itinerary",
+        {"kind": "activity", "name": "Namdaemun Market", "category": "Shopping", "cost": "20000",
+         "currency": "KRW"},
+    )  # fmt: skip
+    assert saved == ("Added to the Seoul itinerary: place to visit (Namdaemun Market, Shopping).")
+    view = await trip_cases.trip_view(uow, RATES, user, trip.id, now=NOW)
+    (place,) = view.bookings
+    assert not place.scheduled and view.booked is None  # an idea isn't booked
+    lines = " ".join(trip_cases.describe_view(view))
+    assert "Places to visit, not on a day yet: place to visit (Namdaemun Market" in lines
+    assert "No place to stay on the itinerary yet for the night of: Mon 07 Dec" in lines
+    assert "No flight or train on the itinerary yet." in lines
+    assert view.ready.nights_without_stay == [date(2026, 12, d) for d in (7, 8, 9)]
+
+    # Given a day, it's on the itinerary.
+    moved = await use("change_itinerary_entry", {"item": "namdaemun", "day": "2026-12-08"})
+    assert "plan (Namdaemun Market, Tue 08 Dec" in moved
+    view = await trip_cases.trip_view(uow, RATES, user, trip.id, now=NOW)
+    assert view.bookings[0].scheduled
+
+    # Days take a label, kept when the trip changes and dropped when the day goes.
+    labelled = await use("label_trip_day", {"day": "2026-12-09", "label": "Busan"})
+    assert labelled == "Wed 09 Dec of the Seoul trip is labelled 'Busan'."
+    view = await trip_cases.trip_view(uow, RATES, user, trip.id, now=NOW)
+    assert "Days: Wed 09 Dec Busan." in trip_cases.describe_view(view)
+    longer = trip_cases.draft_of(view.trip)
+    kept = await trip_cases.update_trip(
+        uow(), user, trip.id,
+        trip_cases.TripDraft(longer.destination, longer.start, date(2026, 12, 11), "KRW"),
+        now=NOW,
+    )  # fmt: skip
+    assert kept.day_labels == {date(2026, 12, 9): "Busan"}
+    shorter = await trip_cases.update_trip(
+        uow(), user, trip.id,
+        trip_cases.TripDraft("Seoul", date(2026, 12, 7), date(2026, 12, 8), "KRW"),
+        now=NOW,
+    )  # fmt: skip
+    assert shorter.day_labels == {}
+    with pytest.raises(InvalidInput, match="isn't one of the trip's days"):
+        await trip_cases.set_day_label(uow(), user, trip.id, date(2026, 12, 20), "X", now=NOW)

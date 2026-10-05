@@ -459,6 +459,7 @@ export type Trip = {
   days_until: number;
   day_number: number | null;
   notes: string | null;
+  day_labels: Record<string, string>;
 };
 
 /** A flight, hotel or train booking read from email. Times are local as booked. */
@@ -481,6 +482,8 @@ export type Booking = {
   note: string | null;
   reference: string | null;
   booked_via: string | null;
+  category: string | null;
+  scheduled: boolean;
   cost: Money | null;
   logged: boolean;
   manual: boolean;
@@ -494,6 +497,7 @@ export type TripDetail = {
   booked: Money | null;
   booked_unlogged: Money | null;
   to_spend: Money | null;
+  ready: { nights_without_stay: string[]; has_transport: boolean; has_budget: boolean; done: number; total: number };
   spending: {
     spent: Money;
     left: Money | null;

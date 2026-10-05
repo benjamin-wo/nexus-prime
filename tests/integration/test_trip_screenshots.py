@@ -45,6 +45,7 @@ async def test_a_booking_screenshot_lands_on_the_trip_with_its_reference(
         "9876543210), 64500 JPY",
         "• plan (Dinner at Sushi Ten, Sat 12 Dec 19:00; ref R-55821)",
         "• flight booking (ZZ12, SIN → NRT, Thu 10 Dec 08:25; ref ZK4P7Q)",
+        "• place to visit (Senso-ji Temple, Sight)",
     ]
     assert reader.captions == ["my hotel booking"]
     view = await trip_cases.trip_view(uow, RATES, user, trip.id, now=NOW)
@@ -54,7 +55,7 @@ async def test_a_booking_screenshot_lands_on_the_trip_with_its_reference(
 
     # The same screenshot again adds nothing twice.
     again = only(await agent.handle_photo(user.id, b"png", "image/png", "booking", "p2"))
-    assert again.text == "3 are already on the itinerary, so I left them."
+    assert again.text == "4 are already on the itinerary, so I left them."
 
 
 async def test_a_photo_the_receipt_reader_calls_travel_goes_to_the_trip(

@@ -127,7 +127,12 @@ async def add_from_screenshot(
             if any(_same(draft, e) for e in existing):
                 repeated += 1
                 continue
-            found = [chosen] if chosen else matching_trips(trips, draft.starts or today, today)
+            if chosen:
+                found = [chosen]
+            elif draft.starts is None:  # a place to visit: the trip coming up, if only one
+                found = ahead
+            else:
+                found = matching_trips(trips, draft.starts, today)
             trip = found[0] if len(found) == 1 else None
             if trip is not None and (
                 len(await uow.trips.list_bookings(user.id, trip_id=trip.id)) >= MAX_BOOKINGS_A_TRIP
@@ -245,7 +250,7 @@ def _draft(details: dict[str, object]) -> BookingDraft:
     if found is None:
         kind = str(details.get("kind", ""))
         if kind == "activity":
-            raise InvalidInput("a plan needs a name and a day")
+            raise InvalidInput("a plan or place needs a name")
         if kind == "hotel":
             raise InvalidInput("a hotel needs a check-in date")
         if kind in ("flight", "rail"):

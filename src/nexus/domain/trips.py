@@ -8,7 +8,7 @@ budget S$3,000") or, later, from research.
 import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import ROUND_CEILING, Decimal
 from enum import StrEnum
 from uuid import UUID
@@ -47,6 +47,8 @@ class Trip:
     created_at: datetime
     updated_at: datetime
     notes: str | None = None  # the user's own: what to pack, who to meet
+    # A label per day of the trip, such as the city ("Busan") or the plan ("Day trip").
+    day_labels: dict[date, str] = field(default_factory=dict)
 
     @property
     def days(self) -> int:
@@ -112,6 +114,22 @@ def clean_notes(raw: str | None) -> str | None:
         return None
     text = "\n".join(line.rstrip() for line in raw.strip().splitlines())[:MAX_NOTES]
     return hide_private(text) or None
+
+
+MAX_DAY_LABEL = 40
+
+
+def clean_day_label(trip: Trip, day: date, raw: str | None) -> dict[date, str]:
+    """The trip's day labels with ``day``'s set (or cleared when blank)."""
+    if not trip.start <= day <= trip.end:
+        raise InvalidInput(f"{day:%d %b} isn't one of the trip's days")
+    labels = dict(trip.day_labels)
+    text = " ".join((raw or "").split())[:MAX_DAY_LABEL]
+    if text:
+        labels[day] = text
+    else:
+        labels.pop(day, None)
+    return labels
 
 
 def clean_currency(raw: str) -> str:
@@ -329,3 +347,43 @@ def describe_trip(trip: Trip, today: date) -> str:
     if trip.notes:
         text += f". Notes: {' / '.join(trip.notes.splitlines())}"
     return text
+
+
+# --- getting ready ---------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class Stay:
+    """A hotel stay, for checking which nights have somewhere to sleep."""
+
+    check_in: date
+    check_out: date | None
+
+
+@dataclass(frozen=True, slots=True)
+class Readiness:
+    """What a trip still needs: nights without a place to stay, a way there."""
+
+    nights_without_stay: list[date]  # each night (the evening's date) not covered
+    has_transport: bool  # a flight or train is on the itinerary
+    has_budget: bool
+
+    @property
+    def done(self) -> int:
+        return sum((not self.nights_without_stay, self.has_transport, self.has_budget))
+
+    TOTAL = 3
+
+
+def readiness(trip: Trip, stays: Sequence[Stay], has_transport: bool) -> Readiness:
+    nights = [trip.start + timedelta(days=n) for n in range(trip.days - 1)]
+    covered: set[date] = set()
+    for s in stays:
+        last = s.check_out or s.check_in + timedelta(days=1)
+        day = s.check_in
+        while day < last:
+            covered.add(day)
+            day += timedelta(days=1)
+    return Readiness(
+        [n for n in nights if n not in covered], has_transport, trip.budget is not None
+    )

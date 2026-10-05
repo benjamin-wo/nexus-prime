@@ -155,3 +155,14 @@ def test_dates_and_times_written_out_are_read_too() -> None:
         date(2026, 12, 10),
         date(2026, 12, 14),
     )
+
+
+def test_a_plan_without_a_day_is_a_place_to_visit() -> None:
+    d = BookingDraft.from_dict(
+        {"kind": "activity", "name": "Namdaemun Market", "category": "Shopping"}
+    )
+    assert d is not None and d.starts is None and d.category == "Shopping"
+    assert d.describe() == "place to visit (Namdaemun Market, Shopping)"
+    assert BookingDraft.from_dict({"kind": "activity", "category": "Food"}) is None  # no name
+    place = Booking(uuid4(), USER, None, None, d, None, None, MADE)
+    assert not place.scheduled

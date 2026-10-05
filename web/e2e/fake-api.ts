@@ -579,6 +579,8 @@ export async function fakeApi(
         status: Date.parse(String(body.start)) > Date.parse("2026-09-28") ? "upcoming" : "ongoing",
         days_until: Math.round((Date.parse(String(body.start)) - Date.parse("2026-09-28")) / 86400000),
         day_number: null,
+        notes: body.notes ?? null,
+        day_labels: {} as Record<string, string>,
       };
       state.trips = [trip, ...state.trips];
       return json(route, trip, 201);
@@ -633,6 +635,8 @@ export async function fakeApi(
             check_out: null,
             reference: "ZK4P7Q",
             booked_via: "Acme Air",
+            category: null,
+            scheduled: true,
             cost: home(820),
             logged: false,
             manual: false,
@@ -641,6 +645,16 @@ export async function fakeApi(
         ],
         booked: home(820),
         booked_unlogged: home(820),
+        ready: (() => {
+          const hotels = state.plans.filter((p) => p.kind === "hotel") as { check_in: string; check_out: string }[];
+          const nights: string[] = [];
+          for (let t = Date.parse(String(trip.start)); t < Date.parse(String(trip.end)); t += 86400000) {
+            const d = new Date(t).toISOString().slice(0, 10);
+            if (!hotels.some((h) => h.check_in <= d && d < h.check_out)) nights.push(d);
+          }
+          const done = (nights.length ? 0 : 1) + 1 + (trip.budget ? 1 : 0);
+          return { nights_without_stay: nights, has_transport: true, has_budget: Boolean(trip.budget), done, total: 3 };
+        })(),
         to_spend: budget ? home(Number(budget.amount) - spent - 820) : null,
       };
     };
@@ -654,6 +668,16 @@ export async function fakeApi(
     if (path === "/travel/next" && method === "GET") {
       const next = state.trips.find((t) => t.status !== "finished");
       return json(route, next ? tripDetail(next) : null);
+    }
+    const dayLabel = path.match(/^\/travel\/trips\/([^/]+)\/days\/([0-9-]+)$/);
+    if (dayLabel && method === "PUT") {
+      const trip = state.trips.find((t) => t.id === dayLabel[1]);
+      if (!trip) return json(route, { detail: "no trip with that id" }, 404);
+      const labels = { ...(trip.day_labels as Record<string, string>) };
+      if (body.label) labels[dayLabel[2]] = String(body.label);
+      else delete labels[dayLabel[2]];
+      trip.day_labels = labels;
+      return json(route, trip);
     }
     const tripMatch = path.match(/^\/travel\/trips\/([^/]+)$/);
     if (tripMatch) {
@@ -672,7 +696,7 @@ export async function fakeApi(
         id: `pl${state.plans.length + 1}`, trip_id: tripShot[1], kind: "hotel", title: "Hotel Kumo, 3 nights", provider: null,
         starts: "2026-11-15", ends: "2026-11-18", segments: [], hotel: "Hotel Kumo", address: "4-5-6 Asakusa",
         check_in: "2026-11-15", check_out: "2026-11-18", name: null, day: null, at: null, note: null,
-        reference: "9876543210", booked_via: "Agoda", cost: { amount: "64500.0000", currency: "JPY" }, logged: false, manual: true,
+        reference: "9876543210", booked_via: "Agoda", category: null, scheduled: true, cost: { amount: "64500.0000", currency: "JPY" }, logged: false, manual: true,
       };
       state.plans.push(stay);
       return json(route, { added: [stay], repeated: 0, message: "✈️ Added to your Tokyo trip:\n• hotel booking (Hotel Kumo, 3 nights, 15 Nov to 18 Nov; booked on Agoda, ref 9876543210)" });
@@ -683,24 +707,31 @@ export async function fakeApi(
         id: `pl${state.plans.length + 1}`, trip_id: tripPlans[1], kind: "hotel", title: body.hotel, provider: null,
         starts: body.check_in, ends: body.check_out, segments: [], hotel: body.hotel, address: body.address,
         check_in: body.check_in, check_out: body.check_out, name: null, day: null, at: null, note: null, cost: null,
+        reference: body.reference ?? null, booked_via: body.booked_via ?? null, category: null, scheduled: true,
         logged: false, manual: true,
       };
       state.plans.push(stay);
       return json(route, stay, 201);
     }
     if (tripPlans && method === "POST") {
-      if (!body.day || !body.name) return json(route, { detail: "a plan needs a name and a day" }, 422);
+      if (!body.name) return json(route, { detail: "a plan or place needs a name" }, 422);
       const plan = {
         id: `pl${state.plans.length + 1}`, trip_id: tripPlans[1], kind: "activity", title: body.name, provider: null,
         starts: body.day, ends: body.day, segments: [], hotel: null, address: body.address, check_in: null, check_out: null,
         name: body.name, day: body.day, at: body.at, note: body.note, cost: null, logged: false, manual: true,
+        reference: body.reference ?? null, booked_via: body.booked_via ?? null, category: body.category ?? null,
+        scheduled: Boolean(body.day), ...(body.day ? {} : { starts: "2026-09-28", ends: null }),
       };
       state.plans.push(plan);
       return json(route, plan, 201);
     }
     const planEdit = path.match(/^\/travel\/bookings\/(pl\d+)$/);
     if (planEdit && method === "PUT") {
-      state.plans = state.plans.map((p) => (p.id === planEdit[1] ? { ...p, at: body.at, day: body.day, starts: body.day, name: body.name, title: body.name } : p));
+      state.plans = state.plans.map((p) =>
+        p.id === planEdit[1]
+          ? { ...p, at: body.at, day: body.day, starts: body.day ?? p.starts, scheduled: Boolean(body.day), name: body.name, title: body.name, category: body.category ?? null }
+          : p,
+      );
       return json(route, state.plans.find((p) => p.id === planEdit[1]));
     }
     if (planEdit && method === "DELETE") {
@@ -763,7 +794,7 @@ export async function fakeApi(
       const trip = {
         id: "trip9", destination: "Tokyo", start: "2027-01-10", end: "2027-01-17", days: 8, currency: "JPY",
         budget: { amount: "6800.0000", currency: "SGD" }, companions: [], set_aside: { amount: "2267.0000", currency: "SGD" },
-        planned: {}, status: "upcoming", days_until: 104, day_number: null,
+        planned: {}, status: "upcoming", days_until: 104, day_number: null, notes: null, day_labels: {},
       };
       state.trips = [trip, ...state.trips];
       return json(route, trip, 201);

@@ -8,7 +8,7 @@ home currency at the rate for the day it was spent.
 """
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo
 from nexus.application import cashflow, fx
 from nexus.application.fx import RateSource
 from nexus.application.ports import UnitOfWork
-from nexus.domain.bookings import EARLY_DAYS, Booking
+from nexus.domain.bookings import EARLY_DAYS, Booking, BookingKind
 from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.ledger import Direction, User, UserId, same_person
 from nexus.domain.money import Money
@@ -24,7 +24,9 @@ from nexus.domain.planning import paydays
 from nexus.domain.trips import (
     MAX_TRIPS,
     Owed,
+    Readiness,
     SetAside,
+    Stay,
     Trip,
     TripItem,
     TripSpending,
@@ -32,11 +34,13 @@ from nexus.domain.trips import (
     check_dates,
     clean_companions,
     clean_currency,
+    clean_day_label,
     clean_destination,
     clean_notes,
     clean_planned,
     describe_trip,
     home_amount,
+    readiness,
     set_aside,
     spending,
 )
@@ -65,7 +69,14 @@ def local_today(user: User, now: datetime) -> date:
     return now.astimezone(ZoneInfo(user.timezone)).date()
 
 
-def _build(user: User, draft: TripDraft, trip_id: UUID, created: datetime, now: datetime) -> Trip:
+def _build(
+    user: User,
+    draft: TripDraft,
+    trip_id: UUID,
+    created: datetime,
+    now: datetime,
+    day_labels: dict[date, str] | None = None,
+) -> Trip:
     check_dates(draft.start, draft.end)
     home = user.home_currency
     return Trip(
@@ -82,6 +93,10 @@ def _build(user: User, draft: TripDraft, trip_id: UUID, created: datetime, now: 
         created_at=created,
         updated_at=now,
         notes=clean_notes(draft.notes),
+        # Labels on days the trip no longer has are dropped.
+        day_labels={
+            d: label for d, label in (day_labels or {}).items() if draft.start <= d <= draft.end
+        },
     )
 
 
@@ -93,7 +108,10 @@ async def create_trip(uow: UnitOfWork, user: User, draft: TripDraft, *, now: dat
         await uow.trips.insert_trip(trip, user.home_currency)
         # Bookings already read (from email or a screenshot) for these dates join it.
         for booking in await uow.trips.list_bookings(user.id, unattached=True):
-            if trip.start - timedelta(days=EARLY_DAYS) <= booking.starts <= trip.end:
+            if (
+                booking.scheduled
+                and trip.start - timedelta(days=EARLY_DAYS) <= booking.starts <= trip.end
+            ):
                 await uow.trips.set_booking(
                     user.id, booking.id, trip_id=trip.id, transaction_id=booking.transaction_id
                 )
@@ -112,7 +130,21 @@ async def update_trip(
         current = await uow.trips.get_trip(user.id, trip_id)
         if current is None:
             raise NotFound("no trip with that id")
-        trip = _build(user, draft, trip_id, current.created_at, now)
+        trip = _build(user, draft, trip_id, current.created_at, now, current.day_labels)
+        await uow.trips.update_trip(trip, user.home_currency)
+        await uow.commit()
+    return trip
+
+
+async def set_day_label(
+    uow: UnitOfWork, user: User, trip_id: UUID, day: date, label: str | None, *, now: datetime
+) -> Trip:
+    """Names a day of the trip ("Busan", "Day trip to Nikko"); blank clears it."""
+    async with uow:
+        current = await uow.trips.get_trip(user.id, trip_id)
+        if current is None:
+            raise NotFound("no trip with that id")
+        trip = replace(current, day_labels=clean_day_label(current, day, label), updated_at=now)
         await uow.trips.update_trip(trip, user.home_currency)
         await uow.commit()
     return trip
@@ -235,6 +267,7 @@ class TripView:
     booked_unlogged: Money | None = None
     # The budget less what's spent and what's booked but not logged.
     to_spend: Money | None = None
+    ready: Readiness = field(default_factory=lambda: Readiness([], False, False))
 
     @property
     def days_until(self) -> int:
@@ -334,7 +367,10 @@ async def _view(
     async with uow() as tx:
         bookings = await tx.trips.list_bookings(user.id, trip_id=trip.id)
     tz = ZoneInfo(user.timezone)
-    costed = [(b, b.cost, b.created_at.astimezone(tz).date()) for b in bookings if b.cost]
+    # A place to visit without a day isn't booked yet, so its cost isn't counted.
+    costed = [
+        (b, b.cost, b.created_at.astimezone(tz).date()) for b in bookings if b.cost and b.scheduled
+    ]
     found = await fx.rates_for(rates, home, ((c.currency, d) for _, c, d in costed))
     booked = unlogged = Money.zero(home)
     for b, cost, day in costed:
@@ -359,6 +395,15 @@ async def _view(
         booked=booked if costed else None,
         booked_unlogged=unlogged if costed else None,
         to_spend=to_spend,
+        ready=readiness(
+            trip,
+            [
+                Stay(b.draft.check_in, b.draft.check_out)
+                for b in bookings
+                if b.draft.kind is BookingKind.HOTEL and b.draft.check_in
+            ],
+            any(b.draft.kind in (BookingKind.FLIGHT, BookingKind.RAIL) for b in bookings),
+        ),
     )
 
 
@@ -442,8 +487,28 @@ def describe_view(view: TripView) -> list[str]:
                 f"To cover the budget by the trip, set aside about {a.suggested} on each of "
                 f"the {a.paydays_left} paydays before it."
             )
-    if view.bookings:
-        lines.append("Bookings: " + "; ".join(b.draft.describe() for b in view.bookings) + ".")
+    on_days = [b for b in view.bookings if b.scheduled]
+    places = [b for b in view.bookings if not b.scheduled]
+    if on_days:
+        lines.append("Bookings: " + "; ".join(b.draft.describe() for b in on_days) + ".")
+    if places:
+        lines.append(
+            "Places to visit, not on a day yet: "
+            + "; ".join(b.draft.describe() for b in places)
+            + "."
+        )
+    if trip.day_labels:
+        lines.append(
+            "Days: "
+            + "; ".join(f"{d:%a %d %b} {label}" for d, label in sorted(trip.day_labels.items()))
+            + "."
+        )
+    r = view.ready
+    if r.nights_without_stay and view.status is not TripStatus.FINISHED:
+        nights = ", ".join(f"{n:%a %d %b}" for n in r.nights_without_stay)
+        lines.append(f"No place to stay on the itinerary yet for the night of: {nights}.")
+    if not r.has_transport and view.status is TripStatus.UPCOMING:
+        lines.append("No flight or train on the itinerary yet.")
     if view.booked is not None:
         line = f"Booked: {view.booked}"
         if view.booked_unlogged and view.booked_unlogged.is_positive:

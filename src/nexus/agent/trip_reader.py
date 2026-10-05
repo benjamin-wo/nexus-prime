@@ -43,6 +43,9 @@ class ShotEntry(BaseModel):
     check_out: str | None = Field(None, description="A hotel's check-out date, YYYY-MM-DD")
     day: str | None = Field(None, description="An activity's date, YYYY-MM-DD")
     time: str | None = Field(None, description="An activity's start time, HH:MM")
+    category: str | None = Field(
+        None, description="An activity's kind: Food, Sight, Shopping, Nature, Nightlife"
+    )
     reference: str | None = Field(
         None, description="The booking reference, confirmation number or PNR, exactly as shown"
     )
@@ -75,7 +78,9 @@ _PROMPT = (
     "Read this screenshot. If it shows travel bookings, reservations or trip plans (a "
     "booking confirmation in an app or email, a ticket, an itinerary or a day-by-day "
     "plan), list every entry in it, in order, with every field the image shows.\n"
-    "- One entry per flight booking (its legs inside it), hotel stay, train, or plan.\n"
+    "- One entry per flight booking (its legs inside it), hotel stay, train, or plan. "
+    "A list of places to visit or eat at, without dates, is fine: one activity each, "
+    "with its category (Food, Sight, Shopping, Nature, Nightlife...).\n"
     "- Dates as YYYY-MM-DD and times as HH:MM, local as shown. Today is {today}: a date "
     "without a year is the next one on or after today.\n"
     "- reference: the booking or confirmation number exactly as shown; booked_via: the "
@@ -127,8 +132,9 @@ def _cost(entry: ShotEntry) -> Money | None:
 
 
 def drafts(shot: TripShot) -> list[tuple[BookingDraft, Money | None]]:
-    """The entries that make sense as itinerary entries (each needs a date), with
-    their costs; anything unclear is dropped."""
+    """The entries that make sense as itinerary entries, with their costs: flights,
+    hotels and trains need a date; a plan without one is a place to visit. Anything
+    unclear is dropped."""
     found: list[tuple[BookingDraft, Money | None]] = []
     for e in shot.entries[:MAX_ENTRIES]:
         draft = BookingDraft.from_dict(
@@ -150,6 +156,7 @@ def drafts(shot: TripShot) -> list[tuple[BookingDraft, Money | None]]:
                 "note": e.note,
                 "reference": e.reference,
                 "booked_via": e.booked_via,
+                "category": e.category,
             }
         )  # fmt: skip
         if draft is not None:

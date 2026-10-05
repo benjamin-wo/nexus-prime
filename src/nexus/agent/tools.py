@@ -1707,10 +1707,18 @@ async def _remove_from_trip(ctx: ToolContext, a: TripExpenseArgs) -> ToolResult:
 
 class ItineraryArgs(TripNameArgs):
     kind: Literal["activity", "flight", "hotel", "rail"] = Field(
-        description="activity for a plan (a dinner, tour, day trip), else flight, hotel or rail"
+        description="activity for a plan or place to visit (a dinner, tour, market, day "
+        "trip), else flight, hotel or rail"
     )
-    name: str | None = Field(None, description="A plan's name, or the hotel's name")
-    day: str | None = Field(None, description="A plan's day or a hotel's check-in, 2026-12-12")
+    name: str | None = Field(None, description="A plan's or place's name, or the hotel's name")
+    day: str | None = Field(
+        None,
+        description="A plan's day or a hotel's check-in, 2026-12-12; leave out for a place "
+        "to visit that isn't on a day yet",
+    )
+    category: str | None = Field(
+        None, description="A plan's or place's kind: Food, Sight, Shopping, Nature, Nightlife"
+    )
     time: str | None = Field(None, description="A plan's time, like 19:00")
     until: str | None = Field(None, description="A hotel's check-out day")
     place: str | None = Field(None, description="Where: an address or area")
@@ -1737,7 +1745,7 @@ def _itinerary_details(a: ItineraryArgs) -> dict[str, object]:
 def _kind_details(a: ItineraryArgs) -> dict[str, object]:
     if a.kind == "activity":
         return {"kind": "activity", "name": a.name, "day": a.day, "at": a.time,
-                "address": a.place, "note": a.note}  # fmt: skip
+                "address": a.place, "note": a.note, "category": a.category}  # fmt: skip
     if a.kind == "hotel":
         return {"kind": "hotel", "hotel": a.name, "address": a.place, "check_in": a.day,
                 "check_out": a.until, "note": a.note}  # fmt: skip
@@ -1762,7 +1770,7 @@ async def _itinerary_entry(
     draft = BookingDraft.from_dict(_itinerary_details(a))
     if draft is None:
         raise InvalidInput(
-            "a plan needs a name and a day, a hotel its check-in day, and a flight or train "
+            "a plan or place needs a name, a hotel its check-in day, and a flight or train "
             "its departure time"
         )
     cost = parse_money(ctx, a.cost, a.currency) if a.cost else None
@@ -1810,9 +1818,27 @@ async def _remove_from_itinerary(ctx: ToolContext, a: ItineraryItemArgs) -> Tool
     return ToolResult(f"Taken off the {trip.destination} itinerary.", wrote=True)
 
 
+class DayLabelArgs(TripNameArgs):
+    day: str = Field(description="The day, 2026-12-12")
+    label: str = Field(description="The label, such as a city; empty to clear it")
+
+
+async def _label_day(ctx: ToolContext, a: DayLabelArgs) -> ToolResult:
+    trip = await trip_cases.find_trip(ctx.uow(), ctx.user, a.trip, now=ctx.now)
+    day = parse_day(ctx, a.day).date()
+    await trip_cases.set_day_label(ctx.uow(), ctx.user, trip.id, day, a.label, now=ctx.now)
+    what = f"labelled {a.label.strip()!r}" if a.label.strip() else "unlabelled"
+    return ToolResult(f"{day:%a %d %b} of the {trip.destination} trip is {what}.", wrote=True)
+
+
 class ItineraryChangeArgs(ItineraryItemArgs):
     name: str | None = Field(None, description="A new name for a plan or hotel")
-    day: str | None = Field(None, description="A new day for a plan, or check-in for a hotel")
+    day: str | None = Field(
+        None,
+        description="A new day for a plan (this puts a place to visit on that day), or "
+        "check-in for a hotel",
+    )
+    category: str | None = Field(None, description="A new kind: Food, Sight, Shopping")
     time: str | None = Field(None, description="A plan's new time, like 19:00")
     until: str | None = Field(None, description="A hotel's new check-out day")
     place: str | None = Field(None, description="A new address or area")
@@ -1846,6 +1872,7 @@ async def _changed_entry(
         "note": a.note,
         "reference": a.reference,
         "booked_via": a.booked_via,
+        "category": a.category,
     }
     data.update({k: v for k, v in fields.items() if v is not None})
     leg = {"number": a.number, "from": a.origin, "to": a.destination,
@@ -2296,6 +2323,13 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             ItineraryChangeArgs,
             _change_itinerary,
             confirm=_describe_change_itinerary,
+        ),
+        ToolSpec(
+            "label_trip_day",
+            "Name a day of a trip, such as the city the user is in that day ('Busan') or "
+            "its plan ('Day trip to Nikko'). An empty label clears it.",
+            DayLabelArgs,
+            _label_day,
         ),
         ToolSpec(
             "remove_from_itinerary",
