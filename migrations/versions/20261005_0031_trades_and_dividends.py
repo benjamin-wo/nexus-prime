@@ -56,9 +56,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint("per_share > 0", name=op.f("ck_dividends_per_share_positive")),
         sa.CheckConstraint("shares > 0", name=op.f("ck_dividends_shares_positive")),
-        sa.ForeignKeyConstraint(
-            ["user_id"], ["users.id"], name=op.f("fk_dividends_user_id_users")
-        ),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], name=op.f("fk_dividends_user_id_users")),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_dividends")),
         sa.UniqueConstraint(
             "user_id", "symbol", "ex_date", name=op.f("uq_dividends_user_id_symbol_ex_date")
