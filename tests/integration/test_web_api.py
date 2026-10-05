@@ -41,6 +41,7 @@ from tests.fakes import (
     FakeHoldings,
     FakeMailbox,
     FakeNews,
+    FakePlaces,
     FakePrices,
     FakeRates,
     FakeTelegram,
@@ -48,6 +49,7 @@ from tests.fakes import (
     ScriptedModel,
     call,
     fake_email,
+    fake_place,
     models,
     say,
     scripted,
@@ -55,6 +57,7 @@ from tests.fakes import (
 from tests.integration.conftest import UowFactory
 from tests.integration.test_departments import Shown
 
+PLACE = fake_place("fakePlaceNoodle01", "Hanok Noodle Bar", closed_on=4, reviews=("Worth it.",))
 pytestmark = pytest.mark.integration
 
 ORIGIN = "https://nexus.test"
@@ -155,6 +158,7 @@ async def world(engine: AsyncEngine, empty_database_url: str) -> AsyncIterator[W
             trip_reader=FakeTripReader(),
             prices=FakePrices(),
             news=FakeNews(),
+            places=FakePlaces([PLACE]),
         ),
     )
     async with app.router.lifespan_context(app):
@@ -1612,3 +1616,48 @@ async def test_trades_and_dividends_on_the_web(world: World) -> None:
     member = world.browser()
     await member.login(MEMBER, invite=token)
     assert (await member.get("/api/investments/trades")).json() == []  # their own only
+
+
+async def test_google_maps_places_on_the_web(world: World) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+    made = await owner.send(
+        "POST", "/api/travel/trips",
+        {"destination": "Seoul", "start": "2026-11-10", "end": "2026-11-13", "currency": "KRW"},
+    )  # fmt: skip
+    trip_id = made.json()["id"]
+    detail = (await owner.get(f"/api/travel/trips/{trip_id}")).json()
+    assert detail["places"] is True
+
+    found = (await owner.get(f"/api/travel/places/search?q=noodles&trip_id={trip_id}")).json()
+    assert [(p["id"], p["name"], p["rating"], p["price"]) for p in found] == [
+        ("fakePlaceNoodle01", "Hanok Noodle Bar", "4.5", "Moderate")
+    ]
+    one = (await owner.get("/api/travel/places/fakePlaceNoodle01")).json()
+    assert one["reviews"][0]["text"] == "Worth it." and one["hours"]
+    assert (await owner.get("/api/travel/places/fakePlace0099")).status_code == 404
+
+    # Saved from a search with its place; an edit that doesn't mention it keeps it.
+    plan = {"kind": "activity", "name": "Hanok Noodle Bar", "day": "2026-11-12", "at": "19:00"}
+    saved = await owner.send(
+        "POST", f"/api/travel/trips/{trip_id}/bookings", {**plan, "place_id": "fakePlaceNoodle01"}
+    )
+    booking = saved.json()
+    assert saved.status_code == 201 and booking["place_id"] == "fakePlaceNoodle01"
+    edited = await owner.send(
+        "PUT", f"/api/travel/bookings/{booking['id']}", {**plan, "at": "20:00"}
+    )
+    assert edited.json()["place_id"] == "fakePlaceNoodle01"
+    linked = (await owner.get(f"/api/travel/trips/{trip_id}/places")).json()
+    assert [(x["booking_id"], x["place"]["name"], x["warning"]) for x in linked] == [
+        (booking["id"], "Hanok Noodle Bar", "Usually closed on Thursdays")
+    ]
+
+    unlinked = await owner.send(
+        "PUT", f"/api/travel/bookings/{booking['id']}/place", {"place_id": None}
+    )
+    assert unlinked.json()["place_id"] is None
+    bad = await owner.send(
+        "PUT", f"/api/travel/bookings/{booking['id']}/place", {"place_id": "../x"}
+    )
+    assert bad.status_code == 422

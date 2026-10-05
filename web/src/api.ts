@@ -525,17 +525,38 @@ export type Booking = {
   reference: string | null;
   booked_via: string | null;
   category: string | null;
+  place_id: string | null;
   scheduled: boolean;
   cost: Money | null;
   logged: boolean;
   manual: boolean;
 };
 
+/** A place as Google Maps shows it: fetched when shown, only its id is kept. */
+export type Place = {
+  id: string;
+  name: string;
+  address: string | null;
+  kind: string | null;
+  rating: string | null;
+  ratings: number | null;
+  price: string | null;
+  maps_url: string | null;
+  website: string | null;
+  phone: string | null;
+  summary: string | null;
+  status: string | null;
+  hours: string[];
+  reviews: { rating: number | null; text: string; author: string | null; author_url: string | null; when: string | null }[];
+};
+export type LinkedPlace = { booking_id: string; place: Place; warning: string | null };
+
 export type ScreenshotRead = { added: Booking[]; repeated: number; message: string };
 
 export type TripDetail = {
   trip: Trip;
   bookings: Booking[];
+  places: boolean;
   booked: Money | null;
   booked_unlogged: Money | null;
   to_spend: Money | null;

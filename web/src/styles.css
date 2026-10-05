@@ -610,3 +610,15 @@ details.section[open] > summary { margin-bottom: var(--space-3); }
 @media (prefers-reduced-motion: reduce) {
   .trip-fab-button:active { transform: none; }
 }
+
+/* Google Maps places on trip entries */
+.place-rating { font-weight: 600; color: var(--orange-primary); }
+.place-line { display: block; }
+.place-warning { display: block; margin: 2px 0; color: var(--status-warning); font-size: 0.875rem; }
+.place-details { margin: var(--space-2) 0; padding-left: var(--space-2); border-left: 3px solid var(--border-card); }
+.place-hours, .place-reviews { list-style: none; margin: var(--space-1) 0; padding: 0; }
+.place-hours li { font-size: 0.875rem; }
+.place-reviews li { margin-bottom: var(--space-2); overflow-wrap: anywhere; }
+.place-finder { margin: var(--space-2) 0; }
+.place-finder .inline-form { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.place-finder .inline-form input { flex: 1 1 12rem; min-width: 0; }

@@ -30,6 +30,7 @@ from nexus.application.email import EmailRuntime
 from nexus.application.fx import RateSource
 from nexus.application.limits import RateLimiter
 from nexus.application.market import PriceSource
+from nexus.application.places import Places, PlaceSource
 from nexus.application.plans import plan_kind
 from nexus.application.ports import (
     EmailReader,
@@ -70,6 +71,7 @@ from nexus.infra.llm.factory import (
 from nexus.infra.logs import configure_logging
 from nexus.infra.market.finnhub import FinnhubNews
 from nexus.infra.market.tiingo import TiingoPrices
+from nexus.infra.places.google import GooglePlaces
 from nexus.infra.search.openrouter_web import OpenRouterWebSearch
 from nexus.infra.search.serpapi import SerpApiTravel
 from nexus.infra.storage.s3 import S3ReceiptStore
@@ -95,6 +97,7 @@ class Overrides:
     rates: RateSource | None = None
     prices: PriceSource | None = None
     news: NewsSource | None = None
+    places: PlaceSource | None = None
     receipt_store: ReceiptStore | None = None
     mailbox: SignInMailbox | None = None
     forwarding: ForwardingInboxes | None = None
@@ -150,6 +153,21 @@ async def _news(
         return None
     http = await stack.enter_async_context(httpx.AsyncClient())
     return FinnhubNews(http, key.get_secret_value())
+
+
+async def _places(
+    settings: Settings, overrides: Overrides, stack: AsyncExitStack, clock: Callable[[], datetime]
+) -> Places | None:
+    """Google Maps places for trips, when a Places API key is set."""
+    source = overrides.places
+    if source is None:
+        key = settings.google_places_api_key
+        if key is None:
+            log.warning("GOOGLE_PLACES_API_KEY is not set; trips won't show Google Maps places")
+            return None
+        http = await stack.enter_async_context(httpx.AsyncClient())
+        source = GooglePlaces(http, key.get_secret_value())
+    return Places(source, clock=clock)
 
 
 async def _email_runtime(
@@ -238,6 +256,7 @@ async def _telegram_runtime(
     models: ChatModels,
     email: EmailRuntime | None,
     departments: Departments | None = None,
+    places: Places | None = None,
 ) -> telegram_webhook.TelegramRuntime:
     def uow() -> SqlUnitOfWork:
         return SqlUnitOfWork(engine)
@@ -267,6 +286,7 @@ async def _telegram_runtime(
             connect_link=_connect_link(uow, email, clock),
             forward_address=_forward_address(uow, email, clock),
             departments=departments,
+            places=places,
         )
     ).compile(checkpointer)
     receipts: ReceiptReader | None = overrides.receipts
@@ -424,9 +444,11 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                 departments = extra.departments or await _registry(
                     resolved, engine, models, rates, stack
                 )
+                places = await _places(resolved, extra, stack, extra.clock or utcnow)
                 telegram = await _telegram_runtime(
-                    resolved, engine, extra, stack, rates, archive, models, email, departments
-                )
+                    resolved, engine, extra, stack, rates, archive, models, email, departments,
+                    places,
+                )  # fmt: skip
                 app.state.telegram = telegram
                 origin = resolved.public_origin
                 clock = extra.clock or utcnow
@@ -465,6 +487,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                         departments=departments,
                         prices=prices is not None,
                         news=news is not None,
+                        places=places,
                     )
                     menu = asyncio.create_task(_set_menu_button(telegram.client, origin))
                     stack.push_async_callback(_finish, menu)

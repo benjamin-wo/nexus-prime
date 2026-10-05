@@ -92,6 +92,9 @@ class Settings(BaseSettings):
     # hotel prices from Google Flights and Hotels; unset, costs come from web search. ---
     travel_research_model: str | None = None
     serpapi_api_key: SecretStr | None = None
+    # --- Google Maps places on trips (Places API (New)): ratings, regular hours and
+    # reviews for plans, places to visit and hotels. Unset = no place lookups. ---
+    google_places_api_key: SecretStr | None = None
 
     # --- LLM. Names match the pre-rebuild deployment's variables. ---
     llm_provider: LlmProvider = LlmProvider.GEMINI
@@ -174,6 +177,7 @@ class Settings(BaseSettings):
         "research_lead_model",
         "travel_research_model",
         "serpapi_api_key",
+        "google_places_api_key",
         "agentmail_api_key",
         "agentmail_domain",
         "tiingo_api_key",

@@ -3,7 +3,7 @@
 import json
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from typing import Any
 from uuid import uuid4
@@ -21,6 +21,7 @@ from nexus.agent.service import Button
 from nexus.agent.trip_reader import ShotEntry, ShotLeg, TripShot
 from nexus.application.fx import Rate
 from nexus.application.market import PriceSourceError
+from nexus.application.places import PlacesError
 from nexus.application.ports import MailboxGrant, MailboxRevoked
 from nexus.application.research import NewsSourceError
 from nexus.channels.telegram.client import TelegramError
@@ -29,6 +30,7 @@ from nexus.domain.email import ExpenseDraft, FetchedEmail, Screening
 from nexus.domain.errors import InvalidInput
 from nexus.domain.market import Bar
 from nexus.domain.news import EarningsDate, NewsItem
+from nexus.domain.places import Period, Place, Review
 from nexus.infra.llm.factory import ChatModels
 
 NOW = datetime(2026, 9, 28, 4, 0, tzinfo=UTC)  # noon in Singapore
@@ -435,3 +437,54 @@ class FakeTripReader:
                 ShotEntry(kind="flight", provider="Acme Air"),  # dropped: a flight needs a date
             ],
         )  # fmt: skip
+
+
+def fake_place(
+    pid: str,
+    name: str,
+    *,
+    rating: str = "4.5",
+    closed_on: int | None = None,  # Google's day: 0 Sunday … 6 Saturday
+    reviews: tuple[str, ...] = (),
+    address: str = "1 Example Street",
+) -> Place:
+    """A made-up Google Maps place, open 11:00 to 22:00 except ``closed_on``."""
+    periods = tuple(Period(d, time(11), d, time(22)) for d in range(7) if d != closed_on)
+    return Place(
+        id=pid,
+        name=name,
+        address=address,
+        kind="Restaurant",
+        rating=Decimal(rating),
+        ratings=1200,
+        price_level=2,
+        maps_url=f"https://maps.example/{pid}",
+        periods=periods,
+        hours=tuple(f"Day {d}: 11:00 to 22:00" for d in range(7) if d != closed_on),
+        reviews=tuple(
+            Review(5, r, "A. Reviewer", "https://maps.example/u", "a week ago") for r in reviews
+        ),
+    )
+
+
+@dataclass
+class FakePlaces:
+    """Made-up Google Maps: every search returns ``results``; details come from the
+    same places. Counts what reached it."""
+
+    results: list[Place] = field(default_factory=list)
+    failing: bool = False
+    searches: list[str] = field(default_factory=list)
+    looked_up: list[str] = field(default_factory=list)
+
+    async def search(self, query: str, *, limit: int) -> list[Place]:
+        self.searches.append(query)
+        if self.failing:
+            raise PlacesError("HTTP 500")
+        return self.results[:limit]
+
+    async def details(self, place_id: str) -> Place | None:
+        self.looked_up.append(place_id)
+        if self.failing:
+            raise PlacesError("HTTP 500")
+        return next((p for p in self.results if p.id == place_id), None)

@@ -20,6 +20,7 @@ from nexus.application.departments import Departments, default_registry
 from nexus.application.email import EmailRuntime
 from nexus.application.fx import RateSource
 from nexus.application.limits import RateLimiter
+from nexus.application.places import Places
 from nexus.application.ports import ReceiptStore
 from nexus.domain.access import Session
 from nexus.domain.ledger import User
@@ -45,6 +46,7 @@ class WebRuntime:
     departments: Departments = field(default_factory=default_registry)
     prices: bool = False  # daily stock prices are set up
     news: bool = False  # company news and earnings dates are set up
+    places: Places | None = None  # Google Maps places on trips; None = not set up
 
 
 @dataclass(frozen=True, slots=True)
