@@ -35,7 +35,7 @@ FAILED = "Sorry, something went wrong on my side. Please try again."
 # so old messages don't keep offering to undo whatever happens to be latest.
 UNDO_FOR = timedelta(minutes=5)
 UNDO_EXPIRE = "telegram.undo_expire"
-ONE_SHOT = ("hitl:", "bill:", "salary:", "rule:", "email:", "run:", "hold:", "plan:")
+ONE_SHOT = ("hitl:", "bill:", "salary:", "rule:", "email:", "run:", "hold:", "plan:", "trip:")
 
 
 @dataclass(frozen=True, slots=True)

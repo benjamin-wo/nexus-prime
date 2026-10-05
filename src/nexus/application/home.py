@@ -4,8 +4,10 @@ for, newest worry first. Read-only; each item links to the page that settles it.
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from nexus.application import bills as bill_cases
+from nexus.application import bookings as booking_cases
 from nexus.application import budgets as budget_cases
 from nexus.application import duplicates as duplicate_cases
 from nexus.application import email as email_cases
@@ -28,7 +30,7 @@ DUPLICATE_DAYS = 30
 @dataclass(frozen=True, slots=True)
 class FeedItem:
     department: str
-    kind: str  # "email", "duplicates", "budget", "bill", "trip_budget", "settle_up"
+    kind: str  # "email", "duplicates", "budget", "bill", "trip_budget", "booking", "settle_up"
     text: str
     link: str  # the web app page that deals with it
     urgent: bool = False
@@ -116,6 +118,18 @@ async def needs_you(
                     urgent=over,
                 )
             )
+    loose = await booking_cases.unattached(uow(), user.id)
+    today = now.astimezone(ZoneInfo(user.timezone)).date()
+    loose = [b for b in loose if (b.draft.ends or b.starts) >= today]
+    if loose:
+        items.append(
+            FeedItem(
+                "travel",
+                "booking",
+                f"{_plural(len(loose), 'booking', 'bookings')} from email not on a trip",
+                "/travel",
+            )
+        )
     for done, owed in await trip_cases.to_settle(uow, rates, user, now=now):
         items.append(
             FeedItem(

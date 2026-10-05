@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 from nexus.agent.memory_writer import MemoryWriter
 from nexus.agent.service import Button
 from nexus.application import bills as bill_cases
+from nexus.application import bookings as booking_cases
 from nexus.application import budgets as budget_cases
 from nexus.application import departments as department_cases
 from nexus.application import email as email_cases
@@ -54,6 +55,7 @@ SCHEDULES = (
     Schedule(market_cases.REFRESH_JOB, timedelta(hours=1)),
     Schedule(market_cases.NEWS_JOB, timedelta(hours=1)),
     Schedule(plan_cases.FOLLOW_JOB, timedelta(hours=1)),
+    Schedule(booking_cases.REMIND_JOB, timedelta(hours=1)),
 )
 
 
@@ -241,6 +243,11 @@ def build_handlers(
         if alerts:
             log.info("plans: queued %d alerts", alerts)
 
+    async def travel_reminders(_: dict[str, Any]) -> None:
+        sent = await booking_cases.remind_everyone(uow, now=clock())
+        if sent:
+            log.info("travel: queued %d reminders", sent)
+
     registry = departments or department_cases.default_registry()
     progress = TelegramProgress(telegram)
 
@@ -263,6 +270,7 @@ def build_handlers(
         market_cases.REFRESH_JOB: refresh_prices,
         market_cases.NEWS_JOB: refresh_news,
         plan_cases.FOLLOW_JOB: follow_plans,
+        booking_cases.REMIND_JOB: travel_reminders,
         department_cases.STEP_JOB: department_step,
         UNDO_EXPIRE: expire_undo,
         MEMORY_UPDATE: update_memory,

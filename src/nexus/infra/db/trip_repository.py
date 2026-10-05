@@ -10,11 +10,20 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from nexus.application.ports import TripExpense
+from nexus.domain.bookings import Booking, BookingDraft
 from nexus.domain.ledger import Direction, TransactionStatus, UserId
 from nexus.domain.money import Money
 from nexus.domain.trips import Trip
 from nexus.infra.db.ledger_repository import _transaction
-from nexus.infra.db.tables import categories, splits, transactions, trip_links, trips
+from nexus.infra.db.tables import (
+    categories,
+    splits,
+    transactions,
+    trip_bookings,
+    trip_links,
+    trip_reminders,
+    trips,
+)
 
 
 def _trip(row: Row[Any]) -> Trip:
@@ -69,6 +78,12 @@ class SqlTripRepository:
         )
 
     async def delete_trip(self, user_id: UserId, trip_id: UUID) -> bool:
+        # Its bookings stay, without a trip.
+        await self._db.execute(
+            update(trip_bookings)
+            .where(trip_bookings.c.user_id == user_id, trip_bookings.c.trip_id == trip_id)
+            .values(trip_id=None)
+        )
         result = await self._db.execute(
             delete(trips).where(trips.c.user_id == user_id, trips.c.id == trip_id)
         )
@@ -180,3 +195,136 @@ class SqlTripRepository:
             )
         )
         return [_trip(r) for r in rows]
+
+    # --- bookings ---------------------------------------------------------------------
+
+    async def insert_booking(self, booking: Booking) -> bool:
+        """False when that email's booking is already saved."""
+        d = booking.draft
+        stmt = (
+            pg_insert(trip_bookings)
+            .values(
+                id=booking.id,
+                user_id=booking.user_id,
+                trip_id=booking.trip_id,
+                email_id=booking.email_id,
+                kind=d.kind.value,
+                title=d.title,
+                start_on=booking.starts,
+                end_on=d.ends,
+                details=d.as_dict(),
+                amount=booking.cost.amount if booking.cost else None,
+                currency=booking.cost.currency if booking.cost else None,
+                transaction_id=booking.transaction_id,
+                created_at=booking.created_at,
+            )
+            .on_conflict_do_nothing()
+            .returning(trip_bookings.c.id)
+        )
+        return (await self._db.execute(stmt)).first() is not None
+
+    async def get_booking(self, user_id: UserId, booking_id: UUID) -> Booking | None:
+        row = (
+            await self._db.execute(
+                select(trip_bookings).where(
+                    trip_bookings.c.user_id == user_id, trip_bookings.c.id == booking_id
+                )
+            )
+        ).first()
+        return _booking(row) if row else None
+
+    async def booking_for_email(self, user_id: UserId, email_id: UUID) -> Booking | None:
+        row = (
+            await self._db.execute(
+                select(trip_bookings).where(
+                    trip_bookings.c.user_id == user_id, trip_bookings.c.email_id == email_id
+                )
+            )
+        ).first()
+        return _booking(row) if row else None
+
+    async def list_bookings(
+        self, user_id: UserId, *, trip_id: UUID | None = None, unattached: bool = False
+    ) -> list[Booking]:
+        b = trip_bookings.c
+        conditions: list[Any] = [b.user_id == user_id]
+        if trip_id is not None:
+            conditions.append(b.trip_id == trip_id)
+        if unattached:
+            conditions.append(b.trip_id.is_(None))
+        rows = await self._db.execute(
+            select(trip_bookings).where(*conditions).order_by(b.start_on, b.created_at)
+        )
+        return [_booking(r) for r in rows]
+
+    async def upcoming_bookings(self, user_id: UserId, since: date) -> list[Booking]:
+        b = trip_bookings.c
+        rows = await self._db.execute(
+            select(trip_bookings)
+            .where(b.user_id == user_id, func.coalesce(b.end_on, b.start_on) >= since)
+            .order_by(b.start_on)
+        )
+        return [_booking(r) for r in rows]
+
+    async def set_booking(
+        self,
+        user_id: UserId,
+        booking_id: UUID,
+        *,
+        trip_id: UUID | None,
+        transaction_id: UUID | None,
+    ) -> None:
+        await self._db.execute(
+            update(trip_bookings)
+            .where(trip_bookings.c.user_id == user_id, trip_bookings.c.id == booking_id)
+            .values(trip_id=trip_id, transaction_id=transaction_id)
+        )
+
+    async def delete_booking(self, user_id: UserId, booking_id: UUID) -> bool:
+        result = await self._db.execute(
+            delete(trip_bookings).where(
+                trip_bookings.c.user_id == user_id, trip_bookings.c.id == booking_id
+            )
+        )
+        return bool(result.rowcount)
+
+    # --- reminders --------------------------------------------------------------------
+
+    async def claim_reminder(self, user_id: UserId, key: str, at: datetime) -> bool:
+        """True the first time only: the reminder is then the caller's to send."""
+        stmt = (
+            pg_insert(trip_reminders)
+            .values(user_id=user_id, key=key, sent_at=at)
+            .on_conflict_do_nothing()
+            .returning(trip_reminders.c.key)
+        )
+        return (await self._db.execute(stmt)).first() is not None
+
+    async def travellers(self, since: date) -> list[UserId]:
+        """Users with a trip not yet over or a booking still ahead."""
+        rows = await self._db.execute(
+            select(trips.c.user_id)
+            .where(trips.c.end_on >= since)
+            .union(
+                select(trip_bookings.c.user_id).where(
+                    func.coalesce(trip_bookings.c.end_on, trip_bookings.c.start_on) >= since
+                )
+            )
+        )
+        return [UserId(r[0]) for r in rows]
+
+
+def _booking(row: Row[Any]) -> Booking:
+    draft = BookingDraft.from_dict(row.details)
+    if draft is None:  # pragma: no cover - only valid drafts are stored
+        raise ValueError(f"booking {row.id} has unreadable details")
+    return Booking(
+        id=row.id,
+        user_id=UserId(row.user_id),
+        trip_id=row.trip_id,
+        email_id=row.email_id,
+        draft=draft,
+        cost=Money(row.amount, row.currency) if row.amount is not None else None,
+        transaction_id=row.transaction_id,
+        created_at=row.created_at,
+    )

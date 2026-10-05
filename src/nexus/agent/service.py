@@ -22,6 +22,7 @@ from nexus.agent.holdings_reader import HoldingsReader, ScreenshotHoldings
 from nexus.agent.receipts import ReceiptReader, caption_date
 from nexus.agent.tools import UowFactory
 from nexus.application import bills as bill_cases
+from nexus.application import bookings as booking_cases
 from nexus.application import category_rules as rule_cases
 from nexus.application import departments as department_cases
 from nexus.application import email as email_cases
@@ -367,7 +368,27 @@ class AgentService:
             return [await self._cancel_run(actor, data.removeprefix("run:cancel:"))]
         if data.startswith("plan:mute:"):
             return [await self._mute_plan(actor, data.removeprefix("plan:mute:"))]
+        if data.startswith("trip:book:"):
+            booking_id, _, trip_id = data.removeprefix("trip:book:").partition(":")
+            return [await self._booking_trip(actor, booking_id, trip_id)]
         return [Reply("I don't know that button.")]
+
+    async def _booking_trip(self, actor: UserId, booking_id: str, trip_id: str) -> Reply:
+        """Which trip a booking from email is for, on the question about it."""
+        try:
+            found = UUID(booking_id)
+            trip = None if trip_id == "none" else UUID(trip_id)
+        except ValueError:
+            return Reply("I don't know that button.")
+        try:
+            booking, on = await booking_cases.attach(
+                self._uow(), actor, found, trip, now=self._clock()
+            )
+        except NexusError as exc:
+            return Reply(str(exc).capitalize() + ".")
+        if on is None:
+            return Reply(f"OK, {booking.draft.title} isn't for a trip.")
+        return Reply(f"✈️ {booking.draft.title} is on your {on.destination} trip.")
 
     async def _mute_plan(self, actor: UserId, plan_id: str) -> Reply:
         """Stop alerts for this plan, on a plan alert."""

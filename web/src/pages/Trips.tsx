@@ -1,8 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, type ReactNode, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
-import { api, type Me, type Money, type Trip, type TripDetail } from "../api";
+import { api, type Booking, type Me, type Money, type Trip, type TripDetail } from "../api";
 import { formatMoney, formatShortDate } from "../format";
 
 const day = (iso: string) => formatShortDate(iso, "UTC");
@@ -185,8 +185,8 @@ export function TripsPage() {
         <div>
           <h1>Trips</h1>
           <p className="muted">
-            A trip keeps its money together: the budget, what to set aside each payday, what you spend there and who still owes you
-            after. Nexus never books anything.
+            A trip keeps its money together: the budget, what to set aside each payday, bookings from your email, what you spend there
+            and who still owes you after. Nexus never books anything.
           </p>
         </div>
         {!adding && (
@@ -219,6 +219,7 @@ export function TripsPage() {
           </p>
         </section>
       )}
+      <LooseBookings trips={all} />
       {groups
         .filter(([, list]) => list.length > 0)
         .map(([title, list]) => (
@@ -283,6 +284,12 @@ function Spending({ detail }: { detail: TripDetail }) {
         <Figure label="Today" value={s.today} />
         <Figure label="Average a day" value={s.per_day} />
         <Figure label="To stay on budget" value={s.per_day_left} note="a day, for the rest of the trip" />
+        <Figure
+          label="Booked"
+          value={detail.booked}
+          note={detail.booked_unlogged && Number(detail.booked_unlogged.amount) > 0 ? `${formatMoney(detail.booked_unlogged)} not logged yet` : undefined}
+        />
+        {detail.booked && <Figure label="Still to spend" value={detail.to_spend} note="the budget less what's spent and booked" />}
       </dl>
       {s.categories.length > 0 && (
         <ul className="bars" aria-label="Biggest categories">
@@ -349,6 +356,117 @@ function PlannedVsActual({ detail }: { detail: TripDetail }) {
         </tbody>
       </table>
       </div>
+    </section>
+  );
+}
+
+const KIND_ICON: Record<Booking["kind"], string> = { flight: "✈️", hotel: "🏨", rail: "🚆" };
+
+const localTime = (iso: string) =>
+  new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "UTC" }).format(
+    new Date(`${iso}:00Z`),
+  );
+
+function BookingLines({ booking }: { booking: Booking }) {
+  if (booking.kind === "hotel") {
+    return (
+      <span className="caption">
+        {booking.check_in && `Check in ${day(booking.check_in)}`}
+        {booking.check_out && ` · out ${day(booking.check_out)}`}
+        {booking.address && ` · ${booking.address}`}
+      </span>
+    );
+  }
+  return (
+    <>
+      {booking.segments.map((s, n) => (
+        <span key={n} className="caption">
+          {[s.number, [s.origin, s.destination].filter(Boolean).join(" → ")].filter(Boolean).join(" ")}
+          {s.departs && ` · ${localTime(s.departs)}`}
+          {s.arrives && ` to ${localTime(s.arrives)}`}
+          <br />
+        </span>
+      ))}
+    </>
+  );
+}
+
+function BookingRow({ booking, children }: { booking: Booking; children?: ReactNode }) {
+  return (
+    <li className="run-row">
+      <span className="wrap">
+        <span aria-hidden="true">{KIND_ICON[booking.kind]}</span> <strong>{booking.title}</strong>
+        {booking.provider && booking.kind !== "hotel" && <span className="caption"> · {booking.provider}</span>}
+        <br />
+        <BookingLines booking={booking} />
+      </span>
+      {booking.cost && (
+        <span className="num">
+          {formatMoney(booking.cost)}
+          {!booking.logged && <span className="caption"> not logged</span>}
+        </span>
+      )}
+      {children}
+    </li>
+  );
+}
+
+function Itinerary({ detail }: { detail: TripDetail }) {
+  return (
+    <section className="card" aria-labelledby="itinerary">
+      <div className="card-head">
+        <h2 id="itinerary">Itinerary</h2>
+        <span className="caption">From your booking emails; times are local</span>
+      </div>
+      {detail.bookings.length === 0 ? (
+        <p className="state">No bookings yet. Flight, hotel and train confirmations in your email land here.</p>
+      ) : (
+        <ul className="feed" aria-label="Bookings">
+          {detail.bookings.map((b) => (
+            <BookingRow key={b.id} booking={b} />
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/** Bookings from email that aren't on a trip yet: put each on one, or forget it. */
+function LooseBookings({ trips }: { trips: Trip[] }) {
+  const client = useQueryClient();
+  const loose = useQuery({ queryKey: ["loose-bookings"], queryFn: () => api<Booking[]>("/travel/bookings") });
+  const ahead = trips.filter((t) => t.status !== "finished");
+  if (!loose.data?.length) return null;
+
+  async function move(booking: Booking, tripId: string) {
+    if (tripId === "forget") await api(`/travel/bookings/${booking.id}`, { method: "DELETE" });
+    else await api(`/travel/bookings/${booking.id}/trip`, { method: "PUT", body: { trip_id: tripId } });
+    void client.invalidateQueries({ queryKey: ["loose-bookings"] });
+    void client.invalidateQueries({ queryKey: ["home"] });
+  }
+
+  return (
+    <section className="card" aria-labelledby="loose-bookings">
+      <div className="card-head">
+        <h2 id="loose-bookings">Bookings not on a trip</h2>
+      </div>
+      <ul className="feed">
+        {loose.data.map((b) => (
+          <BookingRow key={b.id} booking={b}>
+            <select className="input" aria-label={`Trip for ${b.title}`} value="" onChange={(e) => void move(b, e.target.value)}>
+              <option value="" disabled>
+                Put on a trip…
+              </option>
+              {ahead.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.destination} ({day(t.start)})
+                </option>
+              ))}
+              <option value="forget">Not for a trip: forget it</option>
+            </select>
+          </BookingRow>
+        ))}
+      </ul>
     </section>
   );
 }
@@ -491,6 +609,7 @@ export function TripPage() {
       {data && (
         <>
           <Spending detail={data} />
+          <Itinerary detail={data} />
           <PlannedVsActual detail={data} />
           <SetAside detail={data} />
           <SettleUp detail={data} />

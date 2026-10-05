@@ -19,6 +19,7 @@ from typing import Any
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
+from nexus.application import bookings as booking_cases
 from nexus.application import duplicates as duplicate_cases
 from nexus.application import receipts as receipt_cases
 from nexus.application import splits as split_cases
@@ -36,6 +37,7 @@ from nexus.application.ports import (
 )
 from nexus.application.splits import owing_person
 from nexus.application.transactions import NewTransaction
+from nexus.domain.bookings import BookingDraft, mask
 from nexus.domain.duplicates import Candidate, better_name, likely_same
 from nexus.domain.email import (
     ACTIONABLE,
@@ -337,6 +339,14 @@ def prompt_text(email: InboundEmail, tz: ZoneInfo) -> str:
         sender = f" from {draft.merchant}" if draft.merchant else ""
         return f"📧 From your email: {money} came in{sender} on {day:%-d %b}. Log it as money in?"
     where = f" at {draft.merchant}" if draft.merchant else ""
+    booking = BookingDraft.from_dict((email.draft or {}).get("booking") or {})
+    if booking is not None:
+        trip = (email.draft or {}).get("booking_trip")
+        on = f" It's on your {trip} trip." if trip else ""
+        return (
+            f"📧 From your email: a {booking.describe()}, {money}{where} on {day:%-d %b}.{on} "
+            "Log the cost?"
+        )
     return f"📧 From your email: {money}{where} on {day:%-d %b}. Log it?"
 
 
@@ -406,10 +416,15 @@ async def _read_one(
     status: EmailStatus = EmailStatus.FAILED
     reason: str | None = "couldn't be read"
     draft: dict[str, Any] | None = None
+    booking: dict[str, Any] | None = None
     try:
         screening = await asyncio.wait_for(reader.triage(fetched), READ_TIMEOUT.total_seconds())
+        if screening.booking:
+            booking = await _read_booking(reader, fetched)
         if not screening.is_receipt:
             status, reason = EmailStatus.NOT_RECEIPT, short(screening.reason, 80)
+            if booking is not None:
+                reason, draft = "a travel booking, no payment found", {}
         else:
             expense = await asyncio.wait_for(
                 reader.extract(fetched, categories=categories, received=screening.received),
@@ -449,6 +464,13 @@ async def _read_one(
         stated = amount_in_text(fetched.text)
         if stated is not None:
             draft |= {"amount": str(stated.amount), "currency": stated.currency}
+    subject = short(fetched.subject, 200)
+    if booking is not None:
+        draft = {**(draft or {}), "booking": booking}
+        # A booking's subject and payee often carry its reference: never stored.
+        subject = mask(subject)
+        if draft.get("merchant"):
+            draft["merchant"] = mask(str(draft["merchant"]))
     return InboundEmail(
         id=uuid4(),
         user_id=user.id,
@@ -456,13 +478,55 @@ async def _read_one(
         provider_message_id=fetched.provider_message_id,
         received_at=fetched.received_at,
         sender=short(fetched.sender, 200),
-        subject=short(fetched.subject, 200),
+        subject=subject,
         status=status,
         reason=reason,
         draft=draft,
         transaction_id=None,
         created_at=now,
     )
+
+
+async def _read_booking(reader: EmailReader, fetched: FetchedEmail) -> dict[str, Any] | None:
+    """The flight, hotel or train booking in an email, cleaned and masked. A booking
+    that can't be read leaves the receipt to be logged as usual."""
+    try:
+        found = await asyncio.wait_for(reader.read_booking(fetched), READ_TIMEOUT.total_seconds())
+    except Exception:
+        log.warning("could not read a booking from an email", exc_info=True)
+        return None
+    return found.as_dict() if found is not None else None
+
+
+async def _save_booking(
+    tx: UnitOfWork, user: User, email: InboundEmail, now: datetime
+) -> InboundEmail:
+    """Saves the booking an email holds and lands it on a trip, or asks which trip.
+    Inside the caller's unit of work, after the email itself is saved."""
+    draft = email.draft or {}
+    found = BookingDraft.from_dict(draft.get("booking") or {})
+    if found is None:
+        return email
+    cost = (
+        _amount(ExpenseDraft.from_dict(draft), user.home_currency)
+        if email.status is EmailStatus.PENDING
+        else None
+    )
+    saved = await booking_cases.save_from_email(tx, user, email.id, found, cost, now=now)
+    if saved is None:
+        return email
+    if saved.trip is not None:
+        email = replace(email, draft={**draft, "booking_trip": saved.trip.destination})
+        await tx.email.update_inbound(email)
+    elif saved.ask:
+        text, buttons = booking_cases.which_trip(saved)
+        await tx.jobs.enqueue(
+            TELEGRAM_SEND,
+            {"user_id": str(user.id), "text": text, "buttons": buttons},
+            dedupe_key=f"trip.ask:{saved.booking.id}",
+            run_at=now,
+        )
+    return email
 
 
 async def sweep(
@@ -576,6 +640,8 @@ async def _record(
         else:
             await tx.email.update_inbound(email)
             saved = True
+        if saved:
+            email = await _save_booking(tx, user, email, email.created_at)
         await tx.commit()
     return email if saved and email.status is EmailStatus.PENDING else None
 
@@ -857,6 +923,7 @@ async def log_email(
         # The kept PDF expired (a day unconfirmed): log the expense without it.
         saved = await receipt_cases.log_with_receipt(uow(), user.id, cmd, None, now=now)
     await _set(uow(), user.id, email_id, EmailStatus.LOGGED, None, saved.id)
+    await booking_cases.expense_logged(uow(), user.id, email_id, saved.id, now=now)
     return saved
 
 
@@ -988,6 +1055,7 @@ async def same_payment(
             )
         )
         await tx.commit()
+    await booking_cases.expense_logged(uow(), user.id, email_id, current.id, now=now)
     return current
 
 

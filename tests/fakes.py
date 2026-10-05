@@ -1,5 +1,6 @@
 """Test doubles for the model, Telegram, receipt reading and exchange rates."""
 
+import json
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
@@ -21,6 +22,7 @@ from nexus.application.fx import Rate
 from nexus.application.market import PriceSourceError
 from nexus.application.ports import MailboxGrant, MailboxRevoked
 from nexus.application.research import NewsSourceError
+from nexus.domain.bookings import BookingDraft
 from nexus.domain.email import ExpenseDraft, FetchedEmail, Screening
 from nexus.domain.errors import InvalidInput
 from nexus.domain.market import Bar
@@ -329,11 +331,19 @@ class FakeEmailReader:
     lines like 'Total: 18.50' and 'Merchant: Grab' (or 'From: Ann') in the text."""
 
     async def triage(self, email: FetchedEmail) -> Screening:
+        booking = "booking" in email.subject.lower()
         if "received" in email.subject.lower():
             return Screening(True, "money received", received=True)
         if "receipt" in email.subject.lower():
-            return Screening(True, "receipt")
-        return Screening(False, "promotion")
+            return Screening(True, "receipt", booking=booking)
+        return Screening(False, "travel booking" if booking else "promotion", booking=booking)
+
+    async def read_booking(self, email: FetchedEmail) -> BookingDraft | None:
+        """A JSON object on a line starting 'Booking: ', as the reader would give it."""
+        for line in email.text.splitlines():
+            if line.startswith("Booking: "):
+                return BookingDraft.from_dict(json.loads(line.removeprefix("Booking: ")))
+        return None
 
     async def extract(
         self, email: FetchedEmail, *, categories: Sequence[str] = (), received: bool = False

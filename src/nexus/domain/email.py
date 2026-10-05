@@ -44,7 +44,8 @@ FILTER_WORDS = ("receipt", "invoice", "order", "payment", "transaction", "paid",
 RECEIPT_QUERY = (
     "-in:chats -in:spam -in:trash -category:promotions -category:social ("
     "subject:(receipt OR invoice OR order OR payment OR paid OR transaction OR purchase "
-    'OR booking OR "e-receipt" OR "tax invoice" OR "you paid" OR "card alert" '
+    'OR booking OR itinerary OR reservation OR e-ticket OR "e-receipt" OR "tax invoice" '
+    'OR "you paid" OR "card alert" '
     "OR received OR transfer OR paynow) "
     'OR "total paid" OR "amount paid" OR "order total" OR "transaction alert" '
     'OR "you have received")'
@@ -137,6 +138,8 @@ class Screening:
     reason: str
     # Money that came in (a transfer or PayNow to the user), not money spent.
     received: bool = False
+    # A flight, hotel or train booking (paid or not), read for the user's trips.
+    booking: bool = False
 
 
 @dataclass(frozen=True, slots=True)

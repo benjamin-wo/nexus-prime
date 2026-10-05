@@ -760,6 +760,10 @@ test("a trip is added and shows its spending, set-aside and settle-up", async ({
   await expect(spending).toContainText("SGD 800.00 before the trip");
   await expect(page.getByRole("region", { name: "Setting money aside" })).toContainText("SGD 1,500.00 each payday would cover it");
   await expect(page.getByRole("region", { name: "Settle up" })).toContainText("Ann");
+  const itinerary = page.getByRole("region", { name: "Itinerary" });
+  await expect(itinerary).toContainText("ZZ12 SIN → NRT");
+  await expect(itinerary).toContainText("not logged");
+  await expect(spending).toContainText("SGD 820.00 not logged yet");
   const expenses = page.getByRole("region", { name: "Expenses" });
   await expect(expenses.getByText("added by hand")).toBeVisible();
   await expenses.getByRole("button", { name: "Take Air ticket off the trip" }).click();
@@ -770,4 +774,9 @@ test("a trip is added and shows its spending, set-aside and settle-up", async ({
   await expect(page.getByRole("link", { name: /^Travel:/ })).toContainText("Tokyo: in 43 days");
   await page.goto("/travel");
   await expect(page.getByRole("region", { name: "Coming up" }).getByRole("link", { name: "Tokyo" })).toBeVisible();
+  const loose = page.getByRole("region", { name: "Bookings not on a trip" });
+  await expect(loose).toContainText("Hotel Sakura, 2 nights");
+  await loose.getByLabel("Trip for Hotel Sakura, 2 nights").selectOption("trip1");
+  await expect(loose).toHaveCount(0);
+  expect(state.movedBookings).toEqual(["bk2:trip1"]);
 });

@@ -460,8 +460,30 @@ export type Trip = {
   day_number: number | null;
 };
 
+/** A flight, hotel or train booking read from email. Times are local as booked. */
+export type Booking = {
+  id: string;
+  trip_id: string | null;
+  kind: "flight" | "hotel" | "rail";
+  title: string;
+  provider: string | null;
+  starts: string;
+  ends: string | null;
+  segments: { number: string | null; origin: string | null; destination: string | null; departs: string | null; arrives: string | null }[];
+  hotel: string | null;
+  address: string | null;
+  check_in: string | null;
+  check_out: string | null;
+  cost: Money | null;
+  logged: boolean;
+};
+
 export type TripDetail = {
   trip: Trip;
+  bookings: Booking[];
+  booked: Money | null;
+  booked_unlogged: Money | null;
+  to_spend: Money | null;
   spending: {
     spent: Money;
     left: Money | null;

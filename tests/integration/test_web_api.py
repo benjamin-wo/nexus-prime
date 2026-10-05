@@ -1471,6 +1471,11 @@ async def test_trips_on_the_web(world: World) -> None:
     assert detail["spending"]["before"]["amount"] == "30.0000"
     assert [i["counterparty"] for i in detail["items"]] == ["Taxi"]
     assert detail["items"][0]["linked"] is True
+    assert (detail["bookings"], detail["booked"]) == ([], None)
+    assert detail["to_spend"] == {"amount": "1970.0000", "currency": "SGD"}
+    assert (await owner.get("/api/travel/bookings")).json() == []
+    missing = await owner.send("PUT", "/api/travel/bookings/not-an-id/trip", {"trip_id": None})
+    assert missing.status_code == 404
     assert {c["name"]: c["planned"] for c in detail["spending"]["categories"]}["Dining Out"] == {
         "amount": "600.0000",
         "currency": "SGD",
