@@ -1,10 +1,10 @@
-"""Travel bookings read from email: flights, hotels and trains. Pure rules, no I/O.
+"""Travel bookings: flights, hotels, trains and plans, read from email or a
+screenshot or added by hand. Pure rules, no I/O.
 
 What's kept is what the user needs to travel: flight and train numbers, places,
-times, hotel names and addresses, dates and the cost. Booking references, ticket,
-passport and loyalty numbers and travellers' names are never kept: the reader is
-told not to give them, and anything that still looks like one is masked here
-before it's stored.
+times, hotel names and addresses, dates, the cost, the booking reference and where
+it was booked (an airline, Agoda, Klook). The reference is the user's own and shown
+only to them. Card numbers, security codes and passport numbers are never kept.
 """
 
 import re
@@ -17,7 +17,7 @@ from uuid import UUID
 
 from nexus.domain.ledger import UserId
 from nexus.domain.money import Money
-from nexus.domain.trips import Trip, TripStatus, clean_notes
+from nexus.domain.trips import Trip, TripStatus, clean_notes, hide_private
 
 MAX_SEGMENTS = 6
 MAX_TEXT = 120
@@ -40,43 +40,26 @@ class BookingKind(StrEnum):
     ACTIVITY = "activity"  # a plan the user adds: a dinner, a tour, a day trip
 
 
-# Anything that looks like a reference, ticket, passport or loyalty number.
-_MIXED_CODE = re.compile(r"\b(?=[A-Z0-9]*\d)(?=[A-Z0-9]*[A-Z])[A-Z0-9]{5,10}\b")
-_LONG_NUMBER = re.compile(r"\b\d[\d\s-]{6,}\d\b")
-_PASSPORT = re.compile(r"\b[A-Z]{1,2}\d{6,8}[A-Z]?\b")
-_LABELLED = re.compile(
-    r"(?i)\b(booking|confirmation|reservation|record locator|pnr|ticket|e-ticket|passport|"
-    r"membership|member|loyalty|frequent flyer|krisflyer|ref(?:erence)?)\b\s*(?:no\.?|number|"
-    r"code|#)?\s*[:#]?\s*\S+"
-)
 _FLIGHT_NUMBER = re.compile(r"^([A-Z0-9]{2})\s?(\d{1,4})$")
 _TRAIN_NUMBER = re.compile(r"^[A-Za-z ]{0,20}\d{1,5}[A-Z]?$")
 MASK = "•••"
 
 
-def mask(text: str) -> str:
-    """Hides anything that looks like a booking reference or a personal number."""
-    text = _LABELLED.sub(lambda m: f"{m.group(1)} {MASK}", text)
-    for pattern in (_LONG_NUMBER, _PASSPORT, _MIXED_CODE):
-        text = pattern.sub(MASK, text)
-    return text
+MAX_REFERENCE = 40
 
 
-def _text(value: object, *, keep_numbers: bool = False, limit: int = MAX_TEXT) -> str | None:
-    """A short, single-line, masked string, or None."""
+def _text(value: object, *, limit: int = MAX_TEXT) -> str | None:
+    """A short, single-line string without card or passport numbers, or None."""
     if not isinstance(value, str):
         return None
-    cleaned = " ".join(value.split())[:limit].strip()
-    if not cleaned:
-        return None
-    if keep_numbers:
-        # An address keeps its street number and postcode, but never a labelled
-        # reference or a mixed letters-and-digits code.
-        cleaned = _LABELLED.sub(lambda m: f"{m.group(1)} {MASK}", cleaned)
-        cleaned = _MIXED_CODE.sub(lambda m: m.group(0) if m.group(0).isdigit() else MASK, cleaned)
-    else:
-        cleaned = mask(cleaned)
-    return cleaned if cleaned.replace(MASK, "").strip() else None
+    cleaned = hide_private(" ".join(value.split())[:limit].strip())
+    return cleaned or None
+
+
+def _reference(value: object) -> str | None:
+    """A booking reference as written ("XK7Q9P", "1234567890"); never a card number."""
+    found = _text(value, limit=MAX_REFERENCE)
+    return None if found is None or "•" in found else found
 
 
 # How a model sometimes writes a date or time despite being asked for ISO.
@@ -192,6 +175,8 @@ class BookingDraft:
     day: date | None = None  # a plan's
     at: time | None = None  # a plan's time, if it has one
     note: str | None = None  # the user's own note, on any kind
+    reference: str | None = None  # the booking or confirmation number, the user's own
+    booked_via: str | None = None  # where it was booked: the airline, Agoda, Klook
 
     @property
     def starts(self) -> date | None:
@@ -245,6 +230,8 @@ class BookingDraft:
             "day": self.day.isoformat() if self.day else None,
             "at": self.at.isoformat(timespec="minutes") if self.at else None,
             "note": self.note,
+            "reference": self.reference,
+            "booked_via": self.booked_via,
         }
 
     @classmethod
@@ -261,13 +248,15 @@ class BookingDraft:
                 provider=None,
                 segments=(),
                 hotel=None,
-                address=_text(data.get("address"), keep_numbers=True),
+                address=_text(data.get("address")),
                 check_in=None,
                 check_out=None,
                 name=_text(data.get("name")),
                 day=_day(data.get("day")),
                 at=_clock(data.get("at")),
                 note=_note(data.get("note")),
+                reference=_reference(data.get("reference")),
+                booked_via=_text(data.get("booked_via")),
             )
             return plan if plan.day and plan.name else None
         number = flight_number if kind is BookingKind.FLIGHT else train_number
@@ -293,16 +282,30 @@ class BookingDraft:
             hotel=_text(data.get("hotel") or data.get("provider"))
             if kind is BookingKind.HOTEL
             else None,
-            address=_text(data.get("address"), keep_numbers=True)
-            if kind is BookingKind.HOTEL
-            else None,
+            address=_text(data.get("address")) if kind is BookingKind.HOTEL else None,
             check_in=check_in if kind is BookingKind.HOTEL else None,
             check_out=check_out if kind is BookingKind.HOTEL else None,
             note=_note(data.get("note")),
+            reference=_reference(data.get("reference")),
+            booked_via=_text(data.get("booked_via")),
         )
         return draft if draft.starts else None
 
     def describe(self) -> str:
+        """For the user and the model: what, when, and where it was booked with its
+        reference."""
+        extra = ", ".join(
+            p
+            for p in (
+                f"booked on {self.booked_via}" if self.booked_via else None,
+                f"ref {self.reference}" if self.reference else None,
+            )
+            if p
+        )
+        text = self._what()
+        return f"{text[:-1]}; {extra})" if extra else text
+
+    def _what(self) -> str:
         if self.kind is BookingKind.ACTIVITY:
             when = f"{self.day:%a %d %b}" if self.day else ""
             if self.at:

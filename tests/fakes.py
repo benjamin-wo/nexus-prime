@@ -18,6 +18,7 @@ from pydantic import Field
 from nexus.agent.holdings_reader import ScreenshotHoldings, ScreenshotPosition
 from nexus.agent.receipts import ReceiptDraft
 from nexus.agent.service import Button
+from nexus.agent.trip_reader import ShotEntry, ShotLeg, TripShot
 from nexus.application.fx import Rate
 from nexus.application.market import PriceSourceError
 from nexus.application.ports import MailboxGrant, MailboxRevoked
@@ -397,3 +398,36 @@ class FakeHoldings:
                 ScreenshotPosition(symbol="Total", quantity=None, average_cost=None),
             ],
         )
+
+
+@dataclass
+class FakeTripReader:
+    """Reads every image as the same screenshot: by default a made-up hotel booked on
+    an app, a dinner plan and a flight, for a December trip to Tokyo."""
+
+    shot: TripShot | None = None
+    reads: int = 0
+    captions: list[str | None] = field(default_factory=list)
+
+    async def read(
+        self, image: bytes, mime_type: str, caption: str | None, *, today: date
+    ) -> TripShot:
+        self.reads += 1
+        self.captions.append(caption)
+        if self.shot is not None:
+            return self.shot
+        return TripShot(
+            is_travel=True,
+            entries=[
+                ShotEntry(kind="hotel", hotel="Hotel Kumo", address="4-5-6 Asakusa",
+                          check_in="2026-12-10", check_out="2026-12-13",
+                          reference="9876543210", booked_via="Agoda", cost="64,500",
+                          currency="JPY"),
+                ShotEntry(kind="activity", name="Dinner at Sushi Ten", day="2026-12-12",
+                          time="19:00", reference="R-55821"),
+                ShotEntry(kind="flight", provider="Acme Air", reference="ZK4P7Q",
+                          legs=[ShotLeg(number="ZZ12", origin="SIN", destination="NRT",
+                                        departs="2026-12-10T08:25")]),
+                ShotEntry(kind="activity", name="Some day, no date"),  # dropped: no date
+            ],
+        )  # fmt: skip

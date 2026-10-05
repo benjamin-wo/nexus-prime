@@ -1,6 +1,8 @@
 """The Travel department's API: trips, what's been spent on them, money set aside
 and settling up. Nothing here books or buys anything."""
 
+import base64
+import binascii
 from datetime import date
 from typing import Any
 from uuid import UUID
@@ -12,9 +14,10 @@ from nexus.application import bookings as booking_cases
 from nexus.application import travel_research as research_cases
 from nexus.application import trips as trip_cases
 from nexus.channels.web.api import MoneyOut, money
-from nexus.channels.web.security import Auth, Runtime
+from nexus.channels.web.investments_api import MAX_IMAGE_CHARS
+from nexus.channels.web.security import Auth, Runtime, limit
 from nexus.domain.bookings import Booking
-from nexus.domain.errors import NotFound
+from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.ledger import User
 from nexus.domain.money import Money
 from nexus.domain.trips import MAX_COMPANIONS, MAX_NOTES, MAX_PLANNED, Trip
@@ -145,6 +148,8 @@ class BookingOut(Model):
     day: date | None
     at: str | None  # HH:MM
     note: str | None
+    reference: str | None  # the booking or confirmation number: the user's own
+    booked_via: str | None  # the airline, Agoda, Klook
     cost: MoneyOut | None
     logged: bool  # its cost is in the ledger
     manual: bool  # added by hand, not read from email
@@ -178,6 +183,8 @@ def _booking(b: Booking) -> BookingOut:
         day=d.day,
         at=d.at.isoformat(timespec="minutes") if d.at else None,
         note=d.note,
+        reference=d.reference,
+        booked_via=d.booked_via,
         cost=_m(b.cost),
         logged=b.transaction_id is not None,
         manual=b.email_id is None,
@@ -417,6 +424,8 @@ class BookingIn(Model):
     day: str | None = Field(None, max_length=10)
     at: str | None = Field(None, max_length=5)
     note: str | None = Field(None, max_length=300)
+    reference: str | None = Field(None, max_length=40)
+    booked_via: str | None = Field(None, max_length=80)
     cost: str | None = Field(None, max_length=32)
     currency: str | None = Field(None, pattern="^[A-Za-z]{3}$")
 
@@ -443,6 +452,8 @@ def _details(body: BookingIn) -> dict[str, object]:
         "day": body.day,
         "at": body.at,
         "note": body.note,
+        "reference": body.reference,
+        "booked_via": body.booked_via,
     }
 
 
@@ -468,3 +479,38 @@ async def edit_booking(booking_id: str, body: BookingIn, auth: Auth, web: Runtim
         _cost(auth.user, body),
     )  # fmt: skip
     return _booking(booking)
+
+
+class ScreenshotIn(Model):
+    image: str = Field(min_length=1, max_length=MAX_IMAGE_CHARS)  # base64
+    mime_type: str = Field(pattern="^image/(png|jpeg|webp)$")
+    caption: str | None = Field(None, max_length=300)
+
+
+class ScreenshotOut(Model):
+    added: list[BookingOut]
+    repeated: int  # already on the itinerary, not added again
+    message: str
+
+
+@router.post("/trips/{trip_id}/screenshot")
+async def read_screenshot(
+    trip_id: str, body: ScreenshotIn, auth: Auth, web: Runtime
+) -> ScreenshotOut:
+    """A screenshot of bookings or plans read onto this trip's itinerary. The image is
+    only held for this request."""
+    limit(web, auth, "import")
+    try:
+        image = base64.b64decode(body.image, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise InvalidInput("that image didn't arrive whole; try again") from exc
+    result = await web.service.read_trip_screenshot(
+        auth.user.id, image, body.mime_type, body.caption, trip_id=_uuid(trip_id)
+    )
+    if result is None:  # pragma: no cover - asked, so never None
+        raise InvalidInput("I couldn't find any bookings or plans in that screenshot")
+    return ScreenshotOut(
+        added=[_booking(s.booking) for s in result.saved],
+        repeated=result.repeated,
+        message=booking_cases.describe_screenshot(result),
+    )

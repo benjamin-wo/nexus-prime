@@ -860,3 +860,28 @@ test("plans are added to a trip's itinerary by hand, day by day, and changed", a
   await expect(itinerary.getByText("Staying at Hotel Kawa")).toHaveCount(2); // the 11th and 12th
   expect(state.plans[0]).toMatchObject({ check_in: "2026-11-10", check_out: "2026-11-13" });
 });
+
+test("a booking screenshot goes on the itinerary with its reference", async ({ page }) => {
+  const state = await fakeApi(page);
+  await page.goto("/travel");
+  await page.getByRole("button", { name: "Add a trip" }).click();
+  const form = page.getByRole("form", { name: "Add a trip" });
+  await form.getByLabel("Where").fill("Tokyo");
+  await form.getByLabel("From").fill("2026-11-10");
+  await form.getByLabel("To").fill("2026-11-19");
+  await form.getByLabel("Currency there").fill("JPY");
+  await form.getByRole("button", { name: "Add trip" }).click();
+  await expect(page).toHaveURL(/\/travel\/trips\/trip1$/);
+
+  const itinerary = page.getByRole("region", { name: "Itinerary" });
+  await expect(itinerary).toContainText("Booked on Acme Air · Ref ZK4P7Q"); // from email
+  await itinerary.getByLabel("From a screenshot").setInputFiles({
+    name: "booking.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("made-up image bytes"),
+  });
+  await expect(itinerary.getByRole("status")).toContainText("Added to your Tokyo trip");
+  await expect(itinerary).toContainText("Booked on Agoda · Ref 9876543210");
+  await expect(itinerary.getByRole("button", { name: "Copy reference 9876543210" })).toBeVisible();
+  expect(state.plans[0]).toMatchObject({ hotel: "Hotel Kumo", reference: "9876543210" });
+});

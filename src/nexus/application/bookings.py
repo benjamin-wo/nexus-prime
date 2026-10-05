@@ -83,6 +83,99 @@ async def save_from_email(
     return Saved(booking, trip, ask)
 
 
+def _same(a: BookingDraft, b: BookingDraft) -> bool:
+    """The same entry read twice (a screenshot sent again)."""
+    return (
+        a.kind is b.kind
+        and a.starts == b.starts
+        and a.title.casefold() == b.title.casefold()
+        and (a.reference or "") == (b.reference or "")
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class FromScreenshot:
+    saved: list[Saved]
+    repeated: int  # entries already on the itinerary, not added again
+
+
+async def add_from_screenshot(
+    uow: UnitOfWork,
+    user: User,
+    entries: list[tuple[BookingDraft, Money | None]],
+    *,
+    trip_id: UUID | None = None,
+    now: datetime,
+) -> FromScreenshot:
+    """Itinerary entries read from a screenshot. With ``trip_id`` (sent from a trip's
+    page) all go on that trip; otherwise each lands on the trip whose dates it falls
+    in, or the user is asked which, as for a booking from email. Entries already on
+    the itinerary aren't added twice."""
+    today = _today(user, now)
+    saved: list[Saved] = []
+    repeated = 0
+    async with uow:
+        trips = await uow.trips.list_trips(user.id)
+        chosen = None
+        if trip_id is not None:
+            chosen = next((t for t in trips if t.id == trip_id), None)
+            if chosen is None:
+                raise NotFound("no trip with that id")
+        existing = [b.draft for b in await uow.trips.list_bookings(user.id)]
+        ahead = [t for t in trips if t.status(today) is not TripStatus.FINISHED]
+        for draft, cost in entries:
+            if any(_same(draft, e) for e in existing):
+                repeated += 1
+                continue
+            found = [chosen] if chosen else matching_trips(trips, draft.starts or today, today)
+            trip = found[0] if len(found) == 1 else None
+            if trip is not None and (
+                len(await uow.trips.list_bookings(user.id, trip_id=trip.id)) >= MAX_BOOKINGS_A_TRIP
+            ):
+                raise InvalidInput(f"a trip keeps at most {MAX_BOOKINGS_A_TRIP} itinerary entries")
+            booking = Booking(uuid4(), user.id, trip.id if trip else None, None, draft, cost,
+                              None, now)  # fmt: skip
+            await uow.trips.insert_booking(booking)
+            existing.append(draft)
+            ask = [] if trip else sorted(found or ahead, key=lambda t: t.start)[:ASK_TRIPS]
+            saved.append(Saved(booking, trip, ask))
+        await uow.commit()
+    return FromScreenshot(saved, repeated)
+
+
+def describe_screenshot(result: FromScreenshot) -> str:
+    """What was added where, for the reply."""
+    lines: list[str] = []
+    by_trip: dict[str, list[Saved]] = {}
+    for s in result.saved:
+        if s.trip is not None:
+            by_trip.setdefault(s.trip.destination, []).append(s)
+    for destination, items in by_trip.items():
+        lines.append(f"✈️ Added to your {destination} trip:")
+        lines += [f"• {_entry_line(s.booking)}" for s in items]
+    loose = [s for s in result.saved if s.trip is None]
+    if loose and not any(s.ask for s in loose):
+        lines.append("No trip covers these dates yet, so they're kept under Trips:")
+        lines += [f"• {_entry_line(s.booking)}" for s in loose]
+        lines.append(
+            'Tell me where you\'re going and when ("make a Tokyo trip 10 to 18 Dec") '
+            "and they'll go on it."
+        )
+    if result.repeated:
+        lines.append(
+            f"{result.repeated} {'is' if result.repeated == 1 else 'are'} already on the "
+            "itinerary, so I left them."
+        )
+    if not lines and not loose:
+        lines.append("Those are all on the itinerary already.")
+    return "\n".join(lines)
+
+
+def _entry_line(b: Booking) -> str:
+    cost = f", {b.cost}" if b.cost else ""
+    return f"{b.draft.describe()}{cost}"
+
+
 def which_trip(saved: Saved) -> tuple[str, list[list[dict[str, str]]]]:
     """The question when a booking didn't land on one trip, and its buttons."""
     b = saved.booking

@@ -33,7 +33,7 @@ async def test_plans_flights_and_notes_added_by_hand(uow: UowFactory) -> None:
         ),
         now=NOW,
     )  # fmt: skip
-    assert trip.notes == "Pack a power adapter.\nBooking •••\nCard •••"
+    assert trip.notes == "Pack a power adapter.\nBooking reference: XK7Q9P\nCard •••• 1111"
 
     dinner = await booking_cases.add_manual(
         uow(), user.id, trip.id,

@@ -197,6 +197,16 @@ def build_memory_model(settings: Settings, primary: BaseChatModel) -> BaseChatMo
     return _quick_or(settings, settings.memory_model, primary)
 
 
+def build_screenshot_reader(settings: Settings, vision: BaseChatModel) -> BaseChatModel:
+    """The model that reads travel screenshots: the photo model without reasoning on
+    OpenRouter (6 to 9 seconds a screenshot instead of 13 to 20, as accurate)."""
+    if settings.llm_provider is LlmProvider.OPENROUTER and settings.openrouter_api_key:
+        name = settings.openrouter_vision_model or settings.openrouter_model
+        if name:
+            return _quick(settings, name)
+    return vision
+
+
 def build_research_models(
     settings: Settings, primary: BaseChatModel
 ) -> tuple[BaseChatModel, BaseChatModel]:

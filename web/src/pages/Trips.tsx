@@ -1,8 +1,9 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, type ReactNode, useState } from "react";
+import { type ChangeEvent, type FormEvent, type ReactNode, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
-import { api, type Booking, type Me, type Money, type Trip, type TripDetail } from "../api";
+import { api, type Booking, type Me, type Money, type ScreenshotRead, type Trip, type TripDetail } from "../api";
+import { base64 } from "../files";
 import { formatMoney, formatShortDate } from "../format";
 import { ResearchList } from "./Research";
 
@@ -167,7 +168,7 @@ function TripForm({ initial, home, onDone }: { initial?: Trip; home: string; onD
           maxLength={2000}
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
-          placeholder="What to pack, who to meet. Booking references and card numbers aren't kept."
+          placeholder="What to pack, who to meet, booking references. Card and passport numbers aren't kept."
         />
       </label>
       {error && (
@@ -415,7 +416,46 @@ const localTime = (iso: string) =>
     new Date(`${iso}:00Z`),
   );
 
+/** Where it was booked and its reference, which the user can copy for the counter or the app. */
+function BookedWith({ booking }: { booking: Booking }) {
+  const [copied, setCopied] = useState(false);
+  if (!booking.reference && !booking.booked_via) return null;
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(booking.reference ?? "");
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setCopied(false);
+    }
+  }
+  return (
+    <span className="caption">
+      {booking.booked_via && `Booked on ${booking.booked_via}`}
+      {booking.booked_via && booking.reference && " · "}
+      {booking.reference && (
+        <>
+          Ref <strong className="num">{booking.reference}</strong>{" "}
+          <button type="button" className="btn btn-small btn-ghost" onClick={() => void copy()} aria-label={`Copy reference ${booking.reference}`}>
+            {copied ? "Copied" : "Copy"}
+          </button>
+        </>
+      )}
+      <br />
+    </span>
+  );
+}
+
 function BookingLines({ booking }: { booking: Booking }) {
+  return (
+    <>
+      <KindLines booking={booking} />
+      <BookedWith booking={booking} />
+    </>
+  );
+}
+
+function KindLines({ booking }: { booking: Booking }) {
   const note = booking.note && (
     <span className="caption">
       {booking.note}
@@ -436,11 +476,15 @@ function BookingLines({ booking }: { booking: Booking }) {
   }
   if (booking.kind === "hotel") {
     return (
-      <span className="caption">
-        {booking.check_in && `Check in ${day(booking.check_in)}`}
-        {booking.check_out && ` · out ${day(booking.check_out)}`}
-        {booking.address && ` · ${booking.address}`}
-      </span>
+      <>
+        <span className="caption">
+          {booking.check_in && `Check in ${day(booking.check_in)}`}
+          {booking.check_out && ` · out ${day(booking.check_out)}`}
+          {booking.address && ` · ${booking.address}`}
+          <br />
+        </span>
+        {note}
+      </>
     );
   }
   return (
@@ -491,13 +535,15 @@ type EntryForm = {
   arrives: string;
   provider: string;
   note: string;
+  reference: string;
+  bookedVia: string;
   cost: string;
   currency: string;
 };
 
 const EMPTY: EntryForm = {
   kind: "activity", name: "", day: "", at: "", until: "", address: "", number: "", origin: "", destination: "",
-  departs: "", arrives: "", provider: "", note: "", cost: "", currency: "",
+  departs: "", arrives: "", provider: "", note: "", reference: "", bookedVia: "", cost: "", currency: "",
 };
 
 function formOf(b: Booking): EntryForm {
@@ -516,6 +562,8 @@ function formOf(b: Booking): EntryForm {
     arrives: leg?.arrives ?? "",
     provider: b.provider ?? "",
     note: b.note ?? "",
+    reference: b.reference ?? "",
+    bookedVia: b.booked_via ?? "",
     cost: b.cost ? String(Number(b.cost.amount)) : "",
     currency: b.cost?.currency ?? "",
   };
@@ -523,7 +571,7 @@ function formOf(b: Booking): EntryForm {
 
 function bodyOf(f: EntryForm, home: string) {
   const blank = (v: string) => v.trim() || null;
-  const base = { kind: f.kind, note: blank(f.note), cost: blank(f.cost), currency: f.cost.trim() ? f.currency.trim() || home : null };
+  const base = { kind: f.kind, note: blank(f.note), reference: blank(f.reference), booked_via: blank(f.bookedVia), cost: blank(f.cost), currency: f.cost.trim() ? f.currency.trim() || home : null };
   if (f.kind === "activity") return { ...base, name: blank(f.name), day: blank(f.day), at: blank(f.at), address: blank(f.address) };
   if (f.kind === "hotel") return { ...base, hotel: blank(f.name), check_in: blank(f.day), check_out: blank(f.until), address: blank(f.address) };
   return {
@@ -647,6 +695,16 @@ function EntryEditor({ trip, home, entry, onDone }: { trip: Trip; home: string; 
       )}
       <div className="trip-form-row">
         <label className="field">
+          Booking reference
+          <input className="input" value={f.reference} maxLength={40} onChange={set("reference")} placeholder="Optional" />
+        </label>
+        <label className="field">
+          Booked on
+          <input className="input" value={f.bookedVia} maxLength={80} onChange={set("bookedVia")} placeholder="Agoda, the airline…" />
+        </label>
+      </div>
+      <div className="trip-form-row">
+        <label className="field">
           Note
           <input className="input" value={f.note} maxLength={300} onChange={set("note")} placeholder="Seat, what to bring…" />
         </label>
@@ -682,6 +740,30 @@ const sortKey = (b: Booking) => `${b.starts}T${b.at ?? b.segments[0]?.departs?.s
 function Itinerary({ detail, onChange }: { detail: TripDetail; onChange: () => void }) {
   const home = useHome();
   const [adding, setAdding] = useState(false);
+  const [reading, setReading] = useState(false);
+  const [shotNotice, setShotNotice] = useState<string | null>(null);
+  const [shotError, setShotError] = useState<string | null>(null);
+
+  async function upload(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setShotError(null);
+    setShotNotice(null);
+    setReading(true);
+    try {
+      const read = await api<ScreenshotRead>(`/travel/trips/${detail.trip.id}/screenshot`, {
+        method: "POST",
+        body: { image: await base64(file), mime_type: file.type || "image/png" },
+      });
+      setShotNotice(read.message);
+      onChange();
+    } catch (e) {
+      setShotError(e instanceof Error ? e.message : "Couldn't read that screenshot");
+    } finally {
+      setReading(false);
+    }
+  }
   const [editing, setEditing] = useState<string | null>(null);
   const sorted = [...detail.bookings].sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
   const stays = sorted.filter((b) => b.kind === "hotel" && b.check_in && b.check_out);
@@ -712,11 +794,27 @@ function Itinerary({ detail, onChange }: { detail: TripDetail; onChange: () => v
       <div className="card-head">
         <h2 id="itinerary">Itinerary</h2>
         {!adding && (
-          <button type="button" className="btn btn-small" onClick={() => setAdding(true)}>
-            Add to itinerary
-          </button>
+          <span className="quick">
+            <label className="btn btn-small">
+              {reading ? "Reading…" : "From a screenshot"}
+              <input className="sr-only" type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => void upload(e)} disabled={reading} />
+            </label>
+            <button type="button" className="btn btn-small" onClick={() => setAdding(true)}>
+              Add to itinerary
+            </button>
+          </span>
         )}
       </div>
+      {shotError && (
+        <p className="error-text" role="alert">
+          {shotError}
+        </p>
+      )}
+      {shotNotice && (
+        <p className="state" role="status" style={{ whiteSpace: "pre-line" }}>
+          {shotNotice}
+        </p>
+      )}
       {adding && (
         <EntryEditor
           trip={detail.trip}
@@ -728,7 +826,7 @@ function Itinerary({ detail, onChange }: { detail: TripDetail; onChange: () => v
         />
       )}
       {sorted.length === 0 && !adding && (
-        <p className="state">Nothing yet. Booking emails land here by themselves; add plans, flights or hotels by hand too.</p>
+        <p className="state">Nothing yet. Booking emails land here by themselves; send a screenshot of a booking or plan, or add them by hand.</p>
       )}
       {days.map((d) => (
         <div key={d} className="itinerary-day">
