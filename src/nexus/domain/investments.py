@@ -7,7 +7,7 @@ what they type ("I bought 10 NVDA at 118").
 
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from enum import StrEnum
 from uuid import UUID
@@ -182,3 +182,115 @@ def sell(held: Position | None, symbol: str, quantity: Decimal) -> Position | No
         raise InvalidInput(f"you only hold {_shares(held.quantity)} {symbol}")
     left = held.quantity - quantity
     return None if left == 0 else Position(symbol, left, held.average_cost)
+
+
+def realised(held: Position, quantity: Decimal, price: Money) -> Money:
+    """What selling ``quantity`` at ``price`` locked in against the average cost, as
+    brokers show it (average-cost method; below zero for a loss)."""
+    if price.currency != held.average_cost.currency:
+        raise InvalidInput(
+            f"{held.symbol} is held in {held.average_cost.currency}, not {price.currency}"
+        )
+    return _money(quantity * (price.amount - held.average_cost.amount), price.currency)
+
+
+# --- trades ---------------------------------------------------------------------------
+
+
+class TradeSide(StrEnum):
+    BUY = "buy"
+    SELL = "sell"
+
+
+@dataclass(frozen=True, slots=True)
+class Trade:
+    """A trade the user made at their broker and told Nexus about."""
+
+    id: UUID
+    user_id: UserId
+    symbol: str
+    side: TradeSide
+    quantity: Decimal
+    price: Money | None  # per share; a sale told without its price has none
+    traded_on: date
+    realised: Money | None  # a sale's gain or loss against the average cost
+    created_at: datetime
+
+
+def held_on(quantity_now: Decimal, trades: list[Trade], day: date) -> Decimal:
+    """Shares held at the end of ``day``, worked back from today's quantity through
+    the trades made after it."""
+    held = quantity_now
+    for t in trades:
+        if t.traded_on > day:
+            held += -t.quantity if t.side is TradeSide.BUY else t.quantity
+    return max(held, Decimal(0))
+
+
+# --- dividends ------------------------------------------------------------------------
+
+# Tax withheld from dividends at source, by the price's currency, for a Singapore
+# resident: the US takes 30% (no treaty); Singapore, Hong Kong and the UK take none.
+WITHHOLDING: dict[str, Decimal] = {"USD": Decimal("0.30")}
+
+
+def withholding_rate(currency: str) -> Decimal:
+    return WITHHOLDING.get(currency, Decimal(0))
+
+
+@dataclass(frozen=True, slots=True)
+class Dividend:
+    """A dividend on shares the user held when it went ex."""
+
+    id: UUID
+    user_id: UserId
+    symbol: str
+    ex_date: date
+    per_share: Money
+    shares: Decimal
+    created_at: datetime
+
+    @property
+    def gross(self) -> Money:
+        return _money(self.shares * self.per_share.amount, self.per_share.currency)
+
+    @property
+    def withheld(self) -> Money:
+        rate = withholding_rate(self.per_share.currency)
+        return _money(self.gross.amount * rate, self.per_share.currency)
+
+    @property
+    def net(self) -> Money:
+        return self.gross - self.withheld
+
+
+@dataclass(frozen=True, slots=True)
+class Expected:
+    """A stock's dividends over the next year if it pays what it paid in the last one."""
+
+    symbol: str
+    per_share: Money  # the last 12 months' dividends per share
+    payments: int  # how many in those 12 months
+    net: Money  # on today's shares, after withholding
+    yield_on_value: Decimal | None  # the 12-month dividends over today's price, %
+    yield_on_cost: Decimal | None  # over the average cost, %
+
+
+def expected(
+    position: Position, past_year: list[Decimal], price: Decimal | None
+) -> Expected | None:
+    """From the dividends per share paid in the last 12 months, oldest first."""
+    if not past_year:
+        return None
+    currency = position.average_cost.currency
+    per_share = sum(past_year, Decimal(0))
+    gross = position.quantity * per_share
+    net = gross * (1 - withholding_rate(currency))
+    hundred = Decimal(100)
+    on_value = (per_share / price * hundred).quantize(Decimal("0.01")) if price else None
+    cost = position.average_cost.amount
+    on_cost = (per_share / cost * hundred).quantize(Decimal("0.01")) if cost else None
+    return Expected(
+        position.symbol, _money(per_share, currency), len(past_year), _money(net, currency),
+        on_value, on_cost,
+    )  # fmt: skip

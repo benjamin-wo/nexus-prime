@@ -6,7 +6,7 @@ from decimal import Decimal
 
 import pytest
 from langchain_core.messages import AIMessage
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nexus.agent.holdings_reader import ScreenshotHoldings, ScreenshotPosition
@@ -17,7 +17,7 @@ from nexus.domain.errors import Conflict, InvalidInput, NotFound
 from nexus.domain.investments import Position
 from nexus.domain.ledger import UserId
 from nexus.domain.money import Money
-from nexus.infra.db.tables import jobs
+from nexus.infra.db.tables import jobs, market_symbols
 from nexus.jobs.handlers import SCHEDULES
 from nexus.jobs.runner import JobRunner
 from tests.fakes import NOW, FakeHoldings, FakePrices, FakeRates, FakeReceipts, call, scripted
@@ -258,3 +258,107 @@ async def test_a_save_in_the_hourly_slots_first_minute_still_fetches_prices(
         f"prices.refresh:soon@{slot.isoformat()}",
         f"prices.refresh@{slot.isoformat()}",
     ]
+
+
+async def test_a_sale_records_what_it_locked_in_and_the_history_keeps_it(
+    uow: UowFactory,
+) -> None:
+    user = await person(uow)
+    await trade(uow, user.id, "buy", "NVDA", "10", "100")
+    sold = await investment_cases.record(
+        uow(), user.id, investment_cases.Side.SELL, "NVDA", Decimal(4), usd("150"),
+        now=NOW, traded_on=date(2026, 9, 20),
+    )  # fmt: skip
+    assert sold.trade.realised == usd("200") and sold.position == pos("NVDA", "6", "100")
+    unpriced = await investment_cases.record(
+        uow(), user.id, investment_cases.Side.SELL, "NVDA", Decimal(1), None, now=NOW
+    )
+    assert unpriced.trade.realised is None  # no price: not known
+    with pytest.raises(InvalidInput, match="in the future"):
+        await investment_cases.record(
+            uow(), user.id, investment_cases.Side.BUY, "NVDA", Decimal(1), usd("1"),
+            now=NOW, traded_on=date(2026, 10, 1),
+        )  # fmt: skip
+    history = await investment_cases.trade_history(uow(), user.id)
+    # Newest first by trade date, then as recorded.
+    assert [(t.side.value, t.quantity, t.traded_on) for t in history] == [
+        ("sell", Decimal(1), NOW.date()),
+        ("buy", Decimal(10), NOW.date()),
+        ("sell", Decimal(4), date(2026, 9, 20)),
+    ]
+    prices = FakePrices({"NVDA": {date(2026, 9, 24): "128", date(2026, 9, 25): "130"}})
+    await market_cases.refresh(uow, prices, now=NOW)
+    rates = FakeRates({("USD", "SGD"): {date(2026, 9, 25): "1.30"}})
+    v = await investment_cases.valuation(uow(), rates, user)
+    assert v.realised == Money(Decimal("260.00"), "SGD")
+    assert v.gain == Money(Decimal("195.00"), "SGD")  # 5 shares, 30 up each
+    assert v.total_return == Money(Decimal("455.00"), "SGD")
+    text = investment_cases.describe_valuation(v)
+    assert "Locked in by sales: +260.00 SGD." in text
+    assert "Total return (held, sold and dividends): +455.00 SGD." in text
+
+
+async def test_dividends_on_shares_held_when_they_went_ex(
+    engine: AsyncEngine, uow: UowFactory
+) -> None:
+    holder = await person(uow)
+    newcomer = await person(uow, 4343)
+    # Bought before the September ex-date (told with its date), part sold after it.
+    await investment_cases.record(
+        uow(), holder.id, investment_cases.Side.BUY, "NVDA", Decimal(10), usd("100"),
+        now=NOW, traded_on=date(2026, 9, 1),
+    )  # fmt: skip
+    await investment_cases.record(
+        uow(), holder.id, investment_cases.Side.SELL, "NVDA", Decimal(4), usd("120"),
+        now=NOW, traded_on=date(2026, 9, 20),
+    )  # fmt: skip
+    # Saved today with no earlier trades: Nexus can't know they held it in September.
+    await trade(uow, newcomer.id, "buy", "NVDA", "50", "120")
+    prices = FakePrices(
+        {"NVDA": {date(2026, 6, 15): "110", date(2026, 9, 15): "125", date(2026, 9, 25): "130"}},
+        dividends={"NVDA": {date(2026, 6, 15): "0.04", date(2026, 9, 15): "0.04"}},
+    )
+    await market_cases.refresh(uow, prices, now=NOW)
+    assert await investment_cases.collect_dividends(uow, now=NOW) == 1
+    assert await investment_cases.collect_dividends(uow, now=NOW) == 0  # once each
+    async with engine.connect() as db:
+        texts = [r.payload["text"] for r in await db.execute(select(jobs))
+                 if r.kind == "telegram.send"]  # fmt: skip
+    assert texts == [
+        "💵 NVDA went ex-dividend on 15 Sep: 0.04 USD a share on your 10 shares is 0.40 USD, "
+        "0.28 USD after 0.12 USD withheld. It's paid to your broker in the next few weeks."
+    ]
+    rates = FakeRates({("USD", "SGD"): {date(2026, 9, 1): "1.30"}})
+    view = await investment_cases.dividend_view(uow, rates, holder, now=NOW)
+    (got,) = view.received
+    assert (got.shares, got.net) == (Decimal(10), usd("0.28"))
+    assert view.this_year_home == Money(Decimal("0.36"), "SGD")
+    (e,) = view.expected  # two payments of 0.04 in the last year, on 6 shares now
+    assert (e.per_share, e.payments, e.net) == (usd("0.08"), 2, usd("0.336"))
+    assert e.yield_on_value == Decimal("0.06")
+    assert "Next 12 months if each pays what it paid in the last 12" in (
+        investment_cases.describe_dividends(view)
+    )
+    newcomer_view = await investment_cases.dividend_view(uow, rates, newcomer, now=NOW)
+    assert newcomer_view.received == [] and newcomer_view.expected[0].payments == 2
+    v = await investment_cases.valuation(uow(), rates, holder)
+    assert v.dividends == Money(Decimal("0.36"), "SGD")
+
+
+async def test_prices_fetched_before_dividends_are_fetched_again_once(
+    engine: AsyncEngine, uow: UowFactory
+) -> None:
+    user = await person(uow)
+    await trade(uow, user.id, "buy", "NVDA", "1", "100")
+    prices = FakePrices({"NVDA": {date(2026, 9, 25): "130"}})
+    await market_cases.refresh(uow, prices, now=NOW)
+    # As stored before dividends were kept: the next refresh fetches all history again.
+    async with engine.begin() as db:
+        await db.execute(update(market_symbols).values(dividends=False))
+    prices.asked.clear()
+    later = NOW + timedelta(days=1)
+    await market_cases.refresh(uow, prices, now=later)
+    assert prices.asked == [("NVDA", date(2025, 7, 6), later.date())]
+    prices.asked.clear()
+    await market_cases.refresh(uow, prices, now=later + timedelta(days=1))
+    assert prices.asked[0][1] == date(2026, 9, 18)  # back to a week's overlap

@@ -1,16 +1,22 @@
 ---
 name: investments
 description: "Stocks (Investment department): the user's holdings and what they're worth, their watchlist, one stock's levels from daily prices, news and earnings dates, and research plans (entry, stop, targets). Holdings come from a broker screenshot or trades they tell you about. Research only; Nexus never trades."
-tools: [show_portfolio, record_trade, stock_levels, research_plan, show_plan, plan_record, show_watchlist, watch_stock, unwatch_stock]
+tools: [show_portfolio, record_trade, trade_history, show_dividends, stock_levels, research_plan, show_plan, plan_record, show_watchlist, watch_stock, unwatch_stock]
 ---
 # Investments
 
 - "my portfolio", "how's my portfolio?", "what do I hold", "how many NVDA do I have":
   `show_portfolio`. Values use the last daily close, not live prices; say so if the
   user asks about today's moves.
-- "I bought 10 NVDA at 118", "sold 5 AAPL": `record_trade` with the side, ticker,
-  shares and (for a buy) the price per share. US stocks are priced in USD unless the
-  user says otherwise. Never guess a price: ask for it.
+- "I bought 10 NVDA at 118", "sold 5 AAPL at 230 last Friday": `record_trade` with the
+  side, ticker, shares, the price per share and the date if not today. A buy needs its
+  price; for a sale, ask for the price if not given, so what it locked in is known (if
+  the user doesn't know it, record it without). US stocks are priced in USD unless the
+  user says otherwise. Never guess a price.
+- "my trades", "what did I sell this year?", "how much have I made from selling?":
+  `trade_history`. "my dividends", "how much dividend income will I get?", "what's my
+  yield?": `show_dividends`. Dividends are found by themselves from daily prices on
+  shares held when each went ex; US ones have 30% withheld for Singapore residents.
 - The quickest way to set up holdings is a screenshot of their broker's Portfolio
   screen (IBKR first): sent here or on the web app's Investment page. Nexus reads it
   and asks before saving.

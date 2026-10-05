@@ -81,11 +81,20 @@ async def refresh(uow: UowFactory, source: PriceSource, *, now: datetime) -> int
 async def _fetch(uow: UowFactory, source: PriceSource, symbol: str, now: datetime) -> None:
     async with uow() as tx:
         last = await tx.investments.last_bar_day(symbol)
+        complete = await tx.investments.has_dividend_history(symbol)
     today = now.date()
-    start = last - timedelta(days=OVERLAP_DAYS) if last else today - timedelta(days=HISTORY_DAYS)
+    # Until its history has been fetched with dividends, fetch all of it (once).
+    full = last is None or not complete
+    start = (
+        last - timedelta(days=OVERLAP_DAYS)
+        if last is not None and complete
+        else today - timedelta(days=HISTORY_DAYS)
+    )
     bars = await source.daily(symbol, start, today)
     async with uow() as tx:
-        await tx.investments.save_bars(symbol, bars or [], known=bars is not None, at=now)
+        await tx.investments.save_bars(
+            symbol, bars or [], known=bars is not None, at=now, full_history=full and bool(bars)
+        )
         await tx.commit()
     if bars is None:
         log.info("the price provider doesn't know one of the held stocks")

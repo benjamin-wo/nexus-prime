@@ -1577,3 +1577,32 @@ async def test_a_booking_screenshot_onto_a_trip_on_the_web(world: World) -> None
     await member.login(MEMBER, invite=token)
     theirs = await member.send("POST", path, {"image": image, "mime_type": "image/png"})
     assert theirs.status_code == 404  # not their trip
+
+
+async def test_trades_and_dividends_on_the_web(world: World) -> None:
+    owner, token = await owner_and_invite(world)
+    bought = await owner.send(
+        "POST", "/api/investments/trades",
+        {"side": "buy", "symbol": "nvda", "quantity": "10", "price": "100",
+         "traded_on": "2026-09-01"},
+    )  # fmt: skip
+    assert bought.status_code == 201 and bought.json()["realised"] is None
+    sold = await owner.send(
+        "POST", "/api/investments/trades",
+        {"side": "sell", "symbol": "NVDA", "quantity": "4", "price": "150"},
+    )  # fmt: skip
+    assert sold.json()["realised"] == {"amount": "200.0000", "currency": "USD"}
+    history = (await owner.get("/api/investments/trades")).json()
+    assert [(t["side"], t["quantity"]) for t in history] == [("sell", "4"), ("buy", "10")]
+    too_many = await owner.send(
+        "POST", "/api/investments/trades",
+        {"side": "sell", "symbol": "NVDA", "quantity": "99", "price": "150"},
+    )  # fmt: skip
+    assert too_many.status_code == 422
+    totals = (await owner.get("/api/investments")).json()["totals"]
+    assert totals["realised"] is not None
+    dividends = (await owner.get("/api/investments/dividends")).json()
+    assert dividends["received"] == [] and dividends["expected_home"] is None
+    member = world.browser()
+    await member.login(MEMBER, invite=token)
+    assert (await member.get("/api/investments/trades")).json() == []  # their own only

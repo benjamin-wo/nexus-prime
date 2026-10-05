@@ -14,6 +14,7 @@ from nexus.application import bookings as booking_cases
 from nexus.application import budgets as budget_cases
 from nexus.application import departments as department_cases
 from nexus.application import email as email_cases
+from nexus.application import investments as investment_cases
 from nexus.application import market as market_cases
 from nexus.application import notifications as notify_cases
 from nexus.application import plans as plan_cases
@@ -232,6 +233,9 @@ def build_handlers(
             log.info("price refresh: fetched %d stocks", fetched)
             if fetched:  # new closes: see what the plans make of them now
                 await follow_plans({})
+                found = await investment_cases.collect_dividends(uow, now=clock())
+                if found:
+                    log.info("price refresh: recorded %d dividends", found)
 
     async def refresh_news(_: dict[str, Any]) -> None:
         if news is not None:

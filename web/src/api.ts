@@ -325,7 +325,31 @@ export type PortfolioTotals = {
   day_percent: string | null;
   as_of: string | null;
   missing: string[];
+  realised: Money | null;
+  dividends: Money | null;
+  total_return: Money | null;
 };
+
+export type TradeRecord = {
+  id: string;
+  symbol: string;
+  side: "buy" | "sell";
+  quantity: string;
+  price: Money | null;
+  traded_on: string;
+  realised: Money | null;
+};
+
+export type DividendRecord = { symbol: string; ex_date: string; per_share: Money; shares: string; gross: Money; withheld: Money; net: Money };
+export type ExpectedDividend = { symbol: string; per_share: Money; payments: number; net: Money; yield_on_value: string | null; yield_on_cost: string | null };
+export type Dividends = {
+  received: DividendRecord[];
+  received_home: Money | null;
+  this_year_home: Money | null;
+  expected: ExpectedDividend[];
+  expected_home: Money | null;
+};
+
 export type Portfolio = {
   holdings: Holding[];
   totals: PortfolioTotals;

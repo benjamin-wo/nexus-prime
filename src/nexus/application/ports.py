@@ -22,7 +22,14 @@ from nexus.domain.email import (
     InboundEmail,
     Screening,
 )
-from nexus.domain.investments import DraftStatus, Holding, HoldingsDraft, Position
+from nexus.domain.investments import (
+    Dividend,
+    DraftStatus,
+    Holding,
+    HoldingsDraft,
+    Position,
+    Trade,
+)
 from nexus.domain.ledger import (
     Category,
     Direction,
@@ -566,8 +573,27 @@ class InvestmentRepository(Protocol):
     async def fetched(self, symbols: list[str]) -> dict[str, datetime]: ...
     async def last_bar_day(self, symbol: str) -> date | None: ...
     async def save_bars(
-        self, symbol: str, bars: list[Bar], *, known: bool, at: datetime
+        self,
+        symbol: str,
+        bars: list[Bar],
+        *,
+        known: bool,
+        at: datetime,
+        full_history: bool = False,
     ) -> None: ...
+    async def has_dividend_history(self, symbol: str) -> bool: ...
+    async def dividends_since(self, symbols: list[str], since: date) -> list[Bar]: ...
+    async def insert_trade(self, trade: Trade) -> None: ...
+    async def list_trades(self, user_id: UserId, symbol: str | None = None) -> list[Trade]: ...
+    async def insert_dividend(self, dividend: Dividend) -> bool:
+        """False when that dividend is already recorded."""
+        ...
+
+    async def list_dividends(self, user_id: UserId) -> list[Dividend]: ...
+    async def holders(self, symbol: str) -> list[Holding]:
+        """Across all users: who holds this stock now."""
+        ...
+
     async def latest_bars(self, symbols: list[str], count: int = 2) -> dict[str, list[Bar]]:
         """Each stock's last ``count`` days of prices, newest first."""
         ...

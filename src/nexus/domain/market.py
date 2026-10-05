@@ -30,6 +30,8 @@ class Bar:
     # Adjusted for later splits and dividends: for comparing prices over time.
     adj_close: Decimal
     volume: int
+    # A dividend per share going ex on this day (0 on most days), in the price's currency.
+    div_cash: Decimal = Decimal(0)
 
 
 def last_publish(now: datetime) -> datetime:
