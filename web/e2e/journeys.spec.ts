@@ -703,16 +703,22 @@ test("a research plan is started from a stock and read with its chart and source
   expect(state.planStarted).toBe(true);
 
   await page.goto("/investment/plans");
-  await page.getByRole("link", { name: /AMD: Wait for a pullback/ }).click();
+  await page.getByRole("link", { name: /AMD: Wait for a dip to buy/ }).click();
   await expect(page).toHaveURL(/\/investment\/plans\/p1$/);
-  await expect(page.getByRole("heading", { name: "Plan for AMD", level: 1 })).toBeVisible();
-  const levels = page.getByLabel("Plan levels");
-  await expect(levels).toContainText("124.75–125.65");
-  await expect(levels).toContainText("122.95");
-  await expect(page.getByText(/Earnings on .*inside the plan's window/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "AMD plan", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Wait for a dip to buy", level: 2 })).toBeVisible();
+  // The game plan says when to buy, take profit, cut losses and review, with prices.
+  const steps = page.getByRole("list", { name: "Game plan" }).getByRole("listitem");
+  await expect(steps).toHaveCount(5);
+  await expect(steps.nth(0)).toContainText("Buy124.75 to 125.65-3.0%");
+  await expect(steps.nth(1)).toContainText("Take profit131.00 / 132.00+1.2%+1.9%");
+  await expect(steps.nth(2)).toContainText("Cut losses122.95-5.1%");
+  await expect(steps.nth(2)).toContainText("Sell if a day closes below 122.95");
+  await expect(steps.nth(4)).toContainText("Earnings are on 08 Oct");
+  await expect(page.getByText("What would prove it wrong:")).toBeVisible();
   await expect(page.getByRole("img", { name: /AMD daily closes over 60 days/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "What could go wrong" })).toBeVisible();
   const cite = page.getByRole("link", { name: "[Wire]" });
   await expect(cite).toHaveAttribute("href", "https://news.example/1");
   await expect(cite).toHaveAttribute("rel", /noopener/);
-  await expect(page.getByText("What would prove it wrong:")).toBeVisible();
 });
