@@ -37,7 +37,14 @@ from nexus.infra.db.migrations import alembic_config
 OPENROUTER = "https://openrouter.ai/api/v1"
 
 
-def openrouter_model(name: str, api_key: str, timeout: float = 90.0) -> BaseChatModel:
+def openrouter_model(
+    name: str, api_key: str, timeout: float = 90.0, providers: list[str] | None = None
+) -> BaseChatModel:
+    routing = (
+        {"provider": {"order": providers, "only": providers, "require_parameters": True}}
+        if providers
+        else None
+    )
     return ChatOpenAI(
         model=name,
         api_key=SecretStr(api_key),
@@ -46,6 +53,7 @@ def openrouter_model(name: str, api_key: str, timeout: float = 90.0) -> BaseChat
         timeout=timeout,
         max_retries=2,
         default_headers={"X-Title": "Nexus Prime evals"},
+        extra_body=routing,
     )
 
 
@@ -136,6 +144,12 @@ async def main(argv: list[str] | None = None) -> int:
         "--memory-model", help="another model for the memory writer (default: each --model)"
     )
     parser.add_argument("--out", default="eval-results")
+    parser.add_argument(
+        "--providers",
+        default="",
+        help="OpenRouter provider slugs for the main model, comma separated, as "
+        "OPENROUTER_PROVIDERS (default: OpenRouter picks)",
+    )
     args = parser.parse_args(argv)
 
     api_key = os.environ.get("OPENROUTER_API_KEY")
@@ -157,7 +171,8 @@ async def main(argv: list[str] | None = None) -> int:
         engine = make_engine(url)
         try:
             for offset, name in enumerate(args.model):
-                model = openrouter_model(name, api_key)
+                providers = [p.strip() for p in args.providers.split(",") if p.strip()]
+                model = openrouter_model(name, api_key, providers=providers or None)
                 print(f"{name}: {len(cases)} cases", flush=True)
 
                 def progress(result: CaseResult) -> None:

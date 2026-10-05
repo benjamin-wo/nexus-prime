@@ -75,3 +75,36 @@ def test_fallbacks_read_from_the_environment(monkeypatch: pytest.MonkeyPatch, ra
     # As Railway sets it: an environment variable, plain or JSON.
     monkeypatch.setenv("OPENROUTER_FALLBACK_MODELS", raw)
     assert settings().openrouter_fallback_models == ("qwen/qwen3.8-flash", "z-ai/glm-5.3-flash")
+
+
+def test_openrouter_providers_pin_the_main_model_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A cheap host that drops tool arguments made edits fail: the main model can be
+    # kept to providers that handle tool calls well.
+    monkeypatch.setenv("OPENROUTER_PROVIDERS", "deepinfra, fireworks")
+    models = build_chat_models(
+        settings(
+            llm_provider="openrouter",
+            openrouter_api_key="or-key",
+            openrouter_model="deepseek/deepseek-v4.1-flash",
+            openrouter_vision_model="qwen/qwen3.8-flash",
+        )
+    )
+    assert isinstance(models.primary, ChatOpenAI)
+    assert models.primary.extra_body == {
+        "provider": {
+            "order": ["deepinfra", "fireworks"],
+            "only": ["deepinfra", "fireworks"],
+            "require_parameters": True,
+        }
+    }
+    # The receipt reader is another model: those providers may not serve it.
+    assert isinstance(models.vision, ChatOpenAI) and models.vision.extra_body is None
+    unpinned = build_chat_models(
+        settings(
+            llm_provider="openrouter",
+            openrouter_api_key="or-key",
+            openrouter_model="deepseek/deepseek-v4.1-flash",
+            openrouter_providers="",
+        )
+    )
+    assert isinstance(unpinned.primary, ChatOpenAI) and unpinned.primary.extra_body is None

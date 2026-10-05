@@ -36,6 +36,7 @@ With `LLM_PROVIDER=openrouter`, `OPENROUTER_FALLBACK_MODELS` are tried in order 
 
 - **Everything fails:** check [OpenRouter's status](https://status.openrouter.ai) and the account's credits. An invalid or exhausted key fails every model.
 - **Switch model:** set `OPENROUTER_MODEL` (or the fallback list) on `nexus-app`; Railway redeploys with it. Choose from models that have been scored with `python -m nexus.evals` (see [`EVALS.md`](EVALS.md)), and keep OpenRouter's privacy setting that excludes providers who train on prompts.
+- **Tool calls go wrong** (edits arrive without the change, the bot repeats itself): a host OpenRouter picked may be mishandling tool calls. Pin `OPENROUTER_PROVIDERS` to hosts that pass the evaluation set (`python -m nexus.evals --providers <slug>`).
 - **Receipt photos only:** `OPENROUTER_VISION_MODEL`.
 - **Memory only:** failed `memory.update` jobs don't affect replies; the job is retried. `MEMORY_MODEL` can point it elsewhere.
 

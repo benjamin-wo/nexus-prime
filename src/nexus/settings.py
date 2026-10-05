@@ -100,6 +100,10 @@ class Settings(BaseSettings):
     # reads receipt photos (unset = OPENROUTER_MODEL, which must then take images).
     openrouter_fallback_models: Annotated[tuple[str, ...], NoDecode] = ()
     openrouter_vision_model: str | None = None
+    # Which OpenRouter providers may serve OPENROUTER_MODEL, in order of preference
+    # (comma separated slugs, e.g. "deepinfra,fireworks"). Unset: OpenRouter picks,
+    # cheapest first, which can land on hosts that handle tool calls poorly.
+    openrouter_providers: Annotated[tuple[str, ...], NoDecode] = ()
     deepseek_api_key: SecretStr | None = None
     deepseek_base_url: str = "https://api.deepseek.com/v1"
     deepseek_model: str = "deepseek-v4-flash"
@@ -130,7 +134,7 @@ class Settings(BaseSettings):
     def _lowercase_provider(cls, value: object) -> object:
         return value.strip().lower() if isinstance(value, str) else value
 
-    @field_validator("openrouter_fallback_models", mode="before")
+    @field_validator("openrouter_fallback_models", "openrouter_providers", mode="before")
     @classmethod
     def _split_models(cls, value: object) -> object:
         """Comma separated ("a/b, c/d") or a JSON list (["a/b", "c/d"])."""
