@@ -7,9 +7,11 @@ from uuid import UUID
 from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field
 
+from nexus.application import bookings as booking_cases
 from nexus.application import trips as trip_cases
 from nexus.channels.web.api import MoneyOut, money
 from nexus.channels.web.security import Auth, Runtime
+from nexus.domain.bookings import Booking
 from nexus.domain.errors import NotFound
 from nexus.domain.ledger import User
 from nexus.domain.money import Money
@@ -114,12 +116,70 @@ class ItemOut(Model):
     linked: bool
 
 
+class SegmentOut(Model):
+    number: str | None
+    origin: str | None
+    destination: str | None
+    departs: str | None  # local time as booked, YYYY-MM-DDTHH:MM
+    arrives: str | None
+
+
+class BookingOut(Model):
+    id: UUID
+    trip_id: UUID | None
+    kind: str  # flight, hotel, rail
+    title: str
+    provider: str | None
+    starts: date
+    ends: date | None
+    segments: list[SegmentOut]
+    hotel: str | None
+    address: str | None
+    check_in: date | None
+    check_out: date | None
+    cost: MoneyOut | None
+    logged: bool  # its cost is in the ledger
+
+
+def _booking(b: Booking) -> BookingOut:
+    d = b.draft
+    return BookingOut(
+        id=b.id,
+        trip_id=b.trip_id,
+        kind=d.kind.value,
+        title=d.title,
+        provider=d.provider,
+        starts=b.starts,
+        ends=d.ends,
+        segments=[
+            SegmentOut(
+                number=s.number,
+                origin=s.origin,
+                destination=s.destination,
+                departs=s.departs.isoformat(timespec="minutes") if s.departs else None,
+                arrives=s.arrives.isoformat(timespec="minutes") if s.arrives else None,
+            )
+            for s in d.segments
+        ],
+        hotel=d.hotel,
+        address=d.address,
+        check_in=d.check_in,
+        check_out=d.check_out,
+        cost=_m(b.cost),
+        logged=b.transaction_id is not None,
+    )
+
+
 class TripDetailOut(Model):
     trip: TripOut
     spending: SpendingOut
     saving: SavingOut
     owed: list[OwedOut]
     items: list[ItemOut]
+    bookings: list[BookingOut]
+    booked: MoneyOut | None
+    booked_unlogged: MoneyOut | None
+    to_spend: MoneyOut | None
 
 
 def _detail(view: trip_cases.TripView) -> TripDetailOut:
@@ -168,6 +228,10 @@ def _detail(view: trip_cases.TripView) -> TripDetailOut:
             )
             for i in reversed(view.items)  # newest first
         ],
+        bookings=[_booking(b) for b in view.bookings],
+        booked=_m(view.booked),
+        booked_unlogged=_m(view.booked_unlogged),
+        to_spend=_m(view.to_spend),
     )
 
 
@@ -272,3 +336,25 @@ async def remove_expense(trip_id: str, transaction_id: str, auth: Auth, web: Run
         _uuid(transaction_id, "transaction"),
         now=web.clock(),
     )
+
+
+@router.get("/bookings")
+async def loose_bookings(auth: Auth, web: Runtime) -> list[BookingOut]:
+    """Bookings from email that aren't on a trip."""
+    return [_booking(b) for b in await booking_cases.unattached(web.uow(), auth.user.id)]
+
+
+class BookingTripIn(Model):
+    trip_id: UUID | None
+
+
+@router.put("/bookings/{booking_id}/trip", status_code=204)
+async def set_booking_trip(booking_id: str, body: BookingTripIn, auth: Auth, web: Runtime) -> None:
+    await booking_cases.attach(
+        web.uow(), auth.user.id, _uuid(booking_id, "booking"), body.trip_id, now=web.clock()
+    )
+
+
+@router.delete("/bookings/{booking_id}", status_code=204)
+async def delete_booking(booking_id: str, auth: Auth, web: Runtime) -> None:
+    await booking_cases.delete_booking(web.uow(), auth.user.id, _uuid(booking_id, "booking"))

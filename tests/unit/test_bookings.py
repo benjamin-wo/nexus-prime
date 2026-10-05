@@ -1,0 +1,146 @@
+"""Bookings read from email: what's kept, what's masked, which trip they land on,
+and when reminders are due. Every name, number and place here is made up."""
+
+from datetime import UTC, date, datetime
+from uuid import uuid4
+
+from nexus.domain.bookings import (
+    MASK,
+    Booking,
+    BookingDraft,
+    BookingKind,
+    booking_reminders,
+    mask,
+    matching_trips,
+    passport_reminder,
+)
+from nexus.domain.ledger import UserId
+from nexus.domain.money import Money
+from nexus.domain.trips import Trip
+
+USER = UserId(uuid4())
+MADE = datetime(2026, 9, 28, tzinfo=UTC)
+
+
+def trip(destination: str, start: date, end: date, currency: str = "JPY") -> Trip:
+    return Trip(
+        uuid4(), USER, destination, start, end, currency, Money.of("3000", "SGD"), (),
+        None, {}, MADE, MADE,
+    )  # fmt: skip
+
+
+FLIGHT = {
+    "kind": "flight",
+    "provider": "Acme Air",
+    "segments": [
+        {
+            "number": "ZZ 12",
+            "from": "SIN",
+            "to": "NRT",
+            "departs": "2026-12-10T08:25",
+            "arrives": "2026-12-10T16:05",
+        },
+        {"number": "ZZ13", "from": "NRT", "to": "SIN", "departs": "2026-12-18T17:30"},
+    ],
+}
+
+
+def test_references_and_personal_numbers_are_masked() -> None:
+    assert MASK in mask("Booking reference: XK7Q9P")
+    assert "XK7Q9P" not in mask("Your PNR is XK7Q9P, see you soon")
+    assert "1234567890123" not in mask("E-ticket 123-4567890123")
+    assert "E1234567" not in mask("Passport E1234567 on file")
+    assert "88123456" not in mask("KrisFlyer member 88123456")
+    assert mask("Hotel Sakura, Shinjuku") == "Hotel Sakura, Shinjuku"
+
+
+def test_a_flight_keeps_its_numbers_places_and_times() -> None:
+    raw = {**FLIGHT, "provider": "Acme Air (booking ref QW3E4R)"}
+    d = BookingDraft.from_dict(raw)
+    assert d is not None and d.kind is BookingKind.FLIGHT
+    assert [s.number for s in d.segments] == ["ZZ12", "ZZ13"]
+    assert (d.starts, d.ends) == (date(2026, 12, 10), date(2026, 12, 18))
+    assert d.title == "ZZ12 SIN → NRT, return"
+    assert d.provider is not None and "QW3E4R" not in d.provider
+    assert d.describe().startswith("flight booking (ZZ12, SIN → NRT, Thu 10 Dec 08:25")
+    # A "flight number" that's really a reference is dropped, not kept.
+    odd = BookingDraft.from_dict(
+        {**FLIGHT, "segments": [{"number": "XK7Q9P", "departs": "2026-12-10T08:25"}]}
+    )
+    assert odd is not None and odd.segments[0].number is None
+    assert BookingDraft.from_dict({"kind": "flight", "segments": []}) is None  # no date
+    assert BookingDraft.from_dict({"kind": "cruise"}) is None
+
+
+def test_a_hotel_keeps_its_address_but_not_its_confirmation() -> None:
+    d = BookingDraft.from_dict(
+        {
+            "kind": "hotel",
+            "hotel": "Hotel Sakura",
+            "address": "1-2-3 Nishi-Shinjuku, Tokyo 160-0023, confirmation no. 77AB12",
+            "check_in": "2026-12-10",
+            "check_out": "2026-12-14",
+        }
+    )
+    assert d is not None
+    assert d.address is not None and "160-0023" in d.address and "77AB12" not in d.address
+    assert d.title == "Hotel Sakura, 4 nights"
+    assert (d.starts, d.ends) == (date(2026, 12, 10), date(2026, 12, 14))
+
+
+def test_a_booking_lands_on_the_trip_whose_dates_it_falls_in() -> None:
+    today = date(2026, 9, 28)
+    tokyo = trip("Tokyo", date(2026, 12, 10), date(2026, 12, 18))
+    bali = trip("Bali", date(2026, 11, 3), date(2026, 11, 8), "IDR")
+    old = trip("Seoul", date(2026, 9, 1), date(2026, 9, 5), "KRW")
+    assert matching_trips([tokyo, bali, old], date(2026, 12, 9), today) == [tokyo]  # a day early
+    assert matching_trips([tokyo, bali, old], date(2026, 10, 1), today) == []
+    assert matching_trips([tokyo, bali, old], date(2026, 9, 2), today) == []  # that trip is over
+
+
+def test_reminders_come_due_once_at_the_right_time() -> None:
+    tokyo = trip("Tokyo", date(2026, 12, 10), date(2026, 12, 18))
+    assert passport_reminder(tokyo, date(2026, 11, 10), "SGD") is not None  # 30 days out
+    assert passport_reminder(tokyo, date(2026, 11, 1), "SGD") is None
+    home = trip("Penang", date(2026, 12, 10), date(2026, 12, 12), "SGD")
+    assert passport_reminder(home, date(2026, 11, 10), "SGD") is None  # not abroad
+
+    draft = BookingDraft.from_dict(FLIGHT)
+    assert draft is not None
+    flight = Booking(uuid4(), USER, tokyo.id, None, draft, None, None, MADE)
+    assert booking_reminders(flight, datetime(2026, 12, 9, 7, 0)) == []
+    due = booking_reminders(flight, datetime(2026, 12, 9, 9, 0))
+    assert [r.key for r in due] == [f"checkin:{flight.id}:0"]
+    assert "Acme Air" in due[0].text
+
+    stay = BookingDraft.from_dict(
+        {
+            "kind": "hotel",
+            "hotel": "Hotel Sakura",
+            "address": "1-2-3 Nishi-Shinjuku",
+            "check_in": "2026-12-10",
+        }
+    )
+    assert stay is not None
+    hotel = Booking(uuid4(), USER, tokyo.id, None, stay, None, None, MADE)
+    assert booking_reminders(hotel, datetime(2026, 12, 10, 7, 0)) == []
+    assert "1-2-3 Nishi-Shinjuku" in booking_reminders(hotel, datetime(2026, 12, 10, 8, 30))[0].text
+
+
+def test_dates_and_times_written_out_are_read_too() -> None:
+    # The reader is asked for ISO, but sometimes writes dates out.
+    raw = {
+        **FLIGHT,
+        "segments": [
+            {"number": "ZZ12", "departs": "10 Dec 2026 08:25", "arrives": "Thu, 10 Dec 2026 16:05"}
+        ],
+    }
+    d = BookingDraft.from_dict(raw)
+    assert d is not None and d.segments[0].departs == datetime(2026, 12, 10, 8, 25)
+    stay = BookingDraft.from_dict(
+        {"kind": "hotel", "check_in": "Thu, 10 Dec 2026", "check_out": "14 December 2026"}
+    )
+    assert stay is not None and (stay.check_in, stay.check_out) == (
+        date(2026, 12, 10),
+        date(2026, 12, 14),
+    )

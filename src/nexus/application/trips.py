@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 from nexus.application import cashflow, fx
 from nexus.application.fx import RateSource
 from nexus.application.ports import UnitOfWork
+from nexus.domain.bookings import Booking
 from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.ledger import Direction, User, UserId, same_person
 from nexus.domain.money import Money
@@ -213,6 +214,13 @@ class TripView:
     saving: SetAside
     paid: bool  # whether the user has a pay schedule, which set-aside needs
     owed: list[Owed]
+    # Bookings on the trip (its itinerary), and their cost in the home currency.
+    bookings: list[Booking] = field(default_factory=list)
+    booked: Money | None = None
+    # Booked but not logged yet, so not in what's spent.
+    booked_unlogged: Money | None = None
+    # The budget less what's spent and what's booked but not logged.
+    to_spend: Money | None = None
 
     @property
     def days_until(self) -> int:
@@ -309,15 +317,34 @@ async def _view(
             await _fits(uow, rates, user, trip, now),
             saving.next_payday,
         )
+    async with uow() as tx:
+        bookings = await tx.trips.list_bookings(user.id, trip_id=trip.id)
+    tz = ZoneInfo(user.timezone)
+    costed = [(b, b.cost, b.created_at.astimezone(tz).date()) for b in bookings if b.cost]
+    found = await fx.rates_for(rates, home, ((c.currency, d) for _, c, d in costed))
+    booked = unlogged = Money.zero(home)
+    for b, cost, day in costed:
+        converted = fx.convert(cost, day, home, found).home
+        if converted is None:
+            continue
+        booked = booked + converted
+        if b.transaction_id is None or b.transaction_id not in ids:
+            unlogged = unlogged + converted
+    spent = spending(trip, items, today, home)
+    to_spend = trip.budget - spent.spent - unlogged if trip.budget else None
     return TripView(
         trip=trip,
         today=today,
         status=trip.status(today),
         items=items,
-        spending=spending(trip, items, today, home),
+        spending=spent,
         saving=saving,
         paid=schedule is not None,
         owed=await _owed(uow, rates, user, ids, today),
+        bookings=bookings,
+        booked=booked if costed else None,
+        booked_unlogged=unlogged if costed else None,
+        to_spend=to_spend,
     )
 
 
@@ -401,6 +428,15 @@ def describe_view(view: TripView) -> list[str]:
                 f"To cover the budget by the trip, set aside about {a.suggested} on each of "
                 f"the {a.paydays_left} paydays before it."
             )
+    if view.bookings:
+        lines.append("Bookings: " + "; ".join(b.draft.describe() for b in view.bookings) + ".")
+    if view.booked is not None:
+        line = f"Booked: {view.booked}"
+        if view.booked_unlogged and view.booked_unlogged.is_positive:
+            line += f", of which {view.booked_unlogged} isn't logged as an expense yet"
+        lines.append(line + ".")
+    if view.to_spend is not None and view.booked is not None:
+        lines.append(f"Still to spend in the budget after bookings: {view.to_spend}.")
     if view.owed:
         lines.append(
             "Still owed for this trip: "

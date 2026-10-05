@@ -89,6 +89,8 @@ export async function fakeApi(
     watching: string[];
     trips: Record<string, unknown>[];
     tripItems: string[];
+    looseBookings: Record<string, unknown>[];
+    movedBookings: string[];
     planStarted: boolean;
     planAlerts: boolean;
     cancelled: string[];
@@ -135,6 +137,25 @@ export async function fakeApi(
     watching: [],
     trips: [],
     tripItems: ["k1", "k2"],
+    looseBookings: [
+      {
+        id: "bk2",
+        trip_id: null,
+        kind: "hotel",
+        title: "Hotel Sakura, 2 nights",
+        provider: null,
+        starts: "2026-11-20",
+        ends: "2026-11-22",
+        segments: [],
+        hotel: "Hotel Sakura",
+        address: "1-2-3 Nishi-Shinjuku",
+        check_in: "2026-11-20",
+        check_out: "2026-11-22",
+        cost: null,
+        logged: false,
+      },
+    ],
+    movedBookings: [],
     planStarted: false,
     planAlerts: true,
     draft: null,
@@ -593,8 +614,36 @@ export async function fakeApi(
         },
         owed: [{ name: "Ann", amounts: [{ amount: "15000.0000", currency: "JPY" }], home: home(135) }],
         items,
+        bookings: [
+          {
+            id: "bk1",
+            trip_id: trip.id,
+            kind: "flight",
+            title: "ZZ12 SIN → NRT",
+            provider: "Acme Air",
+            starts: "2026-11-10",
+            ends: "2026-11-10",
+            segments: [{ number: "ZZ12", origin: "SIN", destination: "NRT", departs: "2026-11-10T08:25", arrives: "2026-11-10T16:05" }],
+            hotel: null,
+            address: null,
+            check_in: null,
+            check_out: null,
+            cost: home(820),
+            logged: false,
+          },
+        ],
+        booked: home(820),
+        booked_unlogged: home(820),
+        to_spend: budget ? home(Number(budget.amount) - spent - 820) : null,
       };
     };
+    if (path === "/travel/bookings" && method === "GET") return json(route, state.looseBookings);
+    const bookingTrip = path.match(/^\/travel\/bookings\/([^/]+)\/trip$/);
+    if (bookingTrip && method === "PUT") {
+      state.movedBookings.push(`${bookingTrip[1]}:${String(body.trip_id)}`);
+      state.looseBookings = state.looseBookings.filter((b) => b.id !== bookingTrip[1]);
+      return route.fulfill({ status: 204 });
+    }
     if (path === "/travel/next" && method === "GET") {
       const next = state.trips.find((t) => t.status !== "finished");
       return json(route, next ? tripDetail(next) : null);

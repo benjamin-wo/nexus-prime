@@ -1,0 +1,343 @@
+"""Travel bookings read from email: flights, hotels and trains. Pure rules, no I/O.
+
+What's kept is what the user needs to travel: flight and train numbers, places,
+times, hotel names and addresses, dates and the cost. Booking references, ticket,
+passport and loyalty numbers and travellers' names are never kept: the reader is
+told not to give them, and anything that still looks like one is masked here
+before it's stored.
+"""
+
+import re
+from collections.abc import Sequence
+from dataclasses import dataclass
+from datetime import date, datetime, time, timedelta
+from enum import StrEnum
+from typing import Any
+from uuid import UUID
+
+from nexus.domain.ledger import UserId
+from nexus.domain.money import Money
+from nexus.domain.trips import Trip, TripStatus
+
+MAX_SEGMENTS = 6
+MAX_TEXT = 120
+# A booking up to this many days before a trip starts (an overnight flight out)
+# still belongs to it.
+EARLY_DAYS = 1
+# Reminders: the passport and visa this many days before a trip abroad.
+PASSPORT_DAYS = 30
+# Online check-in opens about a day before a flight.
+CHECK_IN_BEFORE = timedelta(hours=24)
+# The hotel's address on the morning of check-in, from this hour.
+HOTEL_MORNING = time(8)
+
+
+class BookingKind(StrEnum):
+    FLIGHT = "flight"
+    HOTEL = "hotel"
+    RAIL = "rail"
+
+
+# Anything that looks like a reference, ticket, passport or loyalty number.
+_MIXED_CODE = re.compile(r"\b(?=[A-Z0-9]*\d)(?=[A-Z0-9]*[A-Z])[A-Z0-9]{5,10}\b")
+_LONG_NUMBER = re.compile(r"\b\d[\d\s-]{6,}\d\b")
+_PASSPORT = re.compile(r"\b[A-Z]{1,2}\d{6,8}[A-Z]?\b")
+_LABELLED = re.compile(
+    r"(?i)\b(booking|confirmation|reservation|record locator|pnr|ticket|e-ticket|passport|"
+    r"membership|member|loyalty|frequent flyer|krisflyer|ref(?:erence)?)\b\s*(?:no\.?|number|"
+    r"code|#)?\s*[:#]?\s*\S+"
+)
+_FLIGHT_NUMBER = re.compile(r"^([A-Z0-9]{2})\s?(\d{1,4})$")
+_TRAIN_NUMBER = re.compile(r"^[A-Za-z ]{0,20}\d{1,5}[A-Z]?$")
+MASK = "•••"
+
+
+def mask(text: str) -> str:
+    """Hides anything that looks like a booking reference or a personal number."""
+    text = _LABELLED.sub(lambda m: f"{m.group(1)} {MASK}", text)
+    for pattern in (_LONG_NUMBER, _PASSPORT, _MIXED_CODE):
+        text = pattern.sub(MASK, text)
+    return text
+
+
+def _text(value: object, *, keep_numbers: bool = False) -> str | None:
+    """A short, single-line, masked string, or None."""
+    if not isinstance(value, str):
+        return None
+    cleaned = " ".join(value.split())[:MAX_TEXT].strip()
+    if not cleaned:
+        return None
+    if keep_numbers:
+        # An address keeps its street number and postcode, but never a labelled
+        # reference or a mixed letters-and-digits code.
+        cleaned = _LABELLED.sub(lambda m: f"{m.group(1)} {MASK}", cleaned)
+        cleaned = _MIXED_CODE.sub(lambda m: m.group(0) if m.group(0).isdigit() else MASK, cleaned)
+    else:
+        cleaned = mask(cleaned)
+    return cleaned if cleaned.replace(MASK, "").strip() else None
+
+
+# How a model sometimes writes a date or time despite being asked for ISO.
+_DAY_FORMATS = ("%d %b %Y", "%d %B %Y", "%a %d %b %Y", "%a, %d %b %Y", "%b %d %Y", "%B %d %Y")
+_TIME_FORMATS = tuple(f"{d} %H:%M" for d in _DAY_FORMATS)
+
+
+def _parse(text: str, formats: tuple[str, ...]) -> datetime | None:
+    for fmt in formats:
+        try:
+            return datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _day(value: object) -> date | None:
+    if not isinstance(value, str):
+        return None
+    text = " ".join(value.replace(",", " ").split())
+    try:
+        return date.fromisoformat(text[:10])
+    except ValueError:
+        found = _parse(text, tuple(f.replace(",", "") for f in _DAY_FORMATS))
+        return found.date() if found else None
+
+
+def _when(value: object) -> datetime | None:
+    """A local date and time as written ("2026-12-10T08:25"), without a timezone."""
+    if not isinstance(value, str):
+        return None
+    text = " ".join(value.replace(",", " ").split())
+    try:
+        parsed = datetime.fromisoformat(text[:16])
+    except ValueError:
+        found = _parse(text[:24], tuple(f.replace(",", "") for f in _TIME_FORMATS))
+        if found is None:
+            return None
+        parsed = found
+    return parsed.replace(tzinfo=None, second=0, microsecond=0)
+
+
+def flight_number(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    found = _FLIGHT_NUMBER.match(value.strip().upper().replace("-", ""))
+    return f"{found.group(1)}{found.group(2)}" if found else None
+
+
+def train_number(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    text = " ".join(value.split())
+    return text if _TRAIN_NUMBER.match(text) else None
+
+
+@dataclass(frozen=True, slots=True)
+class Segment:
+    """One flight or train: its number, from and to, and local times."""
+
+    number: str | None
+    origin: str | None
+    destination: str | None
+    departs: datetime | None
+    arrives: datetime | None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "number": self.number,
+            "from": self.origin,
+            "to": self.destination,
+            "departs": self.departs.isoformat(timespec="minutes") if self.departs else None,
+            "arrives": self.arrives.isoformat(timespec="minutes") if self.arrives else None,
+        }
+
+    def line(self) -> str:
+        route = " → ".join(p for p in (self.origin, self.destination) if p)
+        parts = [p for p in (self.number, route) if p]
+        if self.departs:
+            parts.append(f"{self.departs:%a %d %b %H:%M}")
+        return ", ".join(parts)
+
+
+@dataclass(frozen=True, slots=True)
+class BookingDraft:
+    """What was read from a booking email, cleaned and masked."""
+
+    kind: BookingKind
+    provider: str | None  # the airline, hotel or rail operator
+    segments: tuple[Segment, ...]  # flights or trains, in order
+    hotel: str | None
+    address: str | None
+    check_in: date | None
+    check_out: date | None
+
+    @property
+    def starts(self) -> date | None:
+        if self.kind is BookingKind.HOTEL:
+            return self.check_in
+        days = [s.departs.date() for s in self.segments if s.departs]
+        return min(days) if days else None
+
+    @property
+    def ends(self) -> date | None:
+        if self.kind is BookingKind.HOTEL:
+            return self.check_out or self.check_in
+        times = [t for s in self.segments for t in (s.arrives or s.departs,) if t is not None]
+        return max(t.date() for t in times) if times else None
+
+    @property
+    def title(self) -> str:
+        if self.kind is BookingKind.HOTEL:
+            name = self.hotel or self.provider or "Hotel"
+            if self.check_in and self.check_out:
+                nights = (self.check_out - self.check_in).days
+                return f"{name}, {nights} night{'s' if nights != 1 else ''}"
+            return name
+        if not self.segments:
+            return self.provider or self.kind.value.capitalize()
+        first, last = self.segments[0], self.segments[-1]
+        route = " → ".join(p for p in (first.origin, first.destination) if p)
+        number = first.number or self.provider or self.kind.value.capitalize()
+        title = f"{number} {route}".strip()
+        if len(self.segments) > 1:
+            back = first.origin is not None and last.destination == first.origin
+            title += ", return" if back else f", {len(self.segments)} legs"
+        return title
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "kind": self.kind.value,
+            "provider": self.provider,
+            "segments": [s.as_dict() for s in self.segments],
+            "hotel": self.hotel,
+            "address": self.address,
+            "check_in": self.check_in.isoformat() if self.check_in else None,
+            "check_out": self.check_out.isoformat() if self.check_out else None,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "BookingDraft | None":
+        """From what the reader gave or what was stored; anything unclear dropped.
+        None when it isn't a booking with at least a date."""
+        try:
+            kind = BookingKind(str(data.get("kind", "")).lower())
+        except ValueError:
+            return None
+        number = flight_number if kind is BookingKind.FLIGHT else train_number
+        raw = data.get("segments")
+        segments = tuple(
+            Segment(
+                number(s.get("number")),
+                _text(s.get("from")),
+                _text(s.get("to")),
+                _when(s.get("departs")),
+                _when(s.get("arrives")),
+            )
+            for s in (raw if isinstance(raw, list) else [])[:MAX_SEGMENTS]
+            if isinstance(s, dict)
+        )
+        check_in, check_out = _day(data.get("check_in")), _day(data.get("check_out"))
+        if check_in and check_out and check_out < check_in:
+            check_out = None
+        draft = cls(
+            kind=kind,
+            provider=_text(data.get("provider")),
+            segments=segments if kind is not BookingKind.HOTEL else (),
+            hotel=_text(data.get("hotel") or data.get("provider"))
+            if kind is BookingKind.HOTEL
+            else None,
+            address=_text(data.get("address"), keep_numbers=True)
+            if kind is BookingKind.HOTEL
+            else None,
+            check_in=check_in if kind is BookingKind.HOTEL else None,
+            check_out=check_out if kind is BookingKind.HOTEL else None,
+        )
+        return draft if draft.starts else None
+
+    def describe(self) -> str:
+        if self.kind is BookingKind.HOTEL:
+            when = ""
+            if self.check_in:
+                when = f", {self.check_in:%d %b}"
+                if self.check_out:
+                    when += f" to {self.check_out:%d %b}"
+            return f"hotel booking ({self.title}{when})"
+        legs = "; ".join(s.line() for s in self.segments) or self.title
+        return f"{self.kind.value} booking ({legs})"
+
+
+@dataclass(frozen=True, slots=True)
+class Booking:
+    id: UUID
+    user_id: UserId
+    trip_id: UUID | None
+    email_id: UUID | None  # the inbound email it was read from
+    draft: BookingDraft
+    cost: Money | None
+    transaction_id: UUID | None  # the expense, once the user logs it
+    created_at: datetime
+
+    @property
+    def starts(self) -> date:
+        found = self.draft.starts
+        return found if found else self.created_at.date()
+
+
+def matching_trips(trips: Sequence[Trip], starts: date, today: date) -> list[Trip]:
+    """Trips a booking starting on ``starts`` could belong to: ones not over whose
+    dates (or the day before) include it."""
+    return [
+        t
+        for t in trips
+        if t.status(today) is not TripStatus.FINISHED
+        and t.start - timedelta(days=EARLY_DAYS) <= starts <= t.end
+    ]
+
+
+# --- reminders ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class Reminder:
+    key: str  # sent once per key
+    text: str
+
+
+def passport_reminder(trip: Trip, today: date, home: str) -> Reminder | None:
+    """About a month before a trip abroad (spent in another currency)."""
+    days = (trip.start - today).days
+    if trip.currency == home or not (PASSPORT_DAYS - 3 <= days <= PASSPORT_DAYS):
+        return None
+    return Reminder(
+        f"passport:{trip.id}",
+        f"🛂 {trip.destination} is {days} days away. Check your passport is valid for at "
+        "least six months after you're back, and whether you need a visa or an entry form.",
+    )
+
+
+def booking_reminders(booking: Booking, now: datetime) -> list[Reminder]:
+    """Online check-in about a day before each flight, and the hotel's address on
+    the morning of check-in. Times are the booking's local times, compared with
+    the user's local ``now`` (no timezone)."""
+    found: list[Reminder] = []
+    d = booking.draft
+    if d.kind is BookingKind.FLIGHT:
+        for n, s in enumerate(d.segments):
+            if s.departs and s.departs - CHECK_IN_BEFORE <= now < s.departs:
+                found.append(
+                    Reminder(
+                        f"checkin:{booking.id}:{n}",
+                        f"✈️ Online check-in for {s.line()} usually opens about now. Check in "
+                        f"on {d.provider or 'the airline'}'s own app or site.",
+                    )
+                )
+    if d.kind is BookingKind.HOTEL and d.check_in:
+        morning = datetime.combine(d.check_in, HOTEL_MORNING)
+        if morning <= now < datetime.combine(d.check_in, time(23, 59)):
+            where = f": {d.address}" if d.address else ""
+            found.append(
+                Reminder(
+                    f"hotel:{booking.id}",
+                    f"🏨 Checking in today at {d.hotel or d.provider or 'your hotel'}{where}.",
+                )
+            )
+    return found

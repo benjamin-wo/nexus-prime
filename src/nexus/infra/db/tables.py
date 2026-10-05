@@ -801,6 +801,47 @@ trip_links = Table(
 )
 
 
+# A flight, hotel or train booking read from email (M11b). Only what's needed to
+# travel; references and personal numbers are never stored.
+trip_bookings = Table(
+    "trip_bookings",
+    metadata,
+    _uuid_pk(),
+    _user_fk(),
+    Column("trip_id", UUID(as_uuid=True)),
+    Column("email_id", UUID(as_uuid=True)),
+    Column("kind", Text, nullable=False),
+    Column("title", Text, nullable=False),
+    Column("start_on", Date, nullable=False),
+    Column("end_on", Date),
+    Column("details", JSONB, nullable=False),
+    Column("amount", MONEY),
+    Column("currency", CURRENCY),
+    Column("transaction_id", UUID(as_uuid=True)),
+    Column("created_at", TZ, nullable=False),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+    ForeignKeyConstraint(["trip_id", "user_id"], ["trips.id", "trips.user_id"]),
+    ForeignKeyConstraint(
+        ["transaction_id", "user_id"], ["transactions.id", "transactions.user_id"]
+    ),
+    UniqueConstraint("user_id", "email_id"),
+    CheckConstraint("kind IN ('flight', 'hotel', 'rail')", name="kind"),
+    CheckConstraint("(amount IS NULL) = (currency IS NULL)", name="cost"),
+    Index("ix_trip_bookings_user_id_start_on", "user_id", "start_on"),
+)
+
+# Travel reminders already sent (passport, check-in, hotel address), once each.
+trip_reminders = Table(
+    "trip_reminders",
+    metadata,
+    _user_fk(),
+    Column("key", Text, nullable=False),
+    Column("sent_at", TZ, nullable=False),
+    PrimaryKeyConstraint("user_id", "key"),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+)
+
+
 # Tables LangGraph's Postgres checkpointer creates for itself (migration 0003).
 CHECKPOINT_TABLES = frozenset(
     {"checkpoints", "checkpoint_blobs", "checkpoint_writes", "checkpoint_migrations"}

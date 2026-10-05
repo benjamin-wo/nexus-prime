@@ -675,6 +675,13 @@ CASES: tuple[Case, ...] = (
         confirms=True,
     ),
     Case(
+        "trip-booked",
+        "ask",
+        _t("what have I booked for Japan so far?"),
+        calls=(Call("trip_status"),),
+        unchanged=True,
+    ),
+    Case(
         "trip-no-booking",
         "ask",
         _t("book me a flight to Tokyo for the trip"),
