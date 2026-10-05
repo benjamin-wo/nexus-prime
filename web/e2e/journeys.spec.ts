@@ -703,10 +703,20 @@ test("a research plan is started from a stock and read with its chart and source
   expect(state.planStarted).toBe(true);
 
   await page.goto("/investment/plans");
+  // The track record counts finished plans; each plan shows how it's going.
+  const record = page.getByRole("region", { name: "Track record" });
+  await expect(record.getByLabel("Plan results")).toContainText("Hit target1");
+  await expect(record).toContainText("Average result+4.6%");
+  await expect(page.getByRole("link", { name: /MSFT: Keep holding/ })).toContainText("🎯 Hit target +4.6%");
+  await expect(page.getByRole("link", { name: /AMD: Wait for a dip to buy/ })).toContainText("⏳ Open, waiting to buy");
   await page.getByRole("link", { name: /AMD: Wait for a dip to buy/ }).click();
   await expect(page).toHaveURL(/\/investment\/plans\/p1$/);
   await expect(page.getByRole("heading", { name: "AMD plan", level: 1 })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Wait for a dip to buy", level: 2 })).toBeVisible();
+  const going = page.getByRole("region", { name: "How it's going" });
+  await expect(going).toContainText("you'll get a message when it dips into the buy zone");
+  await going.getByLabel("Telegram alerts for this plan").uncheck();
+  await expect.poll(() => state.planAlerts).toBe(false);
   // The game plan says when to buy, take profit, cut losses and review, with prices.
   const steps = page.getByRole("list", { name: "Game plan" }).getByRole("listitem");
   await expect(steps).toHaveCount(5);

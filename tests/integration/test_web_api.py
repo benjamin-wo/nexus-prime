@@ -1425,3 +1425,11 @@ async def test_research_plans_on_the_web(world: World) -> None:
     }
     assert (await owner.get("/api/investments/stocks/AMD")).json()["plan"]["id"] == listed[0]["id"]
     assert (await owner.get("/api/investments/plans/not-a-plan")).status_code == 404
+    plan_id = listed[0]["id"]
+    assert listed[0]["status"] == "open" and listed[0]["alerts"] and listed[0]["followed"]
+    off = await owner.send("POST", f"/api/investments/plans/{plan_id}/alerts", {"on": False})
+    assert off.status_code == 204
+    assert not (await owner.get("/api/investments/plans")).json()[0]["alerts"]
+    record = (await owner.get("/api/investments/plans/record")).json()
+    assert record["finished"] == 0 and record["open"] == 1
+    assert record["text"].startswith("No plans have finished yet (1 still open)")

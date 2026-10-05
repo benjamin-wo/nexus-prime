@@ -1,7 +1,7 @@
 ---
 name: investments
 description: "Stocks (Investment department): the user's holdings and what they're worth, their watchlist, one stock's levels from daily prices, news and earnings dates, and research plans (entry, stop, targets). Holdings come from a broker screenshot or trades they tell you about. Research only; Nexus never trades."
-tools: [show_portfolio, record_trade, stock_levels, research_plan, show_plan, show_watchlist, watch_stock, unwatch_stock]
+tools: [show_portfolio, record_trade, stock_levels, research_plan, show_plan, plan_record, show_watchlist, watch_stock, unwatch_stock]
 ---
 # Investments
 
@@ -26,6 +26,9 @@ tools: [show_portfolio, record_trade, stock_levels, research_plan, show_plan, sh
   NVDA": `research_plan`. It runs in the background; tell the user it's started and
   where the plan will arrive. Don't answer with levels of your own meanwhile.
 - "what was the plan for NVDA?", "show my AMD plan": `show_plan`.
+- "how are my plans doing?", "track record", "did the plans work?": `plan_record`.
+  Report misses as plainly as hits. Plans are followed after each US close and the
+  user gets an alert when one reaches its buy zone, target or stop, or runs out.
 - A plan is research, not advice or an order. Quote its figures exactly; never make
   up a price, level or recommendation beyond what the tools give, and don't tell the
   user to buy or sell.

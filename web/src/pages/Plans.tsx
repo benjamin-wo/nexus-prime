@@ -1,14 +1,73 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type PointerEvent, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
-import { api, type PlanBody, type PlanBrief, type PlanDetail, type PlanStep } from "../api";
+import { api, type PlanBody, type PlanBrief, type PlanDetail, type PlanRecord, type PlanStep } from "../api";
 import { formatDate, formatShortDate } from "../format";
 
 const usd = (amount: string | number) =>
   Number(amount).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /** Every plan the research team has written, newest first. */
+/** Where a plan stands: open, or how it ended. */
+export function PlanStatus({ plan }: { plan: PlanBrief }) {
+  if (!plan.followed) return null;
+  const result = plan.result_percent !== null ? ` ${Number(plan.result_percent) > 0 ? "+" : ""}${plan.result_percent}%` : "";
+  const label =
+    plan.status === "target"
+      ? `🎯 Hit target${result}`
+      : plan.status === "stopped"
+        ? `🛑 Stopped out${result}`
+        : plan.status === "expired"
+          ? plan.entered_on
+            ? `📅 Ran out${result}`
+            : "📅 Ran out, never bought"
+          : plan.entered_on
+            ? "⏳ Open, bought"
+            : "⏳ Open, waiting to buy";
+  return <span className={`badge status-${plan.status}`}>{label}</span>;
+}
+
+function TrackRecord() {
+  const record = useQuery({ queryKey: ["plans", "record"], queryFn: () => api<PlanRecord>("/investments/plans/record") });
+  const r = record.data;
+  if (!r) return null;
+  return (
+    <section className="card" aria-labelledby="record">
+      <div className="card-head">
+        <h2 id="record">Track record</h2>
+        <span className="caption">Scored after each US close, misses included</span>
+      </div>
+      {r.finished > 0 && (
+        <dl className="totals" aria-label="Plan results">
+          <div>
+            <dt>Hit target</dt>
+            <dd className="num up">{r.targets}</dd>
+          </div>
+          <div>
+            <dt>Stopped out</dt>
+            <dd className="num down">{r.stopped}</dd>
+          </div>
+          <div>
+            <dt>Ran out</dt>
+            <dd className="num">{r.expired}</dd>
+          </div>
+          {r.average_result !== null && (
+            <div>
+              <dt>Average result</dt>
+              <dd className={`num ${Number(r.average_result) >= 0 ? "up" : "down"}`}>
+                {Number(r.average_result) > 0 ? "+" : ""}
+                {r.average_result}%
+              </dd>
+            </div>
+          )}
+        </dl>
+      )}
+      <p className="muted">{r.text}</p>
+    </section>
+  );
+}
+
 export function PlansPage() {
   const plans = useQuery({ queryKey: ["plans"], queryFn: () => api<PlanBrief[]>("/investments/plans") });
   return (
@@ -19,6 +78,7 @@ export function PlansPage() {
           <p className="muted">Swing-trade research for days to weeks. Research only: never an order.</p>
         </div>
       </div>
+      <TrackRecord />
       <section className="card" aria-labelledby="all-plans">
         <div className="card-head">
           <h2 id="all-plans">Research plans</h2>
@@ -41,8 +101,9 @@ export function PlansPage() {
                     <span className="muted">{p.reason}</span>
                   </span>
                   <span className="caption">
+                    <PlanStatus plan={p} />
+                    <br />
                     {formatShortDate(p.created_at)}
-                    {p.expired && " · expired"}
                   </span>
                 </Link>
               </li>
@@ -227,6 +288,42 @@ function List({ title, items, tone }: { title: string; items: string[]; tone?: "
 
 /** One plan: the headline, the game plan with its prices (worked out in code), the
  * chart, then why, with sources. */
+function Following({ brief }: { brief: PlanBrief }) {
+  const client = useQueryClient();
+  const [alerts, setAlerts] = useState(brief.alerts);
+  if (!brief.followed) return null;
+  async function toggle() {
+    const on = !alerts;
+    setAlerts(on);
+    try {
+      await api(`/investments/plans/${brief.id}/alerts`, { method: "POST", body: { on } });
+    } catch {
+      setAlerts(!on);
+    }
+    void client.invalidateQueries({ queryKey: ["plan", brief.id] });
+  }
+  const outcome =
+    brief.status === "open"
+      ? brief.entered_on
+        ? "It's being followed after each US close: you'll get a message if it reaches its target or its stop, or runs out."
+        : "It's being followed after each US close: you'll get a message when it dips into the buy zone, and again at its target or stop."
+      : `It finished on ${formatShortDate(brief.outcome_day!, "UTC")}${brief.outcome_price ? ` at ${usd(brief.outcome_price)}` : ""}.`;
+  return (
+    <section className="card following" aria-labelledby="following">
+      <div className="card-head">
+        <h2 id="following">How it's going</h2>
+        <PlanStatus plan={brief} />
+      </div>
+      <p className="muted">{outcome}</p>
+      {brief.status === "open" && (
+        <label className="toggle">
+          <input type="checkbox" checked={alerts} onChange={() => void toggle()} /> Telegram alerts for this plan
+        </label>
+      )}
+    </section>
+  );
+}
+
 export function PlanPage() {
   const { id = "" } = useParams();
   const detail = useQuery({ queryKey: ["plan", id], queryFn: () => api<PlanDetail>(`/investments/plans/${id}`) });
@@ -286,6 +383,8 @@ export function PlanPage() {
             )}
             <p>{plan.summary}</p>
           </section>
+
+          <Following brief={data.brief} />
 
           <section className="card" aria-labelledby="game-plan">
             <div className="card-head">

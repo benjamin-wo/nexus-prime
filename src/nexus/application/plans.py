@@ -28,6 +28,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from nexus.application import research
+from nexus.application.budgets import TELEGRAM_SEND
 from nexus.application.departments import Departments, RunKind, Step, StepContext, start_run
 from nexus.application.ports import UnitOfWork
 from nexus.domain.departments import Run
@@ -37,15 +38,22 @@ from nexus.domain.ledger import User, UserId
 from nexus.domain.levels import Levels
 from nexus.domain.levels import describe as describe_levels
 from nexus.domain.plans import (
+    FOLLOWED,
     VERDICT_TEXT,
+    EventKind,
+    Followed,
+    PlanEvent,
     PlanNumbers,
     PlanStatus,
+    Record,
     SavedPlan,
     Target,
     Verdict,
+    follow,
     keep_supported,
     plan,
     playbook,
+    record,
 )
 
 log = logging.getLogger(__name__)
@@ -617,3 +625,117 @@ def describe_plan(body: dict[str, Any]) -> str:
     if r.risks:
         lines.append("Risks: " + " ".join(r.risks))
     return "\n".join(lines)
+
+
+# --- following plans after each close (M13d) ---------------------------------------
+
+FOLLOW_JOB = "plans.follow"
+# Days of prices read per plan: its two-week window, with room for missed checks.
+FOLLOW_BARS = 40
+
+
+def event_text(plan: SavedPlan, event: PlanEvent, followed: Followed) -> str:
+    """The alert for something a plan said to watch for."""
+    s = plan.symbol
+    on = f"{event.day:%d %b}"
+    result = (
+        f" That's {followed.result_percent:+}% from the plan's price."
+        if followed.result_percent is not None
+        else ""
+    )
+    if event.kind is EventKind.ENTRY:
+        stop = f" Cut losses below {plan.stop}." if plan.stop is not None else ""
+        target = f" Take profit at {plan.first_target}." if plan.first_target else ""
+        return (
+            f"🟢 {s} dipped into its buy zone ({plan.entry_low} to {plan.entry_high}) on {on}: "
+            f"the price the plan was waiting for.{stop}{target}"
+        )
+    if event.kind is EventKind.TARGET:
+        trail = plan.body.get("trail_to")
+        raise_stop = f" and raise your stop to {trail}" if trail else ""
+        return (
+            f"🎯 {s} reached its first target, {event.price}, on {on}. The plan says sell "
+            f"part{raise_stop}.{result}"
+        )
+    if event.kind is EventKind.STOPPED:
+        return (
+            f"🛑 {s} closed at {event.price} on {on}, below its stop of {plan.stop}. The plan "
+            f"says cut it: the reason to own it has broken.{result}"
+        )
+    if followed.entered_on is None and not plan.held:
+        return (
+            f"📅 Your {s} plan ran out on {on} without dipping to its buy zone, so it was "
+            "never bought. Ask for a fresh plan if you're still interested."
+        )
+    return (
+        f"📅 Your {s} plan ran out on {on} without reaching its target or stop.{result} "
+        "Ask for a fresh plan to see where things stand now."
+    )
+
+
+async def follow_plans(uow: UowFactory, *, now: datetime) -> int:
+    """Check every open plan against the days since it was last checked, save what
+    happened and queue an alert for each event. Returns how many alerts were queued."""
+    async with uow() as tx:
+        followed_plans = await tx.investments.plans_to_follow()
+    queued = 0
+    for p in followed_plans:
+        async with uow() as tx:
+            bars = await tx.investments.bars(p.symbol, FOLLOW_BARS)
+        f = follow(p, bars, today=now.date())
+        if f.checked_through == p.checked_through and f.status is p.status and not f.events:
+            continue
+        async with uow() as tx:
+            await tx.investments.save_followed(p.user_id, p.id, f, at=now)
+            for event in f.events if p.alerts else []:
+                queued += await tx.jobs.enqueue(
+                    TELEGRAM_SEND,
+                    {
+                        "user_id": str(p.user_id),
+                        "text": event_text(p, event, f),
+                        "buttons": [
+                            [{"label": "Stop alerts for this plan", "data": f"plan:mute:{p.id}"}]
+                        ]
+                        if f.status is PlanStatus.OPEN
+                        else [],
+                    },
+                    dedupe_key=f"plan:{p.id}:{event.kind.value}",
+                    run_at=now,
+                )
+            await tx.commit()
+    return queued
+
+
+async def set_alerts(uow: UnitOfWork, user_id: UserId, plan_id: UUID, *, on: bool) -> None:
+    async with uow:
+        if not await uow.investments.set_plan_alerts(user_id, plan_id, on):
+            raise NotFound("that plan isn't in your list")
+        await uow.commit()
+
+
+async def track_record(uow: UnitOfWork, user_id: UserId) -> tuple[Record, list[SavedPlan]]:
+    """The record over every plan, and the finished ones newest first."""
+    async with uow:
+        saved = await uow.investments.list_plans(user_id, limit=500)
+    finished = [p for p in saved if p.verdict in FOLLOWED and p.status is not PlanStatus.OPEN]
+    return record(saved), finished
+
+
+def describe_record(r: Record) -> str:
+    if r.finished == 0:
+        return (
+            f"No plans have finished yet ({r.open} still open). A plan finishes when it hits "
+            "its first target or its stop, or runs past its date."
+        )
+    parts = [
+        f"{r.finished} finished: {r.targets} hit their target, {r.stopped} were stopped out, "
+        f"{r.expired} ran out"
+    ]
+    if r.never_entered:
+        parts.append(f" ({r.never_entered} never reached their buy zone)")
+    line = "".join(parts) + "."
+    if r.average_result is not None:
+        line += f" Average result {r.average_result:+}% per plan that was bought or held."
+    if r.open:
+        line += f" {r.open} still open."
+    return line

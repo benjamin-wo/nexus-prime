@@ -13,7 +13,7 @@ from nexus.domain.ledger import UserId
 from nexus.domain.market import Bar
 from nexus.domain.money import Money
 from nexus.domain.news import EarningsDate, NewsItem
-from nexus.domain.plans import PlanStatus, SavedPlan, Verdict
+from nexus.domain.plans import FOLLOWED, Followed, PlanStatus, SavedPlan, Verdict
 from nexus.infra.db.tables import (
     holding_drafts,
     holdings,
@@ -63,6 +63,12 @@ def _plan(row: Row[Any]) -> SavedPlan:
         body=row.body,
         status=PlanStatus(row.status),
         created_at=row.created_at,
+        entered_on=row.entered_on,
+        checked_through=row.checked_through,
+        outcome_price=row.outcome_price,
+        outcome_day=row.outcome_day,
+        result_percent=row.result_percent,
+        alerts=row.alerts,
     )
 
 
@@ -401,3 +407,39 @@ class SqlInvestmentRepository:
             await self._db.execute(select(plans).where(p.user_id == user_id, p.id == plan_id))
         ).first()
         return _plan(row) if row else None
+
+    async def plans_to_follow(self) -> list[SavedPlan]:
+        """Across all users: open plans that make a call worth following."""
+        p = plans.c
+        rows = await self._db.execute(
+            select(plans)
+            .where(p.status == PlanStatus.OPEN.value, p.verdict.in_([v.value for v in FOLLOWED]))
+            .order_by(p.created_at)
+        )
+        return [_plan(r) for r in rows]
+
+    async def save_followed(
+        self, user_id: UserId, plan_id: UUID, followed: Followed, *, at: datetime
+    ) -> None:
+        p = plans.c
+        finished = followed.status is not PlanStatus.OPEN
+        await self._db.execute(
+            update(plans)
+            .where(p.user_id == user_id, p.id == plan_id)
+            .values(
+                status=followed.status.value,
+                entered_on=followed.entered_on,
+                checked_through=followed.checked_through,
+                outcome_price=followed.outcome_price,
+                outcome_day=followed.outcome_day,
+                result_percent=followed.result_percent,
+                closed_at=at if finished else None,
+            )
+        )
+
+    async def set_plan_alerts(self, user_id: UserId, plan_id: UUID, on: bool) -> bool:
+        p = plans.c
+        result = await self._db.execute(
+            update(plans).where(p.user_id == user_id, p.id == plan_id).values(alerts=on)
+        )
+        return bool(result.rowcount)
