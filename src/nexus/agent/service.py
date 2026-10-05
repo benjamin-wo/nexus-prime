@@ -33,6 +33,7 @@ from nexus.application import salary as salary_cases
 from nexus.application import splits as split_cases
 from nexus.application import subscriptions as subscription_cases
 from nexus.application import transactions as tx_cases
+from nexus.application import travel_research as research_cases
 from nexus.application.categories import list_categories
 from nexus.application.fx import RateSource
 from nexus.application.limits import RateLimiter
@@ -368,10 +369,33 @@ class AgentService:
             return [await self._cancel_run(actor, data.removeprefix("run:cancel:"))]
         if data.startswith("plan:mute:"):
             return [await self._mute_plan(actor, data.removeprefix("plan:mute:"))]
+        if data.startswith("trip:research:"):
+            return [await self._research_trip(actor, data.removeprefix("trip:research:"))]
         if data.startswith("trip:book:"):
             booking_id, _, trip_id = data.removeprefix("trip:book:").partition(":")
             return [await self._booking_trip(actor, booking_id, trip_id)]
         return [Reply("I don't know that button.")]
+
+    async def _research_trip(self, actor: UserId, run_id: str) -> Reply:
+        """Make it a trip, on the message with a trip's research."""
+        try:
+            found = UUID(run_id)
+        except ValueError:
+            return Reply("I don't know that button.")
+        async with self._uow() as tx:
+            user = await tx.ledger.get_user(actor)
+        if user is None:  # pragma: no cover
+            return Reply("I don't know who you are yet.")
+        try:
+            trip = await research_cases.make_trip(self._uow, user, found, now=self._clock())
+        except NexusError as exc:
+            return Reply(str(exc).capitalize() + ".")
+        aside = f", setting aside {trip.set_aside} each payday" if trip.set_aside else ""
+        budget = f", budget {trip.budget}" if trip.budget else ""
+        return Reply(
+            f"✈️ Trip saved: {trip.destination}, {trip.start:%d %b} to {trip.end:%d %b %Y}"
+            f"{budget}{aside}. Change the dates or budget anytime on the trip page."
+        )
 
     async def _booking_trip(self, actor: UserId, booking_id: str, trip_id: str) -> Reply:
         """Which trip a booking from email is for, on the question about it."""
