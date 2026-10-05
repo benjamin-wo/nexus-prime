@@ -908,6 +908,19 @@ test("the trip overview: getting ready, places to visit, and labelled days", asy
   await form.getByRole("button", { name: "Add trip" }).click();
   await expect(page).toHaveURL(/\/travel\/trips\/trip1$/);
 
+  // Every field of the trip form fits inside it, dates included (iOS once pushed the
+  // date pickers past the card's edge).
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  const edit = page.getByRole("form", { name: "Change the trip" });
+  const overflow = await edit.evaluate((form) => {
+    const edge = form.getBoundingClientRect().right + 0.5;
+    return [...form.querySelectorAll("input, select, textarea")]
+      .filter((el) => el.getBoundingClientRect().right > edge)
+      .map((el) => el.getAttribute("type") ?? el.tagName);
+  });
+  expect(overflow).toEqual([]);
+  await edit.getByRole("button", { name: "Cancel" }).click();
+
   const ready = page.getByRole("region", { name: "Getting ready" });
   await expect(ready).toContainText("1 of 3");
   await expect(ready).toContainText("3 nights with no place to stay");
