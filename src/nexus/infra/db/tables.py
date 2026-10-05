@@ -757,6 +757,50 @@ email_links = Table(
     ForeignKeyConstraint(["user_id"], ["users.id"]),
 )
 
+# A trip (M11a): dates, a budget and set-aside in the home currency, and who's going.
+trips = Table(
+    "trips",
+    metadata,
+    _uuid_pk(),
+    _user_fk(),
+    Column("destination", Text, nullable=False),
+    Column("start_on", Date, nullable=False),
+    Column("end_on", Date, nullable=False),
+    Column("currency", CURRENCY, nullable=False),
+    Column("home_currency", CURRENCY, nullable=False),
+    Column("budget", MONEY),
+    Column("set_aside", MONEY),
+    Column("companions", JSONB, nullable=False),
+    Column("planned", JSONB, nullable=False),
+    Column("created_at", TZ, nullable=False),
+    Column("updated_at", TZ, nullable=False),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+    UniqueConstraint("id", "user_id"),
+    CheckConstraint("end_on >= start_on", name="dates"),
+    CheckConstraint("budget IS NULL OR budget > 0", name="budget_positive"),
+    CheckConstraint("set_aside IS NULL OR set_aside > 0", name="set_aside_positive"),
+    Index("ix_trips_user_id_start_on", "user_id", "start_on"),
+)
+
+# An expense added to a trip by hand (included), or taken off one its dates and
+# currency would have put it on (excluded).
+trip_links = Table(
+    "trip_links",
+    metadata,
+    _user_fk(),
+    Column("trip_id", UUID(as_uuid=True), nullable=False),
+    Column("transaction_id", UUID(as_uuid=True), nullable=False),
+    Column("included", Boolean, nullable=False),
+    Column("created_at", TZ, nullable=False),
+    PrimaryKeyConstraint("trip_id", "transaction_id"),
+    ForeignKeyConstraint(["trip_id", "user_id"], ["trips.id", "trips.user_id"], ondelete="CASCADE"),
+    ForeignKeyConstraint(
+        ["transaction_id", "user_id"], ["transactions.id", "transactions.user_id"]
+    ),
+    Index("ix_trip_links_user_id_transaction_id", "user_id", "transaction_id"),
+)
+
+
 # Tables LangGraph's Postgres checkpointer creates for itself (migration 0003).
 CHECKPOINT_TABLES = frozenset(
     {"checkpoints", "checkpoint_blobs", "checkpoint_writes", "checkpoint_migrations"}

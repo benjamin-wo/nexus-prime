@@ -9,10 +9,12 @@ from nexus.application import bills as bill_cases
 from nexus.application import budgets as budget_cases
 from nexus.application import duplicates as duplicate_cases
 from nexus.application import email as email_cases
+from nexus.application import trips as trip_cases
 from nexus.application.fx import RateSource
 from nexus.application.ports import UnitOfWork
 from nexus.domain.email import EmailStatus
 from nexus.domain.ledger import User
+from nexus.domain.trips import TripStatus
 
 type UowFactory = Callable[[], UnitOfWork]
 
@@ -26,7 +28,7 @@ DUPLICATE_DAYS = 30
 @dataclass(frozen=True, slots=True)
 class FeedItem:
     department: str
-    kind: str  # "email", "duplicates", "budget", "bill"
+    kind: str  # "email", "duplicates", "budget", "bill", "trip_budget", "settle_up"
     text: str
     link: str  # the web app page that deals with it
     urgent: bool = False
@@ -98,4 +100,30 @@ async def needs_you(
                     urgent=days <= 0,
                 )
             )
+    trip = await trip_cases.next_trip(uow, rates, user, now=now)
+    percent = trip.spending.percent if trip else None
+    if trip and trip.status is TripStatus.ONGOING and percent is not None:
+        s = trip.spending
+        if percent >= BUDGET_PERCENT:
+            over = percent >= 100
+            items.append(
+                FeedItem(
+                    "travel",
+                    "trip_budget",
+                    f"{trip.trip.destination} budget {'is over' if over else 'is at'} "
+                    f"{percent}% ({s.spent} of {trip.trip.budget})",
+                    f"/travel/trips/{trip.trip.id}",
+                    urgent=over,
+                )
+            )
+    for done, owed in await trip_cases.to_settle(uow, rates, user, now=now):
+        items.append(
+            FeedItem(
+                "travel",
+                "settle_up",
+                f"Settle up for {done.destination}: "
+                f"{_plural(len(owed), 'person still owes', 'people still owe')} you",
+                f"/travel/trips/{done.id}",
+            )
+        )
     return items

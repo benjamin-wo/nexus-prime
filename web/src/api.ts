@@ -214,7 +214,7 @@ export type EmailOverview = {
   emails: InboundEmail[];
 };
 export type Expected = {
-  kind: "bill" | "subscription" | "salary";
+  kind: "bill" | "subscription" | "salary" | "trip";
   name: string;
   direction: "in" | "out";
   amount: Money | null;
@@ -442,3 +442,57 @@ export type PlanBody = {
   sources: PlanSource[];
 };
 export type PlanDetail = { brief: PlanBrief; plan: PlanBody; closes: { day: string; close: string }[] };
+
+/** A trip (Travel). Budget, set-aside and planned amounts are in the home currency. */
+export type Trip = {
+  id: string;
+  destination: string;
+  start: string;
+  end: string;
+  days: number;
+  currency: string;
+  budget: Money | null;
+  companions: string[];
+  set_aside: Money | null;
+  planned: Record<string, Money>;
+  status: "upcoming" | "ongoing" | "finished";
+  days_until: number;
+  day_number: number | null;
+};
+
+export type TripDetail = {
+  trip: Trip;
+  spending: {
+    spent: Money;
+    left: Money | null;
+    percent: number | null;
+    before: Money;
+    today: Money | null;
+    per_day: Money | null;
+    per_day_left: Money | null;
+    categories: { name: string; planned: Money | null; spent: Money }[];
+    unconverted: number;
+  };
+  saving: {
+    per_payday: Money | null;
+    paydays_done: number;
+    paydays_left: number;
+    saved: Money | null;
+    by_start: Money | null;
+    covers_budget: boolean | null;
+    suggested: Money | null;
+    fits: boolean | null;
+    next_payday: string | null;
+    pay_schedule: boolean;
+  };
+  owed: { name: string; amounts: Money[]; home: Money | null }[];
+  items: {
+    transaction_id: string;
+    day: string;
+    counterparty: string | null;
+    category: string | null;
+    amount: Money;
+    home: Money | null;
+    linked: boolean;
+  }[];
+};

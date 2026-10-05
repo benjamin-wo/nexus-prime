@@ -1,5 +1,5 @@
-/** The departments behind the front desk, as the web app shows them. Accounting is
- * live; the others show an intro until they're built (M13 Investment, M11 Travel). */
+/** The departments behind the front desk, as the web app shows them. A department
+ * with ``upcoming`` set shows an intro until it's built. */
 export type DepartmentTab = { to: string; label: string; end?: boolean };
 
 export type DepartmentView = {
@@ -45,10 +45,8 @@ export const DEPARTMENTS: DepartmentView[] = [
     label: "Travel",
     icon: "✈️",
     path: "/travel",
-    blurb: "Trips tied to your money: budget, savings, bookings and spending.",
-    tabs: [],
-    upcoming:
-      "Add a trip and Nexus keeps its money together: a budget, how much to set aside each payday, bookings picked up from your email, and what you spend while you're away, with a settle-up with friends at the end. Later it can research where and when to go, linking to sellers; it never books anything.",
+    blurb: "Your trips: budgets, money set aside, spending and settling up.",
+    tabs: [{ to: "/travel", label: "Trips", end: true }],
   },
 ];
 

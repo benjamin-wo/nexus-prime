@@ -1264,7 +1264,7 @@ async def test_departments_and_runs(world: World) -> None:
     owner = world.browser()
     await owner.login(OWNER)
     departments = (await owner.get("/api/departments")).json()
-    assert [d["name"] for d in departments] == ["accounting", "investment"]
+    assert [d["name"] for d in departments] == ["accounting", "investment", "travel"]
     assert departments[0]["label"] == "Accounting"
     assert (await owner.get("/api/runs")).json() == []
     missing = "/api/runs/00000000-0000-0000-0000-000000000000"
@@ -1433,3 +1433,55 @@ async def test_research_plans_on_the_web(world: World) -> None:
     record = (await owner.get("/api/investments/plans/record")).json()
     assert record["finished"] == 0 and record["open"] == 1
     assert record["text"].startswith("No plans have finished yet (1 still open)")
+
+
+async def test_trips_on_the_web(world: World) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+    assert (await owner.get("/api/travel/trips")).json() == []
+    assert (await owner.get("/api/travel/next")).json() is None
+    body = {
+        "destination": "Seoul",
+        "start": "2026-09-27",
+        "end": "2026-10-01",
+        "currency": "krw",
+        "budget": "2,000",
+        "companions": ["Ann"],
+        "planned": {"Dining Out": "600"},
+    }
+    made = await owner.send("POST", "/api/travel/trips", body)
+    assert made.status_code == 201
+    trip = made.json()
+    assert (trip["currency"], trip["status"], trip["day_number"], trip["days"]) == (
+        "KRW", "ongoing", 2, 5,
+    )  # fmt: skip
+    assert trip["budget"] == {"amount": "2000.0000", "currency": "SGD"}
+    backwards = await owner.send("POST", "/api/travel/trips", {**body, "end": "2026-09-01"})
+    assert backwards.status_code == 422
+
+    taxi = await owner.send(
+        "POST", "/api/transactions",
+        {"direction": "out", "amount": "30", "date": "2026-09-20", "counterparty": "Taxi"},
+    )  # fmt: skip
+    taxi_id = taxi.json()["id"]
+    path = f"/api/travel/trips/{trip['id']}"
+    assert (await owner.send("POST", f"{path}/expenses/{taxi_id}")).status_code == 204
+    detail = (await owner.get(path)).json()
+    assert detail["spending"]["spent"] == {"amount": "30.0000", "currency": "SGD"}
+    assert detail["spending"]["before"]["amount"] == "30.0000"
+    assert [i["counterparty"] for i in detail["items"]] == ["Taxi"]
+    assert detail["items"][0]["linked"] is True
+    assert {c["name"]: c["planned"] for c in detail["spending"]["categories"]}["Dining Out"] == {
+        "amount": "600.0000",
+        "currency": "SGD",
+    }
+    assert (await owner.get("/api/travel/next")).json()["trip"]["id"] == trip["id"]
+    assert (await owner.send("DELETE", f"{path}/expenses/{taxi_id}")).status_code == 204
+    assert (await owner.get(path)).json()["items"] == []
+
+    edited = await owner.send("PUT", path, {**body, "budget": None})
+    assert edited.json()["budget"] is None
+
+    assert (await owner.send("DELETE", path)).status_code == 204
+    assert (await owner.get(path)).status_code == 404
+    assert (await owner.get("/api/travel/trips/not-an-id")).status_code == 404

@@ -102,7 +102,7 @@ function DayDetail({ day, today }: { day: CashDay; today: string }) {
                 </span>
               </div>
               <p className="caption">
-                {e.kind === "bill" ? "Bill" : e.kind === "subscription" ? "Subscription" : "Payday"}
+                {e.kind === "bill" ? "Bill" : e.kind === "subscription" ? "Subscription" : e.kind === "trip" ? "Trip" : "Payday"}
                 {e.amount && e.home && e.amount.currency !== e.home.currency ? ` · about ${formatMoney(e.home)}` : ""}
               </p>
             </li>
