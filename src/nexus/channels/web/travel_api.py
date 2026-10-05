@@ -17,7 +17,7 @@ from nexus.domain.bookings import Booking
 from nexus.domain.errors import NotFound
 from nexus.domain.ledger import User
 from nexus.domain.money import Money
-from nexus.domain.trips import MAX_COMPANIONS, MAX_PLANNED, Trip
+from nexus.domain.trips import MAX_COMPANIONS, MAX_NOTES, MAX_PLANNED, Trip
 
 router = APIRouter(prefix="/api/travel")
 
@@ -51,6 +51,7 @@ class TripOut(Model):
     status: str  # upcoming, ongoing, finished
     days_until: int  # below zero once it has started
     day_number: int | None  # day 3 of 10, while it's on
+    notes: str | None
 
 
 def _trip(trip: Trip, today: date) -> TripOut:
@@ -68,6 +69,7 @@ def _trip(trip: Trip, today: date) -> TripOut:
         status=trip.status(today).value,
         days_until=(trip.start - today).days,
         day_number=trip.day_number(today),
+        notes=trip.notes,
     )
 
 
@@ -129,7 +131,7 @@ class SegmentOut(Model):
 class BookingOut(Model):
     id: UUID
     trip_id: UUID | None
-    kind: str  # flight, hotel, rail
+    kind: str  # flight, hotel, rail, activity (a plan)
     title: str
     provider: str | None
     starts: date
@@ -139,8 +141,13 @@ class BookingOut(Model):
     address: str | None
     check_in: date | None
     check_out: date | None
+    name: str | None  # a plan's
+    day: date | None
+    at: str | None  # HH:MM
+    note: str | None
     cost: MoneyOut | None
     logged: bool  # its cost is in the ledger
+    manual: bool  # added by hand, not read from email
 
 
 def _booking(b: Booking) -> BookingOut:
@@ -167,8 +174,13 @@ def _booking(b: Booking) -> BookingOut:
         address=d.address,
         check_in=d.check_in,
         check_out=d.check_out,
+        name=d.name,
+        day=d.day,
+        at=d.at.isoformat(timespec="minutes") if d.at else None,
+        note=d.note,
         cost=_m(b.cost),
         logged=b.transaction_id is not None,
+        manual=b.email_id is None,
     )
 
 
@@ -246,6 +258,7 @@ class TripIn(Model):
     companions: list[str] = Field(default_factory=list, max_length=MAX_COMPANIONS)
     set_aside: str | None = Field(None, max_length=32)
     planned: dict[str, str] = Field(default_factory=dict, max_length=MAX_PLANNED)
+    notes: str | None = Field(None, max_length=MAX_NOTES)
 
 
 def _home(user: User, amount: str | None) -> Money | None:
@@ -269,6 +282,7 @@ def _draft(user: User, body: TripIn) -> trip_cases.TripDraft:
         companions=body.companions,
         set_aside=_home(user, body.set_aside),
         planned=planned,
+        notes=body.notes,
     )
 
 
@@ -378,3 +392,79 @@ async def research_to_trip(run_id: str, auth: Auth, web: Runtime) -> TripOut:
         web.uow, auth.user, _uuid(run_id, "research"), now=web.clock()
     )
     return _trip(trip, _today(auth, web))
+
+
+class SegmentIn(Model):
+    number: str | None = Field(None, max_length=20)
+    origin: str | None = Field(None, max_length=80)
+    destination: str | None = Field(None, max_length=80)
+    departs: str | None = Field(None, max_length=20)  # YYYY-MM-DDTHH:MM, local
+    arrives: str | None = Field(None, max_length=20)
+
+
+class BookingIn(Model):
+    """An itinerary entry by hand: a flight or train (its legs), a hotel stay, or a
+    plan (a name, a day and maybe a time and place). Cost in any currency."""
+
+    kind: str = Field(pattern="^(flight|hotel|rail|activity)$")
+    provider: str | None = Field(None, max_length=80)
+    segments: list[SegmentIn] = Field(default_factory=list, max_length=6)
+    hotel: str | None = Field(None, max_length=120)
+    address: str | None = Field(None, max_length=200)
+    check_in: str | None = Field(None, max_length=10)
+    check_out: str | None = Field(None, max_length=10)
+    name: str | None = Field(None, max_length=120)
+    day: str | None = Field(None, max_length=10)
+    at: str | None = Field(None, max_length=5)
+    note: str | None = Field(None, max_length=300)
+    cost: str | None = Field(None, max_length=32)
+    currency: str | None = Field(None, pattern="^[A-Za-z]{3}$")
+
+
+def _details(body: BookingIn) -> dict[str, object]:
+    return {
+        "kind": body.kind,
+        "provider": body.provider,
+        "segments": [
+            {
+                "number": s.number,
+                "from": s.origin,
+                "to": s.destination,
+                "departs": s.departs,
+                "arrives": s.arrives,
+            }
+            for s in body.segments
+        ],
+        "hotel": body.hotel,
+        "address": body.address,
+        "check_in": body.check_in,
+        "check_out": body.check_out,
+        "name": body.name,
+        "day": body.day,
+        "at": body.at,
+        "note": body.note,
+    }
+
+
+def _cost(user: User, body: BookingIn) -> Money | None:
+    if body.cost is None or not body.cost.strip():
+        return None
+    return Money.of(body.cost.replace(",", ""), (body.currency or user.home_currency).upper())
+
+
+@router.post("/trips/{trip_id}/bookings", status_code=201)
+async def add_booking(trip_id: str, body: BookingIn, auth: Auth, web: Runtime) -> BookingOut:
+    booking = await booking_cases.add_manual(
+        web.uow(), auth.user.id, _uuid(trip_id), _details(body), _cost(auth.user, body),
+        now=web.clock(),
+    )  # fmt: skip
+    return _booking(booking)
+
+
+@router.put("/bookings/{booking_id}")
+async def edit_booking(booking_id: str, body: BookingIn, auth: Auth, web: Runtime) -> BookingOut:
+    booking = await booking_cases.edit_booking(
+        web.uow(), auth.user.id, _uuid(booking_id, "booking"), _details(body),
+        _cost(auth.user, body),
+    )  # fmt: skip
+    return _booking(booking)

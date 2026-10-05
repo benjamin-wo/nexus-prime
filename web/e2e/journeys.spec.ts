@@ -796,3 +796,41 @@ test("trip research shows sourced prices and a budget, and becomes a trip", asyn
   await expect(page).toHaveURL(/\/travel\/trips\/trip9$/);
   expect(state.trips[0]).toMatchObject({ destination: "Tokyo", currency: "JPY" });
 });
+
+test("plans are added to a trip's itinerary by hand, day by day, and changed", async ({ page }) => {
+  const state = await fakeApi(page);
+  await page.goto("/travel");
+  await page.getByRole("button", { name: "Add a trip" }).click();
+  const form = page.getByRole("form", { name: "Add a trip" });
+  await form.getByLabel("Where").fill("Tokyo");
+  await form.getByLabel("From").fill("2026-11-10");
+  await form.getByLabel("To").fill("2026-11-19");
+  await form.getByLabel("Currency there").fill("JPY");
+  await form.getByLabel("Notes").fill("Pack an adapter");
+  await form.getByRole("button", { name: "Add trip" }).click();
+  await expect(page).toHaveURL(/\/travel\/trips\/trip1$/);
+  expect(state.trips[0]).toMatchObject({ destination: "Tokyo" });
+
+  const itinerary = page.getByRole("region", { name: "Itinerary" });
+  await itinerary.getByRole("button", { name: "Add to itinerary" }).click();
+  const entry = itinerary.getByRole("form", { name: "Add to the itinerary" });
+  await entry.getByLabel("Name", { exact: true }).fill("Dinner at Sushi Ten");
+  await entry.getByLabel("Day", { exact: true }).fill("2026-11-12");
+  await entry.getByLabel("Time", { exact: true }).fill("19:00");
+  await entry.getByLabel("Where", { exact: true }).fill("1-2-3 Ginza");
+  await entry.getByRole("button", { name: "Add" }).click();
+  await expect(itinerary.getByRole("list", { name: /^Day 3/ })).toContainText("Dinner at Sushi Ten");
+  await expect(itinerary).toContainText("19:00 · 1-2-3 Ginza");
+  expect(state.plans[0]).toMatchObject({ name: "Dinner at Sushi Ten", day: "2026-11-12", at: "19:00" });
+
+  await itinerary.getByRole("button", { name: "Edit Dinner at Sushi Ten" }).click();
+  const edit = itinerary.getByRole("form", { name: "Change the entry" });
+  await edit.getByLabel("Time", { exact: true }).fill("20:00");
+  await edit.getByRole("button", { name: "Save" }).click();
+  await expect(itinerary).toContainText("20:00 · 1-2-3 Ginza");
+
+  page.once("dialog", (d) => void d.accept());
+  await itinerary.getByRole("button", { name: "Remove Dinner at Sushi Ten" }).click();
+  await expect(itinerary).not.toContainText("Dinner at Sushi Ten");
+  expect(state.plans).toEqual([]);
+});

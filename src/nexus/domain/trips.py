@@ -5,6 +5,7 @@ Travel never books or buys anything. A trip is made by hand ("Tokyo 10-20 Jan,
 budget S$3,000") or, later, from research.
 """
 
+import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -45,6 +46,7 @@ class Trip:
     planned: dict[str, Money]  # by category name
     created_at: datetime
     updated_at: datetime
+    notes: str | None = None  # the user's own: what to pack, who to meet
 
     @property
     def days(self) -> int:
@@ -66,6 +68,27 @@ class Trip:
 
 def clean_destination(raw: str) -> str:
     return clean_name(raw, field_name="destination")
+
+
+MAX_NOTES = 2000
+# Personal numbers a note shouldn't keep: a labelled reference or passport number,
+# or a long run of digits (a card, ticket or loyalty number).
+_LABELLED = re.compile(
+    r"(?i)\b(booking|confirmation|reservation|pnr|ticket|passport|membership|loyalty|"
+    r"frequent flyer|card)(?:\s+(?:reference|ref|no\.?|number|code)|\s*#)*\s*[:#]?\s*"
+    r"(?=[A-Z0-9-]*\d)[A-Z0-9-]{4,}"
+)
+_LONG_DIGITS = re.compile(r"\b\d(?:[\s-]?\d){7,}\b")
+
+
+def clean_notes(raw: str | None) -> str | None:
+    """Free notes, kept as written (line breaks too) but without personal numbers."""
+    if raw is None:
+        return None
+    text = "\n".join(line.rstrip() for line in raw.strip().splitlines())[:MAX_NOTES]
+    text = _LONG_DIGITS.sub("•••", text)
+    text = _LABELLED.sub(lambda m: f"{m.group(1)} •••", text)
+    return text or None
 
 
 def clean_currency(raw: str) -> str:
@@ -279,4 +302,7 @@ def describe_trip(trip: Trip, today: date) -> str:
         parts.append("with " + ", ".join(trip.companions))
     if trip.set_aside:
         parts.append(f"setting aside {trip.set_aside} each payday")
-    return "; ".join(parts)
+    text = "; ".join(parts)
+    if trip.notes:
+        text += f". Notes: {' / '.join(trip.notes.splitlines())}"
+    return text

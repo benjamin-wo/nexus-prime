@@ -9,7 +9,7 @@ the expense counts towards the booking's trip whatever its date or currency.
 
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
@@ -23,7 +23,7 @@ from nexus.domain.bookings import (
     matching_trips,
     passport_reminder,
 )
-from nexus.domain.errors import NotFound
+from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.ledger import User, UserId
 from nexus.domain.money import Money
 from nexus.domain.trips import Trip, TripStatus
@@ -142,6 +142,69 @@ async def expense_logged(
 async def unattached(uow: UnitOfWork, user_id: UserId) -> list[Booking]:
     async with uow:
         return await uow.trips.list_bookings(user_id, unattached=True)
+
+
+MAX_BOOKINGS_A_TRIP = 100
+
+
+def _draft(details: dict[str, object]) -> BookingDraft:
+    found = BookingDraft.from_dict(dict(details))
+    if found is None:
+        kind = str(details.get("kind", ""))
+        if kind == "activity":
+            raise InvalidInput("a plan needs a name and a day")
+        if kind == "hotel":
+            raise InvalidInput("a hotel needs a check-in date")
+        if kind in ("flight", "rail"):
+            raise InvalidInput("a flight or train needs its departure date and time")
+        raise InvalidInput("that's not a flight, hotel, train or plan")
+    return found
+
+
+async def add_manual(
+    uow: UnitOfWork,
+    user_id: UserId,
+    trip_id: UUID,
+    details: dict[str, object],
+    cost: Money | None,
+    *,
+    now: datetime,
+) -> Booking:
+    """An itinerary entry the user adds by hand: a flight, hotel, train or plan."""
+    draft = _draft(details)
+    if cost is not None and not cost.is_positive:
+        raise InvalidInput("a cost must be more than zero")
+    async with uow:
+        trip = await uow.trips.get_trip(user_id, trip_id)
+        if trip is None:
+            raise NotFound("no trip with that id")
+        if len(await uow.trips.list_bookings(user_id, trip_id=trip_id)) >= MAX_BOOKINGS_A_TRIP:
+            raise InvalidInput(f"a trip keeps at most {MAX_BOOKINGS_A_TRIP} itinerary entries")
+        booking = Booking(uuid4(), user_id, trip_id, None, draft, cost, None, now)
+        await uow.trips.insert_booking(booking)
+        await uow.commit()
+    return booking
+
+
+async def edit_booking(
+    uow: UnitOfWork,
+    user_id: UserId,
+    booking_id: UUID,
+    details: dict[str, object],
+    cost: Money | None,
+) -> Booking:
+    """Changes an entry's details, by hand or read from email (a corrected time)."""
+    draft = _draft(details)
+    if cost is not None and not cost.is_positive:
+        raise InvalidInput("a cost must be more than zero")
+    async with uow:
+        current = await uow.trips.get_booking(user_id, booking_id)
+        if current is None:
+            raise NotFound("no booking with that id")
+        changed = replace(current, draft=draft, cost=cost)
+        await uow.trips.update_booking(changed)
+        await uow.commit()
+    return changed
 
 
 async def delete_booking(uow: UnitOfWork, user_id: UserId, booking_id: UUID) -> None:

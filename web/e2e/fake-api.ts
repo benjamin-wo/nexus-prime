@@ -92,6 +92,7 @@ export async function fakeApi(
     tripItems: string[];
     looseBookings: Record<string, unknown>[];
     movedBookings: string[];
+    plans: Record<string, unknown>[];
     planStarted: boolean;
     planAlerts: boolean;
     cancelled: string[];
@@ -157,6 +158,7 @@ export async function fakeApi(
       },
     ],
     movedBookings: [],
+    plans: [],
     planStarted: false,
     planAlerts: true,
     draft: null,
@@ -631,7 +633,9 @@ export async function fakeApi(
             check_out: null,
             cost: home(820),
             logged: false,
+            manual: false,
           },
+          ...state.plans,
         ],
         booked: home(820),
         booked_unlogged: home(820),
@@ -658,6 +662,26 @@ export async function fakeApi(
         state.trips = state.trips.filter((t) => t !== trip);
         return route.fulfill({ status: 204 });
       }
+    }
+    const tripPlans = path.match(/^\/travel\/trips\/([^/]+)\/bookings$/);
+    if (tripPlans && method === "POST") {
+      if (!body.day || !body.name) return json(route, { detail: "a plan needs a name and a day" }, 422);
+      const plan = {
+        id: `pl${state.plans.length + 1}`, trip_id: tripPlans[1], kind: "activity", title: body.name, provider: null,
+        starts: body.day, ends: body.day, segments: [], hotel: null, address: body.address, check_in: null, check_out: null,
+        name: body.name, day: body.day, at: body.at, note: body.note, cost: null, logged: false, manual: true,
+      };
+      state.plans.push(plan);
+      return json(route, plan, 201);
+    }
+    const planEdit = path.match(/^\/travel\/bookings\/(pl\d+)$/);
+    if (planEdit && method === "PUT") {
+      state.plans = state.plans.map((p) => (p.id === planEdit[1] ? { ...p, at: body.at, day: body.day, starts: body.day, name: body.name, title: body.name } : p));
+      return json(route, state.plans.find((p) => p.id === planEdit[1]));
+    }
+    if (planEdit && method === "DELETE") {
+      state.plans = state.plans.filter((p) => p.id !== planEdit[1]);
+      return route.fulfill({ status: 204 });
     }
     const tripExpense = path.match(/^\/travel\/trips\/([^/]+)\/expenses\/([^/]+)$/);
     if (tripExpense && method === "DELETE") {

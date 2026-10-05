@@ -1,7 +1,7 @@
 ---
 name: trips
 description: "Trips (Travel department): trips the user is planning or on, with dates, the currency spent there, a budget in the home currency, who's going and money set aside each payday; what's been spent on a trip, what's left, and who still owes what afterwards. Nexus never books or buys anything."
-tools: [research_trip, create_trip, update_trip, delete_trip, list_trips, trip_status, add_to_trip, remove_from_trip, find_transactions, split_bill, list_ious]
+tools: [research_trip, add_to_itinerary, remove_from_itinerary, create_trip, update_trip, delete_trip, list_trips, trip_status, add_to_trip, remove_from_trip, find_transactions, split_bill, list_ious]
 ---
 # Trips
 
@@ -22,6 +22,13 @@ tools: [research_trip, create_trip, update_trip, delete_trip, list_trips, trip_s
   Anything else (flights paid at home months before, a home-currency card charge
   abroad) is added with `add_to_trip`; find its id first with `find_transactions`.
   `remove_from_trip` takes one off; it stays in the ledger.
+- "add dinner at Sushi Ten on the 12th at 7pm to Tokyo", "we're doing a day trip to Nikko
+  on Tuesday", "add my hotel: Hotel Sakura, 10 to 14 Dec", "add flight SQ12 on the 10th
+  at 8:25": `add_to_itinerary` (kind activity for plans). Booking emails add themselves;
+  this is for anything else. "cancel the Nikko trip" (an entry): `remove_from_itinerary`.
+- "note for Tokyo: pack an adapter": `update_trip` with `notes`, keeping what's already in
+  the notes (`trip_status` shows them). Booking references and passport or card numbers
+  aren't kept in notes; say so if the user tries.
 - "my trips": `list_trips`. "move the trip to the 12th", "change the budget to 4000":
   `update_trip`. "cancel the Bali trip": `delete_trip` (expenses stay).
 - Flight, hotel and train confirmations in the user's connected or forwarded email are

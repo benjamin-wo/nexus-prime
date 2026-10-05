@@ -41,6 +41,7 @@ def _trip(row: Row[Any]) -> Trip:
         planned={k: Money(Decimal(v), home) for k, v in row.planned.items()},
         created_at=row.created_at,
         updated_at=row.updated_at,
+        notes=row.notes,
     )
 
 
@@ -55,6 +56,7 @@ def _values(trip: Trip, home: str) -> dict[str, Any]:
         "set_aside": trip.set_aside.amount if trip.set_aside else None,
         "companions": list(trip.companions),
         "planned": {k: str(v.amount) for k, v in trip.planned.items()},
+        "notes": trip.notes,
         "updated_at": trip.updated_at,
     }
 
@@ -278,6 +280,22 @@ class SqlTripRepository:
             update(trip_bookings)
             .where(trip_bookings.c.user_id == user_id, trip_bookings.c.id == booking_id)
             .values(trip_id=trip_id, transaction_id=transaction_id)
+        )
+
+    async def update_booking(self, booking: Booking) -> None:
+        d = booking.draft
+        await self._db.execute(
+            update(trip_bookings)
+            .where(trip_bookings.c.user_id == booking.user_id, trip_bookings.c.id == booking.id)
+            .values(
+                kind=d.kind.value,
+                title=d.title,
+                start_on=booking.starts,
+                end_on=d.ends,
+                details=d.as_dict(),
+                amount=booking.cost.amount if booking.cost else None,
+                currency=booking.cost.currency if booking.cost else None,
+            )
         )
 
     async def delete_booking(self, user_id: UserId, booking_id: UUID) -> bool:

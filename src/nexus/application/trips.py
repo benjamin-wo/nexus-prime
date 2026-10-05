@@ -33,6 +33,7 @@ from nexus.domain.trips import (
     clean_companions,
     clean_currency,
     clean_destination,
+    clean_notes,
     clean_planned,
     describe_trip,
     home_amount,
@@ -57,6 +58,7 @@ class TripDraft:
     companions: list[str] = field(default_factory=list)
     set_aside: Money | None = None
     planned: dict[str, Money] = field(default_factory=dict)
+    notes: str | None = None
 
 
 def local_today(user: User, now: datetime) -> date:
@@ -79,6 +81,7 @@ def _build(user: User, draft: TripDraft, trip_id: UUID, created: datetime, now: 
         planned=clean_planned(draft.planned, home),
         created_at=created,
         updated_at=now,
+        notes=clean_notes(draft.notes),
     )
 
 
@@ -115,6 +118,7 @@ def draft_of(trip: Trip) -> TripDraft:
         list(trip.companions),
         trip.set_aside,
         dict(trip.planned),
+        trip.notes,
     )
 
 

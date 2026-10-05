@@ -30,6 +30,7 @@ function TripForm({ initial, home, onDone }: { initial?: Trip; home: string; onD
   const [planned, setPlanned] = useState<FormRow[]>(
     Object.entries(initial?.planned ?? {}).map(([name, m]) => ({ name, amount: String(Number(m.amount)) })),
   );
+  const [notes, setNotes] = useState(initial?.notes ?? "");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -49,6 +50,7 @@ function TripForm({ initial, home, onDone }: { initial?: Trip; home: string; onD
         .filter(Boolean),
       set_aside: setAside.trim() || null,
       planned: Object.fromEntries(planned.filter((p) => p.name.trim() && p.amount.trim()).map((p) => [p.name.trim(), p.amount.trim()])),
+      notes: notes.trim() || null,
     };
     try {
       const saved = initial
@@ -125,6 +127,17 @@ function TripForm({ initial, home, onDone }: { initial?: Trip; home: string; onD
           </button>
         )}
       </fieldset>
+      <label className="field">
+        Notes
+        <textarea
+          className="input"
+          rows={3}
+          maxLength={2000}
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="What to pack, who to meet. Booking references and card numbers aren't kept."
+        />
+      </label>
       {error && (
         <p className="error-text" role="alert">
           {error}
@@ -363,7 +376,7 @@ function PlannedVsActual({ detail }: { detail: TripDetail }) {
   );
 }
 
-const KIND_ICON: Record<Booking["kind"], string> = { flight: "✈️", hotel: "🏨", rail: "🚆" };
+const KIND_ICON: Record<Booking["kind"], string> = { flight: "✈️", hotel: "🏨", rail: "🚆", activity: "📍" };
 
 const localTime = (iso: string) =>
   new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "UTC" }).format(
@@ -371,6 +384,24 @@ const localTime = (iso: string) =>
   );
 
 function BookingLines({ booking }: { booking: Booking }) {
+  const note = booking.note && (
+    <span className="caption">
+      {booking.note}
+      <br />
+    </span>
+  );
+  if (booking.kind === "activity") {
+    return (
+      <>
+        <span className="caption">
+          {booking.at && `${booking.at} · `}
+          {booking.address}
+          {(booking.at || booking.address) && <br />}
+        </span>
+        {note}
+      </>
+    );
+  }
   if (booking.kind === "hotel") {
     return (
       <span className="caption">
@@ -414,22 +445,288 @@ function BookingRow({ booking, children }: { booking: Booking; children?: ReactN
   );
 }
 
-function Itinerary({ detail }: { detail: TripDetail }) {
+type EntryForm = {
+  kind: Booking["kind"];
+  name: string;
+  day: string;
+  at: string;
+  until: string;
+  address: string;
+  number: string;
+  origin: string;
+  destination: string;
+  departs: string;
+  arrives: string;
+  provider: string;
+  note: string;
+  cost: string;
+  currency: string;
+};
+
+const EMPTY: EntryForm = {
+  kind: "activity", name: "", day: "", at: "", until: "", address: "", number: "", origin: "", destination: "",
+  departs: "", arrives: "", provider: "", note: "", cost: "", currency: "",
+};
+
+function formOf(b: Booking): EntryForm {
+  const leg = b.segments[0];
+  return {
+    kind: b.kind,
+    name: b.kind === "hotel" ? (b.hotel ?? "") : (b.name ?? ""),
+    day: (b.kind === "hotel" ? b.check_in : b.day) ?? "",
+    at: b.at ?? "",
+    until: b.check_out ?? "",
+    address: b.address ?? "",
+    number: leg?.number ?? "",
+    origin: leg?.origin ?? "",
+    destination: leg?.destination ?? "",
+    departs: leg?.departs ?? "",
+    arrives: leg?.arrives ?? "",
+    provider: b.provider ?? "",
+    note: b.note ?? "",
+    cost: b.cost ? String(Number(b.cost.amount)) : "",
+    currency: b.cost?.currency ?? "",
+  };
+}
+
+function bodyOf(f: EntryForm, home: string) {
+  const blank = (v: string) => v.trim() || null;
+  const base = { kind: f.kind, note: blank(f.note), cost: blank(f.cost), currency: f.cost.trim() ? f.currency.trim() || home : null };
+  if (f.kind === "activity") return { ...base, name: blank(f.name), day: blank(f.day), at: blank(f.at), address: blank(f.address) };
+  if (f.kind === "hotel") return { ...base, hotel: blank(f.name), check_in: blank(f.day), check_out: blank(f.until), address: blank(f.address) };
+  return {
+    ...base,
+    provider: blank(f.provider),
+    segments: [{ number: blank(f.number), origin: blank(f.origin), destination: blank(f.destination), departs: blank(f.departs), arrives: blank(f.arrives) }],
+  };
+}
+
+/** Add or change an itinerary entry by hand: a plan, a flight, a hotel or a train. */
+function EntryEditor({ tripId, home, entry, onDone }: { tripId: string; home: string; entry?: Booking; onDone: (saved: boolean) => void }) {
+  const [f, setF] = useState<EntryForm>(entry ? formOf(entry) : EMPTY);
+  const [error, setError] = useState<string | null>(null);
+  const set = (key: keyof EntryForm) => (e: { target: { value: string } }) => setF({ ...f, [key]: e.target.value });
+
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    setError(null);
+    try {
+      const body = bodyOf(f, home);
+      if (entry) await api(`/travel/bookings/${entry.id}`, { method: "PUT", body });
+      else await api(`/travel/trips/${tripId}/bookings`, { method: "POST", body });
+      onDone(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't save that");
+    }
+  }
+
+  const legs = f.kind === "flight" || f.kind === "rail";
+  return (
+    <form className="trip-form" onSubmit={save} aria-label={entry ? "Change the entry" : "Add to the itinerary"}>
+      {!entry && (
+        <label className="field">
+          What
+          <select className="input" value={f.kind} onChange={set("kind")}>
+            <option value="activity">Plan (dinner, tour, day trip)</option>
+            <option value="flight">Flight</option>
+            <option value="hotel">Hotel</option>
+            <option value="rail">Train</option>
+          </select>
+        </label>
+      )}
+      {f.kind === "activity" && (
+        <div className="trip-form-row">
+          <label className="field">
+            Name
+            <input className="input" value={f.name} maxLength={120} onChange={set("name")} required />
+          </label>
+          <label className="field">
+            Day
+            <input className="input" type="date" value={f.day} onChange={set("day")} required />
+          </label>
+          <label className="field">
+            Time
+            <input className="input" type="time" value={f.at} onChange={set("at")} />
+          </label>
+        </div>
+      )}
+      {f.kind === "hotel" && (
+        <div className="trip-form-row">
+          <label className="field">
+            Hotel
+            <input className="input" value={f.name} maxLength={120} onChange={set("name")} required />
+          </label>
+          <label className="field">
+            Check in
+            <input className="input" type="date" value={f.day} onChange={set("day")} required />
+          </label>
+          <label className="field">
+            Check out
+            <input className="input" type="date" value={f.until} onChange={set("until")} />
+          </label>
+        </div>
+      )}
+      {legs && (
+        <>
+          <div className="trip-form-row">
+            <label className="field">
+              {f.kind === "flight" ? "Flight number" : "Train"}
+              <input className="input" value={f.number} maxLength={20} onChange={set("number")} />
+            </label>
+            <label className="field">
+              From
+              <input className="input" value={f.origin} maxLength={80} onChange={set("origin")} />
+            </label>
+            <label className="field">
+              To
+              <input className="input" value={f.destination} maxLength={80} onChange={set("destination")} />
+            </label>
+          </div>
+          <div className="trip-form-row">
+            <label className="field">
+              Departs (local)
+              <input className="input" type="datetime-local" value={f.departs} onChange={set("departs")} required />
+            </label>
+            <label className="field">
+              Arrives (local)
+              <input className="input" type="datetime-local" value={f.arrives} onChange={set("arrives")} />
+            </label>
+            <label className="field">
+              {f.kind === "flight" ? "Airline" : "Operator"}
+              <input className="input" value={f.provider} maxLength={80} onChange={set("provider")} />
+            </label>
+          </div>
+        </>
+      )}
+      {(f.kind === "activity" || f.kind === "hotel") && (
+        <label className="field">
+          {f.kind === "hotel" ? "Address" : "Where"}
+          <input className="input" value={f.address} maxLength={200} onChange={set("address")} />
+        </label>
+      )}
+      <div className="trip-form-row">
+        <label className="field">
+          Note
+          <input className="input" value={f.note} maxLength={300} onChange={set("note")} placeholder="Seat, what to bring…" />
+        </label>
+        <label className="field">
+          Cost
+          <input className="input" inputMode="decimal" value={f.cost} onChange={set("cost")} placeholder="Optional" />
+        </label>
+        <label className="field">
+          Currency
+          <input className="input" value={f.currency} maxLength={3} onChange={set("currency")} placeholder={home} />
+        </label>
+      </div>
+      {error && (
+        <p className="error-text" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="actions">
+        <button type="submit" className="btn btn-primary">
+          {entry ? "Save" : "Add"}
+        </button>
+        <button type="button" className="btn" onClick={() => onDone(false)}>
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
+const sortKey = (b: Booking) => `${b.starts}T${b.at ?? b.segments[0]?.departs?.slice(11) ?? (b.kind === "hotel" ? "15:00" : "00:00")}`;
+
+/** The trip day by day: bookings from email and entries added by hand. */
+function Itinerary({ detail, onChange }: { detail: TripDetail; onChange: () => void }) {
+  const home = useHome();
+  const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
+  const sorted = [...detail.bookings].sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
+  const days = [...new Set(sorted.map((b) => b.starts))];
+  const dayLabel = (iso: string) => {
+    const n = Math.round((Date.parse(iso) - Date.parse(detail.trip.start)) / 86400000) + 1;
+    const when = new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(iso));
+    return n >= 1 && n <= detail.trip.days ? `Day ${n} · ${when}` : when;
+  };
+
+  async function remove(b: Booking) {
+    if (!window.confirm(`Take ${b.title} off the itinerary?`)) return;
+    await api(`/travel/bookings/${b.id}`, { method: "DELETE" }).catch(() => undefined);
+    onChange();
+  }
+
   return (
     <section className="card" aria-labelledby="itinerary">
       <div className="card-head">
         <h2 id="itinerary">Itinerary</h2>
-        <span className="caption">From your booking emails; times are local</span>
+        {!adding && (
+          <button type="button" className="btn btn-small" onClick={() => setAdding(true)}>
+            Add to itinerary
+          </button>
+        )}
       </div>
-      {detail.bookings.length === 0 ? (
-        <p className="state">No bookings yet. Flight, hotel and train confirmations in your email land here.</p>
-      ) : (
-        <ul className="feed" aria-label="Bookings">
-          {detail.bookings.map((b) => (
-            <BookingRow key={b.id} booking={b} />
-          ))}
-        </ul>
+      {adding && (
+        <EntryEditor
+          tripId={detail.trip.id}
+          home={home}
+          onDone={(saved) => {
+            setAdding(false);
+            if (saved) onChange();
+          }}
+        />
       )}
+      {sorted.length === 0 && !adding && (
+        <p className="state">Nothing yet. Booking emails land here by themselves; add plans, flights or hotels by hand too.</p>
+      )}
+      {days.map((d) => (
+        <div key={d} className="itinerary-day">
+          <h3 className="caption">{dayLabel(d)}</h3>
+          <ul className="feed" aria-label={dayLabel(d)}>
+            {sorted
+              .filter((b) => b.starts === d)
+              .map((b) =>
+                editing === b.id ? (
+                  <li key={b.id}>
+                    <EntryEditor
+                      tripId={detail.trip.id}
+                      home={home}
+                      entry={b}
+                      onDone={(saved) => {
+                        setEditing(null);
+                        if (saved) onChange();
+                      }}
+                    />
+                  </li>
+                ) : (
+                  <BookingRow key={b.id} booking={b}>
+                    <span className="row-actions">
+                      <button type="button" className="btn btn-small" onClick={() => setEditing(b.id)} aria-label={`Edit ${b.title}`}>
+                        Edit
+                      </button>
+                      <button type="button" className="btn btn-small" onClick={() => void remove(b)} aria-label={`Remove ${b.title}`}>
+                        Remove
+                      </button>
+                    </span>
+                  </BookingRow>
+                ),
+              )}
+          </ul>
+        </div>
+      ))}
+      <p className="caption">Times are local. Booking emails add themselves.</p>
+    </section>
+  );
+}
+
+function Notes({ trip }: { trip: Trip }) {
+  if (!trip.notes) return null;
+  return (
+    <section className="card" aria-labelledby="trip-notes">
+      <div className="card-head">
+        <h2 id="trip-notes">Notes</h2>
+      </div>
+      <p className="notes">{trip.notes}</p>
     </section>
   );
 }
@@ -612,7 +909,8 @@ export function TripPage() {
       {data && (
         <>
           <Spending detail={data} />
-          <Itinerary detail={data} />
+          <Notes trip={data.trip} />
+          <Itinerary detail={data} onChange={refresh} />
           <PlannedVsActual detail={data} />
           <SetAside detail={data} />
           <SettleUp detail={data} />

@@ -17,6 +17,7 @@ from zoneinfo import ZoneInfo
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from nexus.application import bills as bill_cases
+from nexus.application import bookings as booking_cases
 from nexus.application import budgets as budget_cases
 from nexus.application import cashflow as cashflow_cases
 from nexus.application import categories as category_cases
@@ -39,6 +40,7 @@ from nexus.application import trips as trip_cases
 from nexus.application.departments import Departments
 from nexus.application.fx import Rate, RateSource
 from nexus.application.ports import LedgerQuery, UnitOfWork
+from nexus.domain.bookings import Booking, BookingDraft
 from nexus.domain.email import InboundEmail
 from nexus.domain.errors import InvalidInput, NexusError, NotFound
 from nexus.domain.investments import clean_quantity, clean_symbol, describe_position
@@ -1536,6 +1538,7 @@ class TripArgs(Args):
     set_aside: str | None = Field(
         None, description="Amount to put aside each payday until the trip, home currency"
     )
+    notes: str | None = Field(None, description="The user's own notes for the trip")
 
 
 def _home_money(ctx: ToolContext, amount: str | None) -> Money | None:
@@ -1553,6 +1556,7 @@ def _trip_draft(ctx: ToolContext, a: TripArgs) -> trip_cases.TripDraft:
         budget=_home_money(ctx, a.budget),
         companions=a.companions,
         set_aside=_home_money(ctx, a.set_aside),
+        notes=a.notes,
     )
 
 
@@ -1566,6 +1570,8 @@ def _draft_line(d: trip_cases.TripDraft) -> str:
         line += ", with " + ", ".join(d.companions)
     if d.set_aside:
         line += f", setting aside {d.set_aside} each payday"
+    if d.notes:
+        line += f'. Notes: "{" / ".join(d.notes.splitlines())}"'
     return line
 
 
@@ -1596,6 +1602,9 @@ class TripChangeArgs(TripNameArgs):
     budget: str | None = Field(None, description="New budget in the home currency; none clears")
     companions: list[str] | None = Field(None, description="Everyone going, replacing the list")
     set_aside: str | None = Field(None, description="New amount each payday; none stops it")
+    notes: str | None = Field(
+        None, description="The trip's notes in full, replacing them (include what to keep)"
+    )
 
 
 async def _changed_trip(ctx: ToolContext, a: TripChangeArgs) -> tuple[UUID, trip_cases.TripDraft]:
@@ -1610,6 +1619,7 @@ async def _changed_trip(ctx: ToolContext, a: TripChangeArgs) -> tuple[UUID, trip
         budget=_home_money(ctx, a.budget) if a.budget is not None else d.budget,
         companions=a.companions if a.companions is not None else d.companions,
         set_aside=_home_money(ctx, a.set_aside) if a.set_aside is not None else d.set_aside,
+        notes=a.notes if a.notes is not None else d.notes,
     )
     return trip.id, changed
 
@@ -1687,6 +1697,97 @@ async def _remove_from_trip(ctx: ToolContext, a: TripExpenseArgs) -> ToolResult:
     trip, tx = await _trip_and_expense(ctx, a)
     await trip_cases.remove_expense(ctx.uow(), ctx.user.id, trip.id, tx.id, now=ctx.now)
     return ToolResult(f"Taken off the {trip.destination} trip; it stays in the ledger.", wrote=True)
+
+
+class ItineraryArgs(TripNameArgs):
+    kind: Literal["activity", "flight", "hotel", "rail"] = Field(
+        description="activity for a plan (a dinner, tour, day trip), else flight, hotel or rail"
+    )
+    name: str | None = Field(None, description="A plan's name, or the hotel's name")
+    day: str | None = Field(None, description="A plan's day or a hotel's check-in, 2026-12-12")
+    time: str | None = Field(None, description="A plan's time, like 19:00")
+    until: str | None = Field(None, description="A hotel's check-out day")
+    place: str | None = Field(None, description="Where: an address or area")
+    number: str | None = Field(None, description="A flight or train number, e.g. SQ12")
+    origin: str | None = Field(None, description="A flight or train: from")
+    destination: str | None = Field(None, description="A flight or train: to")
+    departs: str | None = Field(None, description="Departure, local, like 2026-12-10T08:25")
+    arrives: str | None = Field(None, description="Arrival, local")
+    provider: str | None = Field(None, description="The airline or rail operator")
+    note: str | None = Field(None, description="Anything else worth keeping")
+    cost: str | None = Field(None, description="What it costs, if said")
+    currency: str | None = Field(None, description="The cost's currency, if not the home one")
+
+
+def _itinerary_details(a: ItineraryArgs) -> dict[str, object]:
+    if a.kind == "activity":
+        return {"kind": "activity", "name": a.name, "day": a.day, "at": a.time,
+                "address": a.place, "note": a.note}  # fmt: skip
+    if a.kind == "hotel":
+        return {"kind": "hotel", "hotel": a.name, "address": a.place, "check_in": a.day,
+                "check_out": a.until, "note": a.note}  # fmt: skip
+    return {
+        "kind": a.kind,
+        "provider": a.provider,
+        "segments": [{"number": a.number, "from": a.origin, "to": a.destination,
+                      "departs": a.departs or a.day, "arrives": a.arrives}],
+        "note": a.note,
+    }  # fmt: skip
+
+
+async def _itinerary_entry(
+    ctx: ToolContext, a: ItineraryArgs
+) -> tuple[Trip, BookingDraft, Money | None]:
+    trip = await trip_cases.find_trip(ctx.uow(), ctx.user, a.trip, now=ctx.now)
+    draft = BookingDraft.from_dict(_itinerary_details(a))
+    if draft is None:
+        raise InvalidInput(
+            "a plan needs a name and a day, a hotel its check-in day, and a flight or train "
+            "its departure time"
+        )
+    cost = parse_money(ctx, a.cost, a.currency) if a.cost else None
+    return trip, draft, cost
+
+
+async def _describe_add_to_itinerary(ctx: ToolContext, a: ItineraryArgs) -> str:
+    trip, draft, cost = await _itinerary_entry(ctx, a)
+    price = f", {cost}" if cost else ""
+    return f"Add to the {trip.destination} itinerary: {draft.describe()}{price}?"
+
+
+async def _add_to_itinerary(ctx: ToolContext, a: ItineraryArgs) -> ToolResult:
+    trip, draft, cost = await _itinerary_entry(ctx, a)
+    await booking_cases.add_manual(
+        ctx.uow(), ctx.user.id, trip.id, draft.as_dict(), cost, now=ctx.now
+    )
+    return ToolResult(f"Added to the {trip.destination} itinerary: {draft.describe()}.", wrote=True)
+
+
+class ItineraryItemArgs(TripNameArgs):
+    item: str = Field(description="The entry's name or part of it, as the user says it")
+
+
+async def _find_item(ctx: ToolContext, a: ItineraryItemArgs) -> tuple[Trip, Booking]:
+    trip = await trip_cases.find_trip(ctx.uow(), ctx.user, a.trip, now=ctx.now)
+    async with ctx.uow() as tx:
+        items = await tx.trips.list_bookings(ctx.user.id, trip_id=trip.id)
+    wanted = a.item.strip().casefold()
+    found = [b for b in items if wanted in b.draft.title.casefold()]
+    if len(found) != 1:
+        listed = "; ".join(b.draft.title for b in items) or "nothing yet"
+        raise NotFound(f"no single itinerary entry matches {a.item!r}; the itinerary has: {listed}")
+    return trip, found[0]
+
+
+async def _describe_remove_from_itinerary(ctx: ToolContext, a: ItineraryItemArgs) -> str:
+    trip, item = await _find_item(ctx, a)
+    return f"Take {item.draft.describe()} off the {trip.destination} itinerary?"
+
+
+async def _remove_from_itinerary(ctx: ToolContext, a: ItineraryItemArgs) -> ToolResult:
+    trip, item = await _find_item(ctx, a)
+    await booking_cases.delete_booking(ctx.uow(), ctx.user.id, item.id)
+    return ToolResult(f"Taken off the {trip.destination} itinerary.", wrote=True)
 
 
 class ResearchArgs(Args):
@@ -2090,6 +2191,21 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             TripExpenseArgs,
             _remove_from_trip,
             confirm=_describe_remove_from_trip,
+        ),
+        ToolSpec(
+            "add_to_itinerary",
+            "Add an entry to a trip's itinerary by hand: a plan (dinner, tour, day trip), a "
+            "flight, a hotel stay or a train. Asks the user to confirm.",
+            ItineraryArgs,
+            _add_to_itinerary,
+            confirm=_describe_add_to_itinerary,
+        ),
+        ToolSpec(
+            "remove_from_itinerary",
+            "Take an entry off a trip's itinerary. Asks the user to confirm.",
+            ItineraryItemArgs,
+            _remove_from_itinerary,
+            confirm=_describe_remove_from_itinerary,
         ),
         ToolSpec(
             "research_trip",
