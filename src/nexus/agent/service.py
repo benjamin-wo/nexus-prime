@@ -21,6 +21,7 @@ from nexus.agent.graph import BUTTONS, RECEIPT, REF, WROTE, strip_ids, thread_id
 from nexus.agent.holdings_reader import HoldingsReader, ScreenshotHoldings
 from nexus.agent.receipts import ReceiptReader, caption_date
 from nexus.agent.tools import UowFactory
+from nexus.agent.trip_reader import TripReader, drafts
 from nexus.application import bills as bill_cases
 from nexus.application import bookings as booking_cases
 from nexus.application import category_rules as rule_cases
@@ -87,6 +88,18 @@ class _NoRates:
 
 
 # A caption that says the photo is a portfolio screenshot, not a receipt.
+# A caption that says the photo is about travel: read it as bookings or plans.
+_TRAVEL = re.compile(
+    r"\b(?:trip|itinerary|hotel|flights?|bookings?|reservations?|tickets?|tours?|travel|"
+    r"agoda|klook|airbnb|check[- ]?in)\b",
+    re.I,
+)
+_NO_ENTRIES = Reply(
+    "I couldn't find any bookings or plans with dates in that screenshot. Try a clearer "
+    "one, or tell me the details."
+)
+# Which-trip questions sent for one screenshot; the rest wait on the Trips page.
+ASK_AT_MOST = 3
 _PORTFOLIO = re.compile(r"\b(?:portfolio|holdings?|positions?|ibkr|interactive brokers)\b", re.I)
 _NO_POSITIONS = Reply(
     "I couldn't find any positions in that screenshot. Send your broker's Portfolio "
@@ -123,8 +136,11 @@ class AgentService:
         after_turn: Callable[[UserId, list[str], str], Awaitable[None]] | None = None,
         limiter: RateLimiter | None = None,
         holdings: HoldingsReader | None = None,
+        trips: TripReader | None = None,
     ) -> None:
         self._graph = graph
+        # Reads screenshots of travel bookings and plans; None: they're read as receipts.
+        self._trips = trips
         # Reads broker portfolio screenshots; None: photos are only read as receipts.
         self._holdings = holdings
         # For figures in the home currency; None leaves foreign amounts out.
@@ -224,10 +240,14 @@ class AgentService:
         self, actor: UserId, image: bytes, mime_type: str, caption: str | None, ref: str
     ) -> list[Reply]:
         receipts = self._receipts
-        if receipts is None and self._holdings is None:
+        if receipts is None and self._holdings is None and self._trips is None:
             return [Reply("Reading receipt photos isn't set up yet. Type the amount instead.")]
         if self._over_limit(actor):
             return [Reply(SLOW_DOWN)]
+        if self._trips is not None and (receipts is None or _TRAVEL.search(caption or "")):
+            return await self._trip_photo(actor, image, mime_type, caption, asked=True) or [
+                _NO_ENTRIES
+            ]
         if receipts is None or (self._holdings is not None and _PORTFOLIO.search(caption or "")):
             found = await self._holdings_photo(actor, image, mime_type, asked=True)
             return [found or _NO_POSITIONS]
@@ -239,6 +259,11 @@ class AgentService:
         except Exception:
             log.exception("receipt reading failed")
             return [Reply("I couldn't read that photo right now. Type the amount instead.")]
+        if draft.is_travel and self._trips is not None:
+            # A booking confirmation or itinerary: its entries go on the trip.
+            entries = await self._trip_photo(actor, image, mime_type, caption, asked=False)
+            if entries is not None:
+                return entries
         if not draft.is_receipt and self._holdings is not None:
             # Not a receipt: it may be a portfolio screenshot sent without a caption.
             found = await self._holdings_photo(actor, image, mime_type, asked=False)
@@ -263,6 +288,67 @@ class AgentService:
                 additional_kwargs={RECEIPT: details, REF: ref},
             )
             return await self._run(actor, {"messages": [message]})
+
+    async def _trip_photo(
+        self, actor: UserId, image: bytes, mime_type: str, caption: str | None, *, asked: bool
+    ) -> list[Reply] | None:
+        """A screenshot of bookings or plans put on the user's trips. None when it
+        isn't one and the user didn't say it was."""
+        try:
+            result = await self.read_trip_screenshot(actor, image, mime_type, caption, asked=asked)
+        except InvalidInput as exc:
+            return [Reply(str(exc))] if asked else None
+        if result is None:
+            return None
+        replies = [Reply(booking_cases.describe_screenshot(result))]
+        asks = [s for s in result.saved if s.trip is None and s.ask]
+        for saved in asks[:ASK_AT_MOST]:
+            text, rows = booking_cases.which_trip(saved)
+            replies.append(
+                Reply(text, [[Button(b["label"], b["data"]) for b in row] for row in rows])
+            )
+        if len(asks) > ASK_AT_MOST:
+            replies.append(Reply("The rest are on the Trips page, under Not on a trip yet."))
+        return [r for r in replies if r.text]
+
+    @property
+    def reads_trip_screenshots(self) -> bool:
+        return self._trips is not None
+
+    async def read_trip_screenshot(
+        self,
+        actor: UserId,
+        image: bytes,
+        mime_type: str,
+        caption: str | None = None,
+        *,
+        trip_id: UUID | None = None,
+        asked: bool = True,
+    ) -> booking_cases.FromScreenshot | None:
+        """Read a screenshot of bookings or plans onto the user's trips (or onto
+        ``trip_id``). None when it isn't one and the user didn't say it was;
+        InvalidInput when nothing usable was found or it couldn't be read."""
+        if self._trips is None:
+            raise InvalidInput("reading screenshots isn't set up yet")
+        user = await get_user(self._uow(), actor)
+        now = self._clock()
+        try:
+            shot = await self._trips.read(
+                image, mime_type, caption, today=now.astimezone(ZoneInfo(user.timezone)).date()
+            )
+        except Exception as exc:
+            log.exception("trip screenshot reading failed")
+            raise InvalidInput(
+                "I couldn't read that screenshot right now. Try again in a bit."
+            ) from exc
+        if not shot.is_travel and not asked:
+            return None
+        entries = drafts(shot)
+        if not entries:
+            raise InvalidInput(_NO_ENTRIES.text)
+        return await booking_cases.add_from_screenshot(
+            self._uow(), user, entries, trip_id=trip_id, now=now
+        )
 
     async def _holdings_photo(
         self, actor: UserId, image: bytes, mime_type: str, *, asked: bool

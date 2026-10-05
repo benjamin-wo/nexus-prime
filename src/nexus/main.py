@@ -22,6 +22,7 @@ from nexus.agent.receipts import LlmReceiptReader, ReceiptReader
 from nexus.agent.service import AgentService
 from nexus.agent.skills import SkillLibrary
 from nexus.agent.tools import build_tools
+from nexus.agent.trip_reader import LlmTripReader, TripReader
 from nexus.application import email as email_cases
 from nexus.application.clock import utcnow
 from nexus.application.departments import Departments, default_registry
@@ -62,6 +63,7 @@ from nexus.infra.llm.factory import (
     build_memory_model,
     build_research_models,
     build_screener,
+    build_screenshot_reader,
     build_travel_sorter,
     openrouter_routing,
 )
@@ -86,6 +88,7 @@ class Overrides:
     departments: Departments | None = None  # the registry, with test run kinds
     receipts: ReceiptReader | None = None
     holdings: HoldingsReader | None = None
+    trip_reader: TripReader | None = None
     telegram: TelegramClient | None = None
     checkpointer: BaseCheckpointSaver[Any] | None = None
     clock: Callable[[], datetime] | None = None
@@ -272,6 +275,9 @@ async def _telegram_runtime(
     holdings: HoldingsReader | None = overrides.holdings
     if holdings is None and models.vision is not None:
         holdings = LlmHoldingsReader(models.vision)
+    trip_reader: TripReader | None = overrides.trip_reader
+    if trip_reader is None and models.vision is not None:
+        trip_reader = LlmTripReader(build_screenshot_reader(settings, models.vision))
     client = overrides.telegram
     if client is None:
         token = settings.telegram_bot_token
@@ -293,6 +299,7 @@ async def _telegram_runtime(
             after_turn=_queue_memory(uow, clock),
             limiter=RateLimiter(clock=clock),
             holdings=holdings,
+            trips=trip_reader,
         ),
         client=client,
     )

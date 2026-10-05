@@ -37,7 +37,7 @@ from nexus.application.ports import (
 )
 from nexus.application.splits import owing_person
 from nexus.application.transactions import NewTransaction
-from nexus.domain.bookings import BookingDraft, mask
+from nexus.domain.bookings import BookingDraft
 from nexus.domain.duplicates import Candidate, better_name, likely_same
 from nexus.domain.email import (
     ACTIONABLE,
@@ -467,10 +467,6 @@ async def _read_one(
     subject = short(fetched.subject, 200)
     if booking is not None:
         draft = {**(draft or {}), "booking": booking}
-        # A booking's subject and payee often carry its reference: never stored.
-        subject = mask(subject)
-        if draft.get("merchant"):
-            draft["merchant"] = mask(str(draft["merchant"]))
     return InboundEmail(
         id=uuid4(),
         user_id=user.id,
@@ -488,8 +484,9 @@ async def _read_one(
 
 
 async def _read_booking(reader: EmailReader, fetched: FetchedEmail) -> dict[str, Any] | None:
-    """The flight, hotel or train booking in an email, cleaned and masked. A booking
-    that can't be read leaves the receipt to be logged as usual."""
+    """The flight, hotel or train booking in an email, cleaned (card and passport
+    numbers hidden). A booking that can't be read leaves the receipt to be logged as
+    usual."""
     try:
         found = await asyncio.wait_for(reader.read_booking(fetched), READ_TIMEOUT.total_seconds())
     except Exception:

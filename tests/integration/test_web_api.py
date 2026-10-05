@@ -44,6 +44,7 @@ from tests.fakes import (
     FakePrices,
     FakeRates,
     FakeTelegram,
+    FakeTripReader,
     ScriptedModel,
     call,
     fake_email,
@@ -151,6 +152,7 @@ async def world(engine: AsyncEngine, empty_database_url: str) -> AsyncIterator[W
             forwarding=forwarding,
             email_reader=FakeEmailReader(),
             holdings=FakeHoldings(),
+            trip_reader=FakeTripReader(),
             prices=FakePrices(),
             news=FakeNews(),
         ),
@@ -1528,3 +1530,30 @@ async def test_trips_on_the_web(world: World) -> None:
     unknown = "00000000-0000-4000-8000-000000000000"
     assert (await owner.get(f"/api/travel/research/{unknown}")).status_code == 404
     assert (await owner.send("POST", f"/api/travel/research/{unknown}/trip")).status_code == 404
+
+
+async def test_a_booking_screenshot_onto_a_trip_on_the_web(world: World) -> None:
+    owner, token = await owner_and_invite(world)
+    trip = (
+        await owner.send(
+            "POST", "/api/travel/trips",
+            {"destination": "Tokyo", "start": "2026-12-10", "end": "2026-12-18",
+             "currency": "JPY"},
+        )
+    ).json()  # fmt: skip
+    image = base64.b64encode(b"a made-up screenshot").decode()
+    path = f"/api/travel/trips/{trip['id']}/screenshot"
+    read = await owner.send("POST", path, {"image": image, "mime_type": "image/png"})
+    assert read.status_code == 200
+    body = read.json()
+    assert body["repeated"] == 0 and body["message"].startswith("✈️ Added to your Tokyo trip:")
+    hotel = next(b for b in body["added"] if b["kind"] == "hotel")
+    assert (hotel["reference"], hotel["booked_via"]) == ("9876543210", "Agoda")
+    detail = (await owner.get(f"/api/travel/trips/{trip['id']}")).json()
+    assert {b["reference"] for b in detail["bookings"]} == {"9876543210", "R-55821", "ZK4P7Q"}
+    bad = await owner.send("POST", path, {"image": "not base64!", "mime_type": "image/png"})
+    assert bad.status_code == 422
+    member = world.browser()
+    await member.login(MEMBER, invite=token)
+    theirs = await member.send("POST", path, {"image": image, "mime_type": "image/png"})
+    assert theirs.status_code == 404  # not their trip

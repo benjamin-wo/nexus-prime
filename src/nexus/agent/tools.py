@@ -1721,11 +1721,20 @@ class ItineraryArgs(TripNameArgs):
     arrives: str | None = Field(None, description="Arrival, local")
     provider: str | None = Field(None, description="The airline or rail operator")
     note: str | None = Field(None, description="Anything else worth keeping")
+    reference: str | None = Field(None, description="The booking or confirmation number")
+    booked_via: str | None = Field(
+        None, description="Where it was booked: the airline, hotel, Agoda, Klook"
+    )
     cost: str | None = Field(None, description="What it costs, if said")
     currency: str | None = Field(None, description="The cost's currency, if not the home one")
 
 
 def _itinerary_details(a: ItineraryArgs) -> dict[str, object]:
+    found = _kind_details(a)
+    return {**found, "reference": a.reference, "booked_via": a.booked_via}
+
+
+def _kind_details(a: ItineraryArgs) -> dict[str, object]:
     if a.kind == "activity":
         return {"kind": "activity", "name": a.name, "day": a.day, "at": a.time,
                 "address": a.place, "note": a.note}  # fmt: skip
@@ -1814,6 +1823,8 @@ class ItineraryChangeArgs(ItineraryItemArgs):
     arrives: str | None = Field(None, description="New arrival, local")
     provider: str | None = Field(None, description="The airline or rail operator")
     note: str | None = Field(None, description="A new note, replacing the old one")
+    reference: str | None = Field(None, description="The booking or confirmation number")
+    booked_via: str | None = Field(None, description="Where it was booked")
     cost: str | None = Field(None, description="A new cost, if said")
     currency: str | None = Field(None, description="The cost's currency, if not the home one")
 
@@ -1833,6 +1844,8 @@ async def _changed_entry(
         "address": a.place,
         "provider": a.provider,
         "note": a.note,
+        "reference": a.reference,
+        "booked_via": a.booked_via,
     }
     data.update({k: v for k, v in fields.items() if v is not None})
     leg = {"number": a.number, "from": a.origin, "to": a.destination,

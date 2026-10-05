@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo
 from nexus.application import cashflow, fx
 from nexus.application.fx import RateSource
 from nexus.application.ports import UnitOfWork
-from nexus.domain.bookings import Booking
+from nexus.domain.bookings import EARLY_DAYS, Booking
 from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.ledger import Direction, User, UserId, same_person
 from nexus.domain.money import Money
@@ -91,6 +91,16 @@ async def create_trip(uow: UnitOfWork, user: User, draft: TripDraft, *, now: dat
         if len(await uow.trips.list_trips(user.id)) >= MAX_TRIPS:
             raise InvalidInput(f"keep at most {MAX_TRIPS} trips; delete an old one first")
         await uow.trips.insert_trip(trip, user.home_currency)
+        # Bookings already read (from email or a screenshot) for these dates join it.
+        for booking in await uow.trips.list_bookings(user.id, unattached=True):
+            if trip.start - timedelta(days=EARLY_DAYS) <= booking.starts <= trip.end:
+                await uow.trips.set_booking(
+                    user.id, booking.id, trip_id=trip.id, transaction_id=booking.transaction_id
+                )
+                if booking.transaction_id is not None:
+                    await uow.trips.set_link(
+                        user.id, trip.id, booking.transaction_id, included=True, at=now
+                    )
         await uow.commit()
     return trip
 

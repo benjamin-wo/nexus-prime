@@ -12,6 +12,7 @@ from datetime import date
 from nexus.evals import seed
 from nexus.evals.checks import (
     BillIs,
+    Booked,
     BudgetIs,
     CategoryIs,
     Changed,
@@ -1236,6 +1237,47 @@ CASES: tuple[Case, ...] = (
         unchanged=True,
         forbid=WRITES,
         reply=(("dining", "jumbo", "grab", "transport", "groceries"),),
+    ),
+    # --- travel screenshots (made up: fictional apps, places and numbers) ------------
+    Case(
+        "photo-hotel-booking",
+        "log",
+        _t(Turn("", photo="trip-hotel-app")),
+        checks=(
+            Booked(
+                "Hotel Kumo",
+                reference="482019375",
+                booked_via="Staywise",
+                starts=date(2026, 12, 10),
+                cost="64500",
+                absent=("alex tan", "7731", "4242"),
+            ),
+            NotLogged("64500"),
+        ),
+    ),
+    Case(
+        "photo-day-plan",
+        "log",
+        _t(Turn("add these to my japan trip", photo="trip-day-plan")),
+        checks=(
+            Booked("Sushi Ten", reference="R-55821", starts=date(2026, 12, 12)),
+            Booked("Shibuya Sky", reference="SKY-30418", starts=date(2026, 12, 12)),
+            Booked("teamLab", starts=date(2026, 12, 12)),
+        ),
+    ),
+    Case(
+        "photo-eticket",
+        "log",
+        _t(Turn("", photo="trip-eticket")),
+        checks=(
+            Booked(
+                "ZZ12",
+                reference="ZK4P7Q",
+                starts=date(2026, 12, 10),
+                cost="820",
+                absent=("alex tan",),
+            ),
+        ),
     ),
     # --- receipt photos --------------------------------------------------------------
     Case(

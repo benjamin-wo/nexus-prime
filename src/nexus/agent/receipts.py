@@ -18,6 +18,11 @@ MAX_IMAGE_BYTES = 10 * 1024 * 1024
 
 class ReceiptDraft(BaseModel):
     is_receipt: bool = Field(description="Whether the image is a receipt, bill or invoice")
+    is_travel: bool = Field(
+        False,
+        description="Whether it's a travel booking or plan instead: a flight, hotel, train, "
+        "tour or restaurant booking confirmation, a ticket or an itinerary",
+    )
     amount: str | None = Field(None, description="The final total paid, digits only, e.g. 12.40")
     currency: str | None = Field(None, description="ISO 4217 code if printed, else null")
     merchant: str | None = Field(None, description="Shop or company name")
@@ -92,7 +97,8 @@ class ReceiptReader(Protocol):
 
 
 _PROMPT = (
-    "Read this image. If it is a receipt, bill or invoice, extract the final total "
+    "Read this image. Say whether it's a travel booking confirmation, ticket or "
+    "itinerary (is_travel). If it is a receipt, bill or invoice, extract the final total "
     "actually paid (after tax, service charge and discounts), its currency if printed, "
     "the merchant and the purchase date. Use null for anything you can't read clearly; "
     "never guess.{today}{categories}{caption}"

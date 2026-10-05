@@ -19,6 +19,7 @@ from typing import Any
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import InMemorySaver
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -29,6 +30,7 @@ from nexus.agent.receipts import LlmReceiptReader
 from nexus.agent.service import RECENT_MESSAGES, AgentService, Reply
 from nexus.agent.skills import SkillLibrary
 from nexus.agent.tools import build_tools
+from nexus.agent.trip_reader import LlmTripReader
 from nexus.application.fx import Rate
 from nexus.application.ports import UnitOfWork
 from nexus.domain.ledger import User
@@ -117,6 +119,14 @@ class CaseResult:
         return sum(t.memory_output_tokens for t in self.turns)
 
 
+def quick(model: BaseChatModel) -> BaseChatModel:
+    """The same OpenRouter model with reasoning off, as production reads screenshots."""
+    if isinstance(model, ChatOpenAI):
+        body = {**(model.extra_body or {}), "reasoning": {"enabled": False}}
+        return model.model_copy(update={"extra_body": body})
+    return model
+
+
 class Agent:
     """The production agent wired to one model, for one case's user."""
 
@@ -135,6 +145,8 @@ class Agent:
         self.photo_cache = photo_cache
         # Receipt photos: a separate model if given, like OPENROUTER_VISION_MODEL.
         self.receipts = LlmReceiptReader(vision or model)
+        # Travel screenshots: the photo model without reasoning, as in production.
+        self.trips = LlmTripReader(quick(vision or model))
         self.skills = SkillLibrary.load()
         self.tools = build_tools(self.skills.body)
         self.new_conversation()
@@ -160,8 +172,9 @@ class Agent:
             )
         ).compile(InMemorySaver())
         self.service = AgentService(
-            self.graph, self.uow, self.receipts, lambda: seed.NOW, None, FixedRates()
-        )
+            self.graph, self.uow, self.receipts, lambda: seed.NOW, None, FixedRates(),
+            trips=self.trips,
+        )  # fmt: skip
 
     async def messages(self, user: User) -> list[BaseMessage]:
         config = {"configurable": {"thread_id": thread_id(user.id), "user_id": str(user.id)}}

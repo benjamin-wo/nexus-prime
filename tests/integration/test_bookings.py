@@ -83,14 +83,14 @@ async def test_a_booking_lands_on_its_trip_and_its_cost_counts_once_logged(
     assert "flight booking (ZZ12, SIN → NRT, Thu 10 Dec 08:25)" in text
     assert "It's on your Tokyo trip" in text
 
-    # Nothing sensitive is stored, in the booking or the email.
+    # A passport number is never stored, in the booking or the email; the booking
+    # reference is the user's own and may stay (here, in the subject).
     async with engine.connect() as db:
         stored = json.dumps(
             [dict(r._mapping) for r in await db.execute(select(trip_bookings))], default=str
         )
-    assert "XK7Q9P" not in stored and "E1234567" not in stored
-    assert "XK7Q9P" not in json.dumps(email.draft) and "E1234567" not in json.dumps(email.draft)
-    assert "XK7Q9P" not in email.subject
+    assert "E1234567" not in stored and "E1234567" not in json.dumps(email.draft)
+    assert email.subject == "Your booking receipt XK7Q9P"
 
     view = await trip_cases.trip_view(uow, RATES, user, trip.id, now=NOW)
     assert [b.draft.title for b in view.bookings] == ["ZZ12 SIN → NRT"]

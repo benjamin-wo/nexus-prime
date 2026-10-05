@@ -15,6 +15,7 @@ from nexus.agent.receipts import ReceiptDraft, ReceiptReader
 from nexus.agent.service import AgentService, Reply
 from nexus.agent.skills import SkillLibrary
 from nexus.agent.tools import build_tools
+from nexus.agent.trip_reader import TripReader
 from nexus.application import bills as bill_cases
 from nexus.application import subscriptions as subscription_cases
 from nexus.application.category_rules import list_rules
@@ -40,6 +41,7 @@ def build(
     archive: ReceiptStore | None = None,
     holdings: HoldingsReader | None = None,
     departments: Departments | None = None,
+    trips: TripReader | None = None,
 ) -> AgentService:
     skills = SkillLibrary.load()
 
@@ -59,7 +61,7 @@ def build(
             departments=departments,
         )
     ).compile(InMemorySaver())
-    return AgentService(graph, uow, receipts, lambda: NOW, archive, holdings=holdings)
+    return AgentService(graph, uow, receipts, lambda: NOW, archive, holdings=holdings, trips=trips)
 
 
 async def ledger(uow: UowFactory, user: UserId, **query: object) -> list[tuple[str, Decimal]]:

@@ -1,22 +1,20 @@
-"""Bookings read from email: what's kept, what's masked, which trip they land on,
+"""Bookings: what's kept, what's hidden, which trip they land on,
 and when reminders are due. Every name, number and place here is made up."""
 
 from datetime import UTC, date, datetime
 from uuid import uuid4
 
 from nexus.domain.bookings import (
-    MASK,
     Booking,
     BookingDraft,
     BookingKind,
     booking_reminders,
-    mask,
     matching_trips,
     passport_reminder,
 )
 from nexus.domain.ledger import UserId
 from nexus.domain.money import Money
-from nexus.domain.trips import Trip
+from nexus.domain.trips import Trip, hide_private
 
 USER = UserId(uuid4())
 MADE = datetime(2026, 9, 28, tzinfo=UTC)
@@ -45,23 +43,36 @@ FLIGHT = {
 }
 
 
-def test_references_and_personal_numbers_are_masked() -> None:
-    assert MASK in mask("Booking reference: XK7Q9P")
-    assert "XK7Q9P" not in mask("Your PNR is XK7Q9P, see you soon")
-    assert "1234567890123" not in mask("E-ticket 123-4567890123")
-    assert "E1234567" not in mask("Passport E1234567 on file")
-    assert "88123456" not in mask("KrisFlyer member 88123456")
-    assert mask("Hotel Sakura, Shinjuku") == "Hotel Sakura, Shinjuku"
+def test_references_stay_but_card_and_passport_numbers_are_hidden() -> None:
+    # The owner's references are what they need at the counter; a card isn't.
+    kept = "Booking reference: XK7Q9P, booking ID 1234567890, e-ticket 123-4567890123"
+    assert hide_private(kept) == kept
+    assert hide_private("Paid with 4111 1111 1111 1111") == "Paid with •••• 1111"
+    assert hide_private("amex 378282246310005, CVV 123") == "amex •••• 0005, CVV •••"
+    assert "E1234567" not in hide_private("Passport E1234567 on file")
+    assert hide_private("Call +81 3-1234-5678") == "Call +81 3-1234-5678"
+
+
+def test_a_booking_keeps_its_reference_and_where_it_was_booked() -> None:
+    d = BookingDraft.from_dict(
+        {"kind": "hotel", "hotel": "Hotel Sakura", "check_in": "2026-12-10",
+         "check_out": "2026-12-14", "reference": " 1234567890 ", "booked_via": "Agoda"}
+    )  # fmt: skip
+    assert d is not None and (d.reference, d.booked_via) == ("1234567890", "Agoda")
+    assert d.describe() == (
+        "hotel booking (Hotel Sakura, 4 nights, 10 Dec to 14 Dec; booked on Agoda, ref 1234567890)"
+    )
+    assert BookingDraft.from_dict(d.as_dict()) == d
+    card = BookingDraft.from_dict({**d.as_dict(), "reference": "4111111111111111"})
+    assert card is not None and card.reference is None  # a card number is never a reference
 
 
 def test_a_flight_keeps_its_numbers_places_and_times() -> None:
-    raw = {**FLIGHT, "provider": "Acme Air (booking ref QW3E4R)"}
-    d = BookingDraft.from_dict(raw)
+    d = BookingDraft.from_dict(FLIGHT)
     assert d is not None and d.kind is BookingKind.FLIGHT
     assert [s.number for s in d.segments] == ["ZZ12", "ZZ13"]
     assert (d.starts, d.ends) == (date(2026, 12, 10), date(2026, 12, 18))
     assert d.title == "ZZ12 SIN → NRT, return"
-    assert d.provider is not None and "QW3E4R" not in d.provider
     assert d.describe().startswith("flight booking (ZZ12, SIN → NRT, Thu 10 Dec 08:25")
     # A "flight number" that's really a reference is dropped, not kept.
     odd = BookingDraft.from_dict(
@@ -72,18 +83,18 @@ def test_a_flight_keeps_its_numbers_places_and_times() -> None:
     assert BookingDraft.from_dict({"kind": "cruise"}) is None
 
 
-def test_a_hotel_keeps_its_address_but_not_its_confirmation() -> None:
+def test_a_hotel_keeps_its_address() -> None:
     d = BookingDraft.from_dict(
         {
             "kind": "hotel",
             "hotel": "Hotel Sakura",
-            "address": "1-2-3 Nishi-Shinjuku, Tokyo 160-0023, confirmation no. 77AB12",
+            "address": "1-2-3 Nishi-Shinjuku, Tokyo 160-0023",
             "check_in": "2026-12-10",
             "check_out": "2026-12-14",
         }
     )
     assert d is not None
-    assert d.address is not None and "160-0023" in d.address and "77AB12" not in d.address
+    assert d.address == "1-2-3 Nishi-Shinjuku, Tokyo 160-0023"
     assert d.title == "Hotel Sakura, 4 nights"
     assert (d.starts, d.ends) == (date(2026, 12, 10), date(2026, 12, 14))
 

@@ -631,6 +631,8 @@ export async function fakeApi(
             address: null,
             check_in: null,
             check_out: null,
+            reference: "ZK4P7Q",
+            booked_via: "Acme Air",
             cost: home(820),
             logged: false,
             manual: false,
@@ -662,6 +664,18 @@ export async function fakeApi(
         state.trips = state.trips.filter((t) => t !== trip);
         return route.fulfill({ status: 204 });
       }
+    }
+    const tripShot = path.match(/^\/travel\/trips\/([^/]+)\/screenshot$/);
+    if (tripShot && method === "POST") {
+      if (!body.image) return json(route, { detail: "no image" }, 422);
+      const stay = {
+        id: `pl${state.plans.length + 1}`, trip_id: tripShot[1], kind: "hotel", title: "Hotel Kumo, 3 nights", provider: null,
+        starts: "2026-11-15", ends: "2026-11-18", segments: [], hotel: "Hotel Kumo", address: "4-5-6 Asakusa",
+        check_in: "2026-11-15", check_out: "2026-11-18", name: null, day: null, at: null, note: null,
+        reference: "9876543210", booked_via: "Agoda", cost: { amount: "64500.0000", currency: "JPY" }, logged: false, manual: true,
+      };
+      state.plans.push(stay);
+      return json(route, { added: [stay], repeated: 0, message: "✈️ Added to your Tokyo trip:\n• hotel booking (Hotel Kumo, 3 nights, 15 Nov to 18 Nov; booked on Agoda, ref 9876543210)" });
     }
     const tripPlans = path.match(/^\/travel\/trips\/([^/]+)\/bookings$/);
     if (tripPlans && method === "POST" && body.kind === "hotel") {

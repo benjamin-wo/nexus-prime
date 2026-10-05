@@ -345,3 +345,53 @@ class Remembers:
         found = await memory_cases.list_memories(world.uow(), world.user.id)
         mentioned = any(self.text.casefold() in m.text.casefold() for m in found)
         return mentioned is self.present
+
+
+@dataclass(frozen=True, slots=True)
+class Booked:
+    """An itinerary entry like this is on the seeded Tokyo trip (or any trip)."""
+
+    title: str  # found in its title, any case
+    reference: str | None = None
+    booked_via: str | None = None
+    starts: date | None = None
+    cost: str | None = None  # the amount, in any currency
+    absent: tuple[str, ...] = ()  # text that must not be stored anywhere in it
+
+    def describe(self) -> str:
+        parts = [f"an itinerary entry '{self.title}'"]
+        if self.starts:
+            parts.append(f"from {self.starts}")
+        if self.reference:
+            parts.append(f"ref {self.reference}")
+        if self.booked_via:
+            parts.append(f"booked on {self.booked_via}")
+        if self.cost:
+            parts.append(f"costing {self.cost}")
+        if self.absent:
+            parts.append("without " + ", ".join(self.absent))
+        return ", ".join(parts)
+
+    async def holds(self, world: World) -> bool:
+        async with world.uow() as tx:
+            bookings = await tx.trips.list_bookings(world.user.id)
+        for b in bookings:
+            d = b.draft
+            if b.trip_id is None or self.title.casefold() not in d.title.casefold():
+                continue
+            if self.reference and (d.reference or "").replace(" ", "") != self.reference:
+                continue
+            if (
+                self.booked_via
+                and self.booked_via.casefold() not in (d.booked_via or "").casefold()
+            ):
+                continue
+            if self.starts and d.starts != self.starts:
+                continue
+            if self.cost and (b.cost is None or b.cost.amount != Decimal(self.cost)):
+                continue
+            stored = str(d.as_dict()).casefold()
+            if any(a.casefold() in stored for a in self.absent):
+                continue
+            return True
+        return False

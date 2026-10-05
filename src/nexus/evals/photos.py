@@ -1,6 +1,6 @@
-"""Receipt photos for the evaluation set.
+"""Receipt and travel screenshots for the evaluation set.
 
-Drawn ones (made-up shops, dates and totals) live in ``receipts/``. Real photos
+Drawn ones (made-up shops, apps, places, dates and totals) live in ``receipts/``. Real photos
 aren't committed: this repository is public and they belong to whoever took
 them, so only their link is kept, and the runner downloads each once into a
 local cache that git ignores.

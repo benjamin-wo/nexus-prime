@@ -4,18 +4,9 @@ import { Link } from "react-router-dom";
 
 import { api, type Holding, type HoldingsDraft, type Portfolio, type PortfolioTotals } from "../api";
 import { formatChange, formatMoney, formatPercent, formatShortDate } from "../format";
+import { base64 } from "../files";
 
 const shares = (quantity: string) => Number(quantity).toLocaleString("en-US", { maximumFractionDigits: 8 });
-
-/** The file as base64, without the "data:...;base64," prefix. */
-function base64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result).split(",", 2)[1] ?? "");
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
-}
 
 function DraftCard({ draft, onDone }: { draft: HoldingsDraft; onDone: (message: string) => void }) {
   const [error, setError] = useState<string | null>(null);

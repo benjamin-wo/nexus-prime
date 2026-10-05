@@ -479,10 +479,14 @@ export type Booking = {
   day: string | null;
   at: string | null;
   note: string | null;
+  reference: string | null;
+  booked_via: string | null;
   cost: Money | null;
   logged: boolean;
   manual: boolean;
 };
+
+export type ScreenshotRead = { added: Booking[]; repeated: number; message: string };
 
 export type TripDetail = {
   trip: Trip;
