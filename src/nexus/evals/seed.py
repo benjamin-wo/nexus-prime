@@ -15,6 +15,7 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from nexus.application import bills as bill_cases
+from nexus.application import bookings as booking_cases
 from nexus.application import budgets as budget_cases
 from nexus.application import category_rules as rule_cases
 from nexus.application import salary as salary_cases
@@ -147,7 +148,7 @@ async def seed_user(new_uow: UowFactory, telegram_id: int) -> Seeded:
             )
         )
         await db.commit()
-    await trip_cases.create_trip(
+    trip = await trip_cases.create_trip(
         new_uow(),
         user,
         trip_cases.TripDraft(
@@ -155,5 +156,11 @@ async def seed_user(new_uow: UowFactory, telegram_id: int) -> Seeded:
             Money.of("3000", "SGD"), ["Ann"],
         ),
         now=NOW,
+    )  # fmt: skip
+    await booking_cases.add_manual(
+        new_uow(), user.id, trip.id,
+        {"kind": "hotel", "hotel": "Hotel Sakura", "check_in": "2026-12-10",
+         "check_out": "2026-12-14"},
+        None, now=NOW,
     )  # fmt: skip
     return Seeded(user)

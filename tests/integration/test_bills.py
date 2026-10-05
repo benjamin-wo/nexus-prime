@@ -2,16 +2,19 @@
 
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nexus.application import bills as bill_cases
+from nexus.application import transactions as tx_cases
 from nexus.application.budgets import TELEGRAM_SEND
+from nexus.application.transactions import NewTransaction
 from nexus.application.users import RegisterUser, register_user
 from nexus.domain.errors import InvalidInput, NotFound
-from nexus.domain.ledger import User
+from nexus.domain.ledger import Direction, User
 from nexus.domain.money import Money
 from nexus.domain.planning import Cadence
 from nexus.infra.db.tables import jobs, transactions
@@ -19,6 +22,7 @@ from tests.integration.conftest import UowFactory
 
 pytestmark = pytest.mark.integration
 
+SGT = ZoneInfo("Asia/Singapore")
 SGT_9AM = 1  # 01:00 UTC is 09:00 in Singapore
 
 
@@ -83,13 +87,106 @@ async def test_reminders_at_7_3_1_days_once_each(engine: AsyncEngine, uow: UowFa
 
     # Paid: the next month's due date takes over, with its own reminders.
     paid = await bill_cases.mark_paid(uow, user, rent.id, now=at(date(2026, 10, 15)))
-    assert paid.due == due
+    assert paid.view.due == due
     (view,) = await bill_cases.list_bills(uow, user, now=at(date(2026, 10, 15)))
     assert view.due == date(2026, 11, 15)
     assert await sweep(date(2026, 11, 8)) == 1
-    # Nothing was written to the ledger, ever.
+    # Marking it paid logged the rent once, as this month's expense; reminders never did.
     async with engine.connect() as db:
-        assert (await db.execute(select(transactions))).first() is None
+        rows = (await db.execute(select(transactions))).all()
+    assert len(rows) == 1
+
+
+async def test_marking_paid_logs_the_bill_in_the_months_spending(
+    engine: AsyncEngine, uow: UowFactory
+) -> None:
+    user = await sgt_user(uow)
+    rent = await bill_cases.add_bill(
+        uow(),
+        user,
+        "Rent",
+        date(2026, 10, 1),
+        Cadence.MONTHLY,
+        Money.of("1800", "SGD"),
+        now=at(date(2026, 9, 25)),
+    )
+    paid = await bill_cases.mark_paid(uow, user, rent.id, now=at(date(2026, 10, 1)))
+    assert paid.logged is not None and paid.already is None
+    assert paid.logged.amount == Money.of("1800", "SGD")
+    assert paid.logged.counterparty == "Rent"
+    assert paid.message(SGT) == (
+        "Marked Rent (1 Oct) as paid and logged 1800.00 SGD in this month's spending."
+    )
+    async with uow() as tx:
+        categories = {
+            c.id: c.name for c in await tx.ledger.list_categories(user.id, include_inactive=False)
+        }
+    assert paid.logged.category_id is not None
+    assert categories[paid.logged.category_id] == bill_cases.BILLS_CATEGORY
+
+
+async def test_a_bill_already_in_the_ledger_isnt_logged_twice(
+    engine: AsyncEngine, uow: UowFactory
+) -> None:
+    user = await sgt_user(uow)
+    phone = await bill_cases.add_bill(
+        uow(),
+        user,
+        "Phone",
+        date(2026, 10, 5),
+        Cadence.MONTHLY,
+        Money.of("45", "SGD"),
+        now=at(date(2026, 9, 25)),
+    )
+    # The bank's email already logged it the day before.
+    await tx_cases.log_transaction(
+        uow(),
+        user.id,
+        NewTransaction(
+            direction=Direction.OUT,
+            amount=Money.of("45", "SGD"),
+            occurred_at=at(date(2026, 10, 4)),
+            counterparty="Phone",
+        ),
+    )
+    paid = await bill_cases.mark_paid(uow, user, phone.id, now=at(date(2026, 10, 5)))
+    assert paid.logged is None and paid.already is not None
+    assert "already in your spending: 45.00 SGD on 4 Oct" in paid.message(SGT)
+    async with engine.connect() as db:
+        assert len((await db.execute(select(transactions))).all()) == 1
+
+
+async def test_a_bill_with_no_amount_is_logged_only_with_one(uow: UowFactory) -> None:
+    user = await sgt_user(uow)
+    power = await bill_cases.add_bill(
+        uow(),
+        user,
+        "Electricity",
+        date(2026, 10, 8),
+        Cadence.MONTHLY,
+        None,
+        now=at(date(2026, 9, 25)),
+    )
+    water = await bill_cases.add_bill(
+        uow(),
+        user,
+        "Water",
+        date(2026, 10, 8),
+        Cadence.MONTHLY,
+        None,
+        now=at(date(2026, 9, 25)),
+    )
+    unknown = await bill_cases.mark_paid(uow, user, power.id, now=at(date(2026, 10, 8)))
+    assert unknown.logged is None and unknown.amount is None
+    assert "no set amount" in unknown.message(SGT)
+    given = await bill_cases.mark_paid(
+        uow, user, water.id, now=at(date(2026, 10, 8)), amount=Money.of("38.20", "SGD")
+    )
+    assert given.logged is not None and given.logged.amount == Money.of("38.20", "SGD")
+    with pytest.raises(InvalidInput, match="more than zero"):
+        await bill_cases.mark_paid(
+            uow, user, water.id, now=at(date(2026, 10, 9)), amount=Money.of("0", "SGD")
+        )
 
 
 async def test_a_late_bill_gets_the_most_urgent_reminder_only(

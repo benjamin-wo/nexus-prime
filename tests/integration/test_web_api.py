@@ -828,17 +828,26 @@ async def test_bills_and_reminder_buttons(world: World) -> None:
     assert (await member.send("POST", f"/api/bills/{bill['id']}/paid")).status_code == 404
 
     done = (await owner.send("POST", "/api/chat/press", {"data": paid_button})).json()
-    assert done[0]["text"] == "Marked Rent (30 Sep) as paid."
+    assert done[0]["text"] == (
+        "Marked Rent (30 Sep) as paid and logged 1800.00 SGD in this month's spending."
+    )
     again = (await owner.send("POST", "/api/chat/press", {"data": paid_button})).json()
     assert "out of date" in again[0]["text"]
     rent = next(b for b in (await owner.get("/api/bills")).json() if b["name"] == "Rent")
     assert rent["due"] == "2026-10-30"
+    visa = next(b for b in (await owner.get("/api/bills")).json() if b["name"] == "Visa")
+    paid = await owner.send("POST", f"/api/bills/{visa['id']}/paid", {"amount": "60"})
+    assert paid.json() == {
+        "message": "Marked Visa (10 Oct) as paid and logged 60.00 SGD in this month's spending.",
+        "logged": True,
+        "needs_amount": False,
+    }
 
     assert (await owner.send("POST", f"/api/bills/{bill['id']}/snooze")).status_code == 204
     rent = next(b for b in (await owner.get("/api/bills")).json() if b["name"] == "Rent")
     assert rent["snoozed"] is True
     assert (await owner.send("DELETE", f"/api/bills/{bill['id']}")).status_code == 204
-    assert [b["name"] for b in (await owner.get("/api/bills")).json()] == ["Visa"]
+    assert (await owner.get("/api/bills")).json() == []  # Visa was a one-off, now paid
     bad = await owner.send("POST", "/api/bills", {"name": "X", "due": "2026-10-01", "amount": "-5"})
     assert bad.status_code == 422
 

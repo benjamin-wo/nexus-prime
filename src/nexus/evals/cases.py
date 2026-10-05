@@ -533,7 +533,10 @@ CASES: tuple[Case, ...] = (
         "plan-bill-paid",
         "plan",
         _t("i paid the rent"),
-        checks=(BillIs("Rent", paid_on=date(2026, 10, 1)),),
+        checks=(
+            BillIs("Rent", paid_on=date(2026, 10, 1)),
+            Logged("1800", "rent", "Bills & Utilities"),
+        ),
     ),
     Case(
         "plan-snooze",
@@ -686,6 +689,27 @@ CASES: tuple[Case, ...] = (
         "log",
         _t("add dinner at Sushi Ten on 12 Dec at 7pm to my Japan trip"),
         calls=(Call("add_to_itinerary", {"kind": "activity", "name": Has("sushi ten")}),),
+        confirms=True,
+    ),
+    Case(
+        "itinerary-change-hotel",
+        "log",
+        _t("I'm checking out of Hotel Sakura on the 15th instead"),
+        calls=(
+            Call("change_itinerary_entry", {"item": Has("sakura"), "until": Has("2026-12-15")}),
+        ),
+        confirms=True,
+    ),
+    Case(
+        "itinerary-hotel-whole-trip",
+        "log",
+        _t("add my second hotel for Japan: Ryokan Hana in Kyoto, 14 to 18 Dec"),
+        calls=(
+            Call(
+                "add_to_itinerary",
+                {"kind": "hotel", "name": Has("ryokan hana"), "day": Has("2026-12-14")},
+            ),
+        ),
         confirms=True,
     ),
     Case(

@@ -73,14 +73,15 @@ def _same_kind(a: Candidate, b: Candidate) -> bool:
     return True
 
 
-def likely_same(a: Candidate, b: Candidate, tz: ZoneInfo) -> bool:
-    """Whether two records look like one payment."""
+def likely_same(a: Candidate, b: Candidate, tz: ZoneInfo, *, any_source: bool = False) -> bool:
+    """Whether two records look like one payment. ``any_source``: for a bill marked
+    paid, where an entry of any kind for the same amount is the bill already logged."""
     if a.direction is not b.direction or a.amount != b.amount:
         return False
     days = abs((a.occurred_at.astimezone(tz).date() - b.occurred_at.astimezone(tz).date()).days)
     if days > NEAR_DAYS:
         return False
-    return not _same_kind(a, b) and same_merchant(a.merchant, b.merchant)
+    return (any_source or not _same_kind(a, b)) and same_merchant(a.merchant, b.merchant)
 
 
 def _score(name: str) -> tuple[int, int, int]:

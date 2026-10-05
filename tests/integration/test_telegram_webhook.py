@@ -191,6 +191,15 @@ async def test_menu_and_quick_actions(bot: Bot) -> None:
     assert bot.telegram.sent[-1].text.startswith("Just tell me")
 
 
+async def test_an_old_button_press_still_works(bot: Bot) -> None:
+    # Telegram won't answer a press that's too old; the press is handled anyway.
+    await bot.post(bot.text("/start"))
+    bot.telegram.stale_presses = True
+    await bot.post(bot.press("qa:help"))
+    assert bot.telegram.sent[-1].text.startswith("Just tell me")
+    assert bot.telegram.answered == []
+
+
 async def test_receipt_photo(bot: Bot, uow: UowFactory) -> None:
     photo = bot.update(
         message={

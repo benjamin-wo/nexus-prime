@@ -6,7 +6,13 @@ import pytest
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 
-from nexus.infra.llm.factory import LlmNotConfigured, build_chat_models
+from nexus.infra.llm.factory import (
+    LlmNotConfigured,
+    build_chat_models,
+    build_email_reader,
+    build_memory_model,
+    build_screener,
+)
 from nexus.settings import Settings
 
 
@@ -108,3 +114,30 @@ def test_openrouter_providers_pin_the_main_model_only(monkeypatch: pytest.Monkey
         )
     )
     assert isinstance(unpinned.primary, ChatOpenAI) and unpinned.primary.extra_body is None
+
+
+def test_email_and_memory_reads_run_without_reasoning(monkeypatch: pytest.MonkeyPatch) -> None:
+    # With reasoning on, an email read took longer than its 25-second limit and the
+    # user saw "couldn't read"; the memory writer ran out of reply length.
+    monkeypatch.setenv("OPENROUTER_PROVIDERS", "deepinfra")
+    config = settings(
+        llm_provider="openrouter",
+        openrouter_api_key="or-key",
+        openrouter_model="deepseek/deepseek-v4.1-flash",
+        memory_model="small/model",
+    )
+    primary = build_chat_models(config).primary
+    for build in (build_screener, build_email_reader):
+        model = build(config, primary)
+        assert model is not primary and model_name(model) == "deepseek/deepseek-v4.1-flash"
+        assert isinstance(model, ChatOpenAI) and model.extra_body is not None
+        assert model.extra_body["reasoning"] == {"enabled": False}
+        assert model.extra_body["provider"]["only"] == ["deepinfra"]  # routed like the main
+    memory = build_memory_model(config, primary)
+    assert model_name(memory) == "small/model"
+    assert isinstance(memory, ChatOpenAI)
+    assert memory.extra_body == {"reasoning": {"enabled": False}}
+    # Other providers keep the main model as it is.
+    gemini = settings(llm_provider="gemini", gemini_api_key="g-key")
+    main = build_chat_models(gemini).primary
+    assert build_email_reader(gemini, main) is main

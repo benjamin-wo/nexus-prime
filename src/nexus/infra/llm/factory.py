@@ -154,20 +154,47 @@ def build_chat_models(settings: Settings) -> ChatModels:
     return ChatModels(primary, tuple(fallbacks), vision, settings.llm_provider.value)
 
 
+def _quick(settings: Settings, model: str) -> BaseChatModel:
+    """An OpenRouter model with reasoning off, for short reads and extractions: DeepSeek
+    thinks by default, which turns a 2-second read into a minute and can use up the
+    reply's length. Routed like the main model when it is the main one."""
+    routing = openrouter_routing(settings) if model == settings.openrouter_model else None
+    return _openai_compatible(
+        settings,
+        model=model,
+        api_key=settings.openrouter_api_key,
+        base_url="https://openrouter.ai/api/v1",
+        name="OpenRouter",
+        extra_body={**(routing or {}), "reasoning": {"enabled": False}},
+    )
+
+
+def _quick_or(settings: Settings, override: str | None, primary: BaseChatModel) -> BaseChatModel:
+    """``override`` on OpenRouter when set, else the main model; both without reasoning
+    on OpenRouter. Other providers keep the main model as it is."""
+    if override and settings.openrouter_api_key is not None:
+        return _quick(settings, override)
+    if settings.llm_provider is LlmProvider.OPENROUTER and settings.openrouter_model:
+        return _quick(settings, settings.openrouter_model)
+    return primary
+
+
 def build_screener(settings: Settings, primary: BaseChatModel) -> BaseChatModel:
     """The cheap model that screens emails: EMAIL_CLASSIFIER_MODEL on OpenRouter when
-    set, otherwise the main model."""
-    if settings.email_classifier_model and settings.openrouter_api_key is not None:
-        return _openrouter(settings, settings.email_classifier_model)
-    return primary
+    set, otherwise the main model, without reasoning."""
+    return _quick_or(settings, settings.email_classifier_model, primary)
+
+
+def build_email_reader(settings: Settings, primary: BaseChatModel) -> BaseChatModel:
+    """The model that reads a payment or booking out of an email: the main model,
+    without reasoning, so a read fits well inside its time limit."""
+    return _quick_or(settings, None, primary)
 
 
 def build_memory_model(settings: Settings, primary: BaseChatModel) -> BaseChatModel:
     """The model that keeps long-term memory: MEMORY_MODEL on OpenRouter when set,
-    otherwise the main model."""
-    if settings.memory_model and settings.openrouter_api_key is not None:
-        return _openrouter(settings, settings.memory_model)
-    return primary
+    otherwise the main model, without reasoning."""
+    return _quick_or(settings, settings.memory_model, primary)
 
 
 def build_research_models(
@@ -186,16 +213,8 @@ def build_research_models(
 
 def build_travel_sorter(settings: Settings, model: str) -> BaseChatModel:
     """The model that sorts web answers into lines for trip research: no reasoning,
-    so each call takes seconds, routed like the main model when it is the main one."""
-    routing = openrouter_routing(settings) if model == settings.openrouter_model else None
-    return _openai_compatible(
-        settings,
-        model=model,
-        api_key=settings.openrouter_api_key,
-        base_url="https://openrouter.ai/api/v1",
-        name="OpenRouter",
-        extra_body={**(routing or {}), "reasoning": {"enabled": False}},
-    )
+    so each call takes seconds."""
+    return _quick(settings, model)
 
 
 def text_of(content: Any) -> str:

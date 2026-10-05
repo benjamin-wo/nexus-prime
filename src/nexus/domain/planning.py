@@ -82,7 +82,8 @@ class Cadence(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class Bill:
-    """A bill to remember. Never paid by the app, and never written to the ledger."""
+    """A bill to remember. Never paid by the app; marking it paid logs what was paid
+    as an expense (unless it's already in the ledger)."""
 
     id: UUID
     user_id: UserId

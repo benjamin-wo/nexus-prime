@@ -664,6 +664,16 @@ export async function fakeApi(
       }
     }
     const tripPlans = path.match(/^\/travel\/trips\/([^/]+)\/bookings$/);
+    if (tripPlans && method === "POST" && body.kind === "hotel") {
+      const stay = {
+        id: `pl${state.plans.length + 1}`, trip_id: tripPlans[1], kind: "hotel", title: body.hotel, provider: null,
+        starts: body.check_in, ends: body.check_out, segments: [], hotel: body.hotel, address: body.address,
+        check_in: body.check_in, check_out: body.check_out, name: null, day: null, at: null, note: null, cost: null,
+        logged: false, manual: true,
+      };
+      state.plans.push(stay);
+      return json(route, stay, 201);
+    }
     if (tripPlans && method === "POST") {
       if (!body.day || !body.name) return json(route, { detail: "a plan needs a name and a day" }, 422);
       const plan = {
@@ -944,6 +954,14 @@ export async function fakeApi(
       const [, id, action] = billAction;
       if (action === "/snooze") state.bills = state.bills.map((b) => (b.id === id ? { ...b, snoozed: true } : b));
       else state.bills = state.bills.filter((b) => b.id !== id); // paid (one-off) or removed
+      if (action === "/paid") {
+        const amount = (body as { amount?: string | null } | null)?.amount;
+        return json(route, {
+          message: amount ? `Marked it as paid and logged SGD ${amount} in this month's spending.` : "Marked it as paid.",
+          logged: Boolean(amount),
+          needs_amount: !amount,
+        });
+      }
       return route.fulfill({ status: 204 });
     }
     if (path === "/ious") {

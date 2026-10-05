@@ -1334,9 +1334,33 @@ async def add_bill(body: BillIn, auth: Auth, web: Runtime) -> BillOut:
     return bill_out(bill_cases.BillView(bill, body.due, None, today), now)
 
 
-@router.post("/bills/{bill_id}/paid", status_code=204)
-async def bill_paid(bill_id: UUID, auth: Auth, web: Runtime) -> None:
-    await bill_cases.mark_paid(web.uow, auth.user, bill_id, now=web.clock())
+class BillPaidIn(Model):
+    amount: str | None = Field(None, max_length=32)
+    currency: str | None = Field(None, max_length=3)
+
+
+class BillPaidOut(Model):
+    message: str
+    logged: bool  # a new expense was added for it
+    needs_amount: bool  # no set amount and none given, so nothing was logged
+
+
+@router.post("/bills/{bill_id}/paid")
+async def bill_paid(
+    bill_id: UUID, auth: Auth, web: Runtime, body: BillPaidIn | None = None
+) -> BillPaidOut:
+    user = auth.user
+    amount = (
+        Money.of(body.amount.replace(",", ""), body.currency or user.home_currency)
+        if body and body.amount and body.amount.strip()
+        else None
+    )
+    paid = await bill_cases.mark_paid(web.uow, user, bill_id, now=web.clock(), amount=amount)
+    return BillPaidOut(
+        message=paid.message(_tz(user)),
+        logged=paid.logged is not None,
+        needs_amount=paid.amount is None,
+    )
 
 
 @router.post("/bills/{bill_id}/snooze", status_code=204)

@@ -22,6 +22,7 @@ from nexus.application.fx import Rate
 from nexus.application.market import PriceSourceError
 from nexus.application.ports import MailboxGrant, MailboxRevoked
 from nexus.application.research import NewsSourceError
+from nexus.channels.telegram.client import TelegramError
 from nexus.domain.bookings import BookingDraft
 from nexus.domain.email import ExpenseDraft, FetchedEmail, Screening
 from nexus.domain.errors import InvalidInput
@@ -135,6 +136,7 @@ class FakeTelegram:
     files: dict[str, bytes] = field(default_factory=dict)
     app_buttons: list[tuple[int, str, str]] = field(default_factory=list)
     menu_button: tuple[str, str] | None = None
+    stale_presses: bool = False  # Telegram refuses to answer or edit for old presses
 
     async def send_message(
         self, chat_id: int, text: str, buttons: list[list[Button]] | None = None
@@ -143,9 +145,13 @@ class FakeTelegram:
         return 1000 + len(self.sent)  # the message id
 
     async def answer_callback(self, callback_id: str, text: str | None = None) -> None:
+        if self.stale_presses:
+            raise TelegramError("answerCallbackQuery failed: query is too old")
         self.answered.append(callback_id)
 
     async def clear_buttons(self, chat_id: int, message_id: int) -> None:
+        if self.stale_presses:
+            raise TelegramError("editMessageReplyMarkup failed: message can't be edited")
         self.cleared.append((chat_id, message_id))
 
     async def set_buttons(self, chat_id: int, message_id: int, buttons: list[list[Button]]) -> None:

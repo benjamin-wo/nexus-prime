@@ -9,10 +9,14 @@ from datetime import date, datetime, timedelta
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
+from nexus.application import duplicates as duplicate_cases
+from nexus.application import transactions as tx_cases
 from nexus.application.budgets import TELEGRAM_SEND, UowFactory
 from nexus.application.ports import UnitOfWork
-from nexus.domain.errors import InvalidInput, NotFound
-from nexus.domain.ledger import User, UserId, clean_name
+from nexus.application.transactions import NewTransaction
+from nexus.domain.duplicates import Candidate
+from nexus.domain.errors import DuplicateSource, InvalidInput, NotFound
+from nexus.domain.ledger import Direction, Source, Transaction, User, UserId, clean_name
 from nexus.domain.money import Money
 from nexus.domain.planning import (
     OVERDUE_GRACE,
@@ -116,16 +120,81 @@ async def _bill(tx: UnitOfWork, actor: UserId, bill_id: UUID) -> Bill:
     return bill
 
 
-async def mark_paid(uow: UowFactory, user: User, bill_id: UUID, *, now: datetime) -> BillView:
-    """Mark the current due date paid. Returns the view that was paid."""
+BILLS_CATEGORY = "Bills & Utilities"
+
+
+@dataclass(frozen=True, slots=True)
+class Paid:
+    """A bill marked paid, and what happened in the ledger."""
+
+    view: BillView
+    logged: Transaction | None  # the expense logged now
+    already: Transaction | None  # an expense already in the ledger that looks like this payment
+    amount: Money | None  # what was paid, when known
+
+    def message(self, tz: ZoneInfo) -> str:
+        bill = self.view.bill
+        head = f"Marked {bill.name} ({self.view.due:%-d %b}) as paid"
+        if self.logged is not None:
+            return f"{head} and logged {self.logged.amount} in this month's spending."
+        if self.already is not None:
+            when = self.already.occurred_at.astimezone(tz)
+            return (
+                f"{head}. It's already in your spending: {self.already.amount} on "
+                f"{when:%-d %b}, so I didn't log it again."
+            )
+        return (
+            f"{head}. It has no set amount, so nothing was added to your spending; tell me "
+            "how much it was to log it."
+        )
+
+
+async def mark_paid(
+    uow: UowFactory, user: User, bill_id: UUID, *, now: datetime, amount: Money | None = None
+) -> Paid:
+    """Mark the current due date paid and log what was paid as an expense, so it
+    counts in the month's spending. Nothing is paid by the app. If a matching expense
+    is already in the ledger (from email or a statement), it isn't logged twice; a
+    bill with no amount is logged only when the user gives one."""
     async with uow() as tx:
         view = await _view(tx, await _bill(tx, user.id, bill_id), _today(user, now))
         if view is None:
             raise InvalidInput("that bill has nothing left to pay")
+        if amount is not None and not amount.is_positive:
+            raise InvalidInput("an amount must be more than zero")
         current = view.occurrence or BillOccurrence(uuid4(), user.id, bill_id, view.due)
         await tx.planning.save_occurrence(replace(current, paid_at=now, snoozed_until=None))
+        categories = await tx.ledger.list_categories(user.id, include_inactive=False)
         await tx.commit()
-    return view
+    money = amount or view.bill.amount
+    if money is None:
+        return Paid(view, None, None, None)
+    found = await duplicate_cases.check(
+        uow(),
+        user,
+        Candidate(Direction.OUT, money, now, view.bill.name, Source.MANUAL, None),
+        any_source=True,
+    )
+    if found is not None:
+        return Paid(view, None, found, money)
+    category = next((c.id for c in categories if c.name == BILLS_CATEGORY), None)
+    try:
+        logged = await tx_cases.log_transaction(
+            uow(),
+            user.id,
+            NewTransaction(
+                direction=Direction.OUT,
+                amount=money,
+                occurred_at=now,
+                counterparty=view.bill.name,
+                notes=f"Bill due {view.due:%-d %b %Y}",
+                external_id=f"bill:{bill_id}:{view.due.isoformat()}",
+                fallback_category_id=category,
+            ),
+        )
+    except DuplicateSource:
+        return Paid(view, None, None, money)
+    return Paid(view, logged, None, money)
 
 
 async def snooze(uow: UowFactory, user: User, bill_id: UUID, *, now: datetime) -> BillView:
