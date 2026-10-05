@@ -16,6 +16,7 @@ from langchain_core.runnables import Runnable
 from pydantic import Field
 
 from nexus.agent.holdings_reader import ScreenshotHoldings, ScreenshotPosition
+from nexus.agent.image_look import ImageLook, LookFailed
 from nexus.agent.receipts import ReceiptDraft
 from nexus.agent.service import Button
 from nexus.agent.trip_reader import ShotEntry, ShotLeg, TripShot
@@ -488,3 +489,18 @@ class FakePlaces:
         if self.failing:
             raise PlacesError("HTTP 500")
         return next((p for p in self.results if p.id == place_id), None)
+
+
+@dataclass
+class FakeImageLooker:
+    """The first look at each image, made up: ``looks`` in turn (None: it fails)."""
+
+    looks: list[ImageLook | None]
+    seen: list[str | None] = field(default_factory=list)
+
+    async def look(self, image: bytes, mime_type: str, caption: str | None) -> ImageLook:
+        self.seen.append(caption)
+        found = self.looks.pop(0) if len(self.looks) > 1 else self.looks[0]
+        if found is None:
+            raise LookFailed("no look")
+        return found

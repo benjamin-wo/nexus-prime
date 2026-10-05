@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import re
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -17,8 +16,18 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
 from nexus.agent import kernel
-from nexus.agent.graph import BUTTONS, RECEIPT, REF, WROTE, strip_ids, thread_id
+from nexus.agent.graph import BUTTONS, IMAGE, RECEIPT, REF, WROTE, strip_ids, thread_id
 from nexus.agent.holdings_reader import HoldingsReader, ScreenshotHoldings
+from nexus.agent.image_look import (
+    MAX_TEXT,
+    PORTFOLIO_WORDS,
+    TRAVEL_WORDS,
+    ImageKind,
+    ImageLook,
+    ImageLooker,
+    Route,
+    route,
+)
 from nexus.agent.receipts import ReceiptReader, caption_date
 from nexus.agent.tools import UowFactory
 from nexus.agent.trip_reader import TripReader, drafts
@@ -45,7 +54,9 @@ from nexus.domain.errors import DuplicateSource, InvalidInput, NexusError
 from nexus.domain.investments import Position, clean_quantity, clean_symbol
 from nexus.domain.ledger import Direction, Transaction, UserId
 from nexus.domain.money import Money
+from nexus.domain.places import quoted
 from nexus.infra.llm.factory import text_of
+from nexus.infra.pdf.text import PasswordNeeded, pdf_lines
 
 log = logging.getLogger(__name__)
 
@@ -54,6 +65,16 @@ log = logging.getLogger(__name__)
 class Button:
     label: str
     data: str
+
+
+@dataclass(frozen=True, slots=True)
+class Picture:
+    """An image the user sent: its bytes, type, and a reference unique to it (a
+    resent photo has the same one, so its receipt isn't logged twice)."""
+
+    data: bytes
+    mime_type: str
+    ref: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,7 +95,7 @@ HELP = (
     "• split dinner 90 with Ann and Ben\n"
     "• Ann paid me back 30\n"
     "• salary 4200\n"
-    "Or send a photo of a receipt."
+    "Or send a photo: a receipt to log, or any screenshot or bill to ask me about."
 )
 
 
@@ -87,20 +108,12 @@ class _NoRates:
         return None
 
 
-# A caption that says the photo is a portfolio screenshot, not a receipt.
-# A caption that says the photo is about travel: read it as bookings or plans.
-_TRAVEL = re.compile(
-    r"\b(?:trip|itinerary|hotel|flights?|bookings?|reservations?|tickets?|tours?|travel|"
-    r"agoda|klook|airbnb|check[- ]?in)\b",
-    re.I,
-)
 _NO_ENTRIES = Reply(
     "I couldn't find any bookings or plans with dates in that screenshot. Try a clearer "
     "one, or tell me the details."
 )
 # Which-trip questions sent for one screenshot; the rest wait on the Trips page.
 ASK_AT_MOST = 3
-_PORTFOLIO = re.compile(r"\b(?:portfolio|holdings?|positions?|ibkr|interactive brokers)\b", re.I)
 _NO_POSITIONS = Reply(
     "I couldn't find any positions in that screenshot. Send your broker's Portfolio "
     "screen, with the tickers, quantities and average costs showing."
@@ -137,8 +150,11 @@ class AgentService:
         limiter: RateLimiter | None = None,
         holdings: HoldingsReader | None = None,
         trips: TripReader | None = None,
+        looker: ImageLooker | None = None,
     ) -> None:
         self._graph = graph
+        # The first look at every image; None: images are read as receipts first.
+        self._looker = looker
         # Reads screenshots of travel bookings and plans; None: they're read as receipts.
         self._trips = trips
         # Reads broker portfolio screenshots; None: photos are only read as receipts.
@@ -228,7 +244,10 @@ class AgentService:
         try:
             state = await self._graph.aget_state(self._config(actor))
             said = [
-                text_of(m.content)
+                # Text read from an image is data, not the user's words: only the caption.
+                str(m.additional_kwargs[IMAGE])
+                if IMAGE in m.additional_kwargs
+                else text_of(m.content)
                 for m in state.values.get("messages", [])
                 if isinstance(m, HumanMessage) and RECEIPT not in m.additional_kwargs
             ]
@@ -239,18 +258,134 @@ class AgentService:
     async def handle_photo(
         self, actor: UserId, image: bytes, mime_type: str, caption: str | None, ref: str
     ) -> list[Reply]:
-        receipts = self._receipts
-        if receipts is None and self._holdings is None and self._trips is None:
-            return [Reply("Reading receipt photos isn't set up yet. Type the amount instead.")]
+        return await self.handle_images(actor, [Picture(image, mime_type, ref)], caption, ref)
+
+    async def handle_images(
+        self, actor: UserId, pictures: list[Picture], caption: str | None, ref: str
+    ) -> list[Reply]:
+        """Photos or image files the user sent together, with their caption. Each is
+        looked at first (what it is, and its text), then code routes it: receipts are
+        logged, portfolio and trip screenshots read, and anything else (or a question
+        about it) answered by the chat agent from what was read."""
+        if (
+            self._looker is None
+            and self._receipts is None
+            and self._holdings is None
+            and self._trips is None
+        ):
+            return [Reply("Reading photos isn't set up yet. Tell me what it says instead.")]
         if self._over_limit(actor):
             return [Reply(SLOW_DOWN)]
-        if self._trips is not None and (receipts is None or _TRAVEL.search(caption or "")):
-            return await self._trip_photo(actor, image, mime_type, caption, asked=True) or [
-                _NO_ENTRIES
+        looks = await asyncio.gather(*(self._look(p, caption) for p in pictures))
+        replies: list[Reply] = []
+        to_chat: list[ImageLook] = []
+        unread = 0
+        for picture, look in zip(pictures, looks, strict=True):
+            done = await self._read_as(actor, route(look, caption), picture, look, caption)
+            if done is not None:
+                replies += done
+            elif look is not None:
+                to_chat.append(look)
+            else:
+                unread += 1
+        if to_chat:
+            replies += await self.ask_about(actor, to_chat, caption, ref)
+        elif unread and not replies:
+            replies.append(Reply("I couldn't read that right now. Try again in a bit."))
+        return replies
+
+    async def _look(self, picture: Picture, caption: str | None) -> ImageLook | None:
+        if self._looker is None:
+            return None
+        try:
+            return await self._looker.look(picture.data, picture.mime_type, caption)
+        except Exception:
+            log.warning("couldn't look at an image", exc_info=True)
+            return None
+
+    async def _read_as(
+        self,
+        actor: UserId,
+        where: Route,
+        picture: Picture,
+        look: ImageLook | None,
+        caption: str | None,
+    ) -> list[Reply] | None:
+        """The structured read for this route; None when it goes to the chat agent
+        instead (a question, another kind, or a reader that found nothing)."""
+        said = caption or ""
+        if where is Route.TRAVEL and self._trips is not None:
+            asked = bool(TRAVEL_WORDS.search(said))
+            found = await self._trip_photo(
+                actor, picture.data, picture.mime_type, caption, asked=asked
+            )
+            return found if found is not None or look is not None else [_NO_ENTRIES]
+        if where is Route.PORTFOLIO and self._holdings is not None:
+            asked = bool(PORTFOLIO_WORDS.search(said))
+            holding = await self._holdings_photo(
+                actor, picture.data, picture.mime_type, asked=asked
+            )
+            if holding is not None:
+                return [holding]
+            return None if look is not None else [_NO_POSITIONS]
+        if where is Route.RECEIPT and self._receipts is not None:
+            return await self._receipt_photo(actor, picture, look, caption)
+        return None
+
+    async def handle_pdf(
+        self, actor: UserId, data: bytes, name: str, caption: str | None, ref: str
+    ) -> list[Reply]:
+        """A PDF the user sent (an invoice, a payslip, a booking): its text goes to the
+        chat agent as quoted data. Statements are imported on the web instead."""
+        if self._over_limit(actor):
+            return [Reply(SLOW_DOWN)]
+        try:
+            lines = await asyncio.to_thread(pdf_lines, data)
+        except PasswordNeeded:
+            return [
+                Reply(
+                    "That PDF is locked. For a bank statement, use Import in the web app, "
+                    "which asks for the password; otherwise send a screenshot."
+                )
             ]
-        if receipts is None or (self._holdings is not None and _PORTFOLIO.search(caption or "")):
-            found = await self._holdings_photo(actor, image, mime_type, asked=True)
-            return [found or _NO_POSITIONS]
+        except InvalidInput as exc:
+            return [Reply(f"{str(exc).capitalize()}. Send a screenshot of it instead.")]
+        text = quoted(" / ".join(lines), MAX_TEXT)
+        if not text:
+            return [Reply("There's no text in that PDF (it may be scanned). Send a photo of it.")]
+        look = ImageLook(ImageKind.OTHER, None, f"A PDF file named {quoted(name, 80)}", text)
+        return await self.ask_about(actor, [look], caption, ref, label="[PDF]")
+
+    async def ask_about(
+        self,
+        actor: UserId,
+        looks: list[ImageLook],
+        caption: str | None,
+        ref: str,
+        *,
+        label: str | None = None,
+    ) -> list[Reply]:
+        """The chat agent answers about images from what was read, quoted as data."""
+        many = len(looks) > 1
+        quotes = "\n".join(look.quote(n if many else None) for n, look in enumerate(looks, 1))
+        label = label or (f"[{len(looks)} photos]" if many else "[photo]")
+        content = f"{label}{f' {caption}' if caption else ''}\n{quotes}"
+        async with self._locks[actor]:
+            await self._decline_pending(actor)
+            message = HumanMessage(
+                content=content, additional_kwargs={REF: ref, IMAGE: caption or ""}
+            )
+            replies = await self._run(actor, {"messages": [message]})
+        await self._remember(actor, ref)
+        return replies
+
+    async def _receipt_photo(
+        self, actor: UserId, picture: Picture, look: ImageLook | None, caption: str | None
+    ) -> list[Reply] | None:
+        receipts = self._receipts
+        if receipts is None:  # pragma: no cover - routed only when set up
+            return None
+        image, mime_type = picture.data, picture.mime_type
         try:
             names = [c.name for c in await list_categories(self._uow(), actor)]
             user = await get_user(self._uow(), actor)
@@ -258,18 +393,28 @@ class AgentService:
             draft = await receipts.read(image, mime_type, caption, categories=names, today=today)
         except Exception:
             log.exception("receipt reading failed")
+            if look is not None:
+                return None  # the chat agent still has what was read
             return [Reply("I couldn't read that photo right now. Type the amount instead.")]
         if draft.is_travel and self._trips is not None:
-            # A booking confirmation or itinerary: its entries go on the trip.
+            # A ticket or booking with a price on it: its entries go on the trip.
             entries = await self._trip_photo(actor, image, mime_type, caption, asked=False)
             if entries is not None:
                 return entries
-        if not draft.is_receipt and self._holdings is not None:
-            # Not a receipt: it may be a portfolio screenshot sent without a caption.
-            found = await self._holdings_photo(actor, image, mime_type, asked=False)
-            if found is not None:
-                return [found]
+        if look is None:
+            # No first look: the receipt reader's hint decides, as before.
+            if not draft.is_receipt and self._holdings is not None:
+                found = await self._holdings_photo(actor, image, mime_type, asked=False)
+                if found is not None:
+                    return [found]
+        elif not draft.is_receipt or not draft.amount:
+            return None  # not a receipt after all: the chat agent answers from the look
         details = draft.model_dump()
+        if look is not None and look.currency:
+            if not details.get("currency"):
+                details["currency"] = look.currency
+            elif str(details["currency"]).upper() != look.currency:
+                details["seen_currency"] = look.currency
         if not details.get("date"):  # none printed: the caption may say ("from yesterday")
             details["date"] = caption_date(caption, today)
         if self._archive is not None and draft.is_receipt and draft.amount:
@@ -285,7 +430,7 @@ class AgentService:
             await self._decline_pending(actor)
             message = HumanMessage(
                 content="[receipt photo]" + (f" {caption}" if caption else ""),
-                additional_kwargs={RECEIPT: details, REF: ref},
+                additional_kwargs={RECEIPT: details, REF: picture.ref},
             )
             return await self._run(actor, {"messages": [message]})
 

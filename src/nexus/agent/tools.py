@@ -324,12 +324,20 @@ class ReceiptExpenseArgs(Args):
     external_id: str
     receipt_id: str | None = None  # the stored photo, set by the kernel
     best_guess_category: str | None = None  # the receipt reader's guess
+    # The currency the first look at the photo saw, when it differs from the reader's.
+    seen_currency: str | None = None
 
 
 async def _describe_receipt(ctx: ToolContext, a: ReceiptExpenseArgs) -> str:
     money = parse_money(ctx, a.amount, a.currency)
     when = parse_day(ctx, a.date).astimezone(ctx.tz).date().isoformat()
-    return f"Log {money}{f' at {a.merchant}' if a.merchant else ''} on {when} from this receipt?"
+    ask = f"Log {money}{f' at {a.merchant}' if a.merchant else ''} on {when} from this receipt?"
+    if a.seen_currency and a.seen_currency.upper() != money.currency:
+        ask += (
+            f" ⚠️ The receipt may be in {a.seen_currency.upper()}, not {money.currency}: "
+            "if so, tap Cancel and tell me the amount and currency."
+        )
+    return ask
 
 
 async def _log_receipt_expense(ctx: ToolContext, a: ReceiptExpenseArgs) -> ToolResult:
@@ -2159,6 +2167,28 @@ def _skill_tool(load: Callable[[str], str]) -> ToolSpec:
         return ToolResult(load(a.name))
 
     return ToolSpec("load_skill", "Read the full instructions for a skill by name.", SkillArgs, run)
+
+
+# Tools that only read. With these and the tools that confirm first, the agent can
+# answer about an image without anything in the image changing the user's data;
+# every other tool waits until the user asks (see AgentGraph.offered). A new tool is
+# withheld from image turns until it's listed here or confirms first.
+READ_ONLY = frozenset(
+    {
+        "cash_flow", "email_status", "explain_category", "find_duplicates", "find_places",
+        "find_transactions", "list_bills", "list_budgets", "list_categories",
+        "list_category_rules", "list_ious", "list_subscriptions", "list_trips", "load_skill",
+        "place_info", "plan_record", "query_ledger", "show_dividends", "show_pay_schedule",
+        "show_plan", "show_portfolio", "show_watchlist", "spending_summary", "stock_levels",
+        "trade_history", "trip_status",
+    }
+)  # fmt: skip
+
+
+def safe_for_images(spec: ToolSpec) -> bool:
+    """Whether the agent may use this tool on a turn about an image the user hasn't
+    asked it to act on: it only reads, or it asks the user to confirm first."""
+    return spec.confirm is not None or spec.name in READ_ONLY
 
 
 def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:

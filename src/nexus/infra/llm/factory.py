@@ -207,6 +207,22 @@ def build_screenshot_reader(settings: Settings, vision: BaseChatModel) -> BaseCh
     return vision
 
 
+def build_image_look_models(
+    settings: Settings, vision: BaseChatModel
+) -> tuple[BaseChatModel, BaseChatModel | None]:
+    """The first look at an image: IMAGE_LOOK_MODEL (else the main model) without
+    reasoning, with the photo model as its fallback, on OpenRouter. Elsewhere the
+    photo model looks alone."""
+    if settings.llm_provider is not LlmProvider.OPENROUTER or not settings.openrouter_api_key:
+        return vision, None
+    fast = settings.image_look_model or settings.openrouter_model
+    slow = settings.openrouter_vision_model or settings.openrouter_model
+    if not fast:
+        return vision, None
+    fallback = _quick(settings, slow) if slow and slow != fast else None
+    return _quick(settings, fast), fallback
+
+
 def build_research_models(
     settings: Settings, primary: BaseChatModel
 ) -> tuple[BaseChatModel, BaseChatModel]:
