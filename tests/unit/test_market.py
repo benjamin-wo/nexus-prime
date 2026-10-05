@@ -64,7 +64,7 @@ async def test_tiingo_daily_prices() -> None:
             200,
             json=[
                 {"date": "2026-09-25T00:00:00.000Z", "close": 130.25, "high": 131, "low": 127.5,
-                 "open": 128, "volume": 12345, "adjClose": 130.25},
+                 "open": 128, "volume": 12345, "adjClose": 130.25, "divCash": 0.04},
                 {"date": "2026-09-24T00:00:00.000Z", "close": 128.0, "adjClose": 128.0},
                 {"date": "bad", "close": 1},
                 {"date": "2026-09-23T00:00:00.000Z", "close": 0},
@@ -79,6 +79,7 @@ async def test_tiingo_daily_prices() -> None:
         (date(2026, 9, 25), Decimal("130.250000")),
     ]
     assert bars[1].high == Decimal("131.000000") and bars[1].volume == 12345
+    assert (bars[0].div_cash, bars[1].div_cash) == (Decimal(0), Decimal("0.040000"))
     assert bars[0].symbol == "BRK.B"
     request = seen[0]
     assert request.url.path == "/tiingo/daily/brk-b/prices"

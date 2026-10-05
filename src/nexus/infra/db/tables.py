@@ -499,7 +499,47 @@ market_bars = Table(
     Column("close", Numeric(19, 6), nullable=False),
     Column("adj_close", Numeric(19, 6), nullable=False),
     Column("volume", BigInteger, nullable=False),
+    # The dividend per share going ex that day (migration 0031).
+    Column("div_cash", Numeric(19, 6), nullable=False, server_default=text("0")),
     PrimaryKeyConstraint("symbol", "day"),
+)
+
+# Trades the user told Nexus about, buy or sell (migration 0031).
+trades = Table(
+    "trades",
+    metadata,
+    _uuid_pk(),
+    _user_fk(),
+    Column("symbol", Text, nullable=False),
+    Column("side", Text, nullable=False),
+    Column("quantity", Numeric(24, 8), nullable=False),
+    Column("price", MONEY),
+    Column("currency", CURRENCY, nullable=False),
+    Column("traded_on", Date, nullable=False),
+    Column("realised", Numeric(19, 4)),  # a sale's gain or loss, in ``currency``
+    Column("created_at", TZ, nullable=False),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+    CheckConstraint("side IN ('buy', 'sell')", name="side"),
+    CheckConstraint("quantity > 0", name="quantity_positive"),
+    Index("ix_trades_user_id_traded_on", "user_id", "traded_on"),
+)
+
+# Dividends on shares the user held when they went ex (0031).
+dividends = Table(
+    "dividends",
+    metadata,
+    _uuid_pk(),
+    _user_fk(),
+    Column("symbol", Text, nullable=False),
+    Column("ex_date", Date, nullable=False),
+    Column("per_share", Numeric(19, 6), nullable=False),
+    Column("currency", CURRENCY, nullable=False),
+    Column("shares", Numeric(24, 8), nullable=False),
+    Column("created_at", TZ, nullable=False),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+    UniqueConstraint("user_id", "symbol", "ex_date"),
+    CheckConstraint("per_share > 0", name="per_share_positive"),
+    CheckConstraint("shares > 0", name="shares_positive"),
 )
 
 # When each stock's prices were last fetched, and whether the provider knows it.
@@ -509,6 +549,9 @@ market_symbols = Table(
     Column("symbol", Text, primary_key=True),
     Column("fetched_at", TZ, nullable=False),
     Column("known", Boolean, nullable=False),
+    # Its full history was fetched with dividends (0031); until then the next
+    # refresh fetches all of it again, once.
+    Column("dividends", Boolean, nullable=False, server_default=text("false")),
 )
 
 # Stocks a user follows without holding them.

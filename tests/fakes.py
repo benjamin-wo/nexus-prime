@@ -2,7 +2,7 @@
 
 import json
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -184,6 +184,8 @@ class FakePrices:
     closes: dict[str, dict[date, str]] = field(default_factory=dict)
     failing: set[str] = field(default_factory=set)
     asked: list[tuple[str, date, date]] = field(default_factory=list)
+    # Dividends per share going ex on a day: {symbol: {day: amount}}.
+    dividends: dict[str, dict[date, str]] = field(default_factory=dict)
 
     async def daily(self, symbol: str, start: date, end: date) -> list[Bar] | None:
         self.asked.append((symbol, start, end))
@@ -191,8 +193,9 @@ class FakePrices:
             raise PriceSourceError("HTTP 503")
         if symbol not in self.closes:
             return None
+        paid = self.dividends.get(symbol, {})
         return [
-            bar(symbol, day, close)
+            replace(bar(symbol, day, close), div_cash=Decimal(paid.get(day, "0")))
             for day, close in sorted(self.closes[symbol].items())
             if start <= day <= end
         ]

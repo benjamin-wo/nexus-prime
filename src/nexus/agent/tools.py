@@ -1055,8 +1055,13 @@ class TradeArgs(Args):
     side: Literal["buy", "sell"] = Field(description="buy or sell, as the user did at their broker")
     symbol: str = Field(description="The ticker, e.g. NVDA")
     quantity: str = Field(description="Number of shares")
-    price: str | None = Field(None, description="Price paid per share; needed for a buy")
+    price: str | None = Field(
+        None,
+        description="Price per share: needed for a buy, and for a sale to work out what it "
+        "locked in",
+    )
     currency: str | None = Field(None, description="Currency of the price; US stocks are USD")
+    date: str | None = Field(None, description="The trade's date if not today, 2026-09-14")
 
 
 def _trade(a: TradeArgs) -> tuple[str, Decimal, Money | None]:
@@ -1068,17 +1073,59 @@ def _trade(a: TradeArgs) -> tuple[str, Decimal, Money | None]:
 async def _describe_trade(ctx: ToolContext, a: TradeArgs) -> str:
     symbol, quantity, price = _trade(a)
     at = f" at {price}" if price else ""
-    return f"Record that you {'bought' if a.side == 'buy' else 'sold'} {quantity} {symbol}{at}?"
+    when = f" on {parse_day(ctx, a.date):%d %b}" if a.date else ""
+    did = "bought" if a.side == "buy" else "sold"
+    return f"Record that you {did} {quantity} {symbol}{at}{when}?"
 
 
 async def _record_trade(ctx: ToolContext, a: TradeArgs) -> ToolResult:
     symbol, quantity, price = _trade(a)
-    after = await investment_cases.record_trade(
-        ctx.uow(), ctx.user.id, investment_cases.Side(a.side), symbol, quantity, price, now=ctx.now
+    done = await investment_cases.record(
+        ctx.uow(), ctx.user.id, investment_cases.Side(a.side), symbol, quantity, price,
+        now=ctx.now, traded_on=parse_day(ctx, a.date).date() if a.date else None,
+    )  # fmt: skip
+    gain = done.trade.realised
+    locked = ""
+    if gain is not None:
+        word = "a gain" if gain.amount >= 0 else "a loss"
+        locked = f" That locked in {word} of {abs(gain.amount):,.2f} {gain.currency}."
+    elif a.side == "sell":
+        locked = " Without the sale price, what it locked in isn't known."
+    if done.position is None:
+        return ToolResult(f"Recorded: sold all your {symbol}.{locked}", wrote=True)
+    return ToolResult(
+        f"Recorded. You now hold {describe_position(done.position)}.{locked}", wrote=True
     )
-    if after is None:
-        return ToolResult(f"Recorded: sold all your {symbol}.", wrote=True)
-    return ToolResult(f"Recorded. You now hold {describe_position(after)}.", wrote=True)
+
+
+async def _trade_history(ctx: ToolContext, _: NoArgs) -> ToolResult:
+    trades = await investment_cases.trade_history(ctx.uow(), ctx.user.id)
+    if not trades:
+        return ToolResult("No trades recorded yet.")
+    lines = []
+    for t in trades[:30]:
+        at = f" at {t.price}" if t.price else ""
+        gain = f", locked in {t.realised.amount:+,.2f} {t.realised.currency}" if t.realised else ""
+        shares = investment_cases.describe_shares(t.quantity)
+        lines.append(f"• {t.traded_on:%d %b %Y} {t.side.value} {shares} {t.symbol}{at}{gain}")
+    total: dict[str, Decimal] = {}
+    for t in trades:
+        if t.realised is not None:
+            total[t.realised.currency] = (
+                total.get(t.realised.currency, Decimal(0)) + t.realised.amount
+            )
+    if total:
+        lines.append(
+            "Locked in by sales in all: "
+            + ", ".join(f"{v:+,.2f} {c}" for c, v in sorted(total.items()))
+            + "."
+        )
+    return ToolResult("\n".join(lines))
+
+
+async def _dividends(ctx: ToolContext, _: NoArgs) -> ToolResult:
+    view = await investment_cases.dividend_view(ctx.uow, _rates(ctx), ctx.user, now=ctx.now)
+    return ToolResult(investment_cases.describe_dividends(view))
 
 
 class SymbolArgs(Args):
@@ -2036,7 +2083,8 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
         ToolSpec(
             "show_portfolio",
             "The user's stock holdings: shares, average cost, last close, value and gain "
-            "or loss in their home currency. Read-only.",
+            "or loss in their home currency, plus what sales locked in, dividends received "
+            "and the total return. Read-only.",
             NoArgs,
             _portfolio,
         ),
@@ -2047,6 +2095,20 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             TradeArgs,
             _record_trade,
             confirm=_describe_trade,
+        ),
+        ToolSpec(
+            "trade_history",
+            "The stock trades the user recorded, newest first, with what each sale locked "
+            "in against the average cost. Read-only.",
+            NoArgs,
+            _trade_history,
+        ),
+        ToolSpec(
+            "show_dividends",
+            "Dividends on the user's holdings: received (gross, tax withheld, net) and what "
+            "the holdings would pay over the next 12 months with yields. Read-only.",
+            NoArgs,
+            _dividends,
         ),
         ToolSpec(
             "stock_levels",

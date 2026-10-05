@@ -78,6 +78,7 @@ def _bar(symbol: str, row: Any) -> Bar | None:
             close=close,
             adj_close=_decimal(row.get("adjClose", close)),
             volume=int(row.get("volume") or 0),
+            div_cash=_decimal(row.get("divCash") or 0),
         )
     except (KeyError, TypeError, ValueError, InvalidOperation, AttributeError):
         return None

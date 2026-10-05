@@ -1,6 +1,7 @@
 """PostgreSQL storage for holdings. Every query filters on user_id."""
 
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -8,13 +9,23 @@ from sqlalchemy import Row, delete, func, insert, select, union, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from nexus.domain.investments import DraftStatus, Holding, HoldingsDraft, Position, plain
+from nexus.domain.investments import (
+    Dividend,
+    DraftStatus,
+    Holding,
+    HoldingsDraft,
+    Position,
+    Trade,
+    TradeSide,
+    plain,
+)
 from nexus.domain.ledger import UserId
 from nexus.domain.market import Bar
 from nexus.domain.money import Money
 from nexus.domain.news import EarningsDate, NewsItem
 from nexus.domain.plans import FOLLOWED, Followed, PlanStatus, SavedPlan, Verdict
 from nexus.infra.db.tables import (
+    dividends,
     holding_drafts,
     holdings,
     market_bars,
@@ -23,6 +34,7 @@ from nexus.infra.db.tables import (
     market_symbols,
     news_fetches,
     plans,
+    trades,
     watchlist,
 )
 
@@ -70,6 +82,10 @@ def _plan(row: Row[Any]) -> SavedPlan:
         result_percent=row.result_percent,
         alerts=row.alerts,
     )
+
+
+def _bar_row(r: Any) -> Bar:
+    return Bar(r.symbol, r.day, r.open, r.high, r.low, r.close, r.adj_close, r.volume, r.div_cash)
 
 
 class SqlInvestmentRepository:
@@ -180,7 +196,114 @@ class SqlInvestmentRepository:
         ).scalar()
         return day
 
-    async def save_bars(self, symbol: str, bars: list[Bar], *, known: bool, at: datetime) -> None:
+    # --- trades and dividends -----------------------------------------------------------
+
+    async def insert_trade(self, trade: Trade) -> None:
+        await self._db.execute(
+            insert(trades).values(
+                id=trade.id,
+                user_id=trade.user_id,
+                symbol=trade.symbol,
+                side=trade.side.value,
+                quantity=trade.quantity,
+                price=trade.price.amount if trade.price else None,
+                currency=(trade.price or trade.realised or Money.zero("USD")).currency,
+                traded_on=trade.traded_on,
+                realised=trade.realised.amount if trade.realised else None,
+                created_at=trade.created_at,
+            )
+        )
+
+    async def list_trades(self, user_id: UserId, symbol: str | None = None) -> list[Trade]:
+        t = trades.c
+        conditions: list[Any] = [t.user_id == user_id]
+        if symbol is not None:
+            conditions.append(t.symbol == symbol)
+        rows = await self._db.execute(
+            select(trades).where(*conditions).order_by(t.traded_on, t.created_at)
+        )
+        return [
+            Trade(
+                id=r.id,
+                user_id=UserId(r.user_id),
+                symbol=r.symbol,
+                side=TradeSide(r.side),
+                quantity=r.quantity,
+                price=Money(r.price, r.currency) if r.price is not None else None,
+                traded_on=r.traded_on,
+                realised=Money(r.realised, r.currency) if r.realised is not None else None,
+                created_at=r.created_at,
+            )
+            for r in rows
+        ]
+
+    async def insert_dividend(self, dividend: Dividend) -> bool:
+        stmt = (
+            pg_insert(dividends)
+            .values(
+                id=dividend.id,
+                user_id=dividend.user_id,
+                symbol=dividend.symbol,
+                ex_date=dividend.ex_date,
+                per_share=dividend.per_share.amount,
+                currency=dividend.per_share.currency,
+                shares=dividend.shares,
+                created_at=dividend.created_at,
+            )
+            .on_conflict_do_nothing()
+            .returning(dividends.c.id)
+        )
+        return (await self._db.execute(stmt)).first() is not None
+
+    async def list_dividends(self, user_id: UserId) -> list[Dividend]:
+        d = dividends.c
+        rows = await self._db.execute(
+            select(dividends).where(d.user_id == user_id).order_by(d.ex_date.desc(), d.symbol)
+        )
+        return [
+            Dividend(
+                id=r.id,
+                user_id=UserId(r.user_id),
+                symbol=r.symbol,
+                ex_date=r.ex_date,
+                per_share=Money(r.per_share.quantize(Decimal("0.0001")), r.currency),
+                shares=r.shares,
+                created_at=r.created_at,
+            )
+            for r in rows
+        ]
+
+    async def holders(self, symbol: str) -> list[Holding]:
+        rows = await self._db.execute(select(holdings).where(holdings.c.symbol == symbol))
+        return [_holding(r) for r in rows]
+
+    async def has_dividend_history(self, symbol: str) -> bool:
+        """Whether the stock's full history was fetched with its dividends."""
+        m = market_symbols.c
+        found = (await self._db.execute(select(m.dividends).where(m.symbol == symbol))).scalar()
+        return bool(found)
+
+    async def dividends_since(self, symbols: list[str], since: date) -> list[Bar]:
+        """The days a dividend went ex for these stocks, since ``since``, oldest first."""
+        if not symbols:
+            return []
+        b = market_bars.c
+        rows = await self._db.execute(
+            select(market_bars)
+            .where(b.symbol.in_(symbols), b.day >= since, b.div_cash > 0)
+            .order_by(b.day, b.symbol)
+        )
+        return [_bar_row(r) for r in rows]
+
+    async def save_bars(
+        self,
+        symbol: str,
+        bars: list[Bar],
+        *,
+        known: bool,
+        at: datetime,
+        full_history: bool = False,
+    ) -> None:
         """Store a stock's daily prices (a day already stored is replaced: providers
         correct a close now and then) and when they were fetched."""
         if bars:
@@ -195,6 +318,7 @@ class SqlInvestmentRepository:
                         "close": b.close,
                         "adj_close": b.adj_close,
                         "volume": b.volume,
+                        "div_cash": b.div_cash,
                     }
                     for b in bars
                 ]
@@ -204,16 +328,18 @@ class SqlInvestmentRepository:
                     index_elements=[market_bars.c.symbol, market_bars.c.day],
                     set_={
                         c: stmt.excluded[c]
-                        for c in ("open", "high", "low", "close", "adj_close", "volume")
+                        for c in ("open", "high", "low", "close", "adj_close", "volume", "div_cash")
                     },
                 )
             )
-        stmt2 = pg_insert(market_symbols).values(symbol=symbol, fetched_at=at, known=known)
+        stmt2 = pg_insert(market_symbols).values(
+            symbol=symbol, fetched_at=at, known=known, dividends=full_history
+        )
+        changes: dict[str, Any] = {"fetched_at": at, "known": known}
+        if full_history:
+            changes["dividends"] = True
         await self._db.execute(
-            stmt2.on_conflict_do_update(
-                index_elements=[market_symbols.c.symbol],
-                set_={"fetched_at": at, "known": known},
-            )
+            stmt2.on_conflict_do_update(index_elements=[market_symbols.c.symbol], set_=changes)
         )
 
     async def latest_bars(self, symbols: list[str], count: int = 2) -> dict[str, list[Bar]]:
@@ -234,9 +360,7 @@ class SqlInvestmentRepository:
         )
         found: dict[str, list[Bar]] = {}
         for r in rows:
-            found.setdefault(r.symbol, []).append(
-                Bar(r.symbol, r.day, r.open, r.high, r.low, r.close, r.adj_close, r.volume)
-            )
+            found.setdefault(r.symbol, []).append(_bar_row(r))
         return found
 
     async def bars(self, symbol: str, count: int) -> list[Bar]:
@@ -245,10 +369,7 @@ class SqlInvestmentRepository:
         rows = await self._db.execute(
             select(market_bars).where(b.symbol == symbol).order_by(b.day.desc()).limit(count)
         )
-        found = [
-            Bar(r.symbol, r.day, r.open, r.high, r.low, r.close, r.adj_close, r.volume)
-            for r in rows
-        ]
+        found = [_bar_row(r) for r in rows]
         return found[::-1]
 
     # --- watchlist ---

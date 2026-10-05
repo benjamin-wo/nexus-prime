@@ -622,6 +622,36 @@ CASES: tuple[Case, ...] = (
         confirms=True,
     ),
     Case(
+        "inv-sale-with-price",
+        "log",
+        _t("I sold 4 NVDA at 150 on 20 Sep"),
+        calls=(
+            Call(
+                "record_trade",
+                {
+                    "side": "sell",
+                    "symbol": Has("nvda"),
+                    "price": Has("150"),
+                    "date": Has("2026-09-20"),
+                },
+            ),
+        ),
+    ),
+    Case(
+        "inv-dividends",
+        "ask",
+        _t("how much dividend income will my stocks pay this year?"),
+        calls=(Call("show_dividends"),),
+        unchanged=True,
+    ),
+    Case(
+        "inv-trade-history",
+        "ask",
+        _t("what have I made from the shares I sold?"),
+        calls=(Call("trade_history"),),
+        unchanged=True,
+    ),
+    Case(
         "inv-levels",
         "ask",
         _t("where's support on AMD? is it overbought?"),

@@ -682,6 +682,33 @@ test("holdings from a screenshot are checked, saved, edited and removed", async 
   await expect(page.getByRole("link", { name: /^Investment: / })).toContainText("Portfolio SGD");
 });
 
+test("a sale is recorded with what it locked in, and dividends are expected", async ({ page }) => {
+  const state = await fakeApi(page);
+  await page.goto("/investment");
+  await page.getByLabel("Upload screenshot").setInputFiles({ name: "p.png", mimeType: "image/png", buffer: Buffer.from("x") });
+  await page.getByRole("region", { name: "From your screenshot" }).getByRole("button", { name: "Save holdings" }).click();
+
+  const dividends = page.getByRole("region", { name: "Dividends" });
+  await expect(dividends.getByRole("list", { name: "Expected dividends" })).toContainText("NVDA");
+  await expect(dividends).toContainText("4 payments in the last year");
+
+  const trades = page.getByRole("region", { name: "Trades" });
+  await expect(trades).toContainText("No trades recorded yet");
+  const form = trades.getByRole("form", { name: "Record a trade" });
+  await form.getByLabel("Side").selectOption("sell");
+  await form.getByLabel("Ticker").fill("NVDA");
+  await form.getByLabel("Shares").fill("4");
+  await form.getByLabel(/^Price/).fill("150");
+  await form.getByLabel("Date").fill("2026-09-20");
+  await form.getByRole("button", { name: "Record" }).click();
+  const history = trades.getByRole("list", { name: "Trade history" });
+  await expect(history).toContainText("Sold 4 NVDA");
+  await expect(history).toContainText("+USD");
+  expect(state.trades[0]).toMatchObject({ side: "sell", traded_on: "2026-09-20" });
+  await expect(page.getByLabel("Portfolio totals")).toContainText("Locked in by sales");
+  await expect(page.getByLabel("Portfolio totals")).toContainText("Total return");
+});
+
 test("a watched stock shows its levels, earnings date and news", async ({ page }) => {
   const state = await fakeApi(page);
   await page.goto("/investment/watchlist");

@@ -89,6 +89,7 @@ export async function fakeApi(
     screenshots: number;
     watching: string[];
     trips: Record<string, unknown>[];
+    trades: Record<string, unknown>[];
     tripItems: string[];
     looseBookings: Record<string, unknown>[];
     movedBookings: string[];
@@ -138,6 +139,7 @@ export async function fakeApi(
     holdings: [],
     watching: [],
     trips: [],
+    trades: [],
     tripItems: ["k1", "k2"],
     looseBookings: [
       {
@@ -350,6 +352,32 @@ export async function fakeApi(
       cost: usd((Number(quantity) * Number(cost)).toFixed(4)),
       updated_at: new Date().toISOString(),
     });
+    if (path === "/investments/trades" && method === "GET") return json(route, [...state.trades].reverse());
+    if (path === "/investments/trades" && method === "POST") {
+      const symbol = String(body.symbol).toUpperCase();
+      const held = state.holdings.find((h) => h.symbol === symbol);
+      const quantity = Number(body.quantity);
+      let realised = null;
+      if (body.side === "sell") {
+        if (!held || Number(held.quantity) < quantity) return json(route, { detail: `you don't hold enough ${symbol}` }, 422);
+        if (body.price) realised = usd((quantity * (Number(body.price) - Number(held.average_cost.amount))).toFixed(4));
+        const left = Number(held.quantity) - quantity;
+        state.holdings = left ? state.holdings.map((h) => (h.symbol === symbol ? position(symbol, String(left), held.average_cost.amount) : h)) : state.holdings.filter((h) => h.symbol !== symbol);
+      }
+      const trade = { id: `tr${state.trades.length + 1}`, symbol, side: body.side, quantity: String(body.quantity), price: body.price ? usd(String(body.price)) : null, traded_on: body.traded_on ?? "2026-09-28", realised };
+      state.trades.push(trade);
+      return json(route, trade, 201);
+    }
+    if (path === "/investments/dividends" && method === "GET") {
+      const nvda = state.holdings.find((h) => h.symbol === "NVDA");
+      return json(route, {
+        received: [],
+        received_home: null,
+        this_year_home: null,
+        expected: nvda ? [{ symbol: "NVDA", per_share: usd("0.0400"), payments: 4, net: usd((Number(nvda.quantity) * 0.04 * 0.7).toFixed(4)), yield_on_value: "0.03", yield_on_cost: "0.03" }] : [],
+        expected_home: nvda ? { amount: (Number(nvda.quantity) * 0.04 * 0.7 * 1.3).toFixed(4), currency: "SGD" } : null,
+      });
+    }
     if (path === "/investments" && method === "GET") {
       // Made-up closes: NVDA has one, AAPL doesn't yet. 1 USD = 1.30 SGD.
       const closes: Record<string, [string, string]> = { NVDA: ["130.25", "128.00"] };
@@ -392,6 +420,9 @@ export async function fakeApi(
           day_percent: null,
           as_of: priced ? "2026-09-25" : null,
           missing,
+          realised: state.trades.some((t) => t.realised) ? sgd(1.3 * state.trades.reduce((n, t) => n + Number((t.realised as { amount: string } | null)?.amount ?? 0), 0)) : null,
+          dividends: null,
+          total_return: priced && state.trades.some((t) => t.realised) ? sgd(gain + 1.3 * state.trades.reduce((n, t) => n + Number((t.realised as { amount: string } | null)?.amount ?? 0), 0)) : null,
         },
         draft: state.draft,
         screenshots: true,

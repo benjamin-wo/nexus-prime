@@ -20,9 +20,11 @@ from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.investments import (
     HoldingsDraft,
     Position,
+    Trade,
     changes,
     clean_quantity,
     clean_symbol,
+    plain,
 )
 from nexus.domain.levels import Levels
 from nexus.domain.market import percent
@@ -89,6 +91,9 @@ class TotalsOut(Model):
     day_percent: Decimal | None
     as_of: date | None
     missing: list[str]  # stocks left out (no price or exchange rate yet)
+    realised: MoneyOut | None  # locked in by sales
+    dividends: MoneyOut | None  # received, after tax withheld
+    total_return: MoneyOut | None  # held + sold + dividends
 
 
 class PortfolioOut(Model):
@@ -143,6 +148,9 @@ def _totals(v: investment_cases.Valuation) -> TotalsOut:
         day_percent=v.day_percent,
         as_of=v.as_of,
         missing=v.missing,
+        realised=_optional(v.realised),
+        dividends=_optional(v.dividends),
+        total_return=_optional(v.total_return),
     )
 
 
@@ -225,6 +233,111 @@ async def set_holding(symbol: str, body: PositionIn, auth: Auth, web: Runtime) -
 @router.delete("/holdings/{symbol}", status_code=204)
 async def remove_holding(symbol: str, auth: Auth, web: Runtime) -> None:
     await investment_cases.remove(web.uow(), auth.user.id, clean_symbol(symbol))
+
+
+# --- trades and dividends ---------------------------------------------------------------
+
+
+class TradeOut(Model):
+    id: UUID
+    symbol: str
+    side: str  # buy or sell
+    quantity: Decimal
+    price: MoneyOut | None
+    traded_on: date
+    realised: MoneyOut | None  # a sale's gain or loss against the average cost
+
+
+class TradeIn(Model):
+    side: str = Field(pattern="^(buy|sell)$")
+    symbol: str = Field(min_length=1, max_length=12)
+    quantity: str = Field(min_length=1, max_length=32)
+    price: str | None = Field(None, max_length=32)
+    currency: str = Field("USD", pattern="^[A-Za-z]{3}$")
+    traded_on: date | None = None
+
+
+def _trade_out(t: Trade) -> TradeOut:
+    return TradeOut(
+        id=t.id,
+        symbol=t.symbol,
+        side=t.side.value,
+        quantity=plain(t.quantity),
+        price=_optional(t.price),
+        traded_on=t.traded_on,
+        realised=_optional(t.realised),
+    )
+
+
+@router.get("/trades")
+async def trades(auth: Auth, web: Runtime) -> list[TradeOut]:
+    return [_trade_out(t) for t in await investment_cases.trade_history(web.uow(), auth.user.id)]
+
+
+@router.post("/trades", status_code=201)
+async def add_trade(body: TradeIn, auth: Auth, web: Runtime) -> TradeOut:
+    price = (
+        Money.of(body.price.replace(",", ""), body.currency.upper())
+        if body.price and body.price.strip()
+        else None
+    )
+    done = await investment_cases.record(
+        web.uow(), auth.user.id, investment_cases.Side(body.side), clean_symbol(body.symbol),
+        clean_quantity(body.quantity), price, now=web.clock(), traded_on=body.traded_on,
+    )  # fmt: skip
+    return _trade_out(done.trade)
+
+
+class DividendOut(Model):
+    symbol: str
+    ex_date: date
+    per_share: MoneyOut
+    shares: Decimal
+    gross: MoneyOut
+    withheld: MoneyOut
+    net: MoneyOut
+
+
+class ExpectedOut(Model):
+    symbol: str
+    per_share: MoneyOut  # over the last 12 months
+    payments: int
+    net: MoneyOut  # the next 12 months on today's shares, after tax
+    yield_on_value: Decimal | None
+    yield_on_cost: Decimal | None
+
+
+class DividendsOut(Model):
+    received: list[DividendOut]
+    received_home: MoneyOut | None
+    this_year_home: MoneyOut | None
+    expected: list[ExpectedOut]
+    expected_home: MoneyOut | None
+
+
+@router.get("/dividends")
+async def dividends(auth: Auth, web: Runtime) -> DividendsOut:
+    v = await investment_cases.dividend_view(web.uow, web.rates, auth.user, now=web.clock())
+    return DividendsOut(
+        received=[
+            DividendOut(
+                symbol=d.symbol, ex_date=d.ex_date, per_share=money(d.per_share),
+                shares=plain(d.shares), gross=money(d.gross), withheld=money(d.withheld),
+                net=money(d.net),
+            )
+            for d in v.received
+        ],
+        received_home=_optional(v.received_home),
+        this_year_home=_optional(v.this_year_home),
+        expected=[
+            ExpectedOut(
+                symbol=e.symbol, per_share=money(e.per_share), payments=e.payments,
+                net=money(e.net), yield_on_value=e.yield_on_value, yield_on_cost=e.yield_on_cost,
+            )
+            for e in v.expected
+        ],
+        expected_home=_optional(v.expected_home),
+    )  # fmt: skip
 
 
 # --- watchlist and one stock's research -------------------------------------------------
