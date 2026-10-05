@@ -40,7 +40,7 @@ from nexus.application import trips as trip_cases
 from nexus.application.departments import Departments
 from nexus.application.fx import Rate, RateSource
 from nexus.application.ports import LedgerQuery, UnitOfWork
-from nexus.domain.bookings import Booking, BookingDraft
+from nexus.domain.bookings import Booking, BookingDraft, BookingKind
 from nexus.domain.email import InboundEmail
 from nexus.domain.errors import InvalidInput, NexusError, NotFound
 from nexus.domain.investments import clean_quantity, clean_symbol, describe_position
@@ -1438,13 +1438,19 @@ async def _bills(ctx: ToolContext, _: NoArgs) -> ToolResult:
     return ToolResult("\n".join(_bill_line(v, ctx.now) for v in views))
 
 
-async def _bill_paid(ctx: ToolContext, a: BillNameArgs) -> ToolResult:
-    view = await _find_bill(ctx, a.name)
-    await bill_cases.mark_paid(ctx.uow, ctx.user, view.bill.id, now=ctx.now)
-    return ToolResult(
-        f"Marked {view.bill.name} due {view.due.isoformat()} as paid (nothing was paid by me).",
-        wrote=True,
+class BillPaidArgs(BillNameArgs):
+    amount: str | None = Field(
+        default=None,
+        description="What the user paid, only if they said, or the bill has no set amount",
     )
+    currency: str | None = Field(default=None, description="ISO code, if not the home one")
+
+
+async def _bill_paid(ctx: ToolContext, a: BillPaidArgs) -> ToolResult:
+    view = await _find_bill(ctx, a.name)
+    amount = parse_money(ctx, a.amount, a.currency) if a.amount else None
+    paid = await bill_cases.mark_paid(ctx.uow, ctx.user, view.bill.id, now=ctx.now, amount=amount)
+    return ToolResult(paid.message(ctx.tz) + " (Nothing was paid by me.)", wrote=True)
 
 
 async def _snooze_bill(ctx: ToolContext, a: BillNameArgs) -> ToolResult:
@@ -1739,6 +1745,11 @@ async def _itinerary_entry(
     ctx: ToolContext, a: ItineraryArgs
 ) -> tuple[Trip, BookingDraft, Money | None]:
     trip = await trip_cases.find_trip(ctx.uow(), ctx.user, a.trip, now=ctx.now)
+    if a.kind == "hotel" and not a.day:
+        # "add my hotel, Hotel Sakura": the stay is the whole trip unless said otherwise.
+        a = a.model_copy(
+            update={"day": trip.start.isoformat(), "until": a.until or trip.end.isoformat()}
+        )
     draft = BookingDraft.from_dict(_itinerary_details(a))
     if draft is None:
         raise InvalidInput(
@@ -1788,6 +1799,70 @@ async def _remove_from_itinerary(ctx: ToolContext, a: ItineraryItemArgs) -> Tool
     trip, item = await _find_item(ctx, a)
     await booking_cases.delete_booking(ctx.uow(), ctx.user.id, item.id)
     return ToolResult(f"Taken off the {trip.destination} itinerary.", wrote=True)
+
+
+class ItineraryChangeArgs(ItineraryItemArgs):
+    name: str | None = Field(None, description="A new name for a plan or hotel")
+    day: str | None = Field(None, description="A new day for a plan, or check-in for a hotel")
+    time: str | None = Field(None, description="A plan's new time, like 19:00")
+    until: str | None = Field(None, description="A hotel's new check-out day")
+    place: str | None = Field(None, description="A new address or area")
+    number: str | None = Field(None, description="A new flight or train number")
+    origin: str | None = Field(None, description="A flight or train's new from")
+    destination: str | None = Field(None, description="A flight or train's new to")
+    departs: str | None = Field(None, description="New departure, local, 2026-12-10T08:25")
+    arrives: str | None = Field(None, description="New arrival, local")
+    provider: str | None = Field(None, description="The airline or rail operator")
+    note: str | None = Field(None, description="A new note, replacing the old one")
+    cost: str | None = Field(None, description="A new cost, if said")
+    currency: str | None = Field(None, description="The cost's currency, if not the home one")
+
+
+async def _changed_entry(
+    ctx: ToolContext, a: ItineraryChangeArgs
+) -> tuple[Trip, Booking, BookingDraft, Money | None]:
+    """The entry with only what the user changed: the rest is kept."""
+    trip, item = await _find_item(ctx, a)
+    data = item.draft.as_dict()
+    hotel = item.draft.kind is BookingKind.HOTEL
+    fields = {
+        "hotel" if hotel else "name": a.name,
+        "check_in" if hotel else "day": a.day,
+        "at": a.time,
+        "check_out": a.until,
+        "address": a.place,
+        "provider": a.provider,
+        "note": a.note,
+    }
+    data.update({k: v for k, v in fields.items() if v is not None})
+    leg = {"number": a.number, "from": a.origin, "to": a.destination,
+           "departs": a.departs, "arrives": a.arrives}  # fmt: skip
+    if any(v is not None for v in leg.values()):
+        segments = data["segments"] or [{}]
+        segments[0] = {**segments[0], **{k: v for k, v in leg.items() if v is not None}}
+        data["segments"] = segments
+    draft = BookingDraft.from_dict(data)
+    if draft is None:
+        raise InvalidInput("that change leaves the entry without a date")
+    cost = parse_money(ctx, a.cost, a.currency) if a.cost else item.cost
+    return trip, item, draft, cost
+
+
+async def _describe_change_itinerary(ctx: ToolContext, a: ItineraryChangeArgs) -> str:
+    trip, item, draft, cost = await _changed_entry(ctx, a)
+    price = f", {cost}" if cost else ""
+    return (
+        f"Change {item.draft.describe()} on the {trip.destination} itinerary to "
+        f"{draft.describe()}{price}?"
+    )
+
+
+async def _change_itinerary(ctx: ToolContext, a: ItineraryChangeArgs) -> ToolResult:
+    trip, item, draft, cost = await _changed_entry(ctx, a)
+    await booking_cases.edit_booking(ctx.uow(), ctx.user.id, item.id, draft.as_dict(), cost)
+    return ToolResult(
+        f"Changed on the {trip.destination} itinerary: {draft.describe()}.", wrote=True
+    )
 
 
 class ResearchArgs(Args):
@@ -2125,8 +2200,9 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
         ToolSpec("list_bills", "The user's bills and when each is next due.", NoArgs, _bills),
         ToolSpec(
             "mark_bill_paid",
-            "Record that the user has paid a bill's current due date. Pays nothing.",
-            BillNameArgs,
+            "Record that the user has paid a bill's current due date and log it as this "
+            "month's expense (skipped if it's already in the ledger). Pays nothing.",
+            BillPaidArgs,
             _bill_paid,
         ),
         ToolSpec(
@@ -2199,6 +2275,14 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             ItineraryArgs,
             _add_to_itinerary,
             confirm=_describe_add_to_itinerary,
+        ),
+        ToolSpec(
+            "change_itinerary_entry",
+            "Change an entry already on a trip's itinerary (a hotel's check-out, a plan's "
+            "time, a flight's departure), keeping what isn't changed. Asks the user to confirm.",
+            ItineraryChangeArgs,
+            _change_itinerary,
+            confirm=_describe_change_itinerary,
         ),
         ToolSpec(
             "remove_from_itinerary",

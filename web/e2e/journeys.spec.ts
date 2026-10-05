@@ -258,6 +258,21 @@ test("add a bill, snooze its reminders and stop tracking it", async ({ page }) =
   await expect(page.getByText("No bills yet. Add one below.")).toBeVisible();
 });
 
+test("mark a bill with no set amount paid and log what was paid", async ({ page }) => {
+  await fakeApi(page);
+  await page.goto("/plan");
+  const form = page.getByRole("form", { name: "Add a bill" });
+  await form.getByLabel("Bill").fill("Electricity");
+  await form.getByLabel("Next due").fill("2026-10-01");
+  await form.getByRole("button", { name: "Add bill" }).click();
+  const bills = page.getByRole("region", { name: "Bills" });
+  await bills.getByRole("button", { name: "Mark paid" }).click();
+  const paid = bills.getByRole("form", { name: "What you paid for Electricity" });
+  await paid.getByLabel(/Paid/).fill("120");
+  await paid.getByRole("button", { name: "Log and mark paid" }).click();
+  await expect(bills.getByRole("status")).toContainText("logged SGD 120 in this month's spending");
+});
+
 test("a category correction offers a rule, saved only when accepted", async ({ page }) => {
   const state = await fakeApi(page);
   await page.goto("/ledger");
@@ -833,4 +848,15 @@ test("plans are added to a trip's itinerary by hand, day by day, and changed", a
   await itinerary.getByRole("button", { name: "Remove Dinner at Sushi Ten" }).click();
   await expect(itinerary).not.toContainText("Dinner at Sushi Ten");
   expect(state.plans).toEqual([]);
+
+  // A hotel starts on the trip's dates and shows on each night of the stay.
+  await itinerary.getByRole("button", { name: "Add to itinerary" }).click();
+  await entry.getByLabel("What").selectOption("hotel");
+  await expect(entry.getByLabel("Check in")).toHaveValue("2026-11-10");
+  await expect(entry.getByLabel("Check out")).toHaveValue("2026-11-19");
+  await entry.getByLabel("Hotel", { exact: true }).fill("Hotel Kawa");
+  await entry.getByLabel("Check out").fill("2026-11-13");
+  await entry.getByRole("button", { name: "Add" }).click();
+  await expect(itinerary.getByText("Staying at Hotel Kawa")).toHaveCount(2); // the 11th and 12th
+  expect(state.plans[0]).toMatchObject({ check_in: "2026-11-10", check_out: "2026-11-13" });
 });

@@ -26,8 +26,17 @@ function state(bill: Bill): "ok" | "warn" | "over" {
   return "ok";
 }
 
-function BillRow({ bill, onChanged }: { bill: Bill; onChanged: () => void }) {
+type Paid = { message: string; logged: boolean; needs_amount: boolean };
+
+function BillRow({ bill, home, onChanged, onPaid }: {
+  bill: Bill;
+  home: string;
+  onChanged: () => void;
+  onPaid: (message: string) => void;
+}) {
   const [confirming, setConfirming] = useState(false);
+  const [paying, setPaying] = useState(false);
+  const [paidAmount, setPaidAmount] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   async function act(path: string, method = "POST") {
@@ -38,6 +47,25 @@ function BillRow({ bill, onChanged }: { bill: Bill; onChanged: () => void }) {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't update");
     }
+  }
+
+  async function markPaid(amount: string | null) {
+    setError(null);
+    try {
+      const paid = await api<Paid>(`/bills/${bill.id}/paid`, { method: "POST", body: { amount } });
+      setPaying(false);
+      setPaidAmount("");
+      onPaid(paid.message);
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't update");
+    }
+  }
+
+  function startPaid() {
+    // Without a set amount, ask what was paid so it can count in the month's spending.
+    if (bill.amount) void markPaid(null);
+    else setPaying(true);
   }
 
   const repeats = CADENCES.find((c) => c.value === bill.cadence)?.label ?? bill.cadence;
@@ -52,9 +80,38 @@ function BillRow({ bill, onChanged }: { bill: Bill; onChanged: () => void }) {
           {when(bill)} · {repeats}
           {bill.snoozed && " · reminders snoozed"}
         </span>
-        {!confirming ? (
+        {paying ? (
+          <form
+            className="quick"
+            aria-label={`What you paid for ${bill.name}`}
+            onSubmit={(e) => {
+              e.preventDefault();
+              void markPaid(paidAmount.trim() || null);
+            }}
+          >
+            <label className="field">
+              Paid ({home})
+              <input
+                className="input"
+                inputMode="decimal"
+                placeholder="120"
+                value={paidAmount}
+                onChange={(e) => setPaidAmount(e.target.value)}
+              />
+            </label>
+            <button type="submit" className="btn btn-primary" disabled={!paidAmount.trim()}>
+              Log and mark paid
+            </button>
+            <button type="button" className="btn btn-ghost" onClick={() => void markPaid(null)}>
+              Just mark paid
+            </button>
+            <button type="button" className="btn" onClick={() => setPaying(false)}>
+              Cancel
+            </button>
+          </form>
+        ) : !confirming ? (
           <span className="quick">
-            <button type="button" className="btn btn-ghost" onClick={() => act("/paid")}>
+            <button type="button" className="btn btn-ghost" onClick={startPaid}>
               Mark paid
             </button>
             <button type="button" className="btn btn-ghost" onClick={() => act("/snooze")} disabled={bill.snoozed}>
@@ -93,10 +150,14 @@ export function BillsSection({ me }: { me: Me }) {
   const [cadence, setCadence] = useState<Bill["cadence"]>("monthly");
   const [amount, setAmount] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const home = me.user.home_currency;
 
   function refresh() {
     void client.invalidateQueries({ queryKey: ["bills"] });
+    // Marking paid can log an expense, which changes the month's spending.
+    void client.invalidateQueries({ queryKey: ["transactions"] });
+    void client.invalidateQueries({ queryKey: ["home"] });
   }
 
   async function add(event: FormEvent) {
@@ -123,10 +184,15 @@ export function BillsSection({ me }: { me: Me }) {
       {bills.isLoading && <p className="state">Loading…</p>}
       {bills.isError && <p className="state error-text">Couldn't load bills.</p>}
       {bills.data?.length === 0 && <p className="state">No bills yet. Add one below.</p>}
+      {notice && (
+        <p className="state" role="status">
+          {notice}
+        </p>
+      )}
       {bills.data && bills.data.length > 0 && (
         <ul className="budgets">
           {bills.data.map((b) => (
-            <BillRow key={b.id} bill={b} onChanged={refresh} />
+            <BillRow key={b.id} bill={b} home={home} onChanged={refresh} onPaid={setNotice} />
           ))}
         </ul>
       )}
@@ -168,7 +234,7 @@ export function BillsSection({ me }: { me: Me }) {
           {error}
         </p>
       )}
-      <p className="caption">Nexus only reminds you. It never pays anything or adds bills to your ledger.</p>
+      <p className="caption">Nexus only reminds you and never pays anything. Marking a bill paid logs it in your spending, unless it's already there.</p>
     </section>
   );
 }

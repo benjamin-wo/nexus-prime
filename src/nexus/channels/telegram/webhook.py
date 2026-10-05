@@ -20,7 +20,7 @@ from nexus.application.access import create_invite
 from nexus.application.clock import utcnow
 from nexus.application.inbound import claim_event
 from nexus.application.users import RegisterUser, register_user
-from nexus.channels.telegram.client import MAX_DOWNLOAD, TelegramClient
+from nexus.channels.telegram.client import MAX_DOWNLOAD, TelegramClient, TelegramError
 from nexus.domain.errors import Forbidden
 from nexus.domain.ledger import Role, UserId
 from nexus.settings import Settings
@@ -230,7 +230,12 @@ async def _callback(runtime: TelegramRuntime, query: dict[str, Any]) -> None:
     if chat.get("type") != "private":
         return
     chat_id = int(chat["id"])
-    await runtime.client.answer_callback(str(query["id"]))
+    # Telegram refuses to answer a press that's too old (after a restart or a slow
+    # turn). That only stops the button's spinner: the press is still handled.
+    try:
+        await runtime.client.answer_callback(str(query["id"]))
+    except TelegramError as exc:
+        log.info("telegram: couldn't answer a button press: %s", exc)
     actor = await _actor(runtime, query.get("from") or {}, chat_id)
     if actor is None:
         return
@@ -239,7 +244,10 @@ async def _callback(runtime: TelegramRuntime, query: dict[str, Any]) -> None:
     # drop the job that would later put the rest back without Undo.
     if data.startswith(ONE_SHOT) and message.get("message_id") is not None:
         message_id = int(message["message_id"])
-        await runtime.client.clear_buttons(chat_id, message_id)
+        try:
+            await runtime.client.clear_buttons(chat_id, message_id)
+        except TelegramError as exc:  # already cleared, or too old to edit
+            log.info("telegram: couldn't clear buttons: %s", exc)
         async with runtime.uow() as tx:
             await tx.jobs.cancel(_undo_key(chat_id, message_id))
             await tx.commit()

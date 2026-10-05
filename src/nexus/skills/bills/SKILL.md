@@ -11,9 +11,11 @@ tools: [add_bill, list_bills, mark_bill_paid, snooze_bill, remove_bill]
   only if the user gave one; never guess it.
 - If the due date is unclear ("rent soon"), ask one short question.
 - "what bills are coming up?": `list_bills`, then answer in a few short lines.
-- "paid the electricity bill": `mark_bill_paid`. This only records it: you never pay,
-  transfer or schedule anything, and it doesn't log an expense. If they also want it
-  in the ledger, log it as an expense separately.
+- "paid the electricity bill", "paid the phone bill, it was 52": `mark_bill_paid`, with
+  `amount` only if the user said one. It records the payment (you never pay, transfer
+  or schedule anything) and logs the bill as this month's expense, unless an expense
+  like it is already in the ledger. Never log it again separately. For a bill with no
+  set amount and none given, nothing is logged: ask how much, then log it as an expense.
 - "remind me tomorrow" about a bill: `snooze_bill`.
 - "stop reminding me about rent": `remove_bill`; the confirmation step asks the user.
   (Subscriptions spotted from the ledger are stopped on the Plan page instead.)

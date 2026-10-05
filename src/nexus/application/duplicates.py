@@ -45,9 +45,18 @@ async def _pool(
 
 
 def _closest(
-    item: Candidate, pool: Iterable[Transaction], tz: ZoneInfo, skip: Callable[[Transaction], bool]
+    item: Candidate,
+    pool: Iterable[Transaction],
+    tz: ZoneInfo,
+    skip: Callable[[Transaction], bool],
+    *,
+    any_source: bool = False,
 ) -> Transaction | None:
-    found = [t for t in pool if not skip(t) and likely_same(item, candidate(t), tz)]
+    found = [
+        t
+        for t in pool
+        if not skip(t) and likely_same(item, candidate(t), tz, any_source=any_source)
+    ]
     return min(found, key=lambda t: abs(t.occurred_at - item.occurred_at), default=None)
 
 
@@ -92,13 +101,15 @@ async def find_pairs(uow: UowFactory, user: User, start: datetime, end: datetime
     return sorted(pairs.values(), key=lambda p: p.first.occurred_at, reverse=True)
 
 
-async def check(uow: UnitOfWork, user: User, item: Candidate) -> Transaction | None:
+async def check(
+    uow: UnitOfWork, user: User, item: Candidate, *, any_source: bool = False
+) -> Transaction | None:
     """The live transaction a payment about to be logged most likely duplicates."""
     tz = ZoneInfo(user.timezone)
     margin = timedelta(days=NEAR_DAYS + 1)
     async with uow:
         pool = await _pool(uow, user.id, item.occurred_at - margin, item.occurred_at + margin)
-    return _closest(item, pool, tz, lambda _: False)
+    return _closest(item, pool, tz, lambda _: False, any_source=any_source)
 
 
 async def dismiss(uow: UnitOfWork, user_id: UserId, a: UUID, b: UUID, *, now: datetime) -> None:

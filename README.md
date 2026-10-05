@@ -31,7 +31,7 @@ One LLM agent serves both surfaces, but the parts that must be right, like money
 - **Every expense has a category.** Twelve common ones to start (Dining Out, Groceries, Transport, Shopping, Bills & Utilities, Socialising, Health, Travel, Activities, Subscriptions & Software, Income, Other), and you can add, rename, archive or merge your own from chat or the Settings page (the cog in the nav). A category you name wins, then a rule, then the model's best guess; anything left goes to Other.
 - **Category rules you can see.** "grab" → Transport files new expenses automatically, and "why is this in Transport?" gets a real answer. Correcting a category offers a rule change, but never makes one without asking.
 - **Budgets:** monthly limits, overall or per category, with Telegram alerts at 50%, 80% and 100%, each sent once.
-- **Bills:** reminders 7, 3 and 1 days before, with Mark paid and Snooze buttons. It never pays anything.
+- **Bills:** reminders 7, 3 and 1 days before, with Mark paid and Snooze buttons. Marking one paid logs it in the month's spending (once). It never pays anything.
 - **Subscriptions:** after three regular, similar charges from one merchant, Nexus asks whether to track it; tracked ones show on the Plan page with a monthly total, and a price change is flagged.
 - **Cash flow:** a month calendar of net money movement per day: what was logged so far, and what bills, tracked subscriptions and payday are expected to bring. Movement only, never a balance. Also in chat: "what's coming up?"
 - **Telegram updates:** by default, a summary of the day's spending at 9pm. Users can switch to updates as they happen, hourly, 3 times a day, or off, in chat or on the Settings page.

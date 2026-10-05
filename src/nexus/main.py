@@ -58,6 +58,7 @@ from nexus.infra.fx.frankfurter import FrankfurterRates
 from nexus.infra.llm.factory import (
     ChatModels,
     build_chat_models,
+    build_email_reader,
     build_memory_model,
     build_research_models,
     build_screener,
@@ -186,7 +187,7 @@ async def _email_runtime(
             domain=settings.agentmail_domain,
         )
     reader = overrides.email_reader or LlmEmailReader(
-        build_screener(settings, models.primary), models.primary
+        build_screener(settings, models.primary), build_email_reader(settings, models.primary)
     )
     return EmailRuntime(
         mailbox=mailbox,

@@ -19,6 +19,14 @@ type FormRow = { name: string; amount: string };
 
 /** Add or change a trip. Money is in the home currency; the trip's own currency is
  * what's spent there, which is how its spending is found. */
+// Common travel currencies, offered as the trip's currency is typed.
+const CURRENCIES: [string, string][] = [
+  ["JPY", "Japan"], ["KRW", "South Korea"], ["THB", "Thailand"], ["MYR", "Malaysia"], ["IDR", "Indonesia"],
+  ["VND", "Vietnam"], ["PHP", "Philippines"], ["TWD", "Taiwan"], ["HKD", "Hong Kong"], ["CNY", "China"],
+  ["AUD", "Australia"], ["NZD", "New Zealand"], ["USD", "United States"], ["EUR", "Euro area"], ["GBP", "United Kingdom"],
+  ["CHF", "Switzerland"], ["SGD", "Singapore"], ["INR", "India"], ["AED", "UAE"], ["CAD", "Canada"],
+];
+
 function TripForm({ initial, home, onDone }: { initial?: Trip; home: string; onDone: (trip?: Trip) => void }) {
   const [destination, setDestination] = useState(initial?.destination ?? "");
   const [start, setStart] = useState(initial?.start ?? "");
@@ -73,15 +81,39 @@ function TripForm({ initial, home, onDone }: { initial?: Trip; home: string; onD
       <div className="trip-form-row">
         <label className="field">
           From
-          <input className="input" type="date" value={start} onChange={(e) => setStart(e.target.value)} required />
+          <input
+            className="input"
+            type="date"
+            value={start}
+            onChange={(e) => {
+              setStart(e.target.value);
+              if (!end || end < e.target.value) setEnd(e.target.value);
+            }}
+            required
+          />
         </label>
         <label className="field">
           To
-          <input className="input" type="date" value={end} onChange={(e) => setEnd(e.target.value)} required />
+          <input className="input" type="date" value={end} min={start || undefined} onChange={(e) => setEnd(e.target.value)} required />
         </label>
         <label className="field">
           Currency there
-          <input className="input" value={currency} maxLength={3} onChange={(e) => setCurrency(e.target.value)} placeholder="JPY" required />
+          <input
+            className="input"
+            value={currency}
+            maxLength={3}
+            list="trip-currencies"
+            onChange={(e) => setCurrency(e.target.value)}
+            placeholder="JPY"
+            required
+          />
+          <datalist id="trip-currencies">
+            {CURRENCIES.map(([code, where]) => (
+              <option key={code} value={code}>
+                {where}
+              </option>
+            ))}
+          </datalist>
         </label>
       </div>
       <div className="trip-form-row">
@@ -502,10 +534,19 @@ function bodyOf(f: EntryForm, home: string) {
 }
 
 /** Add or change an itinerary entry by hand: a plan, a flight, a hotel or a train. */
-function EntryEditor({ tripId, home, entry, onDone }: { tripId: string; home: string; entry?: Booking; onDone: (saved: boolean) => void }) {
-  const [f, setF] = useState<EntryForm>(entry ? formOf(entry) : EMPTY);
+function EntryEditor({ trip, home, entry, onDone }: { trip: Trip; home: string; entry?: Booking; onDone: (saved: boolean) => void }) {
+  const tripId = trip.id;
+  // New entries start on the trip's dates, so the date pickers open on the right month.
+  const [f, setF] = useState<EntryForm>(
+    entry ? formOf(entry) : { ...EMPTY, day: trip.start, until: trip.end, departs: `${trip.start}T09:00` },
+  );
   const [error, setError] = useState<string | null>(null);
-  const set = (key: keyof EntryForm) => (e: { target: { value: string } }) => setF({ ...f, [key]: e.target.value });
+  const set = (key: keyof EntryForm) => (e: { target: { value: string } }) => {
+    const next = { ...f, [key]: e.target.value };
+    // A check-in moved past the check-out takes the check-out along.
+    if (key === "day" && next.kind === "hotel" && next.until && next.day > next.until) next.until = next.day;
+    setF(next);
+  };
 
   async function save(event: FormEvent) {
     event.preventDefault();
@@ -562,7 +603,7 @@ function EntryEditor({ tripId, home, entry, onDone }: { tripId: string; home: st
           </label>
           <label className="field">
             Check out
-            <input className="input" type="date" value={f.until} onChange={set("until")} />
+            <input className="input" type="date" value={f.until} min={f.day || undefined} onChange={set("until")} />
           </label>
         </div>
       )}
@@ -643,7 +684,17 @@ function Itinerary({ detail, onChange }: { detail: TripDetail; onChange: () => v
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const sorted = [...detail.bookings].sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
-  const days = [...new Set(sorted.map((b) => b.starts))];
+  const stays = sorted.filter((b) => b.kind === "hotel" && b.check_in && b.check_out);
+  // A hotel shows on its check-in day, then as "staying at" on each night after it.
+  const nightsOf = (b: Booking) => {
+    const nights: string[] = [];
+    for (let t = Date.parse(b.check_in!) + 86400000; t < Date.parse(b.check_out!); t += 86400000) {
+      nights.push(new Date(t).toISOString().slice(0, 10));
+    }
+    return nights;
+  };
+  const staying = (d: string) => stays.filter((b) => nightsOf(b).includes(d));
+  const days = [...new Set([...sorted.map((b) => b.starts), ...stays.flatMap(nightsOf)])].sort();
   const dayLabel = (iso: string) => {
     const n = Math.round((Date.parse(iso) - Date.parse(detail.trip.start)) / 86400000) + 1;
     const when = new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(iso));
@@ -668,7 +719,7 @@ function Itinerary({ detail, onChange }: { detail: TripDetail; onChange: () => v
       </div>
       {adding && (
         <EntryEditor
-          tripId={detail.trip.id}
+          trip={detail.trip}
           home={home}
           onDone={(saved) => {
             setAdding(false);
@@ -682,6 +733,11 @@ function Itinerary({ detail, onChange }: { detail: TripDetail; onChange: () => v
       {days.map((d) => (
         <div key={d} className="itinerary-day">
           <h3 className="caption">{dayLabel(d)}</h3>
+          {staying(d).map((b) => (
+            <p key={b.id} className="caption">
+              <span aria-hidden="true">🏨</span> Staying at {b.hotel ?? b.title}
+            </p>
+          ))}
           <ul className="feed" aria-label={dayLabel(d)}>
             {sorted
               .filter((b) => b.starts === d)
@@ -689,7 +745,7 @@ function Itinerary({ detail, onChange }: { detail: TripDetail; onChange: () => v
                 editing === b.id ? (
                   <li key={b.id}>
                     <EntryEditor
-                      tripId={detail.trip.id}
+                      trip={detail.trip}
                       home={home}
                       entry={b}
                       onDone={(saved) => {

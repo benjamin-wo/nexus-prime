@@ -6,6 +6,7 @@ from uuid import uuid4
 
 import pytest
 
+from nexus.agent.tools import ToolContext, build_tools, run_tool
 from nexus.application import bookings as booking_cases
 from nexus.application import trips as trip_cases
 from nexus.domain.bookings import BookingKind
@@ -90,3 +91,40 @@ async def test_plans_flights_and_notes_added_by_hand(uow: UowFactory) -> None:
     assert [b.id for b in view.bookings] == [dinner.id]
     with pytest.raises(NotFound):
         await booking_cases.delete_booking(uow(), user.id, uuid4())
+
+
+async def test_hotels_in_chat_default_to_the_trip_and_can_be_changed(uow: UowFactory) -> None:
+    user = await person(uow)
+    await trip_cases.create_trip(
+        uow(),
+        user,
+        trip_cases.TripDraft("Osaka", date(2026, 12, 10), date(2026, 12, 14), "JPY", None),
+        now=NOW,
+    )
+    tools = build_tools(lambda _: "")
+    ctx = ToolContext(user, uow, NOW, RATES)
+
+    async def use(name: str, args: dict[str, object]) -> str:
+        return (await run_tool(tools[name], ctx, args)).text
+
+    # No dates given: the stay is the whole trip.
+    added = await use("add_to_itinerary", {"kind": "hotel", "name": "Hotel Kawa"})
+    assert added.startswith("Added to the Osaka itinerary: hotel booking (Hotel Kawa")
+    assert added.endswith("10 Dec to 14 Dec).")
+    await use("add_to_itinerary", {"kind": "activity", "name": "Castle tour", "day": "2026-12-11"})
+    # Only what changed changes.
+    change = tools["change_itinerary_entry"]
+    assert change.confirm is not None
+    asked = await change.confirm(ctx, change.parse({"item": "kawa", "until": "2026-12-13"}))
+    assert asked.startswith("Change hotel booking (Hotel Kawa") and "10 Dec to 13 Dec)?" in asked
+    changed = await use("change_itinerary_entry", {"item": "kawa", "until": "2026-12-13"})
+    assert changed.startswith("Changed on the Osaka itinerary: hotel booking (Hotel Kawa")
+    assert changed.endswith("10 Dec to 13 Dec).")
+    moved = await use("change_itinerary_entry", {"item": "castle", "time": "10:30"})
+    assert "Castle tour, Fri 11 Dec 10:30" in moved
+    async with uow() as tx:
+        stored = await tx.trips.list_bookings(user.id)
+    (hotel,) = [b for b in stored if b.draft.kind is BookingKind.HOTEL]
+    assert (hotel.draft.check_in, hotel.draft.check_out) == (date(2026, 12, 10), date(2026, 12, 13))
+    missing = await use("change_itinerary_entry", {"item": "museum", "time": "09:00"})
+    assert "no single itinerary entry matches 'museum'" in missing

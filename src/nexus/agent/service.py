@@ -567,8 +567,8 @@ class AgentService:
         return Reply(f"Saved: new expenses from “{pattern}” will go under {name}.")
 
     async def _bill_button(self, actor: UserId, action: str, occurrence_id: str) -> Reply:
-        """Mark paid / Snooze on a bill reminder. Records the user's word only; nothing
-        is paid and the ledger isn't touched."""
+        """Mark paid / Snooze on a bill reminder. Nothing is paid: marking it paid logs
+        the bill's amount as this month's expense, unless it's already in the ledger."""
         try:
             bill_id = await bill_cases.occurrence_bill(self._uow(), actor, UUID(occurrence_id))
         except ValueError:
@@ -579,8 +579,8 @@ class AgentService:
         now = self._clock()
         try:
             if action == "paid":
-                view = await bill_cases.mark_paid(self._uow, user, bill_id, now=now)
-                return Reply(f"Marked {view.bill.name} ({view.due:%-d %b}) as paid.")
+                paid = await bill_cases.mark_paid(self._uow, user, bill_id, now=now)
+                return Reply(paid.message(ZoneInfo(user.timezone)))
             if action == "snooze":
                 view = await bill_cases.snooze(self._uow, user, bill_id, now=now)
                 return Reply(f"OK, I'll remind you about {view.bill.name} again tomorrow.")
