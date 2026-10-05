@@ -18,6 +18,7 @@ from nexus.application import trips as trip_cases
 from nexus.domain.email import EmailStatus
 from nexus.domain.ledger import User
 from nexus.domain.money import Money
+from nexus.domain.trips import Trip
 from nexus.infra.db.tables import trip_bookings
 from tests.fakes import NOW, FakeMailbox, FakeRates, fake_email
 from tests.integration.conftest import UowFactory
@@ -54,7 +55,7 @@ def booking_email(message_id: str, booking: dict[str, Any], total: str | None = 
     return fake_email(message_id, subject, "\n".join(lines), sender="no-reply@acme-air.test")
 
 
-async def tokyo(uow: UowFactory, user: User) -> trip_cases.Trip:
+async def tokyo(uow: UowFactory, user: User) -> Trip:
     return await trip_cases.create_trip(
         uow(),
         user,
