@@ -103,3 +103,19 @@ def test_the_record_counts_misses_too() -> None:
         1,
     )
     assert r.average_result == D("0.4")
+
+
+def test_the_record_checks_the_odds_against_what_happened() -> None:
+    def odds(chance: int) -> dict[str, object]:
+        return {"targets": [{"price": "130.00"}], "odds": {"targets": [{"chance": chance}]}}
+
+    plans = [
+        saved(status=PlanStatus.TARGET, entered_on=MADE, body=odds(40)),
+        saved(status=PlanStatus.STOPPED, entered_on=MADE, body=odds(30)),
+        saved(status=PlanStatus.EXPIRED, body=odds(90)),  # never bought: not a test of the odds
+        saved(status=PlanStatus.TARGET, entered_on=MADE),  # made before odds
+        saved(body=odds(50)),  # still open
+    ]
+    c = record(plans).calibration
+    assert c is not None and (c.plans, c.said, c.happened) == (2, 35, 50)
+    assert record(plans[3:]).calibration is None

@@ -32,6 +32,7 @@ from nexus.domain.investments import Position
 from nexus.domain.ledger import UserId
 from nexus.domain.levels import Levels
 from nexus.domain.market import Bar
+from nexus.domain.odds import Calibration, calibration
 
 ZONE_ATR = Decimal("0.5")  # the buy zone's height
 STOP_ATR = Decimal(1)  # how far below support the stop sits
@@ -556,6 +557,8 @@ class Record:
     never_entered: int  # buy plans that never reached their zone
     average_result: Decimal | None  # over plans that were entered
     open: int
+    # Whether the odds given to first targets held up, over finished plans that had them.
+    calibration: Calibration | None = None
 
 
 def record(plans: Sequence[SavedPlan]) -> Record:
@@ -575,4 +578,18 @@ def record(plans: Sequence[SavedPlan]) -> Record:
         never_entered=sum(p.entered_on is None and not p.held for p in done),
         average_result=average,
         open=sum(p.status is PlanStatus.OPEN for p in followed),
+        calibration=calibration(
+            [
+                (chance, p.status is PlanStatus.TARGET)
+                for p in done
+                if (p.entered_on is not None or p.held)
+                and (chance := _first_chance(p.body)) is not None
+            ]
+        ),
     )
+
+
+def _first_chance(body: dict[str, Any]) -> int | None:
+    odds = body.get("odds") or {}
+    targets = odds.get("targets") or []
+    return int(targets[0]["chance"]) if targets else None

@@ -56,6 +56,7 @@ from nexus.domain.ledger import (
 from nexus.domain.levels import describe as describe_levels
 from nexus.domain.money import Money
 from nexus.domain.notifications import Frequency
+from nexus.domain.odds import describe_ranges
 from nexus.domain.planning import Cadence, PayRule
 from nexus.domain.rules import clean_pattern
 from nexus.domain.trips import Trip, describe_trip
@@ -1142,6 +1143,11 @@ async def _stock_levels(ctx: ToolContext, a: SymbolArgs) -> ToolResult:
         lines.append("On the user's watchlist.")
     if view.levels:
         lines += describe_levels(view.levels)
+        if view.ranges:
+            lines.append(
+                "Likely closes from its own past volatility (not a forecast; no view on direction):"
+            )
+            lines += describe_ranges(view.ranges)
     else:
         lines.append(
             "No price history yet (it arrives within the hour for a held or watched stock). "

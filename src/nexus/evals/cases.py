@@ -659,6 +659,14 @@ CASES: tuple[Case, ...] = (
         unchanged=True,
     ),
     Case(
+        "inv-range",
+        "ask",
+        _t("where could AMD be in a month?"),
+        calls=(Call("stock_levels", {"symbol": Has("amd")}),),
+        forbid=("research_plan",),
+        unchanged=True,
+    ),
+    Case(
         "inv-plan",
         "ask",
         _t("should I buy AMD here? work out a plan with entry and stop"),
@@ -668,6 +676,13 @@ CASES: tuple[Case, ...] = (
         "inv-record",
         "ask",
         _t("how have my investment plans worked out so far?"),
+        calls=(Call("plan_record"),),
+        unchanged=True,
+    ),
+    Case(
+        "inv-odds-check",
+        "ask",
+        _t("have the plan odds been right so far?"),
         calls=(Call("plan_record"),),
         unchanged=True,
     ),

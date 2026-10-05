@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type PointerEvent, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
-import { api, type PlanBody, type PlanBrief, type PlanDetail, type PlanRecord, type PlanStep } from "../api";
+import { api, type PlanBody, type PlanBrief, type PlanDetail, type PlanOdds, type PlanRecord, type PlanStep } from "../api";
 import { formatDate, formatShortDate } from "../format";
 
 const usd = (amount: string | number) =>
@@ -60,6 +60,18 @@ function TrackRecord() {
                 {r.average_result}%
               </dd>
             </div>
+          )}
+          {r.odds_said !== null && r.odds_happened !== null && (
+            <>
+              <div>
+                <dt>Odds gave target 1</dt>
+                <dd className="num">{r.odds_said}%</dd>
+              </div>
+              <div>
+                <dt>Reached it</dt>
+                <dd className="num">{r.odds_happened}%</dd>
+              </div>
+            </>
           )}
         </dl>
       )}
@@ -324,6 +336,60 @@ function Following({ brief }: { brief: PlanBrief }) {
   );
 }
 
+/** The plan replayed over the stock's last year of daily moves, worked out in code. The
+ * three outcomes for the first target add up to about 100%. */
+function OddsCard({ odds }: { odds: PlanOdds }) {
+  const first = odds.targets[0];
+  const parts = [
+    { key: "target", label: "Target 1 first", value: first?.chance ?? 0 },
+    { key: "stop", label: "Stop first", value: odds.stop_first },
+    { key: "neither", label: "Neither in time", value: odds.neither },
+  ];
+  return (
+    <section className="card" aria-labelledby="odds">
+      <div className="card-head">
+        <h2 id="odds">Odds</h2>
+        <span className="caption">
+          {odds.paths.toLocaleString("en-US")} replays of the last year&apos;s moves · not a forecast
+        </span>
+      </div>
+      <div className="odds-bar" role="img" aria-label={parts.map((p) => `${p.label} ${p.value}%`).join(", ")}>
+        {parts.map((p) =>
+          p.value > 0 ? <span key={p.key} className={`odds-${p.key}`} style={{ width: `${p.value}%` }} /> : null,
+        )}
+      </div>
+      <ul className="odds-key">
+        {parts.map((p) => (
+          <li key={p.key}>
+            <span className={`odds-dot odds-${p.key}`} aria-hidden="true" />
+            {p.label} <strong className="num">{p.value}%</strong>
+          </li>
+        ))}
+      </ul>
+      <ul className="ladder" aria-label="Chance of each target">
+        {odds.targets.map((t, i) => (
+          <li key={t.price} className="up">
+            <span>
+              Target {i + 1} at {usd(t.price)}
+              {t.typical_days !== null && <span className="caption"> · typically {t.typical_days} trading days</span>}
+            </span>
+            <span className="num">{t.chance}%</span>
+          </li>
+        ))}
+        <li className="down">
+          <span>Stop at {usd(odds.stop)} before target 1</span>
+          <span className="num">{odds.stop_first}%</span>
+        </li>
+      </ul>
+      <p className="caption">
+        Starting from {usd(odds.reference)}, the stock&apos;s own daily moves were shuffled week by week over the plan&apos;s{" "}
+        {odds.days} trading days, with no lean up or down. It shows how reachable the prices are, not where the stock
+        will go.
+      </p>
+    </section>
+  );
+}
+
 export function PlanPage() {
   const { id = "" } = useParams();
   const detail = useQuery({ queryKey: ["plan", id], queryFn: () => api<PlanDetail>(`/investments/plans/${id}`) });
@@ -396,6 +462,8 @@ export function PlanPage() {
               <strong>What would prove it wrong:</strong> {plan.invalidation}
             </p>
           </section>
+
+          {plan.odds && <OddsCard odds={plan.odds} />}
 
           <section className="card" aria-labelledby="chart">
             <div className="card-head">
