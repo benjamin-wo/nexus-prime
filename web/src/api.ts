@@ -518,3 +518,29 @@ export type TripDetail = {
     linked: boolean;
   }[];
 };
+
+/** A trip's research: every price names a source (by id), checked on the date given. */
+export type Research = {
+  destination: string;
+  start: string;
+  end: string;
+  nights: number;
+  travellers: number;
+  currency: string | null;
+  home_currency: string;
+  when_summary: string;
+  when: { text: string; source: number }[];
+  prices: { label: string; low: string; high: string; currency: string; per: string; source: number; home_low: string | null; home_high: string | null }[];
+  areas: { name: string; why: string; things: string[]; source: number }[];
+  getting_around: string;
+  getting_around_source: number | null;
+  sources: { id: number; url: string; title: string; checked_on: string }[];
+  estimate_low: string | null;
+  estimate_high: string | null;
+  estimate_lines: string[];
+  budget: string | null;
+  paydays_left: number;
+  set_aside: string | null;
+  fits: boolean | null;
+  trip_id: string | null;
+};

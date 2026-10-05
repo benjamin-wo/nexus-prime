@@ -62,6 +62,7 @@ export async function fakeApi(
     splitBill = false,
     twins = false,
     running = false,
+    research = false,
   } = {},
 ) {
   let session = signedIn;
@@ -672,7 +673,53 @@ export async function fakeApi(
     if (path === "/departments" && method === "GET") {
       return json(route, [{ name: "accounting", label: "Accounting", emoji: "🧾", blurb: "Spending." }]);
     }
-    if (path === "/runs" && method === "GET") return json(route, state.runs);
+    if (path === "/runs" && method === "GET") {
+      const done = research
+        ? [{ id: "rs1", department: "travel", kind: "travel.research", title: "Research: Tokyo", status: "done", progress: "done", steps_done: 4, steps_total: 4, result: null, error: null, created_at: "2026-09-28T03:00:00Z", finished_at: "2026-09-28T03:03:00Z" }]
+        : [];
+      return json(route, [...state.runs, ...done]);
+    }
+    if (path === "/travel/research/rs1" && method === "GET") {
+      return json(route, {
+        destination: "Tokyo",
+        start: "2027-01-10",
+        end: "2027-01-17",
+        nights: 7,
+        travellers: 2,
+        currency: "JPY",
+        home_currency: "SGD",
+        when_summary: "January is cold and dry, and quieter after New Year.",
+        when: [{ text: "Days are cold but clear.", source: 1 }],
+        prices: [
+          { label: "Return flights SIN-NRT", low: "1200", high: "1600", currency: "SGD", per: "person", source: 2, home_low: "1200", home_high: "1600" },
+          { label: "Daily spending", low: "8000", high: "15000", currency: "JPY", per: "day", source: 1, home_low: "72", home_high: "135" },
+        ],
+        areas: [{ name: "Shinjuku", why: "Central, with late food.", things: ["Gyoen garden"], source: 1 }],
+        getting_around: "An IC card covers city trains.",
+        getting_around_source: 1,
+        sources: [
+          { id: 1, url: "https://guide.example.com/tokyo", title: "Tokyo guide", checked_on: "2026-09-28" },
+          { id: 2, url: "https://flights.example.com/s", title: "Google Flights", checked_on: "2026-09-28" },
+        ],
+        estimate_low: "4602",
+        estimate_high: "6760",
+        estimate_lines: ["Return flights SIN-NRT: 2,400 to 3,200 SGD"],
+        budget: "6800",
+        paydays_left: 3,
+        set_aside: "2267",
+        fits: true,
+        trip_id: null,
+      });
+    }
+    if (path === "/travel/research/rs1/trip" && method === "POST") {
+      const trip = {
+        id: "trip9", destination: "Tokyo", start: "2027-01-10", end: "2027-01-17", days: 8, currency: "JPY",
+        budget: { amount: "6800.0000", currency: "SGD" }, companions: [], set_aside: { amount: "2267.0000", currency: "SGD" },
+        planned: {}, status: "upcoming", days_until: 104, day_number: null,
+      };
+      state.trips = [trip, ...state.trips];
+      return json(route, trip, 201);
+    }
     const runCancel = path.match(/^\/runs\/(\w+)\/cancel$/);
     if (runCancel && method === "POST") {
       const run = state.runs.find((r) => r.id === runCancel[1])!;

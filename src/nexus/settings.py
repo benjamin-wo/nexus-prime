@@ -87,6 +87,11 @@ class Settings(BaseSettings):
     # the main model, and the lead analyst uses RESEARCH_MODEL. ---
     research_model: str | None = None
     research_lead_model: str | None = None
+    # --- Trip research (Travel). Web search goes through OpenRouter (its key), with
+    # TRAVEL_RESEARCH_MODEL or the main model. SERPAPI_API_KEY adds live flight and
+    # hotel prices from Google Flights and Hotels; unset, costs come from web search. ---
+    travel_research_model: str | None = None
+    serpapi_api_key: SecretStr | None = None
 
     # --- LLM. Names match the pre-rebuild deployment's variables. ---
     llm_provider: LlmProvider = LlmProvider.GEMINI
@@ -167,6 +172,8 @@ class Settings(BaseSettings):
         "memory_model",
         "research_model",
         "research_lead_model",
+        "travel_research_model",
+        "serpapi_api_key",
         "agentmail_api_key",
         "agentmail_domain",
         "tiingo_api_key",

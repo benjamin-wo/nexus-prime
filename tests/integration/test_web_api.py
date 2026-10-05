@@ -1490,3 +1490,6 @@ async def test_trips_on_the_web(world: World) -> None:
     assert (await owner.send("DELETE", path)).status_code == 204
     assert (await owner.get(path)).status_code == 404
     assert (await owner.get("/api/travel/trips/not-an-id")).status_code == 404
+    unknown = "00000000-0000-4000-8000-000000000000"
+    assert (await owner.get(f"/api/travel/research/{unknown}")).status_code == 404
+    assert (await owner.send("POST", f"/api/travel/research/{unknown}/trip")).status_code == 404

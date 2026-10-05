@@ -184,6 +184,20 @@ def build_research_models(
     return analyst, lead
 
 
+def build_travel_sorter(settings: Settings, model: str) -> BaseChatModel:
+    """The model that sorts web answers into lines for trip research: no reasoning,
+    so each call takes seconds, routed like the main model when it is the main one."""
+    routing = openrouter_routing(settings) if model == settings.openrouter_model else None
+    return _openai_compatible(
+        settings,
+        model=model,
+        api_key=settings.openrouter_api_key,
+        base_url="https://openrouter.ai/api/v1",
+        name="OpenRouter",
+        extra_body={**(routing or {}), "reasoning": {"enabled": False}},
+    )
+
+
 def text_of(content: Any) -> str:
     """Plain text from a model reply; Gemini may return a list of typed parts."""
     if isinstance(content, str):

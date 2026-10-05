@@ -2,12 +2,14 @@
 and settling up. Nothing here books or buys anything."""
 
 from datetime import date
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field
 
 from nexus.application import bookings as booking_cases
+from nexus.application import travel_research as research_cases
 from nexus.application import trips as trip_cases
 from nexus.channels.web.api import MoneyOut, money
 from nexus.channels.web.security import Auth, Runtime
@@ -358,3 +360,21 @@ async def set_booking_trip(booking_id: str, body: BookingTripIn, auth: Auth, web
 @router.delete("/bookings/{booking_id}", status_code=204)
 async def delete_booking(booking_id: str, auth: Auth, web: Runtime) -> None:
     await booking_cases.delete_booking(web.uow(), auth.user.id, _uuid(booking_id, "booking"))
+
+
+# --- research ---------------------------------------------------------------------------
+
+
+@router.get("/research/{run_id}")
+async def get_research(run_id: str, auth: Auth, web: Runtime) -> dict[str, Any]:
+    """A finished trip research: when to go, costs with sources, areas, the budget."""
+    found = await research_cases.research_result(web.uow(), auth.user, _uuid(run_id, "research"))
+    return found.model_dump(mode="json")
+
+
+@router.post("/research/{run_id}/trip", status_code=201)
+async def research_to_trip(run_id: str, auth: Auth, web: Runtime) -> TripOut:
+    trip = await research_cases.make_trip(
+        web.uow, auth.user, _uuid(run_id, "research"), now=web.clock()
+    )
+    return _trip(trip, _today(auth, web))

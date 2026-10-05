@@ -37,6 +37,7 @@ from nexus.application.ports import (
     SignInMailbox,
 )
 from nexus.application.research import NewsSource
+from nexus.application.travel_research import research_kind
 from nexus.channels.telegram import webhook as telegram_webhook
 from nexus.channels.telegram.client import HttpTelegramClient, TelegramClient
 from nexus.channels.web import api as web_api
@@ -60,10 +61,14 @@ from nexus.infra.llm.factory import (
     build_memory_model,
     build_research_models,
     build_screener,
+    build_travel_sorter,
+    openrouter_routing,
 )
 from nexus.infra.logs import configure_logging
 from nexus.infra.market.finnhub import FinnhubNews
 from nexus.infra.market.tiingo import TiingoPrices
+from nexus.infra.search.openrouter_web import OpenRouterWebSearch
+from nexus.infra.search.serpapi import SerpApiTravel
 from nexus.infra.storage.s3 import S3ReceiptStore
 from nexus.jobs.handlers import MEMORY_UPDATE, SCHEDULES, build_handlers
 from nexus.jobs.runner import JobRunner
@@ -292,10 +297,41 @@ async def _telegram_runtime(
     )
 
 
-def _registry(settings: Settings, engine: AsyncEngine, models: ChatModels) -> Departments:
-    """The departments, with the Investment research team."""
+async def _registry(
+    settings: Settings,
+    engine: AsyncEngine,
+    models: ChatModels,
+    rates: RateSource,
+    stack: AsyncExitStack,
+) -> Departments:
+    """The departments, with the Investment research team and, with OpenRouter, the
+    Travel researcher (live flight and hotel prices too with a SerpApi key)."""
+    uow = lambda: SqlUnitOfWork(engine)  # noqa: E731
     analyst, lead = build_research_models(settings, models.primary)
-    return default_registry([plan_kind(lambda: SqlUnitOfWork(engine), analyst, lead)])
+    kinds = [plan_kind(uow, analyst, lead)]
+    key = settings.openrouter_api_key
+    model = settings.travel_research_model or settings.openrouter_model
+    if key is not None and model:
+        http = await stack.enter_async_context(httpx.AsyncClient())
+        routed = model == settings.openrouter_model
+        web = OpenRouterWebSearch(
+            http,
+            key.get_secret_value(),
+            model,
+            routing=openrouter_routing(settings) if routed else None,
+        )
+        prices = (
+            SerpApiTravel(http, settings.serpapi_api_key.get_secret_value())
+            if settings.serpapi_api_key is not None
+            else None
+        )
+        if prices is None:
+            log.warning("SERPAPI_API_KEY is not set; trip research uses web search for prices")
+        sorter = build_travel_sorter(settings, model)
+        kinds.append(research_kind(uow, web, sorter, rates, prices))
+    else:
+        log.warning("OpenRouter isn't set up; trip research is off")
+    return default_registry(kinds)
 
 
 def _queue_memory(
@@ -377,7 +413,9 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                     log.warning("receipt storage is not configured; receipt photos won't be kept")
                 models = extra.models or build_chat_models(resolved)
                 email = await _email_runtime(resolved, extra, stack, models, resolved.public_origin)
-                departments = extra.departments or _registry(resolved, engine, models)
+                departments = extra.departments or await _registry(
+                    resolved, engine, models, rates, stack
+                )
                 telegram = await _telegram_runtime(
                     resolved, engine, extra, stack, rates, archive, models, email, departments
                 )

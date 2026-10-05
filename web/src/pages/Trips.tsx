@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { api, type Booking, type Me, type Money, type Trip, type TripDetail } from "../api";
 import { formatMoney, formatShortDate } from "../format";
+import { ResearchList } from "./Research";
 
 const day = (iso: string) => formatShortDate(iso, "UTC");
 
@@ -215,10 +216,12 @@ export function TripsPage() {
       {trips.data && all.length === 0 && !adding && (
         <section className="card">
           <p className="state">
-            No trips yet. Add one here, or tell Nexus: "I'm going to Tokyo 10 to 20 Jan, budget 3000".
+            No trips yet. Add one here, or tell Nexus: "I'm going to Tokyo 10 to 20 Jan, budget 3000", or "I want to go to Japan in
+            January" to have it researched.
           </p>
         </section>
       )}
+      <ResearchList />
       <LooseBookings trips={all} />
       {groups
         .filter(([, list]) => list.length > 0)

@@ -405,7 +405,7 @@ test("telegram updates default to an end-of-day summary and can be changed", asy
 test("nothing spills sideways on a small phone", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 568 });
   await fakeApi(page, { emailConnected: true });
-  const pages = ["/", "/accounting", "/ledger", "/plan", "/settings", "/email", "/cashflow", "/investment", "/investment/watchlist", "/investment/stocks/AMD", "/investment/plans", "/investment/plans/p1", "/travel"];
+  const pages = ["/", "/accounting", "/ledger", "/plan", "/settings", "/email", "/cashflow", "/investment", "/investment/watchlist", "/investment/stocks/AMD", "/investment/plans", "/investment/plans/p1", "/travel", "/travel/research/rs1"];
   for (const path of [...pages, "/connect/gmail?t=good"]) {
     await page.goto(path);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
@@ -779,4 +779,20 @@ test("a trip is added and shows its spending, set-aside and settle-up", async ({
   await loose.getByLabel("Trip for Hotel Sakura, 2 nights").selectOption("trip1");
   await expect(loose).toHaveCount(0);
   expect(state.movedBookings).toEqual(["bk2:trip1"]);
+});
+
+test("trip research shows sourced prices and a budget, and becomes a trip", async ({ page }) => {
+  const state = await fakeApi(page, { research: true });
+  await page.goto("/travel");
+  await page.getByRole("region", { name: "Research" }).getByRole("link", { name: "Research: Tokyo" }).click();
+  await expect(page.getByRole("heading", { name: "Tokyo", level: 1 })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Budget" })).toContainText("About 4,602 to 6,760 SGD for 2");
+  await expect(page.getByRole("region", { name: "Budget" })).toContainText("It fits your cash flow");
+  const costs = page.getByRole("region", { name: "Costs" });
+  await expect(costs).toContainText("about 72–135 SGD");
+  await expect(costs.getByRole("link", { name: "[2]" })).toHaveAttribute("href", "https://flights.example.com/s");
+  await expect(page.getByRole("region", { name: "Sources" }).getByRole("link", { name: "Tokyo guide" })).toHaveAttribute("rel", /noopener/);
+  await page.getByRole("button", { name: "Make it a trip" }).click();
+  await expect(page).toHaveURL(/\/travel\/trips\/trip9$/);
+  expect(state.trips[0]).toMatchObject({ destination: "Tokyo", currency: "JPY" });
 });
