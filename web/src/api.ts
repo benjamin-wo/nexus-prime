@@ -480,6 +480,8 @@ export type PlanBody = {
   summary: string;
   invalidation: string;
   sources: PlanSource[];
+  /** Parts a writer couldn't finish; the numbers are always complete. */
+  incomplete?: string[];
   odds?: PlanOdds | null;
   ranges?: string[];
 };

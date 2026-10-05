@@ -227,13 +227,13 @@ def build_research_models(
     settings: Settings, primary: BaseChatModel
 ) -> tuple[BaseChatModel, BaseChatModel]:
     """The research team's analysts and lead: RESEARCH_MODEL and RESEARCH_LEAD_MODEL on
-    OpenRouter when set; otherwise the main model (and the lead the analysts')."""
-    analyst = primary
-    if settings.research_model and settings.openrouter_api_key is not None:
-        analyst = _openrouter(settings, settings.research_model)
+    OpenRouter when set; otherwise the main model (and the lead the analysts'). All
+    without reasoning: with it, DeepSeek took 50 to 95 seconds a write-up and ran past
+    the step limit; without it, 2 to 8 seconds, as good to read."""
+    analyst = _quick_or(settings, settings.research_model, primary)
     lead = analyst
     if settings.research_lead_model and settings.openrouter_api_key is not None:
-        lead = _openrouter(settings, settings.research_lead_model)
+        lead = _quick(settings, settings.research_lead_model)
     return analyst, lead
 
 

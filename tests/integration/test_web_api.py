@@ -1416,9 +1416,12 @@ async def test_research_plans_on_the_web(world: World) -> None:
     world.model.script.extend(
         [
             call("TechnicalView", summary="A steady climb."),
-            call("Debate", bull=["Trend intact."], bear=["Stretched."]),
             call(
-                "LeadView", summary="Wait for a pullback.", invalidation="A close below the stop."
+                "LeadView",
+                bull=["Trend intact."],
+                bear=["Stretched."],
+                summary="Wait for a pullback.",
+                invalidation="A close below the stop.",
             ),
         ]
     )  # no headlines, so the news analyst isn't asked
@@ -1426,7 +1429,7 @@ async def test_research_plans_on_the_web(world: World) -> None:
     async with web.uow() as tx:
         user = await tx.ledger.get_user_by_telegram_id(OWNER)
     assert user is not None
-    for _ in range(5):
+    for _ in range(3):
         await department_cases.advance(
             web.uow, web.departments, Shown(), user, run_id, now=world.clock.now
         )

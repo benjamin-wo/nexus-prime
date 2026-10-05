@@ -1,8 +1,10 @@
 """The research team end to end: a plan for a made-up stock with scripted analysts.
 Every ticker, price and headline here is made up."""
 
+import asyncio
 from datetime import date, timedelta
 from decimal import Decimal
+from typing import Any
 
 import pytest
 from langchain_core.messages import AIMessage
@@ -13,6 +15,7 @@ from nexus.application import departments as department_cases
 from nexus.application import market as market_cases
 from nexus.application import plans as plan_cases
 from nexus.application import research as research_cases
+from nexus.application.departments import StepContext
 from nexus.domain.departments import Run, RunStatus
 from nexus.domain.errors import InvalidInput
 from nexus.domain.ledger import User
@@ -41,9 +44,10 @@ def analysts(*, made_up_price: bool = False) -> ScriptedModel:
             ],
             risks=["A court ruling is due."],
         ),
-        call("Debate", bull=["The trend is intact."], bear=[f"It's stretched.{extra}"]),
         call(
             "LeadView",
+            bull=["The trend is intact."],
+            bear=[f"It's stretched.{extra}"],
             summary="Wait for a pullback to the entry zone. The trend is up.",
             invalidation="A close below the stop.",
         ),
@@ -77,7 +81,7 @@ async def test_a_plan_traces_every_price_to_code_and_every_point_to_a_source(
     model = analysts(made_up_price=True)
     registry = department_cases.default_registry([plan_cases.plan_kind(uow, model)])
     run = await plan_cases.start_plan(uow, registry, user, "amd", now=NOW)
-    assert run.title == "Plan for AMD" and run.steps_total == 5
+    assert run.title == "Plan for AMD" and run.steps_total == 3
     done = await finish(uow, registry, user, run)
     assert done.status is RunStatus.DONE, done.error
     result = plan_cases.PlanResult.model_validate(done.result)
@@ -128,7 +132,7 @@ async def test_asking_for_a_plan_in_chat(uow: UowFactory) -> None:
     agent = build(uow, chat, departments=registry)
     reply = only(await agent.handle_text(user.id, "plan for AMD", "m1"))
     assert reply.text == "I've started a plan for AMD."
-    assert "Started 'Plan for AMD': 5 steps" in str(chat.seen[-1][-1].content)
+    assert "Started 'Plan for AMD': 3 steps" in str(chat.seen[-1][-1].content)
     runs = await department_cases.list_runs(uow(), user.id, now=NOW)
     await finish(uow, registry, user, runs[0])
     only(await agent.handle_text(user.id, "show me the AMD plan", "m2"))
@@ -235,3 +239,93 @@ async def test_a_plan_carries_odds_from_replaying_past_moves(uow: UowFactory) ->
     assert plan_cases.PlanResult.model_validate(again.result).odds == odds
     line = plan_cases.summary_line(result)
     assert "\n🎲 " in line and "Not a forecast." in line
+
+
+def by_role(failing: set[str]) -> ScriptedModel:
+    """Analysts that answer by role, whatever order the calls come in; the roles in
+    ``failing`` fail on every try."""
+    answers = {
+        "technical": call("TechnicalView", summary="A steady climb above both averages."),
+        "news": call(
+            "NewsView", points=[{"text": "A rival opened a plant.", "sources": [1]}], risks=[]
+        ),
+        "lead": call(
+            "LeadView",
+            bull=["The trend is intact."],
+            bear=["It's stretched."],
+            summary="Wait for a pullback to the entry zone.",
+            invalidation="A close below the stop.",
+        ),
+    }
+
+    def answer(messages: Any) -> Any:
+        prompt = str(messages[-1].content)
+        role = next(r for r in answers if f"As the {r}" in prompt)
+        if role in failing:
+            raise RuntimeError(f"{role} provider error")
+        return answers[role]
+
+    return scripted(*[answer] * 12)
+
+
+@pytest.mark.parametrize(
+    ("failing", "missing"),
+    [
+        ({"technical"}, ["the chart reading"]),
+        ({"news"}, ["the news"]),
+        ({"lead"}, ["the case for and against"]),
+        (
+            {"technical", "news", "lead"},
+            ["the chart reading", "the news", "the case for and against"],
+        ),
+    ],
+)
+async def test_a_writer_that_keeps_failing_doesnt_lose_the_plan(
+    uow: UowFactory, failing: set[str], missing: list[str]
+) -> None:
+    user = await ready(uow)
+    model = by_role(failing)
+    registry = department_cases.default_registry([plan_cases.plan_kind(uow, model)])
+    run = await plan_cases.start_plan(uow, registry, user, "AMD", now=NOW)
+    done = await finish(uow, registry, user, run)
+    assert done.status is RunStatus.DONE, done.error
+    result = plan_cases.PlanResult.model_validate(done.result)
+    assert result.incomplete == missing
+    assert result.stop is not None and result.targets  # the numbers are all there
+    if "lead" in failing:
+        assert (result.bull, result.bear) == ([], [])
+        assert result.summary == f"{result.verdict_text}. {result.reason}"
+        assert result.invalidation == f"A daily close below {result.stop} would prove it wrong."
+    if "technical" not in failing:
+        assert result.technical.startswith("A steady climb")
+    # Each failing role was tried twice, no more.
+    tries = [str(m[-1].content) for m in model.seen]
+    for role in failing:
+        assert sum(f"As the {role}" in t for t in tries) == 2
+    line = plan_cases.summary_line(result)
+    assert line.endswith(
+        f"⚠️ The write-up is missing {' and '.join(missing)} this time; the prices and game "
+        "plan are complete."
+    )
+    saved = await plan_cases.list_plans(uow(), user.id, symbol="AMD")
+    assert saved[0].body["incomplete"] == missing
+
+
+async def test_a_slow_writer_is_cut_off_and_tried_again(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(plan_cases, "CALL_TIMEOUT", 0.05)
+
+    class Slow:
+        calls = 0
+
+        def with_structured_output(self, schema: Any, include_raw: bool = False) -> Any:
+            return self
+
+        async def ainvoke(self, messages: Any) -> Any:
+            Slow.calls += 1
+            if Slow.calls == 1:
+                await asyncio.sleep(1)
+            return {"raw": None, "parsed": plan_cases.TechnicalView(summary="Fine.")}
+
+    ctx = StepContext(run=None, user=None, now=NOW)  # type: ignore[arg-type]
+    view = await plan_cases._ask(Slow(), plan_cases.TechnicalView, "prompt", ctx)  # type: ignore[arg-type]
+    assert view.summary == "Fine." and Slow.calls == 2

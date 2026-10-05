@@ -448,6 +448,11 @@ export function PlanPage() {
               </p>
             )}
             <p>{plan.summary}</p>
+            {plan.incomplete && plan.incomplete.length > 0 && (
+              <p className="callout" role="note">
+                ⚠️ The write-up is missing {plan.incomplete.join(" and ")} this time; the prices and game plan are complete.
+              </p>
+            )}
           </section>
 
           <Following brief={data.brief} />
