@@ -1418,6 +1418,47 @@ CASES: tuple[Case, ...] = (
         unchanged=True,
         confirms=False,
     ),
+    # --- images that aren't receipts to log, and questions about images --------------
+    Case(
+        "photo-transfer-question",
+        "image",
+        _t(Turn("what's this transfer for?", photo="transfer")),
+        unchanged=True,
+        confirms=False,
+        reply=(("rent", "Rent"), ("jamie", "Jamie")),
+    ),
+    Case(
+        "photo-menu-question",
+        "image",
+        _t(Turn("what's the cheapest thing here?", photo="menu")),
+        unchanged=True,
+        confirms=False,
+        reply=(("lemon tea", "Lemon Tea", "Lemon tea"), "3.20"),
+    ),
+    Case(
+        "photo-receipt-question",
+        "image",
+        _t(Turn("is this expensive for ramen?", photo="ramen")),
+        unchanged=True,
+        confirms=False,
+        reply=(("1980", "1,980"),),
+    ),
+    Case(
+        "photo-payslip",
+        "image",
+        _t(Turn("", photo="payslip")),
+        unchanged=True,
+        confirms=False,
+        reply=(("payslip", "Payslip", "salary", "Salary", "pay"),),
+    ),
+    Case(
+        "photo-bill",
+        "image",
+        _t(Turn("", photo="bill")),
+        unchanged=True,
+        confirms=False,
+        reply=(("88.40",), ("bill", "Bill")),
+    ),
     # --- the money snapshot and long conversations (M8b) ------------------------------
     Case(
         "ctx-last",

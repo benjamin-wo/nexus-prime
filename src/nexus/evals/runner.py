@@ -25,6 +25,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nexus.agent.graph import KERNEL, AgentDeps, AgentGraph, thread_id
+from nexus.agent.image_look import LlmImageLooker
 from nexus.agent.memory_writer import MemoryWriter
 from nexus.agent.receipts import LlmReceiptReader
 from nexus.agent.service import RECENT_MESSAGES, AgentService, Reply
@@ -147,6 +148,9 @@ class Agent:
         self.receipts = LlmReceiptReader(vision or model)
         # Travel screenshots: the photo model without reasoning, as in production.
         self.trips = LlmTripReader(quick(vision or model))
+        # The first look at each image: the main model without reasoning, with the
+        # photo model as its fallback, as in production.
+        self.looker = LlmImageLooker(quick(model), quick(vision) if vision else None)
         self.skills = SkillLibrary.load()
         self.tools = build_tools(self.skills.body)
         self.new_conversation()
@@ -173,7 +177,7 @@ class Agent:
         ).compile(InMemorySaver())
         self.service = AgentService(
             self.graph, self.uow, self.receipts, lambda: seed.NOW, None, FixedRates(),
-            trips=self.trips,
+            trips=self.trips, looker=self.looker,
         )  # fmt: skip
 
     async def messages(self, user: User) -> list[BaseMessage]:

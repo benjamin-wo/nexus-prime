@@ -5,6 +5,7 @@ redelivery is ignored, answers 200 at once and handles it in the background.
 Only allow-listed users in private chats are served.
 """
 
+import asyncio
 import hmac
 import logging
 from collections.abc import Callable
@@ -14,7 +15,7 @@ from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
-from nexus.agent.service import UNDO, AgentService, Button, Reply
+from nexus.agent.service import UNDO, AgentService, Button, Picture, Reply
 from nexus.agent.tools import UowFactory
 from nexus.application.access import create_invite
 from nexus.application.clock import utcnow
@@ -35,6 +36,15 @@ FAILED = "Sorry, something went wrong on my side. Please try again."
 # so old messages don't keep offering to undo whatever happens to be latest.
 UNDO_FOR = timedelta(minutes=5)
 UNDO_EXPIRE = "telegram.undo_expire"
+# Images Telegram sends as files that the models can read; PDFs are read for their text.
+IMAGE_TYPES = frozenset({"image/jpeg", "image/png", "image/webp"})
+PDF = "application/pdf"
+UNREADABLE_FILE = (
+    "I can read photos, JPEG, PNG and WebP images, and PDFs. Send it as a photo instead."
+)
+# Photos sent together arrive as separate updates; wait this long for the rest.
+ALBUM_WAIT = 1.5
+_albums: dict[str, list[dict[str, Any]]] = {}
 ONE_SHOT = ("hitl:", "bill:", "salary:", "rule:", "email:", "run:", "hold:", "plan:", "trip:")
 
 
@@ -147,12 +157,19 @@ async def handle_update(runtime: TelegramRuntime, update: dict[str, Any]) -> Non
             await runtime.client.send_message(chat_id, PRIVATE)
             return
         ref = f"telegram:{chat_id}:{message.get('message_id')}"
-        if photos := message.get("photo"):
-            await _photo(runtime, actor, chat_id, photos, message.get("caption"), ref)
+        if message.get("photo") or message.get("document"):
+            await _media(runtime, actor, chat_id, message, ref)
             return
         text = (message.get("text") or "").strip()
         if not text:
-            await runtime.client.send_message(chat_id, "I can read text and receipt photos.")
+            await runtime.client.send_message(
+                chat_id, "I can read text, photos, screenshots and PDFs."
+            )
+            return
+        replied = message.get("reply_to_message") or {}
+        if not text.startswith("/") and _image_of(replied) is not None:
+            # A question about an earlier photo: look at it again, with the question.
+            await _images(runtime, actor, chat_id, [replied], text, ref)
             return
         command = text.split()[0].split("@")[0]
         if command == "/app":
@@ -204,23 +221,80 @@ async def _invite(runtime: TelegramRuntime, actor: UserId) -> str:
     )
 
 
-async def _photo(
+def _image_of(message: dict[str, Any]) -> dict[str, Any] | None:
+    """The largest readable size of a message's photo, or its image file."""
+    if photos := message.get("photo"):
+        fitting = [p for p in photos if int(p.get("file_size") or 0) <= MAX_DOWNLOAD]
+        if not fitting:
+            return None
+        best = max(fitting, key=lambda p: int(p.get("width", 0)) * int(p.get("height", 0)))
+        return {**best, "mime_type": "image/jpeg"}
+    document = message.get("document") or {}
+    if document.get("mime_type") in IMAGE_TYPES:
+        return document
+    return None
+
+
+async def _media(
+    runtime: TelegramRuntime, actor: UserId, chat_id: int, message: dict[str, Any], ref: str
+) -> None:
+    document = message.get("document") or {}
+    if document and int(document.get("file_size") or 0) > MAX_DOWNLOAD:
+        await runtime.client.send_message(chat_id, "That file is too large.")
+        return
+    if document.get("mime_type") == PDF:
+        data = await runtime.client.download(document["file_id"])
+        name = str(document.get("file_name") or "document.pdf")
+        replies = await runtime.service.handle_pdf(actor, data, name, message.get("caption"), ref)
+        await _send(runtime, chat_id, replies)
+        return
+    if _image_of(message) is None:
+        too_big = bool(message.get("photo"))
+        await runtime.client.send_message(
+            chat_id, "That photo is too large." if too_big else UNREADABLE_FILE
+        )
+        return
+    group = message.get("media_group_id")
+    if group is None:
+        await _images(runtime, actor, chat_id, [message], message.get("caption"), ref)
+        return
+    # One photo of an album: the first to arrive waits for the rest and handles them
+    # all together (the caption is on only one of them).
+    key = f"{chat_id}:{group}"
+    if key in _albums:
+        _albums[key].append(message)
+        return
+    _albums[key] = [message]
+    try:
+        await asyncio.sleep(ALBUM_WAIT)
+    finally:
+        album = _albums.pop(key, [message])
+    caption = next((m.get("caption") for m in album if m.get("caption")), None)
+    readable = [m for m in album if _image_of(m) is not None]
+    await _images(runtime, actor, chat_id, readable, caption, ref)
+
+
+async def _images(
     runtime: TelegramRuntime,
     actor: UserId,
     chat_id: int,
-    photos: list[dict[str, Any]],
+    messages: list[dict[str, Any]],
     caption: str | None,
     ref: str,
 ) -> None:
-    fitting = [p for p in photos if int(p.get("file_size") or 0) <= MAX_DOWNLOAD]
-    if not fitting:
-        await runtime.client.send_message(chat_id, "That photo is too large.")
+    pictures: list[Picture] = []
+    for message in messages:
+        found = _image_of(message)
+        if found is None:
+            continue
+        data = await runtime.client.download(found["file_id"])
+        # Keyed by the image itself, so resending the same photo isn't logged twice.
+        unique = found.get("file_unique_id") or f"{ref}:{len(pictures)}"
+        pictures.append(Picture(data, str(found["mime_type"]), f"telegram-photo:{unique}"))
+    if not pictures:
+        await runtime.client.send_message(chat_id, UNREADABLE_FILE)
         return
-    best = max(fitting, key=lambda p: int(p.get("width", 0)) * int(p.get("height", 0)))
-    image = await runtime.client.download(best["file_id"])
-    # Keyed by the image itself, so resending the same photo isn't logged twice.
-    photo_ref = f"telegram-photo:{best.get('file_unique_id') or ref}"
-    replies = await runtime.service.handle_photo(actor, image, "image/jpeg", caption, photo_ref)
+    replies = await runtime.service.handle_images(actor, pictures, caption, ref)
     await _send(runtime, chat_id, replies)
 
 

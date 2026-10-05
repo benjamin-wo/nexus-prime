@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from nexus.agent.email_reader import LlmEmailReader
 from nexus.agent.graph import AgentDeps, AgentGraph
 from nexus.agent.holdings_reader import HoldingsReader, LlmHoldingsReader
+from nexus.agent.image_look import ImageLooker, LlmImageLooker
 from nexus.agent.memory_writer import MemoryWriter
 from nexus.agent.receipts import LlmReceiptReader, ReceiptReader
 from nexus.agent.service import AgentService
@@ -61,6 +62,7 @@ from nexus.infra.llm.factory import (
     ChatModels,
     build_chat_models,
     build_email_reader,
+    build_image_look_models,
     build_memory_model,
     build_research_models,
     build_screener,
@@ -91,6 +93,7 @@ class Overrides:
     receipts: ReceiptReader | None = None
     holdings: HoldingsReader | None = None
     trip_reader: TripReader | None = None
+    image_looker: ImageLooker | None = None
     telegram: TelegramClient | None = None
     checkpointer: BaseCheckpointSaver[Any] | None = None
     clock: Callable[[], datetime] | None = None
@@ -298,6 +301,9 @@ async def _telegram_runtime(
     trip_reader: TripReader | None = overrides.trip_reader
     if trip_reader is None and models.vision is not None:
         trip_reader = LlmTripReader(build_screenshot_reader(settings, models.vision))
+    looker: ImageLooker | None = overrides.image_looker
+    if looker is None and models.vision is not None:
+        looker = LlmImageLooker(*build_image_look_models(settings, models.vision))
     client = overrides.telegram
     if client is None:
         token = settings.telegram_bot_token
@@ -320,6 +326,7 @@ async def _telegram_runtime(
             limiter=RateLimiter(clock=clock),
             holdings=holdings,
             trips=trip_reader,
+            looker=looker,
         ),
         client=client,
     )

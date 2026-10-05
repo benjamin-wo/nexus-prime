@@ -324,12 +324,20 @@ class ReceiptExpenseArgs(Args):
     external_id: str
     receipt_id: str | None = None  # the stored photo, set by the kernel
     best_guess_category: str | None = None  # the receipt reader's guess
+    # The currency the first look at the photo saw, when it differs from the reader's.
+    seen_currency: str | None = None
 
 
 async def _describe_receipt(ctx: ToolContext, a: ReceiptExpenseArgs) -> str:
     money = parse_money(ctx, a.amount, a.currency)
     when = parse_day(ctx, a.date).astimezone(ctx.tz).date().isoformat()
-    return f"Log {money}{f' at {a.merchant}' if a.merchant else ''} on {when} from this receipt?"
+    ask = f"Log {money}{f' at {a.merchant}' if a.merchant else ''} on {when} from this receipt?"
+    if a.seen_currency and a.seen_currency.upper() != money.currency:
+        ask += (
+            f" ⚠️ The receipt may be in {a.seen_currency.upper()}, not {money.currency}: "
+            "if so, tap Cancel and tell me the amount and currency."
+        )
+    return ask
 
 
 async def _log_receipt_expense(ctx: ToolContext, a: ReceiptExpenseArgs) -> ToolResult:

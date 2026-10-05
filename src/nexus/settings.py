@@ -108,6 +108,10 @@ class Settings(BaseSettings):
     # reads receipt photos (unset = OPENROUTER_MODEL, which must then take images).
     openrouter_fallback_models: Annotated[tuple[str, ...], NoDecode] = ()
     openrouter_vision_model: str | None = None
+    # The fast first look at every image (what it is, and its text), before it's
+    # routed. Unset = OPENROUTER_MODEL (which must take images); the photo model above
+    # takes over when it's slow or fails.
+    image_look_model: str | None = None
     # Which OpenRouter providers may serve OPENROUTER_MODEL, in order of preference
     # (comma separated slugs, e.g. "deepinfra,fireworks"). Unset: OpenRouter picks,
     # cheapest first, which can land on hosts that handle tool calls poorly.
@@ -178,6 +182,7 @@ class Settings(BaseSettings):
         "travel_research_model",
         "serpapi_api_key",
         "google_places_api_key",
+        "image_look_model",
         "agentmail_api_key",
         "agentmail_domain",
         "tiingo_api_key",
