@@ -382,7 +382,23 @@ export type PlanBrief = {
   created_at: string;
   valid_until: string;
   expired: boolean;
-  status: string;
+  status: "open" | "target" | "stopped" | "expired";
+  entered_on: string | null;
+  outcome_day: string | null;
+  outcome_price: string | null;
+  result_percent: string | null;
+  alerts: boolean;
+  followed: boolean;
+};
+export type PlanRecord = {
+  finished: number;
+  targets: number;
+  stopped: number;
+  expired: number;
+  never_entered: number;
+  average_result: string | null;
+  open: number;
+  text: string;
 };
 export type PlanTarget = { price: string; reward_risk: string; why: string };
 export type PlanStep = {

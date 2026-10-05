@@ -26,6 +26,7 @@ from nexus.application import category_rules as rule_cases
 from nexus.application import departments as department_cases
 from nexus.application import email as email_cases
 from nexus.application import investments as investment_cases
+from nexus.application import plans as plan_cases
 from nexus.application import receipts as receipt_cases
 from nexus.application import salary as salary_cases
 from nexus.application import splits as split_cases
@@ -364,7 +365,19 @@ class AgentService:
             return [await self._holdings_button(actor, action, draft_id)]
         if data.startswith("run:cancel:"):
             return [await self._cancel_run(actor, data.removeprefix("run:cancel:"))]
+        if data.startswith("plan:mute:"):
+            return [await self._mute_plan(actor, data.removeprefix("plan:mute:"))]
         return [Reply("I don't know that button.")]
+
+    async def _mute_plan(self, actor: UserId, plan_id: str) -> Reply:
+        """Stop alerts for this plan, on a plan alert."""
+        try:
+            await plan_cases.set_alerts(self._uow(), actor, UUID(plan_id), on=False)
+        except ValueError:
+            return Reply("I don't know that button.")
+        except NexusError as exc:
+            return Reply(str(exc).capitalize() + ".")
+        return Reply("🔕 No more alerts for that plan. It's still tracked in your record.")
 
     async def _cancel_run(self, actor: UserId, run_id: str) -> Reply:
         """Cancel on a department job's progress message."""

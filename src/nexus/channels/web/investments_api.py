@@ -28,7 +28,7 @@ from nexus.domain.levels import Levels
 from nexus.domain.market import percent
 from nexus.domain.money import Money
 from nexus.domain.news import EarningsDate
-from nexus.domain.plans import SavedPlan
+from nexus.domain.plans import FOLLOWED, SavedPlan
 
 router = APIRouter(prefix="/api/investments")
 
@@ -339,7 +339,13 @@ class PlanBrief(Model):
     created_at: datetime
     valid_until: date
     expired: bool
-    status: str
+    status: str  # "open", "target", "stopped" or "expired"
+    entered_on: date | None  # the buy zone was reached (a held stock: always)
+    outcome_day: date | None
+    outcome_price: Decimal | None
+    result_percent: Decimal | None
+    alerts: bool
+    followed: bool  # makes a call that's followed and scored
 
 
 def _brief(p: SavedPlan, today: date) -> PlanBrief:
@@ -356,6 +362,12 @@ def _brief(p: SavedPlan, today: date) -> PlanBrief:
         valid_until=p.valid_until,
         expired=p.valid_until < today,
         status=p.status.value,
+        entered_on=p.entered_on or (p.created_at.date() if p.held else None),
+        outcome_day=p.outcome_day,
+        outcome_price=p.outcome_price,
+        result_percent=p.result_percent,
+        alerts=p.alerts,
+        followed=p.verdict in FOLLOWED,
     )
 
 
@@ -410,6 +422,46 @@ async def start_plan(symbol: str, auth: Auth, web: Runtime) -> StartedOut:
     """Start the research team on a plan; it runs in the background."""
     run = await plan_cases.start_plan(web.uow, web.departments, auth.user, symbol, now=web.clock())
     return StartedOut(run_id=run.id, title=run.title)
+
+
+class RecordOut(Model):
+    finished: int
+    targets: int
+    stopped: int
+    expired: int
+    never_entered: int
+    average_result: Decimal | None
+    open: int
+    text: str
+
+
+@router.get("/plans/record")
+async def plan_record(auth: Auth, web: Runtime) -> RecordOut:
+    """How finished plans turned out, misses included."""
+    r, _ = await plan_cases.track_record(web.uow(), auth.user.id)
+    return RecordOut(
+        finished=r.finished,
+        targets=r.targets,
+        stopped=r.stopped,
+        expired=r.expired,
+        never_entered=r.never_entered,
+        average_result=r.average_result,
+        open=r.open,
+        text=plan_cases.describe_record(r),
+    )
+
+
+class AlertsIn(Model):
+    on: bool
+
+
+@router.post("/plans/{plan_id}/alerts", status_code=204)
+async def plan_alerts(plan_id: str, body: AlertsIn, auth: Auth, web: Runtime) -> None:
+    try:
+        key = UUID(plan_id)
+    except ValueError as exc:
+        raise NotFound("that plan isn't in your list") from exc
+    await plan_cases.set_alerts(web.uow(), auth.user.id, key, on=body.on)
 
 
 @router.get("/plans")

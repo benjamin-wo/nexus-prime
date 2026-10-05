@@ -502,6 +502,10 @@ a.btn { text-decoration: none; }
 .why-list.down h3 { color: var(--rose-accent); }
 .more { margin: var(--space-3) 0; }
 .more summary { cursor: pointer; font-weight: 600; }
+.badge.status-target { color: var(--emerald-accent); border-color: var(--emerald-border); }
+.badge.status-stopped { color: var(--rose-accent); border-color: rgba(244, 63, 94, 0.35); }
+.badge.status-open { color: var(--status-warning); border-color: var(--status-warning-border); }
+.toggle { display: inline-flex; align-items: center; gap: var(--space-2); cursor: pointer; }
 .debate { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--space-3); }
 .cite { font-size: 0.8em; margin-left: 2px; }
 .warning-text { color: var(--status-warning); }

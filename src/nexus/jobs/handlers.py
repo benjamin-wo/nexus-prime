@@ -15,6 +15,7 @@ from nexus.application import departments as department_cases
 from nexus.application import email as email_cases
 from nexus.application import market as market_cases
 from nexus.application import notifications as notify_cases
+from nexus.application import plans as plan_cases
 from nexus.application import receipts as receipt_cases
 from nexus.application import research as research_cases
 from nexus.application import salary as salary_cases
@@ -52,6 +53,7 @@ SCHEDULES = (
     Schedule(SUBSCRIPTIONS_SWEEP, timedelta(hours=6)),
     Schedule(market_cases.REFRESH_JOB, timedelta(hours=1)),
     Schedule(market_cases.NEWS_JOB, timedelta(hours=1)),
+    Schedule(plan_cases.FOLLOW_JOB, timedelta(hours=1)),
 )
 
 
@@ -226,11 +228,18 @@ def build_handlers(
         if prices is not None:
             fetched = await market_cases.refresh(uow, prices, now=clock())
             log.info("price refresh: fetched %d stocks", fetched)
+            if fetched:  # new closes: see what the plans make of them now
+                await follow_plans({})
 
     async def refresh_news(_: dict[str, Any]) -> None:
         if news is not None:
             fetched = await research_cases.refresh_news(uow, news, now=clock())
             log.info("news refresh: fetched %d stocks", fetched)
+
+    async def follow_plans(_: dict[str, Any]) -> None:
+        alerts = await plan_cases.follow_plans(uow, now=clock())
+        if alerts:
+            log.info("plans: queued %d alerts", alerts)
 
     registry = departments or department_cases.default_registry()
     progress = TelegramProgress(telegram)
@@ -253,6 +262,7 @@ def build_handlers(
     return {
         market_cases.REFRESH_JOB: refresh_prices,
         market_cases.NEWS_JOB: refresh_news,
+        plan_cases.FOLLOW_JOB: follow_plans,
         department_cases.STEP_JOB: department_step,
         UNDO_EXPIRE: expire_undo,
         MEMORY_UPDATE: update_memory,

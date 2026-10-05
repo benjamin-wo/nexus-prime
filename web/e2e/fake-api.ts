@@ -31,6 +31,26 @@ const PLAN_BRIEF = {
   valid_until: "2026-10-12",
   expired: false,
   status: "open",
+  entered_on: null,
+  outcome_day: null,
+  outcome_price: null,
+  result_percent: null,
+  alerts: true,
+  followed: true,
+};
+
+const FINISHED_PLAN = {
+  ...PLAN_BRIEF,
+  id: "p0",
+  symbol: "MSFT",
+  headline: "MSFT: Keep holding",
+  verdict: "hold",
+  verdict_text: "Keep holding",
+  status: "target",
+  entered_on: "2026-09-14",
+  outcome_day: "2026-09-22",
+  outcome_price: "441.00",
+  result_percent: "4.6",
 };
 
 export async function fakeApi(
@@ -68,6 +88,7 @@ export async function fakeApi(
     screenshots: number;
     watching: string[];
     planStarted: boolean;
+    planAlerts: boolean;
     cancelled: string[];
     budgets: FakeBudget[];
     bills: FakeBill[];
@@ -111,6 +132,7 @@ export async function fakeApi(
     holdings: [],
     watching: [],
     planStarted: false,
+    planAlerts: true,
     draft: null,
     screenshots: 0,
     txs: [
@@ -412,8 +434,24 @@ export async function fakeApi(
       state.planStarted = true;
       return json(route, { run_id: "r9", title: `Plan for ${startPlan[1].toUpperCase()}` });
     }
+    if (path === "/investments/plans/record" && method === "GET") {
+      return json(route, {
+        finished: 1,
+        targets: 1,
+        stopped: 0,
+        expired: 0,
+        never_entered: 0,
+        average_result: "4.6",
+        open: state.planStarted ? 1 : 0,
+        text: "1 finished: 1 hit their target, 0 were stopped out, 0 ran out. Average result +4.6% per plan that was bought or held.",
+      });
+    }
     if (path === "/investments/plans" && method === "GET") {
-      return json(route, state.planStarted ? [PLAN_BRIEF] : []);
+      return json(route, state.planStarted ? [{ ...PLAN_BRIEF, alerts: state.planAlerts }, FINISHED_PLAN] : [FINISHED_PLAN]);
+    }
+    if (path === "/investments/plans/p1/alerts" && method === "POST") {
+      state.planAlerts = Boolean(body.on);
+      return route.fulfill({ status: 204 });
     }
     if (path === "/investments/plans/p1" && method === "GET") {
       const closes = Array.from({ length: 60 }, (_, i) => ({
@@ -421,7 +459,7 @@ export async function fakeApi(
         close: (100 + i * 0.5).toFixed(2),
       }));
       return json(route, {
-        brief: PLAN_BRIEF,
+        brief: { ...PLAN_BRIEF, alerts: state.planAlerts },
         closes,
         plan: {
           symbol: "AMD",

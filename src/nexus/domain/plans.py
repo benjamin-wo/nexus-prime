@@ -20,6 +20,7 @@ never places or recommends a trade on the user's behalf.
 """
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
@@ -30,6 +31,7 @@ from uuid import UUID
 from nexus.domain.investments import Position
 from nexus.domain.ledger import UserId
 from nexus.domain.levels import Levels
+from nexus.domain.market import Bar
 
 ZONE_ATR = Decimal("0.5")  # the buy zone's height
 STOP_ATR = Decimal(1)  # how far below support the stop sits
@@ -436,3 +438,141 @@ class SavedPlan:
     body: dict[str, Any]
     status: PlanStatus
     created_at: datetime
+    # Following it after each close (M13d).
+    entered_on: date | None = None  # the buy zone was reached (a held stock: from the start)
+    checked_through: date | None = None  # the last trading day looked at
+    outcome_price: Decimal | None = None
+    outcome_day: date | None = None
+    result_percent: Decimal | None = None  # from the buy price (or the close, if held)
+    alerts: bool = True
+
+    @property
+    def held(self) -> bool:
+        return self.verdict in HELD_VERDICTS
+
+    @property
+    def first_target(self) -> Decimal | None:
+        targets = self.body.get("targets") or []
+        return Decimal(str(targets[0]["price"])) if targets else None
+
+    @property
+    def reference(self) -> Decimal | None:
+        """What a result is measured from: the middle of the buy zone, or the close
+        on the day of the plan for a stock already held."""
+        if self.held:
+            return self.close
+        if self.entry_low is None or self.entry_high is None:
+            return None
+        return _q((self.entry_low + self.entry_high) / 2)
+
+
+HELD_VERDICTS = frozenset({Verdict.HOLD, Verdict.TRIM, Verdict.EXIT})
+# Plans that make a call worth following and scoring. "Not a good setup" and "time
+# to cut it" don't: there's nothing to buy or keep.
+FOLLOWED = frozenset({Verdict.IN_ZONE, Verdict.WAIT, Verdict.HOLD, Verdict.TRIM})
+
+
+class EventKind(StrEnum):
+    ENTRY = "entry"  # dipped into the buy zone
+    TARGET = "target"  # reached the first target
+    STOPPED = "stopped"  # closed below the stop
+    EXPIRED = "expired"  # ran past its date with neither
+
+
+@dataclass(frozen=True, slots=True)
+class PlanEvent:
+    kind: EventKind
+    day: date
+    price: Decimal  # where it happened: the zone top, the target, the close
+
+
+@dataclass(frozen=True, slots=True)
+class Followed:
+    """A plan after looking at the days since it was last checked."""
+
+    status: PlanStatus
+    entered_on: date | None
+    checked_through: date | None
+    outcome_price: Decimal | None
+    outcome_day: date | None
+    result_percent: Decimal | None
+    events: list[PlanEvent]
+
+
+def follow(plan: SavedPlan, bars: Sequence[Bar], *, today: date) -> Followed:
+    """Walk the trading days after the plan (and after the last check), oldest first.
+
+    A buy plan counts from the first day whose low reaches the top of the buy zone.
+    From then on, a day that closes below the stop ends it as stopped (checked
+    first: the cautious reading of a day that touched both), and a day whose high
+    reaches the first target ends it as a hit. A plan still open after its date
+    expires. Results are measured from the middle of the zone, or for a stock
+    already held from the close on the day of the plan."""
+    entered = plan.entered_on or (plan.created_at.date() if plan.held else None)
+    checked = plan.checked_through
+    events: list[PlanEvent] = []
+    status, price, day = plan.status, plan.outcome_price, plan.outcome_day
+    target = plan.first_target
+    start = max(d for d in (plan.as_of, checked) if d is not None)
+    for bar in sorted((b for b in bars if b.day > start), key=lambda b: b.day):
+        if status is not PlanStatus.OPEN or bar.day > plan.valid_until:
+            break
+        checked = bar.day
+        if entered is None:
+            if plan.entry_high is not None and bar.low <= plan.entry_high:
+                entered = bar.day
+                events.append(PlanEvent(EventKind.ENTRY, bar.day, plan.entry_high))
+            else:
+                continue
+        if plan.stop is not None and bar.close < plan.stop:
+            status, price, day = PlanStatus.STOPPED, _q(bar.close), bar.day
+            events.append(PlanEvent(EventKind.STOPPED, bar.day, price))
+        elif target is not None and bar.high >= target:
+            status, price, day = PlanStatus.TARGET, target, bar.day
+            events.append(PlanEvent(EventKind.TARGET, bar.day, target))
+    if status is PlanStatus.OPEN and today > plan.valid_until:
+        last = [b for b in bars if b.day <= plan.valid_until]
+        status = PlanStatus.EXPIRED
+        day = plan.valid_until
+        price = _q(max(last, key=lambda b: b.day).close) if last and entered else None
+        events.append(PlanEvent(EventKind.EXPIRED, plan.valid_until, price or plan.close))
+    reference = plan.reference
+    result = (
+        pct(price, reference)
+        if price is not None and reference and entered and status is not PlanStatus.OPEN
+        else None
+    )
+    return Followed(status, entered, checked, price, day, result, events)
+
+
+@dataclass(frozen=True, slots=True)
+class Record:
+    """How the plans that finished turned out, misses included."""
+
+    finished: int
+    targets: int
+    stopped: int
+    expired: int
+    never_entered: int  # buy plans that never reached their zone
+    average_result: Decimal | None  # over plans that were entered
+    open: int
+
+
+def record(plans: Sequence[SavedPlan]) -> Record:
+    followed = [p for p in plans if p.verdict in FOLLOWED]
+    done = [p for p in followed if p.status is not PlanStatus.OPEN]
+    results = [p.result_percent for p in done if p.result_percent is not None]
+    average = (
+        (sum(results, Decimal(0)) / len(results)).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+        if results
+        else None
+    )
+    return Record(
+        finished=len(done),
+        targets=sum(p.status is PlanStatus.TARGET for p in done),
+        stopped=sum(p.status is PlanStatus.STOPPED for p in done),
+        expired=sum(p.status is PlanStatus.EXPIRED for p in done),
+        never_entered=sum(p.entered_on is None and not p.held for p in done),
+        average_result=average,
+        open=sum(p.status is PlanStatus.OPEN for p in followed),
+    )

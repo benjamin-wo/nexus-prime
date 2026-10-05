@@ -576,9 +576,17 @@ plans = Table(
     Column("status", Text, nullable=False),
     Column("created_at", TZ, nullable=False),
     Column("closed_at", TZ),
+    # Following it after each close (M13d).
+    Column("entered_on", Date),
+    Column("checked_through", Date),
+    Column("outcome_price", Numeric(19, 4)),
+    Column("outcome_day", Date),
+    Column("result_percent", Numeric(9, 1)),
+    Column("alerts", Boolean, nullable=False, server_default=text("true")),
     ForeignKeyConstraint(["user_id"], ["users.id"]),
     CheckConstraint("status IN ('open', 'target', 'stopped', 'expired')", name="status"),
     Index("ix_plans_user_id_created_at", "user_id", "created_at"),
+    Index("ix_plans_status", "status"),
 )
 
 # A department's long piece of work (a research plan, a trip), saved step by step.

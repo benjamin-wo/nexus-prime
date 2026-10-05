@@ -1,11 +1,13 @@
 """The research team end to end: a plan for a made-up stock with scripted analysts.
 Every ticker, price and headline here is made up."""
 
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
 from langchain_core.messages import AIMessage
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nexus.application import departments as department_cases
 from nexus.application import market as market_cases
@@ -14,8 +16,10 @@ from nexus.application import research as research_cases
 from nexus.domain.departments import Run, RunStatus
 from nexus.domain.errors import InvalidInput
 from nexus.domain.ledger import User
-from nexus.domain.plans import Verdict
-from tests.fakes import NOW, FakeNews, FakePrices, ScriptedModel, call, scripted
+from nexus.domain.market import Bar
+from nexus.domain.plans import PlanStatus, Verdict
+from nexus.infra.db.tables import jobs
+from tests.fakes import NOW, FakeNews, FakePrices, ScriptedModel, bar, call, scripted
 from tests.integration.conftest import UowFactory
 from tests.integration.test_agent import build, only
 from tests.integration.test_departments import Shown
@@ -132,3 +136,60 @@ async def test_asking_for_a_plan_in_chat(uow: UowFactory) -> None:
     assert shown.startswith("Latest plan for AMD, made 28 Sep.")
     assert "AMD: Wait for a dip to buy." in shown and "🛑 Sell if a day closes below" in shown
     assert "What would prove it wrong: A close below the stop." in shown
+
+
+async def test_plans_are_followed_after_each_close_with_alerts(
+    uow: UowFactory, engine: AsyncEngine
+) -> None:
+    user = await ready(uow)
+    registry = department_cases.default_registry([plan_cases.plan_kind(uow, analysts())])
+    run = await plan_cases.start_plan(uow, registry, user, "AMD", now=NOW)
+    await finish(uow, registry, user, run)
+    saved = (await plan_cases.list_plans(uow(), user.id, symbol="AMD"))[0]
+    assert saved.verdict is Verdict.WAIT and saved.entry_high is not None
+    target = saved.first_target
+    assert target is not None
+    # Monday dips into the buy zone; Tuesday reaches the first target.
+    zone = saved.entry_high
+    monday = bar("AMD", date(2026, 9, 28), str(zone))
+    tuesday = Bar("AMD", date(2026, 9, 29), zone, target + 1, zone, target, target, 1)
+    async with uow() as tx:
+        await tx.investments.save_bars("AMD", [monday, tuesday], known=True, at=NOW)
+        await tx.commit()
+    later = NOW + timedelta(days=1, hours=20)
+    assert await plan_cases.follow_plans(uow, now=later) == 2
+    done = (await plan_cases.list_plans(uow(), user.id, symbol="AMD"))[0]
+    assert done.status is PlanStatus.TARGET and done.entered_on == date(2026, 9, 28)
+    assert done.result_percent is not None and done.result_percent > 0
+    async with engine.connect() as db:
+        rows = (
+            await db.execute(
+                select(jobs.c.dedupe_key, jobs.c.payload)
+                .where(jobs.c.kind == "telegram.send")
+                .order_by(jobs.c.dedupe_key)
+            )
+        ).all()
+    texts = {r.dedupe_key.rsplit(":", 1)[1]: r.payload for r in rows}
+    assert texts["entry"]["text"].startswith("🟢 AMD dipped into its buy zone")
+    assert texts["entry"]["buttons"] == []  # finished by the time the alerts went out
+    assert texts["target"]["text"].startswith(f"🎯 AMD reached its first target, {target}")
+    # Following again changes nothing and sends nothing twice.
+    assert await plan_cases.follow_plans(uow, now=later) == 0
+    r, finished = await plan_cases.track_record(uow(), user.id)
+    assert (r.finished, r.targets) == (1, 1) and finished[0].id == done.id
+    assert plan_cases.describe_record(r).startswith("1 finished: 1 hit their target")
+
+
+async def test_alerts_can_be_turned_off_from_the_alert(uow: UowFactory) -> None:
+    user = await ready(uow)
+    registry = department_cases.default_registry([plan_cases.plan_kind(uow, analysts())])
+    run = await plan_cases.start_plan(uow, registry, user, "AMD", now=NOW)
+    await finish(uow, registry, user, run)
+    saved = (await plan_cases.list_plans(uow(), user.id, symbol="AMD"))[0]
+    agent = build(uow, scripted())
+    reply = only(await agent.press(user.id, f"plan:mute:{saved.id}"))
+    assert reply.text.startswith("🔕 No more alerts for that plan")
+    assert not (await plan_cases.list_plans(uow(), user.id, symbol="AMD"))[0].alerts
+    # A plan that ran out still finishes, quietly.
+    assert await plan_cases.follow_plans(uow, now=NOW + timedelta(days=20)) == 0
+    assert (await plan_cases.list_plans(uow(), user.id))[0].status is PlanStatus.EXPIRED

@@ -1170,11 +1170,30 @@ async def _show_plan(ctx: ToolContext, a: SymbolArgs) -> ToolResult:
         )
     latest = saved[0]
     stale = " (expired: ask for a fresh one)" if latest.valid_until < ctx.today() else ""
+    outcome = {
+        "target": f" It hit its first target on {latest.outcome_day}.",
+        "stopped": f" It was stopped out on {latest.outcome_day}.",
+        "expired": f" It ran out on {latest.outcome_day}.",
+    }.get(latest.status.value, "")
+    if latest.result_percent is not None:
+        outcome += f" Result {latest.result_percent:+}%."
+    stale += outcome
     return ToolResult(
         f"Latest plan for {symbol}, made {latest.created_at.astimezone(ctx.tz):%d %b}{stale}. "
         "Its figures were worked out in code; quote them as they are:\n"
         + plan_cases.describe_plan(latest.body)
     )
+
+
+async def _plan_record(ctx: ToolContext, _: NoArgs) -> ToolResult:
+    r, finished = await plan_cases.track_record(ctx.uow(), ctx.user.id)
+    lines = ["Track record of research plans (scored in code):", plan_cases.describe_record(r)]
+    for p in finished[:8]:
+        result = f", {p.result_percent:+}%" if p.result_percent is not None else ""
+        lines.append(
+            f"- {p.symbol}, {p.created_at.astimezone(ctx.tz):%d %b}: {p.status.value}{result}"
+        )
+    return ToolResult("\n".join(lines))
 
 
 class CashFlowArgs(Args):
@@ -1611,6 +1630,13 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             "The latest research plan made for a stock. Read-only.",
             SymbolArgs,
             _show_plan,
+        ),
+        ToolSpec(
+            "plan_record",
+            "How the research plans turned out: hit target, stopped out or ran out, with "
+            "results. Read-only.",
+            NoArgs,
+            _plan_record,
         ),
         ToolSpec(
             "show_watchlist", "The stocks the user watches. Read-only.", NoArgs, _show_watchlist

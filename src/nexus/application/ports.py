@@ -43,7 +43,7 @@ from nexus.domain.money import Money
 from nexus.domain.news import EarningsDate, NewsItem
 from nexus.domain.notifications import NotificationSettings
 from nexus.domain.planning import Bill, BillOccurrence, Budget, SalarySchedule
-from nexus.domain.plans import SavedPlan
+from nexus.domain.plans import Followed, SavedPlan
 from nexus.domain.receipts import Receipt
 from nexus.domain.recurring import Subscription
 from nexus.domain.rules import CategoryRule
@@ -557,6 +557,14 @@ class InvestmentRepository(Protocol):
         ...
 
     async def get_plan(self, user_id: UserId, plan_id: UUID) -> SavedPlan | None: ...
+    async def plans_to_follow(self) -> list[SavedPlan]:
+        """Across all users: open plans that make a call worth following."""
+        ...
+
+    async def save_followed(
+        self, user_id: UserId, plan_id: UUID, followed: Followed, *, at: datetime
+    ) -> None: ...
+    async def set_plan_alerts(self, user_id: UserId, plan_id: UUID, on: bool) -> bool: ...
 
 
 class UnitOfWork(Protocol):
