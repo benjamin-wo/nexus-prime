@@ -45,6 +45,7 @@ from nexus.application.ports import LedgerQuery, UnitOfWork
 from nexus.domain.bookings import Booking, BookingDraft, BookingKind
 from nexus.domain.email import InboundEmail
 from nexus.domain.errors import InvalidInput, NexusError, NotFound
+from nexus.domain.history import describe as describe_history
 from nexus.domain.investments import clean_quantity, clean_symbol, describe_position
 from nexus.domain.ledger import (
     Category,
@@ -1162,6 +1163,9 @@ async def _stock_levels(ctx: ToolContext, a: SymbolArgs) -> ToolResult:
                 "Likely closes from its own past volatility (not a forecast; no view on direction):"
             )
             lines += describe_ranges(view.ranges)
+        if view.history:
+            lines.append("Its last year, worked out from its prices:")
+            lines += describe_history(view.history)
     else:
         lines.append(
             "No price history yet (it arrives within the hour for a held or watched stock). "

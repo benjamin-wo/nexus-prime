@@ -223,18 +223,41 @@ def build_image_look_models(
     return _quick(settings, fast), fallback
 
 
+# The research team's writer when RESEARCH_MODEL isn't set. Chosen on 5 October 2026
+# from 11 models, each writing the same plans for three made-up stocks, graded blind:
+# the most faithful to the figures, about 8 seconds and $0.002 a plan.
+DEFAULT_RESEARCH_MODEL = "openai/gpt-6-luna-pro"
+
+
 def build_research_models(
     settings: Settings, primary: BaseChatModel
 ) -> tuple[BaseChatModel, BaseChatModel]:
-    """The research team's analysts and lead: RESEARCH_MODEL and RESEARCH_LEAD_MODEL on
-    OpenRouter when set; otherwise the main model (and the lead the analysts'). All
-    without reasoning: with it, DeepSeek took 50 to 95 seconds a write-up and ran past
-    the step limit; without it, 2 to 8 seconds, as good to read."""
-    analyst = _quick_or(settings, settings.research_model, primary)
+    """The research team's analysts and lead: RESEARCH_MODEL (else GPT-6 Luna Pro) and
+    RESEARCH_LEAD_MODEL on OpenRouter; the main model without OpenRouter. All without
+    reasoning: with it, DeepSeek took 50 to 95 seconds a write-up and ran past the step
+    limit; without it, 2 to 8 seconds, as good to read."""
+    if settings.openrouter_api_key is None:
+        return primary, primary
+    analyst = _quick(settings, settings.research_model or DEFAULT_RESEARCH_MODEL)
     lead = analyst
-    if settings.research_lead_model and settings.openrouter_api_key is not None:
+    if settings.research_lead_model:
         lead = _quick(settings, settings.research_lead_model)
     return analyst, lead
+
+
+def build_research_reviewer(settings: Settings) -> BaseChatModel | None:
+    """RESEARCH_REVIEW_MODEL, a stronger model that checks and tidies the finished
+    write-up, on OpenRouter; unset (the default), plans aren't reviewed."""
+    if not settings.research_review_model or settings.openrouter_api_key is None:
+        return None
+    return _openai_compatible(
+        settings,
+        model=settings.research_review_model,
+        api_key=settings.openrouter_api_key,
+        base_url="https://openrouter.ai/api/v1",
+        name="OpenRouter",
+        extra_body={"reasoning": {"effort": "low"}},
+    )
 
 
 def build_travel_sorter(settings: Settings, model: str) -> BaseChatModel:

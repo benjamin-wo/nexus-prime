@@ -746,6 +746,10 @@ test("a research plan is started from a stock and read with its chart and source
   const month = ranges.getByRole("row", { name: /1 month/ });
   await expect(month).toContainText("118.90 – 141.05");
   await expect(month).toContainText("112.50 – 149.07");
+  // Its last year in numbers, worked out from its closes.
+  const past = page.getByRole("region", { name: "Its last year" });
+  await expect(past).toContainText("1 month +6.4%");
+  await expect(past).toContainText("(about usual)");
   const card = page.getByRole("region", { name: "Research plan" });
   await card.getByRole("button", { name: "Make a plan" }).click();
   await expect(card.getByRole("status")).toContainText("Plan for AMD started");

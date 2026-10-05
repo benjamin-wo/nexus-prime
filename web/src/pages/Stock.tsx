@@ -86,6 +86,23 @@ function LevelsCard({ levels }: { levels: Levels }) {
   );
 }
 
+/** The stock's last year in numbers, worked out in code from its daily closes. */
+function HistoryCard({ lines }: { lines: string[] }) {
+  return (
+    <section className="card" aria-labelledby="history">
+      <div className="card-head">
+        <h2 id="history">Its last year</h2>
+        <span className="caption">From daily closes · the past, not a forecast</span>
+      </div>
+      <ul>
+        {lines.map((line) => (
+          <li key={line}>{line}</li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 /** Where the close could be after a week, a month and three months, from the stock's
  * own day-to-day swings. Worked out in code with no view on direction. */
 function RangesCard({ ranges }: { ranges: PriceRange[] }) {
@@ -200,6 +217,7 @@ export function StockPage() {
         </section>
       ))}
       {data && data.ranges.length > 0 && <RangesCard ranges={data.ranges} />}
+      {data && data.history && data.history.length > 0 && <HistoryCard lines={data.history} />}
       {data && data.plans_enabled && data.levels && (
         <section className="card" aria-labelledby="plan">
           <div className="card-head">

@@ -16,6 +16,7 @@ from typing import Protocol
 from nexus.application.market import queue_refresh
 from nexus.application.ports import UnitOfWork
 from nexus.domain.errors import InvalidInput, NotFound
+from nexus.domain.history import MARKET, History, history
 from nexus.domain.investments import Position
 from nexus.domain.ledger import User, UserId
 from nexus.domain.levels import YEAR_DAYS, Levels, compute
@@ -32,6 +33,7 @@ NEWS_EVERY = timedelta(hours=6)
 NEWS_DAYS = 7  # how far back each fetch looks
 KEEP_NEWS = timedelta(days=30)
 EARNINGS_DAYS = 90  # how far ahead earnings dates are looked for
+PAST_EARNINGS_DAYS = 366  # and back, for how the stock moved on them
 MAX_PER_REFRESH = 25  # two calls each, inside the free tier's 60 a minute
 REFRESH_BUDGET_SECONDS = 50.0
 MAX_WATCH = 50
@@ -75,7 +77,11 @@ async def refresh_news(uow: UowFactory, source: NewsSource, *, now: datetime) ->
         try:
             today = now.date()
             items = await source.news(symbol, today - timedelta(days=NEWS_DAYS), today)
-            dates = await source.earnings(symbol, today, today + timedelta(days=EARNINGS_DAYS))
+            dates = await source.earnings(
+                symbol,
+                today - timedelta(days=PAST_EARNINGS_DAYS),
+                today + timedelta(days=EARNINGS_DAYS),
+            )
         except NewsRateLimited:
             log.warning("over the news provider's rate limit; the rest wait for the next refresh")
             break
@@ -131,6 +137,8 @@ class StockView:
     # volatility; empty until there are a few months of prices.
     ranges: list[Range] = field(default_factory=list)
     moves: list[float] = field(default_factory=list)  # the last year's daily log returns
+    # Its last year in numbers (see domain.history); None until a month of prices.
+    history: History | None = None
 
 
 async def stock(uow: UnitOfWork, user: User, symbol: str, *, today: date) -> StockView:
@@ -141,6 +149,10 @@ async def stock(uow: UnitOfWork, user: User, symbol: str, *, today: date) -> Sto
         earnings = await uow.investments.upcoming_earnings([symbol], today)
         # Twice as many as shown: the same story fetched on two days has two ids.
         news = await uow.investments.recent_news(symbol, NEWS_SHOWN * 2)
+        market = await uow.investments.bars(MARKET, LEVEL_BARS) if symbol != MARKET else bars
+        past = await uow.investments.past_earnings(
+            symbol, today - timedelta(days=PAST_EARNINGS_DAYS), today
+        )
     levels = compute(bars)
     moves = returns(bars)
     return StockView(
@@ -152,6 +164,7 @@ async def stock(uow: UnitOfWork, user: User, symbol: str, *, today: date) -> Sto
         news=dedupe(news)[:NEWS_SHOWN],
         ranges=ranges(levels.close, moves) if levels else [],
         moves=moves,
+        history=history(bars, market, past),
     )
 
 

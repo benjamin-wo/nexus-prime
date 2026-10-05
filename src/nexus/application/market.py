@@ -13,6 +13,7 @@ from datetime import date, datetime, timedelta
 from typing import Protocol
 
 from nexus.application.ports import UnitOfWork
+from nexus.domain.history import MARKET
 from nexus.domain.market import Bar, due
 
 log = logging.getLogger(__name__)
@@ -57,10 +58,12 @@ async def queue_refresh(uow: UnitOfWork, now: datetime) -> None:
 
 
 async def refresh(uow: UowFactory, source: PriceSource, *, now: datetime) -> int:
-    """Fetch prices for held and watched stocks that are due. Returns how many were
-    fetched."""
+    """Fetch prices for held and watched stocks that are due, and for the market they're
+    measured against. Returns how many were fetched."""
     async with uow() as tx:
         symbols = await tx.investments.tracked_symbols()
+        if symbols and MARKET not in symbols:
+            symbols.append(MARKET)
         fetched = await tx.investments.fetched(symbols)
     wanted = [s for s in symbols if due(fetched.get(s), now)][:MAX_PER_REFRESH]
     done = 0

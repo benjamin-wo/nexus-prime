@@ -44,7 +44,8 @@ async def test_watched_stocks_get_prices_news_and_levels(uow: UowFactory) -> Non
     await trade(uow, user.id, "buy", "NVDA", "10", "118.40")
     await research_cases.watch(uow(), user.id, "AMD", now=NOW)
     prices = FakePrices({"AMD": history(60), "NVDA": history(5)})
-    assert await market_cases.refresh(uow, prices, now=NOW) == 2
+    # The two stocks, and the market (SPY) they're measured against.
+    assert await market_cases.refresh(uow, prices, now=NOW) == 3
     news = FakeNews(
         headlines={
             "AMD": [

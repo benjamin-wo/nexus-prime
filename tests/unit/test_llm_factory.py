@@ -144,7 +144,7 @@ def test_email_and_memory_reads_run_without_reasoning(monkeypatch: pytest.Monkey
 
 
 def test_the_research_team_writes_without_reasoning() -> None:
-    from nexus.infra.llm.factory import build_research_models
+    from nexus.infra.llm.factory import build_research_models, build_research_reviewer
 
     s = settings(
         llm_provider="openrouter",
@@ -154,20 +154,22 @@ def test_the_research_team_writes_without_reasoning() -> None:
     )
     primary = build_chat_models(s).primary
     analyst, lead = build_research_models(s, primary)
-    assert analyst is lead and model_name(analyst) == "deepseek/deepseek-v4.1-flash"
+    assert analyst is lead and model_name(analyst) == "openai/gpt-6-luna-pro"  # the default
     assert isinstance(analyst, ChatOpenAI)
-    assert analyst.extra_body is not None
-    assert analyst.extra_body["reasoning"] == {"enabled": False}
-    assert analyst.extra_body["provider"]["order"] == ["deepinfra", "fireworks"]  # routed
+    assert analyst.extra_body == {"reasoning": {"enabled": False}}  # not the main model's hosts
+    assert build_research_reviewer(s) is None  # no review unless asked for
     own = settings(
         llm_provider="openrouter",
         openrouter_api_key="sk-or-test",
         openrouter_model="deepseek/deepseek-v4.1-flash",
         research_model="vendor/analyst-model",
         research_lead_model="vendor/lead-model",
+        research_review_model="vendor/review-model",
     )
     analyst, lead = build_research_models(own, build_chat_models(own).primary)
     assert (model_name(analyst), model_name(lead)) == ("vendor/analyst-model", "vendor/lead-model")
     for m in (analyst, lead):
         assert isinstance(m, ChatOpenAI) and m.extra_body is not None
         assert m.extra_body["reasoning"] == {"enabled": False}
+    reviewer = build_research_reviewer(own)
+    assert model_name(reviewer) == "vendor/review-model"

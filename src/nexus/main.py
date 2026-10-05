@@ -65,6 +65,7 @@ from nexus.infra.llm.factory import (
     build_image_look_models,
     build_memory_model,
     build_research_models,
+    build_research_reviewer,
     build_screener,
     build_screenshot_reader,
     build_travel_sorter,
@@ -343,7 +344,7 @@ async def _registry(
     Travel researcher (live flight and hotel prices too with a SerpApi key)."""
     uow = lambda: SqlUnitOfWork(engine)  # noqa: E731
     analyst, lead = build_research_models(settings, models.primary)
-    kinds = [plan_kind(uow, analyst, lead)]
+    kinds = [plan_kind(uow, analyst, lead, build_research_reviewer(settings))]
     key = settings.openrouter_api_key
     model = settings.travel_research_model or settings.openrouter_model
     if key is not None and model:

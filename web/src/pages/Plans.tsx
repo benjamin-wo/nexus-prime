@@ -513,6 +513,16 @@ export function PlanPage() {
                   <li key={line}>{line}</li>
                 ))}
               </ul>
+              {plan.history && plan.history.length > 0 && (
+                <>
+                  <h3>Its last year</h3>
+                  <ul>
+                    {plan.history.map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
+                </>
+              )}
             </details>
             <p className="caption">
               Every price here was worked out in code from daily closes; the analysts only wrote the words. Research, not

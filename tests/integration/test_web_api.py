@@ -1410,6 +1410,7 @@ async def test_research_plans_on_the_web(world: World) -> None:
     assert page["plans_enabled"] and page["plan"] is None
     assert [r["label"] for r in page["ranges"]] == ["1 week", "1 month", "3 months"]
     assert set(page["ranges"][0]) == {"days", "label", "low_68", "high_68", "low_90", "high_90"}
+    assert page["history"][0].startswith("Change in price: 1 week +")
 
     started = await owner.send("POST", "/api/investments/stocks/amd/plan")
     assert started.status_code == 200 and started.json()["title"] == "Plan for AMD"
@@ -1446,6 +1447,7 @@ async def test_research_plans_on_the_web(world: World) -> None:
     odds = detail["plan"]["odds"]  # a steady climb has hardly any swings to replay
     assert odds["paths"] == 2000 and odds["stop"] == detail["plan"]["stop"]
     assert detail["plan"]["ranges"][0].startswith("In 1 week: ")
+    assert detail["plan"]["history"] == page["history"]
     assert (await owner.get("/api/investments/stocks/AMD")).json()["plan"]["id"] == listed[0]["id"]
     assert (await owner.get("/api/investments/plans/not-a-plan")).status_code == 404
     plan_id = listed[0]["id"]

@@ -152,3 +152,23 @@ def test_a_made_up_price_is_dropped_from_model_text() -> None:
     assert unsupported("Revenue grew to 2,400 million.", allowed) == ["2,400"]
     text = "The trend is up. A move to 137.50 is likely. The stop at 122 limits risk."
     assert keep_supported(text, allowed) == "The trend is up. The stop at 122 limits risk."
+    # Names with numbers in them aren't prices.
+    assert unsupported("It beat the S&P 500 and sits above its 200-day average.", allowed) == []
+    assert unsupported("Earnings are on 27 Oct 2026, or October 27, 2026.", allowed) == []
+    assert unsupported("It could hit 2026 by Oct.", allowed) == ["2026"]  # a price, not a date
+
+
+def test_a_stock_far_above_its_zone_still_gets_targets_above_today() -> None:
+    # At its 52-week high, well above the 20-day average it should dip to. Before, the
+    # targets were 2 and 3 times the risk from the buy zone: below today's close.
+    p = plan(
+        levels("172.15", averages={20: D("163.00"), 50: D("150.00")}, support=[],
+               resistance=[], year_high=D("172.15")),
+        today=TODAY,
+    )  # fmt: skip
+    assert p.verdict is Verdict.WAIT and p.entry_high is not None
+    assert p.entry_high < D("172.15")
+    assert p.targets and all(t.price > D("172.15") for t in p.targets)
+    # Still multiples of the risk from the buy zone, the nearest ones above today.
+    assert [t.why for t in p.targets] == [f"{t.reward_risk:g} times the risk" for t in p.targets]
+    assert all(t.reward_risk >= 2 for t in p.targets)

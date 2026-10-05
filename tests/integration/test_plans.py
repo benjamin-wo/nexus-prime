@@ -223,9 +223,13 @@ async def test_a_plan_carries_odds_from_replaying_past_moves(uow: UowFactory) ->
     done = await finish(uow, registry, user, run)
     assert done.status is RunStatus.DONE, done.error
     result = plan_cases.PlanResult.model_validate(done.result)
-    # The analysts were shown the odds with the plan.
-    assert "Odds from replaying the last year's daily moves" in str(team.seen[0][-1].content)
+    # The analysts were shown the odds, likely ranges and history with the plan.
+    brief = str(team.seen[0][-1].content)
+    assert "Odds from replaying the last year's daily moves" in brief
+    assert "Where the close is likely to be" in brief and "In 1 month: " in brief
+    assert "Its last year, worked out from its prices:\nChange in price: 1 week +" in brief
     assert result.ranges[1].startswith("In 1 month: ")
+    assert result.history[0].startswith("Change in price: 1 week +")
     odds = result.odds
     assert odds is not None and result.stop is not None
     assert odds.stop == result.stop
@@ -329,3 +333,77 @@ async def test_a_slow_writer_is_cut_off_and_tried_again(monkeypatch: pytest.Monk
     ctx = StepContext(run=None, user=None, now=NOW)  # type: ignore[arg-type]
     view = await plan_cases._ask(Slow(), plan_cases.TechnicalView, "prompt", ctx)  # type: ignore[arg-type]
     assert view.summary == "Fine." and Slow.calls == 2
+
+
+def reviewer(*replies: Any) -> ScriptedModel:
+    return scripted(*replies)
+
+
+async def test_an_optional_reviewer_corrects_the_draft_before_its_saved(uow: UowFactory) -> None:
+    user = await ready(uow)
+    senior = reviewer(
+        call(
+            "ReviewView",
+            technical="A steady climb: it closes above its 20-day average (the mean close of "
+            "the last 20 trading days).",
+            bull=["The climb is steady."],
+            bear=["It may not dip to the zone. A run to 199.99 is likely."],  # made up
+            summary="Wait for a dip to the buy zone before buying.",
+            invalidation="",  # left out: the draft's is kept
+        )
+    )
+    kind = plan_cases.plan_kind(uow, analysts(), reviewer=senior)
+    registry = department_cases.default_registry([kind])
+    run = await plan_cases.start_plan(uow, registry, user, "AMD", now=NOW)
+    assert run.steps_total == 4
+    done = await finish(uow, registry, user, run)
+    assert done.status is RunStatus.DONE, done.error
+    result = plan_cases.PlanResult.model_validate(done.result)
+    assert result.technical.endswith("(the mean close of the last 20 trading days).")
+    assert result.bull == ["The climb is steady."]
+    assert result.bear == ["It may not dip to the zone."]  # the made-up price is still dropped
+    assert result.summary == "Wait for a dip to the buy zone before buying."
+    assert result.invalidation == "A close below the stop."
+    # The reviewer saw the figures and the draft; the plan was saved once, as reviewed.
+    prompt = str(senior.seen[0][-1].content)
+    assert "<draft>" in prompt and "Case against: It's stretched." in prompt
+    saved = await plan_cases.list_plans(uow(), user.id, symbol="AMD")
+    assert len(saved) == 1 and saved[0].body["summary"] == result.summary
+
+
+async def test_a_reviewer_that_fails_leaves_the_draft(uow: UowFactory) -> None:
+    user = await ready(uow)
+
+    def broken(_: Any) -> Any:
+        raise RuntimeError("provider error")
+
+    senior = reviewer(broken)
+    kind = plan_cases.plan_kind(uow, analysts(), reviewer=senior)
+    registry = department_cases.default_registry([kind])
+    run = await plan_cases.start_plan(uow, registry, user, "AMD", now=NOW)
+    done = await finish(uow, registry, user, run)
+    assert done.status is RunStatus.DONE, done.error
+    result = plan_cases.PlanResult.model_validate(done.result)
+    assert result.summary.startswith("Wait for a pullback") and result.incomplete == []
+    assert len(senior.seen) == 1  # one try: the draft is good enough to keep
+    saved = await plan_cases.list_plans(uow(), user.id, symbol="AMD")
+    assert len(saved) == 1 and saved[0].id == result.plan_id
+
+
+async def test_the_market_and_past_earnings_feed_the_history(uow: UowFactory) -> None:
+    user = await person(uow)
+    await research_cases.watch(uow(), user.id, "AMD", now=NOW)
+    prices = FakePrices({"AMD": uneven(120), "SPY": history(120, start=400)})
+    await market_cases.refresh(uow, prices, now=NOW)
+    assert {s for s, _, _ in prices.asked} == {"AMD", "SPY"}  # the market comes along
+    reported = date(2026, 8, 20)  # a Thursday, after the close
+    news = FakeNews(earnings_days={"AMD": [reported, date(2026, 10, 27)]})
+    await research_cases.refresh_news(uow, news, now=NOW)
+    # Fetched again: the future date is replaced, the past one kept.
+    await research_cases.refresh_news(uow, news, now=NOW + timedelta(hours=7))
+    view = await research_cases.stock(uow(), user, "AMD", today=NOW.date())
+    assert view.earnings is not None and view.earnings.day == date(2026, 10, 27)
+    h = view.history
+    assert h is not None
+    assert [r.day for r in h.earnings] == [reported]
+    assert [v.label for v in h.versus] == ["1 month", "3 months"]  # under a year of prices
