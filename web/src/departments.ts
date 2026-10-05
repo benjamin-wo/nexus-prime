@@ -45,10 +45,10 @@ export const DEPARTMENTS: DepartmentView[] = [
     label: "Travel",
     icon: "✈️",
     path: "/travel",
-    blurb: "Trips planned around your budget.",
+    blurb: "Trips tied to your money: budget, savings, bookings and spending.",
     tabs: [],
     upcoming:
-      "Tell Nexus where and roughly when, and it works out when to go, flights, places to stay and things to do, then shows what the trip costs against your own budget. It never books anything: every result links to the seller.",
+      "Add a trip and Nexus keeps its money together: a budget, how much to set aside each payday, bookings picked up from your email, and what you spend while you're away, with a settle-up with friends at the end. Later it can research where and when to go, linking to sellers; it never books anything.",
   },
 ];
 
