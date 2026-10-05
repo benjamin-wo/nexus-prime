@@ -1000,3 +1000,60 @@ test("the trip overview: getting ready, places to visit, and labelled days", asy
   await expect(itinerary.getByRole("button", { name: "Change the label Myeongdong" })).toBeVisible();
   expect(state.trips[0]).toMatchObject({ day_labels: { "2026-11-10": "Myeongdong" } });
 });
+
+test("places from Google Maps: saved, linked, rated, and flagged when usually closed", async ({ page }) => {
+  const state = await fakeApi(page);
+  await page.goto("/travel");
+  await page.getByRole("button", { name: "Add a trip" }).click();
+  const form = page.getByRole("form", { name: "Add a trip" });
+  await form.getByLabel("Where").fill("Seoul");
+  await form.getByLabel("From").fill("2026-11-10");
+  await form.getByLabel("To").fill("2026-11-13");
+  await form.getByLabel("Currency there").fill("KRW");
+  await form.getByRole("button", { name: "Add trip" }).click();
+  await expect(page).toHaveURL(/\/travel\/trips\/trip1$/);
+
+  // Found on Google Maps and saved as a place to visit, with its place kept.
+  await page.getByRole("button", { name: "🔎 Find places on Google Maps" }).click();
+  await page.getByRole("search", { name: "Search Google Maps" }).getByLabel("Look for").fill("noodles");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  const results = page.getByRole("list", { name: "Google Maps results" });
+  await expect(results).toContainText("Hanok Noodle Bar ★ 4.6 (2,310)");
+  expect(state.placeSearches).toEqual(["noodles"]);
+  await results.getByRole("button", { name: "Save: Hanok Noodle Bar" }).click();
+  const places = page.getByRole("list", { name: "Places to visit" });
+  await expect(places).toContainText("Hanok Noodle Bar");
+  expect(state.plans[0]).toMatchObject({ name: "Hanok Noodle Bar", category: "Noodle shop", place_id: "fakePlaceNoodle01" });
+  await expect(places.getByLabel("Rated 4.6 out of 5 from 2310 ratings")).toBeVisible();
+
+  // Its details: a summary, reviews credited to their authors, and Google Maps.
+  await places.getByRole("button", { name: "Show details for Hanok Noodle Bar" }).click();
+  const reviews = places.getByRole("list", { name: "Reviews of Hanok Noodle Bar" });
+  await expect(reviews).toContainText("The broth is worth the queue.");
+  await expect(reviews.getByRole("link", { name: "A. Reviewer" })).toHaveAttribute("rel", /noopener/);
+  await expect(places).toContainText("From Google Maps");
+
+  // Planned for a Thursday, when it's usually shut: the itinerary says so.
+  await places.getByRole("button", { name: "Plan a day for Hanok Noodle Bar" }).click();
+  const pick = places.getByRole("form", { name: "Change the entry" });
+  await pick.getByLabel(/^Day/).fill("2026-11-12");
+  await pick.getByRole("button", { name: "Save" }).click();
+  expect(state.plans[0]).toMatchObject({ day: "2026-11-12", place_id: "fakePlaceNoodle01" });
+  await page.getByRole("tab", { name: "Itinerary" }).click();
+  const itinerary = page.getByRole("region", { name: "Itinerary" });
+  await expect(itinerary.getByRole("note")).toHaveText("⚠️ Usually closed on Thursdays");
+
+  // A place added by hand is linked to Google Maps from its entry.
+  await page.getByRole("tab", { name: "Overview" }).click();
+  await page.getByRole("button", { name: "Add to the trip" }).click();
+  await page.getByRole("menuitem", { name: "📍 Place to visit" }).click();
+  const entry = page.getByRole("form", { name: "Add to the itinerary" });
+  await entry.getByLabel("Name", { exact: true }).fill("Namdaemun Market");
+  await entry.getByRole("button", { name: "Add" }).click();
+  await places.getByRole("button", { name: "Find Namdaemun Market on Google Maps" }).click();
+  await expect(page.getByRole("search", { name: "Search Google Maps" }).getByLabel("Look for")).toHaveValue("Namdaemun Market");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await page.getByRole("button", { name: "Link: Namdaemun Market" }).click();
+  await expect(places.getByLabel("Rated 4.3 out of 5 from 18000 ratings")).toBeVisible();
+  expect(state.plans[1]).toMatchObject({ name: "Namdaemun Market", place_id: "fakePlaceMarket01" });
+});

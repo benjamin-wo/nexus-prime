@@ -6,6 +6,7 @@ import { api, type Booking, type Me, type Money, type ScreenshotRead, type Trip,
 import { base64 } from "../files";
 import { formatMoney, formatShortDate } from "../format";
 import { ResearchList } from "./Research";
+import { PlaceLine, SavePlaces, TripPlacesProvider } from "./TripPlaces";
 
 const day = (iso: string) => formatShortDate(iso, "UTC");
 
@@ -450,6 +451,7 @@ function BookingLines({ booking, noTime = false }: { booking: Booking; noTime?: 
   return (
     <>
       <KindLines booking={booking} noTime={noTime} />
+      <PlaceLine booking={booking} />
       <BookedWith booking={booking} />
     </>
   );
@@ -1120,6 +1122,7 @@ function Sections({ detail, onChange, onAdd }: { detail: TripDetail; onChange: (
             <button type="button" className="btn btn-ghost btn-small" onClick={() => onAdd({ kind: s.kind })}>
               + Add {items.length ? "another" : "a"} {s.one}
             </button>
+            {s.kind === "place" && <SavePlaces />}
           </details>
         );
       })}
@@ -1365,6 +1368,7 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
   const refresh = () => {
     void client.invalidateQueries({ queryKey: ["trip", id] });
     void client.invalidateQueries({ queryKey: ["trips"] });
+    void client.invalidateQueries({ queryKey: ["trip-places", id] });
   };
 
   function add(preset: { kind: EntryKind; day?: string }) {
@@ -1463,7 +1467,7 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
         </section>
       )}
       {data && (
-        <>
+        <TripPlacesProvider tripId={id} destination={data.trip.destination} enabled={data.places} onChange={refresh}>
           <nav className="trip-tabs" role="tablist" aria-label="Trip views">
             {TABS.map((t) => (
               <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} className="trip-tab" onClick={() => setTab(t.id)}>
@@ -1569,7 +1573,7 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
             onAsk={onAsk ? () => onAsk(`How's my ${data.trip.destination} trip looking? What's booked, what's missing and what's left in the budget?`) : undefined}
             reading={reading}
           />
-        </>
+        </TripPlacesProvider>
       )}
     </>
   );

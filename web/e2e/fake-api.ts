@@ -94,6 +94,7 @@ export async function fakeApi(
     looseBookings: Record<string, unknown>[];
     movedBookings: string[];
     plans: Record<string, unknown>[];
+    placeSearches: string[];
     planStarted: boolean;
     planAlerts: boolean;
     cancelled: string[];
@@ -161,6 +162,7 @@ export async function fakeApi(
     ],
     movedBookings: [],
     plans: [],
+    placeSearches: [],
     planStarted: false,
     planAlerts: true,
     draft: null,
@@ -711,8 +713,50 @@ export async function fakeApi(
           return { nights_without_stay: nights, has_transport: true, has_budget: Boolean(trip.budget), done, total: 3 };
         })(),
         to_spend: budget ? home(Number(budget.amount) - spent - 820) : null,
+        places: true,
       };
     };
+    // Made-up Google Maps places: names, ratings and reviews are all invented.
+    const PLACES: Record<string, Record<string, unknown> & { closed: number | null }> = {
+      fakePlaceNoodle01: {
+        id: "fakePlaceNoodle01", name: "Hanok Noodle Bar", address: "12 Example-ro, Jung-gu, Seoul", kind: "Noodle shop",
+        rating: "4.6", ratings: 2310, price: "Moderate", maps_url: "https://maps.example/noodle", website: null, phone: null,
+        summary: "Hand-pulled noodles in a small wooden room.", status: "OPERATIONAL",
+        hours: ["Monday: 11:00 AM to 9:00 PM", "Thursday: Closed"],
+        reviews: [{ rating: 5, text: "The broth is worth the queue.", author: "A. Reviewer", author_url: "https://maps.example/u/1", when: "a month ago" }],
+        closed: 4,
+      },
+      fakePlaceMarket01: {
+        id: "fakePlaceMarket01", name: "Namdaemun Market", address: "21 Example-gil, Jung-gu, Seoul", kind: "Market",
+        rating: "4.3", ratings: 18000, price: null, maps_url: "https://maps.example/market", website: null, phone: null,
+        summary: null, status: "OPERATIONAL", hours: [], reviews: [], closed: null,
+      },
+    };
+    const placeOut = ({ closed: _closed, ...place }: Record<string, unknown>) => place;
+    if (path === "/travel/places/search" && method === "GET") {
+      state.placeSearches.push(url.searchParams.get("q") ?? "");
+      return json(route, Object.values(PLACES).map(placeOut));
+    }
+    const tripPlaces = path.match(/^\/travel\/trips\/([^/]+)\/places$/);
+    if (tripPlaces && method === "GET") {
+      const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+      return json(
+        route,
+        state.plans
+          .filter((p) => p.place_id && PLACES[String(p.place_id)])
+          .map((p) => {
+            const place = PLACES[String(p.place_id)];
+            const weekday = p.day ? new Date(`${String(p.day)}T00:00:00Z`).getUTCDay() : null;
+            const warning = weekday !== null && weekday === place.closed ? `Usually closed on ${days[weekday]}s` : null;
+            return { booking_id: p.id, place: placeOut(place), warning };
+          }),
+      );
+    }
+    const placeLink = path.match(/^\/travel\/bookings\/([^/]+)\/place$/);
+    if (placeLink && method === "PUT") {
+      state.plans = state.plans.map((p) => (p.id === placeLink[1] ? { ...p, place_id: body.place_id ?? null } : p));
+      return json(route, state.plans.find((p) => p.id === placeLink[1]));
+    }
     if (path === "/travel/bookings" && method === "GET") return json(route, state.looseBookings);
     const bookingTrip = path.match(/^\/travel\/bookings\/([^/]+)\/trip$/);
     if (bookingTrip && method === "PUT") {
@@ -775,6 +819,7 @@ export async function fakeApi(
         starts: body.day, ends: body.day, segments: [], hotel: null, address: body.address, check_in: null, check_out: null,
         name: body.name, day: body.day, at: body.at, note: body.note, cost: null, logged: false, manual: true,
         reference: body.reference ?? null, booked_via: body.booked_via ?? null, category: body.category ?? null,
+        place_id: body.place_id ?? null,
         scheduled: Boolean(body.day), ...(body.day ? {} : { starts: "2026-09-28", ends: null }),
       };
       state.plans.push(plan);

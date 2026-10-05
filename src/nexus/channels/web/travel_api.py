@@ -4,22 +4,26 @@ and settling up. Nothing here books or buys anything."""
 import base64
 import binascii
 from datetime import date
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
 from nexus.application import bookings as booking_cases
+from nexus.application import places as place_cases
 from nexus.application import travel_research as research_cases
 from nexus.application import trips as trip_cases
+from nexus.application.places import Places, PlacesError
 from nexus.channels.web.api import MoneyOut, money
 from nexus.channels.web.investments_api import MAX_IMAGE_CHARS
-from nexus.channels.web.security import Auth, Runtime, limit
+from nexus.channels.web.security import Auth, Runtime, WebRuntime, limit
 from nexus.domain.bookings import Booking
 from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.ledger import User
 from nexus.domain.money import Money
+from nexus.domain.places import Place
 from nexus.domain.trips import MAX_COMPANIONS, MAX_DAY_LABEL, MAX_NOTES, MAX_PLANNED, Trip
 
 router = APIRouter(prefix="/api/travel")
@@ -153,6 +157,7 @@ class BookingOut(Model):
     reference: str | None  # the booking or confirmation number: the user's own
     booked_via: str | None  # the airline, Agoda, Klook
     category: str | None  # a plan's kind: Food, Sight
+    place_id: str | None  # its Google Maps place, for a plan or hotel
     scheduled: bool  # on a day; false for a place to visit without one yet
     cost: MoneyOut | None
     logged: bool  # its cost is in the ledger
@@ -190,6 +195,7 @@ def _booking(b: Booking) -> BookingOut:
         reference=d.reference,
         booked_via=d.booked_via,
         category=d.category,
+        place_id=d.place_id,
         scheduled=b.scheduled,
         cost=_m(b.cost),
         logged=b.transaction_id is not None,
@@ -218,9 +224,10 @@ class TripDetailOut(Model):
     booked_unlogged: MoneyOut | None
     to_spend: MoneyOut | None
     ready: ReadyOut
+    places: bool = False  # Google Maps places are set up
 
 
-def _detail(view: trip_cases.TripView) -> TripDetailOut:
+def _detail(view: trip_cases.TripView, web: WebRuntime | None = None) -> TripDetailOut:
     s, a = view.spending, view.saving
     return TripDetailOut(
         trip=_trip(view.trip, view.today),
@@ -277,6 +284,7 @@ def _detail(view: trip_cases.TripView) -> TripDetailOut:
             done=view.ready.done,
             total=view.ready.TOTAL,
         ),
+        places=web is not None and web.places is not None,
     )
 
 
@@ -339,7 +347,7 @@ async def create_trip(body: TripIn, auth: Auth, web: Runtime) -> TripOut:
 async def next_trip(auth: Auth, web: Runtime) -> TripDetailOut | None:
     """The trip that's on or coming up, for Home."""
     view = await trip_cases.next_trip(web.uow, web.rates, auth.user, now=web.clock())
-    return _detail(view) if view else None
+    return _detail(view, web) if view else None
 
 
 @router.get("/trips/{trip_id}")
@@ -347,7 +355,7 @@ async def get_trip(trip_id: str, auth: Auth, web: Runtime) -> TripDetailOut:
     view = await trip_cases.trip_view(
         web.uow, web.rates, auth.user, _uuid(trip_id), now=web.clock()
     )
-    return _detail(view)
+    return _detail(view, web)
 
 
 @router.put("/trips/{trip_id}")
@@ -466,9 +474,18 @@ class BookingIn(Model):
     category: str | None = Field(None, max_length=30)
     cost: str | None = Field(None, max_length=32)
     currency: str | None = Field(None, pattern="^[A-Za-z]{3}$")
+    # A Google Maps place id; left out of an edit, the entry keeps its place.
+    place_id: str | None = Field(None, max_length=512)
 
 
 def _details(body: BookingIn) -> dict[str, object]:
+    found = _fields(body)
+    if "place_id" in body.model_fields_set:
+        found["place_id"] = body.place_id
+    return found
+
+
+def _fields(body: BookingIn) -> dict[str, object]:
     return {
         "kind": body.kind,
         "provider": body.provider,
@@ -553,3 +570,123 @@ async def read_screenshot(
         repeated=result.repeated,
         message=booking_cases.describe_screenshot(result),
     )
+
+
+# --- Google Maps places ------------------------------------------------------------------
+
+
+class ReviewOut(Model):
+    rating: int | None
+    text: str
+    author: str | None
+    author_url: str | None
+    when: str | None
+
+
+class PlaceOut(Model):
+    """A place as Google Maps shows it. Fetched when shown, never stored (but its id)."""
+
+    id: str
+    name: str
+    address: str | None
+    kind: str | None
+    rating: Decimal | None
+    ratings: int | None
+    price: str | None  # Inexpensive, Moderate…
+    maps_url: str | None
+    website: str | None
+    phone: str | None
+    summary: str | None
+    status: str | None
+    hours: list[str]  # the regular week, as Google words it
+    reviews: list[ReviewOut]
+
+
+def _place(p: Place) -> PlaceOut:
+    return PlaceOut(
+        id=p.id,
+        name=p.name,
+        address=p.address,
+        kind=p.kind,
+        rating=p.rating,
+        ratings=p.ratings,
+        price=p.price,
+        maps_url=p.maps_url,
+        website=p.website,
+        phone=p.phone,
+        summary=p.summary,
+        status=p.status,
+        hours=list(p.hours),
+        reviews=[
+            ReviewOut(
+                rating=r.rating, text=r.text, author=r.author, author_url=r.author_url, when=r.when
+            )
+            for r in p.reviews
+        ],
+    )
+
+
+def _places(web: WebRuntime) -> Places:
+    if web.places is None:
+        raise NotFound("Google Maps places aren't set up")
+    return web.places
+
+
+_SILENT = "Google Maps isn't answering right now; try again in a bit."
+
+
+@router.get("/places/search")
+async def search_places(
+    auth: Auth,
+    web: Runtime,
+    q: str = Query(min_length=1, max_length=120),
+    trip_id: str | None = None,
+) -> list[PlaceOut]:
+    """Places on Google Maps, narrowed to the trip's destination when one is given."""
+    places = _places(web)
+    destination = None
+    if trip_id:
+        trip = await trip_cases.get_trip(web.uow(), auth.user.id, _uuid(trip_id))
+        destination = trip.destination
+    try:
+        found = await places.search(auth.user.id, place_cases.query_for(q, destination))
+    except PlacesError as exc:
+        raise HTTPException(status_code=502, detail=_SILENT) from exc
+    return [_place(p) for p in found]
+
+
+@router.get("/places/{place_id}")
+async def get_place(place_id: str, auth: Auth, web: Runtime) -> PlaceOut:
+    """One place with its regular hours and a few reviews."""
+    try:
+        return _place(await _places(web).details(auth.user.id, place_id))
+    except PlacesError as exc:
+        raise HTTPException(status_code=502, detail=_SILENT) from exc
+
+
+class LinkedPlaceOut(Model):
+    booking_id: UUID
+    place: PlaceOut
+    warning: str | None  # usually closed that day, or not open at the planned time
+
+
+@router.get("/trips/{trip_id}/places")
+async def trip_places(trip_id: str, auth: Auth, web: Runtime) -> list[LinkedPlaceOut]:
+    """Google Maps details for the itinerary entries linked to a place."""
+    found = await place_cases.trip_places(web.uow(), _places(web), auth.user.id, _uuid(trip_id))
+    return [
+        LinkedPlaceOut(booking_id=f.booking_id, place=_place(f.place), warning=f.warning)
+        for f in found
+    ]
+
+
+class PlaceLinkIn(Model):
+    place_id: str | None = Field(None, max_length=512)  # None unlinks
+
+
+@router.put("/bookings/{booking_id}/place")
+async def link_place(booking_id: str, body: PlaceLinkIn, auth: Auth, web: Runtime) -> BookingOut:
+    booking = await place_cases.link_place(
+        web.uow(), auth.user.id, _uuid(booking_id, "booking"), body.place_id
+    )
+    return _booking(booking)

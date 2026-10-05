@@ -299,6 +299,9 @@ async def edit_booking(
         current = await uow.trips.get_booking(user_id, booking_id)
         if current is None:
             raise NotFound("no booking with that id")
+        if "place_id" not in details and draft.kind is current.draft.kind:
+            # An edit that doesn't mention the Google Maps place keeps it.
+            draft = replace(draft, place_id=current.draft.place_id)
         changed = replace(current, draft=draft, cost=cost)
         await uow.trips.update_booking(changed)
         await uow.commit()

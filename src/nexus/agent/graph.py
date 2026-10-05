@@ -43,6 +43,7 @@ from nexus.application.categories import list_categories
 from nexus.application.category_rules import list_rules
 from nexus.application.fx import RateSource
 from nexus.application.inbound import log_capability_gap
+from nexus.application.places import Places
 from nexus.application.users import get_user
 from nexus.domain.errors import DuplicateSource, InvalidInput, NexusError
 from nexus.domain.ledger import User, UserId
@@ -118,6 +119,8 @@ class AgentDeps:
     skill_tools: Mapping[str, Sequence[str]] | None = None
     # The departments, for tools that start a department's run; None: none can.
     departments: department_cases.Departments | None = None
+    # Google Maps places for trips; None: not set up.
+    places: Places | None = None
 
 
 def strip_ids(text: str) -> str:
@@ -195,6 +198,7 @@ class AgentGraph:
             connect_link=self.deps.connect_link,
             forward_address=self.deps.forward_address,
             departments=self.deps.departments,
+            places=self.deps.places,
         )
 
     async def _prompt(self, ctx: ToolContext, state: AgentState) -> str:

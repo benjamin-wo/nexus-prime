@@ -717,6 +717,22 @@ CASES: tuple[Case, ...] = (
         unchanged=True,
     ),
     Case(
+        "trip-find-places",
+        "ask",
+        _t("find good ramen near Shinjuku for my Japan trip"),
+        calls=(Call("find_places", {"query": Has("ramen")}),),
+        forbid=("add_to_itinerary", "research_trip"),
+        unchanged=True,
+    ),
+    Case(
+        "trip-place-reviews",
+        "ask",
+        _t("what do the reviews say about Ichiran Shibuya? is it open on Mondays?"),
+        calls=(Call("place_info", {"place": Has("ichiran")}),),
+        forbid=("add_to_itinerary",),
+        unchanged=True,
+    ),
+    Case(
         "trip-set-aside",
         "log",
         _t("put aside 400 each payday for the japan trip"),

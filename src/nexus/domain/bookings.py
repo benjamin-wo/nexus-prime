@@ -17,6 +17,7 @@ from uuid import UUID
 
 from nexus.domain.ledger import UserId
 from nexus.domain.money import Money
+from nexus.domain.places import place_id as _place_id
 from nexus.domain.trips import Trip, TripStatus, clean_notes, hide_private
 
 MAX_SEGMENTS = 6
@@ -179,6 +180,7 @@ class BookingDraft:
     reference: str | None = None  # the booking or confirmation number, the user's own
     booked_via: str | None = None  # where it was booked: the airline, Agoda, Klook
     category: str | None = None  # a plan's kind: Food, Sight, Shopping
+    place_id: str | None = None  # its Google Maps place, for a plan or hotel
 
     @property
     def starts(self) -> date | None:
@@ -235,6 +237,7 @@ class BookingDraft:
             "reference": self.reference,
             "booked_via": self.booked_via,
             "category": self.category,
+            "place_id": self.place_id,
         }
 
     @classmethod
@@ -261,6 +264,7 @@ class BookingDraft:
                 reference=_reference(data.get("reference")),
                 booked_via=_text(data.get("booked_via")),
                 category=_text(data.get("category"), limit=MAX_CATEGORY),
+                place_id=_place_id(data.get("place_id")),
             )
             # Without a day, it's a place to visit on the trip, not yet on a day.
             return plan if plan.name else None
@@ -293,6 +297,7 @@ class BookingDraft:
             note=_note(data.get("note")),
             reference=_reference(data.get("reference")),
             booked_via=_text(data.get("booked_via")),
+            place_id=_place_id(data.get("place_id")) if kind is BookingKind.HOTEL else None,
         )
         return draft if draft.starts else None
 
