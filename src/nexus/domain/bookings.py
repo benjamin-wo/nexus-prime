@@ -17,10 +17,11 @@ from uuid import UUID
 
 from nexus.domain.ledger import UserId
 from nexus.domain.money import Money
-from nexus.domain.trips import Trip, TripStatus
+from nexus.domain.trips import Trip, TripStatus, clean_notes
 
 MAX_SEGMENTS = 6
 MAX_TEXT = 120
+MAX_NOTE = 300
 # A booking up to this many days before a trip starts (an overnight flight out)
 # still belongs to it.
 EARLY_DAYS = 1
@@ -36,6 +37,7 @@ class BookingKind(StrEnum):
     FLIGHT = "flight"
     HOTEL = "hotel"
     RAIL = "rail"
+    ACTIVITY = "activity"  # a plan the user adds: a dinner, a tour, a day trip
 
 
 # Anything that looks like a reference, ticket, passport or loyalty number.
@@ -60,11 +62,11 @@ def mask(text: str) -> str:
     return text
 
 
-def _text(value: object, *, keep_numbers: bool = False) -> str | None:
+def _text(value: object, *, keep_numbers: bool = False, limit: int = MAX_TEXT) -> str | None:
     """A short, single-line, masked string, or None."""
     if not isinstance(value, str):
         return None
-    cleaned = " ".join(value.split())[:MAX_TEXT].strip()
+    cleaned = " ".join(value.split())[:limit].strip()
     if not cleaned:
         return None
     if keep_numbers:
@@ -117,6 +119,23 @@ def _when(value: object) -> datetime | None:
     return parsed.replace(tzinfo=None, second=0, microsecond=0)
 
 
+def _note(value: object) -> str | None:
+    """The user's own note: one line, without personal numbers."""
+    if not isinstance(value, str):
+        return None
+    return clean_notes(" ".join(value.split())[:MAX_NOTE])
+
+
+def _clock(value: object) -> time | None:
+    """A time of day as written: "19:00", "7:30"."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        return time.fromisoformat(value.strip().zfill(5)[:5])
+    except ValueError:
+        return None
+
+
 def flight_number(value: object) -> str | None:
     if not isinstance(value, str):
         return None
@@ -166,12 +185,18 @@ class BookingDraft:
     provider: str | None  # the airline, hotel or rail operator
     segments: tuple[Segment, ...]  # flights or trains, in order
     hotel: str | None
-    address: str | None
+    address: str | None  # a hotel's, or where a plan happens
     check_in: date | None
     check_out: date | None
+    name: str | None = None  # a plan's
+    day: date | None = None  # a plan's
+    at: time | None = None  # a plan's time, if it has one
+    note: str | None = None  # the user's own note, on any kind
 
     @property
     def starts(self) -> date | None:
+        if self.kind is BookingKind.ACTIVITY:
+            return self.day
         if self.kind is BookingKind.HOTEL:
             return self.check_in
         days = [s.departs.date() for s in self.segments if s.departs]
@@ -179,6 +204,8 @@ class BookingDraft:
 
     @property
     def ends(self) -> date | None:
+        if self.kind is BookingKind.ACTIVITY:
+            return self.day
         if self.kind is BookingKind.HOTEL:
             return self.check_out or self.check_in
         times = [t for s in self.segments for t in (s.arrives or s.departs,) if t is not None]
@@ -186,6 +213,8 @@ class BookingDraft:
 
     @property
     def title(self) -> str:
+        if self.kind is BookingKind.ACTIVITY:
+            return self.name or "Plan"
         if self.kind is BookingKind.HOTEL:
             name = self.hotel or self.provider or "Hotel"
             if self.check_in and self.check_out:
@@ -212,6 +241,10 @@ class BookingDraft:
             "address": self.address,
             "check_in": self.check_in.isoformat() if self.check_in else None,
             "check_out": self.check_out.isoformat() if self.check_out else None,
+            "name": self.name,
+            "day": self.day.isoformat() if self.day else None,
+            "at": self.at.isoformat(timespec="minutes") if self.at else None,
+            "note": self.note,
         }
 
     @classmethod
@@ -222,6 +255,21 @@ class BookingDraft:
             kind = BookingKind(str(data.get("kind", "")).lower())
         except ValueError:
             return None
+        if kind is BookingKind.ACTIVITY:
+            plan = cls(
+                kind=kind,
+                provider=None,
+                segments=(),
+                hotel=None,
+                address=_text(data.get("address"), keep_numbers=True),
+                check_in=None,
+                check_out=None,
+                name=_text(data.get("name")),
+                day=_day(data.get("day")),
+                at=_clock(data.get("at")),
+                note=_note(data.get("note")),
+            )
+            return plan if plan.day and plan.name else None
         number = flight_number if kind is BookingKind.FLIGHT else train_number
         raw = data.get("segments")
         segments = tuple(
@@ -250,10 +298,17 @@ class BookingDraft:
             else None,
             check_in=check_in if kind is BookingKind.HOTEL else None,
             check_out=check_out if kind is BookingKind.HOTEL else None,
+            note=_note(data.get("note")),
         )
         return draft if draft.starts else None
 
     def describe(self) -> str:
+        if self.kind is BookingKind.ACTIVITY:
+            when = f"{self.day:%a %d %b}" if self.day else ""
+            if self.at:
+                when += f" {self.at:%H:%M}"
+            where = f", {self.address}" if self.address else ""
+            return f"plan ({self.title}, {when}{where})"
         if self.kind is BookingKind.HOTEL:
             when = ""
             if self.check_in:

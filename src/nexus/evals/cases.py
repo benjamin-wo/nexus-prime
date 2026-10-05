@@ -682,6 +682,20 @@ CASES: tuple[Case, ...] = (
         unchanged=True,
     ),
     Case(
+        "itinerary-add-plan",
+        "log",
+        _t("add dinner at Sushi Ten on 12 Dec at 7pm to my Japan trip"),
+        calls=(Call("add_to_itinerary", {"kind": "activity", "name": Has("sushi ten")}),),
+        confirms=True,
+    ),
+    Case(
+        "trip-note",
+        "log",
+        _t("note for the Japan trip: bring a power adapter"),
+        calls=(Call("update_trip", {"notes": Has("adapter")}),),
+        confirms=True,
+    ),
+    Case(
         "research-asks-first",
         "clarify",
         _t("I want to go to Japan in January"),

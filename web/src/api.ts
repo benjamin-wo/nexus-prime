@@ -458,13 +458,14 @@ export type Trip = {
   status: "upcoming" | "ongoing" | "finished";
   days_until: number;
   day_number: number | null;
+  notes: string | null;
 };
 
 /** A flight, hotel or train booking read from email. Times are local as booked. */
 export type Booking = {
   id: string;
   trip_id: string | null;
-  kind: "flight" | "hotel" | "rail";
+  kind: "flight" | "hotel" | "rail" | "activity";
   title: string;
   provider: string | null;
   starts: string;
@@ -474,8 +475,13 @@ export type Booking = {
   address: string | null;
   check_in: string | null;
   check_out: string | null;
+  name: string | null;
+  day: string | null;
+  at: string | null;
+  note: string | null;
   cost: Money | null;
   logged: boolean;
+  manual: boolean;
 };
 
 export type TripDetail = {

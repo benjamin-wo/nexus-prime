@@ -1484,8 +1484,34 @@ async def test_trips_on_the_web(world: World) -> None:
     assert (await owner.send("DELETE", f"{path}/expenses/{taxi_id}")).status_code == 204
     assert (await owner.get(path)).json()["items"] == []
 
-    edited = await owner.send("PUT", path, {**body, "budget": None})
-    assert edited.json()["budget"] is None
+    edited = await owner.send("PUT", path, {**body, "budget": None, "notes": "Pack an adapter"})
+    assert edited.json()["budget"] is None and edited.json()["notes"] == "Pack an adapter"
+
+    plan = {
+        "kind": "activity",
+        "name": "Palace tour",
+        "day": "2026-09-29",
+        "at": "10:00",
+        "cost": "20",
+    }
+    added = await owner.send("POST", f"{path}/bookings", plan)
+    assert added.status_code == 201
+    item = added.json()
+    assert (item["kind"], item["title"], item["at"], item["manual"]) == (
+        "activity",
+        "Palace tour",
+        "10:00",
+        True,
+    )
+    assert item["cost"] == {"amount": "20.0000", "currency": "SGD"}
+    moved = await owner.send(
+        "PUT", f"/api/travel/bookings/{item['id']}", {**plan, "day": "2026-09-30"}
+    )
+    assert moved.json()["day"] == "2026-09-30"
+    bad = await owner.send("POST", f"{path}/bookings", {"kind": "activity", "name": "No day"})
+    assert bad.status_code == 422
+    assert [b["title"] for b in (await owner.get(path)).json()["bookings"]] == ["Palace tour"]
+    assert (await owner.send("DELETE", f"/api/travel/bookings/{item['id']}")).status_code == 204
 
     assert (await owner.send("DELETE", path)).status_code == 204
     assert (await owner.get(path)).status_code == 404

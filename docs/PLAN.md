@@ -295,6 +295,8 @@ The first step from expense tracker towards a lifestyle assistant. A trip is a m
 
 Needs a search-results API key (a free tier to start) for M11c only; M11a and M11b need no new keys. About S$0.10–0.30 of searches and model calls per research run. Done when a trip made by hand tracks its spending and set-aside correctly, a booking email lands on the right trip with nothing sensitive stored, and the Japan example produces a plan whose dates and prices each trace to a source, with the injection evals passing.
 
+- **Itinerary and notes by hand** (done after M11c): plans, flights, hotels and trains added on the trip page or in chat, any entry editable, a day-by-day itinerary, and free notes on a trip (migration 0029).
+
 **After M11:**
 - **Price watches.** Watch a flight or hotel, checked weekly within the search API's free tier, capped at a few watches. One message when the price drops, with a one-tap stop.
 - **A day-by-day itinerary** with opening hours.

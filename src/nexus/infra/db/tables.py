@@ -774,6 +774,7 @@ trips = Table(
     Column("planned", JSONB, nullable=False),
     Column("created_at", TZ, nullable=False),
     Column("updated_at", TZ, nullable=False),
+    Column("notes", Text),  # the user's own: what to pack, who to meet (M11 follow-up)
     ForeignKeyConstraint(["user_id"], ["users.id"]),
     UniqueConstraint("id", "user_id"),
     CheckConstraint("end_on >= start_on", name="dates"),
@@ -801,8 +802,9 @@ trip_links = Table(
 )
 
 
-# A flight, hotel or train booking read from email (M11b). Only what's needed to
-# travel; references and personal numbers are never stored.
+# A flight, hotel or train booking read from email (M11b), or an itinerary entry the
+# user added by hand (no email_id), including plans. Only what's needed to travel;
+# references and personal numbers are never stored.
 trip_bookings = Table(
     "trip_bookings",
     metadata,
@@ -825,7 +827,7 @@ trip_bookings = Table(
         ["transaction_id", "user_id"], ["transactions.id", "transactions.user_id"]
     ),
     UniqueConstraint("user_id", "email_id"),
-    CheckConstraint("kind IN ('flight', 'hotel', 'rail')", name="kind"),
+    CheckConstraint("kind IN ('flight', 'hotel', 'rail', 'activity')", name="kind"),
     CheckConstraint("(amount IS NULL) = (currency IS NULL)", name="cost"),
     Index("ix_trip_bookings_user_id_start_on", "user_id", "start_on"),
 )
