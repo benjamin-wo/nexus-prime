@@ -6,19 +6,20 @@
 ![mypy strict](https://img.shields.io/badge/mypy-strict-2a6db2)
 ![Postgres 16](https://img.shields.io/badge/postgres-16-336791)
 
-**A personal finance assistant you talk to.** Text the Telegram bot "lunch at Maxwell 8.40" or send it a receipt photo, and it's in your ledger. Open the web cockpit, on desktop or inside Telegram as a Mini App, to see where the month went. Budgets, bills and payday take care of themselves in the background.
+**A personal finance assistant you talk to.** Text the Telegram bot "lunch at Maxwell 8.40" or send it a receipt photo, and it's in your ledger. Open the web cockpit, on desktop or inside Telegram as a Mini App, and Nexus opens with a brief of your month. Three departments share one assistant: **Accounting** (spending, budgets, bills, payday), **Investment** (holdings, research and trade plans; it never trades) and **Travel** (trips, bookings, itineraries; it never books).
 
 One LLM agent serves both surfaces, but the parts that must be right, like money, identity and who can see what, never depend on the model.
 
 <p align="center">
-  <img src="docs/screenshots/dashboard.png" alt="Dashboard on a phone: spent, received and net for the month in SGD, spending by category" width="30%">
-  <img src="docs/screenshots/ledger.png" alt="Ledger on a phone: transactions with a USD charge shown converted to SGD at its day's rate" width="30%">
-  <img src="docs/screenshots/plan.png" alt="Plan page on a phone: budget meters, upcoming bills and payday" width="30%">
+  <img src="docs/screenshots/home.png" alt="Home on a phone: Nexus's brief of the month with suggested questions, and six months of spending" width="30%">
+  <img src="docs/screenshots/ledger.png" alt="Ledger on a phone: filters, search and transactions, one with a receipt" width="30%">
+  <img src="docs/screenshots/trip.png" alt="A trip on a phone: a cover photo with dates and companions, tabs, and the next flight as a boarding pass" width="30%">
 </p>
 <p align="center"><sub>Screenshots use sample data.</sub></p>
 
 ## What it does
 
+**Accounting**
 - **Capture in a sentence.**
   - "grab 12 yesterday", "coffee 5.50 USD", "split dinner 120 with Ann and Ben", "Ann paid me back 40".
   - Receipt photos are read by a vision model and logged after you confirm. The photo is kept privately with the expense.
@@ -28,7 +29,7 @@ One LLM agent serves both surfaces, but the parts that must be right, like money
   - Totals are in your home currency.
   - Each foreign-currency row shows its converted amount, the rate used and the day that rate was published.
   - An amount with no rate is flagged, never guessed.
-- **Trips:** a budget and spending per trip, set-aside each payday, a day-by-day itinerary filled from booking emails, screenshots (a booking app, an e-ticket, a day plan) or by hand, with each booking's reference and where it was booked.
+- **Images, files and albums on Telegram:** a quick first look decides what each one is (a receipt, a bill, a payslip, a portfolio, a booking, a chart) and sends it to the right reader; a question about an image gets an answer instead of an entry. Nothing read from an image changes your data unless your own words ask it to.
 - **Every expense has a category.** Twelve common ones to start (Dining Out, Groceries, Transport, Shopping, Bills & Utilities, Socialising, Health, Travel, Activities, Subscriptions & Software, Income, Other), and you can add, rename, archive or merge your own from chat or the Settings page (the cog in the nav). A category you name wins, then a rule, then the model's best guess; anything left goes to Other.
 - **Category rules you can see.** "grab" → Transport files new expenses automatically, and "why is this in Transport?" gets a real answer. Correcting a category offers a rule change, but never makes one without asking.
 - **Budgets:** monthly limits, overall or per category, with Telegram alerts at 50%, 80% and 100%, each sent once.
@@ -39,7 +40,21 @@ One LLM agent serves both surfaces, but the parts that must be right, like money
 - **Payday:**
   - A check-in on payday, with weekend paydays moved to Friday.
   - Your usual salary changes only when you confirm it.
-- **Web cockpit:** dashboard, filterable ledger, CSV export, IOUs, and a chat drawer with the same agent. It is mobile-first and opens inside Telegram already signed in.
+- **Statements and duplicates:** import a bank statement (CSV, or PDF with its password used once and never kept), with saved column mappings; likely duplicates from email, statements and chat are paired for one tap to merge or keep.
+- **Memory:** Nexus remembers facts and preferences about you across conversations, shown and deletable in Settings, and every reply sees a snapshot of your money.
+
+**Investment** (research only; it never trades or connects to a broker)
+- **Holdings** from a broker screenshot or typed trades, valued daily in your home currency, with gains from sales and dividends received and expected.
+- **Watchlist and stock pages:** price levels worked out in code (moving averages, RSI, support and resistance, 52-week range), company news and earnings dates, and odds from the stock's own moves.
+- **Research plans:** a small team of models writes an entry, stop and targets with the odds of each, checked against the numbers; plans are then followed daily, with alerts and a track record.
+
+**Travel** (it never books anything)
+- **Trips:** a budget and spending per trip, money set aside each payday, settling up with companions, and research of a trip idea ("Japan in January") with sourced prices and whether it fits your cash flow.
+- **Itinerary:** filled from booking emails, screenshots (a booking app, an e-ticket, a day plan) or by hand, day by day, with each booking's reference, Google Maps ratings, hours, photos and closed-day warnings, and reminders for passports, check-in and the hotel's address.
+- **A trip page that reads like a travel app:** a famous view of the destination in the season you go (from Wikimedia Commons, credited), the next booking as a boarding pass, the weather (forecast, or the same dates in recent years), a packing list with suggestions, and a numbered day rail.
+
+**Everywhere**
+- **Web cockpit:** Home with Nexus's brief and suggested questions, a page per department, a filterable ledger with CSV export, and a chat drawer that keeps one running conversation, shared with Telegram. It is mobile-first and opens inside Telegram already signed in.
 - **Private by construction.** It is invite-only, and each user's data is isolated by the database schema itself, not just by application code.
 
 ## Architecture
@@ -97,7 +112,8 @@ The code follows a clean, layered architecture. `domain` holds pure rules with n
 | Backend | Python 3.12, FastAPI, SQLAlchemy 2 (async Core, asyncpg), Pydantic v2, Alembic |
 | Agent | LangGraph with a Postgres checkpointer, human-in-the-loop interrupts, skills loaded on demand, provider-agnostic LLM adapter |
 | Frontend | React 19, TypeScript, Vite, TanStack Query, React Router |
-| Data | PostgreSQL 16: 22 tables, 10 migrations, a job queue in the same database; receipts in a private S3-compatible bucket |
+| Data | PostgreSQL 16: 46 tables, 34 migrations, a job queue in the same database; receipts in a private S3-compatible bucket |
+| Outside data | Frankfurter (FX), Tiingo (prices), Finnhub (news), SerpApi and web search (trip research, quarantined), Google Places, Wikipedia and Wikimedia Commons (destination photos), Open-Meteo (weather) |
 | Channels | Telegram Bot API (webhook, inline buttons, Mini App), cookie sessions with CSRF |
 | Quality | ruff, mypy `--strict`, pytest, Vitest, Playwright, GitHub Actions |
 | Deploy | Docker multi-stage build on Railway; migrations run as a pre-deploy step and the app refuses to start on an unmigrated schema |
@@ -106,26 +122,29 @@ The code follows a clean, layered architecture. `domain` holds pure rules with n
 
 Every change goes through the same CI: lint, format, strict type-checking, and three test suites.
 
-- **330 Python tests.**
+- **828 Python tests.**
   - Unit tests cover pure rules: money arithmetic, budget thresholds at exact boundaries, due dates across short months and leap years, and paydays across weekends.
   - Integration tests run against a real Postgres, with a fresh database per test built by the real migrations.
   - A schema test fails if the migrations drift from the table definitions.
 - **Agent tests** use a scripted fake model, so conversations, confirmations and refusals are deterministic.
+- **An evaluation set** of real phrasings scores candidate models (pass rate, speed, cost) through OpenRouter, including prompt-injection cases for anything read from email, images or the web.
 - **Concurrency tests** race two job runners and assert each job runs exactly once.
-- **Playwright journeys**, 19 of them, run on desktop and phone viewports. They include a check that nothing overflows a 320px screen.
+- **Playwright journeys**, 52 of them, run on desktop and phone viewports. They include a check that nothing overflows a 320px screen.
 - **Vitest** covers the components, including a regression test for a React effect-cleanup crash found in production.
 
 ## Project layout
 
 ```
 src/nexus/
-  domain/        pure rules: Money, ledger policies, budgets, bills, paydays
-  application/   use cases (transactions, splits, budgets, bills, salary, FX, access) and ports
-  infra/         Postgres repositories and unit of work, Frankfurter client, LLM factory
-  agent/         kernel, LangGraph graph, tools, skills, service used by all channels
+  domain/        pure rules: money, ledger, budgets, bills, paydays, trips, holdings, levels, odds
+  application/   use cases and ports, one module per area, plus the department registry and runs
+  infra/         Postgres repositories and unit of work; clients for FX, prices, news, search,
+                 Google Places, Wikipedia photos, weather, email and storage; the LLM factory
+  agent/         kernel, LangGraph graph, tools, readers for receipts, screenshots and email
   channels/      Telegram webhook and client; web API, security, Mini App sign-in
   jobs/          job runner and handlers
-  skills/        agent skills (expenses, budgets, bills, salary) as Markdown
+  skills/        agent skills (expenses, budgets, bills, investments, trips, ...) as Markdown
+  evals/         the model evaluation set and runner
 web/             React cockpit, Vitest and Playwright tests
 migrations/      Alembic revisions
 tests/           unit and integration tests
@@ -150,10 +169,11 @@ The operations guide ([`docs/OPERATIONS.md`](docs/OPERATIONS.md)) covers the res
 
 The build follows [`docs/PLAN.md`](docs/PLAN.md). Each milestone ships to production as it lands.
 
-- **Done:** foundations, ledger and agent, Telegram, the migration from the old bot, the web cockpit, multi-currency, the job runtime, budgets, bills, payday, category rules, the receipt archive, Connect Gmail and forwarding addresses, subscriptions and the cash-flow calendar.
-- **Next:**
-  - a smarter assistant: a view of your money in every reply, questions about any part of the ledger, and memory of you across conversations (episodic, semantic and procedural), with the model chosen by an evaluation set;
-  - bank statement import (CSV, then PDF);
-  - a hardening pass: security review, load tests and a restore drill.
+- **Done:**
+  - Accounting: foundations, ledger and agent, Telegram, the migration from the old bot, the web cockpit, multi-currency, the job runtime, budgets, bills, payday, category rules, the receipt archive, Connect Gmail and forwarding addresses, subscriptions, the cash-flow calendar, a smarter assistant (money snapshot, ledger questions, memory, an evaluation set), statement import, duplicates, and a hardening pass (security review, load test, restore drill).
+  - Departments, Home, and the orange-and-black redesign; images, files and albums on Telegram; a web chat that remembers.
+  - Investment: holdings, prices and valuation, watchlist, levels, news, odds, research plans and following them.
+  - Travel: trips, bookings from email and screenshots, reminders, trip research, Google Maps places, destination photos, weather and packing lists.
+- **Next:** whatever daily use turns up; see [`docs/PLAN.md`](docs/PLAN.md).
 
 See also [`CONTEXT.md`](CONTEXT.md) (glossary) and [`DESIGN.md`](DESIGN.md) (design system).
