@@ -10,6 +10,7 @@ home currency at the rate for the day it was spent.
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
+from enum import StrEnum
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
@@ -18,9 +19,11 @@ from nexus.application.destination_photos import queue_photo
 from nexus.application.fx import RateSource
 from nexus.application.ports import UnitOfWork
 from nexus.domain.bookings import EARLY_DAYS, Booking, BookingKind
+from nexus.domain.destination_photos import first_place, place_key, season
 from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.ledger import Direction, User, UserId, same_person
 from nexus.domain.money import Money
+from nexus.domain.packing import Outlook, PackItem, clean_list, suggestions
 from nexus.domain.planning import paydays
 from nexus.domain.trips import (
     MAX_TRIPS,
@@ -40,6 +43,7 @@ from nexus.domain.trips import (
     clean_notes,
     clean_planned,
     describe_trip,
+    hide_private,
     home_amount,
     readiness,
     set_aside,
@@ -133,6 +137,7 @@ async def update_trip(
         if current is None:
             raise NotFound("no trip with that id")
         trip = _build(user, draft, trip_id, current.created_at, now, current.day_labels)
+        trip = replace(trip, photo_off=current.photo_off, packing=current.packing)
         await uow.trips.update_trip(trip, user.home_currency)
         if (trip.destination, trip.start) != (current.destination, current.start):
             # Somewhere or some season else: a new header photo.
@@ -530,3 +535,82 @@ def describe_view(view: TripView) -> list[str]:
             + "; ".join(f"{o.name} {', '.join(str(m) for m in o.amounts)}" for o in view.owed)
         )
     return lines
+
+
+async def _save_packing(
+    uow: UnitOfWork, user: User, current: Trip, items: list[PackItem], now: datetime
+) -> Trip:
+    # Without card or passport numbers, as in the notes.
+    private = [PackItem(hide_private(i.text), i.done) for i in items]
+    trip = replace(current, packing=clean_list(private), updated_at=now)
+    await uow.trips.set_packing(user.id, current.id, trip.packing, now)
+    await uow.commit()
+    return trip
+
+
+async def set_packing(
+    uow: UnitOfWork, user: User, trip_id: UUID, items: list[PackItem], *, now: datetime
+) -> Trip:
+    """Replaces the trip's packing list with the one given (ticks included)."""
+    async with uow:
+        current = await uow.trips.get_trip(user.id, trip_id)
+        if current is None:
+            raise NotFound("no trip with that id")
+        return await _save_packing(uow, user, current, items, now)
+
+
+async def suggest_packing(
+    uow: UnitOfWork,
+    user: User,
+    trip_id: UUID,
+    *,
+    latitude: float | None,
+    outlook: Outlook | None,
+    now: datetime,
+) -> Trip:
+    """Adds the usual things for a trip like this that aren't on the list yet."""
+    async with uow:
+        current = await uow.trips.get_trip(user.id, trip_id)
+        if current is None:
+            raise NotFound("no trip with that id")
+        wanted = suggestions(
+            abroad=current.currency != user.home_currency,
+            nights=current.days - 1,
+            season=season(current.start, latitude),
+            outlook=outlook,
+        )
+        have = [i.text.casefold() for i in current.packing]
+        # "Passport" is there already when the list has "Passport •••" or "passports".
+        added = [PackItem(t) for t in wanted if not any(h.startswith(t.casefold()) for h in have)]
+        return await _save_packing(uow, user, current, [*current.packing, *added], now)
+
+
+class PhotoChoice(StrEnum):
+    NEXT = "next"  # another photo of the place
+    OFF = "off"  # no photo, the plain cover
+    ON = "on"  # photos again
+
+
+async def choose_photo(
+    uow: UnitOfWork, user: User, trip_id: UUID, choice: PhotoChoice, *, now: datetime
+) -> Trip:
+    """Shows the next of the place's photos (the chosen one, then its runners-up, then
+    other seasons'), none at all, or photos again."""
+    async with uow:
+        trip = await uow.trips.get_trip(user.id, trip_id)
+        if trip is None:
+            raise NotFound("no trip with that id")
+        photo_id, off = trip.photo_id, choice is PhotoChoice.OFF
+        if choice is PhotoChoice.NEXT:
+            key = place_key(first_place(trip.destination))
+            photos = [p for p in await uow.trips.place_photos(key) if p.found]
+            current = next((p for p in photos if p.id == trip.photo_id), None)
+            of = current.season if current else None
+            photos.sort(key=lambda p: (p.season is not of, p.season.value, p.rank))
+            if not photos:
+                raise InvalidInput("there's no other photo of this place yet")
+            at = next((i for i, p in enumerate(photos) if p.id == trip.photo_id), -1)
+            photo_id = photos[(at + 1) % len(photos)].id
+        await uow.trips.set_photo_choice(user.id, trip_id, photo_id, off=off)
+        await uow.commit()
+    return replace(trip, photo_id=photo_id, photo_off=off, updated_at=now)

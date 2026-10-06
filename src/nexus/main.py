@@ -43,6 +43,7 @@ from nexus.application.ports import (
 )
 from nexus.application.research import NewsSource
 from nexus.application.travel_research import research_kind
+from nexus.application.weather import Weather, WeatherSource
 from nexus.channels.telegram import webhook as telegram_webhook
 from nexus.channels.telegram.client import HttpTelegramClient, TelegramClient
 from nexus.channels.web import api as web_api
@@ -81,6 +82,7 @@ from nexus.infra.places.google import GooglePlaces
 from nexus.infra.search.openrouter_web import OpenRouterWebSearch
 from nexus.infra.search.serpapi import SerpApiTravel
 from nexus.infra.storage.s3 import S3ReceiptStore
+from nexus.infra.weather.open_meteo import OpenMeteo
 from nexus.jobs.handlers import MEMORY_UPDATE, SCHEDULES, build_handlers
 from nexus.jobs.runner import JobRunner
 from nexus.settings import Environment, Settings, get_settings
@@ -110,6 +112,7 @@ class Overrides:
     forwarding: ForwardingInboxes | None = None
     email_reader: EmailReader | None = None
     photos: PhotoFinder | None = None
+    weather: WeatherSource | None = None
 
 
 def _receipt_store(settings: Settings, overrides: Overrides) -> ReceiptStore | None:
@@ -176,6 +179,14 @@ async def _places(
         http = await stack.enter_async_context(httpx.AsyncClient())
         source = GooglePlaces(http, key.get_secret_value())
     return Places(source, clock=clock)
+
+
+async def _weather_source(overrides: Overrides, stack: AsyncExitStack) -> WeatherSource:
+    """Trip weather from Open-Meteo (no key needed)."""
+    if overrides.weather is not None:
+        return overrides.weather
+    http = await stack.enter_async_context(httpx.AsyncClient())
+    return OpenMeteo(http)
 
 
 async def _photos(
@@ -519,6 +530,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                         prices=prices is not None,
                         news=news is not None,
                         places=places,
+                        weather=Weather(await _weather_source(extra, stack), clock=clock),
                     )
                     menu = asyncio.create_task(_set_menu_button(telegram.client, origin))
                     stack.push_async_callback(_finish, menu)

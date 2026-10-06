@@ -47,6 +47,7 @@ from tests.fakes import (
     FakeRates,
     FakeTelegram,
     FakeTripReader,
+    FakeWeather,
     ScriptedModel,
     call,
     fake_email,
@@ -162,6 +163,7 @@ async def world(engine: AsyncEngine, empty_database_url: str) -> AsyncIterator[W
             prices=FakePrices(),
             news=FakeNews(),
             places=FakePlaces([PLACE]),
+            weather=FakeWeather(),
         ),
     )
     async with app.router.lifespan_context(app):
@@ -1775,3 +1777,54 @@ async def test_trip_header_photos_are_served_from_here(world: World) -> None:
     assert (await owner.get("/api/travel/photos/not-an-id")).status_code == 404
     stranger = world.browser()
     assert (await stranger.get(photo["url"])).status_code == 401
+
+
+async def test_trip_weather_packing_cover_and_place_photos(world: World) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+    soon = (world.clock.now + timedelta(days=5)).date()
+    later = (world.clock.now + timedelta(days=60)).date()
+    body = {
+        "destination": "Kyoto",
+        "start": str(soon),
+        "end": str(soon + timedelta(days=3)),
+        "currency": "JPY",
+    }
+    trip = (await owner.send("POST", "/api/travel/trips", body)).json()
+    path = f"/api/travel/trips/{trip['id']}"
+
+    # Weather: the forecast for a trip five days off, typical weather for a far one.
+    weather = (await owner.get(f"{path}/weather")).json()
+    assert weather["kind"] == "forecast" and weather["place"] == "Kyoto, Exampleland"
+    assert len(weather["days"]) == 4 and weather["days"][1]["summary"] == "Light rain"
+    far = {**body, "start": str(later), "end": str(later + timedelta(days=2))}
+    far_trip = (await owner.send("POST", "/api/travel/trips", far)).json()
+    typical = (await owner.get(f"/api/travel/trips/{far_trip['id']}/weather")).json()
+    assert typical["kind"] == "typical" and typical["years"] == 3 and len(typical["days"]) == 3
+
+    # Packing: suggested from the trip and its weather, then ticked off.
+    suggested = (await owner.send("POST", f"{path}/packing/suggest")).json()
+    texts = [i["text"] for i in suggested["packing"]]
+    assert texts[0] == "Passport" and "Umbrella or rain jacket" in texts  # rain on day two
+    items = [{**i, "done": i["text"] == "Passport"} for i in suggested["packing"]]
+    ticked = (await owner.send("PUT", f"{path}/packing", {"items": items})).json()
+    assert ticked["packing"][0] == {"text": "Passport", "done": True}
+    assert (await owner.get(path)).json()["trip"]["packing"] == ticked["packing"]
+    too_many = [{"text": f"thing {n}"} for n in range(81)]
+    assert (await owner.send("PUT", f"{path}/packing", {"items": too_many})).status_code == 422
+
+    # The cover: no photo yet to switch to, but it can be turned off and on.
+    nothing = await owner.send("POST", f"{path}/photo", {"choice": "next"})
+    assert nothing.status_code == 422 and "no other photo" in nothing.text
+    off = (await owner.send("POST", f"{path}/photo", {"choice": "off"})).json()
+    assert off["photo_off"] is True and off["photo"] is None
+    on = (await owner.send("POST", f"{path}/photo", {"choice": "on"})).json()
+    assert on["photo_off"] is False
+
+    # A Google Maps place's thumbnail is served from here, with its author to credit.
+    place = (await owner.get(f"/api/travel/places/{PLACE.id}")).json()
+    assert place["photo_url"] == f"/api/travel/places/{PLACE.id}/photo"
+    assert place["photo_author"] == "A. Photographer"
+    photo = await owner.get(place["photo_url"])
+    assert photo.status_code == 200 and photo.headers["content-type"] == "image/jpeg"
+    assert photo.headers["cache-control"] == "private, max-age=1800"

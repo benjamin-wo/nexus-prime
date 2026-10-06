@@ -22,7 +22,7 @@ from nexus.application.ports import UnitOfWork
 from nexus.domain.bookings import Booking, BookingKind
 from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.ledger import UserId
-from nexus.domain.places import Place, place_id
+from nexus.domain.places import Place, PlacePhoto, place_id
 
 log = logging.getLogger(__name__)
 
@@ -33,6 +33,9 @@ CACHE_FOR = timedelta(minutes=30)
 CACHE_SIZE = 500
 # Lookups that reach Google, per user (cached answers don't count).
 LIMITS: Sequence[Window] = ((30, timedelta(minutes=1)), (200, timedelta(days=1)))
+# Photos fetched from Google, per user (billed per photo; cached ones don't count).
+PHOTO_LIMITS: Sequence[Window] = ((30, timedelta(minutes=1)), (100, timedelta(days=1)))
+PHOTO_CACHE_SIZE = 150
 
 
 class PlacesError(Exception):
@@ -44,6 +47,8 @@ class PlaceSource(Protocol):
 
     async def details(self, place_id: str) -> Place | None: ...
 
+    async def photo(self, name: str) -> tuple[bytes, str]: ...
+
 
 class Places:
     """Google lookups, cached briefly and capped per user."""
@@ -54,10 +59,12 @@ class Places:
         *,
         clock: Callable[[], datetime] = utcnow,
         limits: Sequence[Window] = LIMITS,
+        photo_limits: Sequence[Window] = PHOTO_LIMITS,
     ) -> None:
         self._source = source
         self._clock = clock
-        self._limiter = RateLimiter({"places": limits}, clock=clock)
+        self._limiter = RateLimiter({"places": limits, "photos": photo_limits}, clock=clock)
+        self._photos: OrderedDict[str, tuple[datetime, bytes, str]] = OrderedDict()
         self._cache: OrderedDict[str, tuple[datetime, object]] = OrderedDict()
 
     def _cached(self, key: str) -> object | None:
@@ -107,6 +114,25 @@ class Places:
             raise NotFound("Google Maps doesn't know that place")
         self._keep(f"place:{pid}", found)
         return found
+
+    async def photo(self, user_id: UserId, wanted: str) -> tuple[bytes, str, PlacePhoto]:
+        """A place's first photo, for a thumbnail: its bytes, type and who to credit.
+        Kept in memory for a short while like the details, never stored."""
+        place = await self.details(user_id, wanted)
+        if place.photo is None:
+            raise NotFound("Google Maps has no photo of that place")
+        hit = self._photos.get(place.id)
+        if hit is not None and self._clock() - hit[0] < CACHE_FOR:
+            self._photos.move_to_end(place.id)
+            return hit[1], hit[2], place.photo
+        if not self._limiter.allow("photos", user_id):
+            raise InvalidInput("that's a lot of Google Maps photos at once; try again later")
+        data, mime = await self._source.photo(place.photo.name)
+        self._photos[place.id] = (self._clock(), data, mime)
+        self._photos.move_to_end(place.id)
+        while len(self._photos) > PHOTO_CACHE_SIZE:
+            self._photos.popitem(last=False)
+        return data, mime, place.photo
 
     async def many(self, user_id: UserId, ids: Sequence[str]) -> dict[str, Place]:
         """Details for several places at once; any that fail are left out."""

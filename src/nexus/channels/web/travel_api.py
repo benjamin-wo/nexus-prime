@@ -3,6 +3,7 @@ and settling up. Nothing here books or buys anything."""
 
 import base64
 import binascii
+import logging
 from datetime import date
 from decimal import Decimal
 from typing import Any
@@ -17,6 +18,7 @@ from nexus.application import places as place_cases
 from nexus.application import travel_research as research_cases
 from nexus.application import trips as trip_cases
 from nexus.application.places import Places, PlacesError
+from nexus.application.weather import WeatherError
 from nexus.channels.web.api import MoneyOut, money
 from nexus.channels.web.investments_api import MAX_IMAGE_CHARS
 from nexus.channels.web.security import Auth, Runtime, WebRuntime, limit
@@ -25,8 +27,12 @@ from nexus.domain.destination_photos import DestinationPhoto
 from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.ledger import User
 from nexus.domain.money import Money
+from nexus.domain.packing import MAX_ITEM, MAX_ITEMS, PackItem
 from nexus.domain.places import Place
 from nexus.domain.trips import MAX_COMPANIONS, MAX_DAY_LABEL, MAX_NOTES, MAX_PLANNED, Trip
+from nexus.domain.weather import YEARS, TripWeather, describe
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/travel")
 
@@ -66,6 +72,11 @@ def _photo(photo: DestinationPhoto | None) -> PhotoOut | None:
     )
 
 
+class PackItemOut(Model):
+    text: str
+    done: bool
+
+
 class TripOut(Model):
     id: UUID
     destination: str
@@ -83,6 +94,8 @@ class TripOut(Model):
     notes: str | None
     day_labels: dict[date, str]  # a label per day, such as the city
     photo: PhotoOut | None = None  # a famous view of where it goes, once found
+    photo_off: bool = False  # the user chose to show no photo
+    packing: list[PackItemOut] = Field(default_factory=list)
 
 
 def _trip(trip: Trip, today: date, photos: dict[UUID, DestinationPhoto] | None = None) -> TripOut:
@@ -102,7 +115,13 @@ def _trip(trip: Trip, today: date, photos: dict[UUID, DestinationPhoto] | None =
         day_number=trip.day_number(today),
         notes=trip.notes,
         day_labels=dict(sorted(trip.day_labels.items())),
-        photo=_photo((photos or {}).get(trip.photo_id)) if trip.photo_id else None,
+        photo=(
+            _photo((photos or {}).get(trip.photo_id))
+            if trip.photo_id and not trip.photo_off
+            else None
+        ),
+        photo_off=trip.photo_off,
+        packing=[PackItemOut(text=i.text, done=i.done) for i in trip.packing],
     )
 
 
@@ -650,6 +669,9 @@ class PlaceOut(Model):
     status: str | None
     hours: list[str]  # the regular week, as Google words it
     reviews: list[ReviewOut]
+    photo_url: str | None = None  # a thumbnail served by this API
+    photo_author: str | None = None  # who took it, credited where it's shown
+    photo_author_url: str | None = None
 
 
 def _place(p: Place) -> PlaceOut:
@@ -673,6 +695,9 @@ def _place(p: Place) -> PlaceOut:
             )
             for r in p.reviews
         ],
+        photo_url=f"/api/travel/places/{p.id}/photo" if p.photo else None,
+        photo_author=p.photo.author if p.photo else None,
+        photo_author_url=p.photo.author_url if p.photo else None,
     )
 
 
@@ -714,6 +739,20 @@ async def get_place(place_id: str, auth: Auth, web: Runtime) -> PlaceOut:
         raise HTTPException(status_code=502, detail=_SILENT) from exc
 
 
+@router.get("/places/{place_id}/photo")
+async def place_photo(place_id: str, auth: Auth, web: Runtime) -> Response:
+    """A place's thumbnail from Google Maps, fetched for the page (never stored)."""
+    try:
+        data, mime, _ = await _places(web).photo(auth.user.id, place_id)
+    except PlacesError as exc:
+        raise HTTPException(status_code=502, detail=_SILENT) from exc
+    return Response(
+        data,
+        media_type=mime,
+        headers={"Cache-Control": "private, max-age=1800", "X-Content-Type-Options": "nosniff"},
+    )
+
+
 class LinkedPlaceOut(Model):
     booking_id: UUID
     place: PlaceOut
@@ -740,3 +779,115 @@ async def link_place(booking_id: str, body: PlaceLinkIn, auth: Auth, web: Runtim
         web.uow(), auth.user.id, _uuid(booking_id, "booking"), body.place_id
     )
     return _booking(booking)
+
+
+# --- cover photo, packing list and weather ------------------------------------------------
+
+
+async def _with_photo(web: WebRuntime, trip: Trip, today: date) -> TripOut:
+    return _trip(trip, today, await photo_cases.photos_of(web.uow(), [trip]))
+
+
+class PhotoChoiceIn(Model):
+    choice: trip_cases.PhotoChoice
+
+
+@router.post("/trips/{trip_id}/photo")
+async def choose_photo(trip_id: str, body: PhotoChoiceIn, auth: Auth, web: Runtime) -> TripOut:
+    """Another photo of the place, no photo, or photos again."""
+    trip = await trip_cases.choose_photo(
+        web.uow(), auth.user, _uuid(trip_id), body.choice, now=web.clock()
+    )
+    return await _with_photo(web, trip, _today(auth, web))
+
+
+class PackItemIn(Model):
+    text: str = Field(max_length=MAX_ITEM)
+    done: bool = False
+
+
+class PackingIn(Model):
+    items: list[PackItemIn] = Field(max_length=MAX_ITEMS)
+
+
+@router.put("/trips/{trip_id}/packing")
+async def set_packing(trip_id: str, body: PackingIn, auth: Auth, web: Runtime) -> TripOut:
+    """The whole packing list, ticks included."""
+    trip = await trip_cases.set_packing(
+        web.uow(),
+        auth.user,
+        _uuid(trip_id),
+        [PackItem(i.text, i.done) for i in body.items],
+        now=web.clock(),
+    )
+    return await _with_photo(web, trip, _today(auth, web))
+
+
+async def _weather(web: WebRuntime, trip: Trip, today: date) -> TripWeather | None:
+    if web.weather is None:
+        return None
+    try:
+        return await web.weather.for_trip(trip, today)
+    except WeatherError:
+        log.info("weather unavailable", exc_info=True)
+        return None
+
+
+@router.post("/trips/{trip_id}/packing/suggest")
+async def suggest_packing(trip_id: str, auth: Auth, web: Runtime) -> TripOut:
+    """Adds what a trip like this usually needs, from the weather when it's known."""
+    today = _today(auth, web)
+    current = await trip_cases.get_trip(web.uow(), auth.user.id, _uuid(trip_id))
+    weather = await _weather(web, current, today)
+    trip = await trip_cases.suggest_packing(
+        web.uow(),
+        auth.user,
+        current.id,
+        latitude=weather.place.latitude if weather else None,
+        outlook=weather.outlook() if weather else None,
+        now=web.clock(),
+    )
+    return await _with_photo(web, trip, today)
+
+
+class WeatherDayOut(Model):
+    day: date
+    high: float | None
+    low: float | None
+    rain: int | None  # chance of rain, %
+    summary: str | None  # "Light rain"
+    code: int | None
+
+
+class WeatherOut(Model):
+    place: str  # "Tokyo, Japan"
+    kind: str  # forecast, or typical (the same dates in recent years)
+    years: int  # how many years "typical" averages
+    days: list[WeatherDayOut]
+
+
+@router.get("/trips/{trip_id}/weather")
+async def trip_weather(trip_id: str, auth: Auth, web: Runtime) -> WeatherOut | None:
+    """The forecast once it reaches the trip, else the same dates in recent years.
+    None when the trip is over or the weather isn't available."""
+    trip = await trip_cases.get_trip(web.uow(), auth.user.id, _uuid(trip_id))
+    weather = await _weather(web, trip, _today(auth, web))
+    if weather is None or not weather.days:
+        return None
+    where = weather.place
+    return WeatherOut(
+        place=f"{where.name}, {where.country}" if where.country else where.name,
+        kind=weather.kind.value,
+        years=YEARS,
+        days=[
+            WeatherDayOut(
+                day=d.day,
+                high=d.high,
+                low=d.low,
+                rain=d.rain,
+                summary=describe(d.code),
+                code=d.code,
+            )
+            for d in weather.days
+        ],
+    )

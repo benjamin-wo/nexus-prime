@@ -16,6 +16,7 @@ from uuid import UUID
 from nexus.domain.errors import InvalidInput
 from nexus.domain.ledger import UserId, clean_name, require_positive
 from nexus.domain.money import Money
+from nexus.domain.packing import PackItem
 
 MAX_TRIPS = 50
 MAX_TRIP_DAYS = 120
@@ -50,6 +51,8 @@ class Trip:
     # A label per day of the trip, such as the city ("Busan") or the plan ("Day trip").
     day_labels: dict[date, str] = field(default_factory=dict)
     photo_id: UUID | None = None  # its header photo, once found (destination_photos.py)
+    photo_off: bool = False  # the user chose to show no photo
+    packing: tuple[PackItem, ...] = ()
 
     @property
     def days(self) -> int:

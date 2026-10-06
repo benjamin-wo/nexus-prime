@@ -24,8 +24,10 @@ from nexus.domain.places import (
     MAX_SUMMARY,
     Period,
     Place,
+    PlacePhoto,
     Review,
     link,
+    photo_name,
     place_id,
     quoted,
     text,
@@ -40,8 +42,11 @@ _BASIC = (
 )
 SEARCH_FIELDS = ",".join(f"places.{f}" for f in _BASIC.split(","))
 DETAIL_FIELDS = (
-    f"{_BASIC},websiteUri,internationalPhoneNumber,editorialSummary,regularOpeningHours,reviews"
+    f"{_BASIC},websiteUri,internationalPhoneNumber,editorialSummary,regularOpeningHours,reviews,"
+    "photos"
 )
+PHOTO_WIDTH = 400  # a thumbnail; Google bills per photo, not by size
+MAX_PHOTO_BYTES = 2_000_000
 _PRICES = {
     "PRICE_LEVEL_FREE": 0,
     "PRICE_LEVEL_INEXPENSIVE": 1,
@@ -98,6 +103,31 @@ class GooglePlaces:
         rows = data.get("places") if isinstance(data, dict) else None
         found = [p for row in (rows or []) if (p := parse_place(row)) is not None]
         return found[:limit]
+
+    async def photo(self, name: str) -> tuple[bytes, str]:
+        """A photo's bytes and type. Google answers with a short-lived link to the
+        image, which is fetched without the key."""
+        if photo_name(name) is None:
+            raise PlacesError("not a photo name")
+        try:
+            response = await self._http.get(
+                f"{self._base_url}/{name}/media",
+                params={"maxWidthPx": str(PHOTO_WIDTH), "skipHttpRedirect": "true"},
+                headers={"X-Goog-Api-Key": self._key},
+                timeout=20.0,
+            )
+            uri = response.json().get("photoUri") if response.status_code == 200 else None
+            if not isinstance(uri, str) or not uri.startswith("https://"):
+                raise PlacesError(f"no photo link (HTTP {response.status_code})")
+            image = await self._http.get(uri, timeout=20.0, follow_redirects=True)
+        except (httpx.HTTPError, ValueError, AttributeError) as exc:
+            raise PlacesError(f"photo request failed: {type(exc).__name__}") from exc
+        mime = image.headers.get("content-type", "").split(";")[0].strip()
+        if image.status_code != 200 or mime not in ("image/jpeg", "image/png", "image/webp"):
+            raise PlacesError(f"photo answered {image.status_code} {mime}")
+        if len(image.content) > MAX_PHOTO_BYTES:
+            raise PlacesError("photo too large")
+        return image.content, mime
 
     async def details(self, wanted: str) -> Place | None:
         pid = place_id(wanted)
@@ -175,6 +205,19 @@ def _review(row: Any) -> Review | None:
     )
 
 
+def _photo(rows: Any) -> PlacePhoto | None:
+    """The place's first photo, with its first author for the credit."""
+    first = rows[0] if isinstance(rows, list) and rows and isinstance(rows[0], dict) else None
+    name = photo_name(first.get("name")) if first else None
+    if first is None or name is None:
+        return None
+    authors = first.get("authorAttributions")
+    author = (
+        authors[0] if isinstance(authors, list) and authors and isinstance(authors[0], dict) else {}
+    )
+    return PlacePhoto(name, quoted(author.get("displayName"), 60), link(author.get("uri")))
+
+
 def parse_place(row: Any, *, detailed: bool = False) -> Place | None:
     """A place from Google's JSON; None when it lacks an id or a name."""
     if not isinstance(row, dict):
@@ -202,5 +245,6 @@ def parse_place(row: Any, *, detailed: bool = False) -> Place | None:
         periods=_periods(hours),
         hours=_weekdays(hours),
         reviews=tuple(reviews[:MAX_REVIEWS]),
+        photo=_photo(row.get("photos")) if detailed else None,
         detailed=detailed,
     )

@@ -96,6 +96,7 @@ export async function fakeApi(
     movedBookings: string[];
     plans: Record<string, unknown>[];
     placeSearches: string[];
+    photoChoices: string[];
     planStarted: boolean;
     planAlerts: boolean;
     cancelled: string[];
@@ -164,6 +165,7 @@ export async function fakeApi(
     movedBookings: [],
     plans: [],
     placeSearches: [],
+    photoChoices: [],
     planStarted: false,
     planAlerts: true,
     draft: null,
@@ -745,6 +747,7 @@ export async function fakeApi(
         summary: "Hand-pulled noodles in a small wooden room.", status: "OPERATIONAL",
         hours: ["Monday: 11:00 AM to 9:00 PM", "Thursday: Closed"],
         reviews: [{ rating: 5, text: "The broth is worth the queue.", author: "A. Reviewer", author_url: "https://maps.example/u/1", when: "a month ago" }],
+        photo_url: "/api/travel/places/fakePlaceNoodle01/photo", photo_author: "A. Photographer", photo_author_url: "https://maps.example/u/2",
         closed: 4,
       },
       fakePlaceMarket01: {
@@ -788,6 +791,40 @@ export async function fakeApi(
     if (path === "/travel/next" && method === "GET") {
       const next = state.trips.find((t) => t.status !== "finished");
       return json(route, next ? tripDetail(next) : null);
+    }
+    // A 1x1 PNG stands in for any photo.
+    const png = () => Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+    if (/^\/travel\/places\/[^/]+\/photo$/.test(path)) return route.fulfill({ status: 200, contentType: "image/png", body: png() });
+    const tripWeather = path.match(/^\/travel\/trips\/([^/]+)\/weather$/);
+    if (tripWeather) {
+      const trip = state.trips.find((t) => t.id === tripWeather[1]);
+      if (!trip) return json(route, null);
+      const start = Date.parse(String(trip.start));
+      const days = Array.from({ length: Math.min(Number(trip.days), 5) }, (_, i) => ({
+        day: new Date(start + i * 86400000).toISOString().slice(0, 10),
+        high: 18 + i, low: 9, rain: i === 1 ? 70 : 10, summary: i === 1 ? "Light rain" : "Clear", code: i === 1 ? 61 : 0,
+      }));
+      return json(route, { place: `${String(trip.destination)}, Exampleland`, kind: "typical", years: 3, days });
+    }
+    const tripPacking = path.match(/^\/travel\/trips\/([^/]+)\/packing(\/suggest)?$/);
+    if (tripPacking) {
+      const trip = state.trips.find((t) => t.id === tripPacking[1]);
+      if (!trip) return json(route, { detail: "no trip with that id" }, 404);
+      const have = (trip.packing as { text: string; done: boolean }[] | undefined) ?? [];
+      if (tripPacking[2]) {
+        const wanted = ["Passport", "Travel adapter", "Umbrella or rain jacket"].filter((t) => !have.some((h) => h.text === t));
+        trip.packing = [...have, ...wanted.map((text) => ({ text, done: false }))];
+      } else trip.packing = body.items;
+      return json(route, trip);
+    }
+    const tripPhoto = path.match(/^\/travel\/trips\/([^/]+)\/photo$/);
+    if (tripPhoto && method === "POST") {
+      const trip = state.trips.find((t) => t.id === tripPhoto[1]);
+      if (!trip) return json(route, { detail: "no trip with that id" }, 404);
+      state.photoChoices.push(String(body.choice));
+      if (body.choice === "next") return json(route, { detail: "there's no other photo of this place yet" }, 422);
+      trip.photo_off = body.choice === "off";
+      return json(route, trip);
     }
     const dayLabel = path.match(/^\/travel\/trips\/([^/]+)\/days\/([0-9-]+)$/);
     if (dayLabel && method === "PUT") {

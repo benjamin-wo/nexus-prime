@@ -14,6 +14,7 @@ from nexus.domain.bookings import Booking, BookingDraft
 from nexus.domain.destination_photos import DestinationPhoto, Season
 from nexus.domain.ledger import Direction, TransactionStatus, UserId
 from nexus.domain.money import Money
+from nexus.domain.packing import PackItem, from_rows
 from nexus.domain.trips import Trip
 from nexus.infra.db.ledger_repository import _transaction
 from nexus.infra.db.tables import (
@@ -46,6 +47,8 @@ def _trip(row: Row[Any]) -> Trip:
         notes=row.notes,
         day_labels={date.fromisoformat(k): v for k, v in (row.day_labels or {}).items()},
         photo_id=row.photo_id,
+        photo_off=row.photo_off,
+        packing=from_rows(row.packing),
     )
 
 
@@ -363,12 +366,13 @@ class SqlTripRepository:
             "mime": mime,
             "data": data,
             "created_at": photo.created_at,
+            "rank": photo.rank,
         }
         stmt = (
             pg_insert(destination_photos)
             .values(id=photo.id, **values)
             .on_conflict_do_update(
-                index_elements=["place_key", "season"],
+                index_elements=["place_key", "season", "rank"],
                 set_=values,
                 where=destination_photos.c.status == "none",
             )
@@ -381,6 +385,7 @@ class SqlTripRepository:
                     select(*_PHOTO_COLUMNS).where(
                         destination_photos.c.place_key == photo.place_key,
                         destination_photos.c.season == photo.season.value,
+                        destination_photos.c.rank == photo.rank,
                     )
                 )
             ).one()
@@ -414,6 +419,7 @@ class SqlTripRepository:
             .where(
                 trips.c.end_on >= since,
                 trips.c.photo_id.is_(None),
+                trips.c.photo_off.is_(False),
                 or_(trips.c.photo_tried_at.is_(None), trips.c.photo_tried_at < tried_before),
             )
             .order_by(trips.c.start_on, trips.c.id)
@@ -424,6 +430,24 @@ class SqlTripRepository:
     async def set_trip_photo(self, trip_id: UUID, photo_id: UUID | None, at: datetime) -> None:
         await self._db.execute(
             update(trips).where(trips.c.id == trip_id).values(photo_id=photo_id, photo_tried_at=at)
+        )
+
+    async def set_photo_choice(
+        self, user_id: UserId, trip_id: UUID, photo_id: UUID | None, *, off: bool
+    ) -> None:
+        await self._db.execute(
+            update(trips)
+            .where(trips.c.user_id == user_id, trips.c.id == trip_id)
+            .values(photo_id=photo_id, photo_off=off)
+        )
+
+    async def set_packing(
+        self, user_id: UserId, trip_id: UUID, items: tuple[PackItem, ...], at: datetime
+    ) -> None:
+        await self._db.execute(
+            update(trips)
+            .where(trips.c.user_id == user_id, trips.c.id == trip_id)
+            .values(packing=[i.to_dict() for i in items], updated_at=at)
         )
 
     async def clear_trip_photo(self, user_id: UserId, trip_id: UUID) -> None:
@@ -452,6 +476,7 @@ def _photo(row: Row[Any]) -> DestinationPhoto:
         licence_url=row.licence_url,
         page=row.page,
         created_at=row.created_at,
+        rank=row.rank,
     )
 
 
