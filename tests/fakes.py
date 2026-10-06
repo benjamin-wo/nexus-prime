@@ -25,13 +25,15 @@ from nexus.application.market import PriceSourceError
 from nexus.application.places import PlacesError
 from nexus.application.ports import MailboxGrant, MailboxRevoked
 from nexus.application.research import NewsSourceError
+from nexus.application.weather import WeatherError
 from nexus.channels.telegram.client import TelegramError
 from nexus.domain.bookings import BookingDraft
 from nexus.domain.email import ExpenseDraft, FetchedEmail, Screening
 from nexus.domain.errors import InvalidInput
 from nexus.domain.market import Bar
 from nexus.domain.news import EarningsDate, NewsItem
-from nexus.domain.places import Period, Place, Review
+from nexus.domain.places import Period, Place, PlacePhoto, Review
+from nexus.domain.weather import DayWeather, Spot
 from nexus.infra.llm.factory import ChatModels
 
 NOW = datetime(2026, 9, 28, 4, 0, tzinfo=UTC)  # noon in Singapore
@@ -465,6 +467,7 @@ def fake_place(
         reviews=tuple(
             Review(5, r, "A. Reviewer", "https://maps.example/u", "a week ago") for r in reviews
         ),
+        photo=PlacePhoto(f"places/{pid}/photos/ref1", "A. Photographer", "https://maps.example/p"),
     )
 
 
@@ -477,6 +480,7 @@ class FakePlaces:
     failing: bool = False
     searches: list[str] = field(default_factory=list)
     looked_up: list[str] = field(default_factory=list)
+    photos: list[str] = field(default_factory=list)
 
     async def search(self, query: str, *, limit: int) -> list[Place]:
         self.searches.append(query)
@@ -489,6 +493,12 @@ class FakePlaces:
         if self.failing:
             raise PlacesError("HTTP 500")
         return next((p for p in self.results if p.id == place_id), None)
+
+    async def photo(self, name: str) -> tuple[bytes, str]:
+        self.photos.append(name)
+        if self.failing:
+            raise PlacesError("HTTP 500")
+        return b"\xff\xd8 made-up place photo", "image/jpeg"
 
 
 @dataclass
@@ -504,3 +514,37 @@ class FakeImageLooker:
         if found is None:
             raise LookFailed("no look")
         return found
+
+
+@dataclass
+class FakeWeather:
+    """Made-up weather: one place for every name, mild days with some rain."""
+
+    asked: list[str] = field(default_factory=list)
+    failing: bool = False
+
+    async def find(self, name: str) -> Spot | None:
+        self.asked.append(f"find:{name}")
+        return Spot(name, "Exampleland", 35.0, 139.0)
+
+    async def forecast(self, spot: Spot, start: date, end: date) -> list[DayWeather]:
+        self.asked.append(f"forecast:{start}:{end}")
+        if self.failing:
+            raise WeatherError("busy")
+        days = (end - start).days + 1
+        return [
+            DayWeather(
+                start + timedelta(days=i), 18.0 + i, 9.0, 60 if i == 1 else 10, 61 if i == 1 else 1
+            )
+            for i in range(days)
+        ]
+
+    async def past(self, spot: Spot, start: date, end: date) -> list[DayWeather]:
+        self.asked.append(f"past:{start}:{end}")
+        if self.failing:
+            raise WeatherError("busy")
+        days = (end - start).days + 1
+        return [
+            DayWeather(start + timedelta(days=i), 12.0 + start.year % 3, 3.0, 4 if i == 0 else 0, 3)
+            for i in range(days)
+        ]

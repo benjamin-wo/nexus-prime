@@ -7,7 +7,8 @@ import { base64 } from "../files";
 import { formatMoney, formatShortDate } from "../format";
 import { ResearchList } from "./Research";
 import { Companions, MoneyCard, NextUp, PhotoCredit, Ring, StayCard, TripCard, coverStyle, tripWhen } from "./TripBits";
-import { PlaceLine, SavePlaces, TripPlacesProvider } from "./TripPlaces";
+import { PackingCard, PhotoMenu, WeatherCard } from "./TripExtras";
+import { PlaceLine, PlaceThumb, SavePlaces, TripPlacesProvider } from "./TripPlaces";
 
 const day = (iso: string) => formatShortDate(iso, "UTC");
 
@@ -886,6 +887,7 @@ function TimelineEntry({ booking, iso, stop, children }: { booking: Booking; iso
         <BookingLines booking={booking} noTime />
       </span>
       {booking.cost && <span className="num">{formatMoney(booking.cost)}</span>}
+      <PlaceThumb booking={booking} />
       {children}
     </li>
   );
@@ -1435,6 +1437,7 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
           </Link>
           {data && !editing && (
             <div className="actions">
+              <PhotoMenu trip={data.trip} onChange={refresh} />
               <label className="btn">
                 {reading ? "Reading…" : "From a screenshot"}
                 <input className="sr-only" type="file" accept="image/png,image/jpeg,image/webp" disabled={reading} onChange={(e) => {
@@ -1549,6 +1552,10 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
               <div className="trip-pair">
                 <ReadyCheck detail={data} onAdd={add} />
                 <MoneyCard detail={data} onOpen={() => setTab("money")} />
+              </div>
+              <div className="trip-pair">
+                <WeatherCard trip={data.trip} />
+                <PackingCard key={data.trip.id} trip={data.trip} onChange={refresh} />
               </div>
               {onAsk && (
                 <button

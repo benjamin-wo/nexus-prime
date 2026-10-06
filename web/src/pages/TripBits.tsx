@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 
 import type { Booking, Trip, TripDetail, TripPhoto } from "../api";
 import { formatMoney, formatShortDate } from "../format";
+import { PlaceThumb } from "./TripPlaces";
 
 const day = (iso: string) => formatShortDate(iso, "UTC");
 const DAY_MS = 86400000;
@@ -207,9 +208,13 @@ export function StayCard({ detail, onAdd }: { detail: TripDetail; onAdd: () => v
   const stay = stays.find((b) => (b.check_out ?? b.check_in ?? "") > today) ?? stays[0];
   return (
     <section className="stay-card" aria-label="Where you're staying">
-      <span className="stay-icon" aria-hidden="true">
-        🏨
-      </span>
+      {stay?.place_id ? (
+        <PlaceThumb booking={stay} />
+      ) : (
+        <span className="stay-icon" aria-hidden="true">
+          🏨
+        </span>
+      )}
       <span className="wrap">
         <span className="caption">
           Stay · {covered} of {nights} {nights === 1 ? "night" : "nights"} booked

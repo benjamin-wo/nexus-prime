@@ -838,7 +838,10 @@ destination_photos = Table(
     Column("mime", Text),
     Column("data", LargeBinary),
     Column("created_at", TZ, nullable=False),
-    UniqueConstraint("place_key", "season"),
+    # 0 is the photo chosen; 1 and up are the runners-up a trip can switch to (0034).
+    Column("rank", SmallInteger, nullable=False, server_default=text("0")),
+    UniqueConstraint("place_key", "season", "rank"),
+    CheckConstraint("rank BETWEEN 0 AND 9", name="rank_range"),
     CheckConstraint("season IN ('spring', 'summer', 'autumn', 'winter', 'any')", name="season"),
     CheckConstraint("status IN ('ready', 'none')", name="status"),
     CheckConstraint(
@@ -870,6 +873,9 @@ trips = Table(
     # Its header photo, and when one was last looked for (migration 0033).
     Column("photo_id", UUID(as_uuid=True)),
     Column("photo_tried_at", TZ),
+    # The user chose to show no photo; and their packing list, [{"text", "done"}] (0034).
+    Column("photo_off", Boolean, nullable=False, server_default=text("false")),
+    Column("packing", JSONB, nullable=False, server_default=text("'[]'::jsonb")),
     ForeignKeyConstraint(["user_id"], ["users.id"]),
     ForeignKeyConstraint(["photo_id"], ["destination_photos.id"], ondelete="SET NULL"),
     UniqueConstraint("id", "user_id"),

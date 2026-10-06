@@ -522,6 +522,19 @@ export type Trip = {
   day_labels: Record<string, string>;
   /** A famous view of where it goes, from Wikimedia Commons, once found. */
   photo?: TripPhoto | null;
+  /** The user chose to show no photo. */
+  photo_off?: boolean;
+  packing?: PackItem[];
+};
+
+export type PackItem = { text: string; done: boolean };
+
+/** The forecast once it reaches the trip, else the same dates in recent years. */
+export type TripWeather = {
+  place: string;
+  kind: "forecast" | "typical";
+  years: number;
+  days: { day: string; high: number | null; low: number | null; rain: number | null; summary: string | null; code: number | null }[];
 };
 
 /** A trip's header photo, served by our API, with the credit its licence asks for. */
@@ -577,6 +590,10 @@ export type Place = {
   status: string | null;
   hours: string[];
   reviews: { rating: number | null; text: string; author: string | null; author_url: string | null; when: string | null }[];
+  /** A thumbnail served by our API, and who took it (credited where shown). */
+  photo_url?: string | null;
+  photo_author?: string | null;
+  photo_author_url?: string | null;
 };
 export type LinkedPlace = { booking_id: string; place: Place; warning: string | null };
 

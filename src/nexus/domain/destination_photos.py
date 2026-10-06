@@ -20,6 +20,7 @@ MIN_RATIO = 1.2  # wide enough for a header
 MAX_RATIO = 2.6
 PHOTO_WIDTH = 1280  # what's kept (one of the widths Wikimedia serves ready-made)
 LOOK_WIDTH = 500  # what the model looks at when choosing
+MAX_CHOICES = 4  # the chosen photo and up to three runners-up a trip can switch to
 RETRY_DAYS = 30  # a place with no usable photo is tried again after this long
 # Licences that allow keeping and showing the photo with a credit.
 _FREE = re.compile(r"\b(cc[ -]?by|cc[ -]?by-sa|cc0|public domain|pd\b|gfdl)", re.I)
@@ -142,6 +143,7 @@ class DestinationPhoto:
     licence_url: str | None
     page: str | None
     created_at: datetime
+    rank: int = 0  # 0 is the one chosen; runners-up follow
 
     @property
     def credit(self) -> str | None:

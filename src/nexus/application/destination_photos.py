@@ -27,6 +27,7 @@ from uuid import UUID, uuid4
 
 from nexus.application.ports import UnitOfWork
 from nexus.domain.destination_photos import (
+    MAX_CHOICES,
     RETRY_DAYS,
     Candidate,
     DestinationPhoto,
@@ -104,8 +105,10 @@ def _usable_now(photo: DestinationPhoto, now: datetime) -> bool:
 
 
 def _fallback(photos: list[DestinationPhoto]) -> DestinationPhoto | None:
-    """Another season's photo of the place, the year-round one first."""
-    found = sorted((p for p in photos if p.found), key=lambda p: p.season is not Season.ANY)
+    """Another season's chosen photo of the place, the year-round one first."""
+    found = sorted(
+        (p for p in photos if p.found), key=lambda p: (p.rank, p.season is not Season.ANY)
+    )
     return found[0] if found else None
 
 
@@ -129,7 +132,7 @@ async def photo_for(
     if kept:
         latitude = kept[0].latitude
         of = season(start, latitude)
-        match = next((p for p in kept if p.season is of), None)
+        match = next((p for p in kept if p.season is of and p.rank == 0), None)
         if match is not None and _usable_now(match, now):
             return match if match.found else _fallback(kept)
     info = await finder.source.place(place)
@@ -146,15 +149,16 @@ async def photo_for(
             await tx.commit()
             kept = await tx.trips.place_photos(key)
         return _fallback(kept)
-    pick, data, mime = found
-    photo = DestinationPhoto(
-        uuid4(), key, of, latitude, True, pick.spot, pick.author, pick.licence,
-        pick.licence_url, pick.page, now,
-    )  # fmt: skip
+    saved: list[DestinationPhoto] = []
     async with uow() as tx:
-        saved = await tx.trips.save_photo(photo, data, mime)
+        for rank, (pick, data, mime) in enumerate(found):
+            photo = DestinationPhoto(
+                uuid4(), key, of, latitude, True, pick.spot, pick.author, pick.licence,
+                pick.licence_url, pick.page, now, rank,
+            )  # fmt: skip
+            saved.append(await tx.trips.save_photo(photo, data, mime))
         await tx.commit()
-    return saved
+    return saved[0]
 
 
 async def _search(
@@ -162,7 +166,9 @@ async def _search(
     place: str,
     of: Season,
     latitude: float | None,
-) -> tuple[Candidate, bytes, str] | None:
+) -> list[tuple[Candidate, bytes, str]] | None:
+    """The chosen photo and its runners-up, downloaded, the chosen one first; None
+    when nothing suits."""
     source, spotter, chooser = finder.source, finder.spotter, finder.chooser
     spots: list[str] = []
     if spotter is not None:
@@ -183,7 +189,7 @@ async def _search(
         if failed is not None:
             raise failed  # not "nothing suits": try again later
         return None
-    pick: Candidate | None = choices[0]
+    order: list[Candidate] = choices
     if chooser is not None:
         previews: list[tuple[Candidate, bytes]] = []
         for c in choices:
@@ -198,11 +204,20 @@ async def _search(
         except Exception:
             log.warning("the photo chooser failed; keeping the first candidate")
             n = 0
-        pick = previews[n][0] if n is not None and 0 <= n < len(previews) else None
-    if pick is None:
-        return None
-    data, mime = await source.download(pick.url)
-    return pick, data, mime
+        if n is None or not 0 <= n < len(previews):
+            return None
+        shown = [c for c, _ in previews]
+        order = [shown[n], *shown[:n], *shown[n + 1 :]]
+    kept: list[tuple[Candidate, bytes, str]] = []
+    for i, c in enumerate(order[:MAX_CHOICES]):
+        try:
+            data, mime = await source.download(c.url)
+        except PhotoSourceError:
+            if i == 0:
+                raise  # the chosen one must come; runners-up are a bonus
+            continue
+        kept.append((c, data, mime))
+    return kept
 
 
 async def photos_of(uow: UnitOfWork, trips: list[Trip]) -> dict[UUID, DestinationPhoto]:

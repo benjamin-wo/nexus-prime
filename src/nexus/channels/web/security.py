@@ -22,6 +22,7 @@ from nexus.application.fx import RateSource
 from nexus.application.limits import RateLimiter
 from nexus.application.places import Places
 from nexus.application.ports import ReceiptStore
+from nexus.application.weather import Weather
 from nexus.domain.access import Session
 from nexus.domain.ledger import User
 from nexus.settings import Environment, Settings
@@ -47,6 +48,7 @@ class WebRuntime:
     prices: bool = False  # daily stock prices are set up
     news: bool = False  # company news and earnings dates are set up
     places: Places | None = None  # Google Maps places on trips; None = not set up
+    weather: Weather | None = None  # trip weather; None = not offered
 
 
 @dataclass(frozen=True, slots=True)

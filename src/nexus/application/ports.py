@@ -52,6 +52,7 @@ from nexus.domain.memory import Memory, MemoryKind
 from nexus.domain.money import Money
 from nexus.domain.news import EarningsDate, NewsItem
 from nexus.domain.notifications import NotificationSettings
+from nexus.domain.packing import PackItem
 from nexus.domain.planning import Bill, BillOccurrence, Budget, SalarySchedule
 from nexus.domain.plans import Followed, SavedPlan
 from nexus.domain.receipts import Receipt
@@ -567,6 +568,12 @@ class TripRepository(Protocol):
     ) -> list[Trip]: ...
     async def set_trip_photo(self, trip_id: UUID, photo_id: UUID | None, at: datetime) -> None: ...
     async def clear_trip_photo(self, user_id: UserId, trip_id: UUID) -> None: ...
+    async def set_photo_choice(
+        self, user_id: UserId, trip_id: UUID, photo_id: UUID | None, *, off: bool
+    ) -> None: ...
+    async def set_packing(
+        self, user_id: UserId, trip_id: UUID, items: tuple[PackItem, ...], at: datetime
+    ) -> None: ...
 
 
 class InvestmentRepository(Protocol):

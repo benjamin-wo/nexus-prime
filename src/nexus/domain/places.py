@@ -71,6 +71,23 @@ class Review:
 
 
 @dataclass(frozen=True, slots=True)
+class PlacePhoto:
+    """One of the place's photos on Google Maps: its name fetches it, and its author
+    must be credited wherever it's shown."""
+
+    name: str  # "places/<id>/photos/<ref>"
+    author: str | None
+    author_url: str | None
+
+
+_PHOTO_NAME = re.compile(r"^places/[A-Za-z0-9_-]{1,255}/photos/[A-Za-z0-9_-]{1,1024}$")
+
+
+def photo_name(value: object) -> str | None:
+    return value if isinstance(value, str) and _PHOTO_NAME.match(value) else None
+
+
+@dataclass(frozen=True, slots=True)
 class Place:
     id: str
     name: str
@@ -87,6 +104,7 @@ class Place:
     periods: tuple[Period, ...] = ()
     hours: tuple[str, ...] = ()  # "Monday: 11:00 AM to 10:00 PM", as Google words it
     reviews: tuple[Review, ...] = ()
+    photo: PlacePhoto | None = None
     detailed: bool = False  # fetched with hours and reviews, not just from a search
 
     @property

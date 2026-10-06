@@ -1123,3 +1123,62 @@ test("where to next hands a place and a time to Nexus to research", async ({ pag
   const chat = page.getByRole("dialog", { name: "Chat" });
   await expect(chat.locator(".msg-user").last()).toHaveText("I'm thinking of a trip: Hokkaido in February. Can you research it?");
 });
+
+test("a trip's weather, packing list, cover photo and stop photos", async ({ page }) => {
+  const state = await fakeApi(page);
+  await page.goto("/travel");
+  await page.getByRole("button", { name: "Add a trip" }).click();
+  const form = page.getByRole("form", { name: "Add a trip" });
+  await form.getByLabel("Where").fill("Seoul");
+  await form.getByLabel("From").fill("2026-11-10");
+  await form.getByLabel("To").fill("2026-11-13");
+  await form.getByLabel("Currency there").fill("KRW");
+  await form.getByRole("button", { name: "Add trip" }).click();
+  await expect(page).toHaveURL(/\/travel\/trips\/trip1$/);
+
+  // Weather for the dates, credited to its source.
+  const weather = page.getByRole("region", { name: "Weather in Seoul, Exampleland" });
+  await expect(weather).toContainText("Typical for these dates, last 3 years");
+  await expect(weather.getByRole("img", { name: "Light rain" })).toBeVisible();
+  await expect(weather.getByRole("link", { name: "Weather data by Open-Meteo.com" })).toHaveAttribute("rel", /noopener/);
+
+  // Packing: suggested, then ticked off and added to.
+  const packing = page.getByRole("region", { name: "Packing list" });
+  await packing.getByRole("button", { name: "✨ Suggest" }).click();
+  await expect(packing.getByRole("list", { name: "Things to pack" })).toContainText("Umbrella or rain jacket");
+  await packing.getByRole("checkbox", { name: "Passport" }).check();
+  await expect(packing).toContainText("1 of 3 packed");
+  await packing.getByLabel("Thing to pack").fill("Swimsuit");
+  await packing.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(packing).toContainText("1 of 4 packed");
+  expect(state.trips[0].packing).toEqual([
+    { text: "Passport", done: true },
+    { text: "Travel adapter", done: false },
+    { text: "Umbrella or rain jacket", done: false },
+    { text: "Swimsuit", done: false },
+  ]);
+  await packing.getByRole("button", { name: "Remove Swimsuit" }).click();
+  await expect(packing).toContainText("1 of 3 packed");
+
+  // The cover photo: none other to switch to yet, but it can be hidden.
+  await page.getByRole("button", { name: "Photo", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Another photo" }).click();
+  await expect(page.getByRole("menu", { name: "Cover photo" })).toContainText("no other photo of this place yet");
+  await page.getByRole("menuitem", { name: "No photo" }).click();
+  expect(state.photoChoices).toEqual(["next", "off"]);
+
+  // A place linked from Google Maps shows its photo, credited, on the itinerary.
+  await page.getByRole("button", { name: "🔎 Find places on Google Maps" }).click();
+  await page.getByRole("search", { name: "Search Google Maps" }).getByLabel("Look for").fill("noodles");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await page.getByRole("list", { name: "Google Maps results" }).getByRole("button", { name: "Save: Hanok Noodle Bar" }).click();
+  const places = page.getByRole("list", { name: "Places to visit" });
+  await places.getByRole("button", { name: "Plan a day for Hanok Noodle Bar" }).click();
+  const pick = places.getByRole("form", { name: "Change the entry" });
+  await pick.getByLabel(/^Day/).fill("2026-11-11");
+  await pick.getByRole("button", { name: "Save" }).click();
+  await page.getByRole("tab", { name: "Itinerary" }).click();
+  const itinerary = page.getByRole("region", { name: "Itinerary" });
+  await expect(itinerary.getByRole("img", { name: "Hanok Noodle Bar" })).toBeVisible();
+  await expect(itinerary.getByRole("link", { name: "Photo by A. Photographer, Google Maps" })).toHaveAttribute("href", "https://maps.example/u/2");
+});

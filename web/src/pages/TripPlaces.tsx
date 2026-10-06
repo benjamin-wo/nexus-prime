@@ -32,6 +32,30 @@ export function TripPlacesProvider({ tripId, destination, enabled, onChange, chi
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
 
+/** A linked place's Google Maps photo as a small thumbnail, credited to its author;
+ * a plain tile when there's none. */
+export function PlaceThumb({ booking }: { booking: Booking }) {
+  const places = useContext(Context);
+  if (!places?.enabled) return null;
+  const place = places.linked.get(booking.id)?.place;
+  if (!place?.photo_url) return <span className="place-thumb place-thumb-empty" aria-hidden="true" />;
+  const credit = `Photo${place.photo_author ? ` by ${place.photo_author}` : ""}, Google Maps`;
+  return (
+    <figure className="place-thumb">
+      <img src={place.photo_url} alt={`${place.name}`} loading="lazy" width={64} height={64} />
+      <figcaption>
+        {place.photo_author_url ? (
+          <a href={place.photo_author_url} target="_blank" rel="noopener noreferrer">
+            {credit}
+          </a>
+        ) : (
+          credit
+        )}
+      </figcaption>
+    </figure>
+  );
+}
+
 const linkable = (b: Booking) => b.kind === "activity" || b.kind === "hotel";
 
 export function Rating({ place }: { place: Place }) {
