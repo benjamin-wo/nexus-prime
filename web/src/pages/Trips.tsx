@@ -6,16 +6,12 @@ import { api, type Booking, type Me, type Money, type ScreenshotRead, type Trip,
 import { base64 } from "../files";
 import { formatMoney, formatShortDate } from "../format";
 import { ResearchList } from "./Research";
+import { Companions, MoneyCard, NextUp, PhotoCredit, Ring, StayCard, TripCard, coverStyle, tripWhen } from "./TripBits";
 import { PlaceLine, SavePlaces, TripPlacesProvider } from "./TripPlaces";
 
 const day = (iso: string) => formatShortDate(iso, "UTC");
 
-export function tripWhen(trip: Trip): string {
-  if (trip.status === "ongoing") return `Day ${trip.day_number} of ${trip.days}`;
-  if (trip.status === "finished") return "Finished";
-  if (trip.days_until === 1) return "Tomorrow";
-  return `In ${trip.days_until} days`;
-}
+export { tripWhen };
 
 type FormRow = { name: string; amount: string };
 
@@ -194,27 +190,47 @@ function useHome(): string {
   return me.data?.user.home_currency ?? "";
 }
 
-function TripRow({ trip }: { trip: Trip }) {
+const WHERE_IDEAS = ["Japan in spring", "A long weekend in Bali", "Seoul in December"];
+
+/** "Where to next?": a place and a time, handed to Nexus to research. */
+function WhereNext({ onAsk, onAdd }: { onAsk?: (text: string) => void; onAdd: () => void }) {
+  const [where, setWhere] = useState("");
+  const ask = (text: string) => onAsk?.(`I'm thinking of a trip: ${text}. Can you research it?`);
+  function go(event: FormEvent) {
+    event.preventDefault();
+    if (!where.trim()) return;
+    ask(where.trim());
+    setWhere("");
+  }
   return (
-    <li className="run-row">
-      <span className="wrap">
-        <Link to={`/travel/trips/${trip.id}`}>
-          <strong>{trip.destination}</strong>
-        </Link>{" "}
-        · {day(trip.start)} to {day(trip.end)}
-        <br />
-        <span className="caption">
-          {tripWhen(trip)}
-          {trip.budget && ` · budget ${formatMoney(trip.budget)}`}
-          {trip.companions.length > 0 && ` · with ${trip.companions.join(", ")}`}
-        </span>
-      </span>
-    </li>
+    <section className="card where-next" aria-labelledby="where-next">
+      <h2 id="where-next">Where to next?</h2>
+      {onAsk && (
+        <form className="where-form" onSubmit={go} aria-label="Research a trip">
+          <input className="input" value={where} maxLength={120} onChange={(e) => setWhere(e.target.value)} placeholder="A place and when, e.g. Japan in January" aria-label="Where and when" />
+          <button type="submit" className="btn btn-primary" disabled={!where.trim()}>
+            Research it
+          </button>
+        </form>
+      )}
+      <div className="chips">
+        {onAsk &&
+          WHERE_IDEAS.map((idea) => (
+            <button key={idea} type="button" className="ask-chip" onClick={() => ask(idea)}>
+              {idea}
+            </button>
+          ))}
+        <button type="button" className="ask-chip" onClick={onAdd}>
+          Add a trip
+        </button>
+      </div>
+      <p className="caption">Nexus looks up when to go, what it costs and whether it fits your money.</p>
+    </section>
   );
 }
 
-/** Travel's dashboard: trips on now, coming up and past. */
-export function TripsPage() {
+/** Travel's dashboard: where to next, trips on now, coming up and past, and research. */
+export function TripsPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
   const client = useQueryClient();
   const navigate = useNavigate();
   const home = useHome();
@@ -232,17 +248,10 @@ export function TripsPage() {
       <div className="page-head">
         <div>
           <h1>Trips</h1>
-          <p className="muted">
-            A trip keeps its money together: the budget, what to set aside each payday, bookings from your email, what you spend there
-            and who still owes you after. Nexus never books anything.
-          </p>
+          <p className="muted">Each trip keeps its bookings, plans and money together. Nexus never books anything.</p>
         </div>
-        {!adding && (
-          <button type="button" className="btn btn-primary" onClick={() => setAdding(true)}>
-            Add a trip
-          </button>
-        )}
       </div>
+
       {adding && (
         <section className="card" aria-labelledby="new-trip">
           <div className="card-head">
@@ -268,23 +277,25 @@ export function TripsPage() {
           </p>
         </section>
       )}
-      <ResearchList />
+      {groups.slice(0, 2).filter(([, list]) => list.length > 0).map(([title, list]) => tripGroup(title, list))}
+      {!adding && <WhereNext onAsk={onAsk} onAdd={() => setAdding(true)} />}
       <LooseBookings trips={all} />
-      {groups
-        .filter(([, list]) => list.length > 0)
-        .map(([title, list]) => (
-          <section key={title} className="card" aria-label={title}>
-            <div className="card-head">
-              <h2>{title}</h2>
-            </div>
-            <ul className="feed">
-              {list.map((t) => (
-                <TripRow key={t.id} trip={t} />
-              ))}
-            </ul>
-          </section>
-        ))}
+      {groups.slice(2).filter(([, list]) => list.length > 0).map(([title, list]) => tripGroup(title, list))}
+      <ResearchList />
     </>
+  );
+}
+
+function tripGroup(title: string, list: Trip[]) {
+  return (
+    <section key={title} className="trip-group" aria-label={title}>
+      <h2>{title}</h2>
+      <ul className={`trip-cards${title === "Past" ? " trip-cards-past" : ""}`}>
+        {list.map((t) => (
+          <TripCard key={t.id} trip={t} />
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -891,8 +902,15 @@ function Itinerary({ detail, onChange, onAdd }: { detail: TripDetail; onChange: 
   const staying = (d: string) => stays.filter((b) => nightsOf(b).includes(d));
   const checkingOut = (d: string) => stays.filter((b) => b.check_out === d);
   const days = tripDays(detail);
+  const dayNumber = (iso: string) => Math.round((Date.parse(iso) - Date.parse(detail.trip.start)) / DAY_MS) + 1;
+  const inTrip = (iso: string) => iso >= detail.trip.start && iso <= detail.trip.end;
+  const busy = (iso: string) => sorted.some((b) => b.starts === iso) || checkingOut(iso).length > 0;
+  const planned = days.filter((d) => inTrip(d) && busy(d)).length;
+  const nights = Math.max(detail.trip.days - 1, 0);
+  const covered = nights - detail.ready.nights_without_stay.length;
+  const weekday = (iso: string) => new Intl.DateTimeFormat(undefined, { weekday: "short", timeZone: "UTC" }).format(new Date(iso));
   const dayLabel = (iso: string) => {
-    const n = Math.round((Date.parse(iso) - Date.parse(detail.trip.start)) / DAY_MS) + 1;
+    const n = dayNumber(iso);
     const when = new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(iso));
     return n >= 1 && n <= detail.trip.days ? `Day ${n} · ${when}` : when;
   };
@@ -926,6 +944,24 @@ function Itinerary({ detail, onChange, onAdd }: { detail: TripDetail; onChange: 
           Add to itinerary
         </button>
       </div>
+      <dl className="itinerary-glance" aria-label="Trip at a glance">
+        <div>
+          <dt>Days planned</dt>
+          <dd>
+            {planned} of {detail.trip.days}
+          </dd>
+        </div>
+        <div>
+          <dt>Nights booked</dt>
+          <dd className={covered < nights ? "is-short" : undefined}>
+            {covered} of {nights}
+          </dd>
+        </div>
+        <div>
+          <dt>Booked</dt>
+          <dd>{detail.booked ? formatMoney(detail.booked) : "Nothing yet"}</dd>
+        </div>
+      </dl>
       <nav className="day-strip" aria-label="Days">
         {days.map((d) => (
           <button key={d} type="button" className="day-pill" onClick={() => jump(d)}>
@@ -937,45 +973,57 @@ function Itinerary({ detail, onChange, onAdd }: { detail: TripDetail; onChange: 
         const entries = sorted.filter((b) => b.starts === d);
         const outs = checkingOut(d).filter((b) => b.starts !== d);
         let stop = 0;
+        const n = dayNumber(d);
+        const ends = d === detail.trip.start || d === detail.trip.end;
+        const empty = !busy(d) && staying(d).length === 0;
+        const dot = !inTrip(d) ? "day-dot-out" : ends ? "day-dot-end" : empty ? "day-dot-empty" : "day-dot-planned";
         return (
           <div key={d} id={`day-${d}`} className="itinerary-day">
-            <div className="day-head">
-              <h3>{dayLabel(d)}</h3>
-              <DayLabel trip={detail.trip} iso={d} onChange={onChange} />
+            <div className="day-rail" aria-hidden="true">
+              <span className="caption">{weekday(d)}</span>
+              <span className={`day-dot ${dot}`}>{inTrip(d) ? n : "·"}</span>
+              <span className="day-line" />
             </div>
-            {staying(d).map((b) => (
-              <p key={b.id} className="caption">
-                <span aria-hidden="true">🏨</span> Staying at {b.hotel ?? b.title}
-              </p>
-            ))}
-            <ul className="timeline" aria-label={dayLabel(d)}>
-              {outs.map((b) => (
-                <TimelineEntry key={`out-${b.id}`} booking={b} iso={d} stop={null} />
+            <div className="day-body">
+              <div className="day-head">
+                <h3>{dayLabel(d)}</h3>
+                <DayLabel trip={detail.trip} iso={d} onChange={onChange} />
+              </div>
+              {staying(d).map((b) => (
+                <p key={b.id} className="caption">
+                  <span aria-hidden="true">🏨</span> Staying at {b.hotel ?? b.title}
+                </p>
               ))}
-              {entries.map((b) => {
-                if (b.kind === "activity") stop += 1;
-                return editing === b.id ? (
-                  <li key={b.id}>
-                    <EntryEditor
-                      trip={detail.trip}
-                      home={home}
-                      entry={b}
-                      onDone={(saved) => {
-                        setEditing(null);
-                        if (saved) onChange();
-                      }}
-                    />
-                  </li>
-                ) : (
-                  <TimelineEntry key={b.id} booking={b} iso={d} stop={b.kind === "activity" ? stop : null}>
-                    {actions(b)}
-                  </TimelineEntry>
-                );
-              })}
-            </ul>
-            <button type="button" className="btn btn-ghost btn-small" onClick={() => onAdd({ kind: "activity", day: d })} aria-label={`Add a plan on ${dayPill(d)}`}>
-              + Add a plan
-            </button>
+              <ul className="timeline" aria-label={dayLabel(d)}>
+                {outs.map((b) => (
+                  <TimelineEntry key={`out-${b.id}`} booking={b} iso={d} stop={null} />
+                ))}
+                {entries.map((b) => {
+                  if (b.kind === "activity") stop += 1;
+                  return editing === b.id ? (
+                    <li key={b.id}>
+                      <EntryEditor
+                        trip={detail.trip}
+                        home={home}
+                        entry={b}
+                        onDone={(saved) => {
+                          setEditing(null);
+                          if (saved) onChange();
+                        }}
+                      />
+                    </li>
+                  ) : (
+                    <TimelineEntry key={b.id} booking={b} iso={d} stop={b.kind === "activity" ? stop : null}>
+                      {actions(b)}
+                    </TimelineEntry>
+                  );
+                })}
+              </ul>
+              {empty && <p className="caption">Nothing planned yet</p>}
+              <button type="button" className="btn btn-ghost btn-small" onClick={() => onAdd({ kind: "activity", day: d })} aria-label={`Add a plan on ${dayPill(d)}`}>
+                + Add a plan
+              </button>
+            </div>
           </div>
         );
       })}
@@ -1000,15 +1048,15 @@ function ReadyCheck({ detail, onAdd }: { detail: TripDetail; onAdd: (preset: { k
   if (detail.trip.status === "finished") return null;
   const nights = r.nights_without_stay;
   return (
-    <section className="card" aria-labelledby="trip-ready">
+    <section className="card trip-ready" aria-labelledby="trip-ready">
       <div className="card-head">
         <h2 id="trip-ready">Getting ready</h2>
-        <span className="caption">
-          {r.done} of {r.total}
-        </span>
       </div>
-      <div className="meter" aria-hidden="true">
-        <span style={{ width: `${(r.done / r.total) * 100}%` }} />
+      <div className="ready-top">
+        <Ring done={r.done} total={r.total} label={`${r.done} of ${r.total} done`} />
+        <span>
+          {r.done} of {r.total} done
+        </span>
       </div>
       <ul className="checklist">
         <li className={nights.length ? "todo" : "done"}>
@@ -1252,34 +1300,6 @@ const TABS = [
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
 
-const initials = (name: string) =>
-  name
-    .split(/\s+/)
-    .map((w) => w[0] ?? "")
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-
-/** Companions as overlapping initials, like a collaborator stack. */
-function Companions({ names }: { names: string[] }) {
-  if (names.length === 0) return null;
-  const shown = names.slice(0, 3);
-  return (
-    <span className="avatars" aria-label={`With ${names.join(", ")}`} title={names.join(", ")}>
-      {shown.map((n) => (
-        <span key={n} className="avatar" aria-hidden="true">
-          {initials(n)}
-        </span>
-      ))}
-      {names.length > shown.length && (
-        <span className="avatar more" aria-hidden="true">
-          +{names.length - shown.length}
-        </span>
-      )}
-    </span>
-  );
-}
-
 const ADD_CHOICES: { kind: EntryKind; label: string }[] = [
   { kind: "flight", label: "✈️ Flight" },
   { kind: "hotel", label: "🏨 Lodging" },
@@ -1408,42 +1428,44 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
 
   return (
     <>
-      <p className="caption">
-        <Link to="/travel">Trips</Link>
-      </p>
-      <header className="card trip-hero">
-        <div className="trip-hero-main">
+      <header className="trip-cover" style={data ? coverStyle(data.trip) : undefined}>
+        <div className="trip-cover-top">
+          <Link className="cover-button" to="/travel" aria-label="Back to trips">
+            <span aria-hidden="true">‹</span> Trips
+          </Link>
+          {data && !editing && (
+            <div className="actions">
+              <label className="btn">
+                {reading ? "Reading…" : "From a screenshot"}
+                <input className="sr-only" type="file" accept="image/png,image/jpeg,image/webp" disabled={reading} onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = "";
+                  if (file) void screenshot(file);
+                }} />
+              </label>
+              <button type="button" className="btn" onClick={() => setEditing(true)}>
+                Edit
+              </button>
+              <button type="button" className="btn" onClick={() => void remove()}>
+                Delete
+              </button>
+            </div>
+          )}
+        </div>
+        <div className="trip-cover-main">
           <h1>{data?.trip.destination ?? "Trip"}</h1>
           {data && (
             <p className="trip-meta">
               <span>
-                <span aria-hidden="true">📅</span> {day(data.trip.start)} – {day(data.trip.end)}
+                {day(data.trip.start)} to {day(data.trip.end)} · {data.trip.days} {data.trip.days === 1 ? "day" : "days"}
               </span>
-              <span>{data.trip.days} days</span>
-              <span>{tripWhen(data.trip)}</span>
+              <span className="pill">{tripWhen(data.trip)}</span>
               <span>spending in {data.trip.currency}</span>
               <Companions names={data.trip.companions} />
             </p>
           )}
+          {data?.trip.photo && <PhotoCredit photo={data.trip.photo} />}
         </div>
-        {data && !editing && (
-          <div className="actions">
-            <label className="btn">
-              {reading ? "Reading…" : "From a screenshot"}
-              <input className="sr-only" type="file" accept="image/png,image/jpeg,image/webp" disabled={reading} onChange={(e) => {
-                const file = e.target.files?.[0];
-                e.target.value = "";
-                if (file) void screenshot(file);
-              }} />
-            </label>
-            <button type="button" className="btn" onClick={() => setEditing(true)}>
-              Edit
-            </button>
-            <button type="button" className="btn" onClick={() => void remove()}>
-              Delete
-            </button>
-          </div>
-        )}
       </header>
       {detail.isLoading && <p className="state">Loading…</p>}
       {detail.isError && (
@@ -1520,7 +1542,23 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
           )}
           {tab === "overview" && (
             <>
-              <ReadyCheck detail={data} onAdd={add} />
+              <div className="trip-overview-top">
+                <NextUp detail={data} />
+                <StayCard detail={data} onAdd={() => add({ kind: "hotel", day: data.ready.nights_without_stay[0] })} />
+              </div>
+              <div className="trip-pair">
+                <ReadyCheck detail={data} onAdd={add} />
+                <MoneyCard detail={data} onOpen={() => setTab("money")} />
+              </div>
+              {onAsk && (
+                <button
+                  type="button"
+                  className="btn btn-primary trip-ask"
+                  onClick={() => onAsk(`How's my ${data.trip.destination} trip looking? What's booked, what's missing and what's left in the budget?`)}
+                >
+                  <span aria-hidden="true">✨</span> Ask Nexus about this trip
+                </button>
+              )}
               <ReservationBar detail={data} />
               <Notes trip={data.trip} />
               <Sections detail={data} onChange={refresh} onAdd={add} />

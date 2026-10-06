@@ -520,6 +520,17 @@ export type Trip = {
   day_number: number | null;
   notes: string | null;
   day_labels: Record<string, string>;
+  /** A famous view of where it goes, from Wikimedia Commons, once found. */
+  photo?: TripPhoto | null;
+};
+
+/** A trip's header photo, served by our API, with the credit its licence asks for. */
+export type TripPhoto = {
+  url: string;
+  credit: string;
+  page: string | null;
+  licence_url: string | null;
+  spot: string | null;
 };
 
 /** A flight, hotel or train booking read from email. Times are local as booked. */

@@ -858,6 +858,13 @@ test("a trip is added and shows its spending, set-aside and settle-up", async ({
   await expect(page.getByRole("heading", { name: "Tokyo", level: 1 })).toBeVisible();
   expect(state.trips[0]).toMatchObject({ currency: "JPY", companions: ["Ann", "Ben"], planned: { "Dining Out": { amount: "600.0000" } } });
   await expect(page.getByLabel("With Ann, Ben")).toBeVisible();
+  // The cover photo is credited as its licence asks, linking to its page.
+  const credit = page.getByRole("link", { name: /Photo: A\. Photographer, CC BY-SA 4\.0/ });
+  await expect(credit).toHaveAttribute("href", "https://commons.wikimedia.org/wiki/File:Example.jpg");
+  await expect(credit).toHaveAttribute("rel", /noopener/);
+  // What's next, as a boarding pass, and the money at a glance.
+  await expect(page.getByRole("region", { name: "Next: flight" })).toContainText("ZZ12");
+  await expect(page.getByRole("region", { name: "Money" })).toContainText("of SGD 3,000.00");
   const flights = page.getByRole("list", { name: "Flights" });
   await expect(flights).toContainText("ZZ12 SIN → NRT");
   await expect(flights).toContainText("not logged");
@@ -879,7 +886,9 @@ test("a trip is added and shows its spending, set-aside and settle-up", async ({
   await expect(trip).toContainText("In 43 days");
   await expect(page.getByRole("region", { name: "Nexus" })).toContainText("Tokyo trip is in 43 days");
   await page.goto("/travel");
-  await expect(page.getByRole("region", { name: "Coming up" }).getByRole("link", { name: "Tokyo" })).toBeVisible();
+  const coming = page.getByRole("region", { name: "Coming up" });
+  await expect(coming.getByRole("link", { name: "Tokyo" })).toBeVisible();
+  await expect(coming).toContainText("In 43 days");
   const loose = page.getByRole("region", { name: "Bookings not on a trip" });
   await expect(loose).toContainText("Hotel Sakura, 2 nights");
   await loose.getByLabel("Trip for Hotel Sakura, 2 nights").selectOption("trip1");
@@ -1103,4 +1112,14 @@ test("places from Google Maps: saved, linked, rated, and flagged when usually cl
   await page.getByRole("button", { name: "Link: Namdaemun Market" }).click();
   await expect(places.getByLabel("Rated 4.3 out of 5 from 18000 ratings")).toBeVisible();
   expect(state.plans[1]).toMatchObject({ name: "Namdaemun Market", place_id: "fakePlaceMarket01" });
+});
+
+test("where to next hands a place and a time to Nexus to research", async ({ page }) => {
+  await fakeApi(page);
+  await page.goto("/travel");
+  const where = page.getByRole("region", { name: "Where to next?" });
+  await where.getByLabel("Where and when").fill("Hokkaido in February");
+  await where.getByRole("button", { name: "Research it" }).click();
+  const chat = page.getByRole("dialog", { name: "Chat" });
+  await expect(chat.locator(".msg-user").last()).toHaveText("I'm thinking of a trip: Hokkaido in February. Can you research it?");
 });

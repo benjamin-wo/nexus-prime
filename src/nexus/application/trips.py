@@ -14,6 +14,7 @@ from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 from nexus.application import cashflow, fx
+from nexus.application.destination_photos import queue_photo
 from nexus.application.fx import RateSource
 from nexus.application.ports import UnitOfWork
 from nexus.domain.bookings import EARLY_DAYS, Booking, BookingKind
@@ -106,6 +107,7 @@ async def create_trip(uow: UnitOfWork, user: User, draft: TripDraft, *, now: dat
         if len(await uow.trips.list_trips(user.id)) >= MAX_TRIPS:
             raise InvalidInput(f"keep at most {MAX_TRIPS} trips; delete an old one first")
         await uow.trips.insert_trip(trip, user.home_currency)
+        await queue_photo(uow, now)
         # Bookings already read (from email or a screenshot) for these dates join it.
         for booking in await uow.trips.list_bookings(user.id, unattached=True):
             if (
@@ -132,6 +134,12 @@ async def update_trip(
             raise NotFound("no trip with that id")
         trip = _build(user, draft, trip_id, current.created_at, now, current.day_labels)
         await uow.trips.update_trip(trip, user.home_currency)
+        if (trip.destination, trip.start) != (current.destination, current.start):
+            # Somewhere or some season else: a new header photo.
+            await uow.trips.clear_trip_photo(user.id, trip_id)
+            await queue_photo(uow, now)
+        else:
+            trip = replace(trip, photo_id=current.photo_id)
         await uow.commit()
     return trip
 

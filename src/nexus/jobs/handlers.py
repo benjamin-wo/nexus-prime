@@ -13,6 +13,7 @@ from nexus.application import bills as bill_cases
 from nexus.application import bookings as booking_cases
 from nexus.application import budgets as budget_cases
 from nexus.application import departments as department_cases
+from nexus.application import destination_photos as photo_cases
 from nexus.application import email as email_cases
 from nexus.application import investments as investment_cases
 from nexus.application import market as market_cases
@@ -57,6 +58,7 @@ SCHEDULES = (
     Schedule(market_cases.NEWS_JOB, timedelta(hours=1)),
     Schedule(plan_cases.FOLLOW_JOB, timedelta(hours=1)),
     Schedule(booking_cases.REMIND_JOB, timedelta(hours=1)),
+    Schedule(photo_cases.PHOTOS_JOB, timedelta(minutes=30)),
 )
 
 
@@ -93,6 +95,7 @@ def build_handlers(
     departments: department_cases.Departments | None = None,
     prices: PriceSource | None = None,
     news: NewsSource | None = None,
+    photos: photo_cases.PhotoFinder | None = None,
 ) -> dict[str, Handler]:
     async def send(payload: dict[str, Any]) -> Defer | None:
         """Message a user on Telegram, but not during their quiet hours."""
@@ -237,6 +240,12 @@ def build_handlers(
                 if found:
                     log.info("price refresh: recorded %d dividends", found)
 
+    async def trip_photos(_: dict[str, Any]) -> None:
+        if photos is not None:
+            done = await photo_cases.sweep(uow, photos, now=clock())
+            if done:
+                log.info("trip photos: looked for %d", done)
+
     async def refresh_news(_: dict[str, Any]) -> None:
         if news is not None:
             fetched = await research_cases.refresh_news(uow, news, now=clock())
@@ -273,6 +282,7 @@ def build_handlers(
     return {
         market_cases.REFRESH_JOB: refresh_prices,
         market_cases.NEWS_JOB: refresh_news,
+        photo_cases.PHOTOS_JOB: trip_photos,
         plan_cases.FOLLOW_JOB: follow_plans,
         booking_cases.REMIND_JOB: travel_reminders,
         department_cases.STEP_JOB: department_step,
