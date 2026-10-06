@@ -628,6 +628,11 @@ export async function fakeApi(
     }
     const home = (amount: number) => ({ amount: amount.toFixed(4), currency: "SGD" });
     if (path === "/travel/trips" && method === "GET") return json(route, state.trips);
+    if (path === "/travel/photos/ph1") {
+      // A 1x1 PNG stands in for the photo.
+      const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+      return route.fulfill({ status: 200, contentType: "image/png", body: Buffer.from(png, "base64") });
+    }
     if (path === "/travel/trips" && method === "POST") {
       const sgdOrNull = (v: unknown) => (v ? home(Number(v)) : null);
       const trip = {
@@ -646,6 +651,14 @@ export async function fakeApi(
         day_number: null,
         notes: body.notes ?? null,
         day_labels: {} as Record<string, string>,
+        // Made up, in the shape the photo search keeps.
+        photo: {
+          url: "/api/travel/photos/ph1",
+          credit: "Photo: A. Photographer, CC BY-SA 4.0, via Wikimedia Commons",
+          page: "https://commons.wikimedia.org/wiki/File:Example.jpg",
+          licence_url: "https://creativecommons.org/licenses/by-sa/4.0",
+          spot: "Example Tower",
+        },
       };
       state.trips = [trip, ...state.trips];
       return json(route, trip, 201);

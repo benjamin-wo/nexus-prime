@@ -19,6 +19,7 @@ from nexus.agent.graph import AgentDeps, AgentGraph
 from nexus.agent.holdings_reader import HoldingsReader, LlmHoldingsReader
 from nexus.agent.image_look import ImageLooker, LlmImageLooker
 from nexus.agent.memory_writer import MemoryWriter
+from nexus.agent.photo_picker import LlmChooser, LlmSpotter
 from nexus.agent.receipts import LlmReceiptReader, ReceiptReader
 from nexus.agent.service import AgentService
 from nexus.agent.skills import SkillLibrary
@@ -27,6 +28,7 @@ from nexus.agent.trip_reader import LlmTripReader, TripReader
 from nexus.application import email as email_cases
 from nexus.application.clock import utcnow
 from nexus.application.departments import Departments, default_registry
+from nexus.application.destination_photos import PhotoFinder
 from nexus.application.email import EmailRuntime
 from nexus.application.fx import RateSource
 from nexus.application.limits import RateLimiter
@@ -74,6 +76,7 @@ from nexus.infra.llm.factory import (
 from nexus.infra.logs import configure_logging
 from nexus.infra.market.finnhub import FinnhubNews
 from nexus.infra.market.tiingo import TiingoPrices
+from nexus.infra.photos.wikipedia import WikipediaPhotos
 from nexus.infra.places.google import GooglePlaces
 from nexus.infra.search.openrouter_web import OpenRouterWebSearch
 from nexus.infra.search.serpapi import SerpApiTravel
@@ -106,6 +109,7 @@ class Overrides:
     mailbox: SignInMailbox | None = None
     forwarding: ForwardingInboxes | None = None
     email_reader: EmailReader | None = None
+    photos: PhotoFinder | None = None
 
 
 def _receipt_store(settings: Settings, overrides: Overrides) -> ReceiptStore | None:
@@ -172,6 +176,24 @@ async def _places(
         http = await stack.enter_async_context(httpx.AsyncClient())
         source = GooglePlaces(http, key.get_secret_value())
     return Places(source, clock=clock)
+
+
+async def _photos(
+    settings: Settings, overrides: Overrides, stack: AsyncExitStack, models: ChatModels
+) -> PhotoFinder:
+    """Trip header photos from Wikipedia, with a model naming famous sights and the
+    photo model choosing between a few (without it, the place's lead photo)."""
+    if overrides.photos is not None:
+        return overrides.photos
+    http = await stack.enter_async_context(httpx.AsyncClient())
+    chooser = (
+        LlmChooser(build_screenshot_reader(settings, models.vision))
+        if models.vision is not None
+        else None
+    )
+    return PhotoFinder(
+        WikipediaPhotos(http), LlmSpotter(build_memory_model(settings, models.primary)), chooser
+    )
 
 
 async def _email_runtime(
@@ -474,6 +496,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                             departments,
                             prices,
                             news,
+                            await _photos(resolved, extra, stack, models),
                         ),
                         schedules=SCHEDULES,
                         clock=clock,

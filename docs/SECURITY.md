@@ -19,6 +19,7 @@ A small number of invited people's money records: transactions, budgets, bills, 
 | The model | It can only call tools, never SQL; tools act as the authenticated user, and any `user_id` it sends is dropped; changes ask the user to confirm; there's no tool that moves money; emails and receipts are read by separate, tool-less calls; memories come only from the user's own words and can't start a change |
 | Secrets | From the environment only; Gmail refresh tokens encrypted with Fernet (`TOKEN_ENCRYPTION_KEY`, rotatable); access logs drop query strings on paths that carry one-time tokens |
 | Files | Receipts in a private bucket behind links that expire in minutes; statements and their passwords are read for one request and never stored; CSV export neutralises cells a spreadsheet would run as formulas |
+| Trip photos | Only a place's name and a season leave for Wikipedia and the models, never anything of the user's; only Wikimedia https links are downloaded, JPEG, PNG or WebP under 4 MB; photos are shared across users by design (they're public, freely licensed images) and served by our own API, so the image policy stays `'self'` |
 | Browser | A strict Content-Security-Policy on the web app, framing allowed only by Telegram's web client |
 | Dependencies | `pip-audit` (272 locked packages) and `npm audit` (production): no known vulnerabilities |
 

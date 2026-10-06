@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nexus.application import bills as bill_cases
 from nexus.application import departments as department_cases
+from nexus.application import destination_photos as photo_cases
 from nexus.application import email as email_cases
 from nexus.application import market as market_cases
 from nexus.application import receipts as receipt_cases
@@ -56,6 +57,8 @@ from tests.fakes import (
 )
 from tests.integration.conftest import UowFactory
 from tests.integration.test_departments import Shown
+from tests.integration.test_destination_photos import JPEG, FakeWikipedia
+from tests.integration.test_destination_photos import finder as photo_finder
 
 PLACE = fake_place("fakePlaceNoodle01", "Hanok Noodle Bar", closed_on=4, reviews=("Worth it.",))
 pytestmark = pytest.mark.integration
@@ -1745,3 +1748,30 @@ async def test_google_maps_places_on_the_web(world: World) -> None:
         "PUT", f"/api/travel/bookings/{booking['id']}/place", {"place_id": "../x"}
     )
     assert bad.status_code == 422
+
+
+async def test_trip_header_photos_are_served_from_here(world: World) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+    body = {"destination": "Kyoto", "start": "2026-11-10", "end": "2026-11-14", "currency": "JPY"}
+    trip = (await owner.send("POST", "/api/travel/trips", body)).json()
+    assert trip["photo"] is None  # until the search has run
+    uow = lambda: SqlUnitOfWork(world.engine)  # noqa: E731
+    finder = photo_finder(FakeWikipedia())
+    assert await photo_cases.sweep(uow, finder, now=world.clock.now) == 1
+
+    detail = (await owner.get(f"/api/travel/trips/{trip['id']}")).json()
+    photo = detail["trip"]["photo"]
+    assert photo["credit"] == "Photo: Ann Lee, CC BY-SA 4.0, via Wikimedia Commons"
+    assert photo["page"].startswith("https://commons.wikimedia.org/")
+    assert photo["url"].startswith("/api/travel/photos/")
+    listed = (await owner.get("/api/travel/trips")).json()
+    assert listed[0]["photo"] == photo
+
+    served = await owner.get(photo["url"])
+    assert served.status_code == 200 and served.content == JPEG
+    assert served.headers["content-type"] == "image/jpeg"
+    assert "immutable" in served.headers["cache-control"]
+    assert (await owner.get("/api/travel/photos/not-an-id")).status_code == 404
+    stranger = world.browser()
+    assert (await stranger.get(photo["url"])).status_code == 401

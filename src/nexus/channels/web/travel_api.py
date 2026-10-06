@@ -8,10 +8,11 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from nexus.application import bookings as booking_cases
+from nexus.application import destination_photos as photo_cases
 from nexus.application import places as place_cases
 from nexus.application import travel_research as research_cases
 from nexus.application import trips as trip_cases
@@ -20,6 +21,7 @@ from nexus.channels.web.api import MoneyOut, money
 from nexus.channels.web.investments_api import MAX_IMAGE_CHARS
 from nexus.channels.web.security import Auth, Runtime, WebRuntime, limit
 from nexus.domain.bookings import Booking
+from nexus.domain.destination_photos import DestinationPhoto
 from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.ledger import User
 from nexus.domain.money import Money
@@ -44,6 +46,26 @@ def _m(value: Money | None) -> MoneyOut | None:
     return money(value) if value is not None else None
 
 
+class PhotoOut(Model):
+    url: str  # served by this API: the page's rules allow no other image host
+    credit: str  # "Photo: <author>, <licence>, via Wikimedia Commons"
+    page: str | None  # the photo's page on Commons
+    licence_url: str | None
+    spot: str | None  # what it shows ("Kiyomizu-dera")
+
+
+def _photo(photo: DestinationPhoto | None) -> PhotoOut | None:
+    if photo is None or photo.credit is None:
+        return None
+    return PhotoOut(
+        url=f"/api/travel/photos/{photo.id}",
+        credit=photo.credit,
+        page=photo.page,
+        licence_url=photo.licence_url,
+        spot=photo.spot,
+    )
+
+
 class TripOut(Model):
     id: UUID
     destination: str
@@ -60,9 +82,10 @@ class TripOut(Model):
     day_number: int | None  # day 3 of 10, while it's on
     notes: str | None
     day_labels: dict[date, str]  # a label per day, such as the city
+    photo: PhotoOut | None = None  # a famous view of where it goes, once found
 
 
-def _trip(trip: Trip, today: date) -> TripOut:
+def _trip(trip: Trip, today: date, photos: dict[UUID, DestinationPhoto] | None = None) -> TripOut:
     return TripOut(
         id=trip.id,
         destination=trip.destination,
@@ -79,6 +102,7 @@ def _trip(trip: Trip, today: date) -> TripOut:
         day_number=trip.day_number(today),
         notes=trip.notes,
         day_labels=dict(sorted(trip.day_labels.items())),
+        photo=_photo((photos or {}).get(trip.photo_id)) if trip.photo_id else None,
     )
 
 
@@ -227,10 +251,14 @@ class TripDetailOut(Model):
     places: bool = False  # Google Maps places are set up
 
 
-def _detail(view: trip_cases.TripView, web: WebRuntime | None = None) -> TripDetailOut:
+def _detail(
+    view: trip_cases.TripView,
+    web: WebRuntime | None = None,
+    photos: dict[UUID, DestinationPhoto] | None = None,
+) -> TripDetailOut:
     s, a = view.spending, view.saving
     return TripDetailOut(
-        trip=_trip(view.trip, view.today),
+        trip=_trip(view.trip, view.today, photos),
         spending=SpendingOut(
             spent=money(s.spent),
             left=_m(s.left),
@@ -332,7 +360,9 @@ def _today(auth: Auth, web: Runtime) -> date:
 @router.get("/trips")
 async def list_trips(auth: Auth, web: Runtime) -> list[TripOut]:
     today = _today(auth, web)
-    return [_trip(t, today) for t in await trip_cases.list_trips(web.uow(), auth.user.id)]
+    trips = await trip_cases.list_trips(web.uow(), auth.user.id)
+    photos = await photo_cases.photos_of(web.uow(), trips)
+    return [_trip(t, today, photos) for t in trips]
 
 
 @router.post("/trips", status_code=201)
@@ -347,7 +377,9 @@ async def create_trip(body: TripIn, auth: Auth, web: Runtime) -> TripOut:
 async def next_trip(auth: Auth, web: Runtime) -> TripDetailOut | None:
     """The trip that's on or coming up, for Home."""
     view = await trip_cases.next_trip(web.uow, web.rates, auth.user, now=web.clock())
-    return _detail(view, web) if view else None
+    if view is None:
+        return None
+    return _detail(view, web, await photo_cases.photos_of(web.uow(), [view.trip]))
 
 
 @router.get("/trips/{trip_id}")
@@ -355,7 +387,25 @@ async def get_trip(trip_id: str, auth: Auth, web: Runtime) -> TripDetailOut:
     view = await trip_cases.trip_view(
         web.uow, web.rates, auth.user, _uuid(trip_id), now=web.clock()
     )
-    return _detail(view, web)
+    return _detail(view, web, await photo_cases.photos_of(web.uow(), [view.trip]))
+
+
+@router.get("/photos/{photo_id}")
+async def photo(photo_id: str, auth: Auth, web: Runtime) -> Response:
+    """A trip header photo. Photos are shared by every trip to a place and never
+    change, so the browser keeps them."""
+    found = await photo_cases.photo_file(web.uow(), _uuid(photo_id, "photo"))
+    if found is None:
+        raise NotFound("no photo with that id")
+    data, mime = found
+    return Response(
+        data,
+        media_type=mime,
+        headers={
+            "Cache-Control": "private, max-age=31536000, immutable",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @router.put("/trips/{trip_id}")

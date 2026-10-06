@@ -11,12 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from nexus.application.ports import TripExpense
 from nexus.domain.bookings import Booking, BookingDraft
+from nexus.domain.destination_photos import DestinationPhoto, Season
 from nexus.domain.ledger import Direction, TransactionStatus, UserId
 from nexus.domain.money import Money
 from nexus.domain.trips import Trip
 from nexus.infra.db.ledger_repository import _transaction
 from nexus.infra.db.tables import (
     categories,
+    destination_photos,
     splits,
     transactions,
     trip_bookings,
@@ -43,6 +45,7 @@ def _trip(row: Row[Any]) -> Trip:
         updated_at=row.updated_at,
         notes=row.notes,
         day_labels={date.fromisoformat(k): v for k, v in (row.day_labels or {}).items()},
+        photo_id=row.photo_id,
     )
 
 
@@ -332,6 +335,124 @@ class SqlTripRepository:
             )
         )
         return [UserId(r[0]) for r in rows]
+
+    # --- header photos (shared by every user's trips to a place) -------------------
+
+    async def place_photos(self, place_key: str) -> list[DestinationPhoto]:
+        rows = await self._db.execute(
+            select(*_PHOTO_COLUMNS).where(destination_photos.c.place_key == place_key)
+        )
+        return [_photo(r) for r in rows]
+
+    async def save_photo(
+        self, photo: DestinationPhoto, data: bytes | None, mime: str | None
+    ) -> DestinationPhoto:
+        """Keep a photo, or the note that none was found. A note is replaced by a
+        later find; a photo already kept for the place and season stays, and is
+        returned instead."""
+        values = {
+            "place_key": photo.place_key,
+            "season": photo.season.value,
+            "status": "ready" if photo.found else "none",
+            "latitude": photo.latitude,
+            "spot": photo.spot,
+            "author": photo.author,
+            "licence": photo.licence,
+            "licence_url": photo.licence_url,
+            "page": photo.page,
+            "mime": mime,
+            "data": data,
+            "created_at": photo.created_at,
+        }
+        stmt = (
+            pg_insert(destination_photos)
+            .values(id=photo.id, **values)
+            .on_conflict_do_update(
+                index_elements=["place_key", "season"],
+                set_=values,
+                where=destination_photos.c.status == "none",
+            )
+            .returning(*_PHOTO_COLUMNS)
+        )
+        row = (await self._db.execute(stmt)).first()
+        if row is None:
+            row = (
+                await self._db.execute(
+                    select(*_PHOTO_COLUMNS).where(
+                        destination_photos.c.place_key == photo.place_key,
+                        destination_photos.c.season == photo.season.value,
+                    )
+                )
+            ).one()
+        return _photo(row)
+
+    async def photos(self, ids: list[UUID]) -> dict[UUID, DestinationPhoto]:
+        if not ids:
+            return {}
+        rows = await self._db.execute(
+            select(*_PHOTO_COLUMNS).where(destination_photos.c.id.in_(ids))
+        )
+        return {r.id: _photo(r) for r in rows}
+
+    async def photo_file(self, photo_id: UUID) -> tuple[bytes, str] | None:
+        row = (
+            await self._db.execute(
+                select(destination_photos.c.data, destination_photos.c.mime).where(
+                    destination_photos.c.id == photo_id, destination_photos.c.status == "ready"
+                )
+            )
+        ).first()
+        return (bytes(row.data), row.mime) if row else None
+
+    async def trips_needing_photos(
+        self, since: date, tried_before: datetime, *, limit: int
+    ) -> list[Trip]:
+        """Trips not yet over, without a photo, not looked for since ``tried_before``;
+        across users, the soonest first."""
+        rows = await self._db.execute(
+            select(trips)
+            .where(
+                trips.c.end_on >= since,
+                trips.c.photo_id.is_(None),
+                or_(trips.c.photo_tried_at.is_(None), trips.c.photo_tried_at < tried_before),
+            )
+            .order_by(trips.c.start_on, trips.c.id)
+            .limit(limit)
+        )
+        return [_trip(r) for r in rows]
+
+    async def set_trip_photo(self, trip_id: UUID, photo_id: UUID | None, at: datetime) -> None:
+        await self._db.execute(
+            update(trips).where(trips.c.id == trip_id).values(photo_id=photo_id, photo_tried_at=at)
+        )
+
+    async def clear_trip_photo(self, user_id: UserId, trip_id: UUID) -> None:
+        """Look for a photo again: where or when the trip goes has changed."""
+        await self._db.execute(
+            update(trips)
+            .where(trips.c.user_id == user_id, trips.c.id == trip_id)
+            .values(photo_id=None, photo_tried_at=None)
+        )
+
+
+# Everything but the image bytes.
+_PHOTO_COLUMNS = [c for c in destination_photos.c if c.name != "data"]
+
+
+def _photo(row: Row[Any]) -> DestinationPhoto:
+    return DestinationPhoto(
+        id=row.id,
+        place_key=row.place_key,
+        season=Season(row.season),
+        latitude=float(row.latitude) if row.latitude is not None else None,
+        found=row.status == "ready",
+        spot=row.spot,
+        author=row.author,
+        licence=row.licence,
+        licence_url=row.licence_url,
+        page=row.page,
+        created_at=row.created_at,
+    )
 
 
 def _booking(row: Row[Any]) -> Booking:

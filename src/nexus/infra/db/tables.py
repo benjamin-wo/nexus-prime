@@ -820,6 +820,34 @@ email_links = Table(
 )
 
 # A trip (M11a): dates, a budget and set-aside in the home currency, and who's going.
+# A famous view of a place in a season, from Wikimedia Commons, shared by every trip
+# there; or the note that none was found ("none"), so it isn't looked for again soon.
+destination_photos = Table(
+    "destination_photos",
+    metadata,
+    _uuid_pk(),
+    Column("place_key", Text, nullable=False),
+    Column("season", Text, nullable=False),
+    Column("status", Text, nullable=False),
+    Column("latitude", Numeric(8, 5)),
+    Column("spot", Text),
+    Column("author", Text),
+    Column("licence", Text),
+    Column("licence_url", Text),
+    Column("page", Text),
+    Column("mime", Text),
+    Column("data", LargeBinary),
+    Column("created_at", TZ, nullable=False),
+    UniqueConstraint("place_key", "season"),
+    CheckConstraint("season IN ('spring', 'summer', 'autumn', 'winter', 'any')", name="season"),
+    CheckConstraint("status IN ('ready', 'none')", name="status"),
+    CheckConstraint(
+        "status = 'none' OR (data IS NOT NULL AND mime IS NOT NULL AND author IS NOT NULL "
+        "AND licence IS NOT NULL)",
+        name="ready_has_photo",
+    ),
+)
+
 trips = Table(
     "trips",
     metadata,
@@ -839,7 +867,11 @@ trips = Table(
     Column("notes", Text),  # the user's own: what to pack, who to meet (M11 follow-up)
     # A label per day, {"2026-12-12": "Busan"} (migration 0030).
     Column("day_labels", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    # Its header photo, and when one was last looked for (migration 0033).
+    Column("photo_id", UUID(as_uuid=True)),
+    Column("photo_tried_at", TZ),
     ForeignKeyConstraint(["user_id"], ["users.id"]),
+    ForeignKeyConstraint(["photo_id"], ["destination_photos.id"], ondelete="SET NULL"),
     UniqueConstraint("id", "user_id"),
     CheckConstraint("end_on >= start_on", name="dates"),
     CheckConstraint("budget IS NULL OR budget > 0", name="budget_positive"),

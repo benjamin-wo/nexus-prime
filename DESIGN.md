@@ -173,13 +173,18 @@ All spacing derives from a 4px base unit.
 - **Layout**: inline cluster item
 
 ### Trip page
-- **Structure**: header card (title, meta row, companion initials, actions), sticky tabs (Overview, Itinerary, Money), tab content, quick-add button above the chat button
-- **Variants**: Overview (getting-ready check, reservation counts, notes, collapsible sections), Itinerary (sticky day strip, labelled days, timeline of strips and numbered stops), Money (existing spending cards)
-- **Spacing**: `--space-6` header padding, `--space-4` card padding, `--space-2` timeline gaps
-- **States**: loading, error, empty sections ("None yet"), imported (banner asking whether it looks right), adding, editing
-- **Accessibility**: tabs are `role="tab"` with `aria-selected`; the day strip and reservation counts are labelled navigation; check-in and check-out are text badges; the quick-add menu is a labelled menu with an `aria-expanded` trigger
-- **Motion**: tab colour and underline at Standard timing; quick-add press scale at Micro, removed for reduced motion
-- **Layout**: tabs and day strip stick to the top of the scroll area; the quick-add button sits above the chat button (higher on mobile, above the bottom navigation)
+- **Structure**: photo cover (back button, actions, destination, meta row with a when-pill and companion initials, photo credit), sticky pill tabs (Overview, Itinerary, Money), tab content, quick-add button above the chat button
+- **Variants**: Overview (next-up boarding pass with an orange band, stay card with nights booked, getting-ready ring with the checklist beside a money card, full-width "Ask Nexus about this trip", reservation counts, notes, collapsible sections), Itinerary (at-a-glance strip: days planned, nights booked, booked; sticky day strip; a rail of numbered day dots, filled for the first and last day, outlined orange for planned days, dashed for empty ones), Money (existing spending cards)
+- **Cover**: the destination photo under a dark fade to the page background, or a gradient from the destination's name when there's no photo; text sits on the fade, never on bare photo; the credit links to the photo's Commons page
+- **Spacing**: `--space-4` cover and card padding, `--space-4` between overview cards, `--space-2` timeline gaps
+- **States**: loading, error, empty sections ("None yet"), "Nothing planned yet" days, imported (banner asking whether it looks right), adding, editing
+- **Accessibility**: tabs are `role="tab"` with `aria-selected`; the next-up card is a region named for what's next; the ring has a text label and the count is repeated as text; the day rail is decorative (the day headings carry the dates); the day strip and reservation counts are labelled navigation; check-in and check-out are text badges; the quick-add menu is a labelled menu with an `aria-expanded` trigger
+- **Motion**: tab background at Standard timing; quick-add press scale at Micro, removed for reduced motion
+- **Layout**: overview cards pair on desktop (3:2) and stack under 720px; cover buttons shrink on phones; tabs and day strip stick to the top of the scroll area; the quick-add button sits above the chat button (higher on mobile, above the bottom navigation)
+
+### Travel home
+- **Structure**: title and one line, trips on now and coming up as photo cards, "Where to next?" (a place and when, handed to the chat to research, three example chips and Add a trip), bookings not on a trip, past trips (smaller, desaturated), research
+- **Trip card**: cover photo or gradient, a when-chip, destination (the link; the whole card is clickable), dates with days and nights, budget and companions; a grid of cards at least 300px wide
 
 ## 6. Motion & Interaction
 

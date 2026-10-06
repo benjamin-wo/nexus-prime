@@ -49,6 +49,7 @@ class Trip:
     notes: str | None = None  # the user's own: what to pack, who to meet
     # A label per day of the trip, such as the city ("Busan") or the plan ("Day trip").
     day_labels: dict[date, str] = field(default_factory=dict)
+    photo_id: UUID | None = None  # its header photo, once found (destination_photos.py)
 
     @property
     def days(self) -> int:
