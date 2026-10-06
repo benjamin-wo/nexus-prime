@@ -17,6 +17,7 @@ from nexus.application import research as research_cases
 from nexus.channels.web.api import MoneyOut, money
 from nexus.channels.web.security import Auth, Runtime, limit
 from nexus.domain.errors import InvalidInput, NotFound
+from nexus.domain.history import describe as describe_history
 from nexus.domain.investments import (
     HoldingsDraft,
     Position,
@@ -505,6 +506,7 @@ class StockOut(Model):
     plan: PlanBrief | None  # the latest research plan
     plans_enabled: bool
     ranges: list[RangeOut]  # likely closes in a week, a month and three months
+    history: list[str] = []  # its last year in numbers, as lines
 
 
 @router.get("/stocks/{symbol}")
@@ -524,6 +526,7 @@ async def stock(symbol: str, auth: Auth, web: Runtime) -> StockOut:
             )
             for r in view.ranges
         ],
+        history=describe_history(view.history) if view.history else [],
         symbol=view.symbol,
         held=_position(view.held) if view.held else None,
         watching=view.watching,

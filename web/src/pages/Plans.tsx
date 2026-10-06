@@ -448,6 +448,11 @@ export function PlanPage() {
               </p>
             )}
             <p>{plan.summary}</p>
+            {plan.incomplete && plan.incomplete.length > 0 && (
+              <p className="callout" role="note">
+                ⚠️ The write-up is missing {plan.incomplete.join(" and ")} this time; the prices and game plan are complete.
+              </p>
+            )}
           </section>
 
           <Following brief={data.brief} />
@@ -508,6 +513,16 @@ export function PlanPage() {
                   <li key={line}>{line}</li>
                 ))}
               </ul>
+              {plan.history && plan.history.length > 0 && (
+                <>
+                  <h3>Its last year</h3>
+                  <ul>
+                    {plan.history.map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
+                </>
+              )}
             </details>
             <p className="caption">
               Every price here was worked out in code from daily closes; the analysts only wrote the words. Research, not

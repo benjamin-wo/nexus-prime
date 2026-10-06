@@ -390,6 +390,8 @@ export type Stock = {
   watching: boolean;
   levels: Levels | null;
   ranges: PriceRange[];
+  /** Its last year in numbers (returns, falls, how busy, against the market, earnings moves). */
+  history?: string[];
   earnings: EarningsDate | null;
   news: NewsItem[];
   prices: boolean;
@@ -480,8 +482,11 @@ export type PlanBody = {
   summary: string;
   invalidation: string;
   sources: PlanSource[];
+  /** Parts a writer couldn't finish; the numbers are always complete. */
+  incomplete?: string[];
   odds?: PlanOdds | null;
   ranges?: string[];
+  history?: string[];
 };
 export type PlanDetail = { brief: PlanBrief; plan: PlanBody; closes: { day: string; close: string }[] };
 

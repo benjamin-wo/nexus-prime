@@ -186,11 +186,13 @@ async def test_prices_are_fetched_for_held_stocks_once_due(uow: UowFactory) -> N
     prices = FakePrices(
         {"NVDA": {date(2026, 9, 24): "128", date(2026, 9, 25): "130.255"}}, failing={"DOWN"}
     )
-    assert await market_cases.refresh(uow, prices, now=NOW) == 2  # NVDA, and ZZZZ (unknown)
+    # NVDA, ZZZZ (unknown) and SPY (the market, unknown to this provider).
+    assert await market_cases.refresh(uow, prices, now=NOW) == 3
     # One fetch per stock, however many people hold it, with a long first history.
     assert sorted(prices.asked) == [
         ("DOWN", date(2025, 7, 5), NOW.date()),
         ("NVDA", date(2025, 7, 5), NOW.date()),
+        ("SPY", date(2025, 7, 5), NOW.date()),
         ("ZZZZ", date(2025, 7, 5), NOW.date()),
     ]
     # Nothing more is due until the next US close; the one that failed is retried.
@@ -358,7 +360,7 @@ async def test_prices_fetched_before_dividends_are_fetched_again_once(
     prices.asked.clear()
     later = NOW + timedelta(days=1)
     await market_cases.refresh(uow, prices, now=later)
-    assert prices.asked == [("NVDA", date(2025, 7, 6), later.date())]
+    assert prices.asked[0] == ("NVDA", date(2025, 7, 6), later.date())
     prices.asked.clear()
     await market_cases.refresh(uow, prices, now=later + timedelta(days=1))
     assert prices.asked[0][1] == date(2026, 9, 18)  # back to a week's overlap

@@ -413,8 +413,8 @@ class SqlInvestmentRepository:
         *,
         at: datetime,
     ) -> None:
-        """Add news not seen before, replace the stock's upcoming earnings dates, and
-        note when they were fetched."""
+        """Add news not seen before, replace the stock's upcoming earnings dates (past
+        ones are kept, for how it moved on them), and note when they were fetched."""
         if items:
             await self._db.execute(
                 pg_insert(market_news)
@@ -488,6 +488,17 @@ class SqlInvestmentRepository:
         for r in rows:
             found.setdefault(r.symbol, EarningsDate(r.symbol, r.day, r.timing))
         return found
+
+    async def past_earnings(self, symbol: str, since: date, before: date) -> list[EarningsDate]:
+        """The stock's earnings dates from ``since`` up to (not including) ``before``,
+        oldest first."""
+        e = market_earnings.c
+        rows = await self._db.execute(
+            select(market_earnings)
+            .where(e.symbol == symbol, e.day >= since, e.day < before)
+            .order_by(e.day)
+        )
+        return [EarningsDate(r.symbol, r.day, r.timing) for r in rows]
 
     # --- research plans ---
 

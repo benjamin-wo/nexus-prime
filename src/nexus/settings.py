@@ -84,9 +84,12 @@ class Settings(BaseSettings):
     finnhub_api_key: SecretStr | None = None
 
     # --- The Investment research team (OpenRouter model ids). Unset: the analysts use
-    # the main model, and the lead analyst uses RESEARCH_MODEL. ---
+    # GPT-6 Luna Pro, and the lead analyst uses RESEARCH_MODEL. ---
     research_model: str | None = None
     research_lead_model: str | None = None
+    # A stronger model that reviews each finished plan's write-up (e.g.
+    # openai/gpt-6.1-sol). Unset: no review.
+    research_review_model: str | None = None
     # --- Trip research (Travel). Web search goes through OpenRouter (its key), with
     # TRAVEL_RESEARCH_MODEL or the main model. SERPAPI_API_KEY adds live flight and
     # hotel prices from Google Flights and Hotels; unset, costs come from web search. ---
@@ -179,6 +182,7 @@ class Settings(BaseSettings):
         "memory_model",
         "research_model",
         "research_lead_model",
+        "research_review_model",
         "travel_research_model",
         "serpapi_api_key",
         "google_places_api_key",

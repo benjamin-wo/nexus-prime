@@ -487,6 +487,13 @@ export async function fakeApi(
                 { days: 63, label: "3 months", low_68: "111.20", high_68: "150.81", low_90: "100.98", high_90: "166.08" },
               ]
             : [],
+        history:
+          symbol === "AMD"
+            ? [
+                "Change in price: 1 week +2.1%, 1 month +6.4%, 3 months +18.9%",
+                "Typical daily move: 1.4% over the last month against 1.6% over the year (about usual)",
+              ]
+            : [],
         earnings: symbol === "AMD" ? { day: "2026-10-29", timing: "after close" } : null,
         news:
           symbol === "AMD"

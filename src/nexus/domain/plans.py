@@ -39,6 +39,7 @@ STOP_ATR = Decimal(1)  # how far below support the stop sits
 NO_SUPPORT_STOP_ATR = Decimal(2)  # how far below the close, with no support below
 MIN_REWARD_RISK = Decimal(2)
 MEASURED = (Decimal(2), Decimal(3))  # targets as multiples of the risk, when needed
+MAX_MEASURED = Decimal(10)  # the furthest multiple tried for a stock far above its zone
 MAX_TARGETS = 2
 VALID_DAYS = 14
 _CENT = Decimal("0.01")
@@ -135,14 +136,18 @@ def _targets(
     """Where to take profit, and (for a new buy) resistance too close to be worth it.
 
     Overhead levels are the swing highs, the 52-week high and any moving average
-    above the price (one it has fallen below tends to act as a ceiling)."""
+    above the price (one it has fallen below tends to act as a ceiling). Every target
+    is above today's close as well as the buy price: for a stock already above its
+    buy zone, a level in between would be a "take profit" below where it trades now.
+    Reward to risk is still measured from the buy price."""
+    above = max(reference, levels.close)
     overhead = {(_q(r), "resistance") for r in levels.resistance}
     overhead.add((_q(levels.year_high), "52-week high"))
     overhead |= {(_q(v), f"{n}-day average") for n, v in levels.averages.items()}
     real: list[Target] = []
     capped_by = None
     for price, why in sorted(overhead, key=lambda o: o[0]):
-        if price <= reference or any(t.price == price for t in real):
+        if price <= above or any(t.price == price for t in real):
             continue
         ratio = _q((price - reference) / risk)
         if held or ratio >= MIN_REWARD_RISK:
@@ -153,7 +158,13 @@ def _targets(
             break
     targets = list(real)
     if len(real) < MAX_TARGETS:  # little overhead (a stock at its highs): measure from the risk
-        for k in MEASURED:
+        # 2 and 3 times the risk; for a stock already above its buy zone, the next
+        # multiples up when those are at or below today's close.
+        k = MEASURED[0] - 1
+        for _ in MEASURED:
+            k += 1
+            while _q(reference + risk * k) <= above and k < MAX_MEASURED:
+                k += 1
             price = _q(reference + risk * k)
             if all(abs(price - t.price) > atr * ZONE_ATR for t in real):
                 targets.append(Target(price, k, f"{k:g} times the risk"))
@@ -385,6 +396,13 @@ def playbook(n: PlanNumbers) -> list[Step]:
 
 
 _NUMBER = re.compile(r"(?<![\w.])\$?(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?(?![\w.])")
+# Names and dates with numbers in them that aren't prices.
+_MONTH = r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?"
+_NAMES = re.compile(
+    rf"S&P\s*500|\b(?:52|50|20|200)-(?:week|day)\b|\b(?:\d{{1,2}}\s+{_MONTH},?\s+|{_MONTH}\s+"
+    rf"(?:\d{{1,2}},?\s+)?)(?:19|20)\d\d\b",
+    re.I,
+)
 
 
 def unsupported(text: str, allowed: set[Decimal], *, tolerance: Decimal = _CENT) -> list[str]:
@@ -392,12 +410,12 @@ def unsupported(text: str, allowed: set[Decimal], *, tolerance: Decimal = _CENT)
     whole numbers (counts, days, percentages written as words around them) are
     allowed; anything with decimals, or 3+ digits, must match a plan figure."""
     found = []
-    for match in _NUMBER.finditer(text):
+    for match in _NUMBER.finditer(_NAMES.sub(" ", text)):
         whole, fraction = match.group(1).replace(",", ""), match.group(2)
         if fraction is None and len(whole) < 3:
             continue
         end = match.end()
-        if text[end : end + 1] == "%":
+        if match.string[end : end + 1] == "%":
             continue
         value = Decimal(f"{whole}.{fraction}" if fraction else whole)
         if not any(abs(value - a) <= tolerance for a in allowed):
