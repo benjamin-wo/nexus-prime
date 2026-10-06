@@ -543,6 +543,36 @@ async def test_summary_is_in_home_currency(world: World) -> None:
     assert by_cat == [("Other", "39.0000"), ("Dining Out", "35.8100")]
 
 
+async def test_spending_by_month_for_the_home_chart(world: World) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+    await spend(owner, "40", "SGD", "2026-08-03")
+    await spend(owner, "500", "SGD", "2026-08-30")  # after the 28th: not "by this date"
+    await spend(owner, "20", "USD", "2026-09-26")  # 25.81 SGD
+    await spend(owner, "12", "SGD", "2026-07-15")
+    assert (await owner.send("PUT", "/api/budgets", {"amount": "1,000"})).status_code == 204
+
+    found = (await owner.get("/api/spending/months", params={"count": 3})).json()
+    assert found["currency"] == "SGD"
+    assert [(m["month"], m["spent"]["amount"], m["to_date"]) for m in found["months"]] == [
+        ("2026-07-01", "12.0000", False),
+        ("2026-08-01", "540.0000", False),
+        ("2026-09-01", "25.8100", True),
+    ]
+    assert found["last_month_to_date"] == {"amount": "40.0000", "currency": "SGD"}
+    assert found["budget"] == {"amount": "1000.0000", "currency": "SGD"}
+    assert len((await owner.get("/api/spending/months")).json()["months"]) == 6
+    assert (await owner.get("/api/spending/months", params={"count": 13})).status_code == 422
+
+    member = world.browser()
+    _, token = await owner_and_invite(world)
+    await member.login(MEMBER, invite=token)
+    theirs = (await member.get("/api/spending/months")).json()
+    assert theirs["budget"] is None and {m["spent"]["amount"] for m in theirs["months"]} == {
+        "0.0000"
+    }
+
+
 async def test_export_has_home_currency_columns(world: World) -> None:
     owner = world.browser()
     await owner.login(OWNER)

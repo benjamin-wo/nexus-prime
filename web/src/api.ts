@@ -146,6 +146,13 @@ export type Summary = {
   totals: { direction: Direction; total: Money; count: number; converted: Money[]; unconverted: Money[] }[];
   by_category: { category_id: string | null; category_name: string | null; total: Money; count: number }[];
 };
+/** Money out per month for Home's chart, oldest first, ending with this month so far. */
+export type Spending = {
+  currency: string;
+  months: { month: string; spent: Money; to_date: boolean }[];
+  last_month_to_date: Money;
+  budget: Money | null;
+};
 export type Iou = {
   split_id: string;
   transaction_id: string;

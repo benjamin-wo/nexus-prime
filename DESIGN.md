@@ -21,7 +21,7 @@ in, and amber marks attention or pending work.
 | Text/primary | --text-primary | #f4f4f5 | Main content |
 | Text/strong | --text-white | #ffffff | Headings and emphasis |
 | Text/secondary | --text-secondary | #a1a1aa | Supporting content |
-| Text/tertiary | --text-muted | #71717a | Metadata and hints |
+| Text/tertiary | --text-muted | #8b8b94 | Metadata and hints (lightened from #71717a to pass 4.5:1 on cards) |
 | Border/default | --border-card | #202024 | Card and table boundaries |
 | Border/subtle | --border-subtle | #222226 | Rails and dividers |
 | Accent/primary | --orange-primary | #f97316 | Primary actions and money out |
@@ -36,6 +36,10 @@ in, and amber marks attention or pending work.
 | Status/warning-border | --status-warning-border | rgba(245,158,11,0.35) | Pending control edge |
 | Status/error | --rose-accent | #f43f5e | Destructive actions and errors |
 | Status/info | --cyan-accent | #06b6d4 | Informational accents |
+| Surface/raised | --bg-raised | #1f1f23 | Secondary buttons, icon tiles inside cards |
+| Accent/text | --orange-text | #fb923c | Figures highlighted inside sentences (the brief, nudges) |
+| Accent/glow | --orange-glow | #7c2d12 | The corner glow of the Nexus brief card only |
+| Chart/second | --sky-accent | #38bdf8 | The second chart series (within budget), hatched or solid |
 
 ### Rules
 
@@ -49,18 +53,19 @@ in, and amber marks attention or pending work.
 
 | Level | Size | Weight | Line Height | Usage |
 |-------|------|--------|-------------|-------|
-| Display | 2.25rem | 700 | 1.2 | Page title |
-| H2 | 1.25rem | 700 | 1.3 | Major card heading |
-| H3 | 0.95rem | 700 | 1.4 | Card and modal heading |
-| Body | 0.875rem | 400 | 1.5 | Default copy |
-| Body/sm | 0.8rem | 400 | 1.45 | Secondary copy |
-| Caption | 0.7rem | 600 | 1.35 | Metadata and labels |
-| Data | 0.85rem | 600 | 1.4 | Amounts and identifiers |
+| Display | 2rem | 600 | 1.2 | Page title (1.625rem on phones) |
+| Figure | 2.125rem | 600 | 1.1 | A card's headline amount |
+| Brief | 1.5rem | 500 | 1.4 | The Nexus brief (1.1875rem on phones) |
+| H2 | 1.125rem | 600 | 1.3 | Card heading |
+| H3 | 1rem | 600 | 1.4 | Sub-heading |
+| Body | 0.9375rem | 400 | 1.5 | Default copy |
+| Caption | 0.8125rem | 500 | 1.4 | Metadata and labels; nothing smaller than this |
+| Data | 0.9rem | 600 | 1.4 | Amounts and identifiers |
 
 ### Font Stack
 
-- Primary: Plus Jakarta Sans, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif
-- Mono: JetBrains Mono, monospace
+- Primary: Geist, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif
+- Mono: Geist Mono, monospace (small figures only; large amounts use Geist with tabular figures)
 
 ### Rules
 
@@ -100,6 +105,32 @@ All spacing derives from a 4px base unit.
 - Use intrinsic wrapping before adding a breakpoint.
 
 ## 5. Components
+
+### Radius and surfaces (theme v2)
+
+- Cards 20px (18px on phones), inner tiles and controls 12px, pills fully round.
+- Buttons are filled: primary orange with dark text, secondary `--bg-raised`; no outlines.
+- Department tabs are a rounded segmented control; they wrap on phones rather than scroll.
+- Page padding 40px 48px on desktop, 16px on phones.
+
+### Nexus brief (Home)
+
+- **Structure**: Nexus mark and "Your brief" pill, two or three sentences, one-tap question chips, the ask box
+- **Content**: written in code from the user's own figures (`brief.ts`), never a model's words; figures in `--orange-text`
+- **Behaviour**: a chip or the ask box opens the chat with that question
+- **Surface**: the only element with the corner glow; two faint rings, decorative
+- **Layout**: chips wrap on phones; the card never scrolls sideways
+
+### Spending by month (Home)
+
+- Six bars, hatched `--sky-accent` within the overall budget, hatched orange over it, solid orange for this month so far; the budget as a dashed line
+- Three small tiles underneath: budget left (or money received), against last month by the same date, biggest category
+- Every bar's month and amount is in text for screen readers; the legend names every mark
+
+### Rows
+
+- Icon tile (42px, `--bg-raised`), title and caption, value on the right; rows divided by `--border-card`
+- Used for what needs you, holdings, the latest transactions and budgets
 
 ### Transaction ledger
 

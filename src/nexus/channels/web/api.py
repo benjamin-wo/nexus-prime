@@ -807,6 +807,65 @@ async def summary(
     )
 
 
+class MonthSpendOut(Model):
+    month: date  # its first day
+    spent: MoneyOut
+    to_date: bool  # the current month, so far
+
+
+class SpendingOut(Model):
+    currency: str
+    months: list[MonthSpendOut]  # oldest first, ending with this month so far
+    last_month_to_date: MoneyOut  # last month's spending up to the same day
+    budget: MoneyOut | None  # the overall monthly budget, when one is set
+
+
+def _month_start(day: date, back: int = 0) -> date:
+    index = day.year * 12 + day.month - 1 - back
+    return date(index // 12, index % 12 + 1, 1)
+
+
+@router.get("/spending/months")
+async def spending_months(
+    auth: Auth, web: Runtime, count: Annotated[int, Query(ge=1, le=12)] = 6
+) -> SpendingOut:
+    """Money out per month in the home currency, for Home's chart: the last ``count``
+    months ending with this one so far, last month to the same day, and the overall
+    budget."""
+    user = auth.user
+    today = web.clock().astimezone(_tz(user)).date()
+    months = []
+    for back in range(count - 1, -1, -1):
+        first = _month_start(today, back)
+        end = _month_start(today, back - 1) if back else today + timedelta(days=1)
+        result = await tx_cases.summarize_in_home(
+            web.uow(), web.rates, user, _day_start(user, first), _day_start(user, end)
+        )
+        months.append(
+            MonthSpendOut(month=first, spent=money(result.totals[0].total), to_date=not back)
+        )
+    previous = _month_start(today, 1)
+    same_day = min(today.day, (_month_start(today) - timedelta(days=1)).day)
+    last = await tx_cases.summarize_in_home(
+        web.uow(),
+        web.rates,
+        user,
+        _day_start(user, previous),
+        _day_start(user, previous.replace(day=same_day) + timedelta(days=1)),
+    )
+    async with web.uow() as tx:
+        budgets = await tx.planning.list_budgets(user.id)
+    overall = next(
+        (b for b in budgets if b.is_overall and b.limit.currency == user.home_currency), None
+    )
+    return SpendingOut(
+        currency=user.home_currency,
+        months=months,
+        last_month_to_date=money(last.totals[0].total),
+        budget=money(overall.limit) if overall else None,
+    )
+
+
 class CategoryOut(Model):
     id: UUID
     name: str

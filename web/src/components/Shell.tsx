@@ -3,6 +3,7 @@ import { NavLink, useLocation } from "react-router-dom";
 
 import type { Me } from "../api";
 import { DEPARTMENTS, departmentFor } from "../departments";
+import { Icon, departmentIcon } from "./Icon";
 import { InviteButton } from "./InviteButton";
 
 function CogIcon() {
@@ -41,12 +42,16 @@ export function Shell({
   const here = departmentFor(useLocation().pathname);
   const links = [
     <NavLink key="home" to="/" end className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
-      <span className="nav-glyph" aria-hidden="true">🏠</span>
+      <span className="nav-glyph" aria-hidden="true">
+        <Icon name="home" />
+      </span>
       <span className="nav-label">Home</span>
     </NavLink>,
     ...DEPARTMENTS.map((d) => (
       <NavLink key={d.name} to={d.path} className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
-        <span className="nav-glyph" aria-hidden="true">{d.icon}</span>
+        <span className="nav-glyph" aria-hidden="true">
+          <Icon name={departmentIcon(d.name)} />
+        </span>
         <span className="nav-label">{d.label}</span>
       </NavLink>
     )),
@@ -65,7 +70,15 @@ export function Shell({
     <div className="shell">
       <nav className="rail" aria-label="Main">
         <div className="brand">
-          Nexus <span>Prime</span>
+          <span className="brand-mark" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"
+              strokeLinecap="round" strokeLinejoin="round" focusable="false">
+              <path d="M5 19V5l14 14V5" />
+            </svg>
+          </span>
+          <span>
+            Nexus <span className="brand-accent">Prime</span>
+          </span>
         </div>
         {links}
         {settings}
