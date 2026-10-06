@@ -765,6 +765,55 @@ async def test_the_bot_gives_a_forwarding_address_when_asked(world: World) -> No
     assert '"Nexus test receipt"' in world.model.seen[-1][-1].content
 
 
+async def test_the_chat_is_kept_and_shown_again(world: World) -> None:
+    owner, token = await owner_and_invite(world)
+    world.model.script += [say("Logged SGD 4.20 at Kopi.")]
+    await owner.send("POST", "/api/chat", {"message": "kopi 4.20"})
+    ride = await spend(owner, "12", "SGD", "2026-09-27", counterparty="Grab")
+    world.model.script += [
+        call("delete_transaction", transaction_id=ride["id"]),
+        say("Deleted it."),
+    ]
+    [ask] = (await owner.send("POST", "/api/chat", {"message": "delete the grab ride"})).json()
+
+    # A confirmation still waiting comes back with its buttons.
+    history = (await owner.get("/api/chat/history")).json()
+    assert history["pending"]["text"] == ask["text"]
+    assert history["pending"]["buttons"] == ask["buttons"]
+    assert history["lines"][-1]["text"] == ask["text"]
+
+    confirm = ask["buttons"][0][0]["data"]
+    await owner.send("POST", "/api/chat/press", {"data": confirm})
+    # A button on a notification isn't part of the chat.
+    await owner.send("POST", "/api/chat/press", {"data": f"plan:mute:{ride['id']}"})
+
+    history = (await owner.get("/api/chat/history")).json()
+    assert [(x["role"], x["text"]) for x in history["lines"]] == [
+        ("user", "kopi 4.20"),
+        ("nexus", "Logged SGD 4.20 at Kopi."),
+        ("user", "delete the grab ride"),
+        ("nexus", ask["text"]),
+        ("user", "Confirm"),
+        ("nexus", "Deleted it."),
+    ]
+    assert {x["channel"] for x in history["lines"][:4]} == {"web"}
+    assert history["pending"] is None and not history["more"]
+
+    # Older lines a page at a time.
+    page = (await owner.get("/api/chat/history", params={"limit": 2})).json()
+    assert [x["text"] for x in page["lines"]] == ["Confirm", "Deleted it."] and page["more"]
+    older = (
+        await owner.get("/api/chat/history", params={"limit": 2, "before": page["lines"][0]["id"]})
+    ).json()
+    assert [x["text"] for x in older["lines"]] == ["delete the grab ride", ask["text"]]
+    assert older["pending"] is None
+
+    # Each person sees only their own chat.
+    member = world.browser()
+    await member.login(MEMBER, invite=token)
+    assert (await member.get("/api/chat/history")).json()["lines"] == []
+
+
 # --- category rules -------------------------------------------------------------------
 
 

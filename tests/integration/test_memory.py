@@ -194,3 +194,18 @@ async def test_a_failing_hook_never_reaches_the_user(uow: UowFactory, alice: Use
 
 def test_the_job_kind_is_stable() -> None:
     assert MEMORY_UPDATE == "memory.update"  # queued jobs outlive a deploy
+
+
+async def test_only_the_newest_chat_lines_are_kept(uow: UowFactory, alice: UserId) -> None:
+    from nexus.domain.chat import ChatLine, Speaker
+
+    async with uow() as tx:
+        for n in range(7):
+            line = ChatLine(alice, Speaker.USER, f"message {n}", "web", NOW)
+            await tx.memory.add_chat([line], keep=5)
+        await tx.commit()
+    async with uow() as tx:
+        kept = await tx.memory.chat(alice, 10)
+        older = await tx.memory.chat(alice, 10, before=kept[1].id)
+    assert [x.text for x in kept] == [f"message {n}" for n in range(2, 7)]
+    assert [x.text for x in older] == ["message 2"]
