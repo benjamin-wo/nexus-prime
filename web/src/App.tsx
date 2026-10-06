@@ -84,8 +84,8 @@ function Cockpit({ me }: { me: Me }) {
   return (
     <Shell me={me} onOpenChat={() => setChat({})} onLogout={logout}>
       <Routes>
-        <Route path="/" element={<Home me={me} onAsk={(ask) => setChat({ ask })} />} />
-        <Route path="/accounting" element={<Dashboard me={me} onLog={() => setSheet({})} />} />
+        <Route path="/" element={<Home me={me} onAsk={(ask) => setChat({ ask })} onLog={() => setSheet({})} />} />
+        <Route path="/accounting" element={<Dashboard me={me} onLog={() => setSheet({})} onAsk={(ask) => setChat({ ask })} />} />
         <Route
           path="/accounting/ledger"
           element={<Ledger me={me} onAdd={() => setSheet({})} onEdit={(tx) => setSheet({ editing: tx })} />}

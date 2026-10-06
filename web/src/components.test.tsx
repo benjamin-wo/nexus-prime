@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { ledgerParams, type Me, type Transaction } from "./api";
 import { Amount } from "./components/Amount";
+import { brief } from "./brief";
 import { CategoryBars } from "./components/CategoryBars";
 import { ChatDrawer } from "./components/ChatDrawer";
 import { formatMoney } from "./format";
@@ -178,5 +179,24 @@ describe("ChatDrawer in browsers where scrollIntoView returns a promise", () => 
       await screen.findByText(message);
     }
     expect(await screen.findAllByText("Noted.")).toHaveLength(3);
+  });
+});
+
+describe("brief", () => {
+  const sgd = (amount: string) => ({ amount, currency: "SGD" });
+  const text = (parts: { text: string }[]) => parts.map((p) => p.text).join("");
+
+  it("weighs the month against the budget, else last month", () => {
+    const overall = { id: "b", category_id: null, name: "Overall", limit: sgd("1000"), spent: sgd("412"), remaining: sgd("588"), percent: 41, unconverted: [] };
+    expect(text(brief({ spent: sgd("412"), overall }))).toMatch(/^You've spent SGD\s?412\.00 this month, SGD\s?588\.00 left in your budget\.$/);
+    expect(text(brief({ spent: sgd("1200"), overall }))).toMatch(/SGD\s?200\.00 over your budget\.$/);
+    expect(text(brief({ spent: sgd("300"), lastMonthToDate: sgd("400") }))).toMatch(/SGD\s?100\.00 less than by this time last month\.$/);
+    expect(text(brief({}))).toMatch(/^Nothing needs you right now/);
+  });
+
+  it("only highlights the figures", () => {
+    const parts = brief({ spent: sgd("10"), needs: [{ department: "accounting", kind: "bill", text: "x", link: "/", urgent: false }] });
+    expect(parts.filter((p) => p.hl).map((p) => p.text)).toEqual([expect.stringMatching(/10\.00/)]);
+    expect(text(parts)).toMatch(/ 1 thing needs you below\.$/);
   });
 });

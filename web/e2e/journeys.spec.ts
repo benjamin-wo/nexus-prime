@@ -110,6 +110,9 @@ test("dashboard shows the month, categories and IOUs", async ({ page }) => {
     page.getByRole("list", { name: "Spending by category" }),
   ).toContainText("Dining Out");
   await expect(page.getByText("Ann")).toBeVisible();
+  // The latest few, and a line from Nexus offering to set a budget.
+  await expect(page.getByRole("region", { name: "Latest" }).getByRole("listitem").first()).toBeVisible();
+  await expect(page.getByRole("region", { name: "From Nexus" })).toContainText("Set a monthly budget");
 });
 
 test("log an expense from the entry sheet", async ({ page }) => {
@@ -620,8 +623,26 @@ test("home is the front desk: what needs you, what's running, and each departmen
   await working.getByRole("button", { name: "Cancel" }).click();
   await expect(working.getByText("Cancelled")).toBeVisible();
   expect(state.cancelled).toEqual(["r1"]);
-  await expect(page.getByRole("link", { name: /^Accounting:/ })).toContainText("This month: SGD");
-  await expect(page.getByRole("link", { name: /^Travel:/ })).toContainText("Your trips");
+  // Nexus opens with a brief from the user's own figures, and a few one-tap questions.
+  const nexus = page.getByRole("region", { name: "Nexus" });
+  await expect(nexus).toContainText("You've spent SGD");
+  await expect(nexus).toContainText("than by this time last month.");
+  await expect(nexus).toContainText("2 things need you below.");
+  // Six months of spending, this month so far last; the tiles compare and explain.
+  const months = page.getByRole("list", { name: "Spending by month" });
+  await expect(months.getByRole("listitem")).toHaveCount(6);
+  await expect(months.getByRole("listitem").last()).toContainText("Sep so far");
+  await expect(page.getByText("Against last month")).toBeVisible();
+  await expect(page.getByText("Biggest category")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Budgets this month" })).toContainText("No budgets yet");
+});
+
+test("a suggested question on home opens the chat with it", async ({ page }) => {
+  await fakeApi(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Where did my money go this month?" }).click();
+  const chat = page.getByRole("dialog", { name: "Chat" });
+  await expect(chat.locator(".msg-user").first()).toHaveText("Where did my money go this month?");
 });
 
 test("asking on home opens the chat with the question", async ({ page }) => {
@@ -679,7 +700,8 @@ test("holdings from a screenshot are checked, saved, edited and removed", async 
   await holdings.getByRole("button", { name: "Remove AAPL" }).click();
   await expect(holdings.getByRole("rowheader", { name: "AAPL" })).toHaveCount(0);
   await page.goto("/");
-  await expect(page.getByRole("link", { name: /^Investment: / })).toContainText("Portfolio SGD");
+  await expect(page.getByRole("region", { name: "Portfolio" })).toContainText("SGD");
+  await expect(page.getByRole("list", { name: "Largest holdings" })).toContainText("NVDA");
 });
 
 test("a sale is recorded with what it locked in, and dividends are expected", async ({ page }) => {
@@ -834,7 +856,9 @@ test("a trip is added and shows its spending, set-aside and settle-up", async ({
   expect(state.tripItems).toEqual(["k1"]);
 
   await page.goto("/");
-  await expect(page.getByRole("link", { name: /^Travel:/ })).toContainText("Tokyo: in 43 days");
+  const trip = page.getByRole("region", { name: "Tokyo" });
+  await expect(trip).toContainText("In 43 days");
+  await expect(page.getByRole("region", { name: "Nexus" })).toContainText("Tokyo trip is in 43 days");
   await page.goto("/travel");
   await expect(page.getByRole("region", { name: "Coming up" }).getByRole("link", { name: "Tokyo" })).toBeVisible();
   const loose = page.getByRole("region", { name: "Bookings not on a trip" });

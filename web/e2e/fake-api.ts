@@ -913,6 +913,27 @@ export async function fakeApi(
       state.cancelled.push(run.id);
       return json(route, run);
     }
+    if (path === "/spending/months" && method === "GET") {
+      const sgd = (amount: number) => ({ amount: amount.toFixed(4), currency: "SGD" });
+      const now = live()
+        .filter((t) => t.direction === "out")
+        .reduce((s, t) => s + Number(t.amount.amount), 0);
+      const overall = state.budgets.find((b) => b.category_id === null);
+      return json(route, {
+        currency: "SGD",
+        months: [
+          ["2026-04-01", 1520],
+          ["2026-05-01", 1384.5],
+          ["2026-06-01", 2210],
+          ["2026-07-01", 1190.25],
+          ["2026-08-01", 1655],
+        ]
+          .map(([month, amount]) => ({ month, spent: sgd(amount as number), to_date: false }))
+          .concat([{ month: "2026-09-01", spent: sgd(now), to_date: true }]),
+        last_month_to_date: sgd(1402.1),
+        budget: overall ? sgd(overall.limit) : null,
+      });
+    }
     if (path === "/summary") {
       const out = live().filter((t) => t.direction === "out");
       const total = out.reduce((s, t) => s + Number(t.amount.amount), 0);
@@ -1292,10 +1313,11 @@ export async function fakeApi(
     if (one && method === "GET") return json(route, state.txs.find((t) => t.id === one[1]));
     if (path === "/transactions" && method === "GET") {
       const direction = url.searchParams.get("direction");
+      const limit = Number(url.searchParams.get("limit") ?? 1000);
       const items = live().filter(
         (t) => !direction || t.direction === direction,
       );
-      return json(route, { items, total: items.length });
+      return json(route, { items: items.slice(0, limit), total: items.length });
     }
     const pair = path.match(/^\/transactions\/(t\d+)\/(merge|not-duplicate)$/);
     if (pair && method === "POST") {
