@@ -14,6 +14,7 @@ from uuid import UUID
 
 from nexus.domain.access import Invite, Session
 from nexus.domain.bookings import Booking, BookingDraft
+from nexus.domain.chat import ChatLine
 from nexus.domain.departments import Run, Usage
 from nexus.domain.email import (
     EmailConnection,
@@ -468,6 +469,13 @@ class MemoryRepository(Protocol):
     ) -> bool: ...
     async def delete_memory(self, user_id: UserId, memory_id: UUID) -> bool: ...
     async def prune_memories(self, user_id: UserId, keep: int) -> int: ...
+    async def add_chat(self, lines: list[ChatLine], keep: int) -> None:
+        """Add lines to the user's chat, keeping their newest ``keep``."""
+        ...
+
+    async def chat(self, user_id: UserId, limit: int, before: int | None = None) -> list[ChatLine]:
+        """The newest ``limit`` lines (with ids below ``before``), oldest first."""
+        ...
 
 
 class StatementRepository(Protocol):

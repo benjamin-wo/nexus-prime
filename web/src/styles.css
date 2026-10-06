@@ -281,6 +281,8 @@ table.ledger { width: 100%; border-collapse: collapse; }
 .msg { padding: var(--space-3); border-radius: 10px; max-width: 90%; white-space: pre-wrap; overflow-wrap: anywhere; }
 .msg-user { justify-self: end; background: var(--orange-soft); border: 1px solid var(--orange-border); }
 .msg-bot { justify-self: start; background: var(--bg-card); border: 1px solid var(--border-card); }
+.msg-via { display: block; margin-top: var(--space-1); font-size: 0.75rem; color: var(--text-muted); }
+.messages .earlier { justify-self: center; }
 .msg .choices { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
 .toast {
   position: fixed; left: 50%; bottom: var(--space-6); transform: translateX(-50%); z-index: 40;

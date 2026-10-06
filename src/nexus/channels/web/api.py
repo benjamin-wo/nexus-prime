@@ -1766,6 +1766,46 @@ class ChatIn(Model):
     message: str = Field(min_length=1, max_length=2000)
 
 
+class ChatLineOut(Model):
+    id: int
+    role: str  # "user" or "nexus"
+    text: str
+    channel: str | None
+    at: datetime
+
+
+class ChatHistoryOut(Model):
+    lines: list[ChatLineOut]  # oldest first
+    more: bool  # older lines exist (ask again with before=the first line's id)
+    pending: ReplyOut | None  # a confirmation still waiting, with its buttons
+
+
+@router.get("/chat/history")
+async def chat_history(
+    auth: Auth,
+    web: Runtime,
+    before: Annotated[int | None, Query(ge=1)] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 40,
+) -> ChatHistoryOut:
+    """The running chat as the user saw it, on the web or Telegram; notifications
+    aren't part of it."""
+    async with web.uow() as tx:
+        found = await tx.memory.chat(auth.user.id, limit + 1, before)
+    more = len(found) > limit
+    lines = found[-limit:]
+    pending = await web.service.chat_pending(auth.user.id) if before is None else None
+    return ChatHistoryOut(
+        lines=[
+            ChatLineOut(
+                id=x.id or 0, role=x.role.value, text=x.text, channel=x.channel, at=x.created_at
+            )
+            for x in lines
+        ],
+        more=more,
+        pending=replies_out([pending])[0] if pending else None,
+    )
+
+
 @router.post("/chat")
 async def chat(body: ChatIn, auth: Auth, web: Runtime) -> list[ReplyOut]:
     ref = f"web:{auth.session.token_hash[:16]}:{web.clock().timestamp()}"

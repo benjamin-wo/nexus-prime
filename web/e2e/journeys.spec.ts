@@ -160,6 +160,25 @@ test("chat asks before deleting and confirms", async ({ page }) => {
   await expect(chat.getByRole("button", { name: "Confirm" })).toBeHidden();
 });
 
+test("the chat opens on the running conversation, from the web and Telegram", async ({ page }) => {
+  await fakeApi(page, { chatHistory: true });
+  await page.goto("/");
+  await page.locator(".chat-fab").click();
+  const chat = page.getByRole("dialog", { name: "Chat" });
+  await expect(chat.locator(".msg-user").first()).toHaveText(/kopi 4\.20/);
+  await expect(chat.locator(".msg-bot").first()).toContainText("Logged SGD 4.20 at Kopi.");
+  await expect(chat.locator(".msg-bot").first()).toContainText("on Telegram");
+  await expect(chat.locator(".msg-bot").last()).toHaveText("SGD 12.40 on Dining Out so far.");
+  // Older messages are a tap away.
+  await chat.getByRole("button", { name: "Earlier messages" }).click();
+  await expect(chat.locator(".msg").first()).toHaveText("hello from last week");
+  await expect(chat.getByRole("button", { name: "Earlier messages" })).toHaveCount(0);
+  // New messages follow on.
+  await chat.getByLabel("Message").fill("delete the grab ride");
+  await chat.getByRole("button", { name: "Send" }).click();
+  await expect(chat.locator(".msg-user").last()).toHaveText("delete the grab ride");
+});
+
 test("the app never throws while chatting", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));

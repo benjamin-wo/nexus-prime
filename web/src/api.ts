@@ -269,6 +269,12 @@ export type Updates = {
   options: Record<Frequency, string>;
 };
 export type Reply = { text: string; buttons: { label: string; data: string }[][] };
+/** The running chat as the user saw it, oldest first; notifications aren't part of it. */
+export type ChatHistory = {
+  lines: { id: number; role: "user" | "nexus"; text: string; channel: string | null; at: string }[];
+  more: boolean;
+  pending: Reply | null;
+};
 
 export type LedgerFilters = {
   direction?: Direction;

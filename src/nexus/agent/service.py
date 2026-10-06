@@ -49,6 +49,7 @@ from nexus.application.fx import RateSource
 from nexus.application.limits import RateLimiter
 from nexus.application.ports import ReceiptStore
 from nexus.application.users import get_user
+from nexus.domain.chat import CHAT_KEEP, ChatLine, Speaker, channel_of, clip
 from nexus.domain.departments import RunStatus
 from nexus.domain.errors import DuplicateSource, InvalidInput, NexusError
 from nexus.domain.investments import Position, clean_quantity, clean_symbol
@@ -224,7 +225,41 @@ class AgentService:
     def _over_limit(self, actor: UserId) -> bool:
         return self._limiter is not None and not self._limiter.allow("message", actor)
 
+    async def _keep(
+        self, actor: UserId, said: str | None, replies: list[Reply], ref: str | None
+    ) -> None:
+        """Keep this turn of the chat (the user's words and Nexus's replies) for the
+        web chat to show again. Its failures never reach the user."""
+        try:
+            now = self._clock()
+            channel = channel_of(ref) if ref else None
+            lines = [ChatLine(actor, Speaker.USER, clip(said), channel, now)] if said else []
+            lines += [
+                ChatLine(actor, Speaker.NEXUS, clip(r.text), channel, now)
+                for r in replies
+                if r.text.strip()
+            ]
+            async with self._uow() as tx:
+                await tx.memory.add_chat(lines, CHAT_KEEP)
+                await tx.commit()
+        except Exception:
+            log.exception("could not keep the chat")
+
+    async def chat_pending(self, actor: UserId) -> Reply | None:
+        """The confirmation waiting for an answer, with its buttons, if any."""
+        pending = await self._pending(actor)
+        if pending is None:
+            return None
+        pid, summary = pending
+        buttons = [[Button("Confirm", f"hitl:{pid}:y"), Button("Cancel", f"hitl:{pid}:n")]]
+        return Reply(summary, buttons)
+
     async def handle_text(self, actor: UserId, text: str, ref: str) -> list[Reply]:
+        replies = await self._handle_text(actor, text, ref)
+        await self._keep(actor, text, replies, ref)
+        return replies
+
+    async def _handle_text(self, actor: UserId, text: str, ref: str) -> list[Reply]:
         if self._over_limit(actor):
             return [Reply(SLOW_DOWN)]
         async with self._locks[actor]:
@@ -261,6 +296,14 @@ class AgentService:
         return await self.handle_images(actor, [Picture(image, mime_type, ref)], caption, ref)
 
     async def handle_images(
+        self, actor: UserId, pictures: list[Picture], caption: str | None, ref: str
+    ) -> list[Reply]:
+        replies = await self._handle_images(actor, pictures, caption, ref)
+        what = "a photo" if len(pictures) == 1 else f"{len(pictures)} photos"
+        await self._keep(actor, f"[Sent {what}]{f' {caption}' if caption else ''}", replies, ref)
+        return replies
+
+    async def _handle_images(
         self, actor: UserId, pictures: list[Picture], caption: str | None, ref: str
     ) -> list[Reply]:
         """Photos or image files the user sent together, with their caption. Each is
@@ -333,6 +376,14 @@ class AgentService:
         return None
 
     async def handle_pdf(
+        self, actor: UserId, data: bytes, name: str, caption: str | None, ref: str
+    ) -> list[Reply]:
+        replies = await self._handle_pdf(actor, data, name, caption, ref)
+        said = f"[Sent {quoted(name, 80) or 'a PDF'}]{f' {caption}' if caption else ''}"
+        await self._keep(actor, said, replies, ref)
+        return replies
+
+    async def _handle_pdf(
         self, actor: UserId, data: bytes, name: str, caption: str | None, ref: str
     ) -> list[Reply]:
         """A PDF the user sent (an invoice, a payslip, a booking): its text goes to the
@@ -573,11 +624,17 @@ class AgentService:
 
     async def press(self, actor: UserId, data: str) -> list[Reply]:
         """A button press from any channel: confirmations, Undo and quick actions."""
+        # Answers to the chat's own questions are part of the chat; buttons on
+        # notifications (bills, emails, plan alerts) are not.
         if data.startswith("hitl:"):
             _, confirmation_id, choice = [*data.split(":"), "", ""][:3]
-            return await self.resolve(actor, confirmation_id, choice == "y")
+            replies = await self.resolve(actor, confirmation_id, choice == "y")
+            await self._keep(actor, "Confirm" if choice == "y" else "Cancel", replies, None)
+            return replies
         if data == "act:undo":
-            return await self.quick_action(actor, "undo")
+            replies = await self.quick_action(actor, "undo")
+            await self._keep(actor, "Undo", replies, None)
+            return replies
         if data.startswith("qa:"):
             return await self.quick_action(actor, data.removeprefix("qa:"))
         if data.startswith("salary:"):

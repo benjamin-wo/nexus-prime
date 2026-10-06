@@ -35,6 +35,7 @@ A small number of invited people's money records: transactions, budgets, bills, 
 
 - **Signed logins can be replayed for up to 24 hours** if someone captures one. That's Telegram's design; the window could be shortened at the cost of sign-ins from a stale page failing.
 - **Rate limits are in memory**, per process: a restart resets them, and more than one instance would each count separately. Fine for one instance; move them to Postgres before scaling out.
+- **The chat is kept for the web chat window**: the newest 500 lines per user (their messages and Nexus's replies; no images, emails or notifications), each user's alone.
 - **The model provider sees what the model sees**: messages, the money snapshot, memories, and receipt and email text. OpenRouter's privacy settings exclude providers that train on prompts.
 - **A thread that a crafted PDF ties up** keeps running after the 30-second limit returns; the size and page caps bound it.
 - **The old database is kept read-only** for the legacy import; it's a separate Railway service and isn't reached at runtime.

@@ -8,9 +8,10 @@ from uuid import UUID
 from sqlalchemy import Row, and_, case, delete, func, insert, literal, select, update
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from nexus.domain.chat import ChatLine, Speaker
 from nexus.domain.ledger import UserId
 from nexus.domain.memory import Memory, MemoryKind
-from nexus.infra.db.tables import memories
+from nexus.infra.db.tables import chat_log, memories
 
 _WORD = re.compile(r"[a-z0-9]{2,}")
 
@@ -113,3 +114,47 @@ class SqlMemoryRepository:
             )
         )
         return int(result.rowcount or 0)
+
+    # --- the chat as the user saw it ---
+
+    async def add_chat(self, lines: list[ChatLine], keep: int) -> None:
+        if not lines:
+            return
+        await self._db.execute(
+            insert(chat_log).values(
+                [
+                    {
+                        "user_id": line.user_id,
+                        "role": line.role.value,
+                        "text": line.text,
+                        "channel": line.channel,
+                        "created_at": line.created_at,
+                    }
+                    for line in lines
+                ]
+            )
+        )
+        c = chat_log.c
+        kept = select(c.id).where(c.user_id == lines[0].user_id).order_by(c.id.desc()).limit(keep)
+        await self._db.execute(
+            delete(chat_log).where(c.user_id == lines[0].user_id, c.id.not_in(kept))
+        )
+
+    async def chat(self, user_id: UserId, limit: int, before: int | None = None) -> list[ChatLine]:
+        c = chat_log.c
+        query = select(chat_log).where(c.user_id == user_id)
+        if before is not None:
+            query = query.where(c.id < before)
+        rows = await self._db.execute(query.order_by(c.id.desc()).limit(limit))
+        found = [
+            ChatLine(
+                id=r.id,
+                user_id=UserId(r.user_id),
+                role=Speaker(r.role),
+                text=r.text,
+                channel=r.channel,
+                created_at=r.created_at,
+            )
+            for r in rows
+        ]
+        return found[::-1]

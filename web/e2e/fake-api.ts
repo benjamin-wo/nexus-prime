@@ -63,6 +63,7 @@ export async function fakeApi(
     twins = false,
     running = false,
     research = false,
+    chatHistory = false,
   } = {},
 ) {
   let session = signedIn;
@@ -1350,6 +1351,25 @@ export async function fakeApi(
       for (const t of state.txs)
         if (body.ids.includes(t.id)) t.deleted = deleting;
       return json(route, { ids: body.ids });
+    }
+    if (path === "/chat/history" && method === "GET") {
+      const lines = chatHistory
+        ? [
+            { id: 2, role: "user", text: "kopi 4.20", channel: "telegram", at: "2026-09-27T01:00:00Z" },
+            { id: 3, role: "nexus", text: "Logged SGD 4.20 at Kopi.", channel: "telegram", at: "2026-09-27T01:00:01Z" },
+            { id: 4, role: "user", text: "how much on food this month?", channel: "web", at: "2026-09-28T02:00:00Z" },
+            { id: 5, role: "nexus", text: "SGD 12.40 on Dining Out so far.", channel: "web", at: "2026-09-28T02:00:01Z" },
+          ]
+        : [];
+      const before = url.searchParams.get("before");
+      if (before) {
+        return json(route, {
+          lines: [{ id: 1, role: "user", text: "hello from last week", channel: "web", at: "2026-09-20T01:00:00Z" }],
+          more: false,
+          pending: null,
+        });
+      }
+      return json(route, { lines, more: chatHistory, pending: null });
     }
     if (path === "/chat") {
       return json(route, [
