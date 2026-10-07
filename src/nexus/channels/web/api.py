@@ -519,6 +519,42 @@ async def list_transactions(
     return PageOut(items=items, total=page.total)
 
 
+class MerchantSuggestionOut(Model):
+    name: str
+    category_id: UUID | None  # None when the usual category was archived
+    category: str | None
+    amount: MoneyOut  # the amount usually paid
+    times: int
+    last_on: date
+
+
+@router.get("/transactions/suggestions")
+async def merchant_suggestions(
+    auth: Auth,
+    web: Runtime,
+    q: Annotated[str, Query(max_length=60)] = "",
+    direction: Direction = Direction.OUT,
+) -> list[MerchantSuggestionOut]:
+    """Who the user has paid before that matches what they're typing (the most used
+    when nothing is typed), with the usual amount and category, for the entry form."""
+    found = await tx_cases.merchant_suggestions(
+        web.uow(), auth.user.id, direction, q, now=web.clock()
+    )
+    active = {c.id: c.name for c in await category_cases.list_categories(web.uow(), auth.user.id)}
+    tz = ZoneInfo(auth.user.timezone)
+    return [
+        MerchantSuggestionOut(
+            name=f.name,
+            category_id=f.category_id if f.category_id in active else None,
+            category=active.get(f.category_id) if f.category_id else None,
+            amount=money(f.amount),
+            times=f.times,
+            last_on=f.last.astimezone(tz).date(),
+        )
+        for f in found
+    ]
+
+
 @router.get("/transactions/{transaction_id}")
 async def get_transaction(transaction_id: UUID, auth: Auth, web: Runtime) -> TransactionOut:
     """One transaction with how money moved around it, to follow a repayment's link."""

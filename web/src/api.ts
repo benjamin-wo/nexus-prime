@@ -667,3 +667,14 @@ export type Research = {
   fits: boolean | null;
   trip_id: string | null;
 };
+
+/** Someone paid (or paying) before, suggested on the entry form from the user's own ledger. */
+export type MerchantSuggestion = {
+  name: string;
+  category_id: string | null;
+  category: string | null;
+  /** The amount usually paid. */
+  amount: Money;
+  times: number;
+  last_on: string;
+};

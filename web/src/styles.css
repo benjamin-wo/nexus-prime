@@ -921,3 +921,15 @@ a.ask-chip { display: inline-flex; align-items: center; text-decoration: none; }
 }
 .trip-cover .photo-menu-list .btn { justify-content: flex-start; background: transparent; border-color: transparent; backdrop-filter: none; }
 .photo-menu-list .caption { margin: 0; padding: 0 var(--space-2); max-width: 220px; }
+
+/* Entry form: merchant suggestions */
+.merchant-field { position: relative; display: grid; gap: var(--space-1); min-width: 0; font-weight: 500; font-size: 0.8125rem; color: var(--text-secondary); }
+.merchant-chips { margin: var(--space-1) 0; }
+.merchant-chips .ask-chip { min-height: 34px; font-size: 0.8125rem; }
+.merchant-chips .caption { margin-left: var(--space-1); }
+.merchant-list {
+  position: absolute; left: 0; right: 0; top: 100%; z-index: 30; list-style: none; margin: var(--space-1) 0 0; padding: var(--space-1);
+  max-height: 260px; overflow-y: auto; border-radius: var(--radius-inner); border: 1px solid var(--border-card); background: var(--bg-card-hover); box-shadow: var(--shadow-modal);
+}
+.merchant-list li { display: grid; gap: 2px; padding: var(--space-2) var(--space-3); border-radius: 8px; cursor: pointer; overflow-wrap: anywhere; }
+.merchant-list li:hover, .merchant-list li.is-active { background: var(--bg-raised); }

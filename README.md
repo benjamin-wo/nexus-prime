@@ -22,6 +22,7 @@ One LLM agent serves both surfaces, but the parts that must be right, like money
 **Accounting**
 - **Capture in a sentence.**
   - "grab 12 yesterday", "coffee 5.50 USD", "split dinner 120 with Ann and Ben", "Ann paid me back 40".
+  - Logging by hand on the web suggests where you've paid before as you type, and your most frequent places are one tap away, with the usual amount and category filled in.
   - Receipt photos are read by a vision model and logged after you confirm. The photo is kept privately with the expense.
   - Ask it to log automatically and it offers **Connect Gmail**, or for other mail (Outlook, iCloud, work) your own **forwarding address** with steps for a receipts-only rule. Receipts become Telegram questions (**Log it / Skip**), with an Email page showing what happened to each one.
 - **Anything consequential asks first.** Edits, deletes, splits and budget removal show a Confirm / Cancel prompt. It survives restarts, because the conversation state lives in Postgres.

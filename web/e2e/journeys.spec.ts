@@ -1182,3 +1182,38 @@ test("a trip's weather, packing list, cover photo and stop photos", async ({ pag
   await expect(itinerary.getByRole("img", { name: "Hanok Noodle Bar" })).toBeVisible();
   await expect(itinerary.getByRole("link", { name: "Photo by A. Photographer, Google Maps" })).toHaveAttribute("href", "https://maps.example/u/2");
 });
+
+test("the entry sheet suggests where you usually pay, and fills the usual", async ({ page }) => {
+  const state = await fakeApi(page);
+  await page.goto("/accounting");
+  await page.getByRole("button", { name: "Log expense" }).click();
+  const sheet = page.getByRole("dialog", { name: "Log money out" });
+  // The most frequent places are a tap away before anything is typed.
+  await expect(sheet.getByRole("group", { name: "Frequent" }).getByRole("button", { name: /^Maxwell Food Centre/ })).toBeVisible();
+  // Typing part of a name suggests it, with the usual amount and category.
+  await sheet.getByLabel("Paid to").fill("maxw");
+  const list = sheet.getByRole("listbox", { name: "Past merchants" });
+  await expect(list.getByRole("option")).toHaveCount(1);
+  await expect(list).toContainText("SGD 12.40 · Dining Out");
+  await sheet.getByLabel("Paid to").press("ArrowDown");
+  await sheet.getByLabel("Paid to").press("Enter");
+  await expect(list).toBeHidden();
+  await expect(sheet.getByLabel("Paid to")).toHaveValue("Maxwell Food Centre");
+  await expect(sheet.getByLabel("Amount")).toHaveValue("12.4");
+  await expect(sheet.getByLabel("Category")).toHaveValue("food");
+  await sheet.getByRole("button", { name: "Save" }).click();
+  await expect(sheet).toBeHidden();
+  expect(state.txs[0]).toMatchObject({ counterparty: "Maxwell Food Centre", category_id: "food", amount: { amount: "12.4000" } });
+
+  // A typed amount is never replaced; Escape closes the list, not the sheet.
+  await page.getByRole("button", { name: "Log expense" }).click();
+  await sheet.getByLabel("Amount").fill("9");
+  await sheet.getByLabel("Paid to").fill("gra");
+  await sheet.getByRole("option", { name: /^Grab/ }).click();
+  await expect(sheet.getByLabel("Amount")).toHaveValue("9");
+  await sheet.getByLabel("Paid to").fill("gr");
+  await expect(sheet.getByRole("listbox", { name: "Past merchants" })).toBeVisible();
+  await sheet.getByLabel("Paid to").press("Escape");
+  await expect(sheet.getByRole("listbox", { name: "Past merchants" })).toBeHidden();
+  await expect(sheet).toBeVisible();
+});

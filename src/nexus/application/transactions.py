@@ -1,5 +1,5 @@
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 from typing import Literal
 from uuid import UUID, uuid4
@@ -34,6 +34,7 @@ from nexus.domain.ledger import (
     require_positive,
     snapshot,
 )
+from nexus.domain.merchants import LOOKBACK_DAYS, MAX_ENTRIES, MerchantSuggestion, suggest
 from nexus.domain.money import Money
 from nexus.domain.rules import CategoryRule, best_rule
 
@@ -345,6 +346,19 @@ def _check_range(start: datetime | None, end: datetime | None) -> None:
         require_aware(end, field_name="end")
     if start is not None and end is not None and start >= end:
         raise InvalidInput("start must be before end")
+
+
+async def merchant_suggestions(
+    uow: UnitOfWork, actor: UserId, direction: Direction, typed: str, *, now: datetime
+) -> list[MerchantSuggestion]:
+    """Who the user has paid (or been paid by) before that matches what they're
+    typing, for the entry form: the usual amount and category come with each."""
+    since = now - timedelta(days=LOOKBACK_DAYS)
+    async with uow:
+        entries = await uow.ledger.recent_with_counterparty(
+            actor, direction, since, limit=MAX_ENTRIES
+        )
+    return suggest(entries, typed)
 
 
 async def list_ledger(uow: UnitOfWork, actor: UserId, query: LedgerQuery) -> Page:
