@@ -1360,6 +1360,24 @@ export async function fakeApi(
           : null;
       return json(route, { ...tx, rule_suggestion: offer });
     }
+    if (path === "/transactions/suggestions" && method === "GET") {
+      const q = (url.searchParams.get("q") ?? "").toLowerCase();
+      const direction = url.searchParams.get("direction") ?? "out";
+      const groups = new Map<string, Tx[]>();
+      for (const t of live()) {
+        if (t.direction !== direction || !t.counterparty) continue;
+        const key = t.counterparty.toLowerCase();
+        if (q && (!key.includes(q) || key === q)) continue;
+        groups.set(key, [...(groups.get(key) ?? []), t]);
+      }
+      const out = [...groups.values()]
+        .sort((a, b) => b.length - a.length)
+        .map((txs) => {
+          const category = categories.find((c) => c.id === txs[0].category_id) ?? null;
+          return { name: txs[0].counterparty, category_id: category?.id ?? null, category: category?.name ?? null, amount: txs[0].amount, times: txs.length, last_on: "2026-09-27" };
+        });
+      return json(route, out);
+    }
     const one = path.match(/^\/transactions\/(t\d+)$/);
     if (one && method === "GET") return json(route, state.txs.find((t) => t.id === one[1]));
     if (path === "/transactions" && method === "GET") {

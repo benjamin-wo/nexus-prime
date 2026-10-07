@@ -507,6 +507,26 @@ class SqlLedgerRepository:
         )
         return [_transaction(r) for r in rows]
 
+    async def recent_with_counterparty(
+        self, user_id: UserId, direction: Direction, since: datetime, *, limit: int
+    ) -> list[Transaction]:
+        """Confirmed, kept entries with a counterparty since a time, newest first."""
+        t = transactions.c
+        rows = await self._db.execute(
+            select(transactions)
+            .where(
+                t.user_id == user_id,
+                t.direction == direction.value,
+                t.deleted_at.is_(None),
+                t.status == TransactionStatus.CONFIRMED.value,
+                t.counterparty.is_not(None),
+                t.occurred_at >= since,
+            )
+            .order_by(t.occurred_at.desc(), t.id.desc())
+            .limit(limit)
+        )
+        return [_transaction(r) for r in rows]
+
     async def list_transactions(self, user_id: UserId, query: LedgerQuery) -> Page:
         t = transactions.c
         conditions: list[Any] = [t.user_id == user_id]

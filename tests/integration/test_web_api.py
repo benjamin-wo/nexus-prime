@@ -1148,7 +1148,7 @@ async def test_what_nexus_remembers(world: World, engine: AsyncEngine) -> None:
 
     owner, invite = await owner_and_invite(world)
     member = world.browser()
-    assert (await member.login(MEMBER, invite)).status_code == 200
+    assert (await member.login(MEMBER, invite=invite)).status_code == 200
     # A chat turn queues the memory writer for the user's own words.
     world.model.script += [say("Got it.")]
     await owner.send("POST", "/api/chat", {"message": "ann is my sister"})
@@ -1187,7 +1187,7 @@ async def test_what_nexus_remembers(world: World, engine: AsyncEngine) -> None:
 async def test_import_a_statement(world: World) -> None:
     owner, invite = await owner_and_invite(world)
     member = world.browser()
-    assert (await member.login(MEMBER, invite)).status_code == 200
+    assert (await member.login(MEMBER, invite=invite)).status_code == 200
     csv = (
         "Transaction Date,Reference,Debit Amount,Credit Amount,Transaction Ref1\n"
         "28 Sep 2026,POS,4.20,,KOPITIAM\n"
@@ -1828,3 +1828,37 @@ async def test_trip_weather_packing_cover_and_place_photos(world: World) -> None
     photo = await owner.get(place["photo_url"])
     assert photo.status_code == 200 and photo.headers["content-type"] == "image/jpeg"
     assert photo.headers["cache-control"] == "private, max-age=1800"
+
+
+async def test_the_entry_form_suggests_past_merchants(world: World) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+    cats = (await owner.get("/api/categories")).json()
+    dining = next(c["id"] for c in cats if c["name"] == "Dining Out")
+    entries = (
+        ("6.50", "foodcourt abc", "2026-09-24"),
+        ("7.20", "Foodcourt ABC", "2026-09-25"),
+        ("6.50", "Foodcourt ABC", "2026-09-26"),  # the latest spelling is shown
+    )
+    for amount, name, day in entries:
+        made = await spend(owner, amount, "SGD", day, counterparty=name, category_id=dining)
+        assert made["counterparty"] == name
+    await spend(owner, "4.00", "SGD", "2026-09-25", counterparty="Abc Bakery")
+
+    found = (await owner.get("/api/transactions/suggestions", params={"q": "abc"})).json()
+    assert [f["name"] for f in found] == ["Abc Bakery", "Foodcourt ABC"]
+    court = found[1]
+    assert court["times"] == 3 and court["category"] == "Dining Out"
+    assert court["amount"] == {"amount": "6.5000", "currency": "SGD"}
+    frequent = (await owner.get("/api/transactions/suggestions")).json()
+    assert frequent[0]["name"] == "Foodcourt ABC"
+    received = (await owner.get("/api/transactions/suggestions", params={"direction": "in"})).json()
+    assert all(f["name"] != "Foodcourt ABC" for f in received)
+    too_long = await owner.get("/api/transactions/suggestions", params={"q": "x" * 61})
+    assert too_long.status_code == 422
+
+    # Another user's merchants are never suggested.
+    _, invite = await owner_and_invite(world)
+    member = world.browser()
+    assert (await member.login(MEMBER, invite=invite)).status_code == 200
+    assert (await member.get("/api/transactions/suggestions", params={"q": "abc"})).json() == []

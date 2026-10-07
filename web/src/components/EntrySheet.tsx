@@ -11,6 +11,7 @@ import {
   type Transaction,
 } from "../api";
 import { isoDay } from "../format";
+import { MerchantField } from "./MerchantField";
 import { MoneyTrail } from "./MoneyTrail";
 
 export function EntrySheet({
@@ -122,10 +123,22 @@ export function EntrySheet({
             />
           </label>
         </div>
-        <label className="field">
-          {direction === "out" ? "Paid to" : "Received from"}
-          <input className="input" value={counterparty} onChange={(e) => setCounterparty(e.target.value)} />
-        </label>
+        <MerchantField
+          label={direction === "out" ? "Paid to" : "Received from"}
+          value={counterparty}
+          direction={direction}
+          showFrequent={!editing}
+          onChange={setCounterparty}
+          onPick={(s) => {
+            setCounterparty(s.name);
+            // The usual category and amount fill what's still empty; nothing typed is replaced.
+            if (!categoryId && s.category_id) setCategoryId(s.category_id);
+            if (!editing && !amount.trim()) {
+              setAmount(String(Number(s.amount.amount)));
+              setCurrency(s.amount.currency);
+            }
+          }}
+        />
         <label className="field">
           Category
           <select className="input" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
