@@ -37,6 +37,7 @@ class Spot:
     country: str | None
     latitude: float
     longitude: float
+    country_code: str | None = None  # ISO 3166, e.g. JP
 
 
 @dataclass(frozen=True, slots=True)

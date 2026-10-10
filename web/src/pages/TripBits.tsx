@@ -70,7 +70,7 @@ export function Companions({ names }: { names: string[] }) {
 
 /** "In 35 days", "Day 3 of 10", "Ended 4 Jan". */
 export function tripWhen(trip: Trip): string {
-  if (trip.status === "ongoing") return `Day ${trip.day_number} of ${trip.days}`;
+  if (trip.status === "ongoing") return trip.day_number ? `Day ${trip.day_number} of ${trip.days}` : "On now";
   if (trip.status === "finished") return `Ended ${day(trip.end)}`;
   if (trip.days_until === 1) return "Tomorrow";
   return `In ${trip.days_until} days`;

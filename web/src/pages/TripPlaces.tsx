@@ -268,9 +268,9 @@ export function PlaceLine({ booking }: { booking: Booking }) {
 }
 
 /** Find places on Google Maps and keep them as places to visit. */
-export function SavePlaces() {
+export function SavePlaces({ open = false, onDone }: { open?: boolean; onDone?: () => void } = {}) {
   const places = useContext(Context);
-  const [finding, setFinding] = useState(false);
+  const [finding, setFinding] = useState(open);
   const [saved, setSaved] = useState<string | null>(null);
   if (!places?.enabled) return null;
   if (!finding) {
@@ -300,6 +300,7 @@ export function SavePlaces() {
         setSaved(p.name);
         setFinding(false);
         places.onChange();
+        onDone?.();
       }}
     />
   );

@@ -69,6 +69,7 @@ class OpenMeteo:
             country=quoted(row.get("country"), 80),
             latitude=float(lat),
             longitude=float(lon),
+            country_code=_code(row.get("country_code")),
         )
 
     async def forecast(self, spot: Spot, start: date, end: date) -> list[DayWeather]:
@@ -132,3 +133,8 @@ def _days(data: Any, rain_field: str) -> list[DayWeather]:
             )
         )
     return out
+
+
+def _code(value: object) -> str | None:
+    """A two-letter country code as Open-Meteo gives it, or None."""
+    return value.upper() if isinstance(value, str) and len(value) == 2 and value.isalpha() else None

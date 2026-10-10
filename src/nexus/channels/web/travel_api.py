@@ -23,6 +23,7 @@ from nexus.channels.web.api import MoneyOut, money
 from nexus.channels.web.investments_api import MAX_IMAGE_CHARS
 from nexus.channels.web.security import Auth, Runtime, WebRuntime, limit
 from nexus.domain.bookings import Booking
+from nexus.domain.currencies import currency_of
 from nexus.domain.destination_photos import DestinationPhoto
 from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.ledger import User
@@ -831,6 +832,28 @@ async def _weather(web: WebRuntime, trip: Trip, today: date) -> TripWeather | No
     except WeatherError:
         log.info("weather unavailable", exc_info=True)
         return None
+
+
+class CurrencyOut(Model):
+    currency: str | None
+    country: str | None
+
+
+@router.get("/currency")
+async def currency_for(auth: Auth, web: Runtime, place: str = "") -> CurrencyOut:
+    """The currency spent where a trip goes ("Tokyo" is JPY), so a new trip needn't ask.
+    Both null when the place isn't found, or its country isn't one Nexus knows."""
+    del auth  # signed in only; nothing of the user's is read
+    if web.weather is None or not place.strip():
+        return CurrencyOut(currency=None, country=None)
+    try:
+        spot = await web.weather.spot(place[:80])
+    except WeatherError:
+        log.info("place lookup unavailable", exc_info=True)
+        return CurrencyOut(currency=None, country=None)
+    if spot is None:
+        return CurrencyOut(currency=None, country=None)
+    return CurrencyOut(currency=currency_of(spot.country_code), country=spot.country)
 
 
 @router.post("/trips/{trip_id}/packing/suggest")

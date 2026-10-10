@@ -95,7 +95,8 @@ export function Shell({
       </nav>
       <main className="main-viewport">
         <div className="content" ref={content}>
-          {here && here.tabs.length > 0 && (
+          {/* One tab is no choice: only show the bar when there are two or more. */}
+          {here && here.tabs.length > 1 && (
             <nav className="dept-tabs" aria-label={`${here.label} pages`}>
               {here.tabs.map((tab) => (
                 <NavLink

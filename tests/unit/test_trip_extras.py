@@ -121,7 +121,13 @@ async def test_open_meteo_answers_are_read() -> None:
     def answer(request: httpx.Request) -> httpx.Response:
         if "geocoding" in request.url.host:
             assert request.url.params["name"] == "Tokyo"
-            row = {"name": "Tokyo", "country": "Japan", "latitude": 35.69, "longitude": 139.69}
+            row = {
+                "name": "Tokyo",
+                "country": "Japan",
+                "country_code": "JP",
+                "latitude": 35.69,
+                "longitude": 139.69,
+            }
             return httpx.Response(200, json={"results": [row]})
         assert request.url.params["start_date"] == "2026-11-10"
         daily = {
@@ -135,7 +141,11 @@ async def test_open_meteo_answers_are_read() -> None:
 
     source = meteo(answer)
     spot = await source.find("Tokyo")
-    assert spot is not None and (spot.name, spot.country) == ("Tokyo", "Japan")
+    assert spot is not None and (spot.name, spot.country, spot.country_code) == (
+        "Tokyo",
+        "Japan",
+        "JP",
+    )
     days = await source.forecast(spot, date(2026, 11, 10), date(2026, 11, 11))
     assert days == [
         DayWeather(date(2026, 11, 10), 18.2, 9.1, 20, 1),
@@ -213,3 +223,13 @@ async def test_place_photos_are_cached_and_capped() -> None:
     await capped.photo(USER, "fakePlaceSpot01")
     with pytest.raises(InvalidInput):
         await capped.photo(USER, "fakePlaceSpot02")
+
+
+def test_a_country_suggests_its_currency() -> None:
+    from nexus.domain.currencies import currency_of
+
+    assert currency_of("JP") == "JPY"
+    assert currency_of("fr") == "EUR"  # any case
+    assert currency_of("GB") == "GBP"
+    assert currency_of("ZZ") is None  # not one we know: the user picks
+    assert currency_of(None) is None
