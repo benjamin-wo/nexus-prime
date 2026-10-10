@@ -6,8 +6,8 @@ export const reducedMotion = () =>
 
 // What rises into view as it's scrolled to: cards and the panels laid out like them.
 const REVEALED = ".card, .assistant, .trip-card, .next-pass, .stay-card, .dept-tabs";
-const STAGGER_MS = 70;
-const MAX_STAGGER = 6;
+const STAGGER_MS = 35;
+const MAX_STAGGER = 3;
 
 /** Cards under ``root`` fade and rise into place the first time they're scrolled
  * into view, a few at a time, as on a landing page. Bars and rings inside them fill
@@ -56,7 +56,7 @@ const NUMBER = /-?\d[\d,]*(?:\.\d+)?/;
  * first time it's seen, keeping its format. A placeholder ("…") shows as it is, and
  * the count starts once a number arrives. Shows the value at once for reduced
  * motion, and whenever the value changes after the count. */
-export function CountUp({ value, ms = 900 }: { value: string; ms?: number }) {
+export function CountUp({ value, ms = 650 }: { value: string; ms?: number }) {
   const ref = useRef<HTMLSpanElement>(null);
   const match = value.match(NUMBER);
   const has = match !== null;
