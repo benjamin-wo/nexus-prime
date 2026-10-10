@@ -84,6 +84,7 @@ export async function fakeApi(
   const state: {
     txs: Tx[];
     lastPress?: string;
+    chatSent: string[];
     runs: { id: string; status: string; progress: string; [key: string]: unknown }[];
     holdings: { symbol: string; quantity: string; average_cost: { amount: string; currency: string }; cost: { amount: string; currency: string }; updated_at: string }[];
     draft: Record<string, unknown> | null;
@@ -142,6 +143,7 @@ export async function fakeApi(
     holdings: [],
     watching: [],
     trips: [],
+    chatSent: [],
     trades: [],
     tripItems: ["k1", "k2"],
     looseBookings: [
@@ -629,6 +631,13 @@ export async function fakeApi(
       return route.fulfill({ status: 204 });
     }
     const home = (amount: number) => ({ amount: amount.toFixed(4), currency: "SGD" });
+    if (path === "/travel/currency") {
+      // Made-up lookups: a few places, and one that isn't found.
+      const place = (url.searchParams.get("place") ?? "").toLowerCase();
+      const known: Record<string, [string, string]> = { tokyo: ["JPY", "Japan"], osaka: ["JPY", "Japan"], seoul: ["KRW", "South Korea"], bali: ["IDR", "Indonesia"] };
+      const hit = Object.entries(known).find(([k]) => place.startsWith(k));
+      return json(route, hit ? { currency: hit[1][0], country: hit[1][1] } : { currency: null, country: null });
+    }
     if (path === "/travel/trips" && method === "GET") return json(route, state.trips);
     if (path === "/travel/photos/ph1") {
       // A 1x1 PNG stands in for the photo.
@@ -1440,6 +1449,15 @@ export async function fakeApi(
       return json(route, { lines, more: chatHistory, pending: null });
     }
     if (path === "/chat") {
+      state.chatSent.push(String(body.message));
+      if (String(body.message).startsWith("For my ")) {
+        return json(route, [
+          {
+            text: "Add Hotel Ume, 2 nights, 13 to 15 Nov (ref 8812, booked on Agoda) to your Tokyo trip?",
+            buttons: [[{ label: "Confirm", data: "hitl:t:y" }, { label: "Cancel", data: "hitl:t:n" }]],
+          },
+        ]);
+      }
       return json(route, [
         {
           text: "Delete 2026-09-27 · -25.00 SGD · Grab?",
@@ -1458,7 +1476,7 @@ export async function fakeApi(
         state.txs.find((t) => t.id === "t2")!.deleted = true;
       return json(route, [
         {
-          text: body.data.endsWith("y") ? "Deleted." : "Cancelled.",
+          text: body.data === "hitl:t:y" ? "Added Hotel Ume to your Tokyo trip." : body.data.endsWith("y") ? "Deleted." : "Cancelled.",
           buttons: [],
         },
       ]);

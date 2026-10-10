@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 
 import { fakeApi } from "./fake-api";
 
@@ -837,16 +837,41 @@ test("a research plan is started from a stock and read with its chart and source
   await expect(cite).toHaveAttribute("rel", /noopener/);
 });
 
+/** Adds a trip from the Travel page with just where and when; the currency is found
+ * from the place. ``more`` fills the optional fields. */
+async function addTrip(page: Page, where: string, from: string, to: string, more?: (form: Locator) => Promise<void>) {
+  await page.goto("/travel");
+  await page.getByRole("button", { name: "Add a trip" }).click();
+  const form = page.getByRole("form", { name: "Add a trip" });
+  await form.getByLabel("Where").fill(where);
+  await form.getByLabel("From").fill(from);
+  await form.getByLabel("To").fill(to);
+  await expect(form).toContainText("Spending in");
+  if (more) {
+    await form.getByText(/^Budget, who's going/).click();
+    await more(form);
+  }
+  await form.getByRole("button", { name: "Add trip" }).click();
+  await expect(page).toHaveURL(/\/travel\/trips\/trip1$/);
+}
+
+
 test("a trip is added and shows its spending, set-aside and settle-up", async ({ page }) => {
   const state = await fakeApi(page);
   await page.goto("/travel");
   await expect(page.getByText(/No trips yet/)).toBeVisible();
   await page.getByRole("button", { name: "Add a trip" }).click();
   const form = page.getByRole("form", { name: "Add a trip" });
+  // Where and when is all it asks; the currency comes from the place, or is asked for.
+  await form.getByLabel("Where").fill("Nowhere");
+  await expect(form.getByRole("button", { name: "Add trip" })).toBeDisabled(); // still looking
+  await expect(form.getByLabel("Currency there")).toBeVisible();
   await form.getByLabel("Where").fill("Tokyo");
+  await expect(form).toContainText("Spending in JPY (Japan)");
+  await expect(form.getByLabel("Currency there")).toHaveCount(0);
   await form.getByLabel("From").fill("2026-11-10");
   await form.getByLabel("To").fill("2026-11-19");
-  await form.getByLabel("Currency there").fill("jpy");
+  await form.getByText(/^Budget, who's going/).click();
   await form.getByLabel(/^Budget/).fill("3000");
   await form.getByLabel(/^Set aside each payday/).fill("500");
   await form.getByLabel("Who's going").fill("Ann, Ben");
@@ -857,19 +882,22 @@ test("a trip is added and shows its spending, set-aside and settle-up", async ({
 
   await expect(page).toHaveURL(/\/travel\/trips\/trip1$/);
   await expect(page.getByRole("heading", { name: "Tokyo", level: 1 })).toBeVisible();
-  expect(state.trips[0]).toMatchObject({ currency: "JPY", companions: ["Ann", "Ben"], planned: { "Dining Out": { amount: "600.0000" } } });
+  await expect.poll(() => state.trips[0]).toMatchObject({ currency: "JPY", companions: ["Ann", "Ben"], planned: { "Dining Out": { amount: "600.0000" } } });
   await expect(page.getByLabel("With Ann, Ben")).toBeVisible();
+  // One tab is no choice, so Travel shows no tab bar.
+  await expect(page.getByRole("navigation", { name: "Travel pages" })).toHaveCount(0);
   // The cover photo is credited as its licence asks, linking to its page.
   const credit = page.getByRole("link", { name: /Photo: A\. Photographer, CC BY-SA 4\.0/ });
   await expect(credit).toHaveAttribute("href", "https://commons.wikimedia.org/wiki/File:Example.jpg");
   await expect(credit).toHaveAttribute("rel", /noopener/);
-  // What's next, as a boarding pass, and the money at a glance.
-  await expect(page.getByRole("region", { name: "Next: flight" })).toContainText("ZZ12");
+  // Weeks out, the page opens on what's still to sort and the money in one bar.
+  await expect(page.getByRole("region", { name: /Still to sort/ })).toContainText("9 nights without a place to stay");
   await expect(page.getByRole("region", { name: "Money" })).toContainText("of SGD 3,000.00");
-  const flights = page.getByRole("list", { name: "Flights" });
-  await expect(flights).toContainText("ZZ12 SIN → NRT");
-  await expect(flights).toContainText("not logged");
-  await page.getByRole("tab", { name: "Money" }).click();
+  await expect(page.getByRole("region", { name: "Itinerary" })).toContainText("ZZ12 SIN → NRT");
+  await expect(page.getByRole("region", { name: "Itinerary" })).toContainText("08:25 → 16:05");
+
+  // The details of the money fold away until they're wanted.
+  await page.getByRole("region", { name: "Money" }).getByRole("button", { name: "Details" }).click();
   const spending = page.getByRole("region", { name: "Trip spending" });
   await expect(spending).toContainText("SGD 818.00 of SGD 3,000.00");
   await expect(spending).toContainText("SGD 800.00 before the trip");
@@ -880,7 +908,7 @@ test("a trip is added and shows its spending, set-aside and settle-up", async ({
   await expect(expenses.getByText("added by hand")).toBeVisible();
   await expenses.getByRole("button", { name: "Take Air ticket off the trip" }).click();
   await expect(expenses.getByText("Air ticket")).toHaveCount(0);
-  expect(state.tripItems).toEqual(["k1"]);
+  await expect.poll(() => state.tripItems).toEqual(["k1"]);
 
   await page.goto("/");
   const trip = page.getByRole("region", { name: "Tokyo" });
@@ -894,7 +922,7 @@ test("a trip is added and shows its spending, set-aside and settle-up", async ({
   await expect(loose).toContainText("Hotel Sakura, 2 nights");
   await loose.getByLabel("Trip for Hotel Sakura, 2 nights").selectOption("trip1");
   await expect(loose).toHaveCount(0);
-  expect(state.movedBookings).toEqual(["bk2:trip1"]);
+  await expect.poll(() => state.movedBookings).toEqual(["bk2:trip1"]);
 });
 
 test("trip research shows sourced prices and a budget, and becomes a trip", async ({ page }) => {
@@ -910,37 +938,35 @@ test("trip research shows sourced prices and a budget, and becomes a trip", asyn
   await expect(page.getByRole("region", { name: "Sources" }).getByRole("link", { name: "Tokyo guide" })).toHaveAttribute("rel", /noopener/);
   await page.getByRole("button", { name: "Make it a trip" }).click();
   await expect(page).toHaveURL(/\/travel\/trips\/trip9$/);
-  expect(state.trips[0]).toMatchObject({ destination: "Tokyo", currency: "JPY" });
+  await expect.poll(() => state.trips[0]).toMatchObject({ destination: "Tokyo", currency: "JPY" });
 });
 
 test("plans are added to a trip's itinerary by hand, day by day, and changed", async ({ page }) => {
   const state = await fakeApi(page);
-  await page.goto("/travel");
-  await page.getByRole("button", { name: "Add a trip" }).click();
-  const form = page.getByRole("form", { name: "Add a trip" });
-  await form.getByLabel("Where").fill("Tokyo");
-  await form.getByLabel("From").fill("2026-11-10");
-  await form.getByLabel("To").fill("2026-11-19");
-  await form.getByLabel("Currency there").fill("JPY");
-  await form.getByLabel("Notes").fill("Pack an adapter");
-  await form.getByRole("button", { name: "Add trip" }).click();
-  await expect(page).toHaveURL(/\/travel\/trips\/trip1$/);
-  expect(state.trips[0]).toMatchObject({ destination: "Tokyo" });
+  await addTrip(page, "Tokyo", "2026-11-10", "2026-11-19", (form) => form.getByLabel("Notes").fill("Pack an adapter"));
+  await expect.poll(() => state.trips[0]).toMatchObject({ destination: "Tokyo", notes: "Pack an adapter" });
 
-  await page.getByRole("tab", { name: "Itinerary" }).click();
-  const itinerary = page.getByRole("region", { name: "Itinerary" });
-  await itinerary.getByRole("button", { name: "Add to itinerary" }).click();
+  // One + button, one sheet: here, the form for a plan on a day.
+  await page.getByRole("button", { name: "Add to the trip" }).click();
+  const sheet = page.getByRole("dialog", { name: "Add to Tokyo" });
+  await sheet.getByRole("button", { name: /Fill in a form/ }).click();
+  await page.getByRole("dialog", { name: "Fill in a form" }).getByRole("button", { name: "🗓️ Plan on a day" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   const entry = page.getByRole("form", { name: "Add to the itinerary" });
   await entry.getByLabel("Name", { exact: true }).fill("Dinner at Sushi Ten");
   await entry.getByLabel("Day", { exact: true }).fill("2026-11-12");
   await entry.getByLabel("Time", { exact: true }).fill("19:00");
   await entry.getByLabel("Where", { exact: true }).fill("1-2-3 Ginza");
   await entry.getByRole("button", { name: "Add" }).click();
+  const itinerary = page.getByRole("region", { name: "Itinerary" });
   await expect(itinerary.getByRole("list", { name: /^Day 3/ })).toContainText("Dinner at Sushi Ten");
   await expect(itinerary.getByRole("list", { name: /^Day 3/ })).toContainText("19:00");
   await expect(itinerary).toContainText("1-2-3 Ginza");
-  expect(state.plans[0]).toMatchObject({ name: "Dinner at Sushi Ten", day: "2026-11-12", at: "19:00" });
+  await expect.poll(() => state.plans[0]).toMatchObject({ name: "Dinner at Sushi Ten", day: "2026-11-12", at: "19:00" });
 
+  // Edit and Remove wait behind a small button, so the timeline reads cleanly.
+  await expect(itinerary.getByRole("button", { name: "Edit Dinner at Sushi Ten" })).toHaveCount(0);
+  await itinerary.getByRole("button", { name: "Change Dinner at Sushi Ten" }).click();
   await itinerary.getByRole("button", { name: "Edit Dinner at Sushi Ten" }).click();
   const edit = itinerary.getByRole("form", { name: "Change the entry" });
   await edit.getByLabel("Time", { exact: true }).fill("20:00");
@@ -948,38 +974,49 @@ test("plans are added to a trip's itinerary by hand, day by day, and changed", a
   await expect(itinerary.getByRole("list", { name: /^Day 3/ })).toContainText("20:00");
 
   page.once("dialog", (d) => void d.accept());
+  await itinerary.getByRole("button", { name: "Change Dinner at Sushi Ten" }).click();
   await itinerary.getByRole("button", { name: "Remove Dinner at Sushi Ten" }).click();
   await expect(itinerary).not.toContainText("Dinner at Sushi Ten");
-  expect(state.plans).toEqual([]);
+  await expect.poll(() => state.plans).toEqual([]);
 
-  // A hotel starts on the trip's dates and shows on each night of the stay.
-  await itinerary.getByRole("button", { name: "Add to itinerary" }).click();
-  await entry.getByLabel("What").selectOption("hotel");
+  // A night without a place to stay shows on its day, and Add there starts the stay.
+  await itinerary.getByRole("button", { name: /^Add a place to stay on/ }).first().click();
+  await page.getByRole("dialog", { name: "Type it" }).getByRole("button", { name: /Or fill in a form/ }).click();
   await expect(entry.getByLabel("Check in")).toHaveValue("2026-11-10");
-  await expect(entry.getByLabel("Check out")).toHaveValue("2026-11-19");
   await entry.getByLabel("Hotel", { exact: true }).fill("Hotel Kawa");
   await entry.getByLabel("Check out").fill("2026-11-13");
   await entry.getByRole("button", { name: "Add" }).click();
   await expect(itinerary.getByText("Staying at Hotel Kawa")).toHaveCount(2); // the 11th and 12th
   await expect(itinerary.getByRole("list", { name: /^Day 4/ })).toContainText("Check out");
-  expect(state.plans[0]).toMatchObject({ check_in: "2026-11-10", check_out: "2026-11-13" });
+  await expect.poll(() => state.plans[0]).toMatchObject({ check_in: "2026-11-10", check_out: "2026-11-13" });
+});
+
+test("a booking is added by typing it, and Nexus asks before saving", async ({ page }) => {
+  const state = await fakeApi(page);
+  await addTrip(page, "Tokyo", "2026-11-10", "2026-11-15");
+  await page.getByRole("region", { name: /Still to sort/ }).getByRole("button", { name: /^Add: .*nights without a place to stay/ }).click();
+  const typeIt = page.getByRole("dialog", { name: "Type it" });
+  const box = typeIt.getByLabel("Tell Nexus about a booking");
+  await expect(box).toHaveAttribute("placeholder", /Hotel Ume 13 to 15 Nov/);
+  await box.fill("Hotel Ume 13 to 15 Nov, ref 8812, booked on Agoda");
+  await typeIt.getByRole("button", { name: "Send" }).click();
+  // The trip goes with it, so "13 to 15 Nov" means this trip's.
+  expect(state.chatSent.at(-1)).toMatch(/^For my Tokyo trip \(.+\), add this: Hotel Ume 13 to 15 Nov/);
+  await expect(typeIt).toContainText("Add Hotel Ume, 2 nights");
+  await typeIt.getByRole("button", { name: "Confirm" }).click();
+  await expect(typeIt).toContainText("Added Hotel Ume to your Tokyo trip.");
+  await expect.poll(() => state.lastPress).toBe("hitl:t:y");
+  await page.keyboard.press("Escape");
+  await expect(typeIt).toHaveCount(0);
 });
 
 test("a booking screenshot goes on the itinerary with its reference", async ({ page }) => {
   const state = await fakeApi(page);
-  await page.goto("/travel");
-  await page.getByRole("button", { name: "Add a trip" }).click();
-  const form = page.getByRole("form", { name: "Add a trip" });
-  await form.getByLabel("Where").fill("Tokyo");
-  await form.getByLabel("From").fill("2026-11-10");
-  await form.getByLabel("To").fill("2026-11-19");
-  await form.getByLabel("Currency there").fill("JPY");
-  await form.getByRole("button", { name: "Add trip" }).click();
-  await expect(page).toHaveURL(/\/travel\/trips\/trip1$/);
-
-  const flights = page.getByRole("list", { name: "Flights" });
-  await expect(flights).toContainText("Booked on Acme Air · Ref ZK4P7Q"); // from email
-  await page.getByLabel("From a screenshot").setInputFiles({
+  await addTrip(page, "Tokyo", "2026-11-10", "2026-11-19");
+  const itinerary = page.getByRole("region", { name: "Itinerary" });
+  await expect(itinerary).toContainText("Booked on Acme Air · Ref ZK4P7Q"); // from email
+  await page.getByRole("button", { name: "Add to the trip" }).click();
+  await page.getByRole("dialog", { name: "Add to Tokyo" }).getByLabel("Screenshot or photo").setInputFiles({
     name: "booking.png",
     mimeType: "image/png",
     buffer: Buffer.from("made-up image bytes"),
@@ -987,29 +1024,22 @@ test("a booking screenshot goes on the itinerary with its reference", async ({ p
   const imported = page.getByRole("status", { name: "Imported from a screenshot" });
   await expect(imported).toContainText("Added to your Tokyo trip");
   await expect(imported).toContainText("Does everything look right?");
-  const lodging = page.getByRole("list", { name: "Hotels and lodging" });
-  await expect(lodging).toContainText("Booked on Agoda · Ref 9876543210");
-  await expect(lodging.getByRole("button", { name: "Copy reference 9876543210" })).toBeVisible();
+  await expect(itinerary).toContainText("Booked on Agoda · Ref 9876543210");
+  await expect(itinerary.getByRole("button", { name: "Copy reference 9876543210" })).toBeVisible();
   await imported.getByRole("button", { name: "👍 Looks right" }).click();
   await expect(imported).toHaveCount(0);
-  expect(state.plans[0]).toMatchObject({ hotel: "Hotel Kumo", reference: "9876543210" });
+  await expect.poll(() => state.plans[0]).toMatchObject({ hotel: "Hotel Kumo", reference: "9876543210" });
 });
 
 test("the trip overview: getting ready, places to visit, and labelled days", async ({ page }) => {
   const state = await fakeApi(page);
-  await page.goto("/travel");
-  await page.getByRole("button", { name: "Add a trip" }).click();
-  const form = page.getByRole("form", { name: "Add a trip" });
-  await form.getByLabel("Where").fill("Seoul");
-  await form.getByLabel("From").fill("2026-11-10");
-  await form.getByLabel("To").fill("2026-11-13");
-  await form.getByLabel("Currency there").fill("KRW");
-  await form.getByRole("button", { name: "Add trip" }).click();
-  await expect(page).toHaveURL(/\/travel\/trips\/trip1$/);
+  await addTrip(page, "Seoul", "2026-11-10", "2026-11-13");
+  await expect.poll(() => state.trips[0]).toMatchObject({ currency: "KRW" });
 
   // Every field of the trip form fits inside it, dates included (iOS once pushed the
-  // date pickers past the card's edge).
-  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  // date pickers past the card's edge). Edit lives in the trip's menu.
+  await page.getByRole("button", { name: "Trip options" }).click();
+  await page.getByRole("menuitem", { name: "Edit trip" }).click();
   const edit = page.getByRole("form", { name: "Change the trip" });
   const overflow = await edit.evaluate((form) => {
     const edge = form.getBoundingClientRect().right + 0.5;
@@ -1020,16 +1050,19 @@ test("the trip overview: getting ready, places to visit, and labelled days", asy
   expect(overflow).toEqual([]);
   await edit.getByRole("button", { name: "Cancel" }).click();
 
-  const ready = page.getByRole("region", { name: "Getting ready" });
-  await expect(ready).toContainText("1 of 3");
-  await expect(ready).toContainText("3 nights with no place to stay");
-  await expect(ready).toContainText("No budget yet");
-  const bar = page.getByRole("navigation", { name: "Reservations" });
-  await expect(bar.getByRole("link", { name: /Flights/ })).toContainText("1");
+  const toSort = page.getByRole("region", { name: /Still to sort/ });
+  await expect(toSort).toContainText("Still to sort · 2");
+  await expect(toSort).toContainText("3 nights without a place to stay");
+  await expect(toSort).toContainText("No budget yet");
+  // Set opens the trip to add a budget.
+  await toSort.getByRole("button", { name: "Set: No budget yet" }).click();
+  await expect(page.getByRole("form", { name: "Change the trip" })).toBeVisible();
+  await page.getByRole("form", { name: "Change the trip" }).getByRole("button", { name: "Cancel" }).click();
 
-  // A place to visit, from the quick-add button, kept without a day.
+  // A place to visit, from the add sheet's form, kept without a day.
   await page.getByRole("button", { name: "Add to the trip" }).click();
-  await page.getByRole("menuitem", { name: "📍 Place to visit" }).click();
+  await page.getByRole("dialog", { name: "Add to Seoul" }).getByRole("button", { name: /Fill in a form/ }).click();
+  await page.getByRole("button", { name: "📍 Place to visit" }).click();
   const entry = page.getByRole("form", { name: "Add to the itinerary" });
   await entry.getByLabel("Name", { exact: true }).fill("Namdaemun Market");
   await entry.getByLabel("Kind").fill("Shopping");
@@ -1037,7 +1070,7 @@ test("the trip overview: getting ready, places to visit, and labelled days", asy
   const places = page.getByRole("list", { name: "Places to visit" });
   await expect(places).toContainText("Namdaemun Market");
   await expect(places).toContainText("Shopping");
-  expect(state.plans[0]).toMatchObject({ name: "Namdaemun Market", day: null, category: "Shopping" });
+  await expect.poll(() => state.plans[0]).toMatchObject({ name: "Namdaemun Market", day: null, category: "Shopping" });
 
   // Then given a day, it moves onto the itinerary.
   await places.getByRole("button", { name: "Plan a day for Namdaemun Market" }).click();
@@ -1045,7 +1078,6 @@ test("the trip overview: getting ready, places to visit, and labelled days", asy
   await pick.getByLabel(/^Day/).fill("2026-11-11");
   await pick.getByRole("button", { name: "Save" }).click();
   await expect(places).not.toContainText("Namdaemun Market");
-  await page.getByRole("tab", { name: "Itinerary" }).click();
   const itinerary = page.getByRole("region", { name: "Itinerary" });
   await expect(itinerary.getByRole("list", { name: /^Day 2/ })).toContainText("Namdaemun Market");
 
@@ -1055,20 +1087,12 @@ test("the trip overview: getting ready, places to visit, and labelled days", asy
   await itinerary.getByPlaceholder("City or plan, e.g. Busan").fill("Myeongdong");
   await itinerary.getByRole("button", { name: "Save" }).click();
   await expect(itinerary.getByRole("button", { name: "Change the label Myeongdong" })).toBeVisible();
-  expect(state.trips[0]).toMatchObject({ day_labels: { "2026-11-10": "Myeongdong" } });
+  await expect.poll(() => state.trips[0]).toMatchObject({ day_labels: { "2026-11-10": "Myeongdong" } });
 });
 
 test("places from Google Maps: saved, linked, rated, and flagged when usually closed", async ({ page }) => {
   const state = await fakeApi(page);
-  await page.goto("/travel");
-  await page.getByRole("button", { name: "Add a trip" }).click();
-  const form = page.getByRole("form", { name: "Add a trip" });
-  await form.getByLabel("Where").fill("Seoul");
-  await form.getByLabel("From").fill("2026-11-10");
-  await form.getByLabel("To").fill("2026-11-13");
-  await form.getByLabel("Currency there").fill("KRW");
-  await form.getByRole("button", { name: "Add trip" }).click();
-  await expect(page).toHaveURL(/\/travel\/trips\/trip1$/);
+  await addTrip(page, "Seoul", "2026-11-10", "2026-11-13");
 
   // Found on Google Maps and saved as a place to visit, with its place kept.
   await page.getByRole("button", { name: "🔎 Find places on Google Maps" }).click();
@@ -1076,11 +1100,11 @@ test("places from Google Maps: saved, linked, rated, and flagged when usually cl
   await page.getByRole("button", { name: "Search", exact: true }).click();
   const results = page.getByRole("list", { name: "Google Maps results" });
   await expect(results).toContainText("Hanok Noodle Bar ★ 4.6 (2,310)");
-  expect(state.placeSearches).toEqual(["noodles"]);
+  await expect.poll(() => state.placeSearches).toEqual(["noodles"]);
   await results.getByRole("button", { name: "Save: Hanok Noodle Bar" }).click();
   const places = page.getByRole("list", { name: "Places to visit" });
   await expect(places).toContainText("Hanok Noodle Bar");
-  expect(state.plans[0]).toMatchObject({ name: "Hanok Noodle Bar", category: "Noodle shop", place_id: "fakePlaceNoodle01" });
+  await expect.poll(() => state.plans[0]).toMatchObject({ name: "Hanok Noodle Bar", category: "Noodle shop", place_id: "fakePlaceNoodle01" });
   await expect(places.getByLabel("Rated 4.6 out of 5 from 2310 ratings")).toBeVisible();
 
   // Its details: a summary, reviews credited to their authors, and Google Maps.
@@ -1095,15 +1119,15 @@ test("places from Google Maps: saved, linked, rated, and flagged when usually cl
   const pick = places.getByRole("form", { name: "Change the entry" });
   await pick.getByLabel(/^Day/).fill("2026-11-12");
   await pick.getByRole("button", { name: "Save" }).click();
-  expect(state.plans[0]).toMatchObject({ day: "2026-11-12", place_id: "fakePlaceNoodle01" });
-  await page.getByRole("tab", { name: "Itinerary" }).click();
+  await expect(places).not.toContainText("Hanok Noodle Bar");
+  await expect.poll(() => state.plans[0]).toMatchObject({ day: "2026-11-12", place_id: "fakePlaceNoodle01" });
   const itinerary = page.getByRole("region", { name: "Itinerary" });
   await expect(itinerary.getByRole("note")).toHaveText("⚠️ Usually closed on Thursdays");
 
   // A place added by hand is linked to Google Maps from its entry.
-  await page.getByRole("tab", { name: "Overview" }).click();
   await page.getByRole("button", { name: "Add to the trip" }).click();
-  await page.getByRole("menuitem", { name: "📍 Place to visit" }).click();
+  await page.getByRole("dialog", { name: "Add to Seoul" }).getByRole("button", { name: /Fill in a form/ }).click();
+  await page.getByRole("button", { name: "📍 Place to visit" }).click();
   const entry = page.getByRole("form", { name: "Add to the itinerary" });
   await entry.getByLabel("Name", { exact: true }).fill("Namdaemun Market");
   await entry.getByRole("button", { name: "Add" }).click();
@@ -1112,7 +1136,7 @@ test("places from Google Maps: saved, linked, rated, and flagged when usually cl
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await page.getByRole("button", { name: "Link: Namdaemun Market" }).click();
   await expect(places.getByLabel("Rated 4.3 out of 5 from 18000 ratings")).toBeVisible();
-  expect(state.plans[1]).toMatchObject({ name: "Namdaemun Market", place_id: "fakePlaceMarket01" });
+  await expect.poll(() => state.plans[1]).toMatchObject({ name: "Namdaemun Market", place_id: "fakePlaceMarket01" });
 });
 
 test("where to next hands a place and a time to Nexus to research", async ({ page }) => {
@@ -1127,15 +1151,8 @@ test("where to next hands a place and a time to Nexus to research", async ({ pag
 
 test("a trip's weather, packing list, cover photo and stop photos", async ({ page }) => {
   const state = await fakeApi(page);
-  await page.goto("/travel");
-  await page.getByRole("button", { name: "Add a trip" }).click();
-  const form = page.getByRole("form", { name: "Add a trip" });
-  await form.getByLabel("Where").fill("Seoul");
-  await form.getByLabel("From").fill("2026-11-10");
-  await form.getByLabel("To").fill("2026-11-13");
-  await form.getByLabel("Currency there").fill("KRW");
-  await form.getByRole("button", { name: "Add trip" }).click();
-  await expect(page).toHaveURL(/\/travel\/trips\/trip1$/);
+  // Four days out: getting ready comes first.
+  await addTrip(page, "Seoul", "2026-10-02", "2026-10-05");
 
   // Weather for the dates, credited to its source.
   const weather = page.getByRole("region", { name: "Weather in Seoul, Exampleland" });
@@ -1152,7 +1169,7 @@ test("a trip's weather, packing list, cover photo and stop photos", async ({ pag
   await packing.getByLabel("Thing to pack").fill("Swimsuit");
   await packing.getByRole("button", { name: "Add", exact: true }).click();
   await expect(packing).toContainText("1 of 4 packed");
-  expect(state.trips[0].packing).toEqual([
+  await expect.poll(() => state.trips[0].packing).toEqual([
     { text: "Passport", done: true },
     { text: "Travel adapter", done: false },
     { text: "Umbrella or rain jacket", done: false },
@@ -1161,27 +1178,29 @@ test("a trip's weather, packing list, cover photo and stop photos", async ({ pag
   await packing.getByRole("button", { name: "Remove Swimsuit" }).click();
   await expect(packing).toContainText("1 of 3 packed");
 
-  // The cover photo: none other to switch to yet, but it can be hidden.
-  await page.getByRole("button", { name: "Photo", exact: true }).click();
+  // The cover photo, from the trip's menu: none other to switch to yet, but it can be hidden.
+  await page.getByRole("button", { name: "Trip options" }).click();
   await page.getByRole("menuitem", { name: "Another photo" }).click();
-  await expect(page.getByRole("menu", { name: "Cover photo" })).toContainText("no other photo of this place yet");
+  await expect(page.getByRole("menu", { name: "Trip options" })).toContainText("no other photo of this place yet");
   await page.getByRole("menuitem", { name: "No photo" }).click();
-  expect(state.photoChoices).toEqual(["next", "off"]);
+  await expect.poll(() => state.photoChoices).toEqual(["next", "off"]);
 
-  // A place linked from Google Maps shows its photo, credited, on the itinerary.
-  await page.getByRole("button", { name: "🔎 Find places on Google Maps" }).click();
+  // A place found on Google Maps from the add sheet shows its photo, credited, on the itinerary.
+  await page.getByRole("button", { name: "Add to the trip" }).click();
+  await page.getByRole("dialog", { name: "Add to Seoul" }).getByRole("button", { name: /Find a place/ }).click();
   await page.getByRole("search", { name: "Search Google Maps" }).getByLabel("Look for").fill("noodles");
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await page.getByRole("list", { name: "Google Maps results" }).getByRole("button", { name: "Save: Hanok Noodle Bar" }).click();
+  await page.keyboard.press("Escape");
   const places = page.getByRole("list", { name: "Places to visit" });
   await places.getByRole("button", { name: "Plan a day for Hanok Noodle Bar" }).click();
   const pick = places.getByRole("form", { name: "Change the entry" });
-  await pick.getByLabel(/^Day/).fill("2026-11-11");
+  await pick.getByLabel(/^Day/).fill("2026-10-03");
   await pick.getByRole("button", { name: "Save" }).click();
-  await page.getByRole("tab", { name: "Itinerary" }).click();
-  const itinerary = page.getByRole("region", { name: "Itinerary" });
-  await expect(itinerary.getByRole("img", { name: "Hanok Noodle Bar" })).toBeVisible();
-  await expect(itinerary.getByRole("link", { name: "Photo by A. Photographer, Google Maps" })).toHaveAttribute("href", "https://maps.example/u/2");
+  // The timeline is folded in the last week; it opens on a tap.
+  await page.getByText(/^Itinerary · 4 days/).click();
+  await expect(page.locator(".itinerary-fold").getByRole("img", { name: "Hanok Noodle Bar" })).toBeVisible();
+  await expect(page.locator(".itinerary-fold").getByRole("link", { name: "Photo by A. Photographer, Google Maps" })).toHaveAttribute("href", "https://maps.example/u/2");
 });
 
 test("the entry sheet suggests where you usually pay, and fills the usual", async ({ page }) => {
@@ -1204,7 +1223,7 @@ test("the entry sheet suggests where you usually pay, and fills the usual", asyn
   await expect(sheet.getByLabel("Category")).toHaveValue("food");
   await sheet.getByRole("button", { name: "Save" }).click();
   await expect(sheet).toBeHidden();
-  expect(state.txs[0]).toMatchObject({ counterparty: "Maxwell Food Centre", category_id: "food", amount: { amount: "12.4000" } });
+  await expect.poll(() => state.txs[0]).toMatchObject({ counterparty: "Maxwell Food Centre", category_id: "food", amount: { amount: "12.4000" } });
 
   // A typed amount is never replaced; Escape closes the list, not the sheet.
   await page.getByRole("button", { name: "Log expense" }).click();
@@ -1221,32 +1240,21 @@ test("the entry sheet suggests where you usually pay, and fills the usual", asyn
 
 test("a trip's day on one screen: tonight's stay, the day's plans, addresses and references", async ({ page }) => {
   const state = await fakeApi(page);
-  await page.goto("/travel");
-  await page.getByRole("button", { name: "Add a trip" }).click();
-  const form = page.getByRole("form", { name: "Add a trip" });
-  await form.getByLabel("Where").fill("Tokyo");
-  await form.getByLabel("From").fill("2026-11-10");
-  await form.getByLabel("To").fill("2026-11-13");
-  await form.getByLabel("Currency there").fill("JPY");
-  await form.getByRole("button", { name: "Add trip" }).click();
-  await expect(page).toHaveURL(/\/travel\/trips\/trip1$/);
-  // Made-up bookings: a stay for the whole trip and a plan on day 2.
+  // On now (the made-up today is 28 Sep): the page opens on today.
+  await addTrip(page, "Tokyo", "2026-09-25", "2026-09-28");
   const entry = { trip_id: "trip1", provider: null, segments: [], name: null, day: null, at: null, note: null, cost: null, booked_via: null, category: null, place_id: null, scheduled: true, logged: false, manual: true };
   state.plans.push(
-    { ...entry, id: "pl1", kind: "hotel", title: "Hotel Kumo", hotel: "Hotel Kumo", starts: "2026-11-10", ends: "2026-11-13", check_in: "2026-11-10", check_out: "2026-11-13", address: "1-2-3 Example-cho, Tokyo", reference: "HK55821", booked_via: "Agoda" },
-    { ...entry, id: "pl2", kind: "activity", title: "Fish market breakfast", name: "Fish market breakfast", starts: "2026-11-11", ends: "2026-11-11", day: "2026-11-11", at: "07:30", address: "4-5 Market St, Tokyo", hotel: null, check_in: null, check_out: null, reference: null, note: "Go early" },
+    { ...entry, id: "pl1", kind: "hotel", title: "Hotel Kumo", hotel: "Hotel Kumo", starts: "2026-09-25", ends: "2026-09-28", check_in: "2026-09-25", check_out: "2026-09-28", address: "1-2-3 Example-cho, Tokyo", reference: "HK55821", booked_via: "Agoda" },
+    { ...entry, id: "pl2", kind: "activity", title: "Fish market breakfast", name: "Fish market breakfast", starts: "2026-09-26", ends: "2026-09-26", day: "2026-09-26", at: "07:30", address: "4-5 Market St, Tokyo", hotel: null, check_in: null, check_out: null, reference: null, note: "Go early" },
   );
   await page.reload();
 
-  // Before the trip, the day view is the last tab and starts on day 1.
-  const tabs = page.getByRole("tablist", { name: "Trip views" });
-  await expect(tabs.getByRole("tab").last()).toHaveText("Day view");
-  await tabs.getByRole("tab", { name: "Day view" }).click();
-  const view = page.getByRole("region", { name: /November 10/ });
+  // Spending first, then the day. No tabs.
+  await expect(page.getByRole("tablist")).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Spent so far" })).toContainText("Log what you spend on Telegram");
+  const view = page.getByRole("region", { name: /September 25/ });
   await expect(view).toContainText("Day 1 of 4");
   const plans = view.getByRole("list", { name: /Plans for/ });
-  await expect(plans).toContainText("SIN → NRT");
-  await expect(plans).toContainText("ZK4P7Q");
   await expect(plans).toContainText("Check in");
   await expect(view).toContainText("Tonight");
   await expect(view.getByRole("button", { name: "Copy booking reference HK55821" }).first()).toBeVisible();
@@ -1255,7 +1263,7 @@ test("a trip's day on one screen: tonight's stay, the day's plans, addresses and
 
   // The next day: the plan with its address and a link to directions.
   await view.getByRole("button", { name: "Day after" }).click();
-  const day2 = page.getByRole("region", { name: /November 11/ });
+  const day2 = page.getByRole("region", { name: /September 26/ });
   await expect(day2).toContainText("Day 2 of 4");
   await expect(day2).toContainText("Go early");
   await expect(day2.getByRole("link", { name: "Open Fish market breakfast in Maps" })).toHaveAttribute(
@@ -1266,26 +1274,25 @@ test("a trip's day on one screen: tonight's stay, the day's plans, addresses and
 
   // The last day: checking out, nowhere to sleep needed.
   await day2.getByRole("button", { name: "Day after" }).click();
-  await page.getByRole("region", { name: /November 12/ }).getByRole("button", { name: "Day after" }).click();
-  const last = page.getByRole("region", { name: /November 13/ });
+  await page.getByRole("region", { name: /September 27/ }).getByRole("button", { name: "Day after" }).click();
+  const last = page.getByRole("region", { name: /September 28/ });
   await expect(last.getByRole("list", { name: /Plans for/ })).toContainText("Check out");
   await expect(last).toContainText("Last day of the trip.");
+
+  // The rest of the trip is one tap away.
+  await expect(page.getByText("The whole trip, day by day")).toBeVisible();
 });
 
-test("a trip that's on opens on today", async ({ page }) => {
-  await fakeApi(page);
-  await page.goto("/travel");
-  await page.getByRole("button", { name: "Add a trip" }).click();
-  const form = page.getByRole("form", { name: "Add a trip" });
-  await form.getByLabel("Where").fill("Osaka");
-  await form.getByLabel("From").fill("2026-09-25");
-  await form.getByLabel("To").fill("2026-09-30");
-  await form.getByLabel("Currency there").fill("JPY");
-  await form.getByRole("button", { name: "Add trip" }).click();
-  const tabs = page.getByRole("tablist", { name: "Trip views" });
-  await expect(tabs.getByRole("tab").first()).toHaveText("Today");
-  await expect(tabs.getByRole("tab", { name: "Today" })).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByRole("region", { name: /September/ })).toContainText("of 6");
+test("after a trip: settling up comes first, then what it cost", async ({ page }) => {
+  const state = await fakeApi(page);
+  await addTrip(page, "Osaka", "2026-11-10", "2026-11-12");
+  state.trips[0] = { ...state.trips[0], status: "finished" };
+  await page.reload();
+  const settle = page.getByRole("region", { name: "Settle up" });
+  await expect(settle).toContainText("Ann");
+  await expect(page.getByRole("region", { name: "The trip in numbers" })).toContainText("SGD 818.00");
+  await expect(page.getByRole("button", { name: "Add to the trip" })).toHaveCount(0);
+  await expect(page.getByText("All expenses")).toBeVisible();
 });
 
 test("cards rise into view and figures count up, unless less motion is asked for", async ({ page }) => {

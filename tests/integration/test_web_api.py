@@ -1793,6 +1793,12 @@ async def test_trip_weather_packing_cover_and_place_photos(world: World) -> None
     trip = (await owner.send("POST", "/api/travel/trips", body)).json()
     path = f"/api/travel/trips/{trip['id']}"
 
+    # A new trip's currency, suggested from where it goes.
+    found = (await owner.get("/api/travel/currency?place=Kyoto")).json()
+    assert found == {"currency": "JPY", "country": "Exampleland"}
+    unknown = (await owner.get("/api/travel/currency?place=Nowhere")).json()
+    assert unknown == {"currency": None, "country": None}
+
     # Weather: the forecast for a trip five days off, typical weather for a far one.
     weather = (await owner.get(f"{path}/weather")).json()
     assert weather["kind"] == "forecast" and weather["place"] == "Kyoto, Exampleland"

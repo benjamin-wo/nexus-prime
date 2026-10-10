@@ -525,7 +525,9 @@ class FakeWeather:
 
     async def find(self, name: str) -> Spot | None:
         self.asked.append(f"find:{name}")
-        return Spot(name, "Exampleland", 35.0, 139.0)
+        if name == "Nowhere":
+            return None
+        return Spot(name, "Exampleland", 35.0, 139.0, "JP")
 
     async def forecast(self, spot: Spot, start: date, end: date) -> list[DayWeather]:
         self.asked.append(f"forecast:{start}:{end}")
