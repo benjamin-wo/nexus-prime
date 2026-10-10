@@ -27,6 +27,8 @@
   --orange-text: #fb923c;
   --orange-glow: #7c2d12;
   --sky-accent: #38bdf8;
+  --bg-glass: rgba(21, 21, 24, 0.74);
+  --ribbon-spark: #fdba74;
 
   --space-1: 4px;
   --space-2: 8px;
@@ -172,7 +174,7 @@ input[type="date"].input, input[type="time"].input, input[type="datetime-local"]
 .chat-fab:hover, .chat-fab:focus-visible { opacity: 1; }
 .chat-fab:active { transform: scale(0.95); }
 
-.card { background: var(--bg-card); border: 1px solid var(--border-card); border-radius: var(--radius); padding: var(--space-6); }
+.card { background: var(--bg-glass); border: 1px solid var(--border-card); border-radius: var(--radius); padding: var(--space-6); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04); }
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-5); }
 
 /* --- dashboard --- */
@@ -949,3 +951,78 @@ a.ask-chip { display: inline-flex; align-items: center; text-decoration: none; }
 .today-plan-body { flex: 1; min-width: 0; display: grid; gap: var(--space-2); overflow-wrap: anywhere; }
 .today-address { display: grid; gap: var(--space-2); }
 .today-next { margin: 0; padding-top: var(--space-3); border-top: 1px solid var(--border-subtle); }
+
+/* --- motion: light ribbons, glass cards, things rising and filling into view --- */
+.ribbons { position: fixed; inset: 0 0 0 248px; z-index: 0; pointer-events: none; overflow: hidden; }
+.ribbons svg { position: absolute; inset: -10% -10%; width: 120%; height: 120%; }
+/* Darker at the top and bottom, so the ribbons sit behind the page, not on it. */
+.ribbons-veil {
+  position: absolute; inset: 0;
+  background: radial-gradient(130% 95% at 60% 50%, transparent 0%, transparent 40%, rgba(9, 9, 11, 0.5) 75%, var(--bg-shell) 100%);
+}
+.ribbon { transform-origin: 50% 50%; will-change: transform; }
+.ribbon-main { animation: drift-a 26s ease-in-out infinite alternate; }
+.ribbon-second { animation: drift-b 34s ease-in-out infinite alternate; }
+.ribbon-faint { animation: drift-c 42s ease-in-out infinite alternate; }
+.ribbon-spark { stroke-dasharray: 60 940; animation: spark 7s linear infinite; opacity: 0.9; }
+.ribbon-spark:nth-of-type(2n) { animation-duration: 9s; animation-delay: -3s; }
+@keyframes drift-a { from { transform: translate(-2%, 2%) rotate(-2deg) scale(1.02); } to { transform: translate(3%, -2%) rotate(2deg) scale(1.08); } }
+@keyframes drift-b { from { transform: translate(2%, -1%) rotate(1deg); } to { transform: translate(-3%, 3%) rotate(-3deg) scale(1.05); } }
+@keyframes drift-c { from { transform: translate(0, 0) rotate(0); } to { transform: translate(-2%, -3%) rotate(3deg); } }
+@keyframes spark { from { stroke-dashoffset: 1000; } to { stroke-dashoffset: 0; } }
+/* Painted after the ribbons without starting a stacking context of their own, so
+   sheets and the chat inside them still layer over the floating buttons. */
+.rail, .main-viewport { position: relative; }
+
+/* Cards are glass over the ribbons: dark enough to read, light enough to see through. */
+@media (hover: hover) and (min-width: 901px) {
+  .card, .assistant { -webkit-backdrop-filter: blur(14px) saturate(130%); backdrop-filter: blur(14px) saturate(130%); }
+}
+
+/* The heading accent: one word in an italic serif. */
+.accent-serif { font-family: "Instrument Serif", Georgia, serif; font-style: italic; font-weight: 400; letter-spacing: 0; color: var(--text-white); }
+
+/* Rising into view, a few at a time (motion.tsx). */
+[data-reveal="pending"] { opacity: 0; transform: translateY(22px) scale(0.985); }
+[data-reveal="in"] { animation: reveal 760ms cubic-bezier(0.16, 1, 0.3, 1) var(--reveal-delay, 0ms) both; }
+@keyframes reveal { from { opacity: 0; transform: translateY(22px) scale(0.985); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
+/* Bars and rings fill as their card arrives. */
+[data-reveal="in"] .meter span, [data-reveal="in"] .progress > span, [data-reveal="in"] .bar {
+  transform-origin: left center; animation: fill-x 1s cubic-bezier(0.16, 1, 0.3, 1) calc(var(--reveal-delay, 0ms) + 200ms) both;
+}
+[data-reveal="in"] .month-bar { transform-origin: center bottom; animation: fill-y 900ms cubic-bezier(0.16, 1, 0.3, 1) calc(var(--reveal-delay, 0ms) + 150ms) both; }
+[data-reveal="in"] .month:nth-child(2) .month-bar { animation-delay: calc(var(--reveal-delay, 0ms) + 220ms); }
+[data-reveal="in"] .month:nth-child(3) .month-bar { animation-delay: calc(var(--reveal-delay, 0ms) + 290ms); }
+[data-reveal="in"] .month:nth-child(4) .month-bar { animation-delay: calc(var(--reveal-delay, 0ms) + 360ms); }
+[data-reveal="in"] .month:nth-child(5) .month-bar { animation-delay: calc(var(--reveal-delay, 0ms) + 430ms); }
+[data-reveal="in"] .month:nth-child(6) .month-bar { animation-delay: calc(var(--reveal-delay, 0ms) + 500ms); }
+[data-reveal="in"] .split-bar span { transform-origin: left center; animation: fill-x 1s cubic-bezier(0.16, 1, 0.3, 1) calc(var(--reveal-delay, 0ms) + 200ms) both; }
+@keyframes fill-x { from { transform: scaleX(0); } }
+@keyframes fill-y { from { transform: scaleY(0); } }
+@property --ring { syntax: "<percentage>"; inherits: false; initial-value: 0%; }
+[data-reveal="in"] .ring { animation: ring-fill 1.2s cubic-bezier(0.16, 1, 0.3, 1) calc(var(--reveal-delay, 0ms) + 200ms) both; }
+@keyframes ring-fill { from { --ring: 0%; } }
+
+/* A button that answers the press, like the cards it sits on. */
+.btn { transition: transform var(--t-micro), background var(--t-micro), border-color var(--t-micro); }
+.btn:active { transform: scale(0.97); }
+
+@media (max-width: 900px) {
+  .ribbons { inset: 0; }
+  .ribbons svg { inset: -5% -70%; width: 240%; height: 110%; }
+  /* The phone's tab bar floats as a glass pill, as in the reference. */
+  .bottom-nav {
+    left: var(--space-3); right: var(--space-3); bottom: calc(var(--space-2) + env(safe-area-inset-bottom));
+    border: 1px solid var(--border-card); border-radius: 22px; padding: var(--space-1);
+    background: rgba(13, 13, 16, 0.78); -webkit-backdrop-filter: blur(16px) saturate(140%); backdrop-filter: blur(16px) saturate(140%);
+    box-shadow: 0 18px 40px -12px rgba(0, 0, 0, 0.7);
+  }
+  .bottom-nav .nav-link { border-radius: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ribbon, .ribbon-spark { animation: none; }
+  [data-reveal] { opacity: 1; transform: none; animation: none; }
+  [data-reveal] .meter span, [data-reveal] .progress > span, [data-reveal] .bar, [data-reveal] .month-bar,
+  [data-reveal] .split-bar span, [data-reveal] .ring { animation: none; }
+  .btn:active { transform: none; }
+}

@@ -23,6 +23,7 @@ import {
   formatPercent,
   formatShortDate,
 } from "../format";
+import { AccentTitle, CountUp } from "../motion";
 import { tripWhen } from "./Trips";
 
 function greeting(timezone: string): string {
@@ -282,7 +283,7 @@ function SpendingCard({
             Spent this month
           </h2>
           <span className="figure-value">
-            {now ? formatMoney(now.spent) : "…"}
+            <CountUp value={now ? formatMoney(now.spent) : "…"} />
           </span>
         </div>
         <Link className="btn btn-small" to="/accounting">
@@ -372,7 +373,7 @@ function PortfolioCard({ portfolio }: { portfolio?: Portfolio }) {
       ) : (
         <>
           <span className="figure-value">
-            {totals?.value ? formatMoney(totals.value) : "…"}
+            <CountUp value={totals?.value ? formatMoney(totals.value) : "…"} />
           </span>
           {totals?.day_change && (
             <p
@@ -663,7 +664,9 @@ export function Home({
       <div className="page-head">
         <div>
           <p className="muted">{today(me.user.timezone)}</p>
-          <h1>{greeting(me.user.timezone)}</h1>
+          <h1>
+            <AccentTitle text={greeting(me.user.timezone)} />
+          </h1>
         </div>
         <div className="quick">
           <button type="button" className="btn btn-primary" onClick={onLog}>

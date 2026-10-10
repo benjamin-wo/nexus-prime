@@ -449,7 +449,8 @@ test("nothing spills sideways on a small phone", async ({ page }) => {
     const offenders = await page.evaluate(() => {
       const width = document.documentElement.clientWidth;
       return [...document.querySelectorAll("body *")]
-        .filter((el) => el.getBoundingClientRect().right > width + 1)
+        // The background ribbons are drawn wider than the screen and clipped.
+        .filter((el) => !el.closest(".ribbons") && el.getBoundingClientRect().right > width + 1)
         .map(
           (el) =>
             `${el.tagName.toLowerCase()}.${(el as HTMLElement).className}`,
@@ -1285,4 +1286,22 @@ test("a trip that's on opens on today", async ({ page }) => {
   await expect(tabs.getByRole("tab").first()).toHaveText("Today");
   await expect(tabs.getByRole("tab", { name: "Today" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("region", { name: /September/ })).toContainText("of 6");
+});
+
+test("cards rise into view and figures count up, unless less motion is asked for", async ({ page }) => {
+  await fakeApi(page);
+  await page.goto("/");
+  const spend = page.getByRole("region", { name: "Spent this month" });
+  await expect(spend).toHaveAttribute("data-reveal", "in");
+  await expect(spend.locator(".figure-value")).toHaveText("SGD 37.40");
+  await expect(page.getByRole("heading", { level: 1 }).locator("em.accent-serif")).toHaveText(/morning|afternoon|evening/);
+  // The ribbons are decoration: hidden from screen readers and never in the way.
+  await expect(page.locator(".ribbons")).toHaveAttribute("aria-hidden", "true");
+  await expect(page.locator(".ribbons")).toHaveCSS("pointer-events", "none");
+
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.reload();
+  await expect(spend.locator(".figure-value")).toHaveText("SGD 37.40");
+  await expect(spend).not.toHaveAttribute("data-reveal", /.*/);
+  await expect(page.locator(".ribbon-main")).toHaveCSS("animation-name", "none");
 });

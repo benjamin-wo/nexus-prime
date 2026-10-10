@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 
 import type { Booking, Trip, TripDetail, TripPhoto } from "../api";
 import { formatMoney, formatShortDate } from "../format";
+import { CountUp } from "../motion";
 import { PlaceThumb } from "./TripPlaces";
 
 const day = (iso: string) => formatShortDate(iso, "UTC");
@@ -263,7 +264,9 @@ export function MoneyCard({ detail, onOpen }: { detail: TripDetail; onOpen: () =
           Details
         </button>
       </div>
-      <p className="trip-money-figure">{formatMoney(s.spent)}</p>
+      <p className="trip-money-figure">
+        <CountUp value={formatMoney(s.spent)} />
+      </p>
       {budget && (
         <div className={`meter${(s.percent ?? 0) > 100 ? " meter-over" : ""}`} aria-hidden="true">
           <span style={{ width: `${percent}%` }} />
