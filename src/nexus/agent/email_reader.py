@@ -8,6 +8,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, Field
 
+from nexus.agent.structured import parse_reply, structured
 from nexus.domain.bookings import BookingDraft
 from nexus.domain.email import ExpenseDraft, FetchedEmail, Screening, short
 
@@ -124,16 +125,16 @@ _BOOKING = (
 
 class LlmEmailReader:
     def __init__(self, screener: BaseChatModel, reader: BaseChatModel) -> None:
-        self._screen = screener.with_structured_output(Triage)
-        self._read = reader.with_structured_output(EmailExpense)
-        self._book = reader.with_structured_output(EmailBooking)
+        self._screen = structured(screener, Triage)
+        self._read = structured(reader, EmailExpense)
+        self._book = structured(reader, EmailBooking)
 
     async def triage(self, email: FetchedEmail) -> Screening:
         prompt = _TRIAGE.format(
             sender=email.sender, subject=email.subject, text=short(email.text, 1500)
         )
         result = await self._screen.ainvoke([HumanMessage(content=prompt)])
-        found = result if isinstance(result, Triage) else Triage.model_validate(result)
+        found = parse_reply(result, Triage)
         return Screening(
             found.kind != "neither",
             found.reason,
@@ -149,7 +150,7 @@ class LlmEmailReader:
             text=email.text,
         )
         result = await self._book.ainvoke([HumanMessage(content=prompt)])
-        found = result if isinstance(result, EmailBooking) else EmailBooking.model_validate(result)
+        found = parse_reply(result, EmailBooking)
         if found.kind == "none":
             return None
         return BookingDraft.from_dict(
@@ -187,7 +188,7 @@ class LlmEmailReader:
         if categories and not received:
             prompt += "\n\nAlso pick the closest category for it from: " + ", ".join(categories)
         result = await self._read.ainvoke([HumanMessage(content=prompt)])
-        draft = result if isinstance(result, EmailExpense) else EmailExpense.model_validate(result)
+        draft = parse_reply(result, EmailExpense)
         return ExpenseDraft(
             draft.amount,
             draft.currency,

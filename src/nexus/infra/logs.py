@@ -43,8 +43,17 @@ def configure_logging() -> None:
         access.addFilter(RedactQueries())
     app = logging.getLogger("nexus")
     if not app.handlers:
-        handler = logging.StreamHandler(sys.stdout)
-        handler.setFormatter(JsonLines())
-        app.addHandler(handler)
+        app.addHandler(_json_handler())
         app.setLevel(logging.INFO)
         app.propagate = False
+    # Uvicorn's own lines ("Started server process") go to stderr, which Railway shows
+    # as errors: they go out as JSON lines with their real level instead.
+    server = logging.getLogger("uvicorn.error")
+    if not any(isinstance(h.formatter, JsonLines) for h in server.handlers):
+        server.handlers = [_json_handler()]
+
+
+def _json_handler() -> logging.Handler:
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(JsonLines())
+    return handler

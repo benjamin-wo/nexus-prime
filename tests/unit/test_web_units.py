@@ -116,3 +116,54 @@ def test_app_logs_are_json_lines_with_a_level() -> None:
 
     record = logging.LogRecord("nexus.x", logging.INFO, __file__, 1, "read %d", (3,), None)
     assert json.loads(JsonLines().format(record)) == {"level": "info", "message": "nexus.x: read 3"}
+
+
+def test_uvicorn_lines_go_out_as_json_not_stderr() -> None:
+    import logging
+    import sys
+
+    from nexus.infra.logs import JsonLines, configure_logging
+
+    server = logging.getLogger("uvicorn.error")
+    before = server.handlers
+    try:
+        server.handlers = [logging.StreamHandler(sys.stderr)]
+        configure_logging()
+        configure_logging()  # idempotent
+        [handler] = server.handlers
+        assert isinstance(handler, logging.StreamHandler) and handler.stream is sys.stdout
+        assert isinstance(handler.formatter, JsonLines)
+    finally:
+        server.handlers = before
+
+
+def test_a_turn_is_logged_with_what_it_did_never_what_was_said() -> None:
+    import logging
+
+    from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+
+    from nexus.agent.service import SLOW_TURN_SECONDS, _log_turn
+
+    new = [
+        HumanMessage(content="lunch at foodcourt abc 6.50"),
+        AIMessage(content="", tool_calls=[{"name": "add_expense", "args": {}, "id": "c1"}]),
+        ToolMessage(content="ok", tool_call_id="c1"),
+        AIMessage(content="Logged."),
+    ]
+    seen: list[logging.LogRecord] = []
+    logger = logging.getLogger("nexus.agent.service")
+    handler = logging.Handler()
+    handler.emit = seen.append  # type: ignore[method-assign,assignment]
+    logger.addHandler(handler)
+    level = logger.level
+    logger.setLevel(logging.INFO)
+    try:
+        _log_turn(2.0, new)
+        _log_turn(SLOW_TURN_SECONDS + 1, new)
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(level)
+    quick, slow = seen
+    assert quick.levelno == logging.INFO and slow.levelno == logging.WARNING
+    assert quick.getMessage() == "turn took 2.0s: 2 model calls, tools: add_expense"
+    assert all("foodcourt" not in r.getMessage() for r in seen)

@@ -12,6 +12,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, Field
 
+from nexus.agent.structured import parse_reply, structured
 from nexus.domain.bookings import BookingDraft
 from nexus.domain.errors import InvalidInput
 from nexus.domain.money import Money
@@ -93,7 +94,7 @@ _PROMPT = (
 
 class LlmTripReader:
     def __init__(self, model: BaseChatModel) -> None:
-        self._model = model.with_structured_output(TripShot)
+        self._model = structured(model, TripShot)
 
     async def read(
         self, image: bytes, mime_type: str, caption: str | None, *, today: date
@@ -109,10 +110,7 @@ class LlmTripReader:
         )
         for attempt in (1, 2):  # models now and then return a reply that doesn't parse
             try:
-                result = await self._model.ainvoke([message])
-                if isinstance(result, TripShot):
-                    return result
-                return TripShot.model_validate(result)
+                return parse_reply(await self._model.ainvoke([message]), TripShot)
             except Exception:
                 if attempt == 2:
                     raise

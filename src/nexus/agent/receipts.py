@@ -11,6 +11,8 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, Field, field_validator
 
+from nexus.agent.structured import parse_reply, structured
+
 log = logging.getLogger(__name__)
 
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
@@ -107,7 +109,7 @@ _PROMPT = (
 
 class LlmReceiptReader:
     def __init__(self, model: BaseChatModel) -> None:
-        self._model = model.with_structured_output(ReceiptDraft)
+        self._model = structured(model, ReceiptDraft)
 
     async def read(
         self,
@@ -138,10 +140,7 @@ class LlmReceiptReader:
         )
         for attempt in (1, 2):  # models now and then return a reply that doesn't parse
             try:
-                result = await self._model.ainvoke([message])
-                if isinstance(result, ReceiptDraft):
-                    return result
-                return ReceiptDraft.model_validate(result)
+                return parse_reply(await self._model.ainvoke([message]), ReceiptDraft)
             except Exception:
                 if attempt == 2:
                     raise
