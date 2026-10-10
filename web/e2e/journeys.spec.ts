@@ -1001,7 +1001,7 @@ test("a booking is added by typing it, and Nexus asks before saving", async ({ p
   await box.fill("Hotel Ume 13 to 15 Nov, ref 8812, booked on Agoda");
   await typeIt.getByRole("button", { name: "Send" }).click();
   // The trip goes with it, so "13 to 15 Nov" means this trip's.
-  expect(state.chatSent.at(-1)).toMatch(/^For my Tokyo trip \(.+\), add this: Hotel Ume 13 to 15 Nov/);
+  await expect.poll(() => state.chatSent.at(-1)).toMatch(/^For my Tokyo trip \(.+\), add this: Hotel Ume 13 to 15 Nov/);
   await expect(typeIt).toContainText("Add Hotel Ume, 2 nights");
   await typeIt.getByRole("button", { name: "Confirm" }).click();
   await expect(typeIt).toContainText("Added Hotel Ume to your Tokyo trip.");
