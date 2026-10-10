@@ -13,7 +13,13 @@ type Window = tuple[int, timedelta]  # at most this many in this long
 # Generous for a person, tight for a script or a stuck client.
 MESSAGES: Sequence[Window] = ((20, timedelta(minutes=1)), (400, timedelta(days=1)))
 IMPORTS: Sequence[Window] = ((30, timedelta(minutes=10)),)
-DEFAULT_RULES: Mapping[str, Sequence[Window]] = {"message": MESSAGES, "import": IMPORTS}
+# A shared trip link, by link: plenty for the people going, not for a scraper.
+SHARED_VIEWS: Sequence[Window] = ((60, timedelta(minutes=1)), (2000, timedelta(days=1)))
+DEFAULT_RULES: Mapping[str, Sequence[Window]] = {
+    "message": MESSAGES,
+    "import": IMPORTS,
+    "shared": SHARED_VIEWS,
+}
 
 
 class RateLimiter:

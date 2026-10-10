@@ -1101,5 +1101,16 @@ a.ask-chip { display: inline-flex; align-items: center; text-decoration: none; }
 @media (max-width: 720px) {
   .trip-cover-compact { margin-left: 0; margin-right: 0; min-height: 150px; }
 }
+/* Sharing a trip: the Share button by the menu, the sheet, and the read-only page. */
+.cover-actions { display: flex; align-items: center; gap: var(--space-2); }
+.share-hidden { margin: 0; padding-left: var(--space-5); display: grid; gap: 2px; color: var(--text-secondary); font-size: 0.875rem; }
+.share-link { display: flex; gap: var(--space-2); }
+.share-link .input { flex: 1; min-width: 0; font-size: 0.875rem; }
+.share-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.shared-page { min-height: 100dvh; padding: var(--space-6) var(--space-4) var(--space-8); }
+.shared-page > .trip-page { max-width: 880px; margin: 0 auto; padding-bottom: 0; }
+.shared-badge { cursor: default; }
+.shared-foot { text-align: center; margin: 0; }
+.itinerary-day[aria-current="date"] .day-head h3 { color: var(--text-white); }
 .entry-actions { display: inline-flex; gap: var(--space-1); align-items: center; justify-self: end; }
 .entry-more { min-width: 36px; letter-spacing: 0.08em; color: var(--text-muted); }

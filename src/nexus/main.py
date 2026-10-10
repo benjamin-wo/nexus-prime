@@ -555,6 +555,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
     app.include_router(email_api.router)
     app.include_router(investments_api.router)
     app.include_router(travel_api.router)
+    app.include_router(travel_api.shared_router)
     install_error_handlers(app)
     origin = resolved.public_origin
     install_hardening(app, https=bool(origin and origin.startswith("https://")))

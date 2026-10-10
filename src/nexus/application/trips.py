@@ -7,6 +7,8 @@ hand. The user's own share counts (a bill less the shares of it others owe), in 
 home currency at the rate for the day it was spent.
 """
 
+import re
+import secrets
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
@@ -195,6 +197,58 @@ async def get_trip(uow: UnitOfWork, user_id: UserId, trip_id: UUID) -> Trip:
     if trip is None:
         raise NotFound("no trip with that id")
     return trip
+
+
+# --- the read-only link for the people going -------------------------------------------
+
+# Long enough that a link can't be guessed; the token is the whole permission.
+SHARE_TOKEN = re.compile(r"^[A-Za-z0-9_-]{32,64}$")
+
+
+async def share_link(uow: UnitOfWork, user_id: UserId, trip_id: UUID) -> str | None:
+    """The trip's link token, if it's shared."""
+    async with uow:
+        if await uow.trips.get_trip(user_id, trip_id) is None:
+            raise NotFound("no trip with that id")
+        return await uow.trips.share_token(user_id, trip_id)
+
+
+async def share_trip(
+    uow: UnitOfWork, user_id: UserId, trip_id: UUID, *, renew: bool, now: datetime
+) -> str:
+    """The trip's link, made if it has none. ``renew`` replaces it with a new one, so
+    the old link stops working."""
+    async with uow:
+        if await uow.trips.get_trip(user_id, trip_id) is None:
+            raise NotFound("no trip with that id")
+        token = None if renew else await uow.trips.share_token(user_id, trip_id)
+        if token is None:
+            token = secrets.token_urlsafe(32)
+            await uow.trips.set_share(user_id, trip_id, token, now)
+            await uow.commit()
+        return token
+
+
+async def stop_sharing(uow: UnitOfWork, user_id: UserId, trip_id: UUID) -> None:
+    """The link stops working. Nothing to do when the trip isn't shared."""
+    async with uow:
+        if await uow.trips.get_trip(user_id, trip_id) is None:
+            raise NotFound("no trip with that id")
+        await uow.trips.remove_share(user_id, trip_id)
+        await uow.commit()
+
+
+async def open_shared(uow: UnitOfWork, token: str) -> tuple[Trip, list[Booking]]:
+    """The trip a link opens and its bookings. NotFound for a malformed, unknown or
+    stopped link, all alike, so a link can't be probed."""
+    if not SHARE_TOKEN.match(token):
+        raise NotFound("this link doesn't open a trip")
+    async with uow:
+        trip = await uow.trips.shared_trip(token)
+        if trip is None:
+            raise NotFound("this link doesn't open a trip")
+        bookings = await uow.trips.list_bookings(trip.user_id, trip_id=trip.id)
+    return trip, bookings
 
 
 def current_or_next(trips: list[Trip], today: date) -> Trip | None:

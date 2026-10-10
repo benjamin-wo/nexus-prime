@@ -18,6 +18,7 @@ import { InvestmentPage } from "./pages/Investment";
 import { PlanPage, PlansPage } from "./pages/Plans";
 import { StockPage } from "./pages/Stock";
 import { ResearchPage } from "./pages/Research";
+import { SharedTripPage } from "./pages/SharedTrip";
 import { TripPage, TripsPage } from "./pages/Trips";
 import { WatchlistPage } from "./pages/Watchlist";
 import { ImportPage } from "./pages/Import";
@@ -174,7 +175,11 @@ export function App({ client }: { client?: QueryClient }) {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <ErrorBoundary>
-          <Gate />
+          <Routes>
+            {/* A trip's read-only link: opened by anyone, so it never waits on a sign-in. */}
+            <Route path="/shared/:token" element={<SharedTripPage />} />
+            <Route path="*" element={<Gate />} />
+          </Routes>
         </ErrorBoundary>
       </BrowserRouter>
     </QueryClientProvider>

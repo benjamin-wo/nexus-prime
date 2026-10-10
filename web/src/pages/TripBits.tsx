@@ -23,7 +23,7 @@ export function coverGradient(destination: string): string {
 }
 
 /** The cover behind a trip's header or card: its photo, or a gradient. */
-export function coverStyle(trip: Trip): CSSProperties {
+export function coverStyle(trip: Pick<Trip, "photo" | "destination">): CSSProperties {
   const fade = "linear-gradient(180deg, rgba(9,9,11,0.15) 0%, rgba(9,9,11,0.35) 55%, rgba(9,9,11,0.92) 100%)";
   return trip.photo ? { backgroundImage: `${fade}, url("${trip.photo.url}")` } : { backgroundImage: `${fade}, ${coverGradient(trip.destination)}` };
 }
@@ -69,7 +69,7 @@ export function Companions({ names }: { names: string[] }) {
 }
 
 /** "In 35 days", "Day 3 of 10", "Ended 4 Jan". */
-export function tripWhen(trip: Trip): string {
+export function tripWhen(trip: Pick<Trip, "status" | "day_number" | "days" | "end" | "days_until">): string {
   if (trip.status === "ongoing") return trip.day_number ? `Day ${trip.day_number} of ${trip.days}` : "On now";
   if (trip.status === "finished") return `Ended ${day(trip.end)}`;
   if (trip.days_until === 1) return "Tomorrow";
@@ -99,7 +99,17 @@ export function TripCard({ trip }: { trip: Trip }) {
   );
 }
 
-export const sortKey = (b: Booking) => `${b.starts}T${b.at ?? b.segments[0]?.departs?.slice(11) ?? (b.kind === "hotel" ? "15:00" : "00:00")}`;
+export const sortKey = (b: Pick<Booking, "starts" | "at" | "segments" | "kind">) => `${b.starts}T${b.at ?? b.segments[0]?.departs?.slice(11) ?? (b.kind === "hotel" ? "15:00" : "00:00")}`;
+
+/** "08:25 → 16:05", with the day when a leg lands on another one. Times are local
+ * and always 24-hour, as on a boarding pass. */
+export function legTimes(departs: string | null, arrives: string | null): string {
+  const time = (iso: string) => iso.slice(11, 16);
+  if (!departs) return arrives ? `arrives ${time(arrives)}` : "";
+  if (!arrives) return `departs ${time(departs)}`;
+  const nextDay = arrives.slice(0, 10) !== departs.slice(0, 10);
+  return `${time(departs)} → ${time(arrives)}${nextDay ? ` (${day(arrives.slice(0, 10))})` : ""}`;
+}
 
 function untilLabel(iso: string, today: string): string {
   const n = daysBetween(today, iso);

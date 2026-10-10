@@ -1283,6 +1283,64 @@ test("a trip's day on one screen: tonight's stay, the day's plans, addresses and
   await expect(page.getByText("The whole trip, day by day")).toBeVisible();
 });
 
+test("a trip's plan is shared by a read-only link that shows no money, references or notes", async ({ page }) => {
+  const state = await fakeApi(page);
+  page.on("dialog", (d) => void d.accept());
+  await addTrip(page, "Tokyo", "2026-11-10", "2026-11-12");
+  const entry = { trip_id: "trip1", provider: null, segments: [], name: null, day: null, at: null, category: null, place_id: null, scheduled: true, logged: false, manual: true };
+  state.plans.push(
+    { ...entry, id: "pl1", kind: "hotel", title: "Hotel Kumo", hotel: "Hotel Kumo", starts: "2026-11-10", ends: "2026-11-12", check_in: "2026-11-10", check_out: "2026-11-12", address: "1-2-3 Example-cho, Tokyo", reference: "HK55821", booked_via: "Agoda", note: null, cost: { amount: "64500.0000", currency: "JPY" } },
+    { ...entry, id: "pl2", kind: "activity", title: "Fish market breakfast", name: "Fish market breakfast", starts: "2026-11-11", ends: "2026-11-11", day: "2026-11-11", at: "07:30", address: "4-5 Market St, Tokyo", hotel: null, check_in: null, check_out: null, reference: null, booked_via: null, note: "Somewhere secret", cost: null },
+  );
+  state.trips[0] = { ...state.trips[0], day_labels: { "2026-11-11": "Tsukiji" } };
+  await page.reload();
+
+  // The sheet says what's shown and what isn't, and makes the link only when asked.
+  await page.getByRole("button", { name: "Share the plan" }).click();
+  const sheet = page.getByRole("dialog", { name: "Share the plan" });
+  await expect(sheet.getByRole("list", { name: "Kept private" })).toContainText("Booking references");
+  await expect(sheet.getByLabel("The trip's link")).toHaveCount(0);
+  await sheet.getByRole("button", { name: "Create a link" }).click();
+  const link = sheet.getByLabel("The trip's link");
+  await expect(link).toHaveValue(/\/shared\/fakeShare0001x+$/);
+
+  // A new link replaces the old one; stopping turns it off.
+  await sheet.getByRole("button", { name: "Make a new link" }).click();
+  await expect(link).toHaveValue(/\/shared\/fakeShare0002x+$/);
+  await sheet.getByRole("button", { name: "Stop sharing" }).click();
+  await expect(sheet.getByRole("button", { name: "Create a link" })).toBeVisible();
+  await expect.poll(() => Object.keys(state.shares).length).toBe(0);
+  await sheet.getByRole("button", { name: "Create a link" }).click();
+  await expect(link).toHaveValue(/fakeShare0003x+$/);
+  const shared = new URL(await link.inputValue()).pathname;
+  await page.keyboard.press("Escape");
+  await expect(sheet).toHaveCount(0);
+
+  // Opened by someone who isn't signed in.
+  await page.evaluate(() => fetch("/api/auth/logout", { method: "POST", headers: { "X-CSRF-Token": "csrf-1" } }));
+  await page.goto(`/shared/${"fakeShare0001".padEnd(43, "x")}`);
+  await expect(page.getByRole("alert")).toContainText("This link doesn't work any more");
+
+  await page.goto(shared);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Tokyo");
+  await expect(page.getByText("Shared with you · read only")).toBeVisible();
+  const plan = page.getByRole("region", { name: "The plan" });
+  await expect(plan.getByRole("heading", { name: /^Day 2/ })).toBeVisible();
+  await expect(plan).toContainText("Tsukiji");
+  await expect(plan).toContainText("ZZ12 SIN → NRT");
+  await expect(plan).toContainText("08:25 → 16:05");
+  await expect(plan).toContainText("Staying at Hotel Kumo");
+  await expect(plan.getByRole("link", { name: "Open Fish market breakfast in Google Maps" })).toHaveAttribute(
+    "href",
+    "https://www.google.com/maps/search/?api=1&query=Fish%20market%20breakfast%2C%204-5%20Market%20St%2C%20Tokyo",
+  );
+  const text = await page.locator("main").innerText();
+  for (const secret of ["HK55821", "ZK4P7Q", "Agoda", "Somewhere secret", "SGD", "JPY", "820"]) expect(text).not.toContain(secret);
+  // Nothing can be changed, and it never asked anyone to sign in.
+  await expect(page.getByRole("button")).toHaveCount(0);
+  await expect(page).toHaveURL(shared);
+});
+
 test("after a trip: settling up comes first, then what it cost", async ({ page }) => {
   const state = await fakeApi(page);
   await addTrip(page, "Osaka", "2026-11-10", "2026-11-12");
