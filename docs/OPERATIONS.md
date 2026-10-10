@@ -55,7 +55,7 @@ The web API (`/api/...`) is on when Telegram is configured and the public origin
 
 ## Exchange rates
 
-Foreign amounts convert to the user's home currency at the [Frankfurter](https://frankfurter.dev) (European Central Bank) reference rate published on or before the transaction's local date, never a later one. With no rate, the conversion is reported as unavailable rather than guessed. Rates for past days are cached in memory.
+Foreign amounts convert to the user's home currency at the [Frankfurter](https://frankfurter.dev) (European Central Bank) reference rate published on or before the transaction's local date, never a later one. With no rate, the conversion is reported as unavailable rather than guessed. A past day's rate is fetched once and kept in the database (`fx_rates`, migration 0035, shared by all users since it's public reference data), so it isn't looked up again, even after a restart; today's rate isn't kept, because the day's rate may not be published yet. If the database can't be read, rates come straight from Frankfurter.
 
 ## Background jobs
 

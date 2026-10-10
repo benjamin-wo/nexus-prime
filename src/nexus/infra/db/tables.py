@@ -946,6 +946,23 @@ trip_reminders = Table(
 )
 
 
+# Reference exchange rates already looked up, one per (base, quote, day asked for):
+# a past day's rate never changes, so it's fetched once (migration 0035).
+fx_rates = Table(
+    "fx_rates",
+    metadata,
+    Column("base", String(3), nullable=False),
+    Column("quote", String(3), nullable=False),
+    Column("day", Date, nullable=False),
+    Column("value", Numeric(24, 10), nullable=False),
+    # The day the rate was published: the day asked for, or the business day before.
+    Column("effective", Date, nullable=False),
+    Column("created_at", TZ, nullable=False, server_default=func.now()),
+    PrimaryKeyConstraint("base", "quote", "day"),
+    CheckConstraint("value > 0", name="value_positive"),
+    CheckConstraint("effective <= day", name="effective_not_later"),
+)
+
 # Tables LangGraph's Postgres checkpointer creates for itself (migration 0003).
 CHECKPOINT_TABLES = frozenset(
     {"checkpoints", "checkpoint_blobs", "checkpoint_writes", "checkpoint_migrations"}
