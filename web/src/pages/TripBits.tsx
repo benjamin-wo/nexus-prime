@@ -98,7 +98,7 @@ export function TripCard({ trip }: { trip: Trip }) {
   );
 }
 
-const sortKey = (b: Booking) => `${b.starts}T${b.at ?? b.segments[0]?.departs?.slice(11) ?? (b.kind === "hotel" ? "15:00" : "00:00")}`;
+export const sortKey = (b: Booking) => `${b.starts}T${b.at ?? b.segments[0]?.departs?.slice(11) ?? (b.kind === "hotel" ? "15:00" : "00:00")}`;
 
 function untilLabel(iso: string, today: string): string {
   const n = daysBetween(today, iso);

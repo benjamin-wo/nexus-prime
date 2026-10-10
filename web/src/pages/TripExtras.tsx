@@ -6,7 +6,7 @@ import { api, type PackItem, type Trip, type TripWeather } from "../api";
 const weekday = (iso: string) => new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric", timeZone: "UTC" }).format(new Date(iso));
 
 /** A weather code (WMO, as Open-Meteo reports it) as a picture. */
-function icon(code: number | null): string {
+export function icon(code: number | null): string {
   if (code === null) return "·";
   if (code <= 1) return "☀️";
   if (code === 2) return "⛅";
@@ -17,7 +17,7 @@ function icon(code: number | null): string {
   return "🌧️";
 }
 
-const degrees = (n: number | null) => (n === null ? "–" : `${Math.round(n)}°`);
+export const degrees = (n: number | null) => (n === null ? "–" : `${Math.round(n)}°`);
 
 /** The trip's weather: the forecast once it reaches the trip, before that the same
  * dates in recent years. Nothing shows when it isn't known. */

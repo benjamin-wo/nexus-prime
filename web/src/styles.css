@@ -933,3 +933,19 @@ a.ask-chip { display: inline-flex; align-items: center; text-decoration: none; }
 }
 .merchant-list li { display: grid; gap: 2px; padding: var(--space-2) var(--space-3); border-radius: 8px; cursor: pointer; overflow-wrap: anywhere; }
 .merchant-list li:hover, .merchant-list li.is-active { background: var(--bg-raised); }
+
+/* A trip's day on one screen, for use while travelling. */
+.today-view { display: grid; gap: var(--space-4); }
+.today-head { display: flex; align-items: center; gap: var(--space-3); }
+.today-title { flex: 1; min-width: 0; text-align: center; }
+.today-title h2 { margin: 0; }
+.today-weather { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin: 0; }
+.today-section { display: grid; gap: var(--space-2); }
+.today-section h3 { margin: 0; font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.today-stay { display: grid; gap: var(--space-2); padding: var(--space-4); border-radius: var(--radius-inner); background: var(--bg-input); border: 1px solid var(--border-subtle); }
+.today-plans { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); }
+.today-plan { display: flex; align-items: flex-start; gap: var(--space-3); }
+.today-plan .time-pill { flex: none; margin-left: 0; min-width: 4.5rem; padding: var(--space-1) var(--space-2); text-align: center; font-size: 0.8rem; }
+.today-plan-body { flex: 1; min-width: 0; display: grid; gap: var(--space-2); overflow-wrap: anywhere; }
+.today-address { display: grid; gap: var(--space-2); }
+.today-next { margin: 0; padding-top: var(--space-3); border-top: 1px solid var(--border-subtle); }
