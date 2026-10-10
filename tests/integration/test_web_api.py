@@ -1868,3 +1868,79 @@ async def test_the_entry_form_suggests_past_merchants(world: World) -> None:
     member = world.browser()
     assert (await member.login(MEMBER, invite=invite)).status_code == 200
     assert (await member.get("/api/transactions/suggestions", params={"q": "abc"})).json() == []
+
+
+async def test_a_shared_trip_shows_its_plan_to_anyone_with_the_link_and_nothing_else(
+    world: World,
+) -> None:
+    owner, invite = await owner_and_invite(world)
+    body = {
+        "destination": "Kyoto",
+        "start": "2026-11-10",
+        "end": "2026-11-13",
+        "currency": "JPY",
+        "budget": "3000",
+        "companions": ["Ann Example"],
+        "notes": "Card ending 4242 for the deposit",
+    }
+    trip = (await owner.send("POST", "/api/travel/trips", body)).json()
+    path = f"/api/travel/trips/{trip['id']}"
+    hotel = {
+        "kind": "hotel",
+        "hotel": "Hotel Kumo",
+        "address": "1-2-3 Example-cho, Kyoto",
+        "check_in": "2026-11-10",
+        "check_out": "2026-11-13",
+        "reference": "HK55821",
+        "booked_via": "Agoda",
+        "cost": "640",
+    }
+    assert (await owner.send("POST", f"{path}/bookings", hotel)).status_code == 201
+    plan = {"kind": "activity", "name": "Tea ceremony", "day": "2026-11-11", "at": "15:00"}
+    assert (await owner.send("POST", f"{path}/bookings", plan)).status_code == 201
+    unscheduled = {"kind": "activity", "name": "Somewhere secret"}
+    assert (await owner.send("POST", f"{path}/bookings", unscheduled)).status_code == 201
+
+    # Not shared to start with; sharing makes one link, and asking again keeps it.
+    assert (await owner.get(f"{path}/share")).json() == {"token": None}
+    token = (await owner.send("POST", f"{path}/share", {})).json()["token"]
+    assert len(token) >= 40
+    assert (await owner.send("POST", f"{path}/share", {})).json()["token"] == token
+    assert (await owner.get(f"{path}/share")).json() == {"token": token}
+
+    # Anyone with the link sees the plan, signed in or not...
+    stranger = world.browser()
+    opened = await stranger.get(f"/api/shared/trips/{token}")
+    assert opened.status_code == 200
+    shared = opened.json()
+    assert (shared["destination"], shared["days"]) == ("Kyoto", 4)
+    titles = [b["title"] for b in shared["bookings"]]
+    assert any("Hotel Kumo" in t for t in titles) and "Tea ceremony" in titles
+    assert shared["bookings"][0]["address"] == "1-2-3 Example-cho, Kyoto"
+    # ...and nothing of the money, references, notes, who's going or unscheduled places.
+    text = opened.text
+    for private in ("HK55821", "Agoda", "640", "3000", "4242", "Ann Example", "Somewhere secret"):
+        assert private not in text, private
+    for key in ("budget", "notes", "companions", "reference", "cost", "booked_via", "id"):
+        assert key not in shared and all(key not in b for b in shared["bookings"])
+
+    # Another account can't share or see the share of someone else's trip.
+    member = world.browser()
+    assert (await member.login(MEMBER, invite)).status_code == 200
+    assert (await member.get(f"{path}/share")).status_code == 404
+    assert (await member.send("POST", f"{path}/share", {})).status_code == 404
+
+    # A new link stops the old one; stopping sharing stops the link.
+    renewed = (await owner.send("POST", f"{path}/share", {"renew": True})).json()["token"]
+    assert renewed != token
+    assert (await stranger.get(f"/api/shared/trips/{token}")).status_code == 404
+    assert (await stranger.get(f"/api/shared/trips/{renewed}")).status_code == 200
+    assert (await owner.send("DELETE", f"{path}/share")).status_code == 204
+    assert (await stranger.get(f"/api/shared/trips/{renewed}")).status_code == 404
+    assert (await stranger.get("/api/shared/trips/not-a-real-link")).status_code == 404
+    assert (await stranger.get(f"/api/shared/trips/{renewed}/photo")).status_code == 404
+
+    # Deleting the trip removes its link with it.
+    again = (await owner.send("POST", f"{path}/share", {})).json()["token"]
+    assert (await owner.send("DELETE", path)).status_code == 204
+    assert (await stranger.get(f"/api/shared/trips/{again}")).status_code == 404

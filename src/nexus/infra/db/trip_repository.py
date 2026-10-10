@@ -25,6 +25,7 @@ from nexus.infra.db.tables import (
     trip_bookings,
     trip_links,
     trip_reminders,
+    trip_shares,
     trips,
 )
 
@@ -266,6 +267,44 @@ class SqlTripRepository:
             select(trip_bookings).where(*conditions).order_by(b.start_on, b.created_at)
         )
         return [_booking(r) for r in rows]
+
+    async def share_token(self, user_id: UserId, trip_id: UUID) -> str | None:
+        row = (
+            await self._db.execute(
+                select(trip_shares.c.token).where(
+                    trip_shares.c.user_id == user_id, trip_shares.c.trip_id == trip_id
+                )
+            )
+        ).first()
+        return row.token if row else None
+
+    async def set_share(self, user_id: UserId, trip_id: UUID, token: str, at: datetime) -> None:
+        values = {"trip_id": trip_id, "user_id": user_id, "token": token, "created_at": at}
+        await self._db.execute(
+            pg_insert(trip_shares)
+            .values(**values)
+            .on_conflict_do_update(
+                index_elements=[trip_shares.c.trip_id], set_={"token": token, "created_at": at}
+            )
+        )
+
+    async def remove_share(self, user_id: UserId, trip_id: UUID) -> bool:
+        result = await self._db.execute(
+            delete(trip_shares).where(
+                trip_shares.c.user_id == user_id, trip_shares.c.trip_id == trip_id
+            )
+        )
+        return bool(result.rowcount)
+
+    async def shared_trip(self, token: str) -> Trip | None:
+        row = (
+            await self._db.execute(
+                select(trips)
+                .join(trip_shares, trip_shares.c.trip_id == trips.c.id)
+                .where(trip_shares.c.token == token)
+            )
+        ).first()
+        return _trip(row) if row else None
 
     async def upcoming_bookings(self, user_id: UserId, since: date) -> list[Booking]:
         b = trip_bookings.c

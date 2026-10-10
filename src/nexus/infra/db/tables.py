@@ -885,6 +885,21 @@ trips = Table(
     Index("ix_trips_user_id_start_on", "user_id", "start_on"),
 )
 
+# A trip's read-only link for the people going: anyone with the token sees its plan
+# (days, times, places), never its money, references or notes (migration 0036).
+trip_shares = Table(
+    "trip_shares",
+    metadata,
+    Column("trip_id", UUID(as_uuid=True), nullable=False),
+    _user_fk(),
+    Column("token", Text, nullable=False),
+    Column("created_at", TZ, nullable=False),
+    PrimaryKeyConstraint("trip_id"),
+    UniqueConstraint("token"),
+    ForeignKeyConstraint(["trip_id", "user_id"], ["trips.id", "trips.user_id"], ondelete="CASCADE"),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+)
+
 # An expense added to a trip by hand (included), or taken off one its dates and
 # currency would have put it on (excluded).
 trip_links = Table(

@@ -46,3 +46,12 @@ def test_api_only_without_a_build(tmp_path: Path) -> None:
     app = FastAPI()
     mount_frontend(app, tmp_path / "missing")
     assert TestClient(app).get("/ledger").status_code == 404
+
+
+def test_shared_trip_links_ask_search_engines_not_to_index_them(tmp_path: Path) -> None:
+    client = build(tmp_path)
+    shared = client.get("/shared/" + "a" * 43)
+    assert shared.text == "<html>app</html>"
+    assert shared.headers["x-robots-tag"] == "noindex, nofollow"
+    assert shared.headers["referrer-policy"] == "same-origin"
+    assert "x-robots-tag" not in client.get("/ledger").headers

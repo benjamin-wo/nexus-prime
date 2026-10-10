@@ -914,3 +914,135 @@ async def trip_weather(trip_id: str, auth: Auth, web: Runtime) -> WeatherOut | N
             for d in weather.days
         ],
     )
+
+
+# --- the read-only link for the people going ---------------------------------------------
+
+
+class ShareOut(Model):
+    token: str | None  # the link is /shared/<token>; None when the trip isn't shared
+
+
+class ShareIn(Model):
+    renew: bool = False  # a new link; the old one stops working
+
+
+@router.get("/trips/{trip_id}/share")
+async def get_share(trip_id: str, auth: Auth, web: Runtime) -> ShareOut:
+    return ShareOut(token=await trip_cases.share_link(web.uow(), auth.user.id, _uuid(trip_id)))
+
+
+@router.post("/trips/{trip_id}/share")
+async def share_trip(trip_id: str, body: ShareIn, auth: Auth, web: Runtime) -> ShareOut:
+    """The trip's read-only link, made if it has none (or anew with ``renew``)."""
+    token = await trip_cases.share_trip(
+        web.uow(), auth.user.id, _uuid(trip_id), renew=body.renew, now=web.clock()
+    )
+    return ShareOut(token=token)
+
+
+@router.delete("/trips/{trip_id}/share", status_code=204)
+async def stop_sharing(trip_id: str, auth: Auth, web: Runtime) -> Response:
+    await trip_cases.stop_sharing(web.uow(), auth.user.id, _uuid(trip_id))
+    return Response(status_code=204)
+
+
+# Opened by anyone with the link, signed in or not. What it shows is an allow-list: the
+# plan (days, times, places), never money, booking references, notes or who's going.
+shared_router = APIRouter(prefix="/api/shared")
+
+
+class SharedBookingOut(Model):
+    kind: str
+    title: str
+    provider: str | None
+    starts: date
+    ends: date | None
+    segments: list[SegmentOut]
+    hotel: str | None
+    address: str | None
+    check_in: date | None
+    check_out: date | None
+    day: date | None
+    at: str | None
+    category: str | None
+
+
+class SharedTripOut(Model):
+    destination: str
+    start: date
+    end: date
+    days: int
+    status: str
+    days_until: int
+    day_number: int | None
+    day_labels: dict[date, str]
+    photo: PhotoOut | None
+    bookings: list[SharedBookingOut]
+
+
+def _shared_booking(b: Booking) -> SharedBookingOut:
+    full = _booking(b)
+    return SharedBookingOut(
+        kind=full.kind,
+        title=full.title,
+        provider=full.provider,
+        starts=full.starts,
+        ends=full.ends,
+        segments=full.segments,
+        hotel=full.hotel,
+        address=full.address,
+        check_in=full.check_in,
+        check_out=full.check_out,
+        day=full.day,
+        at=full.at,
+        category=full.category,
+    )
+
+
+def _check_shared_limit(web: WebRuntime, token: str) -> None:
+    if not web.limits.allow("shared", token):
+        raise HTTPException(status_code=429, detail="Too many at once. Try again in a minute.")
+
+
+@shared_router.get("/trips/{token}")
+async def shared_trip(token: str, web: Runtime) -> SharedTripOut:
+    """A shared trip's plan, for anyone with its link."""
+    _check_shared_limit(web, token)
+    trip, bookings = await trip_cases.open_shared(web.uow(), token)
+    today = web.clock().date()
+    photos = await photo_cases.photos_of(web.uow(), [trip]) if not trip.photo_off else {}
+    photo = _photo(photos.get(trip.photo_id)) if trip.photo_id else None
+    if photo is not None:
+        photo = photo.model_copy(update={"url": f"/api/shared/trips/{token}/photo"})
+    return SharedTripOut(
+        destination=trip.destination,
+        start=trip.start,
+        end=trip.end,
+        days=trip.days,
+        status=trip.status(today).value,
+        days_until=(trip.start - today).days,
+        day_number=trip.day_number(today),
+        day_labels=dict(trip.day_labels),
+        photo=photo,
+        bookings=[_shared_booking(b) for b in bookings if b.scheduled],
+    )
+
+
+@shared_router.get("/trips/{token}/photo")
+async def shared_photo(token: str, web: Runtime) -> Response:
+    _check_shared_limit(web, token)
+    trip, _ = await trip_cases.open_shared(web.uow(), token)
+    found = (
+        await photo_cases.photo_file(web.uow(), trip.photo_id)
+        if trip.photo_id and not trip.photo_off
+        else None
+    )
+    if found is None:
+        raise NotFound("this trip has no photo")
+    data, mime = found
+    return Response(
+        data,
+        media_type=mime,
+        headers={"Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff"},
+    )

@@ -57,4 +57,8 @@ def mount_frontend(app: FastAPI, dist: Path = DIST) -> None:
             return Response(status_code=404)
         if path in top_level:
             return FileResponse(top_level[path])
-        return FileResponse(index, headers={"Cache-Control": "no-cache"})
+        headers = {"Cache-Control": "no-cache"}
+        if path.startswith("shared/"):
+            # A trip's read-only link is for whoever it was sent to, not search engines.
+            headers["X-Robots-Tag"] = "noindex, nofollow"
+        return FileResponse(index, headers=headers)

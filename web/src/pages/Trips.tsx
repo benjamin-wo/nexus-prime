@@ -7,10 +7,11 @@ import { base64 } from "../files";
 import { formatMoney, formatShortDate } from "../format";
 import { ResearchList } from "./Research";
 import { type AddPreset, AddSheet } from "./TripAdd";
-import { Companions, NextUp, PhotoCredit, TripCard, coverStyle, tripWhen } from "./TripBits";
+import { Companions, NextUp, PhotoCredit, TripCard, coverStyle, legTimes, tripWhen } from "./TripBits";
 import { PackingCard, WeatherCard } from "./TripExtras";
 import { type Fix, MoneyBar, SpendingNow, type Stage, StillToSort, TripTotals, stageOf } from "./TripStage";
 import { PlaceLine, PlaceThumb, SavePlaces, TripPlacesProvider } from "./TripPlaces";
+import { ShareSheet } from "./TripShare";
 import { TodayView } from "./TripToday";
 
 const day = (iso: string) => formatShortDate(iso, "UTC");
@@ -466,16 +467,6 @@ function PlannedVsActual({ detail }: { detail: TripDetail }) {
 }
 
 const KIND_ICON: Record<Booking["kind"], string> = { flight: "✈️", hotel: "🏨", rail: "🚆", activity: "📍" };
-
-/** "08:25 → 16:05", with the day when a leg lands on another one. Times are local
- * and always 24-hour, as on a boarding pass. */
-function legTimes(departs: string | null, arrives: string | null): string {
-  const time = (iso: string) => iso.slice(11, 16);
-  if (!departs) return arrives ? `arrives ${time(arrives)}` : "";
-  if (!arrives) return `departs ${time(departs)}`;
-  const nextDay = arrives.slice(0, 10) !== departs.slice(0, 10);
-  return `${time(departs)} → ${time(arrives)}${nextDay ? ` (${day(arrives.slice(0, 10))})` : ""}`;
-}
 
 /** Where it was booked and its reference, which the user can copy for the counter or the app. */
 function BookedWith({ booking }: { booking: Booking }) {
@@ -1431,6 +1422,7 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
   const [adding, setAdding] = useState<AddPreset | null>(null);
   const [sheet, setSheet] = useState<{ preset: AddPreset | null } | null>(null);
   const [moneyOpen, setMoneyOpen] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const [reading, setReading] = useState(false);
   const [imported, setImported] = useState<string | null>(null);
   const [shotError, setShotError] = useState<string | null>(null);
@@ -1501,7 +1493,14 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
           <Link className="cover-button" to="/travel" aria-label="Back to trips">
             <span aria-hidden="true">‹</span> Trips
           </Link>
-          {data && !editing && <TripMenu trip={data.trip} onEdit={() => setEditing(true)} onDelete={() => void remove()} onChange={refresh} />}
+          {data && !editing && (
+            <div className="cover-actions">
+              <button type="button" className="cover-button" onClick={() => setSharing(true)} aria-label="Share the plan">
+                Share
+              </button>
+              <TripMenu trip={data.trip} onEdit={() => setEditing(true)} onDelete={() => void remove()} onChange={refresh} />
+            </div>
+          )}
         </div>
         <div className="trip-cover-main">
           <h1>{data?.trip.destination ?? "Trip"}</h1>
@@ -1662,6 +1661,7 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
               onClose={() => setSheet(null)}
             />
           )}
+          {sharing && <ShareSheet trip={data.trip} onClose={() => setSharing(false)} />}
         </TripPlacesProvider>
       )}
     </div>

@@ -98,6 +98,8 @@ export async function fakeApi(
     plans: Record<string, unknown>[];
     placeSearches: string[];
     photoChoices: string[];
+    shares: Record<string, string>;
+    shareCount: number;
     planStarted: boolean;
     planAlerts: boolean;
     cancelled: string[];
@@ -143,6 +145,8 @@ export async function fakeApi(
     holdings: [],
     watching: [],
     trips: [],
+    shares: {},
+    shareCount: 0,
     chatSent: [],
     trades: [],
     tripItems: ["k1", "k2"],
@@ -854,6 +858,43 @@ export async function fakeApi(
         state.trips = state.trips.filter((t) => t !== trip);
         return route.fulfill({ status: 204 });
       }
+    }
+    // A trip's read-only link. Tokens are made up, in the real ones' shape.
+    const tripShare = path.match(/^\/travel\/trips\/([^/]+)\/share$/);
+    if (tripShare) {
+      const id = tripShare[1];
+      if (!state.trips.some((t) => t.id === id)) return json(route, { detail: "no trip with that id" }, 404);
+      if (method === "DELETE") {
+        delete state.shares[id];
+        return route.fulfill({ status: 204 });
+      }
+      if (method === "POST" && (!state.shares[id] || body.renew)) {
+        state.shareCount += 1;
+        state.shares[id] = `fakeShare${String(state.shareCount).padStart(4, "0")}`.padEnd(43, "x");
+      }
+      return json(route, { token: state.shares[id] ?? null });
+    }
+    const shared = path.match(/^\/shared\/trips\/([^/]+)(\/photo)?$/);
+    if (shared) {
+      const id = Object.keys(state.shares).find((k) => state.shares[k] === shared[1]);
+      const trip = state.trips.find((t) => t.id === id);
+      if (!trip) return json(route, { detail: "Not found" }, 404);
+      if (shared[2]) return route.fulfill({ status: 200, contentType: "image/png", body: png() });
+      // The same allow-list as the server: the plan, never money, references or notes.
+      const keep = ["kind", "title", "provider", "starts", "ends", "segments", "hotel", "address", "check_in", "check_out", "day", "at", "category"];
+      const detail = tripDetail(trip);
+      return json(route, {
+        destination: trip.destination,
+        start: trip.start,
+        end: trip.end,
+        days: trip.days,
+        status: trip.status,
+        days_until: trip.days_until,
+        day_number: trip.day_number,
+        day_labels: trip.day_labels,
+        photo: trip.photo && !trip.photo_off ? { ...(trip.photo as object), url: `/api/shared/trips/${shared[1]}/photo` } : null,
+        bookings: (detail.bookings as Record<string, unknown>[]).filter((b) => b.scheduled).map((b) => Object.fromEntries(keep.map((k) => [k, b[k] ?? null]))),
+      });
     }
     const tripShot = path.match(/^\/travel\/trips\/([^/]+)\/screenshot$/);
     if (tripShot && method === "POST") {

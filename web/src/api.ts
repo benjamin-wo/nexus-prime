@@ -597,6 +597,14 @@ export type Place = {
 };
 export type LinkedPlace = { booking_id: string; place: Place; warning: string | null };
 
+/** A trip as its read-only link shows it: the plan, never money, references, notes or
+ * who's going. */
+export type SharedBooking = Pick<Booking, "kind" | "title" | "provider" | "starts" | "ends" | "segments" | "hotel" | "address" | "check_in" | "check_out" | "day" | "at" | "category">;
+export type SharedTrip = Pick<Trip, "destination" | "start" | "end" | "days" | "status" | "days_until" | "day_number" | "day_labels" | "photo"> & {
+  bookings: SharedBooking[];
+};
+export type TripShare = { token: string | null };
+
 export type ScreenshotRead = { added: Booking[]; repeated: number; message: string };
 
 export type TripDetail = {
