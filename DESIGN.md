@@ -40,6 +40,8 @@ in, and amber marks attention or pending work.
 | Accent/text | --orange-text | #fb923c | Figures highlighted inside sentences (the brief, nudges) |
 | Accent/glow | --orange-glow | #7c2d12 | The corner glow of the Nexus brief card only |
 | Chart/second | --sky-accent | #38bdf8 | The second chart series (within budget), hatched or solid |
+| Surface/glass | --bg-glass | rgba(21,21,24,0.74) | Cards: the elevated surface, see-through to the ribbons |
+| Ribbon/spark | --ribbon-spark | #fdba74 | The light running along the background ribbons |
 
 ### Rules
 
@@ -66,6 +68,7 @@ in, and amber marks attention or pending work.
 
 - Primary: Geist, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif
 - Mono: Geist Mono, monospace (small figures only; large amounts use Geist with tabular figures)
+- Accent: Instrument Serif italic, one word at the end of a page title only ("Good *morning*", "This *month*"), never in body copy or figures
 
 ### Rules
 
@@ -196,12 +199,19 @@ All spacing derives from a 4px base unit.
 | Micro | 120ms | ease-out | Press and status changes |
 | Standard | 220ms | ease-in-out | Tabs, filters, modal opacity |
 | Emphasis | 280ms | cubic-bezier(0.16, 1, 0.3, 1) | Bottom-sheet entry |
+| Reveal | 760ms | cubic-bezier(0.16, 1, 0.3, 1) | A card rising into view, 70ms apart, up to 6 at once |
+| Fill | 900–1200ms | cubic-bezier(0.16, 1, 0.3, 1) | Bars, meters and rings filling as their card arrives |
+| Count | 900ms | ease-out cubic | A headline figure counting up from zero, the first time it's seen |
+| Drift | 26–42s | ease-in-out, alternating | The background ribbons |
 
 ### Rules
 
 - Animate only `transform` and `opacity` for movement.
 - Every new interactive control has hover, active, focus, disabled, and loading behavior where applicable.
 - Respect `prefers-reduced-motion: reduce` by removing movement and retaining state changes.
+- **Ambient ribbons** (`components/Ribbons.tsx`): bundles of fine ember and amber strands with a soft glow, drifting slowly behind every page, darkened toward the edges so text stays on charcoal. Decoration only: hidden from screen readers, never catching a tap, still for reduced motion.
+- **Reveal** (`motion.tsx`): cards, the brief and trip panels fade and rise into place the first time they're scrolled into view; their bars, meters and rings fill as they arrive. Figures that count up keep their format (currency, separators, decimals).
+- On phones the tab bar floats as a glass pill above the safe area; cards blur what's behind them only on desktop (hover-capable screens), to keep scrolling smooth on phones.
 
 ## 7. Depth & Surface
 

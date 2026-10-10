@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 
 import type { Booking, Trip, TripDetail, TripPhoto } from "../api";
 import { formatMoney, formatShortDate } from "../format";
+import { CountUp } from "../motion";
 import { PlaceThumb } from "./TripPlaces";
 
 const day = (iso: string) => formatShortDate(iso, "UTC");
@@ -98,7 +99,7 @@ export function TripCard({ trip }: { trip: Trip }) {
   );
 }
 
-const sortKey = (b: Booking) => `${b.starts}T${b.at ?? b.segments[0]?.departs?.slice(11) ?? (b.kind === "hotel" ? "15:00" : "00:00")}`;
+export const sortKey = (b: Booking) => `${b.starts}T${b.at ?? b.segments[0]?.departs?.slice(11) ?? (b.kind === "hotel" ? "15:00" : "00:00")}`;
 
 function untilLabel(iso: string, today: string): string {
   const n = daysBetween(today, iso);
@@ -263,7 +264,9 @@ export function MoneyCard({ detail, onOpen }: { detail: TripDetail; onOpen: () =
           Details
         </button>
       </div>
-      <p className="trip-money-figure">{formatMoney(s.spent)}</p>
+      <p className="trip-money-figure">
+        <CountUp value={formatMoney(s.spent)} />
+      </p>
       {budget && (
         <div className={`meter${(s.percent ?? 0) > 100 ? " meter-over" : ""}`} aria-hidden="true">
           <span style={{ width: `${percent}%` }} />

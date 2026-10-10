@@ -449,7 +449,8 @@ test("nothing spills sideways on a small phone", async ({ page }) => {
     const offenders = await page.evaluate(() => {
       const width = document.documentElement.clientWidth;
       return [...document.querySelectorAll("body *")]
-        .filter((el) => el.getBoundingClientRect().right > width + 1)
+        // The background ribbons are drawn wider than the screen and clipped.
+        .filter((el) => !el.closest(".ribbons") && el.getBoundingClientRect().right > width + 1)
         .map(
           (el) =>
             `${el.tagName.toLowerCase()}.${(el as HTMLElement).className}`,
@@ -1216,4 +1217,91 @@ test("the entry sheet suggests where you usually pay, and fills the usual", asyn
   await sheet.getByLabel("Paid to").press("Escape");
   await expect(sheet.getByRole("listbox", { name: "Past merchants" })).toBeHidden();
   await expect(sheet).toBeVisible();
+});
+
+test("a trip's day on one screen: tonight's stay, the day's plans, addresses and references", async ({ page }) => {
+  const state = await fakeApi(page);
+  await page.goto("/travel");
+  await page.getByRole("button", { name: "Add a trip" }).click();
+  const form = page.getByRole("form", { name: "Add a trip" });
+  await form.getByLabel("Where").fill("Tokyo");
+  await form.getByLabel("From").fill("2026-11-10");
+  await form.getByLabel("To").fill("2026-11-13");
+  await form.getByLabel("Currency there").fill("JPY");
+  await form.getByRole("button", { name: "Add trip" }).click();
+  await expect(page).toHaveURL(/\/travel\/trips\/trip1$/);
+  // Made-up bookings: a stay for the whole trip and a plan on day 2.
+  const entry = { trip_id: "trip1", provider: null, segments: [], name: null, day: null, at: null, note: null, cost: null, booked_via: null, category: null, place_id: null, scheduled: true, logged: false, manual: true };
+  state.plans.push(
+    { ...entry, id: "pl1", kind: "hotel", title: "Hotel Kumo", hotel: "Hotel Kumo", starts: "2026-11-10", ends: "2026-11-13", check_in: "2026-11-10", check_out: "2026-11-13", address: "1-2-3 Example-cho, Tokyo", reference: "HK55821", booked_via: "Agoda" },
+    { ...entry, id: "pl2", kind: "activity", title: "Fish market breakfast", name: "Fish market breakfast", starts: "2026-11-11", ends: "2026-11-11", day: "2026-11-11", at: "07:30", address: "4-5 Market St, Tokyo", hotel: null, check_in: null, check_out: null, reference: null, note: "Go early" },
+  );
+  await page.reload();
+
+  // Before the trip, the day view is the last tab and starts on day 1.
+  const tabs = page.getByRole("tablist", { name: "Trip views" });
+  await expect(tabs.getByRole("tab").last()).toHaveText("Day view");
+  await tabs.getByRole("tab", { name: "Day view" }).click();
+  const view = page.getByRole("region", { name: /November 10/ });
+  await expect(view).toContainText("Day 1 of 4");
+  const plans = view.getByRole("list", { name: /Plans for/ });
+  await expect(plans).toContainText("SIN → NRT");
+  await expect(plans).toContainText("ZK4P7Q");
+  await expect(plans).toContainText("Check in");
+  await expect(view).toContainText("Tonight");
+  await expect(view.getByRole("button", { name: "Copy booking reference HK55821" }).first()).toBeVisible();
+  await expect(view).toContainText("Tomorrow first: Fish market breakfast at 07:30");
+  await expect(view.getByRole("button", { name: "Day before" })).toBeDisabled();
+
+  // The next day: the plan with its address and a link to directions.
+  await view.getByRole("button", { name: "Day after" }).click();
+  const day2 = page.getByRole("region", { name: /November 11/ });
+  await expect(day2).toContainText("Day 2 of 4");
+  await expect(day2).toContainText("Go early");
+  await expect(day2.getByRole("link", { name: "Open Fish market breakfast in Maps" })).toHaveAttribute(
+    "href",
+    "https://www.google.com/maps/search/?api=1&query=Fish%20market%20breakfast%2C%204-5%20Market%20St%2C%20Tokyo",
+  );
+  await expect(day2.getByRole("button", { name: "Copy the address of Hotel Kumo" })).toBeVisible();
+
+  // The last day: checking out, nowhere to sleep needed.
+  await day2.getByRole("button", { name: "Day after" }).click();
+  await page.getByRole("region", { name: /November 12/ }).getByRole("button", { name: "Day after" }).click();
+  const last = page.getByRole("region", { name: /November 13/ });
+  await expect(last.getByRole("list", { name: /Plans for/ })).toContainText("Check out");
+  await expect(last).toContainText("Last day of the trip.");
+});
+
+test("a trip that's on opens on today", async ({ page }) => {
+  await fakeApi(page);
+  await page.goto("/travel");
+  await page.getByRole("button", { name: "Add a trip" }).click();
+  const form = page.getByRole("form", { name: "Add a trip" });
+  await form.getByLabel("Where").fill("Osaka");
+  await form.getByLabel("From").fill("2026-09-25");
+  await form.getByLabel("To").fill("2026-09-30");
+  await form.getByLabel("Currency there").fill("JPY");
+  await form.getByRole("button", { name: "Add trip" }).click();
+  const tabs = page.getByRole("tablist", { name: "Trip views" });
+  await expect(tabs.getByRole("tab").first()).toHaveText("Today");
+  await expect(tabs.getByRole("tab", { name: "Today" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("region", { name: /September/ })).toContainText("of 6");
+});
+
+test("cards rise into view and figures count up, unless less motion is asked for", async ({ page }) => {
+  await fakeApi(page);
+  await page.goto("/");
+  const spend = page.getByRole("region", { name: "Spent this month" });
+  await expect(spend).toHaveAttribute("data-reveal", "in");
+  await expect(spend.locator(".figure-value")).toHaveText("SGD 37.40");
+  await expect(page.getByRole("heading", { level: 1 }).locator("em.accent-serif")).toHaveText(/morning|afternoon|evening/);
+  // The ribbons are decoration: hidden from screen readers and never in the way.
+  await expect(page.locator(".ribbons")).toHaveAttribute("aria-hidden", "true");
+  await expect(page.locator(".ribbons")).toHaveCSS("pointer-events", "none");
+
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.reload();
+  await expect(spend.locator(".figure-value")).toHaveText("SGD 37.40");
+  await expect(spend).not.toHaveAttribute("data-reveal", /.*/);
+  await expect(page.locator(".ribbon-main")).toHaveCSS("animation-name", "none");
 });

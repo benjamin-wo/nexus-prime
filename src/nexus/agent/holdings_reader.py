@@ -10,6 +10,8 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, Field, field_validator
 
+from nexus.agent.structured import parse_reply, structured
+
 log = logging.getLogger(__name__)
 
 _NUMBER = re.compile(r"-?\d+(?:\.\d+)?")
@@ -59,7 +61,7 @@ _PROMPT = (
 
 class LlmHoldingsReader:
     def __init__(self, model: BaseChatModel) -> None:
-        self._model = model.with_structured_output(ScreenshotHoldings)
+        self._model = structured(model, ScreenshotHoldings)
 
     async def read(self, image: bytes, mime_type: str) -> ScreenshotHoldings:
         encoded = base64.b64encode(image).decode()
@@ -71,10 +73,7 @@ class LlmHoldingsReader:
         )
         for attempt in (1, 2):  # models now and then return a reply that doesn't parse
             try:
-                result = await self._model.ainvoke([message])
-                if isinstance(result, ScreenshotHoldings):
-                    return result
-                return ScreenshotHoldings.model_validate(result)
+                return parse_reply(await self._model.ainvoke([message]), ScreenshotHoldings)
             except Exception:
                 if attempt == 2:
                     raise

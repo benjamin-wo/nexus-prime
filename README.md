@@ -52,7 +52,7 @@ One LLM agent serves both surfaces, but the parts that must be right, like money
 **Travel** (it never books anything)
 - **Trips:** a budget and spending per trip, money set aside each payday, settling up with companions, and research of a trip idea ("Japan in January") with sourced prices and whether it fits your cash flow.
 - **Itinerary:** filled from booking emails, screenshots (a booking app, an e-ticket, a day plan) or by hand, day by day, with each booking's reference, Google Maps ratings, hours, photos and closed-day warnings, and reminders for passports, check-in and the hotel's address.
-- **A trip page that reads like a travel app:** a famous view of the destination in the season you go (from Wikimedia Commons, credited), the next booking as a boarding pass, the weather (forecast, or the same dates in recent years), a packing list with suggestions, and a numbered day rail.
+- **A trip page that reads like a travel app:** a famous view of the destination in the season you go (from Wikimedia Commons, credited), the next booking as a boarding pass, the weather (forecast, or the same dates in recent years), a packing list with suggestions, a numbered day rail, and a **Today** view while you're there: tonight's hotel, the day's plans with addresses and directions, and every booking reference with a copy button.
 
 **Everywhere**
 - **Web cockpit:** Home with Nexus's brief and suggested questions, a page per department, a filterable ledger with CSV export, and a chat drawer that keeps one running conversation, shared with Telegram. It is mobile-first and opens inside Telegram already signed in.

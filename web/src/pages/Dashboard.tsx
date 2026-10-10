@@ -21,6 +21,7 @@ import {
   formatMoney,
   formatShortDate,
 } from "../format";
+import { AccentTitle } from "../motion";
 
 type Total = Summary["totals"][number];
 
@@ -220,7 +221,9 @@ export function Dashboard({
     <>
       <div className="page-head">
         <div>
-          <h1>This month</h1>
+          <h1>
+            <AccentTitle text="This month" />
+          </h1>
           {summary.data && (
             <p className="muted">
               {formatDate(summary.data.start)} to {formatDate(summary.data.end)}

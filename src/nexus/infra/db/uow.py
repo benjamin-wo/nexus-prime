@@ -8,6 +8,7 @@ from nexus.infra.db.investment_repository import SqlInvestmentRepository
 from nexus.infra.db.ledger_repository import SqlLedgerRepository
 from nexus.infra.db.memory_repository import SqlMemoryRepository
 from nexus.infra.db.planning_repository import SqlJobQueue, SqlPlanningRepository
+from nexus.infra.db.rate_repository import SqlRateRepository
 from nexus.infra.db.runs_repository import SqlRunRepository
 from nexus.infra.db.statement_repository import SqlStatementRepository
 from nexus.infra.db.trip_repository import SqlTripRepository
@@ -30,6 +31,7 @@ class SqlUnitOfWork:
         self._runs: SqlRunRepository | None = None
         self._investments: SqlInvestmentRepository | None = None
         self._trips: SqlTripRepository | None = None
+        self._rates: SqlRateRepository | None = None
 
     @property
     def ledger(self) -> SqlLedgerRepository:
@@ -85,6 +87,12 @@ class SqlUnitOfWork:
             raise RuntimeError("unit of work is not active")
         return self._trips
 
+    @property
+    def rates(self) -> SqlRateRepository:
+        if self._rates is None:
+            raise RuntimeError("unit of work is not active")
+        return self._rates
+
     async def __aenter__(self) -> Self:
         if self._used:
             raise RuntimeError("a unit of work can only be used once")
@@ -100,6 +108,7 @@ class SqlUnitOfWork:
         self._runs = SqlRunRepository(self._connection)
         self._investments = SqlInvestmentRepository(self._connection)
         self._trips = SqlTripRepository(self._connection)
+        self._rates = SqlRateRepository(self._connection)
         return self
 
     async def commit(self) -> None:

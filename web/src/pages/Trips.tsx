@@ -9,6 +9,7 @@ import { ResearchList } from "./Research";
 import { Companions, MoneyCard, NextUp, PhotoCredit, Ring, StayCard, TripCard, coverStyle, tripWhen } from "./TripBits";
 import { PackingCard, PhotoMenu, WeatherCard } from "./TripExtras";
 import { PlaceLine, PlaceThumb, SavePlaces, TripPlacesProvider } from "./TripPlaces";
+import { TodayView } from "./TripToday";
 
 const day = (iso: string) => formatShortDate(iso, "UTC");
 
@@ -1296,11 +1297,20 @@ function SettleUp({ detail }: { detail: TripDetail }) {
 
 /** One trip: its budget, spending, set-aside, settle-up and expenses. */
 const TABS = [
+  { id: "today", label: "Today" },
   { id: "overview", label: "Overview" },
   { id: "itinerary", label: "Itinerary" },
   { id: "money", label: "Money" },
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
+
+/** The trip's views: "Today" first while it's on, a "Day view" last to look ahead
+ * before it, and neither once it's over. */
+function tabsFor(trip: Trip): { id: Tab; label: string }[] {
+  if (trip.status === "ongoing") return [...TABS];
+  const rest = TABS.filter((t) => t.id !== "today");
+  return trip.status === "upcoming" ? [...rest, { id: "today", label: "Day view" }] : rest;
+}
 
 const ADD_CHOICES: { kind: EntryKind; label: string }[] = [
   { kind: "flight", label: "✈️ Flight" },
@@ -1381,12 +1391,14 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
   const home = useHome();
   const detail = useQuery({ queryKey: ["trip", id], queryFn: () => api<TripDetail>(`/travel/trips/${id}`) });
   const [editing, setEditing] = useState(false);
-  const [tab, setTab] = useState<Tab>("overview");
+  const [chosen, setTab] = useState<Tab | null>(null);
   const [adding, setAdding] = useState<{ kind: EntryKind; day?: string } | null>(null);
   const [reading, setReading] = useState(false);
   const [imported, setImported] = useState<string | null>(null);
   const [shotError, setShotError] = useState<string | null>(null);
   const data = detail.data;
+  // While the trip is on, it opens on today.
+  const tab: Tab = chosen ?? (data?.trip.status === "ongoing" ? "today" : "overview");
   const refresh = () => {
     void client.invalidateQueries({ queryKey: ["trip", id] });
     void client.invalidateQueries({ queryKey: ["trips"] });
@@ -1494,7 +1506,7 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
       {data && (
         <TripPlacesProvider tripId={id} destination={data.trip.destination} enabled={data.places} onChange={refresh}>
           <nav className="trip-tabs" role="tablist" aria-label="Trip views">
-            {TABS.map((t) => (
+            {tabsFor(data.trip).map((t) => (
               <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} className="trip-tab" onClick={() => setTab(t.id)}>
                 {t.label}
               </button>
@@ -1571,6 +1583,7 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
               <Sections detail={data} onChange={refresh} onAdd={add} />
             </>
           )}
+          {tab === "today" && <TodayView detail={data} />}
           {tab === "itinerary" && <Itinerary detail={data} onChange={refresh} onAdd={add} />}
           {tab === "money" && (
             <>

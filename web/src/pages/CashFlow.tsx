@@ -3,6 +3,7 @@ import { useState } from "react";
 
 import { api, type CashDay, type CashFlow, type Money } from "../api";
 import { formatMoney } from "../format";
+import { AccentTitle } from "../motion";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -138,7 +139,9 @@ export function CashFlowPage() {
     <>
       <div className="page-head">
         <div>
-          <h1>Cash flow</h1>
+          <h1>
+            <AccentTitle text="Cash flow" />
+          </h1>
           <p className="muted">
             What came in and went out each day, and what bills, subscriptions and payday will bring. Movement only, not
             a balance.

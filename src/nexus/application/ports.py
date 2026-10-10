@@ -12,6 +12,7 @@ from types import TracebackType
 from typing import Any, Protocol, Self
 from uuid import UUID
 
+from nexus.application.fx import Rate
 from nexus.domain.access import Invite, Session
 from nexus.domain.bookings import Booking, BookingDraft
 from nexus.domain.chat import ChatLine
@@ -675,6 +676,15 @@ class InvestmentRepository(Protocol):
     async def set_plan_alerts(self, user_id: UserId, plan_id: UUID, on: bool) -> bool: ...
 
 
+class RateRepository(Protocol):
+    """Exchange rates already looked up, shared by all users (public reference data)."""
+
+    async def stored_rate(self, base: str, quote: str, day: date) -> Rate | None: ...
+    async def save_rate(self, day: date, rate: Rate) -> None:
+        """Keep ``rate`` as the answer for ``day``; a rate already kept stays."""
+        ...
+
+
 class UnitOfWork(Protocol):
     """One database transaction. Single use: enter it once per use case."""
 
@@ -696,6 +706,8 @@ class UnitOfWork(Protocol):
     def investments(self) -> InvestmentRepository: ...
     @property
     def trips(self) -> TripRepository: ...
+    @property
+    def rates(self) -> RateRepository: ...
 
     async def __aenter__(self) -> Self: ...
     async def __aexit__(

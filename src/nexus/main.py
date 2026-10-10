@@ -41,6 +41,7 @@ from nexus.application.ports import (
     ReceiptStore,
     SignInMailbox,
 )
+from nexus.application.rate_store import StoredRates
 from nexus.application.research import NewsSource
 from nexus.application.travel_research import research_kind
 from nexus.application.weather import Weather, WeatherSource
@@ -474,7 +475,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                 rates = extra.rates
                 if rates is None:
                     http = await stack.enter_async_context(httpx.AsyncClient())
-                    rates = FrankfurterRates(http)
+                    rates = StoredRates(FrankfurterRates(http), lambda: SqlUnitOfWork(engine))
                 prices = await _prices(resolved, extra, stack)
                 news = await _news(resolved, extra, stack)
                 archive = _receipt_store(resolved, extra)

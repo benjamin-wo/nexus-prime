@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import time as clock
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -60,6 +61,8 @@ from nexus.infra.llm.factory import text_of
 from nexus.infra.pdf.text import PasswordNeeded, pdf_lines
 
 log = logging.getLogger(__name__)
+# A turn slower than this is logged as a warning, with what it did (never what was said).
+SLOW_TURN_SECONDS = 15.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,6 +105,20 @@ HELP = (
 
 SLOW_DOWN = "That's a lot of messages at once. Give me a minute, then try again."
 RECENT_MESSAGES = 3  # the newest, and two before it for context
+
+
+def _log_turn(seconds: float, new: list[BaseMessage]) -> None:
+    """How long a turn took, how many model calls it made and which tools it used:
+    enough to see what makes a reply slow, without anything the user said."""
+    replies = [m for m in new if isinstance(m, AIMessage)]
+    tools = [call["name"] for m in replies for call in m.tool_calls]
+    log.log(
+        logging.WARNING if seconds >= SLOW_TURN_SECONDS else logging.INFO,
+        "turn took %.1fs: %d model calls, tools: %s",
+        seconds,
+        len(replies),
+        ", ".join(tools) or "none",
+    )
 
 
 class _NoRates:
@@ -190,11 +207,13 @@ class AgentService:
         config = self._config(actor)
         # By id, not position: a long conversation drops its oldest messages mid-turn.
         seen = {m.id for m in (await self._graph.aget_state(config)).values.get("messages", [])}
+        started = clock.monotonic()
         await self._graph.ainvoke(payload, config)
         state = await self._graph.aget_state(config)
         new: list[BaseMessage] = [
             m for m in state.values.get("messages", []) if m.id is None or m.id not in seen
         ]
+        _log_turn(clock.monotonic() - started, new)
         pending = await self._pending(actor)
         if pending is not None:
             pid, summary = pending

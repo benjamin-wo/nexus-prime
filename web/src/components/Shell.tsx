@@ -1,10 +1,12 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useRef } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 
 import type { Me } from "../api";
 import { DEPARTMENTS, departmentFor } from "../departments";
+import { useReveal } from "../motion";
 import { Icon, departmentIcon } from "./Icon";
 import { InviteButton } from "./InviteButton";
+import { Ribbons } from "./Ribbons";
 
 function CogIcon() {
   return (
@@ -40,6 +42,8 @@ export function Shell({
   children: ReactNode;
 }) {
   const here = departmentFor(useLocation().pathname);
+  const content = useRef<HTMLDivElement>(null);
+  useReveal(content);
   const links = [
     <NavLink key="home" to="/" end className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
       <span className="nav-glyph" aria-hidden="true">
@@ -68,6 +72,7 @@ export function Shell({
   );
   return (
     <div className="shell">
+      <Ribbons />
       <nav className="rail" aria-label="Main">
         <div className="brand">
           <span className="brand-mark" aria-hidden="true">
@@ -89,7 +94,7 @@ export function Shell({
         </button>
       </nav>
       <main className="main-viewport">
-        <div className="content">
+        <div className="content" ref={content}>
           {here && here.tabs.length > 0 && (
             <nav className="dept-tabs" aria-label={`${here.label} pages`}>
               {here.tabs.map((tab) => (
