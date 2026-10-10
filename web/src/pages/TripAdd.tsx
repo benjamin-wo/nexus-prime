@@ -32,7 +32,11 @@ function TypeIt({ trip, preset, onChanged }: { trip: Trip; preset: AddPreset | n
   const end = useRef<HTMLDivElement>(null);
   const when = `${formatShortDate(trip.start, "UTC")} to ${formatShortDate(trip.end, "UTC")}`;
 
-  useEffect(() => end.current?.scrollIntoView({ block: "nearest" }), [lines]);
+  // A block body: newer browsers return a promise from scrollIntoView, and an effect
+  // must return nothing or a clean-up function.
+  useEffect(() => {
+    end.current?.scrollIntoView({ block: "nearest" });
+  }, [lines]);
 
   async function run(call: Promise<Reply[]>) {
     setBusy(true);

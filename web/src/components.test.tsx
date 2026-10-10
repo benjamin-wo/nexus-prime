@@ -10,6 +10,7 @@ import { ChatDrawer } from "./components/ChatDrawer";
 import { formatMoney } from "./format";
 import { conversionNote } from "./pages/Dashboard";
 import { Ledger } from "./pages/Ledger";
+import { AddSheet } from "./pages/TripAdd";
 import { readInitData } from "./telegram";
 import { mockApi, renderWithProviders } from "./testing";
 
@@ -179,6 +180,29 @@ describe("ChatDrawer in browsers where scrollIntoView returns a promise", () => 
       await screen.findByText(message);
     }
     expect(await screen.findAllByText("Noted.")).toHaveLength(3);
+  });
+});
+
+describe("A trip's Type it in browsers where scrollIntoView returns a promise", () => {
+  it("shows Nexus's reply and its buttons instead of crashing", async () => {
+    Element.prototype.scrollIntoView = function () {
+      return Promise.resolve() as unknown as void;
+    };
+    const calls = mockApi({
+      "POST /chat": () => [{ text: "Add Hotel Ume, 2 nights, to your Tokyo trip?", buttons: [[{ label: "Confirm", data: "hitl:t:y" }]] }],
+    });
+    const trip = { id: "t1", destination: "Tokyo", start: "2026-11-10", end: "2026-11-15" } as unknown as import("./api").Trip;
+    let changed = 0;
+    renderWithProviders(
+      <AddSheet trip={trip} preset={{ kind: "hotel" }} places={false} onScreenshot={() => {}} onForm={() => {}} onChanged={() => (changed += 1)} onClose={() => {}} />,
+    );
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText("Tell Nexus about a booking"), "Hotel Ume 13 to 15 Nov");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    expect(await screen.findByText("Add Hotel Ume, 2 nights, to your Tokyo trip?")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Confirm" })).toBeInTheDocument();
+    expect(calls.find((c) => c.path === "/chat")?.body).toEqual({ message: expect.stringMatching(/^For my Tokyo trip \(.+\), add this: Hotel Ume 13 to 15 Nov$/) });
+    expect(changed).toBe(1);
   });
 });
 
