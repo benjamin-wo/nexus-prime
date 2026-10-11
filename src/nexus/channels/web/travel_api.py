@@ -269,6 +269,7 @@ class TripDetailOut(Model):
     to_spend: MoneyOut | None
     ready: ReadyOut
     places: bool = False  # Google Maps places are set up
+    ideas: bool = False  # quick ideas from the web are set up
 
 
 def _detail(
@@ -333,6 +334,7 @@ def _detail(
             total=view.ready.TOTAL,
         ),
         places=web is not None and web.places is not None,
+        ideas=web is not None and web.ideas is not None,
     )
 
 
@@ -729,6 +731,53 @@ async def search_places(
     except PlacesError as exc:
         raise HTTPException(status_code=502, detail=_SILENT) from exc
     return [_place(p) for p in found]
+
+
+class IdeaSourceOut(Model):
+    url: str
+    title: str
+
+
+class IdeaOut(Model):
+    name: str
+    area: str | None
+    kind: str | None  # Food, Sight, Shopping, Nature, Nightlife, Museum or Activity
+    why: str  # from the source, in its words
+    source: IdeaSourceOut
+    place: PlaceOut | None  # its Google Maps match, when there is one
+
+
+class IdeasOut(Model):
+    query: str
+    destination: str
+    ideas: list[IdeaOut]
+
+
+@router.get("/trips/{trip_id}/ideas")
+async def trip_ideas(
+    trip_id: str, auth: Auth, web: Runtime, q: str = Query(min_length=1, max_length=120)
+) -> IdeasOut:
+    """Ideas for the trip from travel guides and articles: named places, each with the
+    page it came from and its Google Maps match. Nothing is saved."""
+    if web.ideas is None:
+        raise NotFound("quick ideas aren't set up")
+    trip = await trip_cases.get_trip(web.uow(), auth.user.id, _uuid(trip_id))
+    found = await web.ideas.find(auth.user.id, trip.destination, q)
+    return IdeasOut(
+        query=found.query,
+        destination=found.destination,
+        ideas=[
+            IdeaOut(
+                name=i.name,
+                area=i.area,
+                kind=i.kind,
+                why=i.why,
+                source=IdeaSourceOut(url=i.source.url, title=i.source.title),
+                place=_place(i.place) if i.place else None,
+            )
+            for i in found.ideas
+        ],
+    )
 
 
 @router.get("/places/{place_id}")

@@ -1538,7 +1538,7 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
         </section>
       )}
       {data && (
-        <TripPlacesProvider tripId={id} destination={data.trip.destination} enabled={data.places} onChange={refresh}>
+        <TripPlacesProvider tripId={id} destination={data.trip.destination} enabled={data.places} ideas={data.ideas ?? false} onChange={refresh}>
           {reading && (
             <p className="state" role="status">
               Reading the screenshot…
@@ -1654,7 +1654,7 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
             <AddSheet
               trip={data.trip}
               preset={sheet.preset}
-              places={data.places}
+              places={data.places || (data.ideas ?? false)}
               onScreenshot={(file) => void screenshot(file)}
               onForm={form}
               onChanged={refresh}

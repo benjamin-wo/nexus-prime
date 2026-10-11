@@ -744,6 +744,9 @@ details.section[open] > summary { margin-bottom: var(--space-3); }
 .place-finder { margin: var(--space-2) 0; }
 .place-finder .inline-form { display: flex; flex-wrap: wrap; gap: var(--space-1); }
 .place-finder .inline-form input { flex: 1 1 12rem; min-width: 0; }
+.idea-section { display: grid; gap: var(--space-2); margin-top: var(--space-3); }
+.idea-why { color: var(--text-secondary); font-size: 0.875rem; }
+.idea-row a.caption { white-space: nowrap; }
 
 /* --- home (theme v2) --- */
 .pill {

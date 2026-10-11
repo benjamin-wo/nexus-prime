@@ -25,7 +25,10 @@ from nexus.application import market as market_cases
 from nexus.application import receipts as receipt_cases
 from nexus.application import research as research_cases
 from nexus.application import subscriptions as subscription_cases
+from nexus.application.ideas import IdeaFinder
+from nexus.application.places import Places
 from nexus.application.transactions import NewTransaction, log_transaction
+from nexus.application.web_search import WebAnswer
 from nexus.channels.web.telegram_login import sign_for_tests, sign_webapp_for_tests
 from nexus.domain.ledger import Direction, Source, UserId
 from nexus.domain.money import Money
@@ -107,6 +110,27 @@ class Browser:
         return await self.client.request(method, path, json=json, headers=base)
 
 
+IDEA_LINES = (
+    "IDEA | Hanok Noodle Bar | Jung-gu | Food | Hand-pulled noodles. | 1\n"
+    "IDEA | Made Up Diner | - | Food | Not on the page. | 1"
+)
+
+
+@dataclass
+class IdeasWeb:
+    """A made-up search: one article naming one place."""
+
+    async def ask(self, question: str) -> WebAnswer:
+        return WebAnswer(
+            "",
+            [("https://food.example.com/seoul", "Seoul noodles")],
+            Decimal(0),
+            ["Hanok Noodle Bar in Jung-gu pulls noodles by hand."],
+            1,
+            "tavily",
+        )
+
+
 @dataclass
 class World:
     app: Any
@@ -164,6 +188,12 @@ async def world(engine: AsyncEngine, empty_database_url: str) -> AsyncIterator[W
             news=FakeNews(),
             places=FakePlaces([PLACE]),
             weather=FakeWeather(),
+            ideas=IdeaFinder(
+                IdeasWeb(),
+                scripted(*[say(IDEA_LINES)] * 3),
+                places=Places(FakePlaces([PLACE]), clock=lambda: clock.now),
+                clock=lambda: clock.now,
+            ),
         ),
     )
     async with app.router.lifespan_context(app):
@@ -1750,6 +1780,30 @@ async def test_google_maps_places_on_the_web(world: World) -> None:
         "PUT", f"/api/travel/bookings/{booking['id']}/place", {"place_id": "../x"}
     )
     assert bad.status_code == 422
+
+
+async def test_quick_ideas_for_a_trip(world: World) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+    body = {"destination": "Seoul", "start": "2026-11-10", "end": "2026-11-13", "currency": "KRW"}
+    trip_id = (await owner.send("POST", "/api/travel/trips", body)).json()["id"]
+    assert (await owner.get(f"/api/travel/trips/{trip_id}")).json()["ideas"] is True
+    found = (await owner.get(f"/api/travel/trips/{trip_id}/ideas?q=noodles")).json()
+    assert (found["query"], found["destination"]) == ("noodles", "Seoul")
+    (idea,) = found["ideas"]  # the place the page doesn't name is gone
+    assert (idea["name"], idea["area"], idea["kind"], idea["why"]) == (
+        "Hanok Noodle Bar",
+        "Jung-gu",
+        "Food",
+        "Hand-pulled noodles.",
+    )
+    assert idea["source"] == {"url": "https://food.example.com/seoul", "title": "Seoul noodles"}
+    assert idea["place"]["id"] == "fakePlaceNoodle01" and idea["place"]["rating"] == "4.5"
+    # Someone else's trip, or no query: nothing.
+    member = world.browser()
+    await member.login(MEMBER, invite=(await owner_and_invite(world))[1])
+    assert (await member.get(f"/api/travel/trips/{trip_id}/ideas?q=noodles")).status_code == 404
+    assert (await owner.get(f"/api/travel/trips/{trip_id}/ideas?q=")).status_code == 422
 
 
 async def test_trip_header_photos_are_served_from_here(world: World) -> None:

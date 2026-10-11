@@ -595,6 +595,17 @@ export type Place = {
   photo_author?: string | null;
   photo_author_url?: string | null;
 };
+/** A place a travel guide or article recommends, with the page it came from and its
+ * Google Maps match when there is one. Nothing is saved until the user picks it. */
+export type Idea = {
+  name: string;
+  area: string | null;
+  kind: string | null;
+  why: string;
+  source: { url: string; title: string };
+  place: Place | null;
+};
+export type Ideas = { query: string; destination: string; ideas: Idea[] };
 export type LinkedPlace = { booking_id: string; place: Place; warning: string | null };
 
 /** A trip as its read-only link shows it: the plan, never money, references, notes or
@@ -611,6 +622,8 @@ export type TripDetail = {
   trip: Trip;
   bookings: Booking[];
   places: boolean;
+  /** Quick ideas from travel guides and articles are set up. */
+  ideas?: boolean;
   booked: Money | null;
   booked_unlogged: Money | null;
   to_spend: Money | null;

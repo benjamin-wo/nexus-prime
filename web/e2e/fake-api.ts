@@ -97,6 +97,7 @@ export async function fakeApi(
     movedBookings: string[];
     plans: Record<string, unknown>[];
     placeSearches: string[];
+    ideaSearches: string[];
     photoChoices: string[];
     shares: Record<string, string>;
     shareCount: number;
@@ -171,6 +172,7 @@ export async function fakeApi(
     movedBookings: [],
     plans: [],
     placeSearches: [],
+    ideaSearches: [],
     photoChoices: [],
     planStarted: false,
     planAlerts: true,
@@ -750,6 +752,7 @@ export async function fakeApi(
         })(),
         to_spend: budget ? home(Number(budget.amount) - spent - 820) : null,
         places: true,
+        ideas: true,
       };
     };
     // Made-up Google Maps places: names, ratings and reviews are all invented.
@@ -773,6 +776,29 @@ export async function fakeApi(
     if (path === "/travel/places/search" && method === "GET") {
       state.placeSearches.push(url.searchParams.get("q") ?? "");
       return json(route, Object.values(PLACES).map(placeOut));
+    }
+    // Made-up ideas from made-up articles: one matched to Google Maps, one not.
+    const tripIdeas = path.match(/^\/travel\/trips\/([^/]+)\/ideas$/);
+    if (tripIdeas && method === "GET") {
+      const q = url.searchParams.get("q") ?? "";
+      state.ideaSearches.push(q);
+      const trip = state.trips.find((t) => t.id === tripIdeas[1]);
+      return json(route, {
+        query: q,
+        destination: trip?.destination ?? "",
+        ideas: [
+          {
+            name: "Hanok Noodle Bar", area: "Jung-gu", kind: "Food", why: "Hand-pulled noodles worth the queue.",
+            source: { url: "https://food.example.com/seoul-noodles", title: "Seoul's best noodles" },
+            place: placeOut(PLACES.fakePlaceNoodle01),
+          },
+          {
+            name: "Lantern Alley", area: "Euljiro", kind: "Nightlife", why: "Tiny bars down a lantern-lit lane.",
+            source: { url: "https://en.wikivoyage.org/wiki/Seoul", title: "Wikivoyage: Seoul" },
+            place: null,
+          },
+        ],
+      });
     }
     const tripPlaces = path.match(/^\/travel\/trips\/([^/]+)\/places$/);
     if (tripPlaces && method === "GET") {

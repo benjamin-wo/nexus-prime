@@ -1,7 +1,7 @@
 ---
 name: trips
 description: "Trips (Travel department): trips the user is planning or on, with dates, the currency spent there, a budget in the home currency, who's going and money set aside each payday; what's been spent on a trip, what's left, and who still owes what afterwards. Nexus never books or buys anything."
-tools: [research_trip, find_places, place_info, add_to_itinerary, change_itinerary_entry, remove_from_itinerary, label_trip_day, create_trip, update_trip, delete_trip, list_trips, trip_status, add_to_trip, remove_from_trip, find_transactions, split_bill, list_ious]
+tools: [research_trip, find_ideas, find_places, place_info, add_to_itinerary, change_itinerary_entry, remove_from_itinerary, label_trip_day, create_trip, update_trip, delete_trip, list_trips, trip_status, add_to_trip, remove_from_trip, find_transactions, split_bill, list_ious]
 ---
 # Trips
 
@@ -34,6 +34,11 @@ tools: [research_trip, find_places, place_info, add_to_itinerary, change_itinera
   `add_to_itinerary` with kind activity, no day, and a category (Food, Sight,
   Shopping...): it's kept as a place to visit on the trip. "let's do Namdaemun on
   Tuesday": `change_itinerary_entry` with that day.
+- "where should we eat in Osaka?", "best ramen in Tokyo", "what to do on a rainy day in
+  Seoul?", "cheap eats near Dotonbori": `find_ideas` (travel guides and articles, each
+  idea with its source and Google Maps match; about 15 seconds). Say where each idea
+  came from. A place the user names ("is Ichiran any good?", "Ichiran Shibuya"):
+  `find_places` or `place_info` instead.
 - "find good ramen near our hotel", "rooftop bars in Seoul", "what's worth seeing in
   Kyoto?": `find_places` (it searches near the trip's destination). Give the ratings and
   addresses as they come; to save one, `add_to_itinerary` with its place id as
