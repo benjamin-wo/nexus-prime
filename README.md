@@ -50,7 +50,7 @@ One LLM agent serves both surfaces, but the parts that must be right, like money
 - **Research plans:** a small team of models writes an entry, stop and targets with the odds of each, checked against the numbers; plans are then followed daily, with alerts and a track record.
 
 **Travel** (it never books anything)
-- **Trips:** a budget and spending per trip, money set aside each payday, settling up with companions, and research of a trip idea ("Japan in January") with sourced prices and whether it fits your cash flow.
+- **Trips:** a budget and spending per trip, money set aside each payday, settling up with companions, and research of a trip idea ("Japan in January") read from the pages themselves, with prices and areas checked against them and whether it fits your cash flow.
 - **Itinerary:** filled from booking emails, screenshots (a booking app, an e-ticket, a day plan) or by hand, day by day, with each booking's reference, Google Maps ratings, hours, photos and closed-day warnings, and reminders for passports, check-in and the hotel's address.
 - **A trip page that follows the trip:** what's still to sort while you plan, check-in, weather and packing in the last week, today and what's left to spend while you're there, and settling up after. One timeline with every booking once, one + button to add by typing it, a screenshot, a place from Google Maps or a form, and a new trip from just where and when (the currency is worked out from the place). A famous view of the destination in the season you go (from Wikimedia Commons, credited) on the cover. A read-only link to share the plan with whoever is coming: days, times and addresses, never prices, booking references or notes.
 
@@ -114,7 +114,7 @@ The code follows a clean, layered architecture. `domain` holds pure rules with n
 | Agent | LangGraph with a Postgres checkpointer, human-in-the-loop interrupts, skills loaded on demand, provider-agnostic LLM adapter |
 | Frontend | React 19, TypeScript, Vite, TanStack Query, React Router |
 | Data | PostgreSQL 16: 46 tables, 34 migrations, a job queue in the same database; receipts in a private S3-compatible bucket |
-| Outside data | Frankfurter (FX), Tiingo (prices), Finnhub (news), SerpApi and web search (trip research, quarantined), Google Places, Wikipedia and Wikimedia Commons (destination photos), Open-Meteo (weather) |
+| Outside data | Frankfurter (FX), Tiingo (prices), Finnhub (news), SerpApi and Tavily web search, with OpenRouter as fallback (trip research, quarantined, cached), Google Places, Wikipedia and Wikimedia Commons (destination photos), Open-Meteo (weather) |
 | Channels | Telegram Bot API (webhook, inline buttons, Mini App), cookie sessions with CSRF |
 | Quality | ruff, mypy `--strict`, pytest, Vitest, Playwright, GitHub Actions |
 | Deploy | Docker multi-stage build on Railway; migrations run as a pre-deploy step and the app refuses to start on an unmigrated schema |

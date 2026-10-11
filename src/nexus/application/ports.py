@@ -695,6 +695,21 @@ class RateRepository(Protocol):
         ...
 
 
+class WebRepository(Protocol):
+    """Web search answers kept for a while, and the credits used each month, shared by
+    all users: the pages are public and the questions carry nothing of the user's."""
+
+    async def cached(self, key: str, now: datetime) -> dict[str, Any] | None: ...
+    async def keep(
+        self, key: str, body: dict[str, Any], expires_at: datetime, now: datetime
+    ) -> None: ...
+    async def credits(self, month: date) -> dict[str, int]:
+        """Credits used in ``month`` (its first day), by product."""
+        ...
+
+    async def add_credits(self, month: date, product: str, credits: int) -> None: ...
+
+
 class UnitOfWork(Protocol):
     """One database transaction. Single use: enter it once per use case."""
 
@@ -718,6 +733,8 @@ class UnitOfWork(Protocol):
     def trips(self) -> TripRepository: ...
     @property
     def rates(self) -> RateRepository: ...
+    @property
+    def web(self) -> WebRepository: ...
 
     async def __aenter__(self) -> Self: ...
     async def __aexit__(

@@ -12,7 +12,7 @@ from typing import Any
 
 import httpx
 
-from nexus.application.travel_research import WebAnswer, WebSearchError
+from nexus.application.web_search import WebAnswer, WebSearchError
 
 log = logging.getLogger(__name__)
 

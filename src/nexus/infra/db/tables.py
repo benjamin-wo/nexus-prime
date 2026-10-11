@@ -978,6 +978,30 @@ fx_rates = Table(
     CheckConstraint("effective <= day", name="effective_not_later"),
 )
 
+# Web search answers already fetched, shared by all users: public pages, keyed by a
+# hash of the provider and question, never anyone's own data (migration 0037).
+web_cache = Table(
+    "web_cache",
+    metadata,
+    Column("key", String(64), nullable=False),
+    Column("body", JSONB, nullable=False),
+    Column("expires_at", TZ, nullable=False),
+    PrimaryKeyConstraint("key"),
+    Index("ix_web_cache_expires_at", "expires_at"),
+)
+
+# Search credits used each month by each product (travel, investment, general), so the
+# free tier is shared out and never overrun, across restarts (migration 0037).
+web_credits = Table(
+    "web_credits",
+    metadata,
+    Column("month", Date, nullable=False),
+    Column("product", String(20), nullable=False),
+    Column("credits", Integer, nullable=False),
+    PrimaryKeyConstraint("month", "product"),
+    CheckConstraint("credits >= 0", name="credits_not_negative"),
+)
+
 # Tables LangGraph's Postgres checkpointer creates for itself (migration 0003).
 CHECKPOINT_TABLES = frozenset(
     {"checkpoints", "checkpoint_blobs", "checkpoint_writes", "checkpoint_migrations"}

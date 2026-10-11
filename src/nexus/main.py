@@ -45,6 +45,7 @@ from nexus.application.rate_store import StoredRates
 from nexus.application.research import NewsSource
 from nexus.application.travel_research import research_kind
 from nexus.application.weather import Weather, WeatherSource
+from nexus.application.web_search import KeptSearch, Product
 from nexus.channels.telegram import webhook as telegram_webhook
 from nexus.channels.telegram.client import HttpTelegramClient, TelegramClient
 from nexus.channels.web import api as web_api
@@ -82,6 +83,7 @@ from nexus.infra.photos.wikipedia import WikipediaPhotos
 from nexus.infra.places.google import GooglePlaces
 from nexus.infra.search.openrouter_web import OpenRouterWebSearch
 from nexus.infra.search.serpapi import SerpApiTravel
+from nexus.infra.search.tavily import TavilySearch
 from nexus.infra.storage.s3 import S3ReceiptStore
 from nexus.infra.weather.open_meteo import OpenMeteo
 from nexus.jobs.handlers import MEMORY_UPDATE, SCHEDULES, build_handlers
@@ -373,9 +375,11 @@ async def _registry(
     models: ChatModels,
     rates: RateSource,
     stack: AsyncExitStack,
+    clock: Callable[[], datetime] = utcnow,
 ) -> Departments:
     """The departments, with the Investment research team and, with OpenRouter, the
-    Travel researcher (live flight and hotel prices too with a SerpApi key)."""
+    Travel researcher (pages read through Tavily with its key, and live flight and
+    hotel prices with a SerpApi key)."""
     uow = lambda: SqlUnitOfWork(engine)  # noqa: E731
     analyst, lead = build_research_models(settings, models.primary)
     kinds = [plan_kind(uow, analyst, lead, build_research_reviewer(settings))]
@@ -384,11 +388,22 @@ async def _registry(
     if key is not None and model:
         http = await stack.enter_async_context(httpx.AsyncClient())
         routed = model == settings.openrouter_model
-        web = OpenRouterWebSearch(
+        fallback = OpenRouterWebSearch(
             http,
             key.get_secret_value(),
             model,
             routing=openrouter_routing(settings) if routed else None,
+        )
+        tavily = settings.tavily_api_key
+        if tavily is None:
+            log.warning("TAVILY_API_KEY is not set; research reads search answers, not pages")
+        web = KeptSearch(
+            uow,
+            Product.TRAVEL,
+            primary=TavilySearch(http, tavily.get_secret_value()) if tavily else None,
+            fallback=fallback,
+            monthly_credits=settings.tavily_monthly_credits,
+            clock=clock,
         )
         prices = (
             SerpApiTravel(http, settings.serpapi_api_key.get_secret_value())
@@ -484,7 +499,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                 models = extra.models or build_chat_models(resolved)
                 email = await _email_runtime(resolved, extra, stack, models, resolved.public_origin)
                 departments = extra.departments or await _registry(
-                    resolved, engine, models, rates, stack
+                    resolved, engine, models, rates, stack, extra.clock or utcnow
                 )
                 places = await _places(resolved, extra, stack, extra.clock or utcnow)
                 telegram = await _telegram_runtime(
