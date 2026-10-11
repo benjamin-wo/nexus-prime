@@ -43,6 +43,7 @@ from nexus.application import memory as memory_cases
 from nexus.application.categories import list_categories
 from nexus.application.category_rules import list_rules
 from nexus.application.fx import RateSource
+from nexus.application.ideas import IdeaFinder
 from nexus.application.inbound import log_capability_gap
 from nexus.application.places import Places
 from nexus.application.users import get_user
@@ -124,6 +125,8 @@ class AgentDeps:
     departments: department_cases.Departments | None = None
     # Google Maps places for trips; None: not set up.
     places: Places | None = None
+    # Quick ideas for a trip from the web; None: not set up.
+    ideas: IdeaFinder | None = None
 
 
 def strip_ids(text: str) -> str:
@@ -217,6 +220,7 @@ class AgentGraph:
             forward_address=self.deps.forward_address,
             departments=self.deps.departments,
             places=self.deps.places,
+            ideas=self.deps.ideas,
         )
 
     async def _prompt(self, ctx: ToolContext, state: AgentState) -> str:

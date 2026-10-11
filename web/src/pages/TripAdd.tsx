@@ -195,7 +195,7 @@ export function AddSheet({
                 </span>
                 <span>
                   <strong>Find a place</strong>
-                  <span className="caption">Search Google Maps and save it to visit</span>
+                  <span className="caption">By name, or ask for ideas: “best ramen”, “rainy day”</span>
                 </span>
               </button>
             )}

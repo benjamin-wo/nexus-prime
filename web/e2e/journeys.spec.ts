@@ -1095,12 +1095,15 @@ test("places from Google Maps: saved, linked, rated, and flagged when usually cl
   await addTrip(page, "Seoul", "2026-11-10", "2026-11-13");
 
   // Found on Google Maps and saved as a place to visit, with its place kept.
-  await page.getByRole("button", { name: "🔎 Find places on Google Maps" }).click();
+  await page.getByRole("button", { name: "🔎 Find places or ideas" }).click();
   await page.getByRole("search", { name: "Search Google Maps" }).getByLabel("Look for").fill("noodles");
   await page.getByRole("button", { name: "Search", exact: true }).click();
   const results = page.getByRole("list", { name: "Google Maps results" });
   await expect(results).toContainText("Hanok Noodle Bar ★ 4.6 (2,310)");
   await expect.poll(() => state.placeSearches).toEqual(["noodles"]);
+  // One word reads as a name: only Google Maps is asked; ideas are a tap away.
+  await expect(page.getByRole("button", { name: /Ideas from guides and articles/ })).toBeVisible();
+  expect(state.ideaSearches).toEqual([]);
   await results.getByRole("button", { name: "Save: Hanok Noodle Bar" }).click();
   const places = page.getByRole("list", { name: "Places to visit" });
   await expect(places).toContainText("Hanok Noodle Bar");
@@ -1339,6 +1342,35 @@ test("a trip's plan is shared by a read-only link that shows no money, reference
   // Nothing can be changed, and it never asked anyone to sign in.
   await expect(page.getByRole("button")).toHaveCount(0);
   await expect(page).toHaveURL(shared);
+});
+
+test("ideas from guides and articles: asked for in words, credited, saved to the trip", async ({ page }) => {
+  const state = await fakeApi(page);
+  await addTrip(page, "Seoul", "2026-11-10", "2026-11-13");
+  await page.getByRole("button", { name: "Add to the trip" }).click();
+  const sheet = page.getByRole("dialog", { name: "Add to Seoul" });
+  await expect(sheet.getByRole("button", { name: /Find a place/ })).toContainText("best ramen");
+  await sheet.getByRole("button", { name: /Find a place/ }).click();
+
+  // Asking for ideas: Google Maps answers first, then guides and articles below.
+  await page.getByRole("search", { name: "Search Google Maps" }).getByLabel("Look for").fill("best noodles");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(page.getByRole("list", { name: "Google Maps results" })).toContainText("Hanok Noodle Bar");
+  const ideas = page.getByRole("list", { name: "Ideas from guides and articles" });
+  await expect(ideas).toContainText("“Hand-pulled noodles worth the queue.”");
+  await expect.poll(() => state.ideaSearches).toEqual(["best noodles"]);
+  // Each is credited to its page, opened safely in a new tab.
+  const source = ideas.getByRole("link", { name: "Seoul's best noodles" });
+  await expect(source).toHaveAttribute("href", "https://food.example.com/seoul-noodles");
+  await expect(source).toHaveAttribute("rel", /noopener/);
+  await expect(ideas.getByLabel("Rated 4.6 out of 5 from 2310 ratings")).toBeVisible();
+  await expect(ideas).toContainText("Nightlife · Euljiro");
+
+  // Saving one without a Google Maps match keeps its name, kind and area.
+  await ideas.getByRole("button", { name: "Save: Lantern Alley" }).click();
+  await expect.poll(() => state.plans[0]).toMatchObject({ name: "Lantern Alley", category: "Nightlife", address: "Euljiro", place_id: null });
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("list", { name: "Places to visit" })).toContainText("Lantern Alley");
 });
 
 test("after a trip: settling up comes first, then what it cost", async ({ page }) => {

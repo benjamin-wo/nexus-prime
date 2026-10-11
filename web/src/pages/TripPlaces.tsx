@@ -1,18 +1,27 @@
 import { useQuery } from "@tanstack/react-query";
 import { createContext, type FormEvent, type ReactNode, useContext, useState } from "react";
 
-import { api, type Booking, type LinkedPlace, type Place } from "../api";
+import { api, type Booking, type Idea, type Ideas, type LinkedPlace, type Place } from "../api";
 
 /** What the trip page knows about Google Maps: whether it's set up, and the details
- * of the entries linked to a place (fetched when shown; only place ids are kept). */
-type TripPlaces = { tripId: string; destination: string; enabled: boolean; linked: Map<string, LinkedPlace>; onChange: () => void };
-
-const Context = createContext<TripPlaces | null>(null);
-
-export function TripPlacesProvider({ tripId, destination, enabled, onChange, children }: {
+ * of the entries linked to a place (fetched when shown; only place ids are kept); and
+ * whether ideas from travel guides and articles can be asked for. */
+type TripPlaces = {
   tripId: string;
   destination: string;
   enabled: boolean;
+  ideas: boolean;
+  linked: Map<string, LinkedPlace>;
+  onChange: () => void;
+};
+
+const Context = createContext<TripPlaces | null>(null);
+
+export function TripPlacesProvider({ tripId, destination, enabled, ideas = false, onChange, children }: {
+  tripId: string;
+  destination: string;
+  enabled: boolean;
+  ideas?: boolean;
   onChange: () => void;
   children: ReactNode;
 }) {
@@ -26,6 +35,7 @@ export function TripPlacesProvider({ tripId, destination, enabled, onChange, chi
     tripId,
     destination,
     enabled,
+    ideas,
     linked: new Map((linked.data ?? []).map((l) => [l.booking_id, l])),
     onChange,
   };
@@ -121,28 +131,90 @@ function PlaceDetails({ place }: { place: Place }) {
   );
 }
 
-/** Search Google Maps, near the trip's destination, and pick a result. */
-export function PlaceFinder({ initial, pickLabel, onPick, onCancel }: {
+// Words that ask for ideas rather than name a place: "best ramen", "rainy day",
+// "cheap eats near Dotonbori". A name ("Ichiran Shibuya") goes to Google Maps alone.
+const IDEA_WORDS =
+  /\b(best|good|great|cheap|top|favou?rite|where|what|ideas?|things?|to do|places|eats?|food|drinks?|bars?|caf[eé]s?|coffee|brunch|dinner|lunch|breakfast|dessert|rainy|kids|family|romantic|local|hidden|street|vegan|vegetarian|halal|sights?|views?|shopping|markets?|nightlife|museums?|day trips?|must)\b/i;
+
+export function wantsIdeas(query: string): boolean {
+  return IDEA_WORDS.test(query) || query.trim().split(/\s+/).length >= 4;
+}
+
+/** Ideas from travel guides and articles, each credited to its page, with its Google
+ * Maps rating when it has one. */
+function IdeaList({ found, busy, onPick }: { found: Ideas; busy: boolean; onPick: (idea: Idea) => void }) {
+  if (found.ideas.length === 0) return <p className="state">No specific places came up in guides or articles.</p>;
+  return (
+    <ul className="feed" aria-label="Ideas from guides and articles">
+      {found.ideas.map((idea) => (
+        <li key={idea.name} className="run-row idea-row">
+          <span className="wrap">
+            <strong>{idea.name}</strong> {idea.place && <Rating place={idea.place} />}
+            <br />
+            <span className="caption">{[idea.kind, idea.area ?? idea.place?.address].filter(Boolean).join(" · ")}</span>
+            <br />
+            <span className="idea-why">“{idea.why}”</span>{" "}
+            <a className="caption" href={idea.source.url} target="_blank" rel="noopener noreferrer nofollow">
+              {idea.source.title}
+            </a>
+          </span>
+          <button type="button" className="btn btn-small" disabled={busy} onClick={() => onPick(idea)} aria-label={`Save: ${idea.name}`}>
+            Save
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Search Google Maps, near the trip's destination, and pick a result. With
+ * ``onPickIdea``, a query that asks for ideas also reads travel guides and articles,
+ * shown below the Google Maps results once they're in (they take longer). */
+export function PlaceFinder({ initial, pickLabel, onPick, onPickIdea, onCancel }: {
   initial: string;
   pickLabel: string;
   onPick: (place: Place) => Promise<void>;
+  onPickIdea?: (idea: Idea) => Promise<void>;
   onCancel: () => void;
 }) {
   const places = useContext(Context);
   const [query, setQuery] = useState(initial);
   const [found, setFound] = useState<Place[] | null>(null);
+  const [ideas, setIdeas] = useState<Ideas | null>(null);
+  const [asked, setAsked] = useState<string | null>(null);
+  const [reading, setReading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   if (!places) return null;
   const tripId = places.tripId;
+  const google = places.enabled;
+  const withIdeas = Boolean(onPickIdea) && places.ideas;
+
+  async function readIdeas(q: string) {
+    setReading(true);
+    setIdeas(null);
+    try {
+      setIdeas(await api<Ideas>(`/travel/trips/${tripId}/ideas?q=${encodeURIComponent(q)}`));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't read guides and articles");
+    } finally {
+      setReading(false);
+    }
+  }
 
   async function search(e?: FormEvent) {
     e?.preventDefault();
-    if (!query.trim()) return;
-    setBusy(true);
+    const q = query.trim();
+    if (!q) return;
     setError(null);
+    setIdeas(null);
+    setAsked(q);
+    // Ideas take longer: they're read alongside, and shown when they're in.
+    if (withIdeas && (!google || wantsIdeas(q))) void readIdeas(q);
+    if (!google) return;
+    setBusy(true);
     try {
-      setFound(await api<Place[]>(`/travel/places/search?q=${encodeURIComponent(query.trim())}&trip_id=${tripId}`));
+      setFound(await api<Place[]>(`/travel/places/search?q=${encodeURIComponent(q)}&trip_id=${tripId}`));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't search Google Maps");
     } finally {
@@ -150,11 +222,11 @@ export function PlaceFinder({ initial, pickLabel, onPick, onCancel }: {
     }
   }
 
-  async function pick(p: Place) {
+  async function pick(run: () => Promise<void>) {
     setBusy(true);
     setError(null);
     try {
-      await onPick(p);
+      await run();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't save that");
       setBusy(false);
@@ -163,9 +235,15 @@ export function PlaceFinder({ initial, pickLabel, onPick, onCancel }: {
 
   return (
     <div className="place-finder">
-      <form role="search" aria-label="Search Google Maps" onSubmit={(e) => void search(e)} className="inline-form">
-        <input aria-label="Look for" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={`Ramen near ${places.destination}`} maxLength={120} />
-        <button type="submit" className="btn btn-small btn-primary" disabled={busy}>
+      <form role="search" aria-label={google ? "Search Google Maps" : "Find ideas"} onSubmit={(e) => void search(e)} className="inline-form">
+        <input
+          aria-label="Look for"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={withIdeas ? `Best ramen, a rainy day, or a place's name` : `Ramen near ${places.destination}`}
+          maxLength={120}
+        />
+        <button type="submit" className="btn btn-small btn-primary" disabled={busy || reading}>
           Search
         </button>
         <button type="button" className="btn btn-small btn-ghost" onClick={onCancel}>
@@ -189,7 +267,7 @@ export function PlaceFinder({ initial, pickLabel, onPick, onCancel }: {
                   <br />
                   <span className="caption">{[p.kind, p.price, p.address].filter(Boolean).join(" · ")}</span>
                 </span>
-                <button type="button" className="btn btn-small" disabled={busy} onClick={() => void pick(p)} aria-label={`${pickLabel}: ${p.name}`}>
+                <button type="button" className="btn btn-small" disabled={busy} onClick={() => void pick(() => onPick(p))} aria-label={`${pickLabel}: ${p.name}`}>
                   {pickLabel}
                 </button>
               </li>
@@ -197,12 +275,27 @@ export function PlaceFinder({ initial, pickLabel, onPick, onCancel }: {
           </ul>
         ))}
       {found !== null && <p className="caption">From Google Maps</p>}
+      {withIdeas && asked && !reading && !ideas && google && (
+        <button type="button" className="btn btn-ghost btn-small" onClick={() => void readIdeas(asked)}>
+          💡 Ideas from guides and articles for “{asked}”
+        </button>
+      )}
+      {reading && (
+        <p className="caption" role="status">
+          Reading travel guides and articles… about 15 seconds.
+        </p>
+      )}
+      {ideas && onPickIdea && (
+        <section aria-label="From guides and articles" className="idea-section">
+          <h3 className="eyebrow">From guides and articles</h3>
+          <IdeaList found={ideas} busy={busy} onPick={(idea) => void pick(() => onPickIdea(idea))} />
+          <p className="caption">Their words, with a link to each page. Check opening times before you go.</p>
+        </section>
+      )}
     </div>
   );
 }
 
-/** Under a plan, place to visit or hotel: its Google Maps rating and a heads-up when
- * it's usually closed that day, with details on tap; or a way to find it. */
 export function PlaceLine({ booking }: { booking: Booking }) {
   const places = useContext(Context);
   const [open, setOpen] = useState(false);
@@ -272,12 +365,24 @@ export function SavePlaces({ open = false, onDone }: { open?: boolean; onDone?: 
   const places = useContext(Context);
   const [finding, setFinding] = useState(open);
   const [saved, setSaved] = useState<string | null>(null);
-  if (!places?.enabled) return null;
+  if (!places || !(places.enabled || places.ideas)) return null;
+
+  async function save(name: string, address: string | null, category: string | null, placeId: string | null) {
+    await api(`/travel/trips/${places!.tripId}/bookings`, {
+      method: "POST",
+      body: { kind: "activity", name: name.slice(0, 120), address: address?.slice(0, 200) ?? null, category: category?.slice(0, 30) ?? null, place_id: placeId },
+    });
+    setSaved(name);
+    setFinding(false);
+    places!.onChange();
+    onDone?.();
+  }
+
   if (!finding) {
     return (
       <>
         <button type="button" className="btn btn-ghost btn-small" onClick={() => setFinding(true)}>
-          🔎 Find places on Google Maps
+          {places.ideas ? "🔎 Find places or ideas" : "🔎 Find places on Google Maps"}
         </button>
         {saved && (
           <p className="caption" role="status">
@@ -292,16 +397,8 @@ export function SavePlaces({ open = false, onDone }: { open?: boolean; onDone?: 
       initial=""
       pickLabel="Save"
       onCancel={() => setFinding(false)}
-      onPick={async (p) => {
-        await api(`/travel/trips/${places.tripId}/bookings`, {
-          method: "POST",
-          body: { kind: "activity", name: p.name.slice(0, 120), address: p.address?.slice(0, 200) ?? null, category: p.kind?.slice(0, 30) ?? null, place_id: p.id },
-        });
-        setSaved(p.name);
-        setFinding(false);
-        places.onChange();
-        onDone?.();
-      }}
+      onPick={(p) => save(p.name, p.address, p.kind, p.id)}
+      onPickIdea={places.ideas ? (i) => save(i.name, i.place?.address ?? i.area, i.kind, i.place?.id ?? null) : undefined}
     />
   );
 }

@@ -31,6 +31,7 @@ from nexus.application.departments import Departments, default_registry
 from nexus.application.destination_photos import PhotoFinder
 from nexus.application.email import EmailRuntime
 from nexus.application.fx import RateSource
+from nexus.application.ideas import IdeaFinder
 from nexus.application.limits import RateLimiter
 from nexus.application.market import PriceSource
 from nexus.application.places import Places, PlaceSource
@@ -45,7 +46,7 @@ from nexus.application.rate_store import StoredRates
 from nexus.application.research import NewsSource
 from nexus.application.travel_research import research_kind
 from nexus.application.weather import Weather, WeatherSource
-from nexus.application.web_search import KeptSearch, Product
+from nexus.application.web_search import KeptSearch, Product, WebSearch
 from nexus.channels.telegram import webhook as telegram_webhook
 from nexus.channels.telegram.client import HttpTelegramClient, TelegramClient
 from nexus.channels.web import api as web_api
@@ -63,6 +64,7 @@ from nexus.infra.db.uow import SqlUnitOfWork
 from nexus.infra.email.agentmail import AgentMailInboxes
 from nexus.infra.email.gmail import GmailMailbox
 from nexus.infra.fx.frankfurter import FrankfurterRates
+from nexus.infra.guides.wikivoyage import Wikivoyage
 from nexus.infra.llm.factory import (
     ChatModels,
     build_chat_models,
@@ -116,6 +118,7 @@ class Overrides:
     email_reader: EmailReader | None = None
     photos: PhotoFinder | None = None
     weather: WeatherSource | None = None
+    ideas: IdeaFinder | None = None
 
 
 def _receipt_store(settings: Settings, overrides: Overrides) -> ReceiptStore | None:
@@ -297,6 +300,7 @@ async def _telegram_runtime(
     email: EmailRuntime | None,
     departments: Departments | None = None,
     places: Places | None = None,
+    ideas: IdeaFinder | None = None,
 ) -> telegram_webhook.TelegramRuntime:
     def uow() -> SqlUnitOfWork:
         return SqlUnitOfWork(engine)
@@ -327,6 +331,7 @@ async def _telegram_runtime(
             forward_address=_forward_address(uow, email, clock),
             departments=departments,
             places=places,
+            ideas=ideas,
         )
     ).compile(checkpointer)
     receipts: ReceiptReader | None = overrides.receipts
@@ -369,42 +374,56 @@ async def _telegram_runtime(
     )
 
 
+async def _travel_web(
+    settings: Settings, engine: AsyncEngine, stack: AsyncExitStack, clock: Callable[[], datetime]
+) -> WebSearch | None:
+    """Travel's web search: Tavily's pages with its key, falling back to OpenRouter's
+    web search, kept a day. None without OpenRouter, which sorts what's found."""
+    key = settings.openrouter_api_key
+    model = settings.travel_research_model or settings.openrouter_model
+    if key is None or not model:
+        return None
+    http = await stack.enter_async_context(httpx.AsyncClient())
+    routed = model == settings.openrouter_model
+    fallback = OpenRouterWebSearch(
+        http,
+        key.get_secret_value(),
+        model,
+        routing=openrouter_routing(settings) if routed else None,
+    )
+    tavily = settings.tavily_api_key
+    if tavily is None:
+        log.warning("TAVILY_API_KEY is not set; research reads search answers, not pages")
+    return KeptSearch(
+        lambda: SqlUnitOfWork(engine),
+        Product.TRAVEL,
+        primary=TavilySearch(http, tavily.get_secret_value()) if tavily else None,
+        fallback=fallback,
+        monthly_credits=settings.tavily_monthly_credits,
+        clock=clock,
+    )
+
+
+def _travel_model(settings: Settings) -> str:
+    return settings.travel_research_model or settings.openrouter_model or ""
+
+
 async def _registry(
     settings: Settings,
     engine: AsyncEngine,
     models: ChatModels,
     rates: RateSource,
     stack: AsyncExitStack,
-    clock: Callable[[], datetime] = utcnow,
+    web: WebSearch | None = None,
 ) -> Departments:
-    """The departments, with the Investment research team and, with OpenRouter, the
-    Travel researcher (pages read through Tavily with its key, and live flight and
-    hotel prices with a SerpApi key)."""
+    """The departments, with the Investment research team and, with travel's web
+    search, the Travel researcher (live flight and hotel prices too with a SerpApi
+    key)."""
     uow = lambda: SqlUnitOfWork(engine)  # noqa: E731
     analyst, lead = build_research_models(settings, models.primary)
     kinds = [plan_kind(uow, analyst, lead, build_research_reviewer(settings))]
-    key = settings.openrouter_api_key
-    model = settings.travel_research_model or settings.openrouter_model
-    if key is not None and model:
+    if web is not None:
         http = await stack.enter_async_context(httpx.AsyncClient())
-        routed = model == settings.openrouter_model
-        fallback = OpenRouterWebSearch(
-            http,
-            key.get_secret_value(),
-            model,
-            routing=openrouter_routing(settings) if routed else None,
-        )
-        tavily = settings.tavily_api_key
-        if tavily is None:
-            log.warning("TAVILY_API_KEY is not set; research reads search answers, not pages")
-        web = KeptSearch(
-            uow,
-            Product.TRAVEL,
-            primary=TavilySearch(http, tavily.get_secret_value()) if tavily else None,
-            fallback=fallback,
-            monthly_credits=settings.tavily_monthly_credits,
-            clock=clock,
-        )
         prices = (
             SerpApiTravel(http, settings.serpapi_api_key.get_secret_value())
             if settings.serpapi_api_key is not None
@@ -412,11 +431,35 @@ async def _registry(
         )
         if prices is None:
             log.warning("SERPAPI_API_KEY is not set; trip research uses web search for prices")
-        sorter = build_travel_sorter(settings, model)
+        sorter = build_travel_sorter(settings, _travel_model(settings))
         kinds.append(research_kind(uow, web, sorter, rates, prices))
     else:
         log.warning("OpenRouter isn't set up; trip research is off")
     return default_registry(kinds)
+
+
+async def _ideas(
+    settings: Settings,
+    overrides: Overrides,
+    stack: AsyncExitStack,
+    web: WebSearch | None,
+    places: Places | None,
+    clock: Callable[[], datetime],
+) -> IdeaFinder | None:
+    """Quick ideas for a trip, from travel's web search and Wikivoyage, matched to
+    Google Maps when that's set up. None without travel's web search."""
+    if overrides.ideas is not None:
+        return overrides.ideas
+    if web is None:
+        return None
+    http = await stack.enter_async_context(httpx.AsyncClient())
+    return IdeaFinder(
+        web,
+        build_travel_sorter(settings, _travel_model(settings)),
+        guides=Wikivoyage(http, clock=clock),
+        places=places,
+        clock=clock,
+    )
 
 
 def _queue_memory(
@@ -498,13 +541,15 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                     log.warning("receipt storage is not configured; receipt photos won't be kept")
                 models = extra.models or build_chat_models(resolved)
                 email = await _email_runtime(resolved, extra, stack, models, resolved.public_origin)
+                web = await _travel_web(resolved, engine, stack, extra.clock or utcnow)
                 departments = extra.departments or await _registry(
-                    resolved, engine, models, rates, stack, extra.clock or utcnow
+                    resolved, engine, models, rates, stack, web
                 )
                 places = await _places(resolved, extra, stack, extra.clock or utcnow)
+                ideas = await _ideas(resolved, extra, stack, web, places, extra.clock or utcnow)
                 telegram = await _telegram_runtime(
                     resolved, engine, extra, stack, rates, archive, models, email, departments,
-                    places,
+                    places, ideas,
                 )  # fmt: skip
                 app.state.telegram = telegram
                 origin = resolved.public_origin
@@ -546,6 +591,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                         prices=prices is not None,
                         news=news is not None,
                         places=places,
+                        ideas=ideas,
                         weather=Weather(await _weather_source(extra, stack), clock=clock),
                     )
                     menu = asyncio.create_task(_set_menu_button(telegram.client, origin))
