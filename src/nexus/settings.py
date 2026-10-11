@@ -90,11 +90,18 @@ class Settings(BaseSettings):
     # A stronger model that reviews each finished plan's write-up (e.g.
     # openai/gpt-6.1-sol). Unset: no review.
     research_review_model: str | None = None
-    # --- Trip research (Travel). Web search goes through OpenRouter (its key), with
-    # TRAVEL_RESEARCH_MODEL or the main model. SERPAPI_API_KEY adds live flight and
-    # hotel prices from Google Flights and Hotels; unset, costs come from web search. ---
+    # --- Trip research (Travel). Pages are sorted by TRAVEL_RESEARCH_MODEL or the main
+    # model through OpenRouter (its key), which also searches when Tavily can't.
+    # SERPAPI_API_KEY adds live flight and hotel prices from Google Flights and Hotels;
+    # unset, costs come from web search. ---
     travel_research_model: str | None = None
     serpapi_api_key: SecretStr | None = None
+    # --- Web search with each page's text (Tavily). Unset: research reads only the
+    # answer and links from OpenRouter's web search. TAVILY_MONTHLY_CREDITS is the
+    # plan's monthly allowance (the free plan's 1,000), shared out between travel,
+    # investment and general search; past a product's share, it uses OpenRouter. ---
+    tavily_api_key: SecretStr | None = None
+    tavily_monthly_credits: int = Field(1000, ge=0)
     # --- Google Maps places on trips (Places API (New)): ratings, regular hours and
     # reviews for plans, places to visit and hotels. Unset = no place lookups. ---
     google_places_api_key: SecretStr | None = None
@@ -185,6 +192,7 @@ class Settings(BaseSettings):
         "research_review_model",
         "travel_research_model",
         "serpapi_api_key",
+        "tavily_api_key",
         "google_places_api_key",
         "image_look_model",
         "agentmail_api_key",

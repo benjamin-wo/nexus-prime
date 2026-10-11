@@ -14,12 +14,8 @@ from typing import Any
 
 import httpx
 
-from nexus.application.travel_research import (
-    FlightQuote,
-    HotelQuote,
-    HotelSearch,
-    WebSearchError,
-)
+from nexus.application.travel_research import FlightQuote, HotelQuote, HotelSearch
+from nexus.application.web_search import WebSearchError
 
 log = logging.getLogger(__name__)
 

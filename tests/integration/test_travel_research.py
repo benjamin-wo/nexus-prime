@@ -16,6 +16,7 @@ from nexus.application import departments as department_cases
 from nexus.application import salary as salary_cases
 from nexus.application import travel_research as research
 from nexus.application.budgets import TELEGRAM_SEND
+from nexus.application.web_search import WebAnswer
 from nexus.domain.departments import RunStatus
 from nexus.domain.errors import InvalidInput
 from nexus.domain.ledger import User
@@ -39,9 +40,9 @@ class FakeWeb:
 
     asked: list[str] = field(default_factory=list)
 
-    async def ask(self, question: str) -> research.WebAnswer:
+    async def ask(self, question: str) -> WebAnswer:
         self.asked.append(question)
-        return research.WebAnswer(
+        return WebAnswer(
             f"Some facts about the place. {INJECTION}",
             [
                 ("https://guide.example.com/tokyo", "Tokyo guide"),
@@ -205,3 +206,59 @@ async def test_without_live_prices_costs_come_from_the_web(uow: UowFactory) -> N
     assert (r.budget, r.set_aside, r.fits) == (Decimal(3000), None, None)
     with pytest.raises(InvalidInput, match="airport code"):
         await research.start_research(uow, registry, user, {**TASK, "airport": "Narita"}, now=NOW)
+
+
+GUIDE = (
+    "Tokyo in January is cold and clear. Most first-timers stay in Shinjuku for its "
+    "late food and trains. Budget about 8,000 to 15,000 JPY a day for meals and "
+    f"transport. {INJECTION}"
+)
+
+
+@dataclass
+class PagesWeb:
+    """A search that returns each page's own text, as Tavily does."""
+
+    async def ask(self, question: str) -> WebAnswer:
+        return WebAnswer(
+            "",
+            [
+                ("https://guide.example.com/tokyo", "Tokyo guide"),
+                ("https://10.0.0.8/x", "Internal"),
+            ],
+            Decimal(0),
+            [GUIDE, "Secret internal page."],
+            1,
+            "tavily",
+        )
+
+
+async def test_with_page_text_claims_must_be_on_their_page(uow: UowFactory) -> None:
+    user = await person(uow)
+    model = scripted(
+        say("SUMMARY | Cold and clear.\nPOINT | January is cold and clear. | 1"),
+        say(
+            "PRICE | Daily spending | 8,000 | 15000 | JPY | day | 1\n"
+            "PRICE | Hotels | 9,000 | 20,000 | JPY | night | 1"  # not on the page
+        ),
+        say(
+            "AREA | Shinjuku | Late food and trains. | Omoide Yokocho | 1\n"
+            "AREA | Ginza | Shopping. | Department stores | 1"  # not on the page
+        ),
+    )
+    registry = department_cases.default_registry(
+        [research.research_kind(uow, PagesWeb(), model, RATES)]
+    )
+    run = await research.start_research(uow, registry, user, TASK, now=NOW)
+    done = await finish(uow, registry, user, run)
+    assert done.status is RunStatus.DONE, done.error
+    r = research.ResearchResult.model_validate(done.result)
+    assert [(p.label, p.low, p.high) for p in r.prices] == [
+        ("Daily spending", Decimal(8000), Decimal(15000))
+    ]
+    assert [a.name for a in r.areas] == ["Shinjuku"]
+    assert [s.url for s in r.sources] == ["https://guide.example.com/tokyo"]
+    # The sorting model read the page itself, as quoted data; the unsafe link never.
+    seen = str(model.seen[0][-1].content)
+    assert "<web>\n[1] Tokyo guide (https://guide.example.com/tokyo)\nTokyo in January" in seen
+    assert "Secret internal page" not in seen and "10.0.0.8" not in seen
