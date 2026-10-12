@@ -32,6 +32,7 @@ from nexus.application.web_search import WebAnswer
 from nexus.channels.web.telegram_login import sign_for_tests, sign_webapp_for_tests
 from nexus.domain.ledger import Direction, Source, UserId
 from nexus.domain.money import Money
+from nexus.domain.places import Point
 from nexus.infra.crypto.fernet import FernetCipher
 from nexus.infra.db.tables import jobs, users
 from nexus.infra.db.uow import SqlUnitOfWork
@@ -48,6 +49,7 @@ from tests.fakes import (
     FakePlaces,
     FakePrices,
     FakeRates,
+    FakeRoutes,
     FakeTelegram,
     FakeTripReader,
     FakeWeather,
@@ -64,7 +66,13 @@ from tests.integration.test_departments import Shown
 from tests.integration.test_destination_photos import JPEG, FakeWikipedia
 from tests.integration.test_destination_photos import finder as photo_finder
 
-PLACE = fake_place("fakePlaceNoodle01", "Hanok Noodle Bar", closed_on=4, reviews=("Worth it.",))
+PLACE = fake_place(
+    "fakePlaceNoodle01",
+    "Hanok Noodle Bar",
+    closed_on=4,
+    reviews=("Worth it.",),
+    location=Point(37.5665, 126.978),
+)
 pytestmark = pytest.mark.integration
 
 ORIGIN = "https://nexus.test"
@@ -187,6 +195,7 @@ async def world(engine: AsyncEngine, empty_database_url: str) -> AsyncIterator[W
             prices=FakePrices(),
             news=FakeNews(),
             places=FakePlaces([PLACE]),
+            routes=FakeRoutes(),
             weather=FakeWeather(),
             ideas=IdeaFinder(
                 IdeasWeb(),
@@ -1780,6 +1789,51 @@ async def test_google_maps_places_on_the_web(world: World) -> None:
         "PUT", f"/api/travel/bookings/{booking['id']}/place", {"place_id": "../x"}
     )
     assert bad.status_code == 422
+
+
+async def test_travel_times_between_a_days_stops(world: World) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+    body = {"destination": "Seoul", "start": "2026-11-10", "end": "2026-11-13", "currency": "KRW"}
+    trip_id = (await owner.send("POST", "/api/travel/trips", body)).json()["id"]
+    assert (await owner.get(f"/api/travel/trips/{trip_id}")).json()["routes"] is True
+    day = "2026-11-12"
+    stops = []
+    for name, at, place in [
+        ("Old Temple", "10:00", "fakePlaceTemple01"),
+        ("Hanok Noodle Bar", "10:20", "fakePlaceNoodle01"),
+    ]:
+        made = await owner.send(
+            "POST",
+            f"/api/travel/trips/{trip_id}/bookings",
+            {"kind": "activity", "name": name, "day": day, "at": at, "place_id": place},
+        )
+        stops.append(made.json()["id"])
+    hops = (await owner.get(f"/api/travel/trips/{trip_id}/days/{day}/hops")).json()
+    # The temple isn't known to Google here, so the distance isn't either: public
+    # transport, 25 minutes, more than the 20 between the two plans.
+    assert [(h["start"], h["end"], h["mode"], h["minutes"], h["tight"]) for h in hops] == [
+        ("Old Temple", "Hanok Noodle Bar", "transit", 25, True)
+    ]
+    assert hops[0]["directions"].startswith("https://www.google.com/maps/dir/?api=1")
+    walked = await owner.get(
+        f"/api/travel/trips/{trip_id}/days/{day}/hops/{stops[0]}/{stops[1]}?mode=walk"
+    )
+    assert (walked.json()["mode"], walked.json()["minutes"], walked.json()["tight"]) == (
+        "walk", 20, False,
+    )  # fmt: skip
+    backwards = await owner.get(
+        f"/api/travel/trips/{trip_id}/days/{day}/hops/{stops[1]}/{stops[0]}?mode=walk"
+    )
+    assert backwards.status_code == 404
+    # The map gets each linked place's coordinates.
+    linked = (await owner.get(f"/api/travel/trips/{trip_id}/places")).json()
+    assert [(x["place"]["lat"], x["place"]["lng"]) for x in linked] == [(37.5665, 126.978)]
+    # Someone else's trip isn't theirs to ask about.
+    stranger = world.browser()
+    await stranger.login(MEMBER, invite=(await owner_and_invite(world))[1])
+    other = await stranger.get(f"/api/travel/trips/{trip_id}/days/{day}/hops")
+    assert other.status_code == 404
 
 
 async def test_quick_ideas_for_a_trip(world: World) -> None:

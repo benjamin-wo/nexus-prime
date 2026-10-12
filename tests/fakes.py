@@ -25,6 +25,7 @@ from nexus.application.market import PriceSourceError
 from nexus.application.places import PlacesError
 from nexus.application.ports import MailboxGrant, MailboxRevoked
 from nexus.application.research import NewsSourceError
+from nexus.application.routes import Leg, RoutesError
 from nexus.application.weather import WeatherError
 from nexus.channels.telegram.client import TelegramError
 from nexus.domain.bookings import BookingDraft
@@ -32,7 +33,8 @@ from nexus.domain.email import ExpenseDraft, FetchedEmail, Screening
 from nexus.domain.errors import InvalidInput
 from nexus.domain.market import Bar
 from nexus.domain.news import EarningsDate, NewsItem
-from nexus.domain.places import Period, Place, PlacePhoto, Review
+from nexus.domain.places import Period, Place, PlacePhoto, Point, Review
+from nexus.domain.routes import Mode
 from nexus.domain.weather import DayWeather, Spot
 from nexus.infra.llm.factory import ChatModels
 
@@ -450,6 +452,7 @@ def fake_place(
     closed_on: int | None = None,  # Google's day: 0 Sunday … 6 Saturday
     reviews: tuple[str, ...] = (),
     address: str = "1 Example Street",
+    location: Point | None = None,
 ) -> Place:
     """A made-up Google Maps place, open 11:00 to 22:00 except ``closed_on``."""
     periods = tuple(Period(d, time(11), d, time(22)) for d in range(7) if d != closed_on)
@@ -468,6 +471,7 @@ def fake_place(
             Review(5, r, "A. Reviewer", "https://maps.example/u", "a week ago") for r in reviews
         ),
         photo=PlacePhoto(f"places/{pid}/photos/ref1", "A. Photographer", "https://maps.example/p"),
+        location=location,
     )
 
 
@@ -499,6 +503,25 @@ class FakePlaces:
         if self.failing:
             raise PlacesError("HTTP 500")
         return b"\xff\xd8 made-up place photo", "image/jpeg"
+
+
+@dataclass
+class FakeRoutes:
+    """Made-up travel times: walking 20 min, public transport 25, driving 15, unless
+    ``times`` says otherwise (None: no route that way). Counts what reached it."""
+
+    times: dict[Mode, int | None] = field(
+        default_factory=lambda: {Mode.WALK: 20, Mode.TRANSIT: 25, Mode.DRIVE: 15}
+    )
+    failing: bool = False
+    asked: list[tuple[str, str, Mode]] = field(default_factory=list)
+
+    async def route(self, origin: str, destination: str, mode: Mode) -> Leg | None:
+        self.asked.append((origin, destination, mode))
+        if self.failing:
+            raise RoutesError("HTTP 500")
+        minutes = self.times.get(mode)
+        return Leg(minutes * 60, minutes * 80) if minutes is not None else None
 
 
 @dataclass

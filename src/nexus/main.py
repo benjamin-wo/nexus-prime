@@ -44,6 +44,7 @@ from nexus.application.ports import (
 )
 from nexus.application.rate_store import StoredRates
 from nexus.application.research import NewsSource
+from nexus.application.routes import Routes, RouteSource
 from nexus.application.travel_research import research_kind
 from nexus.application.weather import Weather, WeatherSource
 from nexus.application.web_lookup import WebLookup
@@ -85,6 +86,7 @@ from nexus.infra.market.finnhub import FinnhubNews
 from nexus.infra.market.tiingo import TiingoPrices
 from nexus.infra.photos.wikipedia import WikipediaPhotos
 from nexus.infra.places.google import GooglePlaces
+from nexus.infra.places.routes import GoogleRoutes
 from nexus.infra.search.openrouter_web import OpenRouterWebSearch
 from nexus.infra.search.serpapi import SerpApiTravel
 from nexus.infra.search.tavily import TavilyReader, TavilySearch
@@ -114,6 +116,7 @@ class Overrides:
     prices: PriceSource | None = None
     news: NewsSource | None = None
     places: PlaceSource | None = None
+    routes: RouteSource | None = None
     receipt_store: ReceiptStore | None = None
     mailbox: SignInMailbox | None = None
     forwarding: ForwardingInboxes | None = None
@@ -188,6 +191,21 @@ async def _places(
         http = await stack.enter_async_context(httpx.AsyncClient())
         source = GooglePlaces(http, key.get_secret_value())
     return Places(source, clock=clock)
+
+
+async def _routes(
+    settings: Settings, overrides: Overrides, stack: AsyncExitStack, clock: Callable[[], datetime]
+) -> Routes | None:
+    """Travel times between a trip day's stops, with the same Google key as places (its
+    Google Cloud project needs the Routes API turned on)."""
+    source = overrides.routes
+    if source is None:
+        key = settings.google_places_api_key
+        if key is None:
+            return None
+        http = await stack.enter_async_context(httpx.AsyncClient())
+        source = GoogleRoutes(http, key.get_secret_value())
+    return Routes(source, clock=clock)
 
 
 async def _weather_source(overrides: Overrides, stack: AsyncExitStack) -> WeatherSource:
@@ -630,6 +648,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                         prices=prices is not None,
                         news=news is not None,
                         places=places,
+                        routes=await _routes(resolved, extra, stack, clock),
                         ideas=ideas,
                         weather=Weather(await _weather_source(extra, stack), clock=clock),
                     )

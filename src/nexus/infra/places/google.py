@@ -25,10 +25,12 @@ from nexus.domain.places import (
     Period,
     Place,
     PlacePhoto,
+    Point,
     Review,
     link,
     photo_name,
     place_id,
+    point,
     quoted,
     text,
 )
@@ -38,7 +40,7 @@ log = logging.getLogger(__name__)
 BASE_URL = "https://places.googleapis.com/v1"
 _BASIC = (
     "id,displayName,formattedAddress,primaryTypeDisplayName,rating,userRatingCount,"
-    "priceLevel,googleMapsUri,businessStatus"
+    "priceLevel,googleMapsUri,businessStatus,location"
 )
 SEARCH_FIELDS = ",".join(f"places.{f}" for f in _BASIC.split(","))
 DETAIL_FIELDS = (
@@ -247,4 +249,11 @@ def parse_place(row: Any, *, detailed: bool = False) -> Place | None:
         reviews=tuple(reviews[:MAX_REVIEWS]),
         photo=_photo(row.get("photos")) if detailed else None,
         detailed=detailed,
+        location=_location(row.get("location")),
     )
+
+
+def _location(value: Any) -> Point | None:
+    if not isinstance(value, dict):
+        return None
+    return point(value.get("latitude"), value.get("longitude"))
