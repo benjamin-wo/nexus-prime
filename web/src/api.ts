@@ -594,6 +594,9 @@ export type Place = {
   photo_url?: string | null;
   photo_author?: string | null;
   photo_author_url?: string | null;
+  /** Where it is, for the trip map (fetched with the place, never stored). */
+  lat?: number | null;
+  lng?: number | null;
 };
 /** A place a travel guide or article recommends, with the page it came from and its
  * Google Maps match when there is one. Nothing is saved until the user picks it. */
@@ -607,6 +610,21 @@ export type Idea = {
 };
 export type Ideas = { query: string; destination: string; ideas: Idea[] };
 export type LinkedPlace = { booking_id: string; place: Place; warning: string | null };
+export type TravelMode = "walk" | "transit" | "drive";
+/** Getting from one of a day's stops to the next. */
+export type Hop = {
+  start_id: string;
+  end_id: string;
+  start: string;
+  end: string;
+  mode: TravelMode;
+  /** Null when Google found no way to get there like that. */
+  minutes: number | null;
+  metres: number | null;
+  /** Takes longer than the time between the two plans. */
+  tight: boolean;
+  directions: string;
+};
 
 /** A trip as its read-only link shows it: the plan, never money, references, notes or
  * who's going. */
@@ -624,6 +642,10 @@ export type TripDetail = {
   places: boolean;
   /** Quick ideas from travel guides and articles are set up. */
   ideas?: boolean;
+  /** Travel times between a day's stops are set up. */
+  routes?: boolean;
+  /** The browser key for Google's map; null when there's no map. */
+  map_key?: string | null;
   booked: Money | null;
   booked_unlogged: Money | null;
   to_spend: Money | null;

@@ -403,3 +403,8 @@ export function SavePlaces({ open = false, onDone }: { open?: boolean; onDone?: 
     />
   );
 }
+
+/** The trip's Google Maps details by entry id, for the map; empty when not set up. */
+export function useLinkedPlaces(): Map<string, LinkedPlace> {
+  return useContext(Context)?.linked ?? new Map();
+}

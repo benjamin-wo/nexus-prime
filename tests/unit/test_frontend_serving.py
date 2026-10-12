@@ -54,4 +54,18 @@ def test_shared_trip_links_ask_search_engines_not_to_index_them(tmp_path: Path) 
     assert shared.text == "<html>app</html>"
     assert shared.headers["x-robots-tag"] == "noindex, nofollow"
     assert shared.headers["referrer-policy"] == "same-origin"
-    assert "x-robots-tag" not in client.get("/ledger").headers
+    ledger = client.get("/ledger")
+    assert "x-robots-tag" not in ledger.headers
+    # The rest of the app sends its origin (never a path) to other sites, which the
+    # map's key needs; the shared link above sends nothing.
+    assert ledger.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+
+
+def test_the_trip_map_is_allowed_and_nothing_else_is(tmp_path: Path) -> None:
+    csp = build(tmp_path).get("/travel").headers["content-security-policy"]
+    rules = dict(rule.split(" ", 1) for rule in csp.split("; "))
+    assert rules["script-src"] == "'self' https://telegram.org https://maps.googleapis.com"
+    assert "'unsafe-inline'" not in rules["script-src"] and "'unsafe-eval'" not in csp
+    assert rules["style-src"] == "'self' 'unsafe-inline' https://fonts.googleapis.com"
+    assert "https://*.gstatic.com" in rules["img-src"]
+    assert rules["frame-ancestors"] == "https://web.telegram.org"

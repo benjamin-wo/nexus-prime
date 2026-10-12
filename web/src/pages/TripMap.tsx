@@ -1,0 +1,318 @@
+import { useQuery } from "@tanstack/react-query";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+
+import { api, type Booking, type Hop, type LinkedPlace, type TravelMode, type TripDetail } from "../api";
+import { type GMap, type GOverlay, loadMaps, type MapsApi, onMapsAuthFailure } from "../maps";
+import { sortKey, todayIso } from "./TripBits";
+import { useLinkedPlaces } from "./TripPlaces";
+
+/** Each day's colour on the map, repeating after eight days; places to visit with
+ * no day are grey. Chosen to stay apart from each other and readable under white. */
+export const DAY_COLORS = ["#2563eb", "#db2777", "#059669", "#d97706", "#7c3aed", "#0891b2", "#dc2626", "#65a30d"];
+export const NO_DAY = "#6b7280";
+
+export type Pin = {
+  id: string;
+  title: string;
+  lat: number;
+  lng: number;
+  /** The plan's number in its day (as on the itinerary), "H" for a hotel, "" for a
+   * place to visit. */
+  label: string;
+  color: string;
+  kind: "plan" | "hotel" | "place";
+  /** The days it's on: a plan's day, every day of a hotel stay, none for a place. */
+  days: string[];
+  sort: string;
+};
+
+const DAY_MS = 86400000;
+const isoDay = (t: number) => new Date(t).toISOString().slice(0, 10);
+
+export function dayNumber(trip: { start: string }, iso: string): number {
+  return Math.round((Date.parse(iso) - Date.parse(trip.start)) / DAY_MS) + 1;
+}
+
+export function dayColor(trip: { start: string }, iso: string | null): string {
+  if (!iso) return NO_DAY;
+  const n = dayNumber(trip, iso) - 1;
+  return DAY_COLORS[((n % DAY_COLORS.length) + DAY_COLORS.length) % DAY_COLORS.length];
+}
+
+function stayDays(b: Booking): string[] {
+  if (!b.check_in) return [];
+  const days: string[] = [];
+  const last = Date.parse(b.check_out ?? b.check_in);
+  for (let t = Date.parse(b.check_in); t <= last && days.length < 120; t += DAY_MS) days.push(isoDay(t));
+  return days;
+}
+
+/** The trip's places that Google Maps knows where to find, as map pins: plans numbered
+ * as on their day of the itinerary, hotels, and places to visit. */
+export function mapPins(detail: Pick<TripDetail, "trip" | "bookings">, linked: Map<string, LinkedPlace>): Pin[] {
+  const numbers = new Map<string, number>();
+  const scheduled = detail.bookings.filter((b) => b.scheduled).sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
+  const counts = new Map<string, number>();
+  for (const b of scheduled) {
+    if (b.kind !== "activity") continue;
+    const n = (counts.get(b.starts) ?? 0) + 1;
+    counts.set(b.starts, n);
+    numbers.set(b.id, n);
+  }
+  const pins: Pin[] = [];
+  for (const b of detail.bookings) {
+    const place = linked.get(b.id)?.place;
+    if (!place || typeof place.lat !== "number" || typeof place.lng !== "number") continue;
+    const base = { id: b.id, title: b.kind === "hotel" ? (b.hotel ?? b.title) : b.title, lat: place.lat, lng: place.lng, sort: sortKey(b) };
+    if (b.kind === "hotel") {
+      pins.push({ ...base, label: "H", color: dayColor(detail.trip, b.check_in), kind: "hotel", days: stayDays(b) });
+    } else if (b.kind === "activity" && b.scheduled) {
+      pins.push({ ...base, label: String(numbers.get(b.id) ?? ""), color: dayColor(detail.trip, b.starts), kind: "plan", days: [b.starts] });
+    } else if (b.kind === "activity") {
+      pins.push({ ...base, label: "", color: NO_DAY, kind: "place", days: [] });
+    }
+  }
+  return pins;
+}
+
+/** A day's route on the map, in itinerary order: from last night's hotel, through the
+ * day's plans (a hotel check-in at 15:00), to tonight's hotel. */
+export function dayPath(pins: Pin[], day: string): Pin[] {
+  const before = isoDay(Date.parse(day) - DAY_MS);
+  const hotels = pins.filter((p) => p.kind === "hotel");
+  const sleptIn = (p: Pin, night: string) => p.days.includes(night) && p.days.at(-1) !== night;
+  const morning = hotels.find((p) => sleptIn(p, before));
+  const tonight = hotels.find((p) => sleptIn(p, day));
+  const stops = pins.filter((p) => (p.kind === "plan" && p.days[0] === day) || (p.kind === "hotel" && p.days[0] === day)).sort((a, b) => a.sort.localeCompare(b.sort));
+  const path: Pin[] = [];
+  for (const p of [morning, ...stops, tonight]) {
+    if (p && path.at(-1)?.id !== p.id) path.push(p);
+  }
+  return path;
+}
+
+function tripDayList(trip: TripDetail["trip"]): string[] {
+  const days: string[] = [];
+  for (let t = Date.parse(trip.start); t <= Date.parse(trip.end) && days.length < 120; t += DAY_MS) days.push(isoDay(t));
+  return days;
+}
+
+/** The trip on a Google map: every place it knows where to find, coloured by day,
+ * with a day's route when one day is picked. Beside the itinerary on wide screens; a
+ * card that opens full screen on phones. */
+export function TripMap({ detail }: { detail: TripDetail }) {
+  const linked = useLinkedPlaces();
+  const pins = useMemo(() => mapPins(detail, linked), [detail, linked]);
+  const days = useMemo(() => tripDayList(detail.trip), [detail.trip]);
+  const today = todayIso();
+  const [day, setDay] = useState<string>(detail.trip.status === "ongoing" && days.includes(today) ? today : "all");
+  const [full, setFull] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [maps, setMaps] = useState<{ api: MapsApi; map: GMap } | null>(null);
+  const element = useRef<HTMLDivElement>(null);
+  const key = detail.map_key ?? null;
+  const shown = day === "all" ? pins : pins.filter((p) => p.days.includes(day));
+
+  useEffect(() => onMapsAuthFailure(() => setError("Google didn't accept the map's key.")), []);
+
+  useEffect(() => {
+    if (!key || pins.length === 0 || maps || !element.current) return;
+    let live = true;
+    loadMaps(key)
+      .then((api) => {
+        if (!live || !element.current) return;
+        const map = new api.Map(element.current, {
+          mapTypeControl: false,
+          streetViewControl: false,
+          fullscreenControl: false,
+          clickableIcons: false,
+          gestureHandling: "cooperative",
+        });
+        setMaps({ api, map });
+      })
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : "The map couldn't load."));
+    return () => {
+      live = false;
+    };
+  }, [key, pins.length, maps]);
+
+  useEffect(() => {
+    if (!maps) return;
+    const { api, map } = maps;
+    const drawn: GOverlay[] = [];
+    const bounds = new api.LatLngBounds();
+    for (const p of shown) {
+      const marker = new api.Marker({
+        map,
+        position: { lat: p.lat, lng: p.lng },
+        title: p.title,
+        label: p.label ? { text: p.label, color: "#ffffff", fontWeight: "600", fontSize: "12px" } : undefined,
+        icon: { path: api.circle, scale: p.label ? 11 : 7, fillColor: p.color, fillOpacity: 1, strokeColor: "#ffffff", strokeWeight: 2 },
+      });
+      marker.addListener("click", () => {
+        const target = document.getElementById(`entry-${p.id}`);
+        if (!target) return;
+        setFull(false);
+        target.scrollIntoView({ behavior: "smooth", block: "center" });
+        target.classList.add("entry-flash");
+        window.setTimeout(() => target.classList.remove("entry-flash"), 1600);
+      });
+      drawn.push(marker);
+      bounds.extend({ lat: p.lat, lng: p.lng });
+    }
+    if (day !== "all") {
+      const path = dayPath(pins, day);
+      if (path.length > 1) {
+        drawn.push(
+          new api.Polyline({
+            map,
+            path: path.map((p) => ({ lat: p.lat, lng: p.lng })),
+            strokeColor: dayColor(detail.trip, day),
+            strokeOpacity: 0.8,
+            strokeWeight: 3,
+          }),
+        );
+      }
+    }
+    if (shown.length === 1) {
+      map.setCenter({ lat: shown[0].lat, lng: shown[0].lng });
+      map.setZoom(15);
+    } else if (shown.length > 1) {
+      map.fitBounds(bounds, 48);
+    }
+    return () => drawn.forEach((o) => o.setMap(null));
+  }, [maps, shown, pins, day, detail.trip]);
+
+  if (!key) return null;
+  const label = (iso: string) => `Day ${dayNumber(detail.trip, iso)}`;
+  return (
+    <section className={`card trip-map${full ? " trip-map-full" : ""}`} aria-labelledby="trip-map-title">
+      <div className="card-head">
+        <h2 id="trip-map-title">Map</h2>
+        {pins.length > 0 && (
+          <button type="button" className="btn btn-ghost btn-small trip-map-toggle" onClick={() => setFull(!full)} aria-pressed={full}>
+            {full ? "Close map" : "Full screen"}
+          </button>
+        )}
+      </div>
+      {pins.length === 0 ? (
+        <p className="caption">Places linked to Google Maps show here, coloured by day.</p>
+      ) : (
+        <>
+          <nav className="day-strip trip-map-days" aria-label="Days on the map">
+            <button type="button" className="day-pill" aria-pressed={day === "all"} onClick={() => setDay("all")}>
+              All
+            </button>
+            {days.map((d) => (
+              <button
+                key={d}
+                type="button"
+                className="day-pill"
+                aria-pressed={day === d}
+                onClick={() => setDay(d)}
+                style={{ borderColor: dayColor(detail.trip, d) }}
+              >
+                {label(d)}
+              </button>
+            ))}
+          </nav>
+          {error ? (
+            <p className="error-text" role="alert">
+              {error}
+            </p>
+          ) : (
+            <div ref={element} className="trip-map-canvas" role="img" aria-label={`Map of ${detail.trip.destination}${day === "all" ? "" : `, ${label(day)}`}`} />
+          )}
+          <ul className="sr-only" aria-label="On the map">
+            {shown.map((p) => (
+              <li key={p.id}>
+                {p.label && p.label !== "H" ? `${p.label}. ` : ""}
+                {p.title}
+                {p.kind === "hotel" ? " (stay)" : p.kind === "place" ? " (place to visit)" : ""}
+              </li>
+            ))}
+          </ul>
+          {day !== "all" && shown.length === 0 && <p className="caption">Nothing on the map that day.</p>}
+        </>
+      )}
+    </section>
+  );
+}
+
+// --- travel times between stops on the itinerary ---------------------------------------
+
+const MODE: Record<TravelMode, { icon: string; words: string }> = {
+  walk: { icon: "🚶", words: "walk" },
+  transit: { icon: "🚆", words: "by public transport" },
+  drive: { icon: "🚗", words: "drive" },
+};
+
+export function distance(metres: number): string {
+  return metres < 1000 ? `${Math.round(metres / 10) * 10} m` : `${(metres / 1000).toFixed(1)} km`;
+}
+
+/** Calls ``children`` with the day's travel times, asked for only once the day is
+ * near the screen (each one is a call to Google). */
+export function DayHops({ tripId, day, enabled, children }: { tripId: string; day: string; enabled: boolean; children: (hops: Hop[]) => ReactNode }) {
+  const holder = useRef<HTMLDivElement>(null);
+  const [near, setNear] = useState(false);
+  useEffect(() => {
+    if (!enabled || near || !holder.current) return;
+    if (typeof IntersectionObserver === "undefined") {
+      setNear(true);
+      return;
+    }
+    const watch = new IntersectionObserver((seen) => seen.some((s) => s.isIntersecting) && setNear(true), { rootMargin: "300px" });
+    watch.observe(holder.current);
+    return () => watch.disconnect();
+  }, [enabled, near]);
+  const hops = useQuery({
+    queryKey: ["trip-hops", tripId, day],
+    queryFn: () => api<Hop[]>(`/travel/trips/${tripId}/days/${day}/hops`),
+    enabled: enabled && near,
+    staleTime: 10 * 60 * 1000,
+  });
+  return <div ref={holder}>{children(hops.data ?? [])}</div>;
+}
+
+/** Getting from one stop to the next, between their cards: how, how long, and a
+ * way to change it for that hop. */
+export function HopLine({ tripId, day, hop }: { tripId: string; day: string; hop: Hop }) {
+  const [shown, setShown] = useState<Hop>(hop);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => setShown(hop), [hop]);
+  async function change(mode: TravelMode) {
+    setBusy(true);
+    try {
+      setShown(await api<Hop>(`/travel/trips/${tripId}/days/${day}/hops/${hop.start_id}/${hop.end_id}?mode=${mode}`));
+    } catch {
+      // Leave the time as it was.
+    } finally {
+      setBusy(false);
+    }
+  }
+  const how = MODE[shown.mode];
+  const time = shown.minutes === null ? `No ${how.words === "walk" ? "walking" : how.words} route` : `${shown.minutes} min ${how.words}`;
+  return (
+    <li className="timeline-hop" aria-label={`From ${shown.start} to ${shown.end}`}>
+      <span aria-hidden="true">{how.icon}</span>
+      <span className="wrap">
+        {time}
+        {shown.metres !== null && shown.minutes !== null && <span className="caption"> · {distance(shown.metres)}</span>}
+        {shown.tight && (
+          <span className="badge badge-pending" title="Takes longer than the time between the two plans">
+            Tight
+          </span>
+        )}
+      </span>
+      <select aria-label={`How to get to ${shown.end}`} value={shown.mode} disabled={busy} onChange={(e) => void change(e.target.value as TravelMode)}>
+        <option value="walk">Walk</option>
+        <option value="transit">Transit</option>
+        <option value="drive">Drive</option>
+      </select>
+      <a href={shown.directions} target="_blank" rel="noopener noreferrer" className="caption">
+        Directions
+      </a>
+    </li>
+  );
+}

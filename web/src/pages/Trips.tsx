@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, type ReactNode, useEffect, useState } from "react";
+import { type FormEvent, Fragment, type ReactNode, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { api, type Booking, type Me, type Money, type ScreenshotRead, type Trip, type TripDetail } from "../api";
@@ -10,6 +10,7 @@ import { type AddPreset, AddSheet } from "./TripAdd";
 import { Companions, NextUp, PhotoCredit, TripCard, coverStyle, legTimes, tripWhen } from "./TripBits";
 import { PackingCard, WeatherCard } from "./TripExtras";
 import { type Fix, MoneyBar, SpendingNow, type Stage, StillToSort, TripTotals, stageOf } from "./TripStage";
+import { DayHops, HopLine, TripMap } from "./TripMap";
 import { PlaceLine, PlaceThumb, SavePlaces, TripPlacesProvider } from "./TripPlaces";
 import { ShareSheet } from "./TripShare";
 import { TodayView } from "./TripToday";
@@ -887,7 +888,7 @@ function TimelineEntry({ booking, iso, stop, children }: { booking: Booking; iso
   if (booking.kind === "hotel") {
     const out = booking.check_out === iso && booking.check_in !== iso;
     return (
-      <li className="timeline-strip">
+      <li className="timeline-strip" id={out ? undefined : `entry-${booking.id}`}>
         <span aria-hidden="true">🏨</span>
         <span className="wrap">
           <strong>{booking.hotel ?? booking.title}</strong>
@@ -900,7 +901,7 @@ function TimelineEntry({ booking, iso, stop, children }: { booking: Booking; iso
   }
   if (booking.kind === "flight" || booking.kind === "rail") {
     return (
-      <li className="timeline-strip">
+      <li className="timeline-strip" id={`entry-${booking.id}`}>
         <span aria-hidden="true">{KIND_ICON[booking.kind]}</span>
         <span className="wrap">
           <strong>{booking.title}</strong>
@@ -914,7 +915,7 @@ function TimelineEntry({ booking, iso, stop, children }: { booking: Booking; iso
     );
   }
   return (
-    <li className="timeline-stop">
+    <li className="timeline-stop" id={`entry-${booking.id}`}>
       <span className="stop-number" aria-hidden="true">
         {stop}
       </span>
@@ -983,7 +984,6 @@ function Itinerary({ detail, onChange, onAdd, collapsed }: {
       {days.map((d) => {
         const entries = sorted.filter((b) => b.starts === d);
         const outs = checkingOut(d).filter((b) => b.starts !== d);
-        let stop = 0;
         const n = dayNumber(d);
         const ends = d === detail.trip.start || d === detail.trip.end;
         const empty = !busy(d) && staying(d).length === 0;
@@ -1012,31 +1012,52 @@ function Itinerary({ detail, onChange, onAdd, collapsed }: {
                   </button>
                 </p>
               )}
-              <ul className="timeline" aria-label={dayLabel(d)}>
-                {outs.map((b) => (
-                  <TimelineEntry key={`out-${b.id}`} booking={b} iso={d} stop={null} />
-                ))}
-                {entries.map((b) => {
-                  if (b.kind === "activity") stop += 1;
-                  return editing === b.id ? (
-                    <li key={b.id}>
-                      <EntryEditor
-                        trip={detail.trip}
-                        home={home}
-                        entry={b}
-                        onDone={(saved) => {
-                          setEditing(null);
-                          if (saved) onChange();
-                        }}
-                      />
-                    </li>
-                  ) : (
-                    <TimelineEntry key={b.id} booking={b} iso={d} stop={b.kind === "activity" ? stop : null}>
-                      {actions(b)}
-                    </TimelineEntry>
+              <DayHops tripId={detail.trip.id} day={d} enabled={Boolean(detail.routes) && detail.places}>
+                {(hops) => {
+                  // Counted here: this renders again when the travel times arrive.
+                  let stop = 0;
+                  const shownIds = new Set(entries.map((b) => b.id));
+                  const into = (b: Booking) => hops.filter((h) => h.end_id === b.id);
+                  const after = hops.filter((h) => !shownIds.has(h.end_id));
+                  return (
+                    <ul className="timeline" aria-label={dayLabel(d)}>
+                      {outs.map((b) => (
+                        <TimelineEntry key={`out-${b.id}`} booking={b} iso={d} stop={null} />
+                      ))}
+                      {entries.map((b) => {
+                        if (b.kind === "activity") stop += 1;
+                        const hopsIn = into(b).map((h) => <HopLine key={`hop-${h.start_id}-${h.end_id}`} tripId={detail.trip.id} day={d} hop={h} />);
+                        return editing === b.id ? (
+                          <Fragment key={b.id}>
+                            {hopsIn}
+                            <li>
+                              <EntryEditor
+                                trip={detail.trip}
+                                home={home}
+                                entry={b}
+                                onDone={(saved) => {
+                                  setEditing(null);
+                                  if (saved) onChange();
+                                }}
+                              />
+                            </li>
+                          </Fragment>
+                        ) : (
+                          <Fragment key={b.id}>
+                            {hopsIn}
+                            <TimelineEntry booking={b} iso={d} stop={b.kind === "activity" ? stop : null}>
+                              {actions(b)}
+                            </TimelineEntry>
+                          </Fragment>
+                        );
+                      })}
+                      {after.map((h) => (
+                        <HopLine key={`hop-${h.start_id}-${h.end_id}`} tripId={detail.trip.id} day={d} hop={h} />
+                      ))}
+                    </ul>
                   );
-                })}
-              </ul>
+                }}
+              </DayHops>
               {empty && <p className="caption">Nothing planned yet</p>}
               <button type="button" className="btn btn-ghost btn-small" onClick={() => onAdd({ kind: "activity", day: d })} aria-label={`Add a plan on ${dayPill(d)}`}>
                 + Add a plan
@@ -1592,7 +1613,10 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
             <>
               <StillToSort detail={data} onFix={fix} />
               <MoneyBar detail={data} onOpen={openMoney} />
-              {timeline()}
+              <div className="trip-plan">
+                <TripMap detail={data} />
+                {timeline()}
+              </div>
               <Sections detail={data} onChange={refresh} />
               <Notes trip={data.trip} />
               {money()}
@@ -1608,6 +1632,7 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
                 <PackingCard key={data.trip.id} trip={data.trip} onChange={refresh} />
               </div>
               <MoneyBar detail={data} onOpen={openMoney} />
+              <TripMap detail={data} />
               {timeline(`Itinerary · ${data.trip.days} days${sorted && nights > 0 ? " · every night booked" : ""}`)}
               <Sections detail={data} onChange={refresh} />
               <Notes trip={data.trip} />
@@ -1620,6 +1645,7 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
               <SpendingNow detail={data} />
               <TodayView detail={data} />
               <WeatherCard trip={data.trip} />
+              <TripMap detail={data} />
               {timeline("The whole trip, day by day")}
               <Sections detail={data} onChange={refresh} />
               <Notes trip={data.trip} />

@@ -96,6 +96,9 @@ export async function fakeApi(
     looseBookings: Record<string, unknown>[];
     movedBookings: string[];
     plans: Record<string, unknown>[];
+    /** The browser key for the trip map; null: no map (as when it isn't set up). */
+    mapKey: string | null;
+    hopModes: string[];
     placeSearches: string[];
     ideaSearches: string[];
     photoChoices: string[];
@@ -171,6 +174,8 @@ export async function fakeApi(
     ],
     movedBookings: [],
     plans: [],
+    mapKey: null,
+    hopModes: [],
     placeSearches: [],
     ideaSearches: [],
     photoChoices: [],
@@ -753,6 +758,8 @@ export async function fakeApi(
         to_spend: budget ? home(Number(budget.amount) - spent - 820) : null,
         places: true,
         ideas: true,
+        routes: state.mapKey !== null,
+        map_key: state.mapKey,
       };
     };
     // Made-up Google Maps places: names, ratings and reviews are all invented.
@@ -764,12 +771,13 @@ export async function fakeApi(
         hours: ["Monday: 11:00 AM to 9:00 PM", "Thursday: Closed"],
         reviews: [{ rating: 5, text: "The broth is worth the queue.", author: "A. Reviewer", author_url: "https://maps.example/u/1", when: "a month ago" }],
         photo_url: "/api/travel/places/fakePlaceNoodle01/photo", photo_author: "A. Photographer", photo_author_url: "https://maps.example/u/2",
+        lat: 37.5651, lng: 126.9895,
         closed: 4,
       },
       fakePlaceMarket01: {
         id: "fakePlaceMarket01", name: "Namdaemun Market", address: "21 Example-gil, Jung-gu, Seoul", kind: "Market",
         rating: "4.3", ratings: 18000, price: null, maps_url: "https://maps.example/market", website: null, phone: null,
-        summary: null, status: "OPERATIONAL", hours: [], reviews: [], closed: null,
+        summary: null, status: "OPERATIONAL", hours: [], reviews: [], lat: 37.5592, lng: 126.9776, closed: null,
       },
     };
     const placeOut = ({ closed: _closed, ...place }: Record<string, unknown>) => place;
@@ -814,6 +822,28 @@ export async function fakeApi(
             return { booking_id: p.id, place: placeOut(place), warning };
           }),
       );
+    }
+    // Made-up travel times: a 14-minute walk between each pair of a day's linked plans;
+    // public transport takes 25 minutes, which is tight for plans 20 minutes apart.
+    const dayHops = path.match(/^\/travel\/trips\/([^/]+)\/days\/([\d-]+)\/hops(?:\/([^/]+)\/([^/]+))?$/);
+    if (dayHops && method === "GET") {
+      const stops = state.plans
+        .filter((p) => p.place_id && p.day === dayHops[2])
+        .sort((a, b) => String(a.at ?? "").localeCompare(String(b.at ?? "")));
+      const hops = stops.slice(1).map((end, n) => {
+        const start = stops[n];
+        return {
+          start_id: start.id, end_id: end.id, start: start.title, end: end.title, mode: "walk", minutes: 14, metres: 944, tight: false,
+          directions: `https://www.google.com/maps/dir/?api=1&origin_place_id=${String(start.place_id)}&destination_place_id=${String(end.place_id)}`,
+        };
+      });
+      if (!dayHops[3]) return json(route, hops);
+      const mode = url.searchParams.get("mode") ?? "walk";
+      state.hopModes.push(mode);
+      const hop = hops.find((h) => h.start_id === dayHops[3] && h.end_id === dayHops[4]);
+      if (!hop) return json(route, { detail: "those two aren't one after the other that day" }, 404);
+      const minutes = mode === "transit" ? 25 : mode === "drive" ? 12 : 14;
+      return json(route, { ...hop, mode, minutes, metres: mode === "walk" ? 944 : 2100, tight: minutes > 20 });
     }
     const placeLink = path.match(/^\/travel\/bookings\/([^/]+)\/place$/);
     if (placeLink && method === "PUT") {
@@ -1550,6 +1580,27 @@ export async function fakeApi(
     }
     return json(route, { detail: `not faked: ${method} ${path}` }, 404);
   });
+  // Google's map script: a stand-in that records the pins and lines the page draws
+  // (window.__map), so no test ever reaches Google.
+  await page.route("https://maps.googleapis.com/**", (route) =>
+    route.fulfill({
+      contentType: "text/javascript",
+      body: `(() => {
+        const log = (window.__map = { markers: [], lines: 0, key: new URL(document.currentScript.src).searchParams.get("key") });
+        class Map { constructor(el) { el.dataset.map = "ready"; } fitBounds() {} setCenter() {} setZoom() {} panTo() {} }
+        class Marker {
+          constructor(o) { this.o = o; this.click = null; log.markers.push(this); }
+          setMap(m) { if (!m) log.markers = log.markers.filter((x) => x !== this); }
+          addListener(e, f) { this.click = f; }
+        }
+        class Polyline { constructor(o) { this.o = o; log.lines += 1; } setMap(m) { if (!m) log.lines -= 1; } }
+        class LatLngBounds { extend() {} }
+        const libraries = { maps: { Map, Polyline }, marker: { Marker }, core: { LatLngBounds, SymbolPath: { CIRCLE: 0 } } };
+        window.google = { maps: { importLibrary: async (name) => libraries[name] } };
+        window[new URL(document.currentScript.src).searchParams.get("callback")]();
+      })();`,
+    }),
+  );
   // Telegram's scripts: the login widget is blanked; the Mini App script is a stub
   // that records what the app asked of it.
   await page.route("https://telegram.org/**", (route) =>

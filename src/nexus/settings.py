@@ -105,6 +105,10 @@ class Settings(BaseSettings):
     # --- Google Maps places on trips (Places API (New)): ratings, regular hours and
     # reviews for plans, places to visit and hotels. Unset = no place lookups. ---
     google_places_api_key: SecretStr | None = None
+    # A second key for the map drawn in the browser (Maps JavaScript API only, limited
+    # to this site's address in Google Cloud). It's sent to the page, so never the
+    # server key above. Unset = no map; travel times still show.
+    google_maps_browser_key: str | None = None
 
     # --- LLM. Names match the pre-rebuild deployment's variables. ---
     llm_provider: LlmProvider = LlmProvider.GEMINI
@@ -194,6 +198,7 @@ class Settings(BaseSettings):
         "serpapi_api_key",
         "tavily_api_key",
         "google_places_api_key",
+        "google_maps_browser_key",
         "image_look_model",
         "agentmail_api_key",
         "agentmail_domain",

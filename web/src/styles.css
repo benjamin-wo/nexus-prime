@@ -723,6 +723,27 @@ details.section[open] > summary { margin-bottom: var(--space-3); }
 .timeline-strip .wrap, .timeline-stop .wrap { flex: 1 1 200px; min-width: 0; }
 .stop-number { flex: none; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 0.7rem; font-weight: 700; color: var(--cyan-accent); border: 1px solid var(--cyan-accent); }
 .time-pill { margin-left: var(--space-2); padding: 0 var(--space-2); border-radius: 999px; font-size: 0.7rem; font-weight: 600; color: var(--cyan-accent); border: 1px solid var(--border-card); font-variant-numeric: tabular-nums; }
+.timeline-hop { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); padding: 0 var(--space-3); font-size: 0.8rem; color: var(--text-secondary); }
+.timeline-hop .wrap { flex: 1 1 160px; min-width: 0; }
+.timeline-hop .badge { margin-left: var(--space-2); }
+.timeline-hop select { font: inherit; font-size: 0.75rem; color: var(--text-primary); background: var(--bg-input); border: 1px solid var(--border-card); border-radius: 6px; padding: 2px var(--space-1); }
+.entry-flash { outline: 2px solid var(--cyan-accent); outline-offset: 2px; transition: outline-color var(--t-standard); }
+/* The trip map: a card above the itinerary, beside it on wide screens, full screen
+   on a phone when asked. */
+.trip-map-days { position: static; margin: 0 0 var(--space-3); padding: 0 0 var(--space-2); border-bottom: 0; background: none; }
+.day-pill[aria-pressed="true"] { background: var(--text-primary); color: var(--bg-card); }
+.trip-map-canvas { height: 260px; border-radius: 10px; overflow: hidden; background: var(--bg-input); }
+.trip-map-full { position: fixed; inset: 0; z-index: 25; margin: 0; border-radius: 0; display: flex; flex-direction: column; padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom)); }
+.trip-map-full .trip-map-canvas { flex: 1; height: auto; }
+.trip-plan { display: grid; gap: var(--space-4); grid-template-columns: minmax(0, 1fr); margin-bottom: var(--space-4); }
+.trip-plan > .card { margin: 0; }
+@media (min-width: 1100px) {
+  .trip-plan { grid-template-columns: minmax(0, 1fr) minmax(320px, 40%); grid-template-areas: "timeline map"; align-items: start; }
+  .trip-plan > .trip-map { grid-area: map; position: sticky; top: var(--space-4); }
+  .trip-plan > :not(.trip-map) { grid-area: timeline; }
+  .trip-plan .trip-map-canvas { height: min(560px, calc(100vh - 200px)); }
+  .trip-map-toggle { display: none; }
+}
 .trip-fab { position: fixed; right: var(--space-6); bottom: calc(var(--space-6) + 68px); z-index: 16; display: grid; justify-items: end; gap: var(--space-2); }
 .trip-fab-button { width: 48px; height: 48px; border-radius: 50%; border: 1px solid var(--orange-primary); background: var(--orange-primary); color: #1a0a00; font: inherit; font-size: 1.5rem; font-weight: 700; line-height: 1; cursor: pointer; box-shadow: var(--shadow-frame); transition: transform var(--t-micro); }
 .trip-fab-button:hover { background: var(--orange-hover); }

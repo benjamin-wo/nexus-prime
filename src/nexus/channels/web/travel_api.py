@@ -273,6 +273,9 @@ class TripDetailOut(Model):
     ready: ReadyOut
     places: bool = False  # Google Maps places are set up
     routes: bool = False  # travel times between stops are set up
+    # The browser key for Google's map; None = no map. Only for signed-in users, and
+    # limited in Google Cloud to this site and the Maps JavaScript API.
+    map_key: str | None = None
     ideas: bool = False  # quick ideas from the web are set up
 
 
@@ -339,6 +342,7 @@ def _detail(
         ),
         places=web is not None and web.places is not None,
         routes=web is not None and web.routes is not None and web.places is not None,
+        map_key=web.settings.google_maps_browser_key if web and web.places else None,
         ideas=web is not None and web.ideas is not None,
     )
 
