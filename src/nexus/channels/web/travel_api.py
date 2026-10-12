@@ -15,9 +15,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from nexus.application import bookings as booking_cases
 from nexus.application import destination_photos as photo_cases
 from nexus.application import places as place_cases
+from nexus.application import routes as route_cases
 from nexus.application import travel_research as research_cases
 from nexus.application import trips as trip_cases
 from nexus.application.places import Places, PlacesError
+from nexus.application.routes import Routes
 from nexus.application.weather import WeatherError
 from nexus.channels.web.api import MoneyOut, money
 from nexus.channels.web.investments_api import MAX_IMAGE_CHARS
@@ -30,6 +32,7 @@ from nexus.domain.ledger import User
 from nexus.domain.money import Money
 from nexus.domain.packing import MAX_ITEM, MAX_ITEMS, PackItem
 from nexus.domain.places import Place
+from nexus.domain.routes import Mode
 from nexus.domain.trips import MAX_COMPANIONS, MAX_DAY_LABEL, MAX_NOTES, MAX_PLANNED, Trip
 from nexus.domain.weather import YEARS, TripWeather, describe
 
@@ -269,6 +272,7 @@ class TripDetailOut(Model):
     to_spend: MoneyOut | None
     ready: ReadyOut
     places: bool = False  # Google Maps places are set up
+    routes: bool = False  # travel times between stops are set up
     ideas: bool = False  # quick ideas from the web are set up
 
 
@@ -334,6 +338,7 @@ def _detail(
             total=view.ready.TOTAL,
         ),
         places=web is not None and web.places is not None,
+        routes=web is not None and web.routes is not None and web.places is not None,
         ideas=web is not None and web.ideas is not None,
     )
 
@@ -675,6 +680,8 @@ class PlaceOut(Model):
     photo_url: str | None = None  # a thumbnail served by this API
     photo_author: str | None = None  # who took it, credited where it's shown
     photo_author_url: str | None = None
+    lat: float | None = None  # where it is, for the trip map (fetched, never stored)
+    lng: float | None = None
 
 
 def _place(p: Place) -> PlaceOut:
@@ -701,6 +708,8 @@ def _place(p: Place) -> PlaceOut:
         photo_url=f"/api/travel/places/{p.id}/photo" if p.photo else None,
         photo_author=p.photo.author if p.photo else None,
         photo_author_url=p.photo.author_url if p.photo else None,
+        lat=p.location.lat if p.location else None,
+        lng=p.location.lng if p.location else None,
     )
 
 
@@ -817,6 +826,73 @@ async def trip_places(trip_id: str, auth: Auth, web: Runtime) -> list[LinkedPlac
         LinkedPlaceOut(booking_id=f.booking_id, place=_place(f.place), warning=f.warning)
         for f in found
     ]
+
+
+class HopOut(Model):
+    """Getting from one of a day's stops to the next."""
+
+    start_id: UUID  # the itinerary entries at either end
+    end_id: UUID
+    start: str
+    end: str
+    mode: Mode  # walk, transit or drive
+    minutes: int | None  # None: Google found no way to get there like that
+    metres: int | None
+    tight: bool  # takes longer than the time between the two plans
+    directions: str  # Google Maps directions
+
+
+def _hop(h: route_cases.HopTime) -> HopOut:
+    return HopOut(
+        start_id=h.hop.start.booking_id,
+        end_id=h.hop.end.booking_id,
+        start=h.hop.start.title,
+        end=h.hop.end.title,
+        mode=h.mode,
+        minutes=h.minutes,
+        metres=h.metres,
+        tight=h.tight,
+        directions=h.directions,
+    )
+
+
+def _routes(web: WebRuntime) -> tuple[Places, Routes]:
+    if web.places is None or web.routes is None:
+        raise NotFound("travel times aren't set up")
+    return web.places, web.routes
+
+
+@router.get("/trips/{trip_id}/days/{day}/hops")
+async def day_hops(trip_id: str, day: date, auth: Auth, web: Runtime) -> list[HopOut]:
+    """How long it takes between each of the day's stops, the usual way for the
+    distance (walking when it's short, else public transport)."""
+    places, routes = _routes(web)
+    found = await route_cases.hop_times(
+        web.uow(), places, routes, auth.user.id, _uuid(trip_id), day
+    )
+    return [_hop(h) for h in found]
+
+
+@router.get("/trips/{trip_id}/days/{day}/hops/{start_id}/{end_id}")
+async def day_hop(
+    trip_id: str, day: date, start_id: str, end_id: str, mode: Mode, auth: Auth, web: Runtime
+) -> HopOut:
+    """One hop of the day, the way the user picked."""
+    _, routes = _routes(web)
+    try:
+        found = await route_cases.hop_time(
+            web.uow(),
+            routes,
+            auth.user.id,
+            _uuid(trip_id),
+            day,
+            _uuid(start_id, "booking"),
+            _uuid(end_id, "booking"),
+            mode,
+        )
+    except route_cases.RoutesError as exc:
+        raise HTTPException(status_code=502, detail=_SILENT) from exc
+    return _hop(found)
 
 
 class PlaceLinkIn(Model):

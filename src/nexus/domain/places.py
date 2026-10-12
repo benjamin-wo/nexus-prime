@@ -6,6 +6,7 @@ fetched when shown, as Google's terms ask. Names, summaries and reviews are othe
 people's text: they're cleaned here and shown to the model as quoted data only.
 """
 
+import math
 import re
 from dataclasses import dataclass
 from datetime import date, time
@@ -88,6 +89,33 @@ def photo_name(value: object) -> str | None:
 
 
 @dataclass(frozen=True, slots=True)
+class Point:
+    """Where a place is, in degrees. Fetched with the place and never stored: Google
+    allows coordinates to be kept only for a while."""
+
+    lat: float
+    lng: float
+
+
+def point(lat: object, lng: object) -> Point | None:
+    """A point if both are finite degrees in range, else None."""
+    if not all(isinstance(v, int | float) and not isinstance(v, bool) for v in (lat, lng)):
+        return None
+    la, ln = float(lat), float(lng)  # type: ignore[arg-type]
+    if not (math.isfinite(la) and math.isfinite(ln) and -90 <= la <= 90 and -180 <= ln <= 180):
+        return None
+    return Point(round(la, 6), round(ln, 6))
+
+
+def metres_between(a: Point, b: Point) -> float:
+    """The straight-line (great-circle) distance between two points, in metres."""
+    la1, la2 = math.radians(a.lat), math.radians(b.lat)
+    dla, dln = la2 - la1, math.radians(b.lng - a.lng)
+    h = math.sin(dla / 2) ** 2 + math.cos(la1) * math.cos(la2) * math.sin(dln / 2) ** 2
+    return 2 * 6_371_000 * math.asin(math.sqrt(min(1.0, h)))
+
+
+@dataclass(frozen=True, slots=True)
 class Place:
     id: str
     name: str
@@ -106,6 +134,7 @@ class Place:
     reviews: tuple[Review, ...] = ()
     photo: PlacePhoto | None = None
     detailed: bool = False  # fetched with hours and reviews, not just from a search
+    location: Point | None = None
 
     @property
     def price(self) -> str | None:
