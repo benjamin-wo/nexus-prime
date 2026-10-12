@@ -60,6 +60,16 @@ describe("the trip map", () => {
     expect(dayPath(pins, "2026-11-12").map((p) => p.id)).toEqual(["inn"]);
   });
 
+  it("numbers and draws a day in the itinerary's order once it's been rearranged", () => {
+    const days = [{ day: "2026-11-11", order: ["lunch", "walk", "temple", "nowhere"], notes: [] }];
+    const moved = mapPins({ trip: trip as never, bookings: [inn, temple, unplaced, lunch, later, unknown], days }, places);
+    expect(moved.filter((p) => p.kind === "plan").map((p) => [p.id, p.label])).toEqual([
+      ["temple", "3"],
+      ["lunch", "1"],
+    ]);
+    expect(dayPath(moved, "2026-11-11").map((p) => p.id)).toEqual(["inn", "lunch", "temple", "inn"]);
+  });
+
   it("says distances the way people do", () => {
     expect(distance(944)).toBe("940 m");
     expect(distance(1450)).toBe("1.4 km");

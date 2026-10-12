@@ -4,6 +4,7 @@ import { useState } from "react";
 import { api, type Booking, type TripDetail, type TripWeather } from "../api";
 import { formatShortDate } from "../format";
 import { sortKey, todayIso } from "./TripBits";
+import { daySpot, useArrange } from "./TripArrange";
 import { degrees, icon } from "./TripExtras";
 
 const DAY_MS = 86400000;
@@ -134,9 +135,11 @@ export function TodayView({ detail }: { detail: TripDetail }) {
   const scheduled = detail.bookings.filter((b) => b.scheduled).sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
   const stays = scheduled.filter((b) => b.kind === "hotel" && b.check_in);
   const outs = stays.filter((b) => b.check_out === day && b.starts !== day);
-  const plans = [...outs, ...scheduled.filter((b) => b.starts === day)];
+  // The day as the itinerary has it, rearranged or by time.
+  const { spots } = useArrange(detail);
+  const plans = [...outs, ...(spots.get(daySpot(day)) ?? [])];
   const tonight = stays.find((b) => (b.check_in ?? "") <= day && (b.check_out ?? b.check_in ?? "") > day);
-  const next = index >= 0 && index < days.length - 1 ? scheduled.find((b) => b.starts === days[index + 1]) : undefined;
+  const next = index >= 0 && index < days.length - 1 ? spots.get(daySpot(days[index + 1]))?.[0] : undefined;
   const forecast = weather.data?.days.find((d) => d.day === day);
   const label = trip.day_labels?.[day];
   const lastNight = day === trip.end;

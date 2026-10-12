@@ -99,6 +99,8 @@ export async function fakeApi(
     /** The browser key for the trip map; null: no map (as when it isn't set up). */
     mapKey: string | null;
     hopModes: string[];
+    /** Moves sent from the trip page, as "id>day|places@after". */
+    moves: string[];
     placeSearches: string[];
     ideaSearches: string[];
     photoChoices: string[];
@@ -176,6 +178,7 @@ export async function fakeApi(
     plans: [],
     mapKey: null,
     hopModes: [],
+    moves: [],
     placeSearches: [],
     ideaSearches: [],
     photoChoices: [],
@@ -685,6 +688,54 @@ export async function fakeApi(
       state.trips = [trip, ...state.trips];
       return json(route, trip, 201);
     }
+    // A day in order, roughly as the server does it: by the plans' own order once
+    // they have one, else by time (a hotel check-in at 15:00).
+    const timeOf = (b: Record<string, unknown>) =>
+      String(b.at ?? (b.segments as { departs: string | null }[] | undefined)?.[0]?.departs?.slice(11) ?? (b.kind === "hotel" ? "15:00" : "00:00"));
+    const dayEntries = (all: Record<string, unknown>[], day: string) =>
+      all
+        .filter((b) => b.scheduled && b.starts === day)
+        .sort((a, b) => {
+          if (a.order != null && b.order != null) return Number(a.order) - Number(b.order);
+          return timeOf(a).localeCompare(timeOf(b));
+        });
+    const placesInOrder = () =>
+      state.plans.filter((p) => p.kind === "activity" && !p.scheduled).sort((a, b) => Number(a.order ?? 999) - Number(b.order ?? 999));
+    // Made-up notes: two plans that overlap, and a free morning before the first plan.
+    const notesFor = (entries: Record<string, unknown>[]) => {
+      const notes: Record<string, unknown>[] = [];
+      const plans = entries.filter((b) => b.kind === "activity" && b.at);
+      for (let i = 1; i < plans.length; i += 1) {
+        const [a, b] = [plans[i - 1], plans[i]];
+        if (a.ends_at && String(a.ends_at) > String(b.at)) {
+          notes.push({ kind: "clash", text: `${String(a.title)} (${String(a.at)} to ${String(a.ends_at)}) runs into ${String(b.title)} at ${String(b.at)}`, ids: [a.id, b.id] });
+        }
+      }
+      const first = plans.map((p) => String(p.at)).sort()[0];
+      if (first && first >= "12:00") notes.push({ kind: "free", text: `Free 09:00 to ${first}`, ids: [], start: "09:00", end: first });
+      return notes;
+    };
+    const FLIGHT: Record<string, unknown> = {
+      id: "bk1",
+      trip_id: null,
+      kind: "flight",
+      title: "ZZ12 SIN → NRT",
+      provider: "Acme Air",
+      starts: "2026-11-10",
+      ends: "2026-11-10",
+      segments: [{ number: "ZZ12", origin: "SIN", destination: "NRT", departs: "2026-11-10T08:25", arrives: "2026-11-10T16:05" }],
+      hotel: null,
+      address: null,
+      check_in: null,
+      check_out: null,
+      reference: "ZK4P7Q",
+      booked_via: "Acme Air",
+      category: null,
+      scheduled: true,
+      cost: home(820),
+      logged: false,
+      manual: false,
+    };
     const tripDetail = (trip: Record<string, unknown>) => {
       const items = [
         { transaction_id: "k1", day: "2026-09-28", counterparty: "Ichiran", category: "Dining Out", amount: { amount: "2000.0000", currency: "JPY" }, home: home(18), linked: false },
@@ -719,30 +770,7 @@ export async function fakeApi(
         },
         owed: [{ name: "Ann", amounts: [{ amount: "15000.0000", currency: "JPY" }], home: home(135) }],
         items,
-        bookings: [
-          {
-            id: "bk1",
-            trip_id: trip.id,
-            kind: "flight",
-            title: "ZZ12 SIN → NRT",
-            provider: "Acme Air",
-            starts: "2026-11-10",
-            ends: "2026-11-10",
-            segments: [{ number: "ZZ12", origin: "SIN", destination: "NRT", departs: "2026-11-10T08:25", arrives: "2026-11-10T16:05" }],
-            hotel: null,
-            address: null,
-            check_in: null,
-            check_out: null,
-            reference: "ZK4P7Q",
-            booked_via: "Acme Air",
-            category: null,
-            scheduled: true,
-            cost: home(820),
-            logged: false,
-            manual: false,
-          },
-          ...state.plans,
-        ],
+        bookings: [{ ...FLIGHT, trip_id: trip.id }, ...state.plans],
         booked: home(820),
         booked_unlogged: home(820),
         ready: (() => {
@@ -756,6 +784,15 @@ export async function fakeApi(
           return { nights_without_stay: nights, has_transport: true, has_budget: Boolean(trip.budget), done, total: 3 };
         })(),
         to_spend: budget ? home(Number(budget.amount) - spent - 820) : null,
+        days: (() => {
+          const all = [FLIGHT, ...state.plans];
+          const days = [...new Set(all.filter((b) => b.scheduled).map((b) => String(b.starts)))].sort();
+          return days.map((day) => {
+            const entries = dayEntries(all, day);
+            return { day, order: entries.map((b) => b.id), notes: notesFor(entries) };
+          });
+        })(),
+        places_order: placesInOrder().map((p) => p.id),
         places: true,
         ideas: true,
         routes: state.mapKey !== null,
@@ -844,6 +881,24 @@ export async function fakeApi(
       if (!hop) return json(route, { detail: "those two aren't one after the other that day" }, 404);
       const minutes = mode === "transit" ? 25 : mode === "drive" ? 12 : 14;
       return json(route, { ...hop, mode, minutes, metres: mode === "walk" ? 944 : 2100, tight: minutes > 20 });
+    }
+    const planMove = path.match(/^\/travel\/bookings\/([^/]+)\/move$/);
+    if (planMove && method === "PUT") {
+      const moving = state.plans.find((p) => p.id === planMove[1]);
+      if (!moving || moving.kind !== "activity") return json(route, { detail: "flights, trains and hotel nights stay where their booking is" }, 422);
+      const day = (body.day as string | null) ?? null;
+      state.moves.push(`${String(moving.id)}>${day ?? "places"}@${String(body.after ?? "first")}`);
+      const others = [FLIGHT, ...state.plans.filter((p) => p !== moving)];
+      const there = day ? dayEntries(others, day) : placesInOrder().filter((p) => p !== moving);
+      const at = body.after ? there.findIndex((b) => b.id === body.after) + 1 : 0;
+      if (body.after && at === 0) return json(route, { detail: "that entry isn't on that day" }, 404);
+      const placed: Record<string, unknown> = { ...moving, day, scheduled: Boolean(day), starts: day ?? "2026-09-28" };
+      const plans = [...there.slice(0, at), placed, ...there.slice(at)].filter((b) => b.kind === "activity");
+      state.plans = state.plans.map((p) => {
+        const n = plans.findIndex((b) => b.id === p.id);
+        return n < 0 ? p : { ...(p === moving ? placed : p), order: n };
+      });
+      return json(route, state.plans.find((p) => p.id === moving.id));
     }
     const placeLink = path.match(/^\/travel\/bookings\/([^/]+)\/place$/);
     if (placeLink && method === "PUT") {
@@ -983,7 +1038,7 @@ export async function fakeApi(
         starts: body.day, ends: body.day, segments: [], hotel: null, address: body.address, check_in: null, check_out: null,
         name: body.name, day: body.day, at: body.at, note: body.note, cost: null, logged: false, manual: true,
         reference: body.reference ?? null, booked_via: body.booked_via ?? null, category: body.category ?? null,
-        place_id: body.place_id ?? null,
+        place_id: body.place_id ?? null, ends_at: body.ends_at ?? null, link: body.link ?? null, list_name: body.list_name ?? null, order: null,
         scheduled: Boolean(body.day), ...(body.day ? {} : { starts: "2026-09-28", ends: null }),
       };
       state.plans.push(plan);
@@ -993,7 +1048,11 @@ export async function fakeApi(
     if (planEdit && method === "PUT") {
       state.plans = state.plans.map((p) =>
         p.id === planEdit[1]
-          ? { ...p, at: body.at, day: body.day, starts: body.day ?? p.starts, scheduled: Boolean(body.day), name: body.name, title: body.name, category: body.category ?? null }
+          ? {
+              ...p, at: body.at, day: body.day, starts: body.day ?? p.starts, scheduled: Boolean(body.day), name: body.name, title: body.name, category: body.category ?? null,
+              ...("ends_at" in body ? { ends_at: body.ends_at } : {}), ...("link" in body ? { link: body.link } : {}), ...("list_name" in body ? { list_name: body.list_name } : {}),
+              ...(body.day !== p.day ? { order: null } : {}),
+            }
           : p,
       );
       return json(route, state.plans.find((p) => p.id === planEdit[1]));

@@ -4,7 +4,7 @@ import { useParams } from "react-router-dom";
 
 import { api, ApiError, type SharedBooking, type SharedTrip } from "../api";
 import { formatShortDate } from "../format";
-import { PhotoCredit, coverStyle, legTimes, sortKey, todayIso, tripWhen } from "./TripBits";
+import { PhotoCredit, coverStyle, legTimes, todayIso, tripWhen } from "./TripBits";
 
 const DAY_MS = 86400000;
 const day = (iso: string) => formatShortDate(iso, "UTC");
@@ -100,7 +100,8 @@ function Entry({ booking, iso, stop }: { booking: SharedBooking; iso: string; st
 /** The trip day by day, as anyone with the link sees it: nothing here can be changed. */
 function SharedDays({ trip }: { trip: SharedTrip }) {
   const today = todayIso();
-  const sorted = [...trip.bookings].sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
+  // Each day as the itinerary has it: the server sends them in that order.
+  const sorted = [...trip.bookings].sort((a, b) => a.starts.localeCompare(b.starts));
   const stays = sorted.filter((b) => b.kind === "hotel" && b.check_in && b.check_out);
   const days = new Set<string>();
   for (let t = Date.parse(trip.start); t <= Date.parse(trip.end); t += DAY_MS) days.add(isoDay(t));

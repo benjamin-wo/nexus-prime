@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { api, type Booking, type Hop, type LinkedPlace, type TravelMode, type TripDetail } from "../api";
 import { type GMap, type GOverlay, loadMaps, type MapsApi, onMapsAuthFailure } from "../maps";
@@ -49,9 +49,13 @@ function stayDays(b: Booking): string[] {
 
 /** The trip's places that Google Maps knows where to find, as map pins: plans numbered
  * as on their day of the itinerary, hotels, and places to visit. */
-export function mapPins(detail: Pick<TripDetail, "trip" | "bookings">, linked: Map<string, LinkedPlace>): Pin[] {
+export function mapPins(detail: Pick<TripDetail, "trip" | "bookings" | "days">, linked: Map<string, LinkedPlace>): Pin[] {
   const numbers = new Map<string, number>();
-  const scheduled = detail.bookings.filter((b) => b.scheduled).sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
+  // Each entry's place in its day, as the itinerary shows it (by time without one).
+  const place = new Map<string, string>();
+  for (const d of detail.days ?? []) d.order.forEach((id, i) => place.set(id, `${d.day}#${String(i).padStart(3, "0")}`));
+  const keyOf = (b: Booking) => place.get(b.id) ?? sortKey(b);
+  const scheduled = detail.bookings.filter((b) => b.scheduled).sort((a, b) => keyOf(a).localeCompare(keyOf(b)));
   const counts = new Map<string, number>();
   for (const b of scheduled) {
     if (b.kind !== "activity") continue;
@@ -61,9 +65,9 @@ export function mapPins(detail: Pick<TripDetail, "trip" | "bookings">, linked: M
   }
   const pins: Pin[] = [];
   for (const b of detail.bookings) {
-    const place = linked.get(b.id)?.place;
-    if (!place || typeof place.lat !== "number" || typeof place.lng !== "number") continue;
-    const base = { id: b.id, title: b.kind === "hotel" ? (b.hotel ?? b.title) : b.title, lat: place.lat, lng: place.lng, sort: sortKey(b) };
+    const found = linked.get(b.id)?.place;
+    if (!found || typeof found.lat !== "number" || typeof found.lng !== "number") continue;
+    const base = { id: b.id, title: b.kind === "hotel" ? (b.hotel ?? b.title) : b.title, lat: found.lat, lng: found.lng, sort: keyOf(b) };
     if (b.kind === "hotel") {
       pins.push({ ...base, label: "H", color: dayColor(detail.trip, b.check_in), kind: "hotel", days: stayDays(b) });
     } else if (b.kind === "activity" && b.scheduled) {
@@ -275,9 +279,81 @@ export function DayHops({ tripId, day, enabled, children }: { tripId: string; da
   return <div ref={holder}>{children(hops.data ?? [])}</div>;
 }
 
+/** The maps app directions open in, kept on this device. */
+export type MapApp = "google" | "apple" | "waze";
+export const MAP_APPS: { app: MapApp; name: string }[] = [
+  { app: "google", name: "Google Maps" },
+  { app: "apple", name: "Apple Maps" },
+  { app: "waze", name: "Waze" },
+];
+const MAP_APP_KEY = "nexus.map-app";
+const watchers = new Set<() => void>();
+let chosen: MapApp | null = null;
+
+function storedApp(): MapApp {
+  try {
+    const app = window.localStorage.getItem(MAP_APP_KEY);
+    return app === "apple" || app === "waze" ? app : "google";
+  } catch {
+    return "google";
+  }
+}
+
+export function useMapApp(): [MapApp, (app: MapApp) => void] {
+  const app = useSyncExternalStore(
+    (changed) => {
+      watchers.add(changed);
+      return () => watchers.delete(changed);
+    },
+    () => (chosen ??= storedApp()),
+    () => "google" as MapApp,
+  );
+  const choose = (next: MapApp) => {
+    chosen = next;
+    try {
+      window.localStorage.setItem(MAP_APP_KEY, next);
+    } catch {
+      // Still used for this visit.
+    }
+    watchers.forEach((w) => w());
+  };
+  return [app, choose];
+}
+
+const APPLE_MODE: Record<TravelMode, string> = { walk: "w", transit: "r", drive: "d" };
+
+/** Directions in the chosen app. Google's link comes from the server, with Google's
+ * place ids; Apple Maps and Waze get only the entries' names and addresses as saved on
+ * the trip, never coordinates or place ids. */
+export function directionsIn(app: MapApp, hop: Pick<Hop, "start" | "end" | "mode" | "directions">, start: string | null, end: string | null): string {
+  const from = start ? `${hop.start}, ${start}` : hop.start;
+  const to = end ? `${hop.end}, ${end}` : hop.end;
+  if (app === "apple") return `https://maps.apple.com/?${new URLSearchParams({ saddr: from, daddr: to, dirflg: APPLE_MODE[hop.mode] })}`;
+  if (app === "waze") return `https://waze.com/ul?${new URLSearchParams({ q: to, navigate: "yes" })}`;
+  return hop.directions;
+}
+
+/** Which app directions open in. */
+export function MapAppPicker() {
+  const [app, choose] = useMapApp();
+  return (
+    <label className="caption map-app">
+      Directions open in{" "}
+      <select value={app} onChange={(e) => choose(e.target.value as MapApp)}>
+        {MAP_APPS.map((m) => (
+          <option key={m.app} value={m.app}>
+            {m.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 /** Getting from one stop to the next, between their cards: how, how long, and a
  * way to change it for that hop. */
-export function HopLine({ tripId, day, hop }: { tripId: string; day: string; hop: Hop }) {
+export function HopLine({ tripId, day, hop, addressOf }: { tripId: string; day: string; hop: Hop; addressOf?: (id: string) => string | null }) {
+  const [app] = useMapApp();
   const [shown, setShown] = useState<Hop>(hop);
   const [busy, setBusy] = useState(false);
   useEffect(() => setShown(hop), [hop]);
@@ -310,7 +386,7 @@ export function HopLine({ tripId, day, hop }: { tripId: string; day: string; hop
         <option value="transit">Transit</option>
         <option value="drive">Drive</option>
       </select>
-      <a href={shown.directions} target="_blank" rel="noopener noreferrer" className="caption">
+      <a href={directionsIn(app, shown, addressOf?.(shown.start_id) ?? null, addressOf?.(shown.end_id) ?? null)} target="_blank" rel="noopener noreferrer" className="caption">
         Directions
       </a>
     </li>

@@ -5,7 +5,13 @@ import { formatShortDate } from "../format";
 import type { EntryKind } from "./Trips";
 import { SavePlaces } from "./TripPlaces";
 
-export type AddPreset = { kind: EntryKind; day?: string };
+export type AddPreset = {
+  kind: EntryKind;
+  day?: string;
+  /** Straight to finding a place, saved as a plan on ``day`` at this time. */
+  find?: boolean;
+  at?: string;
+};
 
 const FORMS: { kind: EntryKind; label: string }[] = [
   { kind: "flight", label: "✈️ Flight" },
@@ -132,7 +138,7 @@ export function AddSheet({
   onChanged: () => void;
   onClose: () => void;
 }) {
-  const [view, setView] = useState<"menu" | "type" | "forms" | "place">(preset ? "type" : "menu");
+  const [view, setView] = useState<"menu" | "type" | "forms" | "place">(preset?.find && places ? "place" : preset ? "type" : "menu");
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -236,7 +242,7 @@ export function AddSheet({
           </div>
         )}
 
-        {view === "place" && <SavePlaces open onDone={onChanged} />}
+        {view === "place" && <SavePlaces open day={preset?.find ? preset.day : undefined} at={preset?.find ? preset.at : undefined} onDone={onChanged} />}
       </section>
     </div>
   );
