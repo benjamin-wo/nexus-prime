@@ -13,15 +13,20 @@ from fastapi.staticfiles import StaticFiles
 DIST = Path(__file__).resolve().parents[4] / "web" / "dist"
 _BACKEND_PREFIXES = ("api/", "telegram/", "healthz")
 
+# Google's map on the trip page loads its script from maps.googleapis.com, draws tiles
+# and icons from Google's image hosts, calls its own APIs and adds <style> elements of
+# its own (hence 'unsafe-inline' for styles only; scripts stay strict).
+_MAPS_IMAGES = "https://*.googleapis.com https://*.gstatic.com https://*.google.com https://*.googleusercontent.com"
 CSP = "; ".join(
     [
         "default-src 'self'",
-        "script-src 'self' https://telegram.org",
+        "script-src 'self' https://telegram.org https://maps.googleapis.com",
         "frame-src https://oauth.telegram.org",
-        "img-src 'self' data: https://t.me https://*.telegram.org",
-        "style-src 'self' https://fonts.googleapis.com",
+        f"img-src 'self' data: blob: https://t.me https://*.telegram.org {_MAPS_IMAGES}",
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
         "font-src https://fonts.gstatic.com",
-        "connect-src 'self'",
+        "connect-src 'self' https://*.googleapis.com https://*.google.com https://*.gstatic.com",
+        "worker-src blob:",
         "base-uri 'none'",
         "form-action 'self'",
         # Telegram's web clients show the Mini App in an iframe; nobody else may.
@@ -59,6 +64,11 @@ def mount_frontend(app: FastAPI, dist: Path = DIST) -> None:
             return FileResponse(top_level[path])
         headers = {"Cache-Control": "no-cache"}
         if path.startswith("shared/"):
-            # A trip's read-only link is for whoever it was sent to, not search engines.
+            # A trip's read-only link is for whoever it was sent to, not search engines,
+            # and its address never leaves the page (the default same-origin policy).
             headers["X-Robots-Tag"] = "noindex, nofollow"
+        else:
+            # Elsewhere, other sites see only our origin, never a path: Google checks it
+            # against the map key's allowed websites.
+            headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         return FileResponse(index, headers=headers)

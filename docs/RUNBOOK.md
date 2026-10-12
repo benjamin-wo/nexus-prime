@@ -105,6 +105,7 @@ All secrets are Railway variables on `nexus-app`; none live in the repo. Changin
 | `SERPAPI_API_KEY` | Regenerate the key on SerpApi's dashboard and set it (trip research falls back to web search without it) |
 | `TAVILY_API_KEY` | Create a new key on Tavily's dashboard, set it, delete the old one (research falls back to OpenRouter's web search, without page text, while it's missing, and plans read headlines without their articles) |
 | `GOOGLE_PLACES_API_KEY` | Create a new key in Google Cloud (APIs & Services → Credentials), restrict it to the Places API (New) and the Routes API, set it, delete the old one (trips show no Google Maps data or travel times without it) |
+| `GOOGLE_MAPS_BROWSER_KEY` | Create a new key in Google Cloud restricted to the Maps JavaScript API and to the app's address as a website (`https://<domain>/*`), set it, delete the old one (the trip page shows no map without it; travel times still show). It's seen by the browser by design, so never reuse the server key here: set to the same value as `GOOGLE_PLACES_API_KEY`, it's ignored (no map) and the startup log says so |
 | Bucket credentials | Reset them on the bucket in Railway; the reference variables pick them up |
 | Web sessions | To sign everyone out: `delete from web_sessions;` (they sign in again with Telegram) |
 

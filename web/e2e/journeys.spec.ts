@@ -1373,6 +1373,71 @@ test("ideas from guides and articles: asked for in words, credited, saved to the
   await expect(page.getByRole("list", { name: "Places to visit" })).toContainText("Lantern Alley");
 });
 
+test("the trip on a map, coloured by day, with travel times between stops", async ({ page }, info) => {
+  const state = await fakeApi(page);
+  state.mapKey = "test-browser-key";
+  await addTrip(page, "Seoul", "2026-11-10", "2026-11-13");
+  // Two plans on day 3, each linked to a made-up Google Maps place, 20 minutes apart.
+  const plan = (id: string, name: string, at: string, place: string) => ({
+    id, trip_id: "trip1", kind: "activity", title: name, provider: null, starts: "2026-11-12", ends: "2026-11-12",
+    segments: [], hotel: null, address: null, check_in: null, check_out: null, name, day: "2026-11-12", at, note: null,
+    cost: null, logged: false, manual: true, reference: null, booked_via: null, category: null, place_id: place, scheduled: true,
+  });
+  state.plans.push(plan("pl1", "Hanok Noodle Bar", "12:00", "fakePlaceNoodle01"), plan("pl2", "Namdaemun Market", "12:20", "fakePlaceMarket01"));
+  await page.reload();
+
+  // Both on the map, numbered as on the itinerary and in day 3's colour.
+  const map = page.getByRole("region", { name: "Map" });
+  await expect(map.getByRole("list", { name: "On the map" }).getByRole("listitem")).toHaveText(["1. Hanok Noodle Bar", "2. Namdaemun Market"]);
+  const pins = () => page.evaluate(() => (window as unknown as { __map: { markers: { o: { title: string; label?: { text: string }; icon: { fillColor: string } } }[] } }).__map.markers.map((m) => [m.o.title, m.o.label?.text, m.o.icon.fillColor]));
+  await expect.poll(pins).toEqual([
+    ["Hanok Noodle Bar", "1", "#059669"],
+    ["Namdaemun Market", "2", "#059669"],
+  ]);
+  expect(await page.evaluate(() => (window as unknown as { __map: { key: string } }).__map.key)).toBe("test-browser-key");
+  // Picking the day draws its route; a day with nothing planned says so.
+  await map.getByRole("button", { name: "Day 3" }).click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __map: { lines: number } }).__map.lines)).toBe(1);
+  await map.getByRole("button", { name: "Day 1" }).click();
+  await expect(map).toContainText("Nothing on the map that day.");
+  await map.getByRole("button", { name: "All" }).click();
+
+  // Between the two on the itinerary: how long it takes (asked for once the day comes
+  // into view), and a way to change it.
+  await page.getByRole("heading", { name: /^Day 3 ·/ }).scrollIntoViewIfNeeded();
+  const hop = page.getByRole("listitem", { name: "From Hanok Noodle Bar to Namdaemun Market" });
+  await expect(hop).toContainText("14 min walk · 940 m");
+  // The plans keep their numbers (as on the map) once the times arrive.
+  await expect(page.locator("#entry-pl1 .stop-number")).toHaveText("1");
+  await expect(page.locator("#entry-pl2 .stop-number")).toHaveText("2");
+  await expect(hop.getByRole("link", { name: "Directions" })).toHaveAttribute("href", /destination_place_id=fakePlaceMarket01/);
+  await hop.getByLabel("How to get to Namdaemun Market").selectOption("transit");
+  await expect(hop).toContainText("25 min by public transport");
+  await expect(hop).toContainText("Tight");
+  expect(state.hopModes).toEqual(["transit"]);
+
+  // Tapping a pin finds its plan on the itinerary.
+  await page.evaluate(() => (window as unknown as { __map: { markers: { click: () => void }[] } }).__map.markers[1].click());
+  await expect(page.locator("#entry-pl2")).toHaveClass(/entry-flash/);
+
+  // On a phone the map opens full screen; on a wide screen it sits beside the itinerary.
+  if (info.project.name === "mobile") {
+    await map.getByRole("button", { name: "Full screen" }).click();
+    await expect(map).toHaveClass(/trip-map-full/);
+    await map.getByRole("button", { name: "Close map" }).click();
+    await expect(map).not.toHaveClass(/trip-map-full/);
+  } else {
+    await expect(map.getByRole("button", { name: "Full screen" })).toBeHidden();
+  }
+});
+
+test("without a map key the trip page has no map", async ({ page }) => {
+  await fakeApi(page);
+  await addTrip(page, "Seoul", "2026-11-10", "2026-11-13");
+  await expect(page.getByRole("region", { name: "Itinerary" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Map" })).toHaveCount(0);
+});
+
 test("trip forms don't jump when a field is tapped", async ({ page }, info) => {
   await fakeApi(page);
   await addTrip(page, "Seoul", "2026-11-10", "2026-11-13");

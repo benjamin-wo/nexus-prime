@@ -1175,7 +1175,10 @@ async def test_config_and_security_headers(world: World) -> None:
     response = await world.browser().get("/api/config")
     assert response.json() == {"bot_username": "nexus_test_bot"}
     csp = response.headers["content-security-policy"]
-    assert "default-src 'self'" in csp and "unsafe" not in csp
+    assert "default-src 'self'" in csp and "unsafe-eval" not in csp
+    # Inline styles only, for Google's trip map; scripts are never inline.
+    script = next(rule for rule in csp.split("; ") if rule.startswith("script-src "))
+    assert "unsafe" not in script
     assert "frame-ancestors https://web.telegram.org" in csp  # only Telegram may embed us
 
 
@@ -1796,7 +1799,9 @@ async def test_travel_times_between_a_days_stops(world: World) -> None:
     await owner.login(OWNER)
     body = {"destination": "Seoul", "start": "2026-11-10", "end": "2026-11-13", "currency": "KRW"}
     trip_id = (await owner.send("POST", "/api/travel/trips", body)).json()["id"]
-    assert (await owner.get(f"/api/travel/trips/{trip_id}")).json()["routes"] is True
+    detail = (await owner.get(f"/api/travel/trips/{trip_id}")).json()
+    # Travel times, but no map: the browser key isn't set here.
+    assert detail["routes"] is True and detail["map_key"] is None
     day = "2026-11-12"
     stops = []
     for name, at, place in [
