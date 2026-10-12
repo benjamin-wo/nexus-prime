@@ -1414,6 +1414,39 @@ test("trip forms don't jump when a field is tapped", async ({ page }, info) => {
   if (phone) expect(await smallest(edit)).toBeGreaterThanOrEqual(16);
 });
 
+test("the keyboard opening leaves the background still and the tab bar out of the way", async ({ page }, info) => {
+  test.skip(info.project.name !== "mobile", "a phone's keyboard");
+  await fakeApi(page);
+  await page.goto("/travel");
+  const bar = page.getByRole("navigation", { name: "Main (mobile)" });
+  const chat = page.getByRole("button", { name: "Open chat" });
+  const ribbons = page.locator(".ribbons");
+  await expect(bar).toBeVisible();
+  const before = await ribbons.evaluate((el) => el.getBoundingClientRect().height);
+
+  // Typing: the bar and the chat button step aside.
+  await page.getByRole("button", { name: "Add a trip" }).click();
+  const where = page.getByRole("form", { name: "Add a trip" }).getByLabel("Where");
+  await where.focus();
+  await expect(page.locator("html")).toHaveClass(/keyboard/);
+  await expect(bar).toBeHidden();
+  await expect(chat).toBeHidden();
+  // The keyboard shrinks the screen; the ribbons keep their height rather than redraw.
+  const size = page.viewportSize()!;
+  await page.setViewportSize({ width: size.width, height: Math.round(size.height * 0.55) });
+  await expect.poll(() => ribbons.evaluate((el) => el.getBoundingClientRect().height)).toBe(before);
+  // Tabbing to the next field doesn't flash the bar back.
+  await page.getByRole("form", { name: "Add a trip" }).getByLabel("From").focus();
+  await expect(bar).toBeHidden();
+
+  // Done typing: everything comes back.
+  await page.setViewportSize(size);
+  await page.getByRole("form", { name: "Add a trip" }).getByLabel("From").blur();
+  await expect(page.locator("html")).not.toHaveClass(/keyboard/);
+  await expect(bar).toBeVisible();
+  await expect(chat).toBeVisible();
+});
+
 test("after a trip: settling up comes first, then what it cost", async ({ page }) => {
   const state = await fakeApi(page);
   await addTrip(page, "Osaka", "2026-11-10", "2026-11-12");
