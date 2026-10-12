@@ -9,6 +9,7 @@ import pytest
 from nexus.agent.tools import ToolContext, build_tools, run_tool
 from nexus.application import bookings as booking_cases
 from nexus.application import trips as trip_cases
+from nexus.domain import itinerary
 from nexus.domain.bookings import BookingKind
 from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.money import Money
@@ -186,3 +187,52 @@ async def test_places_to_visit_days_and_what_the_trip_still_needs(uow: UowFactor
     assert shorter.day_labels == {}
     with pytest.raises(InvalidInput, match="isn't one of the trip's days"):
         await trip_cases.set_day_label(uow(), user, trip.id, date(2026, 12, 20), "X", now=NOW)
+
+
+async def test_chat_puts_a_plan_after_another_and_says_what_clashes(uow: UowFactory) -> None:
+    user = await person(uow)
+    await trip_cases.create_trip(
+        uow(),
+        user,
+        trip_cases.TripDraft("Osaka", date(2026, 12, 10), date(2026, 12, 14), "JPY", None),
+        now=NOW,
+    )
+    tools = build_tools(lambda _: "")
+    ctx = ToolContext(user, uow, NOW, RATES)
+
+    async def use(name: str, args: dict[str, object]) -> str:
+        return (await run_tool(tools[name], ctx, args)).text
+
+    day = "2026-12-11"
+    added = await use(
+        "add_to_itinerary",
+        {"kind": "activity", "name": "Tea ceremony", "day": day, "time": "14:00",
+         "ends": "15:30", "link": "https://tea.example.com/book"},
+    )  # fmt: skip
+    assert "Tea ceremony, Fri 11 Dec 14:00 to 15:30" in added
+    await use(
+        "add_to_itinerary", {"kind": "activity", "name": "Castle tour", "day": day, "time": "15:00"}
+    )
+    await use("add_to_itinerary", {"kind": "activity", "name": "Kaiten sushi", "day": day})
+    # An idea's kind files a place to visit under that list.
+    await use("add_to_itinerary", {"kind": "activity", "name": "Night market", "category": "Food"})
+
+    change = tools["change_itinerary_entry"]
+    assert change.confirm is not None
+    asked = await change.confirm(ctx, change.parse({"item": "sushi", "after": "castle"}))
+    assert asked.endswith(", after Castle tour?")
+    await use("change_itinerary_entry", {"item": "sushi", "after": "castle"})
+    async with uow() as tx:
+        stored = await tx.trips.list_bookings(user.id)
+    on_day = itinerary.on_day(stored, date(2026, 12, 11))
+    assert [b.draft.title for b in on_day] == ["Tea ceremony", "Castle tour", "Kaiten sushi"]
+    market = next(b for b in stored if b.draft.title == "Night market")
+    assert market.draft.list_name == "Food"
+    tea = next(b for b in stored if b.draft.title == "Tea ceremony")
+    assert tea.draft.link == "https://tea.example.com/book"
+    nowhere = await use("change_itinerary_entry", {"item": "sushi", "after": "museum"})
+    assert "no single entry that day matches 'museum'" in nowhere
+
+    status = await use("trip_status", {})
+    assert "Worth a look on the itinerary (worked out in code):" in status
+    assert "Fri 11 Dec: Tea ceremony (14:00 to 15:30) runs into Castle tour at 15:00" in status

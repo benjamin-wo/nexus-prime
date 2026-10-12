@@ -1,25 +1,24 @@
 """Getting from one stop to the next on a trip day. Pure rules, no I/O.
 
 A day's stops are its plans and hotels linked to a Google Maps place, in the order
-the itinerary shows them (by time; a hotel check-in at 15:00), starting at the hotel
+the itinerary shows them (``domain.itinerary.on_day``), starting at the hotel
 slept in the night before and ending at the one slept in that night. A flight, a
 train or a plan with no place breaks the chain: nothing is worked out across it,
 since where the traveller is in between isn't known.
 """
 
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta
+from datetime import date, time, timedelta
 from enum import StrEnum
 from urllib.parse import urlencode
 from uuid import UUID
 
 from nexus.domain.bookings import Booking, BookingKind
+from nexus.domain.itinerary import on_day
 
 # Up to this far apart (in a straight line), a hop is walked by default.
 WALK_UP_TO = 1500
 MAX_HOPS = 12
-# A hotel check-in sits at this time among the day's plans, as on the itinerary.
-CHECK_IN = time(15, 0)
 
 
 class Mode(StrEnum):
@@ -54,18 +53,6 @@ def _linked(b: Booking) -> Stop | None:
     return Stop(b.id, d.place_id, name, at)
 
 
-def _sort_key(b: Booking) -> str:
-    d = b.draft
-    if d.kind is BookingKind.ACTIVITY:
-        at = d.at
-    elif d.kind is BookingKind.HOTEL:
-        at = CHECK_IN
-    else:
-        departs = next((s.departs for s in d.segments if s.departs), None)
-        at = departs.time() if isinstance(departs, datetime) else None
-    return f"{d.starts}T{(at or time(0)).isoformat()}"
-
-
 def _night(b: Booking, night: date) -> bool:
     """Whether the hotel is slept in on the night that starts on ``night``."""
     d = b.draft
@@ -83,7 +70,7 @@ def day_hops(bookings: list[Booking], day: date) -> list[Hop]:
     hotels = [b for b in bookings if b.draft.kind is BookingKind.HOTEL]
     morning = next((b for b in hotels if _night(b, day - timedelta(days=1))), None)
     tonight = next((b for b in hotels if _night(b, day)), None)
-    entries = sorted((b for b in bookings if b.draft.starts == day), key=_sort_key)
+    entries = on_day(bookings, day)
     chain: list[Booking | None] = [morning, *entries, tonight]
     hops: list[Hop] = []
     previous: Stop | None = None

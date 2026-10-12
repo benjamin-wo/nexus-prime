@@ -24,10 +24,12 @@ from nexus.application.weather import WeatherError
 from nexus.channels.web.api import MoneyOut, money
 from nexus.channels.web.investments_api import MAX_IMAGE_CHARS
 from nexus.channels.web.security import Auth, Runtime, WebRuntime, limit
+from nexus.domain import itinerary
 from nexus.domain.bookings import Booking
 from nexus.domain.currencies import currency_of
 from nexus.domain.destination_photos import DestinationPhoto
 from nexus.domain.errors import InvalidInput, NotFound
+from nexus.domain.itinerary import NoteKind
 from nexus.domain.ledger import User
 from nexus.domain.money import Money
 from nexus.domain.packing import MAX_ITEM, MAX_ITEMS, PackItem
@@ -206,6 +208,10 @@ class BookingOut(Model):
     booked_via: str | None  # the airline, Agoda, Klook
     category: str | None  # a plan's kind: Food, Sight
     place_id: str | None  # its Google Maps place, for a plan or hotel
+    ends_at: str | None = None  # a plan's end, HH:MM
+    link: str | None = None  # a booking page or menu (public https)
+    list_name: str | None = None  # a place to visit's list: "Eat", "Rainy day"
+    order: int | None = None  # a plan's place in its day; None until the day is rearranged
     scheduled: bool  # on a day; false for a place to visit without one yet
     cost: MoneyOut | None
     logged: bool  # its cost is in the ledger
@@ -244,6 +250,10 @@ def _booking(b: Booking) -> BookingOut:
         booked_via=d.booked_via,
         category=d.category,
         place_id=d.place_id,
+        ends_at=d.ends_at.isoformat(timespec="minutes") if d.ends_at else None,
+        link=d.link,
+        list_name=d.list_name,
+        order=d.order,
         scheduled=b.scheduled,
         cost=_m(b.cost),
         logged=b.transaction_id is not None,
@@ -261,6 +271,41 @@ class ReadyOut(Model):
     total: int
 
 
+class DayNoteOut(Model):
+    kind: NoteKind  # clash, order or free
+    text: str
+    ids: list[UUID]  # the entries it's about
+    start: str | None = None  # free time: from, HH:MM
+    end: str | None = None
+
+
+class DayPlanOut(Model):
+    """A day of the itinerary: its entries in order, and what to watch out for."""
+
+    day: date
+    order: list[UUID]
+    notes: list[DayNoteOut]
+
+
+def _days(bookings: list[Booking]) -> list[DayPlanOut]:
+    days = sorted({b.draft.starts for b in bookings if b.draft.starts is not None})
+    out = []
+    for day in days:
+        arranged = itinerary.on_day(bookings, day)
+        notes = [
+            DayNoteOut(
+                kind=n.kind,
+                text=n.text,
+                ids=list(n.ids),
+                start=n.start.isoformat(timespec="minutes") if n.start else None,
+                end=n.end.isoformat(timespec="minutes") if n.end else None,
+            )
+            for n in itinerary.day_notes(arranged, day)
+        ]
+        out.append(DayPlanOut(day=day, order=[b.id for b in arranged], notes=notes))
+    return out
+
+
 class TripDetailOut(Model):
     trip: TripOut
     spending: SpendingOut
@@ -272,6 +317,10 @@ class TripDetailOut(Model):
     booked_unlogged: MoneyOut | None
     to_spend: MoneyOut | None
     ready: ReadyOut
+    # Each day with entries, in itinerary order, with its clashes and free time.
+    days: list[DayPlanOut] = Field(default_factory=list)
+    # Places to visit (no day yet) in the user's order.
+    places_order: list[UUID] = Field(default_factory=list)
     places: bool = False  # Google Maps places are set up
     routes: bool = False  # travel times between stops are set up
     # The browser key for Google's map; None = no map. Only for signed-in users, and
@@ -341,6 +390,8 @@ def _detail(
             for i in reversed(view.items)  # newest first
         ],
         bookings=[_booking(b) for b in view.bookings],
+        days=_days(view.bookings),
+        places_order=[b.id for b in itinerary.places_to_visit(view.bookings)],
         booked=_m(view.booked),
         booked_unlogged=_m(view.booked_unlogged),
         to_spend=_m(view.to_spend),
@@ -566,14 +617,22 @@ class BookingIn(Model):
     category: str | None = Field(None, max_length=30)
     cost: str | None = Field(None, max_length=32)
     currency: str | None = Field(None, pattern="^[A-Za-z]{3}$")
-    # A Google Maps place id; left out of an edit, the entry keeps its place.
+    # Each of these, left out of an edit, keeps what the entry had: a Google Maps place
+    # id, a plan's end time (HH:MM), a link (a public https address) and a list name.
     place_id: str | None = Field(None, max_length=512)
+    ends_at: str | None = Field(None, max_length=5)
+    link: str | None = Field(None, max_length=500)
+    list_name: str | None = Field(None, max_length=30)
+
+
+_KEPT_IF_LEFT_OUT = ("place_id", "ends_at", "link", "list_name")
 
 
 def _details(body: BookingIn) -> dict[str, object]:
     found = _fields(body)
-    if "place_id" in body.model_fields_set:
-        found["place_id"] = body.place_id
+    for key in _KEPT_IF_LEFT_OUT:
+        if key in body.model_fields_set:
+            found[key] = getattr(body, key)
     return found
 
 
@@ -627,6 +686,21 @@ async def edit_booking(booking_id: str, body: BookingIn, auth: Auth, web: Runtim
         _cost(auth.user, body),
     )  # fmt: skip
     return _booking(booking)
+
+
+class MoveIn(Model):
+    day: date | None  # None: back to places to visit
+    after: UUID | None = None  # the entry it goes right after there; None: first
+
+
+@router.put("/bookings/{booking_id}/move")
+async def move_booking(booking_id: str, body: MoveIn, auth: Auth, web: Runtime) -> BookingOut:
+    """A plan or place to visit moved to a day (or back to places to visit), right
+    after another entry there. Flights, trains and hotel nights stay put."""
+    moved = await booking_cases.move_entry(
+        web.uow(), auth.user.id, _uuid(booking_id, "booking"), body.day, body.after
+    )
+    return _booking(moved)
 
 
 class ScreenshotIn(Model):

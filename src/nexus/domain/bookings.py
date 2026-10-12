@@ -18,6 +18,7 @@ from uuid import UUID
 from nexus.domain.ledger import UserId
 from nexus.domain.money import Money
 from nexus.domain.places import place_id as _place_id
+from nexus.domain.travel_research import safe_url
 from nexus.domain.trips import Trip, TripStatus, clean_notes, hide_private
 
 MAX_SEGMENTS = 6
@@ -48,6 +49,9 @@ MASK = "•••"
 
 MAX_REFERENCE = 40
 MAX_CATEGORY = 30
+MAX_LIST = 30
+# A plan's place in its day's order (or among places to visit), 0 first.
+MAX_ORDER = 999
 
 
 def _text(value: object, *, limit: int = MAX_TEXT) -> str | None:
@@ -121,6 +125,18 @@ def _clock(value: object) -> time | None:
         return None
 
 
+def _order(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value if 0 <= value <= MAX_ORDER else None
+
+
+def _ends(at: time | None, value: object) -> time | None:
+    """A plan's end time, kept only when it's after its start (or there's no start)."""
+    ends = _clock(value)
+    return ends if ends is not None and (at is None or ends > at) else None
+
+
 def flight_number(value: object) -> str | None:
     if not isinstance(value, str):
         return None
@@ -181,6 +197,10 @@ class BookingDraft:
     booked_via: str | None = None  # where it was booked: the airline, Agoda, Klook
     category: str | None = None  # a plan's kind: Food, Sight, Shopping
     place_id: str | None = None  # its Google Maps place, for a plan or hotel
+    ends_at: time | None = None  # when a plan ends, if it says
+    link: str | None = None  # a booking page or menu, on any kind: a public https address
+    list_name: str | None = None  # a place to visit's list: "Eat", "Rainy day"
+    order: int | None = None  # a plan's place in its day (None: by its time)
 
     @property
     def starts(self) -> date | None:
@@ -238,6 +258,10 @@ class BookingDraft:
             "booked_via": self.booked_via,
             "category": self.category,
             "place_id": self.place_id,
+            "ends_at": self.ends_at.isoformat(timespec="minutes") if self.ends_at else None,
+            "link": self.link,
+            "list_name": self.list_name,
+            "order": self.order,
         }
 
     @classmethod
@@ -248,7 +272,9 @@ class BookingDraft:
             kind = BookingKind(str(data.get("kind", "")).lower())
         except ValueError:
             return None
+        link = safe_url(data.get("link"))
         if kind is BookingKind.ACTIVITY:
+            at = _clock(data.get("at"))
             plan = cls(
                 kind=kind,
                 provider=None,
@@ -259,12 +285,16 @@ class BookingDraft:
                 check_out=None,
                 name=_text(data.get("name")),
                 day=_day(data.get("day")),
-                at=_clock(data.get("at")),
+                at=at,
                 note=_note(data.get("note")),
                 reference=_reference(data.get("reference")),
                 booked_via=_text(data.get("booked_via")),
                 category=_text(data.get("category"), limit=MAX_CATEGORY),
                 place_id=_place_id(data.get("place_id")),
+                ends_at=_ends(at, data.get("ends_at")),
+                link=link,
+                list_name=_text(data.get("list_name"), limit=MAX_LIST),
+                order=_order(data.get("order")),
             )
             # Without a day, it's a place to visit on the trip, not yet on a day.
             return plan if plan.name else None
@@ -298,6 +328,7 @@ class BookingDraft:
             reference=_reference(data.get("reference")),
             booked_via=_text(data.get("booked_via")),
             place_id=_place_id(data.get("place_id")) if kind is BookingKind.HOTEL else None,
+            link=link,
         )
         return draft if draft.starts else None
 
@@ -324,6 +355,8 @@ class BookingDraft:
             when = f"{self.day:%a %d %b}" if self.day else ""
             if self.at:
                 when += f" {self.at:%H:%M}"
+                if self.ends_at:
+                    when += f" to {self.ends_at:%H:%M}"
             where = f", {self.address}" if self.address else ""
             return f"plan ({self.title}, {when}{where})"
         if self.kind is BookingKind.HOTEL:

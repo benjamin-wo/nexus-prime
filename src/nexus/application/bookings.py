@@ -16,9 +16,11 @@ from zoneinfo import ZoneInfo
 
 from nexus.application.budgets import TELEGRAM_SEND
 from nexus.application.ports import UnitOfWork
+from nexus.domain import itinerary
 from nexus.domain.bookings import (
     Booking,
     BookingDraft,
+    BookingKind,
     booking_reminders,
     matching_trips,
     passport_reminder,
@@ -243,10 +245,30 @@ async def unattached(uow: UnitOfWork, user_id: UserId) -> list[Booking]:
 
 
 MAX_BOOKINGS_A_TRIP = 100
+MAX_LISTS_A_TRIP = 12
 
 
-def _draft(details: dict[str, object]) -> BookingDraft:
-    found = BookingDraft.from_dict(dict(details))
+def _check_lists(existing: list[Booking], draft: BookingDraft) -> None:
+    """A trip keeps at most MAX_LISTS_A_TRIP lists of places to visit."""
+    if not draft.list_name:
+        return
+    names = {b.draft.list_name.casefold() for b in existing if b.draft.list_name}
+    if draft.list_name.casefold() not in names and len(names) >= MAX_LISTS_A_TRIP:
+        raise InvalidInput(f"a trip keeps at most {MAX_LISTS_A_TRIP} lists of places")
+
+
+# Kept from the entry as it was when an edit doesn't mention them (the web form and
+# the chat change only what they show or what the user named).
+KEPT = ("place_id", "ends_at", "link", "list_name", "order")
+
+
+def _draft(details: dict[str, object], kept: BookingDraft | None = None) -> BookingDraft:
+    data = dict(details)
+    if kept is not None and kept.kind.value == data.get("kind"):
+        before = kept.as_dict()
+        for key in KEPT:
+            data.setdefault(key, before[key])
+    found = BookingDraft.from_dict(data)
     if found is None:
         kind = str(details.get("kind", ""))
         if kind == "activity":
@@ -256,6 +278,10 @@ def _draft(details: dict[str, object]) -> BookingDraft:
         if kind in ("flight", "rail"):
             raise InvalidInput("a flight or train needs its departure date and time")
         raise InvalidInput("that's not a flight, hotel, train or plan")
+    if details.get("ends_at") and found.ends_at is None:
+        raise InvalidInput("an end time is a time after the start, like 10:00 to 12:30")
+    if details.get("link") and found.link is None:
+        raise InvalidInput("a link must be a public https address")
     return found
 
 
@@ -276,8 +302,10 @@ async def add_manual(
         trip = await uow.trips.get_trip(user_id, trip_id)
         if trip is None:
             raise NotFound("no trip with that id")
-        if len(await uow.trips.list_bookings(user_id, trip_id=trip_id)) >= MAX_BOOKINGS_A_TRIP:
+        existing = await uow.trips.list_bookings(user_id, trip_id=trip_id)
+        if len(existing) >= MAX_BOOKINGS_A_TRIP:
             raise InvalidInput(f"a trip keeps at most {MAX_BOOKINGS_A_TRIP} itinerary entries")
+        _check_lists(existing, draft)
         booking = Booking(uuid4(), user_id, trip_id, None, draft, cost, None, now)
         await uow.trips.insert_booking(booking)
         await uow.commit()
@@ -291,21 +319,67 @@ async def edit_booking(
     details: dict[str, object],
     cost: Money | None,
 ) -> Booking:
-    """Changes an entry's details, by hand or read from email (a corrected time)."""
-    draft = _draft(details)
+    """Changes an entry's details, by hand or read from email (a corrected time).
+    What the change doesn't mention (its Google Maps place, end time, link, list and
+    place in the day) is kept; a plan moved to another day goes where its time fits."""
     if cost is not None and not cost.is_positive:
         raise InvalidInput("a cost must be more than zero")
     async with uow:
         current = await uow.trips.get_booking(user_id, booking_id)
         if current is None:
             raise NotFound("no booking with that id")
-        if "place_id" not in details and draft.kind is current.draft.kind:
-            # An edit that doesn't mention the Google Maps place keeps it.
-            draft = replace(draft, place_id=current.draft.place_id)
+        draft = _draft(details, current.draft)
+        if draft.day != current.draft.day:
+            draft = replace(draft, order=None)
+        if current.trip_id is not None and draft.list_name != current.draft.list_name:
+            _check_lists(await uow.trips.list_bookings(user_id, trip_id=current.trip_id), draft)
         changed = replace(current, draft=draft, cost=cost)
         await uow.trips.update_booking(changed)
         await uow.commit()
     return changed
+
+
+async def move_entry(
+    uow: UnitOfWork,
+    user_id: UserId,
+    booking_id: UUID,
+    day: date | None,
+    after: UUID | None,
+) -> Booking:
+    """Moves a plan or place to visit: onto ``day`` (None: back to places to visit),
+    right after the entry ``after`` there (None: first). Flights, trains and hotel
+    nights stay where their booking puts them. The day's plans are numbered afresh in
+    their new order."""
+    async with uow:
+        moving = await uow.trips.get_booking(user_id, booking_id)
+        if moving is None or moving.trip_id is None:
+            raise NotFound("no itinerary entry with that id")
+        if moving.draft.kind is not BookingKind.ACTIVITY:
+            raise InvalidInput("flights, trains and hotel nights stay where their booking is")
+        others = [
+            b
+            for b in await uow.trips.list_bookings(user_id, trip_id=moving.trip_id)
+            if b.id != moving.id
+        ]
+        there = itinerary.on_day(others, day) if day else itinerary.places_to_visit(others)
+        place = 0
+        if after is not None:
+            ids = [b.id for b in there]
+            if after not in ids:
+                raise NotFound("that entry isn't on that day")
+            place = sum(
+                1 for b in there[: ids.index(after) + 1] if b.draft.kind is BookingKind.ACTIVITY
+            )
+        plans = [b for b in there if b.draft.kind is BookingKind.ACTIVITY]
+        moved = replace(moving, draft=replace(moving.draft, day=day))
+        plans.insert(place, moved)
+        numbers = itinerary.renumber(plans)
+        for b in plans:
+            if b.id != moved.id and b.draft.order == numbers[b.id]:
+                continue
+            await uow.trips.update_booking(replace(b, draft=replace(b.draft, order=numbers[b.id])))
+        await uow.commit()
+    return replace(moved, draft=replace(moved.draft, order=numbers[moved.id]))
 
 
 async def delete_booking(uow: UnitOfWork, user_id: UserId, booking_id: UUID) -> None:
