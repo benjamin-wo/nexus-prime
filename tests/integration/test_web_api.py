@@ -2077,6 +2077,12 @@ async def test_a_shared_trip_shows_its_plan_to_anyone_with_the_link_and_nothing_
     assert (await owner.send("POST", f"{path}/bookings", hotel)).status_code == 201
     plan = {"kind": "activity", "name": "Tea ceremony", "day": "2026-11-11", "at": "15:00"}
     assert (await owner.send("POST", f"{path}/bookings", plan)).status_code == 201
+    later = {"kind": "activity", "name": "Night walk", "day": "2026-11-11", "at": "20:00"}
+    walk = (await owner.send("POST", f"{path}/bookings", later)).json()
+    # Put first on its day by hand: the link shows the day as rearranged.
+    first = {"day": "2026-11-11"}
+    moved = await owner.send("PUT", f"/api/travel/bookings/{walk['id']}/move", first)
+    assert moved.status_code == 200
     unscheduled = {"kind": "activity", "name": "Somewhere secret"}
     assert (await owner.send("POST", f"{path}/bookings", unscheduled)).status_code == 201
 
@@ -2096,6 +2102,7 @@ async def test_a_shared_trip_shows_its_plan_to_anyone_with_the_link_and_nothing_
     titles = [b["title"] for b in shared["bookings"]]
     assert any("Hotel Kumo" in t for t in titles) and "Tea ceremony" in titles
     assert shared["bookings"][0]["address"] == "1-2-3 Example-cho, Kyoto"
+    assert titles.index("Night walk") < titles.index("Tea ceremony")
     # ...and nothing of the money, references, notes, who's going or unscheduled places.
     text = opened.text
     for private in ("HK55821", "Agoda", "640", "3000", "4242", "Ann Example", "Somewhere secret"):

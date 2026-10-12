@@ -1239,8 +1239,16 @@ async def shared_trip(token: str, web: Runtime) -> SharedTripOut:
         day_number=trip.day_number(today),
         day_labels=dict(trip.day_labels),
         photo=photo,
-        bookings=[_shared_booking(b) for b in bookings if b.scheduled],
+        bookings=[_shared_booking(b) for b in _in_order(bookings)],
     )
+
+
+def _in_order(bookings: list[Booking]) -> list[Booking]:
+    """The scheduled entries day by day, each day as the itinerary has it (rearranged
+    by hand, or by time)."""
+    scheduled = [b for b in bookings if b.scheduled]
+    days = sorted({day for b in scheduled if (day := b.draft.starts) is not None})
+    return [b for day in days for b in itinerary.on_day(scheduled, day)]
 
 
 @shared_router.get("/trips/{token}/photo")

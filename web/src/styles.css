@@ -728,6 +728,27 @@ details.section[open] > summary { margin-bottom: var(--space-3); }
 .timeline-hop .badge { margin-left: var(--space-2); }
 .timeline-hop select { font: inherit; font-size: 0.75rem; color: var(--text-primary); background: var(--bg-input); border: 1px solid var(--border-card); border-radius: 6px; padding: 2px var(--space-1); }
 .entry-flash { outline: 2px solid var(--cyan-accent); outline-offset: 2px; transition: outline-color var(--t-standard); }
+/* Rearranging a day: a grip on each plan, a line where it will land, the day it goes to. */
+.drag-handle { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 28px; min-height: 32px; margin-left: calc(-1 * var(--space-1)); border: 0; border-radius: 6px; background: transparent; color: var(--text-muted); cursor: grab; touch-action: none; font-size: 1rem; }
+.drag-handle:hover, .drag-handle:focus-visible { background: var(--bg-card-hover); color: var(--text-primary); }
+.drag-handle:active { cursor: grabbing; }
+.dragging { opacity: 0.4; }
+.drop-before { box-shadow: inset 0 3px 0 var(--cyan-accent); }
+.drop-after { box-shadow: inset 0 -3px 0 var(--cyan-accent); }
+.drop-zone.drop-ready { border-radius: 10px; outline: 1px dashed var(--border-card); outline-offset: 4px; }
+.drop-zone.drop-over { outline-color: var(--cyan-accent); }
+.drag-chip { display: inline-block; max-width: 280px; padding: var(--space-2) var(--space-3); border-radius: 8px; background: var(--bg-card); border: 1px solid var(--cyan-accent); color: var(--text-primary); font-weight: 600; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35); cursor: grabbing; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.move-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-2) var(--space-3); padding: var(--space-2) var(--space-3); border-radius: 8px; background: var(--bg-input); }
+.move-form .field { flex: 1 1 160px; }
+.day-notes { list-style: none; margin: 0 0 var(--space-2); padding: 0; display: grid; gap: var(--space-1); }
+.day-note { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); padding: var(--space-1) var(--space-3); border-radius: 8px; font-size: 0.8125rem; color: var(--text-secondary); background: var(--bg-input); }
+.day-note .wrap { flex: 1 1 180px; min-width: 0; }
+.day-note-clash { color: var(--text-primary); border-left: 3px solid var(--orange-primary); }
+.day-note-order { border-left: 3px solid var(--border-card); }
+.list-chips { margin: var(--space-2) 0; }
+.list-chips .caption { margin-left: var(--space-1); }
+.entry-link { display: inline-block; margin-top: 2px; }
+.arrange-error { margin: var(--space-2) 0; }
 /* The trip map: a card above the itinerary, beside it on wide screens, full screen
    on a phone when asked. */
 .trip-map-days { position: static; margin: 0 0 var(--space-3); padding: 0 0 var(--space-2); border-bottom: 0; background: none; }
@@ -1157,3 +1178,5 @@ html.keyboard .ribbon { animation-play-state: paused; }
 .itinerary-day[aria-current="date"] .day-head h3 { color: var(--text-white); }
 .entry-actions { display: inline-flex; gap: var(--space-1); align-items: center; justify-self: end; }
 .entry-more { min-width: 36px; letter-spacing: 0.08em; color: var(--text-muted); }
+.map-app { display: inline-flex; align-items: center; gap: var(--space-1); }
+.map-app select { font: inherit; color: var(--text-primary); background: var(--bg-input); border: 1px solid var(--border-card); border-radius: 6px; padding: 2px var(--space-1); }

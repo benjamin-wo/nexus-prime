@@ -1,0 +1,445 @@
+import {
+  type Announcements,
+  type ClientRect,
+  type CollisionDetection,
+  DndContext,
+  type DragEndEvent,
+  type DragMoveEvent,
+  DragOverlay,
+  type DragStartEvent,
+  MouseSensor,
+  TouchSensor,
+  closestCenter,
+  pointerWithin,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import { type FormEvent, type KeyboardEvent, type ReactNode, createContext, useContext, useEffect, useMemo, useState } from "react";
+
+import { api, type Booking, type DayNote, type TripDetail } from "../api";
+import { sortKey } from "./TripBits";
+
+const dayName = (iso: string) => new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(iso));
+
+/** Where an entry sits: a day of the itinerary ("day:2026-11-12") or places to visit. */
+export type Spot = `day:${string}` | "places";
+export const PLACES: Spot = "places";
+export const daySpot = (iso: string): Spot => `day:${iso}`;
+const dayOf = (spot: Spot) => (spot === PLACES ? null : spot.slice(4));
+
+/** Every spot's entries in order: each day as the server arranged it (or by time, for
+ * an older server), then places to visit in the user's order. */
+export function spotsOf(detail: Pick<TripDetail, "bookings" | "days" | "places_order">): Map<Spot, Booking[]> {
+  const byId = new Map(detail.bookings.map((b) => [b.id, b]));
+  const spots = new Map<Spot, Booking[]>();
+  const placed = new Set<string>();
+  for (const d of detail.days ?? []) {
+    const entries = d.order.map((id) => byId.get(id)).filter((b): b is Booking => b !== undefined);
+    entries.forEach((b) => placed.add(b.id));
+    spots.set(daySpot(d.day), entries);
+  }
+  // Anything the server didn't place (or no order at all): by time, as before.
+  const rest = detail.bookings.filter((b) => b.scheduled && !placed.has(b.id)).sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
+  for (const b of rest) {
+    const spot = daySpot(b.starts);
+    spots.set(spot, [...(spots.get(spot) ?? []), b]);
+  }
+  const places = detail.bookings.filter((b) => b.kind === "activity" && !b.scheduled);
+  const order = new Map((detail.places_order ?? []).map((id, i) => [id, i]));
+  spots.set(PLACES, places.sort((a, b) => (order.get(a.id) ?? Infinity) - (order.get(b.id) ?? Infinity) || sortKey(a).localeCompare(sortKey(b))));
+  return spots;
+}
+
+/** The entry a moved one goes right after, dropped on ``over`` (an entry, or the spot
+ * itself: the end) above or below its middle. Null puts it first. */
+export function afterFor(list: string[], moving: string, over: string, below: boolean): string | null {
+  const ids = list.filter((id) => id !== moving);
+  const i = ids.indexOf(over);
+  if (i < 0) return ids.at(-1) ?? null;
+  return below ? ids[i] : (ids[i - 1] ?? null);
+}
+
+/** The spots with one entry moved, as the page shows it while the server catches up. */
+export function withMove(spots: Map<Spot, Booking[]>, moving: Booking, to: Spot, after: string | null): Map<Spot, Booking[]> {
+  const next = new Map<Spot, Booking[]>();
+  for (const [spot, list] of spots) next.set(spot, list.filter((b) => b.id !== moving.id));
+  const list = [...(next.get(to) ?? [])];
+  const at = after === null ? 0 : list.findIndex((b) => b.id === after) + 1;
+  const day = dayOf(to);
+  list.splice(at, 0, { ...moving, day, scheduled: day !== null, starts: day ?? moving.starts });
+  next.set(to, list);
+  return next;
+}
+
+type Drop = { over: string; below: boolean } | null;
+type Pending = { moving: Booking; to: Spot; after: string | null } | null;
+
+type Arrange = {
+  /** Plans can be dragged and moved. */
+  on: boolean;
+  spots: Map<Spot, Booking[]>;
+  drop: Drop;
+  dragging: string | null;
+  move: (b: Booking, to: Spot, after: string | null) => Promise<void>;
+  /** The keyboard on a plan's grip: pick up, up and down, put down, Escape. */
+  key: (b: Booking, event: KeyboardEvent) => void;
+  /** Picked up with the keyboard. */
+  carrying: string | null;
+  /** Focus left the grip: whatever was picked up stays where it was. */
+  letGo: () => void;
+};
+
+const Context = createContext<Arrange | null>(null);
+
+/** The entries in order and, under the provider, a way to move them. Without one (a
+ * finished trip), the same order with nothing to move. */
+export function useArrange(detail: TripDetail): Arrange {
+  const arrange = useContext(Context);
+  const spots = useMemo(() => spotsOf(detail), [detail]);
+  return arrange ?? { on: false, spots, drop: null, dragging: null, carrying: null, move: async () => undefined, key: () => undefined, letGo: () => undefined };
+}
+
+const isEntry = (data: unknown): data is { entry: true; spot: Spot } => typeof data === "object" && data !== null && "entry" in data;
+const isZone = (data: unknown): data is { zone: true; spot: Spot; empty: boolean } => typeof data === "object" && data !== null && "zone" in data;
+
+/** Over an entry if the pointer's on one; between entries in a list, the nearest of
+ * them; on an empty day, the day. */
+const collide: CollisionDetection = (args) => {
+  const others = args.droppableContainers.filter((c) => c.id !== args.active.id);
+  const entries = others.filter((c) => isEntry(c.data.current));
+  const zones = others.filter((c) => isZone(c.data.current));
+  if (args.pointerCoordinates) {
+    const hit = pointerWithin({ ...args, droppableContainers: entries });
+    if (hit.length > 0) return hit;
+    const zone = pointerWithin({ ...args, droppableContainers: zones })[0];
+    if (!zone) return [];
+    const spot = (zone.data?.droppableContainer.data.current as { spot: Spot }).spot;
+    const inside = entries.filter((c) => (c.data.current as { spot: Spot }).spot === spot);
+    return inside.length > 0 ? closestCenter({ ...args, droppableContainers: inside }) : [zone];
+  }
+  return [];
+};
+
+const middle = (r: ClientRect) => r.top + r.height / 2;
+
+/** Every place a plan can be put, top to bottom: first on each day and after each of
+ * its entries, then the same in places to visit. */
+export type Gap = { spot: Spot; after: string | null };
+export function gapsFor(spots: Map<Spot, Booking[]>, days: string[], moving: string): Gap[] {
+  const gaps: Gap[] = [];
+  for (const spot of [...days.map(daySpot), PLACES]) {
+    gaps.push({ spot, after: null });
+    for (const b of spots.get(spot) ?? []) if (b.id !== moving) gaps.push({ spot, after: b.id });
+  }
+  return gaps;
+}
+
+/** Drag plans within and across days and from places to visit, with a long press on
+ * phones, or pick one up with the keyboard and step it through the gaps. Each drop is
+ * one call to move it; the page shows the new order straight away and the server's
+ * once it answers. */
+export function ArrangeProvider({ detail, days, on, onChange, children }: {
+  detail: TripDetail;
+  /** The itinerary's days, in order. */
+  days: string[];
+  on: boolean;
+  onChange: () => void;
+  children: ReactNode;
+}) {
+  const base = useMemo(() => spotsOf(detail), [detail]);
+  const [pending, setPending] = useState<Pending>(null);
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [drop, setDrop] = useState<Drop>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [carry, setCarry] = useState<{ id: string; gap: number } | null>(null);
+  const [said, setSaid] = useState("");
+  // The server's answer arrives as a new trip: its order replaces the guess.
+  useEffect(() => setPending(null), [detail]);
+  const spots = useMemo(() => (pending ? withMove(base, pending.moving, pending.to, pending.after) : base), [base, pending]);
+  const byId = useMemo(() => new Map(detail.bookings.map((b) => [b.id, b])), [detail.bookings]);
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 8 } }),
+  );
+
+  const spotOf = (id: string): Spot | undefined => {
+    for (const [spot, list] of spots) if (list.some((b) => b.id === id)) return spot;
+    return undefined;
+  };
+
+  async function move(b: Booking, to: Spot, after: string | null) {
+    const list = (spots.get(to) ?? []).map((e) => e.id);
+    const from = spotOf(b.id);
+    const before = list[list.indexOf(b.id) - 1] ?? null;
+    if (from === to && before === after) return; // dropped where it was
+    setError(null);
+    setPending({ moving: b, to, after });
+    try {
+      await api(`/travel/bookings/${b.id}/move`, { method: "PUT", body: { day: dayOf(to), after } });
+      onChange();
+    } catch (e) {
+      setPending(null);
+      setError(e instanceof Error ? e.message : "Couldn't move that");
+    }
+  }
+
+  const gaps = carry ? gapsFor(spots, days, carry.id) : [];
+  const spotName = (spot: Spot) => (spot === PLACES ? "places to visit" : dayName(spot.slice(4)));
+  const gapName = (g: Gap) => (g.after ? `after ${byId.get(g.after)?.title ?? "that"}, ${spotName(g.spot)}` : `first, ${spotName(g.spot)}`);
+
+  function key(b: Booking, event: KeyboardEvent) {
+    const k = event.key;
+    if (!carry || carry.id !== b.id) {
+      if (k !== " " && k !== "Enter") return;
+      event.preventDefault();
+      const all = gapsFor(spots, days, b.id);
+      const spot = spotOf(b.id) ?? PLACES;
+      const list = (spots.get(spot) ?? []).map((e) => e.id);
+      const before = list[list.indexOf(b.id) - 1] ?? null;
+      const gap = Math.max(0, all.findIndex((g) => g.spot === spot && g.after === before));
+      setError(null);
+      setCarry({ id: b.id, gap });
+      setSaid(`Picked up ${b.title}. Up and down arrows to choose where, space to put it there, Escape to leave it.`);
+      return;
+    }
+    if (k === "ArrowUp" || k === "ArrowDown") {
+      event.preventDefault();
+      const gap = Math.min(gaps.length - 1, Math.max(0, carry.gap + (k === "ArrowUp" ? -1 : 1)));
+      setCarry({ ...carry, gap });
+      setSaid(`${b.title}: ${gapName(gaps[gap])}.`);
+    } else if (k === " " || k === "Enter") {
+      event.preventDefault();
+      const g = gaps[carry.gap];
+      setCarry(null);
+      setSaid(`Moved ${b.title} ${gapName(g)}.`);
+      // The plan's grip keeps the focus in its new place.
+      void move(b, g.spot, g.after).then(() =>
+        window.requestAnimationFrame(() => document.getElementById(`entry-${b.id}`)?.querySelector<HTMLButtonElement>(".drag-handle")?.focus()),
+      );
+    } else if (k === "Escape" || k === "Tab") {
+      if (k === "Escape") event.preventDefault();
+      setCarry(null);
+      setSaid(`${b.title} stays where it was.`);
+    }
+  }
+
+  // Where the carried plan would land, marked like a drop.
+  const carried: Drop = (() => {
+    if (!carry) return null;
+    const g = gaps[carry.gap];
+    if (!g) return null;
+    if (g.after) return { over: g.after, below: true };
+    const first = (spots.get(g.spot) ?? []).find((e) => e.id !== carry.id);
+    return first ? { over: first.id, below: false } : { over: g.spot, below: true };
+  })();
+
+  function where(event: DragMoveEvent | DragEndEvent): { spot: Spot; over: string; below: boolean } | null {
+    const { active, over } = event;
+    const moved = active.rect.current.translated;
+    if (!over || !moved || over.id === active.id) return null;
+    const data = over.data.current;
+    if (isEntry(data)) return { spot: data.spot, over: String(over.id), below: middle(moved) > middle(over.rect) };
+    if (isZone(data)) return { spot: data.spot, over: String(over.id), below: true };
+    return null;
+  }
+
+  function onDragStart(event: DragStartEvent) {
+    setError(null);
+    setDragging(String(event.active.id));
+  }
+
+  function onDragMove(event: DragMoveEvent) {
+    const at = where(event);
+    const next: Drop = at ? { over: at.over, below: at.below } : null;
+    if (next?.over !== drop?.over || next?.below !== drop?.below) setDrop(next);
+  }
+
+  function onDragEnd(event: DragEndEvent) {
+    const at = where(event);
+    const b = byId.get(String(event.active.id));
+    setDragging(null);
+    setDrop(null);
+    if (!at || !b) return;
+    const list = (spots.get(at.spot) ?? []).map((e) => e.id);
+    void move(b, at.spot, afterFor(list, b.id, at.over, at.below));
+  }
+
+  const name = (id: string | number | undefined) => {
+    if (id === undefined) return "";
+    const b = byId.get(String(id));
+    if (b) return b.title;
+    const spot = String(id) as Spot;
+    return spot === PLACES ? "places to visit" : `the day ${dayOf(spot)}`;
+  };
+  const announcements: Announcements = {
+    onDragStart: ({ active }) => `Picked up ${name(active.id)}.`,
+    onDragOver: ({ active, over }) => (over ? `${name(active.id)} is next to ${name(over.id)}.` : `${name(active.id)} is not over a day.`),
+    onDragEnd: ({ active, over }) => (over ? `Moved ${name(active.id)} next to ${name(over.id)}.` : `${name(active.id)} stays where it was.`),
+    onDragCancel: ({ active }) => `${name(active.id)} stays where it was.`,
+  };
+
+  const letGo = () => {
+    if (carry) setCarry(null);
+  };
+  const value: Arrange = { on, spots, drop: carried ?? drop, dragging, move, key, carrying: carry?.id ?? null, letGo };
+  const moving = dragging ? byId.get(dragging) : undefined;
+  return (
+    <Context.Provider value={value}>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={collide}
+        onDragStart={onDragStart}
+        onDragMove={onDragMove}
+        onDragEnd={onDragEnd}
+        onDragCancel={() => {
+          setDragging(null);
+          setDrop(null);
+        }}
+        accessibility={{
+          announcements,
+          screenReaderInstructions: { draggable: "To move a plan, press space, use the up and down arrows to choose where it goes, then press space again. Escape leaves it where it was." },
+        }}
+      >
+        <p className="sr-only" aria-live="assertive" role="status" aria-label="Moving a plan">
+          {said}
+        </p>
+        {error && (
+          <p className="error-text arrange-error" role="alert">
+            {error}
+          </p>
+        )}
+        {children}
+        <DragOverlay dropAnimation={null}>{moving && <div className="drag-chip">{moving.title}</div>}</DragOverlay>
+      </DndContext>
+    </Context.Provider>
+  );
+}
+
+/** A plan's grip and the spot it can be dropped on. Flights, trains and hotels can
+ * take a drop next to them, but stay where their booking puts them. */
+export function useDragEntry(booking: Booking, spot: Spot | undefined) {
+  const arrange = useContext(Context);
+  const on = Boolean(arrange?.on) && spot !== undefined;
+  const movable = on && booking.kind === "activity";
+  // A hotel's check-out line shows the same entry again on a later day; it takes no part.
+  const id = spot ? booking.id : `idle-${booking.id}`;
+  const drag = useDraggable({ id, disabled: !movable });
+  const drop = useDroppable({ id, disabled: !on, data: { entry: true, spot } });
+  const mark = on && arrange?.drop?.over === booking.id ? (arrange.drop.below ? " drop-after" : " drop-before") : "";
+  const ref = (node: HTMLElement | null) => {
+    drag.setNodeRef(node);
+    drop.setNodeRef(node);
+  };
+  const handle = movable ? (
+    <button
+      type="button"
+      ref={drag.setActivatorNodeRef}
+      className="drag-handle"
+      aria-label={`Drag ${booking.title}`}
+      {...drag.attributes}
+      {...drag.listeners}
+      aria-pressed={arrange?.carrying === booking.id}
+      onKeyDown={(e) => arrange?.key(booking, e)}
+      onBlur={() => arrange?.letGo()}
+    >
+      <span aria-hidden="true">⠿</span>
+    </button>
+  ) : null;
+  const lifted = drag.isDragging || arrange?.carrying === booking.id;
+  return { ref, handle, className: `${mark}${lifted ? " dragging" : ""}` };
+}
+
+/** A day or places to visit as a drop target: the end of the list, or the only place
+ * on an empty day. */
+export function DropZone({ spot, empty, children }: { spot: Spot; empty: boolean; children: ReactNode }) {
+  const arrange = useContext(Context);
+  const { setNodeRef } = useDroppable({ id: spot, disabled: !arrange?.on, data: { zone: true, spot, empty } });
+  const over = arrange?.drop?.over === spot;
+  return (
+    <div ref={setNodeRef} className={`drop-zone${over ? " drop-over" : ""}${arrange?.dragging ? " drop-ready" : ""}`}>
+      {children}
+    </div>
+  );
+}
+
+/** Moving without dragging: pick the day and what it comes after. */
+export function MoveForm({ booking, days, spots, onDone }: { booking: Booking; days: string[]; spots: Map<Spot, Booking[]>; onDone: () => void }) {
+  const arrange = useContext(Context);
+  const from = booking.scheduled ? daySpot(booking.starts) : PLACES;
+  const [to, setTo] = useState<Spot>(from);
+  const there = (spots.get(to) ?? []).filter((b) => b.id !== booking.id);
+  const current = (spots.get(from) ?? []).map((b) => b.id);
+  const before = current[current.indexOf(booking.id) - 1] ?? "";
+  const [after, setAfter] = useState<string>(before);
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    await arrange?.move(booking, to, after || null);
+    onDone();
+  }
+  return (
+    <form className="move-form" onSubmit={save} aria-label={`Move ${booking.title}`}>
+      <label className="field">
+        To
+        <select
+          className="input"
+          value={to}
+          onChange={(e) => {
+            setTo(e.target.value as Spot);
+            setAfter("");
+          }}
+        >
+          {days.map((d) => (
+            <option key={d} value={daySpot(d)}>
+              {dayName(d)}
+            </option>
+          ))}
+          <option value={PLACES}>Places to visit (no day)</option>
+        </select>
+      </label>
+      <label className="field">
+        Where
+        <select className="input" value={after} onChange={(e) => setAfter(e.target.value)}>
+          <option value="">First</option>
+          {there.map((b) => (
+            <option key={b.id} value={b.id}>
+              After {b.title}
+            </option>
+          ))}
+        </select>
+      </label>
+      <span className="actions">
+        <button type="submit" className="btn btn-small btn-primary">
+          Move
+        </button>
+        <button type="button" className="btn btn-small" onClick={onDone}>
+          Cancel
+        </button>
+      </span>
+    </form>
+  );
+}
+
+const NOTE_ICON: Record<DayNote["kind"], string> = { clash: "⚠️", order: "↕️", free: "🕒" };
+
+/** What's worth a look on a day: things that overlap, plans out of time order, and
+ * free time, with a way to fill it. */
+export function DayNotes({ notes, onFind }: { notes: DayNote[]; onFind?: (start: string | null) => void }) {
+  if (notes.length === 0) return null;
+  return (
+    <ul className="day-notes" aria-label="Worth a look">
+      {notes.map((n) => (
+        <li key={`${n.kind}-${n.text}`} className={`day-note day-note-${n.kind}`}>
+          <span aria-hidden="true">{NOTE_ICON[n.kind]}</span>
+          <span className="wrap">{n.text}</span>
+          {n.kind === "free" && onFind && (
+            <button type="button" className="btn btn-ghost btn-small" onClick={() => onFind(n.start ?? null)}>
+              Find something to do
+            </button>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}

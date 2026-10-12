@@ -362,16 +362,25 @@ export function PlaceLine({ booking }: { booking: Booking }) {
 }
 
 /** Find places on Google Maps and keep them as places to visit. */
-export function SavePlaces({ open = false, onDone }: { open?: boolean; onDone?: () => void } = {}) {
+export function SavePlaces({ open = false, day, at, onDone }: {
+  open?: boolean;
+  /** Saved as a plan on this day (at this time) instead of a place to visit. */
+  day?: string;
+  at?: string;
+  onDone?: () => void;
+} = {}) {
   const places = useContext(Context);
   const [finding, setFinding] = useState(open);
   const [saved, setSaved] = useState<string | null>(null);
   if (!places || !(places.enabled || places.ideas)) return null;
 
-  async function save(name: string, address: string | null, category: string | null, placeId: string | null) {
+  async function save(name: string, address: string | null, category: string | null, placeId: string | null, list: string | null = null) {
     await api(`/travel/trips/${places!.tripId}/bookings`, {
       method: "POST",
-      body: { kind: "activity", name: name.slice(0, 120), address: address?.slice(0, 200) ?? null, category: category?.slice(0, 30) ?? null, place_id: placeId },
+      body: {
+        kind: "activity", name: name.slice(0, 120), address: address?.slice(0, 200) ?? null, category: category?.slice(0, 30) ?? null, place_id: placeId,
+        day: day ?? null, at: day ? (at ?? null) : null, list_name: day ? null : list?.slice(0, 30) || null,
+      },
     });
     setSaved(name);
     setFinding(false);
@@ -396,10 +405,10 @@ export function SavePlaces({ open = false, onDone }: { open?: boolean; onDone?: 
   return (
     <PlaceFinder
       initial=""
-      pickLabel="Save"
+      pickLabel={day ? "Add" : "Save"}
       onCancel={() => setFinding(false)}
       onPick={(p) => save(p.name, p.address, p.kind, p.id)}
-      onPickIdea={places.ideas ? (i) => save(i.name, i.place?.address ?? i.area, i.kind, i.place?.id ?? null) : undefined}
+      onPickIdea={places.ideas ? (i) => save(i.name, i.place?.address ?? i.area, i.kind, i.place?.id ?? null, i.kind) : undefined}
     />
   );
 }

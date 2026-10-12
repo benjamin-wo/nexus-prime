@@ -1368,7 +1368,7 @@ test("ideas from guides and articles: asked for in words, credited, saved to the
 
   // Saving one without a Google Maps match keeps its name, kind and area.
   await ideas.getByRole("button", { name: "Save: Lantern Alley" }).click();
-  await expect.poll(() => state.plans[0]).toMatchObject({ name: "Lantern Alley", category: "Nightlife", address: "Euljiro", place_id: null });
+  await expect.poll(() => state.plans[0]).toMatchObject({ name: "Lantern Alley", category: "Nightlife", list_name: "Nightlife", address: "Euljiro", place_id: null });
   await page.keyboard.press("Escape");
   await expect(page.getByRole("list", { name: "Places to visit" })).toContainText("Lantern Alley");
 });
@@ -1415,6 +1415,14 @@ test("the trip on a map, coloured by day, with travel times between stops", asyn
   await expect(hop).toContainText("25 min by public transport");
   await expect(hop).toContainText("Tight");
   expect(state.hopModes).toEqual(["transit"]);
+  // Directions can open in another maps app, remembered on this device; it gets only the
+  // entries' own names, never Google's place ids.
+  await page.getByLabel("Directions open in").selectOption("apple");
+  await expect(hop.getByRole("link", { name: "Directions" })).toHaveAttribute("href", "https://maps.apple.com/?saddr=Hanok+Noodle+Bar&daddr=Namdaemun+Market&dirflg=r");
+  await page.reload();
+  await page.getByRole("heading", { name: /^Day 3 ·/ }).scrollIntoViewIfNeeded();
+  await expect(page.getByLabel("Directions open in")).toHaveValue("apple");
+  await page.getByLabel("Directions open in").selectOption("google");
 
   // Tapping a pin finds its plan on the itinerary.
   await page.evaluate(() => (window as unknown as { __map: { markers: { click: () => void }[] } }).__map.markers[1].click());
@@ -1428,6 +1436,127 @@ test("the trip on a map, coloured by day, with travel times between stops", asyn
     await expect(map).not.toHaveClass(/trip-map-full/);
   } else {
     await expect(map.getByRole("button", { name: "Full screen" })).toBeHidden();
+  }
+});
+
+test("a day rearranged: dragged, moved by keyboard or menu, with what to watch out for", async ({ page }, info) => {
+  const state = await fakeApi(page);
+  await addTrip(page, "Seoul", "2026-11-10", "2026-11-13");
+  // Made-up plans: two on day 2 that overlap, and two places to visit in two lists.
+  const entry = (id: string, name: string, more: Record<string, unknown>) => ({
+    id, trip_id: "trip1", kind: "activity", title: name, provider: null, starts: "2026-09-28", ends: null, segments: [], hotel: null,
+    address: null, check_in: null, check_out: null, name, day: null, at: null, ends_at: null, note: null, cost: null, logged: false,
+    manual: true, reference: null, booked_via: null, category: null, place_id: null, link: null, list_name: null, order: null,
+    scheduled: false, ...more,
+  });
+  const onDay2 = { day: "2026-11-11", starts: "2026-11-11", ends: "2026-11-11", scheduled: true };
+  state.plans.push(
+    entry("pl1", "Old Temple", { ...onDay2, at: "13:00", ends_at: "15:00" }),
+    entry("pl2", "Tea house", { ...onDay2, at: "14:00" }),
+    entry("pl3", "Lantern Alley", { list_name: "Nightlife" }),
+    entry("pl4", "Namdaemun Market", { list_name: "Shopping" }),
+  );
+  await page.reload();
+  const itinerary = page.getByRole("region", { name: "Itinerary" });
+  const day2 = itinerary.getByRole("list", { name: /^Day 2/ });
+  const day3 = itinerary.getByRole("list", { name: /^Day 3/ });
+
+  // What's worth a look on the day, worked out on the server.
+  const notes = itinerary.getByRole("list", { name: "Worth a look" });
+  await expect(notes.getByRole("listitem")).toHaveText([/Old Temple \(13:00 to 15:00\) runs into Tea house at 14:00/, /Free 09:00 to 13:00/]);
+  await expect(page.locator("#entry-pl1 .time-pill")).toHaveText("13:00–15:00");
+
+  // Places to visit filter by list.
+  const places = page.getByRole("list", { name: "Places to visit" });
+  const lists = page.getByRole("group", { name: "Lists" });
+  await lists.getByRole("button", { name: /Shopping/ }).click();
+  await expect(places.getByRole("listitem")).toHaveCount(1);
+  await expect(places).toContainText("Namdaemun Market");
+  await lists.getByRole("button", { name: "All" }).click();
+  await expect(places.getByRole("listitem")).toHaveCount(2);
+
+  // Dragged by its grip to above the temple: one call, and the day follows it.
+  const grip = page.getByRole("button", { name: "Drag Tea house" });
+  await grip.scrollIntoViewIfNeeded();
+  const from = (await grip.boundingBox())!;
+  const onto = (await page.locator("#entry-pl1").boundingBox())!;
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2 - 10, { steps: 3 });
+  await page.mouse.move(onto.x + 40, onto.y + 4, { steps: 8 });
+  await expect(page.locator("#entry-pl1")).toHaveClass(/drop-before/);
+  await page.mouse.up();
+  await expect.poll(() => state.moves).toEqual(["pl2>2026-11-11@first"]);
+  await expect(day2.locator(".timeline-stop strong")).toHaveText(["Tea house", "Old Temple"]);
+
+  // With the keyboard: picked up, taken up to the empty day 3, and dropped.
+  const keys = page.getByRole("button", { name: "Drag Lantern Alley" });
+  await keys.focus();
+  await page.keyboard.press("Space");
+  const said = page.getByRole("status", { name: "Moving a plan" });
+  await expect(said).toContainText("Picked up Lantern Alley");
+  // Up from first in places to visit: first on day 4, then first on day 3.
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("ArrowUp");
+  await expect(said).toContainText(/Lantern Alley: first, Thu.*12/);
+  await expect(day3.locator("..")).toHaveClass(/drop-over/);
+  await page.keyboard.press("Space");
+  await expect.poll(() => state.moves).toEqual(["pl2>2026-11-11@first", "pl3>2026-11-12@first"]);
+  await expect(day3).toContainText("Lantern Alley");
+  await expect(places).not.toContainText("Lantern Alley");
+  await expect(page.getByRole("button", { name: "Drag Lantern Alley" })).toBeFocused();
+
+  // Or from the entry's menu, without dragging: the temple after it on day 3.
+  await page.getByRole("button", { name: "Change Old Temple" }).click();
+  await page.getByRole("button", { name: "Move Old Temple to another day or place" }).click();
+  const move = page.getByRole("form", { name: "Move Old Temple" });
+  await move.getByLabel("To").selectOption({ label: new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).format(new Date("2026-11-12")) });
+  await move.getByLabel("Where").selectOption({ label: "After Lantern Alley" });
+  await move.getByRole("button", { name: "Move" }).click();
+  await expect.poll(() => state.moves.at(-1)).toBe("pl1>2026-11-12@pl3");
+  await expect(day3.locator(".timeline-stop strong")).toHaveText(["Lantern Alley", "Old Temple"]);
+
+  // Free time left on day 2 offers something to fill it, saved onto that day.
+  await expect(notes.first()).toContainText("Free 09:00 to 14:00");
+  await notes.first().getByRole("button", { name: "Find something to do" }).click();
+  await page.getByRole("search", { name: "Search Google Maps" }).getByLabel("Look for").fill("noodles");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await page.getByRole("list", { name: "Google Maps results" }).getByRole("button", { name: "Add: Hanok Noodle Bar" }).click();
+  await expect.poll(() => state.plans.at(-1)).toMatchObject({ name: "Hanok Noodle Bar", day: "2026-11-11", at: "09:00", place_id: "fakePlaceNoodle01" });
+  await page.keyboard.press("Escape");
+  await expect(day2).toContainText("Hanok Noodle Bar");
+
+  // An end time and a link, from the entry's editor.
+  await page.getByRole("button", { name: "Change Tea house" }).click();
+  await page.getByRole("button", { name: "Edit Tea house" }).click();
+  const edit = page.getByRole("form", { name: "Change the entry" });
+  await edit.getByLabel("Until").fill("15:30");
+  await edit.getByLabel("Link").fill("https://tea.example.com/book");
+  await edit.getByRole("button", { name: "Save" }).click();
+  await expect.poll(() => state.plans.find((p) => p.id === "pl2")).toMatchObject({ ends_at: "15:30", link: "https://tea.example.com/book" });
+  await expect(page.locator("#entry-pl2 .time-pill")).toHaveText("14:00–15:30");
+  const link = page.getByRole("link", { name: "Open the link for Tea house" });
+  await expect(link).toHaveAttribute("href", "https://tea.example.com/book");
+  await expect(link).toHaveAttribute("rel", /noopener/);
+
+  // On a phone: a long press on the grip, then a drag, to above the noodle bar.
+  if (info.project.name === "mobile") {
+    await expect(day2.locator(".timeline-stop strong")).toHaveText(["Hanok Noodle Bar", "Tea house"]);
+    const touch = await page.context().newCDPSession(page);
+    await page.locator("#entry-pl5").evaluate((e) => e.scrollIntoView({ block: "center" }));
+    await page.waitForLoadState("networkidle");
+    const start = (await page.getByRole("button", { name: "Drag Tea house" }).boundingBox())!;
+    const noodles = (await page.locator("#entry-pl5").boundingBox())!;
+    const at = (x: number, y: number) => [{ x: Math.round(x), y: Math.round(y) }];
+    const [x0, y0, y1] = [start.x + start.width / 2, start.y + start.height / 2, noodles.y + 6];
+    await touch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: at(x0, y0) });
+    await page.waitForTimeout(400);
+    for (let i = 1; i <= 10; i += 1) {
+      await touch.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: at(x0, y0 + ((y1 - y0) * i) / 10) });
+    }
+    await expect(page.locator("#entry-pl5")).toHaveClass(/drop-before/);
+    await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await expect.poll(() => state.moves.at(-1)).toBe("pl2>2026-11-11@first");
   }
 });
 

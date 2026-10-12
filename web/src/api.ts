@@ -568,6 +568,14 @@ export type Booking = {
   booked_via: string | null;
   category: string | null;
   place_id: string | null;
+  /** A plan's end time, HH:MM. */
+  ends_at?: string | null;
+  /** A link to book or read more (https only). */
+  link?: string | null;
+  /** The list a place to visit is filed under (Food, Sights…). */
+  list_name?: string | null;
+  /** Its place in the day (or in places to visit) once rearranged by hand. */
+  order?: number | null;
   scheduled: boolean;
   cost: Money | null;
   logged: boolean;
@@ -636,9 +644,19 @@ export type TripShare = { token: string | null };
 
 export type ScreenshotRead = { added: Booking[]; repeated: number; message: string };
 
+/** Something worth a look on a trip day, worked out on the server. */
+export type DayNote = { kind: "clash" | "order" | "free"; text: string; ids: string[]; start?: string | null; end?: string | null };
+
+/** A trip day: its entries' ids in itinerary order, and its notes. */
+export type DayPlan = { day: string; order: string[]; notes: DayNote[] };
+
 export type TripDetail = {
   trip: Trip;
   bookings: Booking[];
+  /** Each day's entries in order, as the server arranges them. */
+  days?: DayPlan[];
+  /** Places to visit (no day yet) in the user's order. */
+  places_order?: string[];
   places: boolean;
   /** Quick ideas from travel guides and articles are set up. */
   ideas?: boolean;

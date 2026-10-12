@@ -10,7 +10,8 @@ import { type AddPreset, AddSheet } from "./TripAdd";
 import { Companions, NextUp, PhotoCredit, TripCard, coverStyle, legTimes, tripWhen } from "./TripBits";
 import { PackingCard, WeatherCard } from "./TripExtras";
 import { type Fix, MoneyBar, SpendingNow, type Stage, StillToSort, TripTotals, stageOf } from "./TripStage";
-import { DayHops, HopLine, TripMap } from "./TripMap";
+import { ArrangeProvider, DayNotes, DropZone, MoveForm, PLACES, type Spot, daySpot, useArrange, useDragEntry } from "./TripArrange";
+import { DayHops, HopLine, MapAppPicker, TripMap } from "./TripMap";
 import { PlaceLine, PlaceThumb, SavePlaces, TripPlacesProvider } from "./TripPlaces";
 import { ShareSheet } from "./TripShare";
 import { TodayView } from "./TripToday";
@@ -584,6 +585,7 @@ type EntryForm = {
   name: string;
   day: string;
   at: string;
+  ends: string;
   until: string;
   address: string;
   number: string;
@@ -597,13 +599,15 @@ type EntryForm = {
   bookedVia: string;
   cost: string;
   currency: string;
+  link: string;
+  list: string;
 };
 
 const PLACE_KINDS = ["Food", "Sight", "Shopping", "Nature", "Nightlife", "Museum", "Activity"];
 
 const EMPTY: EntryForm = {
-  kind: "activity", category: "", name: "", day: "", at: "", until: "", address: "", number: "", origin: "", destination: "",
-  departs: "", arrives: "", provider: "", note: "", reference: "", bookedVia: "", cost: "", currency: "",
+  kind: "activity", category: "", name: "", day: "", at: "", ends: "", until: "", address: "", number: "", origin: "", destination: "",
+  departs: "", arrives: "", provider: "", note: "", reference: "", bookedVia: "", cost: "", currency: "", link: "", list: "",
 };
 
 function formOf(b: Booking): EntryForm {
@@ -614,6 +618,7 @@ function formOf(b: Booking): EntryForm {
     name: b.kind === "hotel" ? (b.hotel ?? "") : (b.name ?? ""),
     day: (b.kind === "hotel" ? b.check_in : b.day) ?? "",
     at: b.at ?? "",
+    ends: b.ends_at ?? "",
     until: b.check_out ?? "",
     address: b.address ?? "",
     number: leg?.number ?? "",
@@ -627,15 +632,23 @@ function formOf(b: Booking): EntryForm {
     bookedVia: b.booked_via ?? "",
     cost: b.cost ? String(Number(b.cost.amount)) : "",
     currency: b.cost?.currency ?? "",
+    link: b.link ?? "",
+    list: b.list_name ?? "",
   };
 }
 
 function bodyOf(f: EntryForm, home: string) {
   const blank = (v: string) => v.trim() || null;
-  const base = { kind: f.kind, note: blank(f.note), reference: blank(f.reference), booked_via: blank(f.bookedVia), cost: blank(f.cost), currency: f.cost.trim() ? f.currency.trim() || home : null };
-  if (f.kind === "activity") return { ...base, name: blank(f.name), day: blank(f.day), at: blank(f.at), address: blank(f.address), category: blank(f.category) };
+  const base = {
+    kind: f.kind, note: blank(f.note), reference: blank(f.reference), booked_via: blank(f.bookedVia), link: blank(f.link),
+    cost: blank(f.cost), currency: f.cost.trim() ? f.currency.trim() || home : null,
+  };
+  if (f.kind === "activity") {
+    const at = blank(f.at);
+    return { ...base, name: blank(f.name), day: blank(f.day), at, ends_at: at ? blank(f.ends) : null, address: blank(f.address), category: blank(f.category) };
+  }
   // A place given a day goes onto the itinerary as a plan on that day.
-  if (f.kind === "place") return { ...base, kind: "activity", name: blank(f.name), day: blank(f.day), at: null, address: blank(f.address), category: blank(f.category) };
+  if (f.kind === "place") return { ...base, kind: "activity", name: blank(f.name), day: blank(f.day), at: null, address: blank(f.address), category: blank(f.category), list_name: blank(f.list) };
   if (f.kind === "hotel") return { ...base, hotel: blank(f.name), check_in: blank(f.day), check_out: blank(f.until), address: blank(f.address) };
   return {
     ...base,
@@ -645,11 +658,13 @@ function bodyOf(f: EntryForm, home: string) {
 }
 
 /** Add or change an itinerary entry by hand: a plan, a flight, a hotel or a train. */
-function EntryEditor({ trip, home, entry, preset, onDone }: {
+function EntryEditor({ trip, home, entry, preset, lists = [], onDone }: {
   trip: Trip;
   home: string;
   entry?: Booking;
   preset?: { kind: EntryKind; day?: string };
+  /** The trip's lists so far, offered as a place's list is typed. */
+  lists?: string[];
   onDone: (saved: boolean) => void;
 }) {
   const tripId = trip.id;
@@ -711,6 +726,10 @@ function EntryEditor({ trip, home, entry, preset, onDone }: {
             Time
             <input className="input" type="time" value={f.at} onChange={set("at")} />
           </label>
+          <label className="field">
+            Until
+            <input className="input" type="time" value={f.ends} min={f.at || undefined} disabled={!f.at} onChange={set("ends")} />
+          </label>
         </div>
       )}
       {f.kind === "place" && (
@@ -724,6 +743,15 @@ function EntryEditor({ trip, home, entry, preset, onDone }: {
             <input className="input" value={f.category} maxLength={30} list="place-kinds" onChange={set("category")} placeholder="Food, Sight…" />
             <datalist id="place-kinds">
               {PLACE_KINDS.map((k) => (
+                <option key={k} value={k} />
+              ))}
+            </datalist>
+          </label>
+          <label className="field">
+            List
+            <input className="input" value={f.list} maxLength={30} list="place-lists" onChange={set("list")} placeholder="Eat, Must see…" />
+            <datalist id="place-lists">
+              {lists.map((k) => (
                 <option key={k} value={k} />
               ))}
             </datalist>
@@ -790,6 +818,10 @@ function EntryEditor({ trip, home, entry, preset, onDone }: {
           <input className="input" value={f.address} maxLength={200} onChange={set("address")} />
         </label>
       )}
+      <label className="field">
+        Link
+        <input className="input" type="url" inputMode="url" value={f.link} maxLength={500} onChange={set("link")} placeholder="https://… to book or read more" />
+      </label>
       <div className="trip-form-row">
         <label className="field">
           Booking reference
@@ -884,15 +916,17 @@ function DayLabel({ trip, iso, onChange }: { trip: Trip; iso: string; onChange: 
 }
 
 /** A flight or train as a slim strip, a hotel check-in or check-out, or a numbered stop. */
-function TimelineEntry({ booking, iso, stop, children }: { booking: Booking; iso: string; stop: number | null; children?: ReactNode }) {
+function TimelineEntry({ booking, iso, stop, spot, children }: { booking: Booking; iso: string; stop: number | null; spot?: Spot; children?: ReactNode }) {
+  const drag = useDragEntry(booking, spot);
   if (booking.kind === "hotel") {
     const out = booking.check_out === iso && booking.check_in !== iso;
     return (
-      <li className="timeline-strip" id={out ? undefined : `entry-${booking.id}`}>
+      <li ref={drag.ref} className={`timeline-strip${drag.className}`} id={out ? undefined : `entry-${booking.id}`}>
         <span aria-hidden="true">🏨</span>
         <span className="wrap">
           <strong>{booking.hotel ?? booking.title}</strong>
           {!out && <BookingLines booking={booking} />}
+          {!out && <OpenLink booking={booking} />}
         </span>
         <span className={`badge ${out ? "badge-pending" : "badge-in"}`}>{out ? "Check out" : "Check in"}</span>
         {!out && children}
@@ -901,13 +935,14 @@ function TimelineEntry({ booking, iso, stop, children }: { booking: Booking; iso
   }
   if (booking.kind === "flight" || booking.kind === "rail") {
     return (
-      <li className="timeline-strip" id={`entry-${booking.id}`}>
+      <li ref={drag.ref} className={`timeline-strip${drag.className}`} id={`entry-${booking.id}`}>
         <span aria-hidden="true">{KIND_ICON[booking.kind]}</span>
         <span className="wrap">
           <strong>{booking.title}</strong>
           {booking.provider && <span className="caption"> · {booking.provider}</span>}
           <br />
           <BookingLines booking={booking} />
+          <OpenLink booking={booking} />
         </span>
         {booking.cost && <span className="num">{formatMoney(booking.cost)}</span>}
         {children}
@@ -915,16 +950,23 @@ function TimelineEntry({ booking, iso, stop, children }: { booking: Booking; iso
     );
   }
   return (
-    <li className="timeline-stop" id={`entry-${booking.id}`}>
+    <li ref={drag.ref} className={`timeline-stop${drag.className}`} id={`entry-${booking.id}`}>
+      {drag.handle}
       <span className="stop-number" aria-hidden="true">
         {stop}
       </span>
       <span className="wrap">
         <strong>{booking.title}</strong>
-        {booking.at && <span className="time-pill">{booking.at}</span>}
+        {booking.at && (
+          <span className="time-pill">
+            {booking.at}
+            {booking.ends_at && `–${booking.ends_at}`}
+          </span>
+        )}
         {booking.category && <span className="caption"> · {booking.category}</span>}
         <br />
         <BookingLines booking={booking} noTime />
+        <OpenLink booking={booking} />
       </span>
       {booking.cost && <span className="num">{formatMoney(booking.cost)}</span>}
       <PlaceThumb booking={booking} />
@@ -933,17 +975,31 @@ function TimelineEntry({ booking, iso, stop, children }: { booking: Booking; iso
   );
 }
 
+/** An entry's own link, to book or read more. */
+function OpenLink({ booking }: { booking: Booking }) {
+  if (!booking.link) return null;
+  return (
+    <a className="caption entry-link" href={booking.link} target="_blank" rel="noopener noreferrer" aria-label={`Open the link for ${booking.title}`}>
+      Open link ↗
+    </a>
+  );
+}
+
 /** The trip day by day: a strip of days to jump between, each day's label, its
  * flights, trains and hotel check-ins and check-outs, and numbered plans in time order. */
 function Itinerary({ detail, onChange, onAdd, collapsed }: {
   detail: TripDetail;
   onChange: () => void;
-  onAdd: (preset: { kind: EntryKind; day?: string }) => void;
+  onAdd: (preset: AddPreset) => void;
   /** Folded to this one line until opened. */
   collapsed?: string;
 }) {
   const home = useHome();
   const [editing, setEditing] = useState<string | null>(null);
+  const [moving, setMoving] = useState<string | null>(null);
+  const arrange = useArrange(detail);
+  const notesOf = (iso: string) => detail.days?.find((x) => x.day === iso)?.notes ?? [];
+  const addressOf = (id: string) => detail.bookings.find((b) => b.id === id)?.address ?? null;
   const scheduled = detail.bookings.filter((b) => b.scheduled);
   const sorted = [...scheduled].sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
   const stays = sorted.filter((b) => b.kind === "hotel" && b.check_in && b.check_out);
@@ -970,7 +1026,14 @@ function Itinerary({ detail, onChange, onAdd, collapsed }: {
     document.getElementById(`day-${iso}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  const actions = (b: Booking) => <EntryActions booking={b} onEdit={() => setEditing(b.id)} onRemove={() => void remove(b)} />;
+  const actions = (b: Booking) => (
+    <EntryActions
+      booking={b}
+      onEdit={() => setEditing(b.id)}
+      onMove={arrange.on && b.kind === "activity" ? () => setMoving(b.id) : undefined}
+      onRemove={() => void remove(b)}
+    />
+  );
 
   return (
     <Fold collapsed={collapsed}>
@@ -982,7 +1045,7 @@ function Itinerary({ detail, onChange, onAdd, collapsed }: {
         ))}
       </nav>
       {days.map((d) => {
-        const entries = sorted.filter((b) => b.starts === d);
+        const entries = arrange.spots.get(daySpot(d)) ?? [];
         const outs = checkingOut(d).filter((b) => b.starts !== d);
         const n = dayNumber(d);
         const ends = d === detail.trip.start || d === detail.trip.end;
@@ -999,6 +1062,7 @@ function Itinerary({ detail, onChange, onAdd, collapsed }: {
                 <h3>{dayLabel(d)}</h3>
                 <DayLabel trip={detail.trip} iso={d} onChange={onChange} />
               </div>
+              <DayNotes notes={notesOf(d)} onFind={inTrip(d) ? (start) => onAdd({ kind: "activity", day: d, at: start ?? undefined, find: true }) : undefined} />
               {staying(d).map((b) => (
                 <p key={b.id} className="caption">
                   <span aria-hidden="true">🏨</span> Staying at {b.hotel ?? b.title}
@@ -1020,13 +1084,14 @@ function Itinerary({ detail, onChange, onAdd, collapsed }: {
                   const into = (b: Booking) => hops.filter((h) => h.end_id === b.id);
                   const after = hops.filter((h) => !shownIds.has(h.end_id));
                   return (
+                    <DropZone spot={daySpot(d)} empty={entries.every((b) => b.id === arrange.dragging)}>
                     <ul className="timeline" aria-label={dayLabel(d)}>
                       {outs.map((b) => (
                         <TimelineEntry key={`out-${b.id}`} booking={b} iso={d} stop={null} />
                       ))}
                       {entries.map((b) => {
                         if (b.kind === "activity") stop += 1;
-                        const hopsIn = into(b).map((h) => <HopLine key={`hop-${h.start_id}-${h.end_id}`} tripId={detail.trip.id} day={d} hop={h} />);
+                        const hopsIn = into(b).map((h) => <HopLine key={`hop-${h.start_id}-${h.end_id}`} tripId={detail.trip.id} day={d} hop={h} addressOf={addressOf} />);
                         return editing === b.id ? (
                           <Fragment key={b.id}>
                             {hopsIn}
@@ -1045,20 +1110,26 @@ function Itinerary({ detail, onChange, onAdd, collapsed }: {
                         ) : (
                           <Fragment key={b.id}>
                             {hopsIn}
-                            <TimelineEntry booking={b} iso={d} stop={b.kind === "activity" ? stop : null}>
+                            <TimelineEntry booking={b} iso={d} stop={b.kind === "activity" ? stop : null} spot={daySpot(d)}>
                               {actions(b)}
                             </TimelineEntry>
+                            {moving === b.id && (
+                              <li>
+                                <MoveForm booking={b} days={days} spots={arrange.spots} onDone={() => setMoving(null)} />
+                              </li>
+                            )}
                           </Fragment>
                         );
                       })}
                       {after.map((h) => (
-                        <HopLine key={`hop-${h.start_id}-${h.end_id}`} tripId={detail.trip.id} day={d} hop={h} />
+                        <HopLine key={`hop-${h.start_id}-${h.end_id}`} tripId={detail.trip.id} day={d} hop={h} addressOf={addressOf} />
                       ))}
                     </ul>
+                    {empty && <p className="caption">Nothing planned yet</p>}
+                    </DropZone>
                   );
                 }}
               </DayHops>
-              {empty && <p className="caption">Nothing planned yet</p>}
               <button type="button" className="btn btn-ghost btn-small" onClick={() => onAdd({ kind: "activity", day: d })} aria-label={`Add a plan on ${dayPill(d)}`}>
                 + Add a plan
               </button>
@@ -1067,12 +1138,13 @@ function Itinerary({ detail, onChange, onAdd, collapsed }: {
         );
       })}
       <p className="caption">Times are local.</p>
+      {detail.routes && detail.places && <MapAppPicker />}
     </Fold>
   );
 }
 
 /** An entry's Edit and Remove, behind one small button so the timeline reads cleanly. */
-function EntryActions({ booking, onEdit, onRemove }: { booking: Booking; onEdit: () => void; onRemove: () => void }) {
+function EntryActions({ booking, onEdit, onMove, onRemove }: { booking: Booking; onEdit: () => void; onMove?: () => void; onRemove: () => void }) {
   const [open, setOpen] = useState(false);
   return (
     <span className="entry-actions">
@@ -1081,6 +1153,19 @@ function EntryActions({ booking, onEdit, onRemove }: { booking: Booking; onEdit:
           <button type="button" className="btn btn-small" onClick={onEdit} aria-label={`Edit ${booking.title}`}>
             Edit
           </button>
+          {onMove && (
+            <button
+              type="button"
+              className="btn btn-small"
+              onClick={() => {
+                setOpen(false);
+                onMove();
+              }}
+              aria-label={`Move ${booking.title} to another day or place`}
+            >
+              Move
+            </button>
+          )}
           <button type="button" className="btn btn-small" onClick={onRemove} aria-label={`Remove ${booking.title}`}>
             Remove
           </button>
@@ -1120,90 +1205,103 @@ function Fold({ collapsed, children }: { collapsed?: string; children: ReactNode
   );
 }
 
-const SECTIONS: { kind: EntryKind; title: string; one: string; icon: string }[] = [
-  { kind: "flight", title: "Flights", one: "flight", icon: "✈️" },
-  { kind: "hotel", title: "Hotels and lodging", one: "lodging", icon: "🏨" },
-  { kind: "rail", title: "Trains", one: "train", icon: "🚆" },
-  { kind: "place", title: "Places to visit", one: "place", icon: "📍" },
-];
+/** The list a place to visit shows under: its own list, else its kind. */
+const listOf = (b: Booking) => b.list_name ?? b.category ?? null;
 
-const inSection = (kind: EntryKind) => (b: Booking) =>
-  kind === "place" ? b.kind === "activity" && !b.scheduled : b.kind === kind;
+/** A place to visit in the list: its grip, what it is, and its buttons. */
+function PlaceRow({ booking, n, children }: { booking: Booking; n: number; children: ReactNode }) {
+  const drag = useDragEntry(booking, PLACES);
+  return (
+    <li ref={drag.ref} className={`run-row${drag.className}`} id={`entry-${booking.id}`}>
+      {drag.handle}
+      <span className="stop-number" aria-hidden="true">
+        {n}
+      </span>
+      <span className="wrap">
+        <strong>{booking.title}</strong>
+        {listOf(booking) && <span className="caption"> · {listOf(booking)}</span>}
+        <br />
+        <BookingLines booking={booking} />
+        <OpenLink booking={booking} />
+      </span>
+      {booking.cost && <span className="num">{formatMoney(booking.cost)}</span>}
+      {children}
+    </li>
+  );
+}
 
-/** Places to visit: saved without a day, each given one when it fits the plan. Bookings
- * live on the timeline, so this is the one list kept apart from it. */
+/** Places to visit: saved without a day, each given one when it fits the plan (or
+ * dragged onto a day). Bookings live on the timeline, so this is the one list kept
+ * apart from it. Filed in lists, which filter it once there are two or more. */
 function Sections({ detail, onChange }: { detail: TripDetail; onChange: () => void }) {
   const home = useHome();
   const [editing, setEditing] = useState<string | null>(null);
+  const [list, setList] = useState<string | null>(null);
+  const arrange = useArrange(detail);
+  const all = arrange.spots.get(PLACES) ?? [];
+  const lists = [...new Set(all.map(listOf).filter((l): l is string => Boolean(l)))].sort();
+  const picked = list && lists.includes(list) ? list : null;
+  const items = picked ? all.filter((b) => listOf(b) === picked) : all;
   async function remove(b: Booking) {
     if (!window.confirm(`Take ${b.title} off the trip?`)) return;
     await api(`/travel/bookings/${b.id}`, { method: "DELETE" }).catch(() => undefined);
     onChange();
   }
+  if (all.length === 0 && !detail.places) return null;
   return (
-    <>
-      {SECTIONS.filter((s) => s.kind === "place").map((s) => {
-        const items = detail.bookings.filter(inSection(s.kind)).sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
-        if (items.length === 0 && !detail.places) return null;
-        return (
-          <details key={s.kind} id={`section-${s.kind}`} className="card section" open>
-            <summary>
-              <h2>
-                <span aria-hidden="true">{s.icon}</span> {s.title}
-              </h2>
-              <span className="caption">{items.length || "None yet"}</span>
-            </summary>
-            <ul className="feed" aria-label={s.title}>
-              {items.map((b, n) =>
-                editing === b.id ? (
-                  <li key={b.id}>
-                    <EntryEditor
-                      trip={detail.trip}
-                      home={home}
-                      entry={b}
-                      onDone={(saved) => {
-                        setEditing(null);
-                        if (saved) onChange();
-                      }}
-                    />
-                  </li>
-                ) : (
-                  <li key={b.id} className="run-row">
-                    {s.kind === "place" && (
-                      <span className="stop-number" aria-hidden="true">
-                        {n + 1}
-                      </span>
-                    )}
-                    <span className="wrap">
-                      <strong>{b.title}</strong>
-                      {b.category && <span className="caption"> · {b.category}</span>}
-                      {b.scheduled && <span className="caption"> · {day(b.starts)}</span>}
-                      <br />
-                      <BookingLines booking={b} />
-                    </span>
-                    {b.cost && (
-                      <span className="num">
-                        {formatMoney(b.cost)}
-                        {b.scheduled && !b.logged && <span className="caption"> not logged</span>}
-                      </span>
-                    )}
-                    <span className="row-actions">
-                      <button type="button" className="btn btn-small" onClick={() => setEditing(b.id)} aria-label={s.kind === "place" ? `Plan a day for ${b.title}` : `Edit ${b.title}`}>
-                        {s.kind === "place" ? "Pick a day" : "Edit"}
-                      </button>
-                      <button type="button" className="btn btn-small" onClick={() => void remove(b)} aria-label={`Remove ${b.title}`}>
-                        Remove
-                      </button>
-                    </span>
-                  </li>
-                ),
-              )}
-            </ul>
-            {s.kind === "place" && <SavePlaces />}
-          </details>
-        );
-      })}
-    </>
+    <details id="section-place" className="card section" open>
+      <summary>
+        <h2>
+          <span aria-hidden="true">📍</span> Places to visit
+        </h2>
+        <span className="caption">{all.length || "None yet"}</span>
+      </summary>
+      {lists.length > 1 && (
+        <div className="chips list-chips" role="group" aria-label="Lists">
+          <button type="button" className="day-pill" aria-pressed={!picked} onClick={() => setList(null)}>
+            All
+          </button>
+          {lists.map((l) => (
+            <button key={l} type="button" className="day-pill" aria-pressed={picked === l} onClick={() => setList(l)}>
+              {l} <span className="caption">{all.filter((b) => listOf(b) === l).length}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      <DropZone spot={PLACES} empty={all.every((b) => b.id === arrange.dragging)}>
+        <ul className="feed" aria-label="Places to visit">
+          {items.map((b) =>
+            editing === b.id ? (
+              <li key={b.id}>
+                <EntryEditor
+                  trip={detail.trip}
+                  home={home}
+                  entry={b}
+                  lists={lists}
+                  onDone={(saved) => {
+                    setEditing(null);
+                    if (saved) onChange();
+                  }}
+                />
+              </li>
+            ) : (
+              <PlaceRow key={b.id} booking={b} n={all.indexOf(b) + 1}>
+                <span className="row-actions">
+                  <button type="button" className="btn btn-small" onClick={() => setEditing(b.id)} aria-label={`Plan a day for ${b.title}`}>
+                    Pick a day
+                  </button>
+                  <button type="button" className="btn btn-small" onClick={() => void remove(b)} aria-label={`Remove ${b.title}`}>
+                    Remove
+                  </button>
+                </span>
+              </PlaceRow>
+            ),
+          )}
+        </ul>
+      </DropZone>
+      {arrange.on && all.length > 0 && <p className="caption">Drag a place onto a day to plan it.</p>}
+      <SavePlaces />
+    </details>
   );
 }
 
@@ -1453,6 +1551,8 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
     void client.invalidateQueries({ queryKey: ["trip", id] });
     void client.invalidateQueries({ queryKey: ["trips"] });
     void client.invalidateQueries({ queryKey: ["trip-places", id] });
+    // A change to the day can change who goes where, and so the travel times.
+    void client.invalidateQueries({ queryKey: ["trip-hops", id] });
   };
 
   function form(preset: AddPreset) {
@@ -1560,6 +1660,7 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
       )}
       {data && (
         <TripPlacesProvider tripId={id} destination={data.trip.destination} enabled={data.places} ideas={data.ideas ?? false} onChange={refresh}>
+          <ArrangeProvider detail={data} days={tripDays(data)} on={stage !== "after"} onChange={refresh}>
           {reading && (
             <p className="state" role="status">
               Reading the screenshot…
@@ -1688,6 +1789,7 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
             />
           )}
           {sharing && <ShareSheet trip={data.trip} onClose={() => setSharing(false)} />}
+          </ArrangeProvider>
         </TripPlacesProvider>
       )}
     </div>
