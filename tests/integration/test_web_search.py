@@ -1,7 +1,9 @@
 """Web search kept and shared out: an answer is reused for a day, each product stays
 within its share of the free credits, and past it (or when the provider fails) the
-fallback answers instead. Every page here is made up."""
+fallback answers instead. Pages read by address are kept and counted the same way.
+Every page here is made up."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import timedelta
 from decimal import Decimal
@@ -10,8 +12,10 @@ import pytest
 
 from nexus.application.web_search import (
     KEEP_FOR,
+    KeptReader,
     KeptSearch,
     Product,
+    ReadPages,
     WebAnswer,
     WebSearchError,
     allowance,
@@ -118,3 +122,56 @@ async def test_without_tavily_the_fallback_answers(uow: UowFactory) -> None:
     # Its answers are kept too, so asking twice costs once.
     await travel.ask("anything")
     assert len(backup.asked) == 1
+
+
+@dataclass
+class Pages:
+    """Made-up news pages: any address under news.example.com reads, others don't."""
+
+    fail: bool = False
+    asked: list[list[str]] = field(default_factory=list)
+
+    async def read(self, urls: Sequence[str]) -> ReadPages:
+        self.asked.append(list(urls))
+        if self.fail:
+            raise WebSearchError("HTTP 500")
+        pages = {u: f"The article at {u}." for u in urls if "news.example.com" in u}
+        return ReadPages(pages, credits=1 if pages else 0)
+
+
+def reader(uow: UowFactory, pages: Pages, clock: Clock, monthly: int = 1000) -> KeptReader:
+    return KeptReader(uow, Product.INVESTMENT, reader=pages, monthly_credits=monthly, clock=clock)
+
+
+A, B, BLOCKED = (
+    "https://news.example.com/a",
+    "https://news.example.com/b",
+    "https://paywall.example.com/c",
+)
+
+
+async def test_pages_are_kept_a_day_including_ones_that_wouldnt_read(uow: UowFactory) -> None:
+    clock, pages = Clock(), Pages()
+    news = reader(uow, pages, clock)
+    assert await news.read([A, BLOCKED, A]) == {A: f"The article at {A}."}
+    # Read again: only the new page is fetched; the blocked one isn't tried again.
+    assert set(await news.read([A, B, BLOCKED])) == {A, B}
+    assert pages.asked == [[A, BLOCKED], [B]]
+    async with uow() as db:
+        assert await db.web.credits(NOW.date().replace(day=1)) == {"investment": 2}
+    # A day later everything is read afresh.
+    clock.now = NOW + KEEP_FOR + timedelta(seconds=1)
+    await news.read([A])
+    assert pages.asked[-1] == [A]
+
+
+async def test_past_its_share_or_failing_nothing_new_is_read(uow: UowFactory) -> None:
+    clock, pages = Clock(), Pages()
+    news = reader(uow, pages, clock, monthly=4)  # investment's share: 0 credits
+    assert allowance(4, Product.INVESTMENT) == 0
+    assert await news.read([A]) == {} and pages.asked == []
+    failing = reader(uow, Pages(fail=True), clock)
+    assert await failing.read([A]) == {}
+    # A failure isn't kept: next time it's tried again.
+    working = Pages()
+    assert await reader(uow, working, clock).read([A]) == {A: f"The article at {A}."}

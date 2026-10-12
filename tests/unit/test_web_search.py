@@ -10,7 +10,7 @@ import pytest
 
 from nexus.application.web_search import Product, WebSearchError, allowance
 from nexus.domain.evidence import figures, has_figure, mentions, normalise
-from nexus.infra.search.tavily import MAX_PAGE, TavilySearch, page_text
+from nexus.infra.search.tavily import MAX_PAGE, TavilyReader, TavilySearch, page_text
 
 PAGE = (
     "# Where to stay in Exampleton\n\n"
@@ -113,3 +113,53 @@ async def test_tavily_garbage_is_an_error_not_a_guess() -> None:
     async with httpx.AsyncClient(transport=transport) as http:
         with pytest.raises(WebSearchError, match="unexpected response"):
             await TavilySearch(http, "tvly-test").ask("anything")
+
+
+async def test_tavily_reads_only_the_pages_asked_for() -> None:
+    seen: list[httpx.Request] = []
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "results": [
+                    {"url": "https://news.example.com/a", "raw_content": PAGE},
+                    {"url": "https://other.example.com/x", "raw_content": "Not asked for."},
+                    {"url": "https://news.example.com/b", "raw_content": ""},
+                    "junk",
+                ],
+                "failed_results": [{"url": "https://news.example.com/c", "error": "blocked"}],
+            },
+        )
+
+    urls = [
+        "https://news.example.com/a",
+        "https://news.example.com/b",
+        "https://news.example.com/c",
+    ]
+    async with httpx.AsyncClient(transport=httpx.MockTransport(answer)) as http:
+        reader = TavilyReader(http, "tvly-test")
+        got = await reader.read([*urls, urls[0]])
+        assert (await reader.read([])).pages == {}
+    (request,) = seen  # nothing asked for, nothing sent
+    assert str(request.url) == "https://api.tavily.com/extract"
+    assert request.headers["Authorization"] == "Bearer tvly-test"
+    assert json.loads(request.content) == {
+        "urls": urls,
+        "extract_depth": "basic",
+        "format": "markdown",
+        "include_images": False,
+        "include_usage": True,
+    }
+    assert list(got.pages) == ["https://news.example.com/a"]
+    assert "1,200 to 1,850 JPY" in got.pages["https://news.example.com/a"]
+    # Without a usage count: one credit for every five pages read.
+    assert got.credits == 1
+
+
+async def test_tavily_reading_failures_are_errors() -> None:
+    transport = httpx.MockTransport(lambda r: httpx.Response(432, json={"detail": "key"}))
+    async with httpx.AsyncClient(transport=transport) as http:
+        with pytest.raises(WebSearchError, match=r"^out of search credits$"):
+            await TavilyReader(http, "tvly-test").read(["https://news.example.com/a"])

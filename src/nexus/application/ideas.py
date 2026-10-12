@@ -28,7 +28,7 @@ from nexus.domain.errors import InvalidInput
 from nexus.domain.evidence import mentions, normalise
 from nexus.domain.ledger import UserId
 from nexus.domain.places import Place
-from nexus.domain.travel_research import Source, clean_text, safe_url, sources_from
+from nexus.domain.travel_research import Source, clean_text, pages_by_source, sources_from
 
 log = logging.getLogger(__name__)
 
@@ -126,7 +126,7 @@ class IdeaFinder:
             pairs.append((guide.url, guide.title))
             pages.append(guide.text)
         sources = sources_from(pairs, self._clock().date())
-        texts = _pages_by_source(pairs, pages, sources)
+        texts = pages_by_source(pairs, pages, sources)
         if not sources:
             return Ideas(what, destination, [], [])
         ideas = await self._read(what, destination, sources, texts)
@@ -222,17 +222,6 @@ def _number(raw: str) -> int:
         return int(raw.strip().lstrip("[").rstrip("]"))
     except ValueError:
         return -1
-
-
-def _pages_by_source(
-    pairs: list[tuple[str, str]], pages: list[str], sources: list[Source]
-) -> dict[int, str]:
-    by_url: dict[str, str] = {}
-    for (url, _), page in zip(pairs, pages, strict=False):
-        safe = safe_url(url)
-        if safe is not None and page:
-            by_url.setdefault(safe, page)
-    return {s.id: by_url[s.url] for s in sources if s.url in by_url}
 
 
 def _text(content: Any) -> str:

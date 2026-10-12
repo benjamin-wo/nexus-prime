@@ -266,6 +266,11 @@ def build_travel_sorter(settings: Settings, model: str) -> BaseChatModel:
     return _quick(settings, model)
 
 
+def build_web_writer(settings: Settings, model: str) -> BaseChatModel:
+    """The model that answers a chat lookup from web pages: no reasoning, no tools."""
+    return _quick(settings, model)
+
+
 def text_of(content: Any) -> str:
     """Plain text from a model reply; Gemini may return a list of typed parts."""
     if isinstance(content, str):
