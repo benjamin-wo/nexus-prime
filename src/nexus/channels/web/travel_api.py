@@ -35,6 +35,7 @@ from nexus.domain.places import Place
 from nexus.domain.routes import Mode
 from nexus.domain.trips import MAX_COMPANIONS, MAX_DAY_LABEL, MAX_NOTES, MAX_PLANNED, Trip
 from nexus.domain.weather import YEARS, TripWeather, describe
+from nexus.settings import Settings
 
 log = logging.getLogger(__name__)
 
@@ -279,6 +280,16 @@ class TripDetailOut(Model):
     ideas: bool = False  # quick ideas from the web are set up
 
 
+def map_key(settings: Settings) -> str | None:
+    """The browser key for the trip map, or None. Never the server's Places key: the
+    page shows the key to anyone using it, and the server's key can't be limited to
+    this site (its calls don't come from a browser), so a copy would work anywhere."""
+    browser, server = settings.google_maps_browser_key, settings.google_places_api_key
+    if not browser or (server is not None and browser == server.get_secret_value()):
+        return None
+    return browser
+
+
 def _detail(
     view: trip_cases.TripView,
     web: WebRuntime | None = None,
@@ -342,7 +353,7 @@ def _detail(
         ),
         places=web is not None and web.places is not None,
         routes=web is not None and web.routes is not None and web.places is not None,
-        map_key=web.settings.google_maps_browser_key if web and web.places else None,
+        map_key=map_key(web.settings) if web and web.places else None,
         ideas=web is not None and web.ideas is not None,
     )
 

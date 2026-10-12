@@ -188,6 +188,11 @@ async def _places(
         if key is None:
             log.warning("GOOGLE_PLACES_API_KEY is not set; trips won't show Google Maps places")
             return None
+        if settings.google_maps_browser_key == key.get_secret_value():
+            log.warning(
+                "GOOGLE_MAPS_BROWSER_KEY is the same as GOOGLE_PLACES_API_KEY; the map is off. "
+                "Make a separate key limited to the Maps JavaScript API and this site's address"
+            )
         http = await stack.enter_async_context(httpx.AsyncClient())
         source = GooglePlaces(http, key.get_secret_value())
     return Places(source, clock=clock)

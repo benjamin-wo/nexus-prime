@@ -4,6 +4,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from nexus.channels.web.frontend import mount_frontend
+from nexus.channels.web.travel_api import map_key
+from nexus.settings import Settings
 
 
 def build(tmp_path: Path) -> TestClient:
@@ -69,3 +71,16 @@ def test_the_trip_map_is_allowed_and_nothing_else_is(tmp_path: Path) -> None:
     assert rules["style-src"] == "'self' 'unsafe-inline' https://fonts.googleapis.com"
     assert "https://*.gstatic.com" in rules["img-src"]
     assert rules["frame-ancestors"] == "https://web.telegram.org"
+
+
+def test_the_page_never_gets_the_server_key() -> None:
+    def settings(**keys: str) -> Settings:
+        return Settings(_env_file=None, database_url="postgresql://u:p@h/db", **keys)  # type: ignore[arg-type]
+
+    # Made-up keys. The browser's own key is handed to the page...
+    both = settings(google_places_api_key="server-key-0001", google_maps_browser_key="browser-0001")
+    assert map_key(both) == "browser-0001"
+    # ...but the server's key never is, even when it's set as the browser key too.
+    key = "server-key-0001"
+    assert map_key(settings(google_places_api_key=key, google_maps_browser_key=key)) is None
+    assert map_key(settings(google_places_api_key=key)) is None
