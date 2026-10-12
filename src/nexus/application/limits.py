@@ -17,11 +17,14 @@ IMPORTS: Sequence[Window] = ((30, timedelta(minutes=10)),)
 SHARED_VIEWS: Sequence[Window] = ((60, timedelta(minutes=1)), (2000, timedelta(days=1)))
 # Quick ideas for a trip: each is a web search and a model call.
 IDEAS: Sequence[Window] = ((6, timedelta(minutes=1)), (40, timedelta(days=1)))
+# Looking something up on the web from chat: a search and a model call each.
+WEB: Sequence[Window] = ((5, timedelta(minutes=1)), (20, timedelta(days=1)))
 DEFAULT_RULES: Mapping[str, Sequence[Window]] = {
     "message": MESSAGES,
     "import": IMPORTS,
     "shared": SHARED_VIEWS,
     "ideas": IDEAS,
+    "web": WEB,
 }
 
 

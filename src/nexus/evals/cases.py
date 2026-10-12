@@ -733,6 +733,14 @@ CASES: tuple[Case, ...] = (
         unchanged=True,
     ),
     Case(
+        "web-search-fact",
+        "ask",
+        _t("what's the day-tripper fee for Venice this year?"),
+        calls=(Call("web_search", {"question": Has("venice")}),),
+        forbid=("research_trip", "find_ideas", "create_trip"),
+        unchanged=True,
+    ),
+    Case(
         "trip-place-reviews",
         "ask",
         _t("what do the reviews say about Ichiran Shibuya? is it open on Mondays?"),

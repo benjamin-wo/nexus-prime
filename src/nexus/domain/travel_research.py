@@ -108,6 +108,19 @@ def sources_from(found: Iterable[tuple[str, str]], checked_on: date) -> list[Sou
     return kept
 
 
+def pages_by_source(
+    found: Sequence[tuple[str, str]], pages: Sequence[str], sources: Sequence[Source]
+) -> dict[int, str]:
+    """Each kept source's page text, by its number: ``pages`` are in the order of the
+    (url, title) pairs ``found``; unsafe links were dropped from ``sources``."""
+    by_url: dict[str, str] = {}
+    for (url, _), page in zip(found, pages, strict=False):
+        safe = safe_url(url)
+        if safe is not None and page:
+            by_url.setdefault(safe, page)
+    return {s.id: by_url[s.url] for s in sources if s.url in by_url}
+
+
 def _amount(raw: object) -> Decimal | None:
     try:
         value = Decimal(str(raw).replace(",", "").strip())

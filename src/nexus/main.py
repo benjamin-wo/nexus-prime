@@ -46,7 +46,8 @@ from nexus.application.rate_store import StoredRates
 from nexus.application.research import NewsSource
 from nexus.application.travel_research import research_kind
 from nexus.application.weather import Weather, WeatherSource
-from nexus.application.web_search import KeptSearch, Product, WebSearch
+from nexus.application.web_lookup import WebLookup
+from nexus.application.web_search import KeptReader, KeptSearch, Product, WebSearch
 from nexus.channels.telegram import webhook as telegram_webhook
 from nexus.channels.telegram.client import HttpTelegramClient, TelegramClient
 from nexus.channels.web import api as web_api
@@ -76,6 +77,7 @@ from nexus.infra.llm.factory import (
     build_screener,
     build_screenshot_reader,
     build_travel_sorter,
+    build_web_writer,
     openrouter_routing,
 )
 from nexus.infra.logs import configure_logging
@@ -85,7 +87,7 @@ from nexus.infra.photos.wikipedia import WikipediaPhotos
 from nexus.infra.places.google import GooglePlaces
 from nexus.infra.search.openrouter_web import OpenRouterWebSearch
 from nexus.infra.search.serpapi import SerpApiTravel
-from nexus.infra.search.tavily import TavilySearch
+from nexus.infra.search.tavily import TavilyReader, TavilySearch
 from nexus.infra.storage.s3 import S3ReceiptStore
 from nexus.infra.weather.open_meteo import OpenMeteo
 from nexus.jobs.handlers import MEMORY_UPDATE, SCHEDULES, build_handlers
@@ -119,6 +121,7 @@ class Overrides:
     photos: PhotoFinder | None = None
     weather: WeatherSource | None = None
     ideas: IdeaFinder | None = None
+    lookup: WebLookup | None = None
 
 
 def _receipt_store(settings: Settings, overrides: Overrides) -> ReceiptStore | None:
@@ -301,6 +304,7 @@ async def _telegram_runtime(
     departments: Departments | None = None,
     places: Places | None = None,
     ideas: IdeaFinder | None = None,
+    lookup: WebLookup | None = None,
 ) -> telegram_webhook.TelegramRuntime:
     def uow() -> SqlUnitOfWork:
         return SqlUnitOfWork(engine)
@@ -332,6 +336,7 @@ async def _telegram_runtime(
             departments=departments,
             places=places,
             ideas=ideas,
+            lookup=lookup,
         )
     ).compile(checkpointer)
     receipts: ReceiptReader | None = overrides.receipts
@@ -374,13 +379,23 @@ async def _telegram_runtime(
     )
 
 
-async def _travel_web(
+@dataclass(frozen=True, slots=True)
+class Web:
+    """Everything that asks the web, each within its product's share of the credits."""
+
+    travel: WebSearch
+    general: WebSearch
+    # Reads the articles behind an investment plan's headlines; None without Tavily.
+    news: KeptReader | None
+
+
+async def _web(
     settings: Settings, engine: AsyncEngine, stack: AsyncExitStack, clock: Callable[[], datetime]
-) -> WebSearch | None:
-    """Travel's web search: Tavily's pages with its key, falling back to OpenRouter's
-    web search, kept a day. None without OpenRouter, which sorts what's found."""
+) -> Web | None:
+    """Web search: Tavily's pages with its key, falling back to OpenRouter's web search,
+    kept a day. None without OpenRouter, which reads what's found."""
     key = settings.openrouter_api_key
-    model = settings.travel_research_model or settings.openrouter_model
+    model = _travel_model(settings)
     if key is None or not model:
         return None
     http = await stack.enter_async_context(httpx.AsyncClient())
@@ -394,14 +409,27 @@ async def _travel_web(
     tavily = settings.tavily_api_key
     if tavily is None:
         log.warning("TAVILY_API_KEY is not set; research reads search answers, not pages")
-    return KeptSearch(
-        lambda: SqlUnitOfWork(engine),
-        Product.TRAVEL,
-        primary=TavilySearch(http, tavily.get_secret_value()) if tavily else None,
-        fallback=fallback,
-        monthly_credits=settings.tavily_monthly_credits,
-        clock=clock,
+    primary = TavilySearch(http, tavily.get_secret_value()) if tavily else None
+    uow = lambda: SqlUnitOfWork(engine)  # noqa: E731
+    monthly = settings.tavily_monthly_credits
+
+    def search(product: Product) -> KeptSearch:
+        return KeptSearch(
+            uow, product, primary=primary, fallback=fallback, monthly_credits=monthly, clock=clock
+        )
+
+    news = (
+        KeptReader(
+            uow,
+            Product.INVESTMENT,
+            reader=TavilyReader(http, tavily.get_secret_value()),
+            monthly_credits=monthly,
+            clock=clock,
+        )
+        if tavily
+        else None
     )
+    return Web(search(Product.TRAVEL), search(Product.GENERAL), news)
 
 
 def _travel_model(settings: Settings) -> str:
@@ -414,14 +442,15 @@ async def _registry(
     models: ChatModels,
     rates: RateSource,
     stack: AsyncExitStack,
-    web: WebSearch | None = None,
+    web: Web | None = None,
 ) -> Departments:
     """The departments, with the Investment research team and, with travel's web
     search, the Travel researcher (live flight and hotel prices too with a SerpApi
     key)."""
     uow = lambda: SqlUnitOfWork(engine)  # noqa: E731
     analyst, lead = build_research_models(settings, models.primary)
-    kinds = [plan_kind(uow, analyst, lead, build_research_reviewer(settings))]
+    reviewer = build_research_reviewer(settings)
+    kinds = [plan_kind(uow, analyst, lead, reviewer, web.news if web else None)]
     if web is not None:
         http = await stack.enter_async_context(httpx.AsyncClient())
         prices = (
@@ -432,7 +461,7 @@ async def _registry(
         if prices is None:
             log.warning("SERPAPI_API_KEY is not set; trip research uses web search for prices")
         sorter = build_travel_sorter(settings, _travel_model(settings))
-        kinds.append(research_kind(uow, web, sorter, rates, prices))
+        kinds.append(research_kind(uow, web.travel, sorter, rates, prices))
     else:
         log.warning("OpenRouter isn't set up; trip research is off")
     return default_registry(kinds)
@@ -442,7 +471,7 @@ async def _ideas(
     settings: Settings,
     overrides: Overrides,
     stack: AsyncExitStack,
-    web: WebSearch | None,
+    web: Web | None,
     places: Places | None,
     clock: Callable[[], datetime],
 ) -> IdeaFinder | None:
@@ -454,12 +483,22 @@ async def _ideas(
         return None
     http = await stack.enter_async_context(httpx.AsyncClient())
     return IdeaFinder(
-        web,
+        web.travel,
         build_travel_sorter(settings, _travel_model(settings)),
         guides=Wikivoyage(http, clock=clock),
         places=places,
         clock=clock,
     )
+
+
+def _lookup(settings: Settings, overrides: Overrides, web: Web | None) -> WebLookup | None:
+    """Looking things up on the web from chat, within general's share of the credits.
+    None without web search."""
+    if overrides.lookup is not None:
+        return overrides.lookup
+    if web is None:
+        return None
+    return WebLookup(web.general, build_web_writer(settings, _travel_model(settings)))
 
 
 def _queue_memory(
@@ -541,7 +580,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                     log.warning("receipt storage is not configured; receipt photos won't be kept")
                 models = extra.models or build_chat_models(resolved)
                 email = await _email_runtime(resolved, extra, stack, models, resolved.public_origin)
-                web = await _travel_web(resolved, engine, stack, extra.clock or utcnow)
+                web = await _web(resolved, engine, stack, extra.clock or utcnow)
                 departments = extra.departments or await _registry(
                     resolved, engine, models, rates, stack, web
                 )
@@ -549,7 +588,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                 ideas = await _ideas(resolved, extra, stack, web, places, extra.clock or utcnow)
                 telegram = await _telegram_runtime(
                     resolved, engine, extra, stack, rates, archive, models, email, departments,
-                    places, ideas,
+                    places, ideas, _lookup(resolved, extra, web),
                 )  # fmt: skip
                 app.state.telegram = telegram
                 origin = resolved.public_origin

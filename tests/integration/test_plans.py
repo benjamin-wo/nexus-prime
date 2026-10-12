@@ -2,6 +2,8 @@
 Every ticker, price and headline here is made up."""
 
 import asyncio
+from collections.abc import Sequence
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
@@ -72,6 +74,63 @@ async def finish(
         current = await department_cases.advance(uow, registry, shown, user, run.id, now=NOW)
     assert current is not None
     return current
+
+
+@dataclass
+class Articles:
+    """Made-up news articles by address; ``fail`` makes reading them break."""
+
+    pages: dict[str, str] = field(default_factory=dict)
+    fail: bool = False
+    asked: list[list[str]] = field(default_factory=list)
+
+    async def read(self, urls: Sequence[str]) -> dict[str, str]:
+        self.asked.append(list(urls))
+        if self.fail:
+            raise RuntimeError("reading broke")
+        return {u: self.pages[u] for u in urls if u in self.pages}
+
+
+async def test_the_news_analyst_reads_the_articles_as_quoted_data(uow: UowFactory) -> None:
+    user = await ready(uow)
+    model = analysts()
+    article = (
+        "A rival opened a plant in Exampleville.\n\nIt will make chips from 2027. "
+        + "More detail follows. " * 100
+    )
+    articles = Articles({"https://n.example/AMD/0": article})
+    registry = department_cases.default_registry(
+        [plan_cases.plan_kind(uow, model, reader=articles)]
+    )
+    run = await plan_cases.start_plan(uow, registry, user, "AMD", now=NOW)
+    done = await finish(uow, registry, user, run)
+    assert done.status is RunStatus.DONE, done.error
+    assert articles.asked == [["https://n.example/AMD/0"]]
+    prompt = str(model.seen[1][-1].content)
+    quoted = prompt[prompt.index("<headlines>") : prompt.index("</headlines>")]
+    assert "[1] 2026-" in quoted
+    assert (
+        "\n    From the article: A rival opened a plant in Exampleville. It will make chips "
+        "from 2027." in quoted
+    )
+    # Only the start of a long article, cut at a word.
+    excerpt = quoted.split("From the article: ", 1)[1]
+    assert len(excerpt) <= plan_cases.ARTICLE_EXCERPT + 3 and excerpt.rstrip().endswith("…")
+
+
+async def test_a_plan_is_made_from_the_headlines_when_articles_cant_be_read(
+    uow: UowFactory,
+) -> None:
+    user = await ready(uow)
+    model = analysts()
+    registry = department_cases.default_registry(
+        [plan_cases.plan_kind(uow, model, reader=Articles(fail=True))]
+    )
+    run = await plan_cases.start_plan(uow, registry, user, "AMD", now=NOW)
+    done = await finish(uow, registry, user, run)
+    assert done.status is RunStatus.DONE, done.error
+    prompt = str(model.seen[1][-1].content)
+    assert "<headlines>" in prompt and "From the article" not in prompt
 
 
 async def test_a_plan_traces_every_price_to_code_and_every_point_to_a_source(

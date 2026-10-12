@@ -55,10 +55,10 @@ from nexus.domain.travel_research import (
     clean_text,
     estimate,
     keep_sourced,
+    pages_by_source,
     per_payday,
     price_range,
     round_budget,
-    safe_url,
     sources_from,
     trip_window,
 )
@@ -252,16 +252,6 @@ def _quoted(answer: WebAnswer, sources: Sequence[Source], pages: dict[int, str])
     return f"<web>\n{answer.text}\n</web>\nSources:\n{listed or '(none)'}"
 
 
-def _pages_by_source(answer: WebAnswer, sources: Sequence[Source]) -> dict[int, str]:
-    """Each kept source's page text, by its number (unsafe links were dropped)."""
-    by_url: dict[str, str] = {}
-    for (url, _), page in zip(answer.sources, answer.pages, strict=False):
-        safe = safe_url(url)
-        if safe is not None and page:
-            by_url.setdefault(safe, page)
-    return {s.id: by_url[s.url] for s in sources if s.url in by_url}
-
-
 def _quotes(price: PriceRange, page: str) -> bool:
     return has_figure(page, price.low) and has_figure(page, price.high)
 
@@ -283,7 +273,7 @@ async def _search(
     answer = await web.ask(question)
     ctx.spend(answer.usd)
     sources = sources_from(answer.sources, ctx.now.date())
-    return answer, sources, _pages_by_source(answer, sources)
+    return answer, sources, pages_by_source(answer.sources, answer.pages, sources)
 
 
 def _task(ctx: StepContext) -> ResearchTask:

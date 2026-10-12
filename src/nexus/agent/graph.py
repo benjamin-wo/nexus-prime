@@ -47,6 +47,7 @@ from nexus.application.ideas import IdeaFinder
 from nexus.application.inbound import log_capability_gap
 from nexus.application.places import Places
 from nexus.application.users import get_user
+from nexus.application.web_lookup import WebLookup
 from nexus.domain.errors import DuplicateSource, InvalidInput, NexusError
 from nexus.domain.ledger import User, UserId
 from nexus.domain.money import Money
@@ -75,6 +76,7 @@ CORE_TOOLS = (
     "query_ledger",
     "list_categories",
     "answer_email",
+    "web_search",
     "load_skill",
 )
 SKILL_TURNS = 5
@@ -127,6 +129,8 @@ class AgentDeps:
     places: Places | None = None
     # Quick ideas for a trip from the web; None: not set up.
     ideas: IdeaFinder | None = None
+    # Looking things up on the web; None: not set up.
+    lookup: WebLookup | None = None
 
 
 def strip_ids(text: str) -> str:
@@ -221,6 +225,7 @@ class AgentGraph:
             departments=self.deps.departments,
             places=self.deps.places,
             ideas=self.deps.ideas,
+            lookup=self.deps.lookup,
         )
 
     async def _prompt(self, ctx: ToolContext, state: AgentState) -> str:
