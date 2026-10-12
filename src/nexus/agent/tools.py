@@ -40,10 +40,12 @@ from nexus.application import travel_research as trip_research
 from nexus.application import trips as trip_cases
 from nexus.application.departments import Departments
 from nexus.application.fx import Rate, RateSource
+from nexus.application.ideas import KINDS as IDEA_KINDS
 from nexus.application.ideas import IdeaFinder
 from nexus.application.places import Places, PlacesError
 from nexus.application.ports import LedgerQuery, UnitOfWork
 from nexus.application.web_lookup import WebLookup
+from nexus.domain import itinerary
 from nexus.domain.bookings import Booking, BookingDraft, BookingKind
 from nexus.domain.email import InboundEmail
 from nexus.domain.errors import InvalidInput, NexusError, NotFound
@@ -1745,9 +1747,17 @@ async def _list_trips(ctx: ToolContext, _: NoArgs) -> ToolResult:
 async def _trip_status(ctx: ToolContext, a: TripNameArgs) -> ToolResult:
     trip = await trip_cases.find_trip(ctx.uow(), ctx.user, a.trip, now=ctx.now)
     view = await trip_cases.trip_view(ctx.uow, _rates(ctx), ctx.user, trip.id, now=ctx.now)
+    lines = trip_cases.describe_view(view)
+    days = sorted({b.draft.starts for b in view.bookings if b.draft.starts is not None})
+    watch = [
+        f"{day:%a %d %b}: {note.text}"
+        for day in days
+        for note in itinerary.day_notes(itinerary.on_day(view.bookings, day), day)
+    ]
+    if watch:
+        lines += ["Worth a look on the itinerary (worked out in code):", *watch]
     return ToolResult(
-        "Trip figures, worked out in code (quote them as they are):\n"
-        + "\n".join(trip_cases.describe_view(view))
+        "Trip figures, worked out in code (quote them as they are):\n" + "\n".join(lines)
     )
 
 
@@ -1797,8 +1807,12 @@ class ItineraryArgs(TripNameArgs):
         None, description="A plan's or place's kind: Food, Sight, Shopping, Nature, Nightlife"
     )
     time: str | None = Field(None, description="A plan's time, like 19:00")
+    ends: str | None = Field(None, description="When a plan ends, if said, like 21:30")
     until: str | None = Field(None, description="A hotel's check-out day")
     place: str | None = Field(None, description="Where: an address or area")
+    link: str | None = Field(
+        None, description="A booking page or menu the user gave (a public https address)"
+    )
     number: str | None = Field(None, description="A flight or train number, e.g. SQ12")
     origin: str | None = Field(None, description="A flight or train: from")
     destination: str | None = Field(None, description="A flight or train: to")
@@ -1821,13 +1835,16 @@ class ItineraryArgs(TripNameArgs):
 
 def _itinerary_details(a: ItineraryArgs) -> dict[str, object]:
     found = _kind_details(a)
-    return {**found, "reference": a.reference, "booked_via": a.booked_via}
+    return {**found, "reference": a.reference, "booked_via": a.booked_via, "link": a.link}
 
 
 def _kind_details(a: ItineraryArgs) -> dict[str, object]:
     if a.kind == "activity":
+        # A place to visit with an idea's kind (Food, Sight…) is filed under that list.
+        listed = a.category if not a.day and a.category in IDEA_KINDS else None
         return {"kind": "activity", "name": a.name, "day": a.day, "at": a.time,
-                "address": a.place, "note": a.note, "category": a.category}  # fmt: skip
+                "ends_at": a.ends, "address": a.place, "note": a.note,
+                "category": a.category, "list_name": listed}  # fmt: skip
     if a.kind == "hotel":
         return {"kind": "hotel", "hotel": a.name, "address": a.place, "check_in": a.day,
                 "check_out": a.until, "note": a.note}  # fmt: skip
@@ -2109,8 +2126,15 @@ class ItineraryChangeArgs(ItineraryItemArgs):
     )
     category: str | None = Field(None, description="A new kind: Food, Sight, Shopping")
     time: str | None = Field(None, description="A plan's new time, like 19:00")
+    ends: str | None = Field(None, description="A plan's new end time, like 21:30")
     until: str | None = Field(None, description="A hotel's new check-out day")
     place: str | None = Field(None, description="A new address or area")
+    link: str | None = Field(None, description="A new booking page or menu (public https)")
+    after: str | None = Field(
+        None,
+        description="Another entry on that day this plan should come right after, by name "
+        "('after the temple'); 'first' to put it first",
+    )
     number: str | None = Field(None, description="A new flight or train number")
     origin: str | None = Field(None, description="A flight or train's new from")
     destination: str | None = Field(None, description="A flight or train's new to")
@@ -2138,8 +2162,10 @@ async def _changed_entry(
         "hotel" if hotel else "name": a.name,
         "check_in" if hotel else "day": a.day,
         "at": a.time,
+        "ends_at": a.ends,
         "check_out": a.until,
         "address": a.place,
+        "link": a.link,
         "provider": a.provider,
         "note": a.note,
         "reference": a.reference,
@@ -2164,18 +2190,47 @@ async def _changed_entry(
     return trip, item, draft, cost
 
 
+async def _after(
+    ctx: ToolContext, a: ItineraryChangeArgs, trip: Trip, item: Booking, draft: BookingDraft
+) -> tuple[bool, Booking | None]:
+    """Whether the plan is to be placed in its day's order, and after which entry (None:
+    first)."""
+    if not a.after:
+        return False, None
+    if draft.kind is not BookingKind.ACTIVITY or draft.day is None:
+        raise InvalidInput("only a plan on a day can be put after another entry")
+    wanted = a.after.strip().casefold()
+    if wanted == "first":
+        return True, None
+    async with ctx.uow() as tx:
+        items = await tx.trips.list_bookings(ctx.user.id, trip_id=trip.id)
+    there = [b for b in itinerary.on_day(items, draft.day) if b.id != item.id]
+    found = [b for b in there if wanted in b.draft.title.casefold()]
+    if len(found) != 1:
+        listed = "; ".join(b.draft.title for b in there) or "nothing else"
+        raise NotFound(f"no single entry that day matches {a.after!r}; that day has: {listed}")
+    return True, found[0]
+
+
 async def _describe_change_itinerary(ctx: ToolContext, a: ItineraryChangeArgs) -> str:
     trip, item, draft, cost = await _changed_entry(ctx, a)
     price = f", {cost}" if cost else ""
+    moving, after = await _after(ctx, a, trip, item, draft)
+    where = (f", after {after.draft.title}" if after else ", first that day") if moving else ""
     return (
         f"Change {item.draft.describe()} on the {trip.destination} itinerary to "
-        f"{draft.describe()}{price}?"
+        f"{draft.describe()}{price}{where}?"
     )
 
 
 async def _change_itinerary(ctx: ToolContext, a: ItineraryChangeArgs) -> ToolResult:
     trip, item, draft, cost = await _changed_entry(ctx, a)
+    moving, after = await _after(ctx, a, trip, item, draft)
     await booking_cases.edit_booking(ctx.uow(), ctx.user.id, item.id, draft.as_dict(), cost)
+    if moving:
+        await booking_cases.move_entry(
+            ctx.uow(), ctx.user.id, item.id, draft.day, after.id if after else None
+        )
     return ToolResult(
         f"Changed on the {trip.destination} itinerary: {draft.describe()}.", wrote=True
     )

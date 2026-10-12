@@ -1841,6 +1841,72 @@ async def test_travel_times_between_a_days_stops(world: World) -> None:
     assert other.status_code == 404
 
 
+async def test_rearranging_a_day_and_what_to_watch_out_for(world: World) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+    body = {"destination": "Seoul", "start": "2026-11-10", "end": "2026-11-13", "currency": "KRW"}
+    trip_id = (await owner.send("POST", "/api/travel/trips", body)).json()["id"]
+    day = "2026-11-12"
+
+    async def add(entry: dict[str, object]) -> str:
+        made = await owner.send("POST", f"/api/travel/trips/{trip_id}/bookings", entry)
+        assert made.status_code == 201, made.text
+        return str(made.json()["id"])
+
+    tickets = "https://temple.example.com/tickets"
+    temple = await add({"kind": "activity", "name": "Old Temple", "day": day, "at": "09:00",
+                        "ends_at": "12:30", "link": tickets})  # fmt: skip
+    lunch = await add({"kind": "activity", "name": "Noodle lunch", "day": day, "at": "12:00"})
+    stroll = await add({"kind": "activity", "name": "A stroll", "day": day})
+    bakery = await add({"kind": "activity", "name": "Bakery", "list_name": "Eat"})
+    flight = await add({"kind": "flight", "segments": [{"number": "ZZ12", "origin": "SIN",
+                        "destination": "ICN", "departs": "2026-11-12T20:00"}]})  # fmt: skip
+
+    async def plan_of(the_day: str) -> dict[str, Any]:
+        detail = (await owner.get(f"/api/travel/trips/{trip_id}")).json()
+        return next(d for d in detail["days"] if d["day"] == the_day)
+
+    first = await plan_of(day)
+    # By time until rearranged: the stroll with no time first, the flight last.
+    assert first["order"] == [stroll, temple, lunch, flight]
+    assert (first["notes"][0]["kind"], first["notes"][0]["text"]) == (
+        "clash", "Old Temple (09:00 to 12:30) runs into Noodle lunch at 12:00"
+    )  # fmt: skip
+
+    # The stroll moved after the temple; the bakery from places to visit to first.
+    moved = await owner.send(
+        "PUT", f"/api/travel/bookings/{stroll}/move", {"day": day, "after": temple}
+    )
+    assert moved.status_code == 200 and moved.json()["order"] == 1
+    await owner.send("PUT", f"/api/travel/bookings/{bakery}/move", {"day": day, "after": None})
+    assert (await plan_of(day))["order"] == [bakery, temple, stroll, lunch, flight]
+    # Flights stay where their booking puts them; an entry from another day can't be "after".
+    stuck = await owner.send("PUT", f"/api/travel/bookings/{flight}/move", {"day": day})
+    assert stuck.status_code == 422
+    other = await owner.send(
+        "PUT", f"/api/travel/bookings/{lunch}/move", {"day": "2026-11-11", "after": temple}
+    )
+    assert other.status_code == 404
+
+    # An edit that doesn't mention the link, end time or list keeps them.
+    edit = {"kind": "activity", "name": "Old Temple", "day": day, "at": "09:30"}
+    edited = (await owner.send("PUT", f"/api/travel/bookings/{temple}", edit)).json()
+    assert (edited["link"], edited["ends_at"], edited["order"]) == (tickets, "12:30", 1)
+    bad_link = await owner.send(
+        "PUT", f"/api/travel/bookings/{temple}", {**edit, "link": "http://10.0.0.1/x"}
+    )
+    assert bad_link.status_code == 422
+    backwards = await owner.send(
+        "PUT", f"/api/travel/bookings/{temple}", {**edit, "ends_at": "08:00"}
+    )
+    assert backwards.status_code == 422
+    # A place to visit's list is kept; back to places to visit it goes.
+    await owner.send("PUT", f"/api/travel/bookings/{bakery}/move", {"day": None})
+    detail = (await owner.get(f"/api/travel/trips/{trip_id}")).json()
+    assert detail["places_order"] == [bakery]
+    assert next(b for b in detail["bookings"] if b["id"] == bakery)["list_name"] == "Eat"
+
+
 async def test_quick_ideas_for_a_trip(world: World) -> None:
     owner = world.browser()
     await owner.login(OWNER)
