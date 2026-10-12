@@ -237,6 +237,7 @@ export function PlaceFinder({ initial, pickLabel, onPick, onPickIdea, onCancel }
     <div className="place-finder">
       <form role="search" aria-label={google ? "Search Google Maps" : "Find ideas"} onSubmit={(e) => void search(e)} className="inline-form">
         <input
+          className="input"
           aria-label="Look for"
           value={query}
           onChange={(e) => setQuery(e.target.value)}

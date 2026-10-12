@@ -89,6 +89,12 @@ a { color: var(--orange-primary); }
   font-weight: 400;
 }
 .input:focus { border-color: var(--orange-border); outline: none; box-shadow: 0 0 0 2px var(--orange-soft); }
+/* iOS (and Telegram's webview) zoom into a field whose text is under 16px when it's
+   tapped, which jumps the page: on any touch screen or narrow window, every field is
+   16px. Later rules don't shrink it (see .share-link). */
+@media (max-width: 720px), (pointer: coarse) {
+  .input, select.input, textarea.input { font-size: 16px; }
+}
 label.field { display: grid; gap: var(--space-1); min-width: 0; font-weight: 500; font-size: 0.8125rem; color: var(--text-secondary); }
 /* iOS (and the Telegram mini app) gives date and time pickers a fixed minimum width
    and centred text, so they spill out of narrow columns: let them shrink to the
@@ -330,8 +336,6 @@ table.ledger { width: 100%; border-collapse: collapse; }
   .dept-tab { min-height: 36px; padding: 0 var(--space-3); }
   .content { gap: var(--space-4); }
   .card { padding: var(--space-4); border-radius: 18px; }
-  /* iOS (and Telegram's webview) zoom into inputs under 16px and stay zoomed. */
-  .input, select.input, textarea.input { font-size: 16px; }
   .page-head { align-items: center; }
   /* Spent and received side by side, net underneath: the month fits on one screen. */
   .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
@@ -1070,7 +1074,10 @@ a.ask-chip { display: inline-flex; align-items: center; text-decoration: none; }
 
 /* The one way to add: a sheet from the bottom on phones, a dialog on desktop. */
 .sheet-backdrop { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; background: rgba(0, 0, 0, 0.55); animation: fade var(--t-standard); padding: var(--space-4); }
+/* While a sheet is open the page behind it stays put, even as the keyboard opens. */
+.main-viewport:has(.sheet-backdrop) { overflow: hidden; }
 .add-sheet {
+  overscroll-behavior: contain;
   width: min(480px, 100%); max-height: min(640px, 90dvh); overflow-y: auto; display: grid; gap: var(--space-3); align-content: start;
   padding: var(--space-5); border-radius: 22px; border: 1px solid var(--border-card); background: var(--bg-card-hover); box-shadow: var(--shadow-modal);
   animation: sheet-up var(--t-emphasis);
@@ -1108,7 +1115,8 @@ a.ask-chip { display: inline-flex; align-items: center; text-decoration: none; }
 .cover-actions { display: flex; align-items: center; gap: var(--space-2); }
 .share-hidden { margin: 0; padding-left: var(--space-5); display: grid; gap: 2px; color: var(--text-secondary); font-size: 0.875rem; }
 .share-link { display: flex; gap: var(--space-2); }
-.share-link .input { flex: 1; min-width: 0; font-size: 0.875rem; }
+.share-link .input { flex: 1; min-width: 0; }
+@media (min-width: 721px) and (pointer: fine) { .share-link .input { font-size: 0.875rem; } }
 .share-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .shared-page { min-height: 100dvh; padding: var(--space-6) var(--space-4) var(--space-8); }
 .shared-page > .trip-page { max-width: 880px; margin: 0 auto; padding-bottom: 0; }

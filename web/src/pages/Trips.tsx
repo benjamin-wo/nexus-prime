@@ -298,7 +298,7 @@ export function TripsPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
       </div>
 
       {adding && (
-        <section className="card" aria-labelledby="new-trip">
+        <section className="card" aria-labelledby="new-trip" data-no-reveal>
           <div className="card-head">
             <h2 id="new-trip">New trip</h2>
           </div>
@@ -1523,7 +1523,7 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
         </p>
       )}
       {data && editing && (
-        <section className="card" aria-labelledby="edit-trip">
+        <section className="card" aria-labelledby="edit-trip" data-no-reveal>
           <div className="card-head">
             <h2 id="edit-trip">Change the trip</h2>
           </div>
@@ -1571,7 +1571,7 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
             </section>
           )}
           {adding && (
-            <section id="trip-adding" className="card" aria-labelledby="trip-adding-title">
+            <section id="trip-adding" className="card" aria-labelledby="trip-adding-title" data-no-reveal>
               <div className="card-head">
                 <h2 id="trip-adding-title">Add to the trip</h2>
               </div>

@@ -1373,6 +1373,47 @@ test("ideas from guides and articles: asked for in words, credited, saved to the
   await expect(page.getByRole("list", { name: "Places to visit" })).toContainText("Lantern Alley");
 });
 
+test("trip forms don't jump when a field is tapped", async ({ page }, info) => {
+  await fakeApi(page);
+  await addTrip(page, "Seoul", "2026-11-10", "2026-11-13");
+  const phone = info.project.name === "mobile";
+  const fields = "input:not([type=checkbox]):not([type=file]):not([type=radio]), select, textarea";
+  // Phones zoom into a field under 16px when it's tapped, which jumps the page.
+  const smallest = (scope: Locator) =>
+    scope.locator(fields).evaluateAll((els) => Math.min(...els.map((el) => parseFloat(getComputedStyle(el).fontSize))));
+  const viewport = page.locator(".main-viewport");
+
+  // The add sheet: the page behind it stays put; typing waits for a tap on a phone.
+  await page.getByRole("button", { name: "Add to the trip" }).click();
+  // The sheet is named for the view it shows ("Type it", "Find a place").
+  const sheet = page.getByRole("dialog");
+  await expect(sheet).toHaveAccessibleName("Add to Seoul");
+  await expect(viewport).toHaveCSS("overflow-y", "hidden");
+  await sheet.getByRole("button", { name: /Type it/ }).click();
+  if (phone) await expect(sheet.getByLabel("Tell Nexus about a booking")).not.toBeFocused();
+  else await expect(sheet.getByLabel("Tell Nexus about a booking")).toBeFocused();
+  await sheet.getByRole("button", { name: "Back to the ways to add" }).click();
+  await sheet.getByRole("button", { name: /Find a place/ }).click();
+  if (phone) expect(await smallest(sheet)).toBeGreaterThanOrEqual(16);
+  await page.keyboard.press("Escape");
+  await expect(viewport).toHaveCSS("overflow-y", "auto");
+
+  // A form the user opens shows as it is, without fading in, and its fields don't zoom.
+  await page.getByRole("button", { name: "Add to the trip" }).click();
+  await sheet.getByRole("button", { name: /Fill in a form/ }).click();
+  await sheet.getByRole("button", { name: "🏨 Place to stay" }).click();
+  const adding = page.locator("#trip-adding");
+  await expect(adding).toBeVisible();
+  await expect(adding).not.toHaveAttribute("data-reveal", /.*/);
+  if (phone) expect(await smallest(adding)).toBeGreaterThanOrEqual(16);
+
+  await page.getByRole("button", { name: "Trip options" }).click();
+  await page.getByRole("menuitem", { name: "Edit trip" }).click();
+  const edit = page.getByRole("region", { name: "Change the trip" });
+  await expect(edit).not.toHaveAttribute("data-reveal", /.*/);
+  if (phone) expect(await smallest(edit)).toBeGreaterThanOrEqual(16);
+});
+
 test("after a trip: settling up comes first, then what it cost", async ({ page }) => {
   const state = await fakeApi(page);
   await addTrip(page, "Osaka", "2026-11-10", "2026-11-12");

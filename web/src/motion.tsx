@@ -29,8 +29,10 @@ export function useReveal(root: React.RefObject<HTMLElement | null>) {
     );
     const watch = () => {
       host.querySelectorAll<HTMLElement>(REVEALED).forEach((el) => {
-        // Inside a card that's already rising, or met before: leave it be.
-        if (el.dataset.reveal || el.parentElement?.closest("[data-reveal]")) return;
+        // Inside a card that's already rising, or met before: leave it be. A form the
+        // user just opened (data-no-reveal) is shown as it is: fading it in while the
+        // page scrolls to it reads as a jump.
+        if (el.dataset.reveal || el.parentElement?.closest("[data-reveal]") || el.closest("[data-no-reveal]")) return;
         el.dataset.reveal = "pending";
         seen.observe(el);
       });
