@@ -23,6 +23,10 @@ const HINT = 'e.g. "Dinner at Sushi Ten on Thursday at 7pm" or "Hotel Ume 13 to 
 
 type Line = { who: "you" | "nexus"; text: string; buttons?: Reply["buttons"] };
 
+// On a phone the keyboard would open while the sheet is still sliding up, jolting
+// it; there the field waits for a tap.
+const finePointer = () => typeof window !== "undefined" && window.matchMedia?.("(pointer: fine)").matches === true;
+
 /** Telling Nexus about a booking in a sentence, without leaving the trip. What it
  * reads is shown, and anything it changes waits for Confirm, as in the chat. */
 function TypeIt({ trip, preset, onChanged }: { trip: Trip; preset: AddPreset | null; onChanged: () => void }) {
@@ -97,7 +101,7 @@ function TypeIt({ trip, preset, onChanged }: { trip: Trip; preset: AddPreset | n
           className="input"
           value={text}
           maxLength={500}
-          autoFocus
+          autoFocus={finePointer()}
           onChange={(e) => setText(e.target.value)}
           placeholder={(preset && HINTS[preset.kind]) ?? HINT}
         />
