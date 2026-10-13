@@ -775,7 +775,8 @@ test("a watched stock shows its levels, earnings date and news", async ({ page }
 
   await page.getByRole("button", { name: "Stop watching" }).click();
   await expect(page.getByRole("button", { name: "Watch" })).toBeVisible();
-  expect(state.watching).toEqual([]);
+  // The button flips before the request lands: wait for it.
+  await expect.poll(() => state.watching).toEqual([]);
 });
 
 test("a research plan is started from a stock and read with its chart and sources", async ({ page }) => {

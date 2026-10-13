@@ -325,11 +325,10 @@ export function PlaceLine({ booking }: { booking: Booking }) {
   }
   if (!booking.place_id) {
     return (
-      <span className="caption">
-        <button type="button" className="btn btn-small btn-ghost" onClick={() => setFinding(true)} aria-label={`Find ${booking.title} on Google Maps`}>
-          Find on Google Maps
+      <span className="caption place-find">
+        <button type="button" className="link-btn" onClick={() => setFinding(true)} aria-label={`Find ${booking.title} on Google Maps`}>
+          <span aria-hidden="true">📍</span> Find on Google Maps
         </button>
-        <br />
       </span>
     );
   }
@@ -349,7 +348,7 @@ export function PlaceLine({ booking }: { booking: Booking }) {
           </>
         )}
         {" · "}
-        <button type="button" className="btn btn-small btn-ghost" aria-expanded={open} onClick={() => setOpen(!open)} aria-label={`${open ? "Hide" : "Show"} details for ${booking.title}`}>
+        <button type="button" className="link-btn" aria-expanded={open} onClick={() => setOpen(!open)} aria-label={`${open ? "Hide" : "Show"} details for ${booking.title}`}>
           {open ? "Less" : "Details"}
         </button>
       </span>
@@ -361,7 +360,7 @@ export function PlaceLine({ booking }: { booking: Booking }) {
       {open && (
         <>
           <PlaceDetails place={p} />
-          <button type="button" className="btn btn-small btn-ghost" onClick={() => void link(null)}>
+          <button type="button" className="link-btn caption" onClick={() => void link(null)}>
             Not this place
           </button>
         </>

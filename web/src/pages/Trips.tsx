@@ -490,7 +490,7 @@ function BookedWith({ booking }: { booking: Booking }) {
       {booking.reference && (
         <>
           Ref <strong className="num">{booking.reference}</strong>{" "}
-          <button type="button" className="btn btn-small btn-ghost" onClick={() => void copy()} aria-label={`Copy reference ${booking.reference}`}>
+          <button type="button" className="link-btn" onClick={() => void copy()} aria-label={`Copy reference ${booking.reference}`}>
             {copied ? "Copied" : "Copy"}
           </button>
         </>
@@ -1260,7 +1260,7 @@ function EntryActions({ booking, onEdit, onMove, onRemove }: { booking: Booking;
 function Fold({ collapsed, children }: { collapsed?: string; children: ReactNode }) {
   if (!collapsed) {
     return (
-      <section className="card" aria-labelledby="itinerary">
+      <section className="card itinerary-card" aria-labelledby="itinerary">
         <div className="card-head">
           <h2 id="itinerary">Itinerary</h2>
         </div>
@@ -1269,7 +1269,7 @@ function Fold({ collapsed, children }: { collapsed?: string; children: ReactNode
     );
   }
   return (
-    <details className="card section itinerary-fold">
+    <details className="card section itinerary-fold itinerary-card">
       <summary>
         <h2 id="itinerary">{collapsed}</h2>
         <span className="caption">Open</span>
@@ -1286,7 +1286,7 @@ const listOf = (b: Booking) => b.list_name ?? b.category ?? null;
 function PlaceRow({ booking, n, children }: { booking: Booking; n: number; children: ReactNode }) {
   const drag = useDragEntry(booking, PLACES);
   return (
-    <li ref={drag.ref} className={`run-row${drag.className}`} id={`entry-${booking.id}`}>
+    <li ref={drag.ref} className={`run-row place-row${drag.className}`} id={`entry-${booking.id}`}>
       {drag.handle}
       <span className="stop-number" aria-hidden="true">
         {n}
