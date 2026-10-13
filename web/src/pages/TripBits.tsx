@@ -101,6 +101,51 @@ export function TripCard({ trip }: { trip: Trip }) {
 
 export const sortKey = (b: Pick<Booking, "starts" | "at" | "segments" | "kind">) => `${b.starts}T${b.at ?? b.segments[0]?.departs?.slice(11) ?? (b.kind === "hotel" ? "15:00" : "00:00")}`;
 
+const words = (text: string) =>
+  text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean);
+
+/** Whether two words are the same allowing one letter's difference in longer ones
+ * ("Cellar" and "Celler"). */
+function alike(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (Math.min(a.length, b.length) < 5 || Math.abs(a.length - b.length) > 1) return false;
+  let i = 0;
+  let j = 0;
+  let edits = 0;
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) {
+      i += 1;
+      j += 1;
+      continue;
+    }
+    edits += 1;
+    if (edits > 1) return false;
+    if (a.length > b.length) i += 1;
+    else if (b.length > a.length) j += 1;
+    else {
+      i += 1;
+      j += 1;
+    }
+  }
+  return edits + (a.length - i) + (b.length - j) <= 1;
+}
+
+/** An address that only repeats the entry's own name ("El Cellar" under "Girona ·
+ * Sa Tuna · El Celler"): every word of it is already in the title. */
+export function repeatsTitle(text: string, title: string): boolean {
+  const mine = words(text);
+  const theirs = words(title);
+  return mine.length > 0 && mine.every((w) => theirs.some((t) => alike(w, t)));
+}
+
+/** A note that only says which day it is ("Day 3"), which the itinerary already shows. */
+export const onlyNamesDay = (note: string) => /^\s*day\s*\d{1,2}\s*\.?\s*$/i.test(note);
+
 type Leg = Booking["segments"][number];
 
 /** A flight's or train's legs that leave on a day, and those that land on it. */
