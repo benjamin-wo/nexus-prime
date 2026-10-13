@@ -115,6 +115,35 @@ test("dashboard shows the month, categories and IOUs", async ({ page }) => {
   await expect(page.getByRole("region", { name: "From Nexus" })).toContainText("Set a monthly budget");
 });
 
+test("tap a spending category to see its transactions, then all of them in the ledger", async ({ page }) => {
+  await fakeApi(page);
+  await page.goto("/accounting");
+  const split = page.getByRole("list", { name: "Spending by category" });
+  const dining = split.getByRole("button", { name: /^Dining Out:/ });
+  await expect(dining).toHaveAttribute("aria-expanded", "false");
+  await dining.click();
+  await expect(dining).toHaveAttribute("aria-expanded", "true");
+  const list = page.getByRole("list", { name: "Dining Out transactions" });
+  await expect(list).toContainText("Maxwell Food Centre");
+  await expect(list).not.toContainText("Grab");
+  // Uncategorised spending opens the same way.
+  await split.getByRole("button", { name: /^Uncategorised:/ }).click();
+  await expect(page.getByRole("list", { name: "Uncategorised transactions" })).toContainText("Grab");
+  await expect(page.getByRole("list", { name: "Dining Out transactions" })).toHaveCount(0);
+
+  await split.getByRole("button", { name: /^Dining Out:/ }).click();
+  await page.getByRole("link", { name: "Open in the ledger" }).click();
+  await expect(page).toHaveURL(/\/accounting\/ledger\?.*category=food/);
+  const ledger = page.getByRole("region", { name: "Transactions" });
+  await expect(ledger.getByText("Category Dining Out")).toBeVisible();
+  await expect(ledger.getByRole("button", { name: "Money out" })).toHaveAttribute("aria-pressed", "true");
+  await expect(ledger.getByRole("button", { name: "Maxwell Food Centre", exact: true })).toBeVisible();
+  await expect(ledger.getByRole("button", { name: "Grab", exact: true })).toHaveCount(0);
+  await ledger.getByRole("button", { name: "Show every category, not just Dining Out" }).click();
+  await expect(ledger.getByRole("button", { name: "Grab", exact: true })).toBeVisible();
+  await expect(page).not.toHaveURL(/category=/);
+});
+
 test("log an expense from the entry sheet", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/accounting");
@@ -225,6 +254,11 @@ test("set a budget, see how much is used, change and remove it", async ({ page }
   const meter = budgets.getByRole("meter", { name: "Dining Out budget used" });
   await expect(meter).toHaveAttribute("aria-valuetext", "90% used");
   await expect(budgets.getByText(/90% used · SGD\s?10\.00 left/)).toBeVisible();
+  // What went against it this month, under the budget.
+  await budgets.getByRole("button", { name: "Transactions" }).click();
+  await expect(budgets.getByRole("list", { name: "Dining Out transactions" })).toContainText("Maxwell Food Centre");
+  await budgets.getByRole("button", { name: "Hide transactions" }).click();
+  await expect(budgets.getByRole("list", { name: "Dining Out transactions" })).toHaveCount(0);
 
   await budgets.getByRole("button", { name: "Change" }).click();
   await budgets.getByLabel("Monthly limit (SGD)").first().fill("80");
@@ -902,6 +936,10 @@ test("a trip is added and shows its spending, set-aside and settle-up", async ({
   const spending = page.getByRole("region", { name: "Trip spending" });
   await expect(spending).toContainText("SGD 818.00 of SGD 3,000.00");
   await expect(spending).toContainText("SGD 800.00 before the trip");
+  // A category opens to the trip expenses behind it.
+  await spending.getByRole("button", { name: /^Dining Out:/ }).click();
+  await expect(spending.getByRole("list", { name: "Dining Out expenses" })).toContainText("Ichiran");
+  await expect(spending.getByRole("list", { name: "Dining Out expenses" })).not.toContainText("Air ticket");
   await expect(page.getByRole("region", { name: "Setting money aside" })).toContainText("SGD 1,500.00 each payday would cover it");
   await expect(page.getByRole("region", { name: "Settle up" })).toContainText("Ann");
   await expect(spending).toContainText("SGD 820.00 not logged yet");

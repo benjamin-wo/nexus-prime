@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 
 import {
   api,
@@ -30,11 +30,14 @@ const VIEWS: { key: View; label: string }[] = [
 
 export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdit: (tx: Transaction) => void }) {
   const client = useQueryClient();
-  const [view, setView] = useState<View>("all");
+  // A link from a spending category opens the ledger filtered to it.
+  const [params, setParams] = useSearchParams();
+  const [view, setView] = useState<View>(() => VIEWS.find((v) => v.key === params.get("view"))?.key ?? "all");
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
-  const [start, setStart] = useState("");
-  const [end, setEnd] = useState("");
+  const [start, setStart] = useState(() => params.get("start") ?? "");
+  const [end, setEnd] = useState(() => params.get("end") ?? "");
+  const [category, setCategory] = useState(() => params.get("category") ?? "");
   const [offset, setOffset] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<{ message: string; undo?: () => void } | null>(null);
@@ -52,8 +55,10 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
       search: debounced || undefined,
       start: start || undefined,
       end: end || undefined,
+      category_id: category && category !== "none" ? category : undefined,
+      uncategorized: category === "none" || undefined,
     }),
-    [view, debounced, start, end],
+    [view, debounced, start, end, category],
   );
   useEffect(() => {
     setOffset(0);
@@ -149,7 +154,19 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
   const items = page.data?.items ?? [];
   const allChecked = items.length > 0 && items.every((t) => selected.has(t.id));
   const exportHref = `/api/export.csv?${ledgerParams(filters)}`;
-  const filtered = view !== "all" || Boolean(debounced || start || end);
+  const filtered = view !== "all" || Boolean(debounced || start || end || category);
+  const categoryName = category === "none" ? "Uncategorised" : names.get(category);
+
+  function clearCategory() {
+    setCategory("");
+    setParams(
+      (p) => {
+        p.delete("category");
+        return p;
+      },
+      { replace: true },
+    );
+  }
 
   return (
     <>
@@ -195,6 +212,16 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
             <span className="date-caption">To</span>
             <input className="input" type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
           </label>
+          {category && (
+            <span className="filter-chip">
+              <span>
+                <span className="caption">Category</span> {categoryName ?? "…"}
+              </span>
+              <button type="button" className="chip-x" onClick={clearCategory} aria-label={`Show every category, not just ${categoryName ?? "this one"}`}>
+                ×
+              </button>
+            </span>
+          )}
         </div>
 
         {selected.size > 0 && (

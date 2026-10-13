@@ -272,7 +272,11 @@ export function Dashboard({
           {summary.isLoading ? (
             <p className="state">Loading…</p>
           ) : (
-            <CategoryBars rows={summary.data?.by_category ?? []} />
+            <CategoryBars
+              rows={summary.data?.by_category ?? []}
+              period={summary.data && { start: summary.data.start, end: summary.data.end }}
+              timezone={me.user.timezone}
+            />
           )}
           {foreign && (
             <p className="muted">

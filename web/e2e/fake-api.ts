@@ -1602,10 +1602,17 @@ export async function fakeApi(
     const one = path.match(/^\/transactions\/(t\d+)$/);
     if (one && method === "GET") return json(route, state.txs.find((t) => t.id === one[1]));
     if (path === "/transactions" && method === "GET") {
-      const direction = url.searchParams.get("direction");
-      const limit = Number(url.searchParams.get("limit") ?? 1000);
+      const q = url.searchParams;
+      const direction = q.get("direction");
+      const category = q.get("category_id");
+      const status = q.get("status");
+      const limit = Number(q.get("limit") ?? 1000);
       const items = live().filter(
-        (t) => !direction || t.direction === direction,
+        (t) =>
+          (!direction || t.direction === direction) &&
+          (!category || t.category_id === category) &&
+          (q.get("uncategorized") !== "true" || t.category_id === null) &&
+          (!status || t.status === status),
       );
       return json(route, { items: items.slice(0, limit), total: items.length });
     }

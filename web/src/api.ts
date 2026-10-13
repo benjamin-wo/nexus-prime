@@ -278,11 +278,12 @@ export type ChatHistory = {
 
 export type LedgerFilters = {
   direction?: Direction;
-  status?: "pending";
+  status?: "pending" | "confirmed";
   search?: string;
   start?: string;
   end?: string;
   category_id?: string;
+  uncategorized?: boolean;
 };
 
 export function ledgerParams(filters: LedgerFilters, extra: Record<string, string | number> = {}): string {
