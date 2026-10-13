@@ -3,7 +3,7 @@ import { useState } from "react";
 
 import { api, type Booking, type TripDetail, type TripWeather } from "../api";
 import { formatShortDate } from "../format";
-import { sortKey, todayIso } from "./TripBits";
+import { landingOn, landsOnly, leavingOn, sortKey, todayIso } from "./TripBits";
 import { daySpot, useArrange } from "./TripArrange";
 import { degrees, icon } from "./TripExtras";
 
@@ -69,9 +69,26 @@ function Address({ name, address }: { name: string; address: string | null }) {
 }
 
 function Plan({ booking, day, tonight }: { booking: Booking; day: string; tonight: boolean }) {
+  if (landsOnly(booking, day)) {
+    const legs = landingOn(booking, day);
+    const last = legs[legs.length - 1];
+    return (
+      <li className="today-plan">
+        <span className="time-pill">{timeOf(last.arrives)}</span>
+        <div className="today-plan-body">
+          <strong>
+            {booking.kind === "flight" ? "🛬 Land" : "🚉 Arrive"} {last.destination ?? ""}
+          </strong>
+          <span className="caption">{[booking.provider, legs[0].number, legs[0].origin && `from ${legs[0].origin}`].filter(Boolean).join(" · ")}</span>
+          <Reference booking={booking} />
+        </div>
+      </li>
+    );
+  }
   if (booking.kind === "flight" || booking.kind === "rail") {
-    const first = booking.segments[0];
-    const last = booking.segments[booking.segments.length - 1];
+    const today = leavingOn(booking, day);
+    const first = today[0] ?? booking.segments[0];
+    const last = today[today.length - 1] ?? booking.segments[booking.segments.length - 1];
     return (
       <li className="today-plan">
         <span className="time-pill">{timeOf(first?.departs ?? null) ?? booking.at ?? "Today"}</span>

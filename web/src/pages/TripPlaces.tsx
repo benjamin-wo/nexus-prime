@@ -36,7 +36,8 @@ export function TripPlacesProvider({ tripId, destination, enabled, ideas = false
     destination,
     enabled,
     ideas,
-    linked: new Map((linked.data ?? []).map((l) => [l.booking_id, l])),
+    // Airports and stations go under their flight's id and name, apart from entries.
+    linked: new Map((linked.data ?? []).map((l) => [l.station ? `${l.booking_id}#${l.station}` : l.booking_id, l])),
     onChange,
   };
   return <Context.Provider value={value}>{children}</Context.Provider>;

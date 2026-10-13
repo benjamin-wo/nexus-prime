@@ -101,6 +101,16 @@ export function TripCard({ trip }: { trip: Trip }) {
 
 export const sortKey = (b: Pick<Booking, "starts" | "at" | "segments" | "kind">) => `${b.starts}T${b.at ?? b.segments[0]?.departs?.slice(11) ?? (b.kind === "hotel" ? "15:00" : "00:00")}`;
 
+type Leg = Booking["segments"][number];
+
+/** A flight's or train's legs that leave on a day, and those that land on it. */
+export const leavingOn = (b: Pick<Booking, "segments">, iso: string): Leg[] => b.segments.filter((s) => s.departs?.slice(0, 10) === iso);
+export const landingOn = (b: Pick<Booking, "segments">, iso: string): Leg[] => b.segments.filter((s) => s.arrives?.slice(0, 10) === iso);
+
+/** A flight or train on a day it only lands: shown as its arrival. */
+export const landsOnly = (b: Pick<Booking, "kind" | "segments">, iso: string) =>
+  (b.kind === "flight" || b.kind === "rail") && leavingOn(b, iso).length === 0 && landingOn(b, iso).length > 0;
+
 /** "08:25 → 16:05", with the day when a leg lands on another one. Times are local
  * and always 24-hour, as on a boarding pass. */
 export function legTimes(departs: string | null, arrives: string | null): string {

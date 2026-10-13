@@ -1,11 +1,12 @@
 """A trip day in order, and what to watch out for on it: clashes, plans out of time
 order and free time. Every place, flight and time here is made up."""
 
+from dataclasses import replace
 from datetime import date, datetime, time, timedelta
 from uuid import uuid4
 
 from nexus.domain.bookings import Booking, BookingDraft, BookingKind, Segment
-from nexus.domain.itinerary import NoteKind, day_notes, on_day, places_to_visit
+from nexus.domain.itinerary import NoteKind, day_notes, days_of, on_day, places_to_visit
 from nexus.domain.ledger import UserId
 from tests.fakes import NOW
 
@@ -127,3 +128,63 @@ def test_places_to_visit_keep_their_order_then_oldest_first() -> None:
     b = plan("Bakery", day=None, order=0, made=2)
     c = plan("Castle", day=None, made=0)
     assert titles(places_to_visit([a, b, c, plan("On a day")])) == ["Bakery", "Castle", "Arcade"]
+
+
+def overnight(stations: tuple[tuple[str, str], ...] = ()) -> Booking:
+    """A made-up overnight flight: leaves the evening before DAY, lands that morning."""
+    leg = Segment(
+        "ZZ378", "SIN", "BCN",
+        datetime.fromisoformat(f"{DAY - timedelta(days=1)}T23:30"),
+        datetime.fromisoformat(f"{DAY}T09:15"),
+    )  # fmt: skip
+    draft = BookingDraft(BookingKind.FLIGHT, "Acme Air", (leg,), None, None, None, None)
+    return entry(replace(draft, stations=stations))
+
+
+def test_an_overnight_flight_is_on_the_day_it_leaves_and_the_day_it_lands() -> None:
+    away, lodge = overnight(), hotel("Hill Lodge")
+    eve = DAY - timedelta(days=1)
+    assert days_of([away, lodge]) == [eve, DAY]
+    assert on_day([away, lodge], eve) == [away]
+    assert on_day([away, lodge], DAY) == [away, lodge]  # lands 09:15, check-in 15:00
+
+
+def test_landing_well_before_check_in_says_so_in_place_of_free_time() -> None:
+    away, lodge = overnight(), hotel("Hill Lodge")
+    notes = day_notes(on_day([away, lodge], DAY), DAY)
+    assert [(n.kind, n.text) for n in notes] == [
+        (
+            NoteKind.ARRIVAL,
+            "Land 09:15, check-in at Hill Lodge from 15:00: 5 h 45 min to fill, counting "
+            "the way from the airport, or ask about checking in early",
+        )
+    ]
+    assert (notes[0].ids, notes[0].start, notes[0].end) == (
+        (away.id, lodge.id),
+        time(9, 15),
+        time(15),
+    )
+    # Landing after lunch: close enough to check-in for no arrival note; the evening
+    # is free from landing.
+    late = overnight()
+    leg = replace(late.draft.segments[0], arrives=datetime.fromisoformat(f"{DAY}T13:30"))
+    late = replace(late, draft=replace(late.draft, segments=(leg,)))
+    later = day_notes(on_day([late, lodge], DAY), DAY)
+    assert [(n.kind, n.text) for n in later] == [(NoteKind.FREE, "Free 13:30 to 21:00")]
+
+
+def test_no_free_time_is_looked_for_outside_the_trips_days() -> None:
+    eve = DAY - timedelta(days=1)
+    day = on_day([overnight(), plan("Packing", "10:00", day=eve)], eve)
+    assert [n.kind for n in day_notes(day, eve)] == [NoteKind.FREE]
+    assert day_notes(day, eve, in_trip=False) == []
+
+
+def test_airports_found_on_google_maps_are_kept_with_the_flight() -> None:
+    away = overnight((("BCN airport", "fakePlaceAirport1"), ("SIN airport", "")))
+    assert away.draft.station("BCN airport") == "fakePlaceAirport1"
+    assert away.draft.station("SIN airport") == ""  # looked up, nothing found
+    assert away.draft.station("LHR airport") is None  # not looked up
+    assert BookingDraft.from_dict(away.draft.as_dict()) == away.draft
+    odd = BookingDraft.from_dict({**away.draft.as_dict(), "stations": {"X": "not an id!", 3: "y"}})
+    assert odd is not None and odd.stations == ()

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Booking } from "../api";
-import { PLACES, afterFor, daySpot, gapsFor, spotsOf, withMove } from "./TripArrange";
+import { PLACES, afterFor, arrivalText, daySpot, duration, gapsFor, spotsOf, withMove } from "./TripArrange";
 
 // A made-up trip: every plan and flight here is invented.
 function entry(id: string, fields: Partial<Booking>): Booking {
@@ -58,5 +58,26 @@ describe("arranging a trip", () => {
       "places@later",
       "places@sooner",
     ]);
+  });
+});
+
+describe("arriving", () => {
+  const note = {
+    kind: "arrival" as const, text: "Land 09:15, check-in at Hill Lodge from 15:00: 5 h 45 min to fill", ids: ["fl", "lodge"], start: "09:15", end: "15:00",
+  };
+  const hop = (minutes: number | null) => ({
+    start_id: "fl", end_id: "lodge", start: "BCN airport", end: "Hill Lodge", mode: "drive" as const, minutes, metres: 120000, tight: false, directions: "",
+  });
+
+  it("counts the way from the airport once its time is known", () => {
+    expect(arrivalText(note, [hop(90)])).toBe("Arrive around 10:45 (land 09:15, then 1 h 30 min) · check-in from 15:00 · about 4 h 15 min to fill, or ask about checking in early");
+    expect(arrivalText(note, [hop(330)])).toBe("Arrive around 14:45 (land 09:15, then 5 h 30 min) · check-in from 15:00 · about right for check-in");
+    // Not known yet, or no way found: the server's words.
+    expect(arrivalText(note, [])).toBe(note.text);
+    expect(arrivalText(note, [hop(null)])).toBe(note.text);
+  });
+
+  it("says lengths the way people do", () => {
+    expect([duration(25), duration(60), duration(95)]).toEqual(["25 min", "1 h", "1 h 35 min"]);
   });
 });

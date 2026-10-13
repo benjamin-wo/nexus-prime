@@ -588,6 +588,9 @@ class TripRepository(Protocol):
     async def set_packing(
         self, user_id: UserId, trip_id: UUID, items: tuple[PackItem, ...], at: datetime
     ) -> None: ...
+    async def set_hop_modes(
+        self, user_id: UserId, trip_id: UUID, modes: dict[str, str]
+    ) -> None: ...
 
 
 class InvestmentRepository(Protocol):

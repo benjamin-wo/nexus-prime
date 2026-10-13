@@ -3,6 +3,7 @@ import { type ReactNode, useEffect, useMemo, useRef, useState, useSyncExternalSt
 
 import { api, type Booking, type Hop, type LinkedPlace, type TravelMode, type TripDetail } from "../api";
 import { type GMap, type GOverlay, loadMaps, type MapsApi, onMapsAuthFailure } from "../maps";
+import { duration } from "./TripArrange";
 import { sortKey, todayIso } from "./TripBits";
 import { useLinkedPlaces } from "./TripPlaces";
 
@@ -20,11 +21,19 @@ export type Pin = {
    * place to visit. */
   label: string;
   color: string;
-  kind: "plan" | "hotel" | "place";
-  /** The days it's on: a plan's day, every day of a hotel stay, none for a place. */
+  kind: "plan" | "hotel" | "place" | "station";
+  /** The days it's on: a plan's day, every day of a hotel stay, none for a place, the
+   * days an airport or station is left from or landed at. */
   days: string[];
   sort: string;
+  /** Its place in a given day's route, where that differs by day (an airport). */
+  sortOn?: Record<string, string>;
+  /** The element on the itinerary a tap on the pin finds. */
+  target?: string;
 };
+
+/** The colour of an airport or station pin. */
+export const STATION = "#374151";
 
 const DAY_MS = 86400000;
 const isoDay = (t: number) => new Date(t).toISOString().slice(0, 10);
@@ -76,18 +85,50 @@ export function mapPins(detail: Pick<TripDetail, "trip" | "bookings" | "days">, 
       pins.push({ ...base, label: "", color: NO_DAY, kind: "place", days: [] });
     }
   }
+  // Airports and stations: on the days they're left from or landed at, in the
+  // flight's place in that day (landing after leaving, on a short flight).
+  const byId = new Map(detail.bookings.map((b) => [b.id, b]));
+  for (const l of linked.values()) {
+    const b = byId.get(l.booking_id);
+    if (!l.station || !b || typeof l.place.lat !== "number" || typeof l.place.lng !== "number") continue;
+    const stops = l.stops ?? [];
+    const sortOn = Object.fromEntries(stops.map((s) => [s.day, `${s.day}#${placeOn(detail, b.id, s.day)}${s.side === "to" ? "b" : "a"}`]));
+    const landing = stops.find((s) => s.side === "to");
+    pins.push({
+      id: `${b.id}#${l.station}`,
+      title: l.station,
+      lat: l.place.lat,
+      lng: l.place.lng,
+      label: b.kind === "flight" ? "✈" : "🚆",
+      color: STATION,
+      kind: "station",
+      days: stops.map((s) => s.day),
+      sort: Object.values(sortOn)[0] ?? keyOf(b),
+      sortOn,
+      target: landing && landing.day !== b.starts ? `land-${b.id}` : `entry-${b.id}`,
+    });
+  }
   return pins;
 }
 
 /** A day's route on the map, in itinerary order: from last night's hotel, through the
  * day's plans (a hotel check-in at 15:00), to tonight's hotel. */
+/** An entry's place in a day's order, padded to sort ("004"); "999" when not there. */
+function placeOn(detail: Pick<TripDetail, "days">, id: string, day: string): string {
+  const i = detail.days?.find((d) => d.day === day)?.order.indexOf(id) ?? -1;
+  return String(i < 0 ? 999 : i).padStart(3, "0");
+}
+
 export function dayPath(pins: Pin[], day: string): Pin[] {
   const before = isoDay(Date.parse(day) - DAY_MS);
   const hotels = pins.filter((p) => p.kind === "hotel");
   const sleptIn = (p: Pin, night: string) => p.days.includes(night) && p.days.at(-1) !== night;
   const morning = hotels.find((p) => sleptIn(p, before));
   const tonight = hotels.find((p) => sleptIn(p, day));
-  const stops = pins.filter((p) => (p.kind === "plan" && p.days[0] === day) || (p.kind === "hotel" && p.days[0] === day)).sort((a, b) => a.sort.localeCompare(b.sort));
+  const at = (p: Pin) => p.sortOn?.[day] ?? p.sort;
+  const stops = pins
+    .filter((p) => ((p.kind === "plan" || p.kind === "hotel") && p.days[0] === day) || (p.kind === "station" && p.days.includes(day)))
+    .sort((a, b) => at(a).localeCompare(at(b)));
   const path: Pin[] = [];
   for (const p of [morning, ...stops, tonight]) {
     if (p && path.at(-1)?.id !== p.id) path.push(p);
@@ -154,7 +195,7 @@ export function TripMap({ detail }: { detail: TripDetail }) {
         icon: { path: api.circle, scale: p.label ? 11 : 7, fillColor: p.color, fillOpacity: 1, strokeColor: "#ffffff", strokeWeight: 2 },
       });
       marker.addListener("click", () => {
-        const target = document.getElementById(`entry-${p.id}`);
+        const target = document.getElementById(p.target ?? `entry-${p.id}`);
         if (!target) return;
         setFull(false);
         target.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -232,7 +273,7 @@ export function TripMap({ detail }: { detail: TripDetail }) {
               <li key={p.id}>
                 {p.label && p.label !== "H" ? `${p.label}. ` : ""}
                 {p.title}
-                {p.kind === "hotel" ? " (stay)" : p.kind === "place" ? " (place to visit)" : ""}
+                {p.kind === "hotel" ? " (stay)" : p.kind === "place" ? " (place to visit)" : p.kind === "station" ? " (airport or station)" : ""}
               </li>
             ))}
           </ul>
@@ -368,7 +409,7 @@ export function HopLine({ tripId, day, hop, addressOf }: { tripId: string; day: 
     }
   }
   const how = MODE[shown.mode];
-  const time = shown.minutes === null ? `No ${how.words === "walk" ? "walking" : how.words} route` : `${shown.minutes} min ${how.words}`;
+  const time = shown.minutes === null ? `No ${how.words === "walk" ? "walking" : how.words} route` : `${duration(shown.minutes)} ${how.words}`;
   return (
     <li className="timeline-hop" aria-label={`From ${shown.start} to ${shown.end}`}>
       <span aria-hidden="true">{how.icon}</span>

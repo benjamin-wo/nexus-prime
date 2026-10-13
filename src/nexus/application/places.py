@@ -12,7 +12,7 @@ import logging
 from collections import OrderedDict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Protocol
 from uuid import UUID
 
@@ -23,6 +23,7 @@ from nexus.domain.bookings import Booking, BookingKind
 from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.ledger import UserId
 from nexus.domain.places import Place, PlacePhoto, place_id
+from nexus.domain.routes import stations_on
 
 log = logging.getLogger(__name__)
 
@@ -196,19 +197,31 @@ class LinkedPlace:
     booking_id: UUID
     place: Place
     warning: str | None  # closed that day, or not open at the planned time
+    # A flight's or train's airport or station: its name as searched, and the days it's
+    # left from ("from") or landed at ("to").
+    station: str | None = None
+    stops: tuple[tuple[date, str], ...] = ()
 
 
 async def trip_places(
     uow: UnitOfWork, places: Places, user_id: UserId, trip_id: UUID
 ) -> list[LinkedPlace]:
     """Google's details for the trip's linked entries, with a warning where the plan's
-    day or time falls outside the place's regular hours."""
+    day or time falls outside the place's regular hours, and the airports and stations
+    its flights and trains use, once found."""
     async with uow:
         if await uow.trips.get_trip(user_id, trip_id) is None:
             raise NotFound("no trip with that id")
         items = await uow.trips.list_bookings(user_id, trip_id=trip_id)
     linked = [b for b in items if b.draft.place_id and linkable(b)]
-    found = await places.many(user_id, [b.draft.place_id for b in linked if b.draft.place_id])
+    stations = [
+        (b, name, pid, stops)
+        for b in items
+        for name, pid in b.draft.stations
+        if pid and (stops := station_stops(b, name))
+    ]
+    wanted = [b.draft.place_id for b in linked if b.draft.place_id] + [s[2] for s in stations]
+    found = await places.many(user_id, wanted)
     result = []
     for b in linked:
         place = found.get(b.draft.place_id or "")
@@ -217,7 +230,23 @@ async def trip_places(
         hotel = b.draft.kind is BookingKind.HOTEL
         warning = place.warning(None) if hotel else place.warning(b.draft.day, b.draft.at)
         result.append(LinkedPlace(b.id, place, warning))
+    for b, name, pid, stops in stations:
+        if (place := found.get(pid)) is not None:
+            result.append(LinkedPlace(b.id, place, None, name, stops))
     return result
+
+
+def station_stops(b: Booking, name: str) -> tuple[tuple[date, str], ...]:
+    """The days a flight or train leaves from or lands at the named station."""
+    days = sorted({t.date() for s in b.draft.segments for t in (s.departs, s.arrives) if t})
+    stops: list[tuple[date, str]] = []
+    for day in days:
+        leave, land = stations_on(b, day)
+        if leave == name:
+            stops.append((day, "from"))
+        if land == name:
+            stops.append((day, "to"))
+    return tuple(stops)
 
 
 _COMMON = frozenset(

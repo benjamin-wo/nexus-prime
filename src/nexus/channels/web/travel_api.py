@@ -35,7 +35,14 @@ from nexus.domain.money import Money
 from nexus.domain.packing import MAX_ITEM, MAX_ITEMS, PackItem
 from nexus.domain.places import Place
 from nexus.domain.routes import Mode
-from nexus.domain.trips import MAX_COMPANIONS, MAX_DAY_LABEL, MAX_NOTES, MAX_PLANNED, Trip
+from nexus.domain.trips import (
+    MAX_COMPANIONS,
+    MAX_DAY_LABEL,
+    MAX_NOTES,
+    MAX_PLANNED,
+    GettingAround,
+    Trip,
+)
 from nexus.domain.weather import YEARS, TripWeather, describe
 from nexus.settings import Settings
 
@@ -103,6 +110,7 @@ class TripOut(Model):
     photo: PhotoOut | None = None  # a famous view of where it goes, once found
     photo_off: bool = False  # the user chose to show no photo
     packing: list[PackItemOut] = Field(default_factory=list)
+    getting_around: GettingAround = GettingAround.TRANSIT  # public transport or a hire car
 
 
 def _trip(trip: Trip, today: date, photos: dict[UUID, DestinationPhoto] | None = None) -> TripOut:
@@ -129,6 +137,7 @@ def _trip(trip: Trip, today: date, photos: dict[UUID, DestinationPhoto] | None =
         ),
         photo_off=trip.photo_off,
         packing=[PackItemOut(text=i.text, done=i.done) for i in trip.packing],
+        getting_around=trip.getting_around,
     )
 
 
@@ -287,10 +296,9 @@ class DayPlanOut(Model):
     notes: list[DayNoteOut]
 
 
-def _days(bookings: list[Booking]) -> list[DayPlanOut]:
-    days = sorted({b.draft.starts for b in bookings if b.draft.starts is not None})
+def _days(bookings: list[Booking], trip: Trip) -> list[DayPlanOut]:
     out = []
-    for day in days:
+    for day in itinerary.days_of(bookings):
         arranged = itinerary.on_day(bookings, day)
         notes = [
             DayNoteOut(
@@ -300,7 +308,7 @@ def _days(bookings: list[Booking]) -> list[DayPlanOut]:
                 start=n.start.isoformat(timespec="minutes") if n.start else None,
                 end=n.end.isoformat(timespec="minutes") if n.end else None,
             )
-            for n in itinerary.day_notes(arranged, day)
+            for n in itinerary.day_notes(arranged, day, in_trip=trip.start <= day <= trip.end)
         ]
         out.append(DayPlanOut(day=day, order=[b.id for b in arranged], notes=notes))
     return out
@@ -390,7 +398,7 @@ def _detail(
             for i in reversed(view.items)  # newest first
         ],
         bookings=[_booking(b) for b in view.bookings],
-        days=_days(view.bookings),
+        days=_days(view.bookings, view.trip),
         places_order=[b.id for b in itinerary.places_to_visit(view.bookings)],
         booked=_m(view.booked),
         booked_unlogged=_m(view.booked_unlogged),
@@ -518,6 +526,19 @@ async def label_day(trip_id: str, day: date, body: DayLabelIn, auth: Auth, web: 
     """Names a day of the trip, such as the city ("Busan"); blank clears it."""
     trip = await trip_cases.set_day_label(
         web.uow(), auth.user, _uuid(trip_id), day, body.label, now=web.clock()
+    )
+    return _trip(trip, _today(auth, web))
+
+
+class GettingAroundIn(Model):
+    by: GettingAround  # transit or car
+
+
+@router.put("/trips/{trip_id}/getting-around")
+async def getting_around(trip_id: str, body: GettingAroundIn, auth: Auth, web: Runtime) -> TripOut:
+    """Public transport or a hire car: how longer hops go unless one was picked."""
+    trip = await trip_cases.set_getting_around(
+        web.uow(), auth.user, _uuid(trip_id), body.by, now=web.clock()
     )
     return _trip(trip, _today(auth, web))
 
@@ -901,10 +922,18 @@ async def place_photo(place_id: str, auth: Auth, web: Runtime) -> Response:
     )
 
 
+class StationStopOut(Model):
+    day: date
+    side: str  # "from": left from that day; "to": landed at that day
+
+
 class LinkedPlaceOut(Model):
     booking_id: UUID
     place: PlaceOut
     warning: str | None  # usually closed that day, or not open at the planned time
+    # For a flight's or train's airport or station: its name, and when it's used.
+    station: str | None = None
+    stops: list[StationStopOut] = Field(default_factory=list)
 
 
 @router.get("/trips/{trip_id}/places")
@@ -912,7 +941,13 @@ async def trip_places(trip_id: str, auth: Auth, web: Runtime) -> list[LinkedPlac
     """Google Maps details for the itinerary entries linked to a place."""
     found = await place_cases.trip_places(web.uow(), _places(web), auth.user.id, _uuid(trip_id))
     return [
-        LinkedPlaceOut(booking_id=f.booking_id, place=_place(f.place), warning=f.warning)
+        LinkedPlaceOut(
+            booking_id=f.booking_id,
+            place=_place(f.place),
+            warning=f.warning,
+            station=f.station,
+            stops=[StationStopOut(day=d, side=side) for d, side in f.stops],
+        )
         for f in found
     ]
 
@@ -953,12 +988,11 @@ def _routes(web: WebRuntime) -> tuple[Places, Routes]:
 
 @router.get("/trips/{trip_id}/days/{day}/hops")
 async def day_hops(trip_id: str, day: date, auth: Auth, web: Runtime) -> list[HopOut]:
-    """How long it takes between each of the day's stops, the usual way for the
-    distance (walking when it's short, else public transport)."""
+    """How long it takes between each of the day's stops: the way picked for a hop,
+    else the usual way for the distance (walking when it's short, else public
+    transport or the trip's hire car). Airports and stations are looked up once."""
     places, routes = _routes(web)
-    found = await route_cases.hop_times(
-        web.uow(), places, routes, auth.user.id, _uuid(trip_id), day
-    )
+    found = await route_cases.hop_times(web.uow, places, routes, auth.user.id, _uuid(trip_id), day)
     return [_hop(h) for h in found]
 
 
@@ -966,11 +1000,11 @@ async def day_hops(trip_id: str, day: date, auth: Auth, web: Runtime) -> list[Ho
 async def day_hop(
     trip_id: str, day: date, start_id: str, end_id: str, mode: Mode, auth: Auth, web: Runtime
 ) -> HopOut:
-    """One hop of the day, the way the user picked."""
+    """One hop of the day, the way the user picked; kept for next time."""
     _, routes = _routes(web)
     try:
         found = await route_cases.hop_time(
-            web.uow(),
+            web.uow,
             routes,
             auth.user.id,
             _uuid(trip_id),
@@ -1247,8 +1281,14 @@ def _in_order(bookings: list[Booking]) -> list[Booking]:
     """The scheduled entries day by day, each day as the itinerary has it (rearranged
     by hand, or by time)."""
     scheduled = [b for b in bookings if b.scheduled]
-    days = sorted({day for b in scheduled if (day := b.draft.starts) is not None})
-    return [b for day in days for b in itinerary.on_day(scheduled, day)]
+    seen: set[UUID] = set()
+    ordered = []
+    for day in itinerary.days_of(scheduled):
+        for b in itinerary.on_day(scheduled, day):
+            if b.id not in seen:  # a flight landing the next day is listed once
+                seen.add(b.id)
+                ordered.append(b)
+    return ordered
 
 
 @shared_router.get("/trips/{token}/photo")

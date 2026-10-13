@@ -32,6 +32,18 @@ class TripStatus(StrEnum):
     FINISHED = "finished"
 
 
+class GettingAround(StrEnum):
+    """How a trip gets about beyond walking distance."""
+
+    TRANSIT = "transit"  # public transport, driving only where there's none
+    CAR = "car"  # a hire car
+
+
+# The ways picked for a trip's hops ("<from entry>:<to entry>" to walk, transit or
+# drive), newest last; the oldest are let go past this many.
+MAX_HOP_MODES = 200
+
+
 @dataclass(frozen=True, slots=True)
 class Trip:
     id: UUID
@@ -53,6 +65,8 @@ class Trip:
     photo_id: UUID | None = None  # its header photo, once found (destination_photos.py)
     photo_off: bool = False  # the user chose to show no photo
     packing: tuple[PackItem, ...] = ()
+    getting_around: GettingAround = GettingAround.TRANSIT
+    hop_modes: dict[str, str] = field(default_factory=dict)  # see MAX_HOP_MODES
 
     @property
     def days(self) -> int:

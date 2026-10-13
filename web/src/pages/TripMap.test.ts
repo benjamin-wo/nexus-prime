@@ -75,3 +75,31 @@ describe("the trip map", () => {
     expect(distance(1450)).toBe("1.4 km");
   });
 });
+
+describe("airports on the map", () => {
+  // A made-up overnight flight landing on 11 Nov, then the drive to the inn.
+  const flight = entry("fl", {
+    kind: "flight", title: "ZZ378 SIN → BCN", starts: "2026-11-10",
+    segments: [{ number: "ZZ378", origin: "SIN", destination: "BCN", departs: "2026-11-10T23:30", arrives: "2026-11-11T09:15" }],
+  });
+  const lodge = entry("lodge", { kind: "hotel", hotel: "Hill Lodge", starts: "2026-11-11", check_in: "2026-11-11", check_out: "2026-11-13" });
+  const airport = { id: "place-bcn", name: "El Prat", lat: 41.29, lng: 2.07 } as LinkedPlace["place"];
+  const withAirport = new Map([
+    linked("lodge", 41.93, 3.21),
+    ["fl#BCN airport", { booking_id: "fl", place: airport, warning: null, station: "BCN airport", stops: [{ day: "2026-11-11", side: "to" as const }] }],
+  ]);
+  const days = [
+    { day: "2026-11-10", order: ["fl"], notes: [] },
+    { day: "2026-11-11", order: ["fl", "lodge"], notes: [] },
+  ];
+  const pins = mapPins({ trip: trip as never, bookings: [flight, lodge], days }, withAirport);
+
+  it("pins the airport on the day it's landed at", () => {
+    const station = pins.find((p) => p.kind === "station");
+    expect([station?.title, station?.label, station?.days, station?.target]).toEqual(["BCN airport", "✈", ["2026-11-11"], "land-fl"]);
+  });
+
+  it("draws the day from the airport to the hotel", () => {
+    expect(dayPath(pins, "2026-11-11").map((p) => p.id)).toEqual(["fl#BCN airport", "lodge"]);
+  });
+});

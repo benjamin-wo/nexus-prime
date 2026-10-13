@@ -29,6 +29,7 @@ from nexus.domain.packing import Outlook, PackItem, clean_list, suggestions
 from nexus.domain.planning import paydays
 from nexus.domain.trips import (
     MAX_TRIPS,
+    GettingAround,
     Owed,
     Readiness,
     SetAside,
@@ -139,7 +140,13 @@ async def update_trip(
         if current is None:
             raise NotFound("no trip with that id")
         trip = _build(user, draft, trip_id, current.created_at, now, current.day_labels)
-        trip = replace(trip, photo_off=current.photo_off, packing=current.packing)
+        trip = replace(
+            trip,
+            photo_off=current.photo_off,
+            packing=current.packing,
+            getting_around=current.getting_around,
+            hop_modes=current.hop_modes,
+        )
         await uow.trips.update_trip(trip, user.home_currency)
         if (trip.destination, trip.start) != (current.destination, current.start):
             # Somewhere or some season else: a new header photo.
@@ -160,6 +167,20 @@ async def set_day_label(
         if current is None:
             raise NotFound("no trip with that id")
         trip = replace(current, day_labels=clean_day_label(current, day, label), updated_at=now)
+        await uow.trips.update_trip(trip, user.home_currency)
+        await uow.commit()
+    return trip
+
+
+async def set_getting_around(
+    uow: UnitOfWork, user: User, trip_id: UUID, by: GettingAround, *, now: datetime
+) -> Trip:
+    """Public transport or a hire car: how longer hops go unless one was picked."""
+    async with uow:
+        current = await uow.trips.get_trip(user.id, trip_id)
+        if current is None:
+            raise NotFound("no trip with that id")
+        trip = replace(current, getting_around=by, updated_at=now)
         await uow.trips.update_trip(trip, user.home_currency)
         await uow.commit()
     return trip
