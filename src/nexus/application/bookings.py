@@ -259,7 +259,7 @@ def _check_lists(existing: list[Booking], draft: BookingDraft) -> None:
 
 # Kept from the entry as it was when an edit doesn't mention them (the web form and
 # the chat change only what they show or what the user named).
-KEPT = ("place_id", "ends_at", "link", "list_name", "order", "stations")
+KEPT = ("place_id", "ends_at", "link", "list_name", "order", "follows", "stations")
 
 
 def _draft(details: dict[str, object], kept: BookingDraft | None = None) -> BookingDraft:
@@ -330,7 +330,7 @@ async def edit_booking(
             raise NotFound("no booking with that id")
         draft = _draft(details, current.draft)
         if draft.day != current.draft.day:
-            draft = replace(draft, order=None)
+            draft = replace(draft, order=None, follows=None)
         if current.trip_id is not None and draft.list_name != current.draft.list_name:
             _check_lists(await uow.trips.list_bookings(user_id, trip_id=current.trip_id), draft)
         changed = replace(current, draft=draft, cost=cost)
@@ -371,7 +371,10 @@ async def move_entry(
                 1 for b in there[: ids.index(after) + 1] if b.draft.kind is BookingKind.ACTIVITY
             )
         plans = [b for b in there if b.draft.kind is BookingKind.ACTIVITY]
-        moved = replace(moving, draft=replace(moving.draft, day=day))
+        # A plan with no time keeps its spot among the day's timed entries too.
+        before = there[: [b.id for b in there].index(after) + 1] if after is not None else []
+        follows = itinerary.follows_at(before, day) if day and moving.draft.at is None else None
+        moved = replace(moving, draft=replace(moving.draft, day=day, follows=follows))
         plans.insert(place, moved)
         numbers = itinerary.renumber(plans)
         for b in plans:

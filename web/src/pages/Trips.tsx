@@ -1175,8 +1175,10 @@ function Itinerary({ detail, onChange, onAdd, collapsed }: {
                   // Counted here: this renders again when the travel times arrive.
                   let stop = 0;
                   const shownIds = new Set(entries.map((b) => b.id));
-                  const into = (b: Booking) => hops.filter((h) => h.end_id === b.id);
-                  const after = hops.filter((h) => !shownIds.has(h.end_id));
+                  // Landing and collecting a hire car at the airport isn't a trip of its own.
+                  const drawn = hops.filter((h) => !h.beside_airport);
+                  const into = (b: Booking) => drawn.filter((h) => h.end_id === b.id);
+                  const after = drawn.filter((h) => !shownIds.has(h.end_id));
                   return (
                     <>
                     <DayNotes
@@ -1673,13 +1675,14 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
   const [shotError, setShotError] = useState<string | null>(null);
   const data = detail.data;
   const stage: Stage = data ? stageOf(data) : "planning";
-  const refresh = () => {
-    void client.invalidateQueries({ queryKey: ["trip", id] });
-    void client.invalidateQueries({ queryKey: ["trips"] });
-    void client.invalidateQueries({ queryKey: ["trip-places", id] });
-    // A change to the day can change who goes where, and so the travel times.
-    void client.invalidateQueries({ queryKey: ["trip-hops", id] });
-  };
+  const refresh = () =>
+    Promise.all([
+      client.invalidateQueries({ queryKey: ["trip", id] }),
+      client.invalidateQueries({ queryKey: ["trips"] }),
+      client.invalidateQueries({ queryKey: ["trip-places", id] }),
+      // A change to the day can change who goes where, and so the travel times.
+      client.invalidateQueries({ queryKey: ["trip-hops", id] }),
+    ]);
 
   function form(preset: AddPreset) {
     setSheet(null);

@@ -964,6 +964,7 @@ class HopOut(Model):
     metres: int | None
     tight: bool  # takes longer than the time between the two plans
     directions: str  # Google Maps directions
+    beside_airport: bool  # between an airport and a place right by it: not shown or timed
 
 
 def _hop(h: route_cases.HopTime) -> HopOut:
@@ -977,6 +978,7 @@ def _hop(h: route_cases.HopTime) -> HopOut:
         metres=h.metres,
         tight=h.tight,
         directions=h.directions,
+        beside_airport=h.beside_airport,
     )
 
 

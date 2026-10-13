@@ -126,9 +126,29 @@ def places_to_visit(bookings: Sequence[Booking]) -> list[Booking]:
     return sorted(places, key=lambda b: (b.draft.order is None, b.draft.order or 0, b.created_at))
 
 
-def _fit(arranged: list[Booking], b: Booking, day: date, *, end_if_untimed: bool) -> None:
-    """Puts ``b`` right after the last entry with a time no later than its own."""
+def _when(b: Booking, day: date) -> tuple[time, int] | None:
+    """Where an entry falls in the day: its time, or for a plan with none, just after
+    the time it was put after (so a check-in at that same time comes before it)."""
     at = _time(b, day)
+    if at is not None:
+        return (at, 0)
+    follows = b.draft.follows if b.draft.kind is BookingKind.ACTIVITY else None
+    return (follows, 1) if follows is not None else None
+
+
+def follows_at(arranged: Sequence[Booking], day: date) -> time:
+    """For a plan with no time put at the end of ``arranged``: the time it comes after,
+    from the last entry with one (midnight when there's none)."""
+    for e in reversed(arranged):
+        when = _when(e, day)
+        if when is not None:
+            return when[0]
+    return time(0)
+
+
+def _fit(arranged: list[Booking], b: Booking, day: date, *, end_if_untimed: bool) -> None:
+    """Puts ``b`` right after the last entry that falls no later than it."""
+    at = _when(b, day)
     if at is None:
         if end_if_untimed:
             arranged.append(b)
@@ -137,7 +157,7 @@ def _fit(arranged: list[Booking], b: Booking, day: date, *, end_if_untimed: bool
         return
     after = -1
     for i, e in enumerate(arranged):
-        when = _time(e, day)
+        when = _when(e, day)
         if when is not None and when <= at:
             after = i
     arranged.insert(after + 1, b)

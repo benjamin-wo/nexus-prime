@@ -644,6 +644,8 @@ export type Hop = {
   /** Takes longer than the time between the two plans. */
   tight: boolean;
   directions: string;
+  /** Between an airport and a place right by it (a hire-car desk): not drawn or timed. */
+  beside_airport?: boolean;
 };
 
 /** A trip as its read-only link shows it: the plan, never money, references, notes or

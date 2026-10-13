@@ -24,6 +24,9 @@ from nexus.domain.trips import GettingAround
 
 # Up to this far apart (in a straight line), a hop is walked by default.
 WALK_UP_TO = 1500
+# A place this close to an airport is part of being there (a car hire desk, an airport
+# hotel): the way between the two isn't worth a travel time.
+AIRPORT_SIDE = 3000
 MAX_HOPS = 12
 
 
@@ -137,6 +140,12 @@ def day_hops(bookings: list[Booking], day: date) -> list[Hop]:
             continue
         reach(stop)
     return hops[:MAX_HOPS]
+
+
+def beside_airport(hop: Hop, metres: float | None, flights: set[UUID]) -> bool:
+    """Whether a hop only goes between an airport and a place right beside it."""
+    at_airport = hop.start.booking_id in flights or hop.end.booking_id in flights
+    return at_airport and metres is not None and metres <= AIRPORT_SIDE
 
 
 def hop_key(hop: Hop) -> str:

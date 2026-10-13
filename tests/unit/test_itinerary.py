@@ -24,12 +24,13 @@ def plan(
     *,
     ends: str | None = None,
     order: int | None = None,
+    follows: str | None = None,
     day: date | None = DAY,
     made: int = 0,
 ) -> Booking:
     draft = BookingDraft.from_dict(
         {"kind": "activity", "name": name, "day": day.isoformat() if day else None,
-         "at": at, "ends_at": ends, "order": order}
+         "at": at, "ends_at": ends, "order": order, "follows": follows}
     )  # fmt: skip
     assert draft is not None
     return entry(draft, made)
@@ -60,6 +61,25 @@ def test_a_day_nobody_rearranged_runs_by_time_as_before() -> None:
         "Hill Lodge",
         "Dinner",
     ]
+
+
+def test_a_plan_with_no_time_stays_where_it_was_put_among_timed_entries() -> None:
+    lands, lodge = flight("07:00", "09:15"), hotel("Hill Lodge")
+    # Put right after landing: the 15:00 check-in comes after it.
+    pickup = plan("Car pickup", order=0, follows="09:15")
+    assert titles(on_day([lodge, pickup, lands], DAY)) == [
+        "ZZ12 Exampleton → Otherville",
+        "Car pickup",
+        "Hill Lodge",
+    ]
+    # Put after the check-in: after it, though that's at the same 15:00.
+    dinner = plan("Dinner", order=0, follows="15:00")
+    assert titles(on_day([lodge, dinner, lands], DAY))[-1] == "Dinner"
+    # Without the hint, as before: after the last timed entry.
+    old = plan("Car pickup", order=0)
+    assert titles(on_day([lodge, old, lands], DAY))[-1] == "Car pickup"
+    # A time of its own wins: the hint isn't kept.
+    assert plan("Car pickup", "16:00", follows="09:15").draft.follows is None
 
 
 def test_once_rearranged_plans_keep_their_order_and_the_rest_slot_in_by_time() -> None:
