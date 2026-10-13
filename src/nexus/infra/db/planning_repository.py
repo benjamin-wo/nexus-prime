@@ -11,7 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from nexus.domain.ledger import UserId
 from nexus.domain.money import Money
 from nexus.domain.notifications import DAILY_AT, Frequency, NotificationSettings
-from nexus.domain.planning import Bill, BillOccurrence, Budget, Cadence, PayRule, SalarySchedule
+from nexus.domain.planning import (
+    Bill,
+    BillOccurrence,
+    Budget,
+    Cadence,
+    PayRule,
+    SalarySchedule,
+)
 from nexus.domain.recurring import Subscription, SubscriptionStatus
 from nexus.infra.db.tables import (
     bill_occurrences,
@@ -47,6 +54,7 @@ def _bill(row: Row[Any]) -> Bill:
         anchor=row.anchor,
         created_at=row.created_at,
         archived_at=row.archived_at,
+        spending=row.spending,
     )
 
 
@@ -187,6 +195,7 @@ class SqlPlanningRepository:
                 anchor=bill.anchor,
                 created_at=bill.created_at,
                 archived_at=bill.archived_at,
+                spending=bill.spending,
             )
         )
 

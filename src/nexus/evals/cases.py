@@ -531,6 +531,18 @@ CASES: tuple[Case, ...] = (
         checks=(BillIs("insurance", "120", date(2026, 10, 10)),),
     ),
     Case(
+        "plan-regular-investment",
+        "plan",
+        _t("remind me to invest 500 in my index fund on the 5th every month"),
+        checks=(BillIs("index fund", "500", date(2026, 10, 5), spending=False),),
+    ),
+    Case(
+        "plan-regular-transfer",
+        "plan",
+        _t("remind me to move 300 to savings on 25 oct every month"),
+        checks=(BillIs("savings", "300", date(2026, 10, 25), spending=False),),
+    ),
+    Case(
         "plan-bill-paid",
         "plan",
         _t("i paid the rent"),

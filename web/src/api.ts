@@ -174,6 +174,8 @@ export type Budget = {
 export type Bill = {
   id: string;
   name: string;
+  /** Marking it paid logs an expense; false for money moved, not spent (it's marked done). */
+  spending: boolean;
   amount: Money | null;
   cadence: "once" | "weekly" | "monthly" | "yearly";
   due: string;

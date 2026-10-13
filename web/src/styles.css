@@ -554,6 +554,7 @@ a.btn { text-decoration: none; }
 .step-price { font-size: 1.1rem; font-weight: 600; }
 .step-detail { margin: var(--space-1) 0 0; color: var(--text-secondary); }
 .chip { font-size: 0.75rem; font-weight: 600; padding: 1px 6px; border-radius: 999px; background: var(--bg-card); }
+.kind-chip { margin-left: var(--space-2); vertical-align: 2px; color: var(--sky-accent); background: rgba(56, 189, 248, 0.12); font-weight: 600; }
 .chip.up { color: var(--emerald-accent); background: var(--emerald-soft); }
 .chip.down { color: var(--rose-accent); background: rgba(244, 63, 94, 0.12); }
 .callout { margin: var(--space-3) 0 0; padding: var(--space-3); border-radius: var(--radius); background: var(--status-warning-soft); border: 1px solid var(--status-warning-border); }
@@ -566,6 +567,7 @@ a.btn { text-decoration: none; }
 .badge.status-stopped { color: var(--rose-accent); border-color: rgba(244, 63, 94, 0.35); }
 .badge.status-open { color: var(--status-warning); border-color: var(--status-warning-border); }
 .toggle { display: inline-flex; align-items: center; gap: var(--space-2); cursor: pointer; }
+.spending-toggle { flex: 1 1 100%; display: grid; gap: var(--space-1); }
 .debate { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--space-3); }
 .cite { font-size: 0.8em; margin-left: 2px; }
 .warning-text { color: var(--status-warning); }

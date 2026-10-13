@@ -294,13 +294,14 @@ test("set when you're paid and your usual salary", async ({ page }) => {
 test("add a bill, snooze its reminders and stop tracking it", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/plan");
-  await expect(page.getByText("No bills yet. Add one below.")).toBeVisible();
-  const form = page.getByRole("form", { name: "Add a bill" });
-  await form.getByLabel("Bill").fill("Rent");
+  await expect(page.getByText(/^Nothing scheduled yet/)).toBeVisible();
+  const form = page.getByRole("form", { name: "Add a scheduled payment" });
+  await expect(form.getByLabel("Counts as spending")).toBeChecked();
+  await form.getByLabel("Name").fill("Rent");
   await form.getByLabel("Next due").fill("2026-10-01");
   await form.getByLabel(/Amount/).fill("1800");
-  await form.getByRole("button", { name: "Add bill" }).click();
-  const bills = page.getByRole("region", { name: "Bills" });
+  await form.getByRole("button", { name: "Add", exact: true }).click();
+  const bills = page.getByRole("region", { name: "Scheduled payments" });
   await expect(bills.getByRole("heading", { name: "Rent" })).toBeVisible();
   await expect(bills.getByText(/Due in 3 days, .* · Every month/)).toBeVisible();
   await expect(bills.getByText(/SGD\s?1,800\.00/)).toBeVisible();
@@ -311,17 +312,37 @@ test("add a bill, snooze its reminders and stop tracking it", async ({ page }) =
 
   await bills.getByRole("button", { name: "Remove" }).click();
   await bills.getByRole("button", { name: "Remove" }).click(); // confirm
-  await expect(page.getByText("No bills yet. Add one below.")).toBeVisible();
+  await expect(page.getByText(/^Nothing scheduled yet/)).toBeVisible();
+});
+
+test("a regular investment is named freely and marked done without counting as spending", async ({ page }) => {
+  const state = await fakeApi(page);
+  await page.goto("/plan");
+  const form = page.getByRole("form", { name: "Add a scheduled payment" });
+  await form.getByLabel("Name").fill("Index fund");
+  await form.getByLabel("Next due").fill("2026-10-05");
+  await form.getByLabel(/Amount/).fill("500");
+  await form.getByLabel("Counts as spending").uncheck();
+  await form.getByRole("button", { name: "Add", exact: true }).click();
+  await expect.poll(() => state.bills[0]).toMatchObject({ name: "Index fund", spending: false });
+  // The form goes back to spending for the next one.
+  await expect(form.getByLabel("Counts as spending")).toBeChecked();
+
+  const bills = page.getByRole("region", { name: "Scheduled payments" });
+  await expect(bills.getByRole("heading", { name: /Index fund/ })).toContainText("Not spending");
+  await expect(bills.getByRole("button", { name: "Mark paid" })).toHaveCount(0);
+  await bills.getByRole("button", { name: "Mark done" }).click();
+  await expect(bills.getByRole("status")).toContainText("doesn't count as spending, so nothing was logged");
 });
 
 test("mark a bill with no set amount paid and log what was paid", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/plan");
-  const form = page.getByRole("form", { name: "Add a bill" });
-  await form.getByLabel("Bill").fill("Electricity");
+  const form = page.getByRole("form", { name: "Add a scheduled payment" });
+  await form.getByLabel("Name").fill("Electricity");
   await form.getByLabel("Next due").fill("2026-10-01");
-  await form.getByRole("button", { name: "Add bill" }).click();
-  const bills = page.getByRole("region", { name: "Bills" });
+  await form.getByRole("button", { name: "Add", exact: true }).click();
+  const bills = page.getByRole("region", { name: "Scheduled payments" });
   await bills.getByRole("button", { name: "Mark paid" }).click();
   const paid = bills.getByRole("form", { name: "What you paid for Electricity" });
   await paid.getByLabel(/Paid/).fill("120");
@@ -451,7 +472,7 @@ test("cash flow shows logged and expected days, with detail on tap", async ({ pa
   await expect(days.getByRole("button", { name: /^2026-09-12, net -SGD\s42\.10/ })).toContainText("-42.1");
   await days.getByRole("button", { name: "2026-09-30, 1 expected" }).click();
   const detail = page.getByRole("region", { name: /Wednesday, (30 September|September 30)/ });
-  await expect(detail.getByRole("listitem").filter({ hasText: "Rent" })).toContainText("Bill");
+  await expect(detail.getByRole("listitem").filter({ hasText: "Rent" })).toContainText("Scheduled payment");
   await page.getByRole("button", { name: "Next month" }).click();
   await expect(page.getByRole("heading", { name: "October 2026" })).toBeVisible();
   await expect(days.getByRole("button", { name: "2026-10-12, 1 expected" })).toContainText("-17.98");

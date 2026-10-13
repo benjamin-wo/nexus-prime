@@ -881,7 +881,9 @@ class AgentService:
         except ValueError:
             bill_id = None
         if bill_id is None:
-            return Reply("That reminder is out of date: the bill is already paid or removed.")
+            return Reply(
+                "That reminder is out of date: it's already marked paid or done, or removed."
+            )
         user = await get_user(self._uow(), actor)
         now = self._clock()
         try:

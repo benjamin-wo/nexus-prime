@@ -62,9 +62,12 @@ function BillRow({ bill, home, onChanged, onPaid }: {
     }
   }
 
+  const spending = bill.spending;
+
   function startPaid() {
-    // Without a set amount, ask what was paid so it can count in the month's spending.
-    if (bill.amount) void markPaid(null);
+    // Without a set amount, ask what it cost so it can count in the month's
+    // spending. Money moved rather than spent (investing, saving) is just marked done.
+    if (bill.amount || !spending) void markPaid(null);
     else setPaying(true);
   }
 
@@ -72,7 +75,10 @@ function BillRow({ bill, home, onChanged, onPaid }: {
   return (
     <li className="budget">
       <div className="budget-head">
-        <h3 className="wrap">{bill.name}</h3>
+        <h3 className="wrap">
+          {bill.name}
+          {!spending && <span className="chip kind-chip">Not spending</span>}
+        </h3>
         <span className="num">{bill.amount ? formatMoney(bill.amount) : <span className="muted">No amount</span>}</span>
       </div>
       <div className="budget-foot">
@@ -112,7 +118,7 @@ function BillRow({ bill, home, onChanged, onPaid }: {
         ) : !confirming ? (
           <span className="quick">
             <button type="button" className="btn btn-ghost" onClick={startPaid}>
-              Mark paid
+              {spending ? "Mark paid" : "Mark done"}
             </button>
             <button type="button" className="btn btn-ghost" onClick={() => act("/snooze")} disabled={bill.snoozed}>
               Snooze
@@ -123,7 +129,7 @@ function BillRow({ bill, home, onChanged, onPaid }: {
           </span>
         ) : (
           <span className="quick">
-            <span>Stop tracking this bill?</span>
+            <span>Stop tracking {bill.name}?</span>
             <button type="button" className="btn btn-danger" onClick={() => act("", "DELETE")}>
               Remove
             </button>
@@ -148,6 +154,7 @@ export function BillsSection({ me }: { me: Me }) {
   const [name, setName] = useState("");
   const [due, setDue] = useState("");
   const [cadence, setCadence] = useState<Bill["cadence"]>("monthly");
+  const [spending, setSpending] = useState(true);
   const [amount, setAmount] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -164,11 +171,12 @@ export function BillsSection({ me }: { me: Me }) {
     event.preventDefault();
     setError(null);
     try {
-      await api("/bills", { method: "POST", body: { name: name.trim(), due, cadence, amount: amount.trim() || null } });
+      await api("/bills", { method: "POST", body: { name: name.trim(), due, cadence, spending, amount: amount.trim() || null } });
       setName("");
       setDue("");
       setAmount("");
       setCadence("monthly");
+      setSpending(true);
       refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't save");
@@ -178,12 +186,14 @@ export function BillsSection({ me }: { me: Me }) {
   return (
     <section className="card" aria-labelledby="bills">
       <div className="card-head">
-        <h2 id="bills">Bills</h2>
+        <h2 id="bills">Scheduled payments</h2>
         <span className="caption">Reminders 7, 3 and 1 days before</span>
       </div>
       {bills.isLoading && <p className="state">Loading…</p>}
       {bills.isError && <p className="state error-text">Couldn't load bills.</p>}
-      {bills.data?.length === 0 && <p className="state">No bills yet. Add one below.</p>}
+      {bills.data?.length === 0 && (
+        <p className="state">Nothing scheduled yet. Add rent, a bill, a regular investment or a transfer below.</p>
+      )}
       {notice && (
         <p className="state" role="status">
           {notice}
@@ -196,10 +206,16 @@ export function BillsSection({ me }: { me: Me }) {
           ))}
         </ul>
       )}
-      <form className="budget-add plan-add" onSubmit={add} aria-label="Add a bill">
+      <form className="budget-add plan-add" onSubmit={add} aria-label="Add a scheduled payment">
         <label className="field">
-          Bill
-          <input className="input" placeholder="Rent" value={name} onChange={(e) => setName(e.target.value)} required />
+          Name
+          <input
+            className="input"
+            placeholder="Rent, ETF, savings…"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+          />
         </label>
         <label className="field">
           Next due
@@ -225,8 +241,22 @@ export function BillsSection({ me }: { me: Me }) {
             onChange={(e) => setAmount(e.target.value)}
           />
         </label>
+        <div className="spending-toggle">
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={spending}
+              onChange={(e) => setSpending(e.target.checked)}
+              aria-describedby="spending-hint"
+            />{" "}
+            Counts as spending
+          </label>
+          <span id="spending-hint" className="caption">
+            Untick for money you move rather than spend, like investing or saving.
+          </span>
+        </div>
         <button type="submit" className="btn btn-primary" disabled={!name.trim() || !due}>
-          Add bill
+          Add
         </button>
       </form>
       {error && (
@@ -234,7 +264,10 @@ export function BillsSection({ me }: { me: Me }) {
           {error}
         </p>
       )}
-      <p className="caption">Nexus only reminds you and never pays anything. Marking a bill paid logs it in your spending, unless it's already there.</p>
+      <p className="caption">
+        Nexus only reminds you; it never pays, invests or moves money. Marking a payment paid logs it as spending, unless it's
+        already there. One that doesn't count as spending is marked done and nothing is logged.
+      </p>
     </section>
   );
 }

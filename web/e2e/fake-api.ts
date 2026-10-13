@@ -71,6 +71,7 @@ export async function fakeApi(
   type FakeBill = {
     id: string;
     name: string;
+    spending?: boolean;
     amount: { amount: string; currency: string } | null;
     cadence: string;
     due: string;
@@ -1385,6 +1386,7 @@ export async function fakeApi(
       const bill = {
         id: `bill${state.bills.length + 1}`,
         name: body.name,
+        spending: body.spending ?? true,
         amount: body.amount ? { amount: Number(body.amount).toFixed(4), currency: "SGD" } : null,
         cadence: body.cadence,
         due: body.due,
@@ -1397,10 +1399,14 @@ export async function fakeApi(
     const billAction = path.match(/^\/bills\/([^/]+)(\/paid|\/snooze)?$/);
     if (billAction && method !== "GET") {
       const [, id, action] = billAction;
+      const marked = state.bills.find((b) => b.id === id);
       if (action === "/snooze") state.bills = state.bills.map((b) => (b.id === id ? { ...b, snoozed: true } : b));
       else state.bills = state.bills.filter((b) => b.id !== id); // paid (one-off) or removed
       if (action === "/paid") {
         const amount = (body as { amount?: string | null } | null)?.amount;
+        if (marked?.spending === false) {
+          return json(route, { message: "Marked it as done. It doesn't count as spending, so nothing was logged.", logged: false, needs_amount: false });
+        }
         return json(route, {
           message: amount ? `Marked it as paid and logged SGD ${amount} in this month's spending.` : "Marked it as paid.",
           logged: Boolean(amount),
