@@ -947,7 +947,8 @@ a.ask-chip { display: inline-flex; align-items: center; text-decoration: none; }
 .place-thumb img { width: 64px; height: 64px; object-fit: cover; border-radius: var(--radius-inner); background: var(--bg-raised); display: block; }
 .place-thumb figcaption { font-size: 0.625rem; line-height: 1.2; color: var(--text-muted); overflow-wrap: anywhere; }
 .place-thumb figcaption a { color: inherit; }
-.place-thumb-empty { width: 64px; height: 64px; border-radius: var(--radius-inner); background: linear-gradient(160deg, #33281f, #19151a); }
+.place-photo { width: min(100%, 240px); margin: var(--space-2) 0; }
+.place-photo img { width: 100%; height: auto; aspect-ratio: 3 / 2; }
 .stay-card .place-thumb { width: 72px; }
 .stay-card .place-thumb img { width: 72px; height: 72px; }
 .weather-card .card-head { flex-wrap: wrap; }
@@ -1182,3 +1183,7 @@ html.keyboard .ribbon { animation-play-state: paused; }
 .map-app select { font: inherit; color: var(--text-primary); background: var(--bg-input); border: 1px solid var(--border-card); border-radius: 6px; padding: 2px var(--space-1); }
 .trip-ways { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); margin: var(--space-2) 0 0; }
 .timeline-landing { border-style: dashed; }
+/* A plan's grip and number sit on the line of its title; the rest wraps below. */
+.timeline-stop { align-items: flex-start; column-gap: var(--space-2); }
+.timeline-stop .wrap { flex: 1 1 0; min-width: 120px; }
+.timeline-stop > .drag-handle { min-height: 24px; }
