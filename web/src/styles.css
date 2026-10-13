@@ -1187,3 +1187,31 @@ html.keyboard .ribbon { animation-play-state: paused; }
 .timeline-stop { align-items: flex-start; column-gap: var(--space-2); }
 .timeline-stop .wrap { flex: 1 1 0; min-width: 120px; }
 .timeline-stop > .drag-handle { min-height: 24px; }
+
+/* A quiet action inside a line of text (Copy, Details, Find on Google Maps): no
+   button box, just a dotted underline, so it doesn't break the line it sits in. */
+.link-btn {
+  display: inline; min-height: 0; padding: 2px 0; margin: 0; border: 0; background: none; font: inherit; color: var(--text-secondary);
+  text-decoration: underline dotted; text-underline-offset: 3px; cursor: pointer; white-space: nowrap;
+}
+.link-btn:hover, .link-btn:focus-visible { color: var(--text-primary); }
+.place-find { display: block; margin-top: 2px; }
+.place-row { flex-wrap: wrap; }
+
+/* Phones: less nesting around the itinerary so titles get the width. */
+@media (max-width: 720px) {
+  .itinerary-card { padding-left: var(--space-3); padding-right: var(--space-3); }
+  .itinerary-day { grid-template-columns: 26px minmax(0, 1fr); gap: var(--space-2); }
+  .day-dot { width: 26px; height: 26px; font-size: 0.75rem; }
+  .itinerary-day h3 { font-size: 0.95rem; }
+  .day-head { gap: 0 var(--space-2); }
+  .day-label { font-size: 0.8125rem; min-height: 28px; padding: 0 var(--space-1); }
+  .timeline-strip, .timeline-stop { padding: var(--space-2); column-gap: var(--space-2); }
+  .timeline-stop > .drag-handle { width: 18px; margin-left: 0; }
+  .timeline-hop { padding: 0 var(--space-2); }
+  .day-note { padding: var(--space-1) var(--space-2); }
+  /* Places to visit: the name gets the row; Pick a day and Remove sit under it. */
+  .place-row .wrap { flex: 1 1 0; min-width: 0; }
+  .place-row .row-actions { flex-basis: 100%; padding-left: 76px; }
+  .place-row .row-actions .btn { min-height: 30px; padding: 0 var(--space-3); font-size: 0.8125rem; }
+}
