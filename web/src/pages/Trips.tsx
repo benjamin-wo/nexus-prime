@@ -7,7 +7,7 @@ import { base64 } from "../files";
 import { formatMoney, formatShortDate } from "../format";
 import { ResearchList } from "./Research";
 import { type AddPreset, AddSheet } from "./TripAdd";
-import { Companions, NextUp, PhotoCredit, TripCard, coverStyle, landingOn, landsOnly, leavingOn, legTimes, tripWhen } from "./TripBits";
+import { Companions, NextUp, PhotoCredit, TripCard, coverStyle, landingOn, landsOnly, leavingOn, legTimes, onlyNamesDay, repeatsTitle, tripWhen } from "./TripBits";
 import { PackingCard, WeatherCard } from "./TripExtras";
 import { type Fix, MoneyBar, SpendingNow, type Stage, StillToSort, TripTotals, stageOf } from "./TripStage";
 import { ArrangeProvider, DayNotes, DropZone, MoveForm, PLACES, type Spot, daySpot, useArrange, useDragEntry } from "./TripArrange";
@@ -511,19 +511,21 @@ function BookingLines({ booking, noTime = false }: { booking: Booking; noTime?: 
 }
 
 function KindLines({ booking, noTime }: { booking: Booking; noTime: boolean }) {
-  const note = booking.note && (
+  // Nothing the entry's title or day already says.
+  const note = booking.note && !onlyNamesDay(booking.note) && (
     <span className="caption">
       {booking.note}
       <br />
     </span>
   );
   if (booking.kind === "activity") {
+    const address = booking.address && !repeatsTitle(booking.address, booking.title) ? booking.address : null;
     return (
       <>
         <span className="caption">
           {booking.at && !noTime && `${booking.at} · `}
-          {booking.address}
-          {((booking.at && !noTime) || booking.address) && <br />}
+          {address}
+          {((booking.at && !noTime) || address) && <br />}
         </span>
         {note}
       </>
