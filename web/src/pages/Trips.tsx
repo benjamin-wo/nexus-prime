@@ -366,6 +366,60 @@ function BudgetMeter({ percent }: { percent: number }) {
   );
 }
 
+type TripCategory = TripDetail["spending"]["categories"][number];
+
+/** One category's bar; tapping it lists the trip's expenses in it. */
+function SpendingRow({ category: c, biggest, items }: { category: TripCategory; biggest: number; items: TripDetail["items"] }) {
+  const [open, setOpen] = useState(false);
+  const id = `trip-cat-${c.name.replace(/\W+/g, "-")}`;
+  const row = (
+    <>
+      <span className="wrap">{c.name}</span>
+      <span className="bar-track">
+        <span className="bar" style={{ width: `${(Number(c.spent.amount) / biggest) * 100}%` }} />
+      </span>
+      <span className="num">
+        {formatMoney(c.spent)}
+        {c.planned && <span className="caption"> of {formatMoney(c.planned)}</span>}
+      </span>
+    </>
+  );
+  if (items.length === 0) {
+    return <li className="bar-row">{row}</li>;
+  }
+  return (
+    <li className="bar-item">
+      <button
+        type="button"
+        className="bar-row bar-toggle"
+        aria-expanded={open}
+        aria-controls={id}
+        aria-label={`${c.name}: ${formatMoney(c.spent)}${c.planned ? ` of ${formatMoney(c.planned)}` : ""}, ${items.length} ${items.length === 1 ? "expense" : "expenses"}`}
+        onClick={() => setOpen(!open)}
+      >
+        {row}
+        <span className="chevron" aria-hidden="true" />
+      </button>
+      {open && (
+        <div className="peek" id={id}>
+          <ul className="peek-list" aria-label={`${c.name} expenses`}>
+            {items.map((i) => (
+              <li key={i.transaction_id} className="peek-row">
+                <span className="caption peek-day">{day(i.day)}</span>
+                <span className="wrap">{i.counterparty ?? "Expense"}</span>
+                <span className="num">
+                  {formatMoney(i.amount)}
+                  {i.home && i.home.currency !== i.amount.currency && <span className="caption"> ({formatMoney(i.home)})</span>}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </li>
+  );
+}
+
 function Spending({ detail }: { detail: TripDetail }) {
   const { trip, spending: s } = detail;
   const biggest = Math.max(1, ...s.categories.map((c) => Number(c.spent.amount)));
@@ -402,16 +456,12 @@ function Spending({ detail }: { detail: TripDetail }) {
       {s.categories.length > 0 && (
         <ul className="bars" aria-label="Biggest categories">
           {s.categories.slice(0, trip.status === "finished" ? undefined : 5).map((c) => (
-            <li key={c.name} className="bar-row">
-              <span className="wrap">{c.name}</span>
-              <span className="bar-track">
-                <span className="bar" style={{ width: `${(Number(c.spent.amount) / biggest) * 100}%` }} />
-              </span>
-              <span className="num">
-                {formatMoney(c.spent)}
-                {c.planned && <span className="caption"> of {formatMoney(c.planned)}</span>}
-              </span>
-            </li>
+            <SpendingRow
+              key={c.name}
+              category={c}
+              biggest={biggest}
+              items={detail.items.filter((i) => (i.category ?? "Uncategorised") === c.name)}
+            />
           ))}
         </ul>
       )}

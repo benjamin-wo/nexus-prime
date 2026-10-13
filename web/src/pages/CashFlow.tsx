@@ -5,6 +5,13 @@ import { api, type CashDay, type CashFlow, type Money } from "../api";
 import { formatMoney } from "../format";
 import { AccentTitle } from "../motion";
 
+const EXPECTED_KINDS: Record<string, string> = {
+  bill: "Scheduled payment",
+  subscription: "Subscription",
+  trip: "Trip",
+  salary: "Payday",
+};
+
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 function monthKey(date: Date): string {
@@ -103,7 +110,7 @@ function DayDetail({ day, today }: { day: CashDay; today: string }) {
                 </span>
               </div>
               <p className="caption">
-                {e.kind === "bill" ? "Bill" : e.kind === "subscription" ? "Subscription" : e.kind === "trip" ? "Trip" : "Payday"}
+                {EXPECTED_KINDS[e.kind] ?? "Payday"}
                 {e.amount && e.home && e.amount.currency !== e.home.currency ? ` · about ${formatMoney(e.home)}` : ""}
               </p>
             </li>

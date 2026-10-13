@@ -1,9 +1,9 @@
 """The cash-flow calendar: net money movement per day, in the home currency.
 
-Days so far show what was logged. Days ahead show what's expected: bills (unless
-already marked paid), tracked subscriptions, payday, and money set aside each payday
-for a trip. It shows movement only,
-never a balance: Nexus doesn't know what's in the user's accounts.
+Days so far show what was logged. Days ahead show what's expected: scheduled payments,
+spending or not (unless already marked paid or done), tracked subscriptions, payday,
+and money set aside each payday for a trip. It shows movement only, never a
+balance: Nexus doesn't know what's in the user's accounts.
 """
 
 from collections.abc import Callable, Iterable

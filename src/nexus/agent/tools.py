@@ -1466,9 +1466,17 @@ async def _remove_budget(ctx: ToolContext, a: BudgetTargetArgs) -> ToolResult:
 
 
 class AddBillArgs(Args):
-    name: str = Field(description="What the bill is for, e.g. 'Electricity' or 'Rent'")
+    name: str = Field(
+        description="What it's for, e.g. 'Rent', 'Electricity', 'S&P 500 ETF' or 'To savings'"
+    )
     due_date: str = Field(description="Next due date, YYYY-MM-DD")
     repeats: Literal["once", "weekly", "monthly", "yearly"] = "monthly"
+    counts_as_spending: bool = Field(
+        True,
+        description="False for money the user moves rather than spends: a regular "
+        "investment, a transfer to savings, family or another account. True for bills "
+        "(rent, utilities, insurance, phone).",
+    )
     amount: str | None = Field(None, description="Only if the user gave one")
     currency: str | None = Field(None, description="Defaults to the home currency")
 
@@ -1493,16 +1501,24 @@ async def _find_bill(ctx: ToolContext, name: str) -> bill_cases.BillView:
 def _bill_line(view: bill_cases.BillView, now: datetime) -> str:
     bill = view.bill
     amount = f" {bill.amount}" if bill.amount else ""
+    kind = "" if bill.spending else " (not spending)"
     repeats = "" if bill.cadence is Cadence.ONCE else f", {bill.cadence.value}"
     snoozed = ", reminders snoozed" if view.snoozed(now) else ""
-    return f"{bill.name}{amount}: {bill_cases.describe_due(view)}{repeats}{snoozed}"
+    return f"{bill.name}{kind}{amount}: {bill_cases.describe_due(view)}{repeats}{snoozed}"
 
 
 async def _add_bill(ctx: ToolContext, a: AddBillArgs) -> ToolResult:
     due = parse_day(ctx, a.due_date).astimezone(ctx.tz).date()
     amount = parse_money(ctx, a.amount, a.currency) if a.amount else None
     bill = await bill_cases.add_bill(
-        ctx.uow(), ctx.user, a.name, due, Cadence(a.repeats), amount, now=ctx.now
+        ctx.uow(),
+        ctx.user,
+        a.name,
+        due,
+        Cadence(a.repeats),
+        amount,
+        now=ctx.now,
+        spending=a.counts_as_spending,
     )
     view = bill_cases.BillView(bill, due, None, ctx.today())
     return ToolResult(
@@ -1513,7 +1529,7 @@ async def _add_bill(ctx: ToolContext, a: AddBillArgs) -> ToolResult:
 async def _bills(ctx: ToolContext, _: NoArgs) -> ToolResult:
     views = await bill_cases.list_bills(ctx.uow, ctx.user, now=ctx.now)
     if not views:
-        return ToolResult("No bills yet.")
+        return ToolResult("No scheduled payments yet.")
     return ToolResult("\n".join(_bill_line(v, ctx.now) for v in views))
 
 
@@ -1540,7 +1556,7 @@ async def _snooze_bill(ctx: ToolContext, a: BillNameArgs) -> ToolResult:
 
 async def _describe_remove_bill(ctx: ToolContext, a: BillNameArgs) -> str:
     view = await _find_bill(ctx, a.name)
-    return f"Remove the bill {view.bill.name} and stop its reminders?"
+    return f"Stop tracking {view.bill.name} and its reminders?"
 
 
 async def _remove_bill(ctx: ToolContext, a: BillNameArgs) -> ToolResult:
@@ -2603,15 +2619,24 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
         ),
         ToolSpec(
             "add_bill",
-            "Remember a bill and remind the user before it's due.",
+            "Remember a bill or another scheduled payment (a regular investment or a "
+            "transfer to savings, family or another account) and remind the user before "
+            "it's due. Nothing is paid or moved.",
             AddBillArgs,
             _add_bill,
         ),
-        ToolSpec("list_bills", "The user's bills and when each is next due.", NoArgs, _bills),
+        ToolSpec(
+            "list_bills",
+            "The user's bills, regular investments and transfers, and when each is next due.",
+            NoArgs,
+            _bills,
+        ),
         ToolSpec(
             "mark_bill_paid",
             "Record that the user has paid a bill's current due date and log it as this "
-            "month's expense (skipped if it's already in the ledger). Pays nothing.",
+            "month's expense (skipped if it's already in the ledger). One that doesn't "
+            "count as spending (an investment, a transfer to savings) is marked done and "
+            "nothing is logged. Pays nothing.",
             BillPaidArgs,
             _bill_paid,
         ),
@@ -2620,7 +2645,7 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
         ),
         ToolSpec(
             "remove_bill",
-            "Stop tracking a bill. Asks the user to confirm.",
+            "Stop tracking a bill, investment or transfer. Asks the user to confirm.",
             BillNameArgs,
             _remove_bill,
             confirm=_describe_remove_bill,

@@ -1,7 +1,10 @@
-"""Bills: remember due dates, remind 7/3/1 days before, snooze and mark paid.
+"""Scheduled payments (bills, and whatever else the user names: a regular
+investment, a transfer to savings): remember due dates, remind 7/3/1 days before,
+snooze and mark paid.
 
-Nothing here pays anything or writes to the ledger: marking a bill paid only
-records that the user says it's paid.
+Nothing here pays, invests or moves anything. Marking one paid records that the
+user says it's paid and, if it counts as spending, logs it as an expense; one that
+doesn't (money moved, not spent) is only marked done.
 """
 
 from dataclasses import dataclass, replace
@@ -82,6 +85,11 @@ def _label(bill: Bill) -> str:
     return f"{bill.name} ({bill.amount})" if bill.amount else bill.name
 
 
+def done_word(bill: Bill) -> str:
+    """What marking it off is called: spending is paid, money moved is done."""
+    return "paid" if bill.spending else "done"
+
+
 async def add_bill(
     uow: UnitOfWork,
     user: User,
@@ -91,13 +99,21 @@ async def add_bill(
     amount: Money | None,
     *,
     now: datetime,
+    spending: bool = True,
 ) -> Bill:
     if amount is not None and not amount.is_positive:
         raise InvalidInput("a bill's amount must be more than zero")
     if due < _today(user, now) - OVERDUE_GRACE and cadence is Cadence.ONCE:
         raise InvalidInput("that due date has already passed")
     bill = Bill(
-        uuid4(), user.id, clean_name(name, field_name="bill name"), amount, cadence, due, now
+        uuid4(),
+        user.id,
+        clean_name(name, field_name="bill name"),
+        amount,
+        cadence,
+        due,
+        now,
+        spending=spending,
     )
     async with uow:
         await uow.planning.insert_bill(bill)
@@ -134,7 +150,9 @@ class Paid:
 
     def message(self, tz: ZoneInfo) -> str:
         bill = self.view.bill
-        head = f"Marked {bill.name} ({self.view.due:%-d %b}) as paid"
+        head = f"Marked {bill.name} ({self.view.due:%-d %b}) as {done_word(bill)}"
+        if not bill.spending:
+            return f"{head}. It doesn't count as spending, so nothing was logged."
         if self.logged is not None:
             return f"{head} and logged {self.logged.amount} in this month's spending."
         if self.already is not None:
@@ -155,7 +173,8 @@ async def mark_paid(
     """Mark the current due date paid and log what was paid as an expense, so it
     counts in the month's spending. Nothing is paid by the app. If a matching expense
     is already in the ledger (from email or a statement), it isn't logged twice; a
-    bill with no amount is logged only when the user gives one."""
+    bill with no amount is logged only when the user gives one. One that doesn't count
+    as spending (an investment, a transfer to savings) is only marked done."""
     async with uow() as tx:
         view = await _view(tx, await _bill(tx, user.id, bill_id), _today(user, now))
         if view is None:
@@ -167,6 +186,8 @@ async def mark_paid(
         categories = await tx.ledger.list_categories(user.id, include_inactive=False)
         await tx.commit()
     money = amount or view.bill.amount
+    if not view.bill.spending:
+        return Paid(view, None, None, money)
     if money is None:
         return Paid(view, None, None, None)
     found = await duplicate_cases.check(
@@ -254,7 +275,10 @@ async def send_reminders(uow: UowFactory, user: User, *, now: datetime) -> int:
                     "text": reminder_text(view),
                     "buttons": [
                         [
-                            {"label": "Mark paid", "data": f"bill:paid:{stored.id}"},
+                            {
+                                "label": f"Mark {done_word(view.bill)}",
+                                "data": f"bill:paid:{stored.id}",
+                            },
                             {"label": "Snooze 1 day", "data": f"bill:snooze:{stored.id}"},
                         ]
                     ],

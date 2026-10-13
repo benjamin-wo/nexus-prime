@@ -1,5 +1,8 @@
+import { useState } from "react";
+
 import type { Summary } from "../api";
 import { formatMoney } from "../format";
+import { CategoryTransactions } from "./CategoryTransactions";
 
 type Row = Summary["by_category"][number];
 
@@ -7,9 +10,21 @@ type Row = Summary["by_category"][number];
 // hatched alternate so neighbours differ in more than hue.
 const SWATCHES = ["solid-orange", "hatch-orange", "solid-sky", "hatch-sky"];
 
+const keyOf = (row: Row) => `${row.category_id ?? "none"}-${row.total.currency}`;
+
 /** Spending by category: one bar split by share, then every category with its
- * swatch, amount and share in text, so colour is never the only label. */
-export function CategoryBars({ rows }: { rows: Row[] }) {
+ * swatch, amount and share in text, so colour is never the only label. Given the
+ * period, each category opens to show the transactions behind it. */
+export function CategoryBars({
+  rows,
+  period,
+  timezone,
+}: {
+  rows: Row[];
+  period?: { start: string; end: string };
+  timezone?: string;
+}) {
+  const [open, setOpen] = useState<string | null>(null);
   if (rows.length === 0)
     return <p className="state">No spending recorded in this period.</p>;
   const total = rows.reduce((sum, r) => sum + Number(r.total.amount), 0);
@@ -22,7 +37,7 @@ export function CategoryBars({ rows }: { rows: Row[] }) {
             total > 0 ? (Number(row.total.amount) / total) * 100 : 0;
           return share > 0 ? (
             <span
-              key={`${row.category_id}-${row.total.currency}`}
+              key={keyOf(row)}
               className={swatch(i)}
               style={{ flexGrow: share }}
             />
@@ -37,11 +52,9 @@ export function CategoryBars({ rows }: { rows: Row[] }) {
             total > 0
               ? Math.round((Number(row.total.amount) / total) * 100)
               : 0;
-          return (
-            <li
-              key={`${row.category_id}-${row.total.currency}`}
-              className="split-row"
-            >
+          const key = keyOf(row);
+          const label = (
+            <>
               <span className={`swatch ${swatch(i)}`} aria-hidden="true" />
               <span className="wrap split-name">{name}</span>
               <span className="caption">{share}%</span>
@@ -50,6 +63,37 @@ export function CategoryBars({ rows }: { rows: Row[] }) {
                 {name}: {value} across {row.count}{" "}
                 {row.count === 1 ? "transaction" : "transactions"}
               </span>
+            </>
+          );
+          if (!period) {
+            return (
+              <li key={key} className="split-row">
+                {label}
+              </li>
+            );
+          }
+          const shown = open === key;
+          return (
+            <li key={key} className="split-item">
+              <button
+                type="button"
+                className="split-row split-toggle"
+                aria-expanded={shown}
+                aria-label={`${name}: ${value}, ${share}% of spending, ${row.count} ${row.count === 1 ? "transaction" : "transactions"}`}
+                aria-controls={`spent-${key}`}
+                onClick={() => setOpen(shown ? null : key)}
+              >
+                {label}
+                <span className="chevron" aria-hidden="true" />
+              </button>
+              {shown && (
+                <CategoryTransactions
+                  id={`spent-${key}`}
+                  name={name}
+                  timezone={timezone}
+                  pick={{ category: row.category_id, ...period }}
+                />
+              )}
             </li>
           );
         })}

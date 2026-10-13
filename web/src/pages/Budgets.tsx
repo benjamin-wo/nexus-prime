@@ -2,7 +2,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 
 import { api, type Budget, type Category, type Me } from "../api";
-import { formatMoney } from "../format";
+import { CategoryTransactions } from "../components/CategoryTransactions";
+import { formatMoney, isoDay } from "../format";
 
 function level(percent: number): "ok" | "warn" | "over" {
   if (percent >= 100) return "over";
@@ -10,8 +11,15 @@ function level(percent: number): "ok" | "warn" | "over" {
   return "ok";
 }
 
-function BudgetRow({ budget, onChanged }: { budget: Budget; onChanged: () => void }) {
+/** This month so far, as budgets count it, in the user's timezone. */
+function thisMonth(timezone: string): { start: string; end: string } {
+  const end = isoDay(new Date().toISOString(), timezone);
+  return { start: `${end.slice(0, 8)}01`, end };
+}
+
+function BudgetRow({ budget, timezone, onChanged }: { budget: Budget; timezone: string; onChanged: () => void }) {
   const [editing, setEditing] = useState(false);
+  const [showing, setShowing] = useState(false);
   const [amount, setAmount] = useState(String(Number(budget.limit.amount)));
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -64,6 +72,15 @@ function BudgetRow({ budget, onChanged }: { budget: Budget; onChanged: () => voi
         </span>
         {!editing && !confirming && (
           <span className="quick">
+            <button
+              type="button"
+              className="btn btn-ghost"
+              aria-expanded={showing}
+              aria-controls={`budget-tx-${budget.id}`}
+              onClick={() => setShowing(!showing)}
+            >
+              {showing ? "Hide transactions" : "Transactions"}
+            </button>
             <button type="button" className="btn btn-ghost" onClick={() => setEditing(true)}>
               Change
             </button>
@@ -84,6 +101,14 @@ function BudgetRow({ budget, onChanged }: { budget: Budget; onChanged: () => voi
           </span>
         )}
       </div>
+      {showing && (
+        <CategoryTransactions
+          id={`budget-tx-${budget.id}`}
+          name={budget.name}
+          timezone={timezone}
+          pick={{ category: budget.category_id ?? undefined, ...thisMonth(timezone) }}
+        />
+      )}
       {budget.unconverted.length > 0 && (
         <p className="caption">Not counted, no exchange rate yet: {budget.unconverted.map(formatMoney).join(", ")}</p>
       )}
@@ -166,7 +191,7 @@ export function BudgetsSection({ me }: { me: Me }) {
       {budgets.data && budgets.data.length > 0 && (
         <ul className="budgets">
           {budgets.data.map((b) => (
-            <BudgetRow key={b.id} budget={b} onChanged={refresh} />
+            <BudgetRow key={b.id} budget={b} timezone={me.user.timezone} onChanged={refresh} />
           ))}
         </ul>
       )}

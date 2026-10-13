@@ -224,11 +224,15 @@ class BillIs:
     due: date | None = None
     exists: bool = True
     paid_on: date | None = None  # this due date is marked paid
+    spending: bool | None = None  # counts as spending
 
     def describe(self) -> str:
         if not self.exists:
             return f"no bill called {self.name}"
-        extra = f" of {self.amount}" if self.amount else ""
+        extra = (
+            "" if self.spending is None else " (spending)" if self.spending else " (not spending)"
+        )
+        extra += f" of {self.amount}" if self.amount else ""
         extra += f" due {self.due}" if self.due else ""
         extra += f", {self.paid_on} marked paid" if self.paid_on else ""
         return f"a bill {self.name}{extra}"
@@ -248,6 +252,8 @@ class BillIs:
                 ):
                     continue
                 if self.due is not None and bill.anchor != self.due:
+                    continue
+                if self.spending is not None and bill.spending != self.spending:
                     continue
                 if self.paid_on is not None:
                     occurrences = await tx.planning.occurrences(

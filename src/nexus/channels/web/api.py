@@ -1380,6 +1380,7 @@ async def remove_budget(budget_id: UUID, auth: Auth, web: Runtime) -> None:
 class BillOut(Model):
     id: UUID
     name: str
+    spending: bool  # marking it paid logs an expense; False for money moved, not spent
     amount: MoneyOut | None
     cadence: str
     due: date
@@ -1392,6 +1393,7 @@ def bill_out(view: bill_cases.BillView, now: datetime) -> BillOut:
     return BillOut(
         id=bill.id,
         name=bill.name,
+        spending=bill.spending,
         amount=money(bill.amount) if bill.amount else None,
         cadence=bill.cadence.value,
         due=view.due,
@@ -1410,6 +1412,7 @@ class BillIn(Model):
     name: str = Field(min_length=1, max_length=100)
     due: date
     cadence: Literal["once", "weekly", "monthly", "yearly"] = "monthly"
+    spending: bool = True
     amount: str | None = Field(None, max_length=32)
     currency: str | None = Field(None, max_length=3)
 
@@ -1423,7 +1426,14 @@ async def add_bill(body: BillIn, auth: Auth, web: Runtime) -> BillOut:
         else None
     )
     bill = await bill_cases.add_bill(
-        web.uow(), user, body.name, body.due, Cadence(body.cadence), amount, now=now
+        web.uow(),
+        user,
+        body.name,
+        body.due,
+        Cadence(body.cadence),
+        amount,
+        now=now,
+        spending=body.spending,
     )
     today = now.astimezone(_tz(user)).date()
     return bill_out(bill_cases.BillView(bill, body.due, None, today), now)
@@ -1437,7 +1447,7 @@ class BillPaidIn(Model):
 class BillPaidOut(Model):
     message: str
     logged: bool  # a new expense was added for it
-    needs_amount: bool  # no set amount and none given, so nothing was logged
+    needs_amount: bool  # spending with no set amount and none given, so nothing was logged
 
 
 @router.post("/bills/{bill_id}/paid")
@@ -1454,7 +1464,7 @@ async def bill_paid(
     return BillPaidOut(
         message=paid.message(_tz(user)),
         logged=paid.logged is not None,
-        needs_amount=paid.amount is None,
+        needs_amount=paid.amount is None and paid.view.bill.spending,
     )
 
 

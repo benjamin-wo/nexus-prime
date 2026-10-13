@@ -115,6 +115,35 @@ test("dashboard shows the month, categories and IOUs", async ({ page }) => {
   await expect(page.getByRole("region", { name: "From Nexus" })).toContainText("Set a monthly budget");
 });
 
+test("tap a spending category to see its transactions, then all of them in the ledger", async ({ page }) => {
+  await fakeApi(page);
+  await page.goto("/accounting");
+  const split = page.getByRole("list", { name: "Spending by category" });
+  const dining = split.getByRole("button", { name: /^Dining Out:/ });
+  await expect(dining).toHaveAttribute("aria-expanded", "false");
+  await dining.click();
+  await expect(dining).toHaveAttribute("aria-expanded", "true");
+  const list = page.getByRole("list", { name: "Dining Out transactions" });
+  await expect(list).toContainText("Maxwell Food Centre");
+  await expect(list).not.toContainText("Grab");
+  // Uncategorised spending opens the same way.
+  await split.getByRole("button", { name: /^Uncategorised:/ }).click();
+  await expect(page.getByRole("list", { name: "Uncategorised transactions" })).toContainText("Grab");
+  await expect(page.getByRole("list", { name: "Dining Out transactions" })).toHaveCount(0);
+
+  await split.getByRole("button", { name: /^Dining Out:/ }).click();
+  await page.getByRole("link", { name: "Open in the ledger" }).click();
+  await expect(page).toHaveURL(/\/accounting\/ledger\?.*category=food/);
+  const ledger = page.getByRole("region", { name: "Transactions" });
+  await expect(ledger.getByText("Category Dining Out")).toBeVisible();
+  await expect(ledger.getByRole("button", { name: "Money out" })).toHaveAttribute("aria-pressed", "true");
+  await expect(ledger.getByRole("button", { name: "Maxwell Food Centre", exact: true })).toBeVisible();
+  await expect(ledger.getByRole("button", { name: "Grab", exact: true })).toHaveCount(0);
+  await ledger.getByRole("button", { name: "Show every category, not just Dining Out" }).click();
+  await expect(ledger.getByRole("button", { name: "Grab", exact: true })).toBeVisible();
+  await expect(page).not.toHaveURL(/category=/);
+});
+
 test("log an expense from the entry sheet", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/accounting");
@@ -225,6 +254,11 @@ test("set a budget, see how much is used, change and remove it", async ({ page }
   const meter = budgets.getByRole("meter", { name: "Dining Out budget used" });
   await expect(meter).toHaveAttribute("aria-valuetext", "90% used");
   await expect(budgets.getByText(/90% used · SGD\s?10\.00 left/)).toBeVisible();
+  // What went against it this month, under the budget.
+  await budgets.getByRole("button", { name: "Transactions" }).click();
+  await expect(budgets.getByRole("list", { name: "Dining Out transactions" })).toContainText("Maxwell Food Centre");
+  await budgets.getByRole("button", { name: "Hide transactions" }).click();
+  await expect(budgets.getByRole("list", { name: "Dining Out transactions" })).toHaveCount(0);
 
   await budgets.getByRole("button", { name: "Change" }).click();
   await budgets.getByLabel("Monthly limit (SGD)").first().fill("80");
@@ -260,13 +294,14 @@ test("set when you're paid and your usual salary", async ({ page }) => {
 test("add a bill, snooze its reminders and stop tracking it", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/plan");
-  await expect(page.getByText("No bills yet. Add one below.")).toBeVisible();
-  const form = page.getByRole("form", { name: "Add a bill" });
-  await form.getByLabel("Bill").fill("Rent");
+  await expect(page.getByText(/^Nothing scheduled yet/)).toBeVisible();
+  const form = page.getByRole("form", { name: "Add a scheduled payment" });
+  await expect(form.getByLabel("Counts as spending")).toBeChecked();
+  await form.getByLabel("Name").fill("Rent");
   await form.getByLabel("Next due").fill("2026-10-01");
   await form.getByLabel(/Amount/).fill("1800");
-  await form.getByRole("button", { name: "Add bill" }).click();
-  const bills = page.getByRole("region", { name: "Bills" });
+  await form.getByRole("button", { name: "Add", exact: true }).click();
+  const bills = page.getByRole("region", { name: "Scheduled payments" });
   await expect(bills.getByRole("heading", { name: "Rent" })).toBeVisible();
   await expect(bills.getByText(/Due in 3 days, .* · Every month/)).toBeVisible();
   await expect(bills.getByText(/SGD\s?1,800\.00/)).toBeVisible();
@@ -277,17 +312,37 @@ test("add a bill, snooze its reminders and stop tracking it", async ({ page }) =
 
   await bills.getByRole("button", { name: "Remove" }).click();
   await bills.getByRole("button", { name: "Remove" }).click(); // confirm
-  await expect(page.getByText("No bills yet. Add one below.")).toBeVisible();
+  await expect(page.getByText(/^Nothing scheduled yet/)).toBeVisible();
+});
+
+test("a regular investment is named freely and marked done without counting as spending", async ({ page }) => {
+  const state = await fakeApi(page);
+  await page.goto("/plan");
+  const form = page.getByRole("form", { name: "Add a scheduled payment" });
+  await form.getByLabel("Name").fill("Index fund");
+  await form.getByLabel("Next due").fill("2026-10-05");
+  await form.getByLabel(/Amount/).fill("500");
+  await form.getByLabel("Counts as spending").uncheck();
+  await form.getByRole("button", { name: "Add", exact: true }).click();
+  await expect.poll(() => state.bills[0]).toMatchObject({ name: "Index fund", spending: false });
+  // The form goes back to spending for the next one.
+  await expect(form.getByLabel("Counts as spending")).toBeChecked();
+
+  const bills = page.getByRole("region", { name: "Scheduled payments" });
+  await expect(bills.getByRole("heading", { name: /Index fund/ })).toContainText("Not spending");
+  await expect(bills.getByRole("button", { name: "Mark paid" })).toHaveCount(0);
+  await bills.getByRole("button", { name: "Mark done" }).click();
+  await expect(bills.getByRole("status")).toContainText("doesn't count as spending, so nothing was logged");
 });
 
 test("mark a bill with no set amount paid and log what was paid", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/plan");
-  const form = page.getByRole("form", { name: "Add a bill" });
-  await form.getByLabel("Bill").fill("Electricity");
+  const form = page.getByRole("form", { name: "Add a scheduled payment" });
+  await form.getByLabel("Name").fill("Electricity");
   await form.getByLabel("Next due").fill("2026-10-01");
-  await form.getByRole("button", { name: "Add bill" }).click();
-  const bills = page.getByRole("region", { name: "Bills" });
+  await form.getByRole("button", { name: "Add", exact: true }).click();
+  const bills = page.getByRole("region", { name: "Scheduled payments" });
   await bills.getByRole("button", { name: "Mark paid" }).click();
   const paid = bills.getByRole("form", { name: "What you paid for Electricity" });
   await paid.getByLabel(/Paid/).fill("120");
@@ -417,7 +472,7 @@ test("cash flow shows logged and expected days, with detail on tap", async ({ pa
   await expect(days.getByRole("button", { name: /^2026-09-12, net -SGD\s42\.10/ })).toContainText("-42.1");
   await days.getByRole("button", { name: "2026-09-30, 1 expected" }).click();
   const detail = page.getByRole("region", { name: /Wednesday, (30 September|September 30)/ });
-  await expect(detail.getByRole("listitem").filter({ hasText: "Rent" })).toContainText("Bill");
+  await expect(detail.getByRole("listitem").filter({ hasText: "Rent" })).toContainText("Scheduled payment");
   await page.getByRole("button", { name: "Next month" }).click();
   await expect(page.getByRole("heading", { name: "October 2026" })).toBeVisible();
   await expect(days.getByRole("button", { name: "2026-10-12, 1 expected" })).toContainText("-17.98");
@@ -902,6 +957,10 @@ test("a trip is added and shows its spending, set-aside and settle-up", async ({
   const spending = page.getByRole("region", { name: "Trip spending" });
   await expect(spending).toContainText("SGD 818.00 of SGD 3,000.00");
   await expect(spending).toContainText("SGD 800.00 before the trip");
+  // A category opens to the trip expenses behind it.
+  await spending.getByRole("button", { name: /^Dining Out:/ }).click();
+  await expect(spending.getByRole("list", { name: "Dining Out expenses" })).toContainText("Ichiran");
+  await expect(spending.getByRole("list", { name: "Dining Out expenses" })).not.toContainText("Air ticket");
   await expect(page.getByRole("region", { name: "Setting money aside" })).toContainText("SGD 1,500.00 each payday would cover it");
   await expect(page.getByRole("region", { name: "Settle up" })).toContainText("Ann");
   await expect(spending).toContainText("SGD 820.00 not logged yet");

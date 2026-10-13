@@ -144,3 +144,14 @@ async def test_unconverted_amounts_are_named_and_ranges_are_checked(uow: UowFact
         await cash_flow(uow, RATES, user, date(2026, 9, 30), date(2026, 9, 1), now=NOW)
     with pytest.raises(InvalidInput):
         await cash_flow(uow, RATES, user, date(2026, 1, 1), date(2026, 12, 31), now=NOW)
+
+
+async def test_payments_that_arent_spending_are_still_expected(uow: UowFactory) -> None:
+    user = await person(uow)
+    await bill_cases.add_bill(
+        uow(), user, "Index fund", date(2026, 9, 25), Cadence.MONTHLY, sgd("500"), now=NOW,
+        spending=False,
+    )  # fmt: skip
+    flow = await cash_flow(uow, RATES, user, *SEPT, now=NOW)
+    (fund,) = {d.day: d for d in flow.days}[date(2026, 9, 25)].expected
+    assert (fund.name, fund.direction, fund.home) == ("Index fund", Direction.OUT, sgd("500"))

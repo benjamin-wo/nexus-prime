@@ -82,8 +82,10 @@ class Cadence(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class Bill:
-    """A bill to remember. Never paid by the app; marking it paid logs what was paid
-    as an expense (unless it's already in the ledger)."""
+    """A scheduled payment to remember, named by the user: rent, a regular investment,
+    a transfer to savings. Never paid by the app. Marking one that counts as spending
+    paid logs what was paid as an expense (unless it's already in the ledger); one
+    that doesn't (money moved, not spent) is only marked done."""
 
     id: UUID
     user_id: UserId
@@ -93,6 +95,7 @@ class Bill:
     anchor: date  # the first due date; later ones follow the cadence from here
     created_at: datetime
     archived_at: datetime | None = None
+    spending: bool = True  # False for money moved rather than spent: investing, saving
 
 
 @dataclass(frozen=True, slots=True)

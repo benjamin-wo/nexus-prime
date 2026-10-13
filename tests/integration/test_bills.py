@@ -125,6 +125,41 @@ async def test_marking_paid_logs_the_bill_in_the_months_spending(
     assert categories[paid.logged.category_id] == bill_cases.BILLS_CATEGORY
 
 
+async def test_a_payment_that_isnt_spending_is_marked_done_but_never_logged(
+    engine: AsyncEngine, uow: UowFactory
+) -> None:
+    user = await sgt_user(uow)
+    fund = await bill_cases.add_bill(
+        uow(),
+        user,
+        "Index fund",
+        date(2026, 10, 5),
+        Cadence.MONTHLY,
+        Money.of("500", "SGD"),
+        now=at(date(2026, 9, 25)),
+        spending=False,
+    )
+    (listed,) = await bill_cases.list_bills(uow, user, now=at(date(2026, 9, 28)))
+    assert listed.bill.spending is False
+
+    # Its reminder offers "Mark done", not "Mark paid".
+    assert await bill_cases.send_reminders(uow, user, now=at(date(2026, 9, 28))) == 1
+    (reminder,) = await reminders(engine)
+    assert reminder["text"] == "Reminder: Index fund (500.00 SGD) is due in 7 days (Mon 5 Oct)."
+    assert [b["label"] for b in reminder["buttons"][0]] == ["Mark done", "Snooze 1 day"]
+
+    paid = await bill_cases.mark_paid(uow, user, fund.id, now=at(date(2026, 10, 5)))
+    assert paid.logged is None and paid.already is None
+    assert paid.message(SGT) == (
+        "Marked Index fund (5 Oct) as done. It doesn't count as spending, so nothing was logged."
+    )
+    async with engine.connect() as db:
+        assert (await db.execute(select(transactions))).all() == []
+    # Done for this month; next month's takes over.
+    (view,) = await bill_cases.list_bills(uow, user, now=at(date(2026, 10, 5)))
+    assert view.due == date(2026, 11, 5)
+
+
 async def test_a_bill_already_in_the_ledger_isnt_logged_twice(
     engine: AsyncEngine, uow: UowFactory
 ) -> None:

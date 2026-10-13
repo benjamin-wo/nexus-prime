@@ -350,6 +350,7 @@ bills = Table(
     Column("anchor", Date, nullable=False),
     Column("created_at", TZ, nullable=False),
     Column("archived_at", TZ),
+    Column("spending", Boolean, nullable=False, server_default=text("true")),
     ForeignKeyConstraint(["user_id"], ["users.id"]),
     UniqueConstraint("id", "user_id"),
     CheckConstraint("cadence IN ('once', 'weekly', 'monthly', 'yearly')", name="cadence"),
