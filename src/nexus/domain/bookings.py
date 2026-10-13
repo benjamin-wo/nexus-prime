@@ -220,6 +220,10 @@ class BookingDraft:
     link: str | None = None  # a booking page or menu, on any kind: a public https address
     list_name: str | None = None  # a place to visit's list: "Eat", "Rainy day"
     order: int | None = None  # a plan's place in its day (None: by its time)
+    # A plan with no time: where it was put among the day's timed entries, as the time
+    # of the last one before it. It comes after them (a 15:00 check-in stays after a
+    # car pickup put right after a 09:15 landing).
+    follows: time | None = None
     # A flight's or train's airports and stations on Google Maps: (what was searched
     # for, like "BCN airport", its place id or "" when there's none). Only ids are kept.
     stations: tuple[tuple[str, str], ...] = ()
@@ -289,6 +293,7 @@ class BookingDraft:
             "link": self.link,
             "list_name": self.list_name,
             "order": self.order,
+            "follows": self.follows.isoformat(timespec="minutes") if self.follows else None,
             "stations": dict(self.stations),
         }
 
@@ -323,6 +328,7 @@ class BookingDraft:
                 link=link,
                 list_name=_text(data.get("list_name"), limit=MAX_LIST),
                 order=_order(data.get("order")),
+                follows=None if at else _clock(data.get("follows")),
             )
             # Without a day, it's a place to visit on the trip, not yet on a day.
             return plan if plan.name else None

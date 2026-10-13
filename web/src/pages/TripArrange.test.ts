@@ -77,6 +77,14 @@ describe("arriving", () => {
     expect(arrivalText(note, [hop(null)])).toBe(note.text);
   });
 
+  it("counts from a hire-car desk beside the airport, past the walk to it", () => {
+    const desk = { ...hop(null), start_id: "fl", end_id: "car", end: "Car pickup", mode: "walk" as const, metres: 1200, beside_airport: true };
+    const drive = { ...hop(105), start_id: "car", start: "Car pickup" };
+    expect(arrivalText(note, [desk, drive])).toBe("Arrive around 11:00 (land 09:15, then 1 h 45 min) · check-in from 15:00 · about 4 h to fill, or ask about checking in early");
+    // A stop that isn't beside the airport breaks it: the server's words.
+    expect(arrivalText(note, [{ ...desk, beside_airport: false }, drive])).toBe(note.text);
+  });
+
   it("says lengths the way people do", () => {
     expect([duration(25), duration(60), duration(95)]).toEqual(["25 min", "1 h", "1 h 35 min"]);
   });

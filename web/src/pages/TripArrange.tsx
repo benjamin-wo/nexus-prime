@@ -147,7 +147,8 @@ export function ArrangeProvider({ detail, days, on, onChange, children }: {
   /** The itinerary's days, in order. */
   days: string[];
   on: boolean;
-  onChange: () => void;
+  /** Refreshes the trip; resolves once the server's order is back. */
+  onChange: () => unknown;
   children: ReactNode;
 }) {
   const base = useMemo(() => spotsOf(detail), [detail]);
@@ -180,7 +181,9 @@ export function ArrangeProvider({ detail, days, on, onChange, children }: {
     setPending({ moving: b, to, after });
     try {
       await api(`/travel/bookings/${b.id}/move`, { method: "PUT", body: { day: dayOf(to), after } });
-      onChange();
+      await onChange();
+      // Show what the server kept, even when it's the same order as before.
+      setPending(null);
     } catch (e) {
       setPending(null);
       setError(e instanceof Error ? e.message : "Couldn't move that");
@@ -445,7 +448,9 @@ export function duration(minutes: number): string {
  * travel time is known: "Arrive around 10:45 (land 09:15, then 1 h 30 min) …". */
 export function arrivalText(note: DayNote, hops: Hop[]): string {
   const [from, to] = note.ids;
-  const hop = hops.find((h) => h.start_id === from && h.end_id === to);
+  // From the airport to the hotel, counting from a stop beside the airport (picking
+  // up a hire car) when there is one.
+  const hop = hops.find((h) => h.end_id === to && !h.beside_airport && (h.start_id === from || hops.some((a) => a.beside_airport && a.start_id === from && a.end_id === h.start_id)));
   if (!note.start || !note.end || !hop || hop.minutes === null) return note.text;
   const there = minutesOf(note.start) + hop.minutes;
   const wait = minutesOf(note.end) - there;

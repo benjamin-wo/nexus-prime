@@ -32,6 +32,7 @@ from nexus.domain.places import Place, metres_between
 from nexus.domain.routes import (
     Hop,
     Mode,
+    beside_airport,
     day_hops,
     default_mode,
     directions_url,
@@ -106,6 +107,7 @@ class HopTime:
     metres: int | None
     tight: bool  # longer than the time between the two plans
     directions: str  # Google Maps directions, which open the Maps app on a phone
+    beside_airport: bool = False  # between an airport and a place right by it: not timed
 
 
 async def _time(
@@ -147,6 +149,7 @@ async def hop_times(
         return []
     ids = {pid for h in hops for pid in (h.start.place_id, h.end.place_id)}
     found = await places.many(user_id, sorted(ids))
+    flights = {b.id for b in bookings if b.draft.kind is BookingKind.FLIGHT}
 
     async def one(hop: Hop) -> HopTime:
         a, b = found.get(hop.start.place_id), found.get(hop.end.place_id)
@@ -155,6 +158,10 @@ async def hop_times(
             if a is not None and b is not None and a.location and b.location
             else None
         )
+        if beside_airport(hop, metres, flights):
+            # Landing and collecting a hire car, say: part of the arrival, not a trip.
+            walk = directions_url(hop, Mode.WALK)
+            return HopTime(hop, Mode.WALK, None, round(metres or 0), False, walk, True)
         picked = _picked(trip, hop)
         mode = picked or default_mode(metres, trip.getting_around)
         try:

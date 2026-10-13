@@ -19,6 +19,7 @@ from nexus.domain.routes import (
     Hop,
     Mode,
     Stop,
+    beside_airport,
     day_hops,
     default_mode,
     directions_url,
@@ -225,3 +226,15 @@ def test_a_trip_with_a_car_drives_the_longer_hops() -> None:
     assert default_mode(120_000, GettingAround.CAR) is Mode.DRIVE
     assert default_mode(None, GettingAround.CAR) is Mode.DRIVE
     assert default_mode(120_000) is Mode.TRANSIT
+
+
+def test_a_place_right_by_the_airport_is_part_of_being_there() -> None:
+    away = overnight((("BCN airport", "fakePlaceAirport1"),))
+    desk = plan("Car pickup", time(9, 45), "fakePlaceCarDesk1")
+    (hop,) = day_hops([away, desk], DAY)
+    flights = {away.id}
+    assert beside_airport(hop, 1_200, flights)
+    assert not beside_airport(hop, 25_000, flights)  # a drive away
+    assert not beside_airport(hop, None, flights)  # distance unknown
+    # Between two plans, however close, it's an ordinary hop.
+    assert not beside_airport(hop, 1_200, set())

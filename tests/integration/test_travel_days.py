@@ -1,6 +1,6 @@
 """Travel days: an overnight flight's airport found on Google Maps and joined to the
-hotel, the trip's way of getting around, and a way picked for a hop kept. Every
-place, flight and time here is made up."""
+hotel, the trip's way of getting around, a way picked for a hop kept, and a hire car
+collected at the airport on the way. Every place, flight and time here is made up."""
 
 from dataclasses import replace
 from datetime import date
@@ -12,6 +12,7 @@ from nexus.application import places as place_cases
 from nexus.application import trips as trip_cases
 from nexus.application.places import Places
 from nexus.application.routes import Routes, hop_time, hop_times
+from nexus.domain import itinerary
 from nexus.domain.places import Point
 from nexus.domain.routes import Mode
 from nexus.domain.trips import GettingAround
@@ -26,6 +27,8 @@ AIRPORT = replace(
     kind="International airport",
 )
 LODGE = fake_place("fakePlaceLodge001", "Hill Lodge", location=Point(41.93, 3.21))
+# A hire-car desk about a kilometre from the airport's pin.
+DESK = fake_place("fakePlaceCarDesk1", "Example Car Hire T1", location=Point(41.285, 2.08))
 ARRIVAL = date(2026, 10, 21)
 
 
@@ -128,3 +131,66 @@ async def test_a_search_that_finds_no_airport_is_kept_as_none_found(uow: UowFact
     assert (kept.draft.station("SIN airport"), kept.draft.station("XYZ airport")) == ("", "")
     await hop_times(uow, places, routes, user.id, trip.id, ARRIVAL)
     assert source.searches == ["SIN airport", "XYZ airport"]  # each asked once
+
+
+async def test_a_hire_car_collected_at_the_airport_is_part_of_arriving(
+    uow: UowFactory,
+) -> None:
+    user = await person(uow)
+    trip = await trip_cases.create_trip(
+        uow(), user,
+        trip_cases.TripDraft("Exampleland", ARRIVAL, date(2026, 10, 24), "EUR", None),
+        now=NOW,
+    )  # fmt: skip
+    await trip_cases.set_getting_around(uow(), user, trip.id, GettingAround.CAR, now=NOW)
+    flight = await booking_cases.add_manual(
+        uow(), user.id, trip.id,
+        {"kind": "flight", "provider": "Acme Air",
+         "segments": [{"number": "ZZ378", "from": "SIN", "to": "BCN",
+                       "departs": "2026-10-20T23:30", "arrives": "2026-10-21T09:15"}]},
+        None, now=NOW,
+    )  # fmt: skip
+    lodge = await booking_cases.add_manual(
+        uow(), user.id, trip.id,
+        {"kind": "hotel", "hotel": "Hill Lodge", "check_in": "2026-10-21",
+         "check_out": "2026-10-24", "place_id": LODGE.id},
+        None, now=NOW,
+    )  # fmt: skip
+    desk = await booking_cases.add_manual(
+        uow(), user.id, trip.id,
+        {"kind": "activity", "name": "Car pickup", "day": "2026-10-21", "place_id": DESK.id},
+        None, now=NOW,
+    )  # fmt: skip
+
+    async def day() -> list[str]:
+        async with uow() as tx:
+            bookings = await tx.trips.list_bookings(user.id, trip_id=trip.id)
+        names = {flight.id: "flight", lodge.id: "lodge", desk.id: "car"}
+        return [names[b.id] for b in itinerary.on_day(bookings, ARRIVAL)]
+
+    # Put right after landing, the pickup (no time of its own) stays there: the 15:00
+    # check-in doesn't jump ahead of it.
+    await booking_cases.move_entry(uow(), user.id, desk.id, ARRIVAL, lodge.id)
+    assert await day() == ["flight", "lodge", "car"]
+    moved = await booking_cases.move_entry(uow(), user.id, desk.id, ARRIVAL, flight.id)
+    assert moved.draft.follows is not None
+    assert await day() == ["flight", "car", "lodge"]
+
+    # Airport to desk is part of arriving: marked, not timed. Then the drive.
+    source = FakePlaces([AIRPORT, LODGE, DESK])
+    places, routes = Places(source, clock=lambda: NOW), Routes(FakeRoutes(), clock=lambda: NOW)
+    hops = await hop_times(uow, places, routes, user.id, trip.id, ARRIVAL)
+    assert [(h.hop.start.title, h.hop.end.title, h.beside_airport, h.minutes) for h in hops] == [
+        ("BCN airport", "Car pickup", True, None),
+        ("Car pickup", "Hill Lodge", False, 15),
+    ]
+    assert hops[1].mode is Mode.DRIVE
+
+    # Given a time, it goes by that instead.
+    timed = await booking_cases.edit_booking(
+        uow(), user.id, desk.id,
+        {"kind": "activity", "name": "Car pickup", "day": "2026-10-21", "at": "16:00"},
+        None,
+    )  # fmt: skip
+    assert timed.draft.follows is None
+    assert await day() == ["flight", "lodge", "car"]
