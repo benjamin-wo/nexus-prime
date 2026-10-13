@@ -1200,9 +1200,13 @@ test("a trip's weather, packing list, cover photo and stop photos", async ({ pag
   const pick = places.getByRole("form", { name: "Change the entry" });
   await pick.getByLabel(/^Day/).fill("2026-10-03");
   await pick.getByRole("button", { name: "Save" }).click();
-  // The timeline is folded in the last week; it opens on a tap.
+  // The timeline is folded in the last week; it opens on a tap. The photo stays
+  // folded too, until the plan's details are opened.
   await page.getByText(/^Itinerary · 4 days/).click();
-  await expect(page.locator(".itinerary-fold").getByRole("img", { name: "Hanok Noodle Bar" })).toBeVisible();
+  const fold = page.locator(".itinerary-fold");
+  await expect(fold.getByRole("img", { name: "Hanok Noodle Bar" })).toHaveCount(0);
+  await fold.getByRole("button", { name: "Show details for Hanok Noodle Bar" }).click();
+  await expect(fold.getByRole("img", { name: "Hanok Noodle Bar" })).toBeVisible();
   await expect(page.locator(".itinerary-fold").getByRole("link", { name: "Photo by A. Photographer, Google Maps" })).toHaveAttribute("href", "https://maps.example/u/2");
 });
 

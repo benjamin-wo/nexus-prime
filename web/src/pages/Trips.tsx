@@ -12,7 +12,7 @@ import { PackingCard, WeatherCard } from "./TripExtras";
 import { type Fix, MoneyBar, SpendingNow, type Stage, StillToSort, TripTotals, stageOf } from "./TripStage";
 import { ArrangeProvider, DayNotes, DropZone, MoveForm, PLACES, type Spot, daySpot, useArrange, useDragEntry } from "./TripArrange";
 import { DayHops, HopLine, MapAppPicker, TripMap } from "./TripMap";
-import { PlaceLine, PlaceThumb, SavePlaces, TripPlacesProvider } from "./TripPlaces";
+import { PlaceLine, SavePlaces, TripPlacesProvider } from "./TripPlaces";
 import { ShareSheet } from "./TripShare";
 import { TodayView } from "./TripToday";
 
@@ -1013,7 +1013,6 @@ function TimelineEntry({ booking, iso, stop, spot, children }: { booking: Bookin
         <OpenLink booking={booking} />
       </span>
       {booking.cost && <span className="num">{formatMoney(booking.cost)}</span>}
-      <PlaceThumb booking={booking} />
       {children}
     </li>
   );

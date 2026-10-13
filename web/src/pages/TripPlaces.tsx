@@ -44,16 +44,23 @@ export function TripPlacesProvider({ tripId, destination, enabled, ideas = false
 }
 
 /** A linked place's Google Maps photo as a small thumbnail, credited to its author;
- * a plain tile when there's none. */
+ * nothing at all when there's none. */
 export function PlaceThumb({ booking }: { booking: Booking }) {
   const places = useContext(Context);
   if (!places?.enabled) return null;
   const place = places.linked.get(booking.id)?.place;
-  if (!place?.photo_url) return <span className="place-thumb place-thumb-empty" aria-hidden="true" />;
+  return place ? <PlacePicture place={place} /> : null;
+}
+
+/** A place's Google Maps photo, credited to its author; nothing when it has none.
+ * Large in a place's details, a thumbnail elsewhere. */
+function PlacePicture({ place, large = false }: { place: Place; large?: boolean }) {
+  if (!place.photo_url) return null;
   const credit = `Photo${place.photo_author ? ` by ${place.photo_author}` : ""}, Google Maps`;
+  const size = large ? 240 : 64;
   return (
-    <figure className="place-thumb">
-      <img src={place.photo_url} alt={`${place.name}`} loading="lazy" width={64} height={64} />
+    <figure className={`place-thumb${large ? " place-photo" : ""}`}>
+      <img src={place.photo_url} alt={`${place.name}`} loading="lazy" width={size} height={large ? 160 : size} />
       <figcaption>
         {place.photo_author_url ? (
           <a href={place.photo_author_url} target="_blank" rel="noopener noreferrer">
@@ -84,6 +91,7 @@ export function Rating({ place }: { place: Place }) {
 function PlaceDetails({ place }: { place: Place }) {
   return (
     <div className="place-details">
+      <PlacePicture place={place} large />
       {place.summary && <p className="muted">{place.summary}</p>}
       {place.hours.length > 0 && (
         <details>
