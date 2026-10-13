@@ -2,9 +2,14 @@
 
 A day's stops are its plans and hotels linked to a Google Maps place, in the order
 the itinerary shows them (``domain.itinerary.on_day``), starting at the hotel
-slept in the night before and ending at the one slept in that night. A flight, a
-train or a plan with no place breaks the chain: nothing is worked out across it,
-since where the traveller is in between isn't known.
+slept in the night before and ending at the one slept in that night. A flight or
+train adds the airport or station it leaves from (the last stop before it) and the
+one it lands at (the first stop after it), once found on Google Maps; nothing is
+worked out across the journey itself. A plan with no place breaks the chain, since
+where the traveller is then isn't known.
+
+Longer hops go by public transport, or by car when the trip says it has one; a way
+the user picked for a hop is kept and used again.
 """
 
 from dataclasses import dataclass
@@ -13,8 +18,9 @@ from enum import StrEnum
 from urllib.parse import urlencode
 from uuid import UUID
 
-from nexus.domain.bookings import Booking, BookingKind
-from nexus.domain.itinerary import on_day
+from nexus.domain.bookings import Booking, BookingKind, Segment
+from nexus.domain.itinerary import landing, leaving, on_day
+from nexus.domain.trips import GettingAround
 
 # Up to this far apart (in a straight line), a hop is walked by default.
 WALK_UP_TO = 1500
@@ -35,7 +41,7 @@ class Stop:
     booking_id: UUID
     place_id: str
     title: str
-    at: time | None  # when a plan starts, if it has a time
+    at: time | None  # when a plan starts, a flight leaves or lands, if known
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,35 +70,86 @@ def _night(b: Booking, night: date) -> bool:
     )
 
 
+def station_query(kind: BookingKind, name: str | None) -> str | None:
+    """What to search Google Maps for to find where a flight or train leaves or lands:
+    "BCN airport", "Kyoto station"."""
+    name = " ".join((name or "").split())
+    if not name:
+        return None
+    word = "airport" if kind is BookingKind.FLIGHT else "station"
+    return name if word in name.casefold() else f"{name} {word}"
+
+
+def stations_on(b: Booking, day: date) -> tuple[str | None, str | None]:
+    """The airport or station a flight or train leaves from on ``day`` and the one it
+    lands at that day, as searched for on Google Maps."""
+    out, back = leaving(b, day), landing(b, day)
+    return (
+        station_query(b.draft.kind, out[0].origin) if out else None,
+        station_query(b.draft.kind, back[-1].destination) if back else None,
+    )
+
+
+def _station(b: Booking, name: str | None, leg: Segment | None, *, lands: bool) -> Stop | None:
+    pid = b.draft.station(name) if name else None
+    if not pid or leg is None:
+        return None
+    when = leg.arrives if lands else leg.departs
+    return Stop(b.id, pid, name or "", when.time() if when else None)
+
+
 def day_hops(bookings: list[Booking], day: date) -> list[Hop]:
-    """The hops on ``day``, in order: one per pair of consecutive linked stops with no
-    flight, train or unplaced plan between them, and never from a place to itself."""
+    """The hops on ``day``, in order: one per pair of consecutive stops with nothing
+    unknown between them (a flight or train in progress, an unplaced plan), and never
+    from a place to itself."""
     hotels = [b for b in bookings if b.draft.kind is BookingKind.HOTEL]
     morning = next((b for b in hotels if _night(b, day - timedelta(days=1))), None)
     tonight = next((b for b in hotels if _night(b, day)), None)
     entries = on_day(bookings, day)
-    chain: list[Booking | None] = [morning, *entries, tonight]
     hops: list[Hop] = []
     previous: Stop | None = None
-    for b in chain:
-        if b is None:
-            continue
-        stop = _linked(b)
-        if stop is None:
-            # A flight, a train or a plan with no place: where they are is unknown.
-            if b.draft.kind is not BookingKind.HOTEL:
-                previous = None
-            continue
+
+    def reach(stop: Stop) -> None:
+        nonlocal previous
         if previous is not None and previous.place_id != stop.place_id:
             hops.append(Hop(previous, stop))
         previous = stop
+
+    for b in [morning, *entries, tonight]:
+        if b is None:
+            continue
+        if b.draft.kind in (BookingKind.FLIGHT, BookingKind.RAIL):
+            leave, land = stations_on(b, day)
+            out, back = leaving(b, day), landing(b, day)
+            gone = _station(b, leave, out[0] if out else None, lands=False)
+            if gone is not None:
+                reach(gone)  # to the airport or station
+            previous = None  # on the way: nothing is worked out across the journey
+            arrived = _station(b, land, back[-1] if back else None, lands=True)
+            if arrived is not None:
+                previous = arrived
+            continue
+        stop = _linked(b)
+        if stop is None:
+            # A plan with no place: where they are is unknown.
+            if b.draft.kind is not BookingKind.HOTEL:
+                previous = None
+            continue
+        reach(stop)
     return hops[:MAX_HOPS]
 
 
-def default_mode(metres: float | None) -> Mode:
-    """Walking for a short hop, public transport for a longer one (or when the
-    distance isn't known)."""
-    return Mode.WALK if metres is not None and metres <= WALK_UP_TO else Mode.TRANSIT
+def hop_key(hop: Hop) -> str:
+    """How a hop is known when the way the user picked for it is kept."""
+    return f"{hop.start.booking_id}:{hop.end.booking_id}"
+
+
+def default_mode(metres: float | None, by: GettingAround = GettingAround.TRANSIT) -> Mode:
+    """Walking for a short hop; for a longer one (or when the distance isn't known),
+    public transport, or driving on a trip with a car."""
+    if metres is not None and metres <= WALK_UP_TO:
+        return Mode.WALK
+    return Mode.DRIVE if by is GettingAround.CAR else Mode.TRANSIT
 
 
 def tight(hop: Hop, minutes: int) -> bool:

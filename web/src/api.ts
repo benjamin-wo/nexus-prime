@@ -525,6 +525,8 @@ export type Trip = {
   /** The user chose to show no photo. */
   photo_off?: boolean;
   packing?: PackItem[];
+  /** How longer hops go: public transport, or a hire car. */
+  getting_around?: "transit" | "car";
 };
 
 export type PackItem = { text: string; done: boolean };
@@ -617,7 +619,14 @@ export type Idea = {
   place: Place | null;
 };
 export type Ideas = { query: string; destination: string; ideas: Idea[] };
-export type LinkedPlace = { booking_id: string; place: Place; warning: string | null };
+export type LinkedPlace = {
+  booking_id: string;
+  place: Place;
+  warning: string | null;
+  /** For a flight's or train's airport or station: its name, and the days it's left from or landed at. */
+  station?: string | null;
+  stops?: { day: string; side: "from" | "to" }[];
+};
 export type TravelMode = "walk" | "transit" | "drive";
 /** Getting from one of a day's stops to the next. */
 export type Hop = {
@@ -645,7 +654,7 @@ export type TripShare = { token: string | null };
 export type ScreenshotRead = { added: Booking[]; repeated: number; message: string };
 
 /** Something worth a look on a trip day, worked out on the server. */
-export type DayNote = { kind: "clash" | "order" | "free"; text: string; ids: string[]; start?: string | null; end?: string | null };
+export type DayNote = { kind: "clash" | "order" | "free" | "arrival"; text: string; ids: string[]; start?: string | null; end?: string | null };
 
 /** A trip day: its entries' ids in itinerary order, and its notes. */
 export type DayPlan = { day: string; order: string[]; notes: DayNote[] };

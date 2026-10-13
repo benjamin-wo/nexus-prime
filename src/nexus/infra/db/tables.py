@@ -876,12 +876,17 @@ trips = Table(
     # The user chose to show no photo; and their packing list, [{"text", "done"}] (0034).
     Column("photo_off", Boolean, nullable=False, server_default=text("false")),
     Column("packing", JSONB, nullable=False, server_default=text("'[]'::jsonb")),
+    # How it gets about (public transport or a hire car), and the way picked for each
+    # hop between two entries, {"<from>:<to>": "drive"} (migration 0038).
+    Column("getting_around", Text, nullable=False, server_default=text("'transit'")),
+    Column("hop_modes", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
     ForeignKeyConstraint(["user_id"], ["users.id"]),
     ForeignKeyConstraint(["photo_id"], ["destination_photos.id"], ondelete="SET NULL"),
     UniqueConstraint("id", "user_id"),
     CheckConstraint("end_on >= start_on", name="dates"),
     CheckConstraint("budget IS NULL OR budget > 0", name="budget_positive"),
     CheckConstraint("set_aside IS NULL OR set_aside > 0", name="set_aside_positive"),
+    CheckConstraint("getting_around IN ('transit', 'car')", name="getting_around_known"),
     Index("ix_trips_user_id_start_on", "user_id", "start_on"),
 )
 

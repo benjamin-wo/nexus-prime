@@ -2130,3 +2130,41 @@ async def test_a_shared_trip_shows_its_plan_to_anyone_with_the_link_and_nothing_
     again = (await owner.send("POST", f"{path}/share", {})).json()["token"]
     assert (await owner.send("DELETE", path)).status_code == 204
     assert (await stranger.get(f"/api/shared/trips/{again}")).status_code == 404
+
+
+async def test_an_overnight_flight_lands_on_the_next_day_and_the_trip_has_a_car(
+    world: World,
+) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+    body = {"destination": "Exampleland", "start": "2026-10-21", "end": "2026-10-24",
+            "currency": "EUR"}  # fmt: skip
+    trip_id = (await owner.send("POST", "/api/travel/trips", body)).json()["id"]
+    path = f"/api/travel/trips/{trip_id}"
+    flight = await owner.send("POST", f"{path}/bookings", {
+        "kind": "flight", "segments": [{"number": "ZZ378", "origin": "SIN", "destination": "BCN",
+        "departs": "2026-10-20T23:30", "arrives": "2026-10-21T09:15"}]})  # fmt: skip
+    hotel = await owner.send("POST", f"{path}/bookings", {
+        "kind": "hotel", "hotel": "Hill Lodge", "check_in": "2026-10-21",
+        "check_out": "2026-10-24"})  # fmt: skip
+    flight_id, hotel_id = flight.json()["id"], hotel.json()["id"]
+    days = {d["day"]: d for d in (await owner.get(path)).json()["days"]}
+    # On the day it leaves, before the trip: no free time looked for.
+    assert days["2026-10-20"] == {"day": "2026-10-20", "order": [flight_id], "notes": []}
+    # On the day it lands: the landing, then the hotel, and the wait until check-in.
+    landed = days["2026-10-21"]
+    assert landed["order"] == [flight_id, hotel_id]
+    assert [(n["kind"], n["start"], n["end"], n["ids"]) for n in landed["notes"]] == [
+        ("arrival", "09:15", "15:00", [flight_id, hotel_id])
+    ]
+
+    # Getting around: public transport to start with, a hire car once asked.
+    assert (await owner.get(path)).json()["trip"]["getting_around"] == "transit"
+    car = await owner.send("PUT", f"{path}/getting-around", {"by": "car"})
+    assert car.status_code == 200 and car.json()["getting_around"] == "car"
+    assert (await owner.send("PUT", f"{path}/getting-around", {"by": "boat"})).status_code == 422
+
+    # The read-only link lists the flight once.
+    token = (await owner.send("POST", f"{path}/share", {})).json()["token"]
+    shared = (await world.browser().get(f"/api/shared/trips/{token}")).json()
+    assert [b["kind"] for b in shared["bookings"]] == ["flight", "hotel"]

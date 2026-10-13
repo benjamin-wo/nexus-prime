@@ -7,7 +7,7 @@ import { base64 } from "../files";
 import { formatMoney, formatShortDate } from "../format";
 import { ResearchList } from "./Research";
 import { type AddPreset, AddSheet } from "./TripAdd";
-import { Companions, NextUp, PhotoCredit, TripCard, coverStyle, legTimes, tripWhen } from "./TripBits";
+import { Companions, NextUp, PhotoCredit, TripCard, coverStyle, landingOn, landsOnly, leavingOn, legTimes, tripWhen } from "./TripBits";
 import { PackingCard, WeatherCard } from "./TripExtras";
 import { type Fix, MoneyBar, SpendingNow, type Stage, StillToSort, TripTotals, stageOf } from "./TripStage";
 import { ArrangeProvider, DayNotes, DropZone, MoveForm, PLACES, type Spot, daySpot, useArrange, useDragEntry } from "./TripArrange";
@@ -925,11 +925,55 @@ function TimelineEntry({ booking, iso, stop, spot, children }: { booking: Bookin
         <span aria-hidden="true">🏨</span>
         <span className="wrap">
           <strong>{booking.hotel ?? booking.title}</strong>
+          {!out && <br />}
           {!out && <BookingLines booking={booking} />}
           {!out && <OpenLink booking={booking} />}
         </span>
         <span className={`badge ${out ? "badge-pending" : "badge-in"}`}>{out ? "Check out" : "Check in"}</span>
         {!out && children}
+      </li>
+    );
+  }
+  if (landsOnly(booking, iso)) {
+    // The day after an overnight flight or train: where and when it lands.
+    const legs = landingOn(booking, iso);
+    const last = legs[legs.length - 1];
+    const from = legs[0];
+    return (
+      <li ref={drag.ref} className={`timeline-strip timeline-landing${drag.className}`} id={`land-${booking.id}`}>
+        <span aria-hidden="true">{booking.kind === "flight" ? "🛬" : "🚉"}</span>
+        <span className="wrap">
+          <strong>
+            {booking.kind === "flight" ? "Land" : "Arrive"} {last.destination ?? ""} {last.arrives?.slice(11, 16)}
+          </strong>
+          <br />
+          <span className="caption">
+            {[from.number, booking.provider].filter(Boolean).join(" · ")}
+            {from.origin && ` from ${from.origin}`}
+            {from.departs && `, left ${dayPill(from.departs.slice(0, 10))} ${from.departs.slice(11, 16)}`}
+          </span>
+        </span>
+        {children}
+      </li>
+    );
+  }
+  if ((booking.kind === "flight" || booking.kind === "rail") && iso !== booking.starts) {
+    // A later leg of the same booking, such as the flight home.
+    const legs = leavingOn(booking, iso);
+    return (
+      <li ref={drag.ref} className={`timeline-strip${drag.className}`} id={`leave-${booking.id}-${iso}`}>
+        <span aria-hidden="true">{KIND_ICON[booking.kind]}</span>
+        <span className="wrap">
+          {legs.map((l, n) => (
+            <span key={n}>
+              <strong>{[l.number, [l.origin, l.destination].filter(Boolean).join(" → ")].filter(Boolean).join(" ")}</strong>
+              {booking.provider && <span className="caption"> · {booking.provider}</span>}
+              <br />
+              <span className="caption">{legTimes(l.departs, l.arrives)}</span>
+            </span>
+          ))}
+        </span>
+        {children}
       </li>
     );
   }
@@ -1062,7 +1106,6 @@ function Itinerary({ detail, onChange, onAdd, collapsed }: {
                 <h3>{dayLabel(d)}</h3>
                 <DayLabel trip={detail.trip} iso={d} onChange={onChange} />
               </div>
-              <DayNotes notes={notesOf(d)} onFind={inTrip(d) ? (start) => onAdd({ kind: "activity", day: d, at: start ?? undefined, find: true }) : undefined} />
               {staying(d).map((b) => (
                 <p key={b.id} className="caption">
                   <span aria-hidden="true">🏨</span> Staying at {b.hotel ?? b.title}
@@ -1084,6 +1127,12 @@ function Itinerary({ detail, onChange, onAdd, collapsed }: {
                   const into = (b: Booking) => hops.filter((h) => h.end_id === b.id);
                   const after = hops.filter((h) => !shownIds.has(h.end_id));
                   return (
+                    <>
+                    <DayNotes
+                      notes={notesOf(d)}
+                      hops={hops}
+                      onFind={inTrip(d) ? (start) => onAdd({ kind: "activity", day: d, at: start ?? undefined, find: true }) : undefined}
+                    />
                     <DropZone spot={daySpot(d)} empty={entries.every((b) => b.id === arrange.dragging)}>
                     <ul className="timeline" aria-label={dayLabel(d)}>
                       {outs.map((b) => (
@@ -1127,6 +1176,7 @@ function Itinerary({ detail, onChange, onAdd, collapsed }: {
                     </ul>
                     {empty && <p className="caption">Nothing planned yet</p>}
                     </DropZone>
+                    </>
                   );
                 }}
               </DayHops>
@@ -1138,8 +1188,33 @@ function Itinerary({ detail, onChange, onAdd, collapsed }: {
         );
       })}
       <p className="caption">Times are local.</p>
-      {detail.routes && detail.places && <MapAppPicker />}
+      {detail.routes && detail.places && (
+        <p className="trip-ways">
+          <GettingAroundPicker trip={detail.trip} onChange={onChange} />
+          <MapAppPicker />
+        </p>
+      )}
     </Fold>
+  );
+}
+
+/** Public transport or a hire car: how longer hops go, unless one was picked. */
+function GettingAroundPicker({ trip, onChange }: { trip: Trip; onChange: () => void }) {
+  const [busy, setBusy] = useState(false);
+  async function choose(by: string) {
+    setBusy(true);
+    await api(`/travel/trips/${trip.id}/getting-around`, { method: "PUT", body: { by } }).catch(() => undefined);
+    setBusy(false);
+    onChange();
+  }
+  return (
+    <label className="caption map-app">
+      Getting around{" "}
+      <select value={trip.getting_around ?? "transit"} disabled={busy} onChange={(e) => void choose(e.target.value)}>
+        <option value="transit">Public transport</option>
+        <option value="car">Hire car</option>
+      </select>
+    </label>
   );
 }
 

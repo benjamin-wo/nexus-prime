@@ -3,6 +3,7 @@ how each hop is travelled by default, when one is too tight, and Google's Routes
 API. Every place, hotel and time here is made up."""
 
 import json
+from dataclasses import replace
 from datetime import date, datetime, time, timedelta
 from uuid import uuid4
 
@@ -14,7 +15,17 @@ from nexus.domain.bookings import Booking, BookingDraft, BookingKind, Segment
 from nexus.domain.errors import InvalidInput
 from nexus.domain.ledger import UserId
 from nexus.domain.places import Point, metres_between, point
-from nexus.domain.routes import Hop, Mode, Stop, day_hops, default_mode, directions_url, tight
+from nexus.domain.routes import (
+    Hop,
+    Mode,
+    Stop,
+    day_hops,
+    default_mode,
+    directions_url,
+    station_query,
+    tight,
+)
+from nexus.domain.trips import GettingAround
 from nexus.infra.places.google import parse_place
 from nexus.infra.places.routes import GoogleRoutes, parse_leg
 from tests.fakes import NOW, FakeRoutes
@@ -175,3 +186,42 @@ async def test_routes_are_kept_a_while_and_capped_per_person() -> None:
     clock[0] = NOW + timedelta(minutes=31)
     await routes.leg(USER, a, b, Mode.WALK)
     assert len(source.asked) == 3
+
+
+def overnight(stations: tuple[tuple[str, str], ...]) -> Booking:
+    """A made-up overnight flight into DAY, and back out of it later that week."""
+    there = Segment(
+        "ZZ378", "SIN", "BCN", datetime(2026, 11, 11, 23, 30), datetime(2026, 11, 12, 9, 15)
+    )
+    back = Segment(
+        "ZZ379", "BCN", "SIN", datetime(2026, 11, 15, 11, 0), datetime(2026, 11, 16, 7, 0)
+    )
+    draft = BookingDraft(BookingKind.FLIGHT, "Acme Air", (there, back), None, None, None, None)
+    return entry(replace(draft, stations=stations))
+
+
+def test_a_flight_starts_the_day_at_the_airport_it_lands_at() -> None:
+    away = overnight((("BCN airport", "fakePlaceAirport1"),))
+    lodge = hotel("Hill Lodge", DAY, date(2026, 11, 15), "fakePlaceLodge001")
+    hops = day_hops([away, lodge], DAY)
+    assert names(hops) == [("BCN airport", "Hill Lodge")]
+    assert (hops[0].start.booking_id, hops[0].start.at) == (away.id, time(9, 15))
+    # The way home: from the hotel to the airport the return leaves from.
+    assert names(day_hops([away, lodge], date(2026, 11, 15))) == [("Hill Lodge", "BCN airport")]
+    # Before the airport is found on Google Maps (or when it isn't), nothing joins it.
+    assert day_hops([overnight(()), lodge], DAY) == []
+    assert day_hops([overnight((("BCN airport", ""),)), lodge], DAY) == []
+
+
+def test_what_to_search_for_an_airport_or_station() -> None:
+    assert station_query(BookingKind.FLIGHT, "BCN") == "BCN airport"
+    assert station_query(BookingKind.FLIGHT, "Changi Airport") == "Changi Airport"
+    assert station_query(BookingKind.RAIL, " Kyoto ") == "Kyoto station"
+    assert station_query(BookingKind.RAIL, None) is None
+
+
+def test_a_trip_with_a_car_drives_the_longer_hops() -> None:
+    assert default_mode(900, GettingAround.CAR) is Mode.WALK
+    assert default_mode(120_000, GettingAround.CAR) is Mode.DRIVE
+    assert default_mode(None, GettingAround.CAR) is Mode.DRIVE
+    assert default_mode(120_000) is Mode.TRANSIT

@@ -18,7 +18,7 @@ import {
 } from "@dnd-kit/core";
 import { type FormEvent, type KeyboardEvent, type ReactNode, createContext, useContext, useEffect, useMemo, useState } from "react";
 
-import { api, type Booking, type DayNote, type TripDetail } from "../api";
+import { api, type Booking, type DayNote, type Hop, type TripDetail } from "../api";
 import { sortKey } from "./TripBits";
 
 const dayName = (iso: string) => new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(iso));
@@ -73,7 +73,7 @@ export function withMove(spots: Map<Spot, Booking[]>, moving: Booking, to: Spot,
   return next;
 }
 
-type Drop = { over: string; below: boolean } | null;
+type Drop = { over: string; spot: Spot; below: boolean } | null;
 type Pending = { moving: Booking; to: Spot; after: string | null } | null;
 
 type Arrange = {
@@ -101,13 +101,15 @@ export function useArrange(detail: TripDetail): Arrange {
   return arrange ?? { on: false, spots, drop: null, dragging: null, carrying: null, move: async () => undefined, key: () => undefined, letGo: () => undefined };
 }
 
-const isEntry = (data: unknown): data is { entry: true; spot: Spot } => typeof data === "object" && data !== null && "entry" in data;
+const isEntry = (data: unknown): data is { entry: true; spot: Spot; booking: string } => typeof data === "object" && data !== null && "entry" in data;
 const isZone = (data: unknown): data is { zone: true; spot: Spot; empty: boolean } => typeof data === "object" && data !== null && "zone" in data;
 
 /** Over an entry if the pointer's on one; between entries in a list, the nearest of
  * them; on an empty day, the day. */
 const collide: CollisionDetection = (args) => {
-  const others = args.droppableContainers.filter((c) => c.id !== args.active.id);
+  // Not the plan being dragged; a flight shows on each day it leaves or lands, so
+  // its spots are told apart by day.
+  const others = args.droppableContainers.filter((c) => !(isEntry(c.data.current) && c.data.current.booking === args.active.id));
   const entries = others.filter((c) => isEntry(c.data.current));
   const zones = others.filter((c) => isZone(c.data.current));
   if (args.pointerCoordinates) {
@@ -230,17 +232,20 @@ export function ArrangeProvider({ detail, days, on, onChange, children }: {
     if (!carry) return null;
     const g = gaps[carry.gap];
     if (!g) return null;
-    if (g.after) return { over: g.after, below: true };
+    if (g.after) return { over: g.after, spot: g.spot, below: true };
     const first = (spots.get(g.spot) ?? []).find((e) => e.id !== carry.id);
-    return first ? { over: first.id, below: false } : { over: g.spot, below: true };
+    return first ? { over: first.id, spot: g.spot, below: false } : { over: g.spot, spot: g.spot, below: true };
   })();
 
   function where(event: DragMoveEvent | DragEndEvent): { spot: Spot; over: string; below: boolean } | null {
     const { active, over } = event;
     const moved = active.rect.current.translated;
-    if (!over || !moved || over.id === active.id) return null;
+    if (!over || !moved) return null;
     const data = over.data.current;
-    if (isEntry(data)) return { spot: data.spot, over: String(over.id), below: middle(moved) > middle(over.rect) };
+    if (isEntry(data)) {
+      if (data.booking === active.id) return null;
+      return { spot: data.spot, over: data.booking, below: middle(moved) > middle(over.rect) };
+    }
     if (isZone(data)) return { spot: data.spot, over: String(over.id), below: true };
     return null;
   }
@@ -252,8 +257,8 @@ export function ArrangeProvider({ detail, days, on, onChange, children }: {
 
   function onDragMove(event: DragMoveEvent) {
     const at = where(event);
-    const next: Drop = at ? { over: at.over, below: at.below } : null;
-    if (next?.over !== drop?.over || next?.below !== drop?.below) setDrop(next);
+    const next: Drop = at ? { over: at.over, spot: at.spot, below: at.below } : null;
+    if (next?.over !== drop?.over || next?.spot !== drop?.spot || next?.below !== drop?.below) setDrop(next);
   }
 
   function onDragEnd(event: DragEndEvent) {
@@ -268,7 +273,7 @@ export function ArrangeProvider({ detail, days, on, onChange, children }: {
 
   const name = (id: string | number | undefined) => {
     if (id === undefined) return "";
-    const b = byId.get(String(id));
+    const b = byId.get(String(id).split("@")[0]);
     if (b) return b.title;
     const spot = String(id) as Spot;
     return spot === PLACES ? "places to visit" : `the day ${dayOf(spot)}`;
@@ -323,11 +328,13 @@ export function useDragEntry(booking: Booking, spot: Spot | undefined) {
   const arrange = useContext(Context);
   const on = Boolean(arrange?.on) && spot !== undefined;
   const movable = on && booking.kind === "activity";
-  // A hotel's check-out line shows the same entry again on a later day; it takes no part.
-  const id = spot ? booking.id : `idle-${booking.id}`;
-  const drag = useDraggable({ id, disabled: !movable });
-  const drop = useDroppable({ id, disabled: !on, data: { entry: true, spot } });
-  const mark = on && arrange?.drop?.over === booking.id ? (arrange.drop.below ? " drop-after" : " drop-before") : "";
+  // Ids by spot: a flight shows on each day it leaves or lands, and a hotel's
+  // check-out line (no spot) shows it again on a later day and takes no part.
+  const where = `${booking.id}@${spot ?? "none"}`;
+  const drag = useDraggable({ id: movable ? booking.id : `fixed-${where}`, disabled: !movable });
+  const drop = useDroppable({ id: where, disabled: !on, data: { entry: true, spot, booking: booking.id } });
+  const here = on && arrange?.drop?.over === booking.id && arrange.drop.spot === spot;
+  const mark = here ? (arrange?.drop?.below ? " drop-after" : " drop-before") : "";
   const ref = (node: HTMLElement | null) => {
     drag.setNodeRef(node);
     drop.setNodeRef(node);
@@ -421,18 +428,41 @@ export function MoveForm({ booking, days, spots, onDone }: { booking: Booking; d
   );
 }
 
-const NOTE_ICON: Record<DayNote["kind"], string> = { clash: "⚠️", order: "↕️", free: "🕒" };
+const NOTE_ICON: Record<DayNote["kind"], string> = { clash: "⚠️", order: "↕️", free: "🕒", arrival: "🛬" };
 
-/** What's worth a look on a day: things that overlap, plans out of time order, and
- * free time, with a way to fill it. */
-export function DayNotes({ notes, onFind }: { notes: DayNote[]; onFind?: (start: string | null) => void }) {
+const minutesOf = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
+const clock = (minutes: number) => `${String(Math.floor(minutes / 60) % 24).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+
+/** "1 h 30 min", "25 min". */
+export function duration(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (!h) return `${m} min`;
+  return m ? `${h} h ${m} min` : `${h} h`;
+}
+
+/** Landing well before check-in, with the way from the airport counted once its
+ * travel time is known: "Arrive around 10:45 (land 09:15, then 1 h 30 min) …". */
+export function arrivalText(note: DayNote, hops: Hop[]): string {
+  const [from, to] = note.ids;
+  const hop = hops.find((h) => h.start_id === from && h.end_id === to);
+  if (!note.start || !note.end || !hop || hop.minutes === null) return note.text;
+  const there = minutesOf(note.start) + hop.minutes;
+  const wait = minutesOf(note.end) - there;
+  const fill = wait >= 30 ? `about ${duration(Math.round(wait / 15) * 15)} to fill, or ask about checking in early` : "about right for check-in";
+  return `Arrive around ${clock(there)} (land ${note.start}, then ${duration(hop.minutes)}) · check-in from ${note.end} · ${fill}`;
+}
+
+/** What's worth a look on a day: things that overlap, plans out of time order,
+ * landing well before check-in, and free time, with a way to fill it. */
+export function DayNotes({ notes, hops = [], onFind }: { notes: DayNote[]; hops?: Hop[]; onFind?: (start: string | null) => void }) {
   if (notes.length === 0) return null;
   return (
     <ul className="day-notes" aria-label="Worth a look">
       {notes.map((n) => (
         <li key={`${n.kind}-${n.text}`} className={`day-note day-note-${n.kind}`}>
           <span aria-hidden="true">{NOTE_ICON[n.kind]}</span>
-          <span className="wrap">{n.text}</span>
+          <span className="wrap">{n.kind === "arrival" ? arrivalText(n, hops) : n.text}</span>
           {n.kind === "free" && onFind && (
             <button type="button" className="btn btn-ghost btn-small" onClick={() => onFind(n.start ?? null)}>
               Find something to do

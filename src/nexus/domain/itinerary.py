@@ -6,9 +6,14 @@ moved, the day's plans keep the user's order and flights, trains and hotel check
 slot in by their times; a plan added later without a place in that order goes where
 its time fits (one with no time goes last).
 
+A flight or train is on every day one of its legs leaves or lands: an overnight
+flight shows where it leaves, at its departure, and on the next day where it lands,
+at its arrival.
+
 Each day can carry notes, worked out here and shown on the trip page and in chat:
-two things that overlap, a plan that comes after a later one in the user's order, and
-three hours or more of free time between 09:00 and 21:00.
+two things that overlap, a plan that comes after a later one in the user's order,
+landing well before the hotel's check-in, and three hours or more of free time
+between 09:00 and 21:00 (not on a day spent arriving, nor outside the trip's dates).
 """
 
 from collections.abc import Sequence
@@ -18,7 +23,7 @@ from enum import StrEnum
 from itertools import pairwise
 from uuid import UUID
 
-from nexus.domain.bookings import Booking, BookingKind
+from nexus.domain.bookings import Booking, BookingKind, Segment
 
 CHECK_IN = time(15, 0)
 # Free time worth saying, and the part of the day it's looked for in.
@@ -27,12 +32,15 @@ DAY_STARTS, DAY_ENDS = time(9, 0), time(21, 0)
 # A plan with a start and no end is taken to last this long when looking for free time.
 USUAL_LENGTH = timedelta(hours=1)
 MAX_NOTES = 5
+# Landing at least this long before the hotel's check-in is worth a note.
+EARLY_BY = timedelta(hours=2)
 
 
 class NoteKind(StrEnum):
     CLASH = "clash"  # two entries overlap
     ORDER = "order"  # a plan comes after a later one in the user's order
     FREE = "free"  # three hours or more with nothing planned
+    ARRIVAL = "arrival"  # landing well before the hotel's check-in
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,40 +48,76 @@ class DayNote:
     kind: NoteKind
     text: str
     ids: tuple[UUID, ...] = ()  # the entries it's about
-    start: time | None = None  # free time: from
-    end: time | None = None  # free time: until
+    start: time | None = None  # free time: from; arrival: landing
+    end: time | None = None  # free time: until; arrival: check-in
 
 
-def _time(b: Booking) -> time | None:
-    """When an entry happens on its first day: a plan's time, a flight or train's
-    departure, a hotel's check-in."""
+def _transport(b: Booking) -> bool:
+    return b.draft.kind in (BookingKind.FLIGHT, BookingKind.RAIL)
+
+
+def leaving(b: Booking, day: date) -> list[Segment]:
+    """A flight's or train's legs that leave on ``day``."""
+    return [s for s in b.draft.segments if s.departs and s.departs.date() == day]
+
+
+def landing(b: Booking, day: date) -> list[Segment]:
+    """A flight's or train's legs that land on ``day``."""
+    return [s for s in b.draft.segments if s.arrives and s.arrives.date() == day]
+
+
+def _on(b: Booking, day: date) -> bool:
+    if _transport(b):
+        return bool(leaving(b, day) or landing(b, day))
+    return b.draft.starts == day
+
+
+def _time(b: Booking, day: date) -> time | None:
+    """When an entry happens on ``day``: a plan's time, a hotel's check-in, a flight's
+    or train's first departure that day, or else its landing."""
     d = b.draft
     if d.kind is BookingKind.ACTIVITY:
         return d.at
     if d.kind is BookingKind.HOTEL:
         return CHECK_IN
-    departs = next((s.departs for s in d.segments if s.departs), None)
-    return departs.time() if isinstance(departs, datetime) else None
-
-
-def _by_time(b: Booking) -> str:
-    return f"{b.draft.starts}T{(_time(b) or time(0)).isoformat()}"
+    out = [s.departs for s in leaving(b, day) if s.departs]
+    if out:
+        return min(out).time()
+    back = [s.arrives for s in landing(b, day) if s.arrives]
+    return max(back).time() if back else None
 
 
 def on_day(bookings: Sequence[Booking], day: date) -> list[Booking]:
-    """Everything that starts on ``day``, in itinerary order."""
-    entries = [b for b in bookings if b.draft.starts == day]
+    """Everything on ``day``, in itinerary order: what starts that day, and flights
+    and trains landing that day."""
+    entries = [b for b in bookings if _on(b, day)]
+
+    def by_time(b: Booking) -> time:
+        return _time(b, day) or time(0)
+
     plans = [b for b in entries if b.draft.kind is BookingKind.ACTIVITY]
-    ordered = sorted((p for p in plans if p.draft.order is not None), key=_order_key)
+    placed = (p for p in plans if p.draft.order is not None)
+    ordered = sorted(placed, key=lambda p: (p.draft.order or 0, by_time(p)))
     if not ordered:
-        return sorted(entries, key=_by_time)
+        return sorted(entries, key=by_time)
     arranged = list(ordered)
     unordered = (p for p in plans if p.draft.order is None)
-    for b in sorted(unordered, key=lambda p: (p.draft.at is None, _by_time(p))):
-        _fit(arranged, b, end_if_untimed=True)
-    for b in sorted((e for e in entries if e.draft.kind is not BookingKind.ACTIVITY), key=_by_time):
-        _fit(arranged, b, end_if_untimed=False)
+    for b in sorted(unordered, key=lambda p: (p.draft.at is None, by_time(p))):
+        _fit(arranged, b, day, end_if_untimed=True)
+    others = (e for e in entries if e.draft.kind is not BookingKind.ACTIVITY)
+    for b in sorted(others, key=by_time):
+        _fit(arranged, b, day, end_if_untimed=False)
     return arranged
+
+
+def days_of(bookings: Sequence[Booking]) -> list[date]:
+    """Every day something is on, in order: each entry's first day, and every day a
+    flight's or train's leg leaves or lands."""
+    days = {b.draft.starts for b in bookings if b.draft.starts is not None}
+    for b in bookings:
+        if _transport(b):
+            days.update(t.date() for s in b.draft.segments for t in (s.departs, s.arrives) if t)
+    return sorted(days)
 
 
 def places_to_visit(bookings: Sequence[Booking]) -> list[Booking]:
@@ -82,13 +126,9 @@ def places_to_visit(bookings: Sequence[Booking]) -> list[Booking]:
     return sorted(places, key=lambda b: (b.draft.order is None, b.draft.order or 0, b.created_at))
 
 
-def _order_key(b: Booking) -> tuple[int, str]:
-    return (b.draft.order or 0, _by_time(b))
-
-
-def _fit(arranged: list[Booking], b: Booking, *, end_if_untimed: bool) -> None:
+def _fit(arranged: list[Booking], b: Booking, day: date, *, end_if_untimed: bool) -> None:
     """Puts ``b`` right after the last entry with a time no later than its own."""
-    at = _time(b)
+    at = _time(b, day)
     if at is None:
         if end_if_untimed:
             arranged.append(b)
@@ -97,7 +137,7 @@ def _fit(arranged: list[Booking], b: Booking, *, end_if_untimed: bool) -> None:
         return
     after = -1
     for i, e in enumerate(arranged):
-        when = _time(e)
+        when = _time(e, day)
         if when is not None and when <= at:
             after = i
     arranged.insert(after + 1, b)
@@ -111,16 +151,52 @@ def _span(b: Booking, day: date) -> tuple[time, time | None] | None:
         return (d.at, d.ends_at) if d.at else None
     if d.kind is BookingKind.HOTEL:
         return None
-    leg = next((s for s in d.segments if s.departs and s.departs.date() == day), None)
-    if leg is None or leg.departs is None:
+    out = leaving(b, day)
+    if out and out[0].departs:
+        arrives = out[-1].arrives
+        ends = arrives.time() if arrives and arrives.date() == day else time(23, 59)
+        return out[0].departs.time(), ends
+    back = [s.arrives for s in landing(b, day) if s.arrives]
+    # Landing after a night away: taken up from midnight until it lands.
+    return (time(0), max(back).time()) if back else None
+
+
+def _arrival(arranged: Sequence[Booking], day: date) -> DayNote | None:
+    """Landing well before the hotel the traveller checks into that day lets them in."""
+    lands = [
+        (max(arrived).time(), b)
+        for b in arranged
+        if _transport(b) and (arrived := [s.arrives for s in landing(b, day) if s.arrives])
+    ]
+    hotel = next((b for b in arranged if b.draft.kind is BookingKind.HOTEL), None)
+    if not lands or hotel is None:
         return None
-    arrives = leg.arrives
-    ends = arrives.time() if arrives and arrives.date() == day else time(23, 59)
-    return leg.departs.time(), ends
+    at, flight = max(lands, key=lambda t: t[0])
+    wait = datetime.combine(day, CHECK_IN) - datetime.combine(day, at)
+    if wait < EARLY_BY:
+        return None
+    via = "airport" if flight.draft.kind is BookingKind.FLIGHT else "station"
+    name = hotel.draft.hotel or "the hotel"
+    return DayNote(
+        NoteKind.ARRIVAL,
+        f"Land {at:%H:%M}, check-in at {name} from {CHECK_IN:%H:%M}: {_length(wait)} to fill, "
+        f"counting the way from the {via}, or ask about checking in early",
+        (flight.id, hotel.id),
+        start=at,
+        end=CHECK_IN,
+    )
 
 
-def day_notes(arranged: Sequence[Booking], day: date) -> list[DayNote]:
-    """What to watch out for on ``day``, given its entries in itinerary order."""
+def _length(span: timedelta) -> str:
+    hours, minutes = divmod(int(span.total_seconds()) // 60, 60)
+    if not hours:
+        return f"{minutes} min"
+    return f"{hours} h {minutes} min" if minutes else f"{hours} h"
+
+
+def day_notes(arranged: Sequence[Booking], day: date, *, in_trip: bool = True) -> list[DayNote]:
+    """What to watch out for on ``day``, given its entries in itinerary order. Free
+    time is only looked for on the trip's own days."""
     notes: list[DayNote] = []
     timed = [(b, s) for b in arranged if (s := _span(b, day)) is not None]
     by_start = sorted(timed, key=lambda t: t[1][0])
@@ -153,7 +229,11 @@ def day_notes(arranged: Sequence[Booking], day: date) -> list[DayNote]:
                     (a.id, b.id),
                 )
             )
-    notes.extend(_free(timed, day))
+    arrival = _arrival(arranged, day)
+    if arrival is not None:
+        notes.append(arrival)  # the time before check-in is what's free that day
+    elif in_trip:
+        notes.extend(_free(timed, day))
     return notes[:MAX_NOTES]
 
 

@@ -1748,11 +1748,12 @@ async def _trip_status(ctx: ToolContext, a: TripNameArgs) -> ToolResult:
     trip = await trip_cases.find_trip(ctx.uow(), ctx.user, a.trip, now=ctx.now)
     view = await trip_cases.trip_view(ctx.uow, _rates(ctx), ctx.user, trip.id, now=ctx.now)
     lines = trip_cases.describe_view(view)
-    days = sorted({b.draft.starts for b in view.bookings if b.draft.starts is not None})
     watch = [
         f"{day:%a %d %b}: {note.text}"
-        for day in days
-        for note in itinerary.day_notes(itinerary.on_day(view.bookings, day), day)
+        for day in itinerary.days_of(view.bookings)
+        for note in itinerary.day_notes(
+            itinerary.on_day(view.bookings, day), day, in_trip=trip.start <= day <= trip.end
+        )
     ]
     if watch:
         lines += ["Worth a look on the itinerary (worked out in code):", *watch]

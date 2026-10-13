@@ -52,6 +52,25 @@ MAX_CATEGORY = 30
 MAX_LIST = 30
 # A plan's place in its day's order (or among places to visit), 0 first.
 MAX_ORDER = 999
+# Airports and stations looked up on Google Maps for a flight or train: at most this
+# many names, each kept with its place id ("" when Google had no such place).
+MAX_STATIONS = 8
+MAX_STATION_NAME = 80
+
+
+def _stations(value: object) -> tuple[tuple[str, str], ...]:
+    """Airport and station names with their Google place ids ("" for none found)."""
+    if not isinstance(value, dict):
+        return ()
+    kept: list[tuple[str, str]] = []
+    for name, pid in list(value.items())[:MAX_STATIONS]:
+        if not isinstance(name, str) or not name.strip() or len(name) > MAX_STATION_NAME:
+            continue
+        found = _place_id(pid) if pid else None
+        if pid and found is None:
+            continue
+        kept.append((" ".join(name.split()), found or ""))
+    return tuple(kept)
 
 
 def _text(value: object, *, limit: int = MAX_TEXT) -> str | None:
@@ -201,6 +220,14 @@ class BookingDraft:
     link: str | None = None  # a booking page or menu, on any kind: a public https address
     list_name: str | None = None  # a place to visit's list: "Eat", "Rainy day"
     order: int | None = None  # a plan's place in its day (None: by its time)
+    # A flight's or train's airports and stations on Google Maps: (what was searched
+    # for, like "BCN airport", its place id or "" when there's none). Only ids are kept.
+    stations: tuple[tuple[str, str], ...] = ()
+
+    def station(self, name: str) -> str | None:
+        """The place id found for an airport or station; "" when looked up and not
+        found, None when not looked up yet."""
+        return dict(self.stations).get(name)
 
     @property
     def starts(self) -> date | None:
@@ -262,6 +289,7 @@ class BookingDraft:
             "link": self.link,
             "list_name": self.list_name,
             "order": self.order,
+            "stations": dict(self.stations),
         }
 
     @classmethod
@@ -329,6 +357,7 @@ class BookingDraft:
             booked_via=_text(data.get("booked_via")),
             place_id=_place_id(data.get("place_id")) if kind is BookingKind.HOTEL else None,
             link=link,
+            stations=_stations(data.get("stations")) if kind is not BookingKind.HOTEL else (),
         )
         return draft if draft.starts else None
 

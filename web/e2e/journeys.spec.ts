@@ -1560,6 +1560,59 @@ test("a day rearranged: dragged, moved by keyboard or menu, with what to watch o
   }
 });
 
+test("a travel day: the overnight flight lands, then the way to the hotel", async ({ page }) => {
+  const state = await fakeApi(page);
+  state.mapKey = "test-browser-key";
+  await addTrip(page, "Seoul", "2026-10-21", "2026-10-24");
+  // A made-up overnight flight landing on day 1, its airport found on Google Maps, and
+  // the hotel checked into that day.
+  state.plans.push(
+    {
+      id: "pl1", trip_id: "trip1", kind: "flight", title: "ZZ378 SIN → BCN", provider: "Acme Air", starts: "2026-10-20", ends: "2026-10-21",
+      segments: [{ number: "ZZ378", origin: "SIN", destination: "BCN", departs: "2026-10-20T23:30", arrives: "2026-10-21T09:15" }],
+      hotel: null, address: null, check_in: null, check_out: null, name: null, day: null, at: null, note: null, cost: null, logged: false,
+      manual: true, reference: null, booked_via: null, category: null, place_id: null, scheduled: true, stations: { "BCN airport": "fakePlaceAirport1" },
+    },
+    {
+      id: "pl2", trip_id: "trip1", kind: "hotel", title: "Hill Lodge, 3 nights", provider: null, starts: "2026-10-21", ends: "2026-10-24",
+      segments: [], hotel: "Hill Lodge", address: "3 Example Cove", check_in: "2026-10-21", check_out: "2026-10-24", name: null, day: null,
+      at: null, note: null, cost: null, logged: false, manual: true, reference: null, booked_via: null, category: null,
+      place_id: "fakePlaceLodge001", scheduled: true,
+    },
+  );
+  await page.reload();
+  const itinerary = page.getByRole("region", { name: "Itinerary" });
+
+  // The day before: the flight leaves. Day 1: it lands, then the hotel.
+  const before = itinerary.locator("#day-2026-10-20").getByRole("list");
+  await expect(before).toContainText("ZZ378 SIN → BCN");
+  const day1 = itinerary.getByRole("list", { name: /^Day 1/ });
+  await day1.scrollIntoViewIfNeeded();
+  await expect(day1.locator(":scope > li").first()).toContainText("Land BCN 09:15");
+  await expect(day1.locator("#land-pl1")).toContainText("ZZ378 · Acme Air from SIN");
+  // The hotel's name sits on its own line above its dates.
+  expect(await page.locator("#entry-pl2 .wrap").innerText()).toMatch(/^Hill Lodge\n/);
+
+  // From the airport to the hotel, by public transport to start with; the wait for
+  // check-in counts it.
+  const hop = page.getByRole("listitem", { name: "From BCN airport to Hill Lodge" });
+  await expect(hop).toContainText("2 h 20 min by public transport");
+  const notes = itinerary.getByRole("list", { name: "Worth a look" });
+  await expect(notes).toContainText("Arrive around 11:35 (land 09:15, then 2 h 20 min) · check-in from 15:00 · about 3 h 30 min to fill");
+
+  // With a hire car the longer hops drive.
+  await page.getByLabel("Getting around").selectOption("car");
+  await expect.poll(() => state.trips[0].getting_around).toBe("car");
+  await expect(hop).toContainText("1 h 30 min drive");
+  await expect(notes).toContainText("Arrive around 10:45 (land 09:15, then 1 h 30 min) · check-in from 15:00 · about 4 h 15 min to fill");
+
+  // The airport is on the map, and day 1's route runs from it to the hotel.
+  const markers = () => page.evaluate(() => (window as unknown as { __map: { markers: { o: { title: string } }[] } }).__map.markers.map((m) => m.o.title));
+  await expect.poll(markers).toEqual(expect.arrayContaining(["BCN airport", "Hill Lodge"]));
+  await page.getByRole("region", { name: "Map" }).getByRole("button", { name: "Day 1" }).click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __map: { lines: number } }).__map.lines)).toBe(1);
+});
+
 test("without a map key the trip page has no map", async ({ page }) => {
   await fakeApi(page);
   await addTrip(page, "Seoul", "2026-11-10", "2026-11-13");

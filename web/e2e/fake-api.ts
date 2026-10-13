@@ -692,18 +692,32 @@ export async function fakeApi(
     // they have one, else by time (a hotel check-in at 15:00).
     const timeOf = (b: Record<string, unknown>) =>
       String(b.at ?? (b.segments as { departs: string | null }[] | undefined)?.[0]?.departs?.slice(11) ?? (b.kind === "hotel" ? "15:00" : "00:00"));
+    type Leg = { origin?: string; destination?: string; departs: string | null; arrives: string | null };
+    const legsOf = (b: Record<string, unknown>) => (b.segments as Leg[] | undefined) ?? [];
+    // A flight on a day it only lands: shown at its landing.
+    const landsOn = (b: Record<string, unknown>, day: string) =>
+      (b.kind === "flight" || b.kind === "rail") && b.starts !== day && legsOf(b).some((s) => s.arrives?.slice(0, 10) === day);
+    const timeOn = (b: Record<string, unknown>, day: string) => (landsOn(b, day) ? String(legsOf(b).at(-1)?.arrives?.slice(11)) : timeOf(b));
     const dayEntries = (all: Record<string, unknown>[], day: string) =>
       all
-        .filter((b) => b.scheduled && b.starts === day)
+        .filter((b) => b.scheduled && (b.starts === day || landsOn(b, day)))
         .sort((a, b) => {
           if (a.order != null && b.order != null) return Number(a.order) - Number(b.order);
-          return timeOf(a).localeCompare(timeOf(b));
+          return timeOn(a, day).localeCompare(timeOn(b, day));
         });
     const placesInOrder = () =>
       state.plans.filter((p) => p.kind === "activity" && !p.scheduled).sort((a, b) => Number(a.order ?? 999) - Number(b.order ?? 999));
     // Made-up notes: two plans that overlap, and a free morning before the first plan.
-    const notesFor = (entries: Record<string, unknown>[]) => {
+    const notesFor = (entries: Record<string, unknown>[], day = "") => {
       const notes: Record<string, unknown>[] = [];
+      // Landing well before the hotel's check-in.
+      const landed = entries.find((b) => landsOn(b, day));
+      const hotel = entries.find((b) => b.kind === "hotel");
+      if (landed && hotel) {
+        const at = String(legsOf(landed).at(-1)?.arrives?.slice(11, 16));
+        notes.push({ kind: "arrival", text: `Land ${at}, check-in at ${String(hotel.hotel)} from 15:00`, ids: [landed.id, hotel.id], start: at, end: "15:00" });
+        return notes;
+      }
       const plans = entries.filter((b) => b.kind === "activity" && b.at);
       for (let i = 1; i < plans.length; i += 1) {
         const [a, b] = [plans[i - 1], plans[i]];
@@ -786,10 +800,11 @@ export async function fakeApi(
         to_spend: budget ? home(Number(budget.amount) - spent - 820) : null,
         days: (() => {
           const all = [FLIGHT, ...state.plans];
-          const days = [...new Set(all.filter((b) => b.scheduled).map((b) => String(b.starts)))].sort();
+          const landings = all.flatMap((b) => legsOf(b).map((s) => s.arrives?.slice(0, 10) ?? "")).filter(Boolean);
+          const days = [...new Set([...all.filter((b) => b.scheduled).map((b) => String(b.starts)), ...landings])].sort();
           return days.map((day) => {
             const entries = dayEntries(all, day);
-            return { day, order: entries.map((b) => b.id), notes: notesFor(entries) };
+            return { day, order: entries.map((b) => b.id), notes: notesFor(entries, day) };
           });
         })(),
         places_order: placesInOrder().map((p) => p.id),
@@ -816,6 +831,16 @@ export async function fakeApi(
         rating: "4.3", ratings: 18000, price: null, maps_url: "https://maps.example/market", website: null, phone: null,
         summary: null, status: "OPERATIONAL", hours: [], reviews: [], lat: 37.5592, lng: 126.9776, closed: null,
       },
+    };
+    PLACES.fakePlaceLodge001 = {
+      id: "fakePlaceLodge001", name: "Hill Lodge", address: "3 Example Cove", kind: "Hotel", rating: "4.5", ratings: 1576, price: null,
+      maps_url: "https://maps.example/lodge", website: null, phone: null, summary: null, status: "OPERATIONAL", hours: [], reviews: [],
+      lat: 41.93, lng: 3.21, closed: null,
+    };
+    PLACES.fakePlaceAirport1 = {
+      id: "fakePlaceAirport1", name: "Exampleton Airport", address: "Exampleton", kind: "International airport", rating: null, ratings: null,
+      price: null, maps_url: "https://maps.example/airport", website: null, phone: null, summary: null, status: "OPERATIONAL", hours: [],
+      reviews: [], lat: 41.29, lng: 2.07, closed: null,
     };
     const placeOut = ({ closed: _closed, ...place }: Record<string, unknown>) => place;
     if (path === "/travel/places/search" && method === "GET") {
@@ -857,7 +882,18 @@ export async function fakeApi(
             const weekday = p.day ? new Date(`${String(p.day)}T00:00:00Z`).getUTCDay() : null;
             const warning = weekday !== null && weekday === place.closed ? `Usually closed on ${days[weekday]}s` : null;
             return { booking_id: p.id, place: placeOut(place), warning };
-          }),
+          })
+          .concat(
+            // Airports found for flights: on the days they're landed at.
+            state.plans.flatMap((p) =>
+              Object.entries((p.stations as Record<string, string> | undefined) ?? {})
+                .filter(([, pid]) => PLACES[pid])
+                .map(([station, pid]) => ({
+                  booking_id: p.id, place: placeOut(PLACES[pid]), warning: null, station,
+                  stops: legsOf(p).filter((s) => `${s.destination} airport` === station).map((s) => ({ day: String(s.arrives).slice(0, 10), side: "to" })),
+                })),
+            ),
+          ),
       );
     }
     // Made-up travel times: a 14-minute walk between each pair of a day's linked plans;
@@ -874,6 +910,19 @@ export async function fakeApi(
           directions: `https://www.google.com/maps/dir/?api=1&origin_place_id=${String(start.place_id)}&destination_place_id=${String(end.place_id)}`,
         };
       });
+      // From the airport a flight lands at to the hotel checked into that day: a long
+      // way, 2 h 20 min by public transport or 1 h 30 min by car.
+      const trip = state.trips.find((t) => t.id === dayHops[1]);
+      const landed = state.plans.find((p) => landsOn(p, dayHops[2]) && Object.values((p.stations as Record<string, string> | undefined) ?? {}).some(Boolean));
+      const lodge = state.plans.find((p) => p.kind === "hotel" && p.check_in === dayHops[2] && p.place_id);
+      if (landed && lodge) {
+        const car = trip?.getting_around === "car";
+        hops.unshift({
+          start_id: String(landed.id), end_id: String(lodge.id), start: `${String(legsOf(landed).at(-1)?.destination)} airport`, end: String(lodge.hotel),
+          mode: car ? "drive" : "transit", minutes: car ? 90 : 140, metres: 120000, tight: false,
+          directions: `https://www.google.com/maps/dir/?api=1&destination_place_id=${String(lodge.place_id)}`,
+        });
+      }
       if (!dayHops[3]) return json(route, hops);
       const mode = url.searchParams.get("mode") ?? "walk";
       state.hopModes.push(mode);
@@ -948,6 +997,13 @@ export async function fakeApi(
       state.photoChoices.push(String(body.choice));
       if (body.choice === "next") return json(route, { detail: "there's no other photo of this place yet" }, 422);
       trip.photo_off = body.choice === "off";
+      return json(route, trip);
+    }
+    const gettingAround = path.match(/^\/travel\/trips\/([^/]+)\/getting-around$/);
+    if (gettingAround && method === "PUT") {
+      const trip = state.trips.find((t) => t.id === gettingAround[1]);
+      if (!trip) return json(route, { detail: "no trip with that id" }, 404);
+      trip.getting_around = body.by;
       return json(route, trip);
     }
     const dayLabel = path.match(/^\/travel\/trips\/([^/]+)\/days\/([0-9-]+)$/);
