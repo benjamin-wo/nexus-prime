@@ -25,6 +25,7 @@ from nexus.domain.routes import (
     directions_url,
     station_query,
     tight,
+    without_the_car,
 )
 from nexus.domain.trips import GettingAround
 from nexus.infra.places.google import parse_place
@@ -238,3 +239,16 @@ def test_a_place_right_by_the_airport_is_part_of_being_there() -> None:
     assert not beside_airport(hop, None, flights)  # distance unknown
     # Between two plans, however close, it's an ordinary hop.
     assert not beside_airport(hop, 1_200, set())
+
+
+def test_the_way_to_a_car_pickup_and_on_from_a_car_return_is_without_the_car() -> None:
+    def hop(start: str, end: str) -> Hop:
+        return Hop(Stop(uuid4(), "fakeA", start, None), Stop(uuid4(), "fakeB", end, None))
+
+    assert without_the_car(hop("Hill Lodge", "Car pickup — Example Airport T1"))
+    assert without_the_car(hop("Car return — Example Airport T1", "Hill Lodge"))
+    assert without_the_car(hop("Return the hire car", "Old Town"))
+    # With the car: from the pickup, to the return, and anywhere else.
+    assert not without_the_car(hop("Car pickup", "Hill Lodge"))
+    assert not without_the_car(hop("Hill Lodge", "Car return"))
+    assert not without_the_car(hop("Carrer de Example", "Car museum"))

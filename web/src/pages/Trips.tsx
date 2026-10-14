@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, Fragment, type ReactNode, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
-import { api, type Booking, type Me, type Money, type ScreenshotRead, type Trip, type TripDetail } from "../api";
+import { api, type Booking, type Hop, type Me, type Money, type ScreenshotRead, type Trip, type TripDetail } from "../api";
 import { base64 } from "../files";
 import { formatMoney, formatShortDate } from "../format";
 import { ResearchList } from "./Research";
@@ -1175,8 +1175,16 @@ function Itinerary({ detail, onChange, onAdd, collapsed }: {
                   const shownIds = new Set(entries.map((b) => b.id));
                   // Landing and collecting a hire car at the airport isn't a trip of its own.
                   const drawn = hops.filter((h) => !h.beside_airport);
-                  const into = (b: Booking) => drawn.filter((h) => h.end_id === b.id);
-                  const after = drawn.filter((h) => !shownIds.has(h.end_id));
+                  // Each hop above where it goes; one back to somewhere earlier in the day
+                  // (tonight's hotel, checked into before going out) at the end, saying so.
+                  const at = new Map(entries.map((b, i) => [b.id, i]));
+                  const back = (h: Hop) => {
+                    const from = at.get(h.start_id);
+                    const to = at.get(h.end_id);
+                    return to !== undefined && from !== undefined && from >= to;
+                  };
+                  const into = (b: Booking) => drawn.filter((h) => h.end_id === b.id && !back(h));
+                  const after = drawn.filter((h) => !shownIds.has(h.end_id) || back(h));
                   return (
                     <>
                     <DayNotes
@@ -1222,7 +1230,7 @@ function Itinerary({ detail, onChange, onAdd, collapsed }: {
                         );
                       })}
                       {after.map((h) => (
-                        <HopLine key={`hop-${h.start_id}-${h.end_id}`} tripId={detail.trip.id} day={d} hop={h} addressOf={addressOf} />
+                        <HopLine key={`hop-${h.start_id}-${h.end_id}`} tripId={detail.trip.id} day={d} hop={h} addressOf={addressOf} back={back(h)} />
                       ))}
                     </ul>
                     {empty && <p className="caption">Nothing planned yet</p>}

@@ -12,6 +12,7 @@ Longer hops go by public transport, or by car when the trip says it has one; a w
 the user picked for a hop is kept and used again.
 """
 
+import re
 from dataclasses import dataclass
 from datetime import date, time, timedelta
 from enum import StrEnum
@@ -151,6 +152,24 @@ def beside_airport(hop: Hop, metres: float | None, flights: set[UUID]) -> bool:
 def hop_key(hop: Hop) -> str:
     """How a hop is known when the way the user picked for it is kept."""
     return f"{hop.start.booking_id}:{hop.end.booking_id}"
+
+
+_CAR = r"(?:car|rental|hire|vehicle)"
+
+
+def _either_way(action: str) -> re.Pattern[str]:
+    """The car and the action named in either order: "car return", "return the car"."""
+    return re.compile(rf"\b(?:{_CAR}\b.*\b{action}|{action}\b.*\b{_CAR})\b", re.I)
+
+
+_PICKUP = _either_way(r"(?:pick[- ]?up|collect(?:ion)?)")
+_RETURN = _either_way(r"(?:return|drop[- ]?off)")
+
+
+def without_the_car(hop: Hop) -> bool:
+    """A hop made without the hire car: to where it's picked up, or on from where it's
+    handed back ("Car pickup", "Car return — Barcelona Airport T1")."""
+    return bool(_PICKUP.search(hop.end.title) or _RETURN.search(hop.start.title))
 
 
 def default_mode(metres: float | None, by: GettingAround = GettingAround.TRANSIT) -> Mode:

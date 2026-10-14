@@ -1687,6 +1687,38 @@ test("a day rearranged: dragged, moved by keyboard or menu, with what to watch o
   }
 });
 
+test("a day out from the hotel checked into that morning ends with the way back, at the end", async ({ page }) => {
+  const state = await fakeApi(page);
+  state.backToHotel = true;
+  state.mapKey = "test-browser-key";
+  await addTrip(page, "Seoul", "2026-10-21", "2026-10-24");
+  state.plans.push(
+    {
+      id: "pl2", trip_id: "trip1", kind: "hotel", title: "Hill Lodge, 3 nights", provider: null, starts: "2026-10-21", ends: "2026-10-24",
+      segments: [], hotel: "Hill Lodge", address: "3 Example Cove", check_in: "2026-10-21", check_out: "2026-10-24", name: null, day: null,
+      at: null, note: null, cost: null, logged: false, manual: true, reference: null, booked_via: null, category: null,
+      place_id: "fakePlaceLodge001", scheduled: true,
+    },
+    {
+      id: "pl3", trip_id: "trip1", kind: "activity", title: "Car return", provider: null, starts: "2026-10-21", ends: "2026-10-21", segments: [],
+      hotel: null, address: null, check_in: null, check_out: null, name: "Car return", day: "2026-10-21", at: "17:00", ends_at: null, note: null,
+      cost: null, logged: false, manual: true, reference: null, booked_via: null, category: null, place_id: "fakePlaceCarDesk1", link: null,
+      list_name: null, order: null, scheduled: true,
+    },
+  );
+  await page.reload();
+  const day1 = page.getByRole("region", { name: "Itinerary" }).getByRole("list", { name: /^Day 1/ });
+  const rows = day1.locator(":scope > li");
+  // Check in, the way to the car return, the return, then the way back to the hotel:
+  // last, and named, not above the check-in.
+  await expect(rows).toHaveCount(4);
+  await expect(rows.nth(0)).toContainText("Hill Lodge");
+  await expect(rows.nth(1)).toHaveAccessibleName("From Hill Lodge to Car return");
+  await expect(rows.nth(2)).toContainText("Car return");
+  await expect(rows.nth(3)).toHaveAccessibleName("From Car return to Hill Lodge");
+  await expect(rows.nth(3)).toContainText("Back to Hill Lodge · 20 min by public transport");
+});
+
 test("a travel day: the overnight flight lands, then the way to the hotel", async ({ page }) => {
   const state = await fakeApi(page);
   state.mapKey = "test-browser-key";

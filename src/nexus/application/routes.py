@@ -39,8 +39,9 @@ from nexus.domain.routes import (
     hop_key,
     stations_on,
     tight,
+    without_the_car,
 )
-from nexus.domain.trips import MAX_HOP_MODES, Trip
+from nexus.domain.trips import MAX_HOP_MODES, GettingAround, Trip
 
 log = logging.getLogger(__name__)
 
@@ -163,7 +164,9 @@ async def hop_times(
             walk = directions_url(hop, Mode.WALK)
             return HopTime(hop, Mode.WALK, None, round(metres or 0), False, walk, True)
         picked = _picked(trip, hop)
-        mode = picked or default_mode(metres, trip.getting_around)
+        # Even on a trip with a hire car, not before it's picked up or after it's back.
+        by = GettingAround.TRANSIT if without_the_car(hop) else trip.getting_around
+        mode = picked or default_mode(metres, by)
         try:
             return await _time(routes, user_id, hop, mode, fallback=picked is None)
         except RoutesError:
