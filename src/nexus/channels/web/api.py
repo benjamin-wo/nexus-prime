@@ -65,8 +65,10 @@ from nexus.domain.ledger import (
 from nexus.domain.money import Money
 from nexus.domain.notifications import Frequency, NotificationSettings, label
 from nexus.domain.planning import Cadence, PayRule, next_month_start
+from nexus.domain.statement_pdf import PAGE_BREAK
 from nexus.domain.statements import AmountSign, DateOrder, Mapping, StatementImport
-from nexus.infra.pdf.text import PasswordNeeded, pdf_lines
+from nexus.infra.pdf.pages import page_images
+from nexus.infra.pdf.text import PasswordNeeded, pdf_text
 
 router = APIRouter(prefix="/api")
 EXPORT_LIMIT = 10_000
@@ -1148,12 +1150,14 @@ class PdfOut(Model):
     statement_date: date | None = None
     rows: int = 0
     reconciles: bool | None = None
+    scanned: bool = False  # read from pictures of the pages: worth checking row by row
 
 
 @router.post("/imports/pdf")
 async def read_pdf_statement(body: PdfIn, auth: Auth, web: Runtime) -> PdfOut:
-    """A PDF statement's transactions as CSV, previewed and imported like any CSV.
-    The PDF and its password are only held for this request."""
+    """A PDF statement's transactions as CSV, previewed and imported like any CSV. A
+    scanned one is read page by page by the photo model first. The PDF, its password
+    and a scan's text are only held for this request."""
     limit(web, auth, "import")
     try:
         data = base64.b64decode(body.pdf, validate=True)
@@ -1161,14 +1165,28 @@ async def read_pdf_statement(body: PdfIn, auth: Auth, web: Runtime) -> PdfOut:
         raise InvalidInput("that file didn't arrive whole; try again") from exc
     try:
         # A crafted PDF can be slow to read; the request gives up rather than hang.
-        lines = await asyncio.wait_for(
-            asyncio.to_thread(pdf_lines, data, body.password), PDF_SECONDS
+        lines, pages = await asyncio.wait_for(
+            asyncio.to_thread(pdf_text, data, body.password, page_break=PAGE_BREAK), PDF_SECONDS
         )
     except TimeoutError as exc:
         raise InvalidInput("that PDF took too long to read") from exc
     except PasswordNeeded as locked:
         return PdfOut(needs_password=True, wrong_password=locked.wrong)
-    found = statement_cases.read_pdf(lines)
+    scanned = statement_cases.looks_scanned(lines, pages)
+    if scanned:
+        if web.scans is None:
+            raise InvalidInput(
+                "that PDF is a scan, and reading scans isn't set up. Your bank's CSV export "
+                "will work instead"
+            )
+        try:
+            images = await asyncio.wait_for(
+                asyncio.to_thread(page_images, data, body.password), PDF_SECONDS
+            )
+        except TimeoutError as exc:
+            raise InvalidInput("that PDF took too long to read") from exc
+        lines = await statement_cases.read_scan(web.scans, images)
+    found = statement_cases.read_pdf(lines, scanned=scanned)
     return PdfOut(
         csv=found.csv,
         layout=layout_out(statement_cases.PDF_LAYOUT),
@@ -1176,6 +1194,7 @@ async def read_pdf_statement(body: PdfIn, auth: Auth, web: Runtime) -> PdfOut:
         statement_date=found.statement_date,
         rows=found.rows,
         reconciles=found.reconciles,
+        scanned=found.scanned,
     )
 
 

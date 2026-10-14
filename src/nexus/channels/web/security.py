@@ -22,7 +22,7 @@ from nexus.application.fx import RateSource
 from nexus.application.ideas import IdeaFinder
 from nexus.application.limits import RateLimiter
 from nexus.application.places import Places
-from nexus.application.ports import ReceiptStore
+from nexus.application.ports import ReceiptStore, StatementPageReader
 from nexus.application.routes import Routes
 from nexus.application.weather import Weather
 from nexus.domain.access import Session
@@ -53,6 +53,7 @@ class WebRuntime:
     routes: Routes | None = None  # travel times between a day's stops; None = not set up
     ideas: IdeaFinder | None = None  # quick ideas for a trip; None = not set up
     weather: Weather | None = None  # trip weather; None = not offered
+    scans: StatementPageReader | None = None  # reads scanned statements; None = not set up
 
 
 @dataclass(frozen=True, slots=True)

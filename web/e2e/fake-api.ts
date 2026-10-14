@@ -1487,11 +1487,18 @@ export async function fakeApi(
       return json(route, category);
     }
     if (path === "/imports/pdf" && method === "POST") {
+      if (Buffer.from(String(body.pdf), "base64").toString().includes("scanned")) {
+        return json(route, {
+          needs_password: false, wrong_password: false, kind: "card", rows: 1, reconciles: null, scanned: true,
+          csv: "Date,Description,Amount\n2026-09-10,Night Market,-12.00\n",
+          layout: { date: 0, description: [1], amount: 2, debit: null, credit: null, currency: null, date_order: "ymd", sign: "negative_is_out" },
+        });
+      }
       if (body.password !== "secret") {
-        return json(route, { needs_password: true, wrong_password: Boolean(body.password), csv: null, layout: null, kind: null, rows: 0, reconciles: null });
+        return json(route, { needs_password: true, wrong_password: Boolean(body.password), csv: null, layout: null, kind: null, rows: 0, reconciles: null, scanned: false });
       }
       return json(route, {
-        needs_password: false, wrong_password: false, kind: "card", rows: 2, reconciles: true,
+        needs_password: false, wrong_password: false, kind: "card", rows: 2, reconciles: true, scanned: false,
         csv: "Date,Description,Amount\n2026-09-05,Beach Cafe,-28.50\n2026-09-08,Online Refund,10.00\n",
         layout: { date: 0, description: [1], amount: 2, debit: null, credit: null, currency: null, date_order: "ymd", sign: "negative_is_out" },
       });

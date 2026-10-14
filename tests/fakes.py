@@ -411,6 +411,19 @@ class FakeHoldings:
 
 
 @dataclass
+class FakeStatementPages:
+    """Reads scanned pages as the given lines, page by page in the order asked; keeps
+    the pictures it was shown."""
+
+    pages: list[list[str]] = field(default_factory=list)
+    shown: list[bytes] = field(default_factory=list)
+
+    async def transcribe(self, image: bytes) -> list[str]:
+        self.shown.append(image)
+        return self.pages[len(self.shown) - 1] if len(self.shown) <= len(self.pages) else []
+
+
+@dataclass
 class FakeTripReader:
     """Reads every image as the same screenshot: by default a made-up hotel booked on
     an app, a dinner plan and a flight, for a December trip to Tokyo."""

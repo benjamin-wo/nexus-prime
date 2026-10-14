@@ -23,6 +23,7 @@ from nexus.agent.photo_picker import LlmChooser, LlmSpotter
 from nexus.agent.receipts import LlmReceiptReader, ReceiptReader
 from nexus.agent.service import AgentService
 from nexus.agent.skills import SkillLibrary
+from nexus.agent.statement_reader import LlmStatementReader
 from nexus.agent.tools import build_tools
 from nexus.agent.trip_reader import LlmTripReader, TripReader
 from nexus.application import email as email_cases
@@ -41,6 +42,7 @@ from nexus.application.ports import (
     ForwardingInboxes,
     ReceiptStore,
     SignInMailbox,
+    StatementPageReader,
 )
 from nexus.application.rate_store import StoredRates
 from nexus.application.research import NewsSource
@@ -125,6 +127,7 @@ class Overrides:
     weather: WeatherSource | None = None
     ideas: IdeaFinder | None = None
     lookup: WebLookup | None = None
+    statement_pages: StatementPageReader | None = None
 
 
 def _receipt_store(settings: Settings, overrides: Overrides) -> ReceiptStore | None:
@@ -211,6 +214,17 @@ async def _routes(
         http = await stack.enter_async_context(httpx.AsyncClient())
         source = GoogleRoutes(http, key.get_secret_value())
     return Routes(source, clock=clock)
+
+
+def _statement_pages(
+    settings: Settings, overrides: Overrides, models: ChatModels
+) -> StatementPageReader | None:
+    """Scanned statements are read by the photo model, without reasoning."""
+    if overrides.statement_pages is not None:
+        return overrides.statement_pages
+    if models.vision is None:
+        return None
+    return LlmStatementReader(build_screenshot_reader(settings, models.vision))
 
 
 async def _weather_source(overrides: Overrides, stack: AsyncExitStack) -> WeatherSource:
@@ -656,6 +670,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                         routes=await _routes(resolved, extra, stack, clock),
                         ideas=ideas,
                         weather=Weather(await _weather_source(extra, stack), clock=clock),
+                        scans=_statement_pages(resolved, extra, models),
                     )
                     menu = asyncio.create_task(_set_menu_button(telegram.client, origin))
                     stack.push_async_callback(_finish, menu)

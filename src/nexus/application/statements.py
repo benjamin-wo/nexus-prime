@@ -7,8 +7,10 @@ statement is filed as income, never as salary: payday and the usual salary are
 the user's to set.
 """
 
+import asyncio
 import csv
 import io
+import logging
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta
@@ -16,7 +18,12 @@ from enum import StrEnum
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
-from nexus.application.ports import LedgerQuery, LedgerRepository, UnitOfWork
+from nexus.application.ports import (
+    LedgerQuery,
+    LedgerRepository,
+    StatementPageReader,
+    UnitOfWork,
+)
 from nexus.application.transactions import NewTransaction, create_transaction, default_category
 from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.ledger import (
@@ -32,7 +39,7 @@ from nexus.domain.ledger import (
 )
 from nexus.domain.money import Money
 from nexus.domain.rules import best_rule
-from nexus.domain.statement_pdf import Kind, read_statement_lines
+from nexus.domain.statement_pdf import PAGE_BREAK, Kind, read_statement_lines
 from nexus.domain.statements import (
     DateOrder,
     Mapping,
@@ -301,6 +308,42 @@ async def forget_layout(uow: UnitOfWork, actor: UserId, mapping_id: UUID) -> Non
 PDF_LAYOUT = Mapping(date=0, description=(1,), amount=2, date_order=DateOrder.YMD)
 
 
+# A text PDF has hundreds of characters a page; a scan has none, or a stray header.
+SCANNED_CHARS_A_PAGE = 60
+PAGES_AT_ONCE = 4
+PAGE_SECONDS = 60
+
+log = logging.getLogger(__name__)
+
+
+def looks_scanned(lines: list[str], pages: int) -> bool:
+    """Whether a PDF is pictures of pages rather than text."""
+    text = sum(len(line) for line in lines if line != PAGE_BREAK)
+    return pages > 0 and text < SCANNED_CHARS_A_PAGE * pages
+
+
+async def read_scan(reader: StatementPageReader, pages: list[bytes]) -> list[str]:
+    """The text of each scanned page, in page order, a few pages at a time. Nothing is
+    logged: the text is the statement."""
+    gate = asyncio.Semaphore(PAGES_AT_ONCE)
+
+    async def one(page: bytes) -> list[str]:
+        async with gate:
+            return await asyncio.wait_for(reader.transcribe(page), PAGE_SECONDS)
+
+    try:
+        read = await asyncio.gather(*(one(page) for page in pages))
+    except Exception as exc:
+        log.warning("couldn't read a scanned statement: %s", type(exc).__name__)
+        raise InvalidInput("couldn't read that scan right now. Try again in a bit") from exc
+    lines: list[str] = []
+    for number, page in enumerate(read):
+        if number:
+            lines.append(PAGE_BREAK)
+        lines.extend(page)
+    return lines
+
+
 @dataclass(frozen=True, slots=True)
 class PdfRead:
     """A PDF statement's transactions as CSV, for the same preview and import."""
@@ -310,16 +353,20 @@ class PdfRead:
     statement_date: date | None
     rows: int
     reconciles: bool | None  # the rows add up to the statement's own totals
+    scanned: bool = False  # read from pictures of the pages
 
 
-def read_pdf(lines: list[str]) -> PdfRead:
-    """From the PDF's text lines; InvalidInput when it has no readable transactions
-    (a scan, or a layout this reader doesn't know)."""
+def read_pdf(lines: list[str], *, scanned: bool = False) -> PdfRead:
+    """From the PDF's text lines (or a scan's, as read); InvalidInput when it has no
+    readable transactions (a layout this reader doesn't know, or a scan too unclear)."""
     found = read_statement_lines(lines)
     if not found.rows:
         raise InvalidInput(
-            "couldn't find any transactions in that PDF. If it's a scan, your bank's CSV "
-            "export will work instead"
+            "couldn't find any transactions in that scan. A clearer scan, or your bank's "
+            "CSV export, will work instead"
+            if scanned
+            else "couldn't find any transactions in that PDF. Your bank's CSV export will "
+            "work instead"
         )
     out = io.StringIO()
     writer = csv.writer(out)
@@ -327,5 +374,10 @@ def read_pdf(lines: list[str]) -> PdfRead:
     for row in found.rows:
         writer.writerow([row.day.isoformat(), row.description, str(row.amount)])
     return PdfRead(
-        out.getvalue(), found.kind, found.statement_date, len(found.rows), found.reconciles
+        out.getvalue(),
+        found.kind,
+        found.statement_date,
+        len(found.rows),
+        found.reconciles,
+        scanned,
     )

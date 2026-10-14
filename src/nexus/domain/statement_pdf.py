@@ -54,6 +54,9 @@ _SKIP_DESCRIPTION = re.compile(
 )
 _REFERENCE = re.compile(r"^\s*(?:ref(?:erence)?\.?\s*(?:no\.?)?\s*:)", re.I)
 MAX_CONTINUATION = 2
+# Between two pages: nothing after it continues the row before it (a page's header
+# isn't the rest of the last description).
+PAGE_BREAK = "\f"
 
 
 class Kind(StrEnum):
@@ -177,6 +180,9 @@ def read_statement_lines(lines: list[str]) -> PdfStatement:
     last: _Candidate | None = None
     continued = 0
     for n, line in enumerate(lines):
+        if line == PAGE_BREAK:
+            last = None
+            continue
         if _OPENING.match(line):
             if (value := _balance_on(line)) is not None:
                 openings.append(value)
