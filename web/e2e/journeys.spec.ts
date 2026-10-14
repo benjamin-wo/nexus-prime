@@ -1533,7 +1533,8 @@ test("the itinerary goes a day at a time: swipe, pick a day, drop a plan on anot
   const pill4 = pills.getByRole("button", { name: /13/ });
   await pill4.evaluate((el) => el.parentElement!.scrollTo({ left: (el as HTMLElement).offsetLeft }));
   const grip = page.getByRole("button", { name: "Drag Old Temple" });
-  await grip.scrollIntoViewIfNeeded();
+  // Mid-screen, clear of the bottom navigation (the day strip stays pinned above).
+  await grip.evaluate((el) => el.scrollIntoView({ block: "center" }));
   // Both still, and both on screen.
   let last = "";
   await expect.poll(async () => {
@@ -1881,4 +1882,27 @@ test("cards rise into view and figures count up, unless less motion is asked for
   await expect(spend.locator(".figure-value")).toHaveText("SGD 37.40");
   await expect(spend).not.toHaveAttribute("data-reveal", /.*/);
   await expect(page.locator(".ribbon-main")).toHaveCSS("animation-name", "none");
+});
+
+test("on a phone each section runs the full width of the screen; on a desktop it's a rounded card", async ({ page }, info) => {
+  await fakeApi(page);
+  await page.goto("/accounting");
+  const section = page.getByRole("region", { name: "Where it went" });
+  await expect(section).toBeVisible();
+  const box = (await section.boundingBox())!;
+  const width = page.viewportSize()!.width;
+  const radius = await section.evaluate((el) => getComputedStyle(el).borderTopLeftRadius);
+  if (info.project.name === "mobile") {
+    expect(box.x).toBe(0);
+    expect(Math.round(box.x + box.width)).toBe(width);
+    expect(radius).toBe("0px");
+    // Tiles side by side still have a gap between them.
+    const [spent, received] = await page.locator(".tiles > .tile").all();
+    const a = (await spent.boundingBox())!;
+    const b = (await received.boundingBox())!;
+    expect(b.x).toBeGreaterThan(a.x + a.width);
+  } else {
+    expect(box.x).toBeGreaterThan(0);
+    expect(radius).not.toBe("0px");
+  }
 });

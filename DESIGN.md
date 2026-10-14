@@ -111,7 +111,7 @@ All spacing derives from a 4px base unit.
 
 ### Radius and surfaces (theme v2)
 
-- Cards 20px (18px on phones), inner tiles and controls 12px, pills fully round.
+- Cards 20px, inner tiles and controls 12px, pills fully round. On phones each section runs the full width of the screen, square-ended with no side borders; boxes inside a section keep their corners, and tiles side by side keep the gap between them.
 - Buttons are filled: primary orange with dark text, secondary `--bg-raised`; no outlines.
 - Department tabs are a rounded segmented control; they wrap on phones rather than scroll.
 - Page padding 40px 48px on desktop, 16px on phones.
