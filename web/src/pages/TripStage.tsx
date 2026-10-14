@@ -51,7 +51,7 @@ export function StillToSort({ detail, onFix, quiet = false }: { detail: TripDeta
   }
   return (
     <section className="card to-sort" aria-labelledby="to-sort">
-      <h2 id="to-sort" className="eyebrow">
+      <h2 id="to-sort">
         Still to sort · {items.length}
       </h2>
       <ul className="to-sort-list">
@@ -78,7 +78,7 @@ export function MoneyBar({ detail, onOpen }: { detail: TripDetail; onOpen: () =>
   return (
     <section className="card money-bar" aria-labelledby="money-bar">
       <div className="money-bar-head">
-        <h2 id="money-bar" className="eyebrow">
+        <h2 id="money-bar">
           Money
         </h2>
         <button type="button" className="btn btn-ghost btn-small" onClick={onOpen}>
@@ -113,7 +113,7 @@ export function SpendingNow({ detail }: { detail: TripDetail }) {
   const over = (s.percent ?? 0) > 100;
   return (
     <section className="card spending-now" aria-labelledby="spending-now">
-      <h2 id="spending-now" className="eyebrow">
+      <h2 id="spending-now">
         Spent so far
       </h2>
       <p className="money-bar-figure">
@@ -150,7 +150,7 @@ export function TripTotals({ detail }: { detail: TripDetail }) {
   const cats = [...s.categories].sort((a, b) => amount(b.spent) - amount(a.spent));
   return (
     <section className="card trip-totals" aria-labelledby="trip-totals">
-      <h2 id="trip-totals" className="eyebrow">
+      <h2 id="trip-totals">
         The trip in numbers
       </h2>
       <p className="money-bar-figure">

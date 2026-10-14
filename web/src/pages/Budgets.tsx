@@ -154,7 +154,7 @@ export function BudgetsSection({ me }: { me: Me }) {
 
   const taken = new Set(budgets.data?.map((b) => b.category_id ?? "overall"));
   const options = [
-    ...(taken.has("overall") ? [] : [{ value: "overall", label: "Overall (all spending)" }]),
+    ...(taken.has("overall") ? [] : [{ value: "overall", label: "All spending" }]),
     ...(categories.data ?? []).filter((c) => !taken.has(c.id)).map((c) => ({ value: c.id, label: c.name })),
   ];
   const chosen = target && options.some((o) => o.value === target) ? target : (options[0]?.value ?? "");

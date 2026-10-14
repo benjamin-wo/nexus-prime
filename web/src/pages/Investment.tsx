@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { api, type Dividends, type Holding, type HoldingsDraft, type Portfolio, type PortfolioTotals, type TradeRecord } from "../api";
 import { formatChange, formatMoney, formatPercent, formatShortDate } from "../format";
 import { base64 } from "../files";
+import { Foldaway } from "../components/Foldaway";
 
 const shares = (quantity: string) => Number(quantity).toLocaleString("en-US", { maximumFractionDigits: 8 });
 
@@ -152,7 +153,7 @@ function Trades({ onChanged }: { onChanged: () => void }) {
         <h2 id="trades">Trades</h2>
         <span className="caption">What you bought and sold at your broker. Sales show what they locked in at your average cost.</span>
       </div>
-      {list.length === 0 && !trades.isLoading && <p className="state">No trades recorded yet. Record one below or tell the bot ("sold 5 AAPL at 230").</p>}
+      {list.length === 0 && !trades.isLoading && <p className="state">No trades recorded yet. Tell the bot ("sold 5 AAPL at 230") or record one here.</p>}
       {list.length > 0 && (
         <ul className="feed" aria-label="Trade history">
           {list.map((t) => (
@@ -176,34 +177,36 @@ function Trades({ onChanged }: { onChanged: () => void }) {
           ))}
         </ul>
       )}
-      <form className="quick add-holding" onSubmit={record} aria-label="Record a trade">
-        <label className="field">
-          Side
-          <select className="input" value={form.side} onChange={set("side")}>
-            <option value="buy">Bought</option>
-            <option value="sell">Sold</option>
-          </select>
-        </label>
-        <label className="field">
-          Ticker
-          <input className="input" value={form.symbol} maxLength={10} onChange={set("symbol")} required />
-        </label>
-        <label className="field">
-          Shares
-          <input className="input" inputMode="decimal" value={form.quantity} onChange={set("quantity")} required />
-        </label>
-        <label className="field">
-          Price (USD)
-          <input className="input" inputMode="decimal" value={form.price} onChange={set("price")} required={form.side === "buy"} />
-        </label>
-        <label className="field">
-          Date
-          <input className="input" type="date" value={form.day} onChange={set("day")} />
-        </label>
-        <button type="submit" className="btn">
-          Record
-        </button>
-      </form>
+      <Foldaway label="Record a trade">
+        <form className="quick add-holding" onSubmit={record} aria-label="Record a trade">
+          <label className="field">
+            Side
+            <select className="input" value={form.side} onChange={set("side")}>
+              <option value="buy">Bought</option>
+              <option value="sell">Sold</option>
+            </select>
+          </label>
+          <label className="field">
+            Ticker
+            <input className="input" value={form.symbol} maxLength={10} onChange={set("symbol")} required />
+          </label>
+          <label className="field">
+            Shares
+            <input className="input" inputMode="decimal" value={form.quantity} onChange={set("quantity")} required />
+          </label>
+          <label className="field">
+            Price (USD)
+            <input className="input" inputMode="decimal" value={form.price} onChange={set("price")} required={form.side === "buy"} />
+          </label>
+          <label className="field">
+            Date
+            <input className="input" type="date" value={form.day} onChange={set("day")} />
+          </label>
+          <button type="submit" className="btn">
+            Record
+          </button>
+        </form>
+      </Foldaway>
       {error && (
         <p className="error-text" role="alert">
           {error}
@@ -457,8 +460,7 @@ export function InvestmentPage() {
         {portfolio.isLoading && <p className="state">Loading…</p>}
         {portfolio.data && holdings.length === 0 && (
           <p className="state">
-            No holdings yet. Upload a screenshot of your broker's Portfolio screen (IBKR first), send it to the bot, or
-            add one below.
+            No holdings yet. Upload a screenshot of your broker's Portfolio screen (IBKR first), or send it to the bot.
           </p>
         )}
         {holdings.length > 0 && (
@@ -483,21 +485,23 @@ export function InvestmentPage() {
             </table>
           </div>
         )}
-        <form className="quick add-holding" onSubmit={add} aria-label="Add a holding">
-          <label className="field">
-            Ticker
-            <input className="input" value={adding.symbol} maxLength={10} onChange={(e) => setAdding({ ...adding, symbol: e.target.value })} required />
-          </label>
-          <label className="field">
-            Shares
-            <input className="input" inputMode="decimal" value={adding.quantity} onChange={(e) => setAdding({ ...adding, quantity: e.target.value })} required />
-          </label>
-          <label className="field">
-            Avg cost (USD)
-            <input className="input" inputMode="decimal" value={adding.cost} onChange={(e) => setAdding({ ...adding, cost: e.target.value })} required />
-          </label>
-          <button type="submit" className="btn">Add</button>
-        </form>
+        <Foldaway label="Add one by hand">
+          <form className="quick add-holding" onSubmit={add} aria-label="Add a holding">
+            <label className="field">
+              Ticker
+              <input className="input" value={adding.symbol} maxLength={10} onChange={(e) => setAdding({ ...adding, symbol: e.target.value })} required />
+            </label>
+            <label className="field">
+              Shares
+              <input className="input" inputMode="decimal" value={adding.quantity} onChange={(e) => setAdding({ ...adding, quantity: e.target.value })} required />
+            </label>
+            <label className="field">
+              Avg cost (USD)
+              <input className="input" inputMode="decimal" value={adding.cost} onChange={(e) => setAdding({ ...adding, cost: e.target.value })} required />
+            </label>
+            <button type="submit" className="btn">Add</button>
+          </form>
+        </Foldaway>
       </section>
       <DividendsCard />
       <Trades onChanged={refresh} />

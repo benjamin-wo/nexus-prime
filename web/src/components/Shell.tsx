@@ -1,35 +1,90 @@
-import { type ReactNode, useRef } from "react";
-import { NavLink, useLocation } from "react-router-dom";
+import { type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 
 import type { Me } from "../api";
 import { DEPARTMENTS, departmentFor } from "../departments";
 import { useReveal } from "../motion";
 import { Icon, departmentIcon } from "./Icon";
+import { withMiniApp } from "../telegram";
 import { InviteButton } from "./InviteButton";
-import { Ribbons } from "./Ribbons";
 
-function CogIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
-      <circle cx="12" cy="12" r="3" />
-      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-    </svg>
+/** True while the page is being scrolled down (past its top, short of its end):
+ * the floating buttons step aside then, so they never sit on what's being read,
+ * and come back on the way up or at the end of the page. */
+function useScrollingDown(area: RefObject<HTMLElement | null>, page: string): boolean {
+  const [down, setDown] = useState(false);
+  useEffect(() => {
+    const el = area.current;
+    setDown(false);
+    if (!el) return;
+    let last = el.scrollTop;
+    const onScroll = () => {
+      const top = el.scrollTop;
+      const atEnd = top + el.clientHeight >= el.scrollHeight - 24;
+      if (atEnd || top < 80 || top < last - 6) setDown(false);
+      else if (top > last + 6) setDown(true);
+      if (Math.abs(top - last) > 6 || atEnd) last = top;
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [area, page]);
+  return down;
+}
+
+/** A page inside a section (a trip, a stock, a plan) and where "back" goes when
+ * there's no earlier page to return to. */
+const DETAIL: [RegExp, string][] = [
+  [/^\/travel\/(trips|research)\/./, "/travel"],
+  [/^\/investment\/stocks\/./, "/investment/watchlist"],
+  [/^\/investment\/plans\/./, "/investment/plans"],
+  [/^\/accounting\/import/, "/accounting/ledger"],
+];
+
+/** In Telegram, its own back button (top left) on a page inside a section. */
+function useTelegramBack(pathname: string, first: boolean) {
+  const navigate = useNavigate();
+  const parent = DETAIL.find(([pattern]) => pattern.test(pathname))?.[1];
+  useEffect(() => {
+    let undo = () => {};
+    const stop = withMiniApp((app) => {
+      const back = app.BackButton;
+      if (!back) return;
+      if (!parent) {
+        back.hide();
+        return;
+      }
+      const go = () => (first ? navigate(parent) : navigate(-1));
+      back.onClick(go);
+      back.show();
+      undo = () => back.offClick(go);
+    });
+    return () => {
+      stop();
+      undo();
+    };
+  }, [parent, first, navigate]);
+}
+
+/** Telegram's header (and the bar under the app) in the page's own colour: the
+ * hero's orange on Home, the page colour elsewhere. */
+const SHELL_BG = "#f4f1ec";
+const HERO_TOP = "#e4570f";
+const BAR_BG = "#12100e";
+function useTelegramColours(home: boolean) {
+  useEffect(
+    () =>
+      withMiniApp((app) => {
+        app.setHeaderColor?.(home ? HERO_TOP : SHELL_BG);
+        app.setBackgroundColor?.(SHELL_BG);
+        app.setBottomBarColor?.(BAR_BG);
+      }),
+    [home],
   );
 }
 
-function ChatIcon() {
-  return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
-      <path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.8 8.8 0 0 1-3.9-.9L3 20.5l1.5-4.6A8.1 8.1 0 0 1 3.5 11.5 8.5 8.5 0 0 1 12 3a8.5 8.5 0 0 1 9 8.5z" />
-    </svg>
-  );
-}
-
-/** The front desk (Home), a switcher for the departments behind it, and Settings:
- * a rail on wide screens and a bottom bar on phones. A department's own pages are
- * tabs along the top of its section. */
+/** The front desk (Home), a switcher for the departments behind it, Settings and
+ * Nexus: a rail on wide screens; on phones a dark bottom bar with Nexus in the
+ * middle. A department's own pages are tabs along the top of its section. */
 export function Shell({
   me,
   onOpenChat,
@@ -41,8 +96,13 @@ export function Shell({
   onLogout: () => void;
   children: ReactNode;
 }) {
-  const here = departmentFor(useLocation().pathname);
+  const { pathname, key } = useLocation();
+  useTelegramBack(pathname, key === "default");
+  useTelegramColours(pathname === "/");
+  const here = departmentFor(pathname);
   const content = useRef<HTMLDivElement>(null);
+  const viewport = useRef<HTMLElement>(null);
+  const scrolling = useScrollingDown(viewport, pathname);
   useReveal(content);
   const links = [
     <NavLink key="home" to="/" end className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
@@ -61,18 +121,21 @@ export function Shell({
     )),
   ];
   const settings = (
-    <NavLink
-      to="/settings"
-      aria-label="Settings"
-      title="Settings"
-      className={({ isActive }) => `nav-link nav-icon${isActive ? " active" : ""}`}
-    >
-      <CogIcon />
+    <NavLink to="/settings" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
+      <span className="nav-glyph" aria-hidden="true">
+        <Icon name="settings" />
+      </span>
+      <span className="nav-label">Settings</span>
     </NavLink>
   );
+  const nexus = (where: string) => (
+    <button type="button" className={`nexus-button ${where}`} aria-label="Ask Nexus" title="Ask Nexus" onClick={onOpenChat}>
+      <Icon name="sparkle" size={22} />
+      {where === "in-rail" && <span>Ask Nexus</span>}
+    </button>
+  );
   return (
-    <div className="shell">
-      <Ribbons />
+    <div className={`shell${scrolling ? " scrolling-down" : ""}`}>
       <nav className="rail" aria-label="Main">
         <div className="brand">
           <span className="brand-mark" aria-hidden="true">
@@ -87,13 +150,14 @@ export function Shell({
         </div>
         {links}
         {settings}
+        {nexus("in-rail")}
         <div className="spacer" />
         {me.user.role === "owner" && <InviteButton />}
         <button type="button" className="btn btn-ghost" onClick={onLogout}>
           Sign out
         </button>
       </nav>
-      <main className="main-viewport">
+      <main className="main-viewport" ref={viewport}>
         <div className="content" ref={content}>
           {/* One tab is no choice: only show the bar when there are two or more. */}
           {here && here.tabs.length > 1 && (
@@ -113,14 +177,13 @@ export function Shell({
           {children}
         </div>
       </main>
+      {/* Home and Accounting, Nexus in the middle, then Investment and Travel. Settings
+          is on Home (top right). */}
       <nav className="bottom-nav" aria-label="Main (mobile)">
-        {links}
-        {settings}
+        {links.slice(0, 2)}
+        {nexus("in-bar")}
+        {links.slice(2)}
       </nav>
-      {/* Chat floats over every page, clear of the tabs. */}
-      <button type="button" className="chat-fab" aria-label="Open chat" title="Chat" onClick={onOpenChat}>
-        <ChatIcon />
-      </button>
     </div>
   );
 }

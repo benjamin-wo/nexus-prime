@@ -25,7 +25,7 @@ export const DEPARTMENTS: DepartmentView[] = [
       { to: "/accounting/plan", label: "Plan" },
       { to: "/accounting/cashflow", label: "Cash flow" },
       { to: "/accounting/email", label: "Email" },
-      { to: "/accounting/import", label: "Import" },
+      // Import is a one-off task, reached from the Ledger ("Import statement").
     ],
   },
   {

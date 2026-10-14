@@ -20,6 +20,24 @@ function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
+/** How this month stands, in words: against the overall budget if there is one,
+ * else against last month by the same date. ``good`` when it's the better side. */
+export function standing({ spent, overall, lastMonthToDate }: BriefInput): { text: string; good: boolean } | null {
+  if (!spent) return null;
+  const now = Number(spent.amount);
+  if (overall) {
+    const left = Number(overall.limit.amount) - now;
+    return { text: `${money(Math.abs(left), spent.currency)} ${left >= 0 ? "left in your budget" : "over your budget"}`, good: left >= 0 };
+  }
+  if (!lastMonthToDate) return null;
+  const diff = now - Number(lastMonthToDate.amount);
+  if (diff === 0) return { text: "The same as by this time last month", good: true };
+  return {
+    text: `${money(Math.abs(diff), spent.currency)} ${diff < 0 ? "less" : "more"} than by this time last month`,
+    good: diff < 0,
+  };
+}
+
 /** Home's opening lines, written in code from the user's own figures: this month's
  * spending against the budget (or last month), the next trip, and what needs them.
  * Nothing here is a model's words, so every figure is the app's own. */
