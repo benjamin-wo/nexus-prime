@@ -348,6 +348,16 @@ Logs are JSON lines with their real level: uvicorn's start and stop lines are pr
 
 The summary gives turn counts and times, model calls by model, tool, job and request counts, outside calls by host, the database's size and OpenRouter credit left. The owner can read it signed in; a script reads it with `Authorization: Bearer <OPS_TOKEN>` (unset: no token works). Anyone else gets a 404.
 
+**Tickets.** With `OPS_GITHUB_TOKEN` and `OPS_GITHUB_REPO` (`owner/name`) set, the `ops.tickets` job runs every 6 hours (and `POST /api/ops/tickets` runs it now, for the owner or the ops token). It builds the report for the last `OPS_TICKET_HOURS` (default 72) and keeps one GitHub issue per problem at `OPS_TICKET_SEVERITY` (default `medium`) or worse, labelled `ops`, `ops:<severity>` and `area:<area>`, titled with the problem's stable topic ("[ops] Calls to api.frankfurter.app fail"). The problem's id is hidden in the issue (`<!-- ops-id: ... -->`), so each run finds its own issues:
+
+- a new problem opens an issue: its counts, users touched, first and last seen, a link to the line of code, traces to search the logs with, a hint, and steps to fix it;
+- a known one has its issue edited when anything but the window changed (edits notify nobody);
+- one that comes back after its issue was closed as completed reopens it, with a comment;
+- an open issue whose problem is gone from the whole window is closed, with a comment;
+- an issue closed as "not planned" is left closed, however often it happens.
+
+Issues hold only what the report holds, so they're safe in a public repository. The token needs only Issues read and write on that one repository (a fine-grained personal access token). Issue titles are stable, so a fix PR says "Fixes #N" and the issue closes on merge; if the problem recurs, the job reopens it.
+
 ## Evaluating the assistant
 
 `src/nexus/evals` scores models on how well the assistant does what users mean. About 100 made-up requests (logging, clarifying questions, income, questions about money, edits, planning, categories, safety, follow-ups and memory) each start from the same seeded user: two months of invented Singapore spending, a split dinner, a budget, bills, a pay schedule, a rule and a subscription, with "now" fixed at Monday 28 September 2026, 2pm. The real agent (kernel, graph, tools and confirmations, which are approved unless a case says otherwise) handles each case, and grading checks the tool calls, confirmations, replies and the data afterwards. Cases the current assistant can't do yet name the M8 part expected to fix them.
