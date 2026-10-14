@@ -1386,9 +1386,7 @@ function Sections({ detail, onChange }: { detail: TripDetail; onChange: () => vo
   return (
     <details id="section-place" className="card section" open>
       <summary>
-        <h2>
-          <span aria-hidden="true">📍</span> Places to visit
-        </h2>
+        <h2>Places to visit</h2>
         <span className="caption">{all.length || "None yet"}</span>
       </summary>
       {lists.length > 1 && (

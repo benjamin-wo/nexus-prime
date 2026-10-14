@@ -707,7 +707,9 @@ test("home is the front desk: what needs you, what's running, and each departmen
   const months = page.getByRole("list", { name: "Spending by month" });
   await expect(months.getByRole("listitem")).toHaveCount(6);
   await expect(months.getByRole("listitem").last()).toContainText("Sep so far");
-  await expect(page.getByText("Against last month")).toBeVisible();
+  // A usual month, rather than the brief's comparison again.
+  await expect(page.getByText("A usual month")).toBeVisible();
+  await expect(page.getByText("Against last month")).toHaveCount(0);
   await expect(page.getByText("Biggest category")).toBeVisible();
   await expect(page.getByRole("region", { name: "Budgets this month" })).toContainText("No budgets yet");
 });
@@ -791,7 +793,11 @@ test("a sale is recorded with what it locked in, and dividends are expected", as
 
   const trades = page.getByRole("region", { name: "Trades" });
   await expect(trades).toContainText("No trades recorded yet");
+  // Kept out of the way until asked for.
+  await expect(trades.getByRole("form", { name: "Record a trade" })).toHaveCount(0);
+  await trades.getByRole("button", { name: "Record a trade" }).click();
   const form = trades.getByRole("form", { name: "Record a trade" });
+  await expect(form.getByLabel("Side")).toBeFocused();
   await form.getByLabel("Side").selectOption("sell");
   await form.getByLabel("Ticker").fill("NVDA");
   await form.getByLabel("Shares").fill("4");

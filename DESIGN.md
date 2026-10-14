@@ -118,7 +118,10 @@ All spacing derives from a 4px base unit.
 - The ribbons are atmosphere: dimmed, behind near-solid cards, so no figure sits on a bright strand.
 - In Telegram the app behaves natively: Telegram's back button on a page inside a section (a trip, a stock, a plan, Import), a light haptic tap on the main button and a tick when changing tab or day, the header and bottom bar in the shell colour, and no swipe-to-close while scrolling. Every tab in the bottom bar has a label, Settings included.
 - Floating buttons: one per page. On phones they step aside while the page scrolls down and come back on the way up. A trip's page uses its own + (and "Ask Nexus about this trip") instead of the chat bubble.
-- An amount never breaks inside its figure: tile figures size to their box and wrap, if they must, between the currency and the number. Differences are said in words ("less than by this date"), not with a minus sign in green.
+- An amount never breaks inside its figure: tile figures size to their box and wrap, if they must, between the currency and the number. Differences are said in words, not with a minus sign in green.
+- Say a figure once per screen: Home's brief gives this month against last, so its tiles add what the brief doesn't (a usual month, the biggest category).
+- Empty sections are one short line, left-aligned, with one action; a secondary way in (adding a holding by hand, recording a trade) stays behind a small button until asked for.
+- One heading style: sentence case, no emoji. Small capitals (eyebrow) are only for labels inside a section.
 - Page padding 40px 48px on desktop, 16px on phones; on phones every section's text starts 16px in too, so it lines up with the page title.
 - On phones a page's actions sit under its title and share the width (a primary action gets its own row); a section's note sits under its heading; form buttons fill the row.
 

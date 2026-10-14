@@ -19,9 +19,7 @@ export function Settings() {
         <UpdatesSection />
         <MemorySection />
       </div>
-      <h2 className="section-title">
-        <span aria-hidden="true">🧾</span> Accounting
-      </h2>
+      <h2 className="section-title">Accounting</h2>
       <div className="plan-grid">
         <EmailCard />
         <CategoriesSection />

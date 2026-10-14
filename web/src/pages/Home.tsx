@@ -262,10 +262,12 @@ function SpendingCard({
   overall?: Budget;
 }) {
   const now = spending?.months.at(-1);
-  const diff =
-    now && spending
-      ? Number(now.spent.amount) - Number(spending.last_month_to_date.amount)
-      : null;
+  // A usual month, from the full months before this one (the brief already says
+  // how this month compares with the last).
+  const past = spending?.months.filter((m) => !m.to_date && Number(m.spent.amount) > 0) ?? [];
+  const usual = past.length
+    ? past.reduce((sum, m) => sum + Number(m.spent.amount), 0) / past.length
+    : null;
   const top = summary?.by_category[0];
   const spentTotal = summary?.totals.find((t) => t.direction === "out");
   const share =
@@ -312,22 +314,18 @@ function SpendingCard({
           </div>
         )}
         <div className="mini-tile">
-          <span className="caption">Against last month</span>
-          <span
-            className={`mini-value${diff !== null && diff < 0 ? " good" : ""}`}
-          >
-            {diff === null || !now
+          <span className="caption">A usual month</span>
+          <span className="mini-value">
+            {!now
               ? "…"
-              : formatMoney({
-                  amount: String(Math.abs(diff)),
-                  currency: now.spent.currency,
-                })}
+              : usual === null
+                ? "Not yet"
+                : formatMoney({ amount: usual.toFixed(2), currency: now.spent.currency })}
           </span>
-          {/* Said in words: a minus sign in green reads two ways. */}
           <span className="caption">
-            {diff !== null && diff <= 0
-              ? "Less than by this date"
-              : "More than by this date"}
+            {usual === null
+              ? "Needs a full month"
+              : `Average of the last ${past.length === 1 ? "month" : `${past.length} months`}`}
           </span>
         </div>
         <div className="mini-tile">

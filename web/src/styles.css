@@ -283,7 +283,8 @@ table.ledger { width: 100%; border-collapse: collapse; }
 .amount-in { color: var(--emerald-accent); }
 .bulkbar { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3); }
 .pager { display: flex; justify-content: space-between; align-items: center; margin-top: var(--space-4); }
-.state { padding: var(--space-8) var(--space-4); text-align: center; color: var(--text-secondary); }
+.state { margin: 0; padding: var(--space-2) 0 var(--space-4); color: var(--text-secondary); }
+.foldaway { justify-self: start; }
 
 /* --- sheets, drawer, toast --- */
 .backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55); display: grid; place-items: center; z-index: 20; animation: fade var(--t-standard); }
@@ -412,6 +413,9 @@ table.ledger { width: 100%; border-collapse: collapse; }
 }
 @media (max-width: 359px) {
   .filters .tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* The smallest phones: the tabs tighten (and may shorten) rather than scroll. */
+  .dept-tabs { gap: 2px; }
+  .dept-tab { flex: 1 1 auto; min-width: 0; padding: 0 4px; font-size: 0.8125rem; overflow: hidden; text-overflow: ellipsis; }
 }
 @keyframes sheet-up { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
