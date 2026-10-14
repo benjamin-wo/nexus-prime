@@ -27,7 +27,7 @@ export function LoginPage() {
     <div className="login">
       <section className="card">
         <h1>
-          Nexus <span style={{ color: "var(--orange-primary)" }}>Prime</span>
+          Nexus <span style={{ color: "var(--accent)" }}>Prime</span>
         </h1>
         <p className="secondary">
           {token

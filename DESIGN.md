@@ -2,55 +2,58 @@
 
 ## 1. Atmosphere & Identity
 
-Nexus Prime is a focused financial command center: light, warm, and quick to scan. Home
-opens on a solid orange hero (the month's one big figure and Nexus's brief, not in a
-card) that fades into a warm off-white page; every other segment is its own white card,
-its title above it. Orange is the action signal; emerald marks money in, and amber marks
-attention or pending work. The bottom bar is near-black with Nexus in its middle.
+Nexus Prime is a focused financial command center: light, cool, and quick to scan. Its
+palette is True Summer: muted blues on an icy off-white page. Home opens on an indigo hero
+(the month's one big figure and Nexus's brief, not in a card) that fades into the page;
+every other segment is its own white card, its title above it. Indigo is the action
+signal; emerald marks money in, amber attention or pending work, rose a budget gone over.
+The bottom bar is deep slate with Nexus in its middle.
 
 ## 2. Color
 
 ### Palette
 
-| Role | Token | Light | Usage |
+| Role | Token | Value | Usage |
 |------|-------|-------|-------|
-| Surface/primary | --bg-shell | #f4f1ec | Page background (warm off-white) |
+| Surface/primary | --bg-shell | #f1f4f8 | Page background (icy off-white) |
 | Surface/secondary | --bg-frame | #ffffff | The rail, the chat panel |
 | Surface/elevated | --bg-card | #ffffff | Cards, tables, sheets |
-| Surface/interactive | --bg-card-hover | #f7f4f0 | Hovered controls and rows; tiles inside a card |
-| Input surface | --bg-input | #f6f3ef | Form controls |
-| Text/primary | --text-primary | #1c1917 | Main content |
-| Text/strong | --text-white | #0c0a09 | Headings and emphasis (white on the hero and photos) |
-| Text/secondary | --text-secondary | #57534e | Supporting content |
-| Text/tertiary | --text-muted | #6f6862 | Metadata and hints (4.9:1 on the page, 5.5:1 on cards) |
-| Border/default | --border-card | #ebe5de | Card and table boundaries |
-| Border/subtle | --border-subtle | #efeae4 | Rails and dividers |
-| Accent/primary | --orange-primary | #f97316 | Primary actions (dark text on it) and money out |
-| Accent/hover | --orange-hover | #ea580c | Primary hover state |
-| Accent/soft | --orange-soft | rgba(249,115,22,0.12) | Money-out surfaces |
-| Accent/border | --orange-border | rgba(249,115,22,0.35) | Money-out control edge |
+| Surface/interactive | --bg-card-hover | #f5f7fb | Hovered controls and rows; tiles inside a card |
+| Input surface | --bg-input | #f3f6fa | Form controls |
+| Text/primary | --text-primary | #1b2333 | Main content (deep slate) |
+| Text/strong | --text-white | #0f1522 | Headings and emphasis (white on the hero and photos) |
+| Text/secondary | --text-secondary | #4d5e80 | Supporting content (slate; 5.9:1 on the page) |
+| Text/tertiary | --text-muted | #5f6b85 | Metadata and hints (4.9:1 on the page, 5.4:1 on cards) |
+| Border/default | --border-card | #e1e7ef | Card and table boundaries |
+| Border/subtle | --border-subtle | #e8edf3 | Rails and dividers |
+| Accent | --accent | #3e52b6 | Primary actions (white text, 6.8:1) and money out |
+| Accent/hover | --accent-hover | #34469d | Primary hover state |
+| Accent/soft | --accent-soft | rgba(62,82,182,0.10) | Money-out surfaces, pills |
+| Accent/border | --accent-border | rgba(62,82,182,0.30) | Focus rings, money-out control edge |
+| Accent/text | --accent-text | #3e52b6 | Accent words on light surfaces (pills, the current month) |
+| Accent/glow | --accent-glow | #d8e7ed | Soft icy fills |
 | Status/success | --emerald-accent | #047857 | Money in and completed states |
 | Status/success-soft | --emerald-soft | rgba(5,150,105,0.12) | Money-in surfaces |
 | Status/success-border | --emerald-border | rgba(5,150,105,0.35) | Money-in control edge |
 | Status/warning | --status-warning | #b45309 | Pending and attention states |
 | Status/warning-soft | --status-warning-soft | rgba(245,158,11,0.12) | Pending surfaces |
 | Status/warning-border | --status-warning-border | rgba(217,119,6,0.35) | Pending control edge |
-| Status/error | --rose-accent | #e11d48 | Destructive actions and errors |
-| Status/info | --cyan-accent | #0891b2 | Informational accents |
-| Surface/raised | --bg-raised | #f1ece6 | Secondary buttons, icon tiles inside cards |
-| Accent/text | --orange-text | #c2410c | Orange words on light surfaces (pills, the current month) |
-| Accent/glow | --orange-glow | #fed7aa | Soft orange fills |
-| Chart/second | --sky-accent | #0284c7 | A second chart series |
+| Status/error | --rose-accent | #c0365c | Errors, deleting, a month over budget |
+| Status/info | --cyan-accent | #4a93a3 | Informational accents, links to receipts |
+| Surface/raised | --bg-raised | #e9eef5 | Secondary buttons, icon tiles inside cards |
+| Chart/second | --sky-accent | #73b5d9 | A second chart series |
 | Surface/glass | --bg-glass | #ffffff | Cards |
-| Hero/top | --hero-top | #e4570f | Home hero, top (and Telegram's header on Home) |
-| Hero/mid | --hero-mid | #ec6a1e | Home hero, where it starts to fade into the page |
-| Bar/background | --bar-bg | #12100e | The phone's bottom bar |
-| Bar/text | --bar-text | #a8a29e | Bottom bar icons (white when active) |
+| Hero/top | --hero-top | #3e52b6 | Home hero, top (and Telegram's header on Home) |
+| Hero/mid | --hero-mid | #6370c5 | Home hero before it fades into the page (white text 4.5:1) |
+| Bar/background | --bar-bg | #1b2333 | The phone's bottom bar |
+| Bar/text | --bar-text | #9ca8b8 | Bottom bar icons (white when active) |
+
+The palette itself (True Summer), for charts and swatches: `--pal-slate` #4d5e80, `--pal-teal` #4a93a3, `--pal-sage` #6796a2, `--pal-sky` #73b5d9, `--pal-cornflower` #92b0d9, `--pal-iris` #6370c5, `--pal-mist` #bbcdde, `--pal-indigo` #3e52b6; accents `--pal-icy` #d8e7ed, `--pal-periwinkle` #9ca8b8, `--pal-dusty-pink` #e4d8da. Category swatches go indigo, sky, iris, teal, then mist for the rest; past months are mist.
 
 ### Rules
 
-- One theme: warm off-white page, white cards, near-black text, orange for actions and the Home hero; do not introduce a second visual theme.
-- Light text sits only on the hero's orange (with a faint shadow; about 3.2–3.7:1, so keep it 15px+ and medium weight) and on photos (under a dark fade).
+- One theme: icy off-white page, white cards, deep slate text, indigo for actions and the Home hero; do not introduce a second visual theme.
+- Light text sits only on the hero (4.5–6.8:1) and on photos (under a dark fade).
 - Accent colors communicate action or transaction direction, not decoration.
 - New colors must be added here before they are used in CSS.
 
@@ -117,17 +120,17 @@ All spacing derives from a 4px base unit.
 ### Radius and surfaces (theme v2)
 
 - Cards 20px (18px on phones), inner tiles and controls 12px, pills fully round. Every segment is its own white card with a soft shadow and room either side; where it helps scanning (Home, the Accounting overview) the title sits above the card, with its action (Details, Open, See all, Edit) on the right.
-- Home's overview is not a card: a hero on solid orange (full-bleed at the top on phones, fading into the page; a rounded panel on desktop) with the day and greeting, this month's spending as the one big figure with an arrow, how it stands in words, the brief, one-tap questions and the ask box, plus round buttons for Log expense and Settings.
-- Buttons are filled: primary orange with dark text, secondary `--bg-raised`; no outlines.
+- Home's overview is not a card: a hero on solid indigo (full-bleed at the top on phones, fading into the page; a rounded panel on desktop) with the day and greeting, this month's spending as the one big figure with an arrow, how it stands in words, the brief, one-tap questions and the ask box, plus round buttons for Log expense and Settings.
+- Buttons are filled: primary indigo with white text, secondary `--bg-raised`; no outlines.
 - Department tabs are a rounded segmented control on one row, sharing the width on phones; keep a department to five tabs or fewer (one-off tasks like Import are reached from the page that needs them).
-- Orange is for actions (the main button, the active tab, today) and status, not decoration: figures in the brief are white and bold, links in text keep the text's colour with an underline, and a section's heading actions (Details, Open, See all, Edit) are all small buttons.
-- In Telegram the app behaves natively: Telegram's back button on a page inside a section (a trip, a stock, a plan, Import), a light haptic tap on the main button and a tick when changing tab or day, Telegram's header in the hero's orange on Home and the page colour elsewhere, its bottom bar near-black like ours, and no swipe-to-close while scrolling.
-- The phone's bottom bar is near-black with rounded top corners: Home, Accounting, the orange ✦ Nexus button in the middle (it opens the chat), Investment, Travel; icons only, names for screen readers. Settings is the cog at the top of Home (and in the rail on a wide screen, under the orange Ask Nexus button).
+- The accent is for actions (the main button, the active tab, today) and status, not decoration: figures in the brief are white and bold, links in text keep the text's colour with an underline, and a section's heading actions (Details, Open, See all, Edit) are all small buttons.
+- In Telegram the app behaves natively: Telegram's back button on a page inside a section (a trip, a stock, a plan, Import), a light haptic tap on the main button and a tick when changing tab or day, Telegram's header in the hero's indigo on Home and the page colour elsewhere, its bottom bar deep slate like ours, and no swipe-to-close while scrolling.
+- The phone's bottom bar is deep slate with rounded top corners: Home, Accounting, the indigo ✦ Nexus button in the middle (it opens the chat), Investment, Travel; icons only, names for screen readers. Settings is the cog at the top of Home (and in the rail on a wide screen, under the indigo Ask Nexus button).
 - No floating chat bubble: Nexus lives in the bar. The only floating button is a trip page's +, which steps aside while the page scrolls down on a phone and comes back on the way up.
 - An amount never breaks inside its figure: tile figures size to their box and wrap, if they must, between the currency and the number. Differences are said in words, not with a minus sign in green.
 - Say a figure once per screen: Home's hero gives this month's spending and how it stands, so the Spending card shows the trend and adds what the hero doesn't (a usual month, the biggest category).
 - Empty sections are one short line, left-aligned, with one action; a secondary way in (adding a holding by hand, recording a trade) stays behind a small button until asked for.
-- Charts say one thing: past months are quiet grey bars, stripes only mark a month over budget, this month is solid orange over the dashed outline of a usual month, and the legend lists only what's drawn.
+- Charts say one thing: past months are quiet mist bars, rose stripes only mark a month over budget, this month is solid indigo over the dashed iris outline of a usual month, and the legend lists only what's drawn.
 - Ledger on a phone: no tick boxes until Select; dates are chips (All, This month, Last month, Custom), with the date boxes only for Custom.
 - Touch targets: on touch screens small buttons are at least 40px tall and pills and filter tabs 38px.
 - One heading style: sentence case, no emoji. Small capitals (eyebrow) are only for labels inside a section.
@@ -139,12 +142,12 @@ All spacing derives from a 4px base unit.
 - **Structure**: the day and greeting with round Log expense and Settings buttons; this month's spending as the big figure (counting up) with an arrow (down when it's the better side); how it stands in words (budget left, or against last month by this date); the brief; one-tap question chips; the ask box
 - **Content**: the brief is written in code from the user's own figures (`brief.ts`), never a model's words; figures in it are bold
 - **Behaviour**: a chip or the ask box opens the chat with that question
-- **Surface**: solid orange from `--hero-top` to `--hero-mid`, fading into the page on phones; chips and the ask box are white on it
+- **Surface**: solid indigo from `--hero-top` to `--hero-mid`, fading into the page on phones; chips and the ask box are white on it
 - **Layout**: chips wrap on phones; nothing scrolls sideways
 
 ### Spending by month (Home)
 
-- Six bars: quiet grey for past months, striped orange over the overall budget, solid orange for this month so far over the dashed outline of a usual month; the budget as a dashed line
+- Six bars: mist for past months, striped rose over the overall budget, solid indigo for this month so far over the dashed outline of a usual month; the budget as a dashed line
 - Three small tiles underneath: budget left (or money received), a usual month, biggest category
 - Every bar's month and amount is in text for screen readers; the legend names every mark
 
@@ -195,7 +198,7 @@ All spacing derives from a 4px base unit.
 
 ### Trip page
 - **Structure**: photo cover (back button, actions, destination, meta row with a when-pill and companion initials, photo credit), sticky pill tabs (Overview, Itinerary, Money), tab content, quick-add button above the chat button
-- **Variants**: Overview (next-up boarding pass with an orange band, stay card with nights booked, getting-ready ring with the checklist beside a money card, weather (a temperature range, a scrolling strip of days with icon, high, low and rain chance; rain of 50% or more in sky blue; credited to Open-Meteo) beside the packing list (sky meter, checkboxes, add and Suggest), full-width "Ask Nexus about this trip", reservation counts, notes, collapsible sections), Itinerary (at-a-glance strip: days planned, nights booked, booked; sticky day strip; a rail of numbered day dots, filled for the first and last day, outlined orange for planned days, dashed for empty ones), Money (existing spending cards)
+- **Variants**: Overview (next-up boarding pass with an indigo band, stay card with nights booked, getting-ready ring with the checklist beside a money card, weather (a temperature range, a scrolling strip of days with icon, high, low and rain chance; rain of 50% or more in sky blue; credited to Open-Meteo) beside the packing list (sky meter, checkboxes, add and Suggest), full-width "Ask Nexus about this trip", reservation counts, notes, collapsible sections), Itinerary (at-a-glance strip: days planned, nights booked, booked; sticky day strip; a rail of numbered day dots, filled for the first and last day, outlined indigo for planned days, dashed for empty ones), Money (existing spending cards)
 - **Thumbnails**: linked Google Maps places show a 64px rounded photo with a small credit line under it, at the right of a stop and in the stay card; unlinked stops show a plain tile when places are set up
 - **Cover**: a Photo menu (Another photo, No photo, or Show a photo) beside the actions; the destination photo under a dark fade to the page background, or a gradient from the destination's name when there's no photo; text sits on the fade, never on bare photo; the credit links to the photo's Commons page
 - **Spacing**: `--space-4` cover and card padding, `--space-4` between overview cards, `--space-2` timeline gaps
