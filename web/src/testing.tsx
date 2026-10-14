@@ -17,7 +17,7 @@ export function mockApi(handlers: Record<string, (body: unknown) => unknown>): C
     calls.push({ method, path, body });
     const handler = handlers[`${method} ${path}`];
     if (!handler) return new Response(JSON.stringify({ detail: "not mocked" }), { status: 404 });
-    return new Response(JSON.stringify(handler(body) ?? null), {
+    return new Response(JSON.stringify((await handler(body)) ?? null), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });

@@ -21,6 +21,33 @@ function fromHistory(history: ChatHistory): Message[] {
   }));
 }
 
+// After this long, the typing bubble also says it's still going.
+const STILL_WORKING_MS = 10_000;
+
+/** Nexus's side of the chat while a reply is worked out: three dots, then a word
+ * that it's still going, so a slow reply never looks like nothing is happening. */
+function Typing() {
+  const [long, setLong] = useState(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setLong(true), STILL_WORKING_MS);
+    return () => window.clearTimeout(timer);
+  }, []);
+  return (
+    <div
+      className="msg msg-bot typing"
+      role="status"
+      aria-label="Nexus is typing"
+    >
+      <span className="typing-dots" aria-hidden="true">
+        <span />
+        <span />
+        <span />
+      </span>
+      {long && <span className="typing-note">Still working on it…</span>}
+    </div>
+  );
+}
+
 const WHEN = new Intl.DateTimeFormat(undefined, {
   day: "numeric",
   month: "short",
@@ -59,6 +86,9 @@ export function ChatDrawer({
     if (stick.current) end.current?.scrollIntoView?.({ block: "end" });
     stick.current = true;
   }, [messages]);
+  useEffect(() => {
+    if (busy) end.current?.scrollIntoView?.({ block: "end" });
+  }, [busy]);
   useEffect(() => {
     let live = true;
     api<ChatHistory>("/chat/history")
@@ -236,7 +266,7 @@ export function ChatDrawer({
             )}
           </div>
         ))}
-        {busy && <p className="muted">Thinking…</p>}
+        {busy && <Typing />}
         <div ref={end} />
       </div>
       <form onSubmit={send}>

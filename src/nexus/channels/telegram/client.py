@@ -28,6 +28,7 @@ class TelegramClient(Protocol):
     async def bot_username(self) -> str: ...
     async def send_app_button(self, chat_id: int, text: str, label: str, url: str) -> None: ...
     async def set_menu_button(self, label: str, url: str) -> None: ...
+    async def send_typing(self, chat_id: int) -> None: ...
 
 
 def _button(button: Button) -> dict[str, str]:
@@ -68,6 +69,11 @@ class HttpTelegramClient:
         sent = await self._call("sendMessage", payload)
         message_id = sent.get("message_id") if isinstance(sent, dict) else None
         return message_id if isinstance(message_id, int) else None
+
+    async def send_typing(self, chat_id: int) -> None:
+        """Show "typing…" in the chat: Telegram clears it after about 5 seconds, or
+        when the next message is sent."""
+        await self._call("sendChatAction", {"chat_id": chat_id, "action": "typing"})
 
     async def answer_callback(self, callback_id: str, text: str | None = None) -> None:
         payload: dict[str, Any] = {"callback_query_id": callback_id}

@@ -6,9 +6,10 @@ Only allow-listed users in private chats are served.
 """
 
 import asyncio
+import contextlib
 import hmac
 import logging
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
@@ -45,6 +46,9 @@ UNREADABLE_FILE = (
 # Photos sent together arrive as separate updates; wait this long for the rest.
 ALBUM_WAIT = 1.5
 _albums: dict[str, list[dict[str, Any]]] = {}
+# Telegram shows "typing…" for about 5 seconds; it's sent again this often until
+# the reply goes out.
+TYPING_EVERY = 4.0
 ONE_SHOT = ("hitl:", "bill:", "salary:", "rule:", "email:", "run:", "hold:", "plan:", "trip:")
 
 
@@ -107,6 +111,28 @@ async def _actor(runtime: TelegramRuntime, sender: dict[str, Any], chat_id: int)
     return registration.user.id
 
 
+@contextlib.asynccontextmanager
+async def typing(runtime: TelegramRuntime, chat_id: int) -> AsyncIterator[None]:
+    """Show "typing…" in the chat while the body runs, so a slow reply doesn't look
+    like silence. A failure to show it never stops the reply."""
+
+    async def keep_typing() -> None:
+        while True:
+            try:
+                await runtime.client.send_typing(chat_id)
+            except Exception as exc:
+                log.info("telegram: couldn't show typing: %s", type(exc).__name__)
+            await asyncio.sleep(TYPING_EVERY)
+
+    task = asyncio.create_task(keep_typing())
+    try:
+        yield
+    finally:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+
 def _undo_key(chat_id: int, message_id: int) -> str:
     return f"undo-expire:{chat_id}:{message_id}"
 
@@ -156,32 +182,8 @@ async def handle_update(runtime: TelegramRuntime, update: dict[str, Any]) -> Non
         if actor is None:
             await runtime.client.send_message(chat_id, PRIVATE)
             return
-        ref = f"telegram:{chat_id}:{message.get('message_id')}"
-        if message.get("photo") or message.get("document"):
-            await _media(runtime, actor, chat_id, message, ref)
-            return
-        text = (message.get("text") or "").strip()
-        if not text:
-            await runtime.client.send_message(
-                chat_id, "I can read text, photos, screenshots and PDFs."
-            )
-            return
-        replied = message.get("reply_to_message") or {}
-        if not text.startswith("/") and _image_of(replied) is not None:
-            # A question about an earlier photo: look at it again, with the question.
-            await _images(runtime, actor, chat_id, [replied], text, ref)
-            return
-        command = text.split()[0].split("@")[0]
-        if command == "/app":
-            await _open_app(runtime, chat_id)
-            return
-        if command == "/invite":
-            await runtime.client.send_message(chat_id, await _invite(runtime, actor))
-            return
-        if command in {"/start", "/menu", "/help"}:
-            await _send(runtime, chat_id, await runtime.service.quick_action(actor, "menu"))
-            return
-        await _send(runtime, chat_id, await runtime.service.handle_text(actor, text, ref))
+        async with typing(runtime, chat_id):
+            await _message(runtime, actor, chat_id, message)
     except Exception:
         log.exception("failed to handle telegram update %s", update.get("update_id"))
         if chat_id is not None:
@@ -189,6 +191,36 @@ async def handle_update(runtime: TelegramRuntime, update: dict[str, Any]) -> Non
                 await runtime.client.send_message(chat_id, FAILED)
             except Exception:
                 log.exception("could not report the failure to the user")
+
+
+async def _message(
+    runtime: TelegramRuntime, actor: UserId, chat_id: int, message: dict[str, Any]
+) -> None:
+    """A message from an allow-listed user: text, a command, a photo or a file."""
+    ref = f"telegram:{chat_id}:{message.get('message_id')}"
+    if message.get("photo") or message.get("document"):
+        await _media(runtime, actor, chat_id, message, ref)
+        return
+    text = (message.get("text") or "").strip()
+    if not text:
+        await runtime.client.send_message(chat_id, "I can read text, photos, screenshots and PDFs.")
+        return
+    replied = message.get("reply_to_message") or {}
+    if not text.startswith("/") and _image_of(replied) is not None:
+        # A question about an earlier photo: look at it again, with the question.
+        await _images(runtime, actor, chat_id, [replied], text, ref)
+        return
+    command = text.split()[0].split("@")[0]
+    if command == "/app":
+        await _open_app(runtime, chat_id)
+        return
+    if command == "/invite":
+        await runtime.client.send_message(chat_id, await _invite(runtime, actor))
+        return
+    if command in {"/start", "/menu", "/help"}:
+        await _send(runtime, chat_id, await runtime.service.quick_action(actor, "menu"))
+        return
+    await _send(runtime, chat_id, await runtime.service.handle_text(actor, text, ref))
 
 
 APP_LABEL = "Open Nexus"
@@ -325,4 +357,5 @@ async def _callback(runtime: TelegramRuntime, query: dict[str, Any]) -> None:
         async with runtime.uow() as tx:
             await tx.jobs.cancel(_undo_key(chat_id, message_id))
             await tx.commit()
-    await _send(runtime, chat_id, await runtime.service.press(actor, data))
+    async with typing(runtime, chat_id):
+        await _send(runtime, chat_id, await runtime.service.press(actor, data))

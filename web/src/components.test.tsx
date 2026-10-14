@@ -1,8 +1,8 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { ledgerParams, type Me, type Transaction } from "./api";
+import { ledgerParams, type Me, type Reply, type Transaction } from "./api";
 import { Amount } from "./components/Amount";
 import { brief } from "./brief";
 import { CategoryBars } from "./components/CategoryBars";
@@ -162,6 +162,26 @@ describe("ChatDrawer", () => {
     expect(await screen.findByText("Deleted.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Confirm" })).not.toBeInTheDocument();
     expect(calls.find((c) => c.path === "/chat/press")?.body).toEqual({ data: "hitl:abc:y" });
+  });
+});
+
+describe("ChatDrawer while a reply is worked out", () => {
+  it("shows Nexus typing, says it's still working after a while, and goes with the reply", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let answer: (replies: Reply[]) => void = () => {};
+    mockApi({ "POST /chat": () => new Promise<Reply[]>((resolve) => (answer = resolve)) });
+    renderWithProviders(<ChatDrawer onClose={() => {}} onChanged={() => {}} />);
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    await user.type(screen.getByLabelText("Message"), "how much on food this month?");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    const typing = await screen.findByRole("status", { name: "Nexus is typing" });
+    expect(typing).not.toHaveTextContent("Still working");
+    act(() => vi.advanceTimersByTime(10_000));
+    expect(typing).toHaveTextContent("Still working on it…");
+    act(() => answer([{ text: "S$412 on food so far.", buttons: [] }]));
+    expect(await screen.findByText("S$412 on food so far.")).toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "Nexus is typing" })).not.toBeInTheDocument();
+    vi.useRealTimers();
   });
 });
 

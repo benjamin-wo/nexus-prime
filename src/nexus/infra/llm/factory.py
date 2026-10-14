@@ -89,7 +89,12 @@ def _provider_model(settings: Settings, provider: LlmProvider) -> BaseChatModel:
         case LlmProvider.OPENROUTER:
             if not settings.openrouter_model:
                 raise LlmNotConfigured("OPENROUTER_MODEL is not set")
-            return _openrouter(settings, settings.openrouter_model, routed=True)
+            return _openrouter(
+                settings,
+                settings.openrouter_model,
+                routed=True,
+                reasoning=settings.chat_reasoning,
+            )
         case LlmProvider.DEEPSEEK:
             return _openai_compatible(
                 settings,
@@ -108,16 +113,30 @@ def _provider_model(settings: Settings, provider: LlmProvider) -> BaseChatModel:
             )
 
 
-def _openrouter(settings: Settings, model: str, *, routed: bool = False) -> BaseChatModel:
+# CHAT_REASONING as OpenRouter's reasoning setting.
+REASONING: dict[str, dict[str, Any]] = {
+    "on": {"enabled": True},
+    "low": {"effort": "low"},
+    "off": {"enabled": False},
+}
+
+
+def _openrouter(
+    settings: Settings, model: str, *, routed: bool = False, reasoning: str | None = None
+) -> BaseChatModel:
     """``routed``: send OPENROUTER_PROVIDERS with the request (the main model only;
-    other models may not be served by those providers)."""
+    other models may not be served by those providers). ``reasoning``: a
+    CHAT_REASONING value; None leaves the model's default."""
+    body = dict(openrouter_routing(settings) or {}) if routed else {}
+    if reasoning is not None:
+        body["reasoning"] = REASONING[reasoning]
     return _openai_compatible(
         settings,
         model=model,
         api_key=settings.openrouter_api_key,
         base_url="https://openrouter.ai/api/v1",
         name="OpenRouter",
-        extra_body=openrouter_routing(settings) if routed else None,
+        extra_body=body or None,
     )
 
 
