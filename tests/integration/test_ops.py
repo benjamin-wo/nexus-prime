@@ -105,3 +105,30 @@ async def test_old_events_are_dropped(world: World, engine: AsyncEngine) -> None
         )
     assert await world.app.state.ops.prune() == 1
     assert len([r for r in await rows(engine) if r["kind"] == "turn"]) == 1
+
+
+async def test_tickets_sync_on_demand(world: World, monkeypatch: pytest.MonkeyPatch) -> None:
+    from tests.unit.test_ops_tickets import Tracker
+
+    owner = world.browser()
+    await owner.login(OWNER)
+    assert (await owner.send("POST", "/api/ops/tickets")).status_code == 409  # not set up
+
+    tracker = Tracker()
+    monkeypatch.setattr("nexus.jobs.ops_tickets.GitHubIssues", lambda http, repo, token: tracker)
+    world.app.state.settings = world.app.state.settings.model_copy(
+        update={
+            "ops_github_token": SecretStr("made-up-github-token"),
+            "ops_github_repo": "made-up/nexus",
+        }
+    )
+    with ops.scope(trace="job-88"):
+        ops.emit("job", "photos.find", ok=False, ms=50, error="KeyError", attempt=5, final=True)
+    await world.app.state.ops.flush()
+    synced = (await owner.send("POST", "/api/ops/tickets")).json()
+    assert len(synced["opened"]) >= 1
+    titles = [c[1][0] for c in tracker.calls if c[0] == "open"]
+    assert "[ops] Job photos.find fails with KeyError" in titles
+    # Run again: the same problem keeps its ticket.
+    again = (await owner.send("POST", "/api/ops/tickets")).json()
+    assert again["opened"] == []

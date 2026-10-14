@@ -190,12 +190,26 @@ class Settings(BaseSettings):
     ops_token: SecretStr | None = None
     ops_salt: SecretStr | None = None
     ops_events: bool = True
+    # Tickets: with both set, every 6 hours each problem in the last OPS_TICKET_HOURS
+    # at OPS_TICKET_SEVERITY or worse keeps one GitHub issue (labelled "ops") in
+    # OPS_GITHUB_REPO ("owner/name") up to date. The token needs only Issues read and
+    # write on that repository.
+    ops_github_token: SecretStr | None = None
+    ops_github_repo: str | None = None
+    ops_ticket_hours: int = Field(72, ge=1, le=24 * 30)
+    ops_ticket_severity: Literal["high", "medium", "low"] = "medium"
+
+    @property
+    def ops_tickets_enabled(self) -> bool:
+        return self.ops_github_token is not None and bool(self.ops_github_repo)
 
     @field_validator(
         "telegram_bot_token",
         "telegram_webhook_secret",
         "ops_token",
         "ops_salt",
+        "ops_github_token",
+        "ops_github_repo",
         "gemini_api_key",
         "openrouter_api_key",
         "deepseek_api_key",

@@ -98,6 +98,7 @@ from nexus.infra.search.serpapi import SerpApiTravel
 from nexus.infra.search.tavily import TavilyReader, TavilySearch
 from nexus.infra.storage.s3 import S3ReceiptStore
 from nexus.infra.weather.open_meteo import OpenMeteo
+from nexus.jobs import ops_tickets as ops_ticket_job
 from nexus.jobs.handlers import MEMORY_UPDATE, SCHEDULES, build_handlers
 from nexus.jobs.runner import JobRunner
 from nexus.settings import Environment, Settings, get_settings
@@ -664,22 +665,29 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                 origin = resolved.public_origin
                 clock = extra.clock or utcnow
                 if resolved.run_jobs:
+                    handlers = build_handlers(
+                        telegram.uow,
+                        telegram.client,
+                        rates,
+                        clock,
+                        archive,
+                        email,
+                        MemoryWriter(build_memory_model(resolved, models.primary)),
+                        departments,
+                        prices,
+                        news,
+                        await _photos(resolved, extra, stack, models),
+                    )
+                    schedules = list(SCHEDULES)
+                    if resolved.ops_tickets_enabled:
+                        handlers[ops_ticket_job.OPS_TICKETS] = ops_ticket_job.handler(
+                            engine, resolved, ops_api.webhook_info(app)
+                        )
+                        schedules.append(ops_ticket_job.SCHEDULE)
                     runner = JobRunner(
                         engine,
-                        build_handlers(
-                            telegram.uow,
-                            telegram.client,
-                            rates,
-                            clock,
-                            archive,
-                            email,
-                            MemoryWriter(build_memory_model(resolved, models.primary)),
-                            departments,
-                            prices,
-                            news,
-                            await _photos(resolved, extra, stack, models),
-                        ),
-                        schedules=SCHEDULES,
+                        handlers,
+                        schedules=schedules,
                         clock=clock,
                     )
                     stop = asyncio.Event()

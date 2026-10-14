@@ -23,7 +23,7 @@ Everything below assumes the Railway CLI, logged in and linked to the project (`
 
 ## Routine check
 
-Weekly, or after a deploy: read the ops report for the last 7 days (`hours=168`). Anything high is a ticket; medium ones are worth one if they recur. A problem keeps its id while it recurs, so it can be tracked across reports.
+The ops job keeps a GitHub issue open for each medium or high problem (label `ops`), so the routine is the issue list: `is:open label:ops`, `ops:high` first. Each issue links the line of code and lists traces for the logs. Fix it in a PR that says "Fixes #N"; the issue closes on merge and reopens if the problem comes back. Close one as "not planned" to stop it being raised again. Weekly, also skim the ops report for the last 7 days (`hours=168`) for low ones and trends.
 
 ## The bot doesn't reply
 

@@ -40,6 +40,13 @@ class Problem:
     traces: list[str] = field(default_factory=list)
     detail: dict[str, Any] = field(default_factory=dict)
     hint: str | None = None
+    # What it is without its counts ("Calls to x failing"): a ticket's title, which
+    # stays the same while the problem lasts. Empty: the title is already that.
+    topic: str = ""
+
+    @property
+    def subject(self) -> str:
+        return self.topic or self.title
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,6 +89,7 @@ def _problem_json(problem: Problem) -> dict[str, Any]:
     for key in ("first_seen", "last_seen"):
         if found[key] is not None:
             found[key] = found[key].isoformat()
+    found["topic"] = problem.subject
     return found
 
 
@@ -226,6 +234,7 @@ def _from_turns(turns: list[dict[str, Any]], wheres: dict[str, Counter[str]]) ->
             "chat",
             f"Chat turns failed with {error}",
             group,
+            topic=f"Chat turns fail with {error}",
             where=_where(group, wheres),
             hint="The user got the 'something went wrong' reply. The traces find the error.",
         )
@@ -244,6 +253,7 @@ def _from_turns(turns: list[dict[str, Any]], wheres: dict[str, Counter[str]]) ->
             f"{len(slow)} chat {'reply' if len(slow) == 1 else 'replies'} took over "
             f"{SLOW_TURN_MS // 1000}s",
             slow,
+            topic=f"Chat replies take over {SLOW_TURN_MS // 1000}s",
             detail={
                 "slowest_ms": max(t["ms"] for t in slow),
                 "model_share": round(median(model_share), 2) if model_share else None,
@@ -266,6 +276,7 @@ def _from_turns(turns: list[dict[str, Any]], wheres: dict[str, Counter[str]]) ->
             "chat",
             f"One chat reply in ten takes over {p90 // 1000}s",
             turns,
+            topic="Chat replies are slow (p90)",
             count=len(times),
             detail={"p90_ms": p90, "median_ms": int(median(times))},
         )
@@ -285,6 +296,7 @@ def _from_models(models: list[dict[str, Any]], turns: list[dict[str, Any]]) -> I
             "models",
             f"{model} failed with {error}",
             group,
+            topic=f"{model} fails with {error}",
             detail={"share_of_calls": round(share, 2)},
             hint="The fallback model answers when it can; see whether this model or its "
             "provider is having trouble.",
@@ -297,6 +309,7 @@ def _from_models(models: list[dict[str, Any]], turns: list[dict[str, Any]]) -> I
             "models",
             f"The fallback model answered {len(fell_back)} of {len(turns)} chat turns",
             fell_back,
+            topic="The fallback model answers often",
             hint="The chat model is failing often; see the model errors.",
         )
 
@@ -317,6 +330,7 @@ def _from_tools(tools: list[dict[str, Any]], wheres: dict[str, Counter[str]]) ->
             "tools",
             f"Tool {tool} crashed with {error}",
             group,
+            topic=f"Tool {tool} crashes with {error}",
             where=_where(group, wheres),
             hint="The model was told something went wrong. The traces find the error's "
             "log line, with where it happened.",
@@ -330,6 +344,7 @@ def _from_tools(tools: list[dict[str, Any]], wheres: dict[str, Counter[str]]) ->
                 "tools",
                 f"Tool {tool} refused {len(group)} of {calls[tool]} calls",
                 group,
+                topic=f"The model often calls tool {tool} wrongly",
                 detail={"share_of_calls": round(share, 2)},
                 hint="The model keeps calling it wrongly: its description or arguments "
                 "may need to be clearer.",
@@ -353,6 +368,7 @@ def _from_jobs(
             "jobs",
             f"Job {kind} {'gave up' if final else 'keeps failing'} with {error}",
             group,
+            topic=f"Job {kind} fails with {error}",
             where=_where(group, wheres),
             detail={"gave_up": len(final), "attempts": len(group)},
             hint="The jobs table's last_error has the message; the traces find the lines.",
@@ -363,6 +379,7 @@ def _from_jobs(
             severity="high",
             area="jobs",
             title=f"Job {row['kind']} is stuck running past its lease",
+            topic=f"Job {row['kind']} gets stuck past its lease",
             count=1,
             detail={"attempts": row.get("attempts")},
             hint="Its worker died mid-run, or it hangs; it's claimed again once the lease ends.",
@@ -373,6 +390,7 @@ def _from_jobs(
             severity="high",
             area="jobs",
             title=f"{row['count']} {row['kind']} job(s) waiting well past their time",
+            topic=f"{row['kind']} jobs run late",
             count=int(row["count"]),
             first_seen=row.get("oldest"),
             hint="The job runner isn't keeping up, or isn't running.",
@@ -385,6 +403,7 @@ def _from_jobs(
                 id=fingerprint("job-not-running", kind),
                 severity="high",
                 area="jobs",
+                topic=f"Scheduled job {kind} isn't running",
                 title=f"Scheduled job {kind} hasn't finished "
                 + ("yet" if last is None else f"since {last:%d %b %H:%M} UTC"),
                 count=1,
@@ -402,6 +421,7 @@ def _from_requests(requests: Sequence[dict[str, Any]]) -> Iterable[Problem]:
                 severity="high",
                 area="web",
                 title=f"{r['name']} failed {r['failures']} of {r['calls']} times",
+                topic=f"{r['name']} returns server errors",
                 count=int(r["failures"]),
                 detail={"calls": int(r["calls"])},
                 hint="A server error reached the web app or Telegram.",
@@ -419,6 +439,7 @@ def _from_calls(calls: Sequence[dict[str, Any]]) -> Iterable[Problem]:
             severity="high" if share >= 0.5 else "medium",
             area="outside",
             title=f"Calls to {c['name']} failed {failures} of {total} times",
+            topic=f"Calls to {c['name']} fail",
             count=failures,
             detail={
                 "errors": sorted(e for e in (c.get("errors") or []) if e),
@@ -437,6 +458,7 @@ def _from_checks(checks: Checks) -> Iterable[Problem]:
             severity="high",
             area="telegram",
             title=f"{pending} Telegram updates are waiting to be delivered",
+            topic="Telegram updates back up",
             count=pending,
             hint="Telegram can't reach the webhook or it answers slowly.",
         )
@@ -447,6 +469,7 @@ def _from_checks(checks: Checks) -> Iterable[Problem]:
             severity="medium",
             area="telegram",
             title=f"Telegram couldn't deliver an update: {hook.get('last_error_message', '?')}",
+            topic="Telegram can't deliver updates to the webhook",
             count=1,
             last_seen=datetime.fromtimestamp(int(last_error), checks.now.tzinfo),
         )
@@ -457,6 +480,7 @@ def _from_checks(checks: Checks) -> Iterable[Problem]:
             severity="high" if remaining < 1 else "medium",
             area="credits",
             title=f"OpenRouter credit is low: ${remaining:.2f} left",
+            topic="OpenRouter credit is low",
             count=1,
             hint="Every model call fails once it runs out.",
         )
@@ -466,6 +490,7 @@ def _from_checks(checks: Checks) -> Iterable[Problem]:
             severity="medium",
             area="email",
             title=f"{checks.broken_mailboxes} connected mailbox(es) stopped working",
+            topic="Connected mailboxes stopped working",
             count=checks.broken_mailboxes,
             hint="Usually an expired or revoked Gmail grant: the user reconnects on the "
             "Email page.",
@@ -477,6 +502,7 @@ def _from_checks(checks: Checks) -> Iterable[Problem]:
             severity="medium",
             area="credits",
             title=f"Web search used {used} of {checks.search_monthly} credits this month",
+            topic="Web search credits are running out",
             count=used,
             detail={"by_product": checks.search_credits},
             hint="Searches fall back to OpenRouter's web plugin (paid) when they run out.",
