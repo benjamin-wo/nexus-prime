@@ -80,7 +80,7 @@ test("inside Telegram the Mini App signs in by itself", async ({ page }) => {
     () => (window as unknown as { tgCalls: string[] }).tgCalls,
   );
   expect(calls).toEqual(
-    expect.arrayContaining(["ready", "expand", "header #09090b"]),
+    expect.arrayContaining(["ready", "expand", "header #f4f1ec"]),
   );
 });
 
@@ -180,7 +180,7 @@ test("bulk delete asks first and can be undone", async ({ page }, info) => {
 test("chat asks before deleting and confirms", async ({ page }) => {
   const state = await fakeApi(page);
   await page.goto("/accounting");
-  await page.getByRole("button", { name: "Open chat" }).first().click();
+  await page.getByRole("button", { name: "Ask Nexus" }).filter({ visible: true }).click();
   const chat = page.getByRole("dialog", { name: "Chat" });
   await chat.getByLabel("Message").fill("delete the grab ride");
   await chat.getByRole("button", { name: "Send" }).click();
@@ -197,7 +197,7 @@ test("chat asks before deleting and confirms", async ({ page }) => {
 test("the chat opens on the running conversation, from the web and Telegram", async ({ page }) => {
   await fakeApi(page, { chatHistory: true });
   await page.goto("/");
-  await page.locator(".chat-fab").click();
+  await page.getByRole("button", { name: "Ask Nexus" }).filter({ visible: true }).click();
   const chat = page.getByRole("dialog", { name: "Chat" });
   await expect(chat.locator(".msg-user").first()).toHaveText(/kopi 4\.20/);
   await expect(chat.locator(".msg-bot").first()).toContainText("Logged SGD 4.20 at Kopi.");
@@ -218,7 +218,7 @@ test("the app never throws while chatting", async ({ page }) => {
   page.on("pageerror", (e) => errors.push(e.message));
   await fakeApi(page);
   await page.goto("/accounting");
-  await page.getByRole("button", { name: "Open chat" }).first().click();
+  await page.getByRole("button", { name: "Ask Nexus" }).filter({ visible: true }).click();
   const chat = page.getByRole("dialog", { name: "Chat" });
   for (const message of ["one", "two"]) {
     await chat.getByLabel("Message").fill(message);
@@ -509,8 +509,7 @@ test("nothing spills sideways on a small phone", async ({ page }) => {
     const offenders = await page.evaluate(() => {
       const width = document.documentElement.clientWidth;
       return [...document.querySelectorAll("body *")]
-        // The background ribbons are drawn wider than the screen and clipped.
-        .filter((el) => !el.closest(".ribbons") && el.getBoundingClientRect().right > width + 1)
+        .filter((el) => el.getBoundingClientRect().right > width + 1)
         .map(
           (el) =>
             `${el.tagName.toLowerCase()}.${(el as HTMLElement).className}`,
@@ -552,11 +551,13 @@ test("add, rename, archive and bring back a category", async ({ page }) => {
   await expect(yours.getByRole("heading", { name: "Pet care" })).toBeVisible();
 });
 
-test("the cog opens Settings, and Plan keeps only planning", async ({ page }) => {
+test("the cog opens Settings, and Plan keeps only planning", async ({ page }, info) => {
   await fakeApi(page);
   await page.goto("/plan");
   await expect(page.getByRole("region", { name: "Budgets" })).toBeVisible();
   await expect(page.getByRole("region", { name: "Categories" })).toHaveCount(0);
+  // On a phone Settings is the cog at the top of Home; on a wide screen, in the rail.
+  if (info.project.name === "mobile") await page.getByRole("link", { name: "Home" }).filter({ visible: true }).click();
   await page.getByRole("link", { name: "Settings" }).filter({ visible: true }).click();
   await expect(page).toHaveURL(/\/settings$/);
   await expect(page.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible();
@@ -622,14 +623,18 @@ test("see and forget what Nexus remembers", async ({ page }) => {
   await expect(card.getByText(/Nothing yet/)).toBeVisible();
 });
 
-test("the chat bubble floats on every page and opens the chat", async ({ page }) => {
+test("Nexus sits in the middle of the bar on a phone, in the rail on a wide screen, and opens the chat", async ({ page }, info) => {
   await fakeApi(page);
   await page.goto("/plan");
-  await expect(page.getByRole("navigation").getByRole("button", { name: /chat/i })).toHaveCount(0);
-  const bubble = page.locator(".chat-fab");
-  await expect(bubble).toHaveAccessibleName("Open chat");
-  await expect(bubble).toHaveCSS("position", "fixed");
-  await bubble.click();
+  const where = info.project.name === "mobile" ? "Main (mobile)" : "Main";
+  const nexus = page.getByRole("navigation", { name: where, exact: true }).getByRole("button", { name: "Ask Nexus" });
+  await expect(nexus).toBeVisible();
+  if (info.project.name === "mobile") {
+    // Two tabs either side of it.
+    const bar = page.getByRole("navigation", { name: "Main (mobile)" });
+    await expect(bar.locator(":scope > *").nth(2)).toHaveAccessibleName("Ask Nexus");
+  }
+  await nexus.click();
   await expect(page.getByRole("dialog", { name: "Chat" })).toBeVisible();
 });
 
@@ -705,7 +710,7 @@ test("home is the front desk: what needs you, what's running, and each departmen
   expect(state.cancelled).toEqual(["r1"]);
   // Nexus opens with a brief from the user's own figures, and a few one-tap questions.
   const nexus = page.getByRole("region", { name: "Nexus" });
-  await expect(nexus).toContainText("You've spent SGD");
+  await expect(nexus).toContainText("spent this month");
   await expect(nexus).toContainText("than by this time last month.");
   await expect(nexus).toContainText("2 things need you below.");
   // Six months of spending, this month so far last; the tiles compare and explain.
@@ -731,7 +736,7 @@ test("asking on home opens the chat with the question", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/");
   await page.getByRole("textbox", { name: "Ask Nexus" }).fill("how much on grab?");
-  await page.getByRole("button", { name: "Ask" }).click();
+  await page.getByRole("button", { name: "Ask", exact: true }).click();
   const chat = page.getByRole("dialog", { name: "Chat" });
   await expect(chat.locator(".msg-user").first()).toHaveText("how much on grab?");
   await expect(chat.locator(".msg-bot")).toHaveCount(1);
@@ -1837,22 +1842,17 @@ test("the keyboard opening leaves the background still and the tab bar out of th
   await fakeApi(page);
   await page.goto("/travel");
   const bar = page.getByRole("navigation", { name: "Main (mobile)" });
-  const chat = page.getByRole("button", { name: "Open chat" });
-  const ribbons = page.locator(".ribbons");
   await expect(bar).toBeVisible();
-  const before = await ribbons.evaluate((el) => el.getBoundingClientRect().height);
 
-  // Typing: the bar and the chat button step aside.
+  // Typing: the bar (and Nexus in it) steps aside.
   await page.getByRole("button", { name: "Add a trip" }).click();
   const where = page.getByRole("form", { name: "Add a trip" }).getByLabel("Where");
   await where.focus();
   await expect(page.locator("html")).toHaveClass(/keyboard/);
   await expect(bar).toBeHidden();
-  await expect(chat).toBeHidden();
-  // The keyboard shrinks the screen; the ribbons keep their height rather than redraw.
+  // The keyboard shrinks the screen.
   const size = page.viewportSize()!;
   await page.setViewportSize({ width: size.width, height: Math.round(size.height * 0.55) });
-  await expect.poll(() => ribbons.evaluate((el) => el.getBoundingClientRect().height)).toBe(before);
   // Tabbing to the next field doesn't flash the bar back.
   await page.getByRole("form", { name: "Add a trip" }).getByLabel("From").focus();
   await expect(bar).toBeHidden();
@@ -1862,7 +1862,6 @@ test("the keyboard opening leaves the background still and the tab bar out of th
   await page.getByRole("form", { name: "Add a trip" }).getByLabel("From").blur();
   await expect(page.locator("html")).not.toHaveClass(/keyboard/);
   await expect(bar).toBeVisible();
-  await expect(chat).toBeVisible();
 });
 
 test("after a trip: settling up comes first, then what it cost", async ({ page }) => {
@@ -1880,42 +1879,30 @@ test("after a trip: settling up comes first, then what it cost", async ({ page }
 test("cards rise into view and figures count up, unless less motion is asked for", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/");
-  const spend = page.getByRole("region", { name: "Spent this month" });
-  await expect(spend).toHaveAttribute("data-reveal", "in");
-  await expect(spend.locator(".figure-value")).toHaveText("SGD 37.40");
+  const hero = page.getByRole("region", { name: "Nexus" });
+  await expect(hero).toHaveAttribute("data-reveal", "in");
+  await expect(hero.locator(".hero-value")).toHaveText("SGD 37.40");
   await expect(page.getByRole("heading", { level: 1 }).locator("em.accent-serif")).toHaveText(/morning|afternoon|evening/);
-  // The ribbons are decoration: hidden from screen readers and never in the way.
-  await expect(page.locator(".ribbons")).toHaveAttribute("aria-hidden", "true");
-  await expect(page.locator(".ribbons")).toHaveCSS("pointer-events", "none");
 
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.reload();
-  await expect(spend.locator(".figure-value")).toHaveText("SGD 37.40");
-  await expect(spend).not.toHaveAttribute("data-reveal", /.*/);
-  await expect(page.locator(".ribbon-main")).toHaveCSS("animation-name", "none");
+  await expect(hero.locator(".hero-value")).toHaveText("SGD 37.40");
+  await expect(hero).not.toHaveAttribute("data-reveal", /.*/);
 });
 
-test("on a phone each section runs the full width of the screen; on a desktop it's a rounded card", async ({ page }, info) => {
+test("each section is its own rounded card, its title above it, with room either side", async ({ page }) => {
   await fakeApi(page);
-  await page.goto("/accounting");
-  const section = page.getByRole("region", { name: "Where it went" });
-  await expect(section).toBeVisible();
-  const box = (await section.boundingBox())!;
-  const width = page.viewportSize()!.width;
-  const radius = await section.evaluate((el) => getComputedStyle(el).borderTopLeftRadius);
-  if (info.project.name === "mobile") {
-    expect(box.x).toBe(0);
-    expect(Math.round(box.x + box.width)).toBe(width);
-    expect(radius).toBe("0px");
-    // Tiles side by side still have a gap between them.
-    const [spent, received] = await page.locator(".tiles > .tile").all();
-    const a = (await spent.boundingBox())!;
-    const b = (await received.boundingBox())!;
-    expect(b.x).toBeGreaterThan(a.x + a.width);
-  } else {
-    expect(box.x).toBeGreaterThan(0);
-    expect(radius).not.toBe("0px");
-  }
+  await page.goto("/");
+  const budgets = page.getByRole("region", { name: "Budgets this month" });
+  const card = budgets.locator(".card");
+  await expect(card).toBeVisible();
+  // The title sits above the card, not inside it.
+  const title = (await budgets.getByRole("heading", { name: "Budgets this month" }).boundingBox())!;
+  const box = (await card.boundingBox())!;
+  expect(title.y + title.height).toBeLessThanOrEqual(box.y);
+  expect(box.x).toBeGreaterThan(0);
+  expect(box.x + box.width).toBeLessThan(page.viewportSize()!.width);
+  expect(await card.evaluate((el) => getComputedStyle(el).borderTopLeftRadius)).not.toBe("0px");
 });
 
 test("in Telegram, a trip's page shows Telegram's back button, and it goes back to the trips", async ({ page }) => {

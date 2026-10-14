@@ -12,6 +12,7 @@ import {
   type Page,
   type Summary,
 } from "../api";
+import { Block } from "../components/Block";
 import { CategoryBars } from "../components/CategoryBars";
 import { Icon } from "../components/Icon";
 import { StatTile } from "../components/StatTile";
@@ -114,13 +115,15 @@ function Nudge({
 
 function Latest({ page, timezone }: { page?: Page; timezone: string }) {
   return (
-    <section className="card" aria-labelledby="latest">
-      <div className="card-head">
-        <h2 id="latest">Latest</h2>
+    <Block
+      id="latest"
+      title="Latest"
+      action={
         <Link className="btn btn-small" to="/accounting/ledger">
           See all
         </Link>
-      </div>
+      }
+    >
       {!page ? (
         <p className="state">Loading…</p>
       ) : page.items.length === 0 ? (
@@ -159,7 +162,7 @@ function Latest({ page, timezone }: { page?: Page; timezone: string }) {
           })}
         </ul>
       )}
-    </section>
+    </Block>
   );
 }
 
@@ -266,11 +269,7 @@ export function Dashboard({
       </div>
 
       <div className="pair">
-        <section className="card" aria-labelledby="by-category">
-          <div className="card-head">
-            <h2 id="by-category">Where it went</h2>
-            <span className="caption">{home}</span>
-          </div>
+        <Block id="by-category" title="Where it went" action={<span className="caption">In {home}</span>}>
           {summary.isLoading ? (
             <p className="state">Loading…</p>
           ) : (
@@ -287,13 +286,10 @@ export function Dashboard({
               it).
             </p>
           )}
-        </section>
+        </Block>
         <div className="stack">
           <Latest page={latest} timezone={me.user.timezone} />
-          <section className="card" aria-labelledby="owed">
-            <div className="card-head">
-              <h2 id="owed">Who owes you</h2>
-            </div>
+          <Block id="owed" title="Who owes you">
             {ious.isLoading && <p className="state">Loading…</p>}
             {ious.data?.length === 0 && (
               <p className="state">Nobody owes you anything.</p>
@@ -325,7 +321,7 @@ export function Dashboard({
               </div>
             ))}
             {repayError && <p className="error-text">{repayError}</p>}
-          </section>
+          </Block>
         </div>
       </div>
     </>

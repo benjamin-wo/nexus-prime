@@ -1,13 +1,13 @@
 /** Keeps the page steady when a phone's keyboard opens.
  *
- * The keyboard shrinks the visible screen. Anything sized to the screen (the ribbons
- * behind the pages) would stretch and redraw, and anything pinned to its bottom (the
- * tab bar, the chat and add buttons) would jump up onto the keyboard. So:
+ * The keyboard shrinks the visible screen. Anything sized to the screen would stretch
+ * and redraw, and anything pinned to its bottom (the tab bar and the add button)
+ * would jump up onto the keyboard. So:
  *
  * - `--stable-height` holds the screen's height without the keyboard: set on load,
  *   on rotation, and on any resize that isn't the keyboard opening.
  * - `html.keyboard` is set while a text field has focus on a touch screen; the bar
- *   and the floating buttons hide, and the ribbons hold still, until it closes. */
+ *   and the floating buttons hide until it closes. */
 
 const NOT_TYPED = new Set(["checkbox", "radio", "button", "submit", "reset", "file", "range", "color", "image"]);
 

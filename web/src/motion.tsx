@@ -5,7 +5,7 @@ export const reducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
 
 // What rises into view as it's scrolled to: cards and the panels laid out like them.
-const REVEALED = ".card, .assistant, .trip-card, .next-pass, .stay-card, .dept-tabs";
+const REVEALED = ".card, .hero, .trip-card, .next-pass, .stay-card, .dept-tabs";
 const STAGGER_MS = 35;
 const MAX_STAGGER = 3;
 

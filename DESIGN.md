@@ -2,50 +2,55 @@
 
 ## 1. Atmosphere & Identity
 
-Nexus Prime is a focused financial command center: dark, quiet, and quick to scan. The
-signature is the ember accent used as a deliberate action signal against layered charcoal
-surfaces. Financial direction carries meaning: ember marks money out, emerald marks money
-in, and amber marks attention or pending work.
+Nexus Prime is a focused financial command center: light, warm, and quick to scan. Home
+opens on a solid orange hero (the month's one big figure and Nexus's brief, not in a
+card) that fades into a warm off-white page; every other segment is its own white card,
+its title above it. Orange is the action signal; emerald marks money in, and amber marks
+attention or pending work. The bottom bar is near-black with Nexus in its middle.
 
 ## 2. Color
 
 ### Palette
 
-| Role | Token | Dark | Usage |
-|------|-------|------|-------|
-| Surface/primary | --bg-shell | #09090b | Browser and page background |
-| Surface/secondary | --bg-frame | #0d0d10 | Application frame |
-| Surface/elevated | --bg-card | #151518 | Cards, tables, sheets |
-| Surface/interactive | --bg-card-hover | #1b1b1f | Hovered controls and rows |
-| Input surface | --bg-input | #121215 | Form controls |
-| Text/primary | --text-primary | #f4f4f5 | Main content |
-| Text/strong | --text-white | #ffffff | Headings and emphasis |
-| Text/secondary | --text-secondary | #a1a1aa | Supporting content |
-| Text/tertiary | --text-muted | #8b8b94 | Metadata and hints (lightened from #71717a to pass 4.5:1 on cards) |
-| Border/default | --border-card | #202024 | Card and table boundaries |
-| Border/subtle | --border-subtle | #222226 | Rails and dividers |
-| Accent/primary | --orange-primary | #f97316 | Primary actions and money out |
+| Role | Token | Light | Usage |
+|------|-------|-------|-------|
+| Surface/primary | --bg-shell | #f4f1ec | Page background (warm off-white) |
+| Surface/secondary | --bg-frame | #ffffff | The rail, the chat panel |
+| Surface/elevated | --bg-card | #ffffff | Cards, tables, sheets |
+| Surface/interactive | --bg-card-hover | #f7f4f0 | Hovered controls and rows; tiles inside a card |
+| Input surface | --bg-input | #f6f3ef | Form controls |
+| Text/primary | --text-primary | #1c1917 | Main content |
+| Text/strong | --text-white | #0c0a09 | Headings and emphasis (white on the hero and photos) |
+| Text/secondary | --text-secondary | #57534e | Supporting content |
+| Text/tertiary | --text-muted | #6f6862 | Metadata and hints (4.9:1 on the page, 5.5:1 on cards) |
+| Border/default | --border-card | #ebe5de | Card and table boundaries |
+| Border/subtle | --border-subtle | #efeae4 | Rails and dividers |
+| Accent/primary | --orange-primary | #f97316 | Primary actions (dark text on it) and money out |
 | Accent/hover | --orange-hover | #ea580c | Primary hover state |
-| Accent/soft | --orange-soft | rgba(249,115,22,0.15) | Money-out surfaces |
+| Accent/soft | --orange-soft | rgba(249,115,22,0.12) | Money-out surfaces |
 | Accent/border | --orange-border | rgba(249,115,22,0.35) | Money-out control edge |
-| Status/success | --emerald-accent | #10b981 | Money in and completed states |
-| Status/success-soft | --emerald-soft | rgba(16,185,129,0.15) | Money-in surfaces |
-| Status/success-border | --emerald-border | rgba(16,185,129,0.35) | Money-in control edge |
-| Status/warning | --status-warning | #f59e0b | Pending and attention states |
-| Status/warning-soft | --status-warning-soft | rgba(245,158,11,0.10) | Pending surfaces |
-| Status/warning-border | --status-warning-border | rgba(245,158,11,0.35) | Pending control edge |
-| Status/error | --rose-accent | #f43f5e | Destructive actions and errors |
-| Status/info | --cyan-accent | #06b6d4 | Informational accents |
-| Surface/raised | --bg-raised | #1f1f23 | Secondary buttons, icon tiles inside cards |
-| Accent/text | --orange-text | #fb923c | Figures highlighted inside sentences (the brief, nudges) |
-| Accent/glow | --orange-glow | #7c2d12 | The corner glow of the Nexus brief card only |
-| Chart/second | --sky-accent | #38bdf8 | The second chart series (within budget), hatched or solid |
-| Surface/glass | --bg-glass | rgba(21,21,24,0.74) | Cards: the elevated surface, see-through to the ribbons |
-| Ribbon/spark | --ribbon-spark | #fdba74 | The brightest strands of the background ribbons |
+| Status/success | --emerald-accent | #047857 | Money in and completed states |
+| Status/success-soft | --emerald-soft | rgba(5,150,105,0.12) | Money-in surfaces |
+| Status/success-border | --emerald-border | rgba(5,150,105,0.35) | Money-in control edge |
+| Status/warning | --status-warning | #b45309 | Pending and attention states |
+| Status/warning-soft | --status-warning-soft | rgba(245,158,11,0.12) | Pending surfaces |
+| Status/warning-border | --status-warning-border | rgba(217,119,6,0.35) | Pending control edge |
+| Status/error | --rose-accent | #e11d48 | Destructive actions and errors |
+| Status/info | --cyan-accent | #0891b2 | Informational accents |
+| Surface/raised | --bg-raised | #f1ece6 | Secondary buttons, icon tiles inside cards |
+| Accent/text | --orange-text | #c2410c | Orange words on light surfaces (pills, the current month) |
+| Accent/glow | --orange-glow | #fed7aa | Soft orange fills |
+| Chart/second | --sky-accent | #0284c7 | A second chart series |
+| Surface/glass | --bg-glass | #ffffff | Cards |
+| Hero/top | --hero-top | #e4570f | Home hero, top (and Telegram's header on Home) |
+| Hero/mid | --hero-mid | #ec6a1e | Home hero, where it starts to fade into the page |
+| Bar/background | --bar-bg | #12100e | The phone's bottom bar |
+| Bar/text | --bar-text | #a8a29e | Bottom bar icons (white when active) |
 
 ### Rules
 
-- Use the existing charcoal and ember direction; do not introduce a second visual theme.
+- One theme: warm off-white page, white cards, near-black text, orange for actions and the Home hero; do not introduce a second visual theme.
+- Light text sits only on the hero's orange (with a faint shadow; about 3.2–3.7:1, so keep it 15px+ and medium weight) and on photos (under a dark fade).
 - Accent colors communicate action or transaction direction, not decoration.
 - New colors must be added here before they are used in CSS.
 
@@ -111,35 +116,36 @@ All spacing derives from a 4px base unit.
 
 ### Radius and surfaces (theme v2)
 
-- Cards 20px, inner tiles and controls 12px, pills fully round. On phones each section runs the full width of the screen, square-ended with no side borders; boxes inside a section keep their corners, and tiles side by side keep the gap between them.
+- Cards 20px (18px on phones), inner tiles and controls 12px, pills fully round. Every segment is its own white card with a soft shadow and room either side; where it helps scanning (Home, the Accounting overview) the title sits above the card, with its action (Details, Open, See all, Edit) on the right.
+- Home's overview is not a card: a hero on solid orange (full-bleed at the top on phones, fading into the page; a rounded panel on desktop) with the day and greeting, this month's spending as the one big figure with an arrow, how it stands in words, the brief, one-tap questions and the ask box, plus round buttons for Log expense and Settings.
 - Buttons are filled: primary orange with dark text, secondary `--bg-raised`; no outlines.
 - Department tabs are a rounded segmented control on one row, sharing the width on phones; keep a department to five tabs or fewer (one-off tasks like Import are reached from the page that needs them).
 - Orange is for actions (the main button, the active tab, today) and status, not decoration: figures in the brief are white and bold, links in text keep the text's colour with an underline, and a section's heading actions (Details, Open, See all, Edit) are all small buttons.
-- The ribbons are atmosphere: dimmed, behind near-solid cards, so no figure sits on a bright strand.
-- In Telegram the app behaves natively: Telegram's back button on a page inside a section (a trip, a stock, a plan, Import), a light haptic tap on the main button and a tick when changing tab or day, the header and bottom bar in the shell colour, and no swipe-to-close while scrolling. Every tab in the bottom bar has a label, Settings included.
-- Floating buttons: one per page. On phones they step aside while the page scrolls down and come back on the way up. A trip's page uses its own + (and "Ask Nexus about this trip") instead of the chat bubble.
+- In Telegram the app behaves natively: Telegram's back button on a page inside a section (a trip, a stock, a plan, Import), a light haptic tap on the main button and a tick when changing tab or day, Telegram's header in the hero's orange on Home and the page colour elsewhere, its bottom bar near-black like ours, and no swipe-to-close while scrolling.
+- The phone's bottom bar is near-black with rounded top corners: Home, Accounting, the orange ✦ Nexus button in the middle (it opens the chat), Investment, Travel; icons only, names for screen readers. Settings is the cog at the top of Home (and in the rail on a wide screen, under the orange Ask Nexus button).
+- No floating chat bubble: Nexus lives in the bar. The only floating button is a trip page's +, which steps aside while the page scrolls down on a phone and comes back on the way up.
 - An amount never breaks inside its figure: tile figures size to their box and wrap, if they must, between the currency and the number. Differences are said in words, not with a minus sign in green.
-- Say a figure once per screen: Home's brief gives this month against last, so its tiles add what the brief doesn't (a usual month, the biggest category).
+- Say a figure once per screen: Home's hero gives this month's spending and how it stands, so the Spending card shows the trend and adds what the hero doesn't (a usual month, the biggest category).
 - Empty sections are one short line, left-aligned, with one action; a secondary way in (adding a holding by hand, recording a trade) stays behind a small button until asked for.
 - Charts say one thing: past months are quiet grey bars, stripes only mark a month over budget, this month is solid orange over the dashed outline of a usual month, and the legend lists only what's drawn.
 - Ledger on a phone: no tick boxes until Select; dates are chips (All, This month, Last month, Custom), with the date boxes only for Custom.
 - Touch targets: on touch screens small buttons are at least 40px tall and pills and filter tabs 38px.
 - One heading style: sentence case, no emoji. Small capitals (eyebrow) are only for labels inside a section.
-- Page padding 40px 48px on desktop, 16px on phones; on phones every section's text starts 16px in too, so it lines up with the page title.
+- Page padding 40px 48px on desktop, 16px on phones.
 - On phones a page's actions sit under its title and share the width (a primary action gets its own row); a section's note sits under its heading; form buttons fill the row.
 
-### Nexus brief (Home)
+### Home hero
 
-- **Structure**: Nexus mark and "Your brief" pill, two or three sentences, one-tap question chips, the ask box
-- **Content**: written in code from the user's own figures (`brief.ts`), never a model's words; figures in `--orange-text`
+- **Structure**: the day and greeting with round Log expense and Settings buttons; this month's spending as the big figure (counting up) with an arrow (down when it's the better side); how it stands in words (budget left, or against last month by this date); the brief; one-tap question chips; the ask box
+- **Content**: the brief is written in code from the user's own figures (`brief.ts`), never a model's words; figures in it are bold
 - **Behaviour**: a chip or the ask box opens the chat with that question
-- **Surface**: the only element with the corner glow; two faint rings, decorative
-- **Layout**: chips wrap on phones; the card never scrolls sideways
+- **Surface**: solid orange from `--hero-top` to `--hero-mid`, fading into the page on phones; chips and the ask box are white on it
+- **Layout**: chips wrap on phones; nothing scrolls sideways
 
 ### Spending by month (Home)
 
-- Six bars, hatched `--sky-accent` within the overall budget, hatched orange over it, solid orange for this month so far; the budget as a dashed line
-- Three small tiles underneath: budget left (or money received), against last month by the same date, biggest category
+- Six bars: quiet grey for past months, striped orange over the overall budget, solid orange for this month so far over the dashed outline of a usual month; the budget as a dashed line
+- Three small tiles underneath: budget left (or money received), a usual month, biggest category
 - Every bar's month and amount is in text for screen readers; the legend names every mark
 
 ### Rows
@@ -214,16 +220,14 @@ All spacing derives from a 4px base unit.
 | Reveal | 360ms | cubic-bezier(0.16, 1, 0.3, 1) | A card rising 10px into view, 35ms apart, up to 3 at once |
 | Fill | 700–1200ms | cubic-bezier(0.16, 1, 0.3, 1) | Bars, meters and rings filling as their card arrives |
 | Count | 650ms | ease-out cubic | A headline figure counting up from zero, the first time it's seen |
-| Drift | 26–42s | ease-in-out, alternating | The background ribbons |
 
 ### Rules
 
 - Animate only `transform` and `opacity` for movement.
 - Every new interactive control has hover, active, focus, disabled, and loading behavior where applicable.
 - Respect `prefers-reduced-motion: reduce` by removing movement and retaining state changes.
-- **Ambient ribbons** (`components/Ribbons.tsx`): bundles of fine ember and amber strands with a soft glow, drifting slowly behind every page, darkened toward the edges so text stays on charcoal. Each layer is drawn once and only its wrapper moves (a composited transform); nothing inside the SVG animates, since that redraws the glow every frame. Decoration only: hidden from screen readers, never catching a tap, still for reduced motion.
 - **Reveal** (`motion.tsx`): cards, the brief and trip panels fade and rise into place the first time they're scrolled into view; their bars, meters and rings fill as they arrive. Figures that count up keep their format (currency, separators, decimals).
-- On phones the tab bar floats as a glass pill above the safe area; cards blur what's behind them only on desktop (hover-capable screens), to keep scrolling smooth on phones.
+- On phones the bottom bar is fixed to the bottom edge above the safe area; nothing blurs, to keep scrolling smooth.
 
 ## 7. Depth & Surface
 

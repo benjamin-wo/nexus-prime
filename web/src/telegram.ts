@@ -22,7 +22,8 @@ declare global {
   }
 }
 
-const SHELL = "#09090b"; // --bg-shell
+const SHELL = "#f4f1ec"; // --bg-shell
+const BAR = "#12100e"; // --bar-bg
 
 export function readInitData(hash: string): string | null {
   return new URLSearchParams(hash.replace(/^#/, "")).get("tgWebAppData") || null;
@@ -88,7 +89,7 @@ export function startMiniApp(): void {
       app?.expand();
       app?.setHeaderColor?.(SHELL);
       app?.setBackgroundColor?.(SHELL);
-      app?.setBottomBarColor?.(SHELL);
+      app?.setBottomBarColor?.(BAR);
       // Pages scroll inside the app: a swipe down while reading shouldn't close it.
       app?.disableVerticalSwipes?.();
       if (app) hapticsOnTap(app);

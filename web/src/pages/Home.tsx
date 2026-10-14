@@ -8,13 +8,15 @@ import {
   type FeedItem,
   type Holding,
   type Me,
+  type Money,
   type Portfolio,
   type Run,
   type Spending,
   type Summary,
   type TripDetail,
 } from "../api";
-import { brief, suggestions } from "../brief";
+import { brief, standing, suggestions } from "../brief";
+import { Block } from "../components/Block";
 import { Icon, departmentIcon } from "../components/Icon";
 import { DEPARTMENTS } from "../departments";
 import {
@@ -97,16 +99,27 @@ function RunRow({ run, onCancel }: { run: Run; onCancel: (run: Run) => void }) {
   );
 }
 
-/** Nexus speaks first: a short brief from the user's own figures, a few one-tap
- * questions, and a box to ask anything. Every question opens the chat. */
-function Assistant({
+/** The top of Home, on an orange gradient rather than in a card: the day and a
+ * greeting, this month's spending as the one big figure with how it stands, Nexus's
+ * brief, a few one-tap questions, and a box to ask anything (each opens the chat). */
+function Hero({
+  date,
+  greeting: hello,
+  spent,
+  stands,
   parts,
   chips,
   onAsk,
+  onLog,
 }: {
+  date: string;
+  greeting: string;
+  spent?: Money;
+  stands: ReturnType<typeof standing>;
   parts: ReturnType<typeof brief>;
   chips: string[];
   onAsk: (text: string) => void;
+  onLog: () => void;
 }) {
   const [draft, setDraft] = useState("");
   function ask(event: FormEvent) {
@@ -117,15 +130,36 @@ function Assistant({
     onAsk(text);
   }
   return (
-    <section className="assistant" aria-label="Nexus">
-      <div className="assistant-head">
-        <span className="assistant-mark" aria-hidden="true">
-          <Icon name="sparkle" />
-        </span>
-        <strong>Nexus</strong>
-        <span className="pill">Your brief</span>
+    <section className="hero" aria-label="Nexus">
+      <div className="hero-top">
+        <div>
+          <p className="hero-date">{date}</p>
+          <h1>
+            <AccentTitle text={hello} />
+          </h1>
+        </div>
+        <div className="hero-actions">
+          <button type="button" className="round-btn" aria-label="Log expense" title="Log expense" onClick={onLog}>
+            <Icon name="plus" />
+          </button>
+          <Link className="round-btn" to="/settings" aria-label="Settings" title="Settings">
+            <Icon name="settings" />
+          </Link>
+        </div>
       </div>
-      <p className="assistant-brief">
+      <div className="hero-figure">
+        <span className="hero-value">
+          <CountUp value={spent ? formatMoney(spent) : "…"} />
+          {stands && (
+            <span className="hero-arrow" aria-hidden="true">
+              <Icon name={stands.good ? "down" : "up"} size={28} />
+            </span>
+          )}
+        </span>
+        <span className="hero-label">spent this month</span>
+      </div>
+      {stands && <p className="hero-note">{stands.text}.</p>}
+      <p className="hero-brief">
         {parts.map((p, i) =>
           p.hl ? (
             <span key={i} className="hl">
@@ -138,12 +172,7 @@ function Assistant({
       </p>
       <div className="chips" aria-label="Suggested questions">
         {chips.map((c) => (
-          <button
-            key={c}
-            type="button"
-            className="ask-chip"
-            onClick={() => onAsk(c)}
-          >
+          <button key={c} type="button" className="ask-chip" onClick={() => onAsk(c)}>
             {c}
           </button>
         ))}
@@ -282,20 +311,16 @@ function SpendingCard({
       : null;
   const received = summary?.totals.find((t) => t.direction === "in");
   return (
-    <section className="card spend-card" aria-labelledby="spent-month">
-      <div className="card-head">
-        <div className="figure">
-          <h2 id="spent-month" className="figure-label">
-            Spent this month
-          </h2>
-          <span className="figure-value">
-            <CountUp value={now ? formatMoney(now.spent) : "…"} />
-          </span>
-        </div>
+    <Block
+      id="spending-months"
+      title="Spending"
+      className="spend-card"
+      action={
         <Link className="btn btn-small" to="/accounting">
           Details
         </Link>
-      </div>
+      }
+    >
       {spending ? (
         <SpendingChart data={spending} />
       ) : (
@@ -344,7 +369,7 @@ function SpendingCard({
           </span>
         </div>
       </div>
-    </section>
+    </Block>
   );
 }
 
@@ -357,15 +382,15 @@ function PortfolioCard({ portfolio }: { portfolio?: Portfolio }) {
     )
     .slice(0, 4);
   return (
-    <section className="card" aria-labelledby="portfolio">
-      <div className="card-head">
-        <h2 id="portfolio" className="figure-label">
-          Portfolio
-        </h2>
+    <Block
+      id="portfolio"
+      title="Portfolio"
+      action={
         <Link className="btn btn-small" to="/investment">
           Open
         </Link>
-      </div>
+      }
+    >
       {!portfolio ? (
         <p className="state">Loading…</p>
       ) : held.length === 0 ? (
@@ -410,7 +435,7 @@ function PortfolioCard({ portfolio }: { portfolio?: Portfolio }) {
           </ul>
         </>
       )}
-    </section>
+    </Block>
   );
 }
 
@@ -420,10 +445,7 @@ function NeedsYou({
   feed: { data?: FeedItem[]; isLoading: boolean; isError: boolean };
 }) {
   return (
-    <section className="card" aria-labelledby="needs-you">
-      <div className="card-head">
-        <h2 id="needs-you">Needs you</h2>
-      </div>
+    <Block id="needs-you" title="Needs you">
       {feed.isLoading && <p className="state">Loading…</p>}
       {feed.isError && (
         <p className="error-text">Couldn't load what needs you.</p>
@@ -459,7 +481,7 @@ function NeedsYou({
           })}
         </ul>
       )}
-    </section>
+    </Block>
   );
 }
 
@@ -468,13 +490,15 @@ function BudgetsCard({ budgets }: { budgets?: Budget[] }) {
     .sort((a, b) => b.percent - a.percent)
     .slice(0, 4);
   return (
-    <section className="card" aria-labelledby="budgets-home">
-      <div className="card-head">
-        <h2 id="budgets-home">Budgets this month</h2>
+    <Block
+      id="budgets-home"
+      title="Budgets this month"
+      action={
         <Link className="btn btn-small" to="/accounting/plan">
           Edit
         </Link>
-      </div>
+      }
+    >
       {!budgets ? (
         <p className="state">Loading…</p>
       ) : shown.length === 0 ? (
@@ -507,7 +531,7 @@ function BudgetsCard({ budgets }: { budgets?: Budget[] }) {
           ))}
         </ul>
       )}
-    </section>
+    </Block>
   );
 }
 
@@ -538,11 +562,7 @@ function TripCard({
   const t = detail.trip;
   const gaps = new Set(detail.ready.nights_without_stay);
   return (
-    <section className="card" aria-labelledby="trip-home">
-      <div className="card-head">
-        <h2 id="trip-home">{t.destination}</h2>
-        <span className="pill">{tripWhen(t)}</span>
-      </div>
+    <Block id="trip-home" title={t.destination} action={<span className="pill">{tripWhen(t)}</span>}>
       <p className="muted">
         {formatShortDate(t.start, "UTC")} to {formatShortDate(t.end, "UTC")}
       </p>
@@ -592,7 +612,7 @@ function TripCard({
           Open trip
         </Link>
       </div>
-    </section>
+    </Block>
   );
 }
 
@@ -642,13 +662,8 @@ export function Home({
 
   const overall = budgets?.find((b) => b.category_id === null);
   const spent = summary?.totals.find((t) => t.direction === "out")?.total;
-  const parts = brief({
-    spent,
-    overall,
-    lastMonthToDate: spending?.last_month_to_date,
-    trip,
-    needs: feed.data,
-  });
+  // The big figure and how it stands lead the hero; the brief adds the rest.
+  const parts = brief({ trip, needs: feed.data });
   const held = [...(portfolio?.holdings ?? [])]
     .sort(
       (a, b) =>
@@ -666,24 +681,15 @@ export function Home({
   const shown = (runs.data ?? []).slice(0, 5);
   return (
     <>
-      <div className="page-head">
-        <div>
-          <p className="muted">{today(me.user.timezone)}</p>
-          <h1>
-            <AccentTitle text={greeting(me.user.timezone)} />
-          </h1>
-        </div>
-        <div className="quick">
-          <button type="button" className="btn btn-primary" onClick={onLog}>
-            Log expense
-          </button>
-        </div>
-      </div>
-
-      <Assistant
+      <Hero
+        date={today(me.user.timezone)}
+        greeting={greeting(me.user.timezone)}
+        spent={spent}
+        stands={standing({ spent, overall, lastMonthToDate: spending?.last_month_to_date })}
         parts={parts}
         chips={suggestions({ trip, holdings: held })}
         onAsk={onAsk}
+        onLog={onLog}
       />
 
       <div className="pair">
@@ -695,10 +701,7 @@ export function Home({
         <div className="stack">
           <NeedsYou feed={feed} />
           {shown.length > 0 && (
-            <section className="card" aria-labelledby="working-on">
-              <div className="card-head">
-                <h2 id="working-on">Working on</h2>
-              </div>
+            <Block id="working-on" title="Working on">
               <ul className="feed">
                 {shown.map((run) => (
                   <RunRow
@@ -708,7 +711,7 @@ export function Home({
                   />
                 ))}
               </ul>
-            </section>
+            </Block>
           )}
         </div>
         <div className="stack">
@@ -716,15 +719,12 @@ export function Home({
           {trip && trip.trip.status !== "finished" ? (
             <TripCard detail={trip} onAsk={onAsk} />
           ) : (
-            <section className="card" aria-labelledby="trip-home">
-              <div className="card-head">
-                <h2 id="trip-home">Next trip</h2>
-              </div>
+            <Block id="trip-home" title="Next trip">
               <p className="muted">
                 No trip coming up. <Link to="/travel">Plan one</Link>, or ask
                 Nexus to research a destination.
               </p>
-            </section>
+            </Block>
           )}
         </div>
       </div>
