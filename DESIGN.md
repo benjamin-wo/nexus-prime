@@ -55,10 +55,10 @@ in, and amber marks attention or pending work.
 
 | Level | Size | Weight | Line Height | Usage |
 |-------|------|--------|-------------|-------|
-| Display | 2rem | 600 | 1.2 | Page title (1.625rem on phones) |
+| Display | 2rem | 600 | 1.2 | Page title (1.75rem on phones) |
 | Figure | 2.125rem | 600 | 1.1 | A card's headline amount |
-| Brief | 1.5rem | 500 | 1.4 | The Nexus brief (1.1875rem on phones) |
-| H2 | 1.125rem | 600 | 1.3 | Card heading |
+| Brief | 1.5rem | 500 | 1.4 | The Nexus brief (1.25rem on phones) |
+| H2 | 1.125rem | 600 | 1.3 | Card heading (the same on phones) |
 | H3 | 1rem | 600 | 1.4 | Sub-heading |
 | Body | 0.9375rem | 400 | 1.5 | Default copy |
 | Caption | 0.8125rem | 500 | 1.4 | Metadata and labels; nothing smaller than this |
@@ -114,7 +114,8 @@ All spacing derives from a 4px base unit.
 - Cards 20px, inner tiles and controls 12px, pills fully round. On phones each section runs the full width of the screen, square-ended with no side borders; boxes inside a section keep their corners, and tiles side by side keep the gap between them.
 - Buttons are filled: primary orange with dark text, secondary `--bg-raised`; no outlines.
 - Department tabs are a rounded segmented control; they wrap on phones rather than scroll.
-- Page padding 40px 48px on desktop, 16px on phones.
+- Page padding 40px 48px on desktop, 16px on phones; on phones every section's text starts 16px in too, so it lines up with the page title.
+- On phones a page's actions sit under its title and share the width (a primary action gets its own row); a section's note sits under its heading; form buttons fill the row.
 
 ### Nexus brief (Home)
 

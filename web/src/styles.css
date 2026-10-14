@@ -1289,3 +1289,26 @@ html.keyboard .ribbon { animation-play-state: paused; }
   .content .tiles > .card { margin-inline: 0; }
   .trip-cards { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* With sections full width, phones get a little more type and roomier controls:
+   one text edge (16px) for every section, the page's actions under its title
+   sharing the width, a section's note under its title, and form buttons that
+   fill the row. */
+@media (max-width: 720px) {
+  h1 { font-size: 1.75rem; }
+  h2 { font-size: 1.125rem; }
+  .assistant { padding: var(--space-5) var(--space-4); }
+  .assistant-brief { font-size: 1.25rem; }
+  .ask-chip { font-size: 0.875rem; }
+  .tile .value { font-size: clamp(1.25rem, 6vw, 1.75rem); }
+  .tile .extra { font-size: 0.8125rem; }
+
+  .page-head > :not(:first-child) { flex: 1 1 100%; }
+  .page-head > .btn, .page-head .quick > .btn, .page-head .actions > .btn { flex: 1 1 auto; min-height: 44px; }
+  .page-head .quick, .page-head .actions { flex-wrap: wrap; }
+
+  .card-head { flex-wrap: wrap; row-gap: var(--space-1); }
+  .card-head > .caption { flex: 1 1 100%; order: 1; }
+
+  .budget-add > .btn, .budget-edit > .btn, .add-holding > .btn { flex: 1 1 100%; min-height: 44px; }
+}
