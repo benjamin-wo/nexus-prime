@@ -32,9 +32,35 @@ function DayPill({ iso, label, current, onOpen }: { iso: string; label: string; 
   );
 }
 
+/** One day, in a box the same height for every day: a busy day scrolls inside it,
+ * fading at the bottom while there's more below. */
+function DaySlide({ label, children }: { label: string; children: ReactNode }) {
+  const box = useRef<HTMLDivElement>(null);
+  const [more, setMore] = useState(false);
+  const check = useCallback(() => {
+    const el = box.current;
+    if (el) setMore(el.scrollTop + el.clientHeight < el.scrollHeight - 4);
+  }, []);
+  useEffect(() => {
+    const el = box.current;
+    check();
+    if (!el || typeof ResizeObserver === "undefined") return;
+    // Plans added, opened or taken away change how much there is.
+    const watch = new ResizeObserver(check);
+    watch.observe(el);
+    if (el.firstElementChild) watch.observe(el.firstElementChild);
+    return () => watch.disconnect();
+  }, [check]);
+  return (
+    <div ref={box} className={`day-slide${more ? " more-below" : ""}`} role="group" aria-roledescription="slide" aria-label={label} onScroll={check}>
+      {children}
+    </div>
+  );
+}
+
 /** The itinerary a day at a time: swipe between days, or pick one from the pills.
- * Every day stays on the page (so travel times, links and moves work as before); only
- * the one in view sets the height. */
+ * Every day stays on the page (so travel times, links and moves work as before), each
+ * in a box of the same height. */
 export function DayCarousel({
   days,
   start,
@@ -57,7 +83,6 @@ export function DayCarousel({
   const track = useRef<HTMLDivElement>(null);
   const strip = useRef<HTMLElement>(null);
   const [index, setIndex] = useState(() => Math.max(0, days.indexOf(start)));
-  const [height, setHeight] = useState<number | undefined>(undefined);
   const shown = Math.min(index, Math.max(0, days.length - 1));
 
   const go = useCallback(
@@ -90,18 +115,6 @@ export function DayCarousel({
     const i = Math.round(el.scrollLeft / el.clientWidth);
     if (i !== index) setIndex(i);
   }
-
-  // The track is as tall as the day in view, not the longest day.
-  useEffect(() => {
-    const el = track.current?.children[shown] as HTMLElement | undefined;
-    if (!el) return;
-    const fit = () => setHeight(el.offsetHeight);
-    fit();
-    if (typeof ResizeObserver === "undefined") return;
-    const watch = new ResizeObserver(fit);
-    watch.observe(el);
-    return () => watch.disconnect();
-  }, [shown, days.length]);
 
   // Keep the day's pill in view in the strip, moving it only when it's out of view
   // (so a pill a plan is held over stays under it).
@@ -143,17 +156,11 @@ export function DayCarousel({
           </button>
         </div>
       )}
-      <div ref={track} className="day-track" onScroll={onScroll} style={height ? { height } : undefined}>
+      <div ref={track} className="day-track" onScroll={onScroll}>
         {days.map((d, i) => (
-          <div
-            key={d}
-            className="day-slide"
-            role="group"
-            aria-roledescription="slide"
-            aria-label={`${name(d)}, ${i + 1} of ${days.length}`}
-          >
+          <DaySlide key={d} label={`${name(d)}, ${i + 1} of ${days.length}`}>
             {children(d, Math.abs(i - shown) <= 1)}
-          </div>
+          </DaySlide>
         ))}
       </div>
     </div>
