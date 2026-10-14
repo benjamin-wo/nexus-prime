@@ -50,6 +50,7 @@ from tests.fakes import (
     FakePrices,
     FakeRates,
     FakeRoutes,
+    FakeStatementPages,
     FakeTelegram,
     FakeTripReader,
     FakeWeather,
@@ -192,6 +193,7 @@ async def world(engine: AsyncEngine, empty_database_url: str) -> AsyncIterator[W
             email_reader=FakeEmailReader(),
             holdings=FakeHoldings(),
             trip_reader=FakeTripReader(),
+            statement_pages=FakeStatementPages(),
             prices=FakePrices(),
             news=FakeNews(),
             places=FakePlaces([PLACE]),
@@ -1306,6 +1308,43 @@ async def test_import_a_pdf_statement(world: World) -> None:
     assert bad.status_code == 422
     plain = base64.b64encode(make_pdf(["Dear customer, nothing to see."])).decode()
     assert (await owner.send("POST", "/api/imports/pdf", {"pdf": plain})).status_code == 422
+
+
+async def test_import_a_scanned_pdf_statement(world: World) -> None:
+    import base64
+
+    from tests.pdfs import make_scan
+    from tests.unit.test_statement_pdf import CARD
+
+    owner = world.browser()
+    await owner.login(OWNER)
+    pages: FakeStatementPages = world.app.state.web.scans
+    pages.pages = [CARD[:12], CARD[12:]]
+    scan = base64.b64encode(make_scan([CARD[:12], CARD[12:]])).decode()
+    read = (await owner.send("POST", "/api/imports/pdf", {"pdf": scan})).json()
+    # Both pages were shown to the photo model as pictures, and read as a statement.
+    assert len(pages.shown) == 2 and all(p.startswith(b"\xff\xd8") for p in pages.shown)
+    assert read["scanned"] is True and read["rows"] == 5 and read["reconciles"] is True
+    shown = (
+        await owner.send(
+            "POST", "/api/imports/preview", {"csv": read["csv"], "layout": read["layout"]}
+        )
+    ).json()
+    assert [r["verdict"] for r in shown["rows"]] == ["new"] * 5
+    # A text PDF isn't sent to the model at all.
+    from tests.pdfs import make_pdf
+
+    text = base64.b64encode(make_pdf(CARD)).decode()
+    assert (await owner.send("POST", "/api/imports/pdf", {"pdf": text})).json()["scanned"] is False
+    assert len(pages.shown) == 2
+    # A scan with nothing readable in it says so.
+    pages.pages, pages.shown = [], []
+    unclear = await owner.send("POST", "/api/imports/pdf", {"pdf": scan})
+    assert unclear.status_code == 422 and "clearer scan" in unclear.text
+    # Without the photo model, a scan is turned away kindly.
+    object.__setattr__(world.app.state.web, "scans", None)
+    off = await owner.send("POST", "/api/imports/pdf", {"pdf": scan})
+    assert off.status_code == 422 and "reading scans isn't set up" in off.text
 
 
 async def test_security_headers_size_cap_and_import_limit(world: World) -> None:

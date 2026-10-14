@@ -16,10 +16,12 @@ dependencies = [
     "langgraph==1.2.12",
     "langgraph-checkpoint==4.2.0",
     "langgraph-checkpoint-postgres==3.1.2",
+    "pillow>=11",
     "psycopg[binary]>=3.3.6",
     "pydantic>=2.9",
     "pydantic-settings>=2.6",
     "pypdf>=5.1",
+    "pypdfium2>=4.30",
     "pyyaml>=6.0.3",
     "sqlalchemy[asyncio]>=2.0.36",
     "uvicorn[standard]>=0.32",
@@ -61,7 +63,7 @@ plugins = ["pydantic.mypy"]
 files = ["src", "tests", "migrations"]
 
 [[tool.mypy.overrides]]
-module = ["asyncpg.*"]
+module = ["asyncpg.*", "pypdfium2.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

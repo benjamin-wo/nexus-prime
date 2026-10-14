@@ -2,7 +2,13 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ChangeEvent, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { api, type ImportLayout, type ImportPreview, type ImportRecord, type ImportRow } from "../api";
+import {
+  api,
+  type ImportLayout,
+  type ImportPreview,
+  type ImportRecord,
+  type ImportRow,
+} from "../api";
 import { formatDate, formatMoney } from "../format";
 
 const MAX_CSV_BYTES = 2_000_000;
@@ -16,15 +22,20 @@ type PdfRead = {
   kind: "card" | "account" | null;
   rows: number;
   reconciles: boolean | null;
+  scanned: boolean;
 };
 
 async function base64Of(file: File): Promise<string> {
   const bytes = new Uint8Array(await file.arrayBuffer());
   let binary = "";
-  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  for (let i = 0; i < bytes.length; i += 0x8000)
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(binary);
 }
-const VERDICT: Record<ImportRow["verdict"], { label: string; className: string }> = {
+const VERDICT: Record<
+  ImportRow["verdict"],
+  { label: string; className: string }
+> = {
   new: { label: "New", className: "badge badge-in" },
   duplicate: { label: "Possible duplicate", className: "badge badge-pending" },
   imported: { label: "Already imported", className: "badge badge-deleted" },
@@ -50,7 +61,9 @@ function ColumnSelect({
       <select
         className="input"
         value={value ?? ""}
-        onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))}
+        onChange={(e) =>
+          onChange(e.target.value === "" ? null : Number(e.target.value))
+        }
       >
         {optional && <option value="">None</option>}
         {headers.map((h, i) => (
@@ -74,22 +87,35 @@ function LayoutEditor({
   onChange: (layout: ImportLayout) => void;
 }) {
   const split = layout.amount === null;
-  const set = (patch: Partial<ImportLayout>) => onChange({ ...layout, ...patch });
+  const set = (patch: Partial<ImportLayout>) =>
+    onChange({ ...layout, ...patch });
   return (
     <div className="import-layout" aria-label="Columns">
-      <ColumnSelect label="Date" headers={headers} value={layout.date} onChange={(v) => set({ date: v ?? 0 })} />
+      <ColumnSelect
+        label="Date"
+        headers={headers}
+        value={layout.date}
+        onChange={(v) => set({ date: v ?? 0 })}
+      />
       <ColumnSelect
         label="Description"
         headers={headers}
         value={layout.description[0] ?? 0}
-        onChange={(v) => set({ description: [v ?? 0, ...layout.description.slice(1, 2)] })}
+        onChange={(v) =>
+          set({ description: [v ?? 0, ...layout.description.slice(1, 2)] })
+        }
       />
       <ColumnSelect
         label="More description"
         headers={headers}
         optional
         value={layout.description[1] ?? null}
-        onChange={(v) => set({ description: v === null ? [layout.description[0]] : [layout.description[0], v] })}
+        onChange={(v) =>
+          set({
+            description:
+              v === null ? [layout.description[0]] : [layout.description[0], v],
+          })
+        }
       />
       <label className="field">
         Amounts
@@ -98,8 +124,16 @@ function LayoutEditor({
           value={split ? "split" : "one"}
           onChange={(e) =>
             e.target.value === "split"
-              ? set({ amount: null, debit: layout.amount ?? 0, credit: layout.amount ?? 0 })
-              : set({ amount: layout.debit ?? layout.credit ?? 0, debit: null, credit: null })
+              ? set({
+                  amount: null,
+                  debit: layout.amount ?? 0,
+                  credit: layout.amount ?? 0,
+                })
+              : set({
+                  amount: layout.debit ?? layout.credit ?? 0,
+                  debit: null,
+                  credit: null,
+                })
           }
         >
           <option value="one">One column</option>
@@ -108,21 +142,42 @@ function LayoutEditor({
       </label>
       {split ? (
         <>
-          <ColumnSelect label="Money out" headers={headers} optional value={layout.debit} onChange={(v) => set({ debit: v })} />
-          <ColumnSelect label="Money in" headers={headers} optional value={layout.credit} onChange={(v) => set({ credit: v })} />
+          <ColumnSelect
+            label="Money out"
+            headers={headers}
+            optional
+            value={layout.debit}
+            onChange={(v) => set({ debit: v })}
+          />
+          <ColumnSelect
+            label="Money in"
+            headers={headers}
+            optional
+            value={layout.credit}
+            onChange={(v) => set({ credit: v })}
+          />
         </>
       ) : (
         <>
-          <ColumnSelect label="Amount" headers={headers} value={layout.amount} onChange={(v) => set({ amount: v ?? 0 })} />
+          <ColumnSelect
+            label="Amount"
+            headers={headers}
+            value={layout.amount}
+            onChange={(v) => set({ amount: v ?? 0 })}
+          />
           <label className="field">
             Spending shows as
             <select
               className="input"
               value={layout.sign}
-              onChange={(e) => set({ sign: e.target.value as ImportLayout["sign"] })}
+              onChange={(e) =>
+                set({ sign: e.target.value as ImportLayout["sign"] })
+              }
             >
               <option value="negative_is_out">Negative (-12.30)</option>
-              <option value="positive_is_out">Positive (a card statement)</option>
+              <option value="positive_is_out">
+                Positive (a card statement)
+              </option>
             </select>
           </label>
         </>
@@ -132,19 +187,35 @@ function LayoutEditor({
         <select
           className="input"
           value={layout.date_order}
-          onChange={(e) => set({ date_order: e.target.value as ImportLayout["date_order"] })}
+          onChange={(e) =>
+            set({ date_order: e.target.value as ImportLayout["date_order"] })
+          }
         >
           <option value="dmy">Day first (28/09)</option>
           <option value="mdy">Month first (09/28)</option>
           <option value="ymd">Year first (2026-09-28)</option>
         </select>
       </label>
-      <ColumnSelect label="Currency" headers={headers} optional value={layout.currency} onChange={(v) => set({ currency: v })} />
+      <ColumnSelect
+        label="Currency"
+        headers={headers}
+        optional
+        value={layout.currency}
+        onChange={(v) => set({ currency: v })}
+      />
     </div>
   );
 }
 
-function RowLine({ row, checked, onToggle }: { row: ImportRow; checked: boolean; onToggle: () => void }) {
+function RowLine({
+  row,
+  checked,
+  onToggle,
+}: {
+  row: ImportRow;
+  checked: boolean;
+  onToggle: () => void;
+}) {
   const verdict = VERDICT[row.verdict];
   const selectable = row.verdict === "new" || row.verdict === "duplicate";
   return (
@@ -158,19 +229,25 @@ function RowLine({ row, checked, onToggle }: { row: ImportRow; checked: boolean;
           onChange={onToggle}
         />
       </td>
-      <td className="date">{row.date ? formatDate(`${row.date}T12:00:00`) : row.cells.join(" · ").slice(0, 30)}</td>
+      <td className="date">
+        {row.date
+          ? formatDate(`${row.date}T12:00:00`)
+          : row.cells.join(" · ").slice(0, 30)}
+      </td>
       <td className="merchant wrap">
         {row.description || "—"}
         {row.matches && (
           <span className="caption fx">
-            Looks like {formatDate(`${row.matches.date}T12:00:00`)} {row.matches.description ?? ""}{" "}
-            {row.matches.amount}
+            Looks like {formatDate(`${row.matches.date}T12:00:00`)}{" "}
+            {row.matches.description ?? ""} {row.matches.amount}
           </span>
         )}
         {row.problem && <span className="caption fx">{row.problem}</span>}
       </td>
       <td className="hide-mobile">{row.category ?? ""}</td>
-      <td className={`amount ${row.direction === "in" ? "amount-in" : "amount-out"}`}>
+      <td
+        className={`amount ${row.direction === "in" ? "amount-in" : "amount-out"}`}
+      >
         {row.amount && row.currency
           ? `${row.direction === "in" ? "+" : "−"}${formatMoney({ amount: row.amount, currency: row.currency })}`
           : ""}
@@ -185,11 +262,24 @@ function RowLine({ row, checked, onToggle }: { row: ImportRow; checked: boolean;
 /** Import a bank statement: pick a CSV, check the preview, import the ticked rows. */
 export function ImportPage() {
   const client = useQueryClient();
-  const history = useQuery({ queryKey: ["imports"], queryFn: () => api<ImportRecord[]>("/imports") });
-  const [file, setFile] = useState<{ name: string; text: string; fromPdf: boolean } | null>(null);
-  const [locked, setLocked] = useState<{ name: string; pdf: string; wrong: boolean } | null>(null);
+  const history = useQuery({
+    queryKey: ["imports"],
+    queryFn: () => api<ImportRecord[]>("/imports"),
+  });
+  const [file, setFile] = useState<{
+    name: string;
+    text: string;
+    fromPdf: boolean;
+    scanned?: boolean;
+  } | null>(null);
+  const [locked, setLocked] = useState<{
+    name: string;
+    pdf: string;
+    wrong: boolean;
+  } | null>(null);
   const [password, setPassword] = useState("");
   const [check, setCheck] = useState<boolean | null>(null);
+  const [readingPdf, setReadingPdf] = useState(false);
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [ticked, setTicked] = useState<Set<number>>(new Set());
   const [saveAs, setSaveAs] = useState("");
@@ -202,9 +292,16 @@ export function ImportPage() {
     setBusy(true);
     setError(null);
     try {
-      const shown = await api<ImportPreview>("/imports/preview", { method: "POST", body: { csv: text, layout } });
+      const shown = await api<ImportPreview>("/imports/preview", {
+        method: "POST",
+        body: { csv: text, layout },
+      });
       setPreview(shown);
-      setTicked(new Set(shown.rows.filter((r) => r.verdict === "new").map((r) => r.index)));
+      setTicked(
+        new Set(
+          shown.rows.filter((r) => r.verdict === "new").map((r) => r.index),
+        ),
+      );
     } catch (e) {
       setPreview(null);
       setError(e instanceof Error ? e.message : "Couldn't read that file");
@@ -215,9 +312,13 @@ export function ImportPage() {
 
   async function openPdf(name: string, pdf: string, pass: string | null) {
     setBusy(true);
+    setReadingPdf(true);
     setError(null);
     try {
-      const read = await api<PdfRead>("/imports/pdf", { method: "POST", body: { pdf, password: pass } });
+      const read = await api<PdfRead>("/imports/pdf", {
+        method: "POST",
+        body: { pdf, password: pass },
+      });
       if (read.needs_password || !read.csv || !read.layout) {
         setLocked({ name, pdf, wrong: read.wrong_password });
         setBusy(false);
@@ -226,11 +327,13 @@ export function ImportPage() {
       setLocked(null);
       setPassword("");
       setCheck(read.reconciles);
-      setFile({ name, text: read.csv, fromPdf: true });
+      setFile({ name, text: read.csv, fromPdf: true, scanned: read.scanned });
       await show(read.csv, read.layout);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't read that PDF");
       setBusy(false);
+    } finally {
+      setReadingPdf(false);
     }
   }
 
@@ -241,9 +344,15 @@ export function ImportPage() {
     setLocked(null);
     setCheck(null);
     if (!picked) return;
-    const isPdf = picked.type === "application/pdf" || picked.name.toLowerCase().endsWith(".pdf");
+    const isPdf =
+      picked.type === "application/pdf" ||
+      picked.name.toLowerCase().endsWith(".pdf");
     if (picked.size > (isPdf ? MAX_PDF_BYTES : MAX_CSV_BYTES)) {
-      setError(isPdf ? "That PDF is larger than 10 MB." : "That file is larger than 2 MB.");
+      setError(
+        isPdf
+          ? "That PDF is larger than 10 MB."
+          : "That file is larger than 2 MB.",
+      );
       return;
     }
     if (isPdf) {
@@ -267,7 +376,8 @@ export function ImportPage() {
           layout: preview.layout,
           include: [...ticked],
           file_name: file.name,
-          save_as: save && saveAs.trim() && !file.fromPdf ? saveAs.trim() : null,
+          save_as:
+            save && saveAs.trim() && !file.fromPdf ? saveAs.trim() : null,
         },
       });
       setDone(record);
@@ -287,7 +397,8 @@ export function ImportPage() {
     void client.invalidateQueries();
   }
 
-  const counts = (verdict: ImportRow["verdict"]) => preview?.rows.filter((r) => r.verdict === verdict).length ?? 0;
+  const counts = (verdict: ImportRow["verdict"]) =>
+    preview?.rows.filter((r) => r.verdict === verdict).length ?? 0;
   const toggle = (index: number) =>
     setTicked((current) => {
       const next = new Set(current);
@@ -302,7 +413,8 @@ export function ImportPage() {
         <div>
           <h1>Import a statement</h1>
           <p className="muted">
-            A CSV or PDF statement from your bank or card. Nothing is added until you check it and confirm.
+            A CSV or PDF statement from your bank or card. Nothing is added
+            until you check it and confirm.
           </p>
         </div>
         <Link className="btn" to="/accounting/ledger">
@@ -331,7 +443,9 @@ export function ImportPage() {
             }}
           >
             <label className="field">
-              {locked.wrong ? "That password didn't open it. Try again" : "This PDF is locked. Its password"}
+              {locked.wrong
+                ? "That password didn't open it. Try again"
+                : "This PDF is locked. Its password"}
               <input
                 className="input"
                 type="password"
@@ -340,13 +454,25 @@ export function ImportPage() {
                 onChange={(e) => setPassword(e.target.value)}
               />
             </label>
-            <button type="submit" className="btn btn-primary" disabled={!password || busy}>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={!password || busy}
+            >
               Open
             </button>
-            <span className="caption">Used only to read this file; it isn't kept.</span>
+            <span className="caption">
+              Used only to read this file; it isn't kept.
+            </span>
           </form>
         )}
-        {busy && <p className="state">Reading…</p>}
+        {busy && (
+          <p className="state">
+            {readingPdf
+              ? "Reading… a scanned PDF takes up to a minute."
+              : "Reading…"}
+          </p>
+        )}
         {error && (
           <p className="error-text" role="alert">
             {error}
@@ -373,24 +499,59 @@ export function ImportPage() {
           <div className="card-head">
             <h2 id="import-preview">Check before importing</h2>
             <span className="caption">
-              {preview.saved_as ? `Using your saved layout “${preview.saved_as}”` : file.name}
+              {preview.saved_as
+                ? `Using your saved layout “${preview.saved_as}”`
+                : file.name}
             </span>
           </div>
-          {file.fromPdf ? (
-            <p className={check === false ? "error-text" : "caption"} role="note">
-              {check === true && "Read from the PDF. These rows add up to the statement's own totals."}
+          {file.fromPdf && file.scanned ? (
+            <p
+              className={check === false ? "error-text" : "caption"}
+              role="note"
+            >
+              {check === true &&
+                "Read from a scan. These rows add up to the statement's own totals; check the dates and descriptions against it."}
+              {check === false &&
+                "Read from a scan, but these rows don't add up to the statement's totals: some may be misread or missing. Check each one against the statement."}
+              {check === null &&
+                "Read from a scan, and the statement doesn't state totals to check against: check each row against it."}
+            </p>
+          ) : file.fromPdf ? (
+            <p
+              className={check === false ? "error-text" : "caption"}
+              role="note"
+            >
+              {check === true &&
+                "Read from the PDF. These rows add up to the statement's own totals."}
               {check === false &&
                 "Read from the PDF, but these rows don't add up to the statement's totals: some may be missing. Check them against the statement."}
-              {check === null && "Read from the PDF. The statement doesn't state totals to check against."}
+              {check === null &&
+                "Read from the PDF. The statement doesn't state totals to check against."}
             </p>
           ) : preview.layout ? (
-            <LayoutEditor headers={preview.headers} layout={preview.layout} onChange={(l) => show(file.text, l)} />
+            <LayoutEditor
+              headers={preview.headers}
+              layout={preview.layout}
+              onChange={(l) => show(file.text, l)}
+            />
           ) : (
             <>
-              <p className="state">I couldn't tell which columns hold the date, description and amount. Pick them:</p>
+              <p className="state">
+                I couldn't tell which columns hold the date, description and
+                amount. Pick them:
+              </p>
               <LayoutEditor
                 headers={preview.headers}
-                layout={{ date: 0, description: [1], amount: 2, debit: null, credit: null, currency: null, date_order: "dmy", sign: "negative_is_out" }}
+                layout={{
+                  date: 0,
+                  description: [1],
+                  amount: 2,
+                  debit: null,
+                  credit: null,
+                  currency: null,
+                  date_order: "dmy",
+                  sign: "negative_is_out",
+                }}
                 onChange={(l) => show(file.text, l)}
               />
             </>
@@ -398,8 +559,9 @@ export function ImportPage() {
           {preview.rows.length > 0 && (
             <>
               <p className="caption">
-                {counts("new")} new · {counts("duplicate")} possible duplicates (left unticked) ·{" "}
-                {counts("imported")} already imported · {counts("unclear")} can't be read
+                {counts("new")} new · {counts("duplicate")} possible duplicates
+                (left unticked) · {counts("imported")} already imported ·{" "}
+                {counts("unclear")} can't be read
               </p>
               <div className="table-wrap">
                 <table className="ledger import-table">
@@ -421,7 +583,12 @@ export function ImportPage() {
                   </thead>
                   <tbody>
                     {preview.rows.map((row) => (
-                      <RowLine key={row.index} row={row} checked={ticked.has(row.index)} onToggle={() => toggle(row.index)} />
+                      <RowLine
+                        key={row.index}
+                        row={row}
+                        checked={ticked.has(row.index)}
+                        onToggle={() => toggle(row.index)}
+                      />
                     ))}
                   </tbody>
                 </table>
@@ -430,8 +597,12 @@ export function ImportPage() {
                 {!file.fromPdf && (
                   <>
                     <label className="check">
-                      <input type="checkbox" checked={save} onChange={(e) => setSave(e.target.checked)} /> Remember
-                      these columns as
+                      <input
+                        type="checkbox"
+                        checked={save}
+                        onChange={(e) => setSave(e.target.checked)}
+                      />{" "}
+                      Remember these columns as
                     </label>
                     <input
                       className="input"
@@ -443,7 +614,12 @@ export function ImportPage() {
                     />
                   </>
                 )}
-                <button type="button" className="btn btn-primary" onClick={confirm} disabled={busy || ticked.size === 0}>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={confirm}
+                  disabled={busy || ticked.size === 0}
+                >
                   Import {ticked.size} transaction{ticked.size === 1 ? "" : "s"}
                 </button>
               </div>
@@ -464,7 +640,11 @@ export function ImportPage() {
                   {r.undone_at && <span className="caption"> · undone</span>}
                 </span>
                 {!r.undone_at && (
-                  <button type="button" className="btn btn-ghost" onClick={() => undo(r)}>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={() => undo(r)}
+                  >
                     Undo
                   </button>
                 )}

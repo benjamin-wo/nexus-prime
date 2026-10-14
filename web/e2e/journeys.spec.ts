@@ -610,6 +610,19 @@ test("import a locked PDF statement", async ({ page }) => {
   await expect(preview.getByRole("checkbox", { name: "Import Beach Cafe" })).toBeChecked();
 });
 
+test("import a scanned PDF statement", async ({ page }) => {
+  await fakeApi(page);
+  await page.goto("/import");
+  await page.getByLabel("Choose a CSV or PDF").setInputFiles({
+    name: "scanned-statement.pdf",
+    mimeType: "application/pdf",
+    buffer: Buffer.from("%PDF-1.4 scanned, made up"),
+  });
+  const preview = page.getByRole("region", { name: "Check before importing" });
+  await expect(preview.getByRole("note")).toHaveText(/Read from a scan.*check each row/);
+  await expect(preview.getByRole("checkbox", { name: "Import Night Market" })).toBeChecked();
+});
+
 test("see and forget what Nexus remembers", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/settings");

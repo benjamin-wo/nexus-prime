@@ -440,6 +440,12 @@ class EmailReader(Protocol):
         ...
 
 
+class StatementPageReader(Protocol):
+    """Copies the text of one scanned statement page, line by line, as printed."""
+
+    async def transcribe(self, image: bytes) -> list[str]: ...
+
+
 class Cipher(Protocol):
     """Encrypts secrets before they're stored."""
 

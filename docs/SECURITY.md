@@ -44,7 +44,7 @@ A small number of invited people's money records: transactions, budgets, bills, 
 - **Signed logins can be replayed for up to 24 hours** if someone captures one. That's Telegram's design; the window could be shortened at the cost of sign-ins from a stale page failing.
 - **Rate limits are in memory**, per process: a restart resets them, and more than one instance would each count separately. Fine for one instance; move them to Postgres before scaling out.
 - **The chat is kept for the web chat window**: the newest 500 lines per user (their messages and Nexus's replies; no images, emails or notifications), each user's alone.
-- **The model provider sees what the model sees**: messages, the money snapshot, memories, and receipt and email text. OpenRouter's privacy settings exclude providers that train on prompts.
+- **The model provider sees what the model sees**: messages, the money snapshot, memories, receipt and email text, and the page images of a scanned statement being imported. OpenRouter's privacy settings exclude providers that train on prompts.
 - **A thread that a crafted PDF ties up** keeps running after the 30-second limit returns; the size and page caps bound it.
 - **The old database is kept read-only** for the legacy import; it's a separate Railway service and isn't reached at runtime.
 - **A shared trip link works for whoever holds it.** It's a bearer link, like an unlisted photo album: anyone it's forwarded to can see the plan until the owner makes a new one or stops sharing. It shows only the plan (no money, references or notes), and it has no expiry by design, since companions come back to it during the trip.

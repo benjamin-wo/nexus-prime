@@ -44,3 +44,19 @@ def make_pdf(lines: list[str], password: str | None = None) -> bytes:
     locked = io.BytesIO()
     writer.write(locked)
     return locked.getvalue()
+
+
+def make_scan(pages: list[list[str]]) -> bytes:
+    """A scanned PDF: each page a picture of its lines, with no text in it at all."""
+    from PIL import Image, ImageDraw
+
+    pictures = []
+    for lines in pages:
+        picture = Image.new("L", (1190, 1684), 255)  # A4 at 144 dpi
+        draw = ImageDraw.Draw(picture)
+        for n, line in enumerate(lines):
+            draw.text((80, 80 + n * 28), line, fill=0)
+        pictures.append(picture)
+    out = io.BytesIO()
+    pictures[0].save(out, format="PDF", save_all=True, append_images=pictures[1:], resolution=144)
+    return out.getvalue()
