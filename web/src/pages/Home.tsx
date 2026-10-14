@@ -178,15 +178,24 @@ const MONTH = new Intl.DateTimeFormat(undefined, {
   timeZone: "UTC",
 });
 
-/** Money out per month: hatched bars for past months (orange when over the overall
- * budget), a solid bar for this month so far, and the budget as a dashed line. */
+/** A usual month: the average of the full months before this one that had any
+ * spending, and how many there were. */
+function usualMonth(months: Spending["months"]): { usual: number | null; count: number } {
+  const past = months.filter((m) => !m.to_date && Number(m.spent.amount) > 0);
+  const usual = past.length ? past.reduce((sum, m) => sum + Number(m.spent.amount), 0) / past.length : null;
+  return { usual, count: past.length };
+}
+
+/** Money out per month: quiet bars for past months (striped orange only when over
+ * the overall budget), this month so far in solid orange over the outline of a
+ * usual month (so early in the month a short bar reads as "so far"), and the
+ * budget as a dashed line. */
 function SpendingChart({ data }: { data: Spending }) {
   const budget = data.budget ? Number(data.budget.amount) : null;
-  const top = Math.max(
-    1,
-    budget ?? 0,
-    ...data.months.map((m) => Number(m.spent.amount)),
-  );
+  const { usual } = usualMonth(data.months);
+  const top = Math.max(1, budget ?? 0, usual ?? 0, ...data.months.map((m) => Number(m.spent.amount)));
+  const anyOver = budget !== null && data.months.some((m) => !m.to_date && Number(m.spent.amount) > budget);
+  const pct = (value: number) => `${Math.max(2, (value / top) * 100)}%`;
   return (
     <div className="month-chart">
       <div className="month-plot">
@@ -196,10 +205,8 @@ function SpendingChart({ data }: { data: Spending }) {
             const over = budget !== null && value > budget;
             return (
               <li key={m.month} className="month">
-                <span
-                  className={`month-bar${m.to_date ? " now" : over ? " over" : ""}`}
-                  style={{ height: `${Math.max(2, (value / top) * 100)}%` }}
-                />
+                {m.to_date && usual !== null && <span className="month-usual" aria-hidden="true" style={{ height: pct(usual) }} />}
+                <span className={`month-bar${m.to_date ? " now" : over ? " over" : ""}`} style={{ height: pct(value) }} />
                 <span className="sr-only">
                   {monthName(m)}: {formatMoney(m.spent)}
                   {over ? ", over budget" : ""}
@@ -208,13 +215,7 @@ function SpendingChart({ data }: { data: Spending }) {
             );
           })}
         </ul>
-        {budget !== null && (
-          <div
-            className="budget-line"
-            aria-hidden="true"
-            style={{ bottom: `${(budget / top) * 100}%` }}
-          />
-        )}
+        {budget !== null && <div className="budget-line" aria-hidden="true" style={{ bottom: `${(budget / top) * 100}%` }} />}
       </div>
       <div className="month-labels" aria-hidden="true">
         {data.months.map((m) => (
@@ -225,17 +226,24 @@ function SpendingChart({ data }: { data: Spending }) {
       </div>
       <div className="legend" aria-hidden="true">
         <span>
-          <i className="key within" />
-          Within budget
+          <i className="key past" />
+          {budget !== null ? "Within budget" : "Past months"}
         </span>
-        <span>
-          <i className="key over" />
-          Over budget
-        </span>
+        {anyOver && (
+          <span>
+            <i className="key over" />
+            Over budget
+          </span>
+        )}
         <span>
           <i className="key now" />
-          This month
+          This month so far
         </span>
+        {usual !== null && (
+          <span>
+            <i className="key usual" />A usual month
+          </span>
+        )}
         {budget !== null && (
           <span>
             <i className="key line" />
@@ -262,12 +270,8 @@ function SpendingCard({
   overall?: Budget;
 }) {
   const now = spending?.months.at(-1);
-  // A usual month, from the full months before this one (the brief already says
-  // how this month compares with the last).
-  const past = spending?.months.filter((m) => !m.to_date && Number(m.spent.amount) > 0) ?? [];
-  const usual = past.length
-    ? past.reduce((sum, m) => sum + Number(m.spent.amount), 0) / past.length
-    : null;
+  // A usual month (the brief already says how this month compares with the last).
+  const { usual, count } = usualMonth(spending?.months ?? []);
   const top = summary?.by_category[0];
   const spentTotal = summary?.totals.find((t) => t.direction === "out");
   const share =
@@ -325,7 +329,7 @@ function SpendingCard({
           <span className="caption">
             {usual === null
               ? "Needs a full month"
-              : `Average of the last ${past.length === 1 ? "month" : `${past.length} months`}`}
+              : `Average of the last ${count === 1 ? "month" : `${count} months`}`}
           </span>
         </div>
         <div className="mini-tile">

@@ -28,6 +28,23 @@ const VIEWS: { key: View; label: string }[] = [
   { key: "pending", label: "Pending" },
 ];
 
+type Range = { key: "any" | "this" | "last"; label: string; start: string; end: string };
+
+/** The usual date ranges, as the user's own calendar has them. */
+function ranges(timezone: string): Range[] {
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(new Date());
+  const [y, m] = today.split("-").map(Number);
+  const iso = (year: number, month: number, day: number) =>
+    `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  const [ly, lm] = m === 1 ? [y - 1, 12] : [y, m - 1];
+  const lastDay = new Date(Date.UTC(ly, lm, 0)).getUTCDate();
+  return [
+    { key: "any", label: "All", start: "", end: "" },
+    { key: "this", label: "This month", start: iso(y, m, 1), end: "" },
+    { key: "last", label: "Last month", start: iso(ly, lm, 1), end: iso(ly, lm, lastDay) },
+  ];
+}
+
 export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdit: (tx: Transaction) => void }) {
   const client = useQueryClient();
   // A link from a spending category opens the ledger filtered to it.
@@ -40,6 +57,12 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
   const [category, setCategory] = useState(() => params.get("category") ?? "");
   const [offset, setOffset] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const presets = useMemo(() => ranges(me.user.timezone), [me.user.timezone]);
+  const preset = presets.find((r) => r.start === start && r.end === end);
+  // Dates of their own (or from a link) show the two date boxes.
+  const [custom, setCustom] = useState(() => !presets.some((r) => r.start === start && r.end === end));
+  // On a phone the tick boxes wait for "Select"; on a wider screen they're always there.
+  const [selecting, setSelecting] = useState(false);
   const [toast, setToast] = useState<{ message: string; undo?: () => void } | null>(null);
   const [confirming, setConfirming] = useState(false);
 
@@ -204,14 +227,38 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
               onChange={(e) => setSearch(e.target.value)}
             />
           </label>
-          <label className="date-field">
-            <span className="date-caption">From</span>
-            <input className="input" type="date" value={start} onChange={(e) => setStart(e.target.value)} />
-          </label>
-          <label className="date-field">
-            <span className="date-caption">To</span>
-            <input className="input" type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
-          </label>
+          <div className="chips range-chips" role="group" aria-label="When">
+            {presets.map((r) => (
+              <button
+                key={r.key}
+                type="button"
+                className="day-pill"
+                aria-pressed={!custom && preset?.key === r.key}
+                onClick={() => {
+                  setCustom(false);
+                  setStart(r.start);
+                  setEnd(r.end);
+                }}
+              >
+                {r.label}
+              </button>
+            ))}
+            <button type="button" className="day-pill" aria-pressed={custom} onClick={() => setCustom(true)}>
+              Custom
+            </button>
+          </div>
+          {custom && (
+            <>
+              <label className="date-field">
+                <span className="date-caption">From</span>
+                <input className="input" type="date" value={start} onChange={(e) => setStart(e.target.value)} />
+              </label>
+              <label className="date-field">
+                <span className="date-caption">To</span>
+                <input className="input" type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
+              </label>
+            </>
+          )}
           {category && (
             <span className="filter-chip">
               <span>
@@ -223,6 +270,25 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
             </span>
           )}
         </div>
+
+        {items.length > 0 && (
+          <div className="list-head">
+            <span className="caption">
+              {page.data?.total} {page.data?.total === 1 ? "transaction" : "transactions"}
+            </span>
+            <button
+              type="button"
+              className="btn btn-small select-toggle"
+              aria-pressed={selecting}
+              onClick={() => {
+                if (selecting) setSelected(new Set());
+                setSelecting(!selecting);
+              }}
+            >
+              {selecting ? "Done" : "Select"}
+            </button>
+          </div>
+        )}
 
         {selected.size > 0 && (
           <div className="bulkbar" role="region" aria-label="Selection">
@@ -252,7 +318,7 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
         )}
         {items.length > 0 && (
           <div className="table-wrap">
-            <table className="ledger">
+            <table className={`ledger ledger-list${selecting ? " selecting" : ""}`}>
               <thead>
                 <tr>
                   <th scope="col">

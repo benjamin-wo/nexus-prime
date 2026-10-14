@@ -158,9 +158,14 @@ test("log an expense from the entry sheet", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Kopi" })).toBeVisible();
 });
 
-test("bulk delete asks first and can be undone", async ({ page }) => {
+test("bulk delete asks first and can be undone", async ({ page }, info) => {
   await fakeApi(page);
   await page.goto("/ledger");
+  // On a phone the tick boxes wait for "Select".
+  if (info.project.name === "mobile") {
+    await expect(page.getByRole("checkbox", { name: /Select Grab/ })).toBeHidden();
+    await page.getByRole("button", { name: "Select", exact: true }).click();
+  }
   await page.getByRole("checkbox", { name: /Select Grab/ }).check();
   await page.getByRole("button", { name: "Delete selected" }).click();
   await page.getByRole("button", { name: "Delete", exact: true }).click();
@@ -708,7 +713,7 @@ test("home is the front desk: what needs you, what's running, and each departmen
   await expect(months.getByRole("listitem")).toHaveCount(6);
   await expect(months.getByRole("listitem").last()).toContainText("Sep so far");
   // A usual month, rather than the brief's comparison again.
-  await expect(page.getByText("A usual month")).toBeVisible();
+  await expect(page.locator(".mini-tile").getByText("A usual month")).toBeVisible();
   await expect(page.getByText("Against last month")).toHaveCount(0);
   await expect(page.getByText("Biggest category")).toBeVisible();
   await expect(page.getByRole("region", { name: "Budgets this month" })).toContainText("No budgets yet");

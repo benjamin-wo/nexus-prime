@@ -896,11 +896,10 @@ details.section[open] > summary { margin-bottom: var(--space-3); }
   height: 100%; margin: 0; padding: 0 var(--space-1); list-style: none;
   display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: clamp(8px, 3vw, 18px); align-items: end;
 }
-.month { height: 100%; display: flex; align-items: flex-end; }
-.month-bar {
-  display: block; width: 100%; border-radius: 10px;
-  background: repeating-linear-gradient(135deg, var(--sky-accent) 0 2px, rgba(56, 189, 248, 0.15) 2px 7px);
-}
+.month { position: relative; height: 100%; display: flex; align-items: flex-end; }
+.month-bar { position: relative; display: block; width: 100%; border-radius: 10px; background: #3a3a42; }
+/* A usual month, outlined behind this month's bar. */
+.month-usual { position: absolute; left: 0; right: 0; bottom: 0; border: 1px dashed rgba(251, 146, 60, 0.55); border-radius: 10px; }
 .month-bar.over { background: repeating-linear-gradient(135deg, var(--orange-primary) 0 2px, rgba(249, 115, 22, 0.18) 2px 7px); }
 .month-bar.now { background: var(--orange-primary); }
 .budget-line { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--text-secondary); pointer-events: none; }
@@ -912,7 +911,8 @@ details.section[open] > summary { margin-bottom: var(--space-3); }
 .legend { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5); font-size: 0.8125rem; color: var(--text-secondary); }
 .legend span { display: inline-flex; align-items: center; gap: var(--space-2); }
 .key { display: inline-block; width: 10px; height: 10px; border-radius: 3px; }
-.key.within { background: var(--sky-accent); }
+.key.past { background: #3a3a42; }
+.key.usual { background: transparent; border: 1px dashed rgba(251, 146, 60, 0.7); }
 .key.over { background: repeating-linear-gradient(135deg, var(--orange-primary) 0 2px, rgba(249, 115, 22, 0.3) 2px 4px); }
 .key.now { background: var(--orange-primary); }
 .key.line { width: 14px; height: 0; border-radius: 0; border-top: 1px dashed var(--text-secondary); }
@@ -1338,3 +1338,24 @@ html.keyboard .ribbon { animation-play-state: paused; }
 /* The ribbons are atmosphere, not content: quiet enough that no figure or line of
    text ever sits on a bright strand. */
 .ribbons { opacity: 0.45; }
+
+/* Ledger on a phone: no tick box on every row until "Select" is tapped. */
+.list-head { display: none; }
+@media (max-width: 720px) {
+  .list-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-2); }
+  .range-chips { gap: 6px; }
+  .range-chips .day-pill { padding: 0 var(--space-3); font-size: 0.875rem; }
+  .ledger-list:not(.selecting) td.select { display: none; }
+  .ledger-list:not(.selecting) tbody tr { grid-template-columns: minmax(0, 1fr) auto; }
+  .ledger-list:not(.selecting) td.merchant, .ledger-list:not(.selecting) td.date { grid-column: 1; }
+  .ledger-list:not(.selecting) td.amount { grid-column: 2; }
+}
+
+/* Fingers, not pointers: small buttons, pills and filter tabs grow to a size a
+   thumb hits first time. */
+@media (pointer: coarse) {
+  .btn-small { min-height: 40px; }
+  .day-pill { min-height: 38px; }
+  .filters .tab { min-height: 38px; }
+  .chip-x { min-width: 32px; min-height: 32px; }
+}
