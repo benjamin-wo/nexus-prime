@@ -16,7 +16,7 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import { type FormEvent, type KeyboardEvent, type ReactNode, createContext, useContext, useEffect, useMemo, useState } from "react";
+import { type FormEvent, type KeyboardEvent, type ReactNode, createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import { api, type Booking, type DayNote, type Hop, type TripDetail } from "../api";
 import { sortKey } from "./TripBits";
@@ -126,6 +126,14 @@ const collide: CollisionDetection = (args) => {
 
 const middle = (r: ClientRect) => r.top + r.height / 2;
 
+/** The day whose pill is under the pointer or finger, if any. Where the pointer
+ * really is, not the drag's own sum: that shifts when the days slide under it. */
+function pillAt(point: { x: number; y: number } | null): Spot | null {
+  if (!point || typeof document.elementsFromPoint !== "function") return null;
+  const pill = document.elementsFromPoint(point.x, point.y).find((n): n is HTMLElement => n instanceof HTMLElement && Boolean(n.dataset.pill));
+  return (pill?.dataset.pill as Spot | undefined) ?? null;
+}
+
 /** Every place a plan can be put, top to bottom: first on each day and after each of
  * its entries, then the same in places to visit. */
 export type Gap = { spot: Spot; after: string | null };
@@ -160,6 +168,27 @@ export function ArrangeProvider({ detail, days, on, onChange, children }: {
   const [said, setSaid] = useState("");
   // The server's answer arrives as a new trip: its order replaces the guess.
   useEffect(() => setPending(null), [detail]);
+  // Where the pointer or finger is during a drag, for the day pills.
+  const pointer = useRef<{ x: number; y: number } | null>(null);
+  useEffect(() => {
+    if (!dragging) return;
+    const onPointer = (e: PointerEvent | MouseEvent) => (pointer.current = { x: e.clientX, y: e.clientY });
+    const onTouch = (e: TouchEvent) => {
+      const t = e.touches[0];
+      if (t) pointer.current = { x: t.clientX, y: t.clientY };
+    };
+    // Caught on the way down, before the drag's own handlers read it.
+    const early = { passive: true, capture: true };
+    window.addEventListener("pointermove", onPointer, early);
+    window.addEventListener("mousemove", onPointer, early);
+    window.addEventListener("touchmove", onTouch, early);
+    return () => {
+      window.removeEventListener("pointermove", onPointer, true);
+      window.removeEventListener("mousemove", onPointer, true);
+      window.removeEventListener("touchmove", onTouch, true);
+      pointer.current = null;
+    };
+  }, [dragging]);
   const spots = useMemo(() => (pending ? withMove(base, pending.moving, pending.to, pending.after) : base), [base, pending]);
   const byId = useMemo(() => new Map(detail.bookings.map((b) => [b.id, b])), [detail.bookings]);
   const sensors = useSensors(
@@ -241,6 +270,10 @@ export function ArrangeProvider({ detail, days, on, onChange, children }: {
   })();
 
   function where(event: DragMoveEvent | DragEndEvent): { spot: Spot; over: string; below: boolean } | null {
+    // A day's pill (pinned above the days, so found by the pointer itself): the end
+    // of that day.
+    const pill = pillAt(pointer.current);
+    if (pill) return { spot: pill, over: `pill:${pill}`, below: true };
     const { active, over } = event;
     const moved = active.rect.current.translated;
     if (!over || !moved) return null;
@@ -298,6 +331,9 @@ export function ArrangeProvider({ detail, days, on, onChange, children }: {
       <DndContext
         sensors={sensors}
         collisionDetection={collide}
+        // Up and down near the edges, never sideways (that would swipe to another day),
+        // and not while held over a day's pill.
+        autoScroll={{ threshold: { x: 0, y: 0.15 }, canScroll: () => !pillAt(pointer.current) }}
         onDragStart={onDragStart}
         onDragMove={onDragMove}
         onDragEnd={onDragEnd}
@@ -372,6 +408,13 @@ export function DropZone({ spot, empty, children }: { spot: Spot; empty: boolean
       {children}
     </div>
   );
+}
+
+/** A day's pill as somewhere to drop a plan: onto the end of that day. ``over`` while
+ * a plan is held above it; ``pill`` marks the element as the day's. */
+export function useDayPill(spot: Spot) {
+  const arrange = useContext(Context);
+  return { pill: arrange?.on ? spot : undefined, over: Boolean(arrange?.dragging) && arrange?.drop?.over === `pill:${spot}` };
 }
 
 /** Moving without dragging: pick the day and what it comes after. */
