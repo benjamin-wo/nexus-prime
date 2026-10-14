@@ -1906,3 +1906,29 @@ test("on a phone each section runs the full width of the screen; on a desktop it
     expect(radius).not.toBe("0px");
   }
 });
+
+test("in Telegram, a trip's page shows Telegram's back button, and it goes back to the trips", async ({ page }) => {
+  await page.addInitScript(() => {
+    const back = { shown: false, go: null as null | (() => void) };
+    (window as unknown as { back: typeof back }).back = back;
+    (window as unknown as { Telegram: unknown }).Telegram = {
+      WebApp: {
+        ready() {},
+        expand() {},
+        BackButton: {
+          show: () => (back.shown = true),
+          hide: () => (back.shown = false),
+          onClick: (cb: () => void) => (back.go = cb),
+          offClick: () => (back.go = null),
+        },
+      },
+    };
+  });
+  await fakeApi(page);
+  await addTrip(page, "Tokyo", "2026-11-10", "2026-11-13");
+  const shown = () => page.evaluate(() => (window as unknown as { back: { shown: boolean } }).back.shown);
+  await expect.poll(shown).toBe(true);
+  await page.evaluate(() => (window as unknown as { back: { go: () => void } }).back.go());
+  await expect(page).toHaveURL(/\/travel$/);
+  await expect.poll(shown).toBe(false);
+});

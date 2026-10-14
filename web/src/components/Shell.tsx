@@ -1,10 +1,11 @@
 import { type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
-import { NavLink, useLocation } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 
 import type { Me } from "../api";
 import { DEPARTMENTS, departmentFor } from "../departments";
 import { useReveal } from "../motion";
 import { Icon, departmentIcon } from "./Icon";
+import { withMiniApp } from "../telegram";
 import { InviteButton } from "./InviteButton";
 import { Ribbons } from "./Ribbons";
 
@@ -50,6 +51,40 @@ function useScrollingDown(area: RefObject<HTMLElement | null>, page: string): bo
   return down;
 }
 
+/** A page inside a section (a trip, a stock, a plan) and where "back" goes when
+ * there's no earlier page to return to. */
+const DETAIL: [RegExp, string][] = [
+  [/^\/travel\/(trips|research)\/./, "/travel"],
+  [/^\/investment\/stocks\/./, "/investment/watchlist"],
+  [/^\/investment\/plans\/./, "/investment/plans"],
+  [/^\/accounting\/import/, "/accounting/ledger"],
+];
+
+/** In Telegram, its own back button (top left) on a page inside a section. */
+function useTelegramBack(pathname: string, first: boolean) {
+  const navigate = useNavigate();
+  const parent = DETAIL.find(([pattern]) => pattern.test(pathname))?.[1];
+  useEffect(() => {
+    let undo = () => {};
+    const stop = withMiniApp((app) => {
+      const back = app.BackButton;
+      if (!back) return;
+      if (!parent) {
+        back.hide();
+        return;
+      }
+      const go = () => (first ? navigate(parent) : navigate(-1));
+      back.onClick(go);
+      back.show();
+      undo = () => back.offClick(go);
+    });
+    return () => {
+      stop();
+      undo();
+    };
+  }, [parent, first, navigate]);
+}
+
 /** The front desk (Home), a switcher for the departments behind it, and Settings:
  * a rail on wide screens and a bottom bar on phones. A department's own pages are
  * tabs along the top of its section. */
@@ -64,7 +99,8 @@ export function Shell({
   onLogout: () => void;
   children: ReactNode;
 }) {
-  const { pathname } = useLocation();
+  const { pathname, key } = useLocation();
+  useTelegramBack(pathname, key === "default");
   const here = departmentFor(pathname);
   const content = useRef<HTMLDivElement>(null);
   const viewport = useRef<HTMLElement>(null);
@@ -89,13 +125,11 @@ export function Shell({
     )),
   ];
   const settings = (
-    <NavLink
-      to="/settings"
-      aria-label="Settings"
-      title="Settings"
-      className={({ isActive }) => `nav-link nav-icon${isActive ? " active" : ""}`}
-    >
-      <CogIcon />
+    <NavLink to="/settings" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
+      <span className="nav-glyph" aria-hidden="true">
+        <CogIcon />
+      </span>
+      <span className="nav-label">Settings</span>
     </NavLink>
   );
   return (

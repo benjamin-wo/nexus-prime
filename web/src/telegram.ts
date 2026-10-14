@@ -9,7 +9,11 @@ type WebApp = {
   expand(): void;
   setHeaderColor?(color: string): void;
   setBackgroundColor?(color: string): void;
+  setBottomBarColor?(color: string): void;
+  disableVerticalSwipes?(): void;
   openLink?(url: string): void;
+  BackButton?: { show(): void; hide(): void; onClick(cb: () => void): void; offClick(cb: () => void): void };
+  HapticFeedback?: { impactOccurred(style: "light" | "medium"): void; selectionChanged(): void };
 };
 
 declare global {
@@ -45,6 +49,32 @@ export function openExternal(url: string): void {
   else window.open(url, "_blank", "noopener,noreferrer");
 }
 
+const READY = "nexus:telegram-ready";
+
+/** Calls ``then`` with Telegram's app once its script has loaded (straight away if it
+ * has); returns a function that stops waiting. Outside Telegram it never calls. */
+export function withMiniApp(then: (app: WebApp) => void): () => void {
+  const app = window.Telegram?.WebApp;
+  if (app?.BackButton) {
+    then(app);
+    return () => {};
+  }
+  const onReady = () => window.Telegram?.WebApp && then(window.Telegram.WebApp);
+  window.addEventListener(READY, onReady);
+  return () => window.removeEventListener(READY, onReady);
+}
+
+/** A light tap under the finger for the main button, a tick for changing tab or
+ * day: the feel of a native app, through Telegram (phones that have it). */
+function hapticsOnTap(app: WebApp): void {
+  document.addEventListener("click", (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target || !app.HapticFeedback) return;
+    if (target.closest(".btn-primary, .trip-fab-button")) app.HapticFeedback.impactOccurred("light");
+    else if (target.closest(".nav-link, .dept-tab, .day-pill, .tab")) app.HapticFeedback.selectionChanged();
+  });
+}
+
 /** Load Telegram's script (for the full-height panel and header colour), then tidy the URL. */
 export function startMiniApp(): void {
   if (!initData) return;
@@ -58,8 +88,13 @@ export function startMiniApp(): void {
       app?.expand();
       app?.setHeaderColor?.(SHELL);
       app?.setBackgroundColor?.(SHELL);
+      app?.setBottomBarColor?.(SHELL);
+      // Pages scroll inside the app: a swipe down while reading shouldn't close it.
+      app?.disableVerticalSwipes?.();
+      if (app) hapticsOnTap(app);
     } finally {
       forgetLaunchData();
+      window.dispatchEvent(new Event(READY));
     }
   };
   script.onerror = forgetLaunchData;
