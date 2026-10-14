@@ -1503,6 +1503,59 @@ test("the trip on a map, coloured by day, with travel times between stops", asyn
   }
 });
 
+test("the itinerary goes a day at a time: swipe, pick a day, drop a plan on another day", async ({ page }) => {
+  const state = await fakeApi(page);
+  await addTrip(page, "Seoul", "2026-11-10", "2026-11-13");
+  state.plans.push({
+    id: "pl1", trip_id: "trip1", kind: "activity", title: "Old Temple", provider: null, starts: "2026-11-11", ends: "2026-11-11", segments: [], hotel: null,
+    address: null, check_in: null, check_out: null, name: "Old Temple", day: "2026-11-11", at: "10:00", ends_at: null, note: null, cost: null, logged: false,
+    manual: true, reference: null, booked_via: null, category: null, place_id: null, link: null, list_name: null, order: null, scheduled: true,
+  });
+  await page.reload();
+  const days = page.getByRole("region", { name: "Days of the trip" });
+  const pills = page.getByRole("navigation", { name: "Days" });
+  await expect(days).toContainText(/Day 1 · .*, 1 of 4/);
+  await expect(days.getByRole("button", { name: "Previous day" })).toBeDisabled();
+
+  // A swipe moves the track; the heading and pills follow it.
+  await page.locator(".day-track").evaluate((el) => el.scrollTo({ left: el.clientWidth * 2 }));
+  await expect(days).toContainText("3 of 4");
+  await expect(pills.getByRole("button", { name: /12/ })).toHaveAttribute("aria-current", "true");
+
+  // A pill opens its day.
+  await pills.getByRole("button", { name: /11/ }).click();
+  await expect(days).toContainText("2 of 4");
+  const track = page.locator(".day-track");
+  await expect.poll(() => track.evaluate((el) => el.scrollLeft / el.clientWidth)).toBe(1); // settled
+
+  // Dragged onto day 4's pill and held there: that day opens, and the plan goes onto it.
+  // (On a phone the strip scrolls: day 4's pill is brought into view first.)
+  const pill4 = pills.getByRole("button", { name: /13/ });
+  await pill4.evaluate((el) => el.parentElement!.scrollTo({ left: (el as HTMLElement).offsetLeft }));
+  const grip = page.getByRole("button", { name: "Drag Old Temple" });
+  await grip.scrollIntoViewIfNeeded();
+  // Both still, and both on screen.
+  let last = "";
+  await expect.poll(async () => {
+    const now = JSON.stringify([await grip.boundingBox(), await pill4.boundingBox()]);
+    const still = now === last;
+    last = now;
+    return still;
+  }).toBe(true);
+  const from = (await grip.boundingBox())!;
+  const day4 = (await pill4.boundingBox())!;
+  const screen = page.viewportSize()!;
+  expect(day4.x + day4.width / 2).toBeLessThan(screen.width);
+  expect(from.y + from.height).toBeLessThan(screen.height);
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2 - 10, { steps: 3 });
+  await page.mouse.move(day4.x + day4.width / 2, day4.y + day4.height / 2, { steps: 8 });
+  await expect(days).toContainText("4 of 4");
+  await page.mouse.up();
+  await expect.poll(() => state.moves).toEqual(["pl1>2026-11-13@first"]);
+});
+
 test("a day rearranged: dragged, moved by keyboard or menu, with what to watch out for", async ({ page }, info) => {
   const state = await fakeApi(page);
   await addTrip(page, "Seoul", "2026-11-10", "2026-11-13");
@@ -1539,9 +1592,17 @@ test("a day rearranged: dragged, moved by keyboard or menu, with what to watch o
   await lists.getByRole("button", { name: "All" }).click();
   await expect(places.getByRole("listitem")).toHaveCount(2);
 
+  // One day at a time: it opens on day 1; the next day is a swipe or a tap away.
+  const days = page.getByRole("region", { name: "Days of the trip" });
+  await expect(days).toContainText("1 of 4");
+  await days.getByRole("button", { name: "Next day" }).click();
+  await expect(days).toContainText(/Day 2 · .*, 2 of 4/);
+  await expect(page.getByRole("navigation", { name: "Days" }).getByRole("button", { name: /11/ })).toHaveAttribute("aria-current", "true");
+
   // Dragged by its grip to above the temple: one call, and the day follows it.
   const grip = page.getByRole("button", { name: "Drag Tea house" });
   await grip.scrollIntoViewIfNeeded();
+  await expect.poll(async () => (await grip.boundingBox())?.x ?? -1).toBeGreaterThan(0);
   const from = (await grip.boundingBox())!;
   const onto = (await page.locator("#entry-pl1").boundingBox())!;
   await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
@@ -1564,6 +1625,8 @@ test("a day rearranged: dragged, moved by keyboard or menu, with what to watch o
   await page.keyboard.press("ArrowUp");
   await expect(said).toContainText(/Lantern Alley: first, Thu.*12/);
   await expect(day3.locator("..")).toHaveClass(/drop-over/);
+  // The carousel follows the plan to day 3.
+  await expect(days).toContainText("3 of 4");
   await page.keyboard.press("Space");
   await expect.poll(() => state.moves).toEqual(["pl2>2026-11-11@first", "pl3>2026-11-12@first"]);
   await expect(day3).toContainText("Lantern Alley");

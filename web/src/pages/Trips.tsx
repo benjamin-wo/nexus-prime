@@ -7,7 +7,8 @@ import { base64 } from "../files";
 import { formatMoney, formatShortDate } from "../format";
 import { ResearchList } from "./Research";
 import { type AddPreset, AddSheet } from "./TripAdd";
-import { Companions, NextUp, PhotoCredit, TripCard, coverStyle, landingOn, landsOnly, leavingOn, legTimes, onlyNamesDay, repeatsTitle, tripWhen } from "./TripBits";
+import { Companions, NextUp, PhotoCredit, TripCard, coverStyle, landingOn, landsOnly, leavingOn, legTimes, onlyNamesDay, repeatsTitle, todayIso, tripWhen } from "./TripBits";
+import { DayCarousel } from "./DayCarousel";
 import { PackingCard, WeatherCard } from "./TripExtras";
 import { type Fix, MoneyBar, SpendingNow, type Stage, StillToSort, TripTotals, stageOf } from "./TripStage";
 import { ArrangeProvider, DayNotes, DropZone, MoveForm, PLACES, type Spot, daySpot, useArrange, useDragEntry } from "./TripArrange";
@@ -1117,9 +1118,12 @@ function Itinerary({ detail, onChange, onAdd, collapsed }: {
     onChange();
   }
 
-  function jump(iso: string) {
-    document.getElementById(`day-${iso}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
+  // Opens on today while the trip is on, else its first day.
+  const today = todayIso();
+  const startDay = detail.trip.status === "ongoing" && days.includes(today) ? today : days.includes(detail.trip.start) ? detail.trip.start : (days[0] ?? "");
+  // A plan carried by keyboard to another day takes the carousel with it.
+  const carriedTo = arrange.carrying ? arrange.drop?.spot : undefined;
+  const following = carriedTo?.startsWith("day:") ? carriedTo.slice(4) : null;
 
   const actions = (b: Booking) => (
     <EntryActions
@@ -1132,14 +1136,8 @@ function Itinerary({ detail, onChange, onAdd, collapsed }: {
 
   return (
     <Fold collapsed={collapsed}>
-      <nav className="day-strip" aria-label="Days">
-        {days.map((d) => (
-          <button key={d} type="button" className="day-pill" onClick={() => jump(d)}>
-            {dayPill(d)}
-          </button>
-        ))}
-      </nav>
-      {days.map((d) => {
+      <DayCarousel days={days} start={startDay} follow={following} pill={dayPill} name={dayLabel}>
+        {(d, near) => {
         const entries = arrange.spots.get(daySpot(d)) ?? [];
         const outs = checkingOut(d).filter((b) => b.starts !== d);
         const n = dayNumber(d);
@@ -1170,7 +1168,7 @@ function Itinerary({ detail, onChange, onAdd, collapsed }: {
                   </button>
                 </p>
               )}
-              <DayHops tripId={detail.trip.id} day={d} enabled={Boolean(detail.routes) && detail.places}>
+              <DayHops tripId={detail.trip.id} day={d} enabled={Boolean(detail.routes) && detail.places} soon={near}>
                 {(hops) => {
                   // Counted here: this renders again when the travel times arrive.
                   let stop = 0;
@@ -1239,7 +1237,8 @@ function Itinerary({ detail, onChange, onAdd, collapsed }: {
             </div>
           </div>
         );
-      })}
+        }}
+      </DayCarousel>
       <p className="caption">Times are local.</p>
       {detail.routes && detail.places && (
         <p className="trip-ways">

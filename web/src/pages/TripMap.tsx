@@ -298,9 +298,17 @@ export function distance(metres: number): string {
 
 /** Calls ``children`` with the day's travel times, asked for only once the day is
  * near the screen (each one is a call to Google). */
-export function DayHops({ tripId, day, enabled, children }: { tripId: string; day: string; enabled: boolean; children: (hops: Hop[]) => ReactNode }) {
+export function DayHops({ tripId, day, enabled, soon, children }: {
+  tripId: string;
+  day: string;
+  enabled: boolean;
+  /** Ask now, without waiting to scroll near: a day next to the one in view. */
+  soon?: boolean;
+  children: (hops: Hop[]) => ReactNode;
+}) {
   const holder = useRef<HTMLDivElement>(null);
-  const [near, setNear] = useState(false);
+  const [seen, setNear] = useState(false);
+  const near = seen || Boolean(soon);
   useEffect(() => {
     if (!enabled || near || !holder.current) return;
     if (typeof IntersectionObserver === "undefined") {
