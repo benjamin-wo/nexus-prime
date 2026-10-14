@@ -1,4 +1,4 @@
-import { type ReactNode, useRef } from "react";
+import { type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 
 import type { Me } from "../api";
@@ -27,6 +27,29 @@ function ChatIcon() {
   );
 }
 
+/** True while the page is being scrolled down (past its top, short of its end):
+ * the floating buttons step aside then, so they never sit on what's being read,
+ * and come back on the way up or at the end of the page. */
+function useScrollingDown(area: RefObject<HTMLElement | null>, page: string): boolean {
+  const [down, setDown] = useState(false);
+  useEffect(() => {
+    const el = area.current;
+    setDown(false);
+    if (!el) return;
+    let last = el.scrollTop;
+    const onScroll = () => {
+      const top = el.scrollTop;
+      const atEnd = top + el.clientHeight >= el.scrollHeight - 24;
+      if (atEnd || top < 80 || top < last - 6) setDown(false);
+      else if (top > last + 6) setDown(true);
+      if (Math.abs(top - last) > 6 || atEnd) last = top;
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [area, page]);
+  return down;
+}
+
 /** The front desk (Home), a switcher for the departments behind it, and Settings:
  * a rail on wide screens and a bottom bar on phones. A department's own pages are
  * tabs along the top of its section. */
@@ -41,8 +64,13 @@ export function Shell({
   onLogout: () => void;
   children: ReactNode;
 }) {
-  const here = departmentFor(useLocation().pathname);
+  const { pathname } = useLocation();
+  const here = departmentFor(pathname);
   const content = useRef<HTMLDivElement>(null);
+  const viewport = useRef<HTMLElement>(null);
+  const scrolling = useScrollingDown(viewport, pathname);
+  // A trip's page has its own + and "Ask Nexus about this trip": one floating button is enough.
+  const ownButton = pathname.startsWith("/travel/trips/");
   useReveal(content);
   const links = [
     <NavLink key="home" to="/" end className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
@@ -71,7 +99,7 @@ export function Shell({
     </NavLink>
   );
   return (
-    <div className="shell">
+    <div className={`shell${scrolling ? " scrolling-down" : ""}`}>
       <Ribbons />
       <nav className="rail" aria-label="Main">
         <div className="brand">
@@ -93,7 +121,7 @@ export function Shell({
           Sign out
         </button>
       </nav>
-      <main className="main-viewport">
+      <main className="main-viewport" ref={viewport}>
         <div className="content" ref={content}>
           {/* One tab is no choice: only show the bar when there are two or more. */}
           {here && here.tabs.length > 1 && (
@@ -118,9 +146,11 @@ export function Shell({
         {settings}
       </nav>
       {/* Chat floats over every page, clear of the tabs. */}
-      <button type="button" className="chat-fab" aria-label="Open chat" title="Chat" onClick={onOpenChat}>
-        <ChatIcon />
-      </button>
+      {!ownButton && (
+        <button type="button" className="chat-fab" aria-label="Open chat" title="Chat" onClick={onOpenChat}>
+          <ChatIcon />
+        </button>
+      )}
     </div>
   );
 }

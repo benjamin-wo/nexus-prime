@@ -318,15 +318,16 @@ function SpendingCard({
           >
             {diff === null || !now
               ? "…"
-              : formatChange({
-                  amount: String(diff),
+              : formatMoney({
+                  amount: String(Math.abs(diff)),
                   currency: now.spent.currency,
                 })}
           </span>
+          {/* Said in words: a minus sign in green reads two ways. */}
           <span className="caption">
             {diff !== null && diff <= 0
-              ? "Less by this date"
-              : "More by this date"}
+              ? "Less than by this date"
+              : "More than by this date"}
           </span>
         </div>
         <div className="mini-tile">

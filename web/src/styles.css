@@ -348,8 +348,9 @@ table.ledger { width: 100%; border-collapse: collapse; }
 }
 @media (max-width: 720px) {
   h1 { font-size: 1.625rem; }
-  .dept-tabs { flex-wrap: wrap; width: auto; overflow-x: visible; }
-  .dept-tab { min-height: 36px; padding: 0 var(--space-3); }
+  /* One row, the tabs sharing the width (a long list still scrolls, never wraps). */
+  .dept-tabs { width: 100%; }
+  .dept-tab { flex: 1 0 auto; justify-content: center; min-height: 40px; padding: 0 var(--space-2); font-size: 0.875rem; }
   .content { gap: var(--space-4); }
   .card { padding: var(--space-4); border-radius: 18px; }
   .page-head { align-items: center; }
@@ -1178,7 +1179,7 @@ html.keyboard .ribbon { animation-play-state: paused; }
 .itinerary-fold > summary h2 { font-size: 1rem; }
 .money-details { display: grid; gap: var(--space-4); margin-top: var(--space-4); }
 .money-details > .card { padding: 0; border: 0; background: transparent; box-shadow: none; }
-.trip-page > .trip-fab-button { position: fixed; right: var(--space-6); bottom: calc(var(--space-6) + 68px); z-index: 16; }
+.trip-page > .trip-fab-button { position: fixed; right: var(--space-6); bottom: var(--space-6); z-index: 16; }
 .trip-ask { justify-self: start; }
 .currency-line { display: flex; align-items: center; gap: var(--space-2); margin: 0; }
 .more-options { display: grid; gap: var(--space-4); }
@@ -1217,7 +1218,7 @@ html.keyboard .ribbon { animation-play-state: paused; }
 .type-it-form { display: flex; gap: var(--space-2); }
 .type-it-form .input { flex: 1; min-width: 0; }
 @media (max-width: 900px) {
-  .trip-page > .trip-fab-button { right: var(--space-4); bottom: calc(76px + 64px + env(safe-area-inset-bottom)); }
+  .trip-page > .trip-fab-button { right: var(--space-4); bottom: calc(76px + env(safe-area-inset-bottom)); }
   .sheet-backdrop { place-items: end center; padding: 0; }
   .add-sheet { width: 100%; border-radius: 22px 22px 0 0; padding-bottom: calc(var(--space-5) + env(safe-area-inset-bottom)); max-height: 88dvh; }
 }
@@ -1300,7 +1301,6 @@ html.keyboard .ribbon { animation-play-state: paused; }
   .assistant { padding: var(--space-5) var(--space-4); }
   .assistant-brief { font-size: 1.25rem; }
   .ask-chip { font-size: 0.875rem; }
-  .tile .value { font-size: clamp(1.25rem, 6vw, 1.75rem); }
   .tile .extra { font-size: 0.8125rem; }
 
   .page-head > :not(:first-child) { flex: 1 1 100%; }
@@ -1312,3 +1312,19 @@ html.keyboard .ribbon { animation-play-state: paused; }
 
   .budget-add > .btn, .budget-edit > .btn, .add-holding > .btn { flex: 1 1 100%; min-height: 44px; }
 }
+
+/* Phones: the floating buttons step aside while the page scrolls down, so they
+   never sit on what's being read, and come back on the way up. */
+.chat-fab, .trip-page > .trip-fab-button { transition: opacity var(--t-standard), transform var(--t-standard); }
+@media (max-width: 900px) {
+  .shell.scrolling-down .chat-fab, .shell.scrolling-down .trip-page > .trip-fab-button {
+    opacity: 0; transform: translateY(24px) scale(0.9); pointer-events: none;
+  }
+}
+
+/* An amount never breaks inside its figure: it sizes to its box, and if it must
+   wrap, it wraps between the currency and the number. */
+.tile, .mini-tile { container-type: inline-size; }
+.tile .value, .mini-value { overflow-wrap: break-word; }
+.tile .value { font-size: clamp(1.25rem, 14cqi, 1.875rem); }
+.mini-value { font-size: clamp(1rem, 13cqi, 1.25rem); }
