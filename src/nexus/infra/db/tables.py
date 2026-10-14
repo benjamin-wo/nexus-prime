@@ -1008,6 +1008,26 @@ web_credits = Table(
     CheckConstraint("credits >= 0", name="credits_not_negative"),
 )
 
+# What the app did and how it went, for finding failures and slow spots: kinds,
+# names, timings, status codes and error types, and a keyed hash for the user. Never
+# what anyone said, wrote or spent. Kept 30 days (migration 0040).
+ops_events = Table(
+    "ops_events",
+    metadata,
+    Column("id", BigInteger, Identity(), primary_key=True),
+    Column("at", TZ, nullable=False),
+    Column("kind", String(16), nullable=False),
+    Column("name", String(120), nullable=False),
+    Column("ok", Boolean, nullable=False),
+    Column("ms", Integer),
+    Column("trace", String(32)),
+    Column("user_ref", String(16)),
+    Column("channel", String(16)),
+    Column("detail", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    Index("ix_ops_events_at", "at"),
+    Index("ix_ops_events_kind_at", "kind", "at"),
+)
+
 # Tables LangGraph's Postgres checkpointer creates for itself (migration 0003).
 CHECKPOINT_TABLES = frozenset(
     {"checkpoints", "checkpoint_blobs", "checkpoint_writes", "checkpoint_migrations"}

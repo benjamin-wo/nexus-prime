@@ -183,9 +183,19 @@ class Settings(BaseSettings):
             return tuple(int(part) for part in value.replace(" ", "").split(",") if part)
         return value
 
+    # --- Operations. OPS_TOKEN lets a script read GET /api/ops/report (as
+    # "Authorization: Bearer <token>"); unset, only the owner can, signed in.
+    # OPS_SALT keys the hash that stands for a user in ops events; unset, the
+    # webhook secret does. OPS_EVENTS=false records none.
+    ops_token: SecretStr | None = None
+    ops_salt: SecretStr | None = None
+    ops_events: bool = True
+
     @field_validator(
         "telegram_bot_token",
         "telegram_webhook_secret",
+        "ops_token",
+        "ops_salt",
         "gemini_api_key",
         "openrouter_api_key",
         "deepseek_api_key",

@@ -27,6 +27,7 @@ from nexus.agent.statement_reader import LlmStatementReader
 from nexus.agent.tools import build_tools
 from nexus.agent.trip_reader import LlmTripReader, TripReader
 from nexus.application import email as email_cases
+from nexus.application import ops
 from nexus.application.clock import utcnow
 from nexus.application.departments import Departments, default_registry
 from nexus.application.destination_photos import PhotoFinder
@@ -54,11 +55,12 @@ from nexus.application.web_search import KeptReader, KeptSearch, Product, WebSea
 from nexus.channels.telegram import webhook as telegram_webhook
 from nexus.channels.telegram.client import HttpTelegramClient, TelegramClient
 from nexus.channels.web import api as web_api
-from nexus.channels.web import email_api, health, investments_api, travel_api
+from nexus.channels.web import email_api, health, investments_api, ops_api, travel_api
 from nexus.channels.web.errors import install_error_handlers
 from nexus.channels.web.frontend import mount_frontend
 from nexus.channels.web.hardening import install_hardening
 from nexus.channels.web.security import WebRuntime
+from nexus.channels.web.tracing import Tracing
 from nexus.domain.ledger import User, UserId
 from nexus.infra.crypto.fernet import FernetCipher
 from nexus.infra.db.checkpointer import postgres_checkpointer
@@ -69,6 +71,7 @@ from nexus.infra.email.agentmail import AgentMailInboxes
 from nexus.infra.email.gmail import GmailMailbox
 from nexus.infra.fx.frankfurter import FrankfurterRates
 from nexus.infra.guides.wikivoyage import Wikivoyage
+from nexus.infra.http import timed_client
 from nexus.infra.llm.factory import (
     ChatModels,
     build_chat_models,
@@ -86,6 +89,7 @@ from nexus.infra.llm.factory import (
 from nexus.infra.logs import configure_logging
 from nexus.infra.market.finnhub import FinnhubNews
 from nexus.infra.market.tiingo import TiingoPrices
+from nexus.infra.ops_store import OpsStore
 from nexus.infra.photos.wikipedia import WikipediaPhotos
 from nexus.infra.places.google import GooglePlaces
 from nexus.infra.places.routes import GoogleRoutes
@@ -163,7 +167,7 @@ async def _prices(
     if key is None:
         log.warning("TIINGO_API_KEY is not set; holdings won't be valued")
         return None
-    http = await stack.enter_async_context(httpx.AsyncClient())
+    http = await stack.enter_async_context(timed_client())
     return TiingoPrices(http, key.get_secret_value())
 
 
@@ -177,7 +181,7 @@ async def _news(
     if key is None:
         log.warning("FINNHUB_API_KEY is not set; no news or earnings dates will be fetched")
         return None
-    http = await stack.enter_async_context(httpx.AsyncClient())
+    http = await stack.enter_async_context(timed_client())
     return FinnhubNews(http, key.get_secret_value())
 
 
@@ -196,7 +200,7 @@ async def _places(
                 "GOOGLE_MAPS_BROWSER_KEY is the same as GOOGLE_PLACES_API_KEY; the map is off. "
                 "Make a separate key limited to the Maps JavaScript API and this site's address"
             )
-        http = await stack.enter_async_context(httpx.AsyncClient())
+        http = await stack.enter_async_context(timed_client())
         source = GooglePlaces(http, key.get_secret_value())
     return Places(source, clock=clock)
 
@@ -211,7 +215,7 @@ async def _routes(
         key = settings.google_places_api_key
         if key is None:
             return None
-        http = await stack.enter_async_context(httpx.AsyncClient())
+        http = await stack.enter_async_context(timed_client())
         source = GoogleRoutes(http, key.get_secret_value())
     return Routes(source, clock=clock)
 
@@ -231,7 +235,7 @@ async def _weather_source(overrides: Overrides, stack: AsyncExitStack) -> Weathe
     """Trip weather from Open-Meteo (no key needed)."""
     if overrides.weather is not None:
         return overrides.weather
-    http = await stack.enter_async_context(httpx.AsyncClient())
+    http = await stack.enter_async_context(timed_client())
     return OpenMeteo(http)
 
 
@@ -242,7 +246,7 @@ async def _photos(
     photo model choosing between a few (without it, the place's lead photo)."""
     if overrides.photos is not None:
         return overrides.photos
-    http = await stack.enter_async_context(httpx.AsyncClient())
+    http = await stack.enter_async_context(timed_client())
     chooser = (
         LlmChooser(build_screenshot_reader(settings, models.vision))
         if models.vision is not None
@@ -272,7 +276,7 @@ async def _email_runtime(
     async def client() -> httpx.AsyncClient:
         nonlocal http
         if http is None:
-            http = await stack.enter_async_context(httpx.AsyncClient(timeout=30))
+            http = await stack.enter_async_context(timed_client(timeout=30))
         return http
 
     mailbox = overrides.mailbox
@@ -393,7 +397,7 @@ async def _telegram_runtime(
         token = settings.telegram_bot_token
         if token is None:  # pragma: no cover - guarded by telegram_enabled
             raise RuntimeError("Telegram is not configured")
-        http = await stack.enter_async_context(httpx.AsyncClient())
+        http = await stack.enter_async_context(timed_client())
         client = HttpTelegramClient(token.get_secret_value(), http)
     return telegram_webhook.TelegramRuntime(
         settings=settings,
@@ -411,6 +415,7 @@ async def _telegram_runtime(
             holdings=holdings,
             trips=trip_reader,
             looker=looker,
+            primary_model=_model_id(models.primary),
         ),
         client=client,
     )
@@ -435,7 +440,7 @@ async def _web(
     model = _travel_model(settings)
     if key is None or not model:
         return None
-    http = await stack.enter_async_context(httpx.AsyncClient())
+    http = await stack.enter_async_context(timed_client())
     routed = model == settings.openrouter_model
     fallback = OpenRouterWebSearch(
         http,
@@ -489,7 +494,7 @@ async def _registry(
     reviewer = build_research_reviewer(settings)
     kinds = [plan_kind(uow, analyst, lead, reviewer, web.news if web else None)]
     if web is not None:
-        http = await stack.enter_async_context(httpx.AsyncClient())
+        http = await stack.enter_async_context(timed_client())
         prices = (
             SerpApiTravel(http, settings.serpapi_api_key.get_secret_value())
             if settings.serpapi_api_key is not None
@@ -518,7 +523,7 @@ async def _ideas(
         return overrides.ideas
     if web is None:
         return None
-    http = await stack.enter_async_context(httpx.AsyncClient())
+    http = await stack.enter_async_context(timed_client())
     return IdeaFinder(
         web.travel,
         build_travel_sorter(settings, _travel_model(settings)),
@@ -593,6 +598,33 @@ async def _set_menu_button(client: TelegramClient, origin: str) -> None:
         log.warning("could not set the Telegram menu button", exc_info=True)
 
 
+def _model_id(model: BaseChatModel) -> str | None:
+    found = getattr(model, "model_name", None) or getattr(model, "model", None)
+    return str(found) if found else None
+
+
+async def _ops_store(
+    settings: Settings, engine: AsyncEngine, stack: AsyncExitStack
+) -> OpsStore | None:
+    """Ops events kept in the database, written every few seconds. On the real clock,
+    like the events themselves, whatever clock the app runs on."""
+    if not settings.ops_events:
+        return None
+    salt = settings.ops_salt or settings.telegram_webhook_secret or settings.token_encryption_key
+    ops.set_salt(salt.get_secret_value() if salt else None)
+    store = OpsStore(engine)
+    ops.set_sink(store.add)
+    stop = asyncio.Event()
+    task = asyncio.create_task(store.run(stop))
+
+    async def close() -> None:
+        ops.set_sink(None)
+        await _stop_worker(stop, task)
+
+    stack.push_async_callback(close)
+    return store
+
+
 def create_app(settings: Settings | None = None, overrides: Overrides | None = None) -> FastAPI:
     configure_logging()
     resolved = settings or get_settings()
@@ -605,10 +637,11 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
             stack.push_async_callback(engine.dispose)
             await assert_schema_at_head(engine)
             app.state.engine = engine
+            app.state.ops = await _ops_store(resolved, engine, stack)
             if resolved.telegram_enabled:
                 rates = extra.rates
                 if rates is None:
-                    http = await stack.enter_async_context(httpx.AsyncClient())
+                    http = await stack.enter_async_context(timed_client())
                     rates = StoredRates(FrankfurterRates(http), lambda: SqlUnitOfWork(engine))
                 prices = await _prices(resolved, extra, stack)
                 news = await _news(resolved, extra, stack)
@@ -695,9 +728,11 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
     app.include_router(investments_api.router)
     app.include_router(travel_api.router)
     app.include_router(travel_api.shared_router)
+    app.include_router(ops_api.router)
     install_error_handlers(app)
     origin = resolved.public_origin
     install_hardening(app, https=bool(origin and origin.startswith("https://")))
+    app.add_middleware(Tracing)
     mount_frontend(app)
     return app
 
