@@ -117,7 +117,9 @@ function Latest({ page, timezone }: { page?: Page; timezone: string }) {
     <section className="card" aria-labelledby="latest">
       <div className="card-head">
         <h2 id="latest">Latest</h2>
-        <Link to="/accounting/ledger">See all</Link>
+        <Link className="btn btn-small" to="/accounting/ledger">
+          See all
+        </Link>
       </div>
       {!page ? (
         <p className="state">Loading…</p>

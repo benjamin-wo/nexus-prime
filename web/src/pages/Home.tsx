@@ -469,7 +469,9 @@ function BudgetsCard({ budgets }: { budgets?: Budget[] }) {
     <section className="card" aria-labelledby="budgets-home">
       <div className="card-head">
         <h2 id="budgets-home">Budgets this month</h2>
-        <Link to="/accounting/plan">Edit</Link>
+        <Link className="btn btn-small" to="/accounting/plan">
+          Edit
+        </Link>
       </div>
       {!budgets ? (
         <p className="state">Loading…</p>

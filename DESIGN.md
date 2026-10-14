@@ -114,6 +114,8 @@ All spacing derives from a 4px base unit.
 - Cards 20px, inner tiles and controls 12px, pills fully round. On phones each section runs the full width of the screen, square-ended with no side borders; boxes inside a section keep their corners, and tiles side by side keep the gap between them.
 - Buttons are filled: primary orange with dark text, secondary `--bg-raised`; no outlines.
 - Department tabs are a rounded segmented control on one row, sharing the width on phones; keep a department to five tabs or fewer (one-off tasks like Import are reached from the page that needs them).
+- Orange is for actions (the main button, the active tab, today) and status, not decoration: figures in the brief are white and bold, links in text keep the text's colour with an underline, and a section's heading actions (Details, Open, See all, Edit) are all small buttons.
+- The ribbons are atmosphere: dimmed, behind near-solid cards, so no figure sits on a bright strand.
 - Floating buttons: one per page. On phones they step aside while the page scrolls down and come back on the way up. A trip's page uses its own + (and "Ask Nexus about this trip") instead of the chat bubble.
 - An amount never breaks inside its figure: tile figures size to their box and wrap, if they must, between the currency and the number. Differences are said in words ("less than by this date"), not with a minus sign in green.
 - Page padding 40px 48px on desktop, 16px on phones; on phones every section's text starts 16px in too, so it lines up with the page title.

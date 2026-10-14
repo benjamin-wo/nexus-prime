@@ -27,7 +27,7 @@
   --orange-text: #fb923c;
   --orange-glow: #7c2d12;
   --sky-accent: #38bdf8;
-  --bg-glass: rgba(21, 21, 24, 0.74);
+  --bg-glass: rgba(21, 21, 24, 0.92);
   --ribbon-spark: #fdba74;
 
   --space-1: 4px;
@@ -63,9 +63,11 @@ h3 { font-size: 1rem; font-weight: 600; line-height: 1.4; color: var(--text-whit
 .muted { color: var(--text-muted); }
 .secondary { color: var(--text-secondary); }
 .num { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 0.9rem; }
-.hl { color: var(--orange-text); }
+.hl { color: var(--text-white); font-weight: 650; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-a { color: var(--orange-primary); }
+/* Links in text: the text's own colour, underlined; orange is kept for actions. */
+a { color: var(--text-primary); text-decoration-color: rgba(244, 244, 245, 0.4); text-underline-offset: 3px; }
+a:hover { text-decoration-color: currentColor; }
 
 :focus-visible { outline: 2px solid var(--orange-primary); outline-offset: 2px; }
 
@@ -1328,3 +1330,7 @@ html.keyboard .ribbon { animation-play-state: paused; }
 .tile .value, .mini-value { overflow-wrap: break-word; }
 .tile .value { font-size: clamp(1.25rem, 14cqi, 1.875rem); }
 .mini-value { font-size: clamp(1rem, 13cqi, 1.25rem); }
+
+/* The ribbons are atmosphere, not content: quiet enough that no figure or line of
+   text ever sits on a bright strand. */
+.ribbons { opacity: 0.45; }
