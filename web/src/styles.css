@@ -319,6 +319,20 @@ table.ledger { width: 100%; border-collapse: collapse; }
 .msg-bot { justify-self: start; background: var(--bg-card); border: 1px solid var(--border-card); }
 .msg-via { display: block; margin-top: var(--space-1); font-size: 0.75rem; color: var(--text-muted); }
 .messages .earlier { justify-self: center; }
+.typing { display: flex; align-items: center; gap: var(--space-2); }
+.typing-dots { display: inline-flex; gap: 4px; padding: 4px 2px; }
+.typing-dots span {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted);
+  animation: typing-dot 1.2s ease-in-out infinite;
+}
+.typing-dots span:nth-child(2) { animation-delay: 0.15s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.3s; }
+.typing-note { font-size: 0.875rem; color: var(--text-muted); }
+@keyframes typing-dot {
+  0%, 60%, 100% { opacity: 0.35; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-3px); }
+}
+@media (prefers-reduced-motion: reduce) { .typing-dots span { animation: none; opacity: 0.6; } }
 .msg .choices { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
 .toast {
   position: fixed; left: 50%; bottom: var(--space-6); transform: translateX(-50%); z-index: 40;

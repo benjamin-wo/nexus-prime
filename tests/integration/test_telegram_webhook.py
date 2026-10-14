@@ -1,5 +1,6 @@
 """The Telegram webhook through the real app, with a fake Bot API and model."""
 
+import asyncio
 from collections.abc import AsyncIterator
 from datetime import timedelta
 from typing import Any
@@ -16,6 +17,7 @@ from nexus.application.ports import LedgerQuery
 from nexus.application.transactions import list_ledger
 from nexus.application.users import find_telegram_user
 from nexus.channels.telegram import webhook
+from nexus.channels.telegram.client import TelegramError
 from nexus.infra.db.tables import jobs
 from nexus.jobs.handlers import build_handlers
 from nexus.main import Overrides, create_app
@@ -145,6 +147,7 @@ async def test_strangers_and_groups_are_not_served(bot: Bot, uow: UowFactory) ->
     assert await find_telegram_user(uow(), 999) is None
     assert await bot.post(bot.text("coffee 5", chat_type="group")) == 200
     assert len(bot.telegram.sent) == 1
+    assert bot.telegram.typing == []  # nothing shows a stranger Nexus is working
 
 
 async def test_text_round_trip_and_replayed_update(
@@ -155,6 +158,7 @@ async def test_text_round_trip_and_replayed_update(
     assert await bot.post(update) == 200
     assert await bot.post(update) == 200  # Telegram redelivers; handled once
     assert [(s.chat_id, s.text) for s in bot.telegram.sent] == [(OWNER, "Logged 4.20.")]
+    assert bot.telegram.typing == [OWNER]  # "typing…" while the reply was worked out
     owner = await find_telegram_user(uow(), OWNER)
     assert owner is not None and owner.role.value == "owner"
     assert (await list_ledger(uow(), owner.id, LedgerQuery())).total == 1
@@ -175,8 +179,10 @@ async def test_confirmation_buttons(bot: Bot, model: ScriptedModel, uow: UowFact
     confirm = prompt.buttons[0][0].data
     assert all(len(b.data.encode()) <= 64 for row in prompt.buttons for b in row)
 
+    typed = len(bot.telegram.typing)
     await bot.post(bot.press(confirm))
     assert bot.telegram.sent[-1].text == "Deleted."
+    assert len(bot.telegram.typing) == typed + 1  # a press shows it too
     assert bot.telegram.cleared == [(OWNER, 77)]
     assert bot.telegram.answered
     assert (await list_ledger(uow(), owner.id, LedgerQuery())).total == 0
@@ -269,3 +275,23 @@ async def test_other_buttons_stay_and_a_pressed_one_cancels_the_expiry(
     assert (OWNER, message_id) in bot.telegram.cleared
     # The one still queued is the first message's; the pressed message's is gone.
     assert [j.dedupe_key for j in await undo_jobs(engine)] == [job.dedupe_key]
+
+
+async def test_typing_is_shown_again_until_the_reply_and_never_stops_it(
+    bot: Bot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(webhook, "TYPING_EVERY", 0.01)
+    async with webhook.typing(bot.runtime, OWNER):
+        await asyncio.sleep(0.05)  # a slow reply
+    shown = len(bot.telegram.typing)
+    assert shown >= 3
+    await asyncio.sleep(0.03)
+    assert len(bot.telegram.typing) == shown  # stopped with the reply
+
+    async def broken(chat_id: int) -> None:
+        raise TelegramError("sendChatAction failed")
+
+    monkeypatch.setattr(bot.telegram, "send_typing", broken)
+    async with webhook.typing(bot.runtime, OWNER):
+        reply = "still sent"
+    assert reply == "still sent"

@@ -145,12 +145,16 @@ class FakeTelegram:
     app_buttons: list[tuple[int, str, str]] = field(default_factory=list)
     menu_button: tuple[str, str] | None = None
     stale_presses: bool = False  # Telegram refuses to answer or edit for old presses
+    typing: list[int] = field(default_factory=list)  # chats shown "typing…"
 
     async def send_message(
         self, chat_id: int, text: str, buttons: list[list[Button]] | None = None
     ) -> int:
         self.sent.append(Sent(chat_id, text, buttons))
         return 1000 + len(self.sent)  # the message id
+
+    async def send_typing(self, chat_id: int) -> None:
+        self.typing.append(chat_id)
 
     async def answer_callback(self, callback_id: str, text: str | None = None) -> None:
         if self.stale_presses:

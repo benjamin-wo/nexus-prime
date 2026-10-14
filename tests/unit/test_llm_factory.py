@@ -101,7 +101,8 @@ def test_openrouter_providers_pin_the_main_model_only(monkeypatch: pytest.Monkey
             "order": ["deepinfra", "fireworks"],
             "only": ["deepinfra", "fireworks"],
             "require_parameters": True,
-        }
+        },
+        "reasoning": {"effort": "low"},  # CHAT_REASONING's default
     }
     # The receipt reader is another model: those providers may not serve it.
     assert isinstance(models.vision, ChatOpenAI) and models.vision.extra_body is None
@@ -113,7 +114,36 @@ def test_openrouter_providers_pin_the_main_model_only(monkeypatch: pytest.Monkey
             openrouter_providers="",
         )
     )
-    assert isinstance(unpinned.primary, ChatOpenAI) and unpinned.primary.extra_body is None
+    assert isinstance(unpinned.primary, ChatOpenAI)
+    assert unpinned.primary.extra_body == {"reasoning": {"effort": "low"}}
+
+
+@pytest.mark.parametrize(
+    ("level", "sent"),
+    [
+        ("off", {"enabled": False}),
+        ("low", {"effort": "low"}),
+        ("on", {"enabled": True}),
+        ("default", None),
+    ],
+)
+def test_chat_reasoning_is_set_on_the_chat_model_only(
+    monkeypatch: pytest.MonkeyPatch, level: str, sent: dict[str, object] | None
+) -> None:
+    monkeypatch.setenv("OPENROUTER_PROVIDERS", "deepinfra")
+    monkeypatch.setenv("CHAT_REASONING", level)
+    models = build_chat_models(
+        settings(
+            llm_provider="openrouter",
+            openrouter_api_key="or-key",
+            openrouter_model="deepseek/deepseek-v4.1-flash",
+            openrouter_vision_model="qwen/qwen3.8-flash",
+        )
+    )
+    assert isinstance(models.primary, ChatOpenAI) and models.primary.extra_body is not None
+    assert models.primary.extra_body.get("reasoning") == sent
+    assert models.primary.extra_body["provider"]["only"] == ["deepinfra"]  # still pinned
+    assert isinstance(models.vision, ChatOpenAI) and models.vision.extra_body is None
 
 
 def test_email_and_memory_reads_run_without_reasoning(monkeypatch: pytest.MonkeyPatch) -> None:

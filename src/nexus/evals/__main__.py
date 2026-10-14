@@ -35,16 +35,31 @@ from nexus.infra.db.engine import make_engine
 from nexus.infra.db.migrations import alembic_config
 
 OPENROUTER = "https://openrouter.ai/api/v1"
+# --reasoning, as OpenRouter's reasoning setting for the main model.
+REASONING: dict[str, dict[str, object] | None] = {
+    "default": None,
+    "on": {"enabled": True},
+    "off": {"enabled": False},
+    "low": {"effort": "low"},
+}
 
 
 def openrouter_model(
-    name: str, api_key: str, timeout: float = 90.0, providers: list[str] | None = None
+    name: str,
+    api_key: str,
+    timeout: float = 90.0,
+    providers: list[str] | None = None,
+    *,
+    reasoning: dict[str, object] | None = None,
 ) -> BaseChatModel:
-    routing = (
+    """``reasoning``: OpenRouter's reasoning setting; None leaves the model's default."""
+    routing: dict[str, object] = (
         {"provider": {"order": providers, "only": providers, "require_parameters": True}}
         if providers
-        else None
+        else {}
     )
+    if reasoning is not None:
+        routing["reasoning"] = reasoning
     return ChatOpenAI(
         model=name,
         api_key=SecretStr(api_key),
@@ -53,7 +68,7 @@ def openrouter_model(
         timeout=timeout,
         max_retries=2,
         default_headers={"X-Title": "Nexus Prime evals"},
-        extra_body=routing,
+        extra_body=routing or None,
     )
 
 
@@ -150,7 +165,14 @@ async def main(argv: list[str] | None = None) -> int:
         help="OpenRouter provider slugs for the main model, comma separated, as "
         "OPENROUTER_PROVIDERS (default: OpenRouter picks)",
     )
+    parser.add_argument(
+        "--reasoning",
+        choices=list(REASONING),
+        default="default",
+        help="the main model's reasoning, as CHAT_REASONING (default: the model's own)",
+    )
     args = parser.parse_args(argv)
+    reasoning = REASONING[args.reasoning]
 
     api_key = os.environ.get("OPENROUTER_API_KEY")
     admin_url = os.environ.get("EVAL_DATABASE_URL") or os.environ.get("TEST_DATABASE_URL")
@@ -172,7 +194,9 @@ async def main(argv: list[str] | None = None) -> int:
         try:
             for offset, name in enumerate(args.model):
                 providers = [p.strip() for p in args.providers.split(",") if p.strip()]
-                model = openrouter_model(name, api_key, providers=providers or None)
+                model = openrouter_model(
+                    name, api_key, providers=providers or None, reasoning=reasoning
+                )
                 print(f"{name}: {len(cases)} cases", flush=True)
 
                 def progress(result: CaseResult) -> None:
@@ -199,6 +223,8 @@ async def main(argv: list[str] | None = None) -> int:
                     label += f" + {args.vision_model} (photos)"
                 if args.memory_model:
                     label += f" + {args.memory_model} (memory)"
+                if reasoning is not None:
+                    label += f", reasoning {args.reasoning}"
                 memory_price = prices.get(args.memory_model) if args.memory_model else None
                 summary = Summary(label, results, prices.get(name), memory_price)
                 summaries.append(summary)

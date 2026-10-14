@@ -150,3 +150,35 @@ The rules now say a next step is something new, never an offer to undo or redo w
 |---|---|---|---|
 | New style, first draft | 166/170 | 2.8s | $0.00060 |
 | With the fixes | **170, 169, 170** | 2.0–2.4s | $0.00060 |
+
+## Chat reasoning (14 October 2026)
+
+Some chat replies took a minute or more in production with no tool call at all: DeepSeek reasons before answering by default, and now and then for a long time. The full set (214 cases) was run three times, each with the production pinned providers and Qwen3.8 Flash reading photos, with `--reasoning on`, `low` (OpenRouter's `effort: low`) and `off`:
+
+| Reasoning | Passed | Median | p90 | p99 | Slowest | Turns over 15s | Cost a case |
+|---|---|---|---|---|---|---|---|
+| on (the model's default) | 212/214 | 5.2s | 14.2s | 24.3s | 41.7s | 25 of 276 | $0.00079 |
+| **low** | **213/214** | **3.9s** | **10.3s** | **22.6s** | **26.6s** | **10** | **$0.00070** |
+| off | 196/214 | 3.1s | 6.0s | 23.9s | 115s | 6 | $0.00044 |
+
+With reasoning off, the model often answered without the tool it needed: "note for the Japan trip: bring a power adapter" got "Got it" with nothing saved, "we're in Kyoto on 15 Dec" labelled no day, and a trip's spending was answered as nothing logged instead of looked up. A reply that claims a change it didn't make is worse than a slow one. Low kept every one of those right. Its one failure, setting a trip's set-aside, passed with reasoning on (off failed it too).
+
+**Chosen:** `CHAT_REASONING=low`, now the default.
+
+## Other chat models at a similar price (14 October 2026)
+
+Five newer or current models on the same 214 cases, OpenRouter choosing the hosts, each with its own default reasoning, Qwen3.8 Flash reading photos and DeepSeek writing memories so only the chat model differs:
+
+| Chat model | Passed | Median | p90 | Cost a case |
+|---|---|---|---|---|
+| **deepseek/deepseek-v4.1-flash, reasoning low** (above) | **213** | **3.9s** | 10.3s | **$0.00070** |
+| anthropic/claude-haiku-5.5 | 205 | 3.9s | **7.0s** | $0.0023 |
+| z-ai/glm-5.3-flash | 206 | 10.8s | 30.3s | $0.0011 |
+| openai/gpt-6-luna-pro | 204 | 11.7s | 21.7s | $0.0039 |
+| inclusionai/ling-3.1-flash | 200 | 6.7s | 13.8s | $0.0016 |
+| inception/mercury-2.5 | 171 | 4.3s | 9.1s | $0.00088 (7 provider errors) |
+
+**Chosen:**
+- Chat: DeepSeek v4.1 Flash with low reasoning (unchanged model): the most passes, as fast as any and the cheapest.
+- Fallback: Claude Haiku 5.5 replaces GLM-5.3 Flash, which now takes a median 10.8s with one reply in ten over 30s. Haiku is about as accurate, much faster and steadier, at about 3× DeepSeek's cost, paid only when DeepSeek fails. Set in production as `OPENROUTER_FALLBACK_MODELS=anthropic/claude-haiku-5.5`.
+
