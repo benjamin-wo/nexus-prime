@@ -99,7 +99,7 @@ function RunRow({ run, onCancel }: { run: Run; onCancel: (run: Run) => void }) {
   );
 }
 
-/** The top of Home, on an orange gradient rather than in a card: the day and a
+/** The top of Home, on an indigo gradient rather than in a card: the day and a
  * greeting, this month's spending as the one big figure with how it stands, Nexus's
  * brief, a few one-tap questions, and a box to ask anything (each opens the chat). */
 function Hero({
@@ -215,8 +215,8 @@ function usualMonth(months: Spending["months"]): { usual: number | null; count: 
   return { usual, count: past.length };
 }
 
-/** Money out per month: quiet bars for past months (striped orange only when over
- * the overall budget), this month so far in solid orange over the outline of a
+/** Money out per month: quiet bars for past months (striped rose only when over
+ * the overall budget), this month so far in solid indigo over the outline of a
  * usual month (so early in the month a short bar reads as "so far"), and the
  * budget as a dashed line. */
 function SpendingChart({ data }: { data: Spending }) {

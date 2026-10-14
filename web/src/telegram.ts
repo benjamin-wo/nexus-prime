@@ -22,8 +22,8 @@ declare global {
   }
 }
 
-const SHELL = "#f4f1ec"; // --bg-shell
-const BAR = "#12100e"; // --bar-bg
+const SHELL = "#f1f4f8"; // --bg-shell
+const BAR = "#1b2333"; // --bar-bg
 
 export function readInitData(hash: string): string | null {
   return new URLSearchParams(hash.replace(/^#/, "")).get("tgWebAppData") || null;

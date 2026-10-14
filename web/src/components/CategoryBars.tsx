@@ -6,9 +6,9 @@ import { CategoryTransactions } from "./CategoryTransactions";
 
 type Row = Summary["by_category"][number];
 
-// The four largest get their own swatch; the rest share the grey one. Solid and
-// hatched alternate so neighbours differ in more than hue.
-const SWATCHES = ["solid-orange", "hatch-orange", "solid-sky", "hatch-sky"];
+// The four largest get their own swatch from the palette, alternating dark and
+// light so neighbours differ in more than hue; the rest share the mist.
+const SWATCHES = ["sw-1", "sw-2", "sw-3", "sw-4"];
 
 const keyOf = (row: Row) => `${row.category_id ?? "none"}-${row.total.currency}`;
 

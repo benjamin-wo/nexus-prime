@@ -66,10 +66,10 @@ function useTelegramBack(pathname: string, first: boolean) {
 }
 
 /** Telegram's header (and the bar under the app) in the page's own colour: the
- * hero's orange on Home, the page colour elsewhere. */
-const SHELL_BG = "#f4f1ec";
-const HERO_TOP = "#e4570f";
-const BAR_BG = "#12100e";
+ * hero's indigo on Home, the page colour elsewhere. */
+const SHELL_BG = "#f1f4f8";
+const HERO_TOP = "#3e52b6";
+const BAR_BG = "#1b2333";
 function useTelegramColours(home: boolean) {
   useEffect(
     () =>
