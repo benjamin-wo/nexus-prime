@@ -10,6 +10,7 @@ same slot create one job between them. No leader election is needed.
 import asyncio
 import contextlib
 import logging
+import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -19,6 +20,7 @@ from sqlalchemy import and_, delete, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from nexus.application import ops
 from nexus.application.clock import utcnow
 from nexus.infra.db.tables import jobs
 
@@ -169,21 +171,44 @@ class JobRunner:
             return [Claimed(r.id, r.kind, r.payload, r.attempts) for r in rows]
 
     async def _run(self, job: Claimed) -> None:
+        # Everything the job does, its log lines and events, carries the job's trace.
+        with ops.scope(trace=f"job-{job.id}"):
+            await self._execute(job)
+
+    async def _execute(self, job: Claimed) -> None:
         handler = self._handlers.get(job.kind)
         if handler is None:
             await self._finish(job, status="failed", error=f"no handler for {job.kind!r}")
             return
+        started = time.monotonic()
         try:
             outcome = await asyncio.wait_for(handler(job.payload), self._timeout.total_seconds())
         except Exception as exc:
             log.exception("job %s (%s) failed", job.id, job.kind)
             error = f"{type(exc).__name__}: {exc}"[:500]
-            if job.attempts >= MAX_ATTEMPTS:
+            final = job.attempts >= MAX_ATTEMPTS
+            ops.emit(
+                "job",
+                job.kind,
+                ok=False,
+                ms=(time.monotonic() - started) * 1000,
+                error=type(exc).__name__,
+                attempt=job.attempts,
+                final=final or None,
+            )
+            if final:
                 await self._finish(job, status="failed", error=error)
             else:
                 retry_at = self._clock() + backoff(job.attempts)
                 await self._finish(job, status="pending", error=error, run_at=retry_at)
             return
+        ops.emit(
+            "job",
+            job.kind,
+            ms=(time.monotonic() - started) * 1000,
+            attempt=job.attempts,
+            deferred=isinstance(outcome, Defer) or None,
+        )
         if isinstance(outcome, Defer):
             # Not a failure: give the attempt back.
             await self._finish(

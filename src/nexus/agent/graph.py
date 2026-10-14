@@ -10,6 +10,7 @@ and has no side effects of its own, so re-running it on resume is safe.
 
 import logging
 import re
+import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -40,6 +41,7 @@ from nexus.agent.tools import ToolContext, ToolSpec, UowFactory, run_tool, safe_
 from nexus.application import departments as department_cases
 from nexus.application import income as income_cases
 from nexus.application import memory as memory_cases
+from nexus.application import ops
 from nexus.application.categories import list_categories
 from nexus.application.category_rules import list_rules
 from nexus.application.fx import RateSource
@@ -563,14 +565,34 @@ class AgentGraph:
             else:
                 if "user_id" in call["args"]:
                     log.warning("dropped model-supplied user_id on %s", call["name"])
+                started = time.monotonic()
                 try:
                     result = await run_tool(spec, ctx, dict(call["args"]))
                     content, wrote, buttons = result.text, result.wrote, result.buttons
                     skill = str(call["args"].get("name", "")).strip().lower()
                     if call["name"] == "load_skill" and not content.startswith("Error:"):
                         loaded[skill] = SKILL_TURNS
-                except Exception:
+                    # A tool's "Error: ..." is the model's to fix (a bad argument, a
+                    # missing thing): counted, so a tool the model keeps misusing shows.
+                    refused = content.startswith("Error:")
+                    ops.emit(
+                        "tool",
+                        call["name"],
+                        ok=not refused,
+                        ms=(time.monotonic() - started) * 1000,
+                        error="refused" if refused else None,
+                        wrote=wrote or None,
+                    )
+                except Exception as exc:
                     log.exception("tool %s failed", call["name"])
+                    ops.emit(
+                        "tool",
+                        call["name"],
+                        ok=False,
+                        ms=(time.monotonic() - started) * 1000,
+                        error=type(exc).__name__,
+                        crashed=True,
+                    )
                     content, wrote = "Error: something went wrong running that.", False
             kwargs: dict[str, Any] = {WROTE: wrote}
             if buttons:

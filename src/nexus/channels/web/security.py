@@ -15,6 +15,7 @@ from fastapi import Depends, HTTPException, Request, Response
 
 from nexus.agent.service import AgentService
 from nexus.agent.tools import UowFactory
+from nexus.application import ops
 from nexus.application.access import SESSION_TTL, resolve_session
 from nexus.application.departments import Departments, default_registry
 from nexus.application.email import EmailRuntime
@@ -127,6 +128,7 @@ async def authenticated(request: Request, web: Runtime) -> Authed:
     if resolved is None:
         raise HTTPException(status_code=401, detail="session expired")
     session, user = resolved
+    ops.set_user(user.id)
     if request.method not in _SAFE:
         check_origin(request, web)
         given = request.headers.get("x-csrf-token", "")

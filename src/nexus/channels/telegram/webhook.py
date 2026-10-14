@@ -18,6 +18,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
 from nexus.agent.service import UNDO, AgentService, Button, Picture, Reply
 from nexus.agent.tools import UowFactory
+from nexus.application import ops
 from nexus.application.access import create_invite
 from nexus.application.clock import utcnow
 from nexus.application.inbound import claim_event
@@ -166,6 +167,12 @@ def kept_buttons(payload: dict[str, Any]) -> list[list[Button]]:
 
 
 async def handle_update(runtime: TelegramRuntime, update: dict[str, Any]) -> None:
+    # Its log lines and events carry the update's trace, and the user's hash once known.
+    with ops.scope(trace=f"tg-{update.get('update_id')}", channel="telegram"):
+        await _handle_update(runtime, update)
+
+
+async def _handle_update(runtime: TelegramRuntime, update: dict[str, Any]) -> None:
     chat_id: int | None = None
     try:
         if "callback_query" in update:
@@ -180,8 +187,10 @@ async def handle_update(runtime: TelegramRuntime, update: dict[str, Any]) -> Non
         chat_id = int(chat["id"])
         actor = await _actor(runtime, message.get("from") or {}, chat_id)
         if actor is None:
+            ops.emit("access", "telegram", ok=False, reason="not allowed")
             await runtime.client.send_message(chat_id, PRIVATE)
             return
+        ops.set_user(actor)
         async with typing(runtime, chat_id):
             await _message(runtime, actor, chat_id, message)
     except Exception:
@@ -345,6 +354,7 @@ async def _callback(runtime: TelegramRuntime, query: dict[str, Any]) -> None:
     actor = await _actor(runtime, query.get("from") or {}, chat_id)
     if actor is None:
         return
+    ops.set_user(actor)
     data = str(query.get("data") or "")
     # One-shot buttons: take them off the message once pressed, Undo included, and
     # drop the job that would later put the rest back without Undo.

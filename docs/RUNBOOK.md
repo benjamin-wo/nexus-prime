@@ -19,6 +19,11 @@ Everything below assumes the Railway CLI, logged in and linked to the project (`
 2. **Ask the bot** "are you working?": it answers from the kernel without the model, and names the model in use.
 3. **Logs:** Railway → `nexus-app` → Deployments → the active one → Logs (or `railway logs --service nexus-app`). Logs never carry message text, tokens or URLs with secrets; HTTP client logging is held to warnings.
 4. **Recent deploys:** a problem that started with a deploy is fixed fastest by rolling back (below).
+5. **The ops report:** `curl -H "Authorization: Bearer $OPS_TOKEN" "https://<domain>/api/ops/report?hours=24&format=md"` (or open it signed in as the owner) lists what went wrong or slow, worst first, each with where in the code and traces. Search the logs for a trace (`"trace": "tg-123"`) to see every line of that update, request or job. See OPERATIONS.md, Observability.
+
+## Routine check
+
+Weekly, or after a deploy: read the ops report for the last 7 days (`hours=168`). Anything high is a ticket; medium ones are worth one if they recur. A problem keeps its id while it recurs, so it can be tracked across reports.
 
 ## The bot doesn't reply
 

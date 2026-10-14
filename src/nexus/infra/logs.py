@@ -1,9 +1,13 @@
-"""Logging setup: the app's own messages at INFO, and no secrets in access logs."""
+"""Logging setup: the app's own messages at INFO as JSON lines with their trace, other
+libraries' warnings the same way, warnings and errors also kept as ops events, and no
+secrets in access logs."""
 
 import json
 import logging
 import sys
 from typing import Any
+
+from nexus.application import ops
 
 # Query strings on these paths carry one-time tokens or OAuth codes.
 _SECRET_PATHS = ("/api/email/", "/connect/", "/api/auth/", "/invite/")
@@ -29,7 +33,10 @@ class JsonLines(logging.Formatter):
         message = f"{record.name}: {record.getMessage()}"
         if record.exc_info:
             message += "\n" + self.formatException(record.exc_info)
-        return json.dumps({"level": record.levelname.lower(), "message": message})
+        line: dict[str, str] = {"level": record.levelname.lower(), "message": message}
+        if trace := ops.trace():
+            line["trace"] = trace
+        return json.dumps(line)
 
 
 def configure_logging() -> None:
@@ -38,19 +45,34 @@ def configure_logging() -> None:
     # token: they're held to warnings.
     for noisy in ("httpx", "httpcore", "openai", "urllib3"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
+    # pypdf warns about every small fault in a PDF it reads anyway ("Ignoring wrong
+    # pointing object"): only its errors matter.
+    logging.getLogger("pypdf").setLevel(logging.ERROR)
     access = logging.getLogger("uvicorn.access")
     if not any(isinstance(f, RedactQueries) for f in access.filters):
         access.addFilter(RedactQueries())
     app = logging.getLogger("nexus")
     if not app.handlers:
         app.addHandler(_json_handler())
+        app.addHandler(ops.EventsFromLogs())
         app.setLevel(logging.INFO)
         app.propagate = False
+    # Other libraries' warnings: JSON lines with their level (not bare text on stderr,
+    # which Railway shows as errors), and ops events.
+    root = logging.getLogger()
+    if not any(isinstance(h, ops.EventsFromLogs) for h in root.handlers):
+        warnings = _json_handler()
+        warnings.setLevel(logging.WARNING)
+        root.addHandler(warnings)
+        root.addHandler(ops.EventsFromLogs())
     # Uvicorn's own lines ("Started server process") go to stderr, which Railway shows
     # as errors: they go out as JSON lines with their real level instead.
+    # It also stops them propagating to uvicorn's own stderr handler, which printed
+    # each a second time as bare text.
     server = logging.getLogger("uvicorn.error")
     if not any(isinstance(h.formatter, JsonLines) for h in server.handlers):
         server.handlers = [_json_handler()]
+    server.propagate = False
 
 
 def _json_handler() -> logging.Handler:

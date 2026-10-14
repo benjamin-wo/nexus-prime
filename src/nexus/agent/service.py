@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import time as clock
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
@@ -29,6 +29,7 @@ from nexus.agent.image_look import (
     Route,
     route,
 )
+from nexus.agent.ops_timing import TurnTimer
 from nexus.agent.receipts import ReceiptReader, caption_date
 from nexus.agent.tools import UowFactory
 from nexus.agent.trip_reader import TripReader, drafts
@@ -38,6 +39,7 @@ from nexus.application import category_rules as rule_cases
 from nexus.application import departments as department_cases
 from nexus.application import email as email_cases
 from nexus.application import investments as investment_cases
+from nexus.application import ops
 from nexus.application import plans as plan_cases
 from nexus.application import receipts as receipt_cases
 from nexus.application import salary as salary_cases
@@ -121,6 +123,29 @@ def _log_turn(seconds: float, new: list[BaseMessage]) -> None:
     )
 
 
+def _record_turn(
+    seconds: float, new: list[BaseMessage], timer: TurnTimer, error: str | None = None
+) -> None:
+    """The turn as an ops event: its time split into the model's and the rest (tools,
+    database, prompt building), the tools by name, and whether the fallback answered."""
+    tools = Counter(call["name"] for m in new if isinstance(m, AIMessage) for call in m.tool_calls)
+    ms = seconds * 1000
+    ops.emit(
+        "turn",
+        ops.current_channel() or "chat",
+        ok=error is None,
+        ms=ms,
+        error=error,
+        model_calls=len(timer.calls),
+        model_ms=timer.model_ms,
+        other_ms=max(0, int(ms) - timer.model_ms),
+        model_errors=timer.failures or None,
+        fallback=timer.fell_back or None,
+        tools=dict(tools) or None,
+        slow=seconds >= SLOW_TURN_SECONDS or None,
+    )
+
+
 class _NoRates:
     async def rate(self, base: str, quote: str, on: date) -> None:
         return None
@@ -169,8 +194,11 @@ class AgentService:
         holdings: HoldingsReader | None = None,
         trips: TripReader | None = None,
         looker: ImageLooker | None = None,
+        primary_model: str | None = None,
     ) -> None:
         self._graph = graph
+        # The chat model's id: a turn answered by another model used the fallback.
+        self._primary_model = primary_model
         # The first look at every image; None: images are read as receipts first.
         self._looker = looker
         # Reads screenshots of travel bookings and plans; None: they're read as receipts.
@@ -208,12 +236,18 @@ class AgentService:
         # By id, not position: a long conversation drops its oldest messages mid-turn.
         seen = {m.id for m in (await self._graph.aget_state(config)).values.get("messages", [])}
         started = clock.monotonic()
-        await self._graph.ainvoke(payload, config)
+        timer = TurnTimer(self._primary_model)
+        try:
+            await self._graph.ainvoke(payload, {**config, "callbacks": [timer]})
+        except Exception as exc:
+            _record_turn(clock.monotonic() - started, [], timer, error=type(exc).__name__)
+            raise
         state = await self._graph.aget_state(config)
         new: list[BaseMessage] = [
             m for m in state.values.get("messages", []) if m.id is None or m.id not in seen
         ]
         _log_turn(clock.monotonic() - started, new)
+        _record_turn(clock.monotonic() - started, new, timer)
         pending = await self._pending(actor)
         if pending is not None:
             pid, summary = pending

@@ -316,6 +316,38 @@ AgentMail leaves out spam and mail that fails sender authentication. Anyone who 
 
 A missing encryption key stops startup when `AGENTMAIL_API_KEY` is set.
 
+## Observability
+
+The app records **ops events**: what it did and how it went, never what anyone said, wrote or spent. Each is a kind, a name, whether it went well, how long it took, and details that are only counts, names, status codes and error types:
+
+| Kind | Name | Details |
+|---|---|---|
+| `turn` | the channel (`telegram`, `web`) | model calls, time waiting on the model and the rest, tools used by name and count, model errors, whether the fallback answered, slow (15s and over) |
+| `model` | the model id | error type, whether it was the fallback, tokens in and out |
+| `tool` | the tool | `refused` when it answered "Error: ..." (the model's to fix), or the exception type when it crashed; whether it wrote |
+| `job` | the job kind | attempt, error type, whether it gave up, deferred |
+| `request` | the route template (`POST /api/chat`, never the path itself) | status |
+| `http` | the outside host (`api.telegram.org`) | status; failed on 5xx, 401, 403, 429 and exceptions. Never the path or query, which can carry tokens |
+| `log` | the logger | every warning and error: the message's template (a constant in the code, never its arguments), the exception's type (never its message), where in the code (`src/nexus/...:line`, the innermost frame in our code) and a fingerprint |
+| `access` | `telegram` | a message from someone not on the allowlist |
+
+The user is a 10-character keyed hash (HMAC-SHA256 with `OPS_SALT`, else the webhook secret), so one person's events can be told apart without saying who. Every event in a Telegram update, web request or job carries its **trace** (`tg-<update id>`, a random id for web requests, sent back as `X-Trace-Id`, `job-<id>`), and so do the JSON log lines (`"trace"`), so a trace from the report finds the full log lines in Railway. Events are buffered and written every 5 seconds in one insert (`ops_events`, migration 0040), never blocking or failing the work; if the database is down the oldest of 20,000 are dropped. They're kept 30 days. `OPS_EVENTS=false` records none.
+
+Logs are JSON lines with their real level: uvicorn's start and stop lines are printed once (they also went out as bare text, which Railway showed as errors), other libraries' warnings go out as JSON too, and pypdf's notices about small faults in a PDF it reads anyway are held to errors.
+
+**The report.** `GET /api/ops/report?hours=24` (1 hour to 30 days; `&format=md` for Markdown) groups the window's events into **problems**, worst first. Each has a stable `id` (the same every time the same thing goes wrong, for opening a ticket once, updating it and closing it when it stops), a severity (high, medium, low), an area, a title, a count, first and last seen, where in the code when known, how many users it touched (by hash), up to three traces and a hint. An error logged during a failed turn, tool or job is folded into that failure, lending it its code location. What becomes a problem:
+
+- warnings and errors by fingerprint (high for errors, medium for exceptions or 5 or more, else low)
+- failed chat turns (high); replies over 30 seconds, with the share spent on the model and the tools used (medium); one reply in ten over 15 seconds (low)
+- a model failing (high when a fifth or more of its calls fail), and the fallback answering a tenth or more of turns
+- tools crashing (high), and a tool refusing 30% or more of 5 or more calls (the model keeps calling it wrongly)
+- jobs that gave up (high) or keep failing; jobs stuck past their lease, waiting 30 minutes past their time, or a scheduled job that hasn't finished in three of its intervals (at least two hours) (high)
+- routes answering 5xx (high); outside hosts failing 10% or more of 3 or more calls
+- Telegram's webhook with 10 or more updates waiting, or an error delivering one in the window
+- OpenRouter credit under $5 (from its key status), broken mailboxes, web search past 90% of the month's credits
+
+The summary gives turn counts and times, model calls by model, tool, job and request counts, outside calls by host, the database's size and OpenRouter credit left. The owner can read it signed in; a script reads it with `Authorization: Bearer <OPS_TOKEN>` (unset: no token works). Anyone else gets a 404.
+
 ## Evaluating the assistant
 
 `src/nexus/evals` scores models on how well the assistant does what users mean. About 100 made-up requests (logging, clarifying questions, income, questions about money, edits, planning, categories, safety, follow-ups and memory) each start from the same seeded user: two months of invented Singapore spending, a split dinner, a budget, bills, a pay schedule, a rule and a subscription, with "now" fixed at Monday 28 September 2026, 2pm. The real agent (kernel, graph, tools and confirmations, which are approved unless a case says otherwise) handles each case, and grading checks the tool calls, confirmations, replies and the data afterwards. Cases the current assistant can't do yet name the M8 part expected to fix them.
