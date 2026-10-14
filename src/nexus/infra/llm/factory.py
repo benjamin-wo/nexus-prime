@@ -126,9 +126,9 @@ def _openrouter(
 ) -> BaseChatModel:
     """``routed``: send OPENROUTER_PROVIDERS with the request (the main model only;
     other models may not be served by those providers). ``reasoning``: a
-    CHAT_REASONING value; None leaves the model's default."""
+    CHAT_REASONING value; None or "default" leaves the model's default."""
     body = dict(openrouter_routing(settings) or {}) if routed else {}
-    if reasoning is not None:
+    if reasoning in REASONING:
         body["reasoning"] = REASONING[reasoning]
     return _openai_compatible(
         settings,

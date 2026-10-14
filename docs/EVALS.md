@@ -150,3 +150,18 @@ The rules now say a next step is something new, never an offer to undo or redo w
 |---|---|---|---|
 | New style, first draft | 166/170 | 2.8s | $0.00060 |
 | With the fixes | **170, 169, 170** | 2.0–2.4s | $0.00060 |
+
+## Chat reasoning (14 October 2026)
+
+Some chat replies took a minute or more in production with no tool call at all: DeepSeek reasons before answering by default, and now and then for a long time. The full set (214 cases) was run three times, each with the production pinned providers and Qwen3.8 Flash reading photos, with `--reasoning on`, `low` (OpenRouter's `effort: low`) and `off`:
+
+| Reasoning | Passed | Median | p90 | p99 | Slowest | Turns over 15s | Cost a case |
+|---|---|---|---|---|---|---|---|
+| on (the model's default) | 212/214 | 5.2s | 14.2s | 24.3s | 41.7s | 25 of 276 | $0.00079 |
+| **low** | **213/214** | **3.9s** | **10.3s** | **22.6s** | **26.6s** | **10** | **$0.00070** |
+| off | 196/214 | 3.1s | 6.0s | 23.9s | 115s | 6 | $0.00044 |
+
+With reasoning off, the model often answered without the tool it needed: "note for the Japan trip: bring a power adapter" got "Got it" with nothing saved, "we're in Kyoto on 15 Dec" labelled no day, and a trip's spending was answered as nothing logged instead of looked up. A reply that claims a change it didn't make is worse than a slow one. Low kept every one of those right. Its one failure, setting a trip's set-aside, passed with reasoning on (off failed it too).
+
+**Chosen:** `CHAT_REASONING=low`, now the default.
+

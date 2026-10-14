@@ -130,9 +130,10 @@ class Settings(BaseSettings):
     # (comma separated slugs, e.g. "deepinfra,fireworks"). Unset: OpenRouter picks,
     # cheapest first, which can land on hosts that handle tool calls poorly.
     openrouter_providers: Annotated[tuple[str, ...], NoDecode] = ()
-    # How much OPENROUTER_MODEL reasons before it answers in chat: on, low (less
-    # effort) or off. Unset: the model's own default, which for DeepSeek is on.
-    chat_reasoning: Literal["on", "low", "off"] | None = None
+    # How much OPENROUTER_MODEL reasons before it answers in chat: low (the default;
+    # as accurate as on in the evaluation set and faster), on, off, or default (send
+    # nothing: the model's own default, which for DeepSeek is on).
+    chat_reasoning: Literal["low", "on", "off", "default"] = "low"
     deepseek_api_key: SecretStr | None = None
     deepseek_base_url: str = "https://api.deepseek.com/v1"
     deepseek_model: str = "deepseek-v4-flash"
