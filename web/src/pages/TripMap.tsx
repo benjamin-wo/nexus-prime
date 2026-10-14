@@ -401,7 +401,14 @@ export function MapAppPicker() {
 
 /** Getting from one stop to the next, between their cards: how, how long, and a
  * way to change it for that hop. */
-export function HopLine({ tripId, day, hop, addressOf }: { tripId: string; day: string; hop: Hop; addressOf?: (id: string) => string | null }) {
+export function HopLine({ tripId, day, hop, addressOf, back }: {
+  tripId: string;
+  day: string;
+  hop: Hop;
+  addressOf?: (id: string) => string | null;
+  /** Back to somewhere already on the day's list, like tonight's hotel: named. */
+  back?: boolean;
+}) {
   const [app] = useMapApp();
   const [shown, setShown] = useState<Hop>(hop);
   const [busy, setBusy] = useState(false);
@@ -422,6 +429,7 @@ export function HopLine({ tripId, day, hop, addressOf }: { tripId: string; day: 
     <li className="timeline-hop" aria-label={`From ${shown.start} to ${shown.end}`}>
       <span aria-hidden="true">{how.icon}</span>
       <span className="wrap">
+        {back && <span className="hop-back">Back to {shown.end} · </span>}
         {time}
         {shown.metres !== null && shown.minutes !== null && <span className="caption"> · {distance(shown.metres)}</span>}
         {shown.tight && (

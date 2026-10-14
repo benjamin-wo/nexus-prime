@@ -100,6 +100,8 @@ export async function fakeApi(
     /** The browser key for the trip map; null: no map (as when it isn't set up). */
     mapKey: string | null;
     hopModes: string[];
+    /** A day out from the hotel checked into that day: there and back again. */
+    backToHotel: boolean;
     /** Moves sent from the trip page, as "id>day|places@after". */
     moves: string[];
     placeSearches: string[];
@@ -179,6 +181,7 @@ export async function fakeApi(
     plans: [],
     mapKey: null,
     hopModes: [],
+    backToHotel: false,
     moves: [],
     placeSearches: [],
     ideaSearches: [],
@@ -923,6 +926,15 @@ export async function fakeApi(
           mode: car ? "drive" : "transit", minutes: car ? 90 : 140, metres: 120000, tight: false,
           directions: `https://www.google.com/maps/dir/?api=1&destination_place_id=${String(lodge.place_id)}`,
         });
+      }
+      if (state.backToHotel && lodge && stops.length > 0) {
+        const leg = (a: Record<string, unknown>, b: Record<string, unknown>) => ({
+          start_id: String(a.id), end_id: String(b.id), start: String(a.title), end: String(b.title), mode: "transit", minutes: 20, metres: 3100, tight: false,
+          directions: "https://www.google.com/maps/dir/?api=1",
+        });
+        const hotel = { id: lodge.id, title: lodge.hotel };
+        hops.unshift(leg(hotel, stops[0]));
+        hops.push(leg(stops.at(-1)!, hotel));
       }
       if (!dayHops[3]) return json(route, hops);
       const mode = url.searchParams.get("mode") ?? "walk";

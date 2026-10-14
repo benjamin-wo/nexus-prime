@@ -194,3 +194,33 @@ async def test_a_hire_car_collected_at_the_airport_is_part_of_arriving(
     )  # fmt: skip
     assert timed.draft.follows is None
     assert await day() == ["flight", "lodge", "car"]
+
+
+async def test_after_the_car_goes_back_the_way_on_is_public_transport(uow: UowFactory) -> None:
+    user = await person(uow)
+    trip = await trip_cases.create_trip(
+        uow(), user,
+        trip_cases.TripDraft("Exampleland", ARRIVAL, date(2026, 10, 24), "EUR", None),
+        now=NOW,
+    )  # fmt: skip
+    await trip_cases.set_getting_around(uow(), user, trip.id, GettingAround.CAR, now=NOW)
+    await booking_cases.add_manual(
+        uow(), user.id, trip.id,
+        {"kind": "hotel", "hotel": "Hill Lodge", "check_in": "2026-10-21",
+         "check_out": "2026-10-24", "place_id": LODGE.id},
+        None, now=NOW,
+    )  # fmt: skip
+    await booking_cases.add_manual(
+        uow(), user.id, trip.id,
+        {"kind": "activity", "name": "Car return", "day": "2026-10-21", "at": "17:00",
+         "place_id": DESK.id},
+        None, now=NOW,
+    )  # fmt: skip
+    source = FakePlaces([AIRPORT, LODGE, DESK])
+    places, routes = Places(source, clock=lambda: NOW), Routes(FakeRoutes(), clock=lambda: NOW)
+    hops = await hop_times(uow, places, routes, user.id, trip.id, ARRIVAL)
+    # Driven to the car return; back to the hotel without it.
+    assert [(h.hop.start.title, h.hop.end.title, h.mode) for h in hops] == [
+        ("Hill Lodge", "Car return", Mode.DRIVE),
+        ("Car return", "Hill Lodge", Mode.TRANSIT),
+    ]
