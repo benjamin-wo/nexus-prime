@@ -248,6 +248,18 @@ input[type="date"].input, input[type="time"].input, input[type="datetime-local"]
 .budget-state-ok-strong { color: var(--emerald-accent); }
 .budget-state-warn { color: var(--status-warning); }
 .budget-state-over { color: var(--rose-accent); }
+.budget-month { padding-bottom: var(--space-4); border-bottom: 1px solid var(--border-subtle); }
+.budget-month:last-child { border-bottom: 0; padding-bottom: 0; }
+.month-plan { display: grid; gap: var(--space-3); margin-bottom: var(--space-4); }
+.budget-month .month-plan { margin-bottom: 0; }
+.month-figures { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.month-figure { display: grid; gap: var(--space-1); align-content: start; min-width: 0; padding: var(--space-3); border: 1px solid var(--border-subtle); border-radius: var(--radius); }
+.month-figure:first-child, .month-figure:last-child:nth-child(even) { grid-column: 1 / -1; }
+.month-figure > .caption:first-child { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.month-value { font-size: 1.25rem; font-weight: 500; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.month-watch { border-color: var(--status-warning-border); }
+.month-watch .month-value { font-weight: 700; color: var(--text-white); }
+.badge-watch { padding: 1px 8px; color: var(--status-warning); background: var(--status-warning-soft); border-color: var(--status-warning-border); }
 .plan-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: var(--space-6); align-items: start; }
 .plan-add { margin-top: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--border-subtle); }
 .budget-foot .btn-ghost { min-height: 32px; padding: 0 var(--space-2); }
@@ -381,9 +393,9 @@ table.ledger { width: 100%; border-collapse: collapse; }
   .content { gap: var(--space-4); }
   .card { padding: var(--space-4); border-radius: 18px; }
   .page-head { align-items: center; }
-  /* Spent and received side by side, net underneath: the month fits on one screen. */
+  /* Two side by side; a last one left on its own takes the full row. */
   .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
-  .tiles > :last-child { grid-column: 1 / -1; }
+  .tiles > :last-child:nth-child(odd) { grid-column: 1 / -1; }
   .tile { padding: var(--space-4); }
   .tile .value { font-size: clamp(1.15rem, 5.6vw, 1.625rem); }
   .tile .extra { font-size: 0.75rem; }

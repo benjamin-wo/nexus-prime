@@ -115,6 +115,32 @@ test("dashboard shows the month, categories and IOUs", async ({ page }) => {
   await expect(page.getByRole("region", { name: "From Nexus" })).toContainText("Set a monthly budget");
 });
 
+test("the overview shows what was put away and its share of income, once there is a wallet to put it in", async ({ page }) => {
+  await fakeApi(page);
+  await page.goto("/accounting");
+  const tile = page.getByLabel("Put away");
+  await expect(tile).toContainText(/SGD.800\.00/);
+  await expect(tile).toContainText("19% of income");
+  // Spent, Received, Net and Put away sit two by two, with no tile alone on a row.
+  const boxes = await page.locator(".tiles > .tile").evaluateAll((els) => els.map((e) => e.getBoundingClientRect()));
+  expect(boxes).toHaveLength(4);
+  const width = page.viewportSize()!.width;
+  if (width <= 720) {
+    expect(boxes[0].top).toBe(boxes[1].top);
+    expect(boxes[2].top).toBe(boxes[3].top);
+    expect(boxes[3].width).toBeLessThan(width / 2);
+  }
+});
+
+test("a user with only Spending sees no Put away tile", async ({ page }) => {
+  await fakeApi(page, { spendingOnly: true });
+  const wallets = page.waitForResponse((r) => r.url().includes("/api/wallets"));
+  await page.goto("/accounting");
+  await wallets;
+  await expect(page.getByLabel("Received")).toContainText("4,200.00");
+  await expect(page.getByLabel("Put away")).toHaveCount(0);
+});
+
 test("a move between wallets shows neutrally and is not counted as spending or income", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/accounting");
@@ -489,6 +515,47 @@ test("set a budget, see how much is used, change and remove it", async ({ page }
   await budgets.getByRole("button", { name: "Remove" }).click();
   await budgets.getByRole("button", { name: "Remove" }).click(); // confirm
   await expect(budgets.getByText("No budgets yet. Add one below.")).toBeVisible();
+});
+
+test("the budgets card shows total out and left to spend, with the lower of that and budget left marked", async ({ page }) => {
+  const state = await fakeApi(page);
+  state.budgets.push({ id: "b1", category_id: null, limit: 2000, spent: 600 });
+  await page.goto("/plan");
+  const budgets = page.getByRole("region", { name: "Budgets" });
+  const total = budgets.getByRole("group", { name: "Total out of Spending" });
+  await expect(total).toContainText(/SGD.2,600\.00/);
+  await expect(total).toContainText("spending plus moves to your wallets");
+  const left = budgets.getByRole("group", { name: "Left to spend" });
+  await expect(left).toContainText(/SGD.1,100\.00/);
+  await expect(left).toContainText(/after what's still due this month \(SGD.1,300\.00\)/);
+  await expect(left.getByText("Watch this")).toBeVisible();
+  const budgetLeft = budgets.getByRole("group", { name: "Budget left" });
+  await expect(budgetLeft).toContainText(/SGD.1,400\.00/);
+  await expect(budgetLeft.getByText("Watch this")).toHaveCount(0);
+  await expect(budgets.getByRole("note")).toHaveCount(0);
+  // They sit under the overall budget, ahead of the form.
+  const order = await budgets.locator(".budgets > li").evaluateAll((els) => els.map((e) => e.className));
+  expect(order).toEqual(["budget", "budget-month"]);
+});
+
+test("without an overall budget the card still shows total out and left to spend, and a plan that outgrows income is flagged", async ({ page }) => {
+  await fakeApi(page, { planWarning: true });
+  await page.goto("/plan");
+  const budgets = page.getByRole("region", { name: "Budgets" });
+  await expect(budgets.getByRole("group", { name: "Total out of Spending" })).toContainText(/SGD.2,600\.00/);
+  await expect(budgets.getByRole("group", { name: "Left to spend" })).toContainText(/SGD.1,100\.00/);
+  await expect(budgets.getByRole("group", { name: "Budget left" })).toHaveCount(0);
+  await expect(budgets.getByText("Watch this")).toHaveCount(0);
+  await expect(budgets.getByRole("note")).toContainText("add up to more than you usually bring in");
+});
+
+test("home says when less is left to spend than the budget shows", async ({ page }) => {
+  const state = await fakeApi(page);
+  state.budgets.push({ id: "b1", category_id: null, limit: 2000, spent: 600 });
+  await page.goto("/");
+  await expect(page.getByRole("region", { name: "Nexus" })).toContainText(
+    /Left to spend is SGD.1,100\.00 after what's still due — less than your SGD.1,400\.00 budget left\./,
+  );
 });
 
 test("set when you're paid and your usual salary", async ({ page }) => {

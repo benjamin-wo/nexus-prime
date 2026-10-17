@@ -238,6 +238,34 @@ describe("brief", () => {
     expect(text(brief({}))).toMatch(/^Nothing needs you right now/);
   });
 
+  it("says when less is left to spend than the budget shows, and only then", () => {
+    const overall = { id: "b", category_id: null, name: "Overall", limit: sgd("2000"), spent: sgd("600"), remaining: sgd("1400"), percent: 30, unconverted: [] };
+    const plan = (over: object = {}) => ({
+      currency: "SGD",
+      total_out: sgd("2600"),
+      left_to_spend: sgd("1100"),
+      still_due_out: sgd("1300"),
+      income: sgd("5000"),
+      budget_left: sgd("1400"),
+      tighter: "left_to_spend" as const,
+      plan_warning: null,
+      skipped: [],
+      ...over,
+    });
+    const said = text(brief({ overall, plan: plan() }));
+    expect(said).toMatch(/^Left to spend is SGD\s?1,100\.00 after what's still due — less than your SGD\s?1,400\.00 budget left\.$/);
+    const lit = brief({ overall, plan: plan() }).filter((p) => p.hl).map((p) => p.text);
+    expect(lit).toEqual([expect.stringMatching(/1,100\.00/), expect.stringMatching(/1,400\.00/)]);
+    // The budget is the tighter one, there is no overall budget, or there is no plan: nothing to add.
+    expect(text(brief({ overall, plan: plan({ tighter: "budget", left_to_spend: sgd("1800") }) }))).toMatch(/^Nothing needs you/);
+    expect(text(brief({ plan: plan() }))).toMatch(/^Nothing needs you/);
+    expect(text(brief({ overall, plan: plan({ budget_left: null, tighter: null }) }))).toMatch(/^Nothing needs you/);
+    expect(text(brief({ overall }))).toMatch(/^Nothing needs you/);
+    // It sits before the rest of the brief.
+    const needs = [{ department: "accounting", kind: "bill", text: "x", link: "/", urgent: false }];
+    expect(text(brief({ overall, plan: plan(), needs }))).toMatch(/budget left\. 1 thing needs you below\.$/);
+  });
+
   it("only highlights the figures", () => {
     const parts = brief({ spent: sgd("10"), needs: [{ department: "accounting", kind: "bill", text: "x", link: "/", urgent: false }] });
     expect(parts.filter((p) => p.hl).map((p) => p.text)).toEqual([expect.stringMatching(/10\.00/)]);

@@ -1,4 +1,4 @@
-import type { Budget, FeedItem, Money, TripDetail } from "./api";
+import type { Budget, BudgetMonth, FeedItem, Money, TripDetail } from "./api";
 import { formatMoney } from "./format";
 
 /** A run of the brief: plain text, or a figure shown in the accent colour. */
@@ -10,6 +10,8 @@ export type BriefInput = {
   lastMonthToDate?: Money;
   trip?: TripDetail | null;
   needs?: FeedItem[];
+  /** This month's plan: what's left to spend once what's still due is paid. */
+  plan?: BudgetMonth;
 };
 
 function money(amount: number, currency: string): string {
@@ -47,6 +49,7 @@ export function brief({
   lastMonthToDate,
   trip,
   needs,
+  plan,
 }: BriefInput): Part[] {
   const parts: Part[] = [];
   if (spent) {
@@ -81,6 +84,21 @@ export function brief({
         );
     } else parts.push({ text: "." });
   }
+  // Only worth a line when the budget on its own would mislead: less is really left
+  // to spend than the budget says.
+  if (
+    overall &&
+    plan?.tighter === "left_to_spend" &&
+    plan.budget_left &&
+    Number(plan.left_to_spend.amount) < Number(plan.budget_left.amount)
+  )
+    parts.push(
+      { text: `${parts.length ? " " : ""}Left to spend is ` },
+      { text: formatMoney(plan.left_to_spend), hl: true },
+      { text: " after what's still due — less than your " },
+      { text: formatMoney(plan.budget_left), hl: true },
+      { text: " budget left." },
+    );
   if (trip && trip.trip.status !== "finished") {
     const t = trip.trip;
     const gaps = trip.ready.nights_without_stay.length;

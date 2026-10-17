@@ -69,6 +69,7 @@ export async function fakeApi(
     research = false,
     chatHistory = false,
     spendingOnly = false,
+    planWarning = false,
   } = {},
 ) {
   let session = signedIn;
@@ -1370,6 +1371,25 @@ export async function fakeApi(
             count: 1,
           },
         ],
+      });
+    }
+    if (path === "/budgets/month" && method === "GET") {
+      const sgd = (amount: number) => ({ amount: amount.toFixed(4), currency: "SGD" });
+      const overall = state.budgets.find((b) => b.category_id === null);
+      // Fixed figures for the made-up month: 5,000 in, 2,600 out of Spending so far and
+      // 1,300 still due leave 1,100 to spend, which is less than the 1,400 left of a budget.
+      return json(route, {
+        currency: "SGD",
+        total_out: sgd(2600),
+        left_to_spend: sgd(1100),
+        still_due_out: sgd(1300),
+        income: sgd(5000),
+        budget_left: overall ? sgd(1400) : null,
+        tighter: overall ? "left_to_spend" : null,
+        plan_warning: planWarning
+          ? "Your budget and the moves you've scheduled add up to more than you usually bring in."
+          : null,
+        skipped: [],
       });
     }
     if (path === "/budgets" && method === "GET") {

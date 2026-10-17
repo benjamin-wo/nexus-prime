@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useState } from "react";
+import { Fragment, type FormEvent, useState } from "react";
 
-import { api, type Budget, type Category, type Me } from "../api";
+import { api, type Budget, type BudgetMonth, type Category, type Me } from "../api";
 import { CategoryTransactions } from "../components/CategoryTransactions";
 import { formatMoney, isoDay } from "../format";
 
@@ -143,15 +143,66 @@ function BudgetRow({ budget, timezone, onChanged }: { budget: Budget; timezone: 
   );
 }
 
+/** This month so far, and what's still to come: spending plus moves to your wallets,
+ * then what's left to spend after the month's bills, next to what's left of the overall
+ * budget (the lower of the two is marked). */
+function MonthPlan({ plan }: { plan: BudgetMonth }) {
+  const tighter = plan.budget_left ? plan.tighter : null;
+  const watch = (which: "budget" | "left_to_spend") =>
+    tighter === which ? <span className="badge badge-watch">Watch this</span> : null;
+  return (
+    <div className="month-plan">
+      <div className="month-figures" role="group" aria-label="This month">
+        <div className="month-figure" role="group" aria-label="Total out of Spending">
+          <span className="caption">Total out of Spending</span>
+          <span className="num month-value">{formatMoney(plan.total_out)}</span>
+          <span className="caption">spending plus moves to your wallets</span>
+        </div>
+        <div
+          className={`month-figure${tighter === "left_to_spend" ? " month-watch" : ""}`}
+          role="group"
+          aria-label="Left to spend"
+        >
+          <span className="caption">Left to spend {watch("left_to_spend")}</span>
+          <span className="num month-value">{formatMoney(plan.left_to_spend)}</span>
+          <span className="caption">after what's still due this month ({formatMoney(plan.still_due_out)})</span>
+        </div>
+        {plan.budget_left && (
+          <div
+            className={`month-figure${tighter === "budget" ? " month-watch" : ""}`}
+            role="group"
+            aria-label="Budget left"
+          >
+            <span className="caption">Budget left {watch("budget")}</span>
+            <span className="num month-value">{formatMoney(plan.budget_left)}</span>
+            <span className="caption">of your overall budget</span>
+          </div>
+        )}
+      </div>
+      {plan.plan_warning && (
+        <p className="callout" role="note">
+          {plan.plan_warning}
+        </p>
+      )}
+      {plan.skipped.length > 0 && (
+        <p className="caption">Left out, no amount or rate yet: {plan.skipped.join(", ")}</p>
+      )}
+    </div>
+  );
+}
+
 export function BudgetsSection({ me }: { me: Me }) {
   const client = useQueryClient();
   const budgets = useQuery({ queryKey: ["budgets"], queryFn: () => api<Budget[]>("/budgets") });
+  // Under "budgets" so every change to a budget refreshes it too. It never holds the list back.
+  const month = useQuery({ queryKey: ["budgets", "month"], queryFn: () => api<BudgetMonth>("/budgets/month") });
   const categories = useQuery({ queryKey: ["categories"], queryFn: () => api<Category[]>("/categories") });
   const [target, setTarget] = useState("");
   const [amount, setAmount] = useState("");
   const [error, setError] = useState<string | null>(null);
   const home = me.user.home_currency;
 
+  const hasOverall = Boolean(budgets.data?.some((b) => b.category_id === null));
   const taken = new Set(budgets.data?.map((b) => b.category_id ?? "overall"));
   const options = [
     ...(taken.has("overall") ? [] : [{ value: "overall", label: "All spending" }]),
@@ -188,10 +239,18 @@ export function BudgetsSection({ me }: { me: Me }) {
       {budgets.isLoading && <p className="state">Loading…</p>}
       {budgets.isError && <p className="state error-text">Couldn't load budgets.</p>}
       {budgets.data?.length === 0 && <p className="state">No budgets yet. Add one below.</p>}
+      {!hasOverall && month.data && <MonthPlan plan={month.data} />}
       {budgets.data && budgets.data.length > 0 && (
         <ul className="budgets">
           {budgets.data.map((b) => (
-            <BudgetRow key={b.id} budget={b} timezone={me.user.timezone} onChanged={refresh} />
+            <Fragment key={b.id}>
+              <BudgetRow budget={b} timezone={me.user.timezone} onChanged={refresh} />
+              {b.category_id === null && month.data && (
+                <li className="budget-month">
+                  <MonthPlan plan={month.data} />
+                </li>
+              )}
+            </Fragment>
           ))}
         </ul>
       )}
