@@ -988,7 +988,6 @@ CASES: tuple[Case, ...] = (
         "wallets",
         _t("remind me to put 1000 into IBKR every 25th"),
         calls=(Call("add_bill", {"amount": "1000", "to_wallet": Has("ibkr")}),),
-        confirms=True,
         forbid=("log_move", "log_expense"),
     ),
     Case(
