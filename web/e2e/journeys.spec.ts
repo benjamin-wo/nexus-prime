@@ -524,6 +524,11 @@ test("add, rename and delete a category", async ({ page }) => {
   await page.goto("/settings");
   const card = page.getByRole("region", { name: "Categories" });
   const yours = card.getByRole("list", { name: "Your categories" });
+  // The card starts folded: just the names, until Manage opens the list.
+  await expect(card.getByRole("list", { name: "Category names" }).getByText("Dining Out")).toBeVisible();
+  await expect(yours).not.toBeVisible();
+  await card.getByText("Manage", { exact: true }).click();
+  await expect(card.getByRole("list", { name: "Category names" })).not.toBeVisible();
   await expect(yours.getByRole("heading", { name: "Dining Out" })).toBeVisible();
 
   const add = card.getByRole("form", { name: "Add a category" });
@@ -555,7 +560,9 @@ test("add, rename and delete a category", async ({ page }) => {
 test("Other and Income can't be deleted", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/settings");
-  const yours = page.getByRole("region", { name: "Categories" }).getByRole("list", { name: "Your categories" });
+  const card = page.getByRole("region", { name: "Categories" });
+  await card.getByText("Manage", { exact: true }).click();
+  const yours = card.getByRole("list", { name: "Your categories" });
   for (const name of ["Other", "Income"]) {
     const row = yours.getByRole("listitem").filter({ has: page.getByRole("heading", { name, exact: true }) });
     await expect(row.getByRole("button", { name: "Merge into…" })).toBeVisible();
@@ -568,6 +575,7 @@ test("delete a category and find its expense under Other", async ({ page }) => {
   await page.goto("/settings");
   const card = page.getByRole("region", { name: "Categories" });
   const yours = card.getByRole("list", { name: "Your categories" });
+  await card.getByText("Manage", { exact: true }).click();
   const dining = yours.getByRole("listitem").filter({ hasText: "Dining Out" });
   await dining.getByRole("button", { name: "Delete" }).click();
   await expect(dining.getByText("Delete Dining Out? Its expenses move to")).toBeVisible();
@@ -686,6 +694,7 @@ test("merge one category into another from Settings", async ({ page }) => {
   await page.goto("/settings");
   const card = page.getByRole("region", { name: "Categories" });
   const yours = card.getByRole("list", { name: "Your categories" });
+  await card.getByText("Manage", { exact: true }).click();
   await yours.getByRole("listitem").filter({ hasText: "Transport" }).getByRole("button", { name: "Merge into…" }).click();
   const form = card.getByRole("form", { name: "Merge Transport" });
   await expect(form.getByRole("button", { name: "Merge" })).toBeDisabled();

@@ -158,6 +158,7 @@ export function CategoriesSection() {
   });
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
 
   function refresh() {
     for (const key of ["categories", "transactions", "budgets", "category-rules"])
@@ -185,27 +186,44 @@ export function CategoriesSection() {
       </div>
       {all.isLoading && <p className="state">Loading…</p>}
       {all.isError && <p className="state error-text">Couldn't load categories.</p>}
-      {categories.length > 0 && (
-        <ul className="budgets" aria-label="Your categories">
-          {categories.map((c) => (
-            <CategoryRow key={c.id} category={c} others={categories.filter((o) => o.id !== c.id)} onChanged={refresh} />
-          ))}
-        </ul>
-      )}
-      <form className="budget-add plan-add" onSubmit={add} aria-label="Add a category">
-        <label className="field">
-          New category
-          <input className="input" placeholder="Pets" value={name} onChange={(e) => setName(e.target.value)} required />
-        </label>
-        <button type="submit" className="btn btn-primary" disabled={!name.trim()}>
-          Add
-        </button>
-        {error && (
-          <p className="error-text" role="alert">
-            {error}
+      {!open && categories.length > 0 && (
+        <>
+          <p className="caption">
+            {categories.length} {categories.length === 1 ? "category" : "categories"}
           </p>
+          <ul className="chips category-chips" aria-label="Category names">
+            {categories.map((c) => (
+              <li key={c.id} className="chip">
+                {c.name}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      <details className="category-fold" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
+        <summary className="btn">{open ? "Done" : "Manage"}</summary>
+        {categories.length > 0 && (
+          <ul className="budgets" aria-label="Your categories">
+            {categories.map((c) => (
+              <CategoryRow key={c.id} category={c} others={categories.filter((o) => o.id !== c.id)} onChanged={refresh} />
+            ))}
+          </ul>
         )}
-      </form>
+        <form className="budget-add plan-add" onSubmit={add} aria-label="Add a category">
+          <label className="field">
+            New category
+            <input className="input" placeholder="Pets" value={name} onChange={(e) => setName(e.target.value)} required />
+          </label>
+          <button type="submit" className="btn btn-primary" disabled={!name.trim()}>
+            Add
+          </button>
+          {error && (
+            <p className="error-text" role="alert">
+              {error}
+            </p>
+          )}
+        </form>
+      </details>
     </section>
   );
 }
