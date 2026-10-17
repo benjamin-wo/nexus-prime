@@ -104,3 +104,8 @@ export function Sections({ detail, onChange }: { detail: TripDetail; onChange: (
     </details>
   );
 }
+
+/** The Ideas tab. ``viewing`` is the day open on the Plan tab. */
+export function IdeasTab({ detail, onChange }: { detail: TripDetail; onChange: () => void; viewing: string | null }) {
+  return <Sections detail={detail} onChange={onChange} />;
+}

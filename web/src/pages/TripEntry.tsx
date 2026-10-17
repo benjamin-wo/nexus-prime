@@ -92,6 +92,8 @@ export function EntryEditor({ trip, home, entry, preset, lists = [], onDone }: {
   /** The trip's lists so far, offered as a place's list is typed. */
   lists?: string[];
   onDone: (saved: boolean) => void;
+  /** Opens the day picker for this entry (editing only). */
+  onMove?: () => void;
 }) {
   const tripId = trip.id;
   // New entries start on the trip's dates (or the day they're added from), so the date

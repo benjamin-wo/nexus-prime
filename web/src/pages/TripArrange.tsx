@@ -521,3 +521,10 @@ export function DayNotes({ notes, hops = [], onFind }: { notes: DayNote[]; hops?
     </ul>
   );
 }
+
+/** Puts a plan or idea on a day (or back in Ideas). ``viewing``: the day open on Plan. */
+export function DayPickerSheet({ detail, booking, onClose }: { detail: TripDetail; booking: Booking; viewing: string | null; onClose: () => void }) {
+  const spots = spotsOf(detail);
+  const days = [...spots.keys()].filter((s) => s !== PLACES).map((s) => s.slice(4));
+  return <MoveForm booking={booking} days={days} spots={spots} onDone={onClose} />;
+}

@@ -134,7 +134,12 @@ export function AddSheet({
   preset: AddPreset | null;
   places: boolean;
   onScreenshot: (file: File) => void;
-  onForm: (preset: AddPreset) => void;
+  /** Old long form; goes once the short forms are in the sheet. */
+  onForm?: (preset: AddPreset) => void;
+  /** The trip's idea lists, for a new idea's list. */
+  lists?: string[];
+  /** The day open on Plan, where a new plan goes by default. */
+  viewing?: string | null;
   onChanged: () => void;
   onClose: () => void;
 }) {
@@ -225,7 +230,7 @@ export function AddSheet({
           <>
             <TypeIt trip={trip} preset={preset} onChanged={onChanged} />
             {forPreset && (
-              <button type="button" className="btn btn-ghost btn-small" onClick={() => onForm(preset!)}>
+              <button type="button" className="btn btn-ghost btn-small" onClick={() => onForm?.(preset!)}>
                 Or fill in a form: {forPreset.label}
               </button>
             )}
@@ -235,7 +240,7 @@ export function AddSheet({
         {view === "forms" && (
           <div className="ways ways-grid">
             {FORMS.map((f) => (
-              <button key={f.kind} type="button" className="btn" onClick={() => onForm({ kind: f.kind, day: preset?.day })}>
+              <button key={f.kind} type="button" className="btn" onClick={() => onForm?.({ kind: f.kind, day: preset?.day })}>
                 {f.label}
               </button>
             ))}

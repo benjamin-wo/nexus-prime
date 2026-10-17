@@ -293,3 +293,8 @@ export function MoneyDetails({ detail, open, onToggle, onTakeOff, title = "Money
     </details>
   );
 }
+
+/** The Money tab. ``adding``: the tab's + was pressed (a planned cost). */
+export function MoneyTab({ detail }: { detail: TripDetail; onChange: () => void; adding: boolean; onAddDone: () => void }) {
+  return <MoneyDetails detail={detail} open onToggle={() => undefined} onTakeOff={() => undefined} />;
+}
