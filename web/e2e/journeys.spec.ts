@@ -122,7 +122,10 @@ test("the overview shows what was put away and its share of income, once there i
   await expect(tile).toContainText(/SGD.800\.00/);
   await expect(tile).toContainText("19% of income");
   // Spent, Received, Net and Put away sit two by two, with no tile alone on a row.
-  const boxes = await page.locator(".tiles > .tile").evaluateAll((els) => els.map((e) => e.getBoundingClientRect()));
+  // Layout positions, not the on-screen box: the tiles fade in with a staggered slide.
+  const boxes = await page
+    .locator(".tiles > .tile")
+    .evaluateAll((els) => els.map((e) => ({ top: (e as HTMLElement).offsetTop, width: (e as HTMLElement).offsetWidth })));
   expect(boxes).toHaveLength(4);
   const width = page.viewportSize()!.width;
   if (width <= 720) {
