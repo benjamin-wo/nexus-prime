@@ -1168,6 +1168,11 @@ html.keyboard .bottom-nav, html.keyboard .trip-fab-button, html.keyboard .trip-f
 .more-options { display: grid; gap: var(--space-4); }
 .more-options > summary { cursor: pointer; color: var(--text-secondary); font-weight: 500; }
 .more-options[open] > summary { margin-bottom: var(--space-4); }
+.category-chips { margin: 0; padding: 0; list-style: none; }
+.category-chips .chip { padding: 3px 10px; background: var(--bg-raised); color: var(--text-secondary); font-weight: 500; }
+.category-fold > summary { display: inline-flex; margin-top: var(--space-3); list-style: none; }
+.category-fold > summary::-webkit-details-marker { display: none; }
+.category-fold[open] > summary { margin-top: 0; margin-bottom: var(--space-3); }
 
 /* The one way to add: a sheet from the bottom on phones, a dialog on desktop. */
 .sheet-backdrop { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; background: rgba(27, 35, 51, 0.4); animation: fade var(--t-standard); padding: var(--space-4); }
