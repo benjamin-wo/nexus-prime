@@ -9,3 +9,17 @@ You are the orchestrator. Plan first, then delegate.
 5. Run tests at the end and give me a short summary of what changed and anything unresolved.
 
 Don't implement large changes yourself. Small fixes while reviewing are fine.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues on benjamin-wo/nexus-prime; issues labelled `ops` belong to the ops job. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five defaults: needs-triage, needs-info, ready-for-agent, ready-for-human, wontfix. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` at the root, ADRs in `docs/adr/`. See `docs/agents/domain.md`.
