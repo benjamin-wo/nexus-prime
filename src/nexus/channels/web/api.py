@@ -1147,6 +1147,20 @@ async def delete_wallet(
     )
 
 
+class WalletPreviewOut(Model):
+    moved: int  # moves that would point at ``move_to``
+    removed: int  # moves between the two wallets, which would be dropped
+
+
+@router.get("/wallets/{wallet_id}/delete-preview")
+async def delete_wallet_preview(
+    wallet_id: UUID, auth: Auth, web: Runtime, move_to: UUID | None = None
+) -> WalletPreviewOut:
+    """What deleting the wallet (with the same ``move_to``) would do, without doing it."""
+    preview = await wallet_cases.preview_delete_wallet(web.uow(), auth.user.id, wallet_id, move_to)
+    return WalletPreviewOut(moved=preview.moved, removed=preview.removed)
+
+
 class RuleOut(Model):
     id: UUID
     pattern: str
@@ -1550,6 +1564,37 @@ async def budgets(auth: Auth, web: Runtime) -> list[BudgetOut]:
         )
         for s in statuses
     ]
+
+
+class MonthPlanOut(Model):
+    """Left to spend this month: income - total_out - still_due_out (home currency)."""
+
+    currency: str
+    total_out: MoneyOut  # spent so far, plus moved from Spending to anything but a card
+    left_to_spend: MoneyOut  # can be negative
+    still_due_out: MoneyOut  # bills, subscriptions and trip set-asides still ahead this month
+    income: MoneyOut  # received so far, plus salary still due before month end
+    budget_left: MoneyOut | None  # overall budget less spending so far; null without one
+    tighter: Literal["budget", "left_to_spend"] | None  # the lower of the two; null w/o budget
+    plan_warning: str | None  # the budget plus scheduled moves outgrow usual income
+    skipped: list[str]  # scheduled items left out for want of an amount or a rate
+
+
+@router.get("/budgets/month")
+async def budgets_month(auth: Auth, web: Runtime) -> MonthPlanOut:
+    """Where this month stands. Separate from ``/budgets``, whose list shape stays."""
+    plan = await figure_cases.month_plan(web.uow, web.rates, auth.user, now=web.clock())
+    return MonthPlanOut(
+        currency=plan.currency,
+        total_out=money(plan.total_out),
+        left_to_spend=money(plan.left_to_spend),
+        still_due_out=money(plan.still_due_out),
+        income=money(plan.income),
+        budget_left=money(plan.budget_left) if plan.budget_left is not None else None,
+        tighter=plan.tighter,
+        plan_warning=plan.plan_warning,
+        skipped=plan.skipped,
+    )
 
 
 class BudgetIn(Model):

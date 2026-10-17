@@ -11,8 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nexus.agent.snapshot import money_snapshot
 from nexus.agent.tools import ToolContext
+from nexus.application import bills as bill_cases
 from nexus.application import budgets as budget_cases
 from nexus.application import duplicates as duplicate_cases
+from nexus.application import salary as salary_cases
 from nexus.application import subscriptions as subscription_cases
 from nexus.application import transactions as tx_cases
 from nexus.application import trips as trip_cases
@@ -24,6 +26,7 @@ from nexus.application.ports import LedgerQuery
 from nexus.application.transactions import NewTransaction, delete_transaction, log_transaction
 from nexus.application.wallet_figures import (
     month_figures,
+    month_plan,
     month_range,
     put_away,
     total_out,
@@ -34,6 +37,7 @@ from nexus.domain.errors import InvalidInput
 from nexus.domain.ledger import Direction, Source, User, WalletKind
 from nexus.domain.money import Money
 from nexus.domain.notifications import Frequency
+from nexus.domain.planning import Cadence, PayRule
 from tests.fakes import FakeRates
 from tests.integration.conftest import UowFactory
 from tests.integration.test_email import person
@@ -444,3 +448,235 @@ async def test_the_snapshot_shows_a_move_by_where_it_went(uow: UowFactory) -> No
     assert "Tue 15 Sep: 800.00 SGD → Investments (move)" in text
     assert "Mon 14 Sep: -12.00 SGD Coffee (Dining Out)" in text
     assert "+800" not in text and "-800" not in text
+
+
+# --- left to spend ------------------------------------------------------------------
+
+
+async def bill(
+    uow: UowFactory,
+    user: User,
+    name: str,
+    day: int,
+    amount: str | None,
+    *,
+    spending: bool = True,
+    cadence: Cadence = Cadence.MONTHLY,
+    currency: str = "SGD",
+) -> None:
+    await bill_cases.add_bill(
+        uow(),
+        user,
+        name,
+        date(2026, 9, day),
+        cadence,
+        Money.of(amount, currency) if amount else None,
+        now=sg(1),
+        spending=spending,
+    )
+
+
+async def agreed_month(uow: UowFactory) -> tuple[User, Wallets]:
+    """The 18th: 5,000 in, 2,600 out, a 300 bill due on the 22nd and a 1,000 scheduled
+    top-up (not spending) on the 25th."""
+    user = await person(uow)
+    w = await Wallets.create(uow, user)
+    await seed_month(uow, user)
+    await bill(uow, user, "Phone plan", 22, "300")
+    await bill(uow, user, "IBKR top-up", 25, "1000", spending=False)
+    return user, w
+
+
+async def test_left_to_spend_the_agreed_example(uow: UowFactory) -> None:
+    user, _ = await agreed_month(uow)
+    plan = await month_plan(uow, FakeRates(), user, now=sg(18))
+    assert plan.income == sgd("5000") and plan.total_out == sgd("2600")
+    assert plan.still_due_out == sgd("1300")  # the bill, and the top-up that isn't spending
+    assert plan.left_to_spend == sgd("1100")
+    assert (plan.budget_left, plan.tighter, plan.plan_warning, plan.skipped) == (
+        None,
+        None,
+        None,
+        [],
+    )
+
+    await budget_cases.set_budget(uow(), user, None, sgd("4000"), now=sg(1))
+    plan = await month_plan(uow, FakeRates(), user, now=sg(18))
+    assert plan.left_to_spend == sgd("1100")
+    assert plan.budget_left == sgd("1400") and plan.tighter == "left_to_spend"
+
+    # With a smaller budget it is the budget that runs out first.
+    await budget_cases.set_budget(uow(), user, None, sgd("3000"), now=sg(1))
+    plan = await month_plan(uow, FakeRates(), user, now=sg(18))
+    assert plan.budget_left == sgd("400") and plan.tighter == "budget"
+
+
+async def test_only_what_is_still_ahead_this_month_is_due(uow: UowFactory) -> None:
+    user = await person(uow)
+    await log(uow, user, "1000", sg(1), direction=Direction.IN)
+    await bill(uow, user, "Gym", 18, "50")  # today: still due
+    await bill(uow, user, "Insurance", 10, "70")  # earlier this month, unpaid and past
+    await bill(uow, user, "Taxes", 3, "400", cadence=Cadence.YEARLY)  # not this month
+    await bill(uow, user, "Course", 30, "90", cadence=Cadence.ONCE)  # the last day
+    plan = await month_plan(uow, FakeRates(), user, now=sg(18))
+    assert plan.still_due_out == sgd("140")
+    # And a month later it's October's turn: the 18th bill is due again, the 30th is not.
+    october = await month_plan(uow, FakeRates(), user, now=sg(18, month=10))
+    assert october.still_due_out == sgd("50")
+
+
+async def test_subscriptions_and_trip_set_asides_are_still_due_too(uow: UowFactory) -> None:
+    user = await person(uow)
+    for month in (6, 7, 8):
+        await log(uow, user, "15.98", sg(20, 9, month), counterparty=f"NETFLIX.COM {880 + month}")
+    await subscription_cases.check(uow, user, now=sg(18))
+    [proposed] = (await subscription_cases.overview(uow(), user.id)).proposed
+    await subscription_cases.track(uow(), user.id, proposed.subscription.id, now=sg(18))
+    await salary_cases.set_schedule(uow(), user, PayRule.MONTHLY_DAY, day=28, now=sg(1))
+    await trip_cases.create_trip(uow(), user, draft(set_aside=sgd("500")), now=sg(1))
+
+    plan = await month_plan(uow, FakeRates(), user, now=sg(18))
+    assert plan.still_due_out == sgd("515.98")  # the 20th's charge, the 28th's set-aside
+    assert plan.left_to_spend == sgd("-515.98")  # no income yet and no usual amount to expect
+    assert plan.skipped == ["Salary"]
+
+
+async def test_salary_still_due_counts_once_and_not_again_once_logged(uow: UowFactory) -> None:
+    user = await person(uow)
+    await log(uow, user, "300", sg(3), direction=Direction.IN, counterparty="Side gig")
+    await log(uow, user, "1000", sg(5), counterparty="Landlord")
+    await salary_cases.set_schedule(uow(), user, PayRule.MONTHLY_DAY, day=28, now=sg(1))
+    await salary_cases.set_baseline(uow(), user, sgd("5000"), now=sg(1))
+
+    due = await month_plan(uow, FakeRates(), user, now=sg(18))
+    assert due.income == sgd("5300")  # received 300, and 5,000 due on Monday the 28th
+    assert due.left_to_spend == sgd("4300")
+
+    # Payday itself, before it's logged: not counted until it is (as in the cash flow).
+    today = await month_plan(uow, FakeRates(), user, now=sg(28))
+    assert today.income == sgd("300")
+    await salary_cases.log_payday_salary(uow, user, date(2026, 9, 28), now=sg(28))
+    for now in (sg(28), sg(29)):
+        done = await month_plan(uow, FakeRates(), user, now=now)
+        assert done.income == sgd("5300") and done.left_to_spend == sgd("4300")
+
+
+async def test_a_paid_bill_is_not_due_again_and_a_move_made_reduces_left_to_spend(
+    uow: UowFactory,
+) -> None:
+    user, w = await agreed_month(uow)
+    before = await month_plan(uow, FakeRates(), user, now=sg(18))
+    assert before.left_to_spend == sgd("1100")
+
+    # Paying the 300 bill logs it as spent: it moves from due to out, and nothing changes.
+    [phone, ibkr] = await bill_cases.list_bills(uow, user, now=sg(18))
+    await bill_cases.mark_paid(uow, user, phone.bill.id, now=sg(18))
+    paid = await month_plan(uow, FakeRates(), user, now=sg(18))
+    assert (paid.total_out, paid.still_due_out) == (sgd("2900"), sgd("1000"))
+    assert paid.left_to_spend == sgd("1100")
+
+    # Marking the top-up done only drops it from what's due...
+    await bill_cases.mark_paid(uow, user, ibkr.bill.id, now=sg(18))
+    done = await month_plan(uow, FakeRates(), user, now=sg(18))
+    assert done.still_due_out == sgd("0") and done.left_to_spend == sgd("2100")
+    # ... until the move is made, which is money out of Spending.
+    await w.move("1000", w.spending, w.investments, sg(18))
+    moved = await month_plan(uow, FakeRates(), user, now=sg(18))
+    assert moved.total_out == sgd("3900") and moved.left_to_spend == sgd("1100")
+    # Paying the card is no extra: its purchases are spending already.
+    await w.move("600", w.spending, w.card, sg(18))
+    assert (await month_plan(uow, FakeRates(), user, now=sg(18))).left_to_spend == sgd("1100")
+
+
+async def test_items_without_an_amount_or_a_rate_are_skipped_and_named(uow: UowFactory) -> None:
+    user = await person(uow)
+    await log(uow, user, "1000", sg(1), direction=Direction.IN)
+    await bill(uow, user, "Electricity", 20, None)
+    await bill(uow, user, "Hostel", 21, "100", currency="USD")
+    await bill(uow, user, "Rent", 22, "400")
+    plan = await month_plan(uow, FakeRates(), user, now=sg(18))
+    assert plan.still_due_out == sgd("400") and plan.skipped == ["Electricity", "Hostel"]
+    # The USD bill counts once there is a rate for it.
+    rated = FakeRates({("USD", "SGD"): {date(2026, 9, 1): "1.30"}})
+    plan = await month_plan(uow, rated, user, now=sg(18))
+    assert plan.still_due_out == sgd("530") and plan.skipped == ["Electricity"]
+
+
+# --- the plan check -----------------------------------------------------------------
+
+WARNING = (
+    "A 4000.00 SGD budget plus 1500.00 SGD of scheduled moves is more than your usual "
+    "5000.00 SGD income."
+)
+
+
+async def planned(
+    uow: UowFactory, *, budget: str | None = "4000", usual: bool = True, who: int = 4242
+) -> User:
+    user = await person(uow, who)
+    if budget:
+        await budget_cases.set_budget(uow(), user, None, sgd(budget), now=sg(1))
+    if usual:
+        await salary_cases.set_schedule(uow(), user, PayRule.MONTHLY_DAY, day=28, now=sg(1))
+        await salary_cases.set_baseline(uow(), user, sgd("5000"), now=sg(1))
+    return user
+
+
+async def warning(uow: UowFactory, user: User) -> str | None:
+    return (await month_plan(uow, FakeRates(), user, now=sg(18))).plan_warning
+
+
+async def test_plan_warning_appears_when_budget_and_moves_outgrow_usual_income(
+    uow: UowFactory,
+) -> None:
+    user = await planned(uow)
+    await bill(uow, user, "IBKR top-up", 25, "1500", spending=False)
+    assert await warning(uow, user) == WARNING
+    # Exactly equal is fine.
+    await budget_cases.set_budget(uow(), user, None, sgd("3500"), now=sg(2))
+    assert await warning(uow, user) is None
+    await budget_cases.set_budget(uow(), user, None, sgd("3501"), now=sg(3))
+    assert await warning(uow, user) is not None
+
+
+async def test_scheduled_moves_are_a_months_worth_by_cadence(uow: UowFactory) -> None:
+    user = await planned(uow, budget="3000")
+    await bill(uow, user, "Weekly top-up", 3, "300", spending=False, cadence=Cadence.WEEKLY)
+    await bill(uow, user, "Yearly top-up", 3, "6000", spending=False, cadence=Cadence.YEARLY)
+    await bill(uow, user, "Lump sum", 3, "9000", spending=False, cadence=Cadence.ONCE)
+    await bill(uow, user, "Rent", 3, "9000")  # spending: not a move
+    plan = await month_plan(uow, FakeRates(), user, now=sg(18))
+    assert plan.plan_warning is None  # 3,000 + 1,300 + 500 = 4,800 <= 5,000
+    await bill(uow, user, "Monthly top-up", 3, "201.01", spending=False)
+    text = await warning(uow, user)
+    assert text is not None
+    assert "plus 2001.01 SGD of scheduled moves" in text
+
+
+async def test_no_plan_warning_without_a_budget_moves_or_income_history(uow: UowFactory) -> None:
+    nothing = await planned(uow, budget=None)
+    await bill(uow, nothing, "IBKR top-up", 25, "9000", spending=False)
+    assert await warning(uow, nothing) is None  # no overall budget
+
+    no_moves = await planned(uow, who=4243)
+    assert await warning(uow, no_moves) is None  # no scheduled moves
+    await bill(uow, no_moves, "Rent", 25, "9000")
+    assert await warning(uow, no_moves) is None  # a spending bill isn't one
+
+    no_history = await planned(uow, usual=False, who=4244)
+    await bill(uow, no_history, "IBKR top-up", 25, "9000", spending=False)
+    assert await warning(uow, no_history) is None  # nothing to compare with
+
+
+async def test_usual_income_without_a_salary_schedule_is_the_last_three_months(
+    uow: UowFactory,
+) -> None:
+    user = await planned(uow, usual=False)
+    await bill(uow, user, "IBKR top-up", 25, "1500", spending=False)
+    for month, amount in ((6, "4000"), (7, "5000"), (8, "6000")):
+        await log(uow, user, amount, sg(1, month=month), direction=Direction.IN)
+    await log(uow, user, "99000", sg(1, month=5), direction=Direction.IN)  # too long ago
+    await log(uow, user, "99000", sg(2), direction=Direction.IN)  # this month: not complete
+    assert await warning(uow, user) == WARNING  # averages 5,000
+    await budget_cases.set_budget(uow(), user, None, sgd("3500"), now=sg(2))
+    assert await warning(uow, user) is None

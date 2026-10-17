@@ -243,6 +243,40 @@ async def test_deleting_a_wallet_points_its_moves_elsewhere(world: World) -> Non
     assert deleted.json() == {"moved": 0, "removed": 0, "into": None}
 
 
+async def test_delete_preview_counts_match_the_real_delete(world: World) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+    old = await add(owner, "Old broker", "investment")
+    new = await add(owner, "New broker", "investment")
+    spare = await add(owner, "Spare", "other")
+    await move(owner, "100", old["id"])
+    await move(owner, "200", old["id"])
+    await move(owner, "50", new["id"], from_wallet_id=old["id"])  # would be from a wallet to itself
+    preview_url = f"/api/wallets/{old['id']}/delete-preview"
+
+    # The same refusals as the delete, and nothing is changed by asking.
+    assert (await owner.get(preview_url)).status_code == 422  # it has moves; pick another
+    assert (await owner.get(f"{preview_url}?move_to={old['id']}")).status_code == 422
+    unknown = "00000000-0000-4000-8000-000000000000"
+    assert (await owner.get(f"{preview_url}?move_to={unknown}")).status_code == 404
+    assert (await owner.get(f"/api/wallets/{unknown}/delete-preview")).status_code == 404
+    spending = (await wallets_by_name(owner))["Spending"]["id"]
+    assert (await owner.get(f"/api/wallets/{spending}/delete-preview")).status_code == 422
+    assert (await owner.get(f"/api/wallets/{spare['id']}/delete-preview")).json() == {
+        "moved": 0,
+        "removed": 0,
+    }
+
+    preview = await owner.get(f"{preview_url}?move_to={new['id']}")
+    assert preview.status_code == 200 and preview.json() == {"moved": 2, "removed": 1}
+    assert (await owner.get("/api/transactions", params={"direction": "move"})).json()["total"] == 3
+    assert len(await wallets_by_name(owner)) == 4
+
+    deleted = await owner.send("DELETE", f"/api/wallets/{old['id']}?move_to={new['id']}")
+    gone = deleted.json()
+    assert {"moved": gone["moved"], "removed": gone["removed"]} == preview.json()
+
+
 async def test_summary_has_put_away_total_out_and_the_saving_rate(world: World) -> None:
     owner = world.browser()
     await owner.login(OWNER)
@@ -303,6 +337,7 @@ async def test_other_users_wallets_do_not_exist(world: World) -> None:
     await member.login(MEMBER, invite=token)
     theirs = await add(owner, "IBKR", "investment")
     mine = await add(member, "Mine", "savings")
+    assert (await member.get(f"/api/wallets/{theirs['id']}/delete-preview")).status_code == 404
     assert [w["name"] for w in (await member.get("/api/wallets")).json()] == ["Spending", "Mine"]
 
     assert (
@@ -331,3 +366,56 @@ async def test_other_users_wallets_do_not_exist(world: World) -> None:
     assert (
         await owner.send("POST", f"/api/transactions/{tx['id']}/move", {"wallet_id": mine["id"]})
     ).status_code == 404
+
+
+async def test_budgets_month_has_left_to_spend_and_the_plan_check(world: World) -> None:
+    owner = world.browser()  # the clock says 28 September, noon in Singapore; the user's UTC
+    await owner.login(OWNER)
+    spend = {"direction": "out", "date": DAY}
+    await owner.send(
+        "POST", "/api/transactions", {"direction": "in", "amount": "5000", "date": "2026-09-01"}
+    )
+    for amount in ("1500", "1100"):
+        await owner.send("POST", "/api/transactions", {**spend, "amount": amount})
+    bills = [
+        {"name": "Phone plan", "due": "2026-09-29", "amount": "300"},
+        {"name": "IBKR top-up", "due": "2026-09-30", "amount": "1000", "spending": False},
+    ]
+    for body in bills:
+        assert (await owner.send("POST", "/api/bills", body)).status_code == 201
+
+    plain = (await owner.get("/api/budgets/month")).json()
+
+    def money(amount: int) -> dict[str, str]:
+        return {"amount": f"{amount}.0000", "currency": "SGD"}
+
+    assert plain == {
+        "currency": "SGD",
+        "total_out": money(2600),
+        "left_to_spend": money(1100),
+        "still_due_out": money(1300),
+        "income": money(5000),
+        "budget_left": None,
+        "tighter": None,
+        "plan_warning": None,
+        "skipped": [],
+    }
+
+    assert (await owner.send("PUT", "/api/budgets", {"amount": "4000"})).status_code == 204
+    # The list keeps its shape.
+    listed = (await owner.get("/api/budgets")).json()
+    assert [b["name"] for b in listed] == ["Overall"] and listed[0]["remaining"] == money(1400)
+    month = (await owner.get("/api/budgets/month")).json()
+    assert month["budget_left"] == money(1400) and month["tighter"] == "left_to_spend"
+    assert month["plan_warning"] is None  # nothing to compare with: no pay schedule, no history
+
+    # Pay is 4,500 a month: 4,000 of budget plus the 1,000 top-up is more than that.
+    await owner.send("PUT", "/api/salary", {"rule": "monthly_day", "day": 25})
+    await owner.send("PUT", "/api/salary/usual", {"amount": "4,500"})
+    warned = (await owner.get("/api/budgets/month")).json()
+    assert warned["plan_warning"] == (
+        "A 4000.00 SGD budget plus 1000.00 SGD of scheduled moves is more than your usual "
+        "4500.00 SGD income."
+    )
+    stranger = world.browser()
+    assert (await stranger.get("/api/budgets/month")).status_code == 401
