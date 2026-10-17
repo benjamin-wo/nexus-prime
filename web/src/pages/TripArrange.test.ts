@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import type { Booking } from "../api";
-import { PLACES, afterFor, arrivalText, daySpot, duration, gapsFor, spotsOf, withMove } from "./TripArrange";
+import { PLACES, afterFor, arrivalText, daySpot, duration, gapsFor, pickerDays, spotsOf, withMove } from "./TripArrange";
+import { listColors } from "./TripIdeas";
 
 // A made-up trip: every plan and flight here is invented.
 function entry(id: string, fields: Partial<Booking>): Booking {
@@ -87,5 +88,60 @@ describe("arriving", () => {
 
   it("says lengths the way people do", () => {
     expect([duration(25), duration(60), duration(95)]).toEqual(["25 min", "1 h", "1 h 35 min"]);
+  });
+});
+
+describe("the day picker", () => {
+  const trip = { start: "2026-11-10", end: "2026-11-13", day_labels: { "2026-11-12": "Temples" } };
+  const detail = {
+    trip, bookings, places_order: ["sooner", "later"],
+    days: [{ day: "2026-11-11", order: ["market", "flight", "temple"], notes: [] }],
+  } as unknown as Parameters<typeof pickerDays>[0];
+
+  it("lists every trip day with its number, label and how much is on it", () => {
+    const { days } = pickerDays(detail, later, null);
+    expect(days.map((d) => [d.iso, d.number, d.label, d.plans])).toEqual([
+      ["2026-11-10", 1, "Free day", 0],
+      ["2026-11-11", 2, "", 3],
+      ["2026-11-12", 3, "Temples", 0],
+      ["2026-11-13", 4, "Free day", 0],
+    ]);
+  });
+
+  it("sends an idea to the end of a day, and a free day takes it first", () => {
+    const { days } = pickerDays(detail, later, null);
+    expect(days.map((d) => d.last)).toEqual([null, "temple", null, null]);
+  });
+
+  it("puts the viewed day first, only if it is a trip day", () => {
+    expect(pickerDays(detail, later, "2026-11-12").viewing?.number).toBe(3);
+    expect(pickerDays(detail, later, "2026-12-25").viewing).toBeNull();
+    expect(pickerDays(detail, later, null).viewing).toBeNull();
+  });
+
+  it("marks the day a plan is on, and leaves it out of that day's count and end", () => {
+    const picker = pickerDays(detail, market, null);
+    expect(picker.here?.iso).toBe("2026-11-11");
+    expect(picker.days[1]).toMatchObject({ here: true, plans: 2, last: "temple" });
+    expect(picker.days.filter((d) => d.here)).toHaveLength(1);
+    expect(pickerDays(detail, later, null).here).toBeNull();
+  });
+
+  it("knows where the end of Ideas is, not counting the idea itself", () => {
+    expect(pickerDays(detail, market, null).lastIdea).toBe("later");
+    expect(pickerDays(detail, later, null).lastIdea).toBe("sooner");
+  });
+});
+
+describe("idea list colours", () => {
+  it("go by sorted name, so a list keeps its colour", () => {
+    const colors = listColors(["Sights", "Food", "Food", "Cafes"]);
+    expect([...colors.keys()]).toEqual(["Cafes", "Food", "Sights"]);
+    expect(new Set(colors.values()).size).toBe(3);
+  });
+
+  it("repeat after the palette runs out", () => {
+    const colors = listColors(["a", "b", "c", "d", "e"]);
+    expect(colors.get("e")).toBe(colors.get("a"));
   });
 });

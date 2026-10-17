@@ -1,6 +1,6 @@
-import type { Money, TripDetail } from "../api";
+import type { Booking, TripDetail } from "../api";
 import { formatMoney, formatShortDate } from "../format";
-import { CountUp } from "../motion";
+import { sortKey } from "./TripBits";
 
 /** Where the trip is, which decides what its page shows first: the gaps while
  * planning, getting ready in the last week, today while it's on, settling up after. */
@@ -17,7 +17,6 @@ export function stageOf(detail: TripDetail): Stage {
 }
 
 const day = (iso: string) => formatShortDate(iso, "UTC");
-const amount = (m: Money | null) => (m ? Number(m.amount) : 0);
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 export type Fix = { kind: "hotel" | "flight"; day?: string } | "budget";
@@ -37,6 +36,92 @@ export function stillToSort(detail: TripDetail): { text: string; action: string;
   if (!r.has_transport) items.push({ text: "No flight or train yet", action: "Add", fix: { kind: "flight" } });
   if (!r.has_budget) items.push({ text: "No budget yet", action: "Set", fix: "budget" });
   return items;
+}
+
+/** Whether nothing is on a day: no plan, flight, train leg or check-in starting, landing
+ * or leaving then, and no check-out. Staying the night somewhere doesn't fill a day. */
+export function dayIsFree(detail: Pick<TripDetail, "bookings">, iso: string): boolean {
+  return !detail.bookings.some(
+    (b) =>
+      b.scheduled &&
+      (b.starts === iso ||
+        (b.kind === "hotel" && b.check_in !== null && b.check_out === iso) ||
+        b.segments.some((s) => s.departs?.slice(0, 10) === iso || s.arrives?.slice(0, 10) === iso)),
+  );
+}
+
+/** Where a "Next up" button goes: another tab (a day on Plan or Ideas), or a fix. */
+export type Go = { tab: "ideas"; day?: string } | { tab: "prep" } | { tab: "money" } | { fix: Fix } | { tab: "plan"; day: string };
+
+const DAY_MS = 86400000;
+const localDay = (when: Date) => when.toLocaleDateString("en-CA");
+
+/** "Fri 2 Apr", in English whatever the browser's language, like the sentence around it. */
+function dayWords(iso: string): string {
+  const parts = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).formatToParts(new Date(iso));
+  const part = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${part("weekday")} ${part("day")} ${part("month")}`;
+}
+
+/** The HH:MM an entry was booked or planned for, if it has one. */
+const statedTime = (b: Booking): string | null => b.at ?? b.segments[0]?.departs?.slice(11, 16) ?? null;
+
+/** An entry as a short phrase: "SQ 638", "check in at Hotel Ume", "Dinner at Sushi Ten". */
+function entryWords(b: Booking): string {
+  if (b.kind === "flight" || b.kind === "rail") return b.segments[0]?.number ?? b.title;
+  if (b.kind === "hotel") return `check in at ${b.hotel ?? b.title}`;
+  return b.title;
+}
+
+/** The one thing worth doing next on the trip, for the strip under its header, or
+ * null when there's nothing. ``ideasFor``: how many ideas could fill a given day. */
+export function nextUp(detail: TripDetail, ideasFor: (day: string) => number, now: Date = new Date()): { text: string; action: string; go: Go } | null {
+  const stage = stageOf(detail);
+  const today = localDay(now);
+  if (stage === "planning") {
+    const [first] = stillToSort(detail);
+    if (first) return { text: first.text, action: first.action, go: { fix: first.fix } };
+    const trip = detail.trip;
+    for (let t = Date.parse(trip.start), n = 1; t <= Date.parse(trip.end); t += DAY_MS, n += 1) {
+      const iso = new Date(t).toISOString().slice(0, 10);
+      if (!dayIsFree(detail, iso)) continue;
+      const ideas = ideasFor(iso);
+      return {
+        text: `Day ${n} is still free.${ideas > 0 ? ` ${ideas} of your ideas could fill it.` : ""}`,
+        action: "Find ideas",
+        go: { tab: "ideas", day: iso },
+      };
+    }
+    return null;
+  }
+  if (stage === "soon") {
+    const next = detail.bookings.filter((b) => b.scheduled && b.starts >= today).sort((a, b) => sortKey(a).localeCompare(sortKey(b)))[0];
+    if (next) {
+      const time = statedTime(next);
+      return { text: `Next: ${entryWords(next)} on ${dayWords(next.starts)}${time ? ` at ${time}` : ""}`, action: "Open day", go: { tab: "plan", day: next.starts } };
+    }
+    const left = (detail.trip.packing ?? []).filter((p) => !p.done).length;
+    if (left > 0) return { text: `${plural(left, "thing")} left to pack`, action: "Open packing", go: { tab: "prep" } };
+    return null;
+  }
+  if (stage === "during") {
+    const time = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    // A check-in with no time is taken as 15:00; a plan with none can't be told from now.
+    const at = (b: Booking) => statedTime(b) ?? (b.kind === "hotel" ? "15:00" : "");
+    const upcoming = detail.bookings
+      .filter((b) => b.scheduled && b.starts === today && at(b) > time)
+      .sort((a, b) => at(a).localeCompare(at(b)))[0];
+    if (!upcoming) return null;
+    return { text: `Next: ${entryWords(upcoming)} at ${at(upcoming)}`, action: "Open today", go: { tab: "plan", day: today } };
+  }
+  if (detail.owed.length === 0) return null;
+  const [first] = detail.owed;
+  const money = (first.home ? [first.home] : first.amounts).map(formatMoney).join(" + ");
+  return {
+    text: detail.owed.length === 1 ? `${first.name} still owes you ${money}` : `${detail.owed.length} people still owe you`,
+    action: "Settle up",
+    go: { tab: "money" },
+  };
 }
 
 /** The gaps, first on a trip that's being planned. Nothing when it's all sorted. */
@@ -69,110 +154,4 @@ export function StillToSort({ detail, onFix, quiet = false }: { detail: TripDeta
   );
 }
 
-/** Before the trip: what's booked and spent against the budget, in one bar. */
-export function MoneyBar({ detail, onOpen }: { detail: TripDetail; onOpen: () => void }) {
-  const budget = detail.trip.budget;
-  const committed = amount(detail.spending.spent) + amount(detail.booked_unlogged);
-  const currency = detail.spending.spent.currency;
-  const percent = budget ? Math.min(100, Math.round((committed / Number(budget.amount)) * 100)) : 0;
-  return (
-    <section className="card money-bar" aria-labelledby="money-bar">
-      <div className="money-bar-head">
-        <h2 id="money-bar">
-          Money
-        </h2>
-        <button type="button" className="btn btn-ghost btn-small" onClick={onOpen}>
-          Details
-        </button>
-      </div>
-      <p className="money-bar-figure">
-        <CountUp value={formatMoney({ amount: String(committed), currency })} />
-        <span className="caption"> {budget ? `of ${formatMoney(budget)}` : "booked and spent · no budget yet"}</span>
-      </p>
-      {budget && (
-        <div className={`meter${committed > Number(budget.amount) ? " meter-over" : ""}`} aria-hidden="true">
-          <span style={{ width: `${percent}%` }} />
-        </div>
-      )}
-      <p className="caption">
-        {detail.booked ? `Booked ${formatMoney(detail.booked)}` : "Nothing booked yet"}
-        {amount(detail.spending.spent) > 0 && ` · spent ${formatMoney(detail.spending.spent)}`}
-      </p>
-    </section>
-  );
-}
-
-/** While the trip is on: spent against the budget, what's left each day, and what's
- * been spent in the trip's own currency (logged on Telegram). */
-export function SpendingNow({ detail }: { detail: TripDetail }) {
-  const s = detail.spending;
-  const t = detail.trip;
-  const budget = t.budget;
-  const local = detail.items.filter((i) => i.amount.currency === t.currency).reduce((sum, i) => sum + Number(i.amount.amount), 0);
-  const daysLeft = Math.max(t.days - (t.day_number ?? 1) + 1, 1);
-  const over = (s.percent ?? 0) > 100;
-  return (
-    <section className="card spending-now" aria-labelledby="spending-now">
-      <h2 id="spending-now">
-        Spent so far
-      </h2>
-      <p className="money-bar-figure">
-        <CountUp value={formatMoney(s.spent)} />
-        {budget && <span className="caption"> of {formatMoney(budget)}</span>}
-      </p>
-      {budget && (
-        <div className={`meter${over ? " meter-over" : ""}`} aria-hidden="true">
-          <span style={{ width: `${Math.min(s.percent ?? 0, 100)}%` }} />
-        </div>
-      )}
-      <p className="caption">
-        {s.per_day_left
-          ? `${formatMoney(s.per_day_left)} a day left for ${plural(daysLeft, "day")}`
-          : budget
-            ? over
-              ? "Over budget"
-              : "On budget"
-            : "No budget set"}
-        {local > 0 && ` · ${formatMoney({ amount: String(local), currency: t.currency })} spent in ${t.currency}`}
-        {s.today && amount(s.today) > 0 && ` · ${formatMoney(s.today)} today`}
-      </p>
-      <p className="caption">Log what you spend on Telegram: "ramen 1200 yen".</p>
-    </section>
-  );
-}
-
-/** After the trip: the total against the budget, by category. */
-export function TripTotals({ detail }: { detail: TripDetail }) {
-  const s = detail.spending;
-  const budget = detail.trip.budget;
-  const total = amount(s.spent);
-  const diff = budget ? Math.round(((total - Number(budget.amount)) / Number(budget.amount)) * 100) : null;
-  const cats = [...s.categories].sort((a, b) => amount(b.spent) - amount(a.spent));
-  return (
-    <section className="card trip-totals" aria-labelledby="trip-totals">
-      <h2 id="trip-totals">
-        The trip in numbers
-      </h2>
-      <p className="money-bar-figure">
-        <CountUp value={formatMoney(s.spent)} />
-        {budget && (
-          <span className="caption">
-            {" "}
-            of {formatMoney(budget)}
-            {diff !== null && diff !== 0 && ` · ${Math.abs(diff)}% ${diff > 0 ? "over" : "under"}`}
-          </span>
-        )}
-      </p>
-      {cats.length > 0 && (
-        <ul className="totals-list" aria-label="By category">
-          {cats.map((c) => (
-            <li key={c.name}>
-              <span>{c.name}</span>
-              <span className="num">{formatMoney(c.spent)}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
+// The money summaries live with the rest of the Money tab; re-exported while the old page still imports them here.

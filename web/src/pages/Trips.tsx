@@ -1,23 +1,22 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, Fragment, type ReactNode, useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { type FormEvent, Fragment, type ReactNode, useEffect, useMemo, useState } from "react";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { api, type Booking, type Hop, type ScreenshotRead, type Trip, type TripDetail } from "../api";
 import { base64 } from "../files";
 import { formatMoney } from "../format";
 import { ResearchList } from "./Research";
 import { type AddPreset, AddSheet } from "./TripAdd";
-import { BookingLines, Companions, NextUp, OpenLink, PhotoCredit, TripCard, coverStyle, day, landingOn, landsOnly, leavingOn, legTimes, todayIso, tripWhen, useHome } from "./TripBits";
+import { BookingLines, Companions, OpenLink, PhotoCredit, TripCard, coverStyle, day, landingOn, landsOnly, leavingOn, legTimes, sortKey, todayIso, tripWhen, useHome } from "./TripBits";
 import { DayCarousel } from "./DayCarousel";
-import { PackingCard, WeatherCard } from "./TripExtras";
-import { type Fix, MoneyBar, SpendingNow, type Stage, StillToSort, TripTotals, stageOf } from "./TripStage";
-import { ArrangeProvider, DayNotes, DropZone, MoveForm, type Spot, daySpot, useArrange, useDragEntry } from "./TripArrange";
+import { type Fix, type Go, type Stage, dayIsFree, nextUp, stageOf } from "./TripStage";
+import { ArrangeProvider, DayNotes, DayPickerSheet, DropZone, type Spot, daySpot, useArrange, useDragEntry } from "./TripArrange";
 import { DayHops, HopLine, MapAppPicker, TripMap } from "./TripMap";
 import { TripPlacesProvider } from "./TripPlaces";
 import { EntryEditor } from "./TripEntry";
-import { Sections } from "./TripIdeas";
-import { MoneyDetails, SettleUp } from "./TripMoney";
-import { Notes } from "./TripPrep";
+import { IdeasTab, listOf } from "./TripIdeas";
+import { MoneyTab } from "./TripMoney";
+import { PrepTab } from "./TripPrep";
 import { ShareSheet } from "./TripShare";
 import { TodayView } from "./TripToday";
 
@@ -295,6 +294,11 @@ export function TripsPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
           <h1>Trips</h1>
           <p className="muted">Each trip keeps its bookings, plans and money together. Nexus never books anything.</p>
         </div>
+        {!adding && (
+          <button type="button" className="btn btn-primary" onClick={() => setAdding(true)}>
+            New trip
+          </button>
+        )}
       </div>
 
       {adding && (
@@ -366,7 +370,6 @@ function BookingRow({ booking, children }: { booking: Booking; children?: ReactN
   );
 }
 
-const sortKey = (b: Booking) => `${b.starts}T${b.at ?? b.segments[0]?.departs?.slice(11) ?? (b.kind === "hotel" ? "15:00" : "00:00")}`;
 const DAY_MS = 86400000;
 const isoDay = (t: number) => new Date(t).toISOString().slice(0, 10);
 const dayPill = (iso: string) =>
@@ -388,7 +391,7 @@ function nightsOf(b: Booking): string[] {
   return nights;
 }
 
-/** One day's label ("Busan"), edited in place. */
+/** One day's label ("Busan"): a pencil that opens its form, edited in place. */
 function DayLabel({ trip, iso, onChange }: { trip: Trip; iso: string; onChange: () => void }) {
   const current = (trip.day_labels ?? {})[iso] ?? "";
   const [editing, setEditing] = useState(false);
@@ -404,27 +407,60 @@ function DayLabel({ trip, iso, onChange }: { trip: Trip; iso: string; onChange: 
   if (editing) {
     return (
       <form className="day-label-form" onSubmit={save} aria-label={`Label for ${dayPill(iso)}`}>
-        <input className="input" value={text} maxLength={40} autoFocus onChange={(e) => setText(e.target.value)} placeholder="City or plan, e.g. Busan" />
+        <input className="input" value={text} maxLength={40} autoFocus onChange={(e) => setText(e.target.value)} placeholder="City or plan, e.g. Busan" aria-label="Name for this day" />
         <button type="submit" className="btn btn-small">
           Save
+        </button>
+        <button type="button" className="btn btn-ghost btn-small" onClick={() => setEditing(false)}>
+          Cancel
         </button>
       </form>
     );
   }
   return (
-    <button type="button" className="btn btn-ghost btn-small day-label" onClick={() => setEditing(true)} aria-label={current ? `Change the label ${current}` : `Add a label for ${dayPill(iso)}`}>
-      {current || "+ Add a label"}
+    <button
+      type="button"
+      className="day-edit"
+      onClick={() => {
+        setText(current);
+        setEditing(true);
+      }}
+      aria-label="Name this day"
+    >
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z" />
+        <path d="M13.5 6.5l4 4" />
+      </svg>
     </button>
   );
 }
 
-/** A flight or train as a slim strip, a hotel check-in or check-out, or a numbered stop. */
-function TimelineEntry({ booking, iso, stop, spot, children }: { booking: Booking; iso: string; stop: number | null; spot?: Spot; children?: ReactNode }) {
+/** A small padlock on flights, hotels and trains: booked, so the time isn't ours to move. */
+function Lock() {
+  return (
+    <svg className="entry-lock" role="img" aria-label="Booked, fixed time" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="5" y="11" width="14" height="9" rx="2" />
+      <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+    </svg>
+  );
+}
+
+/** The whole row as one tap that opens the entry to change. A button laid over the row,
+ * so links and buttons inside it (the grip, Open link) stay their own. */
+function Tap({ booking, onEdit }: { booking: Booking; onEdit?: () => void }) {
+  if (!onEdit) return null;
+  return <button type="button" className="entry-tap" onClick={onEdit} aria-label={`Change ${booking.title}`} />;
+}
+
+/** A flight or train as a slim strip, a hotel check-in or check-out, or a numbered stop.
+ * ``onEdit``: tapping the entry opens it to change. */
+function TimelineEntry({ booking, iso, stop, spot, onEdit }: { booking: Booking; iso: string; stop: number | null; spot?: Spot; onEdit?: () => void }) {
   const drag = useDragEntry(booking, spot);
   if (booking.kind === "hotel") {
     const out = booking.check_out === iso && booking.check_in !== iso;
     return (
-      <li ref={drag.ref} className={`timeline-strip${drag.className}`} id={out ? undefined : `entry-${booking.id}`}>
+      <li ref={drag.ref} className={`timeline-strip entry-row${drag.className}`} id={out ? undefined : `entry-${booking.id}`}>
+        {!out && <Tap booking={booking} onEdit={onEdit} />}
         <span aria-hidden="true">🏨</span>
         <span className="wrap">
           <strong>{booking.hotel ?? booking.title}</strong>
@@ -433,7 +469,7 @@ function TimelineEntry({ booking, iso, stop, spot, children }: { booking: Bookin
           {!out && <OpenLink booking={booking} />}
         </span>
         <span className={`badge ${out ? "badge-pending" : "badge-in"}`}>{out ? "Check out" : "Check in"}</span>
-        {!out && children}
+        <Lock />
       </li>
     );
   }
@@ -443,7 +479,8 @@ function TimelineEntry({ booking, iso, stop, spot, children }: { booking: Bookin
     const last = legs[legs.length - 1];
     const from = legs[0];
     return (
-      <li ref={drag.ref} className={`timeline-strip timeline-landing${drag.className}`} id={`land-${booking.id}`}>
+      <li ref={drag.ref} className={`timeline-strip timeline-landing entry-row${drag.className}`} id={`land-${booking.id}`}>
+        <Tap booking={booking} onEdit={onEdit} />
         <span aria-hidden="true">{booking.kind === "flight" ? "🛬" : "🚉"}</span>
         <span className="wrap">
           <strong>
@@ -456,7 +493,7 @@ function TimelineEntry({ booking, iso, stop, spot, children }: { booking: Bookin
             {from.departs && `, left ${dayPill(from.departs.slice(0, 10))} ${from.departs.slice(11, 16)}`}
           </span>
         </span>
-        {children}
+        <Lock />
       </li>
     );
   }
@@ -464,7 +501,8 @@ function TimelineEntry({ booking, iso, stop, spot, children }: { booking: Bookin
     // A later leg of the same booking, such as the flight home.
     const legs = leavingOn(booking, iso);
     return (
-      <li ref={drag.ref} className={`timeline-strip${drag.className}`} id={`leave-${booking.id}-${iso}`}>
+      <li ref={drag.ref} className={`timeline-strip entry-row${drag.className}`} id={`leave-${booking.id}-${iso}`}>
+        <Tap booking={booking} onEdit={onEdit} />
         <span aria-hidden="true">{KIND_ICON[booking.kind]}</span>
         <span className="wrap">
           {legs.map((l, n) => (
@@ -476,13 +514,14 @@ function TimelineEntry({ booking, iso, stop, spot, children }: { booking: Bookin
             </span>
           ))}
         </span>
-        {children}
+        <Lock />
       </li>
     );
   }
   if (booking.kind === "flight" || booking.kind === "rail") {
     return (
-      <li ref={drag.ref} className={`timeline-strip${drag.className}`} id={`entry-${booking.id}`}>
+      <li ref={drag.ref} className={`timeline-strip entry-row${drag.className}`} id={`entry-${booking.id}`}>
+        <Tap booking={booking} onEdit={onEdit} />
         <span aria-hidden="true">{KIND_ICON[booking.kind]}</span>
         <span className="wrap">
           <strong>{booking.title}</strong>
@@ -492,12 +531,13 @@ function TimelineEntry({ booking, iso, stop, spot, children }: { booking: Bookin
           <OpenLink booking={booking} />
         </span>
         {booking.cost && <span className="num">{formatMoney(booking.cost)}</span>}
-        {children}
+        <Lock />
       </li>
     );
   }
   return (
-    <li ref={drag.ref} className={`timeline-stop${drag.className}`} id={`entry-${booking.id}`}>
+    <li ref={drag.ref} className={`timeline-stop entry-row${drag.className}`} id={`entry-${booking.id}`}>
+      <Tap booking={booking} onEdit={onEdit} />
       {drag.handle}
       <span className="stop-number" aria-hidden="true">
         {stop}
@@ -516,23 +556,25 @@ function TimelineEntry({ booking, iso, stop, spot, children }: { booking: Bookin
         <OpenLink booking={booking} />
       </span>
       {booking.cost && <span className="num">{formatMoney(booking.cost)}</span>}
-      {children}
     </li>
   );
 }
 
-/** The trip day by day: a strip of days to jump between, each day's label, its
- * flights, trains and hotel check-ins and check-outs, and numbered plans in time order. */
-function Itinerary({ detail, onChange, onAdd, collapsed }: {
+/** The trip day by day: a strip of days to jump between, each day's name, its
+ * flights, trains and hotel check-ins and check-outs, and numbered plans in time order.
+ * The day in view is the page's (``day``), which the map and the other tabs share. */
+function Itinerary({ detail, day, onDay, onChange, onAdd, onIdeas }: {
   detail: TripDetail;
+  day: string;
+  onDay: (iso: string) => void;
   onChange: () => void;
   onAdd: (preset: AddPreset) => void;
-  /** Folded to this one line until opened. */
-  collapsed?: string;
+  /** Opens the Ideas tab, for filling an empty day. */
+  onIdeas: () => void;
 }) {
   const home = useHome();
   const [editing, setEditing] = useState<string | null>(null);
-  const [moving, setMoving] = useState<string | null>(null);
+  const [picking, setPicking] = useState<Booking | null>(null);
   const arrange = useArrange(detail);
   const notesOf = (iso: string) => detail.days?.find((x) => x.day === iso)?.notes ?? [];
   const addressOf = (id: string) => detail.bookings.find((b) => b.id === id)?.address ?? null;
@@ -544,7 +586,6 @@ function Itinerary({ detail, onChange, onAdd, collapsed }: {
   const days = tripDays(detail);
   const dayNumber = (iso: string) => Math.round((Date.parse(iso) - Date.parse(detail.trip.start)) / DAY_MS) + 1;
   const inTrip = (iso: string) => iso >= detail.trip.start && iso <= detail.trip.end;
-  const busy = (iso: string) => sorted.some((b) => b.starts === iso) || checkingOut(iso).length > 0;
   const homeless = new Set(detail.ready.nights_without_stay);
   const dayLabel = (iso: string) => {
     const n = dayNumber(iso);
@@ -552,38 +593,23 @@ function Itinerary({ detail, onChange, onAdd, collapsed }: {
     return n >= 1 && n <= detail.trip.days ? `Day ${n} · ${when}` : when;
   };
 
-  async function remove(b: Booking) {
-    if (!window.confirm(`Take ${b.title} off the itinerary?`)) return;
-    await api(`/travel/bookings/${b.id}`, { method: "DELETE" }).catch(() => undefined);
-    onChange();
-  }
-
-  // Opens on today while the trip is on, else its first day.
-  const today = todayIso();
-  const startDay = detail.trip.status === "ongoing" && days.includes(today) ? today : days.includes(detail.trip.start) ? detail.trip.start : (days[0] ?? "");
   // A plan carried by keyboard to another day takes the carousel with it.
   const carriedTo = arrange.carrying ? arrange.drop?.spot : undefined;
   const following = carriedTo?.startsWith("day:") ? carriedTo.slice(4) : null;
 
-  const actions = (b: Booking) => (
-    <EntryActions
-      booking={b}
-      onEdit={() => setEditing(b.id)}
-      onMove={arrange.on && b.kind === "activity" ? () => setMoving(b.id) : undefined}
-      onRemove={() => void remove(b)}
-    />
-  );
-
   return (
-    <Fold collapsed={collapsed}>
-      <DayCarousel days={days} start={startDay} follow={following} pill={dayPill} name={dayLabel}>
+    <section id="itinerary" className="card itinerary-card" aria-label="Itinerary">
+      <DayCarousel days={days} value={day} onPick={onDay} follow={following} pill={dayPill} name={dayLabel}>
         {(d, near) => {
         const entries = arrange.spots.get(daySpot(d)) ?? [];
         const outs = checkingOut(d).filter((b) => b.starts !== d);
         const n = dayNumber(d);
         const ends = d === detail.trip.start || d === detail.trip.end;
-        const empty = !busy(d) && staying(d).length === 0;
-        const dot = !inTrip(d) ? "day-dot-out" : ends ? "day-dot-end" : empty ? "day-dot-empty" : "day-dot-planned";
+        const free = dayIsFree(detail, d);
+        const dot = !inTrip(d) ? "day-dot-out" : ends ? "day-dot-end" : free ? "day-dot-empty" : "day-dot-planned";
+        const named = (detail.trip.day_labels ?? {})[d];
+        const count = entries.length + outs.length;
+        const addLabel = inTrip(d) ? `Add to Day ${n}` : `Add to ${dayPill(d)}`;
         return (
           <div key={d} id={`day-${d}`} className="itinerary-day">
             <div className="day-rail" aria-hidden="true">
@@ -592,7 +618,10 @@ function Itinerary({ detail, onChange, onAdd, collapsed }: {
             </div>
             <div className="day-body">
               <div className="day-head">
-                <h3>{dayLabel(d)}</h3>
+                <h3 className="day-title">
+                  <span className="day-when">{dayLabel(d)}</span>
+                  <span className="day-name">{named || (free ? "Free day" : `${count} ${count === 1 ? "plan" : "plans"}`)}</span>
+                </h3>
                 <DayLabel trip={detail.trip} iso={d} onChange={onChange} />
               </div>
               {staying(d).map((b) => (
@@ -652,20 +681,14 @@ function Itinerary({ detail, onChange, onAdd, collapsed }: {
                                   setEditing(null);
                                   if (saved) onChange();
                                 }}
+                                onMove={arrange.on && b.kind === "activity" ? () => setPicking(b) : undefined}
                               />
                             </li>
                           </Fragment>
                         ) : (
                           <Fragment key={b.id}>
                             {hopsIn}
-                            <TimelineEntry booking={b} iso={d} stop={b.kind === "activity" ? stop : null} spot={daySpot(d)}>
-                              {actions(b)}
-                            </TimelineEntry>
-                            {moving === b.id && (
-                              <li>
-                                <MoveForm booking={b} days={days} spots={arrange.spots} onDone={() => setMoving(null)} />
-                              </li>
-                            )}
+                            <TimelineEntry booking={b} iso={d} stop={b.kind === "activity" ? stop : null} spot={daySpot(d)} onEdit={() => setEditing(b.id)} />
                           </Fragment>
                         );
                       })}
@@ -673,14 +696,22 @@ function Itinerary({ detail, onChange, onAdd, collapsed }: {
                         <HopLine key={`hop-${h.start_id}-${h.end_id}`} tripId={detail.trip.id} day={d} hop={h} addressOf={addressOf} back={back(h)} />
                       ))}
                     </ul>
-                    {empty && <p className="caption">Nothing planned yet</p>}
+                    {free && entries.length === 0 && (
+                      <p className="caption">
+                        Nothing planned yet. Fill it from your{" "}
+                        <button type="button" className="link-btn" onClick={onIdeas} aria-label="Open Ideas">
+                          ideas
+                        </button>
+                        , or leave it open.
+                      </p>
+                    )}
                     </DropZone>
                     </>
                   );
                 }}
               </DayHops>
-              <button type="button" className="btn btn-ghost btn-small" onClick={() => onAdd({ kind: "activity", day: d })} aria-label={`Add a plan on ${dayPill(d)}`}>
-                + Add a plan
+              <button type="button" className="btn btn-ghost btn-small" onClick={() => onAdd({ kind: "activity", day: d })}>
+                {addLabel}
               </button>
             </div>
           </div>
@@ -694,7 +725,8 @@ function Itinerary({ detail, onChange, onAdd, collapsed }: {
           <MapAppPicker />
         </p>
       )}
-    </Fold>
+      {picking && <DayPickerSheet detail={detail} booking={picking} viewing={day} onClose={() => setPicking(null)} />}
+    </section>
   );
 }
 
@@ -715,68 +747,6 @@ function GettingAroundPicker({ trip, onChange }: { trip: Trip; onChange: () => v
         <option value="car">Hire car</option>
       </select>
     </label>
-  );
-}
-
-/** An entry's Edit and Remove, behind one small button so the timeline reads cleanly. */
-function EntryActions({ booking, onEdit, onMove, onRemove }: { booking: Booking; onEdit: () => void; onMove?: () => void; onRemove: () => void }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <span className="entry-actions">
-      {open ? (
-        <>
-          <button type="button" className="btn btn-small" onClick={onEdit} aria-label={`Edit ${booking.title}`}>
-            Edit
-          </button>
-          {onMove && (
-            <button
-              type="button"
-              className="btn btn-small"
-              onClick={() => {
-                setOpen(false);
-                onMove();
-              }}
-              aria-label={`Move ${booking.title} to another day or place`}
-            >
-              Move
-            </button>
-          )}
-          <button type="button" className="btn btn-small" onClick={onRemove} aria-label={`Remove ${booking.title}`}>
-            Remove
-          </button>
-          <button type="button" className="btn btn-ghost btn-small" onClick={() => setOpen(false)} aria-label="Done">
-            ×
-          </button>
-        </>
-      ) : (
-        <button type="button" className="btn btn-ghost btn-small entry-more" onClick={() => setOpen(true)} aria-label={`Change ${booking.title}`} aria-expanded={false}>
-          ⋯
-        </button>
-      )}
-    </span>
-  );
-}
-
-/** The timeline as a card, or folded to one line that opens it. */
-function Fold({ collapsed, children }: { collapsed?: string; children: ReactNode }) {
-  if (!collapsed) {
-    return (
-      <section className="card itinerary-card" aria-labelledby="itinerary">
-        <div className="card-head">
-          <h2 id="itinerary">Itinerary</h2>
-        </div>
-        {children}
-      </section>
-    );
-  }
-  return (
-    <details className="card section itinerary-fold itinerary-card">
-      <summary>
-        <h2 id="itinerary">{collapsed}</h2>
-        <span className="caption">Open</span>
-      </summary>
-      {children}
-    </details>
   );
 }
 
@@ -874,22 +844,60 @@ function TripMenu({ trip, onEdit, onDelete, onChange }: { trip: Trip; onEdit: ()
   );
 }
 
-/** One trip, on one page that follows it: the gaps while it's being planned, getting
- * ready in the last week, today while it's on, and settling up after. */
+const TABS = [
+  ["plan", "Plan"],
+  ["ideas", "Ideas"],
+  ["money", "Money"],
+  ["prep", "Prep"],
+] as const;
+type Tab = (typeof TABS)[number][0];
+const isTab = (value: string | null): value is Tab => TABS.some(([tab]) => tab === value);
+
+/** The trip's idea lists so far: where a new idea can be filed. */
+function ideaLists(detail: TripDetail): string[] {
+  const lists = detail.bookings.filter((b) => b.kind === "activity" && !b.scheduled).map((b) => listOf(b)?.trim() ?? "");
+  return [...new Set(lists.filter(Boolean))];
+}
+
+/** The one thing to do next, as a slim strip under the trip's header. */
+function NextUpStrip({ detail, onGo }: { detail: TripDetail; onGo: (go: Go) => void }) {
+  // The ideas that could fill a free day: everything not yet on a day.
+  const ideas = detail.bookings.filter((b) => b.kind === "activity" && !b.scheduled).length;
+  const next = nextUp(detail, () => ideas);
+  if (!next) return null;
+  return (
+    <section className="next-up" aria-label="Next up">
+      <div className="next-up-body">
+        <span className="next-up-label">Next up</span>
+        <p className="next-up-text">{next.text}</p>
+      </div>
+      <button type="button" className="btn btn-small" onClick={() => onGo(next.go)} aria-label={`${next.action}: ${next.text}`}>
+        {next.action}
+      </button>
+    </section>
+  );
+}
+
+/** One trip, on one page that follows it: Plan, Ideas, Money and Prep as tabs, and under
+ * the header the one thing to do next. It opens on Plan, or on Money once it's over. */
 export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
   const { id = "" } = useParams();
   const client = useQueryClient();
   const navigate = useNavigate();
   const home = useHome();
+  const [params, setParams] = useSearchParams();
   const detail = useQuery({ queryKey: ["trip", id], queryFn: () => api<TripDetail>(`/travel/trips/${id}`) });
   const [editing, setEditing] = useState(false);
-  const [adding, setAdding] = useState<AddPreset | null>(null);
   const [sheet, setSheet] = useState<{ preset: AddPreset | null } | null>(null);
-  const [moneyOpen, setMoneyOpen] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [reading, setReading] = useState(false);
   const [imported, setImported] = useState<string | null>(null);
   const [shotError, setShotError] = useState<string | null>(null);
+  // The + on Money and Prep: the tab opens its own form.
+  const [addingCost, setAddingCost] = useState(false);
+  const [addingPacking, setAddingPacking] = useState(false);
+  // The map shows every day, not just the one open.
+  const [mapAll, setMapAll] = useState(false);
   const data = detail.data;
   const stage: Stage = data ? stageOf(data) : "planning";
   const refresh = () =>
@@ -901,10 +909,42 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
       client.invalidateQueries({ queryKey: ["trip-hops", id] }),
     ]);
 
-  function form(preset: AddPreset) {
-    setSheet(null);
-    setAdding(preset);
-    window.setTimeout(() => document.getElementById("trip-adding")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  // The open tab lives in the address, so Back goes to the one before.
+  const asked = params.get("tab");
+  const tab: Tab = isTab(asked) ? asked : stage === "after" ? "money" : "plan";
+  // A + pressed on one tab doesn't wait for the next visit to it.
+  useEffect(() => {
+    setAddingCost(false);
+    setAddingPacking(false);
+  }, [tab]);
+  // The day open on Plan, shared with the map and the Ideas tab: today while the trip
+  // is on, else its first day, until one is picked.
+  const days = useMemo(() => (data ? tripDays(data) : []), [data]);
+  const today = todayIso();
+  const startDay = data && data.trip.status === "ongoing" && days.includes(today) ? today : data && days.includes(data.trip.start) ? data.trip.start : (days[0] ?? "");
+  const picked = params.get("day");
+  const selectedDay = picked && days.includes(picked) ? picked : startDay;
+
+  function open(next: Tab, onDay?: string) {
+    setParams((was) => {
+      const query = new URLSearchParams(was);
+      query.set("tab", next);
+      if (onDay) query.set("day", onDay);
+      return query;
+    });
+    if (onDay) setMapAll(false);
+  }
+
+  function pickDay(iso: string) {
+    setMapAll(false);
+    setParams(
+      (was) => {
+        const query = new URLSearchParams(was);
+        query.set("day", iso);
+        return query;
+      },
+      { replace: true },
+    );
   }
 
   function fix(f: Fix) {
@@ -912,9 +952,10 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
     else setSheet({ preset: f });
   }
 
-  function openMoney() {
-    setMoneyOpen(true);
-    window.setTimeout(() => document.getElementById("trip-money-details")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  function go(to: Go) {
+    if ("fix" in to) fix(to.fix);
+    else if (to.tab === "plan" || (to.tab === "ideas" && to.day)) open(to.tab, to.day);
+    else open(to.tab);
   }
 
   async function screenshot(file: File) {
@@ -935,11 +976,6 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
     }
   }
 
-  async function takeOff(transactionId: string) {
-    await api(`/travel/trips/${id}/expenses/${transactionId}`, { method: "DELETE" }).catch(() => undefined);
-    refresh();
-  }
-
   async function remove() {
     if (!data || !window.confirm(`Delete the trip to ${data.trip.destination}? Its expenses stay in the ledger.`)) return;
     await api(`/travel/trips/${id}`, { method: "DELETE" });
@@ -947,11 +983,15 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
     navigate("/travel");
   }
 
-  const timeline = (collapsed?: string) =>
-    data && <Itinerary detail={data} onChange={refresh} onAdd={(preset) => setSheet({ preset })} collapsed={collapsed} />;
-  const money = (title?: string) => data && <MoneyDetails detail={data} open={moneyOpen} onToggle={setMoneyOpen} onTakeOff={(t) => void takeOff(t)} title={title} />;
-  const nights = data ? Math.max(data.trip.days - 1, 0) : 0;
-  const sorted = data ? data.ready.nights_without_stay.length === 0 : false;
+  // The one + on each tab: what it's called, and what it does.
+  const dayNo = data ? Math.round((Date.parse(selectedDay) - Date.parse(data.trip.start)) / DAY_MS) + 1 : 0;
+  const adds: Record<Tab, { label: string; run: () => void }> = {
+    plan: { label: data && dayNo >= 1 && dayNo <= data.trip.days ? `Add to Day ${dayNo}` : "Add to this day", run: () => setSheet({ preset: null }) },
+    ideas: { label: "Add an idea", run: () => setSheet({ preset: { kind: "place" } }) },
+    money: { label: "Add a planned cost", run: () => setAddingCost(true) },
+    prep: { label: "Add to packing", run: () => setAddingPacking(true) },
+  };
+  const add = adds[tab];
 
   return (
     <div className="trip-page">
@@ -1006,7 +1046,7 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
       )}
       {data && (
         <TripPlacesProvider tripId={id} destination={data.trip.destination} enabled={data.places} ideas={data.ideas ?? false} onChange={refresh}>
-          <ArrangeProvider detail={data} days={tripDays(data)} on={stage !== "after"} onChange={refresh}>
+          <ArrangeProvider detail={data} days={days} on={stage !== "after"} onChange={refresh}>
           {reading && (
             <p className="state" role="status">
               Reading the screenshot…
@@ -1030,7 +1070,8 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
                   className="btn btn-small"
                   onClick={() => {
                     setImported(null);
-                    document.getElementById("itinerary")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                    open("plan");
+                    window.setTimeout(() => document.getElementById("itinerary")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
                   }}
                 >
                   👎 Fix something
@@ -1038,88 +1079,53 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
               </span>
             </section>
           )}
-          {adding && (
-            <section id="trip-adding" className="card" aria-labelledby="trip-adding-title" data-no-reveal>
-              <div className="card-head">
-                <h2 id="trip-adding-title">Add to the trip</h2>
+
+          <NextUpStrip detail={data} onGo={go} />
+
+          <div className="trip-tabbar">
+            <nav className="trip-tabs" aria-label="Trip sections">
+              {TABS.map(([name, label]) => (
+                <button key={name} type="button" className="trip-tab" aria-current={tab === name ? "page" : undefined} onClick={() => open(name)}>
+                  {label}
+                </button>
+              ))}
+            </nav>
+            {stage !== "after" && (
+              <button type="button" className="btn btn-primary trip-add-desktop" onClick={add.run}>
+                {add.label}
+              </button>
+            )}
+          </div>
+
+          {tab === "plan" && (
+            <>
+              <div className="plan-layout">
+                {stage === "during" && selectedDay && <TodayView detail={data} day={selectedDay} />}
+                <Itinerary detail={data} day={selectedDay} onDay={pickDay} onChange={refresh} onAdd={(preset) => setSheet({ preset })} onIdeas={() => open("ideas")} />
+                <TripMap
+                  detail={data}
+                  day={mapAll ? null : selectedDay}
+                  selected={selectedDay}
+                  onDay={(iso) => (iso === null ? setMapAll(true) : pickDay(iso))}
+                />
               </div>
-              <EntryEditor
-                key={`${adding.kind}-${adding.day ?? ""}`}
-                trip={data.trip}
-                home={home}
-                preset={adding}
-                onDone={(saved) => {
-                  setAdding(null);
-                  if (saved) refresh();
-                }}
-              />
-            </section>
-          )}
-
-          {stage === "planning" && (
-            <>
-              <StillToSort detail={data} onFix={fix} />
-              <MoneyBar detail={data} onOpen={openMoney} />
-              <div className="trip-plan">
-                <TripMap detail={data} />
-                {timeline()}
-              </div>
-              <Sections detail={data} onChange={refresh} />
-              <Notes trip={data.trip} />
-              {money()}
+              {onAsk && stage !== "after" && (
+                <button
+                  type="button"
+                  className="btn btn-ghost trip-ask"
+                  onClick={() => onAsk(`How's my ${data.trip.destination} trip looking? What's booked, what's missing and what's left in the budget?`)}
+                >
+                  <span aria-hidden="true">✨</span> Ask Nexus about this trip
+                </button>
+              )}
             </>
           )}
+          {tab === "ideas" && <IdeasTab detail={data} onChange={refresh} viewing={selectedDay || null} />}
+          {tab === "money" && <MoneyTab detail={data} onChange={refresh} adding={addingCost} onAddDone={() => setAddingCost(false)} />}
+          {tab === "prep" && <PrepTab detail={data} onChange={refresh} onFix={fix} adding={addingPacking} onAddDone={() => setAddingPacking(false)} />}
 
-          {stage === "soon" && (
-            <>
-              <StillToSort detail={data} onFix={fix} quiet />
-              <NextUp detail={data} />
-              <div className="trip-pair">
-                <WeatherCard trip={data.trip} />
-                <PackingCard key={data.trip.id} trip={data.trip} onChange={refresh} />
-              </div>
-              <MoneyBar detail={data} onOpen={openMoney} />
-              <TripMap detail={data} />
-              {timeline(`Itinerary · ${data.trip.days} days${sorted && nights > 0 ? " · every night booked" : ""}`)}
-              <Sections detail={data} onChange={refresh} />
-              <Notes trip={data.trip} />
-              {money()}
-            </>
-          )}
-
-          {stage === "during" && (
-            <>
-              <SpendingNow detail={data} />
-              <TodayView detail={data} />
-              <WeatherCard trip={data.trip} />
-              <TripMap detail={data} />
-              {timeline("The whole trip, day by day")}
-              <Sections detail={data} onChange={refresh} />
-              <Notes trip={data.trip} />
-              {money()}
-            </>
-          )}
-
-          {stage === "after" && (
-            <>
-              <SettleUp detail={data} />
-              <TripTotals detail={data} />
-              {money("All expenses")}
-              {timeline("The trip, day by day")}
-            </>
-          )}
-
-          {onAsk && stage !== "after" && (
-            <button
-              type="button"
-              className="btn btn-ghost trip-ask"
-              onClick={() => onAsk(`How's my ${data.trip.destination} trip looking? What's booked, what's missing and what's left in the budget?`)}
-            >
-              <span aria-hidden="true">✨</span> Ask Nexus about this trip
-            </button>
-          )}
           {stage !== "after" && (
-            <button type="button" className="trip-fab-button" aria-label="Add to the trip" onClick={() => setSheet({ preset: null })}>
+            <button type="button" className="trip-fab-button" aria-label={add.label} onClick={add.run}>
               +
             </button>
           )}
@@ -1128,8 +1134,9 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
               trip={data.trip}
               preset={sheet.preset}
               places={data.places || (data.ideas ?? false)}
+              lists={ideaLists(data)}
+              viewing={selectedDay || null}
               onScreenshot={(file) => void screenshot(file)}
-              onForm={form}
               onChanged={refresh}
               onClose={() => setSheet(null)}
             />

@@ -220,7 +220,7 @@ export function ArrangeProvider({ detail, days, on, onChange, children }: {
   }
 
   const gaps = carry ? gapsFor(spots, days, carry.id) : [];
-  const spotName = (spot: Spot) => (spot === PLACES ? "places to visit" : dayName(spot.slice(4)));
+  const spotName = (spot: Spot) => (spot === PLACES ? "Ideas" : dayName(spot.slice(4)));
   const gapName = (g: Gap) => (g.after ? `after ${byId.get(g.after)?.title ?? "that"}, ${spotName(g.spot)}` : `first, ${spotName(g.spot)}`);
 
   function key(b: Booking, event: KeyboardEvent) {
@@ -312,7 +312,7 @@ export function ArrangeProvider({ detail, days, on, onChange, children }: {
     const b = byId.get(String(id).split("@")[0]);
     if (b) return b.title;
     const spot = String(id) as Spot;
-    return spot === PLACES ? "places to visit" : `the day ${dayOf(spot)}`;
+    return spot === PLACES ? "Ideas" : `the day ${dayOf(spot)}`;
   };
   const announcements: Announcements = {
     onDragStart: ({ active }) => `Picked up ${name(active.id)}.`,
@@ -448,7 +448,7 @@ export function MoveForm({ booking, days, spots, onDone }: { booking: Booking; d
               {dayName(d)}
             </option>
           ))}
-          <option value={PLACES}>Places to visit (no day)</option>
+          <option value={PLACES}>Ideas (no day)</option>
         </select>
       </label>
       <label className="field">
@@ -522,9 +522,150 @@ export function DayNotes({ notes, hops = [], onFind }: { notes: DayNote[]; hops?
   );
 }
 
-/** Puts a plan or idea on a day (or back in Ideas). ``viewing``: the day open on Plan. */
-export function DayPickerSheet({ detail, booking, onClose }: { detail: TripDetail; booking: Booking; viewing: string | null; onClose: () => void }) {
+const DAY_MS = 86400000;
+
+/** "Wed 7 Apr": a day's short name, without the comma some languages put in. */
+const shortDay = (iso: string) => dayName(iso).replace(",", "");
+
+export type PickerDay = {
+  iso: string;
+  /** Day 1 is the trip's first day. */
+  number: number;
+  /** "Wed 7 Apr". */
+  name: string;
+  /** The day's own label, else "Free day" when nothing is on it, else empty. */
+  label: string;
+  /** Entries on the day, not counting the one being put there. */
+  plans: number;
+  /** The one being put is on this day now. */
+  here: boolean;
+  /** The entry it would go after: the last on the day. Null on an empty day. */
+  last: string | null;
+};
+
+/** The days a plan or idea can be put on, for the day picker: the day open on Plan
+ * first (if it's a trip day), then every day of the trip, each with its label and how
+ * much is on it. ``here`` is the day it is on now; ``lastIdea`` is where it would go
+ * at the end of Ideas. */
+export function pickerDays(
+  detail: Pick<TripDetail, "trip" | "bookings" | "days" | "places_order">,
+  booking: Pick<Booking, "id" | "scheduled" | "day" | "starts">,
+  viewing: string | null,
+): { viewing: PickerDay | null; days: PickerDay[]; here: PickerDay | null; lastIdea: string | null } {
+  const { trip } = detail;
   const spots = spotsOf(detail);
-  const days = [...spots.keys()].filter((s) => s !== PLACES).map((s) => s.slice(4));
-  return <MoveForm booking={booking} days={days} spots={spots} onDone={onClose} />;
+  const current = booking.scheduled ? (booking.day ?? booking.starts) : null;
+  const days: PickerDay[] = [];
+  const first = Date.parse(trip.start);
+  for (let t = first; t <= Date.parse(trip.end) && days.length < 120; t += DAY_MS) {
+    const iso = new Date(t).toISOString().slice(0, 10);
+    const ids = (spots.get(daySpot(iso)) ?? []).filter((b) => b.id !== booking.id).map((b) => b.id);
+    days.push({
+      iso,
+      number: Math.round((t - first) / DAY_MS) + 1,
+      name: shortDay(iso),
+      label: trip.day_labels?.[iso] || (ids.length === 0 ? "Free day" : ""),
+      plans: ids.length,
+      here: iso === current,
+      last: ids.at(-1) ?? null,
+    });
+  }
+  const ideas = (spots.get(PLACES) ?? []).filter((b) => b.id !== booking.id);
+  return {
+    viewing: days.find((d) => d.iso === viewing) ?? null,
+    days,
+    here: days.find((d) => d.here) ?? null,
+    lastIdea: ideas.at(-1)?.id ?? null,
+  };
+}
+
+/** Puts a plan or idea on a day (or back in Ideas): a sheet from the bottom on phones,
+ * a dialog on desktop. A day takes it at the end. ``viewing``: the day open on Plan. */
+export function DayPickerSheet({ detail, booking, viewing, onClose }: { detail: TripDetail; booking: Booking; viewing: string | null; onClose: () => void }) {
+  const { move } = useArrange(detail);
+  const sheet = useRef<HTMLElement>(null);
+  const picker = useMemo(() => pickerDays(detail, booking, viewing), [detail, booking, viewing]);
+
+  // The first day is focused as the sheet opens, and the focus goes back when it closes.
+  useEffect(() => {
+    const before = document.activeElement;
+    sheet.current?.querySelector<HTMLButtonElement>(".day-option")?.focus();
+    return () => {
+      if (before instanceof HTMLElement) before.focus();
+    };
+  }, []);
+
+  useEffect(() => {
+    const key = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [onClose]);
+
+  // The sheet closes at once; the provider keeps the move going and shows what the
+  // server answers.
+  function put(to: Spot, after: string | null) {
+    void move(booking, to, after);
+    onClose();
+  }
+
+  const option = (d: PickerDay) => (
+    <li key={d.iso}>
+      <button type="button" className="day-option" aria-current={d.here ? "true" : undefined} onClick={() => put(daySpot(d.iso), d.last)}>
+        <span className="day-option-number" aria-hidden="true">
+          {d.number}
+        </span>
+        <span className="wrap">
+          <strong>
+            Day {d.number} · {d.name}
+          </strong>
+          {d.label && <span className="caption">{d.label}</span>}
+        </span>
+        {d.here && <span className="badge badge-out">Here now</span>}
+        {d.plans > 0 && (
+          <span className="caption day-option-count">
+            {d.plans} {d.plans === 1 ? "plan" : "plans"}
+          </span>
+        )}
+      </button>
+    </li>
+  );
+
+  return (
+    <div className="sheet-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <section ref={sheet} className="add-sheet day-picker" role="dialog" aria-modal="true" aria-labelledby="day-picker-title">
+        <div className="add-sheet-head">
+          <h2 id="day-picker-title">Put on a day</h2>
+          <button type="button" className="btn btn-ghost btn-small" onClick={onClose} aria-label="Close">
+            ×
+          </button>
+        </div>
+        <p className="day-picker-for">{booking.title}</p>
+        {picker.viewing && (
+          <section aria-labelledby="day-picker-viewing">
+            <h3 id="day-picker-viewing" className="day-picker-heading">
+              Viewing
+            </h3>
+            <ul className="day-options">{option(picker.viewing)}</ul>
+          </section>
+        )}
+        <section aria-labelledby="day-picker-all">
+          <h3 id="day-picker-all" className="day-picker-heading">
+            All days
+          </h3>
+          <ul className="day-options">{picker.days.map(option)}</ul>
+        </section>
+        {picker.here ? (
+          <button type="button" className="btn" onClick={() => put(PLACES, picker.lastIdea)}>
+            Take it off Day {picker.here.number}
+          </button>
+        ) : (
+          <button type="button" className="btn" onClick={onClose}>
+            Keep it as an idea
+          </button>
+        )}
+      </section>
+    </div>
+  );
 }

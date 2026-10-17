@@ -4,7 +4,7 @@ import { type ReactNode, useEffect, useMemo, useRef, useState, useSyncExternalSt
 import { api, type Booking, type Hop, type LinkedPlace, type TravelMode, type TripDetail } from "../api";
 import { type GMap, type GOverlay, loadMaps, type MapsApi, onMapsAuthFailure } from "../maps";
 import { duration } from "./TripArrange";
-import { sortKey, todayIso } from "./TripBits";
+import { sortKey } from "./TripBits";
 import { useLinkedPlaces } from "./TripPlaces";
 
 /** Each day's colour on the map, repeating after eight days; places to visit with
@@ -136,27 +136,27 @@ export function dayPath(pins: Pin[], day: string): Pin[] {
   return path;
 }
 
-function tripDayList(trip: TripDetail["trip"]): string[] {
-  const days: string[] = [];
-  for (let t = Date.parse(trip.start); t <= Date.parse(trip.end) && days.length < 120; t += DAY_MS) days.push(isoDay(t));
-  return days;
-}
-
 /** The trip on a Google map: every place it knows where to find, coloured by day,
- * with a day's route when one day is picked. Beside the itinerary on wide screens; a
- * card that opens full screen on phones. */
-export function TripMap({ detail }: { detail: TripDetail }) {
+ * with a day's route when a day is shown. The day is the page's: ``day`` null shows
+ * every day, and the button on the map switches between that and ``selected``, the day
+ * open beside it. Beside the itinerary on wide screens; a card that opens full screen
+ * on phones. */
+export function TripMap({ detail, day, selected, onDay }: {
+  detail: TripDetail;
+  /** The day shown, or null for all of them. */
+  day: string | null;
+  /** The day open on the itinerary, which the button on the map goes back to. */
+  selected?: string;
+  onDay?: (iso: string | null) => void;
+}) {
   const linked = useLinkedPlaces();
   const pins = useMemo(() => mapPins(detail, linked), [detail, linked]);
-  const days = useMemo(() => tripDayList(detail.trip), [detail.trip]);
-  const today = todayIso();
-  const [day, setDay] = useState<string>(detail.trip.status === "ongoing" && days.includes(today) ? today : "all");
   const [full, setFull] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [maps, setMaps] = useState<{ api: MapsApi; map: GMap } | null>(null);
   const element = useRef<HTMLDivElement>(null);
   const key = detail.map_key ?? null;
-  const shown = day === "all" ? pins : pins.filter((p) => p.days.includes(day));
+  const shown = useMemo(() => (day === null ? pins : pins.filter((p) => p.days.includes(day))), [pins, day]);
 
   useEffect(() => onMapsAuthFailure(() => setError("Google didn't accept the map's key.")), []);
 
@@ -205,7 +205,7 @@ export function TripMap({ detail }: { detail: TripDetail }) {
       drawn.push(marker);
       bounds.extend({ lat: p.lat, lng: p.lng });
     }
-    if (day !== "all") {
+    if (day !== null) {
       const path = dayPath(pins, day);
       if (path.length > 1) {
         drawn.push(
@@ -234,39 +234,33 @@ export function TripMap({ detail }: { detail: TripDetail }) {
     <section className={`card trip-map${full ? " trip-map-full" : ""}`} aria-labelledby="trip-map-title">
       <div className="card-head">
         <h2 id="trip-map-title">Map</h2>
-        {pins.length > 0 && (
-          <button type="button" className="btn btn-ghost btn-small trip-map-toggle" onClick={() => setFull(!full)} aria-pressed={full}>
-            {full ? "Close map" : "Full screen"}
-          </button>
-        )}
+        <span className="trip-map-buttons">
+          {pins.length > 0 && onDay && (day !== null || selected) && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-small trip-map-scope"
+              onClick={() => onDay(day === null ? (selected ?? null) : null)}
+            >
+              {day === null ? "This day" : "All days"}
+            </button>
+          )}
+          {pins.length > 0 && (
+            <button type="button" className="btn btn-ghost btn-small trip-map-toggle" onClick={() => setFull(!full)} aria-pressed={full}>
+              {full ? "Close map" : "Full screen"}
+            </button>
+          )}
+        </span>
       </div>
       {pins.length === 0 ? (
         <p className="caption">Places linked to Google Maps show here, coloured by day.</p>
       ) : (
         <>
-          <nav className="day-strip trip-map-days" aria-label="Days on the map">
-            <button type="button" className="day-pill" aria-pressed={day === "all"} onClick={() => setDay("all")}>
-              All
-            </button>
-            {days.map((d) => (
-              <button
-                key={d}
-                type="button"
-                className="day-pill"
-                aria-pressed={day === d}
-                onClick={() => setDay(d)}
-                style={{ borderColor: dayColor(detail.trip, d) }}
-              >
-                {label(d)}
-              </button>
-            ))}
-          </nav>
           {error ? (
             <p className="error-text" role="alert">
               {error}
             </p>
           ) : (
-            <div ref={element} className="trip-map-canvas" role="img" aria-label={`Map of ${detail.trip.destination}${day === "all" ? "" : `, ${label(day)}`}`} />
+            <div ref={element} className="trip-map-canvas" role="img" aria-label={`Map of ${detail.trip.destination}${day === null ? "" : `, ${label(day)}`}`} />
           )}
           <ul className="sr-only" aria-label="On the map">
             {shown.map((p) => (
@@ -277,7 +271,7 @@ export function TripMap({ detail }: { detail: TripDetail }) {
               </li>
             ))}
           </ul>
-          {day !== "all" && shown.length === 0 && <p className="caption">Nothing on the map that day.</p>}
+          {day !== null && shown.length === 0 && <p className="caption">Nothing on the map that day.</p>}
         </>
       )}
     </section>

@@ -1,8 +1,14 @@
-import { useState } from "react";
+import { type FormEvent, useState } from "react";
 
-import type { Money, TripDetail } from "../api";
+import { api, type Money, type Trip, type TripDetail } from "../api";
 import { formatMoney } from "../format";
+import { CountUp } from "../motion";
 import { day } from "./TripBits";
+import { tripBody } from "./TripEntry";
+import { stageOf } from "./TripStage";
+
+const amount = (m: Money | null) => (m ? Number(m.amount) : 0);
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 export function Figure({ label, value, note }: { label: string; value: Money | null; note?: string }) {
   if (!value) return null;
@@ -84,7 +90,7 @@ export function Spending({ detail }: { detail: TripDetail }) {
   return (
     <section className="card" aria-labelledby="trip-spending">
       <div className="card-head">
-        <h2 id="trip-spending">Trip spending</h2>
+        <h2 id="trip-spending">Where it goes</h2>
         <span className="caption">Your share, in {s.spent.currency} at each day's rate</span>
       </div>
       {trip.budget && s.percent !== null && (
@@ -238,63 +244,294 @@ export function SettleUp({ detail }: { detail: TripDetail }) {
   );
 }
 
-/** Everything about the trip's money, folded away until it's wanted. */
-export function MoneyDetails({ detail, open, onToggle, onTakeOff, title = "Money details" }: {
-  detail: TripDetail;
-  open: boolean;
-  onToggle: (open: boolean) => void;
-  onTakeOff: (transactionId: string) => void;
-  title?: string;
-}) {
+/** Every expense on the trip, each with a way to take it off. */
+export function Expenses({ detail, onTakeOff }: { detail: TripDetail; onTakeOff: (transactionId: string) => void }) {
   return (
-    <details id="trip-money-details" className="card section" open={open} onToggle={(e) => onToggle((e.currentTarget as HTMLDetailsElement).open)}>
-      <summary>
-        <h2>{title}</h2>
-        <span className="caption">{detail.items.length ? `${detail.items.length} expenses` : "Spending, set-aside, settle-up"}</span>
-      </summary>
-      <div className="money-details">
-        <Spending detail={detail} />
-        <PlannedVsActual detail={detail} />
-        <SetAside detail={detail} />
-        {detail.trip.status !== "finished" && <SettleUp detail={detail} />}
-        <section className="card" aria-labelledby="trip-expenses">
-          <div className="card-head">
-            <h2 id="trip-expenses">Expenses</h2>
-            <span className="caption">To count something else, like flights paid earlier, tell Nexus "add it to {detail.trip.destination}"</span>
-          </div>
-          {detail.items.length === 0 ? (
-            <p className="state">None yet.</p>
-          ) : (
-            <ul className="feed" aria-label="Trip expenses">
-              {detail.items.map((i) => (
-                <li key={i.transaction_id} className="run-row">
-                  <span className="wrap">
-                    {i.counterparty ?? "Expense"}
-                    <br />
-                    <span className="caption">
-                      {day(i.day)}
-                      {i.category && ` · ${i.category}`}
-                      {i.linked && " · added by hand"}
-                    </span>
-                  </span>
-                  <span className="num">
-                    {formatMoney(i.amount)}
-                    {i.home && i.home.currency !== i.amount.currency && <span className="caption"> ({formatMoney(i.home)})</span>}
-                  </span>
-                  <button type="button" className="btn btn-small" onClick={() => onTakeOff(i.transaction_id)} aria-label={`Take ${i.counterparty ?? "this expense"} off the trip`}>
-                    Take off
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+    <section className="card" aria-labelledby="trip-expenses">
+      <div className="card-head">
+        <h2 id="trip-expenses">Expenses</h2>
+        <span className="caption">To count something else, like flights paid earlier, tell Nexus "add it to {detail.trip.destination}"</span>
       </div>
-    </details>
+      {detail.items.length === 0 ? (
+        <p className="state">None yet.</p>
+      ) : (
+        <ul className="feed money-list" aria-label="Trip expenses">
+          {detail.items.map((i) => (
+            <li key={i.transaction_id} className="run-row">
+              <span className="wrap">
+                {i.counterparty ?? "Expense"}
+                <br />
+                <span className="caption">
+                  {day(i.day)}
+                  {i.category && ` · ${i.category}`}
+                  {i.linked && " · added by hand"}
+                </span>
+              </span>
+              <span className="num">
+                {formatMoney(i.amount)}
+                {i.home && i.home.currency !== i.amount.currency && <span className="caption"> ({formatMoney(i.home)})</span>}
+              </span>
+              <button type="button" className="btn btn-small" onClick={() => onTakeOff(i.transaction_id)} aria-label={`Take ${i.counterparty ?? "this expense"} off the trip`}>
+                Take off
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
-/** The Money tab. ``adding``: the tab's + was pressed (a planned cost). */
-export function MoneyTab({ detail }: { detail: TripDetail; onChange: () => void; adding: boolean; onAddDone: () => void }) {
-  return <MoneyDetails detail={detail} open onToggle={() => undefined} onTakeOff={() => undefined} />;
+/** The costs planned for the trip, by name, in the home currency. A planned cost is part
+ * of the trip itself, so changing one resends the trip as the trip form would. */
+async function savePlanned(trip: Trip, planned: Record<string, string>) {
+  await api(`/travel/trips/${trip.id}`, { method: "PUT", body: tripBody(trip, { planned }) });
+}
+
+/** The + on the Money tab: one planned cost, a name and an amount. */
+function PlannedForm({ trip, currency, onChange, onDone }: { trip: Trip; currency: string; onChange: () => void; onDone: () => void }) {
+  const [name, setName] = useState("");
+  const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const ready = name.trim() !== "" && Number(value) > 0;
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!ready || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await savePlanned(trip, { ...tripBody(trip).planned, [name.trim()]: String(Number(value)) });
+      onChange();
+      onDone();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't save that");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="card" aria-labelledby="planned-add">
+      <div className="card-head">
+        <h2 id="planned-add">Add a planned cost</h2>
+        <span className="caption">Something you expect to pay for, like flights or a tour</span>
+      </div>
+      <form className="budget-add planned-form" onSubmit={(e) => void submit(e)} aria-label="Add a planned cost">
+        <label className="field">
+          Name
+          <input className="input" value={name} maxLength={60} autoFocus onChange={(e) => setName(e.target.value)} placeholder="Flights, Tour, Visa…" />
+        </label>
+        <label className="field">
+          Amount ({currency})
+          <input className="input" value={value} inputMode="decimal" onChange={(e) => setValue(e.target.value)} placeholder="0" />
+        </label>
+        <button type="submit" className="btn btn-primary" disabled={!ready || busy}>
+          {busy ? "Saving…" : "Save"}
+        </button>
+        <button type="button" className="btn" onClick={onDone} disabled={busy}>
+          Cancel
+        </button>
+      </form>
+      {error && (
+        <p className="error-text" role="alert">
+          {error}
+        </p>
+      )}
+    </section>
+  );
+}
+
+/** What's planned to be paid for, each with a way to drop it. Nothing when there are none. */
+function PlannedCosts({ trip, onChange }: { trip: Trip; onChange: () => void }) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const entries = Object.entries(trip.planned);
+  if (entries.length === 0) return null;
+
+  async function remove(name: string) {
+    const { [name]: _gone, ...rest } = tripBody(trip).planned;
+    setBusy(name);
+    setError(null);
+    try {
+      await savePlanned(trip, rest);
+      onChange();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't remove that");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <section className="card" aria-labelledby="planned-costs">
+      <div className="card-head">
+        <h2 id="planned-costs">Planned costs</h2>
+        <span className="caption">Counted against the budget once they're spent</span>
+      </div>
+      <ul className="feed money-list" aria-label="Planned costs">
+        {entries.map(([name, cost]) => (
+          <li key={name} className="run-row">
+            <span className="wrap">{name}</span>
+            <span className="num">{formatMoney(cost)}</span>
+            <button type="button" className="btn btn-small" disabled={busy !== null} onClick={() => void remove(name)} aria-label={`Remove planned cost ${name}`}>
+              Remove
+            </button>
+          </li>
+        ))}
+      </ul>
+      {error && (
+        <p className="error-text" role="alert">
+          {error}
+        </p>
+      )}
+    </section>
+  );
+}
+
+/** The Money tab: the summary for where the trip is, then everything behind it, unfolded.
+ * ``adding``: the tab's + was pressed (a planned cost). */
+export function MoneyTab({ detail, onChange, adding, onAddDone }: { detail: TripDetail; onChange: () => void; adding: boolean; onAddDone: () => void }) {
+  const stage = stageOf(detail);
+  const [error, setError] = useState<string | null>(null);
+
+  async function takeOff(transactionId: string) {
+    setError(null);
+    try {
+      await api(`/travel/trips/${detail.trip.id}/expenses/${transactionId}`, { method: "DELETE" });
+      onChange();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't take that off");
+    }
+  }
+
+  return (
+    <>
+      {adding && <PlannedForm trip={detail.trip} currency={detail.spending.spent.currency} onChange={onChange} onDone={onAddDone} />}
+      {stage === "during" ? <SpendingNow detail={detail} /> : stage === "after" ? <TripTotals detail={detail} /> : <MoneyBar detail={detail} />}
+      {stage === "after" && <SettleUp detail={detail} />}
+      <Spending detail={detail} />
+      <PlannedVsActual detail={detail} />
+      <PlannedCosts trip={detail.trip} onChange={onChange} />
+      <SetAside detail={detail} />
+      {stage !== "after" && <SettleUp detail={detail} />}
+      <Expenses detail={detail} onTakeOff={(t) => void takeOff(t)} />
+      {error && (
+        <p className="error-text" role="alert">
+          {error}
+        </p>
+      )}
+    </>
+  );
+}
+
+/** Before the trip: what's booked and spent against the budget, in one bar.
+ * Without ``onOpen`` it has no Details button (the Money tab is already the details). */
+export function MoneyBar({ detail, onOpen }: { detail: TripDetail; onOpen?: () => void }) {
+  const budget = detail.trip.budget;
+  const committed = amount(detail.spending.spent) + amount(detail.booked_unlogged);
+  const currency = detail.spending.spent.currency;
+  const percent = budget ? Math.min(100, Math.round((committed / Number(budget.amount)) * 100)) : 0;
+  return (
+    <section className="card money-bar" aria-labelledby="money-bar">
+      <div className="money-bar-head">
+        <h2 id="money-bar">
+          Money
+        </h2>
+        {onOpen && (
+          <button type="button" className="btn btn-ghost btn-small" onClick={onOpen}>
+            Details
+          </button>
+        )}
+      </div>
+      <p className="money-bar-figure">
+        <CountUp value={formatMoney({ amount: String(committed), currency })} />
+        <span className="caption"> {budget ? `of ${formatMoney(budget)}` : "booked and spent · no budget yet"}</span>
+      </p>
+      {budget && (
+        <div className={`meter${committed > Number(budget.amount) ? " meter-over" : ""}`} aria-hidden="true">
+          <span style={{ width: `${percent}%` }} />
+        </div>
+      )}
+      <p className="caption">
+        {detail.booked ? `Booked ${formatMoney(detail.booked)}` : "Nothing booked yet"}
+        {amount(detail.spending.spent) > 0 && ` · spent ${formatMoney(detail.spending.spent)}`}
+      </p>
+    </section>
+  );
+}
+
+/** While the trip is on: spent against the budget, what's left each day, and what's
+ * been spent in the trip's own currency (logged on Telegram). */
+export function SpendingNow({ detail }: { detail: TripDetail }) {
+  const s = detail.spending;
+  const t = detail.trip;
+  const budget = t.budget;
+  const local = detail.items.filter((i) => i.amount.currency === t.currency).reduce((sum, i) => sum + Number(i.amount.amount), 0);
+  const daysLeft = Math.max(t.days - (t.day_number ?? 1) + 1, 1);
+  const over = (s.percent ?? 0) > 100;
+  return (
+    <section className="card spending-now" aria-labelledby="spending-now">
+      <h2 id="spending-now">
+        Spent so far
+      </h2>
+      <p className="money-bar-figure">
+        <CountUp value={formatMoney(s.spent)} />
+        {budget && <span className="caption"> of {formatMoney(budget)}</span>}
+      </p>
+      {budget && (
+        <div className={`meter${over ? " meter-over" : ""}`} aria-hidden="true">
+          <span style={{ width: `${Math.min(s.percent ?? 0, 100)}%` }} />
+        </div>
+      )}
+      <p className="caption">
+        {s.per_day_left
+          ? `${formatMoney(s.per_day_left)} a day left for ${plural(daysLeft, "day")}`
+          : budget
+            ? over
+              ? "Over budget"
+              : "On budget"
+            : "No budget set"}
+        {local > 0 && ` · ${formatMoney({ amount: String(local), currency: t.currency })} spent in ${t.currency}`}
+        {s.today && amount(s.today) > 0 && ` · ${formatMoney(s.today)} today`}
+      </p>
+      <p className="caption">Log what you spend on Telegram: "ramen 1200 yen".</p>
+    </section>
+  );
+}
+
+/** After the trip: the total against the budget, by category. */
+export function TripTotals({ detail }: { detail: TripDetail }) {
+  const s = detail.spending;
+  const budget = detail.trip.budget;
+  const total = amount(s.spent);
+  const diff = budget ? Math.round(((total - Number(budget.amount)) / Number(budget.amount)) * 100) : null;
+  const cats = [...s.categories].sort((a, b) => amount(b.spent) - amount(a.spent));
+  return (
+    <section className="card trip-totals" aria-labelledby="trip-totals">
+      <h2 id="trip-totals">
+        The trip in numbers
+      </h2>
+      <p className="money-bar-figure">
+        <CountUp value={formatMoney(s.spent)} />
+        {budget && (
+          <span className="caption">
+            {" "}
+            of {formatMoney(budget)}
+            {diff !== null && diff !== 0 && ` · ${Math.abs(diff)}% ${diff > 0 ? "over" : "under"}`}
+          </span>
+        )}
+      </p>
+      {cats.length > 0 && (
+        <ul className="totals-list" aria-label="By category">
+          {cats.map((c) => (
+            <li key={c.name}>
+              <span>{c.name}</span>
+              <span className="num">{formatMoney(c.spent)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
 }

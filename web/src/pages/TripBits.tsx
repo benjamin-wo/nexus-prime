@@ -1,18 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
-import { type CSSProperties, type ReactNode, useState } from "react";
+import { type CSSProperties, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { api, type Booking, type Me, type Trip, type TripDetail, type TripPhoto } from "../api";
+import { api, type Booking, type Me, type Trip, type TripPhoto } from "../api";
 import { formatMoney, formatShortDate } from "../format";
 import { PlaceLine } from "./TripPlaces";
 
 export const day = (iso: string) => formatShortDate(iso, "UTC");
-const DAY_MS = 86400000;
 
 /** Today in the browser's own time zone, as YYYY-MM-DD. */
 export const todayIso = () => new Date().toLocaleDateString("en-CA");
-
-const daysBetween = (from: string, to: string) => Math.round((Date.parse(to) - Date.parse(from)) / DAY_MS);
 
 /** A gradient for trips without a photo yet, the same for the same place. */
 export function coverGradient(destination: string): string {
@@ -164,104 +161,6 @@ export function legTimes(departs: string | null, arrives: string | null): string
   if (!arrives) return `departs ${time(departs)}`;
   const nextDay = arrives.slice(0, 10) !== departs.slice(0, 10);
   return `${time(departs)} → ${time(arrives)}${nextDay ? ` (${day(arrives.slice(0, 10))})` : ""}`;
-}
-
-function untilLabel(iso: string, today: string): string {
-  const n = daysBetween(today, iso);
-  if (n <= 0) return "Today";
-  if (n === 1) return "Tomorrow";
-  return `In ${n} days`;
-}
-
-const KIND_WORD: Record<Booking["kind"], string> = {
-  flight: "Flight",
-  rail: "Train",
-  hotel: "Check in",
-  activity: "Plan",
-};
-
-function CopyRef({ reference }: { reference: string }) {
-  const [copied, setCopied] = useState(false);
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(reference);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
-    } catch {
-      setCopied(false);
-    }
-  }
-  return (
-    <div className="pass-ref">
-      <span className="caption">Ref</span>
-      <span className="num">{reference}</span>
-      <button type="button" className="btn btn-small" onClick={() => void copy()} aria-label={`Copy booking reference ${reference}`}>
-        {copied ? "Copied" : "Copy"}
-      </button>
-    </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="pass-field">
-      <span className="caption">{label}</span>
-      <span>{children}</span>
-    </div>
-  );
-}
-
-/** What comes next on the trip, as a boarding pass for a flight or train. */
-export function NextUp({ detail }: { detail: TripDetail }) {
-  const today = todayIso();
-  const next = detail.bookings.filter((b) => b.scheduled && b.starts >= today).sort((a, b) => sortKey(a).localeCompare(sortKey(b)))[0];
-  if (!next || detail.trip.status === "finished") return null;
-  const word = KIND_WORD[next.kind];
-  const first = next.segments[0];
-  const last = next.segments[next.segments.length - 1];
-  const travel = (next.kind === "flight" || next.kind === "rail") && first && last;
-  return (
-    <section className="next-pass" aria-label={`Next: ${word.toLowerCase()}`}>
-      <div className="next-pass-band">
-        <span>Next · {word}</span>
-        <span>{untilLabel(next.starts, today)}</span>
-      </div>
-      <div className="next-pass-body">
-        {travel ? (
-          <div className="pass-route">
-            <div>
-              <span className="pass-code">{first.origin ?? "?"}</span>
-              <span className="pass-time num">{first.departs?.slice(11, 16) ?? ""}</span>
-            </div>
-            <div className="pass-line" aria-hidden="true">
-              <span />
-              <span className="caption">
-                {next.segments.length === 1 ? "direct" : `${next.segments.length - 1} stop${next.segments.length > 2 ? "s" : ""}`}
-              </span>
-            </div>
-            <div className="pass-end">
-              <span className="pass-code">{last.destination ?? "?"}</span>
-              <span className="pass-time num">{last.arrives?.slice(11, 16) ?? ""}</span>
-            </div>
-          </div>
-        ) : (
-          <div className="pass-title">
-            <strong>{next.kind === "hotel" ? (next.hotel ?? next.title) : next.title}</strong>
-            {next.address && <span className="caption">{next.address}</span>}
-          </div>
-        )}
-        <div className="pass-fields">
-          {travel && first.number && <Field label={next.kind === "rail" ? "Train" : "Flight"}>{first.number}</Field>}
-          <Field label="Date">{day(next.starts)}</Field>
-          {next.at && <Field label="Time">{next.at}</Field>}
-          {next.kind === "hotel" && next.check_out && <Field label="Check out">{day(next.check_out)}</Field>}
-          {next.booked_via && <Field label="Booked via">{next.booked_via}</Field>}
-          {!next.booked_via && next.provider && <Field label="With">{next.provider}</Field>}
-        </div>
-        {next.reference && <CopyRef reference={next.reference} />}
-      </div>
-    </section>
-  );
 }
 
 export function useHome(): string {

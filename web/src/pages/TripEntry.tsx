@@ -2,8 +2,9 @@ import { type FormEvent, useState } from "react";
 
 import { api, type Booking, type Trip } from "../api";
 
-/** What the editor adds: a booking kind, or a place to visit (a plan without a day). */
-export type EntryKind = Booking["kind"] | "place";
+/** What the editor adds: a booking kind, a ticket (a booked plan), or an idea (a plan
+ * without a day, "place" here and in the API's own words). */
+export type EntryKind = Booking["kind"] | "place" | "ticket";
 
 export type EntryForm = {
   kind: EntryKind;
@@ -39,6 +40,7 @@ export const EMPTY: EntryForm = {
 export function formOf(b: Booking): EntryForm {
   const leg = b.segments[0];
   return {
+    // A ticket is a booked plan: it comes back as a plan, with its booking details open.
     kind: b.kind === "activity" && !b.scheduled ? "place" : b.kind,
     category: b.category ?? "",
     name: b.kind === "hotel" ? (b.hotel ?? "") : (b.name ?? ""),
@@ -69,11 +71,12 @@ export function bodyOf(f: EntryForm, home: string) {
     kind: f.kind, note: blank(f.note), reference: blank(f.reference), booked_via: blank(f.bookedVia), link: blank(f.link),
     cost: blank(f.cost), currency: f.cost.trim() ? f.currency.trim() || home : null,
   };
-  if (f.kind === "activity") {
+  // A ticket is saved as a plan on its day and time; the API has no kind for it.
+  if (f.kind === "activity" || f.kind === "ticket") {
     const at = blank(f.at);
-    return { ...base, name: blank(f.name), day: blank(f.day), at, ends_at: at ? blank(f.ends) : null, address: blank(f.address), category: blank(f.category) };
+    return { ...base, kind: "activity", name: blank(f.name), day: blank(f.day), at, ends_at: at ? blank(f.ends) : null, address: blank(f.address), category: blank(f.category) };
   }
-  // A place given a day goes onto the itinerary as a plan on that day.
+  // An idea has no day; it goes onto the itinerary when it is moved to one.
   if (f.kind === "place") return { ...base, kind: "activity", name: blank(f.name), day: blank(f.day), at: null, address: blank(f.address), category: blank(f.category), list_name: blank(f.list) };
   if (f.kind === "hotel") return { ...base, hotel: blank(f.name), check_in: blank(f.day), check_out: blank(f.until), address: blank(f.address) };
   return {
@@ -83,38 +86,76 @@ export function bodyOf(f: EntryForm, home: string) {
   };
 }
 
-/** Add or change an itinerary entry by hand: a plan, a flight, a hotel or a train. */
-export function EntryEditor({ trip, home, entry, preset, lists = [], onDone }: {
+/** Whether the form holds any of what "More details" holds, so it opens already showing it. */
+export function hasExtras(f: EntryForm): boolean {
+  const legs = f.kind === "flight" || f.kind === "rail";
+  return [legs ? f.provider : f.address, f.link, f.reference, f.bookedVia, f.note, f.cost].some((v) => v.trim() !== "");
+}
+
+/** Each date of the trip, first to last. */
+export function tripDays(trip: Pick<Trip, "start" | "end">): string[] {
+  const first = new Date(`${trip.start}T00:00:00Z`).getTime();
+  const days = [trip.start];
+  if (Number.isNaN(first)) return days;
+  for (let i = 1; i < 400; i += 1) {
+    const day = new Date(first + i * 86_400_000).toISOString().slice(0, 10);
+    if (day > trip.end) break;
+    days.push(day);
+  }
+  return days;
+}
+
+/** "Sun 4 Apr". */
+export function dayName(day: string): string {
+  const parts = new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).formatToParts(new Date(`${day}T00:00:00Z`));
+  const part = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${part("weekday")} ${part("day")} ${part("month")}`;
+}
+
+const BOOKINGS: { kind: EntryKind; label: string }[] = [
+  { kind: "flight", label: "Flight" },
+  { kind: "hotel", label: "Stay" },
+  { kind: "rail", label: "Train" },
+  { kind: "ticket", label: "Ticket" },
+];
+
+/** Add or change an itinerary entry by hand, with only the few fields its kind needs and
+ * the rest under "More details": a booking, a plan or an idea. */
+export function EntryEditor({ trip, home, entry, preset, lists = [], onDone, onMove }: {
   trip: Trip;
   home: string;
   entry?: Booking;
   preset?: { kind: EntryKind; day?: string };
-  /** The trip's lists so far, offered as a place's list is typed. */
+  /** The trip's lists so far, offered as an idea's list is chosen. */
   lists?: string[];
   onDone: (saved: boolean) => void;
-  /** Opens the day picker for this entry (editing only). */
+  /** Opens the day picker for this entry (editing a plan or idea only). */
   onMove?: () => void;
 }) {
   const tripId = trip.id;
   // New entries start on the trip's dates (or the day they're added from), so the date
   // pickers open on the right month.
   const start = preset?.day ?? trip.start;
-  const [f, setF] = useState<EntryForm>(
-    entry
-      ? formOf(entry)
-      : { ...EMPTY, kind: preset?.kind ?? "activity", day: preset?.kind === "place" ? "" : start, until: trip.end, departs: `${start}T09:00` },
-  );
+  const [f, setF] = useState<EntryForm>(() => {
+    if (entry) return formOf(entry);
+    const kind = preset?.kind ?? "activity";
+    return { ...EMPTY, kind, day: kind === "place" ? "" : start, until: trip.end < start ? start : trip.end, departs: `${start}T09:00` };
+  });
+  const [more, setMore] = useState(() => (entry ? hasExtras(formOf(entry)) : false));
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const set = (key: keyof EntryForm) => (e: { target: { value: string } }) => {
     const next = { ...f, [key]: e.target.value };
     // A check-in moved past the check-out takes the check-out along.
     if (key === "day" && next.kind === "hotel" && next.until && next.day > next.until) next.until = next.day;
     setF(next);
   };
+  const pick = (kind: EntryKind) => setF({ ...f, kind, until: kind === "hotel" && f.until && f.day > f.until ? f.day : f.until });
 
   async function save(event: FormEvent) {
     event.preventDefault();
     setError(null);
+    setBusy(true);
     try {
       const body = bodyOf(f, home);
       if (entry) await api(`/travel/bookings/${entry.id}`, { method: "PUT", body });
@@ -122,52 +163,104 @@ export function EntryEditor({ trip, home, entry, preset, lists = [], onDone }: {
       onDone(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't save that");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove() {
+    if (!entry || !window.confirm(`Take ${entry.title} off the trip?`)) return;
+    setError(null);
+    setBusy(true);
+    try {
+      await api(`/travel/bookings/${entry.id}`, { method: "DELETE" });
+      onDone(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't remove that");
+    } finally {
+      setBusy(false);
     }
   }
 
   const legs = f.kind === "flight" || f.kind === "rail";
+  const booking = legs || f.kind === "hotel" || f.kind === "ticket";
+  const planned = f.kind === "activity" || f.kind === "ticket";
+  const days = tripDays(trip);
   return (
     <form className="trip-form" onSubmit={save} aria-label={entry ? "Change the entry" : "Add to the itinerary"}>
-      {!entry && (
-        <label className="field">
-          What
-          <select className="input" value={f.kind} onChange={set("kind")}>
-            <option value="activity">Plan on a day (dinner, tour, day trip)</option>
-            <option value="place">Place to visit, no day yet</option>
-            <option value="flight">Flight</option>
-            <option value="hotel">Hotel</option>
-            <option value="rail">Train</option>
-          </select>
-        </label>
-      )}
-      {f.kind === "activity" && (
-        <div className="trip-form-row">
-          <label className="field">
-            Name
-            <input className="input" value={f.name} maxLength={120} onChange={set("name")} required />
-          </label>
-          <label className="field">
-            Day
-            <input className="input" type="date" value={f.day} onChange={set("day")} required />
-          </label>
-          <label className="field">
-            Time
-            <input className="input" type="time" value={f.at} onChange={set("at")} />
-          </label>
-          <label className="field">
-            Until
-            <input className="input" type="time" value={f.ends} min={f.at || undefined} disabled={!f.at} onChange={set("ends")} />
-          </label>
+      {!entry && booking && (
+        <div className="chips" role="group" aria-label="What kind of booking">
+          {BOOKINGS.map((b) => (
+            <button key={b.kind} type="button" className="pick" aria-pressed={f.kind === b.kind} onClick={() => pick(b.kind)}>
+              {b.label}
+            </button>
+          ))}
         </div>
       )}
+      {planned && (
+        <>
+          <label className="field">
+            Name
+            <input className="input" value={f.name} maxLength={120} onChange={set("name")} placeholder={f.kind === "ticket" ? "Museum entry, concert…" : "Dinner, tour, day trip…"} required />
+          </label>
+          <div className="trip-form-row">
+            <label className="field">
+              Day
+              <select className="input" value={f.day} onChange={set("day")} required>
+                {!f.day && (
+                  <option value="" disabled>
+                    Pick a day
+                  </option>
+                )}
+                {f.day && !days.includes(f.day) && <option value={f.day}>{dayName(f.day)} (outside the trip)</option>}
+                {days.map((d, i) => (
+                  <option key={d} value={d}>
+                    Day {i + 1} · {dayName(d)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              Time
+              <input className="input" type="time" value={f.at} onChange={set("at")} />
+            </label>
+            {f.kind === "activity" && f.at && (
+              <label className="field">
+                Until
+                <input className="input" type="time" value={f.ends} min={f.at} onChange={set("ends")} />
+              </label>
+            )}
+          </div>
+        </>
+      )}
       {f.kind === "place" && (
-        <div className="trip-form-row">
+        <>
           <label className="field">
             Name
             <input className="input" value={f.name} maxLength={120} onChange={set("name")} required />
           </label>
+          <fieldset className="field-group">
+            <legend>List</legend>
+            {lists.length > 0 && (
+              <div className="chips">
+                {lists.map((name) => (
+                  <button key={name} type="button" className="pick" aria-pressed={f.list === name} onClick={() => setF({ ...f, list: f.list === name ? "" : name })}>
+                    {name}
+                  </button>
+                ))}
+              </div>
+            )}
+            <input
+              className="input"
+              aria-label="New list"
+              value={lists.includes(f.list) ? "" : f.list}
+              maxLength={30}
+              onChange={set("list")}
+              placeholder="New list…"
+            />
+          </fieldset>
           <label className="field">
-            Kind
+            Kind (optional)
             <input className="input" value={f.category} maxLength={30} list="place-kinds" onChange={set("category")} placeholder="Food, Sight…" />
             <datalist id="place-kinds">
               {PLACE_KINDS.map((k) => (
@@ -175,38 +268,25 @@ export function EntryEditor({ trip, home, entry, preset, lists = [], onDone }: {
               ))}
             </datalist>
           </label>
-          <label className="field">
-            List
-            <input className="input" value={f.list} maxLength={30} list="place-lists" onChange={set("list")} placeholder="Eat, Must see…" />
-            <datalist id="place-lists">
-              {lists.map((k) => (
-                <option key={k} value={k} />
-              ))}
-            </datalist>
-          </label>
-          {entry && (
-            <label className="field">
-              Day (puts it on the itinerary)
-              <input className="input" type="date" value={f.day} onChange={set("day")} />
-            </label>
-          )}
-        </div>
+        </>
       )}
       {f.kind === "hotel" && (
-        <div className="trip-form-row">
+        <>
           <label className="field">
-            Hotel
+            Name
             <input className="input" value={f.name} maxLength={120} onChange={set("name")} required />
           </label>
-          <label className="field">
-            Check in
-            <input className="input" type="date" value={f.day} onChange={set("day")} required />
-          </label>
-          <label className="field">
-            Check out
-            <input className="input" type="date" value={f.until} min={f.day || undefined} onChange={set("until")} />
-          </label>
-        </div>
+          <div className="trip-form-row">
+            <label className="field">
+              Check in
+              <input className="input" type="date" value={f.day} onChange={set("day")} required />
+            </label>
+            <label className="field">
+              Check out
+              <input className="input" type="date" value={f.until} min={f.day || undefined} onChange={set("until")} />
+            </label>
+          </div>
+        </>
       )}
       {legs && (
         <>
@@ -233,59 +313,75 @@ export function EntryEditor({ trip, home, entry, preset, lists = [], onDone }: {
               Arrives (local)
               <input className="input" type="datetime-local" value={f.arrives} onChange={set("arrives")} />
             </label>
+          </div>
+        </>
+      )}
+      <details className="more" open={more} onToggle={(e) => setMore(e.currentTarget.open)}>
+        <summary>More details</summary>
+        <div className="more-body">
+          {legs ? (
             <label className="field">
               {f.kind === "flight" ? "Airline" : "Operator"}
               <input className="input" value={f.provider} maxLength={80} onChange={set("provider")} />
             </label>
+          ) : (
+            <label className="field">
+              {f.kind === "hotel" ? "Address" : "Where"}
+              <input className="input" value={f.address} maxLength={200} onChange={set("address")} />
+            </label>
+          )}
+          <label className="field">
+            Link
+            <input className="input" type="url" inputMode="url" value={f.link} maxLength={500} onChange={set("link")} placeholder="https://… to book or read more" />
+          </label>
+          <div className="trip-form-row">
+            <label className="field">
+              Booking reference
+              <input className="input" value={f.reference} maxLength={40} onChange={set("reference")} placeholder="Optional" />
+            </label>
+            <label className="field">
+              Booked on
+              <input className="input" value={f.bookedVia} maxLength={80} onChange={set("bookedVia")} placeholder="Agoda, the airline…" />
+            </label>
           </div>
-        </>
-      )}
-      {(f.kind === "activity" || f.kind === "hotel" || f.kind === "place") && (
-        <label className="field">
-          {f.kind === "hotel" ? "Address" : "Where"}
-          <input className="input" value={f.address} maxLength={200} onChange={set("address")} />
-        </label>
-      )}
-      <label className="field">
-        Link
-        <input className="input" type="url" inputMode="url" value={f.link} maxLength={500} onChange={set("link")} placeholder="https://… to book or read more" />
-      </label>
-      <div className="trip-form-row">
-        <label className="field">
-          Booking reference
-          <input className="input" value={f.reference} maxLength={40} onChange={set("reference")} placeholder="Optional" />
-        </label>
-        <label className="field">
-          Booked on
-          <input className="input" value={f.bookedVia} maxLength={80} onChange={set("bookedVia")} placeholder="Agoda, the airline…" />
-        </label>
-      </div>
-      <div className="trip-form-row">
-        <label className="field">
-          Note
-          <input className="input" value={f.note} maxLength={300} onChange={set("note")} placeholder="Seat, what to bring…" />
-        </label>
-        <label className="field">
-          Cost
-          <input className="input" inputMode="decimal" value={f.cost} onChange={set("cost")} placeholder="Optional" />
-        </label>
-        <label className="field">
-          Currency
-          <input className="input" value={f.currency} maxLength={3} onChange={set("currency")} placeholder={home} />
-        </label>
-      </div>
+          <label className="field">
+            Note
+            <input className="input" value={f.note} maxLength={300} onChange={set("note")} placeholder="Seat, what to bring…" />
+          </label>
+          <div className="trip-form-row">
+            <label className="field">
+              Cost
+              <input className="input" inputMode="decimal" value={f.cost} onChange={set("cost")} placeholder="Optional" />
+            </label>
+            <label className="field">
+              Currency
+              <input className="input" value={f.currency} maxLength={3} onChange={set("currency")} placeholder={home} />
+            </label>
+          </div>
+        </div>
+      </details>
       {error && (
         <p className="error-text" role="alert">
           {error}
         </p>
       )}
       <div className="actions">
-        <button type="submit" className="btn btn-primary">
+        <button type="submit" className="btn btn-primary" disabled={busy}>
           {entry ? "Save" : "Add"}
         </button>
         <button type="button" className="btn" onClick={() => onDone(false)}>
           Cancel
         </button>
+        {entry && entry.kind === "activity" && onMove && (
+          <button type="button" className="btn" onClick={onMove}>
+            Move to…
+          </button>
+        )}
+        {entry && (
+          <button type="button" className="btn btn-danger" disabled={busy} onClick={() => void remove()}>
+            Remove
+          </button>
+        )}
       </div>
     </form>
   );
