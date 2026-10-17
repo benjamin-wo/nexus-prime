@@ -273,7 +273,8 @@ class AgentGraph:
             'savings to IBKR" are moves. So is paying a credit card bill from Spending '
             '("paid my card bill 1,240": a move to their card wallet, since the card\'s '
             "purchases are already expenses). Not moves: money given to a person "
-            '("transferred 50 to Alex for dinner" is an expense, split or owed as usual) and '
+            '("I transferred 50 to Alex for dinner", already done, is an expense, split or '
+            'owed as usual; "send Alex 50" is an instruction: log nothing) and '
             "a dividend or interest paid out (income). If the wallet they name isn't one of "
             "theirs, ask which wallet and offer to add it (wallets skill); never invent one, "
             'and never log the money as an expense instead. You only record: "I moved 500 to '
