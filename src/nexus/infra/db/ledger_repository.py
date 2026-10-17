@@ -689,6 +689,14 @@ class SqlLedgerRepository:
             conditions.append(t.source == query.source.value)
         if query.status is not None:
             conditions.append(t.status == query.status.value)
+        if query.wallet_id is not None:
+            conditions.append(
+                or_(t.from_wallet_id == query.wallet_id, t.to_wallet_id == query.wallet_id)
+            )
+        if query.from_wallet_id is not None:
+            conditions.append(t.from_wallet_id == query.from_wallet_id)
+        if query.to_wallet_id is not None:
+            conditions.append(t.to_wallet_id == query.to_wallet_id)
         if query.search:
             pattern = f"%{_escape_like(query.search)}%"
             conditions.append(

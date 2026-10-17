@@ -79,6 +79,10 @@ class LedgerQuery:
     source: Source | None = None
     status: TransactionStatus | None = None
     search: str | None = None
+    # Moves only: those into or out of this wallet, out of this one, into this one.
+    wallet_id: UUID | None = None
+    from_wallet_id: UUID | None = None
+    to_wallet_id: UUID | None = None
     include_deleted: bool = False
     only_deleted: bool = False
     sort: SortField = SortField.OCCURRED_AT

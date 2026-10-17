@@ -82,11 +82,11 @@ def test_csv_rows() -> None:
     header, row, _ = text.split("\r\n")
     assert header == (
         "date,direction,amount,currency,home_amount,home_currency,fx_rate,fx_rate_date,"
-        "counterparty,category,notes,status,source"
+        "counterparty,category,notes,status,source,from_wallet,to_wallet"
     )
     assert row == (
         "2026-09-28,out,5.5000,SGD,5.5000,SGD,,,"
-        '\'=cmd|\' /C calc\'!A0,,"says ""hi"", ok",confirmed,text'
+        '\'=cmd|\' /C calc\'!A0,,"says ""hi"", ok",confirmed,text,,'
     )
 
 

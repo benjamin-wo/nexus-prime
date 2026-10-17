@@ -258,6 +258,7 @@ input[type="date"].input, input[type="time"].input, input[type="datetime-local"]
 .badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; font-size: 0.75rem; font-weight: 500; border: 1px solid; }
 .badge-out { color: var(--accent); background: var(--accent-soft); border-color: var(--accent-border); }
 .badge-in { color: var(--emerald-accent); background: var(--emerald-soft); border-color: var(--emerald-border); }
+.badge-move { color: var(--text-secondary); border-color: var(--border-card); }
 .badge-pending { color: var(--status-warning); background: var(--status-warning-soft); border-color: var(--status-warning-border); }
 .badge-deleted { color: var(--text-muted); border-color: var(--border-card); }
 
@@ -290,6 +291,7 @@ table.ledger { width: 100%; border-collapse: collapse; }
 .ledger .wrap { overflow-wrap: anywhere; }
 .amount-out { color: var(--text-primary); }
 .amount-in { color: var(--emerald-accent); }
+.amount-move { color: var(--text-secondary); }
 .bulkbar { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3); }
 .pager { display: flex; justify-content: space-between; align-items: center; margin-top: var(--space-4); }
 .state { margin: 0; padding: var(--space-2) 0 var(--space-4); color: var(--text-secondary); }

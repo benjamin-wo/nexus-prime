@@ -1,4 +1,4 @@
-import type { Money } from "./api";
+import type { Money, Transaction } from "./api";
 
 export function formatMoney(money: Money): string {
   const value = Number(money.amount);
@@ -13,6 +13,13 @@ export function formatMoney(money: Money): string {
   } catch {
     return `${value.toFixed(2)} ${money.currency}`;
   }
+}
+
+/** Where a move went: "→ IBKR" from Spending, "Savings → Spending" from anywhere else. */
+export function moveLabel(tx: Pick<Transaction, "from_wallet" | "to_wallet">): string {
+  const { from_wallet: from, to_wallet: to } = tx;
+  if (!to) return "Move";
+  return !from || from.kind === "spending" ? `→ ${to.name}` : `${from.name} → ${to.name}`;
 }
 
 export function formatDate(iso: string, timeZone?: string): string {

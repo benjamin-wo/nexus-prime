@@ -1,7 +1,7 @@
 """The made-up user every evaluation case starts from: two months of ordinary
 spending in Singapore, a salary, a split dinner, a budget, bills, a pay schedule,
-a category rule, a tracked subscription and a trip to Japan in December. Nothing
-here is real data.
+a category rule, a tracked subscription, a trip to Japan in December, and wallets
+(IBKR, Savings, Card) with no moves between them. Nothing here is real data.
 
 "Now" is Monday 28 September 2026, 2pm in Singapore. The figures the cases check
 against are the constants below; a test recomputes them from the ledger.
@@ -22,6 +22,7 @@ from nexus.application import salary as salary_cases
 from nexus.application import splits as split_cases
 from nexus.application import transactions as tx_cases
 from nexus.application import trips as trip_cases
+from nexus.application import wallets as wallet_cases
 from nexus.application.categories import list_categories
 from nexus.application.ports import UnitOfWork
 from nexus.application.users import RegisterUser, register_user
@@ -95,6 +96,10 @@ async def seed_user(new_uow: UowFactory, telegram_id: int) -> Seeded:
         )
     ).user
     cats = {c.name: c.id for c in await list_categories(new_uow(), user.id)}
+    # Wallets for the move cases. No moves are seeded, so every figure below stands.
+    await wallet_cases.add_wallet(new_uow(), user.id, "IBKR", "investment", ["interactive brokers"])
+    await wallet_cases.add_wallet(new_uow(), user.id, "Savings", "savings")
+    await wallet_cases.add_wallet(new_uow(), user.id, "Card", "card", ["credit card"])
     jumbo = None
     for day, merchant, amount, currency, category, direction in _ROWS:
         tx = await tx_cases.log_transaction(

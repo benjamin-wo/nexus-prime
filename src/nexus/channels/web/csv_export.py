@@ -8,10 +8,11 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from nexus.application.fx import Conversion
-from nexus.domain.ledger import Category, Transaction
+from nexus.domain.ledger import Category, Transaction, Wallet
 
 COLUMNS = ["date", "direction", "amount", "currency", "home_amount", "home_currency", "fx_rate",
-           "fx_rate_date", "counterparty", "category", "notes", "status", "source"]  # fmt: skip
+           "fx_rate_date", "counterparty", "category", "notes", "status", "source", "from_wallet",
+           "to_wallet"]  # fmt: skip
 _FORMULA_START = ("=", "+", "-", "@", "\t", "\r", "\n")
 
 
@@ -25,8 +26,11 @@ def to_csv(
     tz: ZoneInfo,
     home_currency: str,
     conversions: dict[UUID, Conversion],
+    wallets: dict[UUID, Wallet] | None = None,
 ) -> str:
-    """Home-currency columns are blank when a foreign row has no available rate."""
+    """Home-currency columns are blank when a foreign row has no available rate. The wallet
+    columns are filled for moves only."""
+    named = wallets or {}
     out = io.StringIO()
     writer = csv.writer(out, lineterminator="\r\n")
     writer.writerow(COLUMNS)
@@ -49,6 +53,8 @@ def to_csv(
             tx.notes or "",
             tx.status.value,
             tx.source.value,
+            named[tx.from_wallet_id].name if tx.from_wallet_id in named else "",
+            named[tx.to_wallet_id].name if tx.to_wallet_id in named else "",
         ]
         writer.writerow([neutralise(cell) for cell in row])
     return out.getvalue()

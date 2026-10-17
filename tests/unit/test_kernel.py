@@ -86,6 +86,14 @@ def test_symbol_and_code_must_agree() -> None:
         ("can you make a payment to DBS", "payment"),
         ("make a payment to DBS", "payment"),
         ("cancel my Netflix subscription", "cancel_subscription"),
+        # An instruction to move money between wallets; Nexus only records.
+        ("move 500 to savings", "transfer"),
+        ("Move S$500 into my savings", "transfer"),
+        ("please move 1000 from savings to IBKR", "transfer"),
+        ("can you move 200 to my brokerage", "transfer"),
+        ("I want to move 500 to savings", "transfer"),
+        ("i'd like to move 500 to savings", "transfer"),
+        ("transfer 500 to savings for me", "transfer"),
     ],
 )
 def test_refuses_money_movement(text: str, intent: str) -> None:
@@ -104,6 +112,23 @@ def test_refuses_money_movement(text: str, intent: str) -> None:
         "pay the town council 88 on 15 october",
         "pay rent 1800 on the 1st",
         "pay my phone bill",
+        # Money moved between the user's own wallets, reported as done: recorded.
+        "I moved 800 to IBKR",
+        "moved 500 to savings",
+        "just put 500 into savings",
+        "topped up savings 500",
+        "took 300 out of savings",
+        "moved 1000 from savings to IBKR",
+        "paid my credit card bill 1,240",
+        "I transferred 500 to savings",
+        "transferred 50 to Alex for dinner",
+        "sent 50 to Alex for dinner",
+        # Not asks to move money: a category correction, and reminders for a regular move.
+        "move the 12 grab ride to Transport",
+        "move the last one to transport",
+        "move 12 grab to transport",
+        "move 300 to savings every payday",
+        "remind me to move 300 to savings on 25 oct every month",
     ],
 )
 def test_does_not_refuse_ordinary_requests(text: str) -> None:

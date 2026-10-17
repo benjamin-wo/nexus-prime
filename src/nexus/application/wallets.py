@@ -9,7 +9,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from nexus.application.clock import utcnow
-from nexus.application.ports import LedgerRepository, UnitOfWork
+from nexus.application.ports import LedgerQuery, LedgerRepository, UnitOfWork
 from nexus.domain.errors import Conflict, InvalidInput, NotFound
 from nexus.domain.ledger import (
     Direction,
@@ -169,6 +169,40 @@ async def delete_wallet(
         await repo.delete_wallet(actor, wallet.id)
         await uow.commit()
     return WalletDeleted(wallet, into if has_moves else None, moved, removed)
+
+
+async def preview_delete_wallet(
+    uow: UnitOfWork, actor: UserId, wallet_id: UUID, move_to: UUID | None = None
+) -> WalletDeleted:
+    """What ``delete_wallet`` would do with the same arguments, without doing it: the same
+    checks, the same counts. Read-only."""
+    if move_to == wallet_id:
+        raise InvalidInput("pick a different wallet to move its moves to")
+    async with uow:
+        repo = uow.ledger
+        wallet = await require_wallet(repo, actor, wallet_id)
+        if wallet.kind is WalletKind.SPENDING:
+            raise InvalidInput("the Spending wallet can't be deleted")
+        into = await require_wallet(repo, actor, move_to) if move_to is not None else None
+        total = await repo.count_moves(actor, wallet.id)
+        if total == 0:
+            return WalletDeleted(wallet, None, 0, 0)
+        if into is None:
+            raise InvalidInput("this wallet has moves; pick another wallet to move them to")
+        between = 0
+        for origin, target in ((wallet.id, into.id), (into.id, wallet.id)):
+            page = await repo.list_transactions(
+                actor,
+                LedgerQuery(
+                    direction=Direction.MOVE,
+                    from_wallet_id=origin,
+                    to_wallet_id=target,
+                    include_deleted=True,
+                    limit=1,
+                ),
+            )
+            between += page.total
+    return WalletDeleted(wallet, into, total - between, between)
 
 
 async def log_move(

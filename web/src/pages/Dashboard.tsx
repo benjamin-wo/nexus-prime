@@ -21,6 +21,7 @@ import {
   formatDate,
   formatMoney,
   formatShortDate,
+  moveLabel,
 } from "../format";
 import { AccentTitle } from "../motion";
 
@@ -131,13 +132,15 @@ function Latest({ page, timezone }: { page?: Page; timezone: string }) {
       ) : (
         <ul className="rows">
           {page.items.map((t) => {
+            const move = t.direction === "move";
             const name =
               t.counterparty ??
-              (t.direction === "in" ? "Money in" : "Money out");
+              (move ? moveLabel(t) : t.direction === "in" ? "Money in" : "Money out");
+            // A move is neither spent nor received: shown without a sign or a colour.
             const signed = {
               ...t.amount,
               amount:
-                t.direction === "in" ? t.amount.amount : `-${t.amount.amount}`,
+                t.direction === "out" ? `-${t.amount.amount}` : t.amount.amount,
             };
             return (
               <li key={t.id} className="row">
@@ -155,7 +158,7 @@ function Latest({ page, timezone }: { page?: Page; timezone: string }) {
                   </span>
                 </span>
                 <span className={`num${t.direction === "in" ? " up" : ""}`}>
-                  {formatChange(signed)}
+                  {move ? formatMoney(t.amount) : formatChange(signed)}
                 </span>
               </li>
             );

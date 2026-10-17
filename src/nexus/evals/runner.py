@@ -58,6 +58,7 @@ _DATA_TABLES = (
     "salary_schedules",
     "subscriptions",
     "notification_settings",
+    "wallets",
 )
 
 
