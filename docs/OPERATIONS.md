@@ -230,6 +230,18 @@ A rule files new expenses whose merchant or notes mention a word or phrase (whol
 
 Rules change only when the user says so. Correcting an expense's category leaves the rules as they are and offers one ("Always file “grab” under Food?", or a change to an existing rule) that is saved only if accepted. Removing a rule archives it: expenses it filed keep their category and can still explain it. A rule never recategorises expenses already logged.
 
+## Wallets
+
+A wallet (`wallets`, migration 0042) is a named place money sits, kept as a label: Nexus tracks what moves in and out, not a balance. Every user has a **Spending** wallet, their main account and the one budgets watch (0042 gave existing users theirs). It can't be deleted or change kind. Others are investment, savings, card or other, with optional match words (up to 20), which the later statement and email imports will use. Names are unique per user, ignoring case.
+
+A **move** is money between two of the user's own wallets: Spending to Investments, Savings to Spending, Savings to Investments, or Spending to a Card wallet to pay the card bill. It's a third direction in `transactions` (`move`, with `from_wallet_id`, `to_wallet_id` and an optional `received_amount` and `received_currency` when it arrived in another currency). The database requires a move to have two different wallets and no category, and in/out rows to have none. A move is never spending and never income, so budgets, spending, income, cash flow, trips, subscriptions and update-message totals leave it out. Card purchases are expenses and paying the bill is a move, so nothing is counted twice. Paying a friend ("transferred 50 to Alex for dinner") is not a move: it stays an expense with a split. Dividends and interest are income.
+
+Three figures add moves back, in the home currency (converted as the other totals are): **put away** is moves into savings and investment wallets minus moves back out (savings to investments nets to zero); **saving rate** is put away over the month's income (none without income); **total out of Spending** is spending plus moves from Spending to every wallet except Card. They are shown with no alerts. `/api/summary` carries them as `put_away`, `saving_rate` and `total_out`.
+
+Deleting a wallet that has moves needs another wallet to point them at (`DELETE /api/wallets/{id}?move_to=`); moves between the two would go from a wallet to itself, so they are removed. This can't be undone. An existing entry can become a move with `POST /api/transactions/{id}/move` (money out moves from Spending to the wallet, money in the other way; the category goes, and undo brings it back). A bill split with others, or money in that paid back an IOU, is refused.
+
+The API is `GET`/`POST /api/wallets`, `PATCH`/`DELETE /api/wallets/{id}` and `POST /api/moves`. In chat the user can log a move ("moved 800 to my IBKR"), add, rename, delete and list wallets, and turn an entry into a move ("that was a move to IBKR"). An unknown wallet gets a question, never a new wallet. Nexus only records moves: "move 500 to savings" as an instruction is still refused.
+
 ## Receipt archive
 
 Receipt photos sent to the bot are kept in a private S3-compatible bucket. In production that's a Railway bucket, wired in with reference variables:

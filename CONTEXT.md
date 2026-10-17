@@ -12,7 +12,7 @@ The shared language for code, tests and docs. When a term here and a name in cod
 
 - **Money**: an exact amount (`NUMERIC(19,4)`) plus an ISO 4217 currency code. Never a float.
 - **Home currency**: the currency a user's totals and budgets are reported in.
-- **Transaction**: one movement of money, with a **direction** of `in` or `out`. Income and expenses share one table.
+- **Transaction**: one movement of money, with a **direction** of `in`, `out` or `move`. Income, expenses and moves share one table.
 - **Source**: where a transaction came from: `text`, `photo`, `email`, `import` or `manual`.
 - **Transaction source record**: the `(user, source, external_id)` key for anything ingested from outside (an email message, a statement row). It outlives a deleted transaction, so it doubles as the **tombstone** that stops the same item being imported again.
 - **Revision**: a snapshot taken on create, edit, delete or restore. Undo and history are built from revisions.
@@ -21,6 +21,8 @@ The shared language for code, tests and docs. When a term here and a name in cod
 - **Settlement**: money in that pays off all or part of a split.
 - **Category**: one per transaction, from the user's own list (twelve defaults to start, plus any they add; one can be merged into another or deleted, except Other and Income). A named category wins, then a rule, then the model's best guess; anything left is **Other** (spending) or **Income** (money in). Deleting one moves its transactions to another category the user picks (Other by default).
 - **Category rule**: a pattern that suggests a category, with a stored explanation. A user's correction never silently rewrites a rule.
+- **Wallet**: a named place money sits, kept as a label: Nexus tracks what moves in and out, not a balance. Every user has one **Spending** wallet (their main account, the one budgets watch; it can't be deleted). Others are an investment, savings, card or other wallet, with optional match words for imports. Deleting one repoints its moves to a wallet the user picks.
+- **Move**: money between two of the user's own wallets (a transaction with direction `move`). It is never spending and never income, has no category, and is left out of budgets, spending, income, cash flow, trips, subscriptions and update messages. Paying a card bill is a move to the Card wallet, so card purchases (expenses) are not counted twice. Paying a friend is not a move; it stays an expense with a split. Nexus only records moves; it never makes one.
 
 ## Planning (forecasts, never ledger entries)
 
