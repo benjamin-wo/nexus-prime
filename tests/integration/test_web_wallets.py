@@ -240,7 +240,7 @@ async def test_deleting_a_wallet_points_its_moves_elsewhere(world: World) -> Non
     # A wallet with no moves goes without a target.
     empty = await add(owner, "Spare", "other")
     deleted = await owner.send("DELETE", f"/api/wallets/{empty['id']}")
-    assert deleted.json() == {"moved": 0, "removed": 0, "into": None}
+    assert deleted.json() == {"moved": 0, "removed": 0, "bills": 0, "into": None}
 
 
 async def test_delete_preview_counts_match_the_real_delete(world: World) -> None:
@@ -265,16 +265,21 @@ async def test_delete_preview_counts_match_the_real_delete(world: World) -> None
     assert (await owner.get(f"/api/wallets/{spare['id']}/delete-preview")).json() == {
         "moved": 0,
         "removed": 0,
+        "bills": 0,
     }
 
     preview = await owner.get(f"{preview_url}?move_to={new['id']}")
-    assert preview.status_code == 200 and preview.json() == {"moved": 2, "removed": 1}
+    assert preview.status_code == 200 and preview.json() == {"moved": 2, "removed": 1, "bills": 0}
     assert (await owner.get("/api/transactions", params={"direction": "move"})).json()["total"] == 3
     assert len(await wallets_by_name(owner)) == 4
 
     deleted = await owner.send("DELETE", f"/api/wallets/{old['id']}?move_to={new['id']}")
     gone = deleted.json()
-    assert {"moved": gone["moved"], "removed": gone["removed"]} == preview.json()
+    assert {
+        "moved": gone["moved"],
+        "removed": gone["removed"],
+        "bills": gone["bills"],
+    } == preview.json()
 
 
 async def test_summary_has_put_away_total_out_and_the_saving_rate(world: World) -> None:

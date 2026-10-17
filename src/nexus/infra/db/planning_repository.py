@@ -4,7 +4,7 @@ from datetime import date, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Row, delete, insert, select, update
+from sqlalchemy import Row, delete, func, insert, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -55,6 +55,7 @@ def _bill(row: Row[Any]) -> Bill:
         created_at=row.created_at,
         archived_at=row.archived_at,
         spending=row.spending,
+        wallet_id=row.wallet_id,
     )
 
 
@@ -67,6 +68,7 @@ def _occurrence(row: Row[Any]) -> BillOccurrence:
         paid_at=row.paid_at,
         snoozed_until=row.snoozed_until,
         reminded_offset=row.reminded_offset,
+        skipped_at=row.skipped_at,
     )
 
 
@@ -196,6 +198,7 @@ class SqlPlanningRepository:
                 created_at=bill.created_at,
                 archived_at=bill.archived_at,
                 spending=bill.spending,
+                wallet_id=bill.wallet_id,
             )
         )
 
@@ -223,6 +226,25 @@ class SqlPlanningRepository:
             .values(archived_at=at)
         )
         return bool(result.rowcount)
+
+    async def count_bills_for_wallet(self, user_id: UserId, wallet_id: UUID) -> int:
+        b = bills.c
+        return (
+            await self._db.execute(
+                select(func.count()).where(
+                    b.user_id == user_id, b.wallet_id == wallet_id, b.archived_at.is_(None)
+                )
+            )
+        ).scalar_one()
+
+    async def repoint_bills(self, user_id: UserId, old_id: UUID, new_id: UUID | None) -> int:
+        b = bills.c
+        result = await self._db.execute(
+            update(bills)
+            .where(b.user_id == user_id, b.wallet_id == old_id)
+            .values(wallet_id=new_id)
+        )
+        return result.rowcount
 
     async def users_with_bills(self) -> list[UserId]:
         b = bills.c
@@ -259,6 +281,7 @@ class SqlPlanningRepository:
             paid_at=occurrence.paid_at,
             snoozed_until=occurrence.snoozed_until,
             reminded_offset=occurrence.reminded_offset,
+            skipped_at=occurrence.skipped_at,
         )
         stmt = stmt.on_conflict_do_update(
             index_elements=[o.bill_id, o.due],
@@ -266,6 +289,7 @@ class SqlPlanningRepository:
                 "paid_at": stmt.excluded.paid_at,
                 "snoozed_until": stmt.excluded.snoozed_until,
                 "reminded_offset": stmt.excluded.reminded_offset,
+                "skipped_at": stmt.excluded.skipped_at,
             },
             # Only this user's row (the bill's foreign key includes user_id).
             where=o.user_id == occurrence.user_id,

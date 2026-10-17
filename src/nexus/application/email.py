@@ -29,6 +29,8 @@ from nexus.application.ports import (
     Cipher,
     EmailReader,
     ForwardingInboxes,
+    LedgerQuery,
+    LedgerRepository,
     Mailbox,
     MailboxRevoked,
     ReceiptStore,
@@ -37,8 +39,9 @@ from nexus.application.ports import (
 )
 from nexus.application.splits import owing_person
 from nexus.application.transactions import NewTransaction
+from nexus.application.wallets import create_move, require_wallet
 from nexus.domain.bookings import BookingDraft
-from nexus.domain.duplicates import Candidate, better_name, likely_same
+from nexus.domain.duplicates import NEAR_DAYS, Candidate, better_name, likely_same
 from nexus.domain.email import (
     ACTIONABLE,
     FILTER_WORDS,
@@ -64,10 +67,20 @@ from nexus.domain.email import (
     sweep_from,
 )
 from nexus.domain.errors import Conflict, DuplicateSource, InvalidInput, NotFound
-from nexus.domain.ledger import Direction, OpenIou, Source, Transaction, User, UserId
+from nexus.domain.ledger import (
+    Direction,
+    OpenIou,
+    Source,
+    Transaction,
+    User,
+    UserId,
+    Wallet,
+    WalletKind,
+)
 from nexus.domain.money import Money
 from nexus.domain.notifications import Frequency
 from nexus.domain.receipts import UNCLAIMED_TTL
+from nexus.domain.wallets import wallet_for
 
 log = logging.getLogger(__name__)
 SWEEP_JOB = "email.sweep"
@@ -371,6 +384,25 @@ def question(
                 [skip],
             ],
         )
+    named = wallet_flag(email)
+    if named is not None:
+        money = _amount(draft, draft.currency or "")
+        day = _day(email, draft, tz)
+        if draft.received:
+            sender = f" from {draft.merchant}" if draft.merchant else ""
+            text = (
+                f"📧 From your email: {money} came in{sender} on {day:%-d %b}. "
+                f"Was this a move from {named['name']}?"
+            )
+            other = {"label": "Income", "data": f"email:income:{email.id}"}
+        else:
+            where = f" at {draft.merchant}" if draft.merchant else ""
+            text = (
+                f"📧 From your email: {money}{where} on {day:%-d %b}. "
+                f"Was this a move to {named['name']}?"
+            )
+            other = {"label": "Expense", "data": f"email:log:{email.id}"}
+        return text, [[{"label": "Move", "data": f"email:move:{email.id}"}, other, skip]]
     person = owing_person(open_ious, draft.merchant) if draft.received and draft.merchant else None
     if person is None:
         return prompt_text(email, tz), [
@@ -391,6 +423,13 @@ def question(
         ],
         [skip],
     ]
+
+
+def wallet_flag(email: InboundEmail) -> dict[str, str] | None:
+    """The wallet this email's text names (``id`` and ``name``), if any: the user is asked
+    whether it was a move rather than being offered to log it as an expense."""
+    found = (email.draft or {}).get("wallet")
+    return found if isinstance(found, dict) else None
 
 
 def duplicate_of(email: InboundEmail) -> dict[str, str] | None:
@@ -618,6 +657,7 @@ async def _record(
 ) -> InboundEmail | None:
     """Save what a read found; the email if it's a receipt now waiting for the user."""
     if email.status is EmailStatus.PENDING:
+        email = await _flag_wallet(uow, user, email)
         email = await _flag_duplicate(uow, user, email)
     async with uow() as tx:
         if not new:
@@ -661,10 +701,72 @@ def _label(merchant: str | None, money: Money, when: datetime, tz: ZoneInfo) -> 
     return f"{merchant or 'no name'}, {money} on {when.astimezone(tz):%-d %b}"
 
 
+async def _twin_move(
+    repo: LedgerRepository,
+    user: User,
+    wallet: Wallet,
+    spending: Wallet,
+    received: bool,
+    money: Money,
+    when: datetime,
+) -> Transaction | None:
+    """A live move already logged that this payment is a second record of: between
+    Spending and ``wallet`` the same way round, the same amount, a day or so apart."""
+    tz = ZoneInfo(user.timezone)
+    margin = timedelta(days=NEAR_DAYS + 1)
+    origin, target = (wallet, spending) if received else (spending, wallet)
+    page = await repo.list_transactions(
+        user.id,
+        LedgerQuery(
+            direction=Direction.MOVE,
+            from_wallet_id=origin.id,
+            to_wallet_id=target.id,
+            start=when - margin,
+            end=when + margin,
+            limit=100,
+        ),
+    )
+    day = when.astimezone(tz).date()
+    for tx in page.items:
+        near = abs((tx.occurred_at.astimezone(tz).date() - day).days) <= NEAR_DAYS
+        if near and money in (tx.amount, tx.received_amount if received else None):
+            return tx
+    return None
+
+
+async def _flag_wallet(uow: UowFactory, user: User, email: InboundEmail) -> InboundEmail:
+    """Note in the draft the wallet the email's merchant or subject names (by the wallet's
+    match words), so the user is asked whether it was a move. If that move is already in
+    the ledger, note it as the payment this email is a second record of instead, so the
+    user is asked "same one?" and not offered to log it twice."""
+    read = ExpenseDraft.from_dict(email.draft or {})
+    async with uow() as db:
+        wallets = await db.ledger.list_wallets(user.id)
+        found = wallet_for([read.merchant, email.subject], wallets)
+        if found is None:
+            return email
+        draft = {**(email.draft or {}), "wallet": {"id": str(found.id), "name": found.name}}
+        spending = await db.ledger.spending_wallet(user.id)
+        money = _amount(read, user.home_currency)
+        if spending is not None and money is not None and "duplicate_of" not in draft:
+            occurred = draft.get("occurred_at")
+            when = datetime.fromisoformat(occurred) if occurred else email.received_at
+            twin = await _twin_move(db.ledger, user, found, spending, read.received, money, when)
+            if twin is not None:
+                tz = ZoneInfo(user.timezone)
+                draft["duplicate_of"] = {
+                    "transaction_id": str(twin.id),
+                    "label": _label(twin.counterparty, twin.amount, twin.occurred_at, tz),
+                }
+    return replace(email, draft=draft)
+
+
 async def _flag_duplicate(uow: UowFactory, user: User, email: InboundEmail) -> InboundEmail:
     """Note in the draft the ledger entry, or another email still waiting, that looks
     like this same payment (a card alert and the shop's receipt), so the user is
     asked "same one?" rather than logging it twice."""
+    if "duplicate_of" in (email.draft or {}):
+        return email  # a move already logged (see _flag_wallet)
     mine = _candidate(email, user.home_currency)
     if mine is None:
         return email
@@ -922,6 +1024,78 @@ async def log_email(
     return saved
 
 
+@dataclass(frozen=True, slots=True)
+class EmailMove:
+    transaction: Transaction
+    wallet: Wallet  # the other end: where the money went, or where it came from
+
+
+async def move_email(
+    uow: UowFactory,
+    user: User,
+    email_id: UUID,
+    *,
+    now: datetime,
+    wallet_id: UUID | None = None,
+    amount: Money | None = None,
+) -> EmailMove:
+    """The user said it was a move: money spent goes from Spending to the wallet the email
+    named (or ``wallet_id``), money received comes from it to Spending. Nothing is spending
+    or income. Marks the email handled, like ``log_email``."""
+    async with uow() as tx:
+        email = await _pending(tx, user.id, email_id)
+        connection = await tx.email.get_connection(user.id, email.connection_id)
+        if connection is None:  # pragma: no cover - the foreign key cascades
+            raise NotFound("that mailbox isn't connected")
+        draft = email.draft or {}
+        read = ExpenseDraft.from_dict(draft)
+        money = amount or _amount(read, user.home_currency)
+        if money is None:
+            raise InvalidInput("no amount was found in that email; tell me the amount")
+        named = wallet_flag(email)
+        chosen = wallet_id or (UUID(named["id"]) if named else None)
+        if chosen is None:
+            raise InvalidInput("that email doesn't name a wallet; say which one it was")
+        other = await require_wallet(tx.ledger, user.id, chosen)
+        if other.kind is WalletKind.SPENDING:
+            raise InvalidInput("pick a wallet other than Spending to move it to or from")
+        spending = await tx.ledger.spending_wallet(user.id)
+        if spending is None:  # pragma: no cover - every user is given one
+            raise InvalidInput("there is no Spending wallet")
+        occurred = draft.get("occurred_at")
+        when = datetime.fromisoformat(occurred) if occurred else email.received_at
+        twin = await _twin_move(tx.ledger, user, other, spending, read.received, money, when)
+        if twin is not None:
+            raise Conflict("that move is already in your ledger; answer 'same one' instead")
+        key = external_id(connection.provider, connection.address, email.provider_message_id)
+        try:
+            moved = await create_move(
+                tx.ledger,
+                user.id,
+                amount=money,
+                origin=other if read.received else spending,
+                target=spending if read.received else other,
+                occurred_at=when,
+                now=now,
+                notes=email.subject or None,
+                counterparty=read.merchant,
+                source=Source.EMAIL,
+                external_id=key,
+            )
+        except DuplicateSource as exc:
+            duplicate: DuplicateSource | None = exc
+        else:
+            duplicate = None
+            await tx.email.update_inbound(
+                replace(email, status=EmailStatus.LOGGED, reason=None, transaction_id=moved.id)
+            )
+            await tx.commit()
+    if duplicate is not None:
+        await _set(uow(), user.id, email_id, EmailStatus.DUPLICATE, "already logged")
+        raise duplicate
+    return EmailMove(moved, other)
+
+
 async def _log_received(
     uow: UowFactory,
     user: User,
@@ -1120,4 +1294,8 @@ def describe(email: InboundEmail, tz: ZoneInfo) -> str:
         what = f"{figure} spent{where}"
     twin = duplicate_of(email)
     same = f"; looks like the same payment as {twin['label']}" if twin else ""
+    named = wallet_flag(email)
+    if named:
+        side = "from" if draft.received else "to"
+        same += f"; may be a move {side} {named['name']} (action move)"
     return f"{when:%a %-d %b %H:%M}, {what} (email: {short(email.subject, 60)}){same}"

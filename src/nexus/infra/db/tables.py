@@ -396,9 +396,13 @@ bills = Table(
     Column("created_at", TZ, nullable=False),
     Column("archived_at", TZ),
     Column("spending", Boolean, nullable=False, server_default=text("true")),
+    # A scheduled move: the wallet the money goes to (never for spending).
+    Column("wallet_id", UUID(as_uuid=True)),
     ForeignKeyConstraint(["user_id"], ["users.id"]),
+    ForeignKeyConstraint(["wallet_id", "user_id"], ["wallets.id", "wallets.user_id"]),
     UniqueConstraint("id", "user_id"),
     CheckConstraint("cadence IN ('once', 'weekly', 'monthly', 'yearly')", name="cadence"),
+    CheckConstraint("wallet_id IS NULL OR NOT spending", name="wallet_not_spending"),
     CheckConstraint("(amount IS NULL) = (currency IS NULL)", name="amount_with_currency"),
     CheckConstraint("amount IS NULL OR amount > 0", name="amount_positive"),
     Index("ix_bills_user_id", "user_id"),
@@ -415,9 +419,11 @@ bill_occurrences = Table(
     Column("paid_at", TZ),
     Column("snoozed_until", TZ),
     Column("reminded_offset", SmallInteger),
+    Column("skipped_at", TZ),
     ForeignKeyConstraint(["bill_id", "user_id"], ["bills.id", "bills.user_id"], ondelete="CASCADE"),
     UniqueConstraint("bill_id", "due"),
     CheckConstraint("reminded_offset IN (7, 3, 1)", name="reminded_offset"),
+    CheckConstraint("paid_at IS NULL OR skipped_at IS NULL", name="not_paid_and_skipped"),
 )
 
 # When the user is paid, and their usual (confirmed) salary. One per user.

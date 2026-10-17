@@ -1090,6 +1090,27 @@ async def wallets(auth: Auth, web: Runtime) -> list[WalletOut]:
     return [wallet_out(w) for w in await wallet_cases.list_wallets(web.uow(), auth.user.id)]
 
 
+class LikelyMoveOut(Model):
+    transaction: TransactionOut
+    wallet: WalletOut | None  # where it would go; null when only the pattern suggests a move
+    reason: str
+
+
+@router.get("/wallets/likely-moves")
+async def likely_moves(auth: Auth, web: Runtime) -> list[LikelyMoveOut]:
+    """Entries from the last six months that may really have been moves. Nothing is
+    changed: convert one with ``POST /transactions/{id}/move``."""
+    found = await wallet_cases.likely_moves(web.uow(), auth.user.id, now=web.clock())
+    return [
+        LikelyMoveOut(
+            transaction=await _out(web, auth.user, f.transaction),
+            wallet=wallet_out(f.wallet) if f.wallet else None,
+            reason=f.reason,
+        )
+        for f in found
+    ]
+
+
 class WalletIn(Model):
     name: str = Field(min_length=1, max_length=100)
     kind: str = Field(max_length=20)
@@ -1129,7 +1150,8 @@ async def edit_wallet(wallet_id: UUID, body: WalletPatch, auth: Auth, web: Runti
 class WalletDeletedOut(Model):
     moved: int  # moves now pointing at ``into``
     removed: int  # moves between the two wallets, dropped as they'd be from a wallet to itself
-    into: WalletOut | None  # null when the wallet had no moves
+    bills: int  # scheduled payments to it, now pointing at ``into``
+    into: WalletOut | None  # null when the wallet had no moves or scheduled payments
 
 
 @router.delete("/wallets/{wallet_id}")
@@ -1143,6 +1165,7 @@ async def delete_wallet(
     return WalletDeletedOut(
         moved=deleted.moved,
         removed=deleted.removed,
+        bills=deleted.bills,
         into=wallet_out(deleted.into) if deleted.into else None,
     )
 
@@ -1150,6 +1173,7 @@ async def delete_wallet(
 class WalletPreviewOut(Model):
     moved: int  # moves that would point at ``move_to``
     removed: int  # moves between the two wallets, which would be dropped
+    bills: int  # scheduled payments to it that would point at ``move_to``
 
 
 @router.get("/wallets/{wallet_id}/delete-preview")
@@ -1158,7 +1182,7 @@ async def delete_wallet_preview(
 ) -> WalletPreviewOut:
     """What deleting the wallet (with the same ``move_to``) would do, without doing it."""
     preview = await wallet_cases.preview_delete_wallet(web.uow(), auth.user.id, wallet_id, move_to)
-    return WalletPreviewOut(moved=preview.moved, removed=preview.removed)
+    return WalletPreviewOut(moved=preview.moved, removed=preview.removed, bills=preview.bills)
 
 
 class RuleOut(Model):
@@ -1274,9 +1298,13 @@ class PreviewRowOut(Model):
     amount: str | None
     currency: str | None
     direction: Direction | None
-    category: str | None
+    category: str | None  # null for a proposed move
     problem: str | None
     matches: MatchOut | None
+    # Proposed as a move because the description names a wallet: money out goes from
+    # Spending to ``move_to``; money in comes from ``move_from`` to Spending.
+    move_to: WalletOut | None = None
+    move_from: WalletOut | None = None
 
 
 class PreviewOut(Model):
@@ -1308,6 +1336,8 @@ async def preview_import(body: PreviewIn, auth: Auth, web: Runtime) -> PreviewOu
                 currency=p.money.currency if p.money else None,
                 direction=p.row.direction,
                 category=p.category,
+                move_to=wallet_out(p.move_to) if p.move_to else None,
+                move_from=wallet_out(p.move_from) if p.move_from else None,
                 problem=p.row.problem,
                 matches=MatchOut(
                     date=p.matches.occurred_at.astimezone(tz).date(),
@@ -1388,10 +1418,19 @@ async def read_pdf_statement(body: PdfIn, auth: Auth, web: Runtime) -> PdfOut:
     )
 
 
+class RowMoveIn(Model):
+    row: int = Field(ge=0)
+    # The wallet to move it to (money out) or from (money in); null: an ordinary entry.
+    as_move: UUID | None = None
+
+
 class ImportIn(Model):
     csv: str = Field(min_length=1, max_length=CSV_CHARS)
     layout: LayoutIn
     include: list[int] = Field(min_length=1, max_length=5000)
+    # Which ticked rows are moves, as the preview proposed or the user changed it. A row
+    # that isn't listed is an ordinary entry.
+    moves: list[RowMoveIn] = Field(default=[], max_length=5000)
     file_name: str = Field(min_length=1, max_length=200)
     save_as: str | None = Field(None, min_length=1, max_length=60)
 
@@ -1429,6 +1468,7 @@ async def import_statement(body: ImportIn, auth: Auth, web: Runtime) -> Imported
         set(body.include),
         file_name=body.file_name,
         save_as=body.save_as,
+        moves={m.row: m.as_move for m in body.moves if m.as_move is not None},
         now=web.clock(),
     )
     return ImportedOut(**import_out(done.record).model_dump(), skipped=done.skipped)
@@ -1617,10 +1657,17 @@ async def remove_budget(budget_id: UUID, auth: Auth, web: Runtime) -> None:
 # --- bills ----------------------------------------------------------------------------
 
 
+class BillWalletOut(Model):
+    id: UUID
+    name: str
+    kind: str
+
+
 class BillOut(Model):
     id: UUID
     name: str
     spending: bool  # marking it paid logs an expense; False for money moved, not spent
+    wallet: BillWalletOut | None  # a scheduled move's destination; never set on spending
     amount: MoneyOut | None
     cadence: str
     due: date
@@ -1628,12 +1675,16 @@ class BillOut(Model):
     snoozed: bool
 
 
-def bill_out(view: bill_cases.BillView, now: datetime) -> BillOut:
+def bill_out(view: bill_cases.BillView, now: datetime, wallets: dict[UUID, Wallet]) -> BillOut:
     bill = view.bill
+    wallet = wallets.get(bill.wallet_id) if bill.wallet_id else None
     return BillOut(
         id=bill.id,
         name=bill.name,
         spending=bill.spending,
+        wallet=BillWalletOut(id=wallet.id, name=wallet.name, kind=wallet.kind.value)
+        if wallet
+        else None,
         amount=money(bill.amount) if bill.amount else None,
         cadence=bill.cadence.value,
         due=view.due,
@@ -1645,7 +1696,9 @@ def bill_out(view: bill_cases.BillView, now: datetime) -> BillOut:
 @router.get("/bills")
 async def bills(auth: Auth, web: Runtime) -> list[BillOut]:
     now = web.clock()
-    return [bill_out(v, now) for v in await bill_cases.list_bills(web.uow, auth.user, now=now)]
+    wallet_names = {w.id: w for w in await wallet_cases.list_wallets(web.uow(), auth.user.id)}
+    views = await bill_cases.list_bills(web.uow, auth.user, now=now)
+    return [bill_out(v, now, wallet_names) for v in views]
 
 
 class BillIn(Model):
@@ -1653,6 +1706,8 @@ class BillIn(Model):
     due: date
     cadence: Literal["once", "weekly", "monthly", "yearly"] = "monthly"
     spending: bool = True
+    # Makes it a scheduled move to this wallet; refused (422) on a spending bill.
+    wallet_id: UUID | None = None
     amount: str | None = Field(None, max_length=32)
     currency: str | None = Field(None, max_length=3)
 
@@ -1674,9 +1729,11 @@ async def add_bill(body: BillIn, auth: Auth, web: Runtime) -> BillOut:
         amount,
         now=now,
         spending=body.spending,
+        wallet_id=body.wallet_id,
     )
     today = now.astimezone(_tz(user)).date()
-    return bill_out(bill_cases.BillView(bill, body.due, None, today), now)
+    wallet_names = {w.id: w for w in await wallet_cases.list_wallets(web.uow(), user.id)}
+    return bill_out(bill_cases.BillView(bill, body.due, None, today), now, wallet_names)
 
 
 class BillPaidIn(Model):
@@ -1687,30 +1744,44 @@ class BillPaidIn(Model):
 class BillPaidOut(Model):
     message: str
     logged: bool  # a new expense was added for it
-    needs_amount: bool  # spending with no set amount and none given, so nothing was logged
+    moved: bool  # a scheduled move: the move to its wallet was logged now
+    # spending, or a scheduled move, with no set amount and none given: nothing was logged
+    needs_amount: bool
 
 
 @router.post("/bills/{bill_id}/paid")
 async def bill_paid(
-    bill_id: UUID, auth: Auth, web: Runtime, body: BillPaidIn | None = None
+    bill_id: UUID, auth: Auth, web: Runtime, body: BillPaidIn | None = None, due: date | None = None
 ) -> BillPaidOut:
+    """Mark the current due date paid (done, for money moved), or the one on ``due``; a
+    scheduled move logs the move to its wallet unless one like it is already there."""
     user = auth.user
     amount = (
         Money.of(body.amount.replace(",", ""), body.currency or user.home_currency)
         if body and body.amount and body.amount.strip()
         else None
     )
-    paid = await bill_cases.mark_paid(web.uow, user, bill_id, now=web.clock(), amount=amount)
+    paid = await bill_cases.mark_paid(
+        web.uow, user, bill_id, now=web.clock(), amount=amount, due=due
+    )
+    bill = paid.view.bill
     return BillPaidOut(
         message=paid.message(_tz(user)),
         logged=paid.logged is not None,
-        needs_amount=paid.amount is None and paid.view.bill.spending,
+        moved=paid.moved is not None,
+        needs_amount=paid.amount is None and (bill.spending or bill.wallet_id is not None),
     )
 
 
 @router.post("/bills/{bill_id}/snooze", status_code=204)
 async def snooze_bill(bill_id: UUID, auth: Auth, web: Runtime) -> None:
     await bill_cases.snooze(web.uow, auth.user, bill_id, now=web.clock())
+
+
+@router.post("/bills/{bill_id}/skip", status_code=204)
+async def skip_bill(bill_id: UUID, auth: Auth, web: Runtime, due: date | None = None) -> None:
+    """Say the current due date (or the one on ``due``) isn't happening: nothing is logged."""
+    await bill_cases.skip(web.uow, auth.user, bill_id, now=web.clock(), due=due)
 
 
 @router.delete("/bills/{bill_id}", status_code=204)
@@ -1977,12 +2048,20 @@ async def list_departments(auth: Auth, web: Runtime) -> list[DepartmentOut]:
     ]
 
 
+class FeedActionOut(Model):
+    key: str
+    label: str
+    method: str
+    path: str  # relative to /api
+
+
 class FeedItemOut(Model):
     department: str
     kind: str
     text: str
     link: str
     urgent: bool
+    actions: list[FeedActionOut]  # buttons that settle the item; usually none
 
 
 @router.get("/home")
@@ -1990,7 +2069,17 @@ async def home(auth: Auth, web: Runtime) -> list[FeedItemOut]:
     """The front desk's "needs you" list across departments."""
     items = await home_cases.needs_you(web.uow, web.rates, auth.user, now=web.clock())
     return [
-        FeedItemOut(department=i.department, kind=i.kind, text=i.text, link=i.link, urgent=i.urgent)
+        FeedItemOut(
+            department=i.department,
+            kind=i.kind,
+            text=i.text,
+            link=i.link,
+            urgent=i.urgent,
+            actions=[
+                FeedActionOut(key=a.key, label=a.label, method=a.method, path=a.path)
+                for a in i.actions
+            ],
+        )
         for i in items
     ]
 

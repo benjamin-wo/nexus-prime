@@ -1009,6 +1009,7 @@ async def test_bills_and_reminder_buttons(world: World) -> None:
     assert paid.json() == {
         "message": "Marked Visa (10 Oct) as paid and logged 60.00 SGD in this month's spending.",
         "logged": True,
+        "moved": False,
         "needs_amount": False,
     }
 

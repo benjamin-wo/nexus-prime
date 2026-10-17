@@ -998,6 +998,20 @@ async def _list_wallets(ctx: ToolContext, _: NoArgs) -> ToolResult:
     return ToolResult("\n".join(lines))
 
 
+async def _find_likely_moves(ctx: ToolContext, _: NoArgs) -> ToolResult:
+    found = await wallet_cases.likely_moves(ctx.uow(), ctx.user.id, now=ctx.now)
+    if not found:
+        return ToolResult("No entries from the last six months look like moves between wallets.")
+    lines = []
+    for item in found:
+        wallet = f" → {item.wallet.name}" if item.wallet else " (which wallet? ask the user)"
+        lines.append(f"{await show(ctx, item.transaction)}{wallet}: {item.reason}")
+    return ToolResult(
+        f"{len(found)} entries that may really have been moves (nothing has been changed):\n"
+        + "\n".join(lines)
+    )
+
+
 type NewKind = Literal["investment", "savings", "card", "other"]
 
 
@@ -1095,6 +1109,10 @@ def _moves(n: int) -> str:
     return f"{n} move{'' if n == 1 else 's'}"
 
 
+def _scheduled(n: int) -> str:
+    return f"{n} scheduled payment{'' if n == 1 else 's'}"
+
+
 async def _describe_delete_wallet(ctx: ToolContext, a: DeleteWalletArgs) -> str:
     plan = await _delete_plan(ctx, a)
     if plan.into is None:
@@ -1103,6 +1121,8 @@ async def _describe_delete_wallet(ctx: ToolContext, a: DeleteWalletArgs) -> str:
     text = (
         f"Delete the wallet {plan.wallet.name}? {_moves(plan.moved)} will point at {into} instead"
     )
+    if plan.bills:
+        text += f", and {_scheduled(plan.bills)} to it will move money to {into} instead"
     if plan.removed:
         text += (
             f", and {_moves(plan.removed)} between the two will be removed, since both "
@@ -1122,6 +1142,8 @@ async def _delete_wallet(ctx: ToolContext, a: DeleteWalletArgs) -> ToolResult:
         return ToolResult(f"Deleted the wallet {wallet.name}.", wrote=True)
     verb = "points" if done.moved == 1 else "point"
     text = f"Deleted the wallet {wallet.name}. {_moves(done.moved)} now {verb} at {done.into.name}"
+    if done.bills:
+        text += f"; {_scheduled(done.bills)} to it now move money to {done.into.name}"
     if done.removed:
         text += f"; {_moves(done.removed)} between the two removed"
     return ToolResult(text + ".", wrote=True)
@@ -1244,11 +1266,13 @@ class AnswerEmailArgs(Args):
     number: int = Field(
         ge=1, le=email_cases.WAITING_SHOWN, description="The email's number in the waiting list"
     )
-    action: Literal["log", "repayment", "income", "skip", "same"] = Field(
+    action: Literal["log", "repayment", "income", "skip", "same", "move"] = Field(
         description="log: save it as it was read (money in from someone who owes the user "
         "pays that back). repayment: money in that pays back what the sender owes. income: "
         "money in kept as plain income. skip: log nothing. same: it's the same payment as "
-        "the one it looks like (already logged or in another email), so add nothing"
+        "the one it looks like (already logged or in another email), so add nothing. move: "
+        "it was money moved to or from the wallet the email names (a line says it may be a "
+        "move), not spending or income"
     )
     amount: str | None = Field(
         None,
@@ -1271,6 +1295,8 @@ async def _describe_answer(ctx: ToolContext, a: AnswerEmailArgs) -> str:
         return f"Skip this email and log nothing? {line}"
     if a.action == "same":
         return f"Treat this email as the same payment, adding nothing? {line}"
+    if a.action == "move":
+        return f"Log it as a move between wallets, not spending or income? {line}"
     figure = f" as {parse_money(ctx, a.amount, a.currency)}" if a.amount else ""
     how = {
         "log": "Log it",
@@ -1294,6 +1320,18 @@ async def _answer_email(ctx: ToolContext, a: AnswerEmailArgs) -> ToolResult:
             )
         return ToolResult(
             f"Same payment: kept {kept.amount} ({kept.counterparty or 'no name'}); nothing added.",
+            wrote=True,
+        )
+    if a.action == "move":
+        moved = await email_cases.move_email(
+            ctx.uow,
+            ctx.user,
+            email.id,
+            now=ctx.now,
+            amount=parse_money(ctx, a.amount, a.currency) if a.amount else None,
+        )
+        return ToolResult(
+            f"Logged a move (not spending or income): {await show(ctx, moved.transaction)}",
             wrote=True,
         )
     tx = await email_cases.log_email(
@@ -1832,7 +1870,13 @@ class AddBillArgs(Args):
         True,
         description="False for money the user moves rather than spends: a regular "
         "investment, a transfer to savings, family or another account. True for bills "
-        "(rent, utilities, insurance, phone).",
+        "(rent, utilities, insurance, phone). Set automatically to False with to_wallet.",
+    )
+    to_wallet: str | None = Field(
+        None,
+        description="A scheduled move: the user's wallet the money goes to from Spending "
+        '("remind me to put 1,000 into IBKR every 25th"). It is never spending. A wallet '
+        "the user doesn't have yet isn't made: ask, or offer to add it first.",
     )
     amount: str | None = Field(None, description="Only if the user gave one")
     currency: str | None = Field(None, description="Defaults to the home currency")
@@ -1855,9 +1899,30 @@ async def _find_bill(ctx: ToolContext, name: str) -> bill_cases.BillView:
     raise InvalidInput(f"{name!r} matches several bills: {', '.join(v.bill.name for v in matches)}")
 
 
-def _bill_line(view: bill_cases.BillView, now: datetime) -> str:
+def _ordinal(n: int) -> str:
+    suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
+
+
+def _bill_line(
+    view: bill_cases.BillView, now: datetime, wallets: dict[UUID, Wallet] | None = None
+) -> str:
     bill = view.bill
     amount = f" {bill.amount}" if bill.amount else ""
+    wallet = (wallets or {}).get(bill.wallet_id) if bill.wallet_id else None
+    if wallet is not None:
+        # A scheduled move: say where it goes, and that it isn't spending.
+        every = {
+            Cadence.ONCE: "",
+            Cadence.WEEKLY: f", every week on {bill.anchor:%A}s",
+            Cadence.MONTHLY: f", every month on the {_ordinal(bill.anchor.day)}",
+            Cadence.YEARLY: f", every year on {bill.anchor.day} {bill.anchor:%B}",
+        }[bill.cadence]
+        snoozed = ", reminders snoozed" if view.snoozed(now) else ""
+        return (
+            f"{bill.name}{amount}: {bill_cases.describe_due(view)}{every}, moved to "
+            f"{wallet.name} (not spending){snoozed}"
+        )
     kind = "" if bill.spending else " (not spending)"
     repeats = "" if bill.cadence is Cadence.ONCE else f", {bill.cadence.value}"
     snoozed = ", reminders snoozed" if view.snoozed(now) else ""
@@ -1867,6 +1932,8 @@ def _bill_line(view: bill_cases.BillView, now: datetime) -> str:
 async def _add_bill(ctx: ToolContext, a: AddBillArgs) -> ToolResult:
     due = parse_day(ctx, a.due_date).astimezone(ctx.tz).date()
     amount = parse_money(ctx, a.amount, a.currency) if a.amount else None
+    # An unknown wallet is for the model to ask about; nothing is created until it does.
+    wallet = await resolve_wallet(ctx, a.to_wallet) if a.to_wallet else None
     bill = await bill_cases.add_bill(
         ctx.uow(),
         ctx.user,
@@ -1875,11 +1942,14 @@ async def _add_bill(ctx: ToolContext, a: AddBillArgs) -> ToolResult:
         Cadence(a.repeats),
         amount,
         now=ctx.now,
-        spending=a.counts_as_spending,
+        spending=a.counts_as_spending and wallet is None,
+        wallet_id=wallet.id if wallet else None,
     )
     view = bill_cases.BillView(bill, due, None, ctx.today())
+    wallets = {wallet.id: wallet} if wallet else None
     return ToolResult(
-        f"Added {_bill_line(view, ctx.now)}. I'll remind you 7, 3 and 1 days before.", wrote=True
+        f"Added {_bill_line(view, ctx.now, wallets)}. I'll remind you 7, 3 and 1 days before.",
+        wrote=True,
     )
 
 
@@ -1887,7 +1957,8 @@ async def _bills(ctx: ToolContext, _: NoArgs) -> ToolResult:
     views = await bill_cases.list_bills(ctx.uow, ctx.user, now=ctx.now)
     if not views:
         return ToolResult("No scheduled payments yet.")
-    return ToolResult("\n".join(_bill_line(v, ctx.now) for v in views))
+    wallets = await wallet_map(ctx) if any(v.bill.wallet_id for v in views) else None
+    return ToolResult("\n".join(_bill_line(v, ctx.now, wallets) for v in views))
 
 
 class BillPaidArgs(BillNameArgs):
@@ -2685,7 +2756,7 @@ READ_ONLY = frozenset(
         "find_places",
         "find_transactions", "list_bills", "list_budgets", "list_categories",
         "list_category_rules", "list_ious", "list_subscriptions", "list_trips", "list_wallets",
-        "load_skill",
+        "find_likely_moves", "load_skill",
         "place_info", "plan_record", "query_ledger", "show_dividends", "show_pay_schedule",
         "show_plan", "show_portfolio", "show_watchlist", "spending_summary", "stock_levels",
         "trade_history", "trip_status",
@@ -2910,6 +2981,15 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             _list_wallets,
         ),
         ToolSpec(
+            "find_likely_moves",
+            "Entries from the last six months that may really have been moves between the "
+            "user's wallets: they name a wallet's match words, or are the same amount to the "
+            "same payee every month. Read-only; offer mark_as_move for each, which asks the "
+            "user to confirm.",
+            NoArgs,
+            _find_likely_moves,
+        ),
+        ToolSpec(
             "add_wallet",
             "Add a wallet: a place the user keeps money, such as a broker, savings or a credit "
             "card. Only when the user says to add one. A wallet is a label; no balance is kept.",
@@ -3029,7 +3109,8 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             "add_bill",
             "Remember a bill or another scheduled payment (a regular investment or a "
             "transfer to savings, family or another account) and remind the user before "
-            "it's due. Nothing is paid or moved.",
+            "it's due. With to_wallet it is a scheduled move to one of the user's wallets. "
+            "Nothing is paid or moved.",
             AddBillArgs,
             _add_bill,
         ),
@@ -3044,7 +3125,8 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             "Record that the user has paid a bill's current due date and log it as this "
             "month's expense (skipped if it's already in the ledger). One that doesn't "
             "count as spending (an investment, a transfer to savings) is marked done and "
-            "nothing is logged. Pays nothing.",
+            "nothing is logged, except a scheduled move to a wallet: that logs the move "
+            "from Spending to the wallet (once, and not if it's already there). Pays nothing.",
             BillPaidArgs,
             _bill_paid,
         ),

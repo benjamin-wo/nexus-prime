@@ -240,7 +240,8 @@ async def _plan_warning(
     skipped: list[str],
 ) -> str | None:
     """Text when the budget plus the month's worth of scheduled moves (repeating bills that
-    aren't spending: investing, saving) is more than the usual income."""
+    aren't spending: investing, saving, with or without a wallet) is more than the usual
+    income."""
     home = user.home_currency
     async with uow() as tx:
         bills = [b for b in await tx.planning.list_bills(user.id) if not b.spending]
@@ -258,7 +259,9 @@ async def _plan_warning(
             fx.convert(bill.amount, today, home, found).home if bill.amount is not None else None
         )
         if converted is None:
-            if bill.name not in skipped:
+            # Already named when the month's items were added up (a scheduled move there is
+            # "name → wallet").
+            if not any(n == bill.name or n.startswith(f"{bill.name} → ") for n in skipped):
                 skipped.append(bill.name)
             continue
         monthly += converted.amount * per_month

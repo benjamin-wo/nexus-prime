@@ -835,7 +835,8 @@ class AgentService:
     async def _email_button(self, actor: UserId, action: str, email_id: str) -> Reply:
         """Log it / Skip on a receipt found in the user's email; for money received,
         also Yes, paid back / Just income; for one that looks like a payment already
-        recorded, Same one / It's another."""
+        recorded, Same one / It's another; for one that names a wallet, Move / Expense
+        (Income)."""
         try:
             found = UUID(email_id)
         except ValueError:
@@ -854,6 +855,15 @@ class AgentService:
             if action == "skip":
                 await email_cases.skip_email(self._uow(), actor, found)
                 return Reply("Skipped. Nothing was logged.")
+            if action == "move":
+                moved = await email_cases.move_email(self._uow, user, found, now=self._clock())
+                tx = moved.transaction
+                side = "from" if tx.to_wallet_id != moved.wallet.id else "to"
+                return Reply(
+                    f"Logged a move of {tx.amount} {side} {moved.wallet.name}. It isn't counted "
+                    "as spending or income.",
+                    [[UNDO]],
+                )
             if action == "same":
                 kept = await email_cases.same_payment(self._uow, user, found, now=self._clock())
                 if kept is None:

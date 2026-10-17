@@ -5,8 +5,9 @@ Nexus only records moves; it never moves money. A move is never spending and nev
 
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo
 
 from nexus.application.clock import utcnow
 from nexus.application.ports import LedgerQuery, LedgerRepository, UnitOfWork
@@ -27,6 +28,7 @@ from nexus.domain.ledger import (
     snapshot,
 )
 from nexus.domain.money import Money
+from nexus.domain.wallets import match_wallet
 
 SPENDING_NAME = "Spending"
 MAX_MATCH_WORDS = 20
@@ -133,12 +135,16 @@ async def rename_wallet(uow: UnitOfWork, actor: UserId, wallet_id: UUID, name: s
     return await update_wallet(uow, actor, wallet_id, name=name)
 
 
+_NEEDS_ANOTHER = "this wallet has moves or scheduled payments; pick another wallet to move them to"
+
+
 @dataclass(frozen=True, slots=True)
 class WalletDeleted:
     wallet: Wallet
     into: Wallet | None  # where its moves went, if it had any
     moved: int  # moves now pointing at ``into``
     removed: int  # moves between the two, which would have been from a wallet to itself
+    bills: int = 0  # scheduled payments that moved money to it, now pointing at ``into``
 
 
 async def delete_wallet(
@@ -149,9 +155,11 @@ async def delete_wallet(
     *,
     now: datetime | None = None,
 ) -> WalletDeleted:
-    """Delete a wallet. Moves into or out of it need ``move_to``, another wallet of the
-    user's, to point at instead; those between the two are removed (there's nothing to
-    record about money moved from a wallet to itself). Not undoable."""
+    """Delete a wallet. Moves into or out of it, and scheduled payments that move money to
+    it, need ``move_to``, another wallet of the user's, to point at instead; those moves
+    between the two are removed (there's nothing to record about money moved from a wallet
+    to itself). Scheduled payments moved to Spending would go nowhere, so they stay as
+    plain not-spending ones. Not undoable."""
     if move_to == wallet_id:
         raise InvalidInput("pick a different wallet to move its moves to")
     async with uow:
@@ -161,14 +169,23 @@ async def delete_wallet(
             raise InvalidInput("the Spending wallet can't be deleted")
         into = await require_wallet(repo, actor, move_to) if move_to is not None else None
         has_moves = await repo.count_moves(actor, wallet.id) > 0
+        scheduled = await uow.planning.count_bills_for_wallet(actor, wallet.id)
         moved = removed = 0
-        if has_moves:
+        if has_moves or scheduled:
             if into is None:
-                raise InvalidInput("this wallet has moves; pick another wallet to move them to")
-            moved, removed = await repo.repoint_moves(actor, wallet.id, into.id, now or utcnow())
+                raise InvalidInput(_NEEDS_ANOTHER)
+            if has_moves:
+                moved, removed = await repo.repoint_moves(
+                    actor, wallet.id, into.id, now or utcnow()
+                )
+        # Archived scheduled payments still name it, so they go along (or lose it).
+        target = into.id if into is not None and into.kind is not WalletKind.SPENDING else None
+        await uow.planning.repoint_bills(actor, wallet.id, target)
         await repo.delete_wallet(actor, wallet.id)
         await uow.commit()
-    return WalletDeleted(wallet, into if has_moves else None, moved, removed)
+    return WalletDeleted(
+        wallet, into if has_moves or scheduled else None, moved, removed, scheduled
+    )
 
 
 async def preview_delete_wallet(
@@ -185,12 +202,13 @@ async def preview_delete_wallet(
             raise InvalidInput("the Spending wallet can't be deleted")
         into = await require_wallet(repo, actor, move_to) if move_to is not None else None
         total = await repo.count_moves(actor, wallet.id)
-        if total == 0:
+        scheduled = await uow.planning.count_bills_for_wallet(actor, wallet.id)
+        if total == 0 and scheduled == 0:
             return WalletDeleted(wallet, None, 0, 0)
         if into is None:
-            raise InvalidInput("this wallet has moves; pick another wallet to move them to")
+            raise InvalidInput(_NEEDS_ANOTHER)
         between = 0
-        for origin, target in ((wallet.id, into.id), (into.id, wallet.id)):
+        for origin, target in ((wallet.id, into.id), (into.id, wallet.id)) if total else ():
             page = await repo.list_transactions(
                 actor,
                 LedgerQuery(
@@ -202,7 +220,58 @@ async def preview_delete_wallet(
                 ),
             )
             between += page.total
-    return WalletDeleted(wallet, into, total - between, between)
+    return WalletDeleted(wallet, into, total - between, between, scheduled)
+
+
+async def create_move(
+    repo: LedgerRepository,
+    actor: UserId,
+    *,
+    amount: Money,
+    origin: Wallet,
+    target: Wallet,
+    occurred_at: datetime,
+    now: datetime,
+    received_amount: Money | None = None,
+    notes: str | None = None,
+    counterparty: str | None = None,
+    source: Source = Source.MANUAL,
+    external_id: str | None = None,
+) -> Transaction:
+    """Validate and store a new move with its revision (and its source claim, for one
+    that came from a statement or an email). Runs inside the caller's unit of work, which
+    commits; ``log_move`` is the use case for one move. Raises DuplicateSource if
+    ``external_id`` was seen before for this source."""
+    amount = require_positive(amount)
+    if received_amount is not None:
+        require_positive(received_amount)
+    occurred_at = require_aware(occurred_at, field_name="occurred_at")
+    if origin.id == target.id:
+        raise InvalidInput("a move needs two different wallets")
+    tx = Transaction(
+        id=uuid4(),
+        user_id=actor,
+        direction=Direction.MOVE,
+        amount=amount,
+        occurred_at=occurred_at,
+        counterparty=clean_text(counterparty, field_name="counterparty"),
+        category_id=None,
+        notes=clean_text(notes, field_name="notes"),
+        status=TransactionStatus.CONFIRMED,
+        source=Source(source),
+        created_at=now,
+        updated_at=now,
+        from_wallet_id=origin.id,
+        to_wallet_id=target.id,
+        received_amount=received_amount,
+    )
+    await repo.insert_transaction(tx)
+    if external_id is not None:
+        await repo.claim_source(
+            actor, tx.source, clean_name(external_id, field_name="external id"), tx.id
+        )
+    await repo.insert_revision(actor, tx.id, RevisionKind.CREATE, None, now)
+    return tx
 
 
 async def log_move(
@@ -217,16 +286,12 @@ async def log_move(
     notes: str | None = None,
     counterparty: str | None = None,
     source: Source = Source.MANUAL,
+    external_id: str | None = None,
 ) -> Transaction:
     """Record money moved between two of the user's wallets (from Spending unless said
     otherwise). ``received_amount`` is what arrived, if that isn't ``amount`` (another
-    currency, or a fee). Undoable like any new transaction."""
-    amount = require_positive(amount)
-    if received_amount is not None:
-        require_positive(received_amount)
-    occurred_at = require_aware(occurred_at, field_name="occurred_at")
-    notes = clean_text(notes, field_name="notes")
-    counterparty = clean_text(counterparty, field_name="counterparty")
+    currency, or a fee). Undoable like any new transaction. With an ``external_id`` the
+    same one is recorded once: a second try raises DuplicateSource."""
     async with uow:
         repo = uow.ledger
         origin = (
@@ -235,28 +300,20 @@ async def log_move(
             else await _spending(repo, actor)
         )
         target = await require_wallet(repo, actor, to_wallet_id)
-        if origin.id == target.id:
-            raise InvalidInput("a move needs two different wallets")
-        now = utcnow()
-        tx = Transaction(
-            id=uuid4(),
-            user_id=actor,
-            direction=Direction.MOVE,
+        tx = await create_move(
+            repo,
+            actor,
             amount=amount,
+            origin=origin,
+            target=target,
             occurred_at=occurred_at,
-            counterparty=counterparty,
-            category_id=None,
-            notes=notes,
-            status=TransactionStatus.CONFIRMED,
-            source=Source(source),
-            created_at=now,
-            updated_at=now,
-            from_wallet_id=origin.id,
-            to_wallet_id=target.id,
+            now=utcnow(),
             received_amount=received_amount,
+            notes=notes,
+            counterparty=counterparty,
+            source=source,
+            external_id=external_id,
         )
-        await repo.insert_transaction(tx)
-        await repo.insert_revision(actor, tx.id, RevisionKind.CREATE, None, now)
         await uow.commit()
     return tx
 
@@ -302,3 +359,97 @@ async def mark_as_move(
         await repo.insert_revision(actor, tx.id, RevisionKind.EDIT, snapshot(tx), now)
         await uow.commit()
     return moved
+
+
+# --- entries that look like moves ------------------------------------------------------
+
+LIKELY_MONTHS = 6  # how far back to look
+REGULAR_RUN = 3  # months in a row, the same payee and amount, before it looks regular
+
+
+@dataclass(frozen=True, slots=True)
+class LikelyMove:
+    """An entry that may really have been a move. Only a suggestion: nothing is changed
+    until the user says so (``mark_as_move``)."""
+
+    transaction: Transaction
+    wallet: Wallet | None  # where it would go; None when only the pattern suggests a move
+    reason: str
+
+
+def _month(when: datetime, tz: ZoneInfo) -> int:
+    day = when.astimezone(tz)
+    return day.year * 12 + day.month - 1
+
+
+def _regular_runs(txs: list[Transaction], tz: ZoneInfo, now: datetime) -> list[Transaction]:
+    """Entries that are part of a run of ``REGULAR_RUN`` or more months in a row with one
+    payment of the same amount to the same payee each (a month with two such payments
+    doesn't count), a run that is still going: it reaches this month or the last."""
+    groups: dict[tuple[str, str, str], list[Transaction]] = {}
+    for tx in txs:
+        if tx.direction is Direction.OUT and tx.counterparty and tx.category_rule_id is None:
+            key = (tx.counterparty.casefold(), str(tx.amount.amount), tx.amount.currency)
+            groups.setdefault(key, []).append(tx)
+    this_month = _month(now, tz)
+    found: list[Transaction] = []
+    for group in groups.values():
+        by_month: dict[int, list[Transaction]] = {}
+        for tx in group:
+            by_month.setdefault(_month(tx.occurred_at, tz), []).append(tx)
+        months = sorted(m for m, items in by_month.items() if len(items) == 1)
+        run: list[int] = []  # the latest unbroken run of months; only it can still be going
+        for m in months:
+            run = [*run, m] if run and run[-1] == m - 1 else [m]
+        if len(run) >= REGULAR_RUN and run[-1] >= this_month - 1:
+            found.extend(by_month[m][0] for m in run)
+    return found
+
+
+async def likely_moves(uow: UnitOfWork, actor: UserId, *, now: datetime) -> list[LikelyMove]:
+    """Money in or out of the last six months that may have been a move, newest first:
+    entries naming one of the user's wallets (by its match words), and a payment of the
+    same amount to the same payee every month for three months or more (a regular
+    transfer). Splits, repayments of IOUs, deleted entries and moves are never offered.
+    Read-only."""
+    async with uow:
+        repo = uow.ledger
+        user = await repo.get_user(actor)
+        if user is None:
+            raise NotFound("user not found")
+        tz = ZoneInfo(user.timezone)
+        wallets = await repo.list_wallets(actor)
+        page = await repo.list_transactions(
+            actor,
+            LedgerQuery(
+                start=now - timedelta(days=30 * LIKELY_MONTHS),
+                end=now,
+                status=TransactionStatus.CONFIRMED,
+                limit=10_000,
+            ),
+        )
+        live = [t for t in page.items if t.direction in (Direction.IN, Direction.OUT)]
+        reasons: dict[UUID, tuple[Wallet | None, str]] = {}
+        for tx in live:
+            found = match_wallet([tx.counterparty, tx.notes], wallets)
+            if found is not None:
+                reasons[tx.id] = (found.wallet, f"matches '{found.word}'")
+        for tx in _regular_runs([t for t in live if t.id not in reasons], tz, now):
+            reasons[tx.id] = (
+                None,
+                f"looks like a regular transfer: {tx.amount} to {tx.counterparty} "
+                f"every month for {REGULAR_RUN}+ months",
+            )
+        offered: list[LikelyMove] = []
+        for tx in live:
+            if tx.id not in reasons:
+                continue
+            if await repo.list_splits(actor, tx.id):
+                continue
+            if await repo.has_settlements(actor, tx.id) or await repo.has_settlements_for_income(
+                actor, tx.id
+            ):
+                continue
+            wallet, reason = reasons[tx.id]
+            offered.append(LikelyMove(tx, wallet, reason))
+    return sorted(offered, key=lambda m: m.transaction.occurred_at, reverse=True)

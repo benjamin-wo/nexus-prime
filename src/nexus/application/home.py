@@ -3,7 +3,8 @@ for, newest worry first. Read-only; each item links to the page that settles it.
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
+from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from nexus.application import bills as bill_cases
@@ -28,12 +29,25 @@ DUPLICATE_DAYS = 30
 
 
 @dataclass(frozen=True, slots=True)
+class FeedAction:
+    """A button on an item: one request to the web API that settles (part of) it."""
+
+    key: str  # stable, e.g. "went_through"
+    label: str
+    method: str  # "POST"
+    path: str  # relative to /api, query string included
+
+
+@dataclass(frozen=True, slots=True)
 class FeedItem:
     department: str
-    kind: str  # "email", "duplicates", "budget", "bill", "trip_budget", "booking", "settle_up"
+    # "email", "duplicates", "budget", "bill", "missed_move", "trip_budget", "booking",
+    # "settle_up"
+    kind: str
     text: str
     link: str  # the web app page that deals with it
     urgent: bool = False
+    actions: tuple[FeedAction, ...] = ()  # buttons that settle it without leaving the page
 
 
 def _plural(n: int, one: str, many: str) -> str:
@@ -80,7 +94,33 @@ async def needs_you(
                     urgent=over,
                 )
             )
+    asked: set[tuple[UUID, date]] = set()
+    for missed in await bill_cases.missed_moves(uow, user, now=now):
+        asked.add((missed.bill.id, missed.due))
+        query = f"?due={missed.due.isoformat()}"
+        items.append(
+            FeedItem(
+                "accounting",
+                "missed_move",
+                missed.text(),
+                "/accounting/plan",
+                urgent=False,
+                actions=(
+                    FeedAction(
+                        "went_through",
+                        "It went through",
+                        "POST",
+                        f"/bills/{missed.bill.id}/paid{query}",
+                    ),
+                    FeedAction(
+                        "skip", "Skip this month", "POST", f"/bills/{missed.bill.id}/skip{query}"
+                    ),
+                ),
+            )
+        )
     for view in await bill_cases.list_bills(uow, user, now=now):
+        if (view.bill.id, view.due) in asked:
+            continue  # already asked about, with buttons
         if view.days_until <= BILL_DAYS and not view.snoozed(now):
             days = view.days_until
             when = (
