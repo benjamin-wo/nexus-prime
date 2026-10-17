@@ -87,7 +87,7 @@ def _user(row: Row[Any]) -> User:
 
 
 def _category(row: Row[Any]) -> Category:
-    return Category(id=row.id, user_id=UserId(row.user_id), name=row.name, active=row.active)
+    return Category(id=row.id, user_id=UserId(row.user_id), name=row.name)
 
 
 def _transaction(row: Row[Any]) -> Transaction:
@@ -240,7 +240,6 @@ class SqlLedgerRepository:
                 id=category.id,
                 user_id=category.user_id,
                 name=category.name,
-                active=category.active,
             )
         )
 
@@ -254,10 +253,8 @@ class SqlLedgerRepository:
         ).first()
         return _category(row) if row else None
 
-    async def list_categories(self, user_id: UserId, *, include_inactive: bool) -> list[Category]:
+    async def list_categories(self, user_id: UserId) -> list[Category]:
         stmt = select(categories).where(categories.c.user_id == user_id)
-        if not include_inactive:
-            stmt = stmt.where(categories.c.active.is_(True))
         rows = await self._db.execute(stmt.order_by(func.lower(categories.c.name)))
         return [_category(r) for r in rows]
 
@@ -265,11 +262,11 @@ class SqlLedgerRepository:
         await self._write_category(
             update(categories)
             .where(categories.c.user_id == category.user_id, categories.c.id == category.id)
-            .values(name=category.name, active=category.active)
+            .values(name=category.name)
         )
 
     async def merge_category(
-        self, user_id: UserId, source_id: UUID, target_id: UUID, now: datetime
+        self, user_id: UserId, source_id: UUID, target_id: UUID, now: datetime, *, keep_budget: bool
     ) -> int:
         moved = await self._db.execute(
             update(transactions)
@@ -281,20 +278,22 @@ class SqlLedgerRepository:
             .where(category_rules.c.user_id == user_id, category_rules.c.category_id == source_id)
             .values(category_id=target_id, updated_at=now)
         )
-        # The target keeps its own budget if it has one; else the source's moves over.
-        target_budget = exists().where(
-            budgets.c.user_id == user_id, budgets.c.category_id == target_id
+        if keep_budget:
+            # The target keeps its own budget if it has one; else the source's moves over.
+            target_budget = exists().where(
+                budgets.c.user_id == user_id, budgets.c.category_id == target_id
+            )
+            await self._db.execute(
+                update(budgets)
+                .where(budgets.c.user_id == user_id, budgets.c.category_id == source_id)
+                .where(~target_budget)
+                .values(category_id=target_id, updated_at=now)
+            )
+        await self._db.execute(
+            delete(budgets).where(budgets.c.user_id == user_id, budgets.c.category_id == source_id)
         )
         await self._db.execute(
-            update(budgets)
-            .where(budgets.c.user_id == user_id, budgets.c.category_id == source_id)
-            .where(~target_budget)
-            .values(category_id=target_id, updated_at=now)
-        )
-        await self._db.execute(
-            update(categories)
-            .where(categories.c.user_id == user_id, categories.c.id == source_id)
-            .values(active=False)
+            delete(categories).where(categories.c.user_id == user_id, categories.c.id == source_id)
         )
         return moved.rowcount
 

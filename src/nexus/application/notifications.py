@@ -104,9 +104,7 @@ async def notify(
         instant = settings.frequency is Frequency.INSTANT
         # Instantly, email receipts are asked about one by one as they're found.
         waiting = 0 if instant else await tx.email.count_waiting(user.id, start, now)
-        names = {
-            c.id: c.name for c in await tx.ledger.list_categories(user.id, include_inactive=True)
-        }
+        names = {c.id: c.name for c in await tx.ledger.list_categories(user.id)}
 
     if instant:
         text = _instant([t for t in logged if t.source not in _TOLD_IN_CHAT], names)

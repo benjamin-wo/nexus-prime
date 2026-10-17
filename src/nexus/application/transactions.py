@@ -112,7 +112,7 @@ async def create_transaction(
             category_id, rule_id = rule.category_id, rule.id
     if category_id is None and cmd.fallback_category_id is not None:
         guess = await repo.get_category(actor, cmd.fallback_category_id)
-        if guess is not None and guess.active:
+        if guess is not None:
             category_id = guess.id
     if category_id is None:
         category_id = await default_category(repo, actor, Direction(cmd.direction))
@@ -148,7 +148,7 @@ async def default_category(
 ) -> UUID | None:
     """The user's "Other" (expenses) or "Income" category, if they still have it."""
     wanted = DEFAULT_FOR[direction]
-    for c in await repo.list_categories(actor, include_inactive=False):
+    for c in await repo.list_categories(actor):
         if c.name.casefold() == wanted:
             return c.id
     return None
@@ -157,12 +157,9 @@ async def default_category(
 async def matching_rule(
     repo: LedgerRepository, actor: UserId, counterparty: str | None, notes: str | None
 ) -> CategoryRule | None:
-    """The rule that would file an expense, skipping rules whose category is archived."""
+    """The rule that would file an expense."""
     rules = await repo.list_category_rules(actor)
-    if not rules:
-        return None
-    active = {c.id for c in await repo.list_categories(actor, include_inactive=False)}
-    return best_rule((r for r in rules if r.category_id in active), counterparty, notes)
+    return best_rule(rules, counterparty, notes) if rules else None
 
 
 async def log_transaction(uow: UnitOfWork, actor: UserId, cmd: NewTransaction) -> Transaction:
@@ -317,6 +314,15 @@ async def undo_last(uow: UnitOfWork, actor: UserId) -> UndoResult:
             if revision.before is None:  # pragma: no cover - only CREATE has no snapshot
                 raise NothingToUndo("this change can't be undone")
             reverted = apply_snapshot(tx, revision.before, now=now)
+            before_category = reverted.category_id
+            if (
+                before_category is not None
+                and await repo.get_category(actor, before_category) is None
+            ):
+                # That category was deleted since: the expense stays where it is now.
+                reverted = replace(
+                    reverted, category_id=tx.category_id, category_rule_id=tx.category_rule_id
+                )
 
         if reverted != tx:
             await repo.update_transaction(reverted)

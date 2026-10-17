@@ -181,7 +181,7 @@ class _UserImport:
         if user is None:  # pragma: no cover - just inserted or already present
             raise RuntimeError("user vanished during import")
         self.user = user
-        existing = await self.repo.list_categories(user.id, include_inactive=True)
+        existing = await self.repo.list_categories(user.id)
         self.categories = {c.name.casefold(): c.id for c in existing}
         if self.report.new_user and not existing:
             for name in DEFAULT_CATEGORIES:
@@ -193,7 +193,7 @@ class _UserImport:
             return None
         key = cleaned.casefold()
         if key not in self.categories:
-            category = Category(uuid4(), self.user.id, cleaned, True)
+            category = Category(uuid4(), self.user.id, cleaned)
             await self.repo.insert_category(category)
             self.categories[key] = category.id
         return self.categories[key]

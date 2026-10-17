@@ -94,7 +94,7 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
   });
   const categories = useQuery({
     queryKey: ["categories", "all"],
-    queryFn: () => api<Category[]>("/categories?include_inactive=true"),
+    queryFn: () => api<Category[]>("/categories"),
   });
   const names = new Map(categories.data?.map((c) => [c.id, c.name]));
   const rules = useQuery({ queryKey: ["category-rules"], queryFn: () => api<CategoryRule[]>("/category-rules") });

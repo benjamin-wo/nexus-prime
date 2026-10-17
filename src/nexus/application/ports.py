@@ -128,15 +128,14 @@ class LedgerRepository(Protocol):
     # categories
     async def insert_category(self, category: Category) -> None: ...
     async def get_category(self, user_id: UserId, category_id: UUID) -> Category | None: ...
-    async def list_categories(
-        self, user_id: UserId, *, include_inactive: bool
-    ) -> list[Category]: ...
+    async def list_categories(self, user_id: UserId) -> list[Category]: ...
     async def update_category(self, category: Category) -> None: ...
     async def merge_category(
-        self, user_id: UserId, source_id: UUID, target_id: UUID, now: datetime
+        self, user_id: UserId, source_id: UUID, target_id: UUID, now: datetime, *, keep_budget: bool
     ) -> int:
-        """Move the source's transactions, rules and (if the target has none) budget to
-        the target, and archive the source. Returns how many transactions moved."""
+        """Move the source's transactions and rules to the target, then delete the source
+        and any budget still on it. With keep_budget, the source's budget moves to the
+        target first if the target has none. Returns how many transactions moved."""
         ...
 
     # receipts

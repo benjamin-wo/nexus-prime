@@ -548,9 +548,7 @@ async def sweep(
         return SweepResult(0, 0, first)
     async with uow() as tx:
         seen = await tx.email.seen_message_ids(connection.id, ids)
-        categories = [
-            c.name for c in await tx.ledger.list_categories(user.id, include_inactive=False)
-        ]
+        categories = [c.name for c in await tx.ledger.list_categories(user.id)]
     fresh = [i for i in ids if i not in seen]
     batch, left = fresh[:SWEEP_LIMIT], fresh[SWEEP_LIMIT:]
     waiting: list[InboundEmail] = []
@@ -967,7 +965,7 @@ async def _log_received(
 async def _category_named(tx: UnitOfWork, user_id: UserId, name: object) -> UUID | None:
     if not isinstance(name, str) or not name.strip():
         return None
-    for c in await tx.ledger.list_categories(user_id, include_inactive=False):
+    for c in await tx.ledger.list_categories(user_id):
         if c.name.casefold() == name.strip().casefold():
             return c.id
     return None

@@ -302,7 +302,7 @@ async def ask_ledger(
     _check(question)
     q = replace(question, search=clean_text(question.search, field_name="search", limit=100))
     async with uow_factory() as db:
-        cats = await db.ledger.list_categories(user.id, include_inactive=True)
+        cats = await db.ledger.list_categories(user.id)
     names = {c.id: c.name for c in cats}
     current = await _figures(uow_factory(), rates, user, q, q.start, q.end, names)
     previous = None

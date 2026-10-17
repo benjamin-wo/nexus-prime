@@ -315,8 +315,10 @@ export async function fakeApi(
     state.txs.push(alert, receipt);
   }
   const categories = [
-    { id: "food", name: "Dining Out", active: true },
-    { id: "transport", name: "Transport", active: true },
+    { id: "food", name: "Dining Out" },
+    { id: "transport", name: "Transport" },
+    { id: "other", name: "Other" },
+    { id: "income", name: "Income" },
   ];
   const categoryName = (id: string) => categories.find((c) => c.id === id)?.name ?? id;
   const live = () => state.txs.filter((t) => !t.deleted);
@@ -1459,28 +1461,38 @@ export async function fakeApi(
         : { status: "skipped", reason: "you skipped it" });
       return route.fulfill({ status: 204 });
     }
-    if (path === "/categories" && method === "GET") {
-      const all = url.searchParams.get("include_inactive") === "true";
-      return json(route, all ? categories : categories.filter((c) => c.active));
-    }
+    if (path === "/categories" && method === "GET") return json(route, categories);
     if (path === "/categories" && method === "POST") {
       const name = String(body.name).trim();
       if (categories.some((c) => c.name.toLowerCase() === name.toLowerCase()))
         return json(route, { detail: "a category with that name already exists" }, 409);
-      const created = { id: `c${categories.length + 1}`, name, active: true };
+      const created = { id: `c${categories.length + 1}`, name };
       categories.push(created);
       return json(route, created, 201);
     }
-    const categoryMerge = path.match(/^\/categories\/([\w-]+)\/merge$/);
-    if (categoryMerge && method === "POST") {
-      const source = categories.find((c) => c.id === categoryMerge[1])!;
-      const into = categories.find((c) => c.id === body.into_id)!;
-      source.active = false;
+    // Merging and deleting both fold a category into another one and drop it.
+    const foldCategory = (sourceId: string, intoId: string) => {
+      const into = categories.find((c) => c.id === intoId)!;
       let moved = 0;
-      for (const tx of state.txs) if (tx.category_id === source.id) { tx.category_id = into.id; moved++; }
-      return json(route, { moved, into });
-    }
+      for (const tx of state.txs) if (tx.category_id === sourceId) { tx.category_id = into.id; moved++; }
+      for (const rule of state.rules)
+        if (rule.category_id === sourceId) Object.assign(rule, { category_id: into.id, category_name: into.name });
+      state.budgets = state.budgets.filter((b) => b.category_id !== sourceId);
+      categories.splice(categories.findIndex((c) => c.id === sourceId), 1);
+      return { moved, into };
+    };
+    const categoryMerge = path.match(/^\/categories\/([\w-]+)\/merge$/);
+    if (categoryMerge && method === "POST") return json(route, foldCategory(categoryMerge[1], body.into_id));
     const categoryEdit = path.match(/^\/categories\/([\w-]+)$/);
+    if (categoryEdit && method === "DELETE") {
+      const category = categories.find((c) => c.id === categoryEdit[1])!;
+      if (["other", "income"].includes(category.name.toLowerCase()))
+        return json(route, { detail: "Other and Income can't be deleted" }, 400);
+      const moveTo = url.searchParams.get("move_to") ?? categories.find((c) => c.name === "Other")!.id;
+      if (moveTo === category.id || !categories.some((c) => c.id === moveTo))
+        return json(route, { detail: "pick another category to move its expenses to" }, 400);
+      return json(route, foldCategory(category.id, moveTo));
+    }
     if (categoryEdit && method === "PATCH") {
       const category = categories.find((c) => c.id === categoryEdit[1])!;
       Object.assign(category, body);

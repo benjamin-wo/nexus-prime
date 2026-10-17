@@ -519,7 +519,7 @@ test("nothing spills sideways on a small phone", async ({ page }) => {
   }
 });
 
-test("add, rename, archive and bring back a category", async ({ page }) => {
+test("add, rename and delete a category", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/settings");
   const card = page.getByRole("region", { name: "Categories" });
@@ -543,12 +543,42 @@ test("add, rename, archive and bring back a category", async ({ page }) => {
   await expect(yours.getByRole("heading", { name: "Pet care" })).toBeVisible();
 
   const petCare = yours.getByRole("listitem").filter({ hasText: "Pet care" });
-  await petCare.getByRole("button", { name: "Archive" }).click();
-  await petCare.getByRole("button", { name: "Archive" }).click();
-  const archived = card.getByRole("list", { name: "Archived categories" });
-  await expect(archived.getByRole("heading", { name: "Pet care" })).toBeVisible();
-  await archived.getByRole("button", { name: "Bring back" }).click();
+  await petCare.getByRole("button", { name: "Delete" }).click();
+  await expect(petCare.getByLabel("Move Pet care expenses to")).toHaveValue("other");
+  await petCare.getByRole("button", { name: "Keep" }).click();
   await expect(yours.getByRole("heading", { name: "Pet care" })).toBeVisible();
+  await petCare.getByRole("button", { name: "Delete" }).click();
+  await petCare.getByRole("button", { name: "Delete" }).click();
+  await expect(yours.getByRole("heading", { name: "Pet care" })).toHaveCount(0);
+});
+
+test("Other and Income can't be deleted", async ({ page }) => {
+  await fakeApi(page);
+  await page.goto("/settings");
+  const yours = page.getByRole("region", { name: "Categories" }).getByRole("list", { name: "Your categories" });
+  for (const name of ["Other", "Income"]) {
+    const row = yours.getByRole("listitem").filter({ has: page.getByRole("heading", { name, exact: true }) });
+    await expect(row.getByRole("button", { name: "Merge into…" })).toBeVisible();
+    await expect(row.getByRole("button", { name: "Delete" })).toHaveCount(0);
+  }
+});
+
+test("delete a category and find its expense under Other", async ({ page }) => {
+  await fakeApi(page);
+  await page.goto("/settings");
+  const card = page.getByRole("region", { name: "Categories" });
+  const yours = card.getByRole("list", { name: "Your categories" });
+  const dining = yours.getByRole("listitem").filter({ hasText: "Dining Out" });
+  await dining.getByRole("button", { name: "Delete" }).click();
+  await expect(dining.getByText("Delete Dining Out? Its expenses move to")).toBeVisible();
+  await expect(dining.getByLabel("Move Dining Out expenses to")).toHaveValue("other");
+  await dining.getByRole("button", { name: "Delete" }).click();
+  await expect(yours.getByRole("heading", { name: "Dining Out" })).toHaveCount(0);
+
+  await page.goto("/accounting/ledger?category=other");
+  const ledger = page.getByRole("region", { name: "Transactions" });
+  await expect(ledger.getByText("Category Other")).toBeVisible();
+  await expect(ledger.getByRole("button", { name: "Maxwell Food Centre", exact: true })).toBeVisible();
 });
 
 test("the cog opens Settings, and Plan keeps only planning", async ({ page }, info) => {
@@ -662,7 +692,6 @@ test("merge one category into another from Settings", async ({ page }) => {
   await form.getByLabel("Move everything in Transport into").selectOption({ label: "Dining Out" });
   await form.getByRole("button", { name: "Merge" }).click();
   await expect(yours.getByRole("heading", { name: "Transport" })).toHaveCount(0);
-  await expect(card.getByRole("list", { name: "Archived categories" }).getByRole("heading", { name: "Transport" })).toBeVisible();
 });
 
 test("mark that someone paid back what they owe", async ({ page }) => {

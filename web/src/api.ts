@@ -133,7 +133,7 @@ export type ImportRecord = {
 };
 
 export type Page = { items: Transaction[]; total: number };
-export type Category = { id: string; name: string; active: boolean };
+export type Category = { id: string; name: string };
 export type Me = {
   user: { telegram_user_id: number; role: "owner" | "member"; home_currency: string; timezone: string };
   csrf_token: string;

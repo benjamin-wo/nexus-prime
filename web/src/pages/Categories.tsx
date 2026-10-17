@@ -17,14 +17,18 @@ function CategoryRow({
   const [confirming, setConfirming] = useState(false);
   const [merging, setMerging] = useState(false);
   const [into, setInto] = useState("");
+  const [moveTo, setMoveTo] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  async function patch(body: { name?: string; active?: boolean }) {
+  const keepsForever = ["other", "income"].includes(category.name.toLowerCase());
+  const fallback = others.find((c) => c.name.toLowerCase() === "other")?.id ?? "";
+  const target = others.some((c) => c.id === moveTo) ? moveTo : fallback;
+
+  async function patch(body: { name: string }) {
     setError(null);
     try {
       await api(`/categories/${category.id}`, { method: "PATCH", body });
       setRenaming(false);
-      setConfirming(false);
       onChanged();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't save");
@@ -40,6 +44,17 @@ function CategoryRow({
       onChanged();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't merge");
+    }
+  }
+
+  async function remove() {
+    setError(null);
+    try {
+      await api(`/categories/${category.id}?move_to=${encodeURIComponent(target)}`, { method: "DELETE" });
+      setConfirming(false);
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't delete");
     }
   }
 
@@ -63,7 +78,7 @@ function CategoryRow({
               ))}
             </select>
           </label>
-          <p className="caption">Its expenses, rules and budget move over, and {category.name} is archived.</p>
+          <p className="caption">Its expenses, rules and budget move over, and {category.name} is deleted.</p>
           <button type="submit" className="btn btn-primary" disabled={!into}>
             Merge
           </button>
@@ -83,36 +98,44 @@ function CategoryRow({
         </form>
       ) : (
         <div className="budget-head">
-          <h3 className={`wrap${category.active ? "" : " muted"}`}>{category.name}</h3>
+          <h3 className="wrap">{category.name}</h3>
           <span className="quick">
-            {category.active ? (
-              confirming ? (
-                <>
-                  <span>Stop using it?</span>
-                  <button type="button" className="btn btn-danger" onClick={() => patch({ active: false })}>
-                    Archive
-                  </button>
-                  <button type="button" className="btn" onClick={() => setConfirming(false)}>
-                    Keep
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button type="button" className="btn btn-ghost" onClick={() => setRenaming(true)}>
-                    Rename
-                  </button>
-                  <button type="button" className="btn btn-ghost" onClick={() => setMerging(true)}>
-                    Merge into…
-                  </button>
-                  <button type="button" className="btn btn-ghost" onClick={() => setConfirming(true)}>
-                    Archive
-                  </button>
-                </>
-              )
+            {confirming ? (
+              <>
+                <span>Delete {category.name}? Its expenses move to</span>
+                <select
+                  className="input"
+                  aria-label={`Move ${category.name} expenses to`}
+                  value={target}
+                  onChange={(e) => setMoveTo(e.target.value)}
+                >
+                  {others.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+                <button type="button" className="btn btn-danger" disabled={!target} onClick={() => void remove()}>
+                  Delete
+                </button>
+                <button type="button" className="btn" onClick={() => setConfirming(false)}>
+                  Keep
+                </button>
+              </>
             ) : (
-              <button type="button" className="btn btn-ghost" onClick={() => patch({ active: true })}>
-                Bring back
-              </button>
+              <>
+                <button type="button" className="btn btn-ghost" onClick={() => setRenaming(true)}>
+                  Rename
+                </button>
+                <button type="button" className="btn btn-ghost" onClick={() => setMerging(true)}>
+                  Merge into…
+                </button>
+                {!keepsForever && (
+                  <button type="button" className="btn btn-ghost" onClick={() => setConfirming(true)}>
+                    Delete
+                  </button>
+                )}
+              </>
             )}
           </span>
         </div>
@@ -131,13 +154,14 @@ export function CategoriesSection() {
   const client = useQueryClient();
   const all = useQuery({
     queryKey: ["categories", "all"],
-    queryFn: () => api<Category[]>("/categories?include_inactive=true"),
+    queryFn: () => api<Category[]>("/categories"),
   });
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   function refresh() {
-    void client.invalidateQueries({ queryKey: ["categories"] });
+    for (const key of ["categories", "transactions", "budgets", "category-rules"])
+      void client.invalidateQueries({ queryKey: [key] });
   }
 
   async function add(event: FormEvent) {
@@ -152,8 +176,7 @@ export function CategoriesSection() {
     }
   }
 
-  const active = all.data?.filter((c) => c.active) ?? [];
-  const archived = all.data?.filter((c) => !c.active) ?? [];
+  const categories = all.data ?? [];
   return (
     <section className="card" aria-labelledby="categories">
       <div className="card-head">
@@ -162,10 +185,10 @@ export function CategoriesSection() {
       </div>
       {all.isLoading && <p className="state">Loading…</p>}
       {all.isError && <p className="state error-text">Couldn't load categories.</p>}
-      {active.length > 0 && (
+      {categories.length > 0 && (
         <ul className="budgets" aria-label="Your categories">
-          {active.map((c) => (
-            <CategoryRow key={c.id} category={c} others={active.filter((o) => o.id !== c.id)} onChanged={refresh} />
+          {categories.map((c) => (
+            <CategoryRow key={c.id} category={c} others={categories.filter((o) => o.id !== c.id)} onChanged={refresh} />
           ))}
         </ul>
       )}
@@ -183,16 +206,6 @@ export function CategoriesSection() {
           </p>
         )}
       </form>
-      {archived.length > 0 && (
-        <>
-          <h3 className="caption">Archived (past expenses keep them)</h3>
-          <ul className="budgets" aria-label="Archived categories">
-            {archived.map((c) => (
-              <CategoryRow key={c.id} category={c} others={[]} onChanged={refresh} />
-            ))}
-          </ul>
-        </>
-      )}
     </section>
   );
 }

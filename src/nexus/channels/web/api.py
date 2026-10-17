@@ -523,7 +523,7 @@ async def list_transactions(
 
 class MerchantSuggestionOut(Model):
     name: str
-    category_id: UUID | None  # None when the usual category was archived
+    category_id: UUID | None  # None when the usual spend has no category
     category: str | None
     amount: MoneyOut  # the amount usually paid
     times: int
@@ -542,13 +542,13 @@ async def merchant_suggestions(
     found = await tx_cases.merchant_suggestions(
         web.uow(), auth.user.id, direction, q, now=web.clock()
     )
-    active = {c.id: c.name for c in await category_cases.list_categories(web.uow(), auth.user.id)}
+    names = {c.id: c.name for c in await category_cases.list_categories(web.uow(), auth.user.id)}
     tz = ZoneInfo(auth.user.timezone)
     return [
         MerchantSuggestionOut(
             name=f.name,
-            category_id=f.category_id if f.category_id in active else None,
-            category=active.get(f.category_id) if f.category_id else None,
+            category_id=f.category_id,
+            category=names.get(f.category_id) if f.category_id else None,
             amount=money(f.amount),
             times=f.times,
             last_on=f.last.astimezone(tz).date(),
@@ -766,7 +766,7 @@ async def export_csv(
         offset += len(page.items)
         if not page.items or offset >= page.total:
             break
-    cats = await category_cases.list_categories(web.uow(), user.id, include_inactive=True)
+    cats = await category_cases.list_categories(web.uow(), user.id)
     rows = rows[:EXPORT_LIMIT]
     conversions = await _conversions(web, user, rows)
     body = to_csv(rows, {c.id: c for c in cats}, _tz(user), user.home_currency, conversions)
@@ -907,18 +907,15 @@ async def spending_months(
 class CategoryOut(Model):
     id: UUID
     name: str
-    active: bool
 
 
 def category_out(c: Category) -> CategoryOut:
-    return CategoryOut(id=c.id, name=c.name, active=c.active)
+    return CategoryOut(id=c.id, name=c.name)
 
 
 @router.get("/categories")
-async def categories(auth: Auth, web: Runtime, include_inactive: bool = False) -> list[CategoryOut]:
-    cats = await category_cases.list_categories(
-        web.uow(), auth.user.id, include_inactive=include_inactive
-    )
+async def categories(auth: Auth, web: Runtime) -> list[CategoryOut]:
+    cats = await category_cases.list_categories(web.uow(), auth.user.id)
     return [category_out(c) for c in cats]
 
 
@@ -931,27 +928,13 @@ async def create_category(body: CategoryIn, auth: Auth, web: Runtime) -> Categor
     return category_out(await category_cases.create_category(web.uow(), auth.user.id, body.name))
 
 
-class CategoryPatch(Model):
-    name: str | None = Field(None, min_length=1, max_length=100)
-    active: bool | None = None
-
-
 @router.patch("/categories/{category_id}")
 async def edit_category(
-    category_id: UUID, body: CategoryPatch, auth: Auth, web: Runtime
+    category_id: UUID, body: CategoryIn, auth: Auth, web: Runtime
 ) -> CategoryOut:
-    result: Category | None = None
-    if body.name is not None:
-        result = await category_cases.rename_category(
-            web.uow(), auth.user.id, category_id, body.name
-        )
-    if body.active is not None:
-        result = await category_cases.set_category_active(
-            web.uow(), auth.user.id, category_id, body.active
-        )
-    if result is None:
-        raise InvalidInput("nothing to change")
-    return category_out(result)
+    return category_out(
+        await category_cases.rename_category(web.uow(), auth.user.id, category_id, body.name)
+    )
 
 
 class MergeIn(Model):
@@ -969,6 +952,17 @@ async def merge_category(category_id: UUID, body: MergeIn, auth: Auth, web: Runt
         web.uow(), auth.user.id, category_id, body.into_id, now=web.clock()
     )
     return MergeOut(moved=merged.moved, into=category_out(merged.into))
+
+
+@router.delete("/categories/{category_id}")
+async def delete_category(
+    category_id: UUID, auth: Auth, web: Runtime, move_to: UUID | None = None
+) -> MergeOut:
+    """Delete a category; its expenses and rules move to ``move_to`` (default: Other)."""
+    deleted = await category_cases.delete_category(
+        web.uow(), auth.user.id, category_id, move_to, now=web.clock()
+    )
+    return MergeOut(moved=deleted.moved, into=category_out(deleted.into))
 
 
 class RuleOut(Model):

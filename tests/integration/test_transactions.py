@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from nexus.application.categories import create_category, list_categories, set_category_active
+from nexus.application.categories import create_category, delete_category, list_categories
 from nexus.application.ports import LedgerQuery, SortField
 from nexus.application.splits import split_bill
 from nexus.application.transactions import (
@@ -18,7 +18,7 @@ from nexus.application.transactions import (
     undo_last,
 )
 from nexus.application.users import DEFAULT_CATEGORIES, RegisterUser, register_user
-from nexus.domain.errors import Conflict, DuplicateSource, InvalidInput, NothingToUndo
+from nexus.domain.errors import Conflict, DuplicateSource, InvalidInput, NotFound, NothingToUndo
 from nexus.domain.ledger import (
     Direction,
     RevisionKind,
@@ -101,12 +101,12 @@ async def test_duplicate_source_is_refused_even_after_delete(
     await log_transaction(uow(), alice, spend("12", source=Source.IMPORT, external_id="msg-1"))
 
 
-async def test_archived_category_cannot_be_assigned(uow: UowFactory, alice: UserId) -> None:
+async def test_deleted_category_cannot_be_assigned(uow: UowFactory, alice: UserId) -> None:
     category = await create_category(uow(), alice, "Coffee")
     with pytest.raises(Conflict, match="already exists"):
         await create_category(uow(), alice, "coffee")
-    await set_category_active(uow(), alice, category.id, False)
-    with pytest.raises(InvalidInput, match="archived"):
+    await delete_category(uow(), alice, category.id, None, now=T0)
+    with pytest.raises(NotFound):
         await log_transaction(uow(), alice, spend("3", category_id=category.id))
 
 

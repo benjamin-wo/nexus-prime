@@ -183,7 +183,7 @@ async def mark_paid(
             raise InvalidInput("an amount must be more than zero")
         current = view.occurrence or BillOccurrence(uuid4(), user.id, bill_id, view.due)
         await tx.planning.save_occurrence(replace(current, paid_at=now, snoozed_until=None))
-        categories = await tx.ledger.list_categories(user.id, include_inactive=False)
+        categories = await tx.ledger.list_categories(user.id)
         await tx.commit()
     money = amount or view.bill.amount
     if not view.bill.spending:
