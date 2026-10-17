@@ -96,7 +96,7 @@ def _exact(rules: list[CategoryRule], pattern: str) -> CategoryRule | None:
 async def list_rules(uow: UnitOfWork, actor: UserId) -> list[RuleView]:
     async with uow:
         rules = await uow.ledger.list_category_rules(actor)
-        cats = {c.id: c for c in await uow.ledger.list_categories(actor, include_inactive=True)}
+        cats = {c.id: c for c in await uow.ledger.list_categories(actor)}
     return [RuleView(r, cats[r.category_id]) for r in rules]
 
 

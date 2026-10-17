@@ -65,9 +65,7 @@ async def ensure_user(repo: LedgerRepository, cmd: RegisterUser) -> Registration
     created = await repo.insert_user_if_absent(candidate)
     if created:
         for name in DEFAULT_CATEGORIES:
-            await repo.insert_category(
-                Category(id=uuid4(), user_id=candidate.id, name=name, active=True)
-            )
+            await repo.insert_category(Category(id=uuid4(), user_id=candidate.id, name=name))
     user = await repo.get_user_by_telegram_id(cmd.telegram_user_id)
     if user is None:  # pragma: no cover - the row was just inserted or already existed
         raise RuntimeError("user vanished during registration")

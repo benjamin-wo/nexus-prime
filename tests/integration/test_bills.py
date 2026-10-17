@@ -118,9 +118,7 @@ async def test_marking_paid_logs_the_bill_in_the_months_spending(
         "Marked Rent (1 Oct) as paid and logged 1800.00 SGD in this month's spending."
     )
     async with uow() as tx:
-        categories = {
-            c.id: c.name for c in await tx.ledger.list_categories(user.id, include_inactive=False)
-        }
+        categories = {c.id: c.name for c in await tx.ledger.list_categories(user.id)}
     assert paid.logged.category_id is not None
     assert categories[paid.logged.category_id] == bill_cases.BILLS_CATEGORY
 

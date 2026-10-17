@@ -198,18 +198,18 @@ def parse_id(value: str) -> UUID:
 
 
 async def category_map(ctx: ToolContext) -> dict[UUID, Category]:
-    cats = await category_cases.list_categories(ctx.uow(), ctx.user.id, include_inactive=True)
+    cats = await category_cases.list_categories(ctx.uow(), ctx.user.id)
     return {c.id: c for c in cats}
 
 
 async def resolve_category(ctx: ToolContext, name: str | None) -> UUID | None:
     if name is None:
         return None
-    active = await category_cases.list_categories(ctx.uow(), ctx.user.id)
-    for category in active:
+    found = await category_cases.list_categories(ctx.uow(), ctx.user.id)
+    for category in found:
         if category.name.casefold() == name.casefold():
             return category.id
-    options = ", ".join(c.name for c in active)
+    options = ", ".join(c.name for c in found)
     raise InvalidInput(f"unknown category {name!r}; choose one of: {options}")
 
 
@@ -686,17 +686,14 @@ class RenameCategoryArgs(Args):
 
 
 async def _find_category(ctx: ToolContext, name: str) -> Category | None:
-    found = await category_cases.list_categories(ctx.uow(), ctx.user.id, include_inactive=True)
+    found = await category_cases.list_categories(ctx.uow(), ctx.user.id)
     return next((c for c in found if c.name.casefold() == name.strip().casefold()), None)
 
 
 async def _add_category(ctx: ToolContext, a: CategoryNameArgs) -> ToolResult:
     existing = await _find_category(ctx, a.category)
-    if existing is not None and existing.active:
-        return ToolResult(f"There's already a category called {existing.name}.")
     if existing is not None:
-        await category_cases.set_category_active(ctx.uow(), ctx.user.id, existing.id, True)
-        return ToolResult(f"Brought back {existing.name}.", wrote=True)
+        return ToolResult(f"There's already a category called {existing.name}.")
     made = await category_cases.create_category(ctx.uow(), ctx.user.id, a.category)
     return ToolResult(f"Added the category {made.name}.", wrote=True)
 
@@ -715,22 +712,37 @@ async def _rename_category(ctx: ToolContext, a: RenameCategoryArgs) -> ToolResul
     )
 
 
-async def _describe_archive_category(ctx: ToolContext, a: CategoryNameArgs) -> str:
+class DeleteCategoryArgs(Args):
+    category: str = Field(description="The category to delete")
+    move_to: str = Field(default="Other", description="The category its expenses and rules move to")
+
+
+async def _delete_pair(ctx: ToolContext, a: DeleteCategoryArgs) -> tuple[Category, Category]:
     current = await _find_category(ctx, a.category)
-    if current is None or not current.active:
-        raise NotFound(f"there's no active category called {a.category!r}")
-    return (
-        f"Stop using the category {current.name}? Past expenses keep it, and it can be "
-        "brought back later."
+    if current is None:
+        raise NotFound(f"there's no category called {a.category!r}")
+    if category_cases.is_protected(current):
+        raise InvalidInput("Other and Income can't be deleted")
+    into = await _find_category(ctx, a.move_to)
+    if into is None:
+        raise NotFound(f"there's no category called {a.move_to!r}")
+    if into.id == current.id:
+        raise InvalidInput("pick a different category to move its expenses to")
+    return current, into
+
+
+async def _describe_delete_category(ctx: ToolContext, a: DeleteCategoryArgs) -> str:
+    current, into = await _delete_pair(ctx, a)
+    return f"Delete {current.name}? Its expenses and rules move to {into.name}."
+
+
+async def _delete_category(ctx: ToolContext, a: DeleteCategoryArgs) -> ToolResult:
+    current, into = await _delete_pair(ctx, a)
+    deleted = await category_cases.delete_category(
+        ctx.uow(), ctx.user.id, current.id, into.id, now=ctx.now
     )
-
-
-async def _archive_category(ctx: ToolContext, a: CategoryNameArgs) -> ToolResult:
-    current = await _find_category(ctx, a.category)
-    if current is None or not current.active:
-        raise NotFound(f"there's no active category called {a.category!r}")
-    await category_cases.set_category_active(ctx.uow(), ctx.user.id, current.id, False)
-    return ToolResult(f"{current.name} is archived. Past expenses keep it.", wrote=True)
+    count = f"{deleted.moved} expense{'' if deleted.moved == 1 else 's'}"
+    return ToolResult(f"Deleted {current.name}. Its {count} moved to {into.name}.", wrote=True)
 
 
 class MergeCategoryArgs(Args):
@@ -742,9 +754,11 @@ async def _merge_pair(ctx: ToolContext, a: MergeCategoryArgs) -> tuple[Category,
     source = await _find_category(ctx, a.category)
     if source is None:
         raise NotFound(f"there's no category called {a.category!r}")
+    if category_cases.is_protected(source):
+        raise InvalidInput("Other and Income can't be merged away")
     into = await _find_category(ctx, a.into)
-    if into is None or not into.active:
-        raise NotFound(f"there's no active category called {a.into!r}")
+    if into is None:
+        raise NotFound(f"there's no category called {a.into!r}")
     if into.id == source.id:
         raise InvalidInput("pick a different category to merge into")
     return source, into
@@ -753,7 +767,7 @@ async def _merge_pair(ctx: ToolContext, a: MergeCategoryArgs) -> tuple[Category,
 async def _describe_merge_category(ctx: ToolContext, a: MergeCategoryArgs) -> str:
     source, into = await _merge_pair(ctx, a)
     return (
-        f"Move everything filed under {source.name} into {into.name} and archive "
+        f"Move everything filed under {source.name} into {into.name} and delete "
         f"{source.name}? This can't be undone automatically."
     )
 
@@ -765,7 +779,7 @@ async def _merge_category(ctx: ToolContext, a: MergeCategoryArgs) -> ToolResult:
     )
     count = f"{merged.moved} transaction{'' if merged.moved == 1 else 's'}"
     return ToolResult(
-        f"Merged {source.name} into {into.name}: {count} moved, and {source.name} is archived.",
+        f"Merged {source.name} into {into.name}: {count} moved, and {source.name} is deleted.",
         wrote=True,
     )
 
@@ -2494,10 +2508,10 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             QueryArgs,
             _query_ledger,
         ),
-        ToolSpec("list_categories", "The user's active categories.", NoArgs, _categories),
+        ToolSpec("list_categories", "The user's categories.", NoArgs, _categories),
         ToolSpec(
             "add_category",
-            "Add a category of the user's own (or bring back an archived one).",
+            "Add a category of the user's own.",
             CategoryNameArgs,
             _add_category,
         ),
@@ -2508,16 +2522,18 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             _rename_category,
         ),
         ToolSpec(
-            "archive_category",
-            "Stop using a category. Past expenses keep it. Asks the user to confirm.",
-            CategoryNameArgs,
-            _archive_category,
-            confirm=_describe_archive_category,
+            "delete_category",
+            "Delete a category: its expenses and rules move to another category (Other "
+            "unless the user names one). Other and Income can't be deleted. Asks the user "
+            "to confirm.",
+            DeleteCategoryArgs,
+            _delete_category,
+            confirm=_describe_delete_category,
         ),
         ToolSpec(
             "merge_category",
             "Fold one category into another: its expenses, rules and budget move over and "
-            "it's archived. Asks the user to confirm.",
+            "it's deleted. Asks the user to confirm.",
             MergeCategoryArgs,
             _merge_category,
             confirm=_describe_merge_category,

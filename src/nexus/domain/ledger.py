@@ -69,7 +69,6 @@ class Category:
     id: UUID
     user_id: UserId
     name: str
-    active: bool
 
 
 @dataclass(frozen=True, slots=True)

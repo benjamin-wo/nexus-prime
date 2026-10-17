@@ -37,7 +37,7 @@ WRITES = (
     "undo_last_change",
     "add_category",
     "rename_category",
-    "archive_category",
+    "delete_category",
     "merge_category",
     "set_category_rule",
     "remove_category_rule",
@@ -883,7 +883,7 @@ CASES: tuple[Case, ...] = (
         "cat-rename",
         "categories",
         _t("rename activities to hobbies"),
-        checks=(CategoryIs("Hobbies", True), CategoryIs("Activities", None)),
+        checks=(CategoryIs("Hobbies", True), CategoryIs("Activities", False)),
     ),
     Case(
         "cat-merge",
@@ -899,7 +899,7 @@ CASES: tuple[Case, ...] = (
         checks=(RuleIs("grab", None),),
     ),
     Case(
-        "cat-archive",
+        "cat-delete",
         "categories",
         _t("i don't need the travel category"),
         checks=(CategoryIs("Travel", False),),

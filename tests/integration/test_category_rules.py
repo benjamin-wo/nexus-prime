@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nexus.application import category_rules as rule_cases
-from nexus.application.categories import list_categories, set_category_active
+from nexus.application.categories import delete_category, list_categories
 from nexus.application.transactions import (
     NewTransaction,
     TransactionChanges,
@@ -106,10 +106,13 @@ async def test_the_most_specific_rule_wins(uow: UowFactory, alice: UserId) -> No
     assert ride.category_id == await category(uow, alice, "Transport")
 
 
-async def test_rules_for_archived_categories_are_skipped(uow: UowFactory, alice: UserId) -> None:
+async def test_deleting_a_category_moves_its_rules(uow: UowFactory, alice: UserId) -> None:
     change = await add_rule(uow, alice, "netflix", "Activities")
-    await set_category_active(uow(), alice, change.category.id, False)
-    assert (await spend(uow, alice, "Netflix")).category_id == await category(uow, alice, "Other")
+    other = await category(uow, alice, "Other")
+    await delete_category(uow(), alice, change.category.id, None, now=NOW)
+    [view] = await rule_cases.list_rules(uow(), alice)
+    assert view.category.id == other
+    assert (await spend(uow, alice, "Netflix")).category_id == other
 
 
 async def test_a_correction_offers_a_rule_change_but_never_makes_one(

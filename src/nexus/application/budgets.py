@@ -87,10 +87,7 @@ async def budget_statuses(
         budgets = await tx.planning.list_budgets(user.id)
     if not budgets:
         return []
-    names = {
-        c.id: c.name
-        for c in await category_cases.list_categories(uow(), user.id, include_inactive=True)
-    }
+    names = {c.id: c.name for c in await category_cases.list_categories(uow(), user.id)}
     _, start, end = _month(user, now)
     summary = await tx_cases.summarize_in_home(uow(), rates, user, start, end)
     out = summary.totals[0]

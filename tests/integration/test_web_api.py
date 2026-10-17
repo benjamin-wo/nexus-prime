@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from cryptography.fernet import Fernet
@@ -373,11 +373,12 @@ async def test_writes_need_csrf_token_and_our_origin(world: World) -> None:
 # --- ledger -----------------------------------------------------------------------------
 
 
-async def test_categories_add_rename_archive(world: World) -> None:
+async def test_categories_add_rename_delete(world: World) -> None:
     owner = world.browser()
     await owner.login(OWNER)
-    names = [c["name"] for c in (await owner.get("/api/categories")).json()]
-    assert len(names) == 12 and "Other" in names
+    every = (await owner.get("/api/categories")).json()
+    assert len(every) == 12 and all(set(c) == {"id", "name"} for c in every)
+    ids = {c["name"]: c["id"] for c in every}
 
     made = await owner.send("POST", "/api/categories", {"name": "Pets"})
     assert made.status_code == 201
@@ -388,18 +389,10 @@ async def test_categories_add_rename_archive(world: World) -> None:
     assert clash.status_code == 409
 
     renamed = await owner.send("PATCH", f"/api/categories/{pets}", {"name": "Pet care"})
-    assert renamed.json()["name"] == "Pet care"
-    await owner.send("PATCH", f"/api/categories/{pets}", {"active": False})
-    active = [c["name"] for c in (await owner.get("/api/categories")).json()]
-    assert "Pet care" not in active
-    every = (await owner.get("/api/categories?include_inactive=true")).json()
-    assert {"name": "Pet care", "active": False} in [
-        {"name": c["name"], "active": c["active"]} for c in every
-    ]
+    assert renamed.json() == {"id": pets, "name": "Pet care"}
 
-    # Merging moves its expenses over and archives it; merging into itself is refused.
-    await owner.send("PATCH", f"/api/categories/{pets}", {"active": True})
-    other = next(c["id"] for c in every if c["name"] == "Other")
+    # Merging moves its expenses over and deletes it; merging into itself is refused.
+    other = ids["Other"]
     await owner.send(
         "POST", "/api/transactions",
         {"direction": "out", "amount": "9", "category_id": pets, "date": "2026-09-27"},
@@ -407,8 +400,53 @@ async def test_categories_add_rename_archive(world: World) -> None:
     merged = await owner.send("POST", f"/api/categories/{pets}/merge", {"into_id": other})
     assert merged.status_code == 200
     assert merged.json()["moved"] == 1 and merged.json()["into"]["name"] == "Other"
+    left = [c["name"] for c in (await owner.get("/api/categories")).json()]
+    assert "Pet care" not in left
     same = await owner.send("POST", f"/api/categories/{other}/merge", {"into_id": other})
     assert same.status_code == 422
+
+
+async def test_deleting_a_category_moves_its_expenses(world: World) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+    ids = {c["name"]: c["id"] for c in (await owner.get("/api/categories")).json()}
+
+    async def file_under(category: str) -> None:
+        sent = await owner.send(
+            "POST", "/api/transactions",
+            {"direction": "out", "amount": "9", "category_id": ids[category], "date": "2026-09-27"},
+        )  # fmt: skip
+        assert sent.status_code == 201
+
+    # By default the expenses go to Other.
+    await file_under("Travel")
+    gone = await owner.send("DELETE", f"/api/categories/{ids['Travel']}")
+    assert gone.status_code == 200
+    assert gone.json()["moved"] == 1 and gone.json()["into"] == {
+        "id": ids["Other"],
+        "name": "Other",
+    }
+
+    # Or to the category the user picks.
+    await file_under("Health")
+    picked = await owner.send(
+        "DELETE", f"/api/categories/{ids['Health']}?move_to={ids['Groceries']}"
+    )
+    assert picked.json()["moved"] == 1 and picked.json()["into"]["name"] == "Groceries"
+    left = [c["name"] for c in (await owner.get("/api/categories")).json()]
+    assert "Travel" not in left and "Health" not in left and len(left) == 10
+
+    # Other and Income stay; a category can't move into itself or something that isn't there.
+    for protected in ("Other", "Income"):
+        refused = await owner.send("DELETE", f"/api/categories/{ids[protected]}")
+        assert refused.status_code == 422
+    assert (
+        await owner.send("DELETE", f"/api/categories/{ids['Shopping']}?move_to={ids['Shopping']}")
+    ).status_code == 422
+    unknown = await owner.send("DELETE", f"/api/categories/{ids['Shopping']}?move_to={uuid4()}")
+    assert unknown.status_code == 404
+    assert (await owner.send("DELETE", f"/api/categories/{uuid4()}")).status_code == 404
+    assert "Shopping" in [c["name"] for c in (await owner.get("/api/categories")).json()]
 
 
 async def test_ledger_round_trip(world: World) -> None:

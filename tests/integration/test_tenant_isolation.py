@@ -13,9 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nexus.application.categories import (
     create_category,
+    delete_category,
     list_categories,
     rename_category,
-    set_category_active,
 )
 from nexus.application.ports import LedgerQuery
 from nexus.application.splits import list_open_ious, settle_iou, split_bill
@@ -81,7 +81,10 @@ async def test_other_users_categories_do_not_exist(
     with pytest.raises(NotFound):
         await rename_category(uow(), bob, category.id, "Stolen")
     with pytest.raises(NotFound):
-        await set_category_active(uow(), bob, category.id, False)
+        await delete_category(uow(), bob, category.id, None, now=T0)
+    mine = (await list_categories(uow(), bob))[0]
+    with pytest.raises(NotFound):
+        await delete_category(uow(), bob, mine.id, category.id, now=T0)
     assert "Private" not in [c.name for c in await list_categories(uow(), bob)]
     # Names are unique per user, not globally.
     await create_category(uow(), bob, "Private")

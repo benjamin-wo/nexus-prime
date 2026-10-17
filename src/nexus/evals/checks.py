@@ -35,9 +35,9 @@ class World:
         )
         return page.items
 
-    async def category_names(self, *, include_inactive: bool = False) -> dict[UUID, str]:
-        cats = await list_categories(self.uow(), self.user.id, include_inactive=True)
-        return {c.id: c.name for c in cats if include_inactive or c.active}
+    async def category_names(self) -> dict[UUID, str]:
+        cats = await list_categories(self.uow(), self.user.id)
+        return {c.id: c.name for c in cats}
 
     def local_day(self, tx: Transaction) -> date:
         return tx.occurred_at.astimezone(ZoneInfo(self.user.timezone)).date()
@@ -85,7 +85,7 @@ class Logged:
         return "logged " + ", ".join(parts)
 
     async def holds(self, world: World) -> bool:
-        names = await world.category_names(include_inactive=True)
+        names = await world.category_names()
         for tx in await world.transactions():
             if tx.id in world.seeded or tx.is_deleted:
                 continue
@@ -146,7 +146,7 @@ class Changed:
         return f"{self.merchant} on {self.day} changed to " + ", ".join(what)
 
     async def holds(self, world: World) -> bool:
-        names = await world.category_names(include_inactive=True)
+        names = await world.category_names()
         for tx in await world.transactions():
             if tx.id not in world.seeded or tx.is_deleted or not _mentions(tx, self.merchant):
                 continue
@@ -206,7 +206,7 @@ class BudgetIs:
         return f"{which} budget is {self.amount}" if self.amount else f"no {which} budget"
 
     async def holds(self, world: World) -> bool:
-        names = await world.category_names(include_inactive=True)
+        names = await world.category_names()
         async with world.uow() as tx:
             budgets = await tx.planning.list_budgets(world.user.id)
         for b in budgets:
@@ -288,18 +288,15 @@ class RuleIs:
 @dataclass(frozen=True, slots=True)
 class CategoryIs:
     name: str
-    active: bool | None  # None: no such category at all
+    present: bool  # False: there's no such category
 
     def describe(self) -> str:
-        state = {True: "active", False: "archived", None: "absent"}[self.active]
-        return f"category {self.name} {state}"
+        return f"category {self.name} {'present' if self.present else 'absent'}"
 
     async def holds(self, world: World) -> bool:
-        cats = await list_categories(world.uow(), world.user.id, include_inactive=True)
-        match = [c for c in cats if c.name.casefold() == self.name.casefold()]
-        if self.active is None:
-            return not match
-        return any(c.active is self.active for c in match)
+        cats = await list_categories(world.uow(), world.user.id)
+        found = any(c.name.casefold() == self.name.casefold() for c in cats)
+        return found is self.present
 
 
 @dataclass(frozen=True, slots=True)

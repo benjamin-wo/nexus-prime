@@ -127,9 +127,7 @@ async def _recent(ctx: ToolContext) -> str:
     page = await tx_cases.list_ledger(ctx.uow(), ctx.user.id, LedgerQuery(limit=RECENT))
     if not page.items:
         return ""
-    names = {
-        c.id: c.name for c in await list_categories(ctx.uow(), ctx.user.id, include_inactive=True)
-    }
+    names = {c.id: c.name for c in await list_categories(ctx.uow(), ctx.user.id)}
     lines = []
     for t in page.items:
         sign = "-" if t.direction is Direction.OUT else "+"

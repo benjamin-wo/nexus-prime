@@ -77,7 +77,6 @@ categories = Table(
     _uuid_pk(),
     _user_fk(),
     Column("name", Text, nullable=False),
-    Column("active", Boolean, nullable=False, server_default=text("true")),
     Column("created_at", TZ, nullable=False, server_default=func.now()),
     ForeignKeyConstraint(["user_id"], ["users.id"]),
     UniqueConstraint("id", "user_id"),
