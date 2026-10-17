@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import {
   api,
   type Budget,
+  type BudgetMonth,
   type FeedItem,
   type Holding,
   type Me,
@@ -651,6 +652,10 @@ export function Home({
     queryKey: ["budgets"],
     queryFn: () => api<Budget[]>("/budgets"),
   }).data;
+  const plan = useQuery({
+    queryKey: ["budgets", "month"],
+    queryFn: () => api<BudgetMonth>("/budgets/month"),
+  }).data;
   const portfolio = useQuery({
     queryKey: ["investments"],
     queryFn: () => api<Portfolio>("/investments"),
@@ -663,7 +668,7 @@ export function Home({
   const overall = budgets?.find((b) => b.category_id === null);
   const spent = summary?.totals.find((t) => t.direction === "out")?.total;
   // The big figure and how it stands lead the hero; the brief adds the rest.
-  const parts = brief({ trip, needs: feed.data });
+  const parts = brief({ trip, needs: feed.data, overall, plan });
   const held = [...(portfolio?.holdings ?? [])]
     .sort(
       (a, b) =>

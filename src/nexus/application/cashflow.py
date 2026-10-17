@@ -154,25 +154,8 @@ async def cash_flow(
     expected: dict[date, list[Expected]] = {d: [] for d in days}
     first_ahead = max(start, today)
     if first_ahead <= end:
-        for day, item in await _expected(uow, user, first_ahead, end, today):
+        for day, item in await expected_between(uow, rates, user, first_ahead, end, now=now):
             expected[day].append(item)
-    wanted = {
-        (e.amount.currency, today)
-        for items in expected.values()
-        for e in items
-        if e.amount is not None
-    }
-    found = await fx.rates_for(rates, home, wanted)
-    for items in expected.values():
-        for n, e in enumerate(items):
-            if e.amount is not None:
-                items[n] = Expected(
-                    e.kind,
-                    e.name,
-                    e.direction,
-                    e.amount,
-                    fx.convert(e.amount, today, home, found).home,
-                )
 
     return CashFlow(
         start=start,
@@ -185,6 +168,33 @@ async def cash_flow(
         ],
         unconverted=unconverted,
     )
+
+
+async def expected_between(
+    uow: UowFactory, rates: RateSource, user: User, start: date, end: date, *, now: datetime
+) -> list[tuple[date, Expected]]:
+    """What's expected on each day of [start, end] (not before today), with ``home`` set
+    where the amount is known and has a rate (today's). Scheduled payments already marked
+    paid are left out, and payday only from tomorrow on: today's may already be logged."""
+    today = now.astimezone(ZoneInfo(user.timezone)).date()
+    found = await _expected(uow, user, start, end, today)
+    wanted = {(e.amount.currency, today) for _, e in found if e.amount is not None}
+    rated = await fx.rates_for(rates, user.home_currency, wanted)
+    return [
+        (
+            day,
+            Expected(
+                e.kind,
+                e.name,
+                e.direction,
+                e.amount,
+                fx.convert(e.amount, today, user.home_currency, rated).home
+                if e.amount is not None
+                else None,
+            ),
+        )
+        for day, e in found
+    ]
 
 
 async def _expected(

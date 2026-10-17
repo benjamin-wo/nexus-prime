@@ -115,6 +115,32 @@ test("dashboard shows the month, categories and IOUs", async ({ page }) => {
   await expect(page.getByRole("region", { name: "From Nexus" })).toContainText("Set a monthly budget");
 });
 
+test("the overview shows what was put away and its share of income, once there is a wallet to put it in", async ({ page }) => {
+  await fakeApi(page);
+  await page.goto("/accounting");
+  const tile = page.getByLabel("Put away");
+  await expect(tile).toContainText(/SGD.800\.00/);
+  await expect(tile).toContainText("19% of income");
+  // Spent, Received, Net and Put away sit two by two, with no tile alone on a row.
+  const boxes = await page.locator(".tiles > .tile").evaluateAll((els) => els.map((e) => e.getBoundingClientRect()));
+  expect(boxes).toHaveLength(4);
+  const width = page.viewportSize()!.width;
+  if (width <= 720) {
+    expect(boxes[0].top).toBe(boxes[1].top);
+    expect(boxes[2].top).toBe(boxes[3].top);
+    expect(boxes[3].width).toBeLessThan(width / 2);
+  }
+});
+
+test("a user with only Spending sees no Put away tile", async ({ page }) => {
+  await fakeApi(page, { spendingOnly: true });
+  const wallets = page.waitForResponse((r) => r.url().includes("/api/wallets"));
+  await page.goto("/accounting");
+  await wallets;
+  await expect(page.getByLabel("Received")).toContainText("4,200.00");
+  await expect(page.getByLabel("Put away")).toHaveCount(0);
+});
+
 test("a move between wallets shows neutrally and is not counted as spending or income", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/accounting");
@@ -146,6 +172,189 @@ test("a move between wallets shows neutrally and is not counted as spending or i
   await page.getByRole("button", { name: "Money out", exact: true }).click();
   await expect(page.getByRole("button", { name: "Maxwell Food Centre", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "→ Investments", exact: true })).toHaveCount(0);
+});
+
+test("add, edit and delete a wallet from Settings", async ({ page }) => {
+  await fakeApi(page);
+  await page.goto("/settings");
+  const card = page.getByRole("region", { name: "Wallets" });
+  const yours = card.getByRole("list", { name: "Your wallets" });
+  // Folded: a count and the names, until Manage opens the list.
+  await expect(card.getByText("4 wallets")).toBeVisible();
+  await expect(card.getByRole("list", { name: "Wallet names" }).getByText("Investments")).toBeVisible();
+  await expect(yours).not.toBeVisible();
+  await card.getByText("Manage", { exact: true }).click();
+  await expect(card.getByRole("list", { name: "Wallet names" })).not.toBeVisible();
+  const investments = yours.getByRole("listitem").filter({ has: page.getByRole("heading", { name: "Investments" }) });
+  await expect(investments.getByText("Investment", { exact: true })).toBeVisible();
+
+  // Add one: Savings is the default kind, match words are optional.
+  const add = card.getByRole("form", { name: "Add a wallet" });
+  await expect(add.getByLabel("Kind")).toHaveValue("savings");
+  await add.getByLabel("New wallet").fill("Emergency fund");
+  await add.getByLabel("Match words (optional)").fill("efund");
+  await add.getByRole("button", { name: "Add" }).click();
+  const fund = yours.getByRole("listitem").filter({ has: page.getByRole("heading", { name: "Emergency fund" }) });
+  await expect(fund.getByText("Savings", { exact: true })).toBeVisible();
+  await expect(fund.getByRole("list", { name: "Match words for Emergency fund" }).getByText("efund")).toBeVisible();
+
+  await add.getByLabel("New wallet").fill("emergency fund");
+  await add.getByRole("button", { name: "Add" }).click();
+  await expect(card.getByRole("alert")).toContainText("already exists");
+
+  // Edit it: the name, the kind and the match words.
+  await fund.getByRole("button", { name: "Edit" }).click();
+  const edit = card.getByRole("form", { name: "Edit Emergency fund" });
+  await edit.getByLabel("Name").fill("Rainy day fund");
+  await edit.getByLabel("Kind").selectOption({ label: "Other" });
+  await edit.getByLabel("Match words").fill("efund, rainy ,, ");
+  await edit.getByRole("button", { name: "Save" }).click();
+  const renamed = yours.getByRole("listitem").filter({ has: page.getByRole("heading", { name: "Rainy day fund" }) });
+  await expect(renamed.getByText("Other", { exact: true })).toBeVisible();
+  const words = renamed.getByRole("list", { name: "Match words for Rainy day fund" });
+  await expect(words.getByRole("listitem")).toHaveText(["efund", "rainy"]);
+
+  // Deleting asks where its moves go, and says what that does to them.
+  await renamed.getByRole("button", { name: "Delete" }).click();
+  await expect(renamed.getByText("Delete Rainy day fund? Its moves go to")).toBeVisible();
+  await expect(renamed.getByText("It has no moves.")).toBeVisible();
+  await renamed.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(yours.getByRole("heading", { name: "Rainy day fund" })).toHaveCount(0);
+
+  await investments.getByRole("button", { name: "Delete" }).click();
+  await expect(investments.getByLabel("Move Investments moves to")).toHaveValue("w-savings");
+  await expect(investments.getByText("1 move goes to Savings.")).toBeVisible();
+  await investments.getByLabel("Move Investments moves to").selectOption({ label: "Spending" });
+  await expect(investments.getByText("No moves go to Spending; 1 move between the two will be removed.")).toBeVisible();
+  await investments.getByRole("button", { name: "Keep" }).click();
+  await expect(yours.getByRole("heading", { name: "Investments" })).toBeVisible();
+});
+
+test("deleting a wallet re-points its moves at the one picked", async ({ page }) => {
+  await fakeApi(page);
+  await page.goto("/settings");
+  const card = page.getByRole("region", { name: "Wallets" });
+  await card.getByText("Manage", { exact: true }).click();
+  const yours = card.getByRole("list", { name: "Your wallets" });
+  const investments = yours.getByRole("listitem").filter({ has: page.getByRole("heading", { name: "Investments" }) });
+  await investments.getByRole("button", { name: "Delete" }).click();
+  await expect(investments.getByText("1 move goes to Savings.")).toBeVisible();
+  await investments.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(yours.getByRole("heading", { name: "Investments" })).toHaveCount(0);
+
+  await page.goto("/accounting/ledger");
+  await page.getByRole("button", { name: "Moves", exact: true }).click();
+  await expect(page.getByRole("button", { name: "→ Savings", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "→ Investments", exact: true })).toHaveCount(0);
+});
+
+test("Spending can be renamed but not deleted or given another kind", async ({ page }) => {
+  await fakeApi(page);
+  await page.goto("/settings");
+  const card = page.getByRole("region", { name: "Wallets" });
+  await card.getByText("Manage", { exact: true }).click();
+  const spending = card
+    .getByRole("list", { name: "Your wallets" })
+    .getByRole("listitem")
+    .filter({ has: page.getByRole("heading", { name: "Spending", exact: true }) });
+  await expect(spending.getByRole("button", { name: "Edit" })).toBeVisible();
+  await expect(spending.getByRole("button", { name: "Delete" })).toHaveCount(0);
+  await spending.getByRole("button", { name: "Edit" }).click();
+  const edit = card.getByRole("form", { name: "Edit Spending" });
+  await expect(edit.getByLabel("Name")).toHaveValue("Spending");
+  await expect(edit.getByLabel("Kind")).toHaveCount(0);
+});
+
+test("a move is added from the add sheet and shows under Moves, not in spending", async ({ page }) => {
+  await fakeApi(page);
+  await page.goto("/accounting/ledger");
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  await page.getByRole("dialog", { name: "Log money out" }).getByRole("button", { name: "Move", exact: true }).click();
+  const sheet = page.getByRole("dialog", { name: "Log a move" });
+  await expect(sheet).toBeVisible();
+  // No merchant or category on a move; it starts from Spending and can't go to itself.
+  await expect(sheet.getByLabel("Paid to")).toHaveCount(0);
+  await expect(sheet.getByLabel("Category")).toHaveCount(0);
+  await expect(sheet.getByLabel("From")).toHaveValue("w-spending");
+  await expect(sheet.getByLabel("To").locator("option")).toHaveText(["Pick a wallet", "Investments", "Savings", "Card"]);
+  await sheet.getByLabel("Amount").fill("500");
+  await sheet.getByLabel("To").selectOption({ label: "Savings" });
+  await sheet.getByLabel("Notes").fill("September top-up");
+  await sheet.getByRole("button", { name: "Save" }).click();
+  await expect(sheet).toBeHidden();
+
+  // Under Moves, with no + or − on the amount.
+  await page.getByRole("button", { name: "Moves", exact: true }).click();
+  const row = page.getByRole("row").filter({ hasText: "→ Savings" });
+  await expect(row.locator("td.amount")).toContainText(/SGD.500\.00/);
+  await expect(row.locator("td.amount")).not.toContainText(/[+−-]/);
+  await expect(row).toContainText("September top-up");
+  await expect(page.getByRole("button", { name: "→ Investments", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Maxwell Food Centre", exact: true })).toHaveCount(0);
+
+  // What was spent and received hasn't changed.
+  await page.goto("/accounting");
+  await expect(page.getByLabel("Spent")).toContainText("37.40");
+  await expect(page.getByLabel("Received")).toContainText("4,200.00");
+});
+
+test("a move needs a second wallet, and the sheet says where to add one", async ({ page }) => {
+  await fakeApi(page, { spendingOnly: true });
+  await page.goto("/accounting/ledger");
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  await page.getByRole("dialog", { name: "Log money out" }).getByRole("button", { name: "Move", exact: true }).click();
+  const sheet = page.getByRole("dialog", { name: "Log a move" });
+  await expect(sheet.getByRole("link", { name: "Add a wallet in Settings first" })).toBeVisible();
+  await expect(sheet.getByRole("button", { name: "Save" })).toBeDisabled();
+  await sheet.getByRole("link", { name: "Add a wallet in Settings first" }).click();
+  await expect(page).toHaveURL(/\/settings$/);
+  await expect(sheet).toBeHidden();
+});
+
+test("an expense is turned into a move to a wallet, and leaves Money out", async ({ page }) => {
+  await fakeApi(page);
+  await page.goto("/accounting/ledger");
+  await page.getByRole("button", { name: "Maxwell Food Centre", exact: true }).click();
+  const sheet = page.getByRole("dialog", { name: "Edit transaction" });
+  await sheet.getByRole("button", { name: "This was a move to…" }).click();
+  const ask = sheet.getByRole("group", { name: "Turn into a move" });
+  // Spending itself isn't offered: a move goes to or from another wallet.
+  await expect(ask.getByLabel("Wallet").locator("option")).toHaveText(["Investments", "Savings", "Card"]);
+  await ask.getByLabel("Wallet").selectOption({ label: "Investments" });
+  await expect(
+    ask.getByText("Turn this into a move from Spending to Investments? It will stop counting as spending and lose its category."),
+  ).toBeVisible();
+  await ask.getByRole("button", { name: "Turn into a move" }).click();
+  await expect(sheet).toBeHidden();
+
+  await page.getByRole("button", { name: "Money out", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Grab", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Maxwell Food Centre", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Moves", exact: true }).click();
+  const row = page.getByRole("row").filter({ hasText: "Maxwell Food Centre" });
+  await expect(row).toContainText("→ Investments");
+  await expect(row.locator("td.amount")).not.toContainText(/[+−-]/);
+  await expect(row.locator(".badge-move")).toHaveText("Move");
+});
+
+test("money in can be turned into a move from a wallet, and a split bill refuses", async ({ page }) => {
+  await fakeApi(page, { splitBill: true });
+  await page.goto("/accounting/ledger");
+  await page.getByRole("button", { name: "Employer", exact: true }).click();
+  let sheet = page.getByRole("dialog", { name: "Edit transaction" });
+  await sheet.getByRole("button", { name: "This was a move to…" }).click();
+  await sheet.getByLabel("Wallet").selectOption({ label: "Savings" });
+  await expect(sheet.getByText("Turn this into a move from Savings to Spending? It will stop counting as income.")).toBeVisible();
+  await sheet.getByRole("button", { name: "Keep as is" }).click();
+  await expect(sheet.getByRole("button", { name: "This was a move to…" })).toBeVisible();
+  await sheet.getByRole("button", { name: "Cancel" }).click();
+
+  await page.getByRole("button", { name: "Hotpot Place", exact: true }).click();
+  sheet = page.getByRole("dialog", { name: "Edit transaction" });
+  await sheet.getByRole("button", { name: "This was a move to…" }).click();
+  await sheet.getByRole("button", { name: "Turn into a move" }).click();
+  await expect(sheet.getByRole("alert")).toContainText("split with others");
+  await expect(sheet).toBeVisible();
 });
 
 test("tap a spending category to see its transactions, then all of them in the ledger", async ({ page }) => {
@@ -306,6 +515,47 @@ test("set a budget, see how much is used, change and remove it", async ({ page }
   await budgets.getByRole("button", { name: "Remove" }).click();
   await budgets.getByRole("button", { name: "Remove" }).click(); // confirm
   await expect(budgets.getByText("No budgets yet. Add one below.")).toBeVisible();
+});
+
+test("the budgets card shows total out and left to spend, with the lower of that and budget left marked", async ({ page }) => {
+  const state = await fakeApi(page);
+  state.budgets.push({ id: "b1", category_id: null, limit: 2000, spent: 600 });
+  await page.goto("/plan");
+  const budgets = page.getByRole("region", { name: "Budgets" });
+  const total = budgets.getByRole("group", { name: "Total out of Spending" });
+  await expect(total).toContainText(/SGD.2,600\.00/);
+  await expect(total).toContainText("spending plus moves to your wallets");
+  const left = budgets.getByRole("group", { name: "Left to spend" });
+  await expect(left).toContainText(/SGD.1,100\.00/);
+  await expect(left).toContainText(/after what's still due this month \(SGD.1,300\.00\)/);
+  await expect(left.getByText("Watch this")).toBeVisible();
+  const budgetLeft = budgets.getByRole("group", { name: "Budget left" });
+  await expect(budgetLeft).toContainText(/SGD.1,400\.00/);
+  await expect(budgetLeft.getByText("Watch this")).toHaveCount(0);
+  await expect(budgets.getByRole("note")).toHaveCount(0);
+  // They sit under the overall budget, ahead of the form.
+  const order = await budgets.locator(".budgets > li").evaluateAll((els) => els.map((e) => e.className));
+  expect(order).toEqual(["budget", "budget-month"]);
+});
+
+test("without an overall budget the card still shows total out and left to spend, and a plan that outgrows income is flagged", async ({ page }) => {
+  await fakeApi(page, { planWarning: true });
+  await page.goto("/plan");
+  const budgets = page.getByRole("region", { name: "Budgets" });
+  await expect(budgets.getByRole("group", { name: "Total out of Spending" })).toContainText(/SGD.2,600\.00/);
+  await expect(budgets.getByRole("group", { name: "Left to spend" })).toContainText(/SGD.1,100\.00/);
+  await expect(budgets.getByRole("group", { name: "Budget left" })).toHaveCount(0);
+  await expect(budgets.getByText("Watch this")).toHaveCount(0);
+  await expect(budgets.getByRole("note")).toContainText("add up to more than you usually bring in");
+});
+
+test("home says when less is left to spend than the budget shows", async ({ page }) => {
+  const state = await fakeApi(page);
+  state.budgets.push({ id: "b1", category_id: null, limit: 2000, spent: 600 });
+  await page.goto("/");
+  await expect(page.getByRole("region", { name: "Nexus" })).toContainText(
+    /Left to spend is SGD.1,100\.00 after what's still due — less than your SGD.1,400\.00 budget left\./,
+  );
 });
 
 test("set when you're paid and your usual salary", async ({ page }) => {
@@ -632,7 +882,7 @@ test("the cog opens Settings, and Plan keeps only planning", async ({ page }, in
   await page.getByRole("link", { name: "Settings" }).filter({ visible: true }).click();
   await expect(page).toHaveURL(/\/settings$/);
   await expect(page.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible();
-  for (const name of ["Telegram updates", "Categories", "Category rules", "What Nexus remembers"])
+  for (const name of ["Telegram updates", "Categories", "Wallets", "Category rules", "What Nexus remembers"])
     await expect(page.getByRole("region", { name })).toBeVisible();
 });
 

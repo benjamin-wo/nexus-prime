@@ -192,6 +192,24 @@ export type Budget = {
   percent: number;
   unconverted: Money[];
 };
+/** How this month stands against what's coming: the figures behind "left to spend". */
+export type BudgetMonth = {
+  currency: string;
+  /** Spending so far, plus moves from Spending to your wallets. */
+  total_out: Money;
+  /** This month's income less total out and what's still due. */
+  left_to_spend: Money;
+  /** Bills, subscriptions, trip set-asides and scheduled moves still to come this month. */
+  still_due_out: Money;
+  income: Money;
+  /** The overall budget less spending so far; null without one. */
+  budget_left: Money | null;
+  /** Whichever of the two is lower; null without an overall budget. */
+  tighter: "budget" | "left_to_spend" | null;
+  plan_warning: string | null;
+  /** Scheduled items left out for want of an amount or a rate. */
+  skipped: string[];
+};
 export type Bill = {
   id: string;
   name: string;

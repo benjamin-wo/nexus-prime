@@ -248,6 +248,18 @@ input[type="date"].input, input[type="time"].input, input[type="datetime-local"]
 .budget-state-ok-strong { color: var(--emerald-accent); }
 .budget-state-warn { color: var(--status-warning); }
 .budget-state-over { color: var(--rose-accent); }
+.budget-month { padding-bottom: var(--space-4); border-bottom: 1px solid var(--border-subtle); }
+.budget-month:last-child { border-bottom: 0; padding-bottom: 0; }
+.month-plan { display: grid; gap: var(--space-3); margin-bottom: var(--space-4); }
+.budget-month .month-plan { margin-bottom: 0; }
+.month-figures { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.month-figure { display: grid; gap: var(--space-1); align-content: start; min-width: 0; padding: var(--space-3); border: 1px solid var(--border-subtle); border-radius: var(--radius); }
+.month-figure:first-child, .month-figure:last-child:nth-child(even) { grid-column: 1 / -1; }
+.month-figure > .caption:first-child { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.month-value { font-size: 1.25rem; font-weight: 500; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.month-watch { border-color: var(--status-warning-border); }
+.month-watch .month-value { font-weight: 700; color: var(--text-white); }
+.badge-watch { padding: 1px 8px; color: var(--status-warning); background: var(--status-warning-soft); border-color: var(--status-warning-border); }
 .plan-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: var(--space-6); align-items: start; }
 .plan-add { margin-top: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--border-subtle); }
 .budget-foot .btn-ghost { min-height: 32px; padding: 0 var(--space-2); }
@@ -381,9 +393,9 @@ table.ledger { width: 100%; border-collapse: collapse; }
   .content { gap: var(--space-4); }
   .card { padding: var(--space-4); border-radius: 18px; }
   .page-head { align-items: center; }
-  /* Spent and received side by side, net underneath: the month fits on one screen. */
+  /* Two side by side; a last one left on its own takes the full row. */
   .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
-  .tiles > :last-child { grid-column: 1 / -1; }
+  .tiles > :last-child:nth-child(odd) { grid-column: 1 / -1; }
   .tile { padding: var(--space-4); }
   .tile .value { font-size: clamp(1.15rem, 5.6vw, 1.625rem); }
   .tile .extra { font-size: 0.75rem; }
@@ -397,9 +409,9 @@ table.ledger { width: 100%; border-collapse: collapse; }
     width: 100vw; max-height: 90dvh; border-radius: 14px 14px 0 0; animation: sheet-up var(--t-emphasis);
     padding: var(--space-4) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom));
   }
-  /* All four views on one row. */
-  .filters .tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); width: 100%; }
-  .filters .tab { padding: 0 var(--space-1); font-size: 0.78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* All five views on one row. */
+  .filters .tabs { display: flex; width: 100%; }
+  .filters .tab { flex: 1 1 auto; padding: 0 var(--space-2); font-size: 0.74rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .filters .search { flex-basis: 100%; }
   /* The two dates share a row, each with a visible caption. iOS draws date
      inputs at its own size and blank when empty, so reset its appearance. */
@@ -1175,6 +1187,9 @@ html.keyboard .bottom-nav, html.keyboard .trip-fab-button, html.keyboard .trip-f
 .category-fold > summary { display: inline-flex; margin-top: var(--space-3); list-style: none; }
 .category-fold > summary::-webkit-details-marker { display: none; }
 .category-fold[open] > summary { margin-top: 0; margin-bottom: var(--space-3); }
+.move-ask { display: grid; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--border-subtle); border-radius: 10px; }
+.move-ask-open { justify-self: start; }
+.wallet-name { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); min-width: 0; }
 
 /* The one way to add: a sheet from the bottom on phones, a dialog on desktop. */
 .sheet-backdrop { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; background: rgba(27, 35, 51, 0.4); animation: fade var(--t-standard); padding: var(--space-4); }

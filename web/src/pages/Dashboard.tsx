@@ -11,6 +11,7 @@ import {
   type Money,
   type Page,
   type Summary,
+  type Wallet,
 } from "../api";
 import { Block } from "../components/Block";
 import { CategoryBars } from "../components/CategoryBars";
@@ -194,6 +195,10 @@ export function Dashboard({
     queryKey: ["ious"],
     queryFn: () => api<Iou[]>("/ious"),
   });
+  const wallets = useQuery({
+    queryKey: ["wallets"],
+    queryFn: () => api<Wallet[]>("/wallets"),
+  }).data;
   const client = useQueryClient();
   const [repayError, setRepayError] = useState<string | null>(null);
 
@@ -221,6 +226,12 @@ export function Dashboard({
   const partial = Boolean(
     spent?.unconverted.length || received?.unconverted.length,
   );
+  // Money put away only means something once there is a wallet to put it in.
+  const putAway =
+    summary.data?.put_away && wallets?.some((w) => w.kind !== "spending")
+      ? summary.data.put_away
+      : null;
+  const savingRate = summary.data?.saving_rate;
   const foreign = Boolean(
     spent?.converted.length || received?.converted.length,
   );
@@ -269,6 +280,17 @@ export function Dashboard({
           }
           extra={partial ? "Leaves out amounts with no rate" : undefined}
         />
+        {putAway && (
+          <StatTile
+            label="Put away"
+            value={formatMoney(putAway)}
+            extra={
+              savingRate == null
+                ? undefined
+                : `${Math.round(savingRate * 100)}% of income`
+            }
+          />
+        )}
       </div>
 
       <div className="pair">
