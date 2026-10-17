@@ -1,12 +1,12 @@
+import { useQuery } from "@tanstack/react-query";
 import { type CSSProperties, type ReactNode, useState } from "react";
 import { Link } from "react-router-dom";
 
-import type { Booking, Trip, TripDetail, TripPhoto } from "../api";
+import { api, type Booking, type Me, type Trip, type TripDetail, type TripPhoto } from "../api";
 import { formatMoney, formatShortDate } from "../format";
-import { CountUp } from "../motion";
-import { PlaceThumb } from "./TripPlaces";
+import { PlaceLine } from "./TripPlaces";
 
-const day = (iso: string) => formatShortDate(iso, "UTC");
+export const day = (iso: string) => formatShortDate(iso, "UTC");
 const DAY_MS = 86400000;
 
 /** Today in the browser's own time zone, as YYYY-MM-DD. */
@@ -264,83 +264,105 @@ export function NextUp({ detail }: { detail: TripDetail }) {
   );
 }
 
-/** Where they're staying: the stay on now or next, and how many nights are covered. */
-export function StayCard({ detail, onAdd }: { detail: TripDetail; onAdd: () => void }) {
-  const today = todayIso();
-  const nights = Math.max(detail.trip.days - 1, 0);
-  if (nights === 0 || detail.trip.status === "finished") return null;
-  const covered = nights - detail.ready.nights_without_stay.length;
-  const stays = detail.bookings.filter((b) => b.kind === "hotel" && b.check_in).sort((a, b) => (a.check_in ?? "").localeCompare(b.check_in ?? ""));
-  const stay = stays.find((b) => (b.check_out ?? b.check_in ?? "") > today) ?? stays[0];
-  return (
-    <section className="stay-card" aria-label="Where you're staying">
-      {stay?.place_id ? (
-        <PlaceThumb booking={stay} />
-      ) : (
-        <span className="stay-icon" aria-hidden="true">
-          🏨
-        </span>
-      )}
-      <span className="wrap">
-        <span className="caption">
-          Stay · {covered} of {nights} {nights === 1 ? "night" : "nights"} booked
-        </span>
-        {stay ? (
-          <>
-            <strong>{stay.hotel ?? stay.title}</strong>
-            <span className="caption">
-              {stay.check_in && day(stay.check_in)}
-              {stay.check_out && ` to ${day(stay.check_out)}`}
-            </span>
-          </>
-        ) : (
-          <strong>Nowhere to stay yet</strong>
-        )}
-      </span>
-      {covered < nights && (
-        <button type="button" className="btn btn-small" onClick={onAdd}>
-          Add a place to stay
-        </button>
-      )}
-    </section>
-  );
+export function useHome(): string {
+  const me = useQuery({ queryKey: ["me"], queryFn: () => api<Me>("/me") });
+  return me.data?.user.home_currency ?? "";
 }
 
-/** A ring showing how much is done, with the share inside. */
-export function Ring({ done, total, label }: { done: number; total: number; label: string }) {
-  const percent = total > 0 ? Math.round((done / total) * 100) : 0;
+/** Where it was booked and its reference, which the user can copy for the counter or the app. */
+export function BookedWith({ booking }: { booking: Booking }) {
+  const [copied, setCopied] = useState(false);
+  if (!booking.reference && !booking.booked_via) return null;
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(booking.reference ?? "");
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setCopied(false);
+    }
+  }
   return (
-    <span className="ring" style={{ "--ring": `${percent}%` } as CSSProperties} role="img" aria-label={label}>
-      <span className="ring-inner">{percent}%</span>
+    <span className="caption">
+      {booking.booked_via && `Booked on ${booking.booked_via}`}
+      {booking.booked_via && booking.reference && " · "}
+      {booking.reference && (
+        <>
+          Ref <strong className="num">{booking.reference}</strong>{" "}
+          <button type="button" className="link-btn" onClick={() => void copy()} aria-label={`Copy reference ${booking.reference}`}>
+            {copied ? "Copied" : "Copy"}
+          </button>
+        </>
+      )}
+      <br />
     </span>
   );
 }
 
-/** The trip's money at a glance: spent so far against the budget, and what's booked. */
-export function MoneyCard({ detail, onOpen }: { detail: TripDetail; onOpen: () => void }) {
-  const s = detail.spending;
-  const budget = detail.trip.budget;
-  const percent = Math.min(s.percent ?? 0, 100);
+export function BookingLines({ booking, noTime = false }: { booking: Booking; noTime?: boolean }) {
   return (
-    <section className="card trip-money" aria-labelledby="trip-money">
-      <div className="card-head">
-        <h2 id="trip-money">Money</h2>
-        <button type="button" className="btn btn-ghost btn-small" onClick={onOpen}>
-          Details
-        </button>
-      </div>
-      <p className="trip-money-figure">
-        <CountUp value={formatMoney(s.spent)} />
-      </p>
-      {budget && (
-        <div className={`meter${(s.percent ?? 0) > 100 ? " meter-over" : ""}`} aria-hidden="true">
-          <span style={{ width: `${percent}%` }} />
-        </div>
-      )}
-      <p className="caption">
-        {budget ? `spent of ${formatMoney(budget)}` : "spent so far · no budget yet"}
-        {detail.booked && ` · ${formatMoney(detail.booked)} booked`}
-      </p>
-    </section>
+    <>
+      <KindLines booking={booking} noTime={noTime} />
+      <PlaceLine booking={booking} />
+      <BookedWith booking={booking} />
+    </>
+  );
+}
+
+function KindLines({ booking, noTime }: { booking: Booking; noTime: boolean }) {
+  // Nothing the entry's title or day already says.
+  const note = booking.note && !onlyNamesDay(booking.note) && (
+    <span className="caption">
+      {booking.note}
+      <br />
+    </span>
+  );
+  if (booking.kind === "activity") {
+    const address = booking.address && !repeatsTitle(booking.address, booking.title) ? booking.address : null;
+    return (
+      <>
+        <span className="caption">
+          {booking.at && !noTime && `${booking.at} · `}
+          {address}
+          {((booking.at && !noTime) || address) && <br />}
+        </span>
+        {note}
+      </>
+    );
+  }
+  if (booking.kind === "hotel") {
+    return (
+      <>
+        <span className="caption">
+          {booking.check_in && `Check in ${day(booking.check_in)}`}
+          {booking.check_out && ` · out ${day(booking.check_out)}`}
+          {booking.address && ` · ${booking.address}`}
+          <br />
+        </span>
+        {note}
+      </>
+    );
+  }
+  return (
+    <>
+      {booking.segments.map((s, n) => (
+        <span key={n} className="caption">
+          {/* One leg is already named by the title; more get their own number and route. */}
+          {booking.segments.length > 1 && `${[s.number, [s.origin, s.destination].filter(Boolean).join(" → ")].filter(Boolean).join(" ")} · `}
+          {legTimes(s.departs, s.arrives)}
+          <br />
+        </span>
+      ))}
+    </>
+  );
+}
+
+/** An entry's own link, to book or read more. */
+export function OpenLink({ booking }: { booking: Booking }) {
+  if (!booking.link) return null;
+  return (
+    <a className="caption entry-link" href={booking.link} target="_blank" rel="noopener noreferrer" aria-label={`Open the link for ${booking.title}`}>
+      Open link ↗
+    </a>
   );
 }

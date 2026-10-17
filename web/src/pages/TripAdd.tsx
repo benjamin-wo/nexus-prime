@@ -2,7 +2,7 @@ import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import { api, type Reply, type Trip } from "../api";
 import { formatShortDate } from "../format";
-import type { EntryKind } from "./Trips";
+import type { EntryKind } from "./TripEntry";
 import { SavePlaces } from "./TripPlaces";
 
 export type AddPreset = {
