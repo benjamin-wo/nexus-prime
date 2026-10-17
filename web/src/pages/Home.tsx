@@ -6,6 +6,7 @@ import {
   api,
   type Budget,
   type BudgetMonth,
+  type FeedAction,
   type FeedItem,
   type Holding,
   type Me,
@@ -440,10 +441,68 @@ function PortfolioCard({ portfolio }: { portfolio?: Portfolio }) {
   );
 }
 
+/** One thing that needs you: a link to where it's settled, and any buttons that settle it
+ * right here. Each button calls the API as given, then everything it may have changed
+ * is fetched again. */
+function NeedsItem({ item, onSettled }: { item: FeedItem; onSettled: () => void }) {
+  const dept = DEPARTMENTS.find((d) => d.name === item.department);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function run(action: FeedAction) {
+    setBusy(true);
+    setError(null);
+    try {
+      await api(action.path, { method: action.method });
+      onSettled();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't do that");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <li>
+      <Link className={`row row-link${item.urgent ? " urgent" : ""}`} to={item.link}>
+        <span className="row-icon" aria-hidden="true">
+          <Icon name={item.urgent ? "alert" : departmentIcon(item.department)} size={18} />
+        </span>
+        <span className="row-main">
+          <span className="wrap">{item.text}</span>
+          <span className="caption">{dept?.label}</span>
+        </span>
+      </Link>
+      {item.actions.length > 0 && (
+        <div className="row-actions needs-actions">
+          {item.actions.map((a, i) => (
+            <button
+              key={a.key}
+              type="button"
+              className={i === 0 ? "btn btn-small btn-primary" : "btn btn-small"}
+              disabled={busy}
+              onClick={() => void run(a)}
+            >
+              {a.label}
+            </button>
+          ))}
+        </div>
+      )}
+      {error && (
+        <p className="error-text needs-error" role="alert">
+          {error}
+        </p>
+      )}
+    </li>
+  );
+}
+
 function NeedsYou({
   feed,
+  onSettled,
 }: {
   feed: { data?: FeedItem[]; isLoading: boolean; isError: boolean };
+  onSettled: () => void;
 }) {
   return (
     <Block id="needs-you" title="Needs you">
@@ -456,30 +515,9 @@ function NeedsYou({
       )}
       {feed.data && feed.data.length > 0 && (
         <ul className="rows">
-          {feed.data.map((item) => {
-            const dept = DEPARTMENTS.find((d) => d.name === item.department);
-            return (
-              <li key={`${item.kind}:${item.text}`}>
-                <Link
-                  className={`row row-link${item.urgent ? " urgent" : ""}`}
-                  to={item.link}
-                >
-                  <span className="row-icon" aria-hidden="true">
-                    <Icon
-                      name={
-                        item.urgent ? "alert" : departmentIcon(item.department)
-                      }
-                      size={18}
-                    />
-                  </span>
-                  <span className="row-main">
-                    <span className="wrap">{item.text}</span>
-                    <span className="caption">{dept?.label}</span>
-                  </span>
-                </Link>
-              </li>
-            );
-          })}
+          {feed.data.map((item) => (
+            <NeedsItem key={`${item.kind}:${item.text}`} item={item} onSettled={onSettled} />
+          ))}
         </ul>
       )}
     </Block>
@@ -683,6 +721,12 @@ export function Home({
     void client.invalidateQueries({ queryKey: ["runs"] });
   }
 
+  // A button on a needs-you item may have logged or skipped something: refresh what shows it.
+  function settled() {
+    for (const key of ["home", "transactions", "bills", "budgets", "summary", "spending-months"])
+      void client.invalidateQueries({ queryKey: [key] });
+  }
+
   const shown = (runs.data ?? []).slice(0, 5);
   return (
     <>
@@ -704,7 +748,7 @@ export function Home({
 
       <div className="pair">
         <div className="stack">
-          <NeedsYou feed={feed} />
+          <NeedsYou feed={feed} onSettled={settled} />
           {shown.length > 0 && (
             <Block id="working-on" title="Working on">
               <ul className="feed">

@@ -159,6 +159,10 @@ class EmailOut(Model):
     transaction_id: UUID | None
     actionable: bool
     duplicate_of: str | None = None  # the payment it looks like a second record of
+    # The wallet its merchant or subject names: it may have been a move to (money spent) or
+    # from (money received) that wallet, and the page can offer "Move" next to "Log".
+    move_wallet_id: UUID | None = None
+    move_wallet: str | None = None
 
 
 class OverviewOut(Model):
@@ -174,6 +178,7 @@ async def overview(auth: Auth, web: Runtime) -> OverviewOut:
     emails = []
     for e in found.emails:
         draft = ExpenseDraft.from_dict(e.draft or {})
+        named = email_cases.wallet_flag(e) if e.status is EmailStatus.PENDING else None
         emails.append(
             EmailOut(
                 id=e.id,
@@ -191,6 +196,8 @@ async def overview(auth: Auth, web: Runtime) -> OverviewOut:
                 duplicate_of=twin["label"]
                 if e.status is EmailStatus.PENDING and (twin := email_cases.duplicate_of(e))
                 else None,
+                move_wallet_id=UUID(named["id"]) if named else None,
+                move_wallet=named["name"] if named else None,
             )
         )
     return OverviewOut(
@@ -220,6 +227,21 @@ async def log_email(email_id: UUID, body: LogIn, auth: Auth, web: Runtime) -> No
     user = auth.user
     amount = Money.of(body.amount, user.home_currency) if body.amount else None
     await email_cases.log_email(web.uow, user, email_id, now=web.clock(), amount=amount)
+
+
+class MoveIn(Model):
+    wallet_id: UUID | None = None  # the wallet, when not the one the email named
+    amount: str | None = Field(None, max_length=32)  # the user's figure, if none was found
+
+
+@router.post("/{email_id}/move", status_code=204)
+async def move_email(email_id: UUID, body: MoveIn, auth: Auth, web: Runtime) -> None:
+    """It was a move between the user's wallets, not an expense or income."""
+    user = auth.user
+    amount = Money.of(body.amount, user.home_currency) if body.amount else None
+    await email_cases.move_email(
+        web.uow, user, email_id, now=web.clock(), wallet_id=body.wallet_id, amount=amount
+    )
 
 
 @router.post("/{email_id}/same", status_code=204)

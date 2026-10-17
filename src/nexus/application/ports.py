@@ -349,6 +349,19 @@ class PlanningRepository(Protocol):
     async def get_bill(self, user_id: UserId, bill_id: UUID) -> Bill | None: ...
     async def archive_bill(self, user_id: UserId, bill_id: UUID, at: datetime) -> bool: ...
     async def users_with_bills(self) -> list[UserId]: ...
+    async def set_bill_wallet(self, user_id: UserId, bill_id: UUID, wallet_id: UUID | None) -> None:
+        """Point a bill at a wallet (a scheduled move), or at none."""
+        ...
+
+    async def count_bills_for_wallet(self, user_id: UserId, wallet_id: UUID) -> int:
+        """Active bills that move money to this wallet."""
+        ...
+
+    async def repoint_bills(self, user_id: UserId, old_id: UUID, new_id: UUID | None) -> int:
+        """Make every bill (archived too) that names ``old_id`` name ``new_id`` instead, or
+        no wallet. Returns how many."""
+        ...
+
     async def occurrences(
         self, user_id: UserId, bill_id: UUID, since: date
     ) -> list[BillOccurrence]:

@@ -129,6 +129,10 @@ def test_refuses_money_movement(text: str, intent: str) -> None:
         "move 12 grab to transport",
         "move 300 to savings every payday",
         "remind me to move 300 to savings on 25 oct every month",
+        "remind me to put 1000 into IBKR every 25th",
+        "remind me to move 1000 into IBKR every 25th",
+        "remind me to put 1,000 into IBKR on the 25th every month",
+        "put 1000 into IBKR every 25th",
     ],
 )
 def test_does_not_refuse_ordinary_requests(text: str) -> None:

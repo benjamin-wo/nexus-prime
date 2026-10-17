@@ -70,6 +70,14 @@ export async function fakeApi(
     chatHistory = false,
     spendingOnly = false,
     planWarning = false,
+    /** The user has an IBKR wallet, which statement rows and emails can name. */
+    ibkr = false,
+    /** Two scheduled moves due on 25 Sep that haven't shown up: the Home nudges. */
+    missedMoves = false,
+    /** A pending email that may have been a move to the IBKR wallet (needs emailConnected). */
+    emailMove = false,
+    /** Two entries that look like moves, for the review on the Wallets card. */
+    likelyMoves = false,
   } = {},
 ) {
   let session = signedIn;
@@ -78,6 +86,7 @@ export async function fakeApi(
     id: string;
     name: string;
     spending?: boolean;
+    wallet?: WalletRef | null;
     amount: { amount: string; currency: string } | null;
     cadence: string;
     due: string;
@@ -123,6 +132,12 @@ export async function fakeApi(
     salary: FakeSalary | null;
     rules: FakeRule[];
     imports: { id: string; file_name: string; added: number; created_at: string; undone_at: string | null }[];
+    /** What each import was sent: the ticked rows, and which of them are moves. */
+    importBodies: { include: number[]; moves: { row: number; as_move: string | null }[] }[];
+    /** Scheduled moves that haven't shown up, as Home nudges: bill id and due date. */
+    missed: { bill: string; due: string }[];
+    /** Emails answered "Move": the email and what was sent. */
+    emailMoves: { id: string; body: Record<string, unknown> }[];
     memories: { id: string; kind: string; text: string; happened_on: string | null; updated_at: string }[];
     frequency: string;
     subs: { id: string; name: string; status: string; amount: string }[];
@@ -212,6 +227,9 @@ export async function fakeApi(
     salary: null,
     rules: [],
     imports: [],
+    importBodies: [],
+    missed: [],
+    emailMoves: [],
     memories: [
       { id: "m1", kind: "fact", text: "Ann is the user's sister.", happened_on: null, updated_at: "2026-09-28T06:00:00Z" },
       { id: "m2", kind: "preference", text: "Wants short replies.", happened_on: null, updated_at: "2026-09-28T06:00:00Z" },
@@ -293,10 +311,36 @@ export async function fakeApi(
               transaction_id: null,
               actionable: true,
             },
+            ...(emailMove
+              ? [
+                  {
+                    id: "e4",
+                    received_at: "2026-09-26T08:00:00Z",
+                    sender: "alerts@bank.test",
+                    subject: "Transfer to IBKR",
+                    status: "pending",
+                    reason: null,
+                    amount: "500.0000",
+                    currency: "SGD",
+                    merchant: "IBKR",
+                    received: false,
+                    transaction_id: null,
+                    actionable: true,
+                    move_wallet_id: "w-ibkr",
+                    move_wallet: "IBKR",
+                  },
+                ]
+              : []),
           ]
         : [],
     },
   };
+  if (likelyMoves) {
+    state.txs.unshift(
+      { ...mk("t201", "out", "500.00", "IBKR Cash Deposit", null), occurred_at: "2026-09-12T04:00:00Z" },
+      { ...mk("t202", "in", "200.00", "FAST Transfer", null), occurred_at: "2026-09-18T04:00:00Z" },
+    );
+  }
   if (splitBill) {
     const bill = { ...mk("t4", "out", "30.00", "Hotpot Place", "food"), occurred_at: "2026-09-25T12:00:00Z" };
     const back = { ...mk("t5", "in", "10.00", "Wei Ming", null), notes: "Paid back" };
@@ -340,9 +384,29 @@ export async function fakeApi(
           { id: "w-investments", name: "Investments", kind: "investment", match_words: [] as string[] },
           { id: "w-savings", name: "Savings", kind: "savings", match_words: [] as string[] },
           { id: "w-card", name: "Card", kind: "card", match_words: [] as string[] },
+          ...(ibkr ? [{ id: "w-ibkr", name: "IBKR", kind: "investment", match_words: ["ibkr"] }] : []),
         ]),
   ];
   const walletRef = (w: { id: string; name: string; kind: string }): WalletRef => ({ id: w.id, name: w.name, kind: w.kind });
+  if (missedMoves) {
+    const target = (id: string) => walletRef(wallets.find((x) => x.id === id)!);
+    const scheduled = (id: string, name: string, amount: string, wallet: string) => ({
+      id,
+      name,
+      spending: false,
+      wallet: target(wallet),
+      amount: { amount, currency: "SGD" },
+      cadence: "monthly",
+      due: "2026-09-25",
+      days_until: -3,
+      snoozed: false,
+    });
+    state.bills.push(
+      scheduled("move1", "IBKR top-up", "1000.0000", "w-ibkr"),
+      scheduled("move2", "Savings top-up", "300.0000", "w-savings"),
+    );
+    state.missed.push({ bill: "move1", due: "2026-09-25" }, { bill: "move2", due: "2026-09-25" });
+  }
   const movesOf = (walletId: string) =>
     live().filter((t) => t.direction === "move" && (t.from_wallet?.id === walletId || t.to_wallet?.id === walletId));
   /** What deleting a wallet does to its moves: re-pointed at ``into``, or dropped if they'd join it to itself. */
@@ -1169,9 +1233,25 @@ export async function fakeApi(
       return route.fulfill({ status: 204 });
     }
     if (path === "/home" && method === "GET") {
+      const nudges = state.missed.map(({ bill: id, due }) => {
+        const bill = state.bills.find((b) => b.id === id)!;
+        const shown = `${bill.amount?.currency} ${Number(bill.amount?.amount).toLocaleString("en-US", { minimumFractionDigits: 2 })}`;
+        return {
+          department: "accounting",
+          kind: "missed_move",
+          text: `Your ${shown} ${bill.name} on ${shortDay(due)} hasn't shown up. Did it go through?`,
+          link: "/accounting/plan",
+          urgent: false,
+          actions: [
+            { key: "went_through", label: "It went through", method: "POST", path: `/bills/${id}/paid?due=${due}` },
+            { key: "skip", label: "Skip this month", method: "POST", path: `/bills/${id}/skip?due=${due}` },
+          ],
+        };
+      });
       return json(route, [
-        { department: "accounting", kind: "email", text: "2 receipts from email waiting for you", link: "/accounting/email", urgent: false },
-        { department: "accounting", kind: "bill", text: "Rent (SGD 1,800.00) due tomorrow", link: "/accounting/plan", urgent: false },
+        ...nudges,
+        { department: "accounting", kind: "email", text: "2 receipts from email waiting for you", link: "/accounting/email", urgent: false, actions: [] },
+        { department: "accounting", kind: "bill", text: "Rent (SGD 1,800.00) due tomorrow", link: "/accounting/plan", urgent: false, actions: [] },
       ]);
     }
     if (path === "/departments" && method === "GET") {
@@ -1253,6 +1333,19 @@ export async function fakeApi(
       });
     }
     if (path === "/wallets" && method === "GET") return json(route, wallets);
+    if (path === "/wallets/likely-moves" && method === "GET") {
+      const ibkrWallet = wallets.find((w) => w.id === "w-ibkr") ?? null;
+      const reasons: Record<string, [typeof ibkrWallet, string]> = {
+        t201: [ibkrWallet, "The description names IBKR."],
+        t202: [null, "A round amount, like the transfers you've moved before."],
+      };
+      return json(
+        route,
+        live()
+          .filter((t) => t.id in reasons && t.direction !== "move")
+          .map((t) => ({ transaction: t, wallet: reasons[t.id][0], reason: reasons[t.id][1] })),
+      );
+    }
     if (path === "/wallets" && method === "POST") {
       const name = String(body.name).trim();
       if (wallets.some((w) => w.name.toLowerCase() === name.toLowerCase()))
@@ -1533,29 +1626,65 @@ export async function fakeApi(
         id: `bill${state.bills.length + 1}`,
         name: body.name,
         spending: body.spending ?? true,
+        wallet: null as WalletRef | null,
         amount: body.amount ? { amount: Number(body.amount).toFixed(4), currency: "SGD" } : null,
         cadence: body.cadence,
         due: body.due,
         days_until: Math.round((Date.parse(body.due) - Date.parse("2026-09-28")) / 86_400_000),
         snoozed: false,
       };
+      if (body.wallet_id) {
+        const target = wallets.find((w) => w.id === body.wallet_id);
+        if (bill.spending) return json(route, { detail: "a bill that counts as spending can't move money to a wallet" }, 422);
+        if (!target) return json(route, { detail: "wallet not found" }, 404);
+        if (target.kind === "spending") return json(route, { detail: "a scheduled move goes to a wallet other than Spending" }, 422);
+        bill.wallet = walletRef(target);
+      }
       state.bills.push(bill);
       return json(route, bill, 201);
     }
-    const billAction = path.match(/^\/bills\/([^/]+)(\/paid|\/snooze)?$/);
+    const billOne = path.match(/^\/bills\/([^/]+)$/);
+    if (billOne && method === "PATCH") {
+      const bill = state.bills.find((b) => b.id === billOne[1]);
+      if (!bill) return json(route, { detail: "bill not found" }, 404);
+      const target = body.wallet_id ? wallets.find((w) => w.id === body.wallet_id) : null;
+      if (body.wallet_id && bill.spending !== false)
+        return json(route, { detail: "a bill that counts as spending can't move money to a wallet" }, 422);
+      if (body.wallet_id && !target) return json(route, { detail: "wallet not found" }, 404);
+      if (target?.kind === "spending") return json(route, { detail: "a scheduled move goes to a wallet other than Spending" }, 422);
+      bill.wallet = target ? walletRef(target) : null;
+      return json(route, bill);
+    }
+    const billAction = path.match(/^\/bills\/([^/]+)(\/paid|\/snooze|\/skip)?$/);
     if (billAction && method !== "GET") {
       const [, id, action] = billAction;
       const marked = state.bills.find((b) => b.id === id);
+      const due = url.searchParams.get("due") ?? marked?.due ?? "2026-09-28";
+      state.missed = state.missed.filter((m) => !(m.bill === id && (action === "/paid" || action === "/skip")));
       if (action === "/snooze") state.bills = state.bills.map((b) => (b.id === id ? { ...b, snoozed: true } : b));
       else state.bills = state.bills.filter((b) => b.id !== id); // paid (one-off) or removed
       if (action === "/paid") {
         const amount = (body as { amount?: string | null } | null)?.amount;
+        if (marked?.spending === false && marked.wallet) {
+          const head = `Marked ${marked.name} (${shortDay(due)}) as done`;
+          if (!marked.amount) {
+            return json(route, { message: `${head}. It has no set amount, so no move was logged; tell me how much it was to log it.`, logged: false, moved: false, needs_amount: true });
+          }
+          state.txs.unshift({
+            ...mk(`t${state.txs.length + 1}`, "move", marked.amount.amount, marked.name, null),
+            from_wallet: walletRef(wallets[0]),
+            to_wallet: marked.wallet,
+          });
+          const shown = Number(marked.amount.amount).toFixed(2);
+          return json(route, { message: `${head} and logged a move of ${shown} SGD from Spending to ${marked.wallet.name}.`, logged: false, moved: true, needs_amount: false });
+        }
         if (marked?.spending === false) {
-          return json(route, { message: "Marked it as done. It doesn't count as spending, so nothing was logged.", logged: false, needs_amount: false });
+          return json(route, { message: "Marked it as done. It doesn't count as spending, so nothing was logged.", logged: false, moved: false, needs_amount: false });
         }
         return json(route, {
           message: amount ? `Marked it as paid and logged SGD ${amount} in this month's spending.` : "Marked it as paid.",
           logged: Boolean(amount),
+          moved: false,
           needs_amount: !amount,
         });
       }
@@ -1585,9 +1714,22 @@ export async function fakeApi(
     if (path === "/email" && method === "GET") return json(route, { available: true, forwarding_available: true, ...state.email });
     if (path === "/email/link" && method === "GET")
       return json(route, url.searchParams.get("t") === "good" ? { valid: true, account_hint: "9165" } : { valid: false, account_hint: null });
-    const emailAction = path.match(/^\/email\/(e\d+)\/(log|skip)$/);
+    const emailAction = path.match(/^\/email\/(e\d+)\/(log|skip|move)$/);
     if (emailAction && method === "POST") {
       const email = state.email.emails.find((e) => e.id === emailAction[1])!;
+      if (emailAction[2] === "move") {
+        const target = wallets.find((w) => w.id === (body.wallet_id ?? email.move_wallet_id));
+        if (!target) return json(route, { detail: "wallet not found" }, 404);
+        state.emailMoves.push({ id: String(email.id), body });
+        const [sent, received] = email.received ? [walletRef(target), walletRef(wallets[0])] : [walletRef(wallets[0]), walletRef(target)];
+        state.txs.unshift({
+          ...mk(`t${state.txs.length + 1}`, "move", String(body.amount ?? email.amount), String(email.merchant), null),
+          from_wallet: sent,
+          to_wallet: received,
+        });
+        Object.assign(email, { status: "logged", transaction_id: "t9", actionable: false, move_wallet_id: null, move_wallet: null });
+        return route.fulfill({ status: 204 });
+      }
       Object.assign(email, emailAction[2] === "log"
         ? { status: "logged", transaction_id: "t9", actionable: false }
         : { status: "skipped", reason: "you skipped it" });
@@ -1654,6 +1796,7 @@ export async function fakeApi(
         date_order: "dmy", sign: "negative_is_out",
       };
       const lines = csv.trim().split("\n").slice(1).map((l) => l.split(","));
+      const named = wallets.find((w) => w.id === "w-ibkr");
       return json(route, {
         headers: ["Date", "Description", "Amount"],
         layout,
@@ -1670,7 +1813,10 @@ export async function fakeApi(
             amount: readable ? Math.abs(amount).toFixed(2) : null,
             currency: readable ? "SGD" : null,
             direction: readable ? (amount < 0 ? "out" : "in") : null,
-            category: readable ? (amount < 0 ? "Other" : "Income") : null,
+            // A description that names a wallet is proposed as a move, with no category.
+            category: readable && !(named && cells[1].toLowerCase().includes("ibkr")) ? (amount < 0 ? "Other" : "Income") : null,
+            move_to: readable && amount < 0 && named && cells[1].toLowerCase().includes("ibkr") ? named : null,
+            move_from: readable && amount > 0 && named && cells[1].toLowerCase().includes("ibkr") ? named : null,
             problem: readable ? null : "can't read the date",
             matches: cells[1] === "Grab" ? { date: "2026-09-28", description: "Grab", amount: "25.00" } : null,
           };
@@ -1678,6 +1824,7 @@ export async function fakeApi(
       });
     }
     if (path === "/imports" && method === "POST") {
+      state.importBodies.push({ include: body.include, moves: body.moves ?? [] });
       const record = {
         id: `i${state.imports.length + 1}`, file_name: body.file_name, added: body.include.length,
         created_at: "2026-09-28T06:00:00Z", undone_at: null,
@@ -1908,6 +2055,12 @@ export async function fakeApi(
   );
 
   return state;
+}
+
+/** "25 Sep" for 2026-09-25. */
+function shortDay(day: string): string {
+  const [, month, date] = day.split("-").map(Number);
+  return `${date} ${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][month - 1]}`;
 }
 
 function mk(

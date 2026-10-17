@@ -1,7 +1,7 @@
 """The cash-flow calendar: net money movement per day, in the home currency.
 
 Days so far show what was logged. Days ahead show what's expected: scheduled payments,
-spending or not (unless already marked paid or done), tracked subscriptions, payday,
+spending or not (unless already marked paid, done or skipped), tracked subscriptions, payday,
 and money set aside each payday for a trip. It shows movement only, never a
 balance: Nexus doesn't know what's in the user's accounts.
 """
@@ -29,6 +29,7 @@ MAX_DAYS = 62  # about two months per request
 
 class ExpectedKind(StrEnum):
     BILL = "bill"
+    MOVE = "move"  # a scheduled move to one of the user's wallets: out of Spending
     SUBSCRIPTION = "subscription"
     SALARY = "salary"
     TRIP = "trip"  # money set aside for a trip, on each payday before it
@@ -203,21 +204,24 @@ async def _expected(
     found: list[tuple[date, Expected]] = []
     async with uow() as tx:
         bills = await tx.planning.list_bills(user.id)
-        paid: set[tuple[UUID, date]] = set()
+        wallets = {w.id: w for w in await tx.ledger.list_wallets(user.id)}
+        paid: set[tuple[UUID, date]] = set()  # marked paid or done, or skipped
         for bill in bills:
             for o in await tx.planning.occurrences(user.id, bill.id, start):
-                if o.paid_at is not None:
+                if o.paid_at is not None or o.skipped_at is not None:
                     paid.add((bill.id, o.due))
         subscriptions = await tx.planning.list_subscriptions(user.id)
         schedule = await tx.planning.get_salary_schedule(user.id)
         trips = [t for t in await tx.trips.list_trips(user.id) if t.set_aside is not None]
 
     for bill in bills:
+        # A scheduled move is still money out of Spending, so it is counted like a bill.
+        wallet = wallets.get(bill.wallet_id) if bill.wallet_id else None
+        kind = ExpectedKind.MOVE if wallet else ExpectedKind.BILL
+        name = f"{bill.name} → {wallet.name}" if wallet else bill.name
         for due in due_dates(bill.anchor, bill.cadence, start, end):
             if (bill.id, due) not in paid:
-                found.append(
-                    (due, Expected(ExpectedKind.BILL, bill.name, Direction.OUT, bill.amount, None))
-                )
+                found.append((due, Expected(kind, name, Direction.OUT, bill.amount, None)))
     for sub in subscriptions:
         if sub.status is not SubscriptionStatus.ACTIVE:
             continue

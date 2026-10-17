@@ -12,6 +12,7 @@ import csv
 import io
 import logging
 from collections.abc import Callable, Iterable
+from collections.abc import Mapping as MappingType
 from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta
 from enum import StrEnum
@@ -25,6 +26,7 @@ from nexus.application.ports import (
     UnitOfWork,
 )
 from nexus.application.transactions import NewTransaction, create_transaction, default_category
+from nexus.application.wallets import create_move
 from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.ledger import (
     Direction,
@@ -34,6 +36,8 @@ from nexus.domain.ledger import (
     TransactionStatus,
     User,
     UserId,
+    Wallet,
+    WalletKind,
     clean_name,
     snapshot,
 )
@@ -54,6 +58,7 @@ from nexus.domain.statements import (
     read_table,
     suggest_mapping,
 )
+from nexus.domain.wallets import wallet_for
 
 type UowFactory = Callable[[], UnitOfWork]
 
@@ -72,8 +77,16 @@ class PreviewRow:
     row: StatementRow
     verdict: Verdict
     money: Money | None = None
-    category: str | None = None  # where it would be filed
+    category: str | None = None  # where it would be filed; None for a proposed move
     matches: Transaction | None = None  # the likely duplicate
+    # Proposed as a move because the description names a wallet: money out goes from
+    # Spending to ``move_to``, money in comes from ``move_from`` to Spending.
+    move_to: Wallet | None = None
+    move_from: Wallet | None = None
+
+    @property
+    def wallet(self) -> Wallet | None:
+        return self.move_to or self.move_from
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,22 +145,42 @@ async def _category_names(repo: LedgerRepository, user: User) -> Callable[[State
 
 
 def _duplicates(
-    rows: Iterable[tuple[StatementRow, Money]], existing: list[Transaction], tz: ZoneInfo
+    rows: Iterable[tuple[StatementRow, Money]],
+    existing: list[Transaction],
+    tz: ZoneInfo,
+    moves: MappingType[int, tuple[UUID, UUID]] | None = None,
 ) -> dict[int, Transaction]:
     """Pair each row with at most one live transaction of the same amount and
-    direction within a day, and each transaction with at most one row."""
+    direction within a day, and each transaction with at most one row. A row proposed as
+    a move (``moves``: row to the wallets it goes between) also pairs with a move between
+    the same two wallets."""
     free = list(existing)
     found: dict[int, Transaction] = {}
     for row, money in rows:
         if row.day is None:
             continue
+        ends = (moves or {}).get(row.index)
         for tx in free:
             near = abs((tx.occurred_at.astimezone(tz).date() - row.day).days) <= DUPLICATE_DAYS
-            if near and tx.direction is row.direction and tx.amount == money:
+            if not near:
+                continue
+            same = tx.direction is row.direction and tx.amount == money
+            twin = (
+                ends is not None
+                and tx.is_move
+                and (tx.from_wallet_id, tx.to_wallet_id) == ends
+                and money in (tx.amount, tx.received_amount)
+            )
+            if same or twin:
                 found[row.index] = tx
                 free.remove(tx)
                 break
     return found
+
+
+def _proposed(row: StatementRow, wallets: list[Wallet]) -> Wallet | None:
+    """The wallet a readable row is about, by the wallets' match words."""
+    return wallet_for([row.description], wallets)
 
 
 async def preview(
@@ -163,6 +196,8 @@ async def preview(
         prints = fingerprints(rows)
         imported = await db.statements.claimed(user.id, Source.IMPORT, list(prints.values()))
         category = await _category_names(db.ledger, user)
+        wallets = await db.ledger.list_wallets(user.id)
+        spending = next((w for w in wallets if w.kind is WalletKind.SPENDING), None)
         readable = [r for r in rows if r.status is RowStatus.READY and r.day is not None]
         existing: list[Transaction] = []
         if readable:
@@ -174,22 +209,34 @@ async def preview(
             )
             existing = page.items
     money = {r.index: _money(r, user) for r in readable}
+    # A row naming a wallet is proposed as a move between it and Spending.
+    proposals: dict[int, Wallet] = {}
+    ends: dict[int, tuple[UUID, UUID]] = {}
+    if spending is not None:
+        for r in readable:
+            if (w := _proposed(r, wallets)) is not None:
+                proposals[r.index] = w
+                ends[r.index] = (
+                    (spending.id, w.id) if r.direction is Direction.OUT else (w.id, spending.id)
+                )
     fresh = [(r, money[r.index]) for r in readable if prints[r.index] not in imported]
-    doubles = _duplicates(fresh, existing, tz)
+    doubles = _duplicates(fresh, existing, tz, ends)
     result: list[PreviewRow] = []
     for row in rows:
         if row.status is not RowStatus.READY:
             result.append(PreviewRow(row, Verdict.UNCLEAR))
-        elif prints[row.index] in imported:
-            result.append(PreviewRow(row, Verdict.IMPORTED, money[row.index], category(row)))
+            continue
+        wallet = proposals.get(row.index)
+        into = wallet if wallet and row.direction is Direction.OUT else None
+        out_of = wallet if wallet and row.direction is Direction.IN else None
+        shown = None if wallet else category(row)
+        if prints[row.index] in imported:
+            verdict, twin = Verdict.IMPORTED, None
         elif row.index in doubles:
-            result.append(
-                PreviewRow(
-                    row, Verdict.DUPLICATE, money[row.index], category(row), doubles[row.index]
-                )
-            )
+            verdict, twin = Verdict.DUPLICATE, doubles[row.index]
         else:
-            result.append(PreviewRow(row, Verdict.NEW, money[row.index], category(row)))
+            verdict, twin = Verdict.NEW, None
+        result.append(PreviewRow(row, verdict, money[row.index], shown, twin, into, out_of))
     return Preview(table, chosen, saved_as, result)
 
 
@@ -208,10 +255,15 @@ async def confirm(
     *,
     file_name: str,
     save_as: str | None = None,
+    moves: MappingType[int, UUID] | None = None,
     now: datetime,
 ) -> Imported:
     """Add the ticked rows as one import. Rows that can't be read, or that an
-    earlier import already added, are skipped rather than failing the rest."""
+    earlier import already added, are skipped rather than failing the rest.
+
+    A ticked row in ``moves`` (row to wallet, as the preview proposed or the user picked)
+    is added as a move between that wallet and Spending (money out goes to the wallet,
+    money in comes from it); every other row is an ordinary entry."""
     table = read_table(text)
     rows = read_rows(table, mapping)
     if not include:
@@ -223,7 +275,16 @@ async def confirm(
     name = clean_name(file_name, field_name="file name")[:120]
     added: list[UUID] = []
     skipped = 0
+    chosen = {i: w for i, w in (moves or {}).items() if i in include}
     async with uow_factory() as db:
+        wallets = {w.id: w for w in await db.ledger.list_wallets(user.id)}
+        spending = next((w for w in wallets.values() if w.kind is WalletKind.SPENDING), None)
+        for wallet_id in set(chosen.values()):
+            wallet = wallets.get(wallet_id)
+            if wallet is None:
+                raise NotFound("wallet not found")
+            if wallet.kind is WalletKind.SPENDING:
+                raise InvalidInput("pick a wallet other than Spending to move it to or from")
         claimed = await db.statements.claimed(user.id, Source.IMPORT, list(prints.values()))
         for row in rows:
             if row.index not in include:
@@ -235,20 +296,36 @@ async def confirm(
             if fingerprint in claimed:
                 skipped += 1
                 continue
-            tx = await create_transaction(
-                db.ledger,
-                user.id,
-                NewTransaction(
-                    direction=row.direction,
+            if row.index in chosen and spending is not None:
+                other = wallets[chosen[row.index]]
+                out = row.direction is Direction.OUT
+                tx = await create_move(
+                    db.ledger,
+                    user.id,
                     amount=_money(row, user),
+                    origin=spending if out else other,
+                    target=other if out else spending,
                     occurred_at=_local_noon(row.day, tz),
+                    now=now,
                     counterparty=row.description or None,
                     source=Source.IMPORT,
-                    status=TransactionStatus.CONFIRMED,
                     external_id=fingerprint,
-                ),
-                now=now,
-            )
+                )
+            else:
+                tx = await create_transaction(
+                    db.ledger,
+                    user.id,
+                    NewTransaction(
+                        direction=row.direction,
+                        amount=_money(row, user),
+                        occurred_at=_local_noon(row.day, tz),
+                        counterparty=row.description or None,
+                        source=Source.IMPORT,
+                        status=TransactionStatus.CONFIRMED,
+                        external_id=fingerprint,
+                    ),
+                    now=now,
+                )
             claimed.add(fingerprint)
             added.append(tx.id)
         record = StatementImport(uuid4(), user.id, name, added, now)

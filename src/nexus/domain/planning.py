@@ -85,7 +85,8 @@ class Bill:
     """A scheduled payment to remember, named by the user: rent, a regular investment,
     a transfer to savings. Never paid by the app. Marking one that counts as spending
     paid logs what was paid as an expense (unless it's already in the ledger); one
-    that doesn't (money moved, not spent) is only marked done."""
+    that doesn't (money moved, not spent) is only marked done. One that points at a
+    wallet is a scheduled move to it: marking it done logs the move too."""
 
     id: UUID
     user_id: UserId
@@ -96,12 +97,14 @@ class Bill:
     created_at: datetime
     archived_at: datetime | None = None
     spending: bool = True  # False for money moved rather than spent: investing, saving
+    # Where the money goes, for a scheduled move (never for spending): a wallet of the user's.
+    wallet_id: UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class BillOccurrence:
     """One due date of a bill, stored once something happens to it (a reminder,
-    a snooze or a payment)."""
+    a snooze, a payment or a skip)."""
 
     id: UUID
     user_id: UserId
@@ -110,6 +113,7 @@ class BillOccurrence:
     paid_at: datetime | None = None
     snoozed_until: datetime | None = None
     reminded_offset: int | None = None  # the most urgent reminder sent (7, 3 or 1)
+    skipped_at: datetime | None = None  # the user said this one isn't happening
 
 
 def _add_months(anchor: date, months: int) -> date:

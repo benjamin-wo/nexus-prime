@@ -1,7 +1,7 @@
 ---
 name: wallets
 description: The user's wallets (Spending, investment, savings, card) and moves of money between them; adding, renaming and deleting wallets, and turning an entry into a move.
-tools: [list_wallets, add_wallet, update_wallet, delete_wallet, mark_as_move, find_transactions, log_move]
+tools: [list_wallets, add_wallet, update_wallet, delete_wallet, mark_as_move, find_likely_moves, find_transactions, log_move]
 ---
 # Wallets and moves
 
@@ -57,6 +57,18 @@ moves; it never moves money.
   be turned into a move. Undo brings it back.
 - `find_transactions` with direction move lists moves. Edit (amount, date, notes),
   delete and undo work as for any entry.
+
+## Finding entries that were really moves
+- "do I have anything that should be a move?", "check my history for transfers to IBKR":
+  `find_likely_moves` lists entries from the last six months that name a wallet's match
+  words, or are the same amount to the same payee every month. It changes nothing.
+- Offer them to the user, one at a time or in a short list. For each one they agree is a
+  move, call `mark_as_move` with its id and the wallet (it asks them to confirm). When
+  there's no wallet next to an entry, it only looks like a regular transfer: ask which
+  wallet it went to, or leave it. Rent, bills and subscriptions can look the same, so
+  never convert one without the user saying so.
+- An email receipt that names a wallet is asked about as "Was this a move to IBKR?". With
+  `answer_email`, action `move` records it as a move.
 
 ## Managing wallets
 - "add a savings wallet called Emergency fund": `add_wallet` with a kind of investment,
