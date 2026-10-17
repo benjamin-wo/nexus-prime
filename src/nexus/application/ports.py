@@ -113,6 +113,18 @@ class DayTotal:
 
 
 @dataclass(frozen=True, slots=True)
+class MoveTotal:
+    """Confirmed moves between two wallets in one currency on one local day: the amounts
+    that left the first wallet."""
+
+    from_wallet_id: UUID
+    to_wallet_id: UUID
+    day: date
+    total: Money
+    count: int
+
+
+@dataclass(frozen=True, slots=True)
 class CategoryTotal:
     category_id: UUID | None
     category_name: str | None
@@ -235,6 +247,11 @@ class LedgerRepository(Protocol):
     async def spending_by_category(
         self, user_id: UserId, start: datetime, end: datetime, *, net: bool = True
     ) -> list[CategoryTotal]: ...
+    async def moves_by_day(
+        self, user_id: UserId, start: datetime, end: datetime, timezone: str
+    ) -> list[MoveTotal]:
+        """Confirmed, live moves in [start, end) per wallet pair, currency and local day."""
+        ...
 
     # external sources (also the "never re-import" tombstones)
     async def claim_source(

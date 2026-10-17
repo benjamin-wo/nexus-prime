@@ -19,6 +19,7 @@ from nexus.application import splits as split_cases
 from nexus.application import transactions as tx_cases
 from nexus.application.categories import list_categories
 from nexus.application.ports import LedgerQuery
+from nexus.application.wallets import list_wallets
 from nexus.domain.ledger import Direction
 from nexus.domain.money import Money
 
@@ -128,11 +129,16 @@ async def _recent(ctx: ToolContext) -> str:
     if not page.items:
         return ""
     names = {c.id: c.name for c in await list_categories(ctx.uow(), ctx.user.id)}
+    wallets = {w.id: w.name for w in await list_wallets(ctx.uow(), ctx.user.id)}
     lines = []
     for t in page.items:
+        when = t.occurred_at.astimezone(ctx.tz)
+        if t.direction is Direction.MOVE:
+            to = wallets.get(t.to_wallet_id, "another wallet") if t.to_wallet_id else "?"
+            lines.append(f"{when:%a %-d %b}: {_money(t.amount)} → {to} (move)")
+            continue
         sign = "-" if t.direction is Direction.OUT else "+"
         who = t.counterparty or t.notes or "?"
         category = names.get(t.category_id, "Uncategorised") if t.category_id else "Uncategorised"
-        when = t.occurred_at.astimezone(ctx.tz)
         lines.append(f"{when:%a %-d %b}: {sign}{_money(t.amount)} {who} ({category})")
     return "Latest transactions, newest first: " + "; ".join(lines) + "."

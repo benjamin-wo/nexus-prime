@@ -14,7 +14,15 @@ from nexus.application.budgets import TELEGRAM_SEND
 from nexus.application.fx import RateSource
 from nexus.application.ports import UnitOfWork
 from nexus.domain.errors import InvalidInput
-from nexus.domain.ledger import Direction, Source, Transaction, User, UserId
+from nexus.domain.ledger import (
+    Direction,
+    Source,
+    Transaction,
+    User,
+    UserId,
+    Wallet,
+    WalletKind,
+)
 from nexus.domain.money import Money
 from nexus.domain.notifications import (
     Frequency,
@@ -30,6 +38,8 @@ type UowFactory = Callable[[], UnitOfWork]
 MAX_READ = 500
 # An instant message lists this many, then says how many more.
 INSTANT_LINES = 5
+# A summary lists this many moves between wallets, then says how many more.
+MOVE_LINES = 3
 # Logged in the chat itself (or confirmed there): the reply already said so.
 _TOLD_IN_CHAT = frozenset({Source.TEXT, Source.PHOTO, Source.EMAIL})
 
@@ -105,12 +115,15 @@ async def notify(
         # Instantly, email receipts are asked about one by one as they're found.
         waiting = 0 if instant else await tx.email.count_waiting(user.id, start, now)
         names = {c.id: c.name for c in await tx.ledger.list_categories(user.id)}
+        wallets = {w.id: w for w in await tx.ledger.list_wallets(user.id)}
 
     if instant:
-        text = _instant([t for t in logged if t.source not in _TOLD_IN_CHAT], names)
+        text = _instant([t for t in logged if t.source not in _TOLD_IN_CHAT], names, wallets)
         buttons: list[list[dict[str, str]]] = []
     else:
-        text = await _summary(rates, user, logged, names, waiting, settings, start, now, tz)
+        text = await _summary(
+            rates, user, logged, names, wallets, waiting, settings, start, now, tz
+        )
         buttons = (
             [[{"label": "Review them", "data": f"url:{review_url}"}]]
             if waiting and review_url
@@ -139,20 +152,34 @@ async def notify(
     return sent
 
 
-def _line(t: Transaction, names: dict[UUID, str]) -> str:
+def _move_line(t: Transaction, wallets: dict[UUID, Wallet]) -> str:
+    """ "Moved S$800 to Investments"; "from X to Y" unless it left the Spending wallet."""
+    origin = wallets.get(t.from_wallet_id) if t.from_wallet_id else None
+    target = wallets.get(t.to_wallet_id) if t.to_wallet_id else None
+    to = target.name if target else "another wallet"
+    if origin is None or origin.kind is WalletKind.SPENDING:
+        return f"Moved {t.amount} to {to}"
+    return f"Moved {t.amount} from {origin.name} to {to}"
+
+
+def _line(t: Transaction, names: dict[UUID, str], wallets: dict[UUID, Wallet]) -> str:
+    if t.direction is Direction.MOVE:
+        return _move_line(t, wallets)
     verb = "Spent" if t.direction is Direction.OUT else "Received"
     where = f" at {t.counterparty}" if t.counterparty else ""
     category = f" · {names[t.category_id]}" if t.category_id in names else ""
     return f"{verb} {t.amount}{where}{category}"
 
 
-def _instant(logged: list[Transaction], names: dict[UUID, str]) -> str | None:
+def _instant(
+    logged: list[Transaction], names: dict[UUID, str], wallets: dict[UUID, Wallet]
+) -> str | None:
     if not logged:
         return None
     if len(logged) == 1:
-        return f"🧾 {_line(logged[0], names)}."
+        return f"🧾 {_line(logged[0], names, wallets)}."
     lines = [f"🧾 {len(logged)} new in your ledger:"]
-    lines += [_line(t, names) for t in logged[:INSTANT_LINES]]
+    lines += [_line(t, names, wallets) for t in logged[:INSTANT_LINES]]
     if len(logged) > INSTANT_LINES:
         lines.append(f"and {len(logged) - INSTANT_LINES} more.")
     return "\n".join(lines)
@@ -163,6 +190,7 @@ async def _summary(
     user: User,
     logged: list[Transaction],
     names: dict[UUID, str],
+    wallets: dict[UUID, Wallet],
     waiting: int,
     settings: NotificationSettings,
     start: datetime,
@@ -178,7 +206,10 @@ async def _summary(
     spent_count = received_count = 0
     by_category: dict[str, Money] = defaultdict(lambda: Money.zero(home))
     unconverted: list[Money] = []
+    moves = [t for t in logged if t.direction is Direction.MOVE]  # neither spent nor received
     for t in logged:
+        if t.direction is Direction.MOVE:
+            continue
         amount = fx.convert(t.amount, days[t.id], home, found).home
         if amount is None:
             unconverted.append(t.amount)
@@ -187,7 +218,7 @@ async def _summary(
             spent, spent_count = spent + amount, spent_count + 1
             name = names.get(t.category_id, "Other") if t.category_id else "Uncategorised"
             by_category[name] += amount
-        else:
+        elif t.direction is Direction.IN:
             received, received_count = received + amount, received_count + 1
 
     lines = [f"🧾 {heading(settings.frequency, start, now, tz, settings.daily_at)}"]
@@ -198,6 +229,9 @@ async def _summary(
             lines.append(" · ".join(f"{name} {amount}" for name, amount in top))
     if received_count:
         lines.append(f"You received {received} ({_count(received_count)}).")
+    lines += [f"{_move_line(t, wallets)}." for t in moves[:MOVE_LINES]]
+    if len(moves) > MOVE_LINES:
+        lines.append(f"and {len(moves) - MOVE_LINES} more moves between your wallets.")
     if unconverted:
         shown = ", ".join(str(m) for m in unconverted[:3])
         lines.append(f"Also {shown}, which I couldn't convert to {home}.")

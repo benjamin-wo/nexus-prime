@@ -29,6 +29,7 @@ from nexus.application.ports import (
     DayTotal,
     DirectionTotal,
     LedgerQuery,
+    MoveTotal,
     Page,
     SortField,
 )
@@ -209,7 +210,11 @@ def _net_amount() -> ColumnElement[Any]:
         )
         .scalar_subquery()
     )
-    return t.amount - case((t.direction == Direction.OUT.value, on_bill), else_=by_income)
+    return t.amount - case(
+        (t.direction == Direction.OUT.value, on_bill),
+        (t.direction == Direction.IN.value, by_income),
+        else_=0,  # a move has no repayments
+    )
 
 
 class SqlLedgerRepository:
@@ -763,6 +768,24 @@ class SqlLedgerRepository:
         return [
             DayTotal(Direction(direction), category_id, name, on, Money(total, currency), count)
             for direction, category_id, name, on, currency, total, count in rows
+        ]
+
+    async def moves_by_day(
+        self, user_id: UserId, start: datetime, end: datetime, timezone: str
+    ) -> list[MoveTotal]:
+        t = transactions.c
+        day = cast(func.timezone(timezone, t.occurred_at), Date)
+        rows = await self._db.execute(
+            select(
+                t.from_wallet_id, t.to_wallet_id, day, t.currency, func.sum(t.amount), func.count()
+            )
+            .where(self._counted(user_id, start, end), t.direction == Direction.MOVE.value)
+            .group_by(t.from_wallet_id, t.to_wallet_id, day, t.currency)
+            .order_by(day)
+        )
+        return [
+            MoveTotal(origin, target, on, Money(total, currency), count)
+            for origin, target, on, currency, total, count in rows
         ]
 
     async def spending_by_category(

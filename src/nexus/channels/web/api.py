@@ -879,9 +879,7 @@ async def spending_months(
         result = await tx_cases.summarize_in_home(
             web.uow(), web.rates, user, _day_start(user, first), _day_start(user, end)
         )
-        months.append(
-            MonthSpendOut(month=first, spent=money(result.totals[0].total), to_date=not back)
-        )
+        months.append(MonthSpendOut(month=first, spent=money(result.out.total), to_date=not back))
     previous = _month_start(today, 1)
     same_day = min(today.day, (_month_start(today) - timedelta(days=1)).day)
     last = await tx_cases.summarize_in_home(
@@ -899,7 +897,7 @@ async def spending_months(
     return SpendingOut(
         currency=user.home_currency,
         months=months,
-        last_month_to_date=money(last.totals[0].total),
+        last_month_to_date=money(last.out.total),
         budget=money(overall.limit) if overall else None,
     )
 

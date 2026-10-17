@@ -432,8 +432,19 @@ class HomeSummary:
     start: datetime
     end: datetime
     currency: str
-    totals: list[HomeTotal]  # one per direction, out first
+    totals: list[HomeTotal]  # money out, then money in; moves between wallets are no part of it
     spending_by_category: list[HomeCategoryTotal]  # largest first
+
+    def total_for(self, direction: Direction) -> HomeTotal:
+        return next(t for t in self.totals if t.direction is direction)
+
+    @property
+    def out(self) -> HomeTotal:
+        return self.total_for(Direction.OUT)
+
+    @property
+    def income(self) -> HomeTotal:
+        return self.total_for(Direction.IN)
 
 
 def _by_currency(amounts: list[Money]) -> list[Money]:
@@ -454,7 +465,11 @@ async def summarize_in_home(
     _check_range(start, end)
     home = user.home_currency
     async with uow:
-        days = await uow.ledger.totals_by_day(user.id, start, end, user.timezone)
+        days = [
+            d
+            for d in await uow.ledger.totals_by_day(user.id, start, end, user.timezone)
+            if d.direction is not Direction.MOVE  # between the user's wallets: not spending
+        ]
     found = await fx.rates_for(rates, home, ((d.total.currency, d.day) for d in days))
     totals: list[HomeTotal] = []
     for direction in (Direction.OUT, Direction.IN):
@@ -501,7 +516,10 @@ async def summarize(uow: UnitOfWork, actor: UserId, start: datetime, end: dateti
     async with uow:
         totals = await uow.ledger.totals_by_direction(actor, start, end)
         by_category = await uow.ledger.spending_by_category(actor, start, end)
-    return Summary(start, end, totals, by_category)
+    # Moves between the user's wallets are neither money out nor money in.
+    return Summary(
+        start, end, [t for t in totals if t.direction is not Direction.MOVE], by_category
+    )
 
 
 MAX_BULK = 500

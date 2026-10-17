@@ -58,8 +58,12 @@ class CashDay:
     def expected_net(self) -> Money:
         total = Money.zero(self.money_in.currency)
         for e in self.expected:
-            if e.home is not None:
-                total = total + e.home if e.direction is Direction.IN else total - e.home
+            if e.home is None:
+                continue
+            if e.direction is Direction.IN:
+                total = total + e.home
+            elif e.direction is Direction.OUT:
+                total = total - e.home
         return total
 
 
@@ -136,6 +140,8 @@ async def cash_flow(
             )
         found = await fx.rates_for(rates, home, ((t.total.currency, t.day) for t in totals))
         for t in totals:
+            if t.direction is Direction.MOVE:
+                continue  # between the user's own wallets: neither money in nor out
             amount = fx.convert(t.total, t.day, home, found).home
             if amount is None:
                 unconverted.append(t.total)
