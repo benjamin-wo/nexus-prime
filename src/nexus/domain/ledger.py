@@ -25,6 +25,16 @@ class Role(StrEnum):
 class Direction(StrEnum):
     IN = "in"
     OUT = "out"
+    # Money between two of the user's own wallets: never spending, never income.
+    MOVE = "move"
+
+
+class WalletKind(StrEnum):
+    SPENDING = "spending"
+    INVESTMENT = "investment"
+    SAVINGS = "savings"
+    CARD = "card"
+    OTHER = "other"
 
 
 class TransactionStatus(StrEnum):
@@ -72,6 +82,19 @@ class Category:
 
 
 @dataclass(frozen=True, slots=True)
+class Wallet:
+    """A named place money sits. A label only: no balance is kept. Every user has
+    exactly one of kind SPENDING (the account the budget watches)."""
+
+    id: UUID
+    user_id: UserId
+    name: str
+    kind: WalletKind
+    # Short strings that tie a statement line to this wallet.
+    match_words: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class Transaction:
     id: UUID
     user_id: UserId
@@ -89,10 +112,19 @@ class Transaction:
     # The category rule that chose the category, if one did. Cleared when the
     # user picks a category themselves.
     category_rule_id: UUID | None = None
+    # A move (direction MOVE) is between two wallets of the user; in and out have neither.
+    from_wallet_id: UUID | None = None
+    to_wallet_id: UUID | None = None
+    # What arrived, when it isn't ``amount`` (another currency, or a fee came off).
+    received_amount: Money | None = None
 
     @property
     def is_deleted(self) -> bool:
         return self.deleted_at is not None
+
+    @property
+    def is_move(self) -> bool:
+        return self.direction is Direction.MOVE
 
 
 @dataclass(frozen=True, slots=True)
@@ -230,10 +262,16 @@ def snapshot(tx: Transaction) -> dict[str, Any]:
         "notes": tx.notes,
         "status": tx.status.value,
         "deleted_at": tx.deleted_at.isoformat() if tx.deleted_at else None,
+        "from_wallet_id": str(tx.from_wallet_id) if tx.from_wallet_id else None,
+        "to_wallet_id": str(tx.to_wallet_id) if tx.to_wallet_id else None,
+        "received_amount": str(tx.received_amount.amount) if tx.received_amount else None,
+        "received_currency": tx.received_amount.currency if tx.received_amount else None,
     }
 
 
 def apply_snapshot(tx: Transaction, data: dict[str, Any], *, now: datetime) -> Transaction:
+    # Snapshots from before wallets existed lack the wallet keys: those rows had none.
+    received = data.get("received_amount")
     return replace(
         tx,
         direction=Direction(data["direction"]),
@@ -245,6 +283,9 @@ def apply_snapshot(tx: Transaction, data: dict[str, Any], *, now: datetime) -> T
         notes=data["notes"],
         status=TransactionStatus(data["status"]),
         deleted_at=datetime.fromisoformat(data["deleted_at"]) if data["deleted_at"] else None,
+        from_wallet_id=UUID(w) if (w := data.get("from_wallet_id")) else None,
+        to_wallet_id=UUID(w) if (w := data.get("to_wallet_id")) else None,
+        received_amount=Money.of(received, data["received_currency"]) if received else None,
         updated_at=now,
     )
 

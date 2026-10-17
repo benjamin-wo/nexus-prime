@@ -30,7 +30,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 
 metadata = MetaData(
     naming_convention={
@@ -83,6 +83,29 @@ categories = Table(
     Index("uq_categories_user_id_lower_name", "user_id", func.lower(text("name")), unique=True),
 )
 
+# A named place money sits (a label: no balance is kept). Every user has exactly one
+# of kind 'spending', the account the budget watches.
+wallets = Table(
+    "wallets",
+    metadata,
+    _uuid_pk(),
+    _user_fk(),
+    Column("name", Text, nullable=False),
+    Column("kind", Text, nullable=False),
+    Column("match_words", ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")),
+    Column("created_at", TZ, nullable=False, server_default=func.now()),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+    UniqueConstraint("id", "user_id"),
+    CheckConstraint("kind IN ('spending', 'investment', 'savings', 'card', 'other')", name="kind"),
+    Index("uq_wallets_user_id_lower_name", "user_id", func.lower(text("name")), unique=True),
+    Index(
+        "uq_wallets_user_id_spending",
+        "user_id",
+        unique=True,
+        postgresql_where=text("kind = 'spending'"),
+    ),
+)
+
 # A word or phrase that files new expenses under a category. Archived, never
 # deleted, so transactions it filed can still explain themselves.
 category_rules = Table(
@@ -127,16 +150,39 @@ transactions = Table(
     Column("updated_at", TZ, nullable=False),
     Column("deleted_at", TZ),
     Column("category_rule_id", UUID(as_uuid=True)),
+    # A move (direction 'move') is money between two of the user's own wallets; in and
+    # out rows have neither. ``received_*`` is what arrived when it differs from what
+    # left (another currency, or a fee).
+    Column("from_wallet_id", UUID(as_uuid=True)),
+    Column("to_wallet_id", UUID(as_uuid=True)),
+    Column("received_amount", MONEY),
+    Column("received_currency", CURRENCY),
     ForeignKeyConstraint(["user_id"], ["users.id"]),
     ForeignKeyConstraint(["category_id", "user_id"], ["categories.id", "categories.user_id"]),
     ForeignKeyConstraint(
         ["category_rule_id", "user_id"], ["category_rules.id", "category_rules.user_id"]
     ),
+    ForeignKeyConstraint(["from_wallet_id", "user_id"], ["wallets.id", "wallets.user_id"]),
+    ForeignKeyConstraint(["to_wallet_id", "user_id"], ["wallets.id", "wallets.user_id"]),
     UniqueConstraint("id", "user_id"),
     CheckConstraint(
         "category_rule_id IS NULL OR category_id IS NOT NULL", name="rule_needs_category"
     ),
-    CheckConstraint("direction IN ('in', 'out')", name="direction"),
+    CheckConstraint("direction IN ('in', 'out', 'move')", name="direction"),
+    CheckConstraint(
+        "(direction = 'move' AND from_wallet_id IS NOT NULL AND to_wallet_id IS NOT NULL "
+        "AND from_wallet_id <> to_wallet_id) "
+        "OR (direction <> 'move' AND from_wallet_id IS NULL AND to_wallet_id IS NULL)",
+        name="move_wallets",
+    ),
+    CheckConstraint(
+        "direction <> 'move' OR (category_id IS NULL AND category_rule_id IS NULL)",
+        name="move_no_category",
+    ),
+    CheckConstraint(
+        "(received_amount IS NULL) = (received_currency IS NULL)", name="received_pair"
+    ),
+    CheckConstraint("received_amount IS NULL OR received_amount > 0", name="received_positive"),
     CheckConstraint("amount > 0", name="amount_positive"),
     CheckConstraint("currency ~ '^[A-Z]{3}$'", name="currency"),
     CheckConstraint("status IN ('confirmed', 'pending')", name="status"),

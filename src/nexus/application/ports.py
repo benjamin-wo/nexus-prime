@@ -47,6 +47,7 @@ from nexus.domain.ledger import (
     TransactionStatus,
     User,
     UserId,
+    Wallet,
 )
 from nexus.domain.market import Bar
 from nexus.domain.memory import Memory, MemoryKind
@@ -136,6 +137,39 @@ class LedgerRepository(Protocol):
         """Move the source's transactions and rules to the target, then delete the source
         and any budget still on it. With keep_budget, the source's budget moves to the
         target first if the target has none. Returns how many transactions moved."""
+        ...
+
+    # wallets
+    async def insert_wallet(self, wallet: Wallet) -> None:
+        """Raises Conflict if the user has a wallet with that name (any case), or a second
+        Spending wallet."""
+        ...
+
+    async def get_wallet(self, user_id: UserId, wallet_id: UUID) -> Wallet | None: ...
+    async def spending_wallet(self, user_id: UserId) -> Wallet | None: ...
+    async def list_wallets(self, user_id: UserId) -> list[Wallet]:
+        """Spending first, then by name."""
+        ...
+
+    async def update_wallet(self, wallet: Wallet) -> None:
+        """Name, kind and match words. Raises Conflict like insert_wallet."""
+        ...
+
+    async def count_moves(self, user_id: UserId, wallet_id: UUID) -> int:
+        """Moves into or out of this wallet, deleted ones too (they still name it)."""
+        ...
+
+    async def repoint_moves(
+        self, user_id: UserId, old_id: UUID, new_id: UUID, now: datetime
+    ) -> tuple[int, int]:
+        """Make every move that names ``old_id`` name ``new_id`` instead. A move between
+        the two would end up from a wallet to itself, so it is removed outright (a deleted
+        row would still name the old wallet), with its history. Returns (moves repointed,
+        moves removed)."""
+        ...
+
+    async def delete_wallet(self, user_id: UserId, wallet_id: UUID) -> None:
+        """Only once no move names it (see repoint_moves)."""
         ...
 
     # receipts

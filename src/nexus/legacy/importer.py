@@ -18,6 +18,7 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from nexus.application.users import DEFAULT_CATEGORIES
+from nexus.application.wallets import new_spending_wallet
 from nexus.domain.errors import InvalidInput
 from nexus.domain.ledger import (
     Category,
@@ -183,6 +184,8 @@ class _UserImport:
         self.user = user
         existing = await self.repo.list_categories(user.id)
         self.categories = {c.name.casefold(): c.id for c in existing}
+        if self.report.new_user:
+            await self.repo.insert_wallet(new_spending_wallet(user.id))
         if self.report.new_user and not existing:
             for name in DEFAULT_CATEGORIES:
                 await self._category(name)
