@@ -4,6 +4,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from nexus.application.clock import utcnow
 from nexus.application.ports import LedgerRepository, UnitOfWork
+from nexus.application.wallets import new_spending_wallet
 from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.ledger import Category, Role, User, UserId
 from nexus.domain.money import Money
@@ -66,6 +67,7 @@ async def ensure_user(repo: LedgerRepository, cmd: RegisterUser) -> Registration
     if created:
         for name in DEFAULT_CATEGORIES:
             await repo.insert_category(Category(id=uuid4(), user_id=candidate.id, name=name))
+        await repo.insert_wallet(new_spending_wallet(candidate.id))
     user = await repo.get_user_by_telegram_id(cmd.telegram_user_id)
     if user is None:  # pragma: no cover - the row was just inserted or already existed
         raise RuntimeError("user vanished during registration")

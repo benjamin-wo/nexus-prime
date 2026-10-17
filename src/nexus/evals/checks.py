@@ -13,6 +13,7 @@ from nexus.application import memory as memory_cases
 from nexus.application import notifications as notification_cases
 from nexus.application import splits as split_cases
 from nexus.application import transactions as tx_cases
+from nexus.application import wallets as wallet_cases
 from nexus.application.categories import list_categories
 from nexus.application.category_rules import list_rules
 from nexus.application.ports import LedgerQuery, UnitOfWork
@@ -99,6 +100,57 @@ class Logged:
             ):
                 return True
         return False
+
+
+@dataclass(frozen=True, slots=True)
+class Moved:
+    """A new, live move between two of the user's wallets like this exists."""
+
+    amount: str
+    to_wallet: str
+    from_wallet: str = "Spending"
+    currency: str = "SGD"
+
+    def describe(self) -> str:
+        return f"moved {self.amount} {self.currency} from {self.from_wallet} to {self.to_wallet}"
+
+    async def holds(self, world: World) -> bool:
+        wallets = await wallet_cases.list_wallets(world.uow(), world.user.id)
+        names = {w.id: w.name.casefold() for w in wallets}
+        route = (self.from_wallet.casefold(), self.to_wallet.casefold())
+        for tx in await world.transactions():
+            if tx.id in world.seeded or tx.is_deleted or not tx.is_move:
+                continue
+            ends = (
+                names.get(tx.from_wallet_id or UUID(int=0)),
+                names.get(tx.to_wallet_id or UUID(int=0)),
+            )
+            if (
+                tx.amount.amount == Decimal(self.amount)
+                and tx.amount.currency == self.currency
+                and ends == route
+            ):
+                return True
+        return False
+
+
+@dataclass(frozen=True, slots=True)
+class NotSpent:
+    """No new, live expense or income of this amount exists (a move of it is fine)."""
+
+    amount: str
+
+    def describe(self) -> str:
+        return f"no expense or income of {self.amount}"
+
+    async def holds(self, world: World) -> bool:
+        return not any(
+            tx.id not in world.seeded
+            and not tx.is_deleted
+            and not tx.is_move
+            and tx.amount.amount == Decimal(self.amount)
+            for tx in await world.transactions()
+        )
 
 
 @dataclass(frozen=True, slots=True)

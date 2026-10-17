@@ -66,6 +66,10 @@ class LedgerQuestion:
     category_id: UUID | None = None
     uncategorised: bool = False
     source: Source | None = None
+    # For moves: those into or out of this wallet, out of this one, into this one.
+    wallet_id: UUID | None = None
+    from_wallet_id: UUID | None = None
+    to_wallet_id: UUID | None = None
     min_amount: Decimal | None = None  # home currency, inclusive
     max_amount: Decimal | None = None
     weekdays: frozenset[int] | None = None  # 0 is Monday, in the user's timezone
@@ -137,6 +141,10 @@ def _check(q: LedgerQuestion) -> None:
         raise InvalidInput(f"top must be between 1 and {MAX_TOP}")
     if q.uncategorised and q.category_id is not None:
         raise InvalidInput("choose a category or uncategorised, not both")
+    if q.direction is not Direction.MOVE and (q.wallet_id or q.from_wallet_id or q.to_wallet_id):
+        raise InvalidInput("a wallet filter is for moves; ask about moves")
+    if q.direction is Direction.MOVE and (q.category_id or q.uncategorised):
+        raise InvalidInput("a move has no category")
     for bound in (q.min_amount, q.max_amount):
         if bound is not None and (not bound.is_finite() or bound < 0):
             raise InvalidInput("amount bounds must be zero or more")
@@ -244,6 +252,9 @@ async def _figures(
                 category_id=q.category_id,
                 uncategorized=q.uncategorised,
                 source=q.source,
+                wallet_id=q.wallet_id,
+                from_wallet_id=q.from_wallet_id,
+                to_wallet_id=q.to_wallet_id,
                 status=TransactionStatus.CONFIRMED,
                 search=q.search,
                 sort=SortField.OCCURRED_AT,

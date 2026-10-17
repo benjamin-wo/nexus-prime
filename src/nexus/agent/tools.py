@@ -38,6 +38,7 @@ from nexus.application import subscriptions as subscription_cases
 from nexus.application import transactions as tx_cases
 from nexus.application import travel_research as trip_research
 from nexus.application import trips as trip_cases
+from nexus.application import wallets as wallet_cases
 from nexus.application.departments import Departments
 from nexus.application.fx import Rate, RateSource
 from nexus.application.ideas import KINDS as IDEA_KINDS
@@ -58,6 +59,8 @@ from nexus.domain.ledger import (
     Source,
     Transaction,
     User,
+    Wallet,
+    WalletKind,
     plan_split,
 )
 from nexus.domain.levels import describe as describe_levels
@@ -221,9 +224,20 @@ async def guess_category(ctx: ToolContext, name: str | None) -> UUID | None:
         return None
 
 
-def describe(tx: Transaction, cats: dict[UUID, Category], tz: ZoneInfo) -> str:
-    sign = "-" if tx.direction is Direction.OUT else "+"
-    parts = [tx.occurred_at.astimezone(tz).date().isoformat(), f"{sign}{tx.amount}"]
+def describe(
+    tx: Transaction,
+    cats: dict[UUID, Category],
+    tz: ZoneInfo,
+    wallets: dict[UUID, Wallet] | None = None,
+) -> str:
+    """One line for the model. A move shows where the money went ("800.00 SGD → IBKR (move)"),
+    with no sign, and where it came from unless that's the Spending wallet; pass ``wallets``
+    (see ``wallet_map``) to name them."""
+    parts = [tx.occurred_at.astimezone(tz).date().isoformat()]
+    if tx.is_move:
+        parts.append(_move_text(tx, wallets or {}))
+    else:
+        parts.append(f"{'-' if tx.direction is Direction.OUT else '+'}{tx.amount}")
     if tx.counterparty:
         parts.append(tx.counterparty)
     if tx.category_id and tx.category_id in cats:
@@ -235,6 +249,68 @@ def describe(tx: Transaction, cats: dict[UUID, Category], tz: ZoneInfo) -> str:
     if tx.is_deleted:
         parts.append("deleted")
     return " · ".join(parts) + f" [id {tx.id}]"
+
+
+def _move_text(tx: Transaction, wallets: dict[UUID, Wallet]) -> str:
+    origin = wallets.get(tx.from_wallet_id) if tx.from_wallet_id else None
+    target = wallets.get(tx.to_wallet_id) if tx.to_wallet_id else None
+    text = f"{tx.amount}"
+    if origin is None or origin.kind is not WalletKind.SPENDING:
+        text += f" {origin.name if origin else 'another wallet'}"
+    text += f" → {target.name if target else 'another wallet'} (move)"
+    if tx.received_amount is not None:
+        text += f", {tx.received_amount} received"
+    return text
+
+
+async def wallet_map(ctx: ToolContext) -> dict[UUID, Wallet]:
+    wallets = await wallet_cases.list_wallets(ctx.uow(), ctx.user.id)
+    return {w.id: w for w in wallets}
+
+
+def find_wallet(wallets: list[Wallet], name: str) -> Wallet | None:
+    """A wallet by name in any case ("my" and "the" in front are ignored), else the one
+    wallet that has the text among its match words."""
+    wanted = name.strip().casefold()
+    for prefix in ("my ", "the "):
+        wanted = wanted.removeprefix(prefix)
+    for w in wallets:
+        if w.name.casefold() == wanted:
+            return w
+    tied = [w for w in wallets if wanted in {m.casefold() for m in w.match_words}]
+    return tied[0] if len(tied) == 1 else None
+
+
+def wallet_list(wallets: list[Wallet]) -> str:
+    return ", ".join(
+        w.name if w.kind is WalletKind.SPENDING else f"{w.name} ({w.kind.value})" for w in wallets
+    )
+
+
+async def resolve_wallet(ctx: ToolContext, name: str) -> Wallet:
+    """One of the user's wallets by name. An unknown one is for the model to ask about:
+    it never creates a wallet unasked."""
+    wallets = await wallet_cases.list_wallets(ctx.uow(), ctx.user.id)
+    found = find_wallet(wallets, name)
+    if found is None:
+        raise NotFound(
+            f"there's no wallet called {name!r}. The user's wallets: {wallet_list(wallets)}. "
+            "Ask which one they mean, or offer to add it as a new wallet (the wallets skill); "
+            "don't add one unless they say yes."
+        )
+    return found
+
+
+async def show(ctx: ToolContext, tx: Transaction) -> str:
+    """``describe`` for one transaction, naming the wallets if it's a move."""
+    wallets = await wallet_map(ctx) if tx.is_move else None
+    return describe(tx, await category_map(ctx), ctx.tz, wallets)
+
+
+async def show_all(ctx: ToolContext, txs: list[Transaction]) -> list[str]:
+    wallets = await wallet_map(ctx) if any(tx.is_move for tx in txs) else None
+    cats = await category_map(ctx)
+    return [describe(tx, cats, ctx.tz, wallets) for tx in txs]
 
 
 async def _load(ctx: ToolContext, transaction_id: str) -> Transaction:
@@ -275,7 +351,7 @@ async def _log_expense(ctx: ToolContext, a: LogExpenseArgs) -> ToolResult:
             fallback_category_id=await guess_category(ctx, a.best_guess_category),
         ),
     )
-    return ToolResult(f"Logged: {describe(tx, await category_map(ctx), ctx.tz)}", wrote=True)
+    return ToolResult(f"Logged: {await show(ctx, tx)}", wrote=True)
 
 
 class IncomeArgs(Args):
@@ -365,14 +441,14 @@ async def _log_receipt_expense(ctx: ToolContext, a: ReceiptExpenseArgs) -> ToolR
         UUID(a.receipt_id) if a.receipt_id else None,
         now=ctx.now,
     )
-    return ToolResult(
-        f"Logged from receipt: {describe(tx, await category_map(ctx), ctx.tz)}", wrote=True
-    )
+    return ToolResult(f"Logged from receipt: {await show(ctx, tx)}", wrote=True)
 
 
 class FindArgs(Args):
     search: str | None = Field(None, description="Text to find in merchant or notes")
-    direction: Literal["in", "out"] | None = None
+    direction: Literal["in", "out", "move"] | None = Field(
+        None, description="move: money moved between the user's own wallets"
+    )
     category: str | None = None
     start_date: str | None = Field(None, description="YYYY-MM-DD, inclusive")
     end_date: str | None = Field(None, description="YYYY-MM-DD, inclusive")
@@ -398,8 +474,7 @@ async def _find(ctx: ToolContext, a: FindArgs) -> ToolResult:
     )
     if not page.items:
         return ToolResult("No matching transactions.")
-    cats = await category_map(ctx)
-    lines = [describe(tx, cats, ctx.tz) for tx in page.items]
+    lines = await show_all(ctx, page.items)
     more = f"\n({page.total - len(lines)} more not shown)" if page.total > len(lines) else ""
     return ToolResult("\n".join(lines) + more)
 
@@ -441,7 +516,7 @@ async def _describe_edit(ctx: ToolContext, a: EditArgs) -> str:
         "notes": a.notes,
     }
     changes = ", ".join(f"{k} → {v}" for k, v in wanted.items() if v)
-    return f"Change {describe(tx, await category_map(ctx), ctx.tz).split(' [id')[0]}: {changes}?"
+    return f"Change {(await show(ctx, tx)).split(' [id')[0]}: {changes}?"
 
 
 async def _edit(ctx: ToolContext, a: EditArgs) -> ToolResult:
@@ -450,7 +525,7 @@ async def _edit(ctx: ToolContext, a: EditArgs) -> ToolResult:
     if a.category is not None:
         changes = replace(changes, category_id=await resolve_category(ctx, a.category))
     tx = await tx_cases.edit_transaction(ctx.uow(), ctx.user.id, current.id, changes)
-    text = f"Updated: {describe(tx, await category_map(ctx), ctx.tz)}"
+    text = f"Updated: {await show(ctx, tx)}"
     if tx.category_id == current.category_id:
         return ToolResult(text, wrote=True)
     # A correction never changes a rule by itself: offer it, and let the user decide.
@@ -476,17 +551,17 @@ class IdArgs(Args):
 
 async def _describe_delete(ctx: ToolContext, a: IdArgs) -> str:
     tx = await _load(ctx, a.transaction_id)
-    return f"Delete {describe(tx, await category_map(ctx), ctx.tz).split(' [id')[0]}?"
+    return f"Delete {(await show(ctx, tx)).split(' [id')[0]}?"
 
 
 async def _delete(ctx: ToolContext, a: IdArgs) -> ToolResult:
     tx = await tx_cases.delete_transaction(ctx.uow(), ctx.user.id, parse_id(a.transaction_id))
-    return ToolResult(f"Deleted: {describe(tx, await category_map(ctx), ctx.tz)}", wrote=True)
+    return ToolResult(f"Deleted: {await show(ctx, tx)}", wrote=True)
 
 
 async def _restore(ctx: ToolContext, a: IdArgs) -> ToolResult:
     tx = await tx_cases.restore_transaction(ctx.uow(), ctx.user.id, parse_id(a.transaction_id))
-    return ToolResult(f"Restored: {describe(tx, await category_map(ctx), ctx.tz)}", wrote=True)
+    return ToolResult(f"Restored: {await show(ctx, tx)}", wrote=True)
 
 
 class NoArgs(Args):
@@ -495,7 +570,7 @@ class NoArgs(Args):
 
 async def _undo(ctx: ToolContext, _: NoArgs) -> ToolResult:
     result = await tx_cases.undo_last(ctx.uow(), ctx.user.id)
-    tx = describe(result.transaction, await category_map(ctx), ctx.tz)
+    tx = await show(ctx, result.transaction)
     return ToolResult(f"Undid the last {result.undone.value}: {tx}", wrote=True)
 
 
@@ -544,7 +619,19 @@ type DayName = Literal["mon", "tue", "wed", "thu", "fri", "sat", "sun", "weekday
 class QueryArgs(Args):
     start_date: str | None = Field(None, description="YYYY-MM-DD; default: 1st of this month")
     end_date: str | None = Field(None, description="YYYY-MM-DD inclusive; default: today")
-    direction: Literal["out", "in"] = Field("out", description="out: spending; in: money received")
+    direction: Literal["out", "in", "move"] = Field(
+        "out",
+        description="out: spending; in: money received; move: money moved between the "
+        "user's own wallets (never spending or income)",
+    )
+    wallet: str | None = Field(
+        None, description="With direction move: only moves into or out of this wallet"
+    )
+    wallet_side: Literal["into", "out_of", "either"] = Field(
+        "into",
+        description='With wallet: into counts money moved into it ("how much did I put '
+        'into IBKR"), out_of money moved out of it, either both',
+    )
     merchant: str | None = Field(None, description="Text found in the merchant or notes")
     category: str | None = Field(None, description="A category name, or 'uncategorised'")
     source: Literal["text", "photo", "email", "import", "manual"] | None = None
@@ -584,10 +671,14 @@ async def _question(ctx: ToolContext, a: QueryArgs) -> question_cases.LedgerQues
     weekdays = None
     if a.days:
         weekdays = frozenset(i for d in a.days for i in (_DAY_SETS.get(d) or (_DAY_NAMES[d],)))
+    wallet = await resolve_wallet(ctx, a.wallet) if a.wallet else None
     return question_cases.LedgerQuestion(
         start=start,
         end=end,
         direction=Direction(a.direction),
+        wallet_id=wallet.id if wallet and a.wallet_side == "either" else None,
+        from_wallet_id=wallet.id if wallet and a.wallet_side == "out_of" else None,
+        to_wallet_id=wallet.id if wallet and a.wallet_side == "into" else None,
         search=a.merchant,
         category_id=None if uncategorised else await resolve_category(ctx, a.category),
         uncategorised=uncategorised,
@@ -642,10 +733,13 @@ async def _query_ledger(ctx: ToolContext, a: QueryArgs) -> ToolResult:
     q = await _question(ctx, a)
     answer = await question_cases.ask_ledger(ctx.uow, _rates(ctx), ctx.user, q)
     cats = await category_map(ctx)
+    wallets = await wallet_map(ctx) if q.direction is Direction.MOVE else None
     now, before = answer.current, answer.previous
-    word = "Spent" if q.direction is Direction.OUT else "Received"
+    word = {Direction.OUT: "Spent", Direction.IN: "Received", Direction.MOVE: "Moved"}[q.direction]
     head, *notes = _figure_lines(now, ctx.tz)
     lines = [f"{word}, in {answer.currency}, {head}", *notes]
+    if q.direction is Direction.MOVE:
+        lines.append("These are moves between the user's own wallets, not spending or income.")
     if q.group_by:
         lines.append(f"By {q.group_by.value}:")
         lines += [_group_line(g, q.measure) for g in now.groups]
@@ -657,7 +751,7 @@ async def _query_ledger(ctx: ToolContext, a: QueryArgs) -> ToolResult:
         for item in shown:
             tx = item.transaction
             home = f" = {item.home}" if item.home.currency != tx.amount.currency else ""
-            lines.append(f"  {describe(tx, cats, ctx.tz)}{home}")
+            lines.append(f"  {describe(tx, cats, ctx.tz, wallets)}{home}")
     if before is not None:
         head, *notes = _figure_lines(before, ctx.tz)
         lines += [f"Period before, {head}; change {_change(now.total, before.total)}", *notes]
@@ -782,6 +876,255 @@ async def _merge_category(ctx: ToolContext, a: MergeCategoryArgs) -> ToolResult:
         f"Merged {source.name} into {into.name}: {count} moved, and {source.name} is deleted.",
         wrote=True,
     )
+
+
+# --- wallets and moves --------------------------------------------------------------
+
+
+class LogMoveArgs(Args):
+    amount: str = Field(description="Amount that left, e.g. '800'. Never guess it.")
+    currency: str | None = Field(
+        None, description="ISO code of that amount; omit for the home currency"
+    )
+    to_wallet: str = Field(
+        description="The wallet the money went to, by name, as the snapshot lists them "
+        "(e.g. 'IBKR'). Never invent one."
+    )
+    from_wallet: str = Field(
+        "Spending", description="The wallet it came from; Spending unless the user says"
+    )
+    date: str | None = Field(None, description="YYYY-MM-DD, 'today' or 'yesterday'; omit for now")
+    received_amount: str | None = Field(
+        None, description="Only when what arrived differs from amount (another currency, a fee)"
+    )
+    received_currency: str | None = Field(
+        None, description="ISO code of received_amount; omit for the same as amount"
+    )
+    note: str | None = Field(None, description="What it was for, if the user said")
+
+
+async def _move_ends(ctx: ToolContext, a: LogMoveArgs) -> tuple[Wallet, Wallet]:
+    origin = await resolve_wallet(ctx, a.from_wallet)
+    target = await resolve_wallet(ctx, a.to_wallet)
+    if origin.id == target.id:
+        raise InvalidInput("a move needs two different wallets")
+    return origin, target
+
+
+def _received(ctx: ToolContext, a: LogMoveArgs, sent: Money) -> Money | None:
+    if a.received_amount is None:
+        return None
+    return parse_money(ctx, a.received_amount, a.received_currency or sent.currency)
+
+
+async def _describe_move(ctx: ToolContext, a: LogMoveArgs) -> str:
+    origin, target = await _move_ends(ctx, a)
+    sent = parse_money(ctx, a.amount, a.currency)
+    got = _received(ctx, a, sent)
+    arrives = f" ({got} arrives)" if got else ""
+    when = f" on {parse_day(ctx, a.date).astimezone(ctx.tz):%-d %b}" if a.date else ""
+    if origin.kind is WalletKind.SPENDING:
+        counts = "spending"
+    elif target.kind is WalletKind.SPENDING:
+        counts = "income"
+    else:
+        counts = "spending or income"
+    return (
+        f"Log a move of {sent} from {origin.name} to {target.name}{arrives}{when}? "
+        f"It won't count as {counts}."
+    )
+
+
+async def _log_move(ctx: ToolContext, a: LogMoveArgs) -> ToolResult:
+    origin, target = await _move_ends(ctx, a)
+    sent = parse_money(ctx, a.amount, a.currency)
+    tx = await wallet_cases.log_move(
+        ctx.uow(),
+        ctx.user.id,
+        amount=sent,
+        to_wallet_id=target.id,
+        from_wallet_id=origin.id,
+        occurred_at=parse_day(ctx, a.date),
+        received_amount=_received(ctx, a, sent),
+        notes=a.note,
+        source=Source.TEXT,
+    )
+    return ToolResult(f"Logged a move (not spending or income): {await show(ctx, tx)}", wrote=True)
+
+
+class MarkMoveArgs(Args):
+    transaction_id: str = Field(description="From find_transactions")
+    wallet: str = Field(
+        description="The other wallet: where the money went (for an expense) or where it "
+        "came from (for money in). Not Spending."
+    )
+
+
+async def _mark_pair(ctx: ToolContext, a: MarkMoveArgs) -> tuple[Transaction, Wallet]:
+    tx = await _load(ctx, a.transaction_id)
+    if tx.is_move:
+        raise InvalidInput("this is already a move")
+    return tx, await resolve_wallet(ctx, a.wallet)
+
+
+async def _describe_mark_move(ctx: ToolContext, a: MarkMoveArgs) -> str:
+    tx, wallet = await _mark_pair(ctx, a)
+    head = (await show(ctx, tx)).split(" [id")[0]
+    if tx.direction is Direction.OUT:
+        return (
+            f"Turn {head} into a move from Spending to {wallet.name}? It will stop counting "
+            "as spending, and it loses its category."
+        )
+    return (
+        f"Turn {head} into a move from {wallet.name} to Spending? It will stop counting "
+        "as income, and it loses its category."
+    )
+
+
+async def _mark_as_move(ctx: ToolContext, a: MarkMoveArgs) -> ToolResult:
+    tx, wallet = await _mark_pair(ctx, a)
+    moved = await wallet_cases.mark_as_move(ctx.uow(), ctx.user.id, tx.id, wallet.id)
+    return ToolResult(f"Now a move: {await show(ctx, moved)}", wrote=True)
+
+
+async def _list_wallets(ctx: ToolContext, _: NoArgs) -> ToolResult:
+    lines = []
+    for w in await wallet_cases.list_wallets(ctx.uow(), ctx.user.id):
+        what = (
+            "the main account the budget watches" if w.kind is WalletKind.SPENDING else w.kind.value
+        )
+        words = f"; match words: {', '.join(w.match_words)}" if w.match_words else ""
+        lines.append(f"{w.name} ({what}{words})")
+    return ToolResult("\n".join(lines))
+
+
+type NewKind = Literal["investment", "savings", "card", "other"]
+
+
+class AddWalletArgs(Args):
+    name: str = Field(description="What to call it, e.g. 'IBKR' or 'Emergency fund'")
+    kind: NewKind = Field(
+        description="investment: a broker or fund; savings: savings or a fixed deposit; "
+        "card: a credit card (paying its bill is a move); other: anything else"
+    )
+    match_words: list[str] | None = Field(
+        None, description="Other names the user or their statements use for it"
+    )
+
+
+async def _find_wallet(ctx: ToolContext, name: str) -> Wallet | None:
+    wallets = await wallet_cases.list_wallets(ctx.uow(), ctx.user.id)
+    return next((w for w in wallets if w.name.casefold() == name.strip().casefold()), None)
+
+
+async def _add_wallet(ctx: ToolContext, a: AddWalletArgs) -> ToolResult:
+    existing = await _find_wallet(ctx, a.name)
+    if existing is not None:
+        return ToolResult(f"There's already a wallet called {existing.name}.")
+    made = await wallet_cases.add_wallet(
+        ctx.uow(), ctx.user.id, a.name, a.kind, a.match_words or ()
+    )
+    return ToolResult(f"Added the wallet {made.name} ({made.kind.value}).", wrote=True)
+
+
+class UpdateWalletArgs(Args):
+    wallet: str = Field(description="The wallet's current name")
+    new_name: str | None = Field(None, description="What to call it instead")
+    kind: NewKind | None = Field(None, description="Change what kind of wallet it is")
+    match_words: list[str] | None = Field(
+        None, description="Replaces its other names; an empty list clears them"
+    )
+
+
+async def _update_wallet(ctx: ToolContext, a: UpdateWalletArgs) -> ToolResult:
+    if a.new_name is None and a.kind is None and a.match_words is None:
+        raise InvalidInput("say what to change: the name, the kind or the match words")
+    current = await resolve_wallet(ctx, a.wallet)
+    if a.new_name is not None:
+        clash = await _find_wallet(ctx, a.new_name)
+        if clash is not None and clash.id != current.id:
+            raise InvalidInput(f"there's already a wallet called {clash.name}")
+    updated = await wallet_cases.update_wallet(
+        ctx.uow(),
+        ctx.user.id,
+        current.id,
+        name=a.new_name,
+        kind=a.kind,
+        match_words=a.match_words,
+    )
+    changes = []
+    if updated.name != current.name:
+        changes.append(f"renamed to {updated.name}")
+    if updated.kind is not current.kind:
+        changes.append(f"its kind is now {updated.kind.value}")
+    if updated.match_words != current.match_words:
+        changes.append("match words: " + (", ".join(updated.match_words) or "none"))
+    done = ", ".join(changes) or "nothing to change"
+    return ToolResult(f"Updated {current.name}: {done}.", wrote=bool(changes))
+
+
+class DeleteWalletArgs(Args):
+    wallet: str = Field(description="The wallet to delete; not Spending")
+    move_to: str | None = Field(
+        None,
+        description="Another wallet that its moves will point at instead; needed only if "
+        "it has moves",
+    )
+
+
+async def _delete_plan(ctx: ToolContext, a: DeleteWalletArgs) -> wallet_cases.WalletDeleted:
+    """What deleting would do, or the reason it can't, for the model to act on."""
+    wallet = await resolve_wallet(ctx, a.wallet)
+    into = await resolve_wallet(ctx, a.move_to) if a.move_to else None
+    try:
+        return await wallet_cases.preview_delete_wallet(
+            ctx.uow(), ctx.user.id, wallet.id, into.id if into else None
+        )
+    except InvalidInput as exc:
+        if into is None and "has moves" in str(exc):
+            wallets = await wallet_cases.list_wallets(ctx.uow(), ctx.user.id)
+            others = wallet_list([w for w in wallets if w.id != wallet.id])
+            raise InvalidInput(
+                f"{wallet.name} has moves, so they need another wallet to point at "
+                f"({others}). Ask the user which."
+            ) from exc
+        raise
+
+
+def _moves(n: int) -> str:
+    return f"{n} move{'' if n == 1 else 's'}"
+
+
+async def _describe_delete_wallet(ctx: ToolContext, a: DeleteWalletArgs) -> str:
+    plan = await _delete_plan(ctx, a)
+    if plan.into is None:
+        return f"Delete the wallet {plan.wallet.name}? It has no moves. This can't be undone."
+    into = plan.into.name
+    text = (
+        f"Delete the wallet {plan.wallet.name}? {_moves(plan.moved)} will point at {into} instead"
+    )
+    if plan.removed:
+        text += (
+            f", and {_moves(plan.removed)} between the two will be removed, since both "
+            f"ends would be {into}"
+        )
+    return text + ". This can't be undone."
+
+
+async def _delete_wallet(ctx: ToolContext, a: DeleteWalletArgs) -> ToolResult:
+    await _delete_plan(ctx, a)  # the same checks, with the same messages
+    wallet = await resolve_wallet(ctx, a.wallet)
+    into = await resolve_wallet(ctx, a.move_to) if a.move_to else None
+    done = await wallet_cases.delete_wallet(
+        ctx.uow(), ctx.user.id, wallet.id, into.id if into else None, now=ctx.now
+    )
+    if done.into is None:
+        return ToolResult(f"Deleted the wallet {wallet.name}.", wrote=True)
+    verb = "points" if done.moved == 1 else "point"
+    text = f"Deleted the wallet {wallet.name}. {_moves(done.moved)} now {verb} at {done.into.name}"
+    if done.removed:
+        text += f"; {_moves(done.removed)} between the two removed"
+    return ToolResult(text + ".", wrote=True)
 
 
 async def _rules(ctx: ToolContext, _: NoArgs) -> ToolResult:
@@ -1379,7 +1722,7 @@ async def _describe_split(ctx: ToolContext, a: SplitArgs) -> str:
     tx = await _load(ctx, a.transaction_id)
     plan = plan_split(tx.amount, _requests(ctx, a, tx.amount.currency), include_self=a.include_me)
     owed = ", ".join(f"{s.participant_name} owes {s.share}" for s in plan.shares)
-    head = describe(tx, await category_map(ctx), ctx.tz).split(" [id")[0]
+    head = (await show(ctx, tx)).split(" [id")[0]
     return f"Split {head}: {owed}; your share {plan.own_share}?"
 
 
@@ -1803,7 +2146,7 @@ async def _trip_and_expense(ctx: ToolContext, a: TripExpenseArgs) -> tuple[Trip,
 
 async def _describe_add_to_trip(ctx: ToolContext, a: TripExpenseArgs) -> str:
     trip, tx = await _trip_and_expense(ctx, a)
-    return f"Count {describe(tx, await category_map(ctx), ctx.tz)} towards {trip.destination}?"
+    return f"Count {await show(ctx, tx)} towards {trip.destination}?"
 
 
 async def _add_to_trip(ctx: ToolContext, a: TripExpenseArgs) -> ToolResult:
@@ -1814,7 +2157,7 @@ async def _add_to_trip(ctx: ToolContext, a: TripExpenseArgs) -> ToolResult:
 
 async def _describe_remove_from_trip(ctx: ToolContext, a: TripExpenseArgs) -> str:
     trip, tx = await _trip_and_expense(ctx, a)
-    return f"Take {describe(tx, await category_map(ctx), ctx.tz)} off {trip.destination}?"
+    return f"Take {await show(ctx, tx)} off {trip.destination}?"
 
 
 async def _remove_from_trip(ctx: ToolContext, a: TripExpenseArgs) -> ToolResult:
@@ -2341,7 +2684,8 @@ READ_ONLY = frozenset(
         "cash_flow", "email_status", "explain_category", "find_duplicates", "find_ideas",
         "find_places",
         "find_transactions", "list_bills", "list_budgets", "list_categories",
-        "list_category_rules", "list_ious", "list_subscriptions", "list_trips", "load_skill",
+        "list_category_rules", "list_ious", "list_subscriptions", "list_trips", "list_wallets",
+        "load_skill",
         "place_info", "plan_record", "query_ledger", "show_dividends", "show_pay_schedule",
         "show_plan", "show_portfolio", "show_watchlist", "spending_summary", "stock_levels",
         "trade_history", "trip_status",
@@ -2362,6 +2706,17 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             "Record money the user spent. Only when the amount is stated.",
             LogExpenseArgs,
             _log_expense,
+        ),
+        ToolSpec(
+            "log_move",
+            "Record money the user moved between their own wallets: into an investment or "
+            "savings wallet, a credit card bill paid from Spending, or back out to Spending. "
+            "Never spending and never income. Only when the amount is stated and both "
+            "wallets are the user's own (an unknown one: ask, don't invent). Nexus only "
+            "records; it never moves money. Asks the user to confirm.",
+            LogMoveArgs,
+            _log_move,
+            confirm=_describe_move,
         ),
         ToolSpec(
             "record_income",
@@ -2537,6 +2892,43 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             MergeCategoryArgs,
             _merge_category,
             confirm=_describe_merge_category,
+        ),
+        ToolSpec(
+            "mark_as_move",
+            "Turn an entry already logged into a move between wallets: an expense that was "
+            "money put into savings or an investment, or money in that was a withdrawal from "
+            "one. Find its id with find_transactions first. Asks the user to confirm.",
+            MarkMoveArgs,
+            _mark_as_move,
+            confirm=_describe_mark_move,
+        ),
+        ToolSpec(
+            "list_wallets",
+            "The user's wallets (Spending, investment, savings, card, other) and their match "
+            "words. Read-only.",
+            NoArgs,
+            _list_wallets,
+        ),
+        ToolSpec(
+            "add_wallet",
+            "Add a wallet: a place the user keeps money, such as a broker, savings or a credit "
+            "card. Only when the user says to add one. A wallet is a label; no balance is kept.",
+            AddWalletArgs,
+            _add_wallet,
+        ),
+        ToolSpec(
+            "update_wallet",
+            "Rename a wallet, change its kind or replace its match words.",
+            UpdateWalletArgs,
+            _update_wallet,
+        ),
+        ToolSpec(
+            "delete_wallet",
+            "Delete a wallet (never Spending). Its moves point at another wallet instead; "
+            "moves between the two are removed. Can't be undone. Asks the user to confirm.",
+            DeleteWalletArgs,
+            _delete_wallet,
+            confirm=_describe_delete_wallet,
         ),
         ToolSpec(
             "list_category_rules",

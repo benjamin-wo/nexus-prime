@@ -6,7 +6,8 @@ import { formatDate, formatMoney, formatShortDate } from "../format";
  * the original amount and the rate used (with the day it was published) below.
  */
 export function Amount({ tx }: { tx: Transaction }) {
-  const sign = tx.direction === "out" ? "−" : "+";
+  // A move is neither spent nor received, so it carries no sign.
+  const sign = tx.direction === "move" ? "" : tx.direction === "out" ? "−" : "+";
   const home = tx.home;
   if (!home) {
     return (

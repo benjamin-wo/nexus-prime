@@ -29,6 +29,7 @@ from nexus.application.ports import (
     DayTotal,
     DirectionTotal,
     LedgerQuery,
+    MoveTotal,
     Page,
     SortField,
 )
@@ -50,6 +51,8 @@ from nexus.domain.ledger import (
     TransactionStatus,
     User,
     UserId,
+    Wallet,
+    WalletKind,
 )
 from nexus.domain.money import Money
 from nexus.domain.receipts import RETENTION_AFTER_DELETE, UNCLAIMED_TTL, Receipt, purge_due
@@ -69,6 +72,7 @@ from nexus.infra.db.tables import (
     transaction_sources,
     transactions,
     users,
+    wallets,
     web_sessions,
 )
 
@@ -90,6 +94,16 @@ def _category(row: Row[Any]) -> Category:
     return Category(id=row.id, user_id=UserId(row.user_id), name=row.name)
 
 
+def _wallet(row: Row[Any]) -> Wallet:
+    return Wallet(
+        id=row.id,
+        user_id=UserId(row.user_id),
+        name=row.name,
+        kind=WalletKind(row.kind),
+        match_words=tuple(row.match_words),
+    )
+
+
 def _transaction(row: Row[Any]) -> Transaction:
     return Transaction(
         id=row.id,
@@ -106,6 +120,13 @@ def _transaction(row: Row[Any]) -> Transaction:
         updated_at=row.updated_at,
         deleted_at=row.deleted_at,
         category_rule_id=row.category_rule_id,
+        from_wallet_id=row.from_wallet_id,
+        to_wallet_id=row.to_wallet_id,
+        received_amount=(
+            Money(row.received_amount, row.received_currency)
+            if row.received_amount is not None
+            else None
+        ),
     )
 
 
@@ -148,6 +169,10 @@ def _transaction_values(tx: Transaction) -> dict[str, Any]:
         "updated_at": tx.updated_at,
         "deleted_at": tx.deleted_at,
         "category_rule_id": tx.category_rule_id,
+        "from_wallet_id": tx.from_wallet_id,
+        "to_wallet_id": tx.to_wallet_id,
+        "received_amount": tx.received_amount.amount if tx.received_amount else None,
+        "received_currency": tx.received_amount.currency if tx.received_amount else None,
     }
 
 
@@ -185,7 +210,11 @@ def _net_amount() -> ColumnElement[Any]:
         )
         .scalar_subquery()
     )
-    return t.amount - case((t.direction == Direction.OUT.value, on_bill), else_=by_income)
+    return t.amount - case(
+        (t.direction == Direction.OUT.value, on_bill),
+        (t.direction == Direction.IN.value, by_income),
+        else_=0,  # a move has no repayments
+    )
 
 
 class SqlLedgerRepository:
@@ -296,6 +325,119 @@ class SqlLedgerRepository:
             delete(categories).where(categories.c.user_id == user_id, categories.c.id == source_id)
         )
         return moved.rowcount
+
+    # --- wallets ----------------------------------------------------------------
+
+    async def _write_wallet(self, stmt: Any) -> None:
+        try:
+            async with self._db.begin_nested():
+                await self._db.execute(stmt)
+        except IntegrityError as exc:
+            if "uq_wallets_user_id_lower_name" in str(exc.orig):
+                raise Conflict("a wallet with that name already exists") from exc
+            if "uq_wallets_user_id_spending" in str(exc.orig):
+                raise Conflict("there is already a Spending wallet") from exc
+            raise
+
+    async def insert_wallet(self, wallet: Wallet) -> None:
+        await self._write_wallet(
+            insert(wallets).values(
+                id=wallet.id,
+                user_id=wallet.user_id,
+                name=wallet.name,
+                kind=wallet.kind.value,
+                match_words=list(wallet.match_words),
+            )
+        )
+
+    async def get_wallet(self, user_id: UserId, wallet_id: UUID) -> Wallet | None:
+        row = (
+            await self._db.execute(
+                select(wallets).where(wallets.c.user_id == user_id, wallets.c.id == wallet_id)
+            )
+        ).first()
+        return _wallet(row) if row else None
+
+    async def spending_wallet(self, user_id: UserId) -> Wallet | None:
+        row = (
+            await self._db.execute(
+                select(wallets).where(
+                    wallets.c.user_id == user_id, wallets.c.kind == WalletKind.SPENDING.value
+                )
+            )
+        ).first()
+        return _wallet(row) if row else None
+
+    async def list_wallets(self, user_id: UserId) -> list[Wallet]:
+        rows = await self._db.execute(
+            select(wallets)
+            .where(wallets.c.user_id == user_id)
+            .order_by(wallets.c.kind != WalletKind.SPENDING.value, func.lower(wallets.c.name))
+        )
+        return [_wallet(r) for r in rows]
+
+    async def update_wallet(self, wallet: Wallet) -> None:
+        await self._write_wallet(
+            update(wallets)
+            .where(wallets.c.user_id == wallet.user_id, wallets.c.id == wallet.id)
+            .values(name=wallet.name, kind=wallet.kind.value, match_words=list(wallet.match_words))
+        )
+
+    async def count_moves(self, user_id: UserId, wallet_id: UUID) -> int:
+        t = transactions.c
+        return (
+            await self._db.execute(
+                select(func.count())
+                .select_from(transactions)
+                .where(
+                    t.user_id == user_id,
+                    or_(t.from_wallet_id == wallet_id, t.to_wallet_id == wallet_id),
+                )
+            )
+        ).scalar_one()
+
+    async def repoint_moves(
+        self, user_id: UserId, old_id: UUID, new_id: UUID, now: datetime
+    ) -> tuple[int, int]:
+        t = transactions.c
+        # A move between the two wallets would become a move from a wallet to itself, which
+        # is nothing. It can't stay as a deleted row either (it would still name the old
+        # wallet), so it goes, with the history and links that pointed at it.
+        between = and_(
+            t.user_id == user_id,
+            or_(
+                and_(t.from_wallet_id == old_id, t.to_wallet_id == new_id),
+                and_(t.from_wallet_id == new_id, t.to_wallet_id == old_id),
+            ),
+        )
+        collapsing = select(t.id).where(between)
+        await self._db.execute(
+            delete(transaction_revisions).where(
+                transaction_revisions.c.user_id == user_id,
+                transaction_revisions.c.transaction_id.in_(collapsing),
+            )
+        )
+        for table in (receipts, transaction_sources):
+            await self._db.execute(
+                update(table)
+                .where(table.c.user_id == user_id, table.c.transaction_id.in_(collapsing))
+                .values(transaction_id=None)
+            )
+        removed = await self._db.execute(delete(transactions).where(between))
+        moved = 0
+        for column in ("from_wallet_id", "to_wallet_id"):
+            result = await self._db.execute(
+                update(transactions)
+                .where(t.user_id == user_id, transactions.c[column] == old_id)
+                .values({column: new_id, "updated_at": now})
+            )
+            moved += result.rowcount
+        return moved, removed.rowcount
+
+    async def delete_wallet(self, user_id: UserId, wallet_id: UUID) -> None:
+        await self._db.execute(
+            delete(wallets).where(wallets.c.user_id == user_id, wallets.c.id == wallet_id)
+        )
 
     # --- category rules -----------------------------------------------------------
 
@@ -547,6 +689,14 @@ class SqlLedgerRepository:
             conditions.append(t.source == query.source.value)
         if query.status is not None:
             conditions.append(t.status == query.status.value)
+        if query.wallet_id is not None:
+            conditions.append(
+                or_(t.from_wallet_id == query.wallet_id, t.to_wallet_id == query.wallet_id)
+            )
+        if query.from_wallet_id is not None:
+            conditions.append(t.from_wallet_id == query.from_wallet_id)
+        if query.to_wallet_id is not None:
+            conditions.append(t.to_wallet_id == query.to_wallet_id)
         if query.search:
             pattern = f"%{_escape_like(query.search)}%"
             conditions.append(
@@ -626,6 +776,24 @@ class SqlLedgerRepository:
         return [
             DayTotal(Direction(direction), category_id, name, on, Money(total, currency), count)
             for direction, category_id, name, on, currency, total, count in rows
+        ]
+
+    async def moves_by_day(
+        self, user_id: UserId, start: datetime, end: datetime, timezone: str
+    ) -> list[MoveTotal]:
+        t = transactions.c
+        day = cast(func.timezone(timezone, t.occurred_at), Date)
+        rows = await self._db.execute(
+            select(
+                t.from_wallet_id, t.to_wallet_id, day, t.currency, func.sum(t.amount), func.count()
+            )
+            .where(self._counted(user_id, start, end), t.direction == Direction.MOVE.value)
+            .group_by(t.from_wallet_id, t.to_wallet_id, day, t.currency)
+            .order_by(day)
+        )
+        return [
+            MoveTotal(origin, target, on, Money(total, currency), count)
+            for origin, target, on, currency, total, count in rows
         ]
 
     async def spending_by_category(

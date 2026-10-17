@@ -12,6 +12,7 @@ export function MoneyTrail({
   timezone: string;
   onOpen: (tx: Transaction) => void;
 }) {
+  if (tx.direction === "move") return null; // a move has no splits and nothing paid back
   const links = tx.links ?? [];
   if (!tx.split && links.length === 0) return null;
 

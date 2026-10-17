@@ -22,7 +22,9 @@ tools: [add_bill, list_bills, mark_bill_paid, snooze_bill, remove_bill]
   set amount and none given, nothing is logged: ask how much, then log it as an expense.
 - "done the ETF investment", "moved the savings": `mark_bill_paid` too. One that doesn't
   count as spending is only marked done and nothing is logged. Don't log it as an
-  expense either.
+  expense either. (When they state an amount and a wallet, "I moved 500 to IBKR", that is
+  a move to record with `log_move`; see the wallets skill. Scheduled moves aren't
+  recorded as moves yet.)
 - "remind me tomorrow" about a bill: `snooze_bill`.
 - "stop reminding me about rent": `remove_bill`; the confirmation step asks the user.
   (Subscriptions spotted from the ledger are stopped on the Plan page instead.)

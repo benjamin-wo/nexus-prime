@@ -68,6 +68,7 @@ SUMMARY_WORDS = 150
 # for SKILL_TURNS of the user's messages after it was last loaded.
 CORE_TOOLS = (
     "log_expense",
+    "log_move",
     "record_income",
     "find_transactions",
     "edit_transaction",
@@ -95,7 +96,8 @@ BUTTONS = "nexus_buttons"
 
 REFUSALS = {
     "transfer": (
-        "I can't send or transfer money. I only keep track of it. If it's a regular "
+        "I can't send or transfer money. I only keep track of it. Once you've moved it "
+        "yourself, tell me (\"I moved 500 to savings\") and I'll record it. If it's a regular "
         "transfer, I can remind you before it's due: say \"remind me to move 300 to "
         'savings every month".'
     ),
@@ -264,6 +266,20 @@ class AgentGraph:
             "one that isn't in the future, so you don't need to ask which month.\n"
             "- You never move money: no payments, transfers or cancelling subscriptions. "
             "Say so plainly if asked.\n"
+            "- Money moved between the user's own wallets (listed in the snapshot) is a move, "
+            "never spending or income: record it with log_move, which asks the user to "
+            'confirm; it comes from Spending unless they say otherwise. "moved 800 to my '
+            'IBKR", "topped up savings 500", "took 300 out of savings", "moved 1000 from '
+            'savings to IBKR" are moves. So is paying a credit card bill from Spending '
+            '("paid my card bill 1,240": a move to their card wallet, since the card\'s '
+            "purchases are already expenses). Not moves: money given to a person "
+            '("I transferred 50 to Alex for dinner", already done, is an expense, split or '
+            'owed as usual; "send Alex 50" is an instruction: log nothing) and '
+            "a dividend or interest paid out (income). If the wallet they name isn't one of "
+            "theirs, ask which wallet and offer to add it (wallets skill); never invent one, "
+            'and never log the money as an expense instead. You only record: "I moved 500 to '
+            'savings" is recorded, but "move 500 to savings" is an instruction you can\'t '
+            "carry out.\n"
             "- Money received (salary, repayments, gifts, refunds): record it with "
             "record_income, which asks the user to confirm. If the amount, the kind (salary, "
             "repayment or other) or who paid is unclear, ask one short question first; see "

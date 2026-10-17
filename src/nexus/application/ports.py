@@ -47,6 +47,7 @@ from nexus.domain.ledger import (
     TransactionStatus,
     User,
     UserId,
+    Wallet,
 )
 from nexus.domain.market import Bar
 from nexus.domain.memory import Memory, MemoryKind
@@ -78,6 +79,10 @@ class LedgerQuery:
     source: Source | None = None
     status: TransactionStatus | None = None
     search: str | None = None
+    # Moves only: those into or out of this wallet, out of this one, into this one.
+    wallet_id: UUID | None = None
+    from_wallet_id: UUID | None = None
+    to_wallet_id: UUID | None = None
     include_deleted: bool = False
     only_deleted: bool = False
     sort: SortField = SortField.OCCURRED_AT
@@ -112,6 +117,18 @@ class DayTotal:
 
 
 @dataclass(frozen=True, slots=True)
+class MoveTotal:
+    """Confirmed moves between two wallets in one currency on one local day: the amounts
+    that left the first wallet."""
+
+    from_wallet_id: UUID
+    to_wallet_id: UUID
+    day: date
+    total: Money
+    count: int
+
+
+@dataclass(frozen=True, slots=True)
 class CategoryTotal:
     category_id: UUID | None
     category_name: str | None
@@ -136,6 +153,39 @@ class LedgerRepository(Protocol):
         """Move the source's transactions and rules to the target, then delete the source
         and any budget still on it. With keep_budget, the source's budget moves to the
         target first if the target has none. Returns how many transactions moved."""
+        ...
+
+    # wallets
+    async def insert_wallet(self, wallet: Wallet) -> None:
+        """Raises Conflict if the user has a wallet with that name (any case), or a second
+        Spending wallet."""
+        ...
+
+    async def get_wallet(self, user_id: UserId, wallet_id: UUID) -> Wallet | None: ...
+    async def spending_wallet(self, user_id: UserId) -> Wallet | None: ...
+    async def list_wallets(self, user_id: UserId) -> list[Wallet]:
+        """Spending first, then by name."""
+        ...
+
+    async def update_wallet(self, wallet: Wallet) -> None:
+        """Name, kind and match words. Raises Conflict like insert_wallet."""
+        ...
+
+    async def count_moves(self, user_id: UserId, wallet_id: UUID) -> int:
+        """Moves into or out of this wallet, deleted ones too (they still name it)."""
+        ...
+
+    async def repoint_moves(
+        self, user_id: UserId, old_id: UUID, new_id: UUID, now: datetime
+    ) -> tuple[int, int]:
+        """Make every move that names ``old_id`` name ``new_id`` instead. A move between
+        the two would end up from a wallet to itself, so it is removed outright (a deleted
+        row would still name the old wallet), with its history. Returns (moves repointed,
+        moves removed)."""
+        ...
+
+    async def delete_wallet(self, user_id: UserId, wallet_id: UUID) -> None:
+        """Only once no move names it (see repoint_moves)."""
         ...
 
     # receipts
@@ -201,6 +251,11 @@ class LedgerRepository(Protocol):
     async def spending_by_category(
         self, user_id: UserId, start: datetime, end: datetime, *, net: bool = True
     ) -> list[CategoryTotal]: ...
+    async def moves_by_day(
+        self, user_id: UserId, start: datetime, end: datetime, timezone: str
+    ) -> list[MoveTotal]:
+        """Confirmed, live moves in [start, end) per wallet pair, currency and local day."""
+        ...
 
     # external sources (also the "never re-import" tombstones)
     async def claim_source(

@@ -17,7 +17,7 @@ import { MoneyTrail } from "../components/MoneyTrail";
 import { DirectionBadge } from "../components/Badge";
 import { Toast } from "../components/Toast";
 import { Amount } from "../components/Amount";
-import { formatDate, formatMoney } from "../format";
+import { formatDate, formatMoney, moveLabel } from "../format";
 
 const PAGE = 50;
 type View = "all" | "out" | "in" | "pending";
@@ -363,8 +363,11 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
                           onEdit(tx);
                         }}
                       >
-                        {tx.counterparty ?? "No merchant"}
+                        {tx.counterparty ?? (tx.direction === "move" ? moveLabel(tx) : "No merchant")}
                       </button>
+                      {tx.direction === "move" && tx.counterparty && (
+                        <div className="caption">{moveLabel(tx)}</div>
+                      )}
                       {tx.notes && <div className="caption">{tx.notes}</div>}
                       <MoneyTrail tx={tx} timezone={me.user.timezone} onOpen={onEdit} />
                       {tx.duplicate && (

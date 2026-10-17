@@ -1,8 +1,12 @@
 import type { Page, Route } from "@playwright/test";
 
+type WalletRef = { id: string; name: string; kind: string };
+
 type Tx = {
   id: string;
-  direction: "in" | "out";
+  direction: "in" | "out" | "move";
+  from_wallet?: WalletRef | null;
+  to_wallet?: WalletRef | null;
   amount: { amount: string; currency: string };
   occurred_at: string;
   counterparty: string | null;
@@ -194,6 +198,12 @@ export async function fakeApi(
       { ...mk("t1", "out", "12.40", "Maxwell Food Centre", "food"), has_receipt: true },
       mk("t2", "out", "25.00", "Grab", null),
       mk("t3", "in", "4200.00", "Employer", null),
+      // Money moved to an investment wallet: neither spent nor received.
+      {
+        ...mk("t100", "move", "800.00", null, null),
+        from_wallet: { id: "w-spending", name: "Spending", kind: "spending" },
+        to_wallet: { id: "w-investments", name: "Investments", kind: "investment" },
+      },
     ],
     budgets: [],
     bills: [],
@@ -1221,6 +1231,12 @@ export async function fakeApi(
         budget: overall ? sgd(overall.limit) : null,
       });
     }
+    if (path === "/wallets" && method === "GET") {
+      return json(route, [
+        { id: "w-spending", name: "Spending", kind: "spending", match_words: [] },
+        { id: "w-investments", name: "Investments", kind: "investment", match_words: [] },
+      ]);
+    }
     if (path === "/summary") {
       const out = live().filter((t) => t.direction === "out");
       const total = out.reduce((s, t) => s + Number(t.amount.amount), 0);
@@ -1244,6 +1260,9 @@ export async function fakeApi(
             unconverted: [],
           },
         ],
+        put_away: { amount: "800.0000", currency: "SGD" },
+        saving_rate: 800 / 4200,
+        total_out: { amount: (total + 800).toFixed(4), currency: "SGD" },
         by_category: [
           {
             category_id: "food",
@@ -1780,7 +1799,7 @@ export async function fakeApi(
 
 function mk(
   id: string,
-  direction: "in" | "out",
+  direction: "in" | "out" | "move",
   amount: string,
   counterparty: string | null,
   category: string | null,

@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import binascii
+from collections.abc import Mapping as MappingType
 from datetime import date, datetime, time, timedelta
 from typing import Annotated, Any, Literal
 from uuid import UUID
@@ -30,6 +31,8 @@ from nexus.application import splits as split_cases
 from nexus.application import statements as statement_cases
 from nexus.application import subscriptions as subscription_cases
 from nexus.application import transactions as tx_cases
+from nexus.application import wallet_figures as figure_cases
+from nexus.application import wallets as wallet_cases
 from nexus.application.ports import LedgerQuery, SortField
 from nexus.application.statements import Verdict
 from nexus.application.users import RegisterUser
@@ -61,6 +64,7 @@ from nexus.domain.ledger import (
     Transaction,
     TransactionStatus,
     User,
+    Wallet,
 )
 from nexus.domain.money import Money
 from nexus.domain.notifications import Frequency, NotificationSettings, label
@@ -129,9 +133,22 @@ class TwinOut(Model):
     amount: MoneyOut
 
 
+class WalletRefOut(Model):
+    """A wallet as a transaction names it."""
+
+    id: UUID
+    name: str
+    kind: str
+
+
+def wallet_ref(wallets: MappingType[UUID, Wallet], wallet_id: UUID | None) -> WalletRefOut | None:
+    wallet = wallets.get(wallet_id) if wallet_id else None
+    return WalletRefOut(id=wallet.id, name=wallet.name, kind=wallet.kind.value) if wallet else None
+
+
 class TransactionOut(Model):
     id: UUID
-    direction: str
+    direction: str  # "in", "out", or "move" (between two of the user's wallets)
     amount: MoneyOut
     home: HomeAmountOut | None = None  # set on listings for foreign-currency rows
     occurred_at: datetime
@@ -147,6 +164,10 @@ class TransactionOut(Model):
     links: list[LinkOut] = []  # repayments to or from other transactions
     own: MoneyOut | None = None  # the user's own money in it, when friends paid part back
     duplicate: TwinOut | None = None  # set on listings: a possible second record of it
+    # A move only: where the money left and where it went. Both null for in and out.
+    from_wallet: WalletRefOut | None = None
+    to_wallet: WalletRefOut | None = None
+    received: MoneyOut | None = None  # a move only: what arrived, when that isn't ``amount``
 
 
 def home_out(conversion: fx.Conversion) -> HomeAmountOut:
@@ -208,7 +229,10 @@ def tx_out(
     has_receipt: bool = False,
     moved: Lineage | None = None,
     twin: Transaction | None = None,
+    wallets: MappingType[UUID, Wallet] | None = None,
 ) -> TransactionOut:
+    """``wallets`` names the ends of a move; load them with ``_wallets_of``."""
+    named = wallets or {}
     return TransactionOut(
         id=tx.id,
         direction=tx.direction.value,
@@ -231,6 +255,9 @@ def tx_out(
         )
         if twin
         else None,
+        from_wallet=wallet_ref(named, tx.from_wallet_id),
+        to_wallet=wallet_ref(named, tx.to_wallet_id),
+        received=money(tx.received_amount) if tx.received_amount else None,
         **_moved(tx, moved),
     )
 
@@ -291,6 +318,18 @@ async def _conversions(
     foreign = [(t, t.occurred_at.astimezone(tz).date()) for t in txs if t.amount.currency != home]
     found = await fx.rates_for(web.rates, home, ((t.amount.currency, d) for t, d in foreign))
     return {t.id: fx.convert(t.amount, d, home, found) for t, d in foreign}
+
+
+async def _wallets_of(web: WebRuntime, user: User, txs: list[Transaction]) -> dict[UUID, Wallet]:
+    """The user's wallets by id, but only when one of ``txs`` is a move that names them."""
+    if not any(t.is_move for t in txs):
+        return {}
+    return {w.id: w for w in await wallet_cases.list_wallets(web.uow(), user.id)}
+
+
+async def _out(web: WebRuntime, user: User, tx: Transaction) -> TransactionOut:
+    """A bare transaction (no listing extras), with its wallets if it's a move."""
+    return tx_out(tx, wallets=await _wallets_of(web, user, [tx]))
 
 
 def _day_start(user: User, day: date) -> datetime:
@@ -508,6 +547,7 @@ async def list_transactions(
     kept = await receipt_cases.with_receipts(web.uow(), auth.user.id, ids)
     moved = await tx_cases.lineage(web.uow(), auth.user.id, ids)
     twins = await duplicate_cases.matches(web.uow(), auth.user, page.items)
+    wallets = await _wallets_of(web, auth.user, page.items)
     items = [
         tx_out(
             t,
@@ -515,6 +555,7 @@ async def list_transactions(
             has_receipt=t.id in kept,
             moved=moved.get(t.id),
             twin=twins.get(t.id),
+            wallets=wallets,
         )
         for t in page.items
     ]
@@ -564,7 +605,13 @@ async def get_transaction(transaction_id: UUID, auth: Auth, web: Runtime) -> Tra
     conversions = await _conversions(web, auth.user, [tx])
     kept = await receipt_cases.with_receipts(web.uow(), auth.user.id, [tx.id])
     moved = await tx_cases.lineage(web.uow(), auth.user.id, [tx.id])
-    return tx_out(tx, conversions.get(tx.id), has_receipt=tx.id in kept, moved=moved.get(tx.id))
+    return tx_out(
+        tx,
+        conversions.get(tx.id),
+        has_receipt=tx.id in kept,
+        moved=moved.get(tx.id),
+        wallets=await _wallets_of(web, auth.user, [tx]),
+    )
 
 
 @router.get("/transactions/{transaction_id}/receipt", include_in_schema=False)
@@ -606,6 +653,54 @@ async def create_transaction(body: TransactionIn, auth: Auth, web: Runtime) -> T
         ),
     )
     return tx_out(tx)
+
+
+class MoveIn(Model):
+    amount: str = Field(max_length=32)
+    currency: str | None = Field(None, max_length=3)  # default: the home currency
+    to_wallet_id: UUID
+    from_wallet_id: UUID | None = None  # default: Spending
+    occurred_at: str | None = None  # a date or a full timestamp; default: now
+    received_amount: str | None = Field(None, max_length=32)  # what arrived, if not ``amount``
+    received_currency: str | None = Field(None, max_length=3)  # default: ``currency``
+    notes: str | None = None
+
+
+@router.post("/moves", status_code=201)
+async def create_move(body: MoveIn, auth: Auth, web: Runtime) -> TransactionOut:
+    """Record money moved between two of the user's wallets. Nothing is moved for real."""
+    user = auth.user
+    currency = body.currency or user.home_currency
+    received = (
+        Money.of(body.received_amount, body.received_currency or currency)
+        if body.received_amount
+        else None
+    )
+    tx = await wallet_cases.log_move(
+        web.uow(),
+        user.id,
+        amount=Money.of(body.amount, currency),
+        to_wallet_id=body.to_wallet_id,
+        from_wallet_id=body.from_wallet_id,
+        occurred_at=_when(user, body.occurred_at, web.clock()),
+        received_amount=received,
+        notes=body.notes,
+    )
+    return await _out(web, user, tx)
+
+
+class MoveToIn(Model):
+    wallet_id: UUID
+
+
+@router.post("/transactions/{transaction_id}/move")
+async def mark_transaction_as_move(
+    transaction_id: UUID, body: MoveToIn, auth: Auth, web: Runtime
+) -> TransactionOut:
+    """ "This was a move": money out becomes a move from Spending to the wallet, money in a
+    move from the wallet to Spending. The category goes; undo brings it back."""
+    tx = await wallet_cases.mark_as_move(web.uow(), auth.user.id, transaction_id, body.wallet_id)
+    return await _out(web, auth.user, tx)
 
 
 class TransactionPatch(Model):
@@ -656,7 +751,7 @@ async def edit_transaction(
     tx = await tx_cases.edit_transaction(
         web.uow(), user.id, transaction_id, tx_cases.TransactionChanges(**changes)
     )
-    out = EditedTransactionOut(**tx_out(tx).model_dump())
+    out = EditedTransactionOut(**(await _out(web, user, tx)).model_dump())
     if tx.category_id != current.category_id:
         offer = await rule_cases.suggest_rule(web.uow(), user.id, tx)
         if offer is not None:
@@ -671,12 +766,14 @@ async def edit_transaction(
 
 @router.delete("/transactions/{transaction_id}")
 async def delete_transaction(transaction_id: UUID, auth: Auth, web: Runtime) -> TransactionOut:
-    return tx_out(await tx_cases.delete_transaction(web.uow(), auth.user.id, transaction_id))
+    tx = await tx_cases.delete_transaction(web.uow(), auth.user.id, transaction_id)
+    return await _out(web, auth.user, tx)
 
 
 @router.post("/transactions/{transaction_id}/restore")
 async def restore_transaction(transaction_id: UUID, auth: Auth, web: Runtime) -> TransactionOut:
-    return tx_out(await tx_cases.restore_transaction(web.uow(), auth.user.id, transaction_id))
+    tx = await tx_cases.restore_transaction(web.uow(), auth.user.id, transaction_id)
+    return await _out(web, auth.user, tx)
 
 
 class OtherIn(Model):
@@ -694,7 +791,10 @@ async def merge_duplicates(
 ) -> MergedOut:
     """Two records of one payment become one: the other is deleted (and restorable)."""
     merged = await duplicate_cases.merge(web.uow, auth.user.id, transaction_id, body.other_id)
-    return MergedOut(kept=tx_out(merged.kept), removed=tx_out(merged.removed))
+    return MergedOut(
+        kept=await _out(web, auth.user, merged.kept),
+        removed=await _out(web, auth.user, merged.removed),
+    )
 
 
 @router.post("/transactions/{transaction_id}/not-duplicate", status_code=204)
@@ -733,7 +833,9 @@ class UndoOut(Model):
 @router.post("/undo")
 async def undo(auth: Auth, web: Runtime) -> UndoOut:
     result = await tx_cases.undo_last(web.uow(), auth.user.id)
-    return UndoOut(undone=result.undone.value, transaction=tx_out(result.transaction))
+    return UndoOut(
+        undone=result.undone.value, transaction=await _out(web, auth.user, result.transaction)
+    )
 
 
 @router.get("/export.csv")
@@ -769,7 +871,10 @@ async def export_csv(
     cats = await category_cases.list_categories(web.uow(), user.id)
     rows = rows[:EXPORT_LIMIT]
     conversions = await _conversions(web, user, rows)
-    body = to_csv(rows, {c.id: c for c in cats}, _tz(user), user.home_currency, conversions)
+    wallets_by_id = await _wallets_of(web, user, rows)
+    body = to_csv(
+        rows, {c.id: c for c in cats}, _tz(user), user.home_currency, conversions, wallets_by_id
+    )
     stamp = web.clock().astimezone(_tz(user)).strftime("%Y%m%d")
     return Response(
         content=body,
@@ -800,8 +905,12 @@ class SummaryOut(Model):
     start: date
     end: date
     currency: str
-    totals: list[TotalOut]
+    totals: list[TotalOut]  # money out, then money in; moves between wallets are in neither
     by_category: list[CategoryTotalOut]
+    # Over the same period, in the home currency (see ``application/wallet_figures.py``).
+    put_away: MoneyOut  # net moved into savings and investment wallets
+    saving_rate: float | None  # put_away / money in (0.24 is 24%); null without money in
+    total_out: MoneyOut  # spending, plus moved from Spending to anything but a card
 
 
 @router.get("/summary")
@@ -812,13 +921,11 @@ async def summary(
     today = web.clock().astimezone(_tz(user)).date()
     first = start or today.replace(day=1)
     last = end or today
-    result = await tx_cases.summarize_in_home(
-        web.uow(),
-        web.rates,
-        user,
-        _day_start(user, first),
-        _day_start(user, last) + timedelta(days=1),
-    )
+    begins, ends = _day_start(user, first), _day_start(user, last) + timedelta(days=1)
+    result = await tx_cases.summarize_in_home(web.uow(), web.rates, user, begins, ends)
+    # Not only for whole months: the figures hold for any period, and the rate is simply
+    # put away over the money in of that same period.
+    figures = await figure_cases.wallet_figures(web.uow, web.rates, user, begins, ends)
     return SummaryOut(
         start=first,
         end=last,
@@ -842,6 +949,9 @@ async def summary(
             )
             for c in result.spending_by_category
         ],
+        put_away=money(figures.put_away),
+        saving_rate=float(figures.saving_rate) if figures.saving_rate is not None else None,
+        total_out=money(figures.total_out),
     )
 
 
@@ -879,9 +989,7 @@ async def spending_months(
         result = await tx_cases.summarize_in_home(
             web.uow(), web.rates, user, _day_start(user, first), _day_start(user, end)
         )
-        months.append(
-            MonthSpendOut(month=first, spent=money(result.totals[0].total), to_date=not back)
-        )
+        months.append(MonthSpendOut(month=first, spent=money(result.out.total), to_date=not back))
     previous = _month_start(today, 1)
     same_day = min(today.day, (_month_start(today) - timedelta(days=1)).day)
     last = await tx_cases.summarize_in_home(
@@ -899,7 +1007,7 @@ async def spending_months(
     return SpendingOut(
         currency=user.home_currency,
         months=months,
-        last_month_to_date=money(last.totals[0].total),
+        last_month_to_date=money(last.out.total),
         budget=money(overall.limit) if overall else None,
     )
 
@@ -963,6 +1071,80 @@ async def delete_category(
         web.uow(), auth.user.id, category_id, move_to, now=web.clock()
     )
     return MergeOut(moved=deleted.moved, into=category_out(deleted.into))
+
+
+class WalletOut(Model):
+    id: UUID
+    name: str
+    kind: str
+    match_words: list[str]
+
+
+def wallet_out(w: Wallet) -> WalletOut:
+    return WalletOut(id=w.id, name=w.name, kind=w.kind.value, match_words=list(w.match_words))
+
+
+@router.get("/wallets")
+async def wallets(auth: Auth, web: Runtime) -> list[WalletOut]:
+    """The user's wallets, Spending first."""
+    return [wallet_out(w) for w in await wallet_cases.list_wallets(web.uow(), auth.user.id)]
+
+
+class WalletIn(Model):
+    name: str = Field(min_length=1, max_length=100)
+    kind: str = Field(max_length=20)
+    match_words: list[str] = Field(default=[], max_length=wallet_cases.MAX_MATCH_WORDS)
+
+
+@router.post("/wallets", status_code=201)
+async def create_wallet(body: WalletIn, auth: Auth, web: Runtime) -> WalletOut:
+    return wallet_out(
+        await wallet_cases.add_wallet(
+            web.uow(), auth.user.id, body.name, body.kind, body.match_words
+        )
+    )
+
+
+class WalletPatch(Model):
+    name: str | None = Field(None, min_length=1, max_length=100)
+    kind: str | None = Field(None, max_length=20)
+    match_words: list[str] | None = Field(None, max_length=wallet_cases.MAX_MATCH_WORDS)
+
+
+@router.patch("/wallets/{wallet_id}")
+async def edit_wallet(wallet_id: UUID, body: WalletPatch, auth: Auth, web: Runtime) -> WalletOut:
+    given = body.model_fields_set
+    return wallet_out(
+        await wallet_cases.update_wallet(
+            web.uow(),
+            auth.user.id,
+            wallet_id,
+            name=body.name if "name" in given else None,
+            kind=body.kind if "kind" in given else None,
+            match_words=body.match_words if "match_words" in given else None,
+        )
+    )
+
+
+class WalletDeletedOut(Model):
+    moved: int  # moves now pointing at ``into``
+    removed: int  # moves between the two wallets, dropped as they'd be from a wallet to itself
+    into: WalletOut | None  # null when the wallet had no moves
+
+
+@router.delete("/wallets/{wallet_id}")
+async def delete_wallet(
+    wallet_id: UUID, auth: Auth, web: Runtime, move_to: UUID | None = None
+) -> WalletDeletedOut:
+    """Delete a wallet. Its moves, if any, need ``move_to``: another wallet to point at."""
+    deleted = await wallet_cases.delete_wallet(
+        web.uow(), auth.user.id, wallet_id, move_to, now=web.clock()
+    )
+    return WalletDeletedOut(
+        moved=deleted.moved,
+        removed=deleted.removed,
+        into=wallet_out(deleted.into) if deleted.into else None,
+    )
 
 
 class RuleOut(Model):

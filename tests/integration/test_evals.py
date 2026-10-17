@@ -131,3 +131,60 @@ async def test_grading_passes_the_right_behaviour_and_fails_the_wrong(
         "didn't ask a question",
         "changed data instead of asking",
     ]
+
+
+async def test_the_wallet_cases_are_graded_on_data_not_just_words(engine: AsyncEngine) -> None:
+    scripts: dict[str, Callable[[], BaseChatModel]] = {
+        "wallet-move-ibkr": lambda: scripted(
+            call("log_move", amount="800", to_wallet="IBKR"), say("Logged 800 to IBKR.")
+        ),
+        "wallet-card-bill": lambda: scripted(  # logs an expense instead of a move
+            call("log_expense", amount="1240", merchant="Card", best_guess_category="Other"),
+            say("Logged."),
+        ),
+        "wallet-out-of-savings": lambda: scripted(
+            call("log_move", amount="300", from_wallet="Savings", to_wallet="Spending"),
+            say("Logged."),
+        ),
+        "wallet-person-is-not-a-move": lambda: scripted(
+            call("log_expense", amount="50", merchant="Alex", best_guess_category="Dining Out"),
+            say("Logged 50 for dinner with Alex."),
+        ),
+        "wallet-unknown-asks": lambda: scripted(
+            say("I don't have a Tiger wallet. Want me to add it as an investment wallet?")
+        ),
+        "wallet-instruction-refused": lambda: scripted(),  # the kernel refuses; no model call
+    }
+    results = {
+        r.case.id: r
+        for r in await run_cases(
+            engine, lambda case: scripts[case.id](), _only(*scripts), concurrency=2
+        )
+    }
+    for good in (
+        "wallet-move-ibkr",
+        "wallet-out-of-savings",
+        "wallet-person-is-not-a-move",
+        "wallet-unknown-asks",
+        "wallet-instruction-refused",
+    ):
+        assert results[good].passed, (good, results[good].failures, results[good].error)
+    assert results["wallet-move-ibkr"].turns[0].confirmations == 1
+    # An expense where a move was due fails on the data, whatever the reply said.
+    assert results["wallet-card-bill"].failures == [
+        "called log_expense",
+        "didn't ask to confirm",
+        "expected moved 1240 SGD from Spending to Card",
+        "expected no expense or income of 1240",
+    ]
+
+
+async def test_the_seed_has_wallets_but_no_moves(engine: AsyncEngine) -> None:
+    user = (await seed.seed_user(lambda: SqlUnitOfWork(engine), 778)).user
+    async with SqlUnitOfWork(engine) as db:
+        wallets = await db.ledger.list_wallets(user.id)
+    assert [w.name for w in wallets] == ["Spending", "Card", "IBKR", "Savings"]
+    page = await tx_cases.list_ledger(
+        SqlUnitOfWork(engine), user.id, LedgerQuery(direction=Direction.MOVE)
+    )
+    assert page.total == 0

@@ -19,7 +19,9 @@ from nexus.application import splits as split_cases
 from nexus.application import transactions as tx_cases
 from nexus.application.categories import list_categories
 from nexus.application.ports import LedgerQuery
-from nexus.domain.ledger import Direction
+from nexus.application.wallet_figures import month_figures
+from nexus.application.wallets import list_wallets
+from nexus.domain.ledger import Direction, WalletKind
 from nexus.domain.money import Money
 
 log = logging.getLogger(__name__)
@@ -33,7 +35,7 @@ AHEAD_DAYS = 7
 async def money_snapshot(ctx: ToolContext) -> str:
     """The snapshot as plain lines, or "" if nothing could be read."""
     parts: list[str] = []
-    for build in (_emails, _month, _budgets, _ahead, _ious, _recent):
+    for build in (_emails, _month, _wallets, _budgets, _ahead, _ious, _recent):
         try:
             text = await build(ctx)
         except Exception:
@@ -70,6 +72,25 @@ async def _month(ctx: ToolContext) -> str:
     if unconverted:
         line += " Not converted (no rate): " + ", ".join(map(_money, unconverted)) + "."
     return line
+
+
+async def _wallets(ctx: ToolContext) -> str:
+    """The user's wallets, so a move's wallet can be named, and what they put away this
+    month. Only once they have a wallet besides Spending."""
+    wallets = await list_wallets(ctx.uow(), ctx.user.id)
+    others = [w for w in wallets if w.kind is not WalletKind.SPENDING]
+    if not others:
+        return ""
+    names = ", ".join(
+        f"{w.name} ({', '.join([w.kind.value, *(f'also {m}' for m in w.match_words)])})"
+        for w in others
+    )
+    line = f"Wallets besides Spending: {names}."
+    figures = await month_figures(ctx.uow, _rates(ctx), ctx.user, now=ctx.now)
+    away = f"Put away this month: {_money(figures.put_away)}"
+    if figures.saving_rate is not None:
+        away += f" ({(figures.saving_rate * 100).quantize(Decimal(1))}% of income)"
+    return f"{line} {away}."
 
 
 async def _budgets(ctx: ToolContext) -> str:
@@ -128,11 +149,16 @@ async def _recent(ctx: ToolContext) -> str:
     if not page.items:
         return ""
     names = {c.id: c.name for c in await list_categories(ctx.uow(), ctx.user.id)}
+    wallets = {w.id: w.name for w in await list_wallets(ctx.uow(), ctx.user.id)}
     lines = []
     for t in page.items:
+        when = t.occurred_at.astimezone(ctx.tz)
+        if t.direction is Direction.MOVE:
+            to = wallets.get(t.to_wallet_id, "another wallet") if t.to_wallet_id else "?"
+            lines.append(f"{when:%a %-d %b}: {_money(t.amount)} → {to} (move)")
+            continue
         sign = "-" if t.direction is Direction.OUT else "+"
         who = t.counterparty or t.notes or "?"
         category = names.get(t.category_id, "Uncategorised") if t.category_id else "Uncategorised"
-        when = t.occurred_at.astimezone(ctx.tz)
         lines.append(f"{when:%a %-d %b}: {sign}{_money(t.amount)} {who} ({category})")
     return "Latest transactions, newest first: " + "; ".join(lines) + "."

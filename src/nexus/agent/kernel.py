@@ -46,8 +46,24 @@ _JOBS = re.compile(
 )
 _BARE_PAY = r"pay(?!\s?(?:day|check|cheque))"
 _POLITE = r"^\s*(?:please\s+|pls\s+|can you\s+|could you\s+|would you\s+|help me\s+)?"
+# "move 500 to savings" asks Nexus to do it. The amount comes straight after "move", so
+# "move the 12 grab ride to Transport" (a category) isn't caught, and a regular transfer
+# ("move 300 to savings every payday") is left to the model, which sets up a reminder.
+# "I moved 500 to savings" is a report of something done, and is recorded.
+_WANTS_TO = (
+    r"(?:i\s+(?:want|need|would like)\s+(?:you\s+)?to|i'd like\s+(?:you\s+)?to|i\s+wanna)\s+"
+)
+_REGULAR = r"\b(?:every|each|daily|weekly|monthly|yearly|annually|pay ?days?|remind\w*)\b"
 _UNSUPPORTED: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("transfer", re.compile(_POLITE + rf"(?:transfer|wire|remit|send)\b.*{_MONEY}.*\bto\b", re.I)),
+    (
+        "transfer",
+        re.compile(
+            rf"^(?!.*{_REGULAR})\s*(?:please\s+|pls\s+|can you\s+|could you\s+|would you\s+"
+            rf"|help me\s+|{_WANTS_TO})?move\s+{_MONEY}\s+(?:from\s+.+?\s+)?(?:to|into)\b",
+            re.I,
+        ),
+    ),
     # Only a request for Nexus itself to pay. A bare "pay rent 1800 on the 1st" is
     # usually a note of a bill, so it goes to the model, which has no way to pay.
     (

@@ -90,7 +90,7 @@ async def budget_statuses(
     names = {c.id: c.name for c in await category_cases.list_categories(uow(), user.id)}
     _, start, end = _month(user, now)
     summary = await tx_cases.summarize_in_home(uow(), rates, user, start, end)
-    out = summary.totals[0]
+    out = summary.out
     by_category = {c.category_id: c.total for c in summary.spending_by_category}
     statuses = []
     for b in budgets:

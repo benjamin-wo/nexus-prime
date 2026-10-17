@@ -115,6 +115,39 @@ test("dashboard shows the month, categories and IOUs", async ({ page }) => {
   await expect(page.getByRole("region", { name: "From Nexus" })).toContainText("Set a monthly budget");
 });
 
+test("a move between wallets shows neutrally and is not counted as spending or income", async ({ page }) => {
+  await fakeApi(page);
+  await page.goto("/accounting");
+  // The dashboard's totals leave it out ...
+  await expect(page.getByLabel("Spent")).toContainText("37.40");
+  await expect(page.getByLabel("Received")).toContainText("4,200.00");
+  // ... but the latest few show where it went, with no + or − on the amount.
+  const latest = page.getByRole("region", { name: "Latest" }).getByRole("listitem").filter({ hasText: "→ Investments" });
+  await expect(latest).toContainText(/SGD.800\.00/);
+  await expect(latest).not.toContainText(/[+−-]/);
+
+  await page.goto("/ledger");
+  const row = page.getByRole("row").filter({ hasText: "→ Investments" });
+  await expect(row.getByRole("button", { name: "→ Investments", exact: true })).toBeVisible();
+  await expect(row.locator("td.amount")).toContainText(/SGD.800\.00/);
+  await expect(row.locator("td.amount")).not.toContainText(/[+−-]/);
+  await expect(row.locator("td.amount")).toHaveClass(/amount-move/);
+  await expect(row.locator(".badge-move")).toHaveText("Move");
+
+  // Editing it keeps it a move: no direction toggle, no category.
+  await row.getByRole("button", { name: "→ Investments", exact: true }).click();
+  const sheet = page.getByRole("dialog", { name: "Edit move" });
+  await expect(sheet.getByText("→ Investments · not counted as spending or income")).toBeVisible();
+  await expect(sheet.getByRole("group", { name: "Direction" })).toHaveCount(0);
+  await expect(sheet.getByLabel("Category")).toHaveCount(0);
+  await sheet.getByRole("button", { name: "Cancel" }).click();
+
+  // It is neither money out nor money in.
+  await page.getByRole("button", { name: "Money out", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Maxwell Food Centre", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "→ Investments", exact: true })).toHaveCount(0);
+});
+
 test("tap a spending category to see its transactions, then all of them in the ledger", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/accounting");

@@ -103,6 +103,8 @@ async def create_transaction(
     Shared by the use cases that create money movements; runs inside the
     caller's unit of work.
     """
+    if Direction(cmd.direction) is Direction.MOVE:
+        raise InvalidInput("a move goes between two wallets: record it with log_move")
     category_id, rule_id = cmd.category_id, None
     if category_id is not None:
         await require_category(repo, actor, category_id)
@@ -140,14 +142,16 @@ async def create_transaction(
 
 
 # Where a transaction goes when nothing else decides: every one gets a category.
-DEFAULT_FOR = {Direction.OUT: "other", Direction.IN: "income"}
+DEFAULT_FOR = {Direction.OUT: "other", Direction.IN: "income"}  # a move has no category
 
 
 async def default_category(
     repo: LedgerRepository, actor: UserId, direction: Direction
 ) -> UUID | None:
     """The user's "Other" (expenses) or "Income" category, if they still have it."""
-    wanted = DEFAULT_FOR[direction]
+    wanted = DEFAULT_FOR.get(direction)
+    if wanted is None:
+        return None
     for c in await repo.list_categories(actor):
         if c.name.casefold() == wanted:
             return c.id
@@ -223,6 +227,10 @@ async def edit_transaction(
             updated = replace(updated, status=TransactionStatus(changes.status))
         if updated == tx:
             return tx
+        if (updated.direction is Direction.MOVE) != (tx.direction is Direction.MOVE):
+            raise InvalidInput("a move can't be changed to money in or out, or the other way")
+        if tx.direction is Direction.MOVE and updated.category_id != tx.category_id:
+            raise InvalidInput("a move has no category")
 
         splits = await repo.list_splits(actor, tx.id)
         if splits:
@@ -274,6 +282,21 @@ async def restore_transaction(uow: UnitOfWork, actor: UserId, transaction_id: UU
     return restored
 
 
+async def _keep_existing_wallets(
+    repo: LedgerRepository, actor: UserId, reverted: Transaction, current: Transaction
+) -> Transaction:
+    """A move's wallet may have been deleted since the change being undone (its moves
+    went to another wallet): the move keeps the wallets it has now."""
+    for wallet_id in (reverted.from_wallet_id, reverted.to_wallet_id):
+        if wallet_id is not None and await repo.get_wallet(actor, wallet_id) is None:
+            return replace(
+                reverted,
+                from_wallet_id=current.from_wallet_id,
+                to_wallet_id=current.to_wallet_id,
+            )
+    return reverted
+
+
 async def undo_last(uow: UnitOfWork, actor: UserId) -> UndoResult:
     """Reverse this user's most recent write that hasn't been undone.
 
@@ -319,10 +342,17 @@ async def undo_last(uow: UnitOfWork, actor: UserId) -> UndoResult:
                 before_category is not None
                 and await repo.get_category(actor, before_category) is None
             ):
-                # That category was deleted since: the expense stays where it is now.
+                # That category was deleted since: the expense stays where it is now (or,
+                # if it was a move then, goes to the default one).
                 reverted = replace(
                     reverted, category_id=tx.category_id, category_rule_id=tx.category_rule_id
                 )
+                if reverted.category_id is None:
+                    reverted = replace(
+                        reverted,
+                        category_id=await default_category(repo, actor, reverted.direction),
+                    )
+            reverted = await _keep_existing_wallets(repo, actor, reverted, tx)
 
         if reverted != tx:
             await repo.update_transaction(reverted)
@@ -402,8 +432,19 @@ class HomeSummary:
     start: datetime
     end: datetime
     currency: str
-    totals: list[HomeTotal]  # one per direction, out first
+    totals: list[HomeTotal]  # money out, then money in; moves between wallets are no part of it
     spending_by_category: list[HomeCategoryTotal]  # largest first
+
+    def total_for(self, direction: Direction) -> HomeTotal:
+        return next(t for t in self.totals if t.direction is direction)
+
+    @property
+    def out(self) -> HomeTotal:
+        return self.total_for(Direction.OUT)
+
+    @property
+    def income(self) -> HomeTotal:
+        return self.total_for(Direction.IN)
 
 
 def _by_currency(amounts: list[Money]) -> list[Money]:
@@ -424,7 +465,11 @@ async def summarize_in_home(
     _check_range(start, end)
     home = user.home_currency
     async with uow:
-        days = await uow.ledger.totals_by_day(user.id, start, end, user.timezone)
+        days = [
+            d
+            for d in await uow.ledger.totals_by_day(user.id, start, end, user.timezone)
+            if d.direction is not Direction.MOVE  # between the user's wallets: not spending
+        ]
     found = await fx.rates_for(rates, home, ((d.total.currency, d.day) for d in days))
     totals: list[HomeTotal] = []
     for direction in (Direction.OUT, Direction.IN):
@@ -471,7 +516,10 @@ async def summarize(uow: UnitOfWork, actor: UserId, start: datetime, end: dateti
     async with uow:
         totals = await uow.ledger.totals_by_direction(actor, start, end)
         by_category = await uow.ledger.spending_by_category(actor, start, end)
-    return Summary(start, end, totals, by_category)
+    # Moves between the user's wallets are neither money out nor money in.
+    return Summary(
+        start, end, [t for t in totals if t.direction is not Direction.MOVE], by_category
+    )
 
 
 MAX_BULK = 500

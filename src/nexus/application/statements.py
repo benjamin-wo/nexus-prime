@@ -117,7 +117,8 @@ async def _category_names(repo: LedgerRepository, user: User) -> Callable[[State
     cats = {c.id: c.name for c in await repo.list_categories(user.id)}
     rules = [r for r in await repo.list_category_rules(user.id) if r.category_id in cats]
     defaults = {
-        d: cats.get(await default_category(repo, user.id, d) or UUID(int=0), "") for d in Direction
+        d: cats.get(await default_category(repo, user.id, d) or UUID(int=0), "")
+        for d in (Direction.OUT, Direction.IN)
     }
 
     def name(row: StatementRow) -> str:

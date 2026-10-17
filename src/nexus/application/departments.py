@@ -131,6 +131,7 @@ ACCOUNTING = Department(
         "salary",
         "automation",
         "updates",
+        "wallets",
     ),
     blurb="Spending, income, budgets, bills, subscriptions, email receipts and statements.",
 )

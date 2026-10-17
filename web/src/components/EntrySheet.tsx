@@ -10,7 +10,7 @@ import {
   receiptUrl,
   type Transaction,
 } from "../api";
-import { isoDay } from "../format";
+import { isoDay, moveLabel } from "../format";
 import { MerchantField } from "./MerchantField";
 import { MoneyTrail } from "./MoneyTrail";
 
@@ -35,7 +35,12 @@ export function EntrySheet({
     queryFn: () => api<{ text: string }>(`/transactions/${editing?.id}/category-explanation`),
     enabled: Boolean(editing?.category_id),
   });
-  const [direction, setDirection] = useState<Direction>(editing?.direction ?? "out");
+  // A move (money between the user's own wallets) keeps its direction: only its amount,
+  // date and notes are edited here.
+  const isMove = editing?.direction === "move";
+  const [direction, setDirection] = useState<Direction>(
+    editing && editing.direction !== "move" ? editing.direction : "out",
+  );
   const [amount, setAmount] = useState(editing ? String(Number(editing.amount.amount)) : "");
   const [currency, setCurrency] = useState(editing?.amount.currency ?? me.user.home_currency);
   const [counterparty, setCounterparty] = useState(editing?.counterparty ?? "");
@@ -59,15 +64,15 @@ export function EntrySheet({
     event.preventDefault();
     setSaving(true);
     setError(null);
-    const body = {
-      direction,
+    const common = {
       amount: amount.trim(),
       currency: currency.trim().toUpperCase(),
       date,
-      counterparty: counterparty.trim() || null,
-      category_id: categoryId || null,
       notes: notes.trim() || null,
     };
+    const body = isMove
+      ? common
+      : { ...common, direction, counterparty: counterparty.trim() || null, category_id: categoryId || null };
     try {
       const tx = editing
         ? await api<EditedTransaction>(`/transactions/${editing.id}`, { method: "PATCH", body })
@@ -80,7 +85,7 @@ export function EntrySheet({
     }
   }
 
-  const title = editing ? "Edit transaction" : direction === "out" ? "Log money out" : "Log money in";
+  const title = isMove ? "Edit move" : editing ? "Edit transaction" : direction === "out" ? "Log money out" : "Log money in";
   return (
     <div className="backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <form
@@ -92,13 +97,17 @@ export function EntrySheet({
         onSubmit={submit}
       >
         <h3 id="entry-title">{title}</h3>
-        <div className="tabs" role="group" aria-label="Direction">
-          {(["out", "in"] as const).map((d) => (
-            <button key={d} type="button" className="tab" aria-pressed={direction === d} onClick={() => setDirection(d)}>
-              {d === "out" ? "Money out" : "Money in"}
-            </button>
-          ))}
-        </div>
+        {editing && isMove ? (
+          <p className="caption">{moveLabel(editing)} · not counted as spending or income</p>
+        ) : (
+          <div className="tabs" role="group" aria-label="Direction">
+            {(["out", "in"] as const).map((d) => (
+              <button key={d} type="button" className="tab" aria-pressed={direction === d} onClick={() => setDirection(d)}>
+                {d === "out" ? "Money out" : "Money in"}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="row">
           <label className="field">
             Amount
@@ -123,36 +132,40 @@ export function EntrySheet({
             />
           </label>
         </div>
-        <MerchantField
-          label={direction === "out" ? "Paid to" : "Received from"}
-          value={counterparty}
-          direction={direction}
-          showFrequent={!editing}
-          onChange={setCounterparty}
-          onPick={(s) => {
-            setCounterparty(s.name);
-            // The usual category and amount fill what's still empty; nothing typed is replaced.
-            if (!categoryId && s.category_id) setCategoryId(s.category_id);
-            if (!editing && !amount.trim()) {
-              setAmount(String(Number(s.amount.amount)));
-              setCurrency(s.amount.currency);
-            }
-          }}
-        />
-        <label className="field">
-          Category
-          <select className="input" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-            <option value="">Uncategorised</option>
-            {categories.data?.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-          {editing && categoryId === (editing.category_id ?? "") && why.data && (
-            <span className="caption">{why.data.text}</span>
-          )}
-        </label>
+        {!isMove && (
+          <MerchantField
+            label={direction === "out" ? "Paid to" : "Received from"}
+            value={counterparty}
+            direction={direction}
+            showFrequent={!editing}
+            onChange={setCounterparty}
+            onPick={(s) => {
+              setCounterparty(s.name);
+              // The usual category and amount fill what's still empty; nothing typed is replaced.
+              if (!categoryId && s.category_id) setCategoryId(s.category_id);
+              if (!editing && !amount.trim()) {
+                setAmount(String(Number(s.amount.amount)));
+                setCurrency(s.amount.currency);
+              }
+            }}
+          />
+        )}
+        {!isMove && (
+          <label className="field">
+            Category
+            <select className="input" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+              <option value="">Uncategorised</option>
+              {categories.data?.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+            {editing && categoryId === (editing.category_id ?? "") && why.data && (
+              <span className="caption">{why.data.text}</span>
+            )}
+          </label>
+        )}
         <label className="field">
           Date
           <input className="input" type="date" required value={date} onChange={(e) => setDate(e.target.value)} />

@@ -34,15 +34,30 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
 }
 
 export type Money = { amount: string; currency: string };
+/** What a person logs by hand: money in or money out. */
 export type Direction = "in" | "out";
+/** What a ledger row can be: a move is money between two of the user's own wallets,
+ * never spending and never income. */
+export type TxDirection = Direction | "move";
+
+export type WalletKind = "spending" | "investment" | "savings" | "card" | "other";
+/** A named place money sits (a label; no balance is kept). */
+export type Wallet = { id: string; name: string; kind: WalletKind; match_words: string[] };
+/** A wallet as a transaction names it. */
+export type WalletRef = { id: string; name: string; kind: WalletKind };
 
 /** A foreign amount in the home currency; amount is null when no rate was available. */
 export type HomeAmount = { amount: Money | null; rate: string | null; rate_date: string | null };
 
 export type Transaction = {
   id: string;
-  direction: Direction;
+  direction: TxDirection;
   amount: Money;
+  /** A move only: where the money left and where it went (null for money in and out). */
+  from_wallet?: WalletRef | null;
+  to_wallet?: WalletRef | null;
+  /** A move only: what arrived, when that isn't `amount`. */
+  received?: Money | null;
   /** Set on listings for rows not in the home currency. */
   home?: HomeAmount | null;
   occurred_at: string;
@@ -145,6 +160,12 @@ export type Summary = {
   currency: string;
   totals: { direction: Direction; total: Money; count: number; converted: Money[]; unconverted: Money[] }[];
   by_category: { category_id: string | null; category_name: string | null; total: Money; count: number }[];
+  /** Net moved into savings and investment wallets over the period (home currency). */
+  put_away?: Money;
+  /** put_away / money in (0.24 is 24%); null without money in. */
+  saving_rate?: number | null;
+  /** Spending, plus moved from Spending to anything but a card. */
+  total_out?: Money;
 };
 /** Money out per month for Home's chart, oldest first, ending with this month so far. */
 export type Spending = {
@@ -279,7 +300,7 @@ export type ChatHistory = {
 };
 
 export type LedgerFilters = {
-  direction?: Direction;
+  direction?: TxDirection;
   status?: "pending" | "confirmed";
   search?: string;
   start?: string;
