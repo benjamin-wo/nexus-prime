@@ -227,6 +227,12 @@ class SqlPlanningRepository:
         )
         return bool(result.rowcount)
 
+    async def set_bill_wallet(self, user_id: UserId, bill_id: UUID, wallet_id: UUID | None) -> None:
+        b = bills.c
+        await self._db.execute(
+            update(bills).where(b.user_id == user_id, b.id == bill_id).values(wallet_id=wallet_id)
+        )
+
     async def count_bills_for_wallet(self, user_id: UserId, wallet_id: UUID) -> int:
         b = bills.c
         return (

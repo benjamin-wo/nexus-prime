@@ -29,6 +29,9 @@ function EmailRow({ email, me, onChanged }: { email: InboundEmail; me: Me; onCha
   // Waiting for an answer: these can also be dismissed.
   const skippable = email.status === "pending" || email.status === "failed";
   const twin = email.status === "pending" ? email.duplicate_of : null;
+  // Its merchant or subject names a wallet: it may have been a move. Not when it looks like
+  // a payment already recorded; that question comes first.
+  const wallet = email.status === "pending" && !twin ? email.move_wallet : null;
 
   async function act(path: string, body?: unknown) {
     setError(null);
@@ -44,6 +47,9 @@ function EmailRow({ email, me, onChanged }: { email: InboundEmail; me: Me; onCha
     event.preventDefault();
     void act("log", { amount: amount.trim() });
   }
+
+  // "Move" keeps the wallet the email named; a figure typed in is sent along.
+  const move = (figure?: string) => act("move", figure ? { amount: figure } : {});
 
   return (
     <li className="budget email-row">
@@ -63,6 +69,11 @@ function EmailRow({ email, me, onChanged }: { email: InboundEmail; me: Me; onCha
         {email.merchant ? ` · ${email.subject}` : ""}
       </p>
       {twin && <p className="caption email-twin">Looks like {twin}, already recorded or in another email. Same payment?</p>}
+      {wallet && (
+        <p className="caption email-twin">
+          Was this a move {email.received ? "from" : "to"} {wallet}?
+        </p>
+      )}
       <div className="budget-foot">
         <span className={`caption email-status email-${email.status}`}>
           {LABELS[email.status]}
@@ -75,8 +86,13 @@ function EmailRow({ email, me, onChanged }: { email: InboundEmail; me: Me; onCha
                 Same one
               </button>
             )}
-            <button type="button" className={twin ? "btn" : "btn btn-primary"} onClick={() => act("log")}>
-              {twin ? "It's another" : "Log it"}
+            {wallet && (
+              <button type="button" className="btn btn-primary" onClick={() => move()}>
+                Move
+              </button>
+            )}
+            <button type="button" className={twin || wallet ? "btn" : "btn btn-primary"} onClick={() => act("log")}>
+              {twin ? "It's another" : wallet ? (email.received ? "Income" : "Expense") : "Log it"}
             </button>
             {skippable && (
               <button type="button" className="btn" onClick={() => act("skip")}>
@@ -103,8 +119,13 @@ function EmailRow({ email, me, onChanged }: { email: InboundEmail; me: Me; onCha
               required
             />
           </label>
+          {wallet && (
+            <button type="button" className="btn btn-primary" disabled={!amount.trim()} onClick={() => move(amount.trim())}>
+              Move
+            </button>
+          )}
           <button type="submit" className="btn" disabled={!amount.trim()}>
-            Log it
+            {wallet ? (email.received ? "Income" : "Expense") : "Log it"}
           </button>
           {skippable && (
             <button type="button" className="btn" onClick={() => act("skip")}>
@@ -201,7 +222,7 @@ export function EmailPage({ me }: { me: Me }) {
   const [confirming, setConfirming] = useState<string | null>(null);
 
   function refresh() {
-    for (const key of ["email", "transactions", "summary"]) void client.invalidateQueries({ queryKey: [key] });
+    for (const key of ["email", "transactions", "summary", "budgets"]) void client.invalidateQueries({ queryKey: [key] });
   }
 
   async function disconnect(id: string) {

@@ -189,3 +189,53 @@ async def test_deleting_the_wallet_repoints_the_bill(world: World) -> None:
     assert gone.status_code == 200 and gone.json()["bills"] == 1
     (bill,) = (await owner.get("/api/bills")).json()
     assert bill["wallet"]["name"] == "Savings"
+
+
+async def test_an_existing_payment_can_be_linked_to_a_wallet_and_unlinked(world: World) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+    ibkr = await wallet(owner)
+    body = {"name": "IBKR top-up", "due": "2026-10-05", "amount": "1,000", "spending": False}
+    bill = (await owner.send("POST", "/api/bills", body)).json()
+    assert bill["wallet"] is None
+
+    linked = await owner.send("PATCH", f"/api/bills/{bill['id']}", {"wallet_id": ibkr["id"]})
+    assert linked.status_code == 200, linked.text
+    assert linked.json()["wallet"] == {"id": ibkr["id"], "name": "IBKR", "kind": "investment"}
+    (listed,) = (await owner.get("/api/bills")).json()
+    assert listed["wallet"]["name"] == "IBKR"
+
+    # Linked, marking it done logs the move.
+    done = await owner.send("POST", f"/api/bills/{bill['id']}/paid")
+    assert done.json()["moved"] is True
+
+    unlinked = await owner.send("PATCH", f"/api/bills/{bill['id']}", {"wallet_id": None})
+    assert unlinked.status_code == 200 and unlinked.json()["wallet"] is None
+
+
+async def test_linking_a_spending_payment_or_to_spending_or_elsewhere_is_refused(
+    world: World,
+) -> None:
+    owner, token = await owner_and_invite(world)
+    member = world.browser()
+    await member.login(MEMBER, invite=token)
+    ibkr = await wallet(owner)
+    rent = (
+        await owner.send("POST", "/api/bills", {"name": "Rent", "due": "2026-10-01"})
+    ).json()  # spending
+    refused = await owner.send("PATCH", f"/api/bills/{rent['id']}", {"wallet_id": ibkr["id"]})
+    assert refused.status_code == 422
+
+    saving = {"name": "Savings", "due": "2026-10-05", "spending": False}
+    bill = (await owner.send("POST", "/api/bills", saving)).json()
+    home = next(w for w in (await owner.get("/api/wallets")).json() if w["kind"] == "spending")
+    to_spending = await owner.send("PATCH", f"/api/bills/{bill['id']}", {"wallet_id": home["id"]})
+    assert to_spending.status_code == 422
+    unknown = {"wallet_id": "8e2d6a4e-0000-4000-8000-000000000001"}
+    assert (await owner.send("PATCH", f"/api/bills/{bill['id']}", unknown)).status_code == 404
+    # Another user's bill is not found, and their wallet is not anyone else's to use.
+    mine = {"wallet_id": ibkr["id"]}
+    assert (await member.send("PATCH", f"/api/bills/{bill['id']}", mine)).status_code == 404
+    assert (await owner.get("/api/bills")).json()[0]["wallet"] is None
+    gone = await owner.send("PATCH", "/api/bills/8e2d6a4e-0000-4000-8000-000000000001", mine)
+    assert gone.status_code == 404

@@ -1,7 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 
-import { api, type Wallet, type WalletKind } from "../api";
+import { api, type LikelyMove, type Wallet, type WalletKind } from "../api";
+import { formatDate, formatMoney } from "../format";
 
 const KIND_LABEL: Record<WalletKind, string> = {
   spending: "Spending",
@@ -213,10 +214,111 @@ function WalletRow({
   );
 }
 
+/** Entries that look like moves, one at a time. Nothing changes until "Make it a move";
+ * "Not a move" only skips it for now (it comes back next time). */
+function LikelyMoves({ found, wallets, onChanged }: { found: LikelyMove[]; wallets: Wallet[]; onChanged: () => void }) {
+  const [reviewing, setReviewing] = useState(false);
+  const [skipped, setSkipped] = useState<Set<string>>(new Set());
+  const [picked, setPicked] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const left = found.filter((f) => !skipped.has(f.transaction.id));
+  if (found.length === 0) return null;
+  const current = left[0];
+  const elsewhere = wallets.filter((w) => w.kind !== "spending");
+
+  if (!reviewing || !current)
+    return (
+      <div className="likely-moves">
+        <p className="caption">
+          {left.length === 0 && reviewing
+            ? "That's all of them."
+            : `${left.length} ${left.length === 1 ? "entry looks" : "entries look"} like ${left.length === 1 ? "a move" : "moves"}`}
+        </p>
+        {left.length > 0 && (
+          <button type="button" className="btn btn-small" onClick={() => setReviewing(true)}>
+            Review
+          </button>
+        )}
+      </div>
+    );
+
+  const tx = current.transaction;
+  const wallet = picked[tx.id] ?? current.wallet?.id ?? "";
+
+  async function convert() {
+    setBusy(true);
+    setError(null);
+    try {
+      await api(`/transactions/${tx.id}/move`, { method: "POST", body: { wallet_id: wallet } });
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't make it a move");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="likely-moves" role="group" aria-label="Review likely moves">
+      <p className="caption">
+        {found.length - left.length + 1} of {found.length}
+      </p>
+      <div className="budget-head">
+        <h3 className="wrap">{tx.counterparty ?? "No merchant"}</h3>
+        <span className={tx.direction === "in" ? "num amount-in" : "num"}>
+          {tx.direction === "in" ? "+" : ""}
+          {formatMoney(tx.amount)}
+        </span>
+      </div>
+      <p className="caption">
+        {formatDate(tx.occurred_at)} · {current.reason}
+      </p>
+      <label className="field">
+        {tx.direction === "in" ? "Moved from" : "Moved to"}
+        <select className="input" value={wallet} onChange={(e) => setPicked({ ...picked, [tx.id]: e.target.value })}>
+          {!wallet && <option value="">Choose a wallet</option>}
+          {elsewhere.map((w) => (
+            <option key={w.id} value={w.id}>
+              {w.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <span className="quick">
+        <button type="button" className="btn btn-primary btn-small" disabled={!wallet || busy} onClick={() => void convert()}>
+          Make it a move
+        </button>
+        <button
+          type="button"
+          className="btn btn-small"
+          disabled={busy}
+          onClick={() => setSkipped(new Set(skipped).add(tx.id))}
+        >
+          Not a move
+        </button>
+        <button type="button" className="btn btn-ghost btn-small" onClick={() => setReviewing(false)}>
+          Close
+        </button>
+      </span>
+      {error && (
+        <p className="error-text" role="alert">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** The user's wallets: places money is moved between. Spending is always one of them. */
 export function WalletsSection() {
   const client = useQueryClient();
   const all = useQuery({ queryKey: ["wallets"], queryFn: () => api<Wallet[]>("/wallets") });
+  const likely = useQuery({
+    queryKey: ["wallets", "likely-moves"],
+    queryFn: () => api<LikelyMove[]>("/wallets/likely-moves"),
+  });
   const [name, setName] = useState("");
   const [kind, setKind] = useState<WalletKind>("savings");
   const [words, setWords] = useState("");
@@ -224,7 +326,7 @@ export function WalletsSection() {
   const [open, setOpen] = useState(false);
 
   function refresh() {
-    for (const key of ["wallets", "transactions", "summary", "budgets"])
+    for (const key of ["wallets", "transactions", "summary", "budgets", "home"])
       void client.invalidateQueries({ queryKey: [key] });
   }
 
@@ -264,6 +366,7 @@ export function WalletsSection() {
           </ul>
         </>
       )}
+      <LikelyMoves found={likely.data ?? []} wallets={wallets} onChanged={refresh} />
       <details className="category-fold" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
         <summary className="btn">{open ? "Done" : "Manage"}</summary>
         {wallets.length > 0 && (

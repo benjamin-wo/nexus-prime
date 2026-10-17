@@ -2264,3 +2264,242 @@ test("in Telegram, a trip's page shows Telegram's back button, and it goes back 
   await expect(page).toHaveURL(/\/travel$/);
   await expect.poll(shown).toBe(false);
 });
+
+// --- scheduled moves, and moves recognised by a wallet's words ---------------------------
+
+test("a scheduled move picks its wallet, which is only offered when it isn't spending", async ({ page }) => {
+  const state = await fakeApi(page, { ibkr: true });
+  await page.goto("/plan");
+  const form = page.getByRole("form", { name: "Add a scheduled payment" });
+  await expect(form.getByLabel("Moves money to (optional)")).toHaveCount(0); // spending
+  await form.getByLabel("Counts as spending").uncheck();
+  const wallet = form.getByLabel("Moves money to (optional)");
+  // Spending itself isn't offered.
+  await expect(wallet.locator("option")).toHaveText(["No wallet", "Investments", "Savings", "Card", "IBKR"]);
+  await form.getByLabel("Name").fill("IBKR top-up");
+  await form.getByLabel("Next due").fill("2026-10-05");
+  await form.getByLabel(/Amount/).fill("1000");
+  await wallet.selectOption({ label: "IBKR" });
+  await form.getByLabel("Counts as spending").check();
+  await expect(wallet).toHaveCount(0); // hidden again for spending
+  await form.getByLabel("Counts as spending").uncheck();
+  await expect(wallet).toHaveValue("w-ibkr"); // and remembered
+  await form.getByRole("button", { name: "Add", exact: true }).click();
+  await expect.poll(() => state.bills[0]).toMatchObject({
+    name: "IBKR top-up",
+    spending: false,
+    wallet: { id: "w-ibkr", name: "IBKR" },
+  });
+
+  const bills = page.getByRole("region", { name: "Scheduled payments" });
+  const row = bills.getByRole("listitem").filter({ hasText: "IBKR top-up" });
+  await expect(row.getByRole("heading")).toContainText("→ IBKR");
+  await expect(row.getByRole("button", { name: "Link to a wallet" })).toHaveCount(0);
+  // The form is reset for the next one.
+  await expect(form.getByLabel("Counts as spending")).toBeChecked();
+
+  // Marking it done says that the move was logged, and the move is in the ledger.
+  await row.getByRole("button", { name: "Mark done" }).click();
+  await expect(bills.getByRole("status")).toContainText(
+    "logged a move of 1000.00 SGD from Spending to IBKR.",
+  );
+  await page.goto("/accounting/ledger");
+  await page.getByRole("button", { name: "Moves", exact: true }).click();
+  await expect(page.getByRole("row").filter({ hasText: "IBKR top-up" })).toContainText("→ IBKR");
+});
+
+test("a payment that isn't spending can be linked to a wallet afterwards", async ({ page }) => {
+  const state = await fakeApi(page, { ibkr: true });
+  await page.goto("/plan");
+  const form = page.getByRole("form", { name: "Add a scheduled payment" });
+  await form.getByLabel("Name").fill("Index fund");
+  await form.getByLabel("Next due").fill("2026-10-05");
+  await form.getByLabel(/Amount/).fill("500");
+  await form.getByLabel("Counts as spending").uncheck();
+  await form.getByRole("button", { name: "Add", exact: true }).click();
+  const bills = page.getByRole("region", { name: "Scheduled payments" });
+  const row = bills.getByRole("listitem").filter({ hasText: "Index fund" });
+  await expect(row.getByRole("heading")).not.toContainText("→");
+
+  // A spending payment never offers it.
+  await form.getByLabel("Name").fill("Rent");
+  await form.getByLabel("Next due").fill("2026-10-01");
+  await form.getByRole("button", { name: "Add", exact: true }).click();
+  const rent = bills.getByRole("listitem").filter({ hasText: "Rent" });
+  await expect(rent.getByRole("button", { name: "Mark paid" })).toBeVisible();
+  await expect(rent.getByRole("button", { name: "Link to a wallet" })).toHaveCount(0);
+
+  await row.getByRole("button", { name: "Link to a wallet" }).click();
+  const link = row.getByRole("form", { name: "Link Index fund to a wallet" });
+  await expect(link.getByLabel("Wallet for Index fund").locator("option")).toHaveText([
+    "Investments",
+    "Savings",
+    "Card",
+    "IBKR",
+  ]);
+  await link.getByLabel("Wallet for Index fund").selectOption({ label: "IBKR" });
+  await link.getByRole("button", { name: "Save" }).click();
+  await expect(row.getByRole("heading")).toContainText("→ IBKR");
+  await expect(row.getByRole("button", { name: "Link to a wallet" })).toHaveCount(0);
+  expect(state.bills.find((b) => b.name === "Index fund")?.wallet).toMatchObject({ id: "w-ibkr" });
+});
+
+test("the Home nudge for a missed move settles with 'It went through' or 'Skip this month'", async ({ page }) => {
+  const state = await fakeApi(page, { ibkr: true, missedMoves: true });
+  await page.goto("/");
+  const needs = page.getByRole("region", { name: "Needs you" });
+  const ibkr = needs.getByRole("listitem").filter({ hasText: "IBKR top-up" });
+  const savings = needs.getByRole("listitem").filter({ hasText: "Savings top-up" });
+  await expect(ibkr).toContainText("Your SGD 1,000.00 IBKR top-up on 25 Sep hasn't shown up. Did it go through?");
+  // Items without actions have no buttons.
+  const email = needs.getByRole("listitem").filter({ hasText: "2 receipts from email" });
+  await expect(email.getByRole("button")).toHaveCount(0);
+  await expect(ibkr.getByRole("button")).toHaveText(["It went through", "Skip this month"]);
+
+  await ibkr.getByRole("button", { name: "It went through" }).click();
+  await expect(needs.getByText(/IBKR top-up on 25 Sep/)).toHaveCount(0);
+  await expect(savings).toBeVisible();
+  expect(state.missed).toEqual([{ bill: "move2", due: "2026-09-25" }]);
+
+  await savings.getByRole("button", { name: "Skip this month" }).click();
+  await expect(needs.getByText(/Savings top-up/)).toHaveCount(0);
+  expect(state.missed).toEqual([]);
+  await expect(needs.getByRole("link", { name: /Rent/ })).toBeVisible();
+
+  // Only the one that went through is in the ledger, as a move.
+  await page.goto("/accounting/ledger");
+  await page.getByRole("button", { name: "Moves", exact: true }).click();
+  await expect(page.getByRole("row").filter({ hasText: "IBKR top-up" })).toContainText("→ IBKR");
+  await expect(page.getByRole("row").filter({ hasText: "Savings top-up" })).toHaveCount(0);
+});
+
+test("a nudge's button shows the error inline when the API refuses", async ({ page }) => {
+  await fakeApi(page, { ibkr: true, missedMoves: true });
+  await page.route("**/api/bills/move1/paid*", (route) =>
+    route.fulfill({ status: 422, contentType: "application/json", body: JSON.stringify({ detail: "that bill has nothing left to pay" }) }),
+  );
+  await page.goto("/");
+  const needs = page.getByRole("region", { name: "Needs you" });
+  const ibkr = needs.getByRole("listitem").filter({ hasText: "IBKR top-up" });
+  await ibkr.getByRole("button", { name: "It went through" }).click();
+  await expect(ibkr.getByRole("alert")).toHaveText("that bill has nothing left to pay");
+  await expect(ibkr.getByRole("button", { name: "It went through" })).toBeEnabled();
+});
+
+test("an import preview shows rows that name a wallet as moves, and sends back what it shows", async ({ page }) => {
+  const state = await fakeApi(page, { ibkr: true });
+  await page.goto("/accounting/import");
+  await page.getByLabel("Choose a CSV or PDF").setInputFiles({
+    name: "sept.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from(
+      "Date,Description,Amount\n" +
+        "28/09/2026,IBKR deposit,-500.00\n" +
+        "28/09/2026,Kopitiam,-4.20\n" +
+        "28/09/2026,IBKR withdrawal,200.00\n" +
+        "28/09/2026,IBKR monthly,-300.00\n",
+    ),
+  });
+  const preview = page.getByRole("region", { name: "Check before importing" });
+  const row = (name: string) => preview.getByRole("row").filter({ hasText: name });
+  await expect(row("IBKR deposit")).toContainText("Move → IBKR");
+  await expect(row("IBKR withdrawal")).toContainText("Move IBKR → Spending");
+  await expect(row("IBKR deposit")).not.toContainText("Other");
+  // An ordinary row is as it was: its category, and no move controls.
+  await expect(row("Kopitiam")).toContainText("Other");
+  await expect(row("Kopitiam").getByRole("button")).toHaveCount(0);
+
+  // The wallet can be changed, and a move can go back to being an ordinary entry.
+  await row("IBKR monthly").getByLabel("Wallet for IBKR monthly").selectOption({ label: "Savings" });
+  await expect(row("IBKR monthly")).toContainText("Move → Savings");
+  await row("IBKR withdrawal").getByRole("button", { name: "Income instead" }).click();
+  await expect(row("IBKR withdrawal")).toContainText("Ordinary entry");
+  await expect(row("IBKR withdrawal")).not.toContainText("Move IBKR");
+
+  await preview.getByRole("button", { name: "Import 4 transactions" }).click();
+  await expect(page.getByRole("status").getByText("Imported 4 transactions.")).toBeVisible();
+  expect(state.importBodies).toEqual([
+    {
+      include: [0, 1, 2, 3],
+      moves: [
+        { row: 0, as_move: "w-ibkr" },
+        { row: 3, as_move: "w-savings" },
+      ],
+    },
+  ]);
+});
+
+test("an unticked move row is not sent, and an ordinary entry can be made a move again", async ({ page }) => {
+  const state = await fakeApi(page, { ibkr: true });
+  await page.goto("/accounting/import");
+  await page.getByLabel("Choose a CSV or PDF").setInputFiles({
+    name: "sept.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from("Date,Description,Amount\n28/09/2026,IBKR deposit,-500.00\n28/09/2026,IBKR monthly,-300.00\n"),
+  });
+  const preview = page.getByRole("region", { name: "Check before importing" });
+  await preview.getByRole("checkbox", { name: "Import IBKR deposit" }).uncheck();
+  const monthly = preview.getByRole("row").filter({ hasText: "IBKR monthly" });
+  await monthly.getByRole("button", { name: "Expense instead" }).click();
+  await expect(monthly).toContainText("Ordinary entry");
+  await monthly.getByRole("button", { name: "Make it a move" }).click();
+  await expect(monthly).toContainText("Move → IBKR");
+  await preview.getByRole("button", { name: "Import 1 transaction" }).click();
+  await expect(page.getByRole("status").getByText("Imported 1 transaction.")).toBeVisible();
+  expect(state.importBodies).toEqual([{ include: [1], moves: [{ row: 1, as_move: "w-ibkr" }] }]);
+});
+
+test("an email that names a wallet asks whether it was a move", async ({ page }) => {
+  const state = await fakeApi(page, { emailConnected: true, ibkr: true, emailMove: true });
+  await page.goto("/accounting/email");
+  const checked = page.getByRole("region", { name: "Checked emails" });
+  const ibkr = checked.getByRole("listitem").filter({ hasText: "Transfer to IBKR" });
+  await expect(ibkr.getByText("Was this a move to IBKR?")).toBeVisible();
+  await expect(ibkr.getByRole("button")).toHaveText(["Move", "Expense", "Skip"]);
+  // The other pending email has no such question.
+  const grab = checked.getByRole("listitem").filter({ hasText: "Your Grab e-receipt" });
+  await expect(grab.getByText(/Was this a move/)).toHaveCount(0);
+  await expect(grab.getByRole("button", { name: "Log it" })).toBeVisible();
+
+  await ibkr.getByRole("button", { name: "Move" }).click();
+  await expect(ibkr.getByText("Logged")).toBeVisible();
+  await expect(ibkr.getByText(/Was this a move/)).toHaveCount(0);
+  expect(state.emailMoves).toEqual([{ id: "e4", body: {} }]);
+
+  await page.goto("/accounting/ledger");
+  await page.getByRole("button", { name: "Moves", exact: true }).click();
+  await expect(page.getByRole("row").filter({ hasText: "IBKR" })).toContainText("→ IBKR");
+});
+
+test("'Expense' on a move question logs the email as usual", async ({ page }) => {
+  const state = await fakeApi(page, { emailConnected: true, ibkr: true, emailMove: true });
+  await page.goto("/accounting/email");
+  const ibkr = page.getByRole("region", { name: "Checked emails" }).getByRole("listitem").filter({ hasText: "Transfer to IBKR" });
+  await ibkr.getByRole("button", { name: "Expense" }).click();
+  await expect(ibkr.getByText("Logged")).toBeVisible();
+  expect(state.emailMoves).toEqual([]);
+});
+
+test("entries that look like moves are reviewed one at a time from the Wallets card", async ({ page }) => {
+  const state = await fakeApi(page, { ibkr: true, likelyMoves: true });
+  await page.goto("/settings");
+  const card = page.getByRole("region", { name: "Wallets" });
+  await expect(card.getByText("2 entries look like moves")).toBeVisible();
+  await card.getByRole("button", { name: "Review" }).click();
+
+  const review = card.getByRole("group", { name: "Review likely moves" });
+  await expect(review).toContainText("IBKR Cash Deposit");
+  await expect(review).toContainText("The description names IBKR.");
+  await expect(review.getByLabel("Moved to")).toHaveValue("w-ibkr"); // the API's own suggestion
+  await review.getByRole("button", { name: "Make it a move" }).click();
+  await expect.poll(() => state.txs.find((t) => t.id === "t201")?.direction).toBe("move");
+  expect(state.txs.find((t) => t.id === "t201")?.to_wallet?.name).toBe("IBKR");
+
+  // Next: money in, with no suggested wallet, so one has to be picked before it's a move.
+  await expect(review).toContainText("FAST Transfer");
+  await expect(review.getByLabel("Moved from")).toHaveValue("");
+  await expect(review.getByRole("button", { name: "Make it a move" })).toBeDisabled();
+  await review.getByRole("button", { name: "Not a move" }).click();
+  await expect(card.getByText("That's all of them.")).toBeVisible();
+  expect(state.txs.find((t) => t.id === "t202")?.direction).toBe("in"); // nothing was changed
+});

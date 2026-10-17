@@ -516,10 +516,17 @@ a.btn { text-decoration: none; }
 .import-layout { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--space-3); margin-bottom: var(--space-4); }
 .import-table tbody tr { cursor: default; }
 .import-table .fx { display: block; }
+.import-table td.move { display: grid; gap: var(--space-1); }
+.import-move-label { font-weight: 600; color: var(--sky-accent); }
 @media (max-width: 720px) {
   .import-table tbody tr { grid-template-rows: auto auto auto; }
   .import-table td.select { grid-row: 1 / span 3; }
   .import-table td.status { grid-column: 2; grid-row: 3; }
+  /* A proposed move has a row of its own for the wallet and the way back. */
+  .import-table tr.is-move { grid-template-rows: auto auto auto auto; }
+  .import-table tr.is-move td.select { grid-row: 1 / span 4; }
+  .import-table tr.is-move td.move { grid-column: 2 / -1; grid-row: 3; margin-top: var(--space-2); }
+  .import-table tr.is-move td.status { grid-row: 4; }
 }
 .import-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-top: var(--space-4); }
 .import-actions .input { flex: 1 1 160px; max-width: 240px; }
@@ -641,6 +648,9 @@ a.btn { text-decoration: none; }
 .sources { margin: 0; padding-left: 1.5em; display: grid; gap: var(--space-2); overflow-wrap: anywhere; }
 .itinerary-day h3 { margin: 0 0 var(--space-1); text-transform: uppercase; letter-spacing: 0.04em; }
 .row-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+/* Buttons under a needs-you item line up with its text, past the icon. */
+.needs-actions { padding: 0 0 var(--space-3) calc(44px + var(--space-3)); }
+.needs-error { margin: 0; padding: 0 0 var(--space-3) calc(44px + var(--space-3)); }
 .notes { white-space: pre-wrap; margin: 0; }
 
 /* --- trip page (photo cover, pill tabs, overview cards, day-by-day rail) --- */

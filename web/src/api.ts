@@ -131,6 +131,10 @@ export type ImportRow = {
   category: string | null;
   problem: string | null;
   matches: { date: string; description: string | null; amount: string } | null;
+  /** Proposed as a move because the description names a wallet: money out goes from Spending
+   * to `move_to`; money in comes from `move_from`. Both null for an ordinary entry. */
+  move_to?: Wallet | null;
+  move_from?: Wallet | null;
 };
 export type ImportPreview = {
   headers: string[];
@@ -215,6 +219,8 @@ export type Bill = {
   name: string;
   /** Marking it paid logs an expense; false for money moved, not spent (it's marked done). */
   spending: boolean;
+  /** A scheduled move's destination; null on spending and on a payment not linked yet. */
+  wallet: WalletRef | null;
   amount: Money | null;
   cadence: "once" | "weekly" | "monthly" | "yearly";
   due: string;
@@ -246,7 +252,12 @@ export type InboundEmail = {
   actionable: boolean;
   /** The payment it looks like a second record of, while it waits. */
   duplicate_of?: string | null;
+  /** The wallet it names, while it waits: it may have been a move there (or from there). */
+  move_wallet_id?: string | null;
+  move_wallet?: string | null;
 };
+/** An entry that may really have been a move; nothing changes until the user says so. */
+export type LikelyMove = { transaction: Transaction; wallet: Wallet | null; reason: string };
 export type EmailConnection = {
   id: string;
   provider: "gmail" | "forward";
@@ -336,7 +347,16 @@ export function ledgerParams(filters: LedgerFilters, extra: Record<string, strin
 }
 
 /** One thing a department is waiting on the user for, on Home. */
-export type FeedItem = { department: string; kind: string; text: string; link: string; urgent: boolean };
+export type FeedItem = {
+  department: string;
+  kind: string;
+  text: string;
+  link: string;
+  urgent: boolean;
+  /** Buttons that settle the item; `path` is relative to /api. */
+  actions: FeedAction[];
+};
+export type FeedAction = { key: string; label: string; method: string; path: string };
 
 /** A department's long piece of work, saved step by step. */
 export type Run = {

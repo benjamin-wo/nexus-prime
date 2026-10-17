@@ -163,6 +163,24 @@ async def add_bill(
     return bill
 
 
+async def set_bill_wallet(
+    uow: UnitOfWork, user: User, bill_id: UUID, wallet_id: UUID | None
+) -> Bill:
+    """Point an existing bill at a wallet, making it a scheduled move, or at none. A bill
+    that counts as spending can't have one, and the wallet can't be Spending."""
+    async with uow:
+        bill = await _bill(uow, user.id, bill_id)
+        if wallet_id is not None:
+            if bill.spending:
+                raise InvalidInput("a bill that counts as spending can't move money to a wallet")
+            target = await wallet_cases.require_wallet(uow.ledger, user.id, wallet_id)
+            if target.kind is WalletKind.SPENDING:
+                raise InvalidInput("a scheduled move goes to a wallet other than Spending")
+        await uow.planning.set_bill_wallet(user.id, bill.id, wallet_id)
+        await uow.commit()
+    return replace(bill, wallet_id=wallet_id)
+
+
 async def list_bills(uow: UowFactory, user: User, *, now: datetime) -> list[BillView]:
     """Active bills by their current due date."""
     today = _today(user, now)

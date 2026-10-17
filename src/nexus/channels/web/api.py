@@ -1736,6 +1736,24 @@ async def add_bill(body: BillIn, auth: Auth, web: Runtime) -> BillOut:
     return bill_out(bill_cases.BillView(bill, body.due, None, today), now, wallet_names)
 
 
+class BillPatch(Model):
+    # Only the wallet can change: a wallet makes it a scheduled move, null unlinks it.
+    wallet_id: UUID | None
+
+
+@router.patch("/bills/{bill_id}")
+async def patch_bill(bill_id: UUID, body: BillPatch, auth: Auth, web: Runtime) -> BillOut:
+    user, now = auth.user, web.clock()
+    bill = await bill_cases.set_bill_wallet(web.uow(), user, bill_id, body.wallet_id)
+    views = await bill_cases.list_bills(web.uow, user, now=now)
+    view = next(
+        (v for v in views if v.bill.id == bill.id),
+        bill_cases.BillView(bill, bill.anchor, None, now.astimezone(_tz(user)).date()),
+    )
+    wallet_names = {w.id: w for w in await wallet_cases.list_wallets(web.uow(), user.id)}
+    return bill_out(view, now, wallet_names)
+
+
 class BillPaidIn(Model):
     amount: str | None = Field(None, max_length=32)
     currency: str | None = Field(None, max_length=3)

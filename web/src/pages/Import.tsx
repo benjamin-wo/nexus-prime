@@ -8,6 +8,7 @@ import {
   type ImportPreview,
   type ImportRecord,
   type ImportRow,
+  type Wallet,
 } from "../api";
 import { formatDate, formatMoney } from "../format";
 
@@ -207,19 +208,92 @@ function LayoutEditor({
   );
 }
 
+/** The wallet a row's description names, if the preview proposed it as a move. */
+function proposed(row: ImportRow): Wallet | null {
+  return (row.direction === "in" ? row.move_from : row.move_to) ?? null;
+}
+
+/** A row proposed as a move: where it goes (changeable), or an ordinary entry instead. */
+function MoveCell({
+  row,
+  wallet,
+  wallets,
+  onChange,
+}: {
+  row: ImportRow;
+  wallet: string | null;
+  wallets: Wallet[];
+  onChange: (wallet: string | null) => void;
+}) {
+  const named = proposed(row);
+  const label = row.description || `row ${row.index + 1}`;
+  const chosen = wallets.find((w) => w.id === wallet) ?? (wallet ? named : null);
+  if (!chosen)
+    return (
+      <>
+        <span className="caption">Ordinary entry</span>
+        <button
+          type="button"
+          className="btn btn-ghost"
+          aria-label={`Make it a move: ${label}`}
+          onClick={() => onChange(named?.id ?? null)}
+        >
+          Make it a move
+        </button>
+      </>
+    );
+  return (
+    <>
+      <span className="import-move-label">
+        {row.direction === "in" ? `Move ${chosen.name} → Spending` : `Move → ${chosen.name}`}
+      </span>
+      <span className="quick">
+        <select
+          className="input"
+          aria-label={`Wallet for ${label}`}
+          value={chosen.id}
+          onChange={(e) => onChange(e.target.value)}
+        >
+          {(wallets.some((w) => w.id === chosen.id) ? wallets : [chosen, ...wallets]).map((w) => (
+            <option key={w.id} value={w.id}>
+              {w.name}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          className="btn btn-ghost"
+          aria-label={`${row.direction === "in" ? "Income" : "Expense"} instead: ${label}`}
+          onClick={() => onChange(null)}
+        >
+          {row.direction === "in" ? "Income instead" : "Expense instead"}
+        </button>
+      </span>
+    </>
+  );
+}
+
 function RowLine({
   row,
   checked,
   onToggle,
+  wallets,
+  moveTo,
+  onMove,
 }: {
   row: ImportRow;
   checked: boolean;
   onToggle: () => void;
+  wallets: Wallet[];
+  /** The wallet a proposed move is going to now; null once made an ordinary entry. */
+  moveTo: string | null;
+  onMove: (wallet: string | null) => void;
 }) {
   const verdict = VERDICT[row.verdict];
+  const isProposed = proposed(row) !== null;
   const selectable = row.verdict === "new" || row.verdict === "duplicate";
   return (
-    <tr>
+    <tr className={isProposed ? "is-move" : undefined}>
       <td className="select">
         <input
           type="checkbox"
@@ -244,7 +318,13 @@ function RowLine({
         )}
         {row.problem && <span className="caption fx">{row.problem}</span>}
       </td>
-      <td className="hide-mobile">{row.category ?? ""}</td>
+      {isProposed ? (
+        <td className="move">
+          <MoveCell row={row} wallet={moveTo} wallets={wallets} onChange={onMove} />
+        </td>
+      ) : (
+        <td className="hide-mobile">{row.category ?? ""}</td>
+      )}
       <td
         className={`amount ${row.direction === "in" ? "amount-in" : "amount-out"}`}
       >
@@ -282,6 +362,10 @@ export function ImportPage() {
   const [readingPdf, setReadingPdf] = useState(false);
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [ticked, setTicked] = useState<Set<number>>(new Set());
+  // Where each proposed move goes: a wallet id, or null once made an ordinary entry.
+  const [moveTo, setMoveTo] = useState<Record<number, string | null>>({});
+  const wallets = useQuery({ queryKey: ["wallets"], queryFn: () => api<Wallet[]>("/wallets") });
+  const elsewhere = (wallets.data ?? []).filter((w) => w.kind !== "spending");
   const [saveAs, setSaveAs] = useState("");
   const [save, setSave] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -297,6 +381,11 @@ export function ImportPage() {
         body: { csv: text, layout },
       });
       setPreview(shown);
+      setMoveTo(
+        Object.fromEntries(
+          shown.rows.filter((r) => proposed(r)).map((r) => [r.index, proposed(r)?.id ?? null]),
+        ),
+      );
       setTicked(
         new Set(
           shown.rows.filter((r) => r.verdict === "new").map((r) => r.index),
@@ -375,6 +464,10 @@ export function ImportPage() {
           csv: file.text,
           layout: preview.layout,
           include: [...ticked],
+          // What the page shows: each ticked row that is a move, with its wallet.
+          moves: [...ticked]
+            .filter((index) => moveTo[index])
+            .map((index) => ({ row: index, as_move: moveTo[index] })),
           file_name: file.name,
           save_as:
             save && saveAs.trim() && !file.fromPdf ? saveAs.trim() : null,
@@ -588,6 +681,9 @@ export function ImportPage() {
                         row={row}
                         checked={ticked.has(row.index)}
                         onToggle={() => toggle(row.index)}
+                        wallets={elsewhere}
+                        moveTo={moveTo[row.index] ?? null}
+                        onMove={(wallet) => setMoveTo((current) => ({ ...current, [row.index]: wallet }))}
                       />
                     ))}
                   </tbody>
