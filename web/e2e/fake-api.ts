@@ -68,6 +68,7 @@ export async function fakeApi(
     running = false,
     research = false,
     chatHistory = false,
+    spendingOnly = false,
   } = {},
 ) {
   let session = signedIn;
@@ -330,6 +331,25 @@ export async function fakeApi(
     { id: "other", name: "Other" },
     { id: "income", name: "Income" },
   ];
+  const wallets = [
+    { id: "w-spending", name: "Spending", kind: "spending", match_words: [] as string[] },
+    ...(spendingOnly
+      ? []
+      : [
+          { id: "w-investments", name: "Investments", kind: "investment", match_words: [] as string[] },
+          { id: "w-savings", name: "Savings", kind: "savings", match_words: [] as string[] },
+          { id: "w-card", name: "Card", kind: "card", match_words: [] as string[] },
+        ]),
+  ];
+  const walletRef = (w: { id: string; name: string; kind: string }): WalletRef => ({ id: w.id, name: w.name, kind: w.kind });
+  const movesOf = (walletId: string) =>
+    live().filter((t) => t.direction === "move" && (t.from_wallet?.id === walletId || t.to_wallet?.id === walletId));
+  /** What deleting a wallet does to its moves: re-pointed at ``into``, or dropped if they'd join it to itself. */
+  const walletFold = (walletId: string, intoId: string | null) => {
+    const mine = movesOf(walletId);
+    const dropped = intoId ? mine.filter((t) => t.from_wallet?.id === intoId || t.to_wallet?.id === intoId) : [];
+    return { mine, dropped };
+  };
   const categoryName = (id: string) => categories.find((c) => c.id === id)?.name ?? id;
   const live = () => state.txs.filter((t) => !t.deleted);
   const json = (route: Route, body: unknown, status = 200) =>
@@ -1231,15 +1251,88 @@ export async function fakeApi(
         budget: overall ? sgd(overall.limit) : null,
       });
     }
-    if (path === "/wallets" && method === "GET") {
-      return json(route, [
-        { id: "w-spending", name: "Spending", kind: "spending", match_words: [] },
-        { id: "w-investments", name: "Investments", kind: "investment", match_words: [] },
-      ]);
+    if (path === "/wallets" && method === "GET") return json(route, wallets);
+    if (path === "/wallets" && method === "POST") {
+      const name = String(body.name).trim();
+      if (wallets.some((w) => w.name.toLowerCase() === name.toLowerCase()))
+        return json(route, { detail: "a wallet with that name already exists" }, 409);
+      const created = { id: `w-${wallets.length + 1}`, name, kind: String(body.kind), match_words: (body.match_words ?? []) as string[] };
+      wallets.push(created);
+      return json(route, created, 201);
+    }
+    const walletPreview = path.match(/^\/wallets\/([\w-]+)\/delete-preview$/);
+    if (walletPreview && method === "GET") {
+      const wallet = wallets.find((w) => w.id === walletPreview[1]);
+      if (!wallet) return json(route, { detail: "wallet not found" }, 404);
+      if (wallet.kind === "spending") return json(route, { detail: "Spending can't be deleted" }, 422);
+      const { mine, dropped } = walletFold(wallet.id, url.searchParams.get("move_to"));
+      return json(route, { moved: mine.length - dropped.length, removed: dropped.length });
+    }
+    const walletOne = path.match(/^\/wallets\/([\w-]+)$/);
+    if (walletOne && method === "PATCH") {
+      const wallet = wallets.find((w) => w.id === walletOne[1]);
+      if (!wallet) return json(route, { detail: "wallet not found" }, 404);
+      if (body.kind && wallet.kind === "spending" && body.kind !== "spending")
+        return json(route, { detail: "Spending can't change kind" }, 400);
+      if (body.name && wallets.some((w) => w.id !== wallet.id && w.name.toLowerCase() === String(body.name).toLowerCase()))
+        return json(route, { detail: "a wallet with that name already exists" }, 409);
+      Object.assign(wallet, body);
+      for (const t of state.txs)
+        for (const end of ["from_wallet", "to_wallet"] as const)
+          if (t[end]?.id === wallet.id) t[end] = walletRef(wallet);
+      return json(route, wallet);
+    }
+    if (walletOne && method === "DELETE") {
+      const wallet = wallets.find((w) => w.id === walletOne[1]);
+      if (!wallet) return json(route, { detail: "wallet not found" }, 404);
+      if (wallet.kind === "spending") return json(route, { detail: "Spending can't be deleted" }, 400);
+      const into = wallets.find((w) => w.id === url.searchParams.get("move_to") && w.id !== wallet.id);
+      const { mine, dropped } = walletFold(wallet.id, into?.id ?? null);
+      if (mine.length > 0 && !into) return json(route, { detail: "pick another wallet to move its moves to" }, 400);
+      for (const t of mine) {
+        if (dropped.includes(t)) t.deleted = true;
+        else for (const end of ["from_wallet", "to_wallet"] as const) if (t[end]?.id === wallet.id) t[end] = walletRef(into!);
+      }
+      wallets.splice(wallets.indexOf(wallet), 1);
+      return json(route, { moved: mine.length - dropped.length, removed: dropped.length, into: mine.length ? into : null });
+    }
+    if (path === "/moves" && method === "POST") {
+      const from = wallets.find((w) => w.id === (body.from_wallet_id ?? "w-spending"));
+      const to = wallets.find((w) => w.id === body.to_wallet_id);
+      if (!from || !to) return json(route, { detail: "wallet not found" }, 404);
+      if (from.id === to.id) return json(route, { detail: "a move needs two different wallets" }, 400);
+      const tx: Tx = {
+        ...mk(`t${state.txs.length + 1}`, "move", body.amount, null, null),
+        from_wallet: walletRef(from),
+        to_wallet: walletRef(to),
+        notes: body.notes ?? null,
+      };
+      if (body.currency) tx.amount.currency = body.currency;
+      if (body.occurred_at) tx.occurred_at = `${String(body.occurred_at).slice(0, 10)}T04:00:00Z`;
+      state.txs.unshift(tx);
+      return json(route, tx, 201);
+    }
+    const markMove = path.match(/^\/transactions\/(t\d+)\/move$/);
+    if (markMove && method === "POST") {
+      const tx = state.txs.find((t) => t.id === markMove[1]);
+      const wallet = wallets.find((w) => w.id === body.wallet_id);
+      if (!tx) return json(route, { detail: "transaction not found" }, 404);
+      if (tx.direction === "move") return json(route, { detail: "this is already a move" }, 400);
+      if (!wallet || wallet.kind === "spending")
+        return json(route, { detail: "pick a wallet other than Spending to move it to or from" }, 400);
+      if (tx.split) return json(route, { detail: "this bill is split with others, so it can't be a move" }, 409);
+      const spending = walletRef(wallets[0]);
+      const [sent, received] = tx.direction === "out" ? [spending, walletRef(wallet)] : [walletRef(wallet), spending];
+      Object.assign(tx, { direction: "move", category_id: null, from_wallet: sent, to_wallet: received });
+      return json(route, tx);
     }
     if (path === "/summary") {
       const out = live().filter((t) => t.direction === "out");
       const total = out.reduce((s, t) => s + Number(t.amount.amount), 0);
+      // Money moved into savings and investment wallets.
+      const putAway = live()
+        .filter((t) => t.direction === "move" && ["savings", "investment"].includes(t.to_wallet?.kind ?? ""))
+        .reduce((s, t) => s + Number(t.amount.amount), 0);
       return json(route, {
         start: "2026-09-01",
         end: "2026-09-28",
@@ -1260,9 +1353,9 @@ export async function fakeApi(
             unconverted: [],
           },
         ],
-        put_away: { amount: "800.0000", currency: "SGD" },
-        saving_rate: 800 / 4200,
-        total_out: { amount: (total + 800).toFixed(4), currency: "SGD" },
+        put_away: { amount: putAway.toFixed(4), currency: "SGD" },
+        saving_rate: putAway / 4200,
+        total_out: { amount: (total + putAway).toFixed(4), currency: "SGD" },
         by_category: [
           {
             category_id: "food",

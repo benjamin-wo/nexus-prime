@@ -20,11 +20,12 @@ import { Amount } from "../components/Amount";
 import { formatDate, formatMoney, moveLabel } from "../format";
 
 const PAGE = 50;
-type View = "all" | "out" | "in" | "pending";
+type View = "all" | "out" | "in" | "move" | "pending";
 const VIEWS: { key: View; label: string }[] = [
   { key: "all", label: "All" },
   { key: "out", label: "Money out" },
   { key: "in", label: "Money in" },
+  { key: "move", label: "Moves" },
   { key: "pending", label: "Pending" },
 ];
 
@@ -73,7 +74,7 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
 
   const filters: LedgerFilters = useMemo(
     () => ({
-      direction: view === "out" || view === "in" ? view : undefined,
+      direction: view === "out" || view === "in" || view === "move" ? view : undefined,
       status: view === "pending" ? "pending" : undefined,
       search: debounced || undefined,
       start: start || undefined,

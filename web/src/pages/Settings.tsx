@@ -3,6 +3,7 @@ import { EmailCard } from "./Email";
 import { MemorySection } from "./Memory";
 import { RulesSection } from "./Rules";
 import { UpdatesSection } from "./Updates";
+import { WalletsSection } from "./Wallets";
 
 /** Account-wide settings, then each department's own. */
 export function Settings() {
@@ -23,6 +24,7 @@ export function Settings() {
       <div className="plan-grid">
         <EmailCard />
         <CategoriesSection />
+        <WalletsSection />
         <RulesSection />
       </div>
     </>
