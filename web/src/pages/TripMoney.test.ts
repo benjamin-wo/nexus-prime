@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Balance, BalancePart, Money, SettleResult } from "../api";
-import { balanceWords, joinNames, partsTotal, settleConfirmText, settledText, splitConfirmText, sumByCurrency, totalOf } from "./TripMoney";
+import { balanceWords, joinNames, partsTotal, setAsideText, settleConfirmText, settledText, splitConfirmText, sumByCurrency, totalOf } from "./TripMoney";
 import { balanceAmount } from "./TripStage";
 
 // Made-up people and amounts only. Intl puts a no-break space after the currency code.
@@ -122,5 +122,28 @@ describe("marking someone settled", () => {
       "Settled with Alex: 1 payment you owed Alex marked paid, nothing added to what you've spent.",
     );
     expect(plain(settledText({ person: "Ben", ious_repaid: 0, payments_settled: 0, income: [], expenses: [] }))).toBe("Nothing was left to settle with Ben.");
+  });
+});
+
+describe("the set-aside sentence", () => {
+  const plan = (saved: Money | null, by_start: Money | null, paydays_left = 3) => ({ per_payday: sgd("500"), saved, by_start, paydays_left });
+
+  it("gives what's saved so far and what it comes to by the trip", () => {
+    expect(plain(setAsideText(plan(sgd("100"), sgd("1600")), "25 Oct"))).toBe(
+      "SGD 500.00 each payday: about SGD 100.00 so far, SGD 1,600.00 by the trip (3 paydays left, next 25 Oct).",
+    );
+  });
+
+  it("leaves out the saved clause when nothing is saved yet", () => {
+    expect(plain(setAsideText(plan(sgd("0"), sgd("1500")), "25 Oct"))).toBe("SGD 500.00 each payday: SGD 1,500.00 by the trip (3 paydays left, next 25 Oct).");
+    expect(plain(setAsideText(plan(null, sgd("1500")), null))).toBe("SGD 500.00 each payday: SGD 1,500.00 by the trip (3 paydays left).");
+  });
+
+  it("leaves out the by-the-trip clause when it is missing", () => {
+    expect(plain(setAsideText(plan(sgd("100"), null, 1), "25 Oct"))).toBe("SGD 500.00 each payday: about SGD 100.00 so far (1 payday left, next 25 Oct).");
+  });
+
+  it("is just the amount and the paydays when there is neither", () => {
+    expect(plain(setAsideText(plan(sgd("0"), null), "25 Oct"))).toBe("SGD 500.00 each payday (3 paydays left, next 25 Oct).");
   });
 });

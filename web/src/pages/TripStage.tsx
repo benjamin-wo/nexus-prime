@@ -1,4 +1,5 @@
 import type { Balance, Booking, TripDetail } from "../api";
+import { Icon } from "../components/Icon";
 import { formatMoney, formatShortDate } from "../format";
 import { sortKey, stopOfDay, stopsOf } from "./TripBits";
 
@@ -148,7 +149,8 @@ export function StillToSort({ detail, onFix, quiet = false }: { detail: TripDeta
   if (items.length === 0) {
     return quiet ? null : (
       <p className="sorted-line" role="status">
-        <span aria-hidden="true">✓</span> All sorted: a place every night, a way there and a budget.
+        <Icon name="check" size={16} className="icon-inline" />
+        All sorted: a place every night, a way there and a budget.
       </p>
     );
   }

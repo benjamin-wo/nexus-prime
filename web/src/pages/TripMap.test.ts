@@ -96,7 +96,7 @@ describe("airports on the map", () => {
 
   it("pins the airport on the day it's landed at", () => {
     const station = pins.find((p) => p.kind === "station");
-    expect([station?.title, station?.label, station?.days, station?.target]).toEqual(["BCN airport", "✈", ["2026-11-11"], "land-fl"]);
+    expect([station?.title, station?.label, station?.days, station?.target]).toEqual(["BCN airport", "F", ["2026-11-11"], "land-fl"]);
   });
 
   it("draws the day from the airport to the hotel", () => {

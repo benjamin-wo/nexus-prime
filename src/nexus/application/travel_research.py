@@ -660,7 +660,7 @@ def budget_step(uow: UowFactory, rates: RateSource) -> Callable[[StepContext], A
             estimate_low=guess.low.quantize(Decimal(1)) if guess else None,
             estimate_high=guess.high.quantize(Decimal(1)) if guess else None,
             estimate_lines=[
-                f"{label}: {lo:,.0f} to {hi:,.0f} {home}" for label, lo, hi in guess.lines
+                f"{label}: {home} {lo:,.0f}–{hi:,.0f}" for label, lo, hi in guess.lines
             ]
             if guess
             else [],

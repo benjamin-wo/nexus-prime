@@ -3,6 +3,7 @@ import { type FormEvent, Fragment, type ReactNode, useEffect, useMemo, useState 
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { api, type Booking, type Hop, type ScreenshotRead, type Trip, type TripDetail } from "../api";
+import { Icon, type IconName } from "../components/Icon";
 import { base64 } from "../files";
 import { formatMoney } from "../format";
 import { ResearchList } from "./Research";
@@ -346,13 +347,14 @@ function tripGroup(title: string, list: Trip[]) {
   );
 }
 
-const KIND_ICON: Record<Booking["kind"], string> = { flight: "✈️", hotel: "🏨", rail: "🚆", activity: "📍" };
+const KIND_ICON: Record<Booking["kind"], IconName> = { flight: "flight", hotel: "stay", rail: "train", activity: "place" };
 
 function BookingRow({ booking, children }: { booking: Booking; children?: ReactNode }) {
   return (
     <li className="run-row">
       <span className="wrap">
-        <span aria-hidden="true">{KIND_ICON[booking.kind]}</span> <strong>{booking.title}</strong>
+        <Icon name={KIND_ICON[booking.kind]} size={18} className="icon-inline" />
+        <strong>{booking.title}</strong>
         {booking.provider && booking.kind !== "hotel" && <span className="caption"> · {booking.provider}</span>}
         <br />
         <BookingLines booking={booking} />
@@ -461,7 +463,7 @@ function TimelineEntry({ booking, iso, stop, spot, onEdit }: { booking: Booking;
     return (
       <li ref={drag.ref} className={`timeline-strip entry-row${drag.className}`} id={out ? undefined : `entry-${booking.id}`}>
         {!out && <Tap booking={booking} onEdit={onEdit} />}
-        <span aria-hidden="true">🏨</span>
+        <Icon name="stay" size={18} />
         <span className="wrap">
           <strong>{booking.hotel ?? booking.title}</strong>
           {!out && <br />}
@@ -481,7 +483,7 @@ function TimelineEntry({ booking, iso, stop, spot, onEdit }: { booking: Booking;
     return (
       <li ref={drag.ref} className={`timeline-strip timeline-landing entry-row${drag.className}`} id={`land-${booking.id}`}>
         <Tap booking={booking} onEdit={onEdit} />
-        <span aria-hidden="true">{booking.kind === "flight" ? "🛬" : "🚉"}</span>
+        <Icon name={booking.kind === "flight" ? "landing" : "train"} size={18} />
         <span className="wrap">
           <strong>
             {booking.kind === "flight" ? "Land" : "Arrive"} {last.destination ?? ""} {last.arrives?.slice(11, 16)}
@@ -503,7 +505,7 @@ function TimelineEntry({ booking, iso, stop, spot, onEdit }: { booking: Booking;
     return (
       <li ref={drag.ref} className={`timeline-strip entry-row${drag.className}`} id={`leave-${booking.id}-${iso}`}>
         <Tap booking={booking} onEdit={onEdit} />
-        <span aria-hidden="true">{KIND_ICON[booking.kind]}</span>
+        <Icon name={KIND_ICON[booking.kind]} size={18} />
         <span className="wrap">
           {legs.map((l, n) => (
             <span key={n}>
@@ -522,7 +524,7 @@ function TimelineEntry({ booking, iso, stop, spot, onEdit }: { booking: Booking;
     return (
       <li ref={drag.ref} className={`timeline-strip entry-row${drag.className}`} id={`entry-${booking.id}`}>
         <Tap booking={booking} onEdit={onEdit} />
-        <span aria-hidden="true">{KIND_ICON[booking.kind]}</span>
+        <Icon name={KIND_ICON[booking.kind]} size={18} />
         <span className="wrap">
           <strong>{booking.title}</strong>
           {booking.provider && <span className="caption"> · {booking.provider}</span>}
@@ -633,7 +635,8 @@ function Itinerary({ detail, day, onDay, onChange, onAdd, onIdeas }: {
               </div>
               {staying(d).map((b) => (
                 <p key={b.id} className="caption">
-                  <span aria-hidden="true">🏨</span> Staying at {b.hotel ?? b.title}
+                  <Icon name="stay" size={16} className="icon-inline" />
+                  Staying at {b.hotel ?? b.title}
                 </p>
               ))}
               {homeless.has(d) && (
@@ -1086,7 +1089,7 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
               <p className="caption">Does everything look right?</p>
               <span className="quick">
                 <button type="button" className="btn btn-small" onClick={() => setImported(null)}>
-                  👍 Looks right
+                  Looks right
                 </button>
                 <button
                   type="button"
@@ -1097,7 +1100,7 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
                     window.setTimeout(() => document.getElementById("itinerary")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
                   }}
                 >
-                  👎 Fix something
+                  Fix something
                 </button>
               </span>
             </section>
@@ -1138,7 +1141,8 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
                   className="btn btn-ghost trip-ask"
                   onClick={() => onAsk(`How's my ${data.trip.destination} trip looking? What's booked, what's missing and what's left in the budget?`)}
                 >
-                  <span aria-hidden="true">✨</span> Ask Nexus about this trip
+                  <Icon name="sparkle" size={16} className="icon-inline" />
+                  Ask Nexus about this trip
                 </button>
               )}
             </>

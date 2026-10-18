@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { useParams } from "react-router-dom";
 
 import { api, ApiError, type SharedBooking, type SharedTrip } from "../api";
+import { Icon, type IconName } from "../components/Icon";
 import { formatShortDate } from "../format";
 import { PhotoCredit, coverStyle, legTimes, todayIso, tripWhen } from "./TripBits";
 
@@ -11,7 +12,7 @@ const day = (iso: string) => formatShortDate(iso, "UTC");
 const isoDay = (t: number) => new Date(t).toISOString().slice(0, 10);
 const longDay = (iso: string) =>
   new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(iso));
-const KIND_ICON: Record<SharedBooking["kind"], string> = { flight: "✈️", hotel: "🏨", rail: "🚆", activity: "📍" };
+const KIND_ICON: Record<SharedBooking["kind"], IconName> = { flight: "flight", hotel: "stay", rail: "train", activity: "place" };
 
 /** A Google Maps search for the place, opened in a new tab. The page's referrer policy
  * keeps the link itself from going with it. */
@@ -42,7 +43,7 @@ function Entry({ booking, iso, stop }: { booking: SharedBooking; iso: string; st
     const out = booking.check_out === iso && booking.check_in !== iso;
     return (
       <li className="timeline-strip">
-        <span aria-hidden="true">🏨</span>
+        <Icon name="stay" size={18} />
         <span className="wrap">
           <strong>{name}</strong>
           {!out && (
@@ -61,7 +62,7 @@ function Entry({ booking, iso, stop }: { booking: SharedBooking; iso: string; st
   if (booking.kind === "flight" || booking.kind === "rail") {
     return (
       <li className="timeline-strip">
-        <span aria-hidden="true">{KIND_ICON[booking.kind]}</span>
+        <Icon name={KIND_ICON[booking.kind]} size={18} />
         <span className="wrap">
           <strong>{booking.title}</strong>
           {booking.provider && <span className="caption"> · {booking.provider}</span>}
@@ -150,7 +151,8 @@ function SharedDays({ trip }: { trip: SharedTrip }) {
               </div>
               {staying.map((b) => (
                 <p key={`${b.starts}-${b.title}`} className="caption">
-                  <span aria-hidden="true">🏨</span> Staying at {b.hotel ?? b.title}
+                  <Icon name="stay" size={16} className="icon-inline" />
+                  Staying at {b.hotel ?? b.title}
                 </p>
               ))}
               <ul className="timeline" aria-label={heading}>

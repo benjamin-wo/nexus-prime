@@ -1,6 +1,7 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import { api, type Reply, type Trip } from "../api";
+import { Icon, type IconName } from "../components/Icon";
 import { formatShortDate } from "../format";
 import { EntryEditor, type EntryKind } from "./TripEntry";
 import { useHome } from "./TripBits";
@@ -17,10 +18,10 @@ export type AddPreset = {
 };
 
 /** The three things a trip holds, each with its own short form. */
-const CHOICES: { form: "booking" | "plan" | "idea"; title: string; text: string; kind: EntryKind }[] = [
-  { form: "booking", title: "A booking", text: "Flight, stay, train or ticket. It sits at its time on its day.", kind: "flight" },
-  { form: "plan", title: "A plan", text: "Something you mean to do on a day. Time is optional.", kind: "activity" },
-  { form: "idea", title: "An idea", text: "A place you might go. Put it on a day later.", kind: "place" },
+const CHOICES: { form: "booking" | "plan" | "idea"; icon: IconName; title: string; text: string; kind: EntryKind }[] = [
+  { form: "booking", icon: "ticket", title: "A booking", text: "Flight, stay, train or ticket. It sits at its time on its day.", kind: "flight" },
+  { form: "plan", icon: "calendar", title: "A plan", text: "Something you mean to do on a day. Time is optional.", kind: "activity" },
+  { form: "idea", icon: "place", title: "An idea", text: "A place you might go. Put it on a day later.", kind: "place" },
 ];
 
 /** The form a preset opens straight into. */
@@ -28,20 +29,6 @@ const formFor = (kind: EntryKind): "booking" | "plan" | "idea" =>
   kind === "place" ? "idea" : kind === "activity" ? "plan" : "booking";
 
 const FORM_TITLES = { booking: "Add a booking", plan: "Add a plan", idea: "Add an idea" };
-
-const ICONS = {
-  booking: <path d="M4 7h16v3a2 2 0 0 0 0 4v3H4v-3a2 2 0 0 0 0-4zM14 7v10" />,
-  plan: <path d="M5 5h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zM3 10h18M8 3v4M16 3v4" />,
-  idea: <path d="M12 21s7-5.6 7-11a7 7 0 1 0-14 0c0 5.4 7 11 7 11zM12 7.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5z" />,
-};
-
-function Icon({ name }: { name: keyof typeof ICONS }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      {ICONS[name]}
-    </svg>
-  );
-}
 
 const HINTS: Partial<Record<EntryKind, string>> = {
   hotel: 'e.g. "Hotel Ume 13 to 15 Nov, ref 8812, booked on Agoda"',
@@ -210,7 +197,7 @@ export function AddSheet({
                   }}
                 >
                   <span className="way-icon" aria-hidden="true">
-                    <Icon name={c.form} />
+                    <Icon name={c.icon} size={22} />
                   </span>
                   <span>
                     <strong>{c.title}</strong>

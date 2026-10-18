@@ -19,6 +19,7 @@ import {
 import { type FormEvent, type KeyboardEvent, type ReactNode, createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import { api, type Booking, type DayNote, type Hop, type LinkedPlace, type TripDetail, type TripStop } from "../api";
+import { Icon, type IconName } from "../components/Icon";
 import { distance, metresBetween, type Point } from "../geo";
 import { sortKey, stopOfDay, stopsOf, suggestLabel } from "./TripBits";
 import { useLinkedPlaces } from "./TripPlaces";
@@ -476,7 +477,7 @@ export function MoveForm({ booking, days, spots, onDone }: { booking: Booking; d
   );
 }
 
-const NOTE_ICON: Record<DayNote["kind"], string> = { clash: "⚠️", order: "↕️", free: "🕒", arrival: "🛬" };
+const NOTE_ICON: Record<DayNote["kind"], IconName> = { clash: "warning", order: "order", free: "clock", arrival: "landing" };
 
 const minutesOf = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
 const clock = (minutes: number) => `${String(Math.floor(minutes / 60) % 24).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
@@ -511,7 +512,7 @@ export function DayNotes({ notes, hops = [], onFind }: { notes: DayNote[]; hops?
     <ul className="day-notes" aria-label="Worth a look">
       {notes.map((n) => (
         <li key={`${n.kind}-${n.text}`} className={`day-note day-note-${n.kind}`}>
-          <span aria-hidden="true">{NOTE_ICON[n.kind]}</span>
+          <Icon name={NOTE_ICON[n.kind]} size={18} />
           <span className="wrap">{n.kind === "arrival" ? arrivalText(n, hops) : n.text}</span>
           {n.kind === "free" && onFind && (
             <button type="button" className="btn btn-ghost btn-small" onClick={() => onFind(n.start ?? null)}>

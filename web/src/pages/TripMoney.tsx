@@ -13,7 +13,7 @@ import {
   type Trip,
   type TripDetail,
 } from "../api";
-import { formatMoney } from "../format";
+import { formatMoney, formatWithHome } from "../format";
 import { CountUp } from "../motion";
 import { day } from "./TripBits";
 import { tripBody } from "./TripEntry";
@@ -84,8 +84,7 @@ export function SpendingRow({ category: c, biggest, items }: { category: TripCat
                 <span className="caption peek-day">{day(i.day)}</span>
                 <span className="wrap">{i.counterparty ?? "Expense"}</span>
                 <span className="num">
-                  {formatMoney(i.amount)}
-                  {i.home && i.home.currency !== i.amount.currency && <span className="caption"> ({formatMoney(i.home)})</span>}
+                  {formatWithHome(i.amount, i.home)}
                 </span>
               </li>
             ))}
@@ -194,6 +193,21 @@ export function PlannedVsActual({ detail }: { detail: TripDetail }) {
   );
 }
 
+const positive = (m: Money | null): m is Money => m !== null && Number(m.amount) > 0;
+
+/** The set-aside plan in a sentence: "SGD 500.00 each payday: about SGD 100.00 so far, SGD 1,500.00
+ * by the trip (3 paydays left, next 25 Oct)." What's saved so far and what it comes to by the trip
+ * are left out when missing or zero; the rest still reads as one sentence. */
+export function setAsideText(
+  a: Pick<TripDetail["saving"], "per_payday" | "saved" | "by_start" | "paydays_left">,
+  nextPayday: string | null,
+): string {
+  if (!a.per_payday) return "";
+  const progress = [positive(a.saved) && `about ${formatMoney(a.saved)} so far`, positive(a.by_start) && `${formatMoney(a.by_start)} by the trip`].filter(Boolean);
+  const left = `${plural(a.paydays_left, "payday")} left${nextPayday ? `, next ${nextPayday}` : ""}`;
+  return `${formatMoney(a.per_payday)} each payday${progress.length > 0 ? `: ${progress.join(", ")}` : ""} (${left}).`;
+}
+
 export function SetAside({ detail }: { detail: TripDetail }) {
   const { trip, saving: a } = detail;
   if (trip.status !== "upcoming") return null;
@@ -204,21 +218,17 @@ export function SetAside({ detail }: { detail: TripDetail }) {
       </div>
       {!a.pay_schedule ? (
         <p className="muted">Set your pay schedule (Accounting, Plan) and Nexus can plan an amount to put aside each payday.</p>
-      ) : a.per_payday ? (
+      ) : positive(a.per_payday) ? (
         <>
-          <p>
-            {formatMoney(a.per_payday)} each payday: about {a.saved && formatMoney(a.saved)} so far, {a.by_start && formatMoney(a.by_start)} by the
-            trip ({a.paydays_left} {a.paydays_left === 1 ? "payday" : "paydays"} left
-            {a.next_payday && `, next ${day(a.next_payday)}`}).
-          </p>
-          {a.covers_budget === false && a.suggested && (
+          <p>{setAsideText(a, a.next_payday ? day(a.next_payday) : null)}</p>
+          {a.covers_budget === false && positive(a.suggested) && (
             <p className="budget-state-warn">That's short of the budget: {formatMoney(a.suggested)} each payday would cover it.</p>
           )}
           {a.covers_budget && <p className="budget-state-ok-strong">That covers the budget.</p>}
           {a.fits === false && <p className="budget-state-over">With it, the cash-flow forecast to the trip goes below zero.</p>}
           {a.fits && <p className="caption">It fits the cash-flow forecast, where it shows on each payday.</p>}
         </>
-      ) : a.suggested ? (
+      ) : positive(a.suggested) ? (
         <p className="muted">
           Put aside about {formatMoney(a.suggested)} on each of the {a.paydays_left} paydays before the trip to cover the budget. Edit the trip
           to plan it.
@@ -814,8 +824,7 @@ function BalanceParts({ b, id }: { b: Balance; id: string }) {
       <span className="caption peek-day">{p.on ? day(p.on) : ""}</span>
       <span className="wrap">{p.label ?? fallback}</span>
       <span className="num">
-        {formatMoney(p.amount)}
-        {p.home && p.home.currency !== p.amount.currency && <span className="caption"> ({formatMoney(p.home)})</span>}
+        {formatWithHome(p.amount, p.home)}
       </span>
     </li>
   );
@@ -1013,8 +1022,7 @@ export function Expenses({ detail, onTakeOff }: { detail: TripDetail; onTakeOff:
                 </span>
               </span>
               <span className="num">
-                {formatMoney(i.amount)}
-                {i.home && i.home.currency !== i.amount.currency && <span className="caption"> ({formatMoney(i.home)})</span>}
+                {formatWithHome(i.amount, i.home)}
               </span>
               <button type="button" className="btn btn-small" onClick={() => onTakeOff(i.transaction_id)} aria-label={`Take ${i.counterparty ?? "this expense"} off the trip`}>
                 Take off
@@ -1227,7 +1235,7 @@ export function MoneyBar({ detail, onOpen }: { detail: TripDetail; onOpen?: () =
         </div>
       )}
       <p className="caption">
-        {detail.booked ? `Booked ${formatMoney(detail.booked)}` : "Nothing booked yet"}
+        {positive(detail.booked) ? `Booked ${formatMoney(detail.booked)}` : "Nothing booked yet"}
         {amount(detail.spending.spent) > 0 && ` · spent ${formatMoney(detail.spending.spent)}`}
       </p>
     </section>
@@ -1258,7 +1266,7 @@ export function SpendingNow({ detail }: { detail: TripDetail }) {
         </div>
       )}
       <p className="caption">
-        {s.per_day_left
+        {positive(s.per_day_left)
           ? `${formatMoney(s.per_day_left)} a day left for ${plural(daysLeft, "day")}`
           : budget
             ? over
