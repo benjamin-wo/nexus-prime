@@ -666,6 +666,40 @@ async def research_to_trip(run_id: str, auth: Auth, web: Runtime) -> TripOut:
     return _trip(trip, _today(auth, web))
 
 
+class ResearchIdeasIn(Model):
+    trip_id: UUID
+    # Names of the research's areas ("Shinjuku"); each one's things to do become ideas.
+    areas: list[str] = Field(min_length=1, max_length=research_cases.MAX_IDEA_AREAS)
+
+
+class ResearchIdeasOut(Model):
+    added: int  # ideas saved on the trip, each under a list named after its area
+    skipped: int  # already on the trip
+    stop_suggestion: str | None  # the research's place when it isn't any of the trip's stops
+
+
+@router.post("/research/{run_id}/ideas")
+async def research_ideas(
+    run_id: str, body: ResearchIdeasIn, auth: Auth, web: Runtime
+) -> ResearchIdeasOut:
+    """Saves the chosen research areas' things to do as ideas (places to visit) on one
+    of the user's upcoming or ongoing trips. 404 for a research or trip that isn't theirs,
+    422 for a finished trip, an unknown area or a full trip. Safe to repeat: what's already
+    there is skipped."""
+    found = await research_cases.ideas_from_areas(
+        web.uow,
+        web.places,
+        auth.user,
+        _uuid(run_id, "research"),
+        body.trip_id,
+        body.areas,
+        now=web.clock(),
+    )
+    return ResearchIdeasOut(
+        added=found.added, skipped=found.skipped, stop_suggestion=found.stop_suggestion
+    )
+
+
 class SegmentIn(Model):
     number: str | None = Field(None, max_length=20)
     origin: str | None = Field(None, max_length=80)
@@ -896,21 +930,46 @@ def _places(web: WebRuntime) -> Places:
 _SILENT = "Google Maps isn't answering right now; try again in a bit."
 
 
+async def _scope(
+    auth: Auth,
+    web: WebRuntime,
+    trip_id: str | None,
+    stop: str | None,
+    day: date | None,
+) -> place_cases.SearchScope | None:
+    """Where a search looks, for the trip it's about; None without a trip."""
+    if not trip_id:
+        if stop or day:
+            raise InvalidInput("a stop or a day needs a trip_id")
+        return None
+    _, scope = await place_cases.search_scope(
+        web.uow(), web.places, auth.user.id, _uuid(trip_id), stop=stop, day=day
+    )
+    return scope
+
+
 @router.get("/places/search")
 async def search_places(
     auth: Auth,
     web: Runtime,
     q: str = Query(min_length=1, max_length=120),
     trip_id: str | None = None,
+    stop: str | None = Query(None, max_length=MAX_STOP_NAME),
+    day: date | None = None,
 ) -> list[PlaceOut]:
-    """Places on Google Maps, narrowed to the trip's destination when one is given."""
+    """Places on Google Maps, narrowed to the trip's destination when a trip is given.
+    With ``stop`` (one of the trip's stops) the search is in that stop instead; with
+    ``day`` (inside the trip) it also leans towards the places planned that day. Both
+    need ``trip_id``: 422 without it, for a stop that isn't the trip's or a day outside
+    it."""
     places = _places(web)
-    destination = None
-    if trip_id:
-        trip = await trip_cases.get_trip(web.uow(), auth.user.id, _uuid(trip_id))
-        destination = trip.destination
+    scope = await _scope(auth, web, trip_id, stop, day)
     try:
-        found = await places.search(auth.user.id, place_cases.query_for(q, destination))
+        found = await places.search(
+            auth.user.id,
+            place_cases.query_for(q, scope.place if scope else None),
+            scope.near if scope else None,
+        )
     except PlacesError as exc:
         raise HTTPException(status_code=502, detail=_SILENT) from exc
     return [_place(p) for p in found]
@@ -938,14 +997,23 @@ class IdeasOut(Model):
 
 @router.get("/trips/{trip_id}/ideas")
 async def trip_ideas(
-    trip_id: str, auth: Auth, web: Runtime, q: str = Query(min_length=1, max_length=120)
+    trip_id: str,
+    auth: Auth,
+    web: Runtime,
+    q: str = Query(min_length=1, max_length=120),
+    stop: str | None = Query(None, max_length=MAX_STOP_NAME),
+    day: date | None = None,
 ) -> IdeasOut:
     """Ideas for the trip from travel guides and articles: named places, each with the
-    page it came from and its Google Maps match. Nothing is saved."""
+    page it came from and its Google Maps match. Nothing is saved. With ``stop`` or
+    ``day`` they are for that stop (or the area of that day's plans, in its stop)
+    instead of the whole trip; the same 422s as the place search."""
     if web.ideas is None:
         raise NotFound("quick ideas aren't set up")
-    trip = await trip_cases.get_trip(web.uow(), auth.user.id, _uuid(trip_id))
-    found = await web.ideas.find(auth.user.id, trip.destination, q)
+    _, scope = await place_cases.search_scope(
+        web.uow(), web.places, auth.user.id, _uuid(trip_id), stop=stop, day=day
+    )
+    found = await web.ideas.find(auth.user.id, scope.place, q)
     return IdeasOut(
         query=found.query,
         destination=found.destination,

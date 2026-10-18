@@ -8,7 +8,7 @@ the expense counts towards the booking's trip whatever its date or currency.
 """
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from datetime import date, datetime
 from uuid import UUID, uuid4
@@ -310,6 +310,32 @@ async def add_manual(
         await uow.trips.insert_booking(booking)
         await uow.commit()
     return booking
+
+
+async def add_ideas(
+    uow: UnitOfWork,
+    user_id: UserId,
+    trip_id: UUID,
+    drafts: Sequence[BookingDraft],
+    *,
+    now: datetime,
+) -> int:
+    """Places to visit added to a trip together, all or none (the trip's caps on
+    entries and lists apply to the whole set)."""
+    async with uow:
+        trip = await uow.trips.get_trip(user_id, trip_id)
+        if trip is None:
+            raise NotFound("no trip with that id")
+        existing = await uow.trips.list_bookings(user_id, trip_id=trip_id)
+        if len(existing) + len(drafts) > MAX_BOOKINGS_A_TRIP:
+            raise InvalidInput(f"a trip keeps at most {MAX_BOOKINGS_A_TRIP} itinerary entries")
+        for draft in drafts:
+            _check_lists(existing, draft)
+            booking = Booking(uuid4(), user_id, trip_id, None, draft, None, None, now)
+            await uow.trips.insert_booking(booking)
+            existing.append(booking)
+        await uow.commit()
+    return len(drafts)
 
 
 async def edit_booking(

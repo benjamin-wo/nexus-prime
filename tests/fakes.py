@@ -33,7 +33,7 @@ from nexus.domain.email import ExpenseDraft, FetchedEmail, Screening
 from nexus.domain.errors import InvalidInput
 from nexus.domain.market import Bar
 from nexus.domain.news import EarningsDate, NewsItem
-from nexus.domain.places import Period, Place, PlacePhoto, Point, Review
+from nexus.domain.places import Circle, Period, Place, PlacePhoto, Point, Review
 from nexus.domain.routes import Mode
 from nexus.domain.weather import DayWeather, Spot
 from nexus.infra.llm.factory import ChatModels
@@ -504,11 +504,13 @@ class FakePlaces:
     results: list[Place] = field(default_factory=list)
     failing: bool = False
     searches: list[str] = field(default_factory=list)
+    near: list[Circle | None] = field(default_factory=list)
     looked_up: list[str] = field(default_factory=list)
     photos: list[str] = field(default_factory=list)
 
-    async def search(self, query: str, *, limit: int) -> list[Place]:
+    async def search(self, query: str, *, limit: int, near: Circle | None = None) -> list[Place]:
         self.searches.append(query)
+        self.near.append(near)
         if self.failing:
             raise PlacesError("HTTP 500")
         return self.results[:limit]

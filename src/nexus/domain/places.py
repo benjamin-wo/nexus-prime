@@ -111,6 +111,28 @@ def point(lat: object, lng: object) -> Point | None:
     return Point(round(la, 6), round(ln, 6))
 
 
+@dataclass(frozen=True, slots=True)
+class Circle:
+    """Where to look first: a point and a radius in metres. Sent to Google as a
+    location bias for one search; never stored."""
+
+    center: Point
+    radius: float  # metres, 1 to MAX_RADIUS
+
+
+MAX_RADIUS = 50_000.0  # Google's limit for a location bias
+
+
+def circle_around(points: list[Point], radius: float) -> Circle | None:
+    """A circle centred on the mean of the points; None when there are none."""
+    if not points:
+        return None
+    lat = sum(p.lat for p in points) / len(points)
+    lng = sum(p.lng for p in points) / len(points)
+    centre = point(lat, lng)
+    return Circle(centre, min(max(radius, 1.0), MAX_RADIUS)) if centre else None
+
+
 def metres_between(a: Point, b: Point) -> float:
     """The straight-line (great-circle) distance between two points, in metres."""
     la1, la2 = math.radians(a.lat), math.radians(b.lat)

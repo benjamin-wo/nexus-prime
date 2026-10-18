@@ -13,7 +13,16 @@ import pytest
 from nexus.application.places import Places, PlacesError, query_for, same_place
 from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.ledger import UserId
-from nexus.domain.places import Period, Place, describe, place_id, quoted
+from nexus.domain.places import (
+    Circle,
+    Period,
+    Place,
+    Point,
+    circle_around,
+    describe,
+    place_id,
+    quoted,
+)
 from nexus.infra.places.google import DETAIL_FIELDS, SEARCH_FIELDS, GooglePlaces, parse_place
 from tests.fakes import FakePlaces, fake_place
 
@@ -106,6 +115,33 @@ async def test_lookups_are_cached_briefly_and_capped() -> None:
         await places.details(ME, "not a place id!")
     with pytest.raises(InvalidInput):
         await places.search(ME, "   ")
+
+
+async def test_the_cache_tells_searches_apart_by_where_they_lean() -> None:
+    source = FakePlaces([fake_place("fakePlace0014", "Hanok Noodle Bar")])
+    places = Places(source)
+    here = Circle(Point(35.0116, 135.7681), 2000)
+    await places.search(ME, "noodles")
+    await places.search(ME, "noodles", here)
+    await places.search(ME, "Noodles", Circle(Point(35.01161, 135.76809), 2000))  # same, to 3 dp
+    await places.search(ME, "noodles", Circle(Point(35.0216, 135.7681), 2000))  # a km away
+    await places.search(ME, "noodles", Circle(Point(35.0116, 135.7681), 500))  # a smaller circle
+    assert source.searches == ["noodles"] * 4
+    assert source.near == [
+        None,
+        here,
+        Circle(Point(35.0216, 135.7681), 2000),
+        Circle(Point(35.0116, 135.7681), 500),
+    ]
+
+
+def test_a_circle_is_centred_on_the_mean_of_the_points() -> None:
+    assert circle_around([], 2000) is None
+    found = circle_around([Point(35.0, 135.0), Point(35.2, 135.4)], 2000)
+    assert found is not None
+    assert (found.center, found.radius) == (Point(35.1, 135.2), 2000)
+    huge = circle_around([Point(35.0, 135.0)], 900_000)
+    assert huge is not None and huge.radius == 50_000
 
 
 async def test_many_leaves_out_what_fails() -> None:
@@ -242,6 +278,35 @@ async def test_the_google_client_asks_for_only_what_it_shows() -> None:
     assert details.headers["X-Goog-FieldMask"] == DETAIL_FIELDS
     assert all(r.headers["X-Goog-Api-Key"] == "test-key" for r in seen)
     assert all("test-key" not in str(r.url) for r in seen)
+
+
+async def test_the_google_client_can_lean_a_search_towards_a_circle() -> None:
+    seen: list[httpx.Request] = []
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"places": [GOOGLE_PLACE]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(answer)) as http:
+        google = GooglePlaces(http, "test-key")
+        near = Circle(Point(37.5665, 126.978), 2000)
+        assert [p.id for p in await google.search("noodles, Seoul", limit=5, near=near)] == [
+            "fakePlace0013"
+        ]
+        await google.search("noodles, Seoul", limit=5, near=Circle(Point(37.5, 126.9), 99_999))
+        await google.search("noodles, Seoul", limit=5)
+    leaning, clamped, plain = seen
+    assert json.loads(leaning.content) == {
+        "textQuery": "noodles, Seoul",
+        "pageSize": 5,
+        "languageCode": "en",
+        "locationBias": {
+            "circle": {"center": {"latitude": 37.5665, "longitude": 126.978}, "radius": 2000.0}
+        },
+    }
+    assert json.loads(clamped.content)["locationBias"]["circle"]["radius"] == 50_000.0
+    assert "locationBias" not in json.loads(plain.content)
+    assert leaning.headers["X-Goog-FieldMask"] == SEARCH_FIELDS  # the same fields, the same bill
 
 
 async def test_google_failures_are_reported_without_detail() -> None:
