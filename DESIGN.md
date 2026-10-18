@@ -28,9 +28,13 @@ The bottom bar is deep slate with Nexus in its middle.
 | Border/subtle | --border-subtle | #e8edf3 | Rails and dividers |
 | Accent | --accent | #3e52b6 | Primary actions (white text, 6.8:1) and money out |
 | Accent/hover | --accent-hover | #34469d | Primary hover state |
-| Accent/soft | --accent-soft | rgba(62,82,182,0.10) | Money-out surfaces, pills |
+| Accent/soft | --accent-soft | rgba(62,82,182,0.10) | Money-out surfaces, pills, the soft button, an "on" chip |
 | Accent/border | --accent-border | rgba(62,82,182,0.30) | Focus rings, money-out control edge |
 | Accent/text | --accent-text | #3e52b6 | Accent words on light surfaces (pills, the current month) |
+| Accent/soft-hover | (none, in `.btn-soft:hover`) | rgba(62,82,182,0.16) | Soft secondary button on hover |
+| Accent/glow-shadow | (none, in `.trip-fab-button`) | rgba(62,82,182,0.6) | Shadow under the trip's Add button |
+| Scrim/info | (none, in `.photo-credit-button`) | rgba(27,35,51,0.45) | Round info button on a photo (0.65 on hover) |
+| Scrim/credit | (none, in `.photo-credit`) | rgba(9,9,11,0.8) | The photo credit that the info button opens |
 | Accent/glow | --accent-glow | #d8e7ed | Soft icy fills |
 | Status/success | --emerald-accent | #047857 | Money in and completed states |
 | Status/success-soft | --emerald-soft | rgba(5,150,105,0.12) | Money-in surfaces |
@@ -121,18 +125,18 @@ All spacing derives from a 4px base unit.
 
 - Cards 20px (18px on phones), inner tiles and controls 12px, pills fully round. Every segment is its own white card with a soft shadow and room either side; where it helps scanning (Home, the Accounting overview) the title sits above the card, with its action (Details, Open, See all, Edit) on the right.
 - Home's overview is not a card: a hero on solid indigo (full-bleed at the top on phones, fading into the page; a rounded panel on desktop) with the day and greeting, this month's spending as the one big figure with an arrow, how it stands in words, the brief, one-tap questions and the ask box, plus round buttons for Log expense and Settings.
-- Buttons are filled: primary indigo with white text, secondary `--bg-raised`; no outlines.
+- Buttons are filled: primary indigo with white text, secondary `--bg-raised`; no outlines. In Travel the secondary is the soft button (`.btn-soft`, pale indigo with indigo text) and grey `--bg-raised` is only for cancel and back; see Travel parts.
 - Department tabs are a rounded segmented control on one row, sharing the width on phones; keep a department to five tabs or fewer (one-off tasks like Import are reached from the page that needs them).
 - The accent is for actions (the main button, the active tab, today) and status, not decoration: figures in the brief are white and bold, links in text keep the text's colour with an underline, and a section's heading actions (Details, Open, See all, Edit) are all small buttons.
 - In Telegram the app behaves natively: Telegram's back button on a page inside a section (a trip, a stock, a plan, Import), a light haptic tap on the main button and a tick when changing tab or day, Telegram's header in the hero's indigo on Home and the page colour elsewhere, its bottom bar deep slate like ours, and no swipe-to-close while scrolling.
 - The phone's bottom bar is deep slate with rounded top corners: Home, Accounting, the indigo ✦ Nexus button in the middle (it opens the chat), Investment, Travel; icons only, names for screen readers. Settings is the cog at the top of Home (and in the rail on a wide screen, under the indigo Ask Nexus button).
-- No floating chat bubble: Nexus lives in the bar. The only floating button is a trip page's +, which steps aside while the page scrolls down on a phone and comes back on the way up.
+- No floating chat bubble: Nexus lives in the bar. The only floating button is a trip page's labelled Add button (white on indigo, a plus and "Add"), 20px above the bottom bar on a phone, where it steps aside while the page scrolls down and comes back on the way up, and in the tab row from 1024px.
 - An amount never breaks inside its figure: tile figures size to their box and wrap, if they must, between the currency and the number. Differences are said in words, not with a minus sign in green.
 - Say a figure once per screen: Home's hero gives this month's spending and how it stands, so the Spending card shows the trend and adds what the hero doesn't (a usual month, the biggest category).
 - Empty sections are one short line, left-aligned, with one action; a secondary way in (adding a holding by hand, recording a trade) stays behind a small button until asked for.
 - Charts say one thing: past months are quiet mist bars, rose stripes only mark a month over budget, this month is solid indigo over the dashed iris outline of a usual month, and the legend lists only what's drawn.
 - Ledger on a phone: no tick boxes until Select; dates are chips (All, This month, Last month, Custom), with the date boxes only for Custom.
-- Touch targets: on touch screens small buttons are at least 40px tall and pills and filter tabs 38px.
+- Touch targets: on touch screens small buttons and chips are at least 40px tall and filter tabs 38px.
 - One heading style: sentence case, no emoji. Small capitals (eyebrow) are only for labels inside a section.
 - Page padding 40px 48px on desktop, 16px on phones.
 - On phones a page's actions sit under its title and share the width (a primary action gets its own row); a section's note sits under its heading; form buttons fill the row.
@@ -197,19 +201,35 @@ All spacing derives from a 4px base unit.
 - **Layout**: inline cluster item
 
 ### Trip page
-- **Structure**: photo cover (back button, actions, destination, meta row with a when-pill and companion initials, photo credit), sticky pill tabs (Overview, Itinerary, Money), tab content, quick-add button above the chat button
-- **Variants**: Overview (next-up boarding pass with an indigo band, stay card with nights booked, getting-ready ring with the checklist beside a money card, weather (a temperature range, a scrolling strip of days with icon, high, low and rain chance; rain of 50% or more in sky blue; credited to Open-Meteo) beside the packing list (sky meter, checkboxes, add and Suggest), full-width "Ask Nexus about this trip", reservation counts, notes, collapsible sections), Itinerary (at-a-glance strip: days planned, nights booked, booked; sticky day strip; a rail of numbered day dots, filled for the first and last day, outlined indigo for planned days, dashed for empty ones), Money (existing spending cards)
-- **Thumbnails**: linked Google Maps places show a 64px rounded photo with a small credit line under it, at the right of a stop and in the stay card; unlinked stops show a plain tile when places are set up
-- **Cover**: a Photo menu (Another photo, No photo, or Show a photo) beside the actions; the destination photo under a dark fade to the page background, or a gradient from the destination's name when there's no photo; text sits on the fade, never on bare photo; the credit links to the photo's Commons page
-- **Spacing**: `--space-4` cover and card padding, `--space-4` between overview cards, `--space-2` timeline gaps
-- **States**: loading, error, empty sections ("None yet"), "Nothing planned yet" days, imported (banner asking whether it looks right), adding, editing
-- **Accessibility**: tabs are `role="tab"` with `aria-selected`; the next-up card is a region named for what's next; the ring has a text label and the count is repeated as text; the day rail is decorative (the day headings carry the dates); the day strip and reservation counts are labelled navigation; check-in and check-out are text badges; the quick-add menu is a labelled menu with an `aria-expanded` trigger
-- **Motion**: tab background at Standard timing; quick-add press scale at Micro, removed for reduced motion
-- **Layout**: overview cards pair on desktop (3:2) and stack under 720px; cover buttons shrink on phones; tabs and day strip stick to the top of the scroll area; the quick-add button sits above the chat button (higher on mobile, above the bottom navigation)
+- **Structure**: a compact photo cover (Trips back link, Share, a ⋯ menu with Edit trip, the photo choices (Another photo, No photo or Show a photo) and Delete trip, the destination as the title, a meta row with dates, a when-pill and companion initials, and the photo credit behind a round info button); a Next up strip; sticky tabs Plan, Ideas, Money and Prep (the open tab is in the address as `?tab=`, and the open day as `?day=`); the tab's content; the Add button
+- **Variants**: Plan (a stops row, each stop with its dates and nights and a travel marker between stops, with Edit stops beside it; the day pills and the day carousel in one card, a day at a time, swiped or picked; a rail dot and the day's stay, plans, flights and trains, travel times between them, a name for the day and plans moved by their grip or onto a day pill; the map beside it on wide screens and full screen on a phone when asked, showing one day or all, with an Ask Nexus about this trip button underneath; while the trip is on, today comes first), Ideas (saved places without a day in lists, filtered by list chips; Add to day, or the day it is on; a List and Map switch where maps are set up, and the map beside the list on wide screens; the finder to look for places in the whole trip, a stop or near a day, with theme chips), Money (spending against the budget, planned against actual, planned costs, setting money aside, travellers, split costs, costs others paid, settle up, expenses; settling up comes first once the trip is over), Prep (what's still to sort, the packing list, the weather for the trip, the notes)
+- **Add sheet**: the Add button opens "Add to <place>" with a booking, a plan or an idea, and quick ways: Type it, Screenshot or photo, Find a place. Money and Prep have their own forms (a planned cost, someone else paid, a packing item) instead of the sheet
+- **Share sheet**: Share on the cover makes a link to the days, plans and ideas, never money, references, notes or who's going; a switch shows bookings, and the link can be copied, renewed or stopped
+- **Place photos**: a linked Google Maps place shows its photo, 240px wide with a credit line under it, in the place's Details on a stop. A 64px thumbnail with its credit (`PlaceThumb`) exists but no page shows it yet; its credit wraps to six lines at that width, so shorten the credit before using it
+- **Cover**: the destination photo under a dark fade to the page background, or a gradient from the destination's name when there's no photo; text sits on the fade, never on bare photo; the photo credit shows from the round info button and links to the photo's Commons page
+- **Spacing**: `--space-4` card padding and between cards, `--space-2` timeline gaps
+- **States**: loading, error, empty sections ("None yet", "No ideas yet", "Free day"), imported from a screenshot (a banner asking whether it looks right), adding, editing; after the trip there is no Add button, Money opens first and Next up is about settling up
+- **Accessibility**: the tabs are a labelled navigation with `aria-current`; Next up is one strip with one button; the day pills are buttons with `aria-current`, and each day is a labelled slide; the day rail is decorative; the Add button is named for what it adds ("Add to Day 2"); the info button and every icon-only button have names; sheets are `role="dialog"` and close on Escape or the backdrop; weather icons carry a text label
+- **Motion**: chips and buttons change colour at Micro timing; the Add button fades down out of the way while a phone scrolls down, and its press scale is removed for reduced motion; the day carousel scrolls smoothly unless reduced motion is on
+- **Layout**: Plan pairs the itinerary and the map on wide screens and stacks them on phones; Ideas pairs the list and the map from 1024px; tabs stick to the top of the scroll area; from 1024px the Add button sits at the right of the tab row; below that it floats at the right of the screen, and on phones 20px above the bottom bar
 
 ### Travel home
-- **Structure**: title and one line, trips on now and coming up as photo cards, "Where to next?" (a place and when, handed to the chat to research, three example chips and Add a trip), bookings not on a trip, past trips (smaller, desaturated), research
-- **Trip card**: cover photo or gradient, a when-chip, destination (the link; the whole card is clickable), dates with days and nights, budget and companions; a grid of cards at least 300px wide
+- **Structure**: title and one line, a New trip button, trips on now and coming up as photo cards, "Where to next?" (a place and when, handed to the chat to research, example chips and Add a trip), bookings not on a trip, past trips, research
+- **Trip card**: cover photo or gradient, a when-chip, destination (the link; the whole card is clickable), dates with days and nights, budget and companions; a grid of cards at least 300px wide; past trips are smaller and desaturated
+- **Research**: each researched place is listed under the trips; its page gives the budget, when to go, costs, where to stay and the sources, with a button to make a trip of it or open the one already made
+- **States**: loading, error, and "No trips yet" with ways to start
+- **Layout**: groups stack in the order On now, Coming up, Where to next, loose bookings, Past, Research
+
+### Travel parts
+These are the rules the Travel pages follow. New Travel screens keep to them.
+
+- **Buttons**: one filled indigo primary per view. A secondary button for a row or a card (Add to day, Find ideas, Open day) is `.btn-soft`: pale indigo with indigo text. Quiet ghost buttons (`.btn-ghost`) carry an icon and text, at least 40px tall. Plain grey `.btn` is only for cancel and back. Destructive is a quiet rose button, never filled.
+- **One chip**: `.day-pill` is the only chip, for days, stops, lists, scopes and themes. It is white; on is pale indigo (`--accent-soft`) with `--accent-text` and `--accent-border`. A stop's or list's colour shows only as a dot. 40px tall on touch. A choice with many options is one chip with a ▾ that opens the options, not a row of chips.
+- **Icons, not emoji**: use the app's line icons (`Icon.tsx`). Weather icons carry a text label. Map markers use the letters F and T for flights and trains (and H for a stay) because Google's classic markers can't take SVG.
+- **Money**: always the ISO code, through `formatMoney`, never a symbol. A range is "SGD 4,602–6,760". A foreign amount is followed by its home amount when known: "JPY 2,000 · SGD 18.00". A sentence that would show zero is left out.
+- **Type**: 13px (0.8125rem) is the floor everywhere in Travel. Headings and labels are sentence case, with no all-caps. The serif italic (`.accent-serif`) is Travel's accent for a trip's title; the cover and trip cards do not use it yet.
+- **Warmth**: it comes from the trip's own photos and the serif. Travel adds no colours.
+- **The Add button**: white on indigo, with a plus and the word "Add", 52px tall, named for what it adds. Below 1024px it floats at the right; on phones it sits 20px above the bottom bar. From 1024px it moves to the tab row. Every tab has one except after the trip.
 
 ## 6. Motion & Interaction
 

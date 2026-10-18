@@ -1801,8 +1801,9 @@ test("a trip's plan is shared by a read-only link that shows no money, reference
   );
   const text = await page.locator("main").innerText();
   for (const secret of ["HK55821", "ZK4P7Q", "Agoda", "Somewhere secret", "SGD", "JPY", "820"]) expect(text).not.toContain(secret);
-  // Nothing can be changed, and it never asked anyone to sign in.
-  await expect(page.getByRole("button")).toHaveCount(0);
+  // Nothing can be changed, and it never asked anyone to sign in. The only button is the cover's photo credit.
+  await expect(page.getByRole("button", { name: "Photo credit" })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: /^(?!Photo credit$)/ })).toHaveCount(0);
   await expect(page).toHaveURL(shared);
 });
 
@@ -2055,7 +2056,7 @@ test("a day rearranged: dragged, moved by keyboard or menu, with what to watch o
 
   // Or from the entry's editor, without dragging: the temple after it on day 3.
   await itinerary.getByRole("navigation", { name: "Days" }).getByRole("button", { name: /11/ }).click();
-  await page.getByRole("button", { name: "Change Old Temple" }).click();
+  await page.getByRole("button", { name: "Change Old Temple" }).click({ position: { x: 6, y: 3 } });
   await page.getByRole("button", { name: "Move to…" }).click();
   await page.getByRole("dialog", { name: "Put on a day" }).getByRole("region", { name: "All days" }).getByRole("button", { name: /^Day 3 ·/ }).click();
   await expect.poll(() => state.moves.at(-1)).toBe("pl1>2026-11-12@pl3");
@@ -2075,7 +2076,8 @@ test("a day rearranged: dragged, moved by keyboard or menu, with what to watch o
   await expect(day2).toContainText("Hanok Noodle Bar");
 
   // An end time and a link, from the entry's editor.
-  await page.getByRole("button", { name: "Change Tea house" }).click();
+  // The row's own "Find on Google Maps" link sits across its middle: tap the row at its edge.
+  await page.getByRole("button", { name: "Change Tea house" }).click({ position: { x: 6, y: 3 } });
   const edit = page.getByRole("form", { name: "Change the entry" });
   await edit.getByLabel("Until").fill("15:30");
   await edit.getByText("More details").click();
@@ -2711,7 +2713,7 @@ test("an idea is put on a day from Ideas, shows on that day of Plan, and is take
   await expect(itineraryOf(page).getByRole("heading", { name: /^Day 3/ })).toContainText("1 plan");
 
   // Its day picker has the way back: take it off, and it is an idea again.
-  await itineraryOf(page).getByRole("button", { name: "Change Lantern Alley" }).click();
+  await itineraryOf(page).getByRole("button", { name: "Change Lantern Alley" }).click({ position: { x: 6, y: 3 } });
   await itineraryOf(page).getByRole("button", { name: "Move to…" }).click();
   const back = page.getByRole("dialog", { name: "Put on a day" });
   await expect(back.getByRole("region", { name: "All days" }).getByRole("button", { name: /^Day 3 ·/ })).toContainText("Here now");
