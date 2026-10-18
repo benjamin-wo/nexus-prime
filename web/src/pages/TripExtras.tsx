@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import { api, type PackItem, type Trip, type TripWeather } from "../api";
 
@@ -66,8 +66,16 @@ export function WeatherCard({ trip }: { trip: Trip }) {
   );
 }
 
-/** What to bring, ticked off as it's packed, with suggestions for a trip like this. */
-export function PackingCard({ trip, onChange }: { trip: Trip; onChange: () => void }) {
+/** What to bring, ticked off as it's packed, with suggestions for a trip like this.
+ * ``adding``: the tab's + was pressed, so bring the add field into view and focus it. */
+export function PackingCard({ trip, onChange, adding = false, onAddDone }: { trip: Trip; onChange: () => void; adding?: boolean; onAddDone?: () => void }) {
+  const addRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!adding) return;
+    addRef.current?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+    addRef.current?.focus({ preventScroll: true });
+    onAddDone?.();
+  }, [adding, onAddDone]);
   const [items, setItems] = useState<PackItem[]>(trip.packing ?? []);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -139,7 +147,7 @@ export function PackingCard({ trip, onChange }: { trip: Trip; onChange: () => vo
         ))}
       </ul>
       <form className="packing-add" onSubmit={add} aria-label="Add to the packing list">
-        <input className="input" value={text} maxLength={60} onChange={(e) => setText(e.target.value)} placeholder="Add something, e.g. Swimsuit" aria-label="Thing to pack" />
+        <input ref={addRef} className="input" value={text} maxLength={60} onChange={(e) => setText(e.target.value)} placeholder="Add something, e.g. Swimsuit" aria-label="Thing to pack" />
         <button type="submit" className="btn" disabled={!text.trim()}>
           Add
         </button>
@@ -153,51 +161,5 @@ export function PackingCard({ trip, onChange }: { trip: Trip; onChange: () => vo
         </p>
       )}
     </section>
-  );
-}
-
-/** The cover's photo choices: another photo of the place, or none. */
-export function PhotoMenu({ trip, onChange }: { trip: Trip; onChange: () => void }) {
-  const [open, setOpen] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
-  async function choose(choice: "next" | "off" | "on") {
-    setNote(null);
-    try {
-      await api<Trip>(`/travel/trips/${trip.id}/photo`, { method: "POST", body: { choice } });
-      setOpen(false);
-      onChange();
-    } catch (e) {
-      setNote(e instanceof Error ? e.message : "Couldn't change the photo");
-    }
-  }
-  return (
-    <div className="photo-menu">
-      <button type="button" className="btn" aria-expanded={open} onClick={() => setOpen(!open)}>
-        Photo
-      </button>
-      {open && (
-        <div className="photo-menu-list" role="menu" aria-label="Cover photo">
-          {trip.photo_off ? (
-            <button type="button" role="menuitem" className="btn btn-ghost" onClick={() => void choose("on")}>
-              Show a photo
-            </button>
-          ) : (
-            <>
-              <button type="button" role="menuitem" className="btn btn-ghost" onClick={() => void choose("next")}>
-                Another photo
-              </button>
-              <button type="button" role="menuitem" className="btn btn-ghost" onClick={() => void choose("off")}>
-                No photo
-              </button>
-            </>
-          )}
-          {note && (
-            <p className="caption" role="status">
-              {note}
-            </p>
-          )}
-        </div>
-      )}
-    </div>
   );
 }

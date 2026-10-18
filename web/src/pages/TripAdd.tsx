@@ -2,7 +2,8 @@ import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import { api, type Reply, type Trip } from "../api";
 import { formatShortDate } from "../format";
-import type { EntryKind } from "./Trips";
+import { EntryEditor, type EntryKind } from "./TripEntry";
+import { useHome } from "./TripBits";
 import { SavePlaces } from "./TripPlaces";
 
 export type AddPreset = {
@@ -13,13 +14,32 @@ export type AddPreset = {
   at?: string;
 };
 
-const FORMS: { kind: EntryKind; label: string }[] = [
-  { kind: "flight", label: "✈️ Flight" },
-  { kind: "hotel", label: "🏨 Place to stay" },
-  { kind: "rail", label: "🚆 Train" },
-  { kind: "activity", label: "🗓️ Plan on a day" },
-  { kind: "place", label: "📍 Place to visit" },
+/** The three things a trip holds, each with its own short form. */
+const CHOICES: { form: "booking" | "plan" | "idea"; title: string; text: string; kind: EntryKind }[] = [
+  { form: "booking", title: "A booking", text: "Flight, stay, train or ticket. It sits at its time on its day.", kind: "flight" },
+  { form: "plan", title: "A plan", text: "Something you mean to do on a day. Time is optional.", kind: "activity" },
+  { form: "idea", title: "An idea", text: "A place you might go. Put it on a day later.", kind: "place" },
 ];
+
+/** The form a preset opens straight into. */
+const formFor = (kind: EntryKind): "booking" | "plan" | "idea" =>
+  kind === "place" ? "idea" : kind === "activity" ? "plan" : "booking";
+
+const FORM_TITLES = { booking: "Add a booking", plan: "Add a plan", idea: "Add an idea" };
+
+const ICONS = {
+  booking: <path d="M4 7h16v3a2 2 0 0 0 0 4v3H4v-3a2 2 0 0 0 0-4zM14 7v10" />,
+  plan: <path d="M5 5h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zM3 10h18M8 3v4M16 3v4" />,
+  idea: <path d="M12 21s7-5.6 7-11a7 7 0 1 0-14 0c0 5.4 7 11 7 11zM12 7.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5z" />,
+};
+
+function Icon({ name }: { name: keyof typeof ICONS }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {ICONS[name]}
+    </svg>
+  );
+}
 
 const HINTS: Partial<Record<EntryKind, string>> = {
   hotel: 'e.g. "Hotel Ume 13 to 15 Nov, ref 8812, booked on Agoda"',
@@ -119,14 +139,15 @@ function TypeIt({ trip, preset, onChanged }: { trip: Trip; preset: AddPreset | n
   );
 }
 
-/** The trip's one way to add something: type it, show a screenshot, find a place, or
- * fill in a form. */
+/** The trip's one way to add something: a booking, a plan or an idea in a short form,
+ * or the quick ways: type it, show a screenshot, find a place. */
 export function AddSheet({
   trip,
   preset,
   places,
+  lists,
+  viewing,
   onScreenshot,
-  onForm,
   onChanged,
   onClose,
 }: {
@@ -134,11 +155,19 @@ export function AddSheet({
   preset: AddPreset | null;
   places: boolean;
   onScreenshot: (file: File) => void;
-  onForm: (preset: AddPreset) => void;
+  /** The trip's idea lists, for a new idea's list. */
+  lists?: string[];
+  /** The day open on Plan, where a new plan or booking goes by default. */
+  viewing?: string | null;
   onChanged: () => void;
   onClose: () => void;
 }) {
-  const [view, setView] = useState<"menu" | "type" | "forms" | "place">(preset?.find && places ? "place" : preset ? "type" : "menu");
+  const home = useHome();
+  const [view, setView] = useState<"menu" | "type" | "booking" | "plan" | "idea" | "place">(
+    preset?.find && places ? "place" : preset ? formFor(preset.kind) : "menu",
+  );
+  // Back to the choices and into another form: it starts on the kind picked there.
+  const [kind, setKind] = useState<EntryKind>(preset?.kind ?? "flight");
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -148,7 +177,8 @@ export function AddSheet({
     return () => window.removeEventListener("keydown", key);
   }, [onClose]);
 
-  const forPreset = preset ? FORMS.find((f) => f.kind === preset.kind) : undefined;
+  const form = view === "booking" || view === "plan" || view === "idea";
+  const title = view === "type" ? "Type it" : view === "place" ? "Find a place" : form ? FORM_TITLES[view] : `Add to ${trip.destination}`;
   return (
     <div className="sheet-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <section className="add-sheet" role="dialog" aria-modal="true" aria-labelledby="add-sheet-title">
@@ -158,88 +188,82 @@ export function AddSheet({
               ‹
             </button>
           )}
-          <h2 id="add-sheet-title">{view === "type" ? "Type it" : view === "forms" ? "Fill in a form" : view === "place" ? "Find a place" : `Add to ${trip.destination}`}</h2>
+          <h2 id="add-sheet-title">{title}</h2>
           <button type="button" className="btn btn-ghost btn-small" onClick={onClose} aria-label="Close">
             ×
           </button>
         </div>
 
         {view === "menu" && (
-          <div className="ways">
-            <button type="button" className="way main" onClick={() => setView("type")}>
-              <span className="way-icon" aria-hidden="true">
-                💬
-              </span>
-              <span>
-                <strong>Type it</strong>
-                <span className="caption">A flight, a stay or a plan, in your own words</span>
-              </span>
-            </button>
-            <label className="way main">
-              <span className="way-icon" aria-hidden="true">
-                🖼️
-              </span>
-              <span>
-                <strong>Screenshot or photo</strong>
-                <span className="caption">A booking, ticket or itinerary page</span>
-              </span>
-              <input
-                className="sr-only"
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                aria-label="Screenshot or photo"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  e.target.value = "";
-                  if (file) {
-                    onClose();
-                    onScreenshot(file);
-                  }
-                }}
-              />
-            </label>
-            {places && (
-              <button type="button" className="way" onClick={() => setView("place")}>
-                <span className="way-icon" aria-hidden="true">
-                  📍
-                </span>
-                <span>
-                  <strong>Find a place</strong>
-                  <span className="caption">By name, or ask for ideas: “best ramen”, “rainy day”</span>
-                </span>
-              </button>
-            )}
-            <button type="button" className="way" onClick={() => setView("forms")}>
-              <span className="way-icon" aria-hidden="true">
-                ✏️
-              </span>
-              <span>
-                <strong>Fill in a form</strong>
-                <span className="caption">Flight, place to stay, train or plan</span>
-              </span>
-            </button>
-          </div>
-        )}
-
-        {view === "type" && (
           <>
-            <TypeIt trip={trip} preset={preset} onChanged={onChanged} />
-            {forPreset && (
-              <button type="button" className="btn btn-ghost btn-small" onClick={() => onForm(preset!)}>
-                Or fill in a form: {forPreset.label}
-              </button>
-            )}
+            <div className="ways">
+              {CHOICES.map((c) => (
+                <button
+                  key={c.form}
+                  type="button"
+                  className="way main"
+                  onClick={() => {
+                    setKind(c.kind);
+                    setView(c.form);
+                  }}
+                >
+                  <span className="way-icon" aria-hidden="true">
+                    <Icon name={c.form} />
+                  </span>
+                  <span>
+                    <strong>{c.title}</strong>
+                    <span className="caption">{c.text}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+            <div className="quick-ways">
+              <span className="caption">Quick ways</span>
+              <div className="quick">
+                <button type="button" className="btn" onClick={() => setView("type")}>
+                  Type it
+                </button>
+                <label className="btn">
+                  Screenshot or photo
+                  <input
+                    className="sr-only"
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    aria-label="Screenshot or photo"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      e.target.value = "";
+                      if (file) {
+                        onClose();
+                        onScreenshot(file);
+                      }
+                    }}
+                  />
+                </label>
+                {places && (
+                  <button type="button" className="btn" onClick={() => setView("place")}>
+                    Find a place
+                  </button>
+                )}
+              </div>
+            </div>
           </>
         )}
 
-        {view === "forms" && (
-          <div className="ways ways-grid">
-            {FORMS.map((f) => (
-              <button key={f.kind} type="button" className="btn" onClick={() => onForm({ kind: f.kind, day: preset?.day })}>
-                {f.label}
-              </button>
-            ))}
-          </div>
+        {view === "type" && <TypeIt trip={trip} preset={preset} onChanged={onChanged} />}
+
+        {form && (
+          <EntryEditor
+            key={view}
+            trip={trip}
+            home={home || trip.currency}
+            lists={lists}
+            preset={{ kind, day: preset?.day ?? viewing ?? undefined }}
+            onDone={(saved) => {
+              if (saved) onChanged();
+              onClose();
+            }}
+          />
         )}
 
         {view === "place" && <SavePlaces open day={preset?.find ? preset.day : undefined} at={preset?.find ? preset.at : undefined} onDone={onChanged} />}

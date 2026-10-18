@@ -60,18 +60,21 @@ function DaySlide({ label, children }: { label: string; children: ReactNode }) {
 
 /** The itinerary a day at a time: swipe between days, or pick one from the pills.
  * Every day stays on the page (so travel times, links and moves work as before), each
- * in a box of the same height. */
+ * in a box of the same height. The day in view is the page's (``value``): a swipe or a
+ * pill asks for another with ``onPick``. */
 export function DayCarousel({
   days,
-  start,
+  value,
+  onPick,
   follow,
   pill,
   name,
   children,
 }: {
   days: string[];
-  /** The day to open on. */
-  start: string;
+  /** The day in view. */
+  value: string;
+  onPick: (iso: string) => void;
   /** A day to bring into view, like where a plan carried by keyboard would land. */
   follow?: string | null;
   pill: (iso: string) => string;
@@ -82,46 +85,71 @@ export function DayCarousel({
 }) {
   const track = useRef<HTMLDivElement>(null);
   const strip = useRef<HTMLElement>(null);
-  const [index, setIndex] = useState(() => Math.max(0, days.indexOf(start)));
-  const shown = Math.min(index, Math.max(0, days.length - 1));
+  const shown = Math.max(0, days.indexOf(value));
+  // The slide a scroll we started is heading for: its in-between positions aren't swipes.
+  const aim = useRef<{ index: number; timer: number } | null>(null);
+  const opened = useRef(false);
 
-  const go = useCallback(
-    (i: number, behavior: ScrollBehavior = smooth()) => {
-      const el = track.current;
-      const next = Math.max(0, Math.min(days.length - 1, i));
-      setIndex(next);
-      if (el) el.scrollTo({ left: next * el.clientWidth, behavior });
-    },
-    [days.length],
-  );
-
-  // Open on the start day, without a slide across.
-  useLayoutEffect(() => {
-    go(Math.max(0, days.indexOf(start)), "auto");
-    // Only once: later the user's swipes decide.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  const scrollTo = useCallback((i: number, behavior: ScrollBehavior) => {
+    const el = track.current;
+    if (!el) return;
+    if (aim.current) window.clearTimeout(aim.current.timer);
+    if (behavior === "auto") {
+      aim.current = null;
+    } else {
+      aim.current = { index: i, timer: window.setTimeout(() => (aim.current = null), 800) };
+    }
+    el.scrollTo({ left: i * el.clientWidth, behavior });
   }, []);
 
+  const go = useCallback(
+    (i: number) => {
+      const next = days[Math.max(0, Math.min(days.length - 1, i))];
+      if (next && next !== value) onPick(next);
+    },
+    [days, value, onPick],
+  );
+
+  // Open on the day without a slide across; later changes of day (a pill, the map, a
+  // button elsewhere on the page) slide to it.
+  useLayoutEffect(() => {
+    const el = track.current;
+    if (!el || el.clientWidth === 0) return;
+    if (opened.current && Math.round(el.scrollLeft / el.clientWidth) === shown) return;
+    scrollTo(shown, opened.current ? smooth() : "auto");
+    opened.current = true;
+  }, [shown, scrollTo]);
+
   useEffect(() => {
-    if (!follow) return;
-    const i = days.indexOf(follow);
-    if (i >= 0 && i !== shown) go(i);
-  }, [follow, days, shown, go]);
+    if (follow && follow !== value && days.includes(follow)) onPick(follow);
+  }, [follow, value, days, onPick]);
 
   // A swipe (or focus moving into another day) scrolls the track: follow it.
   function onScroll() {
     const el = track.current;
     if (!el || el.clientWidth === 0) return;
+    if (aim.current) {
+      if (Math.abs(el.scrollLeft - aim.current.index * el.clientWidth) > 2) return;
+      window.clearTimeout(aim.current.timer);
+      aim.current = null;
+    }
     const i = Math.round(el.scrollLeft / el.clientWidth);
-    if (i !== index) setIndex(i);
+    if (days[i] && days[i] !== value) onPick(days[i]);
   }
 
   // Keep the day's pill in view in the strip, moving it only when it's out of view
-  // (so a pill a plan is held over stays under it).
+  // (so a pill a plan is held over stays under it). Across the top on a phone, down
+  // the side on a wide screen.
   useEffect(() => {
     const bar = strip.current;
     const chosen = bar?.children[shown] as HTMLElement | undefined;
     if (!bar || !chosen) return;
+    if (getComputedStyle(bar).flexDirection === "column") {
+      const top = chosen.offsetTop - bar.offsetTop;
+      if (top >= bar.scrollTop && top + chosen.offsetHeight <= bar.scrollTop + bar.clientHeight) return;
+      bar.scrollTo?.({ top: Math.max(0, top - (bar.clientHeight - chosen.offsetHeight) / 2), behavior: smooth() });
+      return;
+    }
     const start = chosen.offsetLeft - bar.offsetLeft;
     if (start >= bar.scrollLeft && start + chosen.offsetWidth <= bar.scrollLeft + bar.clientWidth) return;
     const left = start - (bar.clientWidth - chosen.offsetWidth) / 2;

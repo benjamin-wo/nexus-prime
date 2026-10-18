@@ -214,9 +214,10 @@ describe("A trip's Type it in browsers where scrollIntoView returns a promise", 
     const trip = { id: "t1", destination: "Tokyo", start: "2026-11-10", end: "2026-11-15" } as unknown as import("./api").Trip;
     let changed = 0;
     renderWithProviders(
-      <AddSheet trip={trip} preset={{ kind: "hotel" }} places={false} onScreenshot={() => {}} onForm={() => {}} onChanged={() => (changed += 1)} onClose={() => {}} />,
+      <AddSheet trip={trip} preset={null} places={false} onScreenshot={() => {}} onChanged={() => (changed += 1)} onClose={() => {}} />,
     );
     const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Type it" }));
     await user.type(screen.getByLabelText("Tell Nexus about a booking"), "Hotel Ume 13 to 15 Nov");
     await user.click(screen.getByRole("button", { name: "Send" }));
     expect(await screen.findByText("Add Hotel Ume, 2 nights, to your Tokyo trip?")).toBeInTheDocument();

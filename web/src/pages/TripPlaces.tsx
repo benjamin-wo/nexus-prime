@@ -369,10 +369,10 @@ export function PlaceLine({ booking }: { booking: Booking }) {
   );
 }
 
-/** Find places on Google Maps and keep them as places to visit. */
+/** Find places on Google Maps and keep them as Ideas. */
 export function SavePlaces({ open = false, day, at, onDone }: {
   open?: boolean;
-  /** Saved as a plan on this day (at this time) instead of a place to visit. */
+  /** Saved as a plan on this day (at this time) instead of an idea. */
   day?: string;
   at?: string;
   onDone?: () => void;
@@ -404,7 +404,7 @@ export function SavePlaces({ open = false, day, at, onDone }: {
         </button>
         {saved && (
           <p className="caption" role="status">
-            Saved {saved}.
+            Saved {saved}{day ? "" : " to Ideas"}.
           </p>
         )}
       </>

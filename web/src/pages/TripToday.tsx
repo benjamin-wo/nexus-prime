@@ -136,12 +136,12 @@ function Plan({ booking, day, tonight }: { booking: Booking; day: string; tonigh
 
 /** One day of the trip on one screen, for use while travelling: the day's weather,
  * where they're sleeping tonight, the day's plans in time order with addresses and
- * booking references, and the first thing tomorrow. */
-export function TodayView({ detail }: { detail: TripDetail }) {
+ * booking references, and the first thing tomorrow. The day is the page's (the one
+ * open on the itinerary); this has no day picker of its own. */
+export function TodayView({ detail, day }: { detail: TripDetail; day: string }) {
   const trip = detail.trip;
   const days = tripDays(trip.start, trip.end);
   const today = todayIso();
-  const [day, setDay] = useState(days.includes(today) ? today : days[0]);
   const weather = useQuery({
     queryKey: ["trip-weather", trip.id, trip.start, trip.end, trip.destination],
     queryFn: () => api<TripWeather | null>(`/travel/trips/${trip.id}/weather`),
@@ -164,19 +164,13 @@ export function TodayView({ detail }: { detail: TripDetail }) {
   return (
     <section className="card today-view" aria-labelledby="today-title">
       <div className="today-head">
-        <button type="button" className="btn btn-small" disabled={index <= 0} onClick={() => setDay(days[index - 1])} aria-label="Day before">
-          ‹
-        </button>
         <div className="today-title">
           <span className="caption">
-            {day === today ? "Today · " : ""}Day {index + 1} of {days.length}
+            {day === today ? "Today · " : ""}{index >= 0 ? `Day ${index + 1} of ${days.length}` : "Outside the trip dates"}
             {label && ` · ${label}`}
           </span>
           <h2 id="today-title">{longDay(day)}</h2>
         </div>
-        <button type="button" className="btn btn-small" disabled={index >= days.length - 1} onClick={() => setDay(days[index + 1])} aria-label="Day after">
-          ›
-        </button>
       </div>
 
       {forecast && (
