@@ -12,6 +12,8 @@ import {
   type SplitResult,
   type Trip,
   type TripDetail,
+  type TripSaving,
+  type TripSpending,
 } from "../api";
 import { formatMoney, formatWithHome } from "../format";
 import { CountUp } from "../motion";
@@ -42,7 +44,7 @@ export function BudgetMeter({ percent }: { percent: number }) {
   );
 }
 
-type TripCategory = TripDetail["spending"]["categories"][number];
+type TripCategory = TripSpending["categories"][number];
 
 /** One category's bar; tapping it lists the trip's expenses in it. */
 export function SpendingRow({ category: c, biggest, items }: { category: TripCategory; biggest: number; items: TripDetail["items"] }) {
@@ -97,6 +99,7 @@ export function SpendingRow({ category: c, biggest, items }: { category: TripCat
 
 export function Spending({ detail }: { detail: TripDetail }) {
   const { trip, spending: s } = detail;
+  if (!s) return null; // a member of the trip gets no money
   const biggest = Math.max(1, ...s.categories.map((c) => Number(c.spent.amount)));
   return (
     <section className="card" aria-labelledby="trip-spending">
@@ -151,6 +154,7 @@ export function Spending({ detail }: { detail: TripDetail }) {
 }
 
 export function PlannedVsActual({ detail }: { detail: TripDetail }) {
+  if (!detail.spending) return null;
   const rows = detail.spending.categories.filter((c) => c.planned);
   if (detail.trip.status !== "finished" || (!detail.trip.budget && rows.length === 0)) return null;
   return (
@@ -199,7 +203,7 @@ const positive = (m: Money | null): m is Money => m !== null && Number(m.amount)
  * by the trip (3 paydays left, next 25 Oct)." What's saved so far and what it comes to by the trip
  * are left out when missing or zero; the rest still reads as one sentence. */
 export function setAsideText(
-  a: Pick<TripDetail["saving"], "per_payday" | "saved" | "by_start" | "paydays_left">,
+  a: Pick<TripSaving, "per_payday" | "saved" | "by_start" | "paydays_left">,
   nextPayday: string | null,
 ): string {
   if (!a.per_payday) return "";
@@ -210,7 +214,7 @@ export function setAsideText(
 
 export function SetAside({ detail }: { detail: TripDetail }) {
   const { trip, saving: a } = detail;
-  if (trip.status !== "upcoming") return null;
+  if (!a || trip.status !== "upcoming") return null;
   return (
     <section className="card" aria-labelledby="set-aside">
       <div className="card-head">
@@ -451,7 +455,7 @@ function TravellersCard({ trip, onChange }: { trip: Trip; onChange: () => void }
 /** Costs not split yet, with a way to split each, split them all, or keep one as just mine. */
 function SplitCard({ detail, onChange }: { detail: TripDetail; onChange: () => void }) {
   const { trip } = detail;
-  const home = detail.spending.spent.currency;
+  const home = detail.spending?.spent.currency ?? detail.trip.currency; // spending is null only for a member, who never sees this
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -728,7 +732,7 @@ function PaidForm({ trip, home, payment, onChange, onDone }: { trip: Trip; home:
 /** What fellow travellers paid for, each with a way to change or remove it. Settled ones stay, muted. */
 function PaidByOthers({ detail, onChange }: { detail: TripDetail; onChange: () => void }) {
   const { trip, paid_by_others: payments } = detail;
-  const home = detail.spending.spent.currency;
+  const home = detail.spending?.spent.currency ?? detail.trip.currency; // spending is null only for a member, who never sees this
   const [editing, setEditing] = useState<string | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -1149,7 +1153,7 @@ export function MoneyTab({ detail, onChange, adding, onAddDone }: { detail: Trip
   const stage = stageOf(detail);
   const [error, setError] = useState<string | null>(null);
   const [kind, setKind] = useState<"planned" | "paid" | null>(null);
-  const home = detail.spending.spent.currency;
+  const home = detail.spending?.spent.currency ?? detail.trip.currency; // spending is null only for a member, who never sees this
   const hasOthers = detail.trip.companions.length > 0;
   useEffect(() => {
     if (!adding) setKind(null);
@@ -1209,9 +1213,11 @@ export function MoneyTab({ detail, onChange, adding, onAddDone }: { detail: Trip
 /** Before the trip: what's booked and spent against the budget, in one bar.
  * Without ``onOpen`` it has no Details button (the Money tab is already the details). */
 export function MoneyBar({ detail, onOpen }: { detail: TripDetail; onOpen?: () => void }) {
+  const spending = detail.spending;
+  if (!spending) return null;
   const budget = detail.trip.budget;
-  const committed = amount(detail.spending.spent) + amount(detail.booked_unlogged);
-  const currency = detail.spending.spent.currency;
+  const committed = amount(spending.spent) + amount(detail.booked_unlogged);
+  const currency = spending.spent.currency;
   const percent = budget ? Math.min(100, Math.round((committed / Number(budget.amount)) * 100)) : 0;
   return (
     <section className="card money-bar" aria-labelledby="money-bar">
@@ -1236,7 +1242,7 @@ export function MoneyBar({ detail, onOpen }: { detail: TripDetail; onOpen?: () =
       )}
       <p className="caption">
         {positive(detail.booked) ? `Booked ${formatMoney(detail.booked)}` : "Nothing booked yet"}
-        {amount(detail.spending.spent) > 0 && ` · spent ${formatMoney(detail.spending.spent)}`}
+        {amount(spending.spent) > 0 && ` · spent ${formatMoney(spending.spent)}`}
       </p>
     </section>
   );
@@ -1246,6 +1252,7 @@ export function MoneyBar({ detail, onOpen }: { detail: TripDetail; onOpen?: () =
  * been spent in the trip's own currency (logged on Telegram). */
 export function SpendingNow({ detail }: { detail: TripDetail }) {
   const s = detail.spending;
+  if (!s) return null;
   const t = detail.trip;
   const budget = t.budget;
   const local = detail.items.filter((i) => i.amount.currency === t.currency).reduce((sum, i) => sum + Number(i.amount.amount), 0);
@@ -1284,6 +1291,7 @@ export function SpendingNow({ detail }: { detail: TripDetail }) {
 /** After the trip: the total against the budget, by category. */
 export function TripTotals({ detail }: { detail: TripDetail }) {
   const s = detail.spending;
+  if (!s) return null;
   const budget = detail.trip.budget;
   const total = amount(s.spent);
   const diff = budget ? Math.round(((total - Number(budget.amount)) / Number(budget.amount)) * 100) : null;

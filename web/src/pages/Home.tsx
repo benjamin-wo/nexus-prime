@@ -631,7 +631,7 @@ function TripCard({
           </span>{" "}
           with no place to stay yet.
         </p>
-      ) : detail.trip.budget ? (
+      ) : detail.trip.budget && detail.spending ? (
         <p className="muted">
           {formatMoney(detail.spending.spent)} of{" "}
           {formatMoney(detail.trip.budget)} spent
