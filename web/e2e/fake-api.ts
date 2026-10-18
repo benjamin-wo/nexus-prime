@@ -2111,8 +2111,18 @@ export async function fakeApi(
     route.fulfill({
       contentType: "text/javascript",
       body: `(() => {
-        const log = (window.__map = { markers: [], lines: 0, key: new URL(document.currentScript.src).searchParams.get("key") });
-        class Map { constructor(el) { el.dataset.map = "ready"; } fitBounds() {} setCenter() {} setZoom() {} panTo() {} }
+        const log = (window.__map = { markers: [], lines: 0, circles: [], key: new URL(document.currentScript.src).searchParams.get("key") });
+        // Holding the map: longPress(lat, lng) presses at that spot and lets go a little after the page's 550 ms.
+        class Map {
+          constructor(el) { el.dataset.map = "ready"; this.on = {}; log.longPress = (lat, lng) => {
+            const at = { latLng: { lat: () => lat, lng: () => lng } };
+            (this.on.mousedown || []).forEach((f) => f(at));
+            setTimeout(() => (this.on.mouseup || []).forEach((f) => f(at)), 700);
+          }; }
+          fitBounds() {} setCenter() {} setZoom() {} panTo() {}
+          addListener(e, f) { (this.on[e] = this.on[e] || []).push(f); }
+        }
+        class Circle { constructor(o) { this.o = o; log.circles.push(this); } setMap(m) { if (!m) log.circles = log.circles.filter((x) => x !== this); } }
         class Marker {
           constructor(o) { this.o = o; this.click = null; log.markers.push(this); }
           setMap(m) { if (!m) log.markers = log.markers.filter((x) => x !== this); }
@@ -2120,7 +2130,7 @@ export async function fakeApi(
         }
         class Polyline { constructor(o) { this.o = o; log.lines += 1; } setMap(m) { if (!m) log.lines -= 1; } }
         class LatLngBounds { extend() {} }
-        const libraries = { maps: { Map, Polyline }, marker: { Marker }, core: { LatLngBounds, SymbolPath: { CIRCLE: 0 } } };
+        const libraries = { maps: { Map, Polyline, Circle }, marker: { Marker }, core: { LatLngBounds, SymbolPath: { CIRCLE: 0 } } };
         window.google = { maps: { importLibrary: async (name) => libraries[name] } };
         window[new URL(document.currentScript.src).searchParams.get("callback")]();
       })();`,

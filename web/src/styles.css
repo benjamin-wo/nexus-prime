@@ -1482,6 +1482,44 @@ html.keyboard .bottom-nav, html.keyboard .trip-fab-button, html.keyboard .trip-f
   .day-controls .btn { min-width: 44px; }
 }
 
+/* Trip page: stops and labels */
+.stops-row { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-3); }
+.stops-list { flex: 1; min-width: 0; display: flex; align-items: stretch; gap: var(--space-2); margin: 0; padding: 0 0 2px; list-style: none; overflow-x: auto; scrollbar-width: thin; }
+.stops-list > li { flex: none; display: flex; }
+.stop-chip { display: flex; align-items: center; gap: var(--space-2); min-height: 44px; padding: var(--space-1) var(--space-3); border-radius: 12px; border: 1px solid var(--border-card); background: var(--bg-input); color: var(--text-primary); font: inherit; text-align: left; cursor: pointer; transition: background var(--t-micro), border-color var(--t-micro); }
+.stop-chip:hover, .stop-chip:focus-visible { background: var(--bg-card-hover); }
+.stop-chip[aria-current="true"] { background: var(--bg-card); }
+.stop-text { display: grid; min-width: 0; }
+.stop-name { font-size: 0.9375rem; line-height: 1.25; }
+.stop-text .caption { white-space: nowrap; }
+.stop-dot { flex: none; display: inline-block; width: 9px; height: 9px; border-radius: 50%; }
+.stop-travel { align-items: center; color: var(--text-muted); }
+.travel-glyph { flex: none; vertical-align: -2px; }
+.day-pill .stop-dot { margin-right: 6px; vertical-align: 1px; }
+.day-pill .travel-glyph { margin-right: 4px; color: var(--text-secondary); }
+.suggest-chip { justify-self: start; color: var(--text-secondary); background: var(--bg-raised); border: 1px solid var(--border-subtle); font-weight: 500; }
+.stops-sheet .caption { margin: 0; }
+.stops-form { display: grid; gap: var(--space-3); }
+.stops-edit { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); }
+.stops-edit-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: end; gap: var(--space-2); padding: var(--space-2) 0; border-top: 1px solid var(--border-subtle); }
+.stops-edit-row:first-child { border-top: 0; }
+.stops-edit-row .stop-dot { margin-bottom: 18px; }
+.stops-name { min-width: 0; }
+.stops-date { display: grid; gap: 2px; min-width: 0; grid-column: 2; }
+.stops-edit-row > .btn { grid-column: 3; grid-row: 1; }
+.stops-add { justify-self: start; }
+.stops-form .actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.stops-form .actions .btn, .stops-edit-row > .btn, .stops-add { min-height: 44px; }
+@media (min-width: 560px) {
+  .stops-edit-row { grid-template-columns: auto minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) auto; }
+  .stops-date { grid-column: auto; }
+  .stops-edit-row > .btn { grid-column: auto; grid-row: auto; }
+}
+@media (max-width: 720px) {
+  .stops-row { flex-wrap: wrap; }
+  .stops-list { flex-basis: 100%; }
+}
+
 /* Trip page: add and edit */
 .way-icon svg { width: 22px; height: 22px; }
 .way.main .way-icon { color: var(--accent-text); background: var(--bg-card); }
@@ -1545,6 +1583,27 @@ html.keyboard .bottom-nav, html.keyboard .trip-fab-button, html.keyboard .trip-f
 .day-option .wrap { display: grid; min-width: 0; }
 .day-option-number { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; color: var(--accent); background: var(--bg-card); border: 1px solid var(--accent-border); }
 .day-option-count { white-space: nowrap; }
+
+/* Trip page: ideas map */
+/* A phone shows the list or the map, picked with the switch above; from 1024px they sit side by side. */
+.ideas-switch { margin-bottom: var(--space-3); }
+.ideas-switch .tab { min-height: 44px; min-width: 88px; }
+.ideas-layout { display: grid; gap: var(--space-4); grid-template-columns: minmax(0, 1fr); align-items: start; }
+.ideas-layout > .card { margin: 0; }
+.ideas-layout[data-view="map"] > .ideas { display: none; }
+.ideas-map-canvas { height: min(480px, 62dvh); border-radius: 10px; overflow: hidden; background: var(--bg-input); }
+.stop-switch { margin: var(--space-2) 0; }
+.stop-switch .day-pill { display: inline-flex; align-items: center; gap: var(--space-2); min-height: 44px; }
+.ideas-unpinned { margin: var(--space-2) 0 0; overflow-wrap: anywhere; }
+.idea-hint { color: var(--accent-text); font-weight: 500; }
+.pin-prompt .actions .btn { min-height: 44px; }
+@media (min-width: 1024px) {
+  .ideas-switch { display: none; }
+  .ideas-layout { grid-template-columns: minmax(0, 1fr) minmax(320px, 42%); }
+  .ideas-layout[data-view="map"] > .ideas { display: block; }
+  .ideas-layout > .ideas-map { position: sticky; top: 76px; }
+  .ideas-map-canvas { height: min(560px, calc(100vh - 260px)); }
+}
 
 /* Trip page: money and prep */
 .planned-form { margin-top: var(--space-3); }

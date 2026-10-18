@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { type CSSProperties, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { api, type Booking, type Me, type Trip, type TripPhoto } from "../api";
+import { api, type Booking, type LinkedPlace, type Me, type Trip, type TripDetail, type TripPhoto, type TripStop } from "../api";
 import { formatMoney, formatShortDate } from "../format";
 import { PlaceLine } from "./TripPlaces";
 
@@ -264,4 +264,64 @@ export function OpenLink({ booking }: { booking: Booking }) {
       Open link ↗
     </a>
   );
+}
+
+/** The trip's stops: the ones the user saved, else those the hotels suggest. */
+export function stopsOf(detail: TripDetail): TripStop[] {
+  const saved = detail.trip.stops ?? [];
+  return saved.length > 0 ? saved : (detail.suggested_stops ?? []);
+}
+
+/** The stop a day belongs to. On a travel day, where one stop ends and the next starts,
+ * it's the one that starts that day. Null outside every stop. */
+export function stopOfDay(stops: TripStop[], iso: string): TripStop | null {
+  const within = stops.filter((s) => s.start <= iso && iso <= s.end);
+  return within.find((s) => s.start === iso) ?? within[0] ?? null;
+}
+
+/** A stop's colour, by its place in the order: the same on the stops row, the day pills
+ * and the Ideas map. */
+const STOP_COLORS = ["var(--accent)", "var(--emerald-accent)", "var(--status-warning)", "var(--cyan-accent)"];
+export const stopColor = (index: number) => STOP_COLORS[((index % STOP_COLORS.length) + STOP_COLORS.length) % STOP_COLORS.length];
+
+/** Plain words for what a place is, tried in order on its Google kind and its category. */
+const KIND_WORDS: [RegExp, string][] = [
+  [/(?<![\p{L}\p{N}])(temples?|shrines?|pagodas?|monaster(?:y|ies))(?![\p{L}\p{N}])/iu, "temples"],
+  [/(?<![\p{L}\p{N}])(restaurants?|food|ramen|sushi|cafes?|cafés?|coffee|markets?|bakery|bakeries|izakayas?|eateries|noodles?)(?![\p{L}\p{N}])/iu, "food"],
+  [/(?<![\p{L}\p{N}])(museums?|galler(?:y|ies))(?![\p{L}\p{N}])/iu, "museums"],
+  [/(?<![\p{L}\p{N}])(parks?|gardens?|nature|hiking|forests?|beach(?:es)?|mountains?)(?![\p{L}\p{N}])/iu, "nature"],
+  [/(?<![\p{L}\p{N}])(shopping|stores?|malls?|shops?|boutiques?)(?![\p{L}\p{N}])/iu, "shopping"],
+  [/(?<![\p{L}\p{N}])(bars?|nightlife|pubs?|night clubs?|clubs?)(?![\p{L}\p{N}])/iu, "nightlife"],
+];
+
+function kindWord(...texts: (string | null | undefined)[]): string | null {
+  for (const text of texts) {
+    if (!text) continue;
+    const hit = KIND_WORDS.find(([pattern]) => pattern.test(text));
+    if (hit) return hit[1];
+  }
+  return null;
+}
+
+/** The entries' most common value (ties go to the first seen), best first. */
+function commonest(values: string[]): string[] {
+  const counts = new Map<string, number>();
+  for (const v of values) counts.set(v, (counts.get(v) ?? 0) + 1);
+  return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([v]) => v);
+}
+
+/** A day's name worked out from where its places are: the neighbourhood most of them
+ * are in, and their one or two main kinds ("Gion · temples & food"). Only plans count
+ * for kinds; hotels and flights don't. Null when nothing says. */
+export function suggestLabel(entries: Booking[], linked: Map<string, LinkedPlace>): string | null {
+  const area = commonest(entries.map((b) => linked.get(b.id)?.place.area?.trim() ?? "").filter(Boolean))[0];
+  const kinds = commonest(
+    entries
+      .filter((b) => b.kind === "activity")
+      .map((b) => kindWord(linked.get(b.id)?.place.kind, b.category))
+      .filter((k): k is string => k !== null),
+  ).slice(0, 2);
+  const what = kinds.join(" & ");
+  if (area && what) return `${area} · ${what}`;
+  return area || what || null;
 }

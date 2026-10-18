@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import type { Booking } from "../api";
-import { PLACES, afterFor, arrivalText, daySpot, duration, gapsFor, pickerDays, spotsOf, withMove } from "./TripArrange";
+import type { Booking, LinkedPlace, TripDetail } from "../api";
+import { PLACES, afterFor, arrivalText, daySpot, dayZones, duration, gapsFor, ideaHint, nearbyOf, pickerDays, pointOf, spotsOf, withMove } from "./TripArrange";
 import { listColors } from "./TripIdeas";
 
 // A made-up trip: every plan and flight here is invented.
@@ -130,6 +130,109 @@ describe("the day picker", () => {
   it("knows where the end of Ideas is, not counting the idea itself", () => {
     expect(pickerDays(detail, market, null).lastIdea).toBe("later");
     expect(pickerDays(detail, later, null).lastIdea).toBe("sooner");
+  });
+});
+
+// A made-up two-stop trip: Tokyo-ish pins around 10N 20E, Kyoto-ish pins around 11N 21E.
+// A hundredth of a degree of latitude is about 1.1 km.
+describe("the day picker, ranked by distance", () => {
+  const trip = {
+    id: "t1", start: "2026-11-10", end: "2026-11-15", day_labels: { "2026-11-11": "Market day" },
+    stops: [] as { name: string; start: string; end: string }[],
+  };
+  const stops = [
+    { name: "Tokyo", start: "2026-11-10", end: "2026-11-13" },
+    { name: "Kyoto", start: "2026-11-13", end: "2026-11-15" },
+  ];
+  const pinned = (id: string, day: string, lat: number, lng: number) => entry(id, { day, starts: day, lat, lng });
+  const day1 = pinned("a1", "2026-11-10", 10.0, 20.0);
+  const day2 = pinned("a2", "2026-11-11", 10.01, 20.0);
+  const day5 = pinned("k1", "2026-11-14", 11.0, 21.0);
+  const idea = (id: string, fields: Partial<Booking> = {}) => entry(id, { scheduled: false, day: null, starts: "2026-09-28", ...fields });
+  const detailOf = (...extra: Booking[]) =>
+    ({ trip: { ...trip, stops }, suggested_stops: [], bookings: [day1, day2, day5, ...extra], places_order: [], days: [] }) as unknown as TripDetail;
+  const nearOf = (detail: TripDetail, linked = new Map<string, LinkedPlace>()) => nearbyOf(detail, linked);
+
+  it("ranks the days with places nearby, nearest first, with how far", () => {
+    const cafe = idea("cafe", { lat: 10.012, lng: 20.0 });
+    const detail = detailOf(cafe);
+    const { ranked, closest, home } = pickerDays(detail, cafe, null, nearOf(detail));
+    expect(ranked).toBe(true);
+    expect(closest.map((d) => d.iso)).toEqual(["2026-11-11", "2026-11-10"]);
+    expect(closest.map((d) => Math.round(d.metres! / 100) / 10)).toEqual([0.2, 1.3]);
+    // Kyoto's day is some 150 km away: not close.
+    expect(closest.map((d) => d.iso)).not.toContain("2026-11-14");
+    expect(home).toBe("Tokyo");
+  });
+
+  it("then the free days in the same stop, then the other stops' days", () => {
+    const cafe = idea("cafe", { lat: 10.012, lng: 20.0 });
+    const detail = detailOf(cafe);
+    const { free, other } = pickerDays(detail, cafe, null, nearOf(detail));
+    // Tokyo's free day only: the 13th is Kyoto's (the travel day belongs to where it ends).
+    expect(free.map((d) => d.iso)).toEqual(["2026-11-12"]);
+    expect(other.map((o) => [o.name, o.days.map((d) => d.iso)])).toEqual([["Kyoto", ["2026-11-13", "2026-11-14", "2026-11-15"]]]);
+  });
+
+  it("follows the idea to Kyoto when that's where it is", () => {
+    const tea = idea("tea", { lat: 11.0005, lng: 21.0 });
+    const detail = detailOf(tea);
+    const { closest, free, other, home } = pickerDays(detail, tea, "2026-11-10", nearOf(detail));
+    expect(closest.map((d) => d.iso)).toEqual(["2026-11-14"]);
+    expect(home).toBe("Kyoto");
+    expect(free.map((d) => d.iso)).toEqual(["2026-11-13", "2026-11-15"]);
+    expect(other.map((o) => o.name)).toEqual(["Tokyo"]);
+  });
+
+  it("takes the place Google Maps found over nothing, and an own pin without one", () => {
+    const linked = new Map<string, LinkedPlace>([["found", { booking_id: "found", warning: null, place: { id: "p", name: "Found", lat: 10.0, lng: 20.001 } as LinkedPlace["place"] }]]);
+    const found = idea("found");
+    const detail = detailOf(found);
+    expect(pointOf(found, linked)).toEqual({ lat: 10.0, lng: 20.001 });
+    expect(pickerDays(detail, found, null, nearOf(detail, linked)).closest[0]).toMatchObject({ iso: "2026-11-10" });
+    expect(pointOf(found, new Map())).toBeNull();
+    expect(pointOf(idea("own", { lat: 1, lng: 2 }), new Map())).toEqual({ lat: 1, lng: 2 });
+  });
+
+  it("keeps today's order without coordinates", () => {
+    const vague = idea("vague");
+    const detail = detailOf(vague);
+    const picker = pickerDays(detail, vague, "2026-11-12", nearOf(detail));
+    expect(picker.ranked).toBe(false);
+    expect(picker.closest).toEqual([]);
+    expect(picker.days.map((d) => d.iso)).toEqual(["2026-11-10", "2026-11-11", "2026-11-12", "2026-11-13", "2026-11-14", "2026-11-15"]);
+    expect(picker.viewing?.iso).toBe("2026-11-12");
+    // And with no nearby info at all, as before.
+    expect(pickerDays(detail, vague, null).ranked).toBe(false);
+  });
+
+  it("names a day by its own label, else a free day", () => {
+    const cafe = idea("cafe", { lat: 10.012, lng: 20.0 });
+    const detail = detailOf(cafe);
+    const { days } = pickerDays(detail, cafe, null, nearOf(detail));
+    expect(days.find((d) => d.iso === "2026-11-11")?.label).toBe("Market day");
+    expect(days.find((d) => d.iso === "2026-11-12")?.label).toBe("Free day");
+  });
+
+  it("puts each day's circle at the middle of its places", () => {
+    const both = pinned("both", "2026-11-10", 10.02, 20.0);
+    const zones = dayZones({ trip, bookings: [day1, both, day2, day5, idea("ignored", { lat: 5, lng: 5 })] } as unknown as Parameters<typeof dayZones>[0], new Map());
+    expect([...zones.keys()]).toEqual(["2026-11-10", "2026-11-11", "2026-11-14"]);
+    expect(zones.get("2026-11-10")).toMatchObject({ lat: 10.01, lng: 20.0 });
+    // Two places 2.2 km apart: 1.1 km out each way, a little wider; one place: the least.
+    expect(zones.get("2026-11-10")!.radius).toBeGreaterThan(1100);
+    expect(zones.get("2026-11-11")!.radius).toBe(400);
+  });
+
+  it("says what a row fits: on a day, near one, or a free day", () => {
+    const near = idea("near", { lat: 10.012, lng: 20.0 });
+    const far = idea("far", { lat: 10.5, lng: 20.0 });
+    const detail = detailOf(near, far);
+    const around = nearOf(detail);
+    expect(ideaHint(detail, near, around)).toBe("Near Day 2 · 220 m");
+    // 55 km from anything: no day is near, so the stop's empty day.
+    expect(ideaHint(detail, far, around)).toBe("Fits free Day 3");
+    expect(ideaHint(detail, day2, around)).toBe("On Day 2");
   });
 });
 

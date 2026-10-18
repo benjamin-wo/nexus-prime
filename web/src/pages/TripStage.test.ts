@@ -62,6 +62,20 @@ describe("next up while planning", () => {
     expect(nextUp(detail(), ideas(0))?.text).toBe("Day 1 is still free.");
   });
 
+  it("names the stop the free day is in", () => {
+    const stops = [
+      { name: "Tokyo", start: "2027-04-02", end: "2027-04-04" },
+      { name: "Kyoto", start: "2027-04-04", end: "2027-04-05" },
+    ];
+    const planned = [booking({ starts: "2027-04-02" }), booking({ id: "p2", starts: "2027-04-03" })];
+    // Day 3 is the travel day, which belongs to Kyoto, where you arrive.
+    expect(nextUp(detail({ bookings: planned }), ideas(0))?.text).toBe("Day 3 is still free.");
+    expect(nextUp({ ...detail({ bookings: planned }), suggested_stops: stops }, ideas(0))?.text).toBe("Day 3 in Kyoto is still free.");
+    // Stops the user saved win over the suggested ones.
+    const mine = [{ name: "Osaka", start: "2027-04-02", end: "2027-04-05" }];
+    expect(nextUp({ ...detail({ trip: { stops: mine }, bookings: planned }), suggested_stops: stops }, ideas(2))?.text).toBe("Day 3 in Osaka is still free. 2 of your ideas could fill it.");
+  });
+
   it("says nothing when every day has something", () => {
     const days = ["2027-04-02", "2027-04-03", "2027-04-04", "2027-04-05"];
     expect(nextUp(detail({ bookings: days.map((starts, i) => booking({ id: `p${i}`, starts })) }), ideas(3))).toBeNull();

@@ -1,12 +1,14 @@
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useState, useSyncExternalStore } from "react";
 
-import type { Booking, TripDetail } from "../api";
+import { api, type Booking, type TripDetail } from "../api";
 import { formatMoney } from "../format";
-import { DayPickerSheet, DropZone, PLACES, useArrange, useDragEntry } from "./TripArrange";
+import type { Point } from "../geo";
+import { DayPickerSheet, DropZone, PLACES, ideaHint, nearbyOf, useArrange, useDragEntry } from "./TripArrange";
 import { OpenLink, onlyNamesDay, repeatsTitle, sortKey, useHome } from "./TripBits";
 import { EntryEditor } from "./TripEntry";
+import { IdeasMap } from "./TripIdeasMap";
 import { dayNumber } from "./TripMap";
-import { PlaceLine, SavePlaces } from "./TripPlaces";
+import { PlaceLine, SavePlaces, useLinkedPlaces } from "./TripPlaces";
 
 /** The list an idea shows under: its own list, else its kind. */
 export const listOf = (b: Booking) => b.list_name ?? b.category ?? null;
@@ -19,12 +21,30 @@ export function listColors(lists: string[]): Map<string, string> {
   return new Map([...new Set(lists)].sort().map((l, i) => [l, DOTS[i % DOTS.length]]));
 }
 
+/** Wide enough for the list and the map to sit side by side. */
+const WIDE = "(min-width: 1024px)";
+
+function useWide(): boolean {
+  return useSyncExternalStore(
+    (changed) => {
+      if (typeof window.matchMedia !== "function") return () => undefined;
+      const query = window.matchMedia(WIDE);
+      query.addEventListener("change", changed);
+      return () => query.removeEventListener("change", changed);
+    },
+    () => typeof window.matchMedia === "function" && window.matchMedia(WIDE).matches,
+    () => false,
+  );
+}
+
 /** An idea: its grip, a dot for its list, its name and where it is, and its button.
- * ``dragging`` off for an idea already on a day, which is moved from Plan. */
-export function PlaceRow({ booking, color, dragging = true, onEdit, children }: {
+ * ``dragging`` off for an idea already on a day, which is moved from Plan. ``hint``:
+ * how it fits the plan ("Near Day 6 · 1.2 km"). */
+export function PlaceRow({ booking, color, dragging = true, hint = null, onEdit, children }: {
   booking: Booking;
   color: string;
   dragging?: boolean;
+  hint?: string | null;
   /** Opens the idea to change it. */
   onEdit: () => void;
   /** The button at the end of the row. */
@@ -44,6 +64,7 @@ export function PlaceRow({ booking, color, dragging = true, onEdit, children }: 
           {caption.length > 0 && <span className="caption">{caption.join(" · ")}</span>}
         </button>
         {booking.note && !onlyNamesDay(booking.note) && <span className="caption">{booking.note}</span>}
+        {hint && <span className="caption idea-hint">{hint}</span>}
         <PlaceLine booking={booking} />
         <OpenLink booking={booking} />
       </span>
@@ -62,6 +83,11 @@ export function IdeasTab({ detail, onChange, viewing }: { detail: TripDetail; on
   const [picking, setPicking] = useState<Booking | null>(null);
   const [list, setList] = useState<string | null>(null);
   const [planned, setPlanned] = useState(false);
+  const [view, setView] = useState<"list" | "map">("list");
+  const wide = useWide();
+  const linked = useLinkedPlaces();
+  const near = nearbyOf(detail, linked);
+  const mapKey = detail.map_key ?? null;
   const arrange = useArrange(detail);
   const ideas = arrange.spots.get(PLACES) ?? [];
   // Ideas that were put on a day keep their list, which is how we know where they came from.
@@ -72,9 +98,31 @@ export function IdeasTab({ detail, onChange, viewing }: { detail: TripDetail; on
   const picked = list && lists.includes(list) ? list : null;
   const items = picked ? shown.filter((b) => listOf(b) === picked) : shown;
   const color = (b: Booking) => colors.get(listOf(b) ?? "") ?? "var(--text-muted)";
+  const hint = (b: Booking) => ideaHint(detail, b, near, viewing);
+
+  // A pin dropped by holding the map is an idea of the user's own, in the list being looked
+  // at; its day is asked for straight after.
+  async function drop(at: Point, name: string) {
+    const created = await api<Booking>(`/travel/trips/${detail.trip.id}/bookings`, {
+      method: "POST",
+      body: { kind: "activity", name: name.slice(0, 120), lat: at.lat, lng: at.lng, list_name: picked?.slice(0, 30) ?? null },
+    });
+    onChange();
+    setPicking(created);
+  }
 
   return (
     <>
+    {mapKey && (
+      <div className="tabs ideas-switch" role="group" aria-label="Show ideas as">
+        {(["list", "map"] as const).map((v) => (
+          <button key={v} type="button" className="tab" aria-pressed={view === v} onClick={() => setView(v)}>
+            {v === "list" ? "List" : "Map"}
+          </button>
+        ))}
+      </div>
+    )}
+    <div className="ideas-layout" data-view={mapKey ? view : "list"}>
     <section id="section-place" className="card ideas" aria-labelledby="ideas-title">
       <h2 id="ideas-title" className="sr-only">
         Ideas
@@ -125,13 +173,13 @@ export function IdeasTab({ detail, onChange, viewing }: { detail: TripDetail; on
                   />
                 </li>
               ) : b.scheduled ? (
-                <PlaceRow key={b.id} booking={b} color={color(b)} dragging={false} onEdit={() => setEditing(b.id)}>
+                <PlaceRow key={b.id} booking={b} color={color(b)} dragging={false} hint={hint(b)} onEdit={() => setEditing(b.id)}>
                   <button type="button" className="btn btn-small" onClick={() => setPicking(b)} aria-label={`${b.title} is on Day ${dayNumber(detail.trip, b.day ?? b.starts)}, change the day`}>
                     Day {dayNumber(detail.trip, b.day ?? b.starts)}
                   </button>
                 </PlaceRow>
               ) : (
-                <PlaceRow key={b.id} booking={b} color={color(b)} onEdit={() => setEditing(b.id)}>
+                <PlaceRow key={b.id} booking={b} color={color(b)} hint={hint(b)} onEdit={() => setEditing(b.id)}>
                   <button type="button" className="btn btn-small btn-primary" onClick={() => setPicking(b)} aria-label={`Put ${b.title} on a day`}>
                     Add to day
                   </button>
@@ -143,6 +191,10 @@ export function IdeasTab({ detail, onChange, viewing }: { detail: TripDetail; on
       </DropZone>
       {arrange.on && ideas.length > 0 && <p className="caption">Tap Add to day to plan an idea, or drag one by its grip to put your ideas in order.</p>}
     </section>
+    {mapKey && (wide || view === "map") && (
+      <IdeasMap detail={detail} apiKey={mapKey} ideas={items} color={color} near={near} viewing={viewing} onPick={setPicking} onDrop={drop} />
+    )}
+    </div>
     {/* Outside the card: a card's own stacking would put the sheet under the tab bar on a phone. */}
     {picking && <DayPickerSheet detail={detail} booking={picking} viewing={viewing} onClose={() => setPicking(null)} />}
     </>

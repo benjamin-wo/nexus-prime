@@ -7,12 +7,13 @@ import { base64 } from "../files";
 import { formatMoney } from "../format";
 import { ResearchList } from "./Research";
 import { type AddPreset, AddSheet } from "./TripAdd";
-import { BookingLines, Companions, OpenLink, PhotoCredit, TripCard, coverStyle, day, landingOn, landsOnly, leavingOn, legTimes, sortKey, todayIso, tripWhen, useHome } from "./TripBits";
+import { BookingLines, Companions, OpenLink, PhotoCredit, TripCard, coverStyle, day, landingOn, landsOnly, leavingOn, legTimes, sortKey, suggestLabel, todayIso, tripWhen, useHome } from "./TripBits";
 import { DayCarousel } from "./DayCarousel";
 import { type Fix, type Go, type Stage, dayIsFree, nextUp, stageOf } from "./TripStage";
 import { ArrangeProvider, DayNotes, DayPickerSheet, DropZone, type Spot, daySpot, useArrange, useDragEntry } from "./TripArrange";
 import { DayHops, HopLine, MapAppPicker, TripMap } from "./TripMap";
-import { TripPlacesProvider } from "./TripPlaces";
+import { TripPlacesProvider, useLinkedPlaces } from "./TripPlaces";
+import { StopsRow, StopsSheet, pillMark, pillTitle } from "./TripStops";
 import { EntryEditor } from "./TripEntry";
 import { IdeasTab, listOf } from "./TripIdeas";
 import { MoneyTab } from "./TripMoney";
@@ -391,11 +392,13 @@ function nightsOf(b: Booking): string[] {
   return nights;
 }
 
-/** One day's label ("Busan"): a pencil that opens its form, edited in place. */
-function DayLabel({ trip, iso, onChange }: { trip: Trip; iso: string; onChange: () => void }) {
+/** One day's label ("Busan"): a pencil that opens its form, edited in place. With no
+ * label saved, the form opens with the ``suggested`` one, and saving keeps it. */
+function DayLabel({ trip, iso, suggested, onChange }: { trip: Trip; iso: string; suggested: string | null; onChange: () => void }) {
   const current = (trip.day_labels ?? {})[iso] ?? "";
+  const start = current || suggested || "";
   const [editing, setEditing] = useState(false);
-  const [text, setText] = useState(current);
+  const [text, setText] = useState(start);
   const inTrip = iso >= trip.start && iso <= trip.end;
   if (!inTrip) return null;
   async function save(event: FormEvent) {
@@ -422,7 +425,7 @@ function DayLabel({ trip, iso, onChange }: { trip: Trip; iso: string; onChange: 
       type="button"
       className="day-edit"
       onClick={() => {
-        setText(current);
+        setText(start);
         setEditing(true);
       }}
       aria-label="Name this day"
@@ -575,6 +578,8 @@ function Itinerary({ detail, day, onDay, onChange, onAdd, onIdeas }: {
   const home = useHome();
   const [editing, setEditing] = useState<string | null>(null);
   const [picking, setPicking] = useState<Booking | null>(null);
+  const [stopsOpen, setStopsOpen] = useState(false);
+  const linked = useLinkedPlaces();
   const arrange = useArrange(detail);
   const notesOf = (iso: string) => detail.days?.find((x) => x.day === iso)?.notes ?? [];
   const addressOf = (id: string) => detail.bookings.find((b) => b.id === id)?.address ?? null;
@@ -600,7 +605,8 @@ function Itinerary({ detail, day, onDay, onChange, onAdd, onIdeas }: {
   return (
     <>
     <section id="itinerary" className="card itinerary-card" aria-label="Itinerary">
-      <DayCarousel days={days} value={day} onPick={onDay} follow={following} pill={dayPill} name={dayLabel}>
+      <StopsRow detail={detail} viewing={day} onDay={onDay} onEdit={() => setStopsOpen(true)} />
+      <DayCarousel days={days} value={day} onPick={onDay} follow={following} pill={dayPill} mark={(d) => pillMark(detail, d)} markTitle={(d) => pillTitle(detail, d)} name={dayLabel}>
         {(d, near) => {
         const entries = arrange.spots.get(daySpot(d)) ?? [];
         const outs = checkingOut(d).filter((b) => b.starts !== d);
@@ -609,6 +615,8 @@ function Itinerary({ detail, day, onDay, onChange, onAdd, onIdeas }: {
         const free = dayIsFree(detail, d);
         const dot = !inTrip(d) ? "day-dot-out" : ends ? "day-dot-end" : free ? "day-dot-empty" : "day-dot-planned";
         const named = (detail.trip.day_labels ?? {})[d];
+        // What the day's places suggest it is called, until the user names it.
+        const suggested = inTrip(d) && !named ? suggestLabel(entries, linked) : null;
         const count = entries.length + outs.length;
         const addLabel = inTrip(d) ? `Add to Day ${n}` : `Add to ${dayPill(d)}`;
         return (
@@ -621,9 +629,10 @@ function Itinerary({ detail, day, onDay, onChange, onAdd, onIdeas }: {
               <div className="day-head">
                 <h3 className="day-title">
                   <span className="day-when">{dayLabel(d)}</span>
-                  <span className="day-name">{named || (free ? "Free day" : `${count} ${count === 1 ? "plan" : "plans"}`)}</span>
+                  <span className="day-name">{named || suggested || (free ? "Free day" : `${count} ${count === 1 ? "plan" : "plans"}`)}</span>
+                  {suggested && <span className="chip suggest-chip">Suggested</span>}
                 </h3>
-                <DayLabel trip={detail.trip} iso={d} onChange={onChange} />
+                <DayLabel trip={detail.trip} iso={d} suggested={suggested} onChange={onChange} />
               </div>
               {staying(d).map((b) => (
                 <p key={b.id} className="caption">
@@ -737,6 +746,7 @@ function Itinerary({ detail, day, onDay, onChange, onAdd, onIdeas }: {
     </section>
     {/* Outside the card: a card's own stacking would put the sheet under the tab bar on a phone. */}
     {picking && <DayPickerSheet detail={detail} booking={picking} viewing={day} onClose={() => setPicking(null)} />}
+    {stopsOpen && <StopsSheet trip={detail.trip} detail={detail} onClose={() => setStopsOpen(false)} onSaved={onChange} />}
     </>
   );
 }

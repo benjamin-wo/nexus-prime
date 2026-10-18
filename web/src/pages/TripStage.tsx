@@ -1,6 +1,6 @@
 import type { Booking, TripDetail } from "../api";
 import { formatMoney, formatShortDate } from "../format";
-import { sortKey } from "./TripBits";
+import { sortKey, stopOfDay, stopsOf } from "./TripBits";
 
 /** Where the trip is, which decides what its page shows first: the gaps while
  * planning, getting ready in the last week, today while it's on, settling up after. */
@@ -82,12 +82,15 @@ export function nextUp(detail: TripDetail, ideasFor: (day: string) => number, no
     const [first] = stillToSort(detail);
     if (first) return { text: first.text, action: first.action, go: { fix: first.fix } };
     const trip = detail.trip;
+    const stops = stopsOf(detail);
     for (let t = Date.parse(trip.start), n = 1; t <= Date.parse(trip.end); t += DAY_MS, n += 1) {
       const iso = new Date(t).toISOString().slice(0, 10);
       if (!dayIsFree(detail, iso)) continue;
       const ideas = ideasFor(iso);
+      // "Day 4 in Tokyo": the stop it falls in, which on a travel day is where you arrive.
+      const stop = stopOfDay(stops, iso);
       return {
-        text: `Day ${n} is still free.${ideas > 0 ? ` ${ideas} of your ideas could fill it.` : ""}`,
+        text: `Day ${n}${stop ? ` in ${stop.name}` : ""} is still free.${ideas > 0 ? ` ${ideas} of your ideas could fill it.` : ""}`,
         action: "Find ideas",
         go: { tab: "ideas", day: iso },
       };
