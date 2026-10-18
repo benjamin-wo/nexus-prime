@@ -810,7 +810,7 @@ export function DayPickerSheet({ detail, booking, viewing, onClose }: { detail: 
           <ul className="day-options">{picker.days.map(option)}</ul>
         </section>
         {picker.here ? (
-          <button type="button" className="btn" onClick={() => put(PLACES, picker.lastIdea)}>
+          <button type="button" className="btn btn-soft" onClick={() => put(PLACES, picker.lastIdea)}>
             Take it off Day {picker.here.number}
           </button>
         ) : (

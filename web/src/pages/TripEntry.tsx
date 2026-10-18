@@ -191,7 +191,7 @@ export function EntryEditor({ trip, home, entry, preset, lists = [], onDone, onM
       {!entry && booking && (
         <div className="chips" role="group" aria-label="What kind of booking">
           {BOOKINGS.map((b) => (
-            <button key={b.kind} type="button" className="pick" aria-pressed={f.kind === b.kind} onClick={() => pick(b.kind)}>
+            <button key={b.kind} type="button" className="day-pill" aria-pressed={f.kind === b.kind} onClick={() => pick(b.kind)}>
               {b.label}
             </button>
           ))}
@@ -244,7 +244,7 @@ export function EntryEditor({ trip, home, entry, preset, lists = [], onDone, onM
             {lists.length > 0 && (
               <div className="chips">
                 {lists.map((name) => (
-                  <button key={name} type="button" className="pick" aria-pressed={f.list === name} onClick={() => setF({ ...f, list: f.list === name ? "" : name })}>
+                  <button key={name} type="button" className="day-pill" aria-pressed={f.list === name} onClick={() => setF({ ...f, list: f.list === name ? "" : name })}>
                     {name}
                   </button>
                 ))}
@@ -373,7 +373,7 @@ export function EntryEditor({ trip, home, entry, preset, lists = [], onDone, onM
           Cancel
         </button>
         {entry && entry.kind === "activity" && onMove && (
-          <button type="button" className="btn" onClick={onMove}>
+          <button type="button" className="btn btn-soft" onClick={onMove}>
             Move to…
           </button>
         )}

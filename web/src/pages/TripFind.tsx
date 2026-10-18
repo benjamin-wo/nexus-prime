@@ -223,11 +223,11 @@ export function ResultList({ results, label, pickLabel, saveText, busy, dayScope
               </span>
             </span>
             <span className="find-actions">
-              <button type="button" className="btn btn-small" disabled={busy} onClick={() => onPick(f, "list")} aria-label={`${pickLabel}: ${f.name}`}>
+              <button type="button" className="btn btn-soft btn-small" disabled={busy} onClick={() => onPick(f, "list")} aria-label={`${pickLabel}: ${f.name}`}>
                 {saveText ?? pickLabel}
               </button>
               {dayScope && (
-                <button type="button" className="btn btn-small" disabled={busy} onClick={() => onPick(f, "day")} aria-label={`Add to Day ${dayScope.number}: ${f.name}`}>
+                <button type="button" className="btn btn-soft btn-small" disabled={busy} onClick={() => onPick(f, "day")} aria-label={`Add to Day ${dayScope.number}: ${f.name}`}>
                   Add to Day {dayScope.number}
                 </button>
               )}

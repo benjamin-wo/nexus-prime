@@ -1319,7 +1319,8 @@ test("a trip is added and shows its spending, set-aside and settle-up", async ({
   await expect(page.getByLabel("With Ann, Ben")).toBeVisible();
   // One tab is no choice, so Travel shows no tab bar.
   await expect(page.getByRole("navigation", { name: "Travel pages" })).toHaveCount(0);
-  // The cover photo is credited as its licence asks, linking to its page.
+  // The cover photo is credited as its licence asks, linking to its page: an info button shows the credit.
+  await page.getByRole("button", { name: "Photo credit" }).click();
   const credit = page.getByRole("link", { name: /Photo: A\. Photographer, CC BY-SA 4\.0/ });
   await expect(credit).toHaveAttribute("href", "https://commons.wikimedia.org/wiki/File:Example.jpg");
   await expect(credit).toHaveAttribute("rel", /noopener/);

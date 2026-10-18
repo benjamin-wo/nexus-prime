@@ -228,7 +228,7 @@ function AddIdeas({
           <ul className="trip-pick">
             {open.map((t) => (
               <li key={t.id}>
-                <button type="button" className="btn trip-pick-btn" disabled={busy} onClick={() => void add(t)}>
+                <button type="button" className="btn btn-soft trip-pick-btn" disabled={busy} onClick={() => void add(t)}>
                   <span>{t.destination}</span>
                   <span className="caption">
                     {day(t.start)} to {day(t.end)}
@@ -355,7 +355,7 @@ export function ResearchPage() {
         </div>
         {r &&
           (r.trip_id ? (
-            <Link className="btn" to={`/travel/trips/${r.trip_id}`}>
+            <Link className="btn btn-soft" to={`/travel/trips/${r.trip_id}`}>
               Open the trip
             </Link>
           ) : (
@@ -486,7 +486,7 @@ export function ResearchPage() {
             ))}
             {withIdeas.length > 0 && (
               <div className="research-actions">
-                <button type="button" className="btn" disabled={ticked.length === 0} onClick={() => setStep({ kind: "pick" })}>
+                <button type="button" className="btn btn-soft" disabled={ticked.length === 0} onClick={() => setStep({ kind: "pick" })}>
                   Add to a trip…
                 </button>
                 <span className="caption">

@@ -3,6 +3,7 @@ import { type CSSProperties, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { api, type Booking, type LinkedPlace, type Me, type Trip, type TripDetail, type TripPhoto, type TripStop } from "../api";
+import { Icon } from "../components/Icon";
 import { formatMoney, formatShortDate } from "../format";
 import { PlaceLine } from "./TripPlaces";
 
@@ -25,15 +26,25 @@ export function coverStyle(trip: Pick<Trip, "photo" | "destination">): CSSProper
   return trip.photo ? { backgroundImage: `${fade}, url("${trip.photo.url}")` } : { backgroundImage: `${fade}, ${coverGradient(trip.destination)}` };
 }
 
-/** The photo's credit, as its licence asks: the author, the licence, a link to the photo. */
+/** The photo's credit, as its licence asks: the author, the licence, a link to the photo.
+ * A small info button on the cover shows it and hides it again. */
 export function PhotoCredit({ photo }: { photo: TripPhoto }) {
+  const [open, setOpen] = useState(false);
   const text = photo.spot ? `${photo.spot}. ${photo.credit}` : photo.credit;
-  return photo.page ? (
-    <a className="photo-credit" href={photo.page} target="_blank" rel="noopener noreferrer">
-      {text}
-    </a>
-  ) : (
-    <span className="photo-credit">{text}</span>
+  return (
+    <div className="photo-credit-wrap">
+      {open &&
+        (photo.page ? (
+          <a className="photo-credit" href={photo.page} target="_blank" rel="noopener noreferrer">
+            {text}
+          </a>
+        ) : (
+          <span className="photo-credit">{text}</span>
+        ))}
+      <button type="button" className="photo-credit-button" aria-label="Photo credit" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <Icon name="info" size={18} />
+      </button>
+    </div>
   );
 }
 

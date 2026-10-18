@@ -400,7 +400,7 @@ export function NameChips({
           />
         </label>
         {!addOnBlur && (
-          <button type="button" className="btn" disabled={busy || text.trim() === ""} onClick={add}>
+          <button type="button" className="btn btn-soft" disabled={busy || text.trim() === ""} onClick={add}>
             Add
           </button>
         )}
@@ -536,10 +536,10 @@ function SplitCard({ detail, onChange }: { detail: TripDetail; onChange: () => v
                     </span>
                     <span className="num">{formatMoney(i.amount)}</span>
                     <span className="row-actions">
-                      <button type="button" className="btn btn-small" disabled={busy} aria-label={`Split ${name} evenly`} onClick={() => void split({ transaction_ids: [i.transaction_id] })}>
+                      <button type="button" className="btn btn-soft btn-small" disabled={busy} aria-label={`Split ${name} evenly`} onClick={() => void split({ transaction_ids: [i.transaction_id] })}>
                         Split
                       </button>
-                      <button type="button" className="btn btn-small" disabled={busy} aria-label={`Keep ${name} as just mine`} onClick={() => void keepMine([i.transaction_id], true)}>
+                      <button type="button" className="btn btn-soft btn-small" disabled={busy} aria-label={`Keep ${name} as just mine`} onClick={() => void keepMine([i.transaction_id], true)}>
                         Just mine
                       </button>
                     </span>
@@ -607,7 +607,7 @@ function SplitCard({ detail, onChange }: { detail: TripDetail; onChange: () => v
                   <span className="caption">{day(i.day)}</span>
                 </span>
                 <span className="num">{formatMoney(i.amount)}</span>
-                <button type="button" className="btn btn-small" disabled={busy} aria-label={`Offer ${i.counterparty ?? "this cost"} for splitting again`} onClick={() => void keepMine([i.transaction_id], false)}>
+                <button type="button" className="btn btn-soft btn-small" disabled={busy} aria-label={`Offer ${i.counterparty ?? "this cost"} for splitting again`} onClick={() => void keepMine([i.transaction_id], false)}>
                   Offer again
                 </button>
               </li>
@@ -783,7 +783,7 @@ function PaidByOthers({ detail, onChange }: { detail: TripDetail; onChange: () =
                 </span>
                 {!p.settled && removing !== p.id && (
                   <span className="row-actions">
-                    <button type="button" className="btn btn-small" aria-label={`Change what ${what} paid`} onClick={() => setEditing(p.id)}>
+                    <button type="button" className="btn btn-soft btn-small" aria-label={`Change what ${what} paid`} onClick={() => setEditing(p.id)}>
                       Edit
                     </button>
                     <button type="button" className="btn btn-small" aria-label={`Remove what ${what} paid`} onClick={() => setRemoving(p.id)}>
@@ -888,7 +888,7 @@ function BalanceRow({ trip, b, onSettled }: { trip: Trip; b: Balance; onSettled:
           <span className="settle-main wrap">{balanceWords(b)}</span>
         )}
         {hasParts && !confirming && (
-          <button type="button" className="btn btn-small" aria-label={`Mark settled with ${b.person}`} onClick={() => setConfirming(true)}>
+          <button type="button" className="btn btn-soft btn-small" aria-label={`Mark settled with ${b.person}`} onClick={() => setConfirming(true)}>
             Mark settled
           </button>
         )}
@@ -972,10 +972,10 @@ function AddChoice({ onPick, onCancel }: { onPick: (kind: "planned" | "paid") =>
         <h2 id="add-choice">What are you adding?</h2>
       </div>
       <div className="people-actions choice-actions">
-        <button type="button" className="btn" onClick={() => onPick("planned")}>
+        <button type="button" className="btn btn-soft" onClick={() => onPick("planned")}>
           A planned cost
         </button>
-        <button type="button" className="btn" onClick={() => onPick("paid")}>
+        <button type="button" className="btn btn-soft" onClick={() => onPick("paid")}>
           Someone else paid
         </button>
         <button type="button" className="btn btn-ghost" onClick={onCancel}>

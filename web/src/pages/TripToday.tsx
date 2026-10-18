@@ -35,7 +35,7 @@ function Copy({ text, label }: { text: string; label: string }) {
     }
   }
   return (
-    <button type="button" className="btn btn-small" onClick={() => void copy()} aria-label={label}>
+    <button type="button" className="btn btn-soft btn-small" onClick={() => void copy()} aria-label={label}>
       {copied ? "Copied" : "Copy"}
     </button>
   );
@@ -60,7 +60,7 @@ function Address({ name, address }: { name: string; address: string | null }) {
     <div className="today-address">
       {address && <span>{address}</span>}
       <span className="quick">
-        <a className="btn btn-small" href={mapsLink(address ? `${name}, ${address}` : name)} target="_blank" rel="noopener noreferrer" aria-label={`Open ${name} in Maps`}>
+        <a className="btn btn-soft btn-small" href={mapsLink(address ? `${name}, ${address}` : name)} target="_blank" rel="noopener noreferrer" aria-label={`Open ${name} in Maps`}>
           Open in Maps
         </a>
         {address && <Copy text={address} label={`Copy the address of ${name}`} />}

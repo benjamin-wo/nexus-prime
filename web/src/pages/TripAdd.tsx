@@ -96,7 +96,7 @@ function TypeIt({ trip, preset, onChanged }: { trip: Trip; preset: AddPreset | n
               {line.buttons && line.buttons.length > 0 && (
                 <div className="quick">
                   {line.buttons.flat().map((b) => (
-                    <button key={b.data} type="button" className="btn btn-small" disabled={busy} onClick={() => press(i, b.data, b.label)}>
+                    <button key={b.data} type="button" className="btn btn-soft btn-small" disabled={busy} onClick={() => press(i, b.data, b.label)}>
                       {b.label}
                     </button>
                   ))}
@@ -209,10 +209,10 @@ export function AddSheet({
             <div className="quick-ways">
               <span className="caption">Quick ways</span>
               <div className="quick">
-                <button type="button" className="btn" onClick={() => setView("type")}>
+                <button type="button" className="btn btn-soft" onClick={() => setView("type")}>
                   Type it
                 </button>
-                <label className="btn">
+                <label className="btn btn-soft">
                   Screenshot or photo
                   <input
                     className="sr-only"
@@ -230,7 +230,7 @@ export function AddSheet({
                   />
                 </label>
                 {places && (
-                  <button type="button" className="btn" onClick={() => setView("place")}>
+                  <button type="button" className="btn btn-soft" onClick={() => setView("place")}>
                     Find a place
                   </button>
                 )}

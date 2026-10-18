@@ -199,7 +199,7 @@ function TripForm({ initial, home, onDone }: { initial?: Trip; home: string; onD
           </div>
         ))}
         {planned.length < 12 && (
-          <button type="button" className="btn btn-small" onClick={() => setPlanned([...planned, { name: "", amount: "" }])}>
+          <button type="button" className="btn btn-soft btn-small" onClick={() => setPlanned([...planned, { name: "", amount: "" }])}>
             Add a category
           </button>
         )}
@@ -251,7 +251,7 @@ function WhereNext({ onAsk, onAdd }: { onAsk?: (text: string) => void; onAdd: ()
       {onAsk && (
         <form className="where-form" onSubmit={go} aria-label="Research a trip">
           <input className="input" value={where} maxLength={120} onChange={(e) => setWhere(e.target.value)} placeholder="A place and when, e.g. Japan in January" aria-label="Where and when" />
-          <button type="submit" className="btn btn-primary" disabled={!where.trim()}>
+          <button type="submit" className="btn btn-soft" disabled={!where.trim()}>
             Research it
           </button>
         </form>
@@ -410,7 +410,7 @@ function DayLabel({ trip, iso, suggested, onChange }: { trip: Trip; iso: string;
     return (
       <form className="day-label-form" onSubmit={save} aria-label={`Label for ${dayPill(iso)}`}>
         <input className="input" value={text} maxLength={40} autoFocus onChange={(e) => setText(e.target.value)} placeholder="City or plan, e.g. Busan" aria-label="Name for this day" />
-        <button type="submit" className="btn btn-small">
+        <button type="submit" className="btn btn-soft btn-small">
           Save
         </button>
         <button type="button" className="btn btn-ghost btn-small" onClick={() => setEditing(false)}>
@@ -642,7 +642,7 @@ function Itinerary({ detail, day, onDay, onChange, onAdd, onIdeas }: {
               {homeless.has(d) && (
                 <p className="gap-line">
                   <span>Nowhere to stay this night yet</span>
-                  <button type="button" className="btn btn-small" onClick={() => onAdd({ kind: "hotel", day: d })} aria-label={`Add a place to stay on ${dayPill(d)}`}>
+                  <button type="button" className="btn btn-soft btn-small" onClick={() => onAdd({ kind: "hotel", day: d })} aria-label={`Add a place to stay on ${dayPill(d)}`}>
                     Add
                   </button>
                 </p>
@@ -897,7 +897,7 @@ function NextUpStrip({ detail, onGo }: { detail: TripDetail; onGo: (go: Go) => v
         <span className="next-up-label">Next up</span>
         <p className="next-up-text">{next.text}</p>
       </div>
-      <button type="button" className="btn btn-small" onClick={() => onGo(next.go)} aria-label={`${next.action}: ${next.text}`}>
+      <button type="button" className="btn btn-soft btn-small" onClick={() => onGo(next.go)} aria-label={`${next.action}: ${next.text}`}>
         {next.action}
       </button>
     </section>
@@ -1088,7 +1088,7 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
               <p style={{ whiteSpace: "pre-line", margin: 0 }}>{imported}</p>
               <p className="caption">Does everything look right?</p>
               <span className="quick">
-                <button type="button" className="btn btn-small" onClick={() => setImported(null)}>
+                <button type="button" className="btn btn-soft btn-small" onClick={() => setImported(null)}>
                   Looks right
                 </button>
                 <button
@@ -1153,7 +1153,8 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
 
           {stage !== "after" && (
             <button type="button" className="trip-fab-button" aria-label={add.label} onClick={add.run}>
-              +
+              <Icon name="plus" size={20} />
+              Add
             </button>
           )}
           {sheet && (

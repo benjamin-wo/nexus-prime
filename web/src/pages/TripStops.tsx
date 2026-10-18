@@ -85,7 +85,7 @@ export function StopsRow({ detail, viewing, onDay, onEdit }: { detail: TripDetai
                 </li>
               )}
               <li>
-                <button type="button" className="stop-chip" aria-current={s === here ? "true" : undefined} onClick={() => onDay(s.start)} style={{ borderColor: s === here ? stopColor(i) : undefined }}>
+                <button type="button" className="day-pill stop-chip" aria-current={s === here ? "true" : undefined} onClick={() => onDay(s.start)}>
                   <span className="stop-dot" style={{ background: stopColor(i) }} aria-hidden="true" />
                   <span className="stop-text">
                     <strong className="stop-name">{s.name}</strong>

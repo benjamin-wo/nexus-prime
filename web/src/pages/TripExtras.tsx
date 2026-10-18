@@ -157,7 +157,7 @@ export function PackingCard({ trip, onChange, adding = false, onAddDone }: { tri
       </ul>
       <form className="packing-add" onSubmit={add} aria-label="Add to the packing list">
         <input ref={addRef} className="input" value={text} maxLength={60} onChange={(e) => setText(e.target.value)} placeholder="Add something, e.g. Swimsuit" aria-label="Thing to pack" />
-        <button type="submit" className="btn" disabled={!text.trim()}>
+        <button type="submit" className="btn btn-soft" disabled={!text.trim()}>
           Add
         </button>
         <button type="button" className="btn btn-ghost" onClick={() => void suggest()} disabled={busy}>

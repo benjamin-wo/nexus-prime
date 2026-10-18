@@ -174,13 +174,13 @@ export function IdeasTab({ detail, onChange, viewing }: { detail: TripDetail; on
                 </li>
               ) : b.scheduled ? (
                 <PlaceRow key={b.id} booking={b} color={color(b)} dragging={false} hint={hint(b)} onEdit={() => setEditing(b.id)}>
-                  <button type="button" className="btn btn-small" onClick={() => setPicking(b)} aria-label={`${b.title} is on Day ${dayNumber(detail.trip, b.day ?? b.starts)}, change the day`}>
+                  <button type="button" className="btn btn-soft btn-small" onClick={() => setPicking(b)} aria-label={`${b.title} is on Day ${dayNumber(detail.trip, b.day ?? b.starts)}, change the day`}>
                     Day {dayNumber(detail.trip, b.day ?? b.starts)}
                   </button>
                 </PlaceRow>
               ) : (
                 <PlaceRow key={b.id} booking={b} color={color(b)} hint={hint(b)} onEdit={() => setEditing(b.id)}>
-                  <button type="button" className="btn btn-small btn-primary" onClick={() => setPicking(b)} aria-label={`Put ${b.title} on a day`}>
+                  <button type="button" className="btn btn-soft btn-small" onClick={() => setPicking(b)} aria-label={`Put ${b.title} on a day`}>
                     Add to day
                   </button>
                 </PlaceRow>
