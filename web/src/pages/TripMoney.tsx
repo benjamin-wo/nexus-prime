@@ -518,7 +518,7 @@ function SplitCard({ detail, onChange }: { detail: TripDetail; onChange: () => v
               {items.map((i) => {
                 const name = i.counterparty ?? "this cost";
                 return (
-                  <li key={i.transaction_id} className="run-row split-row">
+                  <li key={i.transaction_id} className="run-row cost-row">
                     <span className="wrap">
                       {i.counterparty ?? "Expense"}
                       <br />
@@ -590,7 +590,7 @@ function SplitCard({ detail, onChange }: { detail: TripDetail; onChange: () => v
           <summary>Kept as just mine ({kept.length})</summary>
           <ul className="feed money-list" aria-label="Kept as just mine">
             {kept.map((i) => (
-              <li key={i.transaction_id} className="run-row split-row">
+              <li key={i.transaction_id} className="run-row cost-row">
                 <span className="wrap">
                   {i.counterparty ?? "Expense"}
                   <br />
@@ -757,7 +757,7 @@ function PaidByOthers({ detail, onChange }: { detail: TripDetail; onChange: () =
           }
           return (
             <li key={p.id} className={`paid-row${p.settled ? " is-settled" : ""}`}>
-              <div className="run-row split-row">
+              <div className="run-row cost-row">
                 <span className="wrap">
                   {p.person} paid{p.note ? ` for ${p.note}` : ""}
                   <br />

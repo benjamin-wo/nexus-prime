@@ -48,6 +48,11 @@ The shared language for code, tests and docs. When a term here and a name in cod
 - **Merged results**: the finder's one list of places, each once: a Google Maps result and a guide idea for the same place are one card, with the rating, the guide's words and source link, and a tag for each that found it.
 - **Research into ideas**: saving a trip research's areas as **ideas** on a trip, each under a list named after its area, skipping what is already there and matching Google Maps places when one clearly fits. The research's city is offered as a **stop**, with a confirmation that says what it changes. Nothing is booked.
 - **Own pin**: a point the user dropped on the Ideas map, kept with its idea. It is the user's own coordinate, so it is stored; Google's coordinates are fetched with each place and never kept.
+- **Traveller**: a person going on a trip, by name (the trip's companions). "You" are always in it. A traveller is only a name: it isn't linked to another Nexus user, and nothing is shared with them.
+- **Even split**: a trip setting, on by default. While it is on and someone else is going, the trip's unsplit costs are offered under **To split**; nothing is split until the user says so, one cost or all of them after a confirmation. A cost the user keeps out is **Just mine**.
+- **They paid**: a cost a traveller paid and the user shares, recorded on the trip. The user's **share** (an equal share, the user's first) is what they owe that person. It is not the user's spending until it is settled and the user chooses to record it.
+- **Balance**: where the user stands with one person on a trip: what they owe the user less what the user owes them, netted in the home currency, as "Alex owes you SGD 768.00" or "You owe Sam SGD 40.00". **Settle up** with them records what happened item by item (their IOUs paid back, the user's share of what they paid as spent), not the net. Nexus never moves money.
+- **Share settings**: what a trip's read-only link shows. Bookings (flights, stays, tickets) can be hidden; money, booking references, notes, packing and who's going are never shown.
 
 ## Agent
 
