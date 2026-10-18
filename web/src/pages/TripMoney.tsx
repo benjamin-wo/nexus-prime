@@ -408,8 +408,9 @@ export function MoneyTab({ detail, onChange, adding, onAddDone }: { detail: Trip
   return (
     <>
       {adding && <PlannedForm trip={detail.trip} currency={detail.spending.spent.currency} onChange={onChange} onDone={onAddDone} />}
-      {stage === "during" ? <SpendingNow detail={detail} /> : stage === "after" ? <TripTotals detail={detail} /> : <MoneyBar detail={detail} />}
+      {/* After the trip, settling up comes first, then what it cost. */}
       {stage === "after" && <SettleUp detail={detail} />}
+      {stage === "during" ? <SpendingNow detail={detail} /> : stage === "after" ? <TripTotals detail={detail} /> : <MoneyBar detail={detail} />}
       <Spending detail={detail} />
       <PlannedVsActual detail={detail} />
       <PlannedCosts trip={detail.trip} onChange={onChange} />

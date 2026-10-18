@@ -598,6 +598,7 @@ function Itinerary({ detail, day, onDay, onChange, onAdd, onIdeas }: {
   const following = carriedTo?.startsWith("day:") ? carriedTo.slice(4) : null;
 
   return (
+    <>
     <section id="itinerary" className="card itinerary-card" aria-label="Itinerary">
       <DayCarousel days={days} value={day} onPick={onDay} follow={following} pill={dayPill} name={dayLabel}>
         {(d, near) => {
@@ -681,7 +682,15 @@ function Itinerary({ detail, day, onDay, onChange, onAdd, onIdeas }: {
                                   setEditing(null);
                                   if (saved) onChange();
                                 }}
-                                onMove={arrange.on && b.kind === "activity" ? () => setPicking(b) : undefined}
+                                onMove={
+                                  arrange.on && b.kind === "activity"
+                                    ? () => {
+                                        // The editor closes as the day picker opens, so the entry isn't left open on its new day.
+                                        setEditing(null);
+                                        setPicking(b);
+                                      }
+                                    : undefined
+                                }
                               />
                             </li>
                           </Fragment>
@@ -725,8 +734,10 @@ function Itinerary({ detail, day, onDay, onChange, onAdd, onIdeas }: {
           <MapAppPicker />
         </p>
       )}
-      {picking && <DayPickerSheet detail={detail} booking={picking} viewing={day} onClose={() => setPicking(null)} />}
     </section>
+    {/* Outside the card: a card's own stacking would put the sheet under the tab bar on a phone. */}
+    {picking && <DayPickerSheet detail={detail} booking={picking} viewing={day} onClose={() => setPicking(null)} />}
+    </>
   );
 }
 

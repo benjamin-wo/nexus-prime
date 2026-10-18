@@ -111,6 +111,10 @@ export async function fakeApi(
     tripItems: string[];
     looseBookings: Record<string, unknown>[];
     movedBookings: string[];
+    /** The bodies of PUT /travel/trips/{id}: the whole trip, as the form and the tabs send it. */
+    tripPuts: Record<string, unknown>[];
+    /** Every trip carries one made-up flight on 10 Nov; false leaves it off. */
+    flight: boolean;
     plans: Record<string, unknown>[];
     /** The browser key for the trip map; null: no map (as when it isn't set up). */
     mapKey: string | null;
@@ -199,6 +203,8 @@ export async function fakeApi(
       },
     ],
     movedBookings: [],
+    tripPuts: [],
+    flight: true,
     plans: [],
     mapKey: null,
     hopModes: [],
@@ -885,7 +891,7 @@ export async function fakeApi(
         },
         owed: [{ name: "Ann", amounts: [{ amount: "15000.0000", currency: "JPY" }], home: home(135) }],
         items,
-        bookings: [{ ...FLIGHT, trip_id: trip.id }, ...state.plans],
+        bookings: [...(state.flight ? [{ ...FLIGHT, trip_id: trip.id }] : []), ...state.plans],
         booked: home(820),
         booked_unlogged: home(820),
         ready: (() => {
@@ -900,7 +906,7 @@ export async function fakeApi(
         })(),
         to_spend: budget ? home(Number(budget.amount) - spent - 820) : null,
         days: (() => {
-          const all = [FLIGHT, ...state.plans];
+          const all = [...(state.flight ? [FLIGHT] : []), ...state.plans];
           const landings = all.flatMap((b) => legsOf(b).map((s) => s.arrives?.slice(0, 10) ?? "")).filter(Boolean);
           const days = [...new Set([...all.filter((b) => b.scheduled).map((b) => String(b.starts)), ...landings])].sort();
           return days.map((day) => {
@@ -1047,7 +1053,7 @@ export async function fakeApi(
       if (!moving || moving.kind !== "activity") return json(route, { detail: "flights, trains and hotel nights stay where their booking is" }, 422);
       const day = (body.day as string | null) ?? null;
       state.moves.push(`${String(moving.id)}>${day ?? "places"}@${String(body.after ?? "first")}`);
-      const others = [FLIGHT, ...state.plans.filter((p) => p !== moving)];
+      const others = [...(state.flight ? [FLIGHT] : []), ...state.plans.filter((p) => p !== moving)];
       const there = day ? dayEntries(others, day) : placesInOrder().filter((p) => p !== moving);
       const at = body.after ? there.findIndex((b) => b.id === body.after) + 1 : 0;
       if (body.after && at === 0) return json(route, { detail: "that entry isn't on that day" }, 404);
@@ -1131,6 +1137,26 @@ export async function fakeApi(
       const trip = state.trips.find((t) => t.id === tripMatch[1]);
       if (!trip) return json(route, { detail: "no trip with that id" }, 404);
       if (method === "GET") return json(route, tripDetail(trip));
+      if (method === "PUT") {
+        // The whole trip body, as the trip form and the tabs send it: notes, planned costs and the rest.
+        state.tripPuts.push(body);
+        const money = (v: unknown) => (v ? home(Number(v)) : null);
+        const start = String(body.start ?? trip.start);
+        const end = String(body.end ?? trip.end);
+        Object.assign(trip, {
+          destination: body.destination ?? trip.destination,
+          start,
+          end,
+          days: Math.round((Date.parse(end) - Date.parse(start)) / 86400000) + 1,
+          currency: String(body.currency ?? trip.currency).toUpperCase(),
+          budget: money(body.budget),
+          companions: body.companions ?? trip.companions,
+          set_aside: money(body.set_aside),
+          planned: Object.fromEntries(Object.entries((body.planned ?? {}) as Record<string, string>).map(([k, v]) => [k, home(Number(v))])),
+          notes: body.notes ?? null,
+        });
+        return json(route, trip);
+      }
       if (method === "DELETE") {
         state.trips = state.trips.filter((t) => t !== trip);
         return route.fulfill({ status: 204 });

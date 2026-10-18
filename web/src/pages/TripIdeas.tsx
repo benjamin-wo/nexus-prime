@@ -74,6 +74,7 @@ export function IdeasTab({ detail, onChange, viewing }: { detail: TripDetail; on
   const color = (b: Booking) => colors.get(listOf(b) ?? "") ?? "var(--text-muted)";
 
   return (
+    <>
     <section id="section-place" className="card ideas" aria-labelledby="ideas-title">
       <h2 id="ideas-title" className="sr-only">
         Ideas
@@ -113,7 +114,10 @@ export function IdeasTab({ detail, onChange, viewing }: { detail: TripDetail; on
                     home={home}
                     entry={b}
                     lists={lists}
-                    onMove={() => setPicking(b)}
+                    onMove={() => {
+                      setEditing(null);
+                      setPicking(b);
+                    }}
                     onDone={(saved) => {
                       setEditing(null);
                       if (saved) onChange();
@@ -137,8 +141,10 @@ export function IdeasTab({ detail, onChange, viewing }: { detail: TripDetail; on
           </ul>
         )}
       </DropZone>
-      {arrange.on && ideas.length > 0 && <p className="caption">Drag an idea onto a day to plan it.</p>}
-      {picking && <DayPickerSheet detail={detail} booking={picking} viewing={viewing} onClose={() => setPicking(null)} />}
+      {arrange.on && ideas.length > 0 && <p className="caption">Tap Add to day to plan an idea, or drag one by its grip to put your ideas in order.</p>}
     </section>
+    {/* Outside the card: a card's own stacking would put the sheet under the tab bar on a phone. */}
+    {picking && <DayPickerSheet detail={detail} booking={picking} viewing={viewing} onClose={() => setPicking(null)} />}
+    </>
   );
 }

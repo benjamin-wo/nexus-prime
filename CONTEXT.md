@@ -35,6 +35,14 @@ The shared language for code, tests and docs. When a term here and a name in cod
 - **Cash-flow calendar**: expected money in and out per day and the net movement. Never a predicted balance.
 - **FX rate**: a dated rate from Frankfurter. A conversion uses the latest rate on or before the transaction date and shows that date. A missing rate means "conversion unavailable", never a substitute.
 
+## Travel
+
+- **Trip**: a destination with dates, a currency and an optional budget, that keeps its bookings, plans, ideas and money together. Its page has four tabs: Plan, Ideas, Money and Prep. Nexus never books anything.
+- **Booking**: a flight, stay, train or ticket. It sits at its time on its day, and its time isn't ours to move. Read from an email or a screenshot, or added by hand.
+- **Plan**: something the user means to do on a day, such as dinner or a tour. A time is optional. A plan is an `activity` entry with a day.
+- **Idea**: a place saved with no day yet (an `activity` entry with no day, kept in a list such as Food or Nightlife). Putting it on a day makes it a plan; taking it off a day makes it an idea again.
+- **Next up**: the one thing to do next on a trip, shown as a strip under its cover with a button: the first gap while planning, the next booking in the last week, what's next today while it's on, who still owes you after it.
+
 ## Agent
 
 - **Agent**: one LangGraph tool-chaining loop with a bounded number of steps. Tools call use cases; they never touch the database directly.
