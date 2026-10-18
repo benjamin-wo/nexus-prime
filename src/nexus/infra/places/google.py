@@ -19,9 +19,11 @@ from nexus.application.places import PlacesError
 from nexus.domain.places import (
     MAX_ADDRESS,
     MAX_NAME,
+    MAX_RADIUS,
     MAX_REVIEW,
     MAX_REVIEWS,
     MAX_SUMMARY,
+    Circle,
     Period,
     Place,
     PlacePhoto,
@@ -98,13 +100,23 @@ class GooglePlaces:
         except ValueError as exc:
             raise PlacesError("unexpected response") from exc
 
-    async def search(self, query: str, *, limit: int) -> list[Place]:
-        data = await self._call(
-            "POST",
-            "/places:searchText",
-            SEARCH_FIELDS,
-            {"textQuery": query, "pageSize": limit, "languageCode": self._language},
-        )
+    async def search(self, query: str, *, limit: int, near: Circle | None = None) -> list[Place]:
+        """Places for a phrase. ``near`` leans the results towards a circle (Google's
+        ``locationBias``: a preference, not a limit, and no change in what's billed);
+        a place named in the phrase still wins."""
+        body: dict[str, Any] = {
+            "textQuery": query,
+            "pageSize": limit,
+            "languageCode": self._language,
+        }
+        if near is not None:
+            body["locationBias"] = {
+                "circle": {
+                    "center": {"latitude": near.center.lat, "longitude": near.center.lng},
+                    "radius": min(max(near.radius, 1.0), MAX_RADIUS),
+                }
+            }
+        data = await self._call("POST", "/places:searchText", SEARCH_FIELDS, body)
         rows = data.get("places") if isinstance(data, dict) else None
         found = [p for row in (rows or []) if (p := parse_place(row)) is not None]
         return found[:limit]

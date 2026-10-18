@@ -15,7 +15,7 @@ from nexus.application.places import Places
 from nexus.application.web_search import WebAnswer, WebSearchError
 from nexus.domain.errors import InvalidInput
 from nexus.domain.ledger import UserId
-from nexus.domain.places import Place
+from nexus.domain.places import Circle, Place
 from nexus.infra.guides.wikivoyage import Wikivoyage, sections
 from tests.fakes import NOW, ScriptedModel, say, scripted
 
@@ -63,7 +63,7 @@ class Maps:
     places: list[Place]
     searches: list[str] = field(default_factory=list)
 
-    async def search(self, query: str, *, limit: int) -> list[Place]:
+    async def search(self, query: str, *, limit: int, near: Circle | None = None) -> list[Place]:
         self.searches.append(query)
         words = set(query.casefold().replace(",", " ").split())
         return [p for p in self.places if words & set(p.name.casefold().split())][:limit]

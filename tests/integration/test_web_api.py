@@ -66,6 +66,7 @@ from tests.integration.conftest import UowFactory
 from tests.integration.test_departments import Shown
 from tests.integration.test_destination_photos import JPEG, FakeWikipedia
 from tests.integration.test_destination_photos import finder as photo_finder
+from tests.integration.test_research_ideas import finished_research
 
 PLACE = fake_place(
     "fakePlaceNoodle01",
@@ -2162,6 +2163,95 @@ async def test_quick_ideas_for_a_trip(world: World) -> None:
     await member.login(MEMBER, invite=(await owner_and_invite(world))[1])
     assert (await member.get(f"/api/travel/trips/{trip_id}/ideas?q=noodles")).status_code == 404
     assert (await owner.get(f"/api/travel/trips/{trip_id}/ideas?q=")).status_code == 422
+
+
+async def test_finding_by_stop_or_day_on_the_web(world: World) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+    body = {"destination": "Seoul", "start": "2026-11-10", "end": "2026-11-13", "currency": "KRW"}
+    trip_id = (await owner.send("POST", "/api/travel/trips", body)).json()["id"]
+    stops = [
+        {"name": "Seoul", "start": "2026-11-10", "end": "2026-11-12"},
+        {"name": "Busan", "start": "2026-11-12", "end": "2026-11-13"},
+    ]
+    saved = await owner.send("PUT", f"/api/travel/trips/{trip_id}/stops", {"stops": stops})
+    assert saved.status_code == 200
+
+    search = f"/api/travel/places/search?q=noodles&trip_id={trip_id}"
+    for scoped in ("&stop=Busan", "&stop=busan&day=2026-11-13", "&day=2026-11-11"):
+        found = await owner.get(search + scoped)
+        assert found.status_code == 200 and found.json()[0]["id"] == "fakePlaceNoodle01"
+    # Not one of the trip's stops, a day outside the trip or outside the stop, or no trip.
+    for bad in ("&stop=Jeju", "&day=2026-11-20", "&stop=Busan&day=2026-11-10", "&day=nope"):
+        assert (await owner.get(search + bad)).status_code == 422, bad
+    assert (await owner.get("/api/travel/places/search?q=noodles&stop=Busan")).status_code == 422
+    unknown = "00000000-0000-4000-8000-000000000000"
+    gone = await owner.get(f"/api/travel/places/search?q=noodles&trip_id={unknown}&stop=Busan")
+    assert gone.status_code == 404
+
+    ideas = f"/api/travel/trips/{trip_id}/ideas?q=noodles"
+    assert (await owner.get(ideas + "&stop=Busan")).json()["destination"] == "Busan"
+    assert (await owner.get(ideas + "&day=2026-11-11")).json()["destination"] == "Seoul"
+    assert (await owner.get(ideas)).json()["destination"] == "Seoul"
+    assert (await owner.get(ideas + "&stop=Jeju")).status_code == 422
+    assert (await owner.get(ideas + "&day=2026-12-01")).status_code == 422
+
+    # Someone else's trip is not found, scoped or not.
+    member = world.browser()
+    await member.login(MEMBER, invite=(await owner_and_invite(world))[1])
+    assert (await member.get(search + "&stop=Busan")).status_code == 404
+    assert (await member.get(ideas + "&stop=Busan")).status_code == 404
+
+
+async def test_research_areas_into_a_trip_on_the_web(world: World) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+    body = {"destination": "Tokyo", "start": "2026-11-10", "end": "2026-11-13", "currency": "JPY"}
+    trip_id = (await owner.send("POST", "/api/travel/trips", body)).json()["id"]
+    run = await finished_research(world.app.state.web.uow, await user_id(world, OWNER), "Osaka")
+    path = f"/api/travel/research/{run}/ideas"
+
+    added = await owner.send("POST", path, {"trip_id": trip_id, "areas": ["Shinjuku", "Asakusa"]})
+    assert added.status_code == 200
+    assert added.json() == {"added": 6, "skipped": 0, "stop_suggestion": "Osaka"}
+    detail = (await owner.get(f"/api/travel/trips/{trip_id}")).json()
+    listed = {b["title"]: (b["list_name"], b["scheduled"]) for b in detail["bookings"]}
+    assert listed["Senso-ji"] == ("Asakusa", False) and len(listed) == 6
+    again = await owner.send("POST", path, {"trip_id": trip_id, "areas": ["Asakusa"]})
+    assert again.json() == {"added": 0, "skipped": 2, "stop_suggestion": "Osaka"}
+
+    async def post(who: Browser, run_id: str | UUID, trip: str, areas: list[str]) -> Any:
+        return await who.send(
+            "POST", f"/api/travel/research/{run_id}/ideas", {"trip_id": trip, "areas": areas}
+        )
+
+    # Bad requests change nothing: an unknown area, none, a bad id, a finished trip.
+    ginza = await post(owner, run, trip_id, ["Ginza"])
+    assert ginza.status_code == 422 and "no area called" in ginza.json()["detail"]
+    assert (await post(owner, run, trip_id, [])).status_code == 422
+    assert (await post(owner, run, "nope", ["Asakusa"])).status_code == 422
+    over = await owner.send(
+        "POST", "/api/travel/trips",
+        {"destination": "Old", "start": "2026-08-01", "end": "2026-08-05", "currency": "JPY"},
+    )  # fmt: skip
+    finished = await post(owner, run, over.json()["id"], ["Asakusa"])
+    assert finished.status_code == 422 and "over" in finished.json()["detail"]
+    unknown = "00000000-0000-4000-8000-000000000000"
+    assert (await post(owner, run, unknown, ["Asakusa"])).status_code == 404
+    assert (await post(owner, unknown, trip_id, ["Asakusa"])).status_code == 404
+    assert (await post(owner, "nope", trip_id, ["Asakusa"])).status_code == 404
+
+    # Another user can use neither the research nor the trip.
+    member = world.browser()
+    await member.login(MEMBER, invite=(await owner_and_invite(world))[1])
+    mine = (await member.send("POST", "/api/travel/trips", body)).json()["id"]
+    assert (
+        await member.send("POST", path, {"trip_id": mine, "areas": ["Asakusa"]})
+    ).status_code == 404
+    theirs = await finished_research(world.app.state.web.uow, await user_id(world, MEMBER))
+    assert (await post(member, str(theirs), trip_id, ["Asakusa"])).status_code == 404
+    assert (await member.get(f"/api/travel/trips/{mine}")).json()["bookings"] == []
+    assert len((await owner.get(f"/api/travel/trips/{trip_id}")).json()["bookings"]) == 6
 
 
 async def test_trip_header_photos_are_served_from_here(world: World) -> None:

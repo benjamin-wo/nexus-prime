@@ -9,8 +9,8 @@ free monthly allowance for personal use.
 
 import asyncio
 import logging
-from collections import OrderedDict
-from collections.abc import Callable, Sequence
+from collections import Counter, OrderedDict
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta
 from typing import Protocol
@@ -22,7 +22,7 @@ from nexus.application.ports import UnitOfWork
 from nexus.domain.bookings import Booking, BookingKind
 from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.ledger import UserId
-from nexus.domain.places import Place, PlacePhoto, place_id
+from nexus.domain.places import Circle, Place, PlacePhoto, Point, circle_around, place_id
 from nexus.domain.routes import stations_on
 from nexus.domain.stops import suggest_stops
 from nexus.domain.trips import Stop, Trip
@@ -39,6 +39,8 @@ LIMITS: Sequence[Window] = ((30, timedelta(minutes=1)), (200, timedelta(days=1))
 # Photos fetched from Google, per user (billed per photo; cached ones don't count).
 PHOTO_LIMITS: Sequence[Window] = ((30, timedelta(minutes=1)), (100, timedelta(days=1)))
 PHOTO_CACHE_SIZE = 150
+# How far round a day's places a "near this day" search leans, in metres.
+NEAR_RADIUS = 2000.0
 
 
 class PlacesError(Exception):
@@ -46,7 +48,9 @@ class PlacesError(Exception):
 
 
 class PlaceSource(Protocol):
-    async def search(self, query: str, *, limit: int) -> list[Place]: ...
+    async def search(
+        self, query: str, *, limit: int, near: Circle | None = None
+    ) -> list[Place]: ...
 
     async def details(self, place_id: str) -> Place | None: ...
 
@@ -91,16 +95,20 @@ class Places:
         if not self._limiter.allow("places", user_id):
             raise InvalidInput("that's a lot of Google Maps lookups at once; try again later")
 
-    async def search(self, user_id: UserId, query: str) -> list[Place]:
+    async def search(self, user_id: UserId, query: str, near: Circle | None = None) -> list[Place]:
+        """Places for a phrase, leaning towards ``near`` when given. The cache tells
+        searches apart by where they lean, to about a hundred metres."""
         query = " ".join(query.split())[:MAX_QUERY]
         if not query:
             raise InvalidInput("say what to look for, like 'ramen in Shinjuku'")
         key = f"search:{query.casefold()}"
+        if near is not None:
+            key += f"@{near.center.lat:.3f},{near.center.lng:.3f},{near.radius:.0f}"
         cached = self._cached(key)
         if isinstance(cached, list):
             return cached
         self._allow(user_id)
-        found = await self._source.search(query, limit=MAX_RESULTS)
+        found = await self._source.search(query, limit=MAX_RESULTS, near=near)
         self._keep(key, found)
         return found
 
@@ -253,6 +261,102 @@ async def suggested_stops(
     found = await places.many(user_id, ids) if places is not None and ids else {}
     cities = {pid: p.city for pid, p in found.items() if p.city}
     return suggest_stops(trip, bookings, cities)
+
+
+@dataclass(frozen=True, slots=True)
+class SearchScope:
+    """Where a search for a trip looks: the place named in the search text (the trip's
+    destination, a stop, or an area of a stop) and, for a day, a circle round the places
+    already planned that day. Worked out when asked, never stored."""
+
+    place: str
+    near: Circle | None = None
+
+
+def _stop_named(stops: Sequence[Stop], wanted: str) -> Stop:
+    for s in stops:
+        if s.name.casefold() == " ".join(wanted.split()).casefold():
+            return s
+    listed = ", ".join(s.name for s in stops)
+    raise InvalidInput(f"{wanted.strip()!r} isn't one of the trip's stops ({listed})")
+
+
+def _stop_on(stops: Sequence[Stop], day: date) -> Stop | None:
+    """The stop a day is in; on a travel day, the one arrived at."""
+    found = [s for s in stops if s.start <= day <= s.end]
+    return found[-1] if found else None
+
+
+def scope_of_day(
+    trip: Trip,
+    stops: Sequence[Stop],
+    bookings: Sequence[Booking],
+    found: Mapping[str, Place],
+    *,
+    stop: str | None = None,
+    day: date | None = None,
+) -> SearchScope:
+    """The search scope for a stop and/or a day of the trip. ``found`` holds the Google
+    details of the trip's linked places, by id. A day with nothing planned has no circle
+    and is searched by its stop's name alone."""
+    if stop is None and day is None:
+        return SearchScope(trip.destination)
+    chosen = _stop_named(stops, stop) if stop is not None else None
+    if day is not None:
+        if not trip.start <= day <= trip.end:
+            raise InvalidInput(
+                f"{day:%d %b} is outside the trip ({trip.start:%d %b} to {trip.end:%d %b})"
+            )
+        there = _stop_on(stops, day)
+        if chosen is not None and not chosen.start <= day <= chosen.end:
+            raise InvalidInput(f"{day:%d %b} isn't in {chosen.name}")
+        chosen = chosen or there
+    name = chosen.name if chosen is not None else trip.destination
+    if day is None:
+        return SearchScope(name)
+    planned = [
+        b.draft for b in bookings if b.draft.kind is BookingKind.ACTIVITY and b.draft.day == day
+    ]
+    places = [p for d in planned if d.place_id and (p := found.get(d.place_id)) is not None]
+    points: list[Point] = [p.location for p in places if p.location is not None]
+    points += [
+        Point(d.lat, d.lng)
+        for d in planned
+        if not d.place_id and d.lat is not None and d.lng is not None
+    ]
+    areas = Counter(p.area for p in places if p.area)
+    area = areas.most_common(1)[0][0] if areas else None
+    text = f"{area}, {name}" if area and area.casefold() != name.casefold() else name
+    return SearchScope(text, circle_around(points, NEAR_RADIUS))
+
+
+async def search_scope(
+    uow: UnitOfWork,
+    places: Places | None,
+    user_id: UserId,
+    trip_id: UUID,
+    *,
+    stop: str | None = None,
+    day: date | None = None,
+) -> tuple[Trip, SearchScope]:
+    """The trip and where a search for it should look: the whole trip (its destination),
+    one of its stops, or near a day. The stop must be one of the trip's stops (as set, or
+    as its hotels suggest) and the day inside the trip."""
+    async with uow:
+        trip = await uow.trips.get_trip(user_id, trip_id)
+        if trip is None:
+            raise NotFound("no trip with that id")
+        bookings = await uow.trips.list_bookings(user_id, trip_id=trip_id) if (stop or day) else []
+    if stop is None and day is None:
+        return trip, SearchScope(trip.destination)
+    stops = trip.stops or await suggested_stops(places, user_id, trip, bookings)
+    ids = [
+        b.draft.place_id
+        for b in bookings
+        if day is not None and b.draft.day == day and b.draft.place_id and linkable(b)
+    ]
+    found = await places.many(user_id, ids) if places is not None and ids else {}
+    return trip, scope_of_day(trip, stops, bookings, found, stop=stop, day=day)
 
 
 def station_stops(b: Booking, name: str) -> tuple[tuple[date, str], ...]:

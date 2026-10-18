@@ -44,6 +44,9 @@ The shared language for code, tests and docs. When a term here and a name in cod
 - **Next up**: the one thing to do next on a trip, shown as a strip under its cover with a button: the first gap while planning, the next booking in the last week, what's next today while it's on, who still owes you after it.
 - **Stop**: a place a trip is in, such as Tokyo then Kyoto, with the days it is there. The day one stop ends and the next begins is the travel day. Stops follow the hotel stays (grouped by city) until the user edits and saves their own.
 - **Suggested label**: a day's name worked out from where its places are and what they are ("Gion · temples & food"), shown with a Suggested chip until the user accepts or types their own. A label the user typed always wins; a suggestion is never saved by itself.
+- **Search scope**: where a search for a trip looks: the whole trip, one of its **stops**, or near a day. Near a day, Google Maps is also asked to lean towards a circle round that day's places. The circle is worked out when the search is made and never stored. A scope changes where a search looks, never how many credits it costs.
+- **Merged results**: the finder's one list of places, each once: a Google Maps result and a guide idea for the same place are one card, with the rating, the guide's words and source link, and a tag for each that found it.
+- **Research into ideas**: saving a trip research's areas as **ideas** on a trip, each under a list named after its area, skipping what is already there and matching Google Maps places when one clearly fits. The research's city is offered as a **stop**, with a confirmation that says what it changes. Nothing is booked.
 - **Own pin**: a point the user dropped on the Ideas map, kept with its idea. It is the user's own coordinate, so it is stored; Google's coordinates are fetched with each place and never kept.
 
 ## Agent

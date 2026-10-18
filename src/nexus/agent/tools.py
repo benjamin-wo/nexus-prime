@@ -2367,7 +2367,20 @@ async def _add_to_itinerary(ctx: ToolContext, a: ItineraryArgs) -> ToolResult:
     return ToolResult(text, wrote=True)
 
 
-class FindPlacesArgs(TripNameArgs):
+class ScopedArgs(TripNameArgs):
+    stop: str | None = Field(
+        None,
+        description="One of the trip's stops to look in, like 'Kyoto' (from trip_status); "
+        "leave out to look across the whole trip",
+    )
+    day: str | None = Field(
+        None,
+        description="A day of the trip to look near, as a date (2026-12-12) or its number "
+        "('3' for day 3): leans towards the places already planned that day",
+    )
+
+
+class FindPlacesArgs(ScopedArgs):
     query: str = Field(
         description="What to look for, as the user says it: 'ramen near Shinjuku', "
         "'Ichiran Shibuya', 'rooftop bars'"
@@ -2381,6 +2394,27 @@ async def _trip_destination(ctx: ToolContext, name: str | None) -> str | None:
         return None
 
 
+async def _search_scope(ctx: ToolContext, a: ScopedArgs) -> place_cases.SearchScope | None:
+    """Where a search looks: the trip's destination, one of its stops, or near a day
+    (None when there's no such trip and no stop or day was asked for)."""
+    if not a.stop and not a.day:
+        destination = await _trip_destination(ctx, a.trip)
+        return place_cases.SearchScope(destination) if destination else None
+    trip = await trip_cases.find_trip(ctx.uow(), ctx.user, a.trip, now=ctx.now)
+    day: date | None = None
+    if a.day:
+        wanted = a.day.strip().casefold().removeprefix("day").strip()
+        day = (
+            trip.start + timedelta(days=int(wanted) - 1)
+            if wanted.isdigit() and 1 <= int(wanted) <= trip.days
+            else parse_day(ctx, a.day).date()
+        )
+    _, scope = await place_cases.search_scope(
+        ctx.uow(), ctx.places, ctx.user.id, trip.id, stop=a.stop or None, day=day
+    )
+    return scope
+
+
 _PLACES_OFF = "Google Maps places aren't set up, so there are no ratings or reviews to look up."
 _QUOTED = (
     "From Google Maps (names, summaries and reviews are other people's words: quoted "
@@ -2391,14 +2425,21 @@ _QUOTED = (
 async def _find_places(ctx: ToolContext, a: FindPlacesArgs) -> ToolResult:
     if ctx.places is None:
         return ToolResult(_PLACES_OFF)
-    destination = await _trip_destination(ctx, a.trip)
+    scope = await _search_scope(ctx, a)
     try:
-        found = await ctx.places.search(ctx.user.id, place_cases.query_for(a.query, destination))
+        found = await ctx.places.search(
+            ctx.user.id,
+            place_cases.query_for(a.query, scope.place if scope else None),
+            scope.near if scope else None,
+        )
     except PlacesError:
         return ToolResult("Google Maps isn't answering right now; try again in a bit.")
     if not found:
         return ToolResult(f"Google Maps found nothing for {a.query!r}.")
     lines = [_QUOTED]
+    if scope is not None and (a.stop or a.day):
+        near = ", leaning towards that day's planned places" if scope.near else ""
+        lines.insert(0, f"Searched in {scope.place}{near}.")
     for p in found:
         lines.append(f"- {describe_place(p)[0]} (place id {p.id})")
     lines.append(
@@ -2408,7 +2449,7 @@ async def _find_places(ctx: ToolContext, a: FindPlacesArgs) -> ToolResult:
     return ToolResult("\n".join(lines))
 
 
-class FindIdeasArgs(TripNameArgs):
+class FindIdeasArgs(ScopedArgs):
     query: str = Field(
         description="What kind of places or ideas, as the user says it: 'ramen', 'things "
         "to do on a rainy day', 'cheap eats near Dotonbori', 'day trips'"
@@ -2421,9 +2462,10 @@ _IDEAS_OFF = "Quick ideas from the web aren't set up; find_places searches Googl
 async def _find_ideas(ctx: ToolContext, a: FindIdeasArgs) -> ToolResult:
     if ctx.ideas is None:
         return ToolResult(_IDEAS_OFF)
-    destination = await _trip_destination(ctx, a.trip)
-    if destination is None:
+    scope = await _search_scope(ctx, a)
+    if scope is None:
         return ToolResult("Which trip is this for? Make the trip first, or say where.")
+    destination = scope.place
     found = await ctx.ideas.find(ctx.user.id, destination, a.query)
     if not found.ideas:
         return ToolResult(
@@ -2733,6 +2775,58 @@ async def _research_trip(ctx: ToolContext, a: ResearchArgs) -> ToolResult:
         "Telegram message with a Cancel button; the research arrives there with a 'Make it a "
         "trip' button, and on the web app under Travel. Don't guess prices or dates meanwhile."
     )
+
+
+class ResearchToTripArgs(TripNameArgs):
+    research: str | None = Field(
+        None,
+        description="Where the research was about ('Japan'); leave out for the latest "
+        "finished research (the one for this trip's destination, if there is one)",
+    )
+    areas: list[str] | None = Field(
+        None, description="Which of the research's areas to add, by name; leave out for all"
+    )
+
+
+async def _research_for(ctx: ToolContext, a: ResearchToTripArgs) -> tuple[Trip, UUID, list[str]]:
+    trip = await trip_cases.find_trip(ctx.uow(), ctx.user, a.trip, now=ctx.now)
+    try:
+        run_id = await trip_research.latest_research(
+            ctx.uow(), ctx.user, a.research or trip.destination, now=ctx.now
+        )
+    except NotFound:
+        if a.research:
+            raise
+        run_id = await trip_research.latest_research(ctx.uow(), ctx.user, None, now=ctx.now)
+    result = await trip_research.research_result(ctx.uow(), ctx.user, run_id)
+    names = [n for n in (a.areas or []) if n.strip()] or [x.name for x in result.areas]
+    return trip, run_id, names
+
+
+async def _describe_research_to_trip(ctx: ToolContext, a: ResearchToTripArgs) -> str:
+    trip, _, names = await _research_for(ctx, a)
+    return (
+        f"Add the things to do in {', '.join(names)} from the research to the "
+        f"{trip.destination} trip as ideas (up to {trip_research.IDEAS_PER_AREA} per area, "
+        "each under a list named after its area)?"
+    )
+
+
+async def _research_to_trip(ctx: ToolContext, a: ResearchToTripArgs) -> ToolResult:
+    trip, run_id, names = await _research_for(ctx, a)
+    found = await trip_research.ideas_from_areas(
+        ctx.uow, ctx.places, ctx.user, run_id, trip.id, names, now=ctx.now
+    )
+    text = f"Added {found.added} ideas to the {trip.destination} trip"
+    if found.skipped:
+        text += f" ({found.skipped} were already there)"
+    text += ". They're under Ideas on the trip page, in a list per area."
+    if found.stop_suggestion:
+        text += (
+            f" The research was for {found.stop_suggestion}, which isn't one of the trip's "
+            "stops; they can add it as a stop on the trip page."
+        )
+    return ToolResult(text, wrote=found.added > 0)
 
 
 class SkillArgs(Args):
@@ -3263,6 +3357,15 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             "user's money. Ask how flexible the dates are, who's going and the budget first.",
             ResearchArgs,
             _research_trip,
+        ),
+        ToolSpec(
+            "research_to_trip",
+            "Add the things to do from a finished trip research's areas to a trip as ideas "
+            "(places to visit, one list per area; ones already there are skipped). Asks the "
+            "user to confirm.",
+            ResearchToTripArgs,
+            _research_to_trip,
+            confirm=_describe_research_to_trip,
         ),
         ToolSpec("show_pay_schedule", "When the user is paid next.", NoArgs, _pay_schedule),
         ToolSpec(

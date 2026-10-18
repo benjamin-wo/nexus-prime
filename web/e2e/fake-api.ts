@@ -57,6 +57,12 @@ const FINISHED_PLAN = {
   result_percent: "4.6",
 };
 
+/** The made-up research's areas (Tokyo): what the ideas endpoint files under a list per area. */
+export const RESEARCH_AREAS = [
+  { name: "Shinjuku", why: "Central, with late food.", things: ["Gyoen garden"], source: 1 },
+  { name: "Asakusa", why: "Old Tokyo, temples and street food.", things: ["Senso-ji", "Nakamise street", "Kappabashi"], source: 1 },
+];
+
 export async function fakeApi(
   page: Page,
   {
@@ -124,6 +130,12 @@ export async function fakeApi(
     /** Moves sent from the trip page, as "id>day|places@after". */
     moves: string[];
     placeSearches: string[];
+    /** Each Google Maps search with where it looked: its trip, stop and day, as sent. */
+    placeScopes: { q: string; trip_id: string | null; stop: string | null; day: string | null }[];
+    /** Each quick-ideas search with its stop and day, as sent. */
+    ideaScopes: { q: string; stop: string | null; day: string | null }[];
+    /** The bodies of POST /travel/research/{run}/ideas, with the run they went to. */
+    researchIdeaPosts: { run: string; trip_id: string; areas: string[] }[];
     /** The stops sent to PUT /travel/trips/:id/stops, in order. */
     stopPuts: { name: string; start: string; end: string }[][];
     ideaSearches: string[];
@@ -213,6 +225,9 @@ export async function fakeApi(
     backToHotel: false,
     moves: [],
     placeSearches: [],
+    placeScopes: [],
+    ideaScopes: [],
+    researchIdeaPosts: [],
     stopPuts: [],
     ideaSearches: [],
     photoChoices: [],
@@ -997,19 +1012,51 @@ export async function fakeApi(
     japan("fakePlaceKyotoTea1", "Kettle Tea House", "Tea house", "Gion", "Kyoto", 35.0049, 135.7752);
     japan("fakePlaceKyotoBmb1", "Bamboo Walk", "Park", "Arashiyama", "Kyoto", 35.0170, 135.6713);
     const placeOut = ({ closed: _closed, unlisted: _unlisted, ...place }: Record<string, unknown>) => place;
+    // Where a search looks, as the server works it out: ``stop`` must be one of the trip's stops
+    // (as set, else as the hotels suggest) and ``day`` inside the trip; both need a trip.
+    const scopeOf = (tripId: string | null, stop: string | null, day: string | null) => {
+      if (!stop && !day) return { place: null as string | null };
+      if (!tripId) return { error: json(route, { detail: "a stop or a day needs a trip_id" }, 422) };
+      const trip = state.trips.find((t) => t.id === tripId);
+      if (!trip) return { error: json(route, { detail: "no trip with that id" }, 404) };
+      const stops = ((trip.stops as { name: string; start: string; end: string }[] | undefined)?.length
+        ? (trip.stops as { name: string; start: string; end: string }[])
+        : suggestedStops(trip));
+      const named = stop ? stops.find((s) => s.name.toLowerCase() === stop.trim().replace(/\s+/g, " ").toLowerCase()) : undefined;
+      if (stop && !named) {
+        return { error: json(route, { detail: `'${stop}' isn't one of the trip's stops (${stops.map((s) => s.name).join(", ")})` }, 422) };
+      }
+      if (day && (day < String(trip.start) || day > String(trip.end))) {
+        return { error: json(route, { detail: "that day is outside the trip" }, 422) };
+      }
+      if (day && named && (day < named.start || day > named.end)) {
+        return { error: json(route, { detail: `that day isn't in ${named.name}` }, 422) };
+      }
+      const there = named ?? stops.filter((s) => day && s.start <= day && day <= s.end).at(-1);
+      return { place: there?.name ?? String(trip.destination) };
+    };
     if (path === "/travel/places/search" && method === "GET") {
-      state.placeSearches.push(url.searchParams.get("q") ?? "");
+      const [q, tripId] = [url.searchParams.get("q") ?? "", url.searchParams.get("trip_id")];
+      const [stop, day] = [url.searchParams.get("stop"), url.searchParams.get("day")];
+      const scope = scopeOf(tripId, stop, day);
+      if ("error" in scope) return scope.error;
+      state.placeSearches.push(q);
+      state.placeScopes.push({ q, trip_id: tripId, stop, day });
       return json(route, Object.values(PLACES).filter((p) => !p.unlisted).map(placeOut));
     }
     // Made-up ideas from made-up articles: one matched to Google Maps, one not.
     const tripIdeas = path.match(/^\/travel\/trips\/([^/]+)\/ideas$/);
     if (tripIdeas && method === "GET") {
       const q = url.searchParams.get("q") ?? "";
+      const [stop, day] = [url.searchParams.get("stop"), url.searchParams.get("day")];
+      const scope = scopeOf(tripIdeas[1], stop, day);
+      if ("error" in scope) return scope.error;
       state.ideaSearches.push(q);
+      state.ideaScopes.push({ q, stop, day });
       const trip = state.trips.find((t) => t.id === tripIdeas[1]);
       return json(route, {
         query: q,
-        destination: trip?.destination ?? "",
+        destination: scope.place ?? trip?.destination ?? "",
         ideas: [
           {
             name: "Hanok Noodle Bar", area: "Jung-gu", kind: "Food", why: "Hand-pulled noodles worth the queue.",
@@ -1381,7 +1428,7 @@ export async function fakeApi(
           { label: "Return flights SIN-NRT", low: "1200", high: "1600", currency: "SGD", per: "person", source: 2, home_low: "1200", home_high: "1600" },
           { label: "Daily spending", low: "8000", high: "15000", currency: "JPY", per: "day", source: 1, home_low: "72", home_high: "135" },
         ],
-        areas: [{ name: "Shinjuku", why: "Central, with late food.", things: ["Gyoen garden"], source: 1 }],
+        areas: RESEARCH_AREAS,
         getting_around: "An IC card covers city trains.",
         getting_around_source: 1,
         sources: [
@@ -1397,6 +1444,47 @@ export async function fakeApi(
         fits: true,
         trip_id: null,
       });
+    }
+    // POST /travel/research/{run}/ideas: the chosen areas' things (at most 4 each) become ideas under a
+    // list named after the area; one already on the trip is skipped. 404 for a trip or research that
+    // isn't there, 422 for a finished trip or an unknown area. ``stop_suggestion`` is the research place
+    // when it is none of the trip's stops.
+    const researchIdeas = path.match(/^\/travel\/research\/([^/]+)\/ideas$/);
+    if (researchIdeas && method === "POST") {
+      if (researchIdeas[1] !== "rs1") return json(route, { detail: "no research with that id" }, 404);
+      const areas = (body.areas ?? []) as string[];
+      const trip = state.trips.find((t) => t.id === body.trip_id);
+      if (!trip) return json(route, { detail: "no trip with that id" }, 404);
+      if (areas.length === 0) return json(route, { detail: "choose at least one area" }, 422);
+      if (String(trip.end) < "2026-09-28") return json(route, { detail: "that trip is over" }, 422);
+      const chosen = areas.map((name) => RESEARCH_AREAS.find((a) => a.name.toLowerCase() === name.trim().toLowerCase()));
+      const unknown = areas.find((_, n) => !chosen[n]);
+      if (unknown !== undefined) return json(route, { detail: `the research has no area called '${unknown}'` }, 422);
+      state.researchIdeaPosts.push({ run: researchIdeas[1], trip_id: String(trip.id), areas });
+      const squash = (name: string) => name.toLowerCase().replace(/\s+/g, "");
+      const have = new Set(state.plans.filter((p) => p.kind === "activity").map((p) => squash(String(p.name))));
+      let [added, skipped] = [0, 0];
+      for (const area of chosen) {
+        for (const thing of area!.things.slice(0, 4)) {
+          if (have.has(squash(thing))) {
+            skipped += 1;
+            continue;
+          }
+          have.add(squash(thing));
+          added += 1;
+          state.plans.push({
+            id: `pl${state.plans.length + 1}`, trip_id: trip.id, kind: "activity", title: thing, provider: null,
+            starts: "2026-09-28", ends: null, segments: [], hotel: null, address: null, check_in: null, check_out: null,
+            name: thing, day: null, at: null, note: null, cost: null, logged: false, manual: true, reference: null, booked_via: null,
+            category: null, place_id: null, ends_at: null, link: null, list_name: area!.name, order: null, lat: null, lng: null,
+            scheduled: false,
+          });
+        }
+      }
+      const stops = (trip.stops as { name: string }[] | undefined)?.length ? (trip.stops as { name: string }[]) : suggestedStops(trip);
+      const first = (name: string) => name.split(",")[0].trim().toLowerCase();
+      const known = [String(trip.destination), ...stops.map((s) => s.name)].some((name) => first(name) === first("Tokyo"));
+      return json(route, { added, skipped, stop_suggestion: known ? null : "Tokyo" });
     }
     if (path === "/travel/research/rs1/trip" && method === "POST") {
       const trip = {

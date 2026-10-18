@@ -127,7 +127,7 @@ export function IdeasTab({ detail, onChange, viewing }: { detail: TripDetail; on
       <h2 id="ideas-title" className="sr-only">
         Ideas
       </h2>
-      {(detail.places || detail.ideas) && <SavePlaces />}
+      {(detail.places || detail.ideas) && <SavePlaces viewing={viewing} />}
       {(lists.length > 1 || onDays.length > 0) && (
         <div className="chips list-chips" role="group" aria-label="Lists">
           {lists.length > 1 && (

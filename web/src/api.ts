@@ -695,7 +695,25 @@ export type Idea = {
   source: { url: string; title: string };
   place: Place | null;
 };
+/** `destination` is where the search looked: the trip's, a stop's, or "<area>, <stop>" for a day. */
 export type Ideas = { query: string; destination: string; ideas: Idea[] };
+/** Where a search for a trip looks. Neither: the whole trip. `stop` is one of the trip's stops
+ * (its name, as in `stops`/`suggested_stops`); `day` is a date (YYYY-MM-DD) inside the trip, and
+ * leans a Google Maps search towards the places planned that day. Both need the trip: the server
+ * answers 422 for a stop that isn't the trip's, a day outside it (or outside the given stop), and
+ * 404 for a trip that isn't yours. */
+export type SearchScope = { stop?: string | null; day?: string | null };
+/** The query string for `GET /travel/places/search` in a trip, scoped to a stop or a day. */
+export function placeSearchPath(q: string, tripId: string, scope: SearchScope = {}): string {
+  return `/travel/places/search?q=${encodeURIComponent(q)}&trip_id=${tripId}${scopeQuery(scope)}`;
+}
+/** The path for `GET /travel/trips/{id}/ideas` (guides and articles), scoped to a stop or a day. */
+export function tripIdeasPath(tripId: string, q: string, scope: SearchScope = {}): string {
+  return `/travel/trips/${tripId}/ideas?q=${encodeURIComponent(q)}${scopeQuery(scope)}`;
+}
+function scopeQuery({ stop, day }: SearchScope): string {
+  return `${stop ? `&stop=${encodeURIComponent(stop)}` : ""}${day ? `&day=${encodeURIComponent(day)}` : ""}`;
+}
 export type LinkedPlace = {
   booking_id: string;
   place: Place;
@@ -820,6 +838,15 @@ export type Research = {
   fits: boolean | null;
   trip_id: string | null;
 };
+
+/** `POST /travel/research/{run_id}/ideas` body: the research's areas (by name, 1 to 10) whose things
+ * to do become ideas on one of your upcoming or ongoing trips, each under a list named after its area. */
+export type ResearchIdeasIn = { trip_id: string; areas: string[] };
+/** What was done: ideas saved (at most 4 an area), ideas already on the trip (skipped), and the
+ * research's place when it is none of the trip's stops (offer it as one; `PUT /stops` saves it).
+ * Errors: 404 for a research or trip that isn't yours, 422 for a finished trip, no areas, an area the
+ * research lacks, or a trip that's full. Safe to repeat. */
+export type ResearchIdeasOut = { added: number; skipped: number; stop_suggestion: string | null };
 
 /** Someone paid (or paying) before, suggested on the entry form from the user's own ledger. */
 export type MerchantSuggestion = {

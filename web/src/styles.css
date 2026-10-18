@@ -1606,6 +1606,20 @@ html.keyboard .bottom-nav, html.keyboard .trip-fab-button, html.keyboard .trip-f
   .ideas-map-canvas { height: min(560px, calc(100vh - 260px)); }
 }
 
+/* Trip page: finder */
+/* Where to look and quick themes sit under the search field, scrolling sideways rather than wrapping tall on a phone. */
+.find-scopes, .find-themes { margin-top: var(--space-2); }
+.find-scopes .day-pill, .find-themes .day-pill { min-height: 44px; }
+.find-themes .day-pill { font-weight: 500; }
+.find-themes .day-pill:disabled { opacity: 0.6; cursor: default; }
+.find-results { margin-top: var(--space-3); }
+.find-card { align-items: start; }
+.find-card .wrap { min-width: 0; overflow-wrap: anywhere; }
+.find-tags { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-top: var(--space-1); }
+.find-tags .chip { color: var(--text-muted); border: 1px solid var(--border-subtle); background: none; font-weight: 500; }
+.find-actions { display: grid; gap: var(--space-1); justify-items: stretch; flex: none; }
+.find-actions .btn { white-space: nowrap; min-height: 44px; }
+
 /* Trip page: money and prep */
 .planned-form { margin-top: var(--space-3); }
 .planned-form .field { flex: 1 1 160px; }
@@ -1619,3 +1633,20 @@ html.keyboard .bottom-nav, html.keyboard .trip-fab-button, html.keyboard .trip-f
 @media (max-width: 720px) {
   .planned-form > .btn { flex: 1 1 100%; min-height: 44px; }
 }
+
+/* Research into a trip */
+.area-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
+.area-save { display: inline-flex; align-items: center; gap: var(--space-2); min-height: 44px; cursor: pointer; font-size: 0.875rem; color: var(--text-secondary); }
+.area-save input { width: 20px; height: 20px; accent-color: var(--accent); flex: none; }
+.area-head + p { margin-top: 0; }
+.research-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-4); }
+.research-add { display: grid; gap: var(--space-3); margin-bottom: var(--space-4); }
+.research-add h2, .research-add p { margin: 0; }
+.research-add h2:focus { outline: none; }
+.research-add h2:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 4px; border-radius: 4px; }
+.research-add .actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.research-add .btn { min-height: 44px; }
+.research-stop { display: grid; gap: var(--space-2); padding-top: var(--space-3); border-top: 1px solid var(--border-subtle); }
+.trip-pick { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+.trip-pick-btn { width: 100%; justify-content: space-between; gap: var(--space-3); text-align: left; }
+@media (max-width: 600px) { .research-add .actions .btn { flex: 1 1 100%; } }

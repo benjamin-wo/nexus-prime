@@ -13,6 +13,7 @@ Nothing is booked or bought; every result links to where it came from, and one
 tap turns the research into a trip.
 """
 
+import asyncio
 import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
@@ -27,6 +28,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field, field_validator
 
+from nexus.application import bookings as booking_cases
 from nexus.application import cashflow, fx
 from nexus.application import trips as trip_cases
 from nexus.application.budgets import TELEGRAM_SEND
@@ -38,8 +40,10 @@ from nexus.application.departments import (
     start_run,
 )
 from nexus.application.fx import RateSource
+from nexus.application.places import Places, best_match, query_for, suggested_stops
 from nexus.application.ports import UnitOfWork
 from nexus.application.web_search import WebAnswer, WebSearch, WebSearchError
+from nexus.domain.bookings import BookingDraft, BookingKind
 from nexus.domain.departments import RunStatus
 from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.evidence import has_figure, mentions
@@ -62,7 +66,14 @@ from nexus.domain.travel_research import (
     sources_from,
     trip_window,
 )
-from nexus.domain.trips import Trip, clean_currency, clean_destination
+from nexus.domain.trips import (
+    MAX_STOP_NAME,
+    MAX_STOPS,
+    Trip,
+    TripStatus,
+    clean_currency,
+    clean_destination,
+)
 
 log = logging.getLogger(__name__)
 
@@ -823,3 +834,131 @@ async def make_trip(uow: UowFactory, user: User, run_id: UUID, *, now: datetime)
             await tx.runs.update_run(replace(run, result={**run.result, "trip_id": str(trip.id)}))
             await tx.commit()
     return trip
+
+
+# --- the areas' ideas, added to a trip --------------------------------------------------
+
+IDEAS_PER_AREA = 4
+MAX_IDEA_AREAS = 10
+RECENT_RESEARCH = timedelta(days=30)
+
+
+@dataclass(frozen=True, slots=True)
+class AreaIdeas:
+    added: int  # ideas saved on the trip
+    skipped: int  # already on the trip (or named twice)
+    stop_suggestion: str | None  # the research's place, when it isn't any of the trip's stops
+
+
+async def latest_research(
+    uow: UnitOfWork, user: User, destination: str | None, *, now: datetime
+) -> UUID:
+    """The id of the user's latest finished research (of a place named like
+    ``destination``, when given), from the last month's."""
+    async with uow:
+        runs = await uow.runs.list_runs(user.id, since=now - RECENT_RESEARCH, limit=100)
+    wanted = (destination or "").strip().casefold()
+    for run in runs:
+        if run.kind != KIND or run.status is not RunStatus.DONE or run.result is None:
+            continue
+        place = str(run.result.get("destination", "")).casefold()
+        if not wanted or wanted in place or place in wanted:
+            return run.id
+    where = f" for {destination.strip()}" if destination and destination.strip() else ""
+    raise NotFound(f"no finished trip research{where} from the last month")
+
+
+def _squash(name: str) -> str:
+    """A name with case and spaces ignored, to spot the same idea twice."""
+    return "".join(name.casefold().split())
+
+
+def _is_stop(place: str, name: str) -> bool:
+    """Whether a research place and a stop name the same place ("Tokyo, Japan" and
+    "Tokyo")."""
+    a, b = " ".join(place.casefold().split()), " ".join(name.casefold().split())
+    first = a.split(",")[0].strip()
+    return a == b or first == b or b.split(",")[0].strip() == first
+
+
+async def ideas_from_areas(
+    uow: UowFactory,
+    places: Places | None,
+    user: User,
+    run_id: UUID,
+    trip_id: UUID,
+    areas: Sequence[str],
+    *,
+    now: datetime,
+) -> AreaIdeas:
+    """Saves the chosen research areas' things to do as places to visit on a trip, each
+    filed under a list named after its area. A thing already on the trip is skipped. Each
+    is matched to Google Maps when one result clearly is it (``same_place``); when Google
+    Maps can't be asked or isn't sure, it's saved by name only."""
+    result = await research_result(uow(), user, run_id)
+    trip = await trip_cases.get_trip(uow(), user.id, trip_id)
+    if trip.status(trip_cases.local_today(user, now)) is TripStatus.FINISHED:
+        raise InvalidInput("that trip is over")
+    by_name = {a.name.casefold(): a for a in result.areas}
+    chosen = []
+    for name in dict.fromkeys(" ".join(n.split()) for n in areas if n.strip()):
+        if (area := by_name.get(name.casefold())) is None:
+            known = ", ".join(a.name for a in result.areas)
+            raise InvalidInput(f"the research has no area called {name!r} (its areas: {known})")
+        chosen.append(area)
+    if not chosen:
+        raise InvalidInput("choose at least one area")
+    if len(chosen) > MAX_IDEA_AREAS:
+        raise InvalidInput(f"at most {MAX_IDEA_AREAS} areas at a time")
+    async with uow() as tx:
+        bookings = await tx.trips.list_bookings(user.id, trip_id=trip.id)
+    have = {
+        _squash(b.draft.name)
+        for b in bookings
+        if b.draft.kind is BookingKind.ACTIVITY and b.draft.name
+    }
+    wanted: list[tuple[str, str]] = []  # (thing, list name)
+    skipped = 0
+    for area in chosen:
+        for thing in area.things[:IDEAS_PER_AREA]:
+            key = _squash(thing)
+            if not key or key in have:
+                skipped += 1
+                continue
+            have.add(key)
+            wanted.append((thing, area.name))
+    gate = asyncio.Semaphore(4)
+
+    async def matched(thing: str, area: str) -> str | None:
+        if places is None:
+            return None
+        async with gate:
+            found = await best_match(
+                places, user.id, thing, query_for(f"{thing} {area}", result.destination)
+            )
+        return found.id if found is not None else None
+
+    ids = await asyncio.gather(*(matched(thing, area) for thing, area in wanted))
+    drafts = [
+        d
+        for (thing, area), pid in zip(wanted, ids, strict=True)
+        if (
+            d := BookingDraft.from_dict(
+                {"kind": "activity", "name": thing, "list_name": area, "place_id": pid}
+            )
+        )
+        is not None
+    ]
+    added = await booking_cases.add_ideas(uow(), user.id, trip.id, drafts, now=now) if drafts else 0
+    skipped += len(wanted) - len(drafts)
+    stops = trip.stops or await suggested_stops(places, user.id, trip, bookings)
+    suggestion = " ".join(result.destination.split())[:MAX_STOP_NAME].strip()
+    offered = (
+        suggestion
+        if suggestion
+        and len(stops) < MAX_STOPS
+        and not _is_stop(result.destination, trip.destination)
+        and not any(_is_stop(result.destination, s.name) for s in stops)
+        else None
+    )
+    return AreaIdeas(added, skipped, offered)
