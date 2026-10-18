@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { Booking, TripDetail } from "../api";
+import type { Balance, Booking, TripDetail } from "../api";
 import { dayIsFree, nextUp } from "./TripStage";
 
 // Made-up trips and bookings, with only the fields the rules read.
@@ -19,15 +19,17 @@ const booking = (extra: Partial<Booking>): Booking =>
     ...extra,
   }) as Booking;
 
-const detail = (extra: { trip?: Record<string, unknown>; bookings?: Booking[]; ready?: Record<string, unknown>; owed?: TripDetail["owed"] } = {}): TripDetail =>
+const detail = (extra: { trip?: Record<string, unknown>; bookings?: Booking[]; ready?: Record<string, unknown>; balances?: TripDetail["balances"] } = {}): TripDetail =>
   ({
     trip: { start: "2027-04-02", end: "2027-04-05", days: 4, status: "upcoming", days_until: 30, packing: [], ...extra.trip },
     bookings: extra.bookings ?? [],
     ready: { nights_without_stay: [], has_transport: true, has_budget: true, ...extra.ready },
-    owed: extra.owed ?? [],
+    balances: extra.balances ?? [],
   }) as unknown as TripDetail;
 
 const ideas = (n: number) => () => n;
+// Intl puts a no-break space after the currency code.
+const plain = (text: string) => text.replace(/\u00a0/g, " ");
 
 describe("a day with nothing on it", () => {
   const stay = booking({ id: "h", kind: "hotel", starts: "2027-04-02", check_in: "2027-04-02", check_out: "2027-04-04", hotel: "Hotel Ume" });
@@ -123,18 +125,50 @@ describe("next up during the trip", () => {
 
 describe("next up after the trip", () => {
   const trip = { status: "finished" };
-  const owes = (name: string) => ({ name, amounts: [{ amount: "120", currency: "SGD" }], home: { amount: "120", currency: "SGD" } });
+  const sgd = (amount: string) => ({ amount, currency: "SGD" });
+  const balance = (person: string, net: string | null, extra: Partial<Balance> = {}): Balance => ({
+    person,
+    direction: net === null ? null : Number(net) > 0 ? "owes_you" : Number(net) < 0 ? "you_owe" : "even",
+    net: net === null ? null : sgd(net),
+    net_by_currency: net === null ? [] : [sgd(net)],
+    owes_you: [],
+    you_owe: [],
+    ...extra,
+  });
 
   it("says who still owes you", () => {
-    const text = nextUp(detail({ trip, owed: [owes("Alex")] }), ideas(0))?.text;
-    expect(text).toMatch(/^Alex still owes you .*120/);
+    const next = nextUp(detail({ trip, balances: [balance("Alex", "768")] }), ideas(0));
+    expect(next).toMatchObject({ action: "Settle up", go: { tab: "money" } });
+    expect(plain(next?.text ?? "")).toBe("Alex still owes you SGD 768.00");
+  });
+
+  it("says what you still owe", () => {
+    expect(plain(nextUp(detail({ trip, balances: [balance("Sam", "-40")] }), ideas(0))?.text ?? "")).toBe("You still owe Sam SGD 40.00");
   });
 
   it("counts people when several owe you", () => {
-    expect(nextUp(detail({ trip, owed: [owes("Alex"), owes("Sam")] }), ideas(0))).toMatchObject({ text: "2 people still owe you", go: { tab: "money" } });
+    expect(nextUp(detail({ trip, balances: [balance("Alex", "120"), balance("Sam", "30")] }), ideas(0))).toMatchObject({
+      text: "2 people still owe you",
+      go: { tab: "money" },
+    });
   });
 
-  it("is nothing when nobody does", () => {
+  it("counts people to settle with when it goes both ways", () => {
+    expect(nextUp(detail({ trip, balances: [balance("Alex", "120"), balance("Sam", "-30")] }), ideas(0))?.text).toBe("2 people to settle up with");
+  });
+
+  it("falls back to each currency when there is no single total", () => {
+    const mixed = balance("Alex", null, {
+      net_by_currency: [
+        { amount: "4000", currency: "JPY" },
+        { amount: "20", currency: "SGD" },
+      ],
+    });
+    expect(nextUp(detail({ trip, balances: [mixed] }), ideas(0))?.text).toBe("Settle up with Alex");
+  });
+
+  it("is nothing when everyone is square", () => {
+    expect(nextUp(detail({ trip, balances: [balance("Ben", "0")] }), ideas(0))).toBeNull();
     expect(nextUp(detail({ trip }), ideas(0))).toBeNull();
   });
 });

@@ -16,7 +16,7 @@ import { TripPlacesProvider, useLinkedPlaces } from "./TripPlaces";
 import { StopsRow, StopsSheet, pillMark, pillTitle } from "./TripStops";
 import { EntryEditor } from "./TripEntry";
 import { IdeasTab, listOf } from "./TripIdeas";
-import { MoneyTab } from "./TripMoney";
+import { MoneyTab, NameChips } from "./TripMoney";
 import { PrepTab } from "./TripPrep";
 import { ShareSheet } from "./TripShare";
 import { TodayView } from "./TripToday";
@@ -41,7 +41,7 @@ function TripForm({ initial, home, onDone }: { initial?: Trip; home: string; onD
   const [end, setEnd] = useState(initial?.end ?? "");
   const [currency, setCurrency] = useState(initial?.currency ?? "");
   const [budget, setBudget] = useState(initial?.budget?.amount ? String(Number(initial.budget.amount)) : "");
-  const [companions, setCompanions] = useState(initial?.companions.join(", ") ?? "");
+  const [companions, setCompanions] = useState<string[]>(initial?.companions ?? []);
   const [setAside, setSetAside] = useState(initial?.set_aside ? String(Number(initial.set_aside.amount)) : "");
   const [planned, setPlanned] = useState<FormRow[]>(
     Object.entries(initial?.planned ?? {}).map(([name, m]) => ({ name, amount: String(Number(m.amount)) })),
@@ -81,10 +81,7 @@ function TripForm({ initial, home, onDone }: { initial?: Trip; home: string; onD
       end,
       currency: currency.trim().toUpperCase(),
       budget: budget.trim() || null,
-      companions: companions
-        .split(",")
-        .map((c) => c.trim())
-        .filter(Boolean),
+      companions,
       set_aside: setAside.trim() || null,
       planned: Object.fromEntries(planned.filter((p) => p.name.trim() && p.amount.trim()).map((p) => [p.name.trim(), p.amount.trim()])),
       notes: notes.trim() || null,
@@ -173,10 +170,10 @@ function TripForm({ initial, home, onDone }: { initial?: Trip; home: string; onD
           <input className="input" inputMode="decimal" value={setAside} onChange={(e) => setSetAside(e.target.value)} placeholder="Optional" />
         </label>
       </div>
-      <label className="field">
-        Who's going
-        <input className="input" value={companions} onChange={(e) => setCompanions(e.target.value)} placeholder="Names, separated by commas" />
-      </label>
+      <fieldset className="field-group">
+        <legend>Who's going</legend>
+        <NameChips names={companions} onChange={setCompanions} addOnBlur />
+      </fieldset>
       <fieldset className="trip-planned">
         <legend>Planned by category ({home}, optional)</legend>
         {planned.map((row, n) => (

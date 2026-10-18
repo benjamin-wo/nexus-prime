@@ -1,4 +1,4 @@
-import type { Booking, TripDetail } from "../api";
+import type { Balance, Booking, TripDetail } from "../api";
 import { formatMoney, formatShortDate } from "../format";
 import { sortKey, stopOfDay, stopsOf } from "./TripBits";
 
@@ -117,14 +117,29 @@ export function nextUp(detail: TripDetail, ideasFor: (day: string) => number, no
     if (!upcoming) return null;
     return { text: `Next: ${entryWords(upcoming)} at ${at(upcoming)}`, action: "Open today", go: { tab: "plan", day: today } };
   }
-  if (detail.owed.length === 0) return null;
-  const [first] = detail.owed;
-  const money = (first.home ? [first.home] : first.amounts).map(formatMoney).join(" + ");
-  return {
-    text: detail.owed.length === 1 ? `${first.name} still owes you ${money}` : `${detail.owed.length} people still owe you`,
-    action: "Settle up",
-    go: { tab: "money" },
-  };
+  // After the trip: who is left to settle with, from the balances (open items only).
+  const open = detail.balances.filter((b) => b.direction !== "even");
+  if (open.length === 0) return null;
+  const [first] = open;
+  const text =
+    open.length === 1
+      ? first.direction === "you_owe"
+        ? `You still owe ${first.person} ${balanceAmount(first)}`
+        : first.direction === "owes_you"
+          ? `${first.person} still owes you ${balanceAmount(first)}`
+          : `Settle up with ${first.person}`
+      : open.every((b) => b.direction === "owes_you")
+        ? `${open.length} people still owe you`
+        : `${open.length} people to settle up with`;
+  return { text, action: "Settle up", go: { tab: "money" } };
+}
+
+/** What a balance comes to, as an unsigned amount: the net in the home currency, or when
+ * a part has no exchange rate yet, each currency's amount side by side ("JPY 4,000 + SGD 20.00"). */
+export function balanceAmount(b: Pick<Balance, "net" | "net_by_currency">): string {
+  const unsigned = (m: { amount: string; currency: string }) => formatMoney({ ...m, amount: String(Math.abs(Number(m.amount))) });
+  if (b.net) return unsigned(b.net);
+  return b.net_by_currency.map(unsigned).join(" + ");
 }
 
 /** The gaps, first on a trip that's being planned. Nothing when it's all sorted. */

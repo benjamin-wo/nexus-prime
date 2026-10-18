@@ -1237,6 +1237,12 @@ html.keyboard .bottom-nav, html.keyboard .trip-fab-button, html.keyboard .trip-f
 .share-link .input { flex: 1; min-width: 0; }
 @media (min-width: 721px) and (pointer: fine) { .share-link .input { font-size: 0.875rem; } }
 .share-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+/* Share settings */
+.share-switch { display: flex; align-items: center; gap: var(--space-3); min-height: 44px; cursor: pointer; font-weight: 500; }
+.share-switch input { width: 22px; height: 22px; flex: none; accent-color: var(--accent-text); cursor: inherit; }
+.share-switch:has(input:disabled) { cursor: default; opacity: 0.6; }
+.share-saved { margin: calc(-1 * var(--space-2)) 0 0; min-height: 1.25em; }
+.shared-note { margin: 0 0 var(--space-3); padding: var(--space-3) var(--space-4); border-radius: var(--radius-inner); border: 1px solid var(--border-card); background: var(--bg-input); color: var(--text-secondary); font-size: 0.875rem; }
 .shared-page { min-height: 100dvh; padding: var(--space-6) var(--space-4) var(--space-8); }
 .shared-page > .trip-page { max-width: 880px; margin: 0 auto; padding-bottom: 0; }
 .shared-badge { cursor: default; }
@@ -1633,6 +1639,75 @@ html.keyboard .bottom-nav, html.keyboard .trip-fab-button, html.keyboard .trip-f
 @media (max-width: 720px) {
   .planned-form > .btn { flex: 1 1 100%; min-height: 44px; }
 }
+
+/* Trip page: travellers and settling */
+.name-chips-wrap { display: grid; gap: var(--space-3); }
+.name-chips { display: flex; flex-wrap: wrap; gap: var(--space-2); list-style: none; margin: 0; padding: 0; }
+.name-chip {
+  display: inline-flex; align-items: center; gap: var(--space-1); min-height: 44px; padding: 0 var(--space-4);
+  border-radius: 999px; border: 1px solid var(--border-card); background: var(--bg-input); color: var(--text-primary); font-weight: 600;
+}
+.name-chip:has(.chip-x) { padding-right: var(--space-1); }
+.name-chip-you { background: var(--accent-soft); border-color: var(--accent-border); color: var(--accent-text); }
+.name-chip .chip-x { width: 44px; height: 44px; font-size: 1.25rem; }
+.name-chip .chip-x:disabled { opacity: 0.45; cursor: not-allowed; }
+.name-add { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-3); }
+.name-add .field { flex: 1 1 200px; }
+.name-add .btn { min-height: 44px; }
+.switch-row {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); width: 100%; min-height: 44px; padding: 0;
+  border: 0; background: none; color: var(--text-primary); font: inherit; font-weight: 600; text-align: left; cursor: pointer;
+}
+.switch-row:disabled { opacity: 0.6; cursor: not-allowed; }
+.switch-track {
+  flex: none; position: relative; width: 44px; height: 26px; border-radius: 999px; border: 1px solid var(--border-card);
+  background: var(--bg-raised); transition: background var(--t-micro), border-color var(--t-micro);
+}
+.switch-thumb {
+  position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: var(--text-muted);
+  transition: transform var(--t-micro), background var(--t-micro);
+}
+.switch-row[aria-checked="true"] .switch-track { background: var(--accent); border-color: var(--accent); }
+.switch-row[aria-checked="true"] .switch-thumb { transform: translateX(18px); background: #fff; }
+.split-row .row-actions { display: inline-flex; flex-wrap: wrap; gap: var(--space-2); justify-content: flex-end; }
+.split-row .num { text-align: right; }
+.people-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--space-3); }
+.people-actions .btn { min-height: 44px; }
+.choice-actions { margin-top: 0; }
+.confirm-box { display: grid; gap: var(--space-2); margin-top: var(--space-3); padding: var(--space-3); border-radius: var(--radius-inner); border: 1px solid var(--accent-border); background: var(--accent-soft); }
+.confirm-box p { margin: 0; }
+.confirm-box .people-actions { margin-top: 0; }
+.split-outcome { display: grid; gap: var(--space-1); margin-top: var(--space-3); padding: var(--space-3); border-radius: var(--radius-inner); background: var(--bg-input); }
+.split-outcome p, .split-outcome ul { margin: 0; }
+.split-outcome ul { padding-left: var(--space-5); }
+.kept-mine { margin-top: var(--space-3); }
+.paid-form { display: grid; gap: var(--space-3); margin-top: var(--space-3); }
+.paid-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--space-3); }
+.check-list { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); }
+.check-row { display: inline-flex; align-items: center; gap: var(--space-2); min-height: 44px; cursor: pointer; }
+.check-row input { width: 20px; height: 20px; accent-color: var(--accent); flex: none; }
+.paid-row.is-settled, .paid-row.is-settled .caption { color: var(--text-muted); }
+.paid-row { display: grid; gap: var(--space-2); }
+.settle-list { gap: var(--space-3); }
+.settle-row { display: grid; gap: var(--space-2); padding-bottom: var(--space-3); border-bottom: 1px solid var(--border-subtle); }
+.settle-row:last-child { border-bottom: 0; padding-bottom: 0; }
+.settle-row p { margin: 0; }
+.settle-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.settle-main {
+  flex: 1 1 auto; display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-width: 0; min-height: 44px;
+  padding: 0; border: 0; background: none; color: var(--text-primary); font: inherit; font-weight: 600; text-align: left;
+}
+button.settle-main { cursor: pointer; }
+button.settle-main:hover > .wrap { text-decoration: underline dotted; text-underline-offset: 3px; }
+.settle-head .btn { flex: none; min-height: 44px; }
+.settle-row .peek h3 { margin: var(--space-2) 0 0; }
+@media (max-width: 720px) {
+  .split-row { flex-wrap: wrap; }
+  .split-row .row-actions { flex: 1 1 100%; justify-content: flex-start; }
+  .split-row .row-actions .btn { flex: 1 1 0; }
+  .confirm-box .people-actions .btn, .paid-form .people-actions .btn { flex: 1 1 100%; }
+}
+.split-row .btn-small, .paid-row .btn-small { min-height: 44px; }
 
 /* Research into a trip */
 .area-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
