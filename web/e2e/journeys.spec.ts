@@ -1379,8 +1379,12 @@ test("trip research shows sourced prices and a budget, and becomes a trip", asyn
   await expect(costs.getByRole("link", { name: "[2]" })).toHaveAttribute("href", "https://flights.example.com/s");
   await expect(page.getByRole("region", { name: "Sources" }).getByRole("link", { name: "Tokyo guide" })).toHaveAttribute("rel", /noopener/);
   await page.getByRole("button", { name: "Make it a trip" }).click();
+  // The trip is made; the areas' ideas are asked about before leaving, and "Not now" goes on.
+  await expect(page.getByRole("heading", { name: "Add the ideas from these areas to the trip too?" })).toBeVisible();
+  await page.getByRole("button", { name: "Not now" }).click();
   await expect(page).toHaveURL(/\/travel\/trips\/trip9$/);
   await expect.poll(() => state.trips[0]).toMatchObject({ destination: "Tokyo", currency: "JPY" });
+  expect(state.researchIdeaPosts).toEqual([]);
 });
 
 test("plans are added to a trip's itinerary by hand, day by day, and changed", async ({ page }) => {
@@ -1549,7 +1553,7 @@ test("places from Google Maps: saved, linked, rated, and flagged when usually cl
   await page.getByRole("button", { name: "🔎 Find places or ideas" }).click();
   await page.getByRole("search", { name: "Search Google Maps" }).getByLabel("Look for").fill("noodles");
   await page.getByRole("button", { name: "Search", exact: true }).click();
-  const results = page.getByRole("list", { name: "Google Maps results" });
+  const results = page.getByRole("list", { name: "Results" });
   await expect(results).toContainText("Hanok Noodle Bar ★ 4.6 (2,310)");
   await expect.poll(() => state.placeSearches).toEqual(["noodles"]);
   // One word reads as a name: only Google Maps is asked; ideas are a tap away.
@@ -1643,7 +1647,7 @@ test("a trip's weather, packing list, cover photo and stop photos", async ({ pag
   await sheet.getByRole("button", { name: /Find a place/ }).click();
   await page.getByRole("search", { name: "Search Google Maps" }).getByLabel("Look for").fill("noodles");
   await page.getByRole("button", { name: "Search", exact: true }).click();
-  await page.getByRole("list", { name: "Google Maps results" }).getByRole("button", { name: "Save: Hanok Noodle Bar" }).click();
+  await page.getByRole("list", { name: "Results" }).getByRole("button", { name: "Save: Hanok Noodle Bar" }).click();
   await page.keyboard.press("Escape");
   await openTab(page, "Ideas");
   await page.getByRole("list", { name: "Ideas" }).getByRole("button", { name: "Put Hanok Noodle Bar on a day" }).click();
@@ -1808,22 +1812,24 @@ test("ideas from guides and articles: asked for in words, credited, saved to the
   // The search field says ideas can be asked for in words.
   await expect(page.getByRole("search", { name: "Search Google Maps" }).getByLabel("Look for")).toHaveAttribute("placeholder", /Best ramen, a rainy day/);
 
-  // Asking for ideas: Google Maps answers first, then guides and articles below.
+  // Asking for ideas: Google Maps answers first, and the guides' ideas join the same list when they're in.
   await page.getByRole("search", { name: "Search Google Maps" }).getByLabel("Look for").fill("best noodles");
   await page.getByRole("button", { name: "Search", exact: true }).click();
-  await expect(page.getByRole("list", { name: "Google Maps results" })).toContainText("Hanok Noodle Bar");
-  const ideas = page.getByRole("list", { name: "Ideas from guides and articles" });
-  await expect(ideas).toContainText("“Hand-pulled noodles worth the queue.”");
+  const results = page.getByRole("list", { name: "Results" });
+  await expect(results).toContainText("Hanok Noodle Bar");
+  await expect(results).toContainText("“Hand-pulled noodles worth the queue.”");
   await expect.poll(() => state.ideaSearches).toEqual(["best noodles"]);
+  await expect(page.getByRole("list", { name: "Ideas from guides and articles" })).toHaveCount(0);
+  await expect(page.getByRole("list", { name: "Google Maps results" })).toHaveCount(0);
   // Each is credited to its page, opened safely in a new tab.
-  const source = ideas.getByRole("link", { name: "Seoul's best noodles" });
+  const source = results.getByRole("link", { name: "Seoul's best noodles" });
   await expect(source).toHaveAttribute("href", "https://food.example.com/seoul-noodles");
   await expect(source).toHaveAttribute("rel", /noopener/);
-  await expect(ideas.getByLabel("Rated 4.6 out of 5 from 2310 ratings")).toBeVisible();
-  await expect(ideas).toContainText("Nightlife · Euljiro");
+  await expect(results.getByLabel("Rated 4.6 out of 5 from 2310 ratings")).toBeVisible();
+  await expect(results).toContainText("Nightlife · Euljiro");
 
   // Saving one without a Google Maps match keeps its name, kind and area.
-  await ideas.getByRole("button", { name: "Save: Lantern Alley" }).click();
+  await results.getByRole("button", { name: "Save: Lantern Alley" }).click();
   await expect.poll(() => state.plans[0]).toMatchObject({ name: "Lantern Alley", category: "Nightlife", list_name: "Nightlife", address: "Euljiro", place_id: null });
   await page.keyboard.press("Escape");
   await openTab(page, "Ideas");
@@ -2058,7 +2064,10 @@ test("a day rearranged: dragged, moved by keyboard or menu, with what to watch o
   await notes.first().getByRole("button", { name: "Find something to do" }).click();
   await page.getByRole("search", { name: "Search Google Maps" }).getByLabel("Look for").fill("noodles");
   await page.getByRole("button", { name: "Search", exact: true }).click();
-  await page.getByRole("list", { name: "Google Maps results" }).getByRole("button", { name: "Add: Hanok Noodle Bar" }).click();
+  // Searching from a free slot looks near that day, and "Add" is already for it: no second button for the same thing.
+  await expect(page.getByRole("list", { name: "Results" }).getByRole("button", { name: /^Add to Day/ })).toHaveCount(0);
+  await expect.poll(() => state.placeScopes.at(-1)).toMatchObject({ q: "noodles", day: "2026-11-11" });
+  await page.getByRole("list", { name: "Results" }).getByRole("button", { name: "Add: Hanok Noodle Bar" }).click();
   await expect.poll(() => state.plans.at(-1)).toMatchObject({ name: "Hanok Noodle Bar", day: "2026-11-11", at: "09:00", place_id: "fakePlaceNoodle01" });
   await page.keyboard.press("Escape");
   await expect(day2).toContainText("Hanok Noodle Bar");
@@ -3053,4 +3062,250 @@ test("entries that look like moves are reviewed one at a time from the Wallets c
   await review.getByRole("button", { name: "Not a move" }).click();
   await expect(card.getByText("That's all of them.")).toBeVisible();
   expect(state.txs.find((t) => t.id === "t202")?.direction).toBe("in"); // nothing was changed
+});
+
+// --- finding by stop, day or theme, and research into ideas -------------------------------
+
+/** The scope row and the theme chips of the finder that is open. */
+const lookIn = (page: Page) => page.getByRole("group", { name: "Look in" });
+const themesOf = (page: Page) => page.getByRole("group", { name: "Themes" });
+const finderBox = (page: Page) => page.getByRole("search", { name: "Search Google Maps" }).getByLabel("Look for");
+
+/** A Japan trip of three days in Tokyo then three in Kyoto, from stays linked to a place in each. */
+async function japanWithStops(page: Page) {
+  const state = await fakeApi(page);
+  await addTrip(page, "Japan", "2026-11-10", "2026-11-16");
+  state.plans.push(
+    stayAt("pl1", "Hotel Kumo Shinjuku", "2026-11-10", "2026-11-13", "fakePlaceTokyoInn1"),
+    stayAt("pl2", "Machiya Inn Higashiyama", "2026-11-13", "2026-11-16", "fakePlaceKyotoInn1"),
+  );
+  await page.reload();
+  return state;
+}
+
+test("a search looks in one stop or the whole trip, and asks again when the scope changes", async ({ page }) => {
+  const state = await japanWithStops(page);
+  await openTab(page, "Ideas");
+  await page.getByRole("button", { name: "🔎 Find places or ideas" }).click();
+
+  // Whole trip, a button for each stop, and the day open on Plan. The stop of that day is where it begins.
+  const scope = lookIn(page);
+  await expect(scope.getByRole("button")).toHaveText(["Whole trip", "In Tokyo", "In Kyoto", /^Near Day 1/]);
+  await expect(scope.getByRole("button", { name: "In Tokyo" })).toHaveAttribute("aria-pressed", "true");
+  await expect(scope.getByRole("button", { name: "Whole trip" })).toHaveAttribute("aria-pressed", "false");
+
+  // "In Kyoto" sends the stop with both requests; the trip's destination isn't in the text.
+  await scope.getByRole("button", { name: "In Kyoto" }).click();
+  await expect(scope.getByRole("button", { name: "In Kyoto" })).toHaveAttribute("aria-pressed", "true");
+  await finderBox(page).fill("best ramen");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  const results = page.getByRole("list", { name: "Results" });
+  await expect(results).toContainText("Hanok Noodle Bar");
+  await expect.poll(() => state.placeScopes).toEqual([{ q: "best ramen", trip_id: "trip1", stop: "Kyoto", day: null }]);
+  await expect.poll(() => state.ideaScopes).toEqual([{ q: "best ramen", stop: "Kyoto", day: null }]);
+
+  // Looking somewhere else asks the same question again, there.
+  await scope.getByRole("button", { name: "In Tokyo" }).click();
+  await expect.poll(() => state.placeScopes.at(-1)).toEqual({ q: "best ramen", trip_id: "trip1", stop: "Tokyo", day: null });
+  await expect.poll(() => state.ideaScopes.at(-1)).toEqual({ q: "best ramen", stop: "Tokyo", day: null });
+  await scope.getByRole("button", { name: "Whole trip" }).click();
+  await expect.poll(() => state.placeScopes.at(-1)).toEqual({ q: "best ramen", trip_id: "trip1", stop: null, day: null });
+  await expect.poll(() => state.ideaScopes.at(-1)).toEqual({ q: "best ramen", stop: null, day: null });
+  expect(state.placeScopes).toHaveLength(3);
+});
+
+test("a theme chip fills the search and runs it, and what is saved goes in a list of that theme", async ({ page }) => {
+  const state = await japanWithStops(page);
+  await openTab(page, "Ideas");
+  await page.getByRole("button", { name: "🔎 Find places or ideas" }).click();
+  const themes = themesOf(page);
+  await expect(themes.getByRole("button")).toHaveText(["Food", "Sights", "Museums", "Nature", "Shopping", "Nightlife", "Rainy day"]);
+
+  await themes.getByRole("button", { name: "Food" }).click();
+  await expect(finderBox(page)).toHaveValue("Best food");
+  await expect(themes.getByRole("button", { name: "Food" })).toHaveAttribute("aria-pressed", "true");
+  const results = page.getByRole("list", { name: "Results" });
+  await expect(results).toContainText("Lantern Alley");
+  // It began on the stop of the open day, and guides were read too: it is an idea-ish query.
+  await expect.poll(() => state.placeScopes).toEqual([{ q: "Best food", trip_id: "trip1", stop: "Tokyo", day: null }]);
+  await expect.poll(() => state.ideaScopes).toEqual([{ q: "Best food", stop: "Tokyo", day: null }]);
+
+  // Saved under the theme, not the guide's kind (Nightlife).
+  await results.getByRole("button", { name: "Save: Lantern Alley" }).click();
+  await expect.poll(() => state.plans.at(-1)).toMatchObject({ name: "Lantern Alley", day: null, list_name: "Food", place_id: null });
+  await expect(page.getByRole("list", { name: "Ideas" })).toContainText("Lantern Alley");
+
+  // Typing by hand lets the theme go: a next save is filed by the guide's kind.
+  await page.getByRole("button", { name: "🔎 Find places or ideas" }).click();
+  await themesOf(page).getByRole("button", { name: "Rainy day" }).click();
+  await expect(finderBox(page)).toHaveValue("Rainy day");
+  await finderBox(page).fill("best quiet cafes");
+  await expect(themesOf(page).getByRole("button", { name: "Rainy day" })).toHaveAttribute("aria-pressed", "false");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await page.getByRole("list", { name: "Results" }).getByRole("button", { name: "Save: Lantern Alley" }).click();
+  await expect.poll(() => state.plans.at(-1)).toMatchObject({ name: "Lantern Alley", list_name: "Nightlife" });
+});
+
+test("Find ideas near here on a day opens the finder near it, adds to that day, and Plan shows it there", async ({ page }) => {
+  const state = await fakeApi(page);
+  await addTrip(page, "Seoul", "2026-11-10", "2026-11-13");
+  state.plans.push(planOn("pl1", "Hanok Noodle Bar", "2026-11-11", { at: "12:00", place_id: "fakePlaceNoodle01" }));
+  await page.reload();
+  await itineraryOf(page).getByRole("navigation", { name: "Days" }).getByRole("button", { name: /11/ }).click();
+  const day2 = page.locator("#day-2026-11-11");
+  await day2.getByRole("button", { name: "Find ideas near here, Day 2" }).click();
+
+  // It opens on "Near Day 2", the day it was opened from.
+  const sheet = page.getByRole("dialog");
+  const scope = lookIn(page);
+  await expect(scope.getByRole("button", { name: /^Near Day 2/ })).toHaveAttribute("aria-pressed", "true");
+  await expect(scope.getByRole("button", { name: "Whole trip" })).toHaveAttribute("aria-pressed", "false");
+  await finderBox(page).fill("best coffee");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  const results = page.getByRole("list", { name: "Results" });
+  await expect(results).toContainText("Lantern Alley");
+  await expect.poll(() => state.placeScopes).toEqual([{ q: "best coffee", trip_id: "trip1", stop: null, day: "2026-11-11" }]);
+  await expect.poll(() => state.ideaScopes).toEqual([{ q: "best coffee", stop: null, day: "2026-11-11" }]);
+
+  // Each result can be kept as an idea, or put on that day.
+  await expect(results.getByRole("button", { name: "Save: Lantern Alley" })).toBeVisible();
+  await results.getByRole("button", { name: "Add to Day 2: Lantern Alley" }).click();
+  await expect.poll(() => state.plans.at(-1)).toMatchObject({ name: "Lantern Alley", day: "2026-11-11", list_name: null });
+  await expect(sheet).toContainText("Added Lantern Alley to Day 2.");
+  await page.keyboard.press("Escape");
+  await expect(day2).toContainText("Lantern Alley");
+  await expect(day2).toContainText("Hanok Noodle Bar");
+
+  // Widening to the whole trip asks again, with no day; Add to Day goes away with the scope.
+  await day2.getByRole("button", { name: "Find ideas near here, Day 2" }).click();
+  await finderBox(page).fill("best coffee");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(results).toContainText("Namdaemun Market");
+  await lookIn(page).getByRole("button", { name: "Whole trip" }).click();
+  await expect.poll(() => state.placeScopes.at(-1)).toEqual({ q: "best coffee", trip_id: "trip1", stop: null, day: null });
+  await expect(results.getByRole("button", { name: /^Add to Day 2:/ })).toHaveCount(0);
+});
+
+test("a place found by Google Maps and by a guide is one card, with its rating, why and both tags", async ({ page }) => {
+  const state = await fakeApi(page);
+  await addTrip(page, "Seoul", "2026-11-10", "2026-11-13");
+  await openTab(page, "Ideas");
+  await page.getByRole("button", { name: "🔎 Find places or ideas" }).click();
+  await finderBox(page).fill("best noodles");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  const results = page.getByRole("list", { name: "Results" });
+  // Google's four places and the guide's one without a match: the noodle bar comes once, not twice.
+  await expect(results.getByRole("listitem")).toHaveCount(5);
+  await expect.poll(() => state.ideaSearches).toEqual(["best noodles"]);
+  const card = results.getByRole("listitem").filter({ hasText: "Hanok Noodle Bar" });
+  await expect(card).toHaveCount(1);
+  await expect(card.getByLabel("Rated 4.6 out of 5 from 2310 ratings")).toBeVisible();
+  await expect(card).toContainText("“Hand-pulled noodles worth the queue.”");
+  await expect(card.getByRole("link", { name: "Seoul's best noodles" })).toHaveAttribute("href", "https://food.example.com/seoul-noodles");
+  await expect(card.locator(".find-tags .chip")).toHaveText(["Google Maps", "From guides"]);
+  // A place only one of them knew carries only that tag.
+  await expect(results.getByRole("listitem").filter({ hasText: "Namdaemun Market" }).locator(".find-tags .chip")).toHaveText(["Google Maps"]);
+  await expect(results.getByRole("listitem").filter({ hasText: "Lantern Alley" }).locator(".find-tags .chip")).toHaveText(["From guides"]);
+  // Saving the merged card keeps the Google place.
+  await card.getByRole("button", { name: "Save: Hanok Noodle Bar" }).click();
+  await expect.poll(() => state.plans.filter((p) => p.name === "Hanok Noodle Bar")).toHaveLength(1);
+  expect(state.plans[0]).toMatchObject({ name: "Hanok Noodle Bar", place_id: "fakePlaceNoodle01" });
+});
+
+test("research areas are saved to an existing trip: a duplicate is skipped, and the ideas sit under each area", async ({ page }) => {
+  const state = await fakeApi(page, { research: true });
+  await addTrip(page, "Osaka", "2027-01-06", "2027-01-17");
+  state.plans.push(idea("pl1", "Senso-ji"));
+  await page.reload();
+  await page.goto("/travel/research/rs1");
+
+  // A box for each area with things to do, all ticked.
+  const shinjuku = page.getByRole("checkbox", { name: "Save its ideas from Shinjuku" });
+  const asakusa = page.getByRole("checkbox", { name: "Save its ideas from Asakusa" });
+  await expect(shinjuku).toBeChecked();
+  await expect(asakusa).toBeChecked();
+  await expect(page.getByText("Saves the things to do in 2 of 2 areas as ideas.")).toBeVisible();
+  await shinjuku.uncheck();
+  await expect(page.getByText("Saves the things to do in 1 of 2 areas as ideas.")).toBeVisible();
+  await asakusa.uncheck();
+  await expect(page.getByRole("button", { name: "Add to a trip…" })).toBeDisabled();
+  await shinjuku.check();
+  await asakusa.check();
+
+  await page.getByRole("button", { name: "Add to a trip…" }).click();
+  await expect(page.getByRole("heading", { name: "Which trip?" })).toBeVisible();
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByRole("heading", { name: "Which trip?" })).toHaveCount(0);
+  expect(state.researchIdeaPosts).toEqual([]);
+
+  await page.getByRole("button", { name: "Add to a trip…" }).click();
+  await page.getByRole("button", { name: /^Osaka/ }).click();
+  await expect(page.getByRole("heading", { name: "Ideas added" })).toBeVisible();
+  expect(state.researchIdeaPosts).toEqual([{ run: "rs1", trip_id: "trip1", areas: ["Shinjuku", "Asakusa"] }]);
+  // Senso-ji was already an idea on the trip.
+  await expect(page.getByText("Added 3 ideas to Osaka (1 was already there).")).toBeVisible();
+
+  // They are on Ideas, one list per area.
+  await page.getByRole("link", { name: "See them on the trip's Ideas tab" }).click();
+  await expect(page).toHaveURL(/\/travel\/trips\/trip1\?tab=ideas/);
+  const lists = page.getByRole("group", { name: "Lists" });
+  await expect(lists.getByRole("button", { name: /^Shinjuku/ })).toBeVisible();
+  await lists.getByRole("button", { name: /^Asakusa/ }).click();
+  const places = page.getByRole("list", { name: "Ideas" });
+  await expect(places).toContainText("Nakamise street");
+  await expect(places).toContainText("Kappabashi");
+  await expect(places).not.toContainText("Senso-ji");
+  await lists.getByRole("button", { name: /^Shinjuku/ }).click();
+  await expect(places).toContainText("Gyoen garden");
+  expect(state.plans.filter((p) => p.list_name === "Asakusa").map((p) => p.name)).toEqual(["Nakamise street", "Kappabashi"]);
+});
+
+test("the research's city is offered as a stop, says what it changes, and is saved with the stops made room", async ({ page }) => {
+  const state = await fakeApi(page, { research: true });
+  // The trip starts four days before the research's dates, so Osaka has to end where Tokyo starts.
+  await addTrip(page, "Osaka", "2027-01-06", "2027-01-17");
+  await page.goto("/travel/research/rs1");
+  await page.getByRole("button", { name: "Add to a trip…" }).click();
+  await page.getByRole("button", { name: /^Osaka/ }).click();
+  await expect(page.getByRole("heading", { name: "Ideas added" })).toBeVisible();
+  await expect(page.getByText("Added 4 ideas to Osaka.")).toBeVisible();
+
+  const offer = page.locator(".research-stop");
+  await expect(offer).toContainText("Add Tokyo as a stop for");
+  await expect(offer).toContainText(/Osaka would end on .*10/);
+  expect(state.stopPuts).toEqual([]);
+  await offer.getByRole("button", { name: "Add Tokyo as a stop" }).click();
+  await expect(page.getByText("Added Tokyo as a stop.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open the trip" }).last()).toBeVisible();
+  // The new stop kept whole; the old one ends on its first day.
+  expect(state.stopPuts).toEqual([
+    [
+      { name: "Osaka", start: "2027-01-06", end: "2027-01-10" },
+      { name: "Tokyo", start: "2027-01-10", end: "2027-01-17" },
+    ],
+  ]);
+  await expect(offer).toHaveCount(0);
+  await page.getByRole("link", { name: "Open the trip" }).last().click();
+  const stops = page.getByRole("list", { name: "Stops" });
+  await expect(stops.getByRole("button")).toHaveCount(2);
+  await expect(stops.getByRole("button", { name: /^Tokyo/ })).toBeVisible();
+});
+
+test("after Make it a trip, the areas' ideas are added to the new trip when asked", async ({ page }) => {
+  const state = await fakeApi(page, { research: true });
+  await page.goto("/travel/research/rs1");
+  // Only Asakusa's, this time.
+  await page.getByRole("checkbox", { name: "Save its ideas from Shinjuku" }).uncheck();
+  await page.getByRole("button", { name: "Make it a trip" }).click();
+  await expect(page.getByRole("heading", { name: "Add the ideas from these areas to the trip too?" })).toBeVisible();
+  await expect(page).toHaveURL(/\/travel\/research\/rs1$/);
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Ideas added" })).toBeVisible();
+  expect(state.researchIdeaPosts).toEqual([{ run: "rs1", trip_id: "trip9", areas: ["Asakusa"] }]);
+  await expect(page.getByText("Added 3 ideas to Tokyo.")).toBeVisible();
+  // The research is for Tokyo and so is the trip: no stop to offer.
+  await expect(page.locator(".research-stop")).toHaveCount(0);
+  await page.getByRole("link", { name: "See them on the trip's Ideas tab" }).click();
+  await expect(page).toHaveURL(/\/travel\/trips\/trip9\?tab=ideas/);
+  await expect(page.getByRole("list", { name: "Ideas" })).toContainText("Nakamise street");
 });

@@ -160,7 +160,7 @@ export function wantsIdeas(query: string): boolean {
  * query that asks for ideas also reads travel guides and articles, merged into the same
  * list once they're in (they take longer). With ``scopes`` the search can look in one stop
  * or near a day, and ``themes`` adds quick searches. */
-export function PlaceFinder({ initial, pickLabel, saveText, onPick, ideas: ideasOn = false, scopes, firstScopeKey, themes = false, onCancel }: {
+export function PlaceFinder({ initial, pickLabel, saveText, onPick, ideas: ideasOn = false, scopes, firstScopeKey, themes = false, addsToDay = false, onCancel }: {
   initial: string;
   pickLabel: string;
   /** The pick button's words when they say more than ``pickLabel`` (its name stays ``pickLabel``). */
@@ -170,6 +170,8 @@ export function PlaceFinder({ initial, pickLabel, saveText, onPick, ideas: ideas
   scopes?: Scope[];
   firstScopeKey?: string;
   themes?: boolean;
+  /** The pick button already adds to a day, so there's no second "Add to Day N" beside it. */
+  addsToDay?: boolean;
   onCancel: () => void;
 }) {
   const places = useContext(Context);
@@ -190,7 +192,7 @@ export function PlaceFinder({ initial, pickLabel, saveText, onPick, ideas: ideas
   const withIdeas = ideasOn && places.ideas;
   const scope = scopes?.find((s) => s.key === scopeKey) ?? scopes?.[0] ?? null;
   const results = mergeResults(found ?? [], ideas?.ideas ?? []);
-  const dayScope = scope?.day && scope.number ? scope : null;
+  const dayScope = !addsToDay && scope?.day && scope.number ? scope : null;
 
   async function readIdeas(q: string, where: SearchScope, id: number) {
     setReading(true);
@@ -452,6 +454,7 @@ export function SavePlaces({ open = false, day, at, near, viewing, onDone }: {
       scopes={scopes}
       firstScopeKey={firstScope(scopes, { near: from, viewing, stops })}
       themes
+      addsToDay={Boolean(day)}
     />
   );
 }
