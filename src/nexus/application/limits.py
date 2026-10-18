@@ -19,12 +19,17 @@ SHARED_VIEWS: Sequence[Window] = ((60, timedelta(minutes=1)), (2000, timedelta(d
 IDEAS: Sequence[Window] = ((6, timedelta(minutes=1)), (40, timedelta(days=1)))
 # Looking something up on the web from chat: a search and a model call each.
 WEB: Sequence[Window] = ((5, timedelta(minutes=1)), (20, timedelta(days=1)))
+# Making trip invite links, and trying one to join a trip.
+INVITES: Sequence[Window] = ((20, timedelta(hours=1)),)
+JOINS: Sequence[Window] = ((20, timedelta(minutes=10)),)
 DEFAULT_RULES: Mapping[str, Sequence[Window]] = {
     "message": MESSAGES,
     "import": IMPORTS,
     "shared": SHARED_VIEWS,
     "ideas": IDEAS,
     "web": WEB,
+    "invite": INVITES,
+    "join": JOINS,
 }
 
 

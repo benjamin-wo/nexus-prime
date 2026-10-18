@@ -154,8 +154,10 @@ export type ImportRecord = {
 export type Page = { items: Transaction[]; total: number };
 export type Category = { id: string; name: string };
 export type Me = {
-  user: { telegram_user_id: number; role: "owner" | "member"; home_currency: string; timezone: string };
+  user: { telegram_user_id: number; role: "owner" | "member" | "guest"; home_currency: string; timezone: string };
   csrf_token: string;
+  /** Set by a sign-in that added the person to a trip with a trip invite. */
+  joined_trip?: string | null;
 };
 export type Summary = {
   start: string;
@@ -598,6 +600,11 @@ export type Trip = {
   stops: TripStop[];
   /** Costs are split evenly with the people going: offered once someone else is going. */
   split_evenly: boolean;
+  /** "owner" for the user's own trip, "member" for one they were added to: there the budget,
+   * set-aside and planned amounts are left out (null, empty). */
+  role: "owner" | "member";
+  /** The owner's name, as they sign in with. */
+  owner_name: string | null;
 };
 
 export type PackItem = { text: string; done: boolean };
@@ -851,6 +858,32 @@ export type DayNote = { kind: "clash" | "order" | "free" | "arrival"; text: stri
 /** A trip day: its entries' ids in itinerary order, and its notes. */
 export type DayPlan = { day: string; order: string[]; notes: DayNote[] };
 
+/** What a trip has cost so far against its budget. */
+export type TripSpending = {
+  spent: Money;
+  left: Money | null;
+  percent: number | null;
+  before: Money;
+  today: Money | null;
+  per_day: Money | null;
+  per_day_left: Money | null;
+  categories: { name: string; planned: Money | null; spent: Money }[];
+  unconverted: number;
+};
+/** The set-aside plan for a trip. */
+export type TripSaving = {
+  per_payday: Money | null;
+  paydays_done: number;
+  paydays_left: number;
+  saved: Money | null;
+  by_start: Money | null;
+  covers_budget: boolean | null;
+  suggested: Money | null;
+  fits: boolean | null;
+  next_payday: string | null;
+  pay_schedule: boolean;
+};
+
 export type TripDetail = {
   trip: Trip;
   bookings: Booking[];
@@ -872,29 +905,12 @@ export type TripDetail = {
   booked_unlogged: Money | null;
   to_spend: Money | null;
   ready: { nights_without_stay: string[]; has_transport: boolean; has_budget: boolean; done: number; total: number };
-  spending: {
-    spent: Money;
-    left: Money | null;
-    percent: number | null;
-    before: Money;
-    today: Money | null;
-    per_day: Money | null;
-    per_day_left: Money | null;
-    categories: { name: string; planned: Money | null; spent: Money }[];
-    unconverted: number;
-  };
-  saving: {
-    per_payday: Money | null;
-    paydays_done: number;
-    paydays_left: number;
-    saved: Money | null;
-    by_start: Money | null;
-    covers_budget: boolean | null;
-    suggested: Money | null;
-    fits: boolean | null;
-    next_payday: string | null;
-    pay_schedule: boolean;
-  };
+  /** Null for a member of the trip (`trip.role`), who gets the plan and no money. */
+  spending: TripSpending | null;
+  /** Null for a member of the trip. */
+  saving: TripSaving | null;
+  /** Empty for a member of the trip, as are `items`, `to_split`, `just_mine`, `paid_by_others`
+   * and `balances`; `booked`, `booked_unlogged` and `to_spend` are null. */
   owed: { name: string; amounts: Money[]; home: Money | null }[];
   /** Costs not split yet (newest first), while the trip splits evenly and others are going. */
   to_split: ToSplit[];
@@ -914,6 +930,40 @@ export type TripDetail = {
     linked: boolean;
   }[];
 };
+
+/** Someone on a trip: its owner, or a person added to it. */
+export type TripMember = {
+  id: string;
+  /** As they sign in with Telegram; "Someone" if they never gave one. */
+  name: string;
+  role: "owner" | "member";
+  /** Null for the owner. */
+  added_at: string | null;
+  /** The person asking. */
+  you: boolean;
+};
+/** A trip invite link that can still be used (never the link itself). */
+export type TripInvite = { id: string; created_at: string; expires_at: string };
+/** `POST /travel/trips/{id}/invites`: a single-use link, valid for 7 days. The token and url are
+ * shown this once. */
+export type IssuedTripInvite = TripInvite & { token: string; url: string };
+/** One change to the plan of a shared trip, newest first (the latest 20). */
+export type TripActivity = { actor: string; summary: string; at: string };
+/** `POST /travel/invites/{token}/accept`: `new` is false when they were on the trip already. */
+export type JoinedTrip = { trip_id: string; new: boolean };
+/** The path for the trip's members (`GET`), or one of them (`DELETE`: the owner removes someone,
+ * a member removes themselves). */
+export const tripMembersPath = (tripId: string, memberId?: string) =>
+  `/travel/trips/${tripId}/members${memberId ? `/${memberId}` : ""}`;
+/** The path for the trip's invites (`GET`, `POST`), or one of them (`DELETE` cancels it). */
+export const tripInvitesPath = (tripId: string, inviteId?: string) =>
+  `/travel/trips/${tripId}/invites${inviteId ? `/${inviteId}` : ""}`;
+/** The path for `GET /travel/trips/{id}/activity`. */
+export const tripActivityPath = (tripId: string) => `/travel/trips/${tripId}/activity`;
+/** The path for `PUT /travel/trips/{id}/notes` (body `{ notes: string | null }`), how a member edits the notes. */
+export const tripNotesPath = (tripId: string) => `/travel/trips/${tripId}/notes`;
+/** The path for `POST /travel/invites/{token}/accept`. */
+export const acceptInvitePath = (token: string) => `/travel/invites/${encodeURIComponent(token)}/accept`;
 
 /** A trip's research: every price names a source (by id), checked on the date given. */
 export type Research = {

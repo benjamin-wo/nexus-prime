@@ -3,7 +3,7 @@
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import Date, Row, and_, cast, delete, exists, func, insert, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -16,6 +16,14 @@ from nexus.domain.ledger import Direction, TransactionStatus, UserId
 from nexus.domain.money import Money
 from nexus.domain.packing import PackItem, from_rows
 from nexus.domain.settle import PaidByOther
+from nexus.domain.trip_access import (
+    UNKNOWN_NAME,
+    Activity,
+    TripAccess,
+    TripInvite,
+    TripMember,
+    TripRole,
+)
 from nexus.domain.trips import GettingAround, Share, Stop, Trip
 from nexus.infra.db.ledger_repository import _transaction
 from nexus.infra.db.tables import (
@@ -23,12 +31,16 @@ from nexus.infra.db.tables import (
     destination_photos,
     splits,
     transactions,
+    trip_activity,
     trip_bookings,
+    trip_invites,
     trip_links,
+    trip_members,
     trip_paid_by_others,
     trip_reminders,
     trip_shares,
     trips,
+    users,
 )
 
 
@@ -458,6 +470,222 @@ class SqlTripRepository:
             .values(settled_at=at)
         )
 
+    # --- sharing a trip's plan with other people --------------------------------------
+
+    async def trip_access(self, actor_id: UserId, trip_id: UUID) -> TripAccess | None:
+        row = (
+            await self._db.execute(
+                select(trips.c.user_id, trip_members.c.member_id)
+                .select_from(
+                    trips.outerjoin(
+                        trip_members,
+                        and_(
+                            trip_members.c.trip_id == trips.c.id,
+                            trip_members.c.member_id == actor_id,
+                        ),
+                    )
+                )
+                .where(
+                    trips.c.id == trip_id,
+                    or_(trips.c.user_id == actor_id, trip_members.c.member_id.is_not(None)),
+                )
+            )
+        ).first()
+        if row is None:
+            return None
+        owner = UserId(row.user_id)
+        role = TripRole.OWNER if owner == actor_id else TripRole.MEMBER
+        return TripAccess(owner, actor_id, role, trip_id)
+
+    async def booking_access(self, actor_id: UserId, booking_id: UUID) -> TripAccess | None:
+        b = trip_bookings.c
+        row = (
+            await self._db.execute(select(b.user_id, b.trip_id).where(b.id == booking_id))
+        ).first()
+        if row is None:
+            return None
+        owner = UserId(row.user_id)
+        if owner == actor_id:
+            return TripAccess(owner, actor_id, TripRole.OWNER, row.trip_id)
+        if row.trip_id is None:
+            return None
+        found = await self.trip_access(actor_id, row.trip_id)
+        # Only through the booking's own trip: the trip ids must agree on the owner.
+        return found if found is not None and found.owner_id == owner else None
+
+    async def list_member_trips(self, member_id: UserId) -> list[tuple[Trip, str | None]]:
+        rows = await self._db.execute(
+            select(trips, users.c.display_name.label("owner_name"))
+            .select_from(
+                trips.join(
+                    trip_members,
+                    and_(
+                        trip_members.c.trip_id == trips.c.id,
+                        trip_members.c.owner_id == trips.c.user_id,
+                    ),
+                ).join(users, users.c.id == trips.c.user_id)
+            )
+            .where(trip_members.c.member_id == member_id)
+            .order_by(trips.c.start_on.desc(), trips.c.created_at.desc())
+        )
+        return [(_trip(r), r.owner_name) for r in rows]
+
+    async def owner_name(self, owner_id: UserId) -> str | None:
+        return (
+            await self._db.execute(select(users.c.display_name).where(users.c.id == owner_id))
+        ).scalar_one_or_none()
+
+    async def list_members(self, owner_id: UserId, trip_id: UUID) -> list[TripMember]:
+        owner_name = await self.owner_name(owner_id)
+        members = [TripMember(owner_id, owner_name or UNKNOWN_NAME, TripRole.OWNER, None)]
+        rows = await self._db.execute(
+            select(trip_members.c.member_id, trip_members.c.added_at, users.c.display_name)
+            .join(users, users.c.id == trip_members.c.member_id)
+            .where(trip_members.c.owner_id == owner_id, trip_members.c.trip_id == trip_id)
+            .order_by(trip_members.c.added_at, trip_members.c.id)
+        )
+        members += [
+            TripMember(
+                UserId(r.member_id), r.display_name or UNKNOWN_NAME, TripRole.MEMBER, r.added_at
+            )
+            for r in rows
+        ]
+        return members
+
+    async def count_members(self, trip_id: UUID) -> int:
+        return int(
+            (
+                await self._db.execute(
+                    select(func.count())
+                    .select_from(trip_members)
+                    .where(trip_members.c.trip_id == trip_id)
+                )
+            ).scalar_one()
+        )
+
+    async def add_member(
+        self,
+        owner_id: UserId,
+        trip_id: UUID,
+        member_id: UserId,
+        invite_id: UUID | None,
+        at: datetime,
+    ) -> bool:
+        stmt = (
+            pg_insert(trip_members)
+            .values(
+                id=uuid4(),
+                trip_id=trip_id,
+                owner_id=owner_id,
+                member_id=member_id,
+                added_at=at,
+                added_by_invite=invite_id,
+            )
+            .on_conflict_do_nothing(
+                index_elements=[trip_members.c.trip_id, trip_members.c.member_id]
+            )
+            .returning(trip_members.c.id)
+        )
+        return (await self._db.execute(stmt)).first() is not None
+
+    async def remove_member(self, owner_id: UserId, trip_id: UUID, member_id: UserId) -> bool:
+        result = await self._db.execute(
+            delete(trip_members).where(
+                trip_members.c.owner_id == owner_id,
+                trip_members.c.trip_id == trip_id,
+                trip_members.c.member_id == member_id,
+            )
+        )
+        return bool(result.rowcount)
+
+    async def insert_trip_invite(self, invite: TripInvite) -> None:
+        await self._db.execute(
+            insert(trip_invites).values(
+                id=invite.id,
+                token_hash=invite.token_hash,
+                trip_id=invite.trip_id,
+                owner_id=invite.owner_id,
+                created_at=invite.created_at,
+                expires_at=invite.expires_at,
+                may_create_guest=invite.may_create_guest,
+            )
+        )
+
+    async def get_trip_invite(
+        self, token_hash: str, *, for_update: bool = False
+    ) -> TripInvite | None:
+        query = select(trip_invites).where(trip_invites.c.token_hash == token_hash)
+        row = (await self._db.execute(query.with_for_update() if for_update else query)).first()
+        return _trip_invite(row) if row else None
+
+    async def list_open_trip_invites(
+        self, owner_id: UserId, trip_id: UUID, now: datetime
+    ) -> list[TripInvite]:
+        i = trip_invites.c
+        rows = await self._db.execute(
+            select(trip_invites)
+            .where(
+                i.owner_id == owner_id,
+                i.trip_id == trip_id,
+                i.redeemed_at.is_(None),
+                i.revoked_at.is_(None),
+                i.expires_at > now,
+            )
+            .order_by(i.created_at, i.id)
+        )
+        return [_trip_invite(r) for r in rows]
+
+    async def revoke_trip_invite(
+        self, owner_id: UserId, trip_id: UUID, invite_id: UUID, at: datetime
+    ) -> bool:
+        i = trip_invites.c
+        result = await self._db.execute(
+            update(trip_invites)
+            .where(
+                i.owner_id == owner_id,
+                i.trip_id == trip_id,
+                i.id == invite_id,
+                i.redeemed_at.is_(None),
+                i.revoked_at.is_(None),
+            )
+            .values(revoked_at=at)
+        )
+        return bool(result.rowcount)
+
+    async def redeem_trip_invite(self, invite_id: UUID, user_id: UserId, at: datetime) -> bool:
+        i = trip_invites.c
+        result = await self._db.execute(
+            update(trip_invites)
+            .where(i.id == invite_id, i.redeemed_at.is_(None), i.revoked_at.is_(None))
+            .values(redeemed_at=at, redeemed_by=user_id)
+        )
+        return bool(result.rowcount)
+
+    async def add_activity(
+        self, owner_id: UserId, trip_id: UUID, actor_id: UserId, summary: str, at: datetime
+    ) -> None:
+        await self._db.execute(
+            insert(trip_activity).values(
+                id=uuid4(),
+                trip_id=trip_id,
+                owner_id=owner_id,
+                actor_id=actor_id,
+                summary=summary,
+                at=at,
+            )
+        )
+
+    async def list_activity(self, owner_id: UserId, trip_id: UUID, *, limit: int) -> list[Activity]:
+        a = trip_activity.c
+        rows = await self._db.execute(
+            select(a.summary, a.at, users.c.display_name)
+            .join(users, users.c.id == a.actor_id)
+            .where(a.owner_id == owner_id, a.trip_id == trip_id)
+            .order_by(a.at.desc(), a.id)
+            .limit(limit)
+        )
+        return [Activity(r.display_name or UNKNOWN_NAME, r.summary, r.at) for r in rows]
+
     # --- reminders --------------------------------------------------------------------
 
     async def claim_reminder(self, user_id: UserId, key: str, at: datetime) -> bool:
@@ -659,6 +887,21 @@ def _payment(row: Row[Any]) -> PaidByOther:
         split_with=tuple(row.split_with),
         settled_at=row.settled_at,
         created_at=row.created_at,
+    )
+
+
+def _trip_invite(row: Row[Any]) -> TripInvite:
+    return TripInvite(
+        id=row.id,
+        token_hash=row.token_hash,
+        trip_id=row.trip_id,
+        owner_id=UserId(row.owner_id),
+        created_at=row.created_at,
+        expires_at=row.expires_at,
+        may_create_guest=row.may_create_guest,
+        redeemed_at=row.redeemed_at,
+        redeemed_by=UserId(row.redeemed_by) if row.redeemed_by else None,
+        revoked_at=row.revoked_at,
     )
 
 

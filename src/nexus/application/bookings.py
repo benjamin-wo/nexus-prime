@@ -123,7 +123,13 @@ async def add_from_screenshot(
             chosen = next((t for t in trips if t.id == trip_id), None)
             if chosen is None:
                 raise NotFound("no trip with that id")
-        existing = [b.draft for b in await uow.trips.list_bookings(user.id)]
+        # Sent from a trip's page, only that trip's entries count as already there: what
+        # the owner keeps on their other trips is not for someone on this one to learn
+        # (a member's screenshot would otherwise be told "already on the itinerary").
+        existing = [
+            b.draft
+            for b in await uow.trips.list_bookings(user.id, trip_id=chosen.id if chosen else None)
+        ]
         ahead = [t for t in trips if t.status(today) is not TripStatus.FINISHED]
         for draft, cost in entries:
             if any(_same(draft, e) for e in existing):
@@ -344,10 +350,13 @@ async def edit_booking(
     booking_id: UUID,
     details: dict[str, object],
     cost: Money | None,
+    *,
+    keep_cost: bool = False,
 ) -> Booking:
     """Changes an entry's details, by hand or read from email (a corrected time).
     What the change doesn't mention (its Google Maps place, end time, link, list and
-    place in the day) is kept; a plan moved to another day goes where its time fits."""
+    place in the day) is kept; a plan moved to another day goes where its time fits.
+    With ``keep_cost`` the entry keeps the cost it had, whatever ``cost`` says."""
     if cost is not None and not cost.is_positive:
         raise InvalidInput("a cost must be more than zero")
     async with uow:
@@ -359,7 +368,7 @@ async def edit_booking(
             draft = replace(draft, order=None, follows=None)
         if current.trip_id is not None and draft.list_name != current.draft.list_name:
             _check_lists(await uow.trips.list_bookings(user_id, trip_id=current.trip_id), draft)
-        changed = replace(current, draft=draft, cost=cost)
+        changed = replace(current, draft=draft, cost=current.cost if keep_cost else cost)
         await uow.trips.update_booking(changed)
         await uow.commit()
     return changed

@@ -17,6 +17,7 @@ from nexus.application import destination_photos as photo_cases
 from nexus.application import places as place_cases
 from nexus.application import routes as route_cases
 from nexus.application import travel_research as research_cases
+from nexus.application import trip_access as access_cases
 from nexus.application import trip_split as split_cases
 from nexus.application import trips as trip_cases
 from nexus.application.places import Places, PlacesError
@@ -24,20 +25,21 @@ from nexus.application.routes import Routes
 from nexus.application.weather import WeatherError
 from nexus.channels.web.api import MoneyOut, money
 from nexus.channels.web.investments_api import MAX_IMAGE_CHARS
-from nexus.channels.web.security import Auth, Runtime, WebRuntime, limit
+from nexus.channels.web.security import Auth, Runtime, TripAuth, WebRuntime, limit
 from nexus.domain import itinerary
 from nexus.domain.bookings import Booking
 from nexus.domain.currencies import currency_of
 from nexus.domain.destination_photos import DestinationPhoto
-from nexus.domain.errors import InvalidInput, NotFound
+from nexus.domain.errors import Forbidden, InvalidInput, NotFound
 from nexus.domain.itinerary import NoteKind
-from nexus.domain.ledger import User
+from nexus.domain.ledger import User, UserId
 from nexus.domain.money import Money
 from nexus.domain.packing import MAX_ITEM, MAX_ITEMS, PackItem
 from nexus.domain.places import Place
 from nexus.domain.routes import Mode
 from nexus.domain.settle import Debt as SettleDebt
 from nexus.domain.settle import PaidByOther, PersonBalance
+from nexus.domain.trip_access import TripRole, without_money, without_trip_money
 from nexus.domain.trips import (
     MAX_COMPANIONS,
     MAX_DAY_LABEL,
@@ -130,9 +132,24 @@ class TripOut(Model):
     stops: list[StopOut] = Field(default_factory=list)  # as set by the user; empty: suggested
     # Whether its costs are split evenly with the travellers (offered once there are any).
     split_evenly: bool = True
+    # Whose it is: "owner" for the user's own trip, "member" for one they were added to,
+    # where the budget, set-aside and planned amounts are left out (null, empty).
+    role: str = TripRole.OWNER.value
+    owner_name: str | None = None  # the owner's name, as they sign in with
 
 
-def _trip(trip: Trip, today: date, photos: dict[UUID, DestinationPhoto] | None = None) -> TripOut:
+def _trip(
+    trip: Trip,
+    today: date,
+    photos: dict[UUID, DestinationPhoto] | None = None,
+    *,
+    member: bool = False,
+    owner_name: str | None = None,
+) -> TripOut:
+    """``member`` is for someone who is on the owner's trip: the money is removed here,
+    whatever the caller passed."""
+    if member:
+        trip = without_trip_money(trip)
     return TripOut(
         id=trip.id,
         destination=trip.destination,
@@ -159,6 +176,24 @@ def _trip(trip: Trip, today: date, photos: dict[UUID, DestinationPhoto] | None =
         getting_around=trip.getting_around,
         stops=_stops(trip.stops),
         split_evenly=trip.split_evenly,
+        role=(TripRole.MEMBER if member else TripRole.OWNER).value,
+        owner_name=owner_name,
+    )
+
+
+def _trip_of(
+    opened: access_cases.Opened,
+    trip: Trip,
+    today: date,
+    photos: dict[UUID, DestinationPhoto] | None = None,
+) -> TripOut:
+    """A trip as the person who opened it sees it."""
+    return _trip(
+        trip,
+        today,
+        photos,
+        member=not opened.access.is_owner,
+        owner_name=opened.owner.display_name,
     )
 
 
@@ -250,7 +285,11 @@ class BookingOut(Model):
     manual: bool  # added by hand, not read from email
 
 
-def _booking(b: Booking) -> BookingOut:
+def _booking(b: Booking, *, member: bool = False) -> BookingOut:
+    """``member``: for someone on the owner's trip, with what the entry cost and the
+    expense it was logged as removed. Its references stay."""
+    if member:
+        b = without_money(b)
     d = b.draft
     return BookingOut(
         id=b.id,
@@ -420,8 +459,9 @@ def _balance(b: PersonBalance) -> BalanceOut:
 
 class TripDetailOut(Model):
     trip: TripOut
-    spending: SpendingOut
-    saving: SavingOut
+    # Null for a member of the trip (``trip.role``), who gets the plan and no money.
+    spending: SpendingOut | None
+    saving: SavingOut | None
     owed: list[OwedOut]
     items: list[ItemOut]
     bookings: list[BookingOut]
@@ -466,10 +506,11 @@ def _detail(
     web: WebRuntime | None = None,
     photos: dict[UUID, DestinationPhoto] | None = None,
     suggested: tuple[Stop, ...] = (),
+    owner_name: str | None = None,
 ) -> TripDetailOut:
     s, a = view.spending, view.saving
     return TripDetailOut(
-        trip=_trip(view.trip, view.today, photos),
+        trip=_trip(view.trip, view.today, photos, owner_name=owner_name),
         spending=SpendingOut(
             spent=money(s.spent),
             left=_m(s.left),
@@ -547,6 +588,43 @@ def _detail(
     )
 
 
+def _plan_detail(
+    view: access_cases.PlanView,
+    opened: access_cases.Opened,
+    web: WebRuntime,
+    photos: dict[UUID, DestinationPhoto],
+    suggested: tuple[Stop, ...],
+) -> TripDetailOut:
+    """The trip page for a member: the plan only. Every money field is null or empty,
+    and none is worked out, so there is nothing to leak."""
+    ready = view.ready
+    return TripDetailOut(
+        trip=_trip_of(opened, view.trip, view.today, photos),
+        spending=None,
+        saving=None,
+        owed=[],
+        items=[],
+        bookings=[_booking(b, member=True) for b in view.bookings],
+        days=_days(view.bookings, view.trip),
+        places_order=[b.id for b in itinerary.places_to_visit(view.bookings)],
+        booked=None,
+        booked_unlogged=None,
+        to_spend=None,
+        ready=ReadyOut(
+            nights_without_stay=ready.nights_without_stay,
+            has_transport=ready.has_transport,
+            has_budget=False,
+            done=ready.done,
+            total=ready.TOTAL - 1,  # the budget isn't theirs to see
+        ),
+        places=web.places is not None,
+        routes=web.routes is not None and web.places is not None,
+        map_key=map_key(web.settings) if web.places else None,
+        ideas=web.ideas is not None,
+        suggested_stops=_stops(suggested),
+    )
+
+
 class TripIn(Model):
     destination: str = Field(min_length=1, max_length=80)
     start: date
@@ -584,16 +662,51 @@ def _draft(user: User, body: TripIn) -> trip_cases.TripDraft:
     )
 
 
-def _today(auth: Auth, web: Runtime) -> date:
+def _today(auth: Auth | TripAuth, web: Runtime) -> date:
     return trip_cases.local_today(auth.user, web.clock())
 
 
+# Who may do what on a trip is decided by ``_open`` and ``_open_booking`` before anything
+# else happens. They answer with the trip's owner, and the use cases then run as that
+# owner (``opened.owner``, ``opened.access.owner_id``), never as the person asking: a
+# member's edit is the owner's trip being edited. A person with no part in the trip gets
+# the same 404 as for a trip that doesn't exist.
+
+
+async def _open(
+    web: WebRuntime, auth: Auth | TripAuth, trip_id: str, *, owner_only: bool = False
+) -> access_cases.Opened:
+    return await access_cases.open_trip(web.uow(), auth.user, _uuid(trip_id), owner_only=owner_only)
+
+
+async def _open_booking(
+    web: WebRuntime, auth: Auth | TripAuth, booking_id: str, *, owner_only: bool = False
+) -> access_cases.Opened:
+    return await access_cases.open_booking(
+        web.uow(), auth.user, _uuid(booking_id, "booking"), owner_only=owner_only
+    )
+
+
+async def _note(web: WebRuntime, opened: access_cases.Opened, summary: str) -> None:
+    """Records an edit in the trip's activity (when the trip is shared)."""
+    await access_cases.record(web.uow(), opened.access, summary, now=web.clock())
+
+
 @router.get("/trips")
-async def list_trips(auth: Auth, web: Runtime) -> list[TripOut]:
+async def list_trips(auth: TripAuth, web: Runtime) -> list[TripOut]:
+    """The user's own trips and the ones they were added to (money left out of those,
+    each with its owner's name)."""
     today = _today(auth, web)
     trips = await trip_cases.list_trips(web.uow(), auth.user.id)
-    photos = await photo_cases.photos_of(web.uow(), trips)
-    return [_trip(t, today, photos) for t in trips]
+    shared = await access_cases.shared_trips(web.uow(), auth.user.id)
+    photos = await photo_cases.photos_of(web.uow(), [*trips, *(t for t, _ in shared)])
+    own = [_trip(t, today, photos, owner_name=auth.user.display_name) for t in trips]
+    others = [_trip(t, today, photos, member=True, owner_name=name) for t, name in shared]
+    return sorted(
+        [*own, *others],
+        key=lambda t: (t.start, t.end, str(t.id)),
+        reverse=True,
+    )
 
 
 @router.post("/trips", status_code=201)
@@ -601,7 +714,7 @@ async def create_trip(body: TripIn, auth: Auth, web: Runtime) -> TripOut:
     trip = await trip_cases.create_trip(
         web.uow(), auth.user, _draft(auth.user, body), now=web.clock()
     )
-    return _trip(trip, _today(auth, web))
+    return _trip(trip, _today(auth, web), owner_name=auth.user.display_name)
 
 
 @router.get("/next")
@@ -610,27 +723,37 @@ async def next_trip(auth: Auth, web: Runtime) -> TripDetailOut | None:
     view = await trip_cases.next_trip(web.uow, web.rates, auth.user, now=web.clock())
     if view is None:
         return None
-    return await _detailed(view, web)
+    return await _detailed(view, web, auth.user)
 
 
-async def _detailed(view: trip_cases.TripView, web: WebRuntime) -> TripDetailOut:
-    suggested = await place_cases.suggested_stops(
-        web.places, view.trip.user_id, view.trip, view.bookings
-    )
+async def _detailed(view: trip_cases.TripView, web: WebRuntime, user: User) -> TripDetailOut:
+    suggested = await place_cases.suggested_stops(web.places, user.id, view.trip, view.bookings)
     photos = await photo_cases.photos_of(web.uow(), [view.trip])
-    return _detail(view, web, photos, suggested)
+    return _detail(view, web, photos, suggested, owner_name=user.display_name)
 
 
 @router.get("/trips/{trip_id}")
-async def get_trip(trip_id: str, auth: Auth, web: Runtime) -> TripDetailOut:
-    view = await trip_cases.trip_view(
-        web.uow, web.rates, auth.user, _uuid(trip_id), now=web.clock()
+async def get_trip(trip_id: str, auth: TripAuth, web: Runtime) -> TripDetailOut:
+    """The trip page. The owner gets everything; a member gets the plan only, with no
+    budget, spending, who owes what or what anything cost."""
+    opened = await _open(web, auth, trip_id)
+    if opened.access.is_owner:
+        view = await trip_cases.trip_view(
+            web.uow, web.rates, opened.owner, _uuid(trip_id), now=web.clock()
+        )
+        return await _detailed(view, web, opened.owner)
+    plan = await access_cases.plan_view(
+        web.uow(), opened.owner.id, _uuid(trip_id), auth.user, now=web.clock()
     )
-    return await _detailed(view, web)
+    suggested = await place_cases.suggested_stops(
+        web.places, auth.user.id, plan.trip, plan.bookings
+    )
+    photos = await photo_cases.photos_of(web.uow(), [plan.trip])
+    return _plan_detail(plan, opened, web, photos, suggested)
 
 
 @router.get("/photos/{photo_id}")
-async def photo(photo_id: str, auth: Auth, web: Runtime) -> Response:
+async def photo(photo_id: str, auth: TripAuth, web: Runtime) -> Response:
     """A trip header photo. Photos are shared by every trip to a place and never
     change, so the browser keeps them."""
     found = await photo_cases.photo_file(web.uow(), _uuid(photo_id, "photo"))
@@ -649,10 +772,34 @@ async def photo(photo_id: str, auth: Auth, web: Runtime) -> Response:
 
 @router.put("/trips/{trip_id}")
 async def update_trip(trip_id: str, body: TripIn, auth: Auth, web: Runtime) -> TripOut:
+    """Owner only. A member changes the notes through ``PUT /trips/{id}/notes``."""
+    opened = await _open(web, auth, trip_id, owner_only=True)
+    before = await trip_cases.get_trip(web.uow(), opened.owner.id, _uuid(trip_id))
     trip = await trip_cases.update_trip(
         web.uow(), auth.user, _uuid(trip_id), _draft(auth.user, body), now=web.clock()
     )
-    return _trip(trip, _today(auth, web))
+    if trip.notes != before.notes:
+        await _note(web, opened, "changed the notes")
+    if (trip.destination, trip.start, trip.end) != (before.destination, before.start, before.end):
+        await _note(web, opened, "changed the trip's name or dates")
+    return _trip(trip, _today(auth, web), owner_name=auth.user.display_name)
+
+
+class NotesIn(Model):
+    notes: str | None = Field(None, max_length=MAX_NOTES)
+
+
+@router.put("/trips/{trip_id}/notes")
+async def set_notes(trip_id: str, body: NotesIn, auth: TripAuth, web: Runtime) -> TripOut:
+    """Replaces the trip's notes (blank clears them) and nothing else about the trip.
+    This is how a member edits the notes: ``PUT /trips/{id}`` changes dates, budget and
+    more, so it stays the owner's."""
+    opened = await _open(web, auth, trip_id)
+    trip = await trip_cases.set_notes(
+        web.uow(), opened.owner, _uuid(trip_id), body.notes, now=web.clock()
+    )
+    await _note(web, opened, "changed the notes")
+    return _trip_of(opened, trip, _today(auth, web))
 
 
 class DayLabelIn(Model):
@@ -660,12 +807,22 @@ class DayLabelIn(Model):
 
 
 @router.put("/trips/{trip_id}/days/{day}")
-async def label_day(trip_id: str, day: date, body: DayLabelIn, auth: Auth, web: Runtime) -> TripOut:
+async def label_day(
+    trip_id: str, day: date, body: DayLabelIn, auth: TripAuth, web: Runtime
+) -> TripOut:
     """Names a day of the trip, such as the city ("Busan"); blank clears it."""
+    opened = await _open(web, auth, trip_id)
     trip = await trip_cases.set_day_label(
-        web.uow(), auth.user, _uuid(trip_id), day, body.label, now=web.clock()
+        web.uow(), opened.owner, _uuid(trip_id), day, body.label, now=web.clock()
     )
-    return _trip(trip, _today(auth, web))
+    number = (day - trip.start).days + 1
+    label = trip.day_labels.get(day)
+    await _note(
+        web,
+        opened,
+        f'named Day {number} "{label}"' if label else f"cleared the name of Day {number}",
+    )
+    return _trip_of(opened, trip, _today(auth, web))
 
 
 class StopIn(Model):
@@ -679,17 +836,19 @@ class StopsIn(Model):
 
 
 @router.put("/trips/{trip_id}/stops")
-async def set_stops(trip_id: str, body: StopsIn, auth: Auth, web: Runtime) -> TripOut:
+async def set_stops(trip_id: str, body: StopsIn, auth: TripAuth, web: Runtime) -> TripOut:
     """Sets the trip's stops (a city or area per stretch of days, in date order, inside
     the trip, only a travel day shared); none goes back to the ones the hotels suggest."""
+    opened = await _open(web, auth, trip_id)
     trip = await trip_cases.set_stops(
         web.uow(),
-        auth.user,
+        opened.owner,
         _uuid(trip_id),
         [Stop(s.name, s.start, s.end) for s in body.stops],
         now=web.clock(),
     )
-    return _trip(trip, _today(auth, web))
+    await _note(web, opened, "changed the stops")
+    return _trip_of(opened, trip, _today(auth, web))
 
 
 class GettingAroundIn(Model):
@@ -697,21 +856,28 @@ class GettingAroundIn(Model):
 
 
 @router.put("/trips/{trip_id}/getting-around")
-async def getting_around(trip_id: str, body: GettingAroundIn, auth: Auth, web: Runtime) -> TripOut:
+async def getting_around(
+    trip_id: str, body: GettingAroundIn, auth: TripAuth, web: Runtime
+) -> TripOut:
     """Public transport or a hire car: how longer hops go unless one was picked."""
+    opened = await _open(web, auth, trip_id)
     trip = await trip_cases.set_getting_around(
-        web.uow(), auth.user, _uuid(trip_id), body.by, now=web.clock()
+        web.uow(), opened.owner, _uuid(trip_id), body.by, now=web.clock()
     )
-    return _trip(trip, _today(auth, web))
+    way = "a hire car" if body.by is GettingAround.CAR else "public transport"
+    await _note(web, opened, f"changed how the trip gets about to {way}")
+    return _trip_of(opened, trip, _today(auth, web))
 
 
 @router.delete("/trips/{trip_id}", status_code=204)
 async def delete_trip(trip_id: str, auth: Auth, web: Runtime) -> None:
+    await _open(web, auth, trip_id, owner_only=True)
     await trip_cases.delete_trip(web.uow(), auth.user.id, _uuid(trip_id))
 
 
 @router.post("/trips/{trip_id}/expenses/{transaction_id}", status_code=204)
 async def add_expense(trip_id: str, transaction_id: str, auth: Auth, web: Runtime) -> None:
+    await _open(web, auth, trip_id, owner_only=True)
     await trip_cases.add_expense(
         web.uow(),
         auth.user.id,
@@ -723,6 +889,7 @@ async def add_expense(trip_id: str, transaction_id: str, auth: Auth, web: Runtim
 
 @router.delete("/trips/{trip_id}/expenses/{transaction_id}", status_code=204)
 async def remove_expense(trip_id: str, transaction_id: str, auth: Auth, web: Runtime) -> None:
+    await _open(web, auth, trip_id, owner_only=True)
     await trip_cases.remove_expense(
         web.uow(),
         auth.user.id,
@@ -743,8 +910,9 @@ class SplitEvenlyIn(Model):
 async def split_evenly(trip_id: str, body: SplitEvenlyIn, auth: Auth, web: Runtime) -> TripOut:
     """Whether the trip offers to split its costs evenly with the people going. Changes
     nothing in the ledger."""
+    await _open(web, auth, trip_id, owner_only=True)
     trip = await split_cases.set_split_evenly(web.uow(), auth.user, _uuid(trip_id), body.on)
-    return _trip(trip, _today(auth, web))
+    return _trip(trip, _today(auth, web), owner_name=auth.user.display_name)
 
 
 class SplitIn(Model):
@@ -779,6 +947,7 @@ async def split_costs(trip_id: str, body: SplitIn, auth: Auth, web: Runtime) -> 
     user's share included), as ``split_bill`` does. 422 without other travellers, or
     unless exactly one of ``transaction_ids`` and ``all: true`` is given. Expenses split
     meanwhile are skipped and listed, never changed."""
+    await _open(web, auth, trip_id, owner_only=True)
     if (body.transaction_ids is None) == (not body.all):
         raise InvalidInput("give transaction_ids, or all: true, but not both")
     outcome = await split_cases.split_trip_costs(
@@ -821,6 +990,7 @@ async def keep_mine(trip_id: str, body: KeepMineIn, auth: Auth, web: Runtime) ->
     """Marks expenses on the trip "just mine", so they aren't offered for splitting
     again (``keep: false`` offers them again). 404 for one that isn't an expense on
     this trip."""
+    await _open(web, auth, trip_id, owner_only=True)
     trip = await split_cases.keep_mine(
         web.uow(), auth.user, _uuid(trip_id), body.transaction_ids, keep=body.keep
     )
@@ -856,6 +1026,7 @@ async def add_paid_by_other(
     """Notes that a fellow traveller paid for something and the user shares it; the
     user's equal share is what they owe that person. Nothing goes in the ledger until
     they settle up. 422 for someone who isn't on the trip."""
+    await _open(web, auth, trip_id, owner_only=True)
     payment = await split_cases.add_paid_by_other(
         web.uow(), auth.user, _uuid(trip_id), now=web.clock(), **_payment_args(auth, web, body)
     )
@@ -867,6 +1038,7 @@ async def edit_paid_by_other(
     trip_id: str, payment_id: str, body: PaidByOtherIn, auth: Auth, web: Runtime
 ) -> PaidByOtherOut:
     """Changes a payment that isn't settled yet (409 once it is)."""
+    await _open(web, auth, trip_id, owner_only=True)
     payment = await split_cases.edit_paid_by_other(
         web.uow(),
         auth.user,
@@ -879,6 +1051,7 @@ async def edit_paid_by_other(
 
 @router.delete("/trips/{trip_id}/paid-by-others/{payment_id}", status_code=204)
 async def delete_paid_by_other(trip_id: str, payment_id: str, auth: Auth, web: Runtime) -> None:
+    await _open(web, auth, trip_id, owner_only=True)
     await split_cases.delete_paid_by_other(
         web.uow(), auth.user, _uuid(trip_id), _uuid(payment_id, "payment")
     )
@@ -905,6 +1078,7 @@ async def settle_person(trip_id: str, body: SettleIn, auth: Auth, web: Runtime) 
     the trip are marked paid back (recording the money in) and what they paid for the
     trip is settled, with ``log`` the user's share of it recorded as an expense. Moves
     no money. 422 when nothing is open with that person; safe to repeat."""
+    await _open(web, auth, trip_id, owner_only=True)
     done = await split_cases.settle_person(
         web.uow,
         web.rates,
@@ -935,14 +1109,20 @@ class BookingTripIn(Model):
 
 @router.put("/bookings/{booking_id}/trip", status_code=204)
 async def set_booking_trip(booking_id: str, body: BookingTripIn, auth: Auth, web: Runtime) -> None:
+    await _open_booking(web, auth, booking_id, owner_only=True)
     await booking_cases.attach(
         web.uow(), auth.user.id, _uuid(booking_id, "booking"), body.trip_id, now=web.clock()
     )
 
 
 @router.delete("/bookings/{booking_id}", status_code=204)
-async def delete_booking(booking_id: str, auth: Auth, web: Runtime) -> None:
-    await booking_cases.delete_booking(web.uow(), auth.user.id, _uuid(booking_id, "booking"))
+async def delete_booking(booking_id: str, auth: TripAuth, web: Runtime) -> None:
+    opened = await _open_booking(web, auth, booking_id)
+    await booking_cases.delete_booking(
+        web.uow(), opened.access.owner_id, _uuid(booking_id, "booking")
+    )
+    if opened.booking is not None:
+        await _note(web, opened, f"removed {opened.booking.draft.title}")
 
 
 # --- research ---------------------------------------------------------------------------
@@ -983,6 +1163,7 @@ async def research_ideas(
     of the user's upcoming or ongoing trips. 404 for a research or trip that isn't theirs,
     422 for a finished trip, an unknown area or a full trip. Safe to repeat: what's already
     there is skipped."""
+    await _open(web, auth, str(body.trip_id), owner_only=True)
     found = await research_cases.ideas_from_areas(
         web.uow,
         web.places,
@@ -1082,22 +1263,41 @@ def _cost(user: User, body: BookingIn) -> Money | None:
     return Money.of(body.cost.replace(",", ""), (body.currency or user.home_currency).upper())
 
 
+def _no_cost_for_members(opened: access_cases.Opened, body: BookingIn) -> None:
+    """What an entry cost is the owner's money: a member can't set it."""
+    if not opened.access.is_owner and (
+        (body.cost is not None and body.cost.strip()) or body.currency
+    ):
+        raise Forbidden(access_cases.OWNER_ONLY)
+
+
 @router.post("/trips/{trip_id}/bookings", status_code=201)
-async def add_booking(trip_id: str, body: BookingIn, auth: Auth, web: Runtime) -> BookingOut:
+async def add_booking(trip_id: str, body: BookingIn, auth: TripAuth, web: Runtime) -> BookingOut:
+    """An entry on the itinerary. A member can't give a cost (403)."""
+    opened = await _open(web, auth, trip_id)
+    _no_cost_for_members(opened, body)
     booking = await booking_cases.add_manual(
-        web.uow(), auth.user.id, _uuid(trip_id), _details(body), _cost(auth.user, body),
-        now=web.clock(),
+        web.uow(), opened.access.owner_id, _uuid(trip_id), _details(body),
+        _cost(opened.owner, body), now=web.clock(),
     )  # fmt: skip
-    return _booking(booking)
+    await _note(web, opened, f"added {booking.draft.title}")
+    return _booking(booking, member=not opened.access.is_owner)
 
 
 @router.put("/bookings/{booking_id}")
-async def edit_booking(booking_id: str, body: BookingIn, auth: Auth, web: Runtime) -> BookingOut:
+async def edit_booking(
+    booking_id: str, body: BookingIn, auth: TripAuth, web: Runtime
+) -> BookingOut:
+    """Changes an entry. A member can't give a cost (403), and the entry keeps the cost
+    it had."""
+    opened = await _open_booking(web, auth, booking_id)
+    _no_cost_for_members(opened, body)
     booking = await booking_cases.edit_booking(
-        web.uow(), auth.user.id, _uuid(booking_id, "booking"), _details(body),
-        _cost(auth.user, body),
+        web.uow(), opened.access.owner_id, _uuid(booking_id, "booking"), _details(body),
+        _cost(opened.owner, body), keep_cost=not opened.access.is_owner,
     )  # fmt: skip
-    return _booking(booking)
+    await _note(web, opened, f"changed {booking.draft.title}")
+    return _booking(booking, member=not opened.access.is_owner)
 
 
 class MoveIn(Model):
@@ -1106,13 +1306,25 @@ class MoveIn(Model):
 
 
 @router.put("/bookings/{booking_id}/move")
-async def move_booking(booking_id: str, body: MoveIn, auth: Auth, web: Runtime) -> BookingOut:
+async def move_booking(booking_id: str, body: MoveIn, auth: TripAuth, web: Runtime) -> BookingOut:
     """A plan or place to visit moved to a day (or back to places to visit), right
     after another entry there. Flights, trains and hotel nights stay put."""
+    opened = await _open_booking(web, auth, booking_id)
     moved = await booking_cases.move_entry(
-        web.uow(), auth.user.id, _uuid(booking_id, "booking"), body.day, body.after
+        web.uow(), opened.access.owner_id, _uuid(booking_id, "booking"), body.day, body.after
     )
-    return _booking(moved)
+    await _note(web, opened, await _moved(web, opened, moved))
+    return _booking(moved, member=not opened.access.is_owner)
+
+
+async def _moved(web: WebRuntime, opened: access_cases.Opened, moved: Booking) -> str:
+    """ "moved Senso-ji to Day 2", or "put Senso-ji back in the ideas"."""
+    title = moved.draft.title
+    day = moved.draft.day
+    if day is None or moved.trip_id is None:
+        return f"put {title} back in the ideas"
+    trip = await trip_cases.get_trip(web.uow(), opened.access.owner_id, moved.trip_id)
+    return f"moved {title} to Day {(day - trip.start).days + 1}"
 
 
 class ScreenshotIn(Model):
@@ -1129,22 +1341,31 @@ class ScreenshotOut(Model):
 
 @router.post("/trips/{trip_id}/screenshot")
 async def read_screenshot(
-    trip_id: str, body: ScreenshotIn, auth: Auth, web: Runtime
+    trip_id: str, body: ScreenshotIn, auth: TripAuth, web: Runtime
 ) -> ScreenshotOut:
     """A screenshot of bookings or plans read onto this trip's itinerary. The image is
-    only held for this request."""
+    only held for this request. For a member, any prices on it are left out."""
+    opened = await _open(web, auth, trip_id)
     limit(web, auth, "import")
     try:
         image = base64.b64decode(body.image, validate=True)
     except (binascii.Error, ValueError) as exc:
         raise InvalidInput("that image didn't arrive whole; try again") from exc
+    member = not opened.access.is_owner
     result = await web.service.read_trip_screenshot(
-        auth.user.id, image, body.mime_type, body.caption, trip_id=_uuid(trip_id)
+        opened.access.owner_id,
+        image,
+        body.mime_type,
+        body.caption,
+        trip_id=_uuid(trip_id),
+        with_costs=not member,
     )
     if result is None:  # pragma: no cover - asked, so never None
         raise InvalidInput("I couldn't find any bookings or plans in that screenshot")
+    if result.saved:
+        await _note(web, opened, "read a screenshot onto the itinerary")
     return ScreenshotOut(
-        added=[_booking(s.booking) for s in result.saved],
+        added=[_booking(s.booking, member=member) for s in result.saved],
         repeated=result.repeated,
         message=booking_cases.describe_screenshot(result),
     )
@@ -1228,7 +1449,7 @@ _SILENT = "Google Maps isn't answering right now; try again in a bit."
 
 
 async def _scope(
-    auth: Auth,
+    auth: Auth | TripAuth,
     web: WebRuntime,
     trip_id: str | None,
     stop: str | None,
@@ -1239,15 +1460,16 @@ async def _scope(
         if stop or day:
             raise InvalidInput("a stop or a day needs a trip_id")
         return None
+    opened = await _open(web, auth, trip_id)
     _, scope = await place_cases.search_scope(
-        web.uow(), web.places, auth.user.id, _uuid(trip_id), stop=stop, day=day
+        web.uow(), web.places, opened.access.owner_id, _uuid(trip_id), stop=stop, day=day
     )
     return scope
 
 
 @router.get("/places/search")
 async def search_places(
-    auth: Auth,
+    auth: TripAuth,
     web: Runtime,
     q: str = Query(min_length=1, max_length=120),
     trip_id: str | None = None,
@@ -1295,7 +1517,7 @@ class IdeasOut(Model):
 @router.get("/trips/{trip_id}/ideas")
 async def trip_ideas(
     trip_id: str,
-    auth: Auth,
+    auth: TripAuth,
     web: Runtime,
     q: str = Query(min_length=1, max_length=120),
     stop: str | None = Query(None, max_length=MAX_STOP_NAME),
@@ -1305,10 +1527,11 @@ async def trip_ideas(
     page it came from and its Google Maps match. Nothing is saved. With ``stop`` or
     ``day`` they are for that stop (or the area of that day's plans, in its stop)
     instead of the whole trip; the same 422s as the place search."""
+    opened = await _open(web, auth, trip_id)
     if web.ideas is None:
         raise NotFound("quick ideas aren't set up")
     _, scope = await place_cases.search_scope(
-        web.uow(), web.places, auth.user.id, _uuid(trip_id), stop=stop, day=day
+        web.uow(), web.places, opened.access.owner_id, _uuid(trip_id), stop=stop, day=day
     )
     found = await web.ideas.find(auth.user.id, scope.place, q)
     return IdeasOut(
@@ -1329,7 +1552,7 @@ async def trip_ideas(
 
 
 @router.get("/places/{place_id}")
-async def get_place(place_id: str, auth: Auth, web: Runtime) -> PlaceOut:
+async def get_place(place_id: str, auth: TripAuth, web: Runtime) -> PlaceOut:
     """One place with its regular hours and a few reviews."""
     try:
         return _place(await _places(web).details(auth.user.id, place_id))
@@ -1338,7 +1561,7 @@ async def get_place(place_id: str, auth: Auth, web: Runtime) -> PlaceOut:
 
 
 @router.get("/places/{place_id}/photo")
-async def place_photo(place_id: str, auth: Auth, web: Runtime) -> Response:
+async def place_photo(place_id: str, auth: TripAuth, web: Runtime) -> Response:
     """A place's thumbnail from Google Maps, fetched for the page (never stored)."""
     try:
         data, mime, _ = await _places(web).photo(auth.user.id, place_id)
@@ -1366,9 +1589,12 @@ class LinkedPlaceOut(Model):
 
 
 @router.get("/trips/{trip_id}/places")
-async def trip_places(trip_id: str, auth: Auth, web: Runtime) -> list[LinkedPlaceOut]:
+async def trip_places(trip_id: str, auth: TripAuth, web: Runtime) -> list[LinkedPlaceOut]:
     """Google Maps details for the itinerary entries linked to a place."""
-    found = await place_cases.trip_places(web.uow(), _places(web), auth.user.id, _uuid(trip_id))
+    opened = await _open(web, auth, trip_id)
+    found = await place_cases.trip_places(
+        web.uow(), _places(web), opened.access.owner_id, _uuid(trip_id)
+    )
     return [
         LinkedPlaceOut(
             booking_id=f.booking_id,
@@ -1418,26 +1644,30 @@ def _routes(web: WebRuntime) -> tuple[Places, Routes]:
 
 
 @router.get("/trips/{trip_id}/days/{day}/hops")
-async def day_hops(trip_id: str, day: date, auth: Auth, web: Runtime) -> list[HopOut]:
+async def day_hops(trip_id: str, day: date, auth: TripAuth, web: Runtime) -> list[HopOut]:
     """How long it takes between each of the day's stops: the way picked for a hop,
     else the usual way for the distance (walking when it's short, else public
     transport or the trip's hire car). Airports and stations are looked up once."""
+    opened = await _open(web, auth, trip_id)
     places, routes = _routes(web)
-    found = await route_cases.hop_times(web.uow, places, routes, auth.user.id, _uuid(trip_id), day)
+    found = await route_cases.hop_times(
+        web.uow, places, routes, opened.access.owner_id, _uuid(trip_id), day
+    )
     return [_hop(h) for h in found]
 
 
 @router.get("/trips/{trip_id}/days/{day}/hops/{start_id}/{end_id}")
 async def day_hop(
-    trip_id: str, day: date, start_id: str, end_id: str, mode: Mode, auth: Auth, web: Runtime
+    trip_id: str, day: date, start_id: str, end_id: str, mode: Mode, auth: TripAuth, web: Runtime
 ) -> HopOut:
     """One hop of the day, the way the user picked; kept for next time."""
+    opened = await _open(web, auth, trip_id)
     _, routes = _routes(web)
     try:
         found = await route_cases.hop_time(
             web.uow,
             routes,
-            auth.user.id,
+            opened.access.owner_id,
             _uuid(trip_id),
             day,
             _uuid(start_id, "booking"),
@@ -1454,18 +1684,30 @@ class PlaceLinkIn(Model):
 
 
 @router.put("/bookings/{booking_id}/place")
-async def link_place(booking_id: str, body: PlaceLinkIn, auth: Auth, web: Runtime) -> BookingOut:
+async def link_place(
+    booking_id: str, body: PlaceLinkIn, auth: TripAuth, web: Runtime
+) -> BookingOut:
+    opened = await _open_booking(web, auth, booking_id)
     booking = await place_cases.link_place(
-        web.uow(), auth.user.id, _uuid(booking_id, "booking"), body.place_id
+        web.uow(), opened.access.owner_id, _uuid(booking_id, "booking"), body.place_id
     )
-    return _booking(booking)
+    await _note(web, opened, f"changed the place for {booking.draft.title}")
+    return _booking(booking, member=not opened.access.is_owner)
 
 
 # --- cover photo, packing list and weather ------------------------------------------------
 
 
-async def _with_photo(web: WebRuntime, trip: Trip, today: date) -> TripOut:
-    return _trip(trip, today, await photo_cases.photos_of(web.uow(), [trip]))
+async def _with_photo(
+    web: WebRuntime,
+    trip: Trip,
+    today: date,
+    *,
+    member: bool = False,
+    owner_name: str | None = None,
+) -> TripOut:
+    photos = await photo_cases.photos_of(web.uow(), [trip])
+    return _trip(trip, today, photos, member=member, owner_name=owner_name)
 
 
 class PhotoChoiceIn(Model):
@@ -1475,10 +1717,11 @@ class PhotoChoiceIn(Model):
 @router.post("/trips/{trip_id}/photo")
 async def choose_photo(trip_id: str, body: PhotoChoiceIn, auth: Auth, web: Runtime) -> TripOut:
     """Another photo of the place, no photo, or photos again."""
+    await _open(web, auth, trip_id, owner_only=True)
     trip = await trip_cases.choose_photo(
         web.uow(), auth.user, _uuid(trip_id), body.choice, now=web.clock()
     )
-    return await _with_photo(web, trip, _today(auth, web))
+    return await _with_photo(web, trip, _today(auth, web), owner_name=auth.user.display_name)
 
 
 class PackItemIn(Model):
@@ -1491,16 +1734,23 @@ class PackingIn(Model):
 
 
 @router.put("/trips/{trip_id}/packing")
-async def set_packing(trip_id: str, body: PackingIn, auth: Auth, web: Runtime) -> TripOut:
+async def set_packing(trip_id: str, body: PackingIn, auth: TripAuth, web: Runtime) -> TripOut:
     """The whole packing list, ticks included."""
+    opened = await _open(web, auth, trip_id)
     trip = await trip_cases.set_packing(
         web.uow(),
-        auth.user,
+        opened.owner,
         _uuid(trip_id),
         [PackItem(i.text, i.done) for i in body.items],
         now=web.clock(),
     )
-    return await _with_photo(web, trip, _today(auth, web))
+    await _note(web, opened, "changed the packing list")
+    return await _with_photo(web, trip, _today(auth, web), **_viewer(opened))
+
+
+def _viewer(opened: access_cases.Opened) -> dict[str, Any]:
+    """What ``_with_photo`` needs to show a trip to the person who opened it."""
+    return {"member": not opened.access.is_owner, "owner_name": opened.owner.display_name}
 
 
 async def _weather(web: WebRuntime, trip: Trip, today: date) -> TripWeather | None:
@@ -1519,7 +1769,7 @@ class CurrencyOut(Model):
 
 
 @router.get("/currency")
-async def currency_for(auth: Auth, web: Runtime, place: str = "") -> CurrencyOut:
+async def currency_for(auth: TripAuth, web: Runtime, place: str = "") -> CurrencyOut:
     """The currency spent where a trip goes ("Tokyo" is JPY), so a new trip needn't ask.
     Both null when the place isn't found, or its country isn't one Nexus knows."""
     del auth  # signed in only; nothing of the user's is read
@@ -1536,20 +1786,22 @@ async def currency_for(auth: Auth, web: Runtime, place: str = "") -> CurrencyOut
 
 
 @router.post("/trips/{trip_id}/packing/suggest")
-async def suggest_packing(trip_id: str, auth: Auth, web: Runtime) -> TripOut:
+async def suggest_packing(trip_id: str, auth: TripAuth, web: Runtime) -> TripOut:
     """Adds what a trip like this usually needs, from the weather when it's known."""
+    opened = await _open(web, auth, trip_id)
     today = _today(auth, web)
-    current = await trip_cases.get_trip(web.uow(), auth.user.id, _uuid(trip_id))
+    current = await trip_cases.get_trip(web.uow(), opened.access.owner_id, _uuid(trip_id))
     weather = await _weather(web, current, today)
     trip = await trip_cases.suggest_packing(
         web.uow(),
-        auth.user,
+        opened.owner,
         current.id,
         latitude=weather.place.latitude if weather else None,
         outlook=weather.outlook() if weather else None,
         now=web.clock(),
     )
-    return await _with_photo(web, trip, today)
+    await _note(web, opened, "added suggestions to the packing list")
+    return await _with_photo(web, trip, today, **_viewer(opened))
 
 
 class WeatherDayOut(Model):
@@ -1569,10 +1821,11 @@ class WeatherOut(Model):
 
 
 @router.get("/trips/{trip_id}/weather")
-async def trip_weather(trip_id: str, auth: Auth, web: Runtime) -> WeatherOut | None:
+async def trip_weather(trip_id: str, auth: TripAuth, web: Runtime) -> WeatherOut | None:
     """The forecast once it reaches the trip, else the same dates in recent years.
     None when the trip is over or the weather isn't available."""
-    trip = await trip_cases.get_trip(web.uow(), auth.user.id, _uuid(trip_id))
+    opened = await _open(web, auth, trip_id)
+    trip = await trip_cases.get_trip(web.uow(), opened.access.owner_id, _uuid(trip_id))
     weather = await _weather(web, trip, _today(auth, web))
     if weather is None or not weather.days:
         return None
@@ -1614,6 +1867,7 @@ class ShareIn(Model):
 
 @router.get("/trips/{trip_id}/share")
 async def get_share(trip_id: str, auth: Auth, web: Runtime) -> ShareOut:
+    await _open(web, auth, trip_id, owner_only=True)
     share = await trip_cases.share_link(web.uow(), auth.user.id, _uuid(trip_id))
     return (
         ShareOut(token=share.token, show_bookings=share.show_bookings)
@@ -1626,6 +1880,7 @@ async def get_share(trip_id: str, auth: Auth, web: Runtime) -> ShareOut:
 async def share_trip(trip_id: str, body: ShareIn, auth: Auth, web: Runtime) -> ShareOut:
     """The trip's read-only link, made if it has none (or anew with ``renew``). With
     ``show_bookings`` it also sets whether the link shows flights, stays and tickets."""
+    await _open(web, auth, trip_id, owner_only=True)
     share = await trip_cases.share_trip(
         web.uow(),
         auth.user.id,
@@ -1639,8 +1894,123 @@ async def share_trip(trip_id: str, body: ShareIn, auth: Auth, web: Runtime) -> S
 
 @router.delete("/trips/{trip_id}/share", status_code=204)
 async def stop_sharing(trip_id: str, auth: Auth, web: Runtime) -> Response:
+    await _open(web, auth, trip_id, owner_only=True)
     await trip_cases.stop_sharing(web.uow(), auth.user.id, _uuid(trip_id))
     return Response(status_code=204)
+
+
+# --- people on the trip: invites, members and what they changed -----------------------------
+
+
+class TripInviteOut(Model):
+    id: UUID
+    created_at: datetime
+    expires_at: datetime
+
+
+class IssuedInviteOut(TripInviteOut):
+    token: str  # shown this once; only its hash is kept
+    url: str  # where the person opens it: /trip-invite/<token>
+
+
+@router.post("/trips/{trip_id}/invites", status_code=201)
+async def create_invite(trip_id: str, auth: Auth, web: Runtime) -> IssuedInviteOut:
+    """A single-use link that adds one person to the trip, valid for 7 days. Owner only.
+    Anyone who opens it and signs in with Telegram can edit the trip's plan (never its
+    money). Someone with no account gets a guest one, but only if the app's owner made
+    the link."""
+    await _open(web, auth, trip_id, owner_only=True)
+    limit(web, auth, "invite")
+    issued = await access_cases.create_invite(web.uow(), auth.user, _uuid(trip_id), now=web.clock())
+    invite = issued.invite
+    return IssuedInviteOut(
+        id=invite.id,
+        created_at=invite.created_at,
+        expires_at=invite.expires_at,
+        token=issued.token,
+        url=f"{web.origin}/trip-invite/{issued.token}",
+    )
+
+
+@router.get("/trips/{trip_id}/invites")
+async def list_invites(trip_id: str, auth: Auth, web: Runtime) -> list[TripInviteOut]:
+    """The trip's links that can still be used (never the links themselves). Owner only."""
+    await _open(web, auth, trip_id, owner_only=True)
+    found = await access_cases.open_invites(web.uow(), auth.user, _uuid(trip_id), now=web.clock())
+    return [TripInviteOut(id=i.id, created_at=i.created_at, expires_at=i.expires_at) for i in found]
+
+
+@router.delete("/trips/{trip_id}/invites/{invite_id}", status_code=204)
+async def revoke_invite(trip_id: str, invite_id: str, auth: Auth, web: Runtime) -> None:
+    """Cancels a link that hasn't been used. Owner only."""
+    await _open(web, auth, trip_id, owner_only=True)
+    await access_cases.revoke_invite(
+        web.uow(), auth.user, _uuid(trip_id), _uuid(invite_id, "invite"), now=web.clock()
+    )
+
+
+class MemberOut(Model):
+    id: UUID
+    name: str  # as they sign in with Telegram; "Someone" if they never gave one
+    role: str  # owner or member
+    added_at: datetime | None  # null for the owner
+    you: bool
+
+
+@router.get("/trips/{trip_id}/members")
+async def list_members(trip_id: str, auth: TripAuth, web: Runtime) -> list[MemberOut]:
+    """The owner and everyone added to the trip. Anyone on the trip may ask."""
+    await _open(web, auth, trip_id)
+    found = await access_cases.list_members(web.uow(), auth.user, _uuid(trip_id))
+    return [
+        MemberOut(
+            id=m.user_id,
+            name=m.name,
+            role=m.role.value,
+            added_at=m.added_at,
+            you=m.user_id == auth.user.id,
+        )
+        for m in found
+    ]
+
+
+@router.delete("/trips/{trip_id}/members/{member_id}", status_code=204)
+async def remove_member(trip_id: str, member_id: str, auth: TripAuth, web: Runtime) -> None:
+    """The owner takes someone off the trip; a member can only remove themselves (leave).
+    Their access ends at once."""
+    await _open(web, auth, trip_id)
+    await access_cases.remove_member(
+        web.uow(), auth.user, _uuid(trip_id), UserId(_uuid(member_id, "member"))
+    )
+
+
+class ActivityOut(Model):
+    actor: str
+    summary: str  # "added Dinner at Sushi Ten"
+    at: datetime
+
+
+@router.get("/trips/{trip_id}/activity")
+async def trip_activity(trip_id: str, auth: TripAuth, web: Runtime) -> list[ActivityOut]:
+    """The latest 20 changes to the plan by the people on a shared trip, newest first."""
+    await _open(web, auth, trip_id)
+    found = await access_cases.activity(web.uow(), auth.user, _uuid(trip_id))
+    return [ActivityOut(actor=a.actor, summary=a.summary, at=a.at) for a in found]
+
+
+class JoinedOut(Model):
+    trip_id: UUID
+    new: bool  # false when they were on the trip already
+
+
+@router.post("/invites/{token}/accept")
+async def accept_invite(token: str, auth: TripAuth, web: Runtime) -> JoinedOut:
+    """Joins the trip an invite link is for, for anyone signed in (guests included).
+    The link works once. 404 for one that is unknown, used, cancelled or expired, 409
+    for the owner's own trip."""
+    limit(web, auth, "join")
+    joined = await access_cases.accept_invite(web.uow(), auth.user, token, now=web.clock())
+    return JoinedOut(trip_id=joined.trip_id, new=joined.new)
 
 
 # Opened by anyone with the link, signed in or not. What it shows is an allow-list: the

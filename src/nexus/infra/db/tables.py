@@ -67,7 +67,10 @@ users = Table(
     Column("created_at", TZ, nullable=False, server_default=func.now()),
     # Set when a member redeems an invite; owners always have web access.
     Column("web_access_granted_at", TZ),
-    CheckConstraint("role IN ('owner', 'member')", name="role"),
+    # What other people see for them on a shared trip: their Telegram first name (and
+    # last initial), refreshed on every web sign-in (migration 0046).
+    Column("display_name", Text),
+    CheckConstraint("role IN ('owner', 'member', 'guest')", name="role"),
     CheckConstraint("home_currency ~ '^[A-Z]{3}$'", name="home_currency"),
 )
 
@@ -963,6 +966,69 @@ trip_shares = Table(
     UniqueConstraint("token"),
     ForeignKeyConstraint(["trip_id", "user_id"], ["trips.id", "trips.user_id"], ondelete="CASCADE"),
     ForeignKeyConstraint(["user_id"], ["users.id"]),
+)
+
+# A person who can edit a trip's plan beside its owner. The owner's money on the trip
+# stays the owner's: members never see or change it (migration 0046).
+trip_members = Table(
+    "trip_members",
+    metadata,
+    _uuid_pk(),
+    Column("trip_id", UUID(as_uuid=True), nullable=False),
+    Column("owner_id", UUID(as_uuid=True), nullable=False),
+    Column("member_id", UUID(as_uuid=True), nullable=False),
+    Column("added_at", TZ, nullable=False),
+    Column("added_by_invite", UUID(as_uuid=True)),
+    ForeignKeyConstraint(
+        ["trip_id", "owner_id"], ["trips.id", "trips.user_id"], ondelete="CASCADE"
+    ),
+    ForeignKeyConstraint(["member_id"], ["users.id"]),
+    ForeignKeyConstraint(["added_by_invite"], ["trip_invites.id"], ondelete="SET NULL"),
+    UniqueConstraint("trip_id", "member_id"),
+    CheckConstraint("member_id <> owner_id", name="member_not_owner"),
+    Index("ix_trip_members_member_id", "member_id"),
+)
+
+# A single-use link for joining a trip, kept only as a hash like every token. It
+# expires after 7 days; ``may_create_guest`` says whether someone with no account may
+# be given a guest one (only when the app's owner made it) (migration 0046).
+trip_invites = Table(
+    "trip_invites",
+    metadata,
+    _uuid_pk(),
+    Column("token_hash", Text, nullable=False, unique=True),
+    Column("trip_id", UUID(as_uuid=True), nullable=False),
+    Column("owner_id", UUID(as_uuid=True), nullable=False),
+    Column("created_at", TZ, nullable=False),
+    Column("expires_at", TZ, nullable=False),
+    Column("may_create_guest", Boolean, nullable=False, server_default=text("false")),
+    Column("redeemed_at", TZ),
+    Column("redeemed_by", UUID(as_uuid=True)),
+    Column("revoked_at", TZ),
+    ForeignKeyConstraint(
+        ["trip_id", "owner_id"], ["trips.id", "trips.user_id"], ondelete="CASCADE"
+    ),
+    ForeignKeyConstraint(["redeemed_by"], ["users.id"]),
+    Index("ix_trip_invites_trip_id", "trip_id"),
+)
+
+# What the people on a shared trip changed in its plan, in a few words ("added Dinner
+# at Sushi Ten"), newest first. Never money (migration 0046).
+trip_activity = Table(
+    "trip_activity",
+    metadata,
+    _uuid_pk(),
+    Column("trip_id", UUID(as_uuid=True), nullable=False),
+    Column("owner_id", UUID(as_uuid=True), nullable=False),
+    Column("actor_id", UUID(as_uuid=True), nullable=False),
+    Column("summary", Text, nullable=False),
+    Column("at", TZ, nullable=False),
+    ForeignKeyConstraint(
+        ["trip_id", "owner_id"], ["trips.id", "trips.user_id"], ondelete="CASCADE"
+    ),
+    ForeignKeyConstraint(["actor_id"], ["users.id"]),
+    CheckConstraint("char_length(summary) BETWEEN 1 AND 200", name="summary_length"),
+    Index("ix_trip_activity_trip_id_at", "trip_id", text("at DESC")),
 )
 
 # Something a fellow traveller paid for the trip that the user shares in ("Alex paid

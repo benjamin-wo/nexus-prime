@@ -41,6 +41,7 @@ from nexus.channels.web.security import (
     Auth,
     Authed,
     Runtime,
+    TripAuth,
     WebRuntime,
     check_origin,
     clear_session_cookie,
@@ -272,9 +273,11 @@ class UserOut(Model):
 class MeOut(Model):
     user: UserOut
     csrf_token: str
+    # Set by a sign-in that added the person to a trip with a trip invite.
+    joined_trip: UUID | None = None
 
 
-def me_out(user: User, csrf: str) -> MeOut:
+def me_out(user: User, csrf: str, joined_trip: UUID | None = None) -> MeOut:
     return MeOut(
         user=UserOut(
             telegram_user_id=user.telegram_user_id,
@@ -283,6 +286,7 @@ def me_out(user: User, csrf: str) -> MeOut:
             timezone=user.timezone,
         ),
         csrf_token=csrf,
+        joined_trip=joined_trip,
     )
 
 
@@ -367,6 +371,9 @@ async def config(web: Runtime) -> ConfigOut:
 class LoginIn(Model):
     telegram: dict[str, Any]
     invite: str | None = None
+    # A trip invite (not an app invite): adds the person to that trip, and may make a
+    # guest account for someone with none.
+    trip_invite: str | None = None
 
 
 def _bot_token(web: WebRuntime) -> str:
@@ -376,17 +383,23 @@ def _bot_token(web: WebRuntime) -> str:
     return token.get_secret_value()
 
 
-async def _log_in(web: WebRuntime, telegram: dict[str, Any], invite: str | None) -> access.LoggedIn:
+async def _log_in(
+    web: WebRuntime, telegram: dict[str, Any], invite: str | None, trip_invite: str | None = None
+) -> access.LoggedIn:
     now = web.clock()
     try:
         identity = verify_login(telegram, _bot_token(web), now=now)
     except LoginRejected as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
-    return await _open_session(web, identity, invite, now)
+    return await _open_session(web, identity, invite, now, trip_invite)
 
 
 async def _open_session(
-    web: WebRuntime, identity: TelegramIdentity, invite: str | None, now: datetime
+    web: WebRuntime,
+    identity: TelegramIdentity,
+    invite: str | None,
+    now: datetime,
+    trip_invite: str | None = None,
 ) -> access.LoggedIn:
     return await access.log_in(
         web.uow(),
@@ -401,15 +414,17 @@ async def _open_session(
         ),
         owner_telegram_id=web.settings.admin_telegram_chat_id,
         now=now,
+        trip_invite_token=trip_invite,
+        display_name=identity.display_name,
     )
 
 
 @router.post("/auth/telegram")
 async def login(body: LoginIn, request: Request, response: Response, web: Runtime) -> MeOut:
     check_origin(request, web)
-    logged_in = await _log_in(web, body.telegram, body.invite)
+    logged_in = await _log_in(web, body.telegram, body.invite, body.trip_invite)
     set_session_cookie(response, web, logged_in.token)
-    return me_out(logged_in.user, logged_in.session.csrf_token)
+    return me_out(logged_in.user, logged_in.session.csrf_token, logged_in.joined_trip)
 
 
 class WebAppLoginIn(Model):
@@ -441,25 +456,28 @@ async def login_callback(request: Request, web: Runtime) -> Response:
     """
     params = dict(request.query_params)
     invite = params.pop("invite", None)
+    trip_invite = params.pop("trip_invite", None)
     try:
-        logged_in = await _log_in(web, params, invite)
+        logged_in = await _log_in(web, params, invite, trip_invite)
     except HTTPException:
         return RedirectResponse("/login?error=signin", status_code=303)
     except Forbidden:
         return RedirectResponse("/login?error=access", status_code=303)
-    response = RedirectResponse("/", status_code=303)
+    # Someone just added to a trip lands on it.
+    where = f"/travel/trips/{logged_in.joined_trip}" if logged_in.joined_trip else "/"
+    response = RedirectResponse(where, status_code=303)
     set_session_cookie(response, web, logged_in.token)
     return response
 
 
 @router.post("/auth/logout", status_code=204)
-async def logout(auth: Auth, response: Response, web: Runtime) -> None:
+async def logout(auth: TripAuth, response: Response, web: Runtime) -> None:
     await access.log_out(web.uow(), auth.token, now=web.clock())
     clear_session_cookie(response)
 
 
 @router.get("/me")
-async def me(auth: Auth) -> MeOut:
+async def me(auth: TripAuth) -> MeOut:
     return me_out(auth.user, auth.session.csrf_token)
 
 

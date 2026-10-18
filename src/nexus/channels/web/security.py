@@ -3,6 +3,10 @@
 Every route derives the user from the session cookie, never from the request.
 State-changing requests must come from our own origin and carry the session's
 CSRF token in ``X-CSRF-Token``.
+
+Guests (people brought in by a trip invite) are default-deny: ``Auth``, which almost
+every route uses, refuses them. Only the few routes that take ``TripAuth`` (opening
+the trips shared with them, and signing out) let a guest in.
 """
 
 import hmac
@@ -27,7 +31,7 @@ from nexus.application.ports import ReceiptStore, StatementPageReader
 from nexus.application.routes import Routes
 from nexus.application.weather import Weather
 from nexus.domain.access import Session
-from nexus.domain.ledger import User
+from nexus.domain.ledger import Role, User
 from nexus.settings import Environment, Settings
 
 COOKIE = "nexus_session"
@@ -120,7 +124,8 @@ def clear_session_cookie(response: Response) -> None:
     response.delete_cookie(COOKIE, path="/")
 
 
-async def authenticated(request: Request, web: Runtime) -> Authed:
+async def signed_in(request: Request, web: Runtime) -> Authed:
+    """Any signed-in user, guests included: the session, origin and CSRF checks."""
     token = request.cookies.get(COOKIE)
     if not token:
         raise HTTPException(status_code=401, detail="not signed in")
@@ -137,7 +142,19 @@ async def authenticated(request: Request, web: Runtime) -> Authed:
     return Authed(user, session, token)
 
 
+async def authenticated(request: Request, web: Runtime) -> Authed:
+    """A signed-in owner or member. Guests are refused, so a route is closed to them
+    unless it asks for ``TripAuth`` instead."""
+    authed = await signed_in(request, web)
+    if authed.user.role is Role.GUEST:
+        raise HTTPException(status_code=403, detail="guests can only open trips shared with them")
+    return authed
+
+
 Auth = Annotated[Authed, Depends(authenticated)]
+# For the routes a guest may use: the trips shared with them, and the session itself.
+# Those routes must check what the person may do on the trip they name.
+TripAuth = Annotated[Authed, Depends(signed_in)]
 
 
 def limit(web: WebRuntime, auth: Authed, kind: str) -> None:

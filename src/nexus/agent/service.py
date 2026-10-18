@@ -573,10 +573,12 @@ class AgentService:
         *,
         trip_id: UUID | None = None,
         asked: bool = True,
+        with_costs: bool = True,
     ) -> booking_cases.FromScreenshot | None:
         """Read a screenshot of bookings or plans onto the user's trips (or onto
         ``trip_id``). None when it isn't one and the user didn't say it was;
-        InvalidInput when nothing usable was found or it couldn't be read."""
+        InvalidInput when nothing usable was found or it couldn't be read. Without
+        ``with_costs`` any prices on it are dropped, not saved."""
         if self._trips is None:
             raise InvalidInput("reading screenshots isn't set up yet")
         user = await get_user(self._uow(), actor)
@@ -593,6 +595,8 @@ class AgentService:
         if not shot.is_travel and not asked:
             return None
         entries = drafts(shot)
+        if not with_costs:
+            entries = [(draft, None) for draft, _ in entries]
         if not entries:
             raise InvalidInput(_NO_ENTRIES.text)
         return await booking_cases.add_from_screenshot(

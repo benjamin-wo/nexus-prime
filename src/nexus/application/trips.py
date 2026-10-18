@@ -218,6 +218,20 @@ async def set_getting_around(
     return trip
 
 
+async def set_notes(
+    uow: UnitOfWork, user: User, trip_id: UUID, notes: str | None, *, now: datetime
+) -> Trip:
+    """Replaces the trip's notes (blank clears them). Nothing else about the trip changes."""
+    async with uow:
+        current = await uow.trips.get_trip(user.id, trip_id)
+        if current is None:
+            raise NotFound("no trip with that id")
+        trip = replace(current, notes=clean_notes(notes), updated_at=now)
+        await uow.trips.update_trip(trip, user.home_currency)
+        await uow.commit()
+    return trip
+
+
 def draft_of(trip: Trip) -> TripDraft:
     return TripDraft(
         trip.destination,
@@ -626,15 +640,19 @@ async def _view(
         just_mine=[i for i in trip.not_split if i in ids],
         paid_by_others=payments,
         balances=balances,
-        ready=readiness(
-            trip,
-            [
-                Stay(b.draft.check_in, b.draft.check_out)
-                for b in bookings
-                if b.draft.kind is BookingKind.HOTEL and b.draft.check_in
-            ],
-            any(b.draft.kind in (BookingKind.FLIGHT, BookingKind.RAIL) for b in bookings),
-        ),
+        ready=readiness_of(trip, bookings),
+    )
+
+
+def readiness_of(trip: Trip, bookings: list[Booking]) -> Readiness:
+    return readiness(
+        trip,
+        [
+            Stay(b.draft.check_in, b.draft.check_out)
+            for b in bookings
+            if b.draft.kind is BookingKind.HOTEL and b.draft.check_in
+        ],
+        any(b.draft.kind in (BookingKind.FLIGHT, BookingKind.RAIL) for b in bookings),
     )
 
 

@@ -63,6 +63,9 @@ export const RESEARCH_AREAS = [
   { name: "Asakusa", why: "Old Tokyo, temples and street food.", things: ["Senso-ji", "Nakamise street", "Kappabashi"], source: 1 },
 ];
 
+/** The signed-in user's name on the trips they own, as `owner_name` and the members list give it. */
+const OWNER_NAME = "Ben";
+
 export async function fakeApi(
   page: Page,
   {
@@ -110,6 +113,8 @@ export async function fakeApi(
     settled: boolean;
     settled_at: string | null;
   };
+  type FakeMember = { id: string; name: string; role: "owner" | "member"; added_at: string | null; you: boolean };
+  type FakeInvite = { id: string; created_at: string; expires_at: string };
   type FakeRule = { id: string; pattern: string; category_id: string; category_name: string; explanation: string };
   type FakeSalary = { rule: string; day: number | null; anchor: string | null; usual: string | null };
   let annRepaid = false;
@@ -155,6 +160,18 @@ export async function fakeApi(
     /** Whether a trip's link shows flights, stays and tickets (on unless turned off). */
     shareBookings: Record<string, boolean>;
     shareCount: number;
+    /** People added to a trip (besides its owner, the signed-in user), by trip id; a test may fill it. */
+    members: Record<string, FakeMember[]>;
+    /** A trip's unused invite links, by trip id, with the token each was made with. */
+    invites: Record<string, (FakeInvite & { token: string })[]>;
+    /** Invite tokens that, accepted, join the signed-in user to a trip (token to trip id): what a
+     * test fills in, as the fake user already owns every trip it makes. */
+    joinable: Record<string, string>;
+    /** A shared trip's recent changes by trip id, newest first; a test may fill it. */
+    activity: Record<string, { actor: string; summary: string; at: string }[]>;
+    /** The bodies of PUT /travel/trips/{id}/notes, in order. */
+    notesPuts: Record<string, unknown>[];
+    inviteCount: number;
     /** Expenses split evenly from the trip page, by transaction id. */
     splitDone: string[];
     /** Expenses marked "just mine", by trip id. */
@@ -221,6 +238,12 @@ export async function fakeApi(
     shares: {},
     shareBookings: {},
     shareCount: 0,
+    members: {},
+    invites: {},
+    joinable: {},
+    activity: {},
+    notesPuts: [],
+    inviteCount: 0,
     splitDone: [],
     justMine: {},
     paidByOthers: {},
@@ -836,6 +859,8 @@ export async function fakeApi(
         day_labels: {} as Record<string, string>,
         stops: [] as { name: string; start: string; end: string }[],
         split_evenly: true,
+        role: "owner",
+        owner_name: OWNER_NAME,
         // Made up, in the shape the photo search keeps.
         photo: {
           url: "/api/travel/photos/ph1",
@@ -1509,6 +1534,61 @@ export async function fakeApi(
       if (method === "POST" && typeof body.show_bookings === "boolean") state.shareBookings[id] = body.show_bookings;
       return json(route, { token: state.shares[id] ?? null, show_bookings: state.shareBookings[id] ?? true });
     }
+    // Shared trips: members, invites, activity and the notes. The fake user owns every trip
+    // it makes, so it sees what an owner does; a test fills `members`/`activity` to show more.
+    const sharedTrip = path.match(/^\/travel\/trips\/([^/]+)\/(members|invites|activity|notes)(?:\/([^/]+))?$/);
+    if (sharedTrip) {
+      const trip = state.trips.find((t) => t.id === sharedTrip[1]);
+      if (!trip) return json(route, { detail: "no trip with that id" }, 404);
+      const id = String(trip.id);
+      const [, , what, other] = sharedTrip;
+      const people = state.members[id] ?? [];
+      if (what === "members" && !other && method === "GET") {
+        return json(route, [{ id: "u-owner", name: OWNER_NAME, role: "owner", added_at: null, you: true }, ...people]);
+      }
+      if (what === "members" && other && method === "DELETE") {
+        if (!people.some((m) => m.id === other)) return json(route, { detail: "no one with that id is on this trip" }, 404);
+        state.members[id] = people.filter((m) => m.id !== other);
+        return route.fulfill({ status: 204 });
+      }
+      if (what === "invites" && !other && method === "GET") {
+        return json(route, (state.invites[id] ?? []).map(({ token: _token, ...invite }) => invite));
+      }
+      if (what === "invites" && !other && method === "POST") {
+        state.inviteCount += 1;
+        const token = `fakeInvite${String(state.inviteCount).padStart(4, "0")}`.padEnd(43, "x");
+        const invite = { id: `inv${state.inviteCount}`, created_at: "2026-09-28T03:00:00Z", expires_at: "2026-10-05T03:00:00Z", token };
+        state.invites[id] = [invite, ...(state.invites[id] ?? [])];
+        return json(route, { ...invite, url: `${url.origin}/trip-invite/${token}` }, 201);
+      }
+      if (what === "invites" && other && method === "DELETE") {
+        if (!(state.invites[id] ?? []).some((i) => i.id === other)) return json(route, { detail: "that invite link doesn't work" }, 404);
+        state.invites[id] = state.invites[id].filter((i) => i.id !== other);
+        return route.fulfill({ status: 204 });
+      }
+      if (what === "activity" && method === "GET") return json(route, (state.activity[id] ?? []).slice(0, 20));
+      if (what === "notes" && method === "PUT") {
+        state.notesPuts.push(body);
+        const notes = typeof body?.notes === "string" ? body.notes.trim() : "";
+        trip.notes = notes || null;
+        // Only a shared trip keeps an activity log, as on the server.
+        if (people.length > 0) state.activity[id] = [{ actor: OWNER_NAME, summary: "changed the notes", at: "2026-09-28T03:00:00Z" }, ...(state.activity[id] ?? [])];
+        return json(route, trip);
+      }
+    }
+    // An invite link opened by someone signed in: the token must be one a test made joinable.
+    const acceptInvite = path.match(/^\/travel\/invites\/([^/]+)\/accept$/);
+    if (acceptInvite && method === "POST") {
+      const token = decodeURIComponent(acceptInvite[1]);
+      const tripId = state.joinable[token];
+      if (tripId) {
+        delete state.joinable[token];
+        return json(route, { trip_id: tripId, new: true });
+      }
+      const own = Object.values(state.invites).some((list) => list.some((i) => i.token === token));
+      if (own) return json(route, { detail: "that's your own trip" }, 409);
+      return json(route, { detail: "that invite link doesn't work" }, 404);
+    }
     const shared = path.match(/^\/shared\/trips\/([^/]+)(\/photo)?$/);
     if (shared) {
       const id = Object.keys(state.shares).find((k) => state.shares[k] === shared[1]);
@@ -1711,6 +1791,7 @@ export async function fakeApi(
         id: "trip9", destination: "Tokyo", start: "2027-01-10", end: "2027-01-17", days: 8, currency: "JPY",
         budget: { amount: "6800.0000", currency: "SGD" }, companions: [], set_aside: { amount: "2267.0000", currency: "SGD" },
         planned: {}, status: "upcoming", days_until: 104, day_number: null, notes: null, day_labels: {}, stops: [],
+        role: "owner", owner_name: OWNER_NAME,
       };
       state.trips = [trip, ...state.trips];
       return json(route, trip, 201);

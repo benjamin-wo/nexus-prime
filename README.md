@@ -55,6 +55,7 @@ One LLM agent serves both surfaces, but the parts that must be right, like money
 - **Finding things to do:** look in the whole trip, in one stop, or near a day, or start from a theme (food, sights, museums, rainy day). Google Maps results and ideas from guides come as one list, each place once, and the areas of a trip's research can be saved as ideas, with the city offered as a stop.
 - **Itinerary:** filled from booking emails, screenshots (a booking app, an e-ticket, a day plan) or by hand, day by day, with each booking's reference, Google Maps ratings, hours, photos and closed-day warnings, and reminders for passports, check-in and the hotel's address.
 - **A trip page with four tabs and a Next up strip:** Plan (one day picker shared by the days and the map; tap an entry to change it), Ideas (places saved with no day, put on a day in a tap), Money (spending, planned costs, setting money aside, settling up) and Prep (what's still to sort, packing, weather and notes, at any time). The strip under the cover says the one thing to do next: a gap while you plan, the next booking in the last week, what's next today while you're there, and who still owes you after. One + button adds a booking, a plan or an idea in a short form, or by typing it, a screenshot or a place from Google Maps, and a new trip needs just where and when (the currency is worked out from the place). A famous view of the destination in the season you go (from Wikimedia Commons, credited) on the cover. Quick ideas in words ("best ramen", "rainy day") from travel guides, articles and Wikivoyage, each credited and matched to Google Maps, saved in a tap. A read-only link to share the plan with whoever is coming: days, times and addresses, never prices, booking references or notes.
+- **Shared trips:** invite someone to a trip with a single-use link (valid 7 days) and they can edit its plan (days, places, stops, packing, notes), never its money; people the app's owner invites can join with just a Telegram sign-in and see only the trips they are on. The trip keeps a short log of who changed what. The server side is in; the screens come next.
 
 **Everywhere**
 - **Web cockpit:** Home with Nexus's brief and suggested questions, a page per department, a filterable ledger with CSV export, and a chat drawer that keeps one running conversation, shared with Telegram. It is mobile-first and opens inside Telegram already signed in.
@@ -115,7 +116,7 @@ The code follows a clean, layered architecture. `domain` holds pure rules with n
 | Backend | Python 3.12, FastAPI, SQLAlchemy 2 (async Core, asyncpg), Pydantic v2, Alembic |
 | Agent | LangGraph with a Postgres checkpointer, human-in-the-loop interrupts, skills loaded on demand, provider-agnostic LLM adapter |
 | Frontend | React 19, TypeScript, Vite, TanStack Query, React Router |
-| Data | PostgreSQL 16: 53 tables, 45 migrations, a job queue in the same database; receipts in a private S3-compatible bucket |
+| Data | PostgreSQL 16: 56 tables, 46 migrations, a job queue in the same database; receipts in a private S3-compatible bucket |
 | Outside data | Frankfurter (FX), Tiingo (prices), Finnhub (news), SerpApi and Tavily web search, with OpenRouter as fallback (trip research, ideas, chat lookups and plans' news articles, quarantined, cached), Wikivoyage (travel guides), Google Places and Routes (travel times), Wikipedia and Wikimedia Commons (destination photos), Open-Meteo (weather) |
 | Channels | Telegram Bot API (webhook, inline buttons, Mini App), cookie sessions with CSRF |
 | Quality | ruff, mypy `--strict`, pytest, Vitest, Playwright, GitHub Actions |
@@ -176,7 +177,7 @@ The build follows [`docs/PLAN.md`](docs/PLAN.md). Each milestone ships to produc
   - Accounting: foundations, ledger and agent, Telegram, the migration from the old bot, the web cockpit, multi-currency, the job runtime, budgets, bills, payday, category rules, the receipt archive, Connect Gmail and forwarding addresses, subscriptions, the cash-flow calendar, a smarter assistant (money snapshot, ledger questions, memory, an evaluation set), statement import, duplicates, and a hardening pass (security review, load test, restore drill).
   - Departments, Home, and the orange-and-black redesign; images, files and albums on Telegram; a web chat that remembers.
   - Investment: holdings, prices and valuation, watchlist, levels, news, odds, research plans and following them.
-  - Travel: trips with stops, bookings from email and screenshots, reminders, trip research, Google Maps places, suggested day names, an Ideas map that shows the nearest days, destination photos, weather and packing lists.
+  - Travel: trips with stops, bookings from email and screenshots, reminders, trip research, Google Maps places, suggested day names, an Ideas map that shows the nearest days, destination photos, weather and packing lists, and shared trips (so far on the server).
 - **Next:** whatever daily use turns up; see [`docs/PLAN.md`](docs/PLAN.md).
 
 See also [`CONTEXT.md`](CONTEXT.md) (glossary) and [`DESIGN.md`](DESIGN.md) (design system).

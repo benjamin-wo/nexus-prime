@@ -87,6 +87,7 @@ def _user(row: Row[Any]) -> User:
         role=Role(row.role),
         created_at=row.created_at,
         web_access_granted_at=row.web_access_granted_at,
+        display_name=row.display_name,
     )
 
 
@@ -251,6 +252,9 @@ class SqlLedgerRepository:
     async def get_user(self, user_id: UserId) -> User | None:
         row = (await self._db.execute(select(users).where(users.c.id == user_id))).first()
         return _user(row) if row else None
+
+    async def set_display_name(self, user_id: UserId, name: str) -> None:
+        await self._db.execute(update(users).where(users.c.id == user_id).values(display_name=name))
 
     # --- categories -------------------------------------------------------------
 
