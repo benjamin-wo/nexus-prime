@@ -534,7 +534,7 @@ function SplitCard({ detail, onChange }: { detail: TripDetail; onChange: () => v
                       <br />
                       <span className="caption">{day(i.day)}</span>
                     </span>
-                    <span className="num">{formatMoney(i.amount)}</span>
+                    <span className="num">{formatWithHome(i.amount, i.home)}</span>
                     <span className="row-actions">
                       <button type="button" className="btn btn-soft btn-small" disabled={busy} aria-label={`Split ${name} evenly`} onClick={() => void split({ transaction_ids: [i.transaction_id] })}>
                         Split
@@ -606,7 +606,7 @@ function SplitCard({ detail, onChange }: { detail: TripDetail; onChange: () => v
                   <br />
                   <span className="caption">{day(i.day)}</span>
                 </span>
-                <span className="num">{formatMoney(i.amount)}</span>
+                <span className="num">{formatWithHome(i.amount, i.home)}</span>
                 <button type="button" className="btn btn-soft btn-small" disabled={busy} aria-label={`Offer ${i.counterparty ?? "this cost"} for splitting again`} onClick={() => void keepMine([i.transaction_id], false)}>
                   Offer again
                 </button>
@@ -786,7 +786,7 @@ function PaidByOthers({ detail, onChange }: { detail: TripDetail; onChange: () =
                     <button type="button" className="btn btn-soft btn-small" aria-label={`Change what ${what} paid`} onClick={() => setEditing(p.id)}>
                       Edit
                     </button>
-                    <button type="button" className="btn btn-small" aria-label={`Remove what ${what} paid`} onClick={() => setRemoving(p.id)}>
+                    <button type="button" className="btn btn-ghost btn-danger btn-small" aria-label={`Remove what ${what} paid`} onClick={() => setRemoving(p.id)}>
                       Remove
                     </button>
                   </span>
@@ -796,7 +796,7 @@ function PaidByOthers({ detail, onChange }: { detail: TripDetail; onChange: () =
                 <div className="confirm-box" role="group" aria-label={`Remove what ${what} paid`}>
                   <p>Remove this? It won't count towards what you owe {p.person}.</p>
                   <div className="people-actions">
-                    <button type="button" className="btn btn-danger" disabled={busy} onClick={() => void remove(p)}>
+                    <button type="button" className="btn btn-ghost btn-danger" disabled={busy} onClick={() => void remove(p)}>
                       Remove
                     </button>
                     <button type="button" className="btn" disabled={busy} onClick={() => setRemoving(null)}>
@@ -1127,7 +1127,7 @@ function PlannedCosts({ trip, onChange }: { trip: Trip; onChange: () => void }) 
           <li key={name} className="run-row">
             <span className="wrap">{name}</span>
             <span className="num">{formatMoney(cost)}</span>
-            <button type="button" className="btn btn-small" disabled={busy !== null} onClick={() => void remove(name)} aria-label={`Remove planned cost ${name}`}>
+            <button type="button" className="btn btn-ghost btn-danger btn-small" disabled={busy !== null} onClick={() => void remove(name)} aria-label={`Remove planned cost ${name}`}>
               Remove
             </button>
           </li>

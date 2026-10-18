@@ -124,7 +124,7 @@ export function ShareSheet({ trip, onClose }: { trip: Trip; onClose: () => void 
               <button type="button" className="btn btn-ghost btn-small" disabled={busy} onClick={renew}>
                 Make a new link
               </button>
-              <button type="button" className="btn btn-ghost btn-small" disabled={busy} onClick={stop}>
+              <button type="button" className="btn btn-ghost btn-danger btn-small" disabled={busy} onClick={stop}>
                 Stop sharing
               </button>
             </div>

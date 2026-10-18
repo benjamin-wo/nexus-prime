@@ -43,7 +43,9 @@ export type IconName =
   | "phone"
   | "info"
   | "order"
-  | "landing";
+  | "landing"
+  | "edit"
+  | "x";
 
 const PATHS: Record<IconName, string[]> = {
   home: ["M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"],
@@ -144,6 +146,8 @@ const PATHS: Record<IconName, string[]> = {
   info: ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z", "M12 11v5M12 8h.01"],
   order: ["M8 20V5", "M4.5 8.5L8 5l3.5 3.5", "M16 4v15", "M12.5 15.5L16 19l3.5-3.5"],
   landing: ["M3 20h18", "M3 8l4 1 4 3 5.5 1.5a2 2 0 0 1-.5 3.9L5 15z"],
+  edit: ["M4 20h4L19 9l-4-4L4 16z", "M13.5 6.5l4 4"],
+  x: ["M6 6l12 12", "M18 6L6 18"],
 };
 
 export function Icon({

@@ -105,6 +105,9 @@ a:hover { text-decoration-color: currentColor; }
 .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
 .btn-danger { border-color: rgba(244, 63, 94, 0.45); background: transparent; color: var(--rose-accent); }
 .btn-ghost { background: transparent; border-color: transparent; }
+.btn-ghost:hover:not(:disabled) { background: var(--bg-card-hover); }
+/* Touch screens keep :hover after a tap: a ghost button shouldn't stay filled. */
+@media (hover: none) { .btn-ghost:hover:not(:disabled) { background: transparent; } }
 .input, select.input, textarea.input {
   width: 100%; min-height: 44px; padding: var(--space-2) var(--space-3); border-radius: var(--radius-inner);
   border: 1px solid var(--border-card); background: var(--bg-input); color: var(--text-primary); font: inherit;
@@ -1038,7 +1041,8 @@ a.ask-chip { display: inline-flex; align-items: center; text-decoration: none; }
 .weather-days { list-style: none; margin: 0 0 var(--space-3); padding: 0 0 var(--space-1); display: flex; gap: var(--space-2); overflow-x: auto; }
 .weather-day { flex: none; min-width: 72px; display: grid; justify-items: center; gap: 2px; padding: var(--space-2); border-radius: var(--radius-inner); background: var(--bg-input); text-align: center; }
 .weather-icon { font-size: 1.375rem; line-height: 1.2; }
-.weather-day .is-wet { color: var(--sky-accent); }
+.weather-day .is-wet { color: var(--accent-text); font-weight: 600; }
+.weather-day:has(.is-wet) .weather-icon { color: var(--sky-accent); }
 .meter-sky span { background: var(--sky-accent); }
 .packing-card .meter { margin-bottom: var(--space-3); }
 .packing-list { list-style: none; margin: 0 0 var(--space-3); padding: 0; display: grid; gap: 2px; }
@@ -1760,3 +1764,9 @@ button.settle-main:hover > .wrap { text-decoration: underline dotted; text-under
 .photo-credit { max-width: 260px; padding: var(--space-2) var(--space-3); border-radius: var(--radius-inner); background: rgba(9, 9, 11, 0.8); color: #fff; font-size: 0.8125rem; line-height: 1.4; text-decoration: none; overflow-wrap: anywhere; }
 a.photo-credit:hover { text-decoration: underline; }
 .trip-cover:has(.photo-credit-wrap) .trip-meta { padding-right: 44px; }
+
+/* A quiet icon-only button, 40px (44px on touch), like the packing list's remove. */
+.packing-remove { flex: none; min-width: 40px; min-height: 40px; padding: 0; }
+@media (pointer: coarse) {
+  .packing-remove { min-width: 44px; min-height: 44px; }
+}

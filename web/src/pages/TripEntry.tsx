@@ -378,7 +378,7 @@ export function EntryEditor({ trip, home, entry, preset, lists = [], onDone, onM
           </button>
         )}
         {entry && (
-          <button type="button" className="btn btn-danger" disabled={busy} onClick={() => void remove()}>
+          <button type="button" className="btn btn-ghost btn-danger" disabled={busy} onClick={() => void remove()}>
             Remove
           </button>
         )}

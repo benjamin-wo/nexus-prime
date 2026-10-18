@@ -149,8 +149,8 @@ export function PackingCard({ trip, onChange, adding = false, onAddDone }: { tri
               <input type="checkbox" checked={item.done} onChange={() => void save(items.map((x, j) => (j === i ? { ...x, done: !x.done } : x)))} />
               <span>{item.text}</span>
             </label>
-            <button type="button" className="btn btn-ghost btn-small" aria-label={`Remove ${item.text}`} onClick={() => void save(items.filter((_, j) => j !== i))}>
-              ×
+            <button type="button" className="btn btn-ghost btn-small packing-remove" aria-label={`Remove ${item.text}`} onClick={() => void save(items.filter((_, j) => j !== i))}>
+              <Icon name="x" size={18} />
             </button>
           </li>
         ))}

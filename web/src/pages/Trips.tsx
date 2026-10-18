@@ -193,7 +193,7 @@ function TripForm({ initial, home, onDone }: { initial?: Trip; home: string; onD
               value={row.amount}
               onChange={(e) => setPlanned(planned.map((p, i) => (i === n ? { ...p, amount: e.target.value } : p)))}
             />
-            <button type="button" className="btn btn-small" onClick={() => setPlanned(planned.filter((_, i) => i !== n))}>
+            <button type="button" className="btn btn-ghost btn-danger btn-small" onClick={() => setPlanned(planned.filter((_, i) => i !== n))}>
               Remove
             </button>
           </div>
@@ -259,11 +259,11 @@ function WhereNext({ onAsk, onAdd }: { onAsk?: (text: string) => void; onAdd: ()
       <div className="chips">
         {onAsk &&
           WHERE_IDEAS.map((idea) => (
-            <button key={idea} type="button" className="ask-chip" onClick={() => ask(idea)}>
+            <button key={idea} type="button" className="day-pill" onClick={() => ask(idea)}>
               {idea}
             </button>
           ))}
-        <button type="button" className="ask-chip" onClick={onAdd}>
+        <button type="button" className="day-pill" onClick={onAdd}>
           Add a trip
         </button>
       </div>
@@ -729,10 +729,12 @@ function Itinerary({ detail, day, onDay, onChange, onAdd, onIdeas }: {
                 }}
               </DayHops>
               <button type="button" className="btn btn-ghost btn-small" onClick={() => onAdd({ kind: "activity", day: d })}>
+                <Icon name="plus" size={16} />
                 {addLabel}
               </button>
               {inTrip(d) && (detail.places || detail.ideas) && (
                 <button type="button" className="btn btn-ghost btn-small" onClick={() => onAdd({ kind: "activity", day: d, near: true })} aria-label={`Find ideas near here, Day ${n}`}>
+                  <Icon name="find" size={16} />
                   Find ideas near here
                 </button>
               )}
@@ -830,11 +832,11 @@ function TripMenu({ trip, onEdit, onDelete, onChange }: { trip: Trip; onEdit: ()
       setNote(e instanceof Error ? e.message : "Couldn't change the photo");
     }
   }
-  const item = (label: string, run: () => void) => (
+  const item = (label: string, run: () => void, danger = false) => (
     <button
       type="button"
       role="menuitem"
-      className="btn btn-ghost"
+      className={`btn btn-ghost${danger ? " btn-danger" : ""}`}
       onClick={() => {
         run();
       }}
@@ -855,10 +857,14 @@ function TripMenu({ trip, onEdit, onDelete, onChange }: { trip: Trip; onEdit: ()
           })}
           {trip.photo_off ? item("Show a photo", () => void photo("on")) : item("Another photo", () => void photo("next"))}
           {!trip.photo_off && item("No photo", () => void photo("off"))}
-          {item("Delete trip", () => {
-            setOpen(false);
-            onDelete();
-          })}
+          {item(
+            "Delete trip",
+            () => {
+              setOpen(false);
+              onDelete();
+            },
+            true,
+          )}
           {note && (
             <p className="caption" role="status">
               {note}
