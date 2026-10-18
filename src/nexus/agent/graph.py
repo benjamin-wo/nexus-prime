@@ -544,9 +544,11 @@ class AgentGraph:
             if spec is None or spec.confirm is None or not (spec.exposed or from_kernel):
                 continue
             try:
-                summaries.append(strip_ids(await spec.confirm(ctx, spec.parse(call["args"]))))
+                summary = strip_ids(await spec.confirm(ctx, spec.parse(call["args"])))
             except NexusError:
                 continue  # the call will fail the same way in `tools`, changing nothing
+            if summary:  # empty: this call only reads, so there's nothing to confirm
+                summaries.append(summary)
         if not summaries:
             return Command(goto="tools")
         decision = interrupt({"summary": "\n".join(summaries)})

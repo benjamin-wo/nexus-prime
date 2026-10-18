@@ -1306,7 +1306,8 @@ test("a trip is added and shows its spending, set-aside and settle-up", async ({
   await form.getByText(/^Budget, who's going/).click();
   await form.getByLabel(/^Budget/).fill("3000");
   await form.getByLabel(/^Set aside each payday/).fill("500");
-  await form.getByLabel("Who's going").fill("Ann, Ben");
+  // Names typed and left behind (no Enter) still join the list when the field is left.
+  await form.getByLabel("Add a traveller").fill("Ann, Ben");
   await form.getByRole("button", { name: "Add a category" }).click();
   await form.getByLabel("Category").fill("Dining Out");
   await form.getByLabel("Planned amount").fill("600");
@@ -1761,7 +1762,7 @@ test("a trip's plan is shared by a read-only link that shows no money, reference
   // The sheet says what's shown and what isn't, and makes the link only when asked.
   await page.getByRole("button", { name: "Share the plan" }).click();
   const sheet = page.getByRole("dialog", { name: "Share the plan" });
-  await expect(sheet.getByRole("list", { name: "Kept private" })).toContainText("Booking references");
+  await expect(sheet).toContainText("Shows the days, plans and ideas. Never money, booking references, notes or who's going.");
   await expect(sheet.getByLabel("The trip's link")).toHaveCount(0);
   await sheet.getByRole("button", { name: "Create a link" }).click();
   const link = sheet.getByLabel("The trip's link");
@@ -2280,7 +2281,7 @@ test("the keyboard opening leaves the background still and the tab bar out of th
 test("after a trip: settling up comes first, then what it cost", async ({ page }) => {
   const state = await fakeApi(page);
   await addTrip(page, "Osaka", "2026-11-10", "2026-11-12");
-  state.trips[0] = { ...state.trips[0], status: "finished" };
+  state.trips[0] = { ...state.trips[0], status: "finished", companions: ["Ann"] };
   await page.reload();
   // It opens on Money, with the strip under the cover saying who still owes.
   await expect(page.getByRole("navigation", { name: "Trip sections" }).getByRole("button", { name: "Money", exact: true })).toHaveAttribute("aria-current", "page");
@@ -2288,11 +2289,306 @@ test("after a trip: settling up comes first, then what it cost", async ({ page }
   const settle = page.getByRole("region", { name: "Settle up" });
   await expect(settle).toContainText("Ann");
   const numbers = page.getByRole("region", { name: "The trip in numbers" });
+  // Settle up now fills the first screen, so the figures below it count up once scrolled to.
+  await numbers.scrollIntoViewIfNeeded();
   await expect(numbers).toContainText("SGD 818.00");
   // Settling up sits above what it cost.
   expect((await settle.boundingBox())!.y).toBeLessThan((await numbers.boundingBox())!.y);
   await expect(tripAdd(page)).toHaveCount(0);
   await expect(page.getByRole("region", { name: "Expenses" })).toBeVisible();
+});
+
+/** A finished-looking trip on the Money tab with these people going. */
+async function moneyTrip(page: Page, companions: string[]) {
+  const state = await fakeApi(page);
+  await addTrip(page, "Osaka", "2026-11-10", "2026-11-12");
+  state.trips[0] = { ...state.trips[0], companions };
+  await page.reload();
+  await openTab(page, "Money");
+  return state;
+}
+
+const paidByAnn = (note: string, paidOn: string) => ({
+  id: "pay1",
+  person: "Ann",
+  amount: { amount: "60000.0000", currency: "JPY" },
+  note,
+  paid_on: paidOn,
+  split_with: ["Ben"],
+  my_share: { amount: "20000.0000", currency: "JPY" },
+  settled: false,
+  settled_at: null,
+});
+
+test("travellers are added and removed on the Money tab, and the split card follows them", async ({ page }) => {
+  const state = await moneyTrip(page, []);
+  const travellers = page.getByRole("region", { name: "Travellers" });
+  await expect(travellers.getByRole("list", { name: "Who's going" })).toHaveText("You");
+  // Nobody else is going, so there is nothing to split yet.
+  await expect(page.getByRole("heading", { name: "Split costs" })).toHaveCount(0);
+
+  await travellers.getByRole("textbox", { name: "Add a traveller" }).fill("Ann");
+  await travellers.getByRole("button", { name: "Add" }).click();
+  await expect.poll(() => state.tripPuts.at(-1)).toMatchObject({ companions: ["Ann"] });
+  await expect(travellers.getByRole("list", { name: "Who's going" })).toContainText("Ann");
+  await expect(page.getByRole("heading", { name: "Split costs" })).toBeVisible();
+  // Enter adds too, and a name already there (any case) is not added twice.
+  await travellers.getByRole("textbox", { name: "Add a traveller" }).fill("ben");
+  await travellers.getByRole("textbox", { name: "Add a traveller" }).press("Enter");
+  await expect.poll(() => state.tripPuts.at(-1)).toMatchObject({ companions: ["Ann", "ben"] });
+  await travellers.getByRole("textbox", { name: "Add a traveller" }).fill("ANN");
+  await travellers.getByRole("button", { name: "Add" }).click();
+  expect(state.tripPuts).toHaveLength(2);
+
+  await travellers.getByRole("button", { name: "Remove Ann" }).click();
+  await expect.poll(() => state.tripPuts.at(-1)).toMatchObject({ companions: ["ben"] });
+  await travellers.getByRole("button", { name: "Remove ben" }).click();
+  await expect.poll(() => state.tripPuts.at(-1)).toMatchObject({ companions: [] });
+  await expect(travellers.getByRole("list", { name: "Who's going" })).toHaveText("You");
+  await expect(page.getByRole("heading", { name: "Split costs" })).toHaveCount(0);
+});
+
+test("split all evenly asks first, then the shares show in Settle up", async ({ page }) => {
+  const state = await moneyTrip(page, ["Ann", "Ben"]);
+  const split = page.getByRole("region", { name: "Split costs" });
+  // Even splitting is on by default, and offers the trip's costs without changing anything.
+  await expect(split.getByRole("switch", { name: "Split costs evenly" })).toHaveAttribute("aria-checked", "true");
+  await expect(split.getByRole("list", { name: "To split" })).toContainText("Ichiran");
+  await expect(split.getByRole("list", { name: "To split" })).toContainText("Air ticket");
+  expect(state.splitPosts).toEqual([]);
+
+  await split.getByRole("button", { name: "Split all evenly" }).click();
+  const confirm = split.getByRole("group", { name: "Confirm splitting all" });
+  await expect(confirm).toContainText("Split 2 costs (SGD 818.00) evenly with Ann and Ben?");
+  // Cancelling splits nothing.
+  await confirm.getByRole("button", { name: "Cancel" }).click();
+  await expect(confirm).toHaveCount(0);
+  expect(state.splitPosts).toEqual([]);
+
+  await split.getByRole("button", { name: "Split all evenly" }).click();
+  await confirm.getByRole("button", { name: "Split them" }).click();
+  await expect.poll(() => state.splitPosts).toEqual([{ all: true }]);
+  await expect(split.getByRole("status")).toContainText("Split 2 costs evenly with Ann and Ben");
+  await expect(split.getByRole("list", { name: "To split" })).toHaveCount(0);
+  await expect(split).toContainText("Nothing left to split.");
+
+  // The IOUs show up in Settle up: what Ann owes now includes her shares of both bills.
+  const settle = page.getByRole("region", { name: "Settle up" });
+  const rows = settle.getByRole("list", { name: "Still to settle" });
+  await expect(rows.getByRole("button", { name: /^Ann owes you/ })).toBeVisible();
+  await expect(rows.getByRole("button", { name: /^Ben owes you/ })).toBeVisible();
+  await rows.getByRole("button", { name: /^Ann owes you/ }).click();
+  const parts = rows.getByRole("list", { name: "What Ann owes you" });
+  await expect(parts).toContainText("Dinner");
+  await expect(parts).toContainText("Ichiran");
+  await expect(parts).toContainText("Air ticket");
+  // Nothing is moved: this only records.
+  await expect(settle).toContainText("It doesn't move money");
+});
+
+test("the even split can be switched off, and one cost kept as just mine and offered again", async ({ page }) => {
+  const state = await moneyTrip(page, ["Ann"]);
+  const split = page.getByRole("region", { name: "Split costs" });
+  const toSplit = split.getByRole("list", { name: "To split" });
+
+  await split.getByRole("button", { name: "Keep Ichiran as just mine" }).click();
+  await expect.poll(() => state.keepMinePosts).toEqual([{ transaction_ids: ["k1"], keep: true }]);
+  await expect(toSplit).not.toContainText("Ichiran");
+  await expect(toSplit).toContainText("Air ticket");
+  // It is set aside, not lost: still listed, and offered again on request.
+  const kept = split.getByText("Kept as just mine (1)");
+  await kept.click();
+  const keptList = split.getByRole("list", { name: "Kept as just mine" });
+  await expect(keptList).toContainText("Ichiran");
+  await split.getByRole("button", { name: "Offer Ichiran for splitting again" }).click();
+  await expect.poll(() => state.keepMinePosts.at(-1)).toEqual({ transaction_ids: ["k1"], keep: false });
+  await expect(toSplit).toContainText("Ichiran");
+  await expect(split.getByText(/^Kept as just mine/)).toHaveCount(0);
+  // Nothing was split along the way.
+  expect(state.splitPosts).toEqual([]);
+
+  // One row can be split on its own.
+  await split.getByRole("button", { name: "Split Air ticket evenly" }).click();
+  await expect.poll(() => state.splitPosts).toEqual([{ transaction_ids: ["k2"] }]);
+  await expect(toSplit).not.toContainText("Air ticket");
+
+  // Switching it off stops offering costs; on again brings them back.
+  const toggle = split.getByRole("switch", { name: "Split costs evenly" });
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-checked", "false");
+  await expect(split.getByRole("list", { name: "To split" })).toHaveCount(0);
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-checked", "true");
+  await expect(split.getByRole("list", { name: "To split" })).toContainText("Ichiran");
+});
+
+test("someone else paid: it is listed with your share and nets against what they owe you", async ({ page }) => {
+  const state = await moneyTrip(page, ["Ann", "Ben"]);
+  await tripAdd(page).click();
+  await expect(page.getByRole("heading", { name: "What are you adding?" })).toBeVisible();
+  await page.getByRole("button", { name: "Someone else paid" }).click();
+  const form = page.getByRole("form", { name: "Someone else paid" });
+  await form.getByLabel("Who paid").selectOption("Ann");
+  await form.getByLabel("Amount").fill("60000");
+  await form.getByLabel("Currency").fill("jpy");
+  await form.getByLabel("What it was for").fill("Ryokan");
+  await form.getByLabel("Date").fill("2026-09-20");
+  await expect(form.getByRole("group", { name: "Split with (you're in it too)" })).toContainText("Ben");
+  await form.getByRole("button", { name: "Save" }).click();
+
+  const paid = page.getByRole("region", { name: "Paid by others" });
+  await expect(paid).toContainText("Ann paid for Ryokan");
+  await expect(paid).toContainText("split with you, Ben");
+  await expect(paid).toContainText("your share JPY 20,000");
+  expect(state.paidByOthers.trip1).toHaveLength(1);
+
+  // Ann already owed JPY 15,000 (SGD 135.00); your share of the ryokan is SGD 180.00, so you owe her the difference.
+  const rows = page.getByRole("region", { name: "Settle up" }).getByRole("list", { name: "Still to settle" });
+  const ann = rows.getByRole("button", { name: /^You owe Ann/ });
+  await expect(ann).toHaveText("You owe Ann SGD 45.00");
+  await ann.click();
+  await expect(rows.getByRole("list", { name: "What you owe Ann" })).toContainText("Ryokan");
+  await expect(rows.getByRole("list", { name: "What Ann owes you" })).toContainText("Dinner");
+
+  // Taking it away puts the balance back.
+  await paid.getByRole("button", { name: "Remove what Ann, Ryokan paid" }).click();
+  const sure = paid.getByRole("group", { name: "Remove what Ann, Ryokan paid" });
+  await sure.getByRole("button", { name: "Keep" }).click();
+  await expect(paid).toContainText("Ann paid for Ryokan");
+  await paid.getByRole("button", { name: "Remove what Ann, Ryokan paid" }).click();
+  await sure.getByRole("button", { name: "Remove" }).click();
+  await expect(page.getByRole("region", { name: "Paid by others" })).toHaveCount(0);
+  expect(state.paidByOthers.trip1).toEqual([]);
+  await expect(rows.getByRole("button", { name: /^Ann owes you/ })).toHaveText("Ann owes you SGD 135.00");
+});
+
+test("a payment someone else made can be changed", async ({ page }) => {
+  const state = await moneyTrip(page, ["Ann", "Ben"]);
+  state.paidByOthers.trip1 = [paidByAnn("Ryokan", "2026-09-20")];
+  await page.reload();
+  await openTab(page, "Money");
+  const paid = page.getByRole("region", { name: "Paid by others" });
+  await paid.getByRole("button", { name: "Change what Ann, Ryokan paid" }).click();
+  const form = page.getByRole("form", { name: "Change what Ann paid" });
+  await form.getByLabel("Amount").fill("30000");
+  await form.getByRole("button", { name: "Save" }).click();
+  await expect(paid).toContainText("your share JPY 10,000");
+});
+
+test("mark settled records the payment, with or without counting your share as spent", async ({ page }) => {
+  const state = await moneyTrip(page, ["Ann", "Ben"]);
+  state.paidByOthers.trip1 = [paidByAnn("Ryokan", "2026-09-20"), { ...paidByAnn("Taxi", "2026-09-21"), id: "pay2", person: "Ben", split_with: ["Ann"] }];
+  await page.reload();
+  await openTab(page, "Money");
+  const settle = page.getByRole("region", { name: "Settle up" });
+  const rows = settle.getByRole("list", { name: "Still to settle" });
+
+  // Ann: you owe her more than she owes you. Counting your share as spent is on, and says what it records.
+  await settle.getByRole("button", { name: "Mark settled with Ann" }).click();
+  const confirm = settle.getByRole("group", { name: "Settle up with Ann" });
+  const record = confirm.getByRole("checkbox", { name: "Also record my share as spent" });
+  await expect(record).toBeChecked();
+  await expect(confirm).toContainText("Nexus doesn't move any money.");
+  // Cancelling records nothing.
+  await confirm.getByRole("button", { name: "Cancel" }).click();
+  await expect(confirm).toHaveCount(0);
+  expect(state.settlePosts).toEqual([]);
+  await settle.getByRole("button", { name: "Mark settled with Ann" }).click();
+  await confirm.getByRole("button", { name: "Yes, mark settled" }).click();
+  await expect.poll(() => state.settlePosts).toEqual([{ person: "Ann", log: true }]);
+  await expect(settle.getByRole("status")).toContainText("Settled with Ann: 1 IOU from Ann marked paid back");
+  await expect(settle.getByRole("status")).toContainText("1 payment you owed Ann marked paid, JPY 20,000 recorded as spent");
+  await expect(rows.getByRole("button", { name: /Ann/ })).toHaveCount(0);
+
+  // Ben: left unticked, it is marked paid without touching what you've spent.
+  await settle.getByRole("button", { name: "Mark settled with Ben" }).click();
+  const benConfirm = settle.getByRole("group", { name: "Settle up with Ben" });
+  await benConfirm.getByRole("checkbox", { name: "Also record my share as spent" }).uncheck();
+  await benConfirm.getByRole("button", { name: "Yes, mark settled" }).click();
+  await expect.poll(() => state.settlePosts.at(-1)).toEqual({ person: "Ben", log: false });
+  await expect(settle.getByRole("status")).toContainText("nothing added to what you've spent");
+  await expect(settle).toContainText("Nothing left to settle.");
+  await expect(rows).toHaveCount(0);
+});
+
+test("when they only owe you, settling has no spending choice", async ({ page }) => {
+  const state = await moneyTrip(page, ["Ann"]);
+  const settle = page.getByRole("region", { name: "Settle up" });
+  await settle.getByRole("button", { name: "Mark settled with Ann" }).click();
+  const confirm = settle.getByRole("group", { name: "Settle up with Ann" });
+  await expect(confirm.getByRole("checkbox")).toHaveCount(0);
+  await expect(confirm).toContainText("Ann paid you back");
+  await confirm.getByRole("button", { name: "Yes, mark settled" }).click();
+  await expect.poll(() => state.settlePosts).toEqual([{ person: "Ann", log: false }]);
+  await expect(settle.getByRole("status")).toContainText("Settled with Ann: 1 IOU from Ann marked paid back");
+});
+
+test("a shared link can leave bookings out, and the shared page says so", async ({ page }) => {
+  const state = await fakeApi(page);
+  page.on("dialog", (d) => void d.accept());
+  await addTrip(page, "Tokyo", "2026-11-10", "2026-11-12");
+  const entry = { trip_id: "trip1", provider: null, segments: [], name: null, day: null, at: null, category: null, place_id: null, scheduled: true, logged: false, manual: true };
+  state.plans.push(
+    { ...entry, id: "pl1", kind: "hotel", title: "Hotel Kumo", hotel: "Hotel Kumo", starts: "2026-11-10", ends: "2026-11-12", check_in: "2026-11-10", check_out: "2026-11-12", address: "1-2-3 Example-cho, Tokyo", reference: "HK55821", booked_via: "Agoda", note: null, cost: null },
+    { ...entry, id: "pl2", kind: "activity", title: "Fish market breakfast", name: "Fish market breakfast", starts: "2026-11-11", ends: "2026-11-11", day: "2026-11-11", at: "07:30", address: "4-5 Market St, Tokyo", hotel: null, check_in: null, check_out: null, reference: null, booked_via: null, note: null, cost: null },
+  );
+  await page.reload();
+
+  await page.getByRole("button", { name: "Share the plan" }).click();
+  const sheet = page.getByRole("dialog", { name: "Share the plan" });
+  const toggle = sheet.getByRole("switch", { name: "Show bookings (flights, stays, tickets)" });
+  // Bookings are shown unless you say otherwise, even before there is a link.
+  await expect(toggle).toBeChecked();
+  const created = page.waitForRequest((r) => r.url().endsWith("/travel/trips/trip1/share") && r.method() === "POST");
+  await sheet.getByRole("button", { name: "Create a link" }).click();
+  expect((await created).postDataJSON()).toEqual({ show_bookings: true });
+  const link = sheet.getByLabel("The trip's link");
+  await expect(link).toHaveValue(/\/shared\/fakeShare0001x+$/);
+  await expect(toggle).toBeChecked();
+  expect(state.shareBookings.trip1).toBe(true);
+
+  const off = page.waitForRequest((r) => r.url().endsWith("/travel/trips/trip1/share") && r.method() === "POST");
+  await toggle.click();
+  expect((await off).postDataJSON()).toEqual({ show_bookings: false });
+  await expect(sheet.getByRole("status")).toHaveText("Saved");
+  await expect(toggle).not.toBeChecked();
+  expect(state.shareBookings.trip1).toBe(false);
+  // A new link keeps the choice.
+  await sheet.getByRole("button", { name: "Make a new link" }).click();
+  await expect(link).toHaveValue(/\/shared\/fakeShare0002x+$/);
+  await expect(toggle).not.toBeChecked();
+  const shared = new URL(await link.inputValue()).pathname;
+  await page.keyboard.press("Escape");
+
+  await page.goto(shared);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Tokyo");
+  await expect(page.getByRole("note")).toHaveText("Bookings aren't shown on this link.");
+  const plan = page.getByRole("region", { name: "The plan" });
+  // Their own plans stay; flights and stays are gone, and the days they filled read as travel days.
+  await expect(plan).toContainText("Fish market breakfast");
+  const text = await page.locator("main").innerText();
+  for (const hidden of ["ZZ12", "Hotel Kumo", "Staying at", "HK55821"]) expect(text).not.toContain(hidden);
+  await expect(plan.getByText("Travel day")).toHaveCount(2);
+  await expect(plan.getByText("Nothing planned yet")).toHaveCount(0);
+
+  // Back on, the bookings return and the note goes.
+  await page.goto("/travel/trips/trip1");
+  await page.getByRole("button", { name: "Share the plan" }).click();
+  await sheet.getByRole("switch", { name: "Show bookings (flights, stays, tickets)" }).click();
+  await expect.poll(() => state.shareBookings.trip1).toBe(true);
+  await page.goto(shared);
+  await expect(page.getByRole("note")).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "The plan" })).toContainText("Staying at Hotel Kumo");
+  await expect(page.getByRole("region", { name: "The plan" })).toContainText("ZZ12 SIN → NRT");
+
+  // Stopping and sharing again starts from the default: bookings shown.
+  await page.goto("/travel/trips/trip1");
+  await page.getByRole("button", { name: "Share the plan" }).click();
+  await sheet.getByRole("switch", { name: "Show bookings (flights, stays, tickets)" }).click();
+  await expect.poll(() => state.shareBookings.trip1).toBe(false);
+  await sheet.getByRole("button", { name: "Stop sharing" }).click();
+  await expect(sheet.getByRole("button", { name: "Create a link" })).toBeVisible();
+  await expect(sheet.getByRole("switch", { name: "Show bookings (flights, stays, tickets)" })).toBeChecked();
 });
 
 test("cards rise into view and figures count up, unless less motion is asked for", async ({ page }) => {

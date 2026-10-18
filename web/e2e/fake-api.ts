@@ -99,6 +99,17 @@ export async function fakeApi(
     days_until: number;
     snoozed: boolean;
   };
+  type FakePayment = {
+    id: string;
+    person: string;
+    amount: { amount: string; currency: string };
+    note: string | null;
+    paid_on: string;
+    split_with: string[];
+    my_share: { amount: string; currency: string };
+    settled: boolean;
+    settled_at: string | null;
+  };
   type FakeRule = { id: string; pattern: string; category_id: string; category_name: string; explanation: string };
   type FakeSalary = { rule: string; day: number | null; anchor: string | null; usual: string | null };
   let annRepaid = false;
@@ -141,7 +152,21 @@ export async function fakeApi(
     ideaSearches: string[];
     photoChoices: string[];
     shares: Record<string, string>;
+    /** Whether a trip's link shows flights, stays and tickets (on unless turned off). */
+    shareBookings: Record<string, boolean>;
     shareCount: number;
+    /** Expenses split evenly from the trip page, by transaction id. */
+    splitDone: string[];
+    /** Expenses marked "just mine", by trip id. */
+    justMine: Record<string, string[]>;
+    /** What fellow travellers paid, by trip id. */
+    paidByOthers: Record<string, FakePayment[]>;
+    /** People settled up with, as "trip id:name". */
+    settledWith: string[];
+    /** The bodies of POST /travel/trips/{id}/split, /keep-mine and /settle, in order. */
+    splitPosts: Record<string, unknown>[];
+    keepMinePosts: Record<string, unknown>[];
+    settlePosts: Record<string, unknown>[];
     planStarted: boolean;
     planAlerts: boolean;
     cancelled: string[];
@@ -194,7 +219,15 @@ export async function fakeApi(
     watching: [],
     trips: [],
     shares: {},
+    shareBookings: {},
     shareCount: 0,
+    splitDone: [],
+    justMine: {},
+    paidByOthers: {},
+    settledWith: [],
+    splitPosts: [],
+    keepMinePosts: [],
+    settlePosts: [],
     chatSent: [],
     trades: [],
     tripItems: ["k1", "k2"],
@@ -802,6 +835,7 @@ export async function fakeApi(
         notes: body.notes ?? null,
         day_labels: {} as Record<string, string>,
         stops: [] as { name: string; start: string; end: string }[],
+        split_evenly: true,
         // Made up, in the shape the photo search keeps.
         photo: {
           url: "/api/travel/photos/ph1",
@@ -902,6 +936,73 @@ export async function fakeApi(
       stops[stops.length - 1].end = end;
       return stops;
     };
+    // The made-up trip's money with other people. Yen are worth 0.009 SGD; nothing else has a rate.
+    const rateOf = (currency: string) => (currency === "SGD" ? 1 : currency === "JPY" ? 0.009 : null);
+    const unitsOf = (currency: string) => (currency === "JPY" ? 1 : 100);
+    const moneyOf = (value: number, currency: string) => ({ amount: value.toFixed(4), currency });
+    const homeOf = (m: { amount: string; currency: string }) => {
+      const rate = rateOf(m.currency);
+      return rate === null ? null : home(Number(m.amount) * rate);
+    };
+    /** ``parts`` equal parts in the currency's smallest unit; the earlier ones take the leftover. */
+    const allocate = (m: { amount: string; currency: string }, parts: number) => {
+      const unit = unitsOf(m.currency);
+      const total = Math.round(Number(m.amount) * unit);
+      const base = Math.floor(total / parts);
+      const extra = total - base * parts;
+      return Array.from({ length: parts }, (_, i) => moneyOf((base + (i < extra ? 1 : 0)) / unit, m.currency));
+    };
+    const firstShare = (m: { amount: string; currency: string }, parts: number) => allocate(m, parts)[0];
+    const settledWith = (trip: Record<string, unknown>, name: string) => state.settledWith.includes(`${String(trip.id)}:${name}`);
+    const tripCosts = () =>
+      [
+        { transaction_id: "k1", day: "2026-09-28", counterparty: "Ichiran", category: "Dining Out", amount: { amount: "2000.0000", currency: "JPY" }, linked: false },
+        { transaction_id: "k2", day: "2026-08-01", counterparty: "Air ticket", category: "Travel", amount: home(800), linked: true },
+      ].filter((i) => state.tripItems.includes(i.transaction_id));
+    const balancesFor = (trip: Record<string, unknown>) => {
+      type Part = { kind: "iou" | "payment"; id: string; label: string | null; amount: { amount: string; currency: string }; home: { amount: string; currency: string } | null; on: string };
+      const people = new Map<string, { owes_you: Part[]; you_owe: Part[] }>();
+      const of = (name: string) => {
+        if (!people.has(name)) people.set(name, { owes_you: [], you_owe: [] });
+        return people.get(name)!;
+      };
+      const companions = (trip.companions as string[]) ?? [];
+      // The dinner Ann owes for, from before this trip page learned to split.
+      if (companions.includes("Ann") && !settledWith(trip, "Ann")) {
+        const amount = { amount: "15000.0000", currency: "JPY" };
+        of("Ann").owes_you.push({ kind: "iou", id: "iou-dinner", label: "Dinner", amount, home: homeOf(amount), on: "2026-09-20" });
+      }
+      for (const cost of tripCosts().filter((c) => state.splitDone.includes(c.transaction_id))) {
+        // The user's share comes first, so they take the leftover; then each person in the trip's order.
+        const shares = allocate(cost.amount, companions.length + 1).slice(1);
+        companions.forEach((name, n) => {
+          if (settledWith(trip, name)) return;
+          of(name).owes_you.push({ kind: "iou", id: `iou-${cost.transaction_id}-${name}`, label: cost.counterparty, amount: shares[n], home: homeOf(shares[n]), on: cost.day });
+        });
+      }
+      for (const p of state.paidByOthers[String(trip.id)] ?? []) {
+        if (p.settled) continue;
+        of(p.person).you_owe.push({ kind: "payment", id: p.id, label: p.note, amount: p.my_share, home: homeOf(p.my_share), on: p.paid_on });
+      }
+      return [...people.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([person, parts]) => {
+          const byCurrency = new Map<string, number>();
+          for (const d of parts.owes_you) byCurrency.set(d.amount.currency, (byCurrency.get(d.amount.currency) ?? 0) + Number(d.amount.amount));
+          for (const d of parts.you_owe) byCurrency.set(d.amount.currency, (byCurrency.get(d.amount.currency) ?? 0) - Number(d.amount.amount));
+          const all = [...parts.owes_you, ...parts.you_owe];
+          const known = all.every((d) => d.home !== null);
+          const net = known ? parts.owes_you.reduce((t, d) => t + Number(d.home!.amount), 0) - parts.you_owe.reduce((t, d) => t + Number(d.home!.amount), 0) : null;
+          const sign = net ?? (byCurrency.size === 1 ? [...byCurrency.values()][0] : null);
+          return {
+            person,
+            direction: sign === null ? null : sign > 0 ? "owes_you" : sign < 0 ? "you_owe" : "even",
+            net: net === null ? null : home(net),
+            net_by_currency: [...byCurrency.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([c, v]) => moneyOf(v, c)),
+            ...parts,
+          };
+        });
+    };
     const tripDetail = (trip: Record<string, unknown>) => {
       const items = [
         { transaction_id: "k1", day: "2026-09-28", counterparty: "Ichiran", category: "Dining Out", amount: { amount: "2000.0000", currency: "JPY" }, home: home(18), linked: false },
@@ -934,7 +1035,18 @@ export async function fakeApi(
           next_payday: "2026-10-30",
           pay_schedule: true,
         },
-        owed: [{ name: "Ann", amounts: [{ amount: "15000.0000", currency: "JPY" }], home: home(135) }],
+        owed: settledWith(trip, "Ann") ? [] : [{ name: "Ann", amounts: [{ amount: "15000.0000", currency: "JPY" }], home: home(135) }],
+        // Costs not split yet (newest first), while the trip splits evenly and others are going.
+        to_split:
+          trip.split_evenly !== false && ((trip.companions as string[]) ?? []).length > 0
+            ? [...tripCosts()]
+                .reverse()
+                .filter((c) => !state.splitDone.includes(c.transaction_id) && !(state.justMine[String(trip.id)] ?? []).includes(c.transaction_id))
+                .map((c) => ({ transaction_id: c.transaction_id, day: c.day, counterparty: c.counterparty, category: c.category, amount: c.amount, home: homeOf(c.amount) }))
+            : [],
+        just_mine: state.justMine[String(trip.id)] ?? [],
+        paid_by_others: state.paidByOthers[String(trip.id)] ?? [],
+        balances: balancesFor(trip),
         items,
         bookings: [...(state.flight ? [{ ...FLIGHT, trip_id: trip.id }] : []), ...state.plans],
         booked: home(820),
@@ -1282,6 +1394,98 @@ export async function fakeApi(
         return route.fulfill({ status: 204 });
       }
     }
+    // Splitting costs, what others paid and settling up, as the server answers them.
+    const tripMoney = path.match(/^\/travel\/trips\/([^/]+)\/(split-evenly|split|keep-mine|paid-by-others|settle)(?:\/([^/]+))?$/);
+    if (tripMoney) {
+      const trip = state.trips.find((t) => t.id === tripMoney[1]);
+      if (!trip) return json(route, { detail: "no trip with that id" }, 404);
+      const id = String(trip.id);
+      const companions = (trip.companions as string[]) ?? [];
+      const traveller = (name: unknown) => companions.find((c) => c.toLowerCase() === String(name ?? "").trim().toLowerCase());
+      if (tripMoney[2] === "split-evenly" && method === "PUT") {
+        if (typeof body.on !== "boolean") return json(route, { detail: "on: Input should be a valid boolean" }, 422);
+        trip.split_evenly = body.on;
+        return json(route, trip);
+      }
+      if (tripMoney[2] === "keep-mine" && method === "POST") {
+        state.keepMinePosts.push(body);
+        const ids = (body.transaction_ids ?? []) as string[];
+        if (ids.length === 0) return json(route, { detail: "transaction_ids: List should have at least 1 item" }, 422);
+        if (ids.some((i) => !tripCosts().some((c) => c.transaction_id === i))) return json(route, { detail: "no expense with that id on this trip" }, 404);
+        const kept = (state.justMine[id] ?? []).filter((i) => body.keep === false ? !ids.includes(i) : true);
+        state.justMine[id] = body.keep === false ? kept : [...kept, ...ids.filter((i) => !kept.includes(i))];
+        return json(route, { just_mine: state.justMine[id] });
+      }
+      if (tripMoney[2] === "split" && method === "POST") {
+        state.splitPosts.push(body);
+        const ids = body.transaction_ids as string[] | undefined;
+        if ((ids === undefined || ids === null) === !body.all || (ids && ids.length === 0)) return json(route, { detail: "give transaction_ids, or all: true, but not both" }, 422);
+        if (companions.length === 0) return json(route, { detail: "add the people you're travelling with to the trip first" }, 422);
+        const costs = tripCosts();
+        const wanted = body.all ? costs.filter((c) => !state.splitDone.includes(c.transaction_id) && !(state.justMine[id] ?? []).includes(c.transaction_id)).map((c) => c.transaction_id) : ids!;
+        const done: Record<string, unknown>[] = [];
+        const skipped: { transaction_id: string; reason: string }[] = [];
+        for (const tid of wanted) {
+          const cost = costs.find((c) => c.transaction_id === tid);
+          if (!cost) skipped.push({ transaction_id: tid, reason: "not an expense on this trip" });
+          else if (state.splitDone.includes(tid)) skipped.push({ transaction_id: tid, reason: "this bill is already split" });
+          else {
+            state.splitDone.push(tid);
+            state.justMine[id] = (state.justMine[id] ?? []).filter((i) => i !== tid);
+            done.push({ transaction_id: tid, counterparty: cost.counterparty, amount: cost.amount, own_share: firstShare(cost.amount, companions.length + 1) });
+          }
+        }
+        return json(route, { with_people: companions, done, skipped });
+      }
+      if (tripMoney[2] === "paid-by-others" && (method === "POST" || method === "PUT" || method === "DELETE")) {
+        const list = state.paidByOthers[id] ?? (state.paidByOthers[id] = []);
+        const found = tripMoney[3] ? list.find((p) => p.id === tripMoney[3]) : undefined;
+        if (method !== "POST" && !found) return json(route, { detail: "no payment with that id on this trip" }, 404);
+        if (method === "DELETE") {
+          state.paidByOthers[id] = list.filter((p) => p !== found);
+          return route.fulfill({ status: 204 });
+        }
+        if (found?.settled) return json(route, { detail: "this payment is already settled" }, 409);
+        const person = traveller(body.person);
+        if (!person) return json(route, { detail: `${String(body.person ?? "").trim()} isn't on this trip; add them to the trip's travellers first` }, 422);
+        const currency = String(body.currency ?? "SGD").toUpperCase();
+        const value = Number(String(body.amount ?? "").replace(/,/g, ""));
+        if (!(value > 0)) return json(route, { detail: "amount must be greater than zero" }, 422);
+        const others = body.split_with === undefined || body.split_with === null ? companions : (body.split_with as string[]).map((n) => traveller(n));
+        if (others.some((n) => !n)) return json(route, { detail: "someone in split_with isn't on this trip" }, 422);
+        const split_with = [...new Set(others as string[])].filter((n) => n !== person);
+        const amount = moneyOf(value, currency);
+        const payment: FakePayment = {
+          id: found?.id ?? `pay${list.length + 1}`,
+          person,
+          amount,
+          note: body.note ? String(body.note).trim() : null,
+          paid_on: String(body.paid_on ?? "2026-09-28"),
+          split_with,
+          my_share: firstShare(amount, 2 + split_with.length),
+          settled: false,
+          settled_at: null,
+        };
+        if (found) Object.assign(found, payment);
+        else list.push(payment);
+        return json(route, payment, method === "POST" ? 201 : 200);
+      }
+      if (tripMoney[2] === "settle" && method === "POST") {
+        state.settlePosts.push(body);
+        const person = traveller(body.person) ?? String(body.person ?? "");
+        const balance = balancesFor(trip).find((b) => b.person.toLowerCase() === person.toLowerCase());
+        if (!balance) return json(route, { detail: `nothing to settle with ${person} on this trip` }, 422);
+        state.settledWith.push(`${id}:${balance.person}`);
+        for (const p of state.paidByOthers[id] ?? []) if (p.person === balance.person) Object.assign(p, { settled: true, settled_at: "2026-09-28T04:00:00Z" });
+        return json(route, {
+          person: balance.person,
+          ious_repaid: balance.owes_you.length,
+          payments_settled: balance.you_owe.length,
+          income: balance.owes_you.map((d) => d.amount),
+          expenses: body.log === false ? [] : balance.you_owe.map((d) => d.amount),
+        });
+      }
+    }
     // A trip's read-only link. Tokens are made up, in the real ones' shape.
     const tripShare = path.match(/^\/travel\/trips\/([^/]+)\/share$/);
     if (tripShare) {
@@ -1289,13 +1493,21 @@ export async function fakeApi(
       if (!state.trips.some((t) => t.id === id)) return json(route, { detail: "no trip with that id" }, 404);
       if (method === "DELETE") {
         delete state.shares[id];
+        delete state.shareBookings[id];
         return route.fulfill({ status: 204 });
+      }
+      if (method === "POST" && body.show_bookings !== undefined && body.show_bookings !== null && typeof body.show_bookings !== "boolean") {
+        return json(route, { detail: "show_bookings: Input should be a valid boolean" }, 422);
       }
       if (method === "POST" && (!state.shares[id] || body.renew)) {
         state.shareCount += 1;
         state.shares[id] = `fakeShare${String(state.shareCount).padStart(4, "0")}`.padEnd(43, "x");
+        // A new link starts with bookings shown; a renewed one keeps the choice.
+        if (!body.renew) state.shareBookings[id] = true;
       }
-      return json(route, { token: state.shares[id] ?? null });
+      // Left out, the link keeps what it had.
+      if (method === "POST" && typeof body.show_bookings === "boolean") state.shareBookings[id] = body.show_bookings;
+      return json(route, { token: state.shares[id] ?? null, show_bookings: state.shareBookings[id] ?? true });
     }
     const shared = path.match(/^\/shared\/trips\/([^/]+)(\/photo)?$/);
     if (shared) {
@@ -1306,6 +1518,11 @@ export async function fakeApi(
       // The same allow-list as the server: the plan, never money, references or notes.
       const keep = ["kind", "title", "provider", "starts", "ends", "segments", "hotel", "address", "check_in", "check_out", "day", "at", "category"];
       const detail = tripDetail(trip);
+      const showBookings = state.shareBookings[String(id)] ?? true;
+      // Without bookings: only the user's own plans stay (a plan with a reference or a place booked is a ticket).
+      const isBooking = (b: Record<string, unknown>) => b.kind !== "activity" || Boolean(b.reference) || Boolean(b.booked_via);
+      const scheduled = (detail.bookings as Record<string, unknown>[]).filter((b) => b.scheduled);
+      const hidden = showBookings ? [] : scheduled.filter(isBooking);
       return json(route, {
         destination: trip.destination,
         start: trip.start,
@@ -1317,7 +1534,10 @@ export async function fakeApi(
         day_labels: trip.day_labels,
         stops: trip.stops ?? [],
         photo: trip.photo && !trip.photo_off ? { ...(trip.photo as object), url: `/api/shared/trips/${shared[1]}/photo` } : null,
-        bookings: (detail.bookings as Record<string, unknown>[]).filter((b) => b.scheduled).map((b) => Object.fromEntries(keep.map((k) => [k, b[k] ?? null]))),
+        bookings: scheduled.filter((b) => showBookings || !isBooking(b)).map((b) => Object.fromEntries(keep.map((k) => [k, b[k] ?? null]))),
+        show_bookings: showBookings,
+        // Days a hidden booking starts or ends on, so the page can say "Travel day" rather than "Free day".
+        hidden_days: [...new Set(hidden.flatMap((b) => [b.starts, b.ends]).filter(Boolean).map(String))].sort(),
       });
     }
     const tripShot = path.match(/^\/travel\/trips\/([^/]+)\/screenshot$/);

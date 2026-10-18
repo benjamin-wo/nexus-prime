@@ -97,6 +97,11 @@ function Entry({ booking, iso, stop }: { booking: SharedBooking; iso: string; st
   );
 }
 
+/** What an empty day says: a day a hidden booking falls on is a travel day, not a free one. */
+export function emptyDayText(iso: string, hiddenDays: readonly string[]): string {
+  return hiddenDays.includes(iso) ? "Travel day" : "Nothing planned yet";
+}
+
 /** The trip day by day, as anyone with the link sees it: nothing here can be changed. */
 function SharedDays({ trip }: { trip: SharedTrip }) {
   const today = todayIso();
@@ -106,6 +111,9 @@ function SharedDays({ trip }: { trip: SharedTrip }) {
   const days = new Set<string>();
   for (let t = Date.parse(trip.start); t <= Date.parse(trip.end); t += DAY_MS) days.add(isoDay(t));
   for (const b of sorted) days.add(b.starts);
+  // A day only a hidden booking falls on (the day before, say) still shows, as a travel day.
+  const hiddenDays = trip.show_bookings ? [] : (trip.hidden_days ?? []);
+  for (const d of hiddenDays) days.add(d);
   const dayNumber = (iso: string) => Math.round((Date.parse(iso) - Date.parse(trip.start)) / DAY_MS) + 1;
   const inTrip = (iso: string) => iso >= trip.start && iso <= trip.end;
 
@@ -154,7 +162,7 @@ function SharedDays({ trip }: { trip: SharedTrip }) {
                   return <Entry key={i} booking={b} iso={d} stop={b.kind === "activity" ? stop : null} />;
                 })}
               </ul>
-              {empty && <p className="caption">Nothing planned yet</p>}
+              {empty && <p className="caption">{emptyDayText(d, hiddenDays)}</p>}
             </div>
           </div>
         );
@@ -208,6 +216,11 @@ export function SharedTripPage() {
               : shared.error instanceof Error
                 ? shared.error.message
                 : "Couldn't load this trip. Try again in a minute."}
+          </p>
+        )}
+        {trip && !trip.show_bookings && (
+          <p className="shared-note" role="note">
+            Bookings aren't shown on this link.
           </p>
         )}
         {trip && <SharedDays trip={trip} />}

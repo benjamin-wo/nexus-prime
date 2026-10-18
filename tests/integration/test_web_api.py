@@ -2410,11 +2410,11 @@ async def test_a_shared_trip_shows_its_plan_to_anyone_with_the_link_and_nothing_
     assert (await owner.send("POST", f"{path}/bookings", unscheduled)).status_code == 201
 
     # Not shared to start with; sharing makes one link, and asking again keeps it.
-    assert (await owner.get(f"{path}/share")).json() == {"token": None}
+    assert (await owner.get(f"{path}/share")).json() == {"token": None, "show_bookings": True}
     token = (await owner.send("POST", f"{path}/share", {})).json()["token"]
     assert len(token) >= 40
     assert (await owner.send("POST", f"{path}/share", {})).json()["token"] == token
-    assert (await owner.get(f"{path}/share")).json() == {"token": token}
+    assert (await owner.get(f"{path}/share")).json() == {"token": token, "show_bookings": True}
 
     # Anyone with the link sees the plan, signed in or not...
     stranger = world.browser()
@@ -2426,6 +2426,7 @@ async def test_a_shared_trip_shows_its_plan_to_anyone_with_the_link_and_nothing_
     assert any("Hotel Kumo" in t for t in titles) and "Tea ceremony" in titles
     assert shared["bookings"][0]["address"] == "1-2-3 Example-cho, Kyoto"
     assert titles.index("Night walk") < titles.index("Tea ceremony")
+    assert shared["show_bookings"] is True and shared["hidden_days"] == []
     # ...and nothing of the money, references, notes, who's going or unscheduled places.
     text = opened.text
     for private in ("HK55821", "Agoda", "640", "3000", "4242", "Ann Example", "Somewhere secret"):
@@ -2491,3 +2492,215 @@ async def test_an_overnight_flight_lands_on_the_next_day_and_the_trip_has_a_car(
     token = (await owner.send("POST", f"{path}/share", {})).json()["token"]
     shared = (await world.browser().get(f"/api/shared/trips/{token}")).json()
     assert [b["kind"] for b in shared["bookings"]] == ["flight", "hotel"]
+
+
+async def test_a_link_can_hide_flights_stays_and_tickets(world: World) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+    body = {"destination": "Kyoto", "start": "2026-11-10", "end": "2026-11-13", "currency": "JPY"}
+    trip_id = (await owner.send("POST", "/api/travel/trips", body)).json()["id"]
+    path = f"/api/travel/trips/{trip_id}"
+    hotel_stay = {"kind": "hotel", "hotel": "Hotel Kumo", "check_in": "2026-11-10",
+                  "check_out": "2026-11-12", "reference": "HK55821"}  # fmt: skip
+    assert (await owner.send("POST", f"{path}/bookings", hotel_stay)).status_code == 201
+    plan = {"kind": "activity", "name": "Tea ceremony", "day": "2026-11-11", "at": "15:00"}
+    assert (await owner.send("POST", f"{path}/bookings", plan)).status_code == 201
+    ticket = {
+        "kind": "activity",
+        "name": "Museum entry",
+        "day": "2026-11-12",
+        "booked_via": "Klook",
+    }
+    assert (await owner.send("POST", f"{path}/bookings", ticket)).status_code == 201
+
+    # On by default, as before; asking to hide them keeps the same link.
+    shared = await owner.send("POST", f"{path}/share", {})
+    token = shared.json()["token"]
+    assert shared.json()["show_bookings"] is True
+    stranger = world.browser()
+    full = (await stranger.get(f"/api/shared/trips/{token}")).json()
+    titles = [b["title"] for b in full["bookings"]]
+    assert "Hotel Kumo" in titles[0] and titles[1:] == ["Tea ceremony", "Museum entry"]
+
+    hidden = await owner.send("POST", f"{path}/share", {"show_bookings": False})
+    assert hidden.json() == {"token": token, "show_bookings": False}
+    assert (await owner.get(f"{path}/share")).json() == {"token": token, "show_bookings": False}
+    opened = await stranger.get(f"/api/shared/trips/{token}")
+    assert opened.status_code == 200
+    seen = opened.json()
+    assert [b["title"] for b in seen["bookings"]] == ["Tea ceremony"]
+    assert (seen["show_bookings"], seen["hidden_days"]) == (False, ["2026-11-10", "2026-11-12"])
+    for private in ("Hotel Kumo", "HK55821", "Klook", "Museum entry"):
+        assert private not in opened.text, private
+
+    # Asking for a link again, or a new one, keeps the setting; turning it on again shows all.
+    assert (await owner.send("POST", f"{path}/share", {})).json() == hidden.json()
+    renewed = await owner.send("POST", f"{path}/share", {"renew": True})
+    assert renewed.json()["show_bookings"] is False and renewed.json()["token"] != token
+    back = await owner.send("POST", f"{path}/share", {"show_bookings": True})
+    assert back.json() == {"token": renewed.json()["token"], "show_bookings": True}
+    again = (await stranger.get(f"/api/shared/trips/{back.json()['token']}")).json()
+    assert len(again["bookings"]) == 3 and again["hidden_days"] == []
+
+    # Only a yes or no is accepted, and only the trip's owner can change it.
+    assert (
+        await owner.send("POST", f"{path}/share", {"show_bookings": "maybe"})
+    ).status_code == 422
+    assert (await owner.send("POST", f"{path}/share", {"hide": True})).status_code == 422
+    member = world.browser()
+    invite = (await owner.send("POST", "/api/invites")).json()["url"].rsplit("/", 1)[-1]
+    await member.login(MEMBER, invite)
+    refused = await member.send("POST", f"{path}/share", {"show_bookings": False})
+    assert refused.status_code == 404
+
+
+async def test_splitting_a_trips_costs_and_settling_up_on_the_web(world: World) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+    body = {"destination": "Penang", "start": "2026-09-25", "end": "2026-09-30", "currency": "SGD",
+            "companions": ["Alex", "Sam"]}  # fmt: skip
+    trip = (await owner.send("POST", "/api/travel/trips", body)).json()
+    assert trip["split_evenly"] is True
+    path = f"/api/travel/trips/{trip['id']}"
+
+    async def spend(amount: str, day: str, shop: str) -> str:
+        made = await owner.send(
+            "POST", "/api/transactions",
+            {"direction": "out", "amount": amount, "date": day, "counterparty": shop},
+        )  # fmt: skip
+        assert made.status_code == 201
+        return str(made.json()["id"])
+
+    hotel = await spend("120", "2026-09-26", "Hotel")
+    food = await spend("60", "2026-09-27", "Hawker")
+    taxi = await spend("30", "2026-09-28", "Taxi")
+
+    detail = (await owner.get(path)).json()
+    assert [i["transaction_id"] for i in detail["to_split"]] == [taxi, food, hotel]
+    first = detail["to_split"][-1]
+    assert first["amount"] == {"amount": "120.0000", "currency": "SGD"}
+    assert first["counterparty"] == "Hotel" and first["home"]["amount"] == "120.0000"
+    assert (detail["just_mine"], detail["paid_by_others"], detail["balances"]) == ([], [], [])
+
+    # Just mine: not offered again, and it can be offered again.
+    mine = await owner.send("POST", f"{path}/keep-mine", {"transaction_ids": [taxi]})
+    assert mine.json() == {"just_mine": [taxi]}
+    detail = (await owner.get(path)).json()
+    assert [i["transaction_id"] for i in detail["to_split"]] == [food, hotel]
+    assert detail["just_mine"] == [taxi]
+    bad_mine = await owner.send("POST", f"{path}/keep-mine", {"transaction_ids": [str(uuid4())]})
+    assert bad_mine.status_code == 404
+    assert (
+        await owner.send("POST", f"{path}/keep-mine", {"transaction_ids": []})
+    ).status_code == 422
+
+    # Splitting asks for exactly one of ids or all.
+    wrongs: list[dict[str, object]] = [
+        {}, {"all": False}, {"all": True, "transaction_ids": [hotel]},
+        {"transaction_ids": []}, {"everything": True},
+    ]  # fmt: skip
+    for wrong in wrongs:
+        assert (await owner.send("POST", f"{path}/split", wrong)).status_code == 422, wrong
+    one = await owner.send("POST", f"{path}/split", {"transaction_ids": [hotel, str(uuid4())]})
+    assert one.status_code == 200
+    assert one.json()["with_people"] == ["Alex", "Sam"]
+    [done] = one.json()["done"]
+    assert done["transaction_id"] == hotel and done["own_share"]["amount"] == "40.0000"
+    assert [s["reason"] for s in one.json()["skipped"]] == ["not an expense on this trip"]
+
+    everything = await owner.send("POST", f"{path}/split", {"all": True})
+    assert [d["transaction_id"] for d in everything.json()["done"]] == [food]
+    assert everything.json()["skipped"] == []
+    again = await owner.send("POST", f"{path}/split", {"all": True})
+    assert again.json()["done"] == [] and again.json()["skipped"] == []
+
+    detail = (await owner.get(path)).json()
+    assert detail["to_split"] == []
+    # The user's third of the two bills, and the taxi in full.
+    assert detail["spending"]["spent"]["amount"] == "90.0000"
+    by_name = {b["person"]: b for b in detail["balances"]}
+    assert by_name["Alex"]["net"] == {"amount": "60.0000", "currency": "SGD"}
+    assert by_name["Alex"]["direction"] == "owes_you"
+    assert [(d["kind"], d["label"]) for d in by_name["Alex"]["owes_you"]] == [
+        ("iou", "Hotel"), ("iou", "Hawker")
+    ]  # fmt: skip
+
+    # Switching the setting off hides the list; nothing in the ledger changes.
+    off = await owner.send("PUT", f"{path}/split-evenly", {"on": False})
+    assert off.json()["split_evenly"] is False
+    assert (await owner.get(path)).json()["trip"]["split_evenly"] is False
+    assert (await owner.send("PUT", f"{path}/split-evenly", {"on": "later"})).status_code == 422
+    await owner.send("PUT", f"{path}/split-evenly", {"on": True})
+
+    # What Alex paid: 460 shared three ways is 153.34 for the user.
+    paid_body = {"person": "alex", "amount": "460", "note": "the ryokan", "paid_on": "2026-09-27"}
+    paid = await owner.send("POST", f"{path}/paid-by-others", paid_body)
+    assert paid.status_code == 201
+    payment = paid.json()
+    assert (payment["person"], payment["split_with"], payment["settled"]) == (
+        "Alex",
+        ["Sam"],
+        False,
+    )
+    assert payment["my_share"] == {"amount": "153.3400", "currency": "SGD"}
+    assert payment["amount"] == {"amount": "460.0000", "currency": "SGD"}
+    detail = (await owner.get(path)).json()
+    assert [p["id"] for p in detail["paid_by_others"]] == [payment["id"]]
+    alex = {b["person"]: b for b in detail["balances"]}["Alex"]
+    assert alex["net"] == {"amount": "-93.3400", "currency": "SGD"}  # 60 less 153.34
+    assert alex["direction"] == "you_owe"
+    assert [(d["kind"], d["id"]) for d in alex["you_owe"]] == [("payment", payment["id"])]
+
+    edited = await owner.send(
+        "PUT", f"{path}/paid-by-others/{payment['id']}", {**paid_body, "split_with": []}
+    )
+    assert edited.json()["my_share"]["amount"] == "230.0000"
+    for bad in (
+        {**paid_body, "person": "Zoe"}, {**paid_body, "amount": "0"}, {**paid_body, "amount": "x"},
+        {**paid_body, "split_with": ["Zoe"]}, {**paid_body, "currency": "dollars"},
+        {**paid_body, "extra": 1}, {"person": "Alex"},
+    ):  # fmt: skip
+        assert (await owner.send("POST", f"{path}/paid-by-others", bad)).status_code == 422, bad
+    assert len((await owner.get(path)).json()["paid_by_others"]) == 1
+
+    # Settling up records what happened, once.
+    settled = await owner.send("POST", f"{path}/settle", {"person": "ALEX"})
+    assert settled.status_code == 200
+    assert settled.json() == {
+        "person": "Alex", "ious_repaid": 2, "payments_settled": 1,
+        "income": [{"amount": a, "currency": "SGD"} for a in ("40.0000", "20.0000")],
+        "expenses": [{"amount": "230.0000", "currency": "SGD"}],
+    }  # fmt: skip
+    detail = (await owner.get(path)).json()
+    assert [b["person"] for b in detail["balances"]] == ["Sam"]
+    assert detail["paid_by_others"][0]["settled"] is True
+    assert detail["to_split"] == []
+    again = await owner.send("POST", f"{path}/settle", {"person": "Alex"})
+    assert again.status_code == 422
+    locked = await owner.send("PUT", f"{path}/paid-by-others/{payment['id']}", paid_body)
+    assert locked.status_code == 409
+    assert (
+        await owner.send("POST", f"{path}/settle", {"person": "Sam", "log": False})
+    ).status_code == 200
+    assert (await owner.get(path)).json()["balances"] == []
+    assert (await owner.send("DELETE", f"{path}/paid-by-others/{payment['id']}")).status_code == 204
+    assert (await owner.get(path)).json()["paid_by_others"] == []
+    assert (await owner.send("DELETE", f"{path}/paid-by-others/{payment['id']}")).status_code == 404
+
+    # Another account sees and changes none of it.
+    member = world.browser()
+    invite = (await owner.send("POST", "/api/invites")).json()["url"].rsplit("/", 1)[-1]
+    await member.login(MEMBER, invite)
+    for method, tail, sent in [
+        ("PUT", "split-evenly", {"on": False}),
+        ("POST", "split", {"all": True}),
+        ("POST", "keep-mine", {"transaction_ids": [hotel]}),
+        ("POST", "paid-by-others", paid_body),
+        ("PUT", f"paid-by-others/{payment['id']}", paid_body),
+        ("DELETE", f"paid-by-others/{payment['id']}", None),
+        ("POST", "settle", {"person": "Alex"}),
+    ]:
+        assert (await member.send(method, f"{path}/{tail}", sent)).status_code == 404, tail
+    assert (await member.get(path)).status_code == 404
+    # Nor can anyone with the owner's trip id get at it from outside.
+    assert (await world.browser().get(path)).status_code in (401, 403)

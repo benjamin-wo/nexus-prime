@@ -84,6 +84,10 @@ class Trip:
     hop_modes: dict[str, str] = field(default_factory=dict)  # see MAX_HOP_MODES
     # The stops the user set, in order. Empty: they follow the hotels (suggest_stops).
     stops: tuple[Stop, ...] = ()
+    # Whether its costs are split evenly with the travellers (once there are any), and
+    # the expenses the user marked "just mine" so they aren't offered again.
+    split_evenly: bool = True
+    not_split: tuple[UUID, ...] = ()
 
     @property
     def days(self) -> int:
@@ -101,6 +105,16 @@ class Trip:
         if self.status(today) is not TripStatus.ONGOING:
             return None
         return (today - self.start).days + 1
+
+
+@dataclass(frozen=True, slots=True)
+class Share:
+    """A trip's read-only link: the token is the whole permission."""
+
+    token: str
+    # Whether it shows flights, stays and tickets. Money, references, notes and who's
+    # going are never shown.
+    show_bookings: bool = True
 
 
 def clean_destination(raw: str) -> str:

@@ -437,6 +437,18 @@ class Booking:
         """On a day of the itinerary; a place to visit without a day isn't yet."""
         return self.draft.starts is not None
 
+    @property
+    def is_booking(self) -> bool:
+        """A flight, stay or train, or a ticket: a plan read from an email or with a
+        booking reference or a place it was booked. Other plans are the user's own
+        ("dinner at Sushi Ten") and aren't bookings."""
+        d = self.draft
+        return (
+            d.kind is not BookingKind.ACTIVITY
+            or self.email_id is not None
+            or bool(d.reference or d.booked_via)
+        )
+
 
 def matching_trips(trips: Sequence[Trip], starts: date, today: date) -> list[Trip]:
     """Trips a booking starting on ``starts`` could belong to: ones not over whose

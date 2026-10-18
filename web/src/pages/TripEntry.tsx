@@ -389,7 +389,7 @@ export function EntryEditor({ trip, home, entry, preset, lists = [], onDone, onM
 
 /** The body of `PUT /travel/trips/{id}` for a trip as it stands, with `changes` laid over it:
  * the same shape the trip form sends, so one field can change without resending the rest by hand. */
-export function tripBody(trip: Trip, changes: Partial<{ notes: string | null; planned: Record<string, string> }> = {}) {
+export function tripBody(trip: Trip, changes: Partial<{ notes: string | null; planned: Record<string, string>; companions: string[] }> = {}) {
   return {
     destination: trip.destination,
     start: trip.start,

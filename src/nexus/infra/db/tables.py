@@ -934,6 +934,10 @@ trips = Table(
     Column("hop_modes", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
     # The stops the user set, [{"name", "start", "end"}]; empty follows the hotels (0044).
     Column("stops", JSONB, nullable=False, server_default=text("'[]'::jsonb")),
+    # Whether its costs are split evenly with the travellers, and the expenses the user
+    # marked "just mine" so they aren't offered again (transaction ids) (0045).
+    Column("split_evenly", Boolean, nullable=False, server_default=text("true")),
+    Column("not_split", JSONB, nullable=False, server_default=text("'[]'::jsonb")),
     ForeignKeyConstraint(["user_id"], ["users.id"]),
     ForeignKeyConstraint(["photo_id"], ["destination_photos.id"], ondelete="SET NULL"),
     UniqueConstraint("id", "user_id"),
@@ -953,10 +957,36 @@ trip_shares = Table(
     _user_fk(),
     Column("token", Text, nullable=False),
     Column("created_at", TZ, nullable=False),
+    # Whether the link shows flights, stays and tickets (migration 0045).
+    Column("show_bookings", Boolean, nullable=False, server_default=text("true")),
     PrimaryKeyConstraint("trip_id"),
     UniqueConstraint("token"),
     ForeignKeyConstraint(["trip_id", "user_id"], ["trips.id", "trips.user_id"], ondelete="CASCADE"),
     ForeignKeyConstraint(["user_id"], ["users.id"]),
+)
+
+# Something a fellow traveller paid for the trip that the user shares in ("Alex paid
+# S$460 for the ryokan"). The user's share is what they owe that person; nothing is
+# in the ledger until they settle up (migration 0045).
+trip_paid_by_others = Table(
+    "trip_paid_by_others",
+    metadata,
+    _uuid_pk(),
+    _user_fk(),
+    Column("trip_id", UUID(as_uuid=True), nullable=False),
+    Column("person", Text, nullable=False),
+    Column("amount", MONEY, nullable=False),
+    Column("currency", CURRENCY, nullable=False),
+    Column("note", Text),
+    Column("paid_on", Date, nullable=False),
+    # The other travellers sharing it besides the payer and the user, by name.
+    Column("split_with", JSONB, nullable=False, server_default=text("'[]'::jsonb")),
+    Column("settled_at", TZ),
+    Column("created_at", TZ, nullable=False),
+    ForeignKeyConstraint(["trip_id", "user_id"], ["trips.id", "trips.user_id"], ondelete="CASCADE"),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+    CheckConstraint("amount > 0", name="amount_positive"),
+    Index("ix_trip_paid_by_others_user_id_trip_id", "user_id", "trip_id"),
 )
 
 # An expense added to a trip by hand (included), or taken off one its dates and

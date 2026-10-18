@@ -596,6 +596,8 @@ export type Trip = {
   /** The stops the user set, in date order; empty means they follow the hotels (see
    * TripDetail.suggested_stops). */
   stops: TripStop[];
+  /** Costs are split evenly with the people going: offered once someone else is going. */
+  split_evenly: boolean;
 };
 
 export type PackItem = { text: string; done: boolean };
@@ -746,8 +748,100 @@ export type SharedBooking = Pick<Booking, "kind" | "title" | "provider" | "start
 export type SharedTrip = Pick<Trip, "destination" | "start" | "end" | "days" | "status" | "days_until" | "day_number" | "day_labels" | "photo"> & {
   stops: TripStop[];
   bookings: SharedBooking[];
+  /** False when the owner hides flights, stays and tickets: `bookings` then holds only their own plans. */
+  show_bookings: boolean;
+  /** Days a hidden booking starts or ends on (dates only), so the page can say "Travel day"
+   * rather than "Free day". Empty while bookings are shown. */
+  hidden_days: string[];
 };
-export type TripShare = { token: string | null };
+export type TripShare = {
+  token: string | null;
+  /** The link shows flights, stays and tickets (on unless turned off). Money, references, notes
+   * and who's going are never shown. */
+  show_bookings: boolean;
+};
+
+/** A cost on the trip that nobody owes a share of yet. */
+export type ToSplit = {
+  transaction_id: string;
+  day: string;
+  counterparty: string | null;
+  category: string | null;
+  /** The whole bill. */
+  amount: Money;
+  home: Money | null;
+};
+
+/** Something a fellow traveller paid for the trip that the user shares in. */
+export type PaidByOther = {
+  id: string;
+  person: string;
+  /** The whole bill, in the currency it was paid in. */
+  amount: Money;
+  note: string | null;
+  paid_on: string;
+  /** The other travellers sharing it, besides the payer and the user. */
+  split_with: string[];
+  /** The user's equal part, in the currency it was paid in: what they owe the payer. */
+  my_share: Money;
+  settled: boolean;
+  settled_at: string | null;
+};
+
+/** One thing owed between the user and a person: "iou" is their share of a bill the user paid,
+ * "payment" the user's share of a bill they paid. */
+export type BalancePart = {
+  kind: "iou" | "payment";
+  id: string;
+  label: string | null;
+  amount: Money;
+  home: Money | null;
+  on: string;
+};
+
+/** Where the user stands with one person (open items only). `net` is in the home currency,
+ * positive when they owe the user, and null when a part has no exchange rate yet; then
+ * `net_by_currency` (signed the same way) has the amounts and `direction` is null if the
+ * currencies differ. */
+export type Balance = {
+  person: string;
+  direction: "owes_you" | "you_owe" | "even" | null;
+  net: Money | null;
+  net_by_currency: Money[];
+  owes_you: BalancePart[];
+  you_owe: BalancePart[];
+};
+
+/** POST /travel/trips/{id}/split: `all` splits every cost not split yet, else `transaction_ids`. */
+export type SplitBody = { transaction_ids: string[] } | { all: true };
+export type SplitResult = {
+  with_people: string[];
+  done: { transaction_id: string; counterparty: string | null; amount: Money; own_share: Money }[];
+  /** Split meanwhile, not on the trip, or can't be split: left alone. */
+  skipped: { transaction_id: string; reason: string }[];
+};
+
+/** POST/PUT /travel/trips/{id}/paid-by-others. `person` must be a traveller on the trip;
+ * `currency` defaults to the home currency, `paid_on` to today and `split_with` (the other
+ * travellers sharing it besides the payer and the user) to everyone. */
+export type PaidByOtherBody = {
+  person: string;
+  amount: string;
+  currency?: string | null;
+  note?: string | null;
+  paid_on?: string | null;
+  split_with?: string[] | null;
+};
+
+/** POST /travel/trips/{id}/settle. What they owe the user is always recorded as money in when it is
+ * marked paid back; `log` also records the user's share of what they paid as an expense. */
+export type SettleResult = {
+  person: string;
+  ious_repaid: number;
+  payments_settled: number;
+  income: Money[];
+  expenses: Money[];
+};
 
 export type ScreenshotRead = { added: Booking[]; repeated: number; message: string };
 
@@ -802,6 +896,14 @@ export type TripDetail = {
     pay_schedule: boolean;
   };
   owed: { name: string; amounts: Money[]; home: Money | null }[];
+  /** Costs not split yet (newest first), while the trip splits evenly and others are going. */
+  to_split: ToSplit[];
+  /** Expenses marked "just mine". */
+  just_mine: string[];
+  /** What fellow travellers paid for the trip, oldest first, settled ones included. */
+  paid_by_others: PaidByOther[];
+  /** Where the user stands with each person (open items only), A to Z. */
+  balances: Balance[];
   items: {
     transaction_id: string;
     day: string;

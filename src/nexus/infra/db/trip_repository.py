@@ -15,7 +15,8 @@ from nexus.domain.destination_photos import DestinationPhoto, Season
 from nexus.domain.ledger import Direction, TransactionStatus, UserId
 from nexus.domain.money import Money
 from nexus.domain.packing import PackItem, from_rows
-from nexus.domain.trips import GettingAround, Stop, Trip
+from nexus.domain.settle import PaidByOther
+from nexus.domain.trips import GettingAround, Share, Stop, Trip
 from nexus.infra.db.ledger_repository import _transaction
 from nexus.infra.db.tables import (
     categories,
@@ -24,6 +25,7 @@ from nexus.infra.db.tables import (
     transactions,
     trip_bookings,
     trip_links,
+    trip_paid_by_others,
     trip_reminders,
     trip_shares,
     trips,
@@ -56,6 +58,8 @@ def _trip(row: Row[Any]) -> Trip:
             Stop(r["name"], date.fromisoformat(r["start"]), date.fromisoformat(r["end"]))
             for r in (row.stops or [])
         ),
+        split_evenly=row.split_evenly,
+        not_split=tuple(UUID(i) for i in (row.not_split or [])),
     )
 
 
@@ -280,24 +284,42 @@ class SqlTripRepository:
         )
         return [_booking(r) for r in rows]
 
-    async def share_token(self, user_id: UserId, trip_id: UUID) -> str | None:
+    async def get_share(self, user_id: UserId, trip_id: UUID) -> Share | None:
         row = (
             await self._db.execute(
-                select(trip_shares.c.token).where(
+                select(trip_shares.c.token, trip_shares.c.show_bookings).where(
                     trip_shares.c.user_id == user_id, trip_shares.c.trip_id == trip_id
                 )
             )
         ).first()
-        return row.token if row else None
+        return Share(row.token, row.show_bookings) if row else None
 
-    async def set_share(self, user_id: UserId, trip_id: UUID, token: str, at: datetime) -> None:
-        values = {"trip_id": trip_id, "user_id": user_id, "token": token, "created_at": at}
+    async def set_share(self, user_id: UserId, trip_id: UUID, share: Share, at: datetime) -> None:
+        values = {
+            "trip_id": trip_id,
+            "user_id": user_id,
+            "token": share.token,
+            "show_bookings": share.show_bookings,
+            "created_at": at,
+        }
         await self._db.execute(
             pg_insert(trip_shares)
             .values(**values)
             .on_conflict_do_update(
-                index_elements=[trip_shares.c.trip_id], set_={"token": token, "created_at": at}
+                index_elements=[trip_shares.c.trip_id],
+                set_={
+                    "token": share.token,
+                    "show_bookings": share.show_bookings,
+                    "created_at": at,
+                },
             )
+        )
+
+    async def set_show_bookings(self, user_id: UserId, trip_id: UUID, show: bool) -> None:
+        await self._db.execute(
+            update(trip_shares)
+            .where(trip_shares.c.user_id == user_id, trip_shares.c.trip_id == trip_id)
+            .values(show_bookings=show)
         )
 
     async def remove_share(self, user_id: UserId, trip_id: UUID) -> bool:
@@ -308,15 +330,15 @@ class SqlTripRepository:
         )
         return bool(result.rowcount)
 
-    async def shared_trip(self, token: str) -> Trip | None:
+    async def shared_trip(self, token: str) -> tuple[Trip, Share] | None:
         row = (
             await self._db.execute(
-                select(trips)
+                select(trips, trip_shares.c.show_bookings)
                 .join(trip_shares, trip_shares.c.trip_id == trips.c.id)
                 .where(trip_shares.c.token == token)
             )
         ).first()
-        return _trip(row) if row else None
+        return (_trip(row), Share(token, row.show_bookings)) if row else None
 
     async def upcoming_bookings(self, user_id: UserId, since: date) -> list[Booking]:
         b = trip_bookings.c
@@ -364,6 +386,77 @@ class SqlTripRepository:
             )
         )
         return bool(result.rowcount)
+
+    # --- splitting costs and settling up ---------------------------------------------
+
+    async def set_split_evenly(self, user_id: UserId, trip_id: UUID, on: bool) -> None:
+        await self._db.execute(
+            update(trips)
+            .where(trips.c.user_id == user_id, trips.c.id == trip_id)
+            .values(split_evenly=on)
+        )
+
+    async def set_not_split(self, user_id: UserId, trip_id: UUID, ids: tuple[UUID, ...]) -> None:
+        await self._db.execute(
+            update(trips)
+            .where(trips.c.user_id == user_id, trips.c.id == trip_id)
+            .values(not_split=[str(i) for i in ids])
+        )
+
+    async def insert_payment(self, payment: PaidByOther) -> None:
+        await self._db.execute(insert(trip_paid_by_others).values(**_payment_values(payment)))
+
+    async def update_payment(self, payment: PaidByOther) -> None:
+        values = _payment_values(payment)
+        for fixed in ("id", "user_id", "trip_id", "created_at"):
+            del values[fixed]
+        await self._db.execute(
+            update(trip_paid_by_others)
+            .where(
+                trip_paid_by_others.c.user_id == payment.user_id,
+                trip_paid_by_others.c.trip_id == payment.trip_id,
+                trip_paid_by_others.c.id == payment.id,
+            )
+            .values(**values)
+        )
+
+    async def get_payment(
+        self, user_id: UserId, trip_id: UUID, payment_id: UUID, *, for_update: bool = False
+    ) -> PaidByOther | None:
+        p = trip_paid_by_others.c
+        query = select(trip_paid_by_others).where(
+            p.user_id == user_id, p.trip_id == trip_id, p.id == payment_id
+        )
+        row = (await self._db.execute(query.with_for_update() if for_update else query)).first()
+        return _payment(row) if row else None
+
+    async def list_payments(self, user_id: UserId, trip_id: UUID) -> list[PaidByOther]:
+        p = trip_paid_by_others.c
+        rows = await self._db.execute(
+            select(trip_paid_by_others)
+            .where(p.user_id == user_id, p.trip_id == trip_id)
+            .order_by(p.paid_on, p.created_at, p.id)
+        )
+        return [_payment(r) for r in rows]
+
+    async def delete_payment(self, user_id: UserId, trip_id: UUID, payment_id: UUID) -> bool:
+        p = trip_paid_by_others.c
+        result = await self._db.execute(
+            delete(trip_paid_by_others).where(
+                p.user_id == user_id, p.trip_id == trip_id, p.id == payment_id
+            )
+        )
+        return bool(result.rowcount)
+
+    async def set_payment_settled(
+        self, user_id: UserId, trip_id: UUID, payment_id: UUID, at: datetime | None
+    ) -> None:
+        p = trip_paid_by_others.c
+        await self._db.execute(
+            update(trip_paid_by_others)
+            .where(p.user_id == user_id, p.trip_id == trip_id, p.id == payment_id)
+            .values(settled_at=at)
+        )
 
     # --- reminders --------------------------------------------------------------------
 
@@ -535,6 +628,37 @@ def _photo(row: Row[Any]) -> DestinationPhoto:
         page=row.page,
         created_at=row.created_at,
         rank=row.rank,
+    )
+
+
+def _payment_values(payment: PaidByOther) -> dict[str, Any]:
+    return {
+        "id": payment.id,
+        "user_id": payment.user_id,
+        "trip_id": payment.trip_id,
+        "person": payment.person,
+        "amount": payment.amount.amount,
+        "currency": payment.amount.currency,
+        "note": payment.note,
+        "paid_on": payment.paid_on,
+        "split_with": list(payment.split_with),
+        "settled_at": payment.settled_at,
+        "created_at": payment.created_at,
+    }
+
+
+def _payment(row: Row[Any]) -> PaidByOther:
+    return PaidByOther(
+        id=row.id,
+        user_id=UserId(row.user_id),
+        trip_id=row.trip_id,
+        person=row.person,
+        amount=Money(row.amount, row.currency),
+        note=row.note,
+        paid_on=row.paid_on,
+        split_with=tuple(row.split_with),
+        settled_at=row.settled_at,
+        created_at=row.created_at,
     )
 
 

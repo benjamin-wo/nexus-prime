@@ -4,7 +4,7 @@ and settling up. Nothing here books or buys anything."""
 import base64
 import binascii
 import logging
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -17,6 +17,7 @@ from nexus.application import destination_photos as photo_cases
 from nexus.application import places as place_cases
 from nexus.application import routes as route_cases
 from nexus.application import travel_research as research_cases
+from nexus.application import trip_split as split_cases
 from nexus.application import trips as trip_cases
 from nexus.application.places import Places, PlacesError
 from nexus.application.routes import Routes
@@ -35,6 +36,8 @@ from nexus.domain.money import Money
 from nexus.domain.packing import MAX_ITEM, MAX_ITEMS, PackItem
 from nexus.domain.places import Place
 from nexus.domain.routes import Mode
+from nexus.domain.settle import Debt as SettleDebt
+from nexus.domain.settle import PaidByOther, PersonBalance
 from nexus.domain.trips import (
     MAX_COMPANIONS,
     MAX_DAY_LABEL,
@@ -125,6 +128,8 @@ class TripOut(Model):
     packing: list[PackItemOut] = Field(default_factory=list)
     getting_around: GettingAround = GettingAround.TRANSIT  # public transport or a hire car
     stops: list[StopOut] = Field(default_factory=list)  # as set by the user; empty: suggested
+    # Whether its costs are split evenly with the travellers (offered once there are any).
+    split_evenly: bool = True
 
 
 def _trip(trip: Trip, today: date, photos: dict[UUID, DestinationPhoto] | None = None) -> TripOut:
@@ -153,6 +158,7 @@ def _trip(trip: Trip, today: date, photos: dict[UUID, DestinationPhoto] | None =
         packing=[PackItemOut(text=i.text, done=i.done) for i in trip.packing],
         getting_around=trip.getting_around,
         stops=_stops(trip.stops),
+        split_evenly=trip.split_evenly,
     )
 
 
@@ -333,6 +339,85 @@ def _days(bookings: list[Booking], trip: Trip) -> list[DayPlanOut]:
     return out
 
 
+class ToSplitOut(Model):
+    """A cost on the trip that nobody owes a share of yet."""
+
+    transaction_id: UUID
+    day: date
+    counterparty: str | None
+    category: str | None
+    amount: MoneyOut  # the whole bill
+    home: MoneyOut | None
+
+
+class PaidByOtherOut(Model):
+    id: UUID
+    person: str  # who paid
+    amount: MoneyOut  # the whole bill
+    note: str | None
+    paid_on: date
+    split_with: list[str]  # the other travellers sharing it, besides the payer and the user
+    my_share: MoneyOut  # the user's equal part, in the currency it was paid in
+    settled: bool
+    settled_at: datetime | None
+
+
+def _paid(p: PaidByOther) -> PaidByOtherOut:
+    return PaidByOtherOut(
+        id=p.id,
+        person=p.person,
+        amount=money(p.amount),
+        note=p.note,
+        paid_on=p.paid_on,
+        split_with=list(p.split_with),
+        my_share=money(p.my_share),
+        settled=p.settled,
+        settled_at=p.settled_at,
+    )
+
+
+class DebtOut(Model):
+    kind: str  # "iou": their share of a bill the user paid; "payment": the user's share of theirs
+    id: UUID  # the split (iou) or the payment
+    label: str | None  # what it was for
+    amount: MoneyOut
+    home: MoneyOut | None
+    on: date
+
+
+class BalanceOut(Model):
+    person: str
+    # "owes_you", "you_owe" or "even"; None when a missing exchange rate leaves the net
+    # unknown and the currencies differ.
+    direction: str | None
+    net: MoneyOut | None  # home currency, positive when they owe the user; None: no rate
+    net_by_currency: list[MoneyOut]  # the same, signed, per currency
+    owes_you: list[DebtOut]
+    you_owe: list[DebtOut]
+
+
+def _debt(d: SettleDebt) -> DebtOut:
+    return DebtOut(
+        kind=d.kind.value,
+        id=d.ref,
+        label=d.label,
+        amount=money(d.amount),
+        home=_m(d.home),
+        on=d.on,
+    )
+
+
+def _balance(b: PersonBalance) -> BalanceOut:
+    return BalanceOut(
+        person=b.name,
+        direction=b.direction.value if b.direction else None,
+        net=_m(b.net_home),
+        net_by_currency=[money(m) for m in b.net_by_currency],
+        owes_you=[_debt(d) for d in b.owes_you],
+        you_owe=[_debt(d) for d in b.you_owe],
+    )
+
+
 class TripDetailOut(Model):
     trip: TripOut
     spending: SpendingOut
@@ -357,6 +442,13 @@ class TripDetailOut(Model):
     # The stops the hotels suggest (named by each hotel's area where Google Maps knows
     # it): what the page shows until the user sets their own.
     suggested_stops: list[StopOut] = Field(default_factory=list)
+    # Costs not split yet while the trip splits evenly with other travellers (newest
+    # first); empty when the setting is off or nobody else is going.
+    to_split: list[ToSplitOut] = Field(default_factory=list)
+    just_mine: list[UUID] = Field(default_factory=list)  # expenses marked "just mine"
+    paid_by_others: list[PaidByOtherOut] = Field(default_factory=list)  # oldest first
+    # Where the user stands with each person (open items only), A to Z.
+    balances: list[BalanceOut] = Field(default_factory=list)
 
 
 def map_key(settings: Settings) -> str | None:
@@ -438,6 +530,20 @@ def _detail(
         map_key=map_key(web.settings) if web and web.places else None,
         ideas=web is not None and web.ideas is not None,
         suggested_stops=_stops(suggested),
+        to_split=[
+            ToSplitOut(
+                transaction_id=i.transaction_id,
+                day=i.day,
+                counterparty=i.counterparty,
+                category=i.category,
+                amount=money(i.amount),
+                home=_m(i.home),
+            )
+            for i in view.to_split
+        ],
+        just_mine=list(view.just_mine),
+        paid_by_others=[_paid(p) for p in view.paid_by_others],
+        balances=[_balance(b) for b in view.balances],
     )
 
 
@@ -623,6 +729,197 @@ async def remove_expense(trip_id: str, transaction_id: str, auth: Auth, web: Run
         _uuid(trip_id),
         _uuid(transaction_id, "transaction"),
         now=web.clock(),
+    )
+
+
+# --- splitting costs, what others paid, and settling up -----------------------------------
+
+
+class SplitEvenlyIn(Model):
+    on: bool
+
+
+@router.put("/trips/{trip_id}/split-evenly")
+async def split_evenly(trip_id: str, body: SplitEvenlyIn, auth: Auth, web: Runtime) -> TripOut:
+    """Whether the trip offers to split its costs evenly with the people going. Changes
+    nothing in the ledger."""
+    trip = await split_cases.set_split_evenly(web.uow(), auth.user, _uuid(trip_id), body.on)
+    return _trip(trip, _today(auth, web))
+
+
+class SplitIn(Model):
+    # Exactly one of the two: these expenses, or every cost not split yet.
+    transaction_ids: list[UUID] | None = Field(
+        None, min_length=1, max_length=trip_cases.MAX_EXPENSES
+    )
+    all: bool = False
+
+
+class SplitDoneOut(Model):
+    transaction_id: UUID
+    counterparty: str | None
+    amount: MoneyOut
+    own_share: MoneyOut  # the user's equal part of the bill
+
+
+class SplitSkippedOut(Model):
+    transaction_id: UUID
+    reason: str
+
+
+class SplitOut(Model):
+    with_people: list[str]  # everyone else on the trip, who the costs were split with
+    done: list[SplitDoneOut]
+    skipped: list[SplitSkippedOut]  # split meanwhile, not on the trip, or can't be split
+
+
+@router.post("/trips/{trip_id}/split")
+async def split_costs(trip_id: str, body: SplitIn, auth: Auth, web: Runtime) -> SplitOut:
+    """Splits the trip's costs evenly with everyone else on it (each person's IOU, the
+    user's share included), as ``split_bill`` does. 422 without other travellers, or
+    unless exactly one of ``transaction_ids`` and ``all: true`` is given. Expenses split
+    meanwhile are skipped and listed, never changed."""
+    if (body.transaction_ids is None) == (not body.all):
+        raise InvalidInput("give transaction_ids, or all: true, but not both")
+    outcome = await split_cases.split_trip_costs(
+        web.uow,
+        web.rates,
+        auth.user,
+        _uuid(trip_id),
+        None if body.all else body.transaction_ids,
+        now=web.clock(),
+    )
+    return SplitOut(
+        with_people=outcome.with_people,
+        done=[
+            SplitDoneOut(
+                transaction_id=d.transaction_id,
+                counterparty=d.counterparty,
+                amount=money(d.amount),
+                own_share=money(d.own_share),
+            )
+            for d in outcome.done
+        ],
+        skipped=[
+            SplitSkippedOut(transaction_id=k.transaction_id, reason=k.reason)
+            for k in outcome.skipped
+        ],
+    )
+
+
+class KeepMineIn(Model):
+    transaction_ids: list[UUID] = Field(min_length=1, max_length=trip_cases.MAX_EXPENSES)
+    keep: bool = True  # false offers them for splitting again
+
+
+class KeepMineOut(Model):
+    just_mine: list[UUID]
+
+
+@router.post("/trips/{trip_id}/keep-mine")
+async def keep_mine(trip_id: str, body: KeepMineIn, auth: Auth, web: Runtime) -> KeepMineOut:
+    """Marks expenses on the trip "just mine", so they aren't offered for splitting
+    again (``keep: false`` offers them again). 404 for one that isn't an expense on
+    this trip."""
+    trip = await split_cases.keep_mine(
+        web.uow(), auth.user, _uuid(trip_id), body.transaction_ids, keep=body.keep
+    )
+    return KeepMineOut(just_mine=list(trip.not_split))
+
+
+class PaidByOtherIn(Model):
+    person: str = Field(min_length=1, max_length=100)  # a traveller on the trip
+    amount: str = Field(max_length=32)  # the whole bill
+    currency: str | None = Field(None, pattern="^[A-Za-z]{3}$")  # default: the home currency
+    note: str | None = Field(None, max_length=100)  # what it was for
+    paid_on: date | None = None  # default: today
+    # The other travellers sharing it, besides the payer and the user; left out: everyone.
+    split_with: list[str] | None = Field(None, max_length=MAX_COMPANIONS)
+
+
+def _payment_args(auth: Auth, web: WebRuntime, body: PaidByOtherIn) -> dict[str, Any]:
+    return {
+        "person": body.person,
+        "amount": Money.of(
+            body.amount.replace(",", ""), (body.currency or auth.user.home_currency).upper()
+        ),
+        "note": body.note,
+        "paid_on": body.paid_on or _today(auth, web),
+        "split_with": body.split_with,
+    }
+
+
+@router.post("/trips/{trip_id}/paid-by-others", status_code=201)
+async def add_paid_by_other(
+    trip_id: str, body: PaidByOtherIn, auth: Auth, web: Runtime
+) -> PaidByOtherOut:
+    """Notes that a fellow traveller paid for something and the user shares it; the
+    user's equal share is what they owe that person. Nothing goes in the ledger until
+    they settle up. 422 for someone who isn't on the trip."""
+    payment = await split_cases.add_paid_by_other(
+        web.uow(), auth.user, _uuid(trip_id), now=web.clock(), **_payment_args(auth, web, body)
+    )
+    return _paid(payment)
+
+
+@router.put("/trips/{trip_id}/paid-by-others/{payment_id}")
+async def edit_paid_by_other(
+    trip_id: str, payment_id: str, body: PaidByOtherIn, auth: Auth, web: Runtime
+) -> PaidByOtherOut:
+    """Changes a payment that isn't settled yet (409 once it is)."""
+    payment = await split_cases.edit_paid_by_other(
+        web.uow(),
+        auth.user,
+        _uuid(trip_id),
+        _uuid(payment_id, "payment"),
+        **_payment_args(auth, web, body),
+    )
+    return _paid(payment)
+
+
+@router.delete("/trips/{trip_id}/paid-by-others/{payment_id}", status_code=204)
+async def delete_paid_by_other(trip_id: str, payment_id: str, auth: Auth, web: Runtime) -> None:
+    await split_cases.delete_paid_by_other(
+        web.uow(), auth.user, _uuid(trip_id), _uuid(payment_id, "payment")
+    )
+
+
+class SettleIn(Model):
+    person: str = Field(min_length=1, max_length=100)
+    # Also record the user's share of what the person paid as an expense. What they owe
+    # the user is always recorded as money in when it is marked paid back.
+    log: bool = True
+
+
+class SettleOut(Model):
+    person: str
+    ious_repaid: int
+    payments_settled: int
+    income: list[MoneyOut]  # money in recorded for the shares they paid back
+    expenses: list[MoneyOut]  # money out recorded for the user's share of what they paid
+
+
+@router.post("/trips/{trip_id}/settle")
+async def settle_person(trip_id: str, body: SettleIn, auth: Auth, web: Runtime) -> SettleOut:
+    """Records that the user and one person are square for this trip: their open IOUs on
+    the trip are marked paid back (recording the money in) and what they paid for the
+    trip is settled, with ``log`` the user's share of it recorded as an expense. Moves
+    no money. 422 when nothing is open with that person; safe to repeat."""
+    done = await split_cases.settle_person(
+        web.uow,
+        web.rates,
+        auth.user,
+        _uuid(trip_id),
+        body.person,
+        log=body.log,
+        now=web.clock(),
+    )
+    return SettleOut(
+        person=done.person,
+        ious_repaid=done.ious_repaid,
+        payments_settled=done.payments_settled,
+        income=[money(t.amount) for t in done.income],
+        expenses=[money(t.amount) for t in done.expenses],
     )
 
 
@@ -1303,24 +1600,41 @@ async def trip_weather(trip_id: str, auth: Auth, web: Runtime) -> WeatherOut | N
 
 class ShareOut(Model):
     token: str | None  # the link is /shared/<token>; None when the trip isn't shared
+    # Whether the link shows flights, stays and tickets (on unless turned off). Money,
+    # booking references, notes and who's going are never shown.
+    show_bookings: bool = True
 
 
 class ShareIn(Model):
     renew: bool = False  # a new link; the old one stops working
+    # Show flights, stays and tickets on the link. Left out, the link keeps its setting
+    # (on for a new one).
+    show_bookings: bool | None = None
 
 
 @router.get("/trips/{trip_id}/share")
 async def get_share(trip_id: str, auth: Auth, web: Runtime) -> ShareOut:
-    return ShareOut(token=await trip_cases.share_link(web.uow(), auth.user.id, _uuid(trip_id)))
+    share = await trip_cases.share_link(web.uow(), auth.user.id, _uuid(trip_id))
+    return (
+        ShareOut(token=share.token, show_bookings=share.show_bookings)
+        if share
+        else ShareOut(token=None)
+    )
 
 
 @router.post("/trips/{trip_id}/share")
 async def share_trip(trip_id: str, body: ShareIn, auth: Auth, web: Runtime) -> ShareOut:
-    """The trip's read-only link, made if it has none (or anew with ``renew``)."""
-    token = await trip_cases.share_trip(
-        web.uow(), auth.user.id, _uuid(trip_id), renew=body.renew, now=web.clock()
+    """The trip's read-only link, made if it has none (or anew with ``renew``). With
+    ``show_bookings`` it also sets whether the link shows flights, stays and tickets."""
+    share = await trip_cases.share_trip(
+        web.uow(),
+        auth.user.id,
+        _uuid(trip_id),
+        renew=body.renew,
+        show_bookings=body.show_bookings,
+        now=web.clock(),
     )
-    return ShareOut(token=token)
+    return ShareOut(token=share.token, show_bookings=share.show_bookings)
 
 
 @router.delete("/trips/{trip_id}/share", status_code=204)
@@ -1362,6 +1676,11 @@ class SharedTripOut(Model):
     stops: list[StopOut]
     photo: PhotoOut | None
     bookings: list[SharedBookingOut]
+    # False when the owner hides flights, stays and tickets: `bookings` then holds only
+    # their own plans, and `hidden_days` the days a hidden booking starts or ends on
+    # (dates alone), so the page can say "Travel day" instead of "Free day".
+    show_bookings: bool = True
+    hidden_days: list[date] = Field(default_factory=list)
 
 
 def _shared_booking(b: Booking) -> SharedBookingOut:
@@ -1392,7 +1711,8 @@ def _check_shared_limit(web: WebRuntime, token: str) -> None:
 async def shared_trip(token: str, web: Runtime) -> SharedTripOut:
     """A shared trip's plan, for anyone with its link."""
     _check_shared_limit(web, token)
-    trip, bookings = await trip_cases.open_shared(web.uow(), token)
+    shared = await trip_cases.open_shared(web.uow(), token)
+    trip = shared.trip
     today = web.clock().date()
     photos = await photo_cases.photos_of(web.uow(), [trip]) if not trip.photo_off else {}
     photo = _photo(photos.get(trip.photo_id)) if trip.photo_id else None
@@ -1409,7 +1729,9 @@ async def shared_trip(token: str, web: Runtime) -> SharedTripOut:
         day_labels=dict(trip.day_labels),
         stops=_stops(trip.stops),
         photo=photo,
-        bookings=[_shared_booking(b) for b in _in_order(bookings)],
+        bookings=[_shared_booking(b) for b in _in_order(shared.bookings)],
+        show_bookings=shared.show_bookings,
+        hidden_days=shared.hidden_days,
     )
 
 
@@ -1430,7 +1752,7 @@ def _in_order(bookings: list[Booking]) -> list[Booking]:
 @shared_router.get("/trips/{token}/photo")
 async def shared_photo(token: str, web: Runtime) -> Response:
     _check_shared_limit(web, token)
-    trip, _ = await trip_cases.open_shared(web.uow(), token)
+    trip = (await trip_cases.open_shared(web.uow(), token)).trip
     found = (
         await photo_cases.photo_file(web.uow(), trip.photo_id)
         if trip.photo_id and not trip.photo_off
