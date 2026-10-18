@@ -1,6 +1,7 @@
 import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 
 import { api, type Trip, type TripDetail, type TripStop } from "../api";
+import { Icon } from "../components/Icon";
 import { day, stopColor, stopOfDay, stopsOf } from "./TripBits";
 
 const DAY_MS = 86400000;
@@ -85,7 +86,7 @@ export function StopsRow({ detail, viewing, onDay, onEdit }: { detail: TripDetai
                 </li>
               )}
               <li>
-                <button type="button" className="stop-chip" aria-current={s === here ? "true" : undefined} onClick={() => onDay(s.start)} style={{ borderColor: s === here ? stopColor(i) : undefined }}>
+                <button type="button" className="day-pill stop-chip" aria-current={s === here ? "true" : undefined} onClick={() => onDay(s.start)}>
                   <span className="stop-dot" style={{ background: stopColor(i) }} aria-hidden="true" />
                   <span className="stop-text">
                     <strong className="stop-name">{s.name}</strong>
@@ -100,6 +101,7 @@ export function StopsRow({ detail, viewing, onDay, onEdit }: { detail: TripDetai
         })}
       </ol>
       <button type="button" className="btn btn-ghost btn-small" onClick={onEdit}>
+        <Icon name="edit" size={16} />
         Edit stops
       </button>
     </div>
@@ -175,7 +177,7 @@ export function StopsSheet({ trip, detail, onClose, onSaved }: { trip: Trip; det
                   <span className="caption">To</span>
                   <input className="input" type="date" value={r.end} min={trip.start} max={trip.end} onChange={(e) => change(r.key, { end: e.target.value })} aria-label={`Stop ${i + 1} ends`} />
                 </label>
-                <button type="button" className="btn btn-ghost btn-small" onClick={() => setRows((was) => was.filter((x) => x.key !== r.key))} aria-label={`Remove stop ${i + 1}`}>
+                <button type="button" className="btn btn-ghost btn-danger btn-small" onClick={() => setRows((was) => was.filter((x) => x.key !== r.key))} aria-label={`Remove stop ${i + 1}`}>
                   Remove
                 </button>
               </li>

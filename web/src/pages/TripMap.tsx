@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { api, type Booking, type Hop, type LinkedPlace, type TravelMode, type TripDetail } from "../api";
+import { Icon, type IconName } from "../components/Icon";
 import { distance } from "../geo";
 import { type GMap, type GOverlay, loadMaps, type MapsApi, onMapsAuthFailure } from "../maps";
 import { duration } from "./TripArrange";
@@ -100,7 +101,8 @@ export function mapPins(detail: Pick<TripDetail, "trip" | "bookings" | "days">, 
       title: l.station,
       lat: l.place.lat,
       lng: l.place.lng,
-      label: b.kind === "flight" ? "✈" : "🚆",
+      // A letter, not a symbol: the map's marker label is plain text (F for flight, T for train).
+      label: b.kind === "flight" ? "F" : "T",
       color: STATION,
       kind: "station",
       days: stops.map((s) => s.day),
@@ -266,7 +268,7 @@ export function TripMap({ detail, day, selected, onDay }: {
           <ul className="sr-only" aria-label="On the map">
             {shown.map((p) => (
               <li key={p.id}>
-                {p.label && p.label !== "H" ? `${p.label}. ` : ""}
+                {p.label && p.label !== "H" && p.kind !== "station" ? `${p.label}. ` : ""}
                 {p.title}
                 {p.kind === "hotel" ? " (stay)" : p.kind === "place" ? " (place to visit)" : p.kind === "station" ? " (airport or station)" : ""}
               </li>
@@ -281,10 +283,10 @@ export function TripMap({ detail, day, selected, onDay }: {
 
 // --- travel times between stops on the itinerary ---------------------------------------
 
-const MODE: Record<TravelMode, { icon: string; words: string }> = {
-  walk: { icon: "🚶", words: "walk" },
-  transit: { icon: "🚆", words: "by public transport" },
-  drive: { icon: "🚗", words: "drive" },
+const MODE: Record<TravelMode, { icon: IconName; words: string }> = {
+  walk: { icon: "walk", words: "walk" },
+  transit: { icon: "transit", words: "by public transport" },
+  drive: { icon: "car", words: "drive" },
 };
 
 export { distance } from "../geo";
@@ -420,7 +422,7 @@ export function HopLine({ tripId, day, hop, addressOf, back }: {
   const time = shown.minutes === null ? `No ${how.words === "walk" ? "walking" : how.words} route` : `${duration(shown.minutes)} ${how.words}`;
   return (
     <li className="timeline-hop" aria-label={`From ${shown.start} to ${shown.end}`}>
-      <span aria-hidden="true">{how.icon}</span>
+      <Icon name={how.icon} size={18} />
       <span className="wrap">
         {back && <span className="hop-back">Back to {shown.end} · </span>}
         {time}

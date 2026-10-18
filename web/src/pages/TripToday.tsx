@@ -2,10 +2,11 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { api, type Booking, type TripDetail, type TripWeather } from "../api";
+import { Icon } from "../components/Icon";
 import { formatShortDate } from "../format";
 import { landingOn, landsOnly, leavingOn, sortKey, todayIso } from "./TripBits";
 import { daySpot, useArrange } from "./TripArrange";
-import { degrees, icon } from "./TripExtras";
+import { degrees, WeatherIcon } from "./TripExtras";
 
 const DAY_MS = 86400000;
 const shortDay = (iso: string) => formatShortDate(iso, "UTC");
@@ -34,7 +35,7 @@ function Copy({ text, label }: { text: string; label: string }) {
     }
   }
   return (
-    <button type="button" className="btn btn-small" onClick={() => void copy()} aria-label={label}>
+    <button type="button" className="btn btn-soft btn-small" onClick={() => void copy()} aria-label={label}>
       {copied ? "Copied" : "Copy"}
     </button>
   );
@@ -59,7 +60,7 @@ function Address({ name, address }: { name: string; address: string | null }) {
     <div className="today-address">
       {address && <span>{address}</span>}
       <span className="quick">
-        <a className="btn btn-small" href={mapsLink(address ? `${name}, ${address}` : name)} target="_blank" rel="noopener noreferrer" aria-label={`Open ${name} in Maps`}>
+        <a className="btn btn-soft btn-small" href={mapsLink(address ? `${name}, ${address}` : name)} target="_blank" rel="noopener noreferrer" aria-label={`Open ${name} in Maps`}>
           Open in Maps
         </a>
         {address && <Copy text={address} label={`Copy the address of ${name}`} />}
@@ -77,7 +78,8 @@ function Plan({ booking, day, tonight }: { booking: Booking; day: string; tonigh
         <span className="time-pill">{timeOf(last.arrives)}</span>
         <div className="today-plan-body">
           <strong>
-            {booking.kind === "flight" ? "🛬 Land" : "🚉 Arrive"} {last.destination ?? ""}
+            <Icon name={booking.kind === "flight" ? "landing" : "train"} size={16} className="icon-inline" />
+            {booking.kind === "flight" ? "Land" : "Arrive"} {last.destination ?? ""}
           </strong>
           <span className="caption">{[booking.provider, legs[0].number, legs[0].origin && `from ${legs[0].origin}`].filter(Boolean).join(" · ")}</span>
           <Reference booking={booking} />
@@ -94,7 +96,8 @@ function Plan({ booking, day, tonight }: { booking: Booking; day: string; tonigh
         <span className="time-pill">{timeOf(first?.departs ?? null) ?? booking.at ?? "Today"}</span>
         <div className="today-plan-body">
           <strong>
-            {booking.kind === "flight" ? "✈️" : "🚆"} {[first?.origin, last?.destination].filter(Boolean).join(" → ") || booking.title}
+            <Icon name={booking.kind === "flight" ? "flight" : "train"} size={16} className="icon-inline" />
+            {[first?.origin, last?.destination].filter(Boolean).join(" → ") || booking.title}
           </strong>
           <span className="caption">
             {[booking.provider, ...booking.segments.map((s) => s.number)].filter(Boolean).join(" · ")}
@@ -112,7 +115,10 @@ function Plan({ booking, day, tonight }: { booking: Booking; day: string; tonigh
       <li className="today-plan">
         <span className="time-pill">{out ? "Check out" : "Check in"}</span>
         <div className="today-plan-body">
-          <strong>🏨 {name}</strong>
+          <strong>
+            <Icon name="stay" size={16} className="icon-inline" />
+            {name}
+          </strong>
           {/* Its address and reference are under Tonight already. */}
           {!out && !tonight && <Address name={name} address={booking.address} />}
           {!out && !tonight && <Reference booking={booking} />}
@@ -175,9 +181,7 @@ export function TodayView({ detail, day }: { detail: TripDetail; day: string }) 
 
       {forecast && (
         <p className="today-weather">
-          <span className="weather-icon" role="img" aria-label={forecast.summary ?? "Weather"}>
-            {icon(forecast.code)}
-          </span>
+          <WeatherIcon code={forecast.code} summary={forecast.summary} />
           <span className="num">
             {degrees(forecast.high)} <span className="caption">{degrees(forecast.low)}</span>
           </span>
@@ -190,7 +194,10 @@ export function TodayView({ detail, day }: { detail: TripDetail; day: string }) 
         <h3>Tonight</h3>
         {tonight ? (
           <div className="today-stay">
-            <strong>🏨 {tonight.hotel ?? tonight.title}</strong>
+            <strong>
+              <Icon name="stay" size={16} className="icon-inline" />
+              {tonight.hotel ?? tonight.title}
+            </strong>
             <Address name={tonight.hotel ?? tonight.title} address={tonight.address} />
             {tonight.check_out && <span className="caption">Check out {shortDay(tonight.check_out)}</span>}
             <Reference booking={tonight} />

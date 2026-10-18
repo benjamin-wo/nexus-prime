@@ -1657,7 +1657,7 @@ export async function fakeApi(
         ],
         estimate_low: "4602",
         estimate_high: "6760",
-        estimate_lines: ["Return flights SIN-NRT: 2,400 to 3,200 SGD"],
+        estimate_lines: ["Return flights SIN-NRT: SGD 2,400–3,200"],
         budget: "6800",
         paydays_left: 3,
         set_aside: "2267",

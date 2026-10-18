@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { createContext, type FormEvent, type ReactNode, useContext, useRef, useState } from "react";
 
 import { api, type Booking, type Ideas, type LinkedPlace, type Place, placeSearchPath, type SearchScope, tripIdeasPath, type TripDetail } from "../api";
+import { Icon } from "../components/Icon";
 import { nearbyOf } from "./TripArrange";
 import { stopsOf } from "./TripBits";
 import { findScopes, firstScope, listFor, type Found, mergeResults, type PickCtx, ResultList, type Scope, ScopeRow, scopeParams, ThemeChips } from "./TripFind";
@@ -88,7 +89,7 @@ export function Rating({ place }: { place: Place }) {
   const count = place.ratings !== null ? ` (${place.ratings.toLocaleString("en-US")})` : "";
   return (
     <span className="place-rating" aria-label={`Rated ${place.rating} out of 5${count ? ` from ${place.ratings} ratings` : ""}`}>
-      ★ {place.rating}
+      Rated {place.rating}
       <span className="caption">{count}</span>
     </span>
   );
@@ -115,7 +116,7 @@ function PlaceDetails({ place }: { place: Place }) {
         <ul className="place-reviews" aria-label={`Reviews of ${place.name}`}>
           {place.reviews.map((r, n) => (
             <li key={n}>
-              {r.rating !== null && <span aria-label={`${r.rating} stars`}>{"★".repeat(r.rating)}</span>} {r.text}
+              {r.rating !== null && <span className="place-rating">Rated {r.rating}</span>} {r.text}
               <br />
               <span className="caption">
                 {r.author_url ? (
@@ -313,7 +314,8 @@ export function PlaceFinder({ initial, pickLabel, saveText, onPick, ideas: ideas
       {ideas && ideas.ideas.length === 0 && <p className="state">No specific places came up in guides or articles.</p>}
       {withIdeas && asked && !reading && !ideas && google && (
         <button type="button" className="btn btn-ghost btn-small" onClick={() => void readIdeas(asked.q, asked.scope, latest.current)}>
-          💡 Ideas from guides and articles for “{asked.q}”
+          <Icon name="sparkle" size={16} className="icon-inline" />
+          Ideas from guides and articles for “{asked.q}”
         </button>
       )}
       {found !== null && <p className="caption">From Google Maps</p>}
@@ -343,7 +345,7 @@ export function PlaceLine({ booking }: { booking: Booking }) {
     return (
       <span className="caption place-find">
         <button type="button" className="link-btn" onClick={() => setFinding(true)} aria-label={`Find ${booking.title} on Google Maps`}>
-          <span aria-hidden="true">📍</span> Find on Google Maps
+          <Icon name="place" size={16} className="icon-inline" /> Find on Google Maps
         </button>
       </span>
     );
@@ -370,7 +372,8 @@ export function PlaceLine({ booking }: { booking: Booking }) {
       </span>
       {linked.warning && (
         <span className="place-warning" role="note">
-          ⚠️ {linked.warning}
+          <Icon name="warning" size={16} className="icon-inline" />
+          {linked.warning}
         </span>
       )}
       {open && (
@@ -423,7 +426,8 @@ export function SavePlaces({ open = false, day, at, near, viewing, onDone }: {
     return (
       <>
         <button type="button" className="btn btn-ghost btn-small" onClick={() => setFinding(true)}>
-          {places.ideas ? "🔎 Find places or ideas" : "🔎 Find places on Google Maps"}
+          <Icon name="find" size={16} className="icon-inline" />
+          {places.ideas ? "Find places or ideas" : "Find places on Google Maps"}
         </button>
         {saved && (
           <p className="caption" role="status">

@@ -13,7 +13,7 @@ import {
   type Trip,
   type TripDetail,
 } from "../api";
-import { formatMoney } from "../format";
+import { formatMoney, formatWithHome } from "../format";
 import { CountUp } from "../motion";
 import { day } from "./TripBits";
 import { tripBody } from "./TripEntry";
@@ -84,8 +84,7 @@ export function SpendingRow({ category: c, biggest, items }: { category: TripCat
                 <span className="caption peek-day">{day(i.day)}</span>
                 <span className="wrap">{i.counterparty ?? "Expense"}</span>
                 <span className="num">
-                  {formatMoney(i.amount)}
-                  {i.home && i.home.currency !== i.amount.currency && <span className="caption"> ({formatMoney(i.home)})</span>}
+                  {formatWithHome(i.amount, i.home)}
                 </span>
               </li>
             ))}
@@ -194,6 +193,21 @@ export function PlannedVsActual({ detail }: { detail: TripDetail }) {
   );
 }
 
+const positive = (m: Money | null): m is Money => m !== null && Number(m.amount) > 0;
+
+/** The set-aside plan in a sentence: "SGD 500.00 each payday: about SGD 100.00 so far, SGD 1,500.00
+ * by the trip (3 paydays left, next 25 Oct)." What's saved so far and what it comes to by the trip
+ * are left out when missing or zero; the rest still reads as one sentence. */
+export function setAsideText(
+  a: Pick<TripDetail["saving"], "per_payday" | "saved" | "by_start" | "paydays_left">,
+  nextPayday: string | null,
+): string {
+  if (!a.per_payday) return "";
+  const progress = [positive(a.saved) && `about ${formatMoney(a.saved)} so far`, positive(a.by_start) && `${formatMoney(a.by_start)} by the trip`].filter(Boolean);
+  const left = `${plural(a.paydays_left, "payday")} left${nextPayday ? `, next ${nextPayday}` : ""}`;
+  return `${formatMoney(a.per_payday)} each payday${progress.length > 0 ? `: ${progress.join(", ")}` : ""} (${left}).`;
+}
+
 export function SetAside({ detail }: { detail: TripDetail }) {
   const { trip, saving: a } = detail;
   if (trip.status !== "upcoming") return null;
@@ -204,21 +218,17 @@ export function SetAside({ detail }: { detail: TripDetail }) {
       </div>
       {!a.pay_schedule ? (
         <p className="muted">Set your pay schedule (Accounting, Plan) and Nexus can plan an amount to put aside each payday.</p>
-      ) : a.per_payday ? (
+      ) : positive(a.per_payday) ? (
         <>
-          <p>
-            {formatMoney(a.per_payday)} each payday: about {a.saved && formatMoney(a.saved)} so far, {a.by_start && formatMoney(a.by_start)} by the
-            trip ({a.paydays_left} {a.paydays_left === 1 ? "payday" : "paydays"} left
-            {a.next_payday && `, next ${day(a.next_payday)}`}).
-          </p>
-          {a.covers_budget === false && a.suggested && (
+          <p>{setAsideText(a, a.next_payday ? day(a.next_payday) : null)}</p>
+          {a.covers_budget === false && positive(a.suggested) && (
             <p className="budget-state-warn">That's short of the budget: {formatMoney(a.suggested)} each payday would cover it.</p>
           )}
           {a.covers_budget && <p className="budget-state-ok-strong">That covers the budget.</p>}
           {a.fits === false && <p className="budget-state-over">With it, the cash-flow forecast to the trip goes below zero.</p>}
           {a.fits && <p className="caption">It fits the cash-flow forecast, where it shows on each payday.</p>}
         </>
-      ) : a.suggested ? (
+      ) : positive(a.suggested) ? (
         <p className="muted">
           Put aside about {formatMoney(a.suggested)} on each of the {a.paydays_left} paydays before the trip to cover the budget. Edit the trip
           to plan it.
@@ -390,7 +400,7 @@ export function NameChips({
           />
         </label>
         {!addOnBlur && (
-          <button type="button" className="btn" disabled={busy || text.trim() === ""} onClick={add}>
+          <button type="button" className="btn btn-soft" disabled={busy || text.trim() === ""} onClick={add}>
             Add
           </button>
         )}
@@ -524,12 +534,12 @@ function SplitCard({ detail, onChange }: { detail: TripDetail; onChange: () => v
                       <br />
                       <span className="caption">{day(i.day)}</span>
                     </span>
-                    <span className="num">{formatMoney(i.amount)}</span>
+                    <span className="num">{formatWithHome(i.amount, i.home)}</span>
                     <span className="row-actions">
-                      <button type="button" className="btn btn-small" disabled={busy} aria-label={`Split ${name} evenly`} onClick={() => void split({ transaction_ids: [i.transaction_id] })}>
+                      <button type="button" className="btn btn-soft btn-small" disabled={busy} aria-label={`Split ${name} evenly`} onClick={() => void split({ transaction_ids: [i.transaction_id] })}>
                         Split
                       </button>
-                      <button type="button" className="btn btn-small" disabled={busy} aria-label={`Keep ${name} as just mine`} onClick={() => void keepMine([i.transaction_id], true)}>
+                      <button type="button" className="btn btn-soft btn-small" disabled={busy} aria-label={`Keep ${name} as just mine`} onClick={() => void keepMine([i.transaction_id], true)}>
                         Just mine
                       </button>
                     </span>
@@ -596,8 +606,8 @@ function SplitCard({ detail, onChange }: { detail: TripDetail; onChange: () => v
                   <br />
                   <span className="caption">{day(i.day)}</span>
                 </span>
-                <span className="num">{formatMoney(i.amount)}</span>
-                <button type="button" className="btn btn-small" disabled={busy} aria-label={`Offer ${i.counterparty ?? "this cost"} for splitting again`} onClick={() => void keepMine([i.transaction_id], false)}>
+                <span className="num">{formatWithHome(i.amount, i.home)}</span>
+                <button type="button" className="btn btn-soft btn-small" disabled={busy} aria-label={`Offer ${i.counterparty ?? "this cost"} for splitting again`} onClick={() => void keepMine([i.transaction_id], false)}>
                   Offer again
                 </button>
               </li>
@@ -773,10 +783,10 @@ function PaidByOthers({ detail, onChange }: { detail: TripDetail; onChange: () =
                 </span>
                 {!p.settled && removing !== p.id && (
                   <span className="row-actions">
-                    <button type="button" className="btn btn-small" aria-label={`Change what ${what} paid`} onClick={() => setEditing(p.id)}>
+                    <button type="button" className="btn btn-soft btn-small" aria-label={`Change what ${what} paid`} onClick={() => setEditing(p.id)}>
                       Edit
                     </button>
-                    <button type="button" className="btn btn-small" aria-label={`Remove what ${what} paid`} onClick={() => setRemoving(p.id)}>
+                    <button type="button" className="btn btn-ghost btn-danger btn-small" aria-label={`Remove what ${what} paid`} onClick={() => setRemoving(p.id)}>
                       Remove
                     </button>
                   </span>
@@ -786,7 +796,7 @@ function PaidByOthers({ detail, onChange }: { detail: TripDetail; onChange: () =
                 <div className="confirm-box" role="group" aria-label={`Remove what ${what} paid`}>
                   <p>Remove this? It won't count towards what you owe {p.person}.</p>
                   <div className="people-actions">
-                    <button type="button" className="btn btn-danger" disabled={busy} onClick={() => void remove(p)}>
+                    <button type="button" className="btn btn-ghost btn-danger" disabled={busy} onClick={() => void remove(p)}>
                       Remove
                     </button>
                     <button type="button" className="btn" disabled={busy} onClick={() => setRemoving(null)}>
@@ -814,8 +824,7 @@ function BalanceParts({ b, id }: { b: Balance; id: string }) {
       <span className="caption peek-day">{p.on ? day(p.on) : ""}</span>
       <span className="wrap">{p.label ?? fallback}</span>
       <span className="num">
-        {formatMoney(p.amount)}
-        {p.home && p.home.currency !== p.amount.currency && <span className="caption"> ({formatMoney(p.home)})</span>}
+        {formatWithHome(p.amount, p.home)}
       </span>
     </li>
   );
@@ -879,7 +888,7 @@ function BalanceRow({ trip, b, onSettled }: { trip: Trip; b: Balance; onSettled:
           <span className="settle-main wrap">{balanceWords(b)}</span>
         )}
         {hasParts && !confirming && (
-          <button type="button" className="btn btn-small" aria-label={`Mark settled with ${b.person}`} onClick={() => setConfirming(true)}>
+          <button type="button" className="btn btn-soft btn-small" aria-label={`Mark settled with ${b.person}`} onClick={() => setConfirming(true)}>
             Mark settled
           </button>
         )}
@@ -963,10 +972,10 @@ function AddChoice({ onPick, onCancel }: { onPick: (kind: "planned" | "paid") =>
         <h2 id="add-choice">What are you adding?</h2>
       </div>
       <div className="people-actions choice-actions">
-        <button type="button" className="btn" onClick={() => onPick("planned")}>
+        <button type="button" className="btn btn-soft" onClick={() => onPick("planned")}>
           A planned cost
         </button>
-        <button type="button" className="btn" onClick={() => onPick("paid")}>
+        <button type="button" className="btn btn-soft" onClick={() => onPick("paid")}>
           Someone else paid
         </button>
         <button type="button" className="btn btn-ghost" onClick={onCancel}>
@@ -1013,8 +1022,7 @@ export function Expenses({ detail, onTakeOff }: { detail: TripDetail; onTakeOff:
                 </span>
               </span>
               <span className="num">
-                {formatMoney(i.amount)}
-                {i.home && i.home.currency !== i.amount.currency && <span className="caption"> ({formatMoney(i.home)})</span>}
+                {formatWithHome(i.amount, i.home)}
               </span>
               <button type="button" className="btn btn-small" onClick={() => onTakeOff(i.transaction_id)} aria-label={`Take ${i.counterparty ?? "this expense"} off the trip`}>
                 Take off
@@ -1119,7 +1127,7 @@ function PlannedCosts({ trip, onChange }: { trip: Trip; onChange: () => void }) 
           <li key={name} className="run-row">
             <span className="wrap">{name}</span>
             <span className="num">{formatMoney(cost)}</span>
-            <button type="button" className="btn btn-small" disabled={busy !== null} onClick={() => void remove(name)} aria-label={`Remove planned cost ${name}`}>
+            <button type="button" className="btn btn-ghost btn-danger btn-small" disabled={busy !== null} onClick={() => void remove(name)} aria-label={`Remove planned cost ${name}`}>
               Remove
             </button>
           </li>
@@ -1227,7 +1235,7 @@ export function MoneyBar({ detail, onOpen }: { detail: TripDetail; onOpen?: () =
         </div>
       )}
       <p className="caption">
-        {detail.booked ? `Booked ${formatMoney(detail.booked)}` : "Nothing booked yet"}
+        {positive(detail.booked) ? `Booked ${formatMoney(detail.booked)}` : "Nothing booked yet"}
         {amount(detail.spending.spent) > 0 && ` · spent ${formatMoney(detail.spending.spent)}`}
       </p>
     </section>
@@ -1258,7 +1266,7 @@ export function SpendingNow({ detail }: { detail: TripDetail }) {
         </div>
       )}
       <p className="caption">
-        {s.per_day_left
+        {positive(s.per_day_left)
           ? `${formatMoney(s.per_day_left)} a day left for ${plural(daysLeft, "day")}`
           : budget
             ? over

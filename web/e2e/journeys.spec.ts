@@ -1319,7 +1319,8 @@ test("a trip is added and shows its spending, set-aside and settle-up", async ({
   await expect(page.getByLabel("With Ann, Ben")).toBeVisible();
   // One tab is no choice, so Travel shows no tab bar.
   await expect(page.getByRole("navigation", { name: "Travel pages" })).toHaveCount(0);
-  // The cover photo is credited as its licence asks, linking to its page.
+  // The cover photo is credited as its licence asks, linking to its page: an info button shows the credit.
+  await page.getByRole("button", { name: "Photo credit" }).click();
   const credit = page.getByRole("link", { name: /Photo: A\. Photographer, CC BY-SA 4\.0/ });
   await expect(credit).toHaveAttribute("href", "https://commons.wikimedia.org/wiki/File:Example.jpg");
   await expect(credit).toHaveAttribute("rel", /noopener/);
@@ -1373,10 +1374,10 @@ test("trip research shows sourced prices and a budget, and becomes a trip", asyn
   await page.goto("/travel");
   await page.getByRole("region", { name: "Research" }).getByRole("link", { name: "Research: Tokyo" }).click();
   await expect(page.getByRole("heading", { name: "Tokyo", level: 1 })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Budget" })).toContainText("About 4,602 to 6,760 SGD for 2");
+  await expect(page.getByRole("region", { name: "Budget" })).toContainText("About SGD 4,602–6,760 for 2");
   await expect(page.getByRole("region", { name: "Budget" })).toContainText("It fits your cash flow");
   const costs = page.getByRole("region", { name: "Costs" });
-  await expect(costs).toContainText("about 72–135 SGD");
+  await expect(costs).toContainText("JPY 8,000–15,000 · SGD 72–135");
   await expect(costs.getByRole("link", { name: "[2]" })).toHaveAttribute("href", "https://flights.example.com/s");
   await expect(page.getByRole("region", { name: "Sources" }).getByRole("link", { name: "Tokyo guide" })).toHaveAttribute("rel", /noopener/);
   await page.getByRole("button", { name: "Make it a trip" }).click();
@@ -1477,7 +1478,7 @@ test("a booking screenshot goes on the itinerary with its reference", async ({ p
   await expect(imported).toContainText("Does everything look right?");
   await expect(itinerary).toContainText("Booked on Agoda · Ref 9876543210");
   await expect(itinerary.getByRole("button", { name: "Copy reference 9876543210" })).toBeVisible();
-  await imported.getByRole("button", { name: "👍 Looks right" }).click();
+  await imported.getByRole("button", { name: "Looks right" }).click();
   await expect(imported).toHaveCount(0);
   await expect.poll(() => state.plans[0]).toMatchObject({ hotel: "Hotel Kumo", reference: "9876543210" });
 });
@@ -1551,11 +1552,11 @@ test("places from Google Maps: saved, linked, rated, and flagged when usually cl
 
   // Found on Google Maps and saved as an idea, with its place kept. Finding sits at the top of Ideas.
   await openTab(page, "Ideas");
-  await page.getByRole("button", { name: "🔎 Find places or ideas" }).click();
+  await page.getByRole("button", { name: "Find places or ideas" }).click();
   await page.getByRole("search", { name: "Search Google Maps" }).getByLabel("Look for").fill("noodles");
   await page.getByRole("button", { name: "Search", exact: true }).click();
   const results = page.getByRole("list", { name: "Results" });
-  await expect(results).toContainText("Hanok Noodle Bar ★ 4.6 (2,310)");
+  await expect(results).toContainText("Hanok Noodle Bar Rated 4.6 (2,310)");
   await expect.poll(() => state.placeSearches).toEqual(["noodles"]);
   // One word reads as a name: only Google Maps is asked; ideas are a tap away.
   await expect(page.getByRole("button", { name: /Ideas from guides and articles/ })).toBeVisible();
@@ -1579,7 +1580,7 @@ test("places from Google Maps: saved, linked, rated, and flagged when usually cl
   await expect(page.getByRole("list", { name: "Ideas" })).toHaveCount(0);
   await expect.poll(() => state.plans[0]).toMatchObject({ day: "2026-11-12", place_id: "fakePlaceNoodle01" });
   await openTab(page, "Plan");
-  await expect(itineraryOf(page).getByRole("note")).toHaveText("⚠️ Usually closed on Thursdays");
+  await expect(itineraryOf(page).getByRole("note")).toHaveText("Usually closed on Thursdays");
 
   // A place added by hand is linked to Google Maps from its row.
   await openTab(page, "Ideas");
@@ -1619,7 +1620,7 @@ test("a trip's weather, packing list, cover photo and stop photos", async ({ pag
 
   // Packing: suggested, then ticked off and added to.
   const packing = page.getByRole("region", { name: "Packing list" });
-  await packing.getByRole("button", { name: "✨ Suggest" }).click();
+  await packing.getByRole("button", { name: "Suggest", exact: true }).click();
   await expect(packing.getByRole("list", { name: "Things to pack" })).toContainText("Umbrella or rain jacket");
   await packing.getByRole("checkbox", { name: "Passport" }).check();
   await expect(packing).toContainText("1 of 3 packed");
@@ -1800,8 +1801,9 @@ test("a trip's plan is shared by a read-only link that shows no money, reference
   );
   const text = await page.locator("main").innerText();
   for (const secret of ["HK55821", "ZK4P7Q", "Agoda", "Somewhere secret", "SGD", "JPY", "820"]) expect(text).not.toContain(secret);
-  // Nothing can be changed, and it never asked anyone to sign in.
-  await expect(page.getByRole("button")).toHaveCount(0);
+  // Nothing can be changed, and it never asked anyone to sign in. The only button is the cover's photo credit.
+  await expect(page.getByRole("button", { name: "Photo credit" })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: /^(?!Photo credit$)/ })).toHaveCount(0);
   await expect(page).toHaveURL(shared);
 });
 
@@ -2054,7 +2056,7 @@ test("a day rearranged: dragged, moved by keyboard or menu, with what to watch o
 
   // Or from the entry's editor, without dragging: the temple after it on day 3.
   await itinerary.getByRole("navigation", { name: "Days" }).getByRole("button", { name: /11/ }).click();
-  await page.getByRole("button", { name: "Change Old Temple" }).click();
+  await page.getByRole("button", { name: "Change Old Temple" }).click({ position: { x: 6, y: 3 } });
   await page.getByRole("button", { name: "Move to…" }).click();
   await page.getByRole("dialog", { name: "Put on a day" }).getByRole("region", { name: "All days" }).getByRole("button", { name: /^Day 3 ·/ }).click();
   await expect.poll(() => state.moves.at(-1)).toBe("pl1>2026-11-12@pl3");
@@ -2074,7 +2076,8 @@ test("a day rearranged: dragged, moved by keyboard or menu, with what to watch o
   await expect(day2).toContainText("Hanok Noodle Bar");
 
   // An end time and a link, from the entry's editor.
-  await page.getByRole("button", { name: "Change Tea house" }).click();
+  // The row's own "Find on Google Maps" link sits across its middle: tap the row at its edge.
+  await page.getByRole("button", { name: "Change Tea house" }).click({ position: { x: 6, y: 3 } });
   const edit = page.getByRole("form", { name: "Change the entry" });
   await edit.getByLabel("Until").fill("15:30");
   await edit.getByText("More details").click();
@@ -2710,7 +2713,7 @@ test("an idea is put on a day from Ideas, shows on that day of Plan, and is take
   await expect(itineraryOf(page).getByRole("heading", { name: /^Day 3/ })).toContainText("1 plan");
 
   // Its day picker has the way back: take it off, and it is an idea again.
-  await itineraryOf(page).getByRole("button", { name: "Change Lantern Alley" }).click();
+  await itineraryOf(page).getByRole("button", { name: "Change Lantern Alley" }).click({ position: { x: 6, y: 3 } });
   await itineraryOf(page).getByRole("button", { name: "Move to…" }).click();
   const back = page.getByRole("dialog", { name: "Put on a day" });
   await expect(back.getByRole("region", { name: "All days" }).getByRole("button", { name: /^Day 3 ·/ })).toContainText("Here now");
@@ -2787,7 +2790,7 @@ test("packing is there months before the trip, and the + on Prep adds to it", as
   const packing = page.getByRole("region", { name: "Packing list" });
   await expect(packing).toBeVisible();
   await expect(packing).toContainText("Nothing on the list yet");
-  await packing.getByRole("button", { name: "✨ Suggest" }).click();
+  await packing.getByRole("button", { name: "Suggest", exact: true }).click();
   await expect(packing.getByRole("list", { name: "Things to pack" })).toContainText("Passport");
   await packing.getByRole("checkbox", { name: "Passport" }).check();
   await expect(packing).toContainText("1 of 3 packed");
@@ -3382,7 +3385,7 @@ async function japanWithStops(page: Page) {
 test("a search looks in one stop or the whole trip, and asks again when the scope changes", async ({ page }) => {
   const state = await japanWithStops(page);
   await openTab(page, "Ideas");
-  await page.getByRole("button", { name: "🔎 Find places or ideas" }).click();
+  await page.getByRole("button", { name: "Find places or ideas" }).click();
 
   // Whole trip, a button for each stop, and the day open on Plan. The stop of that day is where it begins.
   const scope = lookIn(page);
@@ -3413,7 +3416,7 @@ test("a search looks in one stop or the whole trip, and asks again when the scop
 test("a theme chip fills the search and runs it, and what is saved goes in a list of that theme", async ({ page }) => {
   const state = await japanWithStops(page);
   await openTab(page, "Ideas");
-  await page.getByRole("button", { name: "🔎 Find places or ideas" }).click();
+  await page.getByRole("button", { name: "Find places or ideas" }).click();
   const themes = themesOf(page);
   await expect(themes.getByRole("button")).toHaveText(["Food", "Sights", "Museums", "Nature", "Shopping", "Nightlife", "Rainy day"]);
 
@@ -3432,7 +3435,7 @@ test("a theme chip fills the search and runs it, and what is saved goes in a lis
   await expect(page.getByRole("list", { name: "Ideas" })).toContainText("Lantern Alley");
 
   // Typing by hand lets the theme go: a next save is filed by the guide's kind.
-  await page.getByRole("button", { name: "🔎 Find places or ideas" }).click();
+  await page.getByRole("button", { name: "Find places or ideas" }).click();
   await themesOf(page).getByRole("button", { name: "Rainy day" }).click();
   await expect(finderBox(page)).toHaveValue("Rainy day");
   await finderBox(page).fill("best quiet cafes");
@@ -3486,7 +3489,7 @@ test("a place found by Google Maps and by a guide is one card, with its rating, 
   const state = await fakeApi(page);
   await addTrip(page, "Seoul", "2026-11-10", "2026-11-13");
   await openTab(page, "Ideas");
-  await page.getByRole("button", { name: "🔎 Find places or ideas" }).click();
+  await page.getByRole("button", { name: "Find places or ideas" }).click();
   await finderBox(page).fill("best noodles");
   await page.getByRole("button", { name: "Search", exact: true }).click();
   const results = page.getByRole("list", { name: "Results" });

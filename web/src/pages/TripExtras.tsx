@@ -1,20 +1,31 @@
 import { useQuery } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 
+import { Icon, type IconName } from "../components/Icon";
 import { api, type PackItem, type Trip, type TripWeather } from "../api";
 
 const weekday = (iso: string) => new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric", timeZone: "UTC" }).format(new Date(iso));
 
-/** A weather code (WMO, as Open-Meteo reports it) as a picture. */
-export function icon(code: number | null): string {
-  if (code === null) return "·";
-  if (code <= 1) return "☀️";
-  if (code === 2) return "⛅";
-  if (code === 3) return "☁️";
-  if (code === 45 || code === 48) return "🌫️";
-  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return "❄️";
-  if (code >= 95) return "⛈️";
-  return "🌧️";
+/** A weather code (WMO, as Open-Meteo reports it) as an icon name and a plain label. */
+export function weatherKind(code: number | null): { name: IconName; label: string } {
+  if (code === null) return { name: "info", label: "Weather" };
+  if (code <= 1) return { name: "sun", label: "Sunny" };
+  if (code === 2) return { name: "partCloud", label: "Partly cloudy" };
+  if (code === 3) return { name: "cloud", label: "Cloudy" };
+  if (code === 45 || code === 48) return { name: "fog", label: "Fog" };
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return { name: "snow", label: "Snow" };
+  if (code >= 95) return { name: "storm", label: "Thunderstorm" };
+  return { name: "rain", label: "Rain" };
+}
+
+/** The weather picture for a code; the day's own summary names it when there is one. */
+export function WeatherIcon({ code, summary, size = 24 }: { code: number | null; summary: string | null; size?: number }) {
+  const kind = weatherKind(code);
+  return (
+    <span className="weather-icon">
+      {code === null ? <span aria-hidden="true">·</span> : <Icon name={kind.name} size={size} label={summary ?? kind.label} />}
+    </span>
+  );
 }
 
 export const degrees = (n: number | null) => (n === null ? "–" : `${Math.round(n)}°`);
@@ -47,9 +58,7 @@ export function WeatherCard({ trip }: { trip: Trip }) {
         {w.days.map((d) => (
           <li key={d.day} className="weather-day" title={d.summary ?? undefined}>
             <span className="caption">{weekday(d.day)}</span>
-            <span className="weather-icon" role="img" aria-label={d.summary ?? "Weather"}>
-              {icon(d.code)}
-            </span>
+            <WeatherIcon code={d.code} summary={d.summary} />
             <span className="num">
               {degrees(d.high)} <span className="caption">{degrees(d.low)}</span>
             </span>
@@ -140,19 +149,19 @@ export function PackingCard({ trip, onChange, adding = false, onAddDone }: { tri
               <input type="checkbox" checked={item.done} onChange={() => void save(items.map((x, j) => (j === i ? { ...x, done: !x.done } : x)))} />
               <span>{item.text}</span>
             </label>
-            <button type="button" className="btn btn-ghost btn-small" aria-label={`Remove ${item.text}`} onClick={() => void save(items.filter((_, j) => j !== i))}>
-              ×
+            <button type="button" className="btn btn-ghost btn-small packing-remove" aria-label={`Remove ${item.text}`} onClick={() => void save(items.filter((_, j) => j !== i))}>
+              <Icon name="x" size={18} />
             </button>
           </li>
         ))}
       </ul>
       <form className="packing-add" onSubmit={add} aria-label="Add to the packing list">
         <input ref={addRef} className="input" value={text} maxLength={60} onChange={(e) => setText(e.target.value)} placeholder="Add something, e.g. Swimsuit" aria-label="Thing to pack" />
-        <button type="submit" className="btn" disabled={!text.trim()}>
+        <button type="submit" className="btn btn-soft" disabled={!text.trim()}>
           Add
         </button>
         <button type="button" className="btn btn-ghost" onClick={() => void suggest()} disabled={busy}>
-          {busy ? "Suggesting…" : "✨ Suggest"}
+          {busy ? "Suggesting…" : (<><Icon name="sparkle" size={16} className="icon-inline" />Suggest</>)}
         </button>
       </form>
       {error && (

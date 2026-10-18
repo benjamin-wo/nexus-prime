@@ -3,11 +3,15 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { api, type Research, type ResearchIdeasOut, type Run, type Trip, type TripDetail, type TripStop } from "../api";
-import { formatShortDate } from "../format";
+import { formatRange, formatWholeMoney, formatShortDate } from "../format";
 import { stopsOf } from "./TripBits";
 
 const day = (iso: string) => formatShortDate(iso, "UTC");
-const whole = (amount: string) => Number(amount).toLocaleString(undefined, { maximumFractionDigits: 0 });
+/** Research prices are whole numbers in the currency named beside them: "SGD 4,602". */
+const wholeMoney = (amount: string, currency: string) => formatWholeMoney({ amount, currency });
+const wholeRange = (low: string, high: string, currency: string) =>
+  formatRange({ amount: low, currency }, { amount: high, currency }, { whole: true });
+const positive = (amount: string | null): amount is string => amount !== null && Number(amount) > 0;
 
 /** A citation: the source's number, linking to the page it came from. */
 function Cite({ id, research }: { id: number | null; research: Research }) {
@@ -224,7 +228,7 @@ function AddIdeas({
           <ul className="trip-pick">
             {open.map((t) => (
               <li key={t.id}>
-                <button type="button" className="btn trip-pick-btn" disabled={busy} onClick={() => void add(t)}>
+                <button type="button" className="btn btn-soft trip-pick-btn" disabled={busy} onClick={() => void add(t)}>
                   <span>{t.destination}</span>
                   <span className="caption">
                     {day(t.start)} to {day(t.end)}
@@ -351,7 +355,7 @@ export function ResearchPage() {
         </div>
         {r &&
           (r.trip_id ? (
-            <Link className="btn" to={`/travel/trips/${r.trip_id}`}>
+            <Link className="btn btn-soft" to={`/travel/trips/${r.trip_id}`}>
               Open the trip
             </Link>
           ) : (
@@ -379,12 +383,9 @@ export function ResearchPage() {
               <h2 id="budget-card">Budget</h2>
               <span className="caption">Worked out from the prices below</span>
             </div>
-            {r.estimate_low && r.estimate_high ? (
+            {positive(r.estimate_low) && positive(r.estimate_high) ? (
               <p>
-                About{" "}
-                <strong>
-                  {whole(r.estimate_low)} to {whole(r.estimate_high)} {r.home_currency}
-                </strong>{" "}
+                About <strong>{wholeRange(r.estimate_low, r.estimate_high, r.home_currency)}</strong>{" "}
                 for {r.travellers}.
               </p>
             ) : (
@@ -397,10 +398,10 @@ export function ResearchPage() {
                 ))}
               </ul>
             )}
-            {r.set_aside && r.budget && (
+            {positive(r.set_aside) && positive(r.budget) && (
               <p>
-                Put aside {whole(r.set_aside)} {r.home_currency} on each of the {r.paydays_left} paydays before then for a {whole(r.budget)}{" "}
-                {r.home_currency} budget.{" "}
+                Put aside {wholeMoney(r.set_aside, r.home_currency)} on each of the {r.paydays_left} paydays before then for a{" "}
+                {wholeMoney(r.budget, r.home_currency)} budget.{" "}
                 {r.fits === true && <span className="budget-state-ok-strong">It fits your cash flow.</span>}
                 {r.fits === false && <span className="budget-state-over">That's tight for your cash flow.</span>}
               </p>
@@ -447,12 +448,9 @@ export function ResearchPage() {
                           <span className="caption">per {p.per}</span>
                         </td>
                         <td className="num">
-                          {whole(p.low)}–{whole(p.high)} {p.currency}
-                          {p.home_low && p.home_high && p.currency !== r.home_currency && (
-                            <span className="caption">
-                              <br />
-                              about {whole(p.home_low)}–{whole(p.home_high)} {r.home_currency}
-                            </span>
+                          {wholeRange(p.low, p.high, p.currency)}
+                          {positive(p.home_low) && positive(p.home_high) && p.currency !== r.home_currency && (
+                            <span className="caption"> · {wholeRange(p.home_low, p.home_high, r.home_currency)}</span>
                           )}
                         </td>
                         <td>
@@ -488,7 +486,7 @@ export function ResearchPage() {
             ))}
             {withIdeas.length > 0 && (
               <div className="research-actions">
-                <button type="button" className="btn" disabled={ticked.length === 0} onClick={() => setStep({ kind: "pick" })}>
+                <button type="button" className="btn btn-soft" disabled={ticked.length === 0} onClick={() => setStep({ kind: "pick" })}>
                   Add to a trip…
                 </button>
                 <span className="caption">
