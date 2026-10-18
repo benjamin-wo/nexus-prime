@@ -40,7 +40,10 @@ from nexus.domain.trips import (
     MAX_DAY_LABEL,
     MAX_NOTES,
     MAX_PLANNED,
+    MAX_STOP_NAME,
+    MAX_STOPS,
     GettingAround,
+    Stop,
     Trip,
 )
 from nexus.domain.weather import YEARS, TripWeather, describe
@@ -91,6 +94,16 @@ class PackItemOut(Model):
     done: bool
 
 
+class StopOut(Model):
+    name: str
+    start: date  # the stop's first day
+    end: date  # and last; the next stop may start the same day (the travel day)
+
+
+def _stops(stops: tuple[Stop, ...]) -> list[StopOut]:
+    return [StopOut(name=s.name, start=s.start, end=s.end) for s in stops]
+
+
 class TripOut(Model):
     id: UUID
     destination: str
@@ -111,6 +124,7 @@ class TripOut(Model):
     photo_off: bool = False  # the user chose to show no photo
     packing: list[PackItemOut] = Field(default_factory=list)
     getting_around: GettingAround = GettingAround.TRANSIT  # public transport or a hire car
+    stops: list[StopOut] = Field(default_factory=list)  # as set by the user; empty: suggested
 
 
 def _trip(trip: Trip, today: date, photos: dict[UUID, DestinationPhoto] | None = None) -> TripOut:
@@ -138,6 +152,7 @@ def _trip(trip: Trip, today: date, photos: dict[UUID, DestinationPhoto] | None =
         photo_off=trip.photo_off,
         packing=[PackItemOut(text=i.text, done=i.done) for i in trip.packing],
         getting_around=trip.getting_around,
+        stops=_stops(trip.stops),
     )
 
 
@@ -223,6 +238,8 @@ class BookingOut(Model):
     order: int | None = None  # a plan's place in its day; None until the day is rearranged
     scheduled: bool  # on a day; false for a place to visit without one yet
     cost: MoneyOut | None
+    lat: float | None = None  # the user's own pin, on a plan with no Google Maps place
+    lng: float | None = None
     logged: bool  # its cost is in the ledger
     manual: bool  # added by hand, not read from email
 
@@ -263,6 +280,8 @@ def _booking(b: Booking) -> BookingOut:
         link=d.link,
         list_name=d.list_name,
         order=d.order,
+        lat=d.lat,
+        lng=d.lng,
         scheduled=b.scheduled,
         cost=_m(b.cost),
         logged=b.transaction_id is not None,
@@ -335,6 +354,9 @@ class TripDetailOut(Model):
     # limited in Google Cloud to this site and the Maps JavaScript API.
     map_key: str | None = None
     ideas: bool = False  # quick ideas from the web are set up
+    # The stops the hotels suggest (named by each hotel's area where Google Maps knows
+    # it): what the page shows until the user sets their own.
+    suggested_stops: list[StopOut] = Field(default_factory=list)
 
 
 def map_key(settings: Settings) -> str | None:
@@ -351,6 +373,7 @@ def _detail(
     view: trip_cases.TripView,
     web: WebRuntime | None = None,
     photos: dict[UUID, DestinationPhoto] | None = None,
+    suggested: tuple[Stop, ...] = (),
 ) -> TripDetailOut:
     s, a = view.spending, view.saving
     return TripDetailOut(
@@ -414,6 +437,7 @@ def _detail(
         routes=web is not None and web.routes is not None and web.places is not None,
         map_key=map_key(web.settings) if web and web.places else None,
         ideas=web is not None and web.ideas is not None,
+        suggested_stops=_stops(suggested),
     )
 
 
@@ -480,7 +504,15 @@ async def next_trip(auth: Auth, web: Runtime) -> TripDetailOut | None:
     view = await trip_cases.next_trip(web.uow, web.rates, auth.user, now=web.clock())
     if view is None:
         return None
-    return _detail(view, web, await photo_cases.photos_of(web.uow(), [view.trip]))
+    return await _detailed(view, web)
+
+
+async def _detailed(view: trip_cases.TripView, web: WebRuntime) -> TripDetailOut:
+    suggested = await place_cases.suggested_stops(
+        web.places, view.trip.user_id, view.trip, view.bookings
+    )
+    photos = await photo_cases.photos_of(web.uow(), [view.trip])
+    return _detail(view, web, photos, suggested)
 
 
 @router.get("/trips/{trip_id}")
@@ -488,7 +520,7 @@ async def get_trip(trip_id: str, auth: Auth, web: Runtime) -> TripDetailOut:
     view = await trip_cases.trip_view(
         web.uow, web.rates, auth.user, _uuid(trip_id), now=web.clock()
     )
-    return _detail(view, web, await photo_cases.photos_of(web.uow(), [view.trip]))
+    return await _detailed(view, web)
 
 
 @router.get("/photos/{photo_id}")
@@ -526,6 +558,30 @@ async def label_day(trip_id: str, day: date, body: DayLabelIn, auth: Auth, web: 
     """Names a day of the trip, such as the city ("Busan"); blank clears it."""
     trip = await trip_cases.set_day_label(
         web.uow(), auth.user, _uuid(trip_id), day, body.label, now=web.clock()
+    )
+    return _trip(trip, _today(auth, web))
+
+
+class StopIn(Model):
+    name: str = Field(min_length=1, max_length=MAX_STOP_NAME)
+    start: date
+    end: date
+
+
+class StopsIn(Model):
+    stops: list[StopIn] = Field(max_length=MAX_STOPS)  # empty: back to the suggested ones
+
+
+@router.put("/trips/{trip_id}/stops")
+async def set_stops(trip_id: str, body: StopsIn, auth: Auth, web: Runtime) -> TripOut:
+    """Sets the trip's stops (a city or area per stretch of days, in date order, inside
+    the trip, only a travel day shared); none goes back to the ones the hotels suggest."""
+    trip = await trip_cases.set_stops(
+        web.uow(),
+        auth.user,
+        _uuid(trip_id),
+        [Stop(s.name, s.start, s.end) for s in body.stops],
+        now=web.clock(),
     )
     return _trip(trip, _today(auth, web))
 
@@ -644,9 +700,13 @@ class BookingIn(Model):
     ends_at: str | None = Field(None, max_length=5)
     link: str | None = Field(None, max_length=500)
     list_name: str | None = Field(None, max_length=30)
+    # The user's own pin on the map, for a plan with no Google Maps place (kept if left
+    # out of an edit; dropped once a place is linked).
+    lat: float | None = Field(None, ge=-90, le=90)
+    lng: float | None = Field(None, ge=-180, le=180)
 
 
-_KEPT_IF_LEFT_OUT = ("place_id", "ends_at", "link", "list_name")
+_KEPT_IF_LEFT_OUT = ("place_id", "ends_at", "link", "list_name", "lat", "lng")
 
 
 def _details(body: BookingIn) -> dict[str, object]:
@@ -792,6 +852,8 @@ class PlaceOut(Model):
     photo_author_url: str | None = None
     lat: float | None = None  # where it is, for the trip map (fetched, never stored)
     lng: float | None = None
+    area: str | None = None  # its neighbourhood ("Gion"), fetched with it, never stored
+    city: str | None = None  # its city ("Kyoto"), likewise
 
 
 def _place(p: Place) -> PlaceOut:
@@ -820,6 +882,8 @@ def _place(p: Place) -> PlaceOut:
         photo_author_url=p.photo.author_url if p.photo else None,
         lat=p.location.lat if p.location else None,
         lng=p.location.lng if p.location else None,
+        area=p.area,
+        city=p.city,
     )
 
 
@@ -1227,6 +1291,7 @@ class SharedTripOut(Model):
     days_until: int
     day_number: int | None
     day_labels: dict[date, str]
+    stops: list[StopOut]
     photo: PhotoOut | None
     bookings: list[SharedBookingOut]
 
@@ -1274,6 +1339,7 @@ async def shared_trip(token: str, web: Runtime) -> SharedTripOut:
         days_until=(trip.start - today).days,
         day_number=trip.day_number(today),
         day_labels=dict(trip.day_labels),
+        stops=_stops(trip.stops),
         photo=photo,
         bookings=[_shared_booking(b) for b in _in_order(bookings)],
     )

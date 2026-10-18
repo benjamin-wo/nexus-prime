@@ -73,6 +73,8 @@ PLACE = fake_place(
     closed_on=4,
     reviews=("Worth it.",),
     location=Point(37.5665, 126.978),
+    area="Mapo",
+    city="Seoul",
 )
 pytestmark = pytest.mark.integration
 
@@ -1917,6 +1919,159 @@ async def test_travel_times_between_a_days_stops(world: World) -> None:
     await stranger.login(MEMBER, invite=(await owner_and_invite(world))[1])
     other = await stranger.get(f"/api/travel/trips/{trip_id}/days/{day}/hops")
     assert other.status_code == 404
+
+
+async def test_stops_are_set_suggested_from_the_hotels_and_kept_per_user(world: World) -> None:
+    owner, invite = await owner_and_invite(world)
+    body = {"destination": "Seoul", "start": "2026-11-10", "end": "2026-11-20", "currency": "KRW"}
+    trip = (await owner.send("POST", "/api/travel/trips", body)).json()
+    trip_id, path = trip["id"], f"/api/travel/trips/{trip['id']}"
+    assert trip["stops"] == []
+
+    # Until the user sets their own, the hotels suggest them: a linked hotel by its
+    # Google Maps city (not its area), another by the end of its address.
+    for hotel in [
+        {"hotel": "Hanok Stay", "check_in": "2026-11-10", "check_out": "2026-11-14",
+         "place_id": "fakePlaceNoodle01"},
+        {"hotel": "Harbour Inn", "check_in": "2026-11-14", "check_out": "2026-11-19",
+         "address": "5 Example-ro, Busan"},
+    ]:  # fmt: skip
+        made = await owner.send("POST", f"{path}/bookings", {"kind": "hotel", **hotel})
+        assert made.status_code == 201
+    detail = (await owner.get(path)).json()
+    assert detail["trip"]["stops"] == []
+    assert detail["suggested_stops"] == [
+        {"name": "Seoul", "start": "2026-11-10", "end": "2026-11-14"},
+        {"name": "Busan", "start": "2026-11-14", "end": "2026-11-20"},
+    ]
+
+    mine = [
+        {"name": "Seoul", "start": "2026-11-10", "end": "2026-11-15"},
+        {"name": "Busan", "start": "2026-11-15", "end": "2026-11-20"},
+    ]
+    saved = await owner.send("PUT", f"{path}/stops", {"stops": mine})
+    assert saved.status_code == 200 and saved.json()["stops"] == mine
+    detail = (await owner.get(path)).json()
+    assert detail["trip"]["stops"] == mine and len(detail["suggested_stops"]) == 2
+    # Editing the trip keeps them while they still fit, and lets them go when they don't.
+    longer = await owner.send("PUT", path, {**body, "end": "2026-11-22"})
+    assert longer.json()["stops"] == mine
+    shorter = await owner.send("PUT", path, {**body, "end": "2026-11-17"})
+    assert shorter.json()["stops"] == []
+    await owner.send("PUT", path, body)
+
+    # Overlaps, days outside the trip, blank or long names, too many: refused.
+    def stop(name: str, start: str, end: str) -> dict[str, str]:
+        return {"name": name, "start": start, "end": end}
+
+    for bad in [
+        [stop("A", "2026-11-10", "2026-11-15"), stop("B", "2026-11-14", "2026-11-20")],
+        [stop("A", "2026-11-09", "2026-11-15")],
+        [stop("A", "2026-11-15", "2026-11-12")],
+        [stop("  ", "2026-11-10", "2026-11-12")],
+        [stop("x" * 41, "2026-11-10", "2026-11-12")],
+        [stop(f"S{n}", "2026-11-10", "2026-11-10") for n in range(11)],
+    ]:
+        assert (await owner.send("PUT", f"{path}/stops", {"stops": bad})).status_code == 422
+    unknown = await owner.send("PUT", f"{path}/stops", {"stops": [], "extra": 1})
+    assert unknown.status_code == 422
+    assert (await owner.get(path)).json()["trip"]["stops"] == []  # nothing was saved
+    await owner.send("PUT", f"{path}/stops", {"stops": mine})
+
+    # They are the shared view's too, and another user can neither see nor set them.
+    token = (await owner.send("POST", f"{path}/share", {})).json()["token"]
+    shared = (await world.browser().get(f"/api/shared/trips/{token}")).json()
+    assert shared["stops"] == mine
+    member = world.browser()
+    await member.login(MEMBER, invite=invite)
+    assert (await member.send("PUT", f"{path}/stops", {"stops": mine})).status_code == 404
+    assert (await member.get(path)).status_code == 404
+    assert (await member.get("/api/travel/trips")).json() == []
+    back = await owner.send("PUT", f"{path}/stops", {"stops": []})
+    assert back.json()["stops"] == [] and trip_id == back.json()["id"]
+
+
+async def test_the_users_own_pin_is_kept_until_a_place_is_linked(world: World) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+    body = {"destination": "Seoul", "start": "2026-11-10", "end": "2026-11-13", "currency": "KRW"}
+    trip_id = (await owner.send("POST", "/api/travel/trips", body)).json()["id"]
+    path = f"/api/travel/trips/{trip_id}"
+    idea = {"kind": "activity", "name": "Dropped pin", "lat": 37.5701, "lng": 126.9769}
+
+    # A place to visit (no day yet) with the user's own pin, and one on a day.
+    made = await owner.send("POST", f"{path}/bookings", idea)
+    assert made.status_code == 201
+    pinned = made.json()
+    assert (pinned["lat"], pinned["lng"], pinned["place_id"], pinned["scheduled"]) == (
+        37.5701, 126.9769, None, False,
+    )  # fmt: skip
+    dated = await owner.send("POST", f"{path}/bookings", {**idea, "day": "2026-11-11"})
+    assert (dated.json()["lat"], dated.json()["scheduled"]) == (37.5701, True)
+    detail = (await owner.get(path)).json()
+    assert {(b["lat"], b["lng"]) for b in detail["bookings"]} == {(37.5701, 126.9769)}
+
+    # An edit that doesn't mention it keeps it, one that does moves or clears it, and
+    # moving the entry to a day keeps it.
+    renamed = await owner.send(
+        "PUT", f"/api/travel/bookings/{pinned['id']}", {"kind": "activity", "name": "Palace gate"}
+    )
+    assert (renamed.json()["name"], renamed.json()["lat"]) == ("Palace gate", 37.5701)
+    moved = await owner.send(
+        "PUT", f"/api/travel/bookings/{pinned['id']}/move", {"day": "2026-11-12"}
+    )
+    assert (moved.json()["lat"], moved.json()["lng"]) == (37.5701, 126.9769)
+    nudged = await owner.send(
+        "PUT",
+        f"/api/travel/bookings/{pinned['id']}",
+        {
+            "kind": "activity",
+            "name": "Palace gate",
+            "day": "2026-11-12",
+            "lat": 37.58,
+            "lng": 127.0,
+        },
+    )
+    assert (nudged.json()["lat"], nudged.json()["lng"]) == (37.58, 127.0)
+    # Not a place on Earth: refused, and half a pin is no pin.
+    for bad in [{"lat": 91, "lng": 0}, {"lat": 0, "lng": 181}]:
+        refused = await owner.send(
+            "POST", f"{path}/bookings", {"kind": "activity", "name": "X", **bad}
+        )
+        assert refused.status_code == 422
+    half = await owner.send(
+        "POST", f"{path}/bookings", {"kind": "activity", "name": "X", "lat": 1.5}
+    )
+    assert (half.json()["lat"], half.json()["lng"]) == (None, None)
+
+    # Linking a Google Maps place lets the pin go (the place has its own position);
+    # unlinking doesn't bring it back.
+    linked = await owner.send(
+        "PUT", f"/api/travel/bookings/{pinned['id']}/place", {"place_id": "fakePlaceNoodle01"}
+    )
+    assert (linked.json()["place_id"], linked.json()["lat"], linked.json()["lng"]) == (
+        "fakePlaceNoodle01", None, None,
+    )  # fmt: skip
+    unlinked = await owner.send(
+        "PUT", f"/api/travel/bookings/{pinned['id']}/place", {"place_id": None}
+    )
+    assert (unlinked.json()["place_id"], unlinked.json()["lat"]) == (None, None)
+    # A place chosen in the same edit as a pin wins over it.
+    both = await owner.send("POST", f"{path}/bookings", {**idea, "place_id": "fakePlaceNoodle01"})
+    assert (both.json()["place_id"], both.json()["lat"]) == ("fakePlaceNoodle01", None)
+    # Only plans carry one: a hotel's pin is ignored.
+    hotel = await owner.send(
+        "POST", f"{path}/bookings", {"kind": "hotel", "hotel": "Inn", "check_in": "2026-11-10",
+                                      "lat": 37.5, "lng": 127.0},
+    )  # fmt: skip
+    assert (hotel.json()["lat"], hotel.json()["lng"]) == (None, None)
+
+    # The area of a linked place comes with it, fetched and not stored.
+    assert both.status_code == 201
+    area = (await owner.get(f"{path}/places")).json()
+    assert {(x["place"]["area"], x["place"]["city"]) for x in area} == {("Mapo", "Seoul")}
+    one = (await owner.get("/api/travel/places/fakePlaceNoodle01")).json()
+    assert (one["area"], one["city"]) == ("Mapo", "Seoul")
 
 
 async def test_rearranging_a_day_and_what_to_watch_out_for(world: World) -> None:

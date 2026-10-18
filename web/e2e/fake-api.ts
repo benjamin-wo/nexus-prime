@@ -124,6 +124,8 @@ export async function fakeApi(
     /** Moves sent from the trip page, as "id>day|places@after". */
     moves: string[];
     placeSearches: string[];
+    /** The stops sent to PUT /travel/trips/:id/stops, in order. */
+    stopPuts: { name: string; start: string; end: string }[][];
     ideaSearches: string[];
     photoChoices: string[];
     shares: Record<string, string>;
@@ -211,6 +213,7 @@ export async function fakeApi(
     backToHotel: false,
     moves: [],
     placeSearches: [],
+    stopPuts: [],
     ideaSearches: [],
     photoChoices: [],
     planStarted: false,
@@ -755,7 +758,7 @@ export async function fakeApi(
     if (path === "/travel/currency") {
       // Made-up lookups: a few places, and one that isn't found.
       const place = (url.searchParams.get("place") ?? "").toLowerCase();
-      const known: Record<string, [string, string]> = { tokyo: ["JPY", "Japan"], osaka: ["JPY", "Japan"], seoul: ["KRW", "South Korea"], bali: ["IDR", "Indonesia"] };
+      const known: Record<string, [string, string]> = { tokyo: ["JPY", "Japan"], osaka: ["JPY", "Japan"], japan: ["JPY", "Japan"], seoul: ["KRW", "South Korea"], bali: ["IDR", "Indonesia"] };
       const hit = Object.entries(known).find(([k]) => place.startsWith(k));
       return json(route, hit ? { currency: hit[1][0], country: hit[1][1] } : { currency: null, country: null });
     }
@@ -783,6 +786,7 @@ export async function fakeApi(
         day_number: null,
         notes: body.notes ?? null,
         day_labels: {} as Record<string, string>,
+        stops: [] as { name: string; start: string; end: string }[],
         // Made up, in the shape the photo search keeps.
         photo: {
           url: "/api/travel/photos/ph1",
@@ -857,6 +861,32 @@ export async function fakeApi(
       logged: false,
       manual: false,
     };
+    // The stops the hotels suggest, as the server works them out: a run of stays in one place
+    // is a stop, named by the linked place's city, else the end of the address, else the
+    // destination; the first starts with the trip and the last ends with it.
+    const suggestedStops = (trip: Record<string, unknown>) => {
+      const [start, end] = [String(trip.start), String(trip.end)];
+      const stays = (state.plans as { kind: string; check_in: string; check_out: string | null; address?: string | null; place_id?: string | null }[])
+        .filter((p) => p.kind === "hotel" && p.check_in)
+        .sort((a, b) => a.check_in.localeCompare(b.check_in));
+      const stops: { name: string; start: string; end: string }[] = [];
+      for (const stay of stays) {
+        const nextDay = new Date(Date.parse(stay.check_in) + 86400000).toISOString().slice(0, 10);
+        const from = stay.check_in < start ? start : stay.check_in;
+        const to = (stay.check_out ?? nextDay) > end ? end : (stay.check_out ?? nextDay);
+        if (from > end || to < start) continue;
+        const city = stay.place_id ? PLACES[stay.place_id]?.city : null;
+        const address = (stay.address ?? "").split(",").map((part) => part.replace(/\b\S*\d\S*\b/g, "").trim()).filter(Boolean).at(-1);
+        const name = String(city ?? address ?? trip.destination).slice(0, 40);
+        const last = stops.at(-1);
+        if (last && last.name.toLowerCase() === name.toLowerCase()) last.end = to > last.end ? to : last.end;
+        else if (to > from || from > start) stops.push({ name, start: last && from < last.end ? last.end : from, end: to });
+      }
+      if (stops.length === 0) return [{ name: String(trip.destination).slice(0, 40), start, end }];
+      stops[0].start = start;
+      stops[stops.length - 1].end = end;
+      return stops;
+    };
     const tripDetail = (trip: Record<string, unknown>) => {
       const items = [
         { transaction_id: "k1", day: "2026-09-28", counterparty: "Ichiran", category: "Dining Out", amount: { amount: "2000.0000", currency: "JPY" }, home: home(18), linked: false },
@@ -915,6 +945,7 @@ export async function fakeApi(
           });
         })(),
         places_order: placesInOrder().map((p) => p.id),
+        suggested_stops: suggestedStops(trip),
         places: true,
         ideas: true,
         routes: state.mapKey !== null,
@@ -930,29 +961,45 @@ export async function fakeApi(
         hours: ["Monday: 11:00 AM to 9:00 PM", "Thursday: Closed"],
         reviews: [{ rating: 5, text: "The broth is worth the queue.", author: "A. Reviewer", author_url: "https://maps.example/u/1", when: "a month ago" }],
         photo_url: "/api/travel/places/fakePlaceNoodle01/photo", photo_author: "A. Photographer", photo_author_url: "https://maps.example/u/2",
-        lat: 37.5651, lng: 126.9895,
+        lat: 37.5651, lng: 126.9895, area: "Jung-gu", city: "Seoul",
         closed: 4,
       },
       fakePlaceMarket01: {
         id: "fakePlaceMarket01", name: "Namdaemun Market", address: "21 Example-gil, Jung-gu, Seoul", kind: "Market",
         rating: "4.3", ratings: 18000, price: null, maps_url: "https://maps.example/market", website: null, phone: null,
-        summary: null, status: "OPERATIONAL", hours: [], reviews: [], lat: 37.5592, lng: 126.9776, closed: null,
+        summary: null, status: "OPERATIONAL", hours: [], reviews: [], lat: 37.5592, lng: 126.9776, area: "Jung-gu", city: "Seoul", closed: null,
       },
     };
     PLACES.fakePlaceLodge001 = {
       id: "fakePlaceLodge001", name: "Hill Lodge", address: "3 Example Cove", kind: "Hotel", rating: "4.5", ratings: 1576, price: null,
       maps_url: "https://maps.example/lodge", website: null, phone: null, summary: null, status: "OPERATIONAL", hours: [], reviews: [],
-      lat: 41.93, lng: 3.21, closed: null,
+      lat: 41.93, lng: 3.21, area: "Example Cove", city: "Exampleton", closed: null,
     };
     PLACES.fakePlaceAirport1 = {
       id: "fakePlaceAirport1", name: "Exampleton Airport", address: "Exampleton", kind: "International airport", rating: null, ratings: null,
       price: null, maps_url: "https://maps.example/airport", website: null, phone: null, summary: null, status: "OPERATIONAL", hours: [],
-      reviews: [], lat: 41.29, lng: 2.07, closed: null,
+      reviews: [], lat: 41.29, lng: 2.07, area: null, city: "Exampleton", closed: null,
     };
-    const placeOut = ({ closed: _closed, ...place }: Record<string, unknown>) => place;
+    // Made-up places in two Japanese cities, for stops and day areas. They never turn up in a
+    // search (``unlisted``), so they only appear when a test links them to a plan.
+    const japan = (id: string, name: string, kind: string, area: string, city: string, lat: number, lng: number) => {
+      PLACES[id] = {
+        id, name, address: `1 Example-dori, ${area}, ${city}`, kind, rating: "4.4", ratings: 900, price: null, maps_url: `https://maps.example/${id}`,
+        website: null, phone: null, summary: null, status: "OPERATIONAL", hours: [], reviews: [], lat, lng, area, city, closed: null, unlisted: true,
+      };
+    };
+    japan("fakePlaceTokyoInn1", "Hotel Kumo Shinjuku", "Hotel", "Shinjuku", "Tokyo", 35.6896, 139.7006);
+    japan("fakePlaceKyotoInn1", "Machiya Inn Higashiyama", "Inn", "Higashiyama", "Kyoto", 35.0036, 135.7785);
+    japan("fakePlaceTokyoShr1", "Lantern Shrine", "Shinto shrine", "Asakusa", "Tokyo", 35.7148, 139.7967);
+    japan("fakePlaceTokyoRmn1", "Counter Ramen Ichi", "Ramen restaurant", "Asakusa", "Tokyo", 35.7121, 139.7961);
+    japan("fakePlaceTokyoMus1", "Paper Crane Museum", "Museum", "Ueno", "Tokyo", 35.7189, 139.7745);
+    japan("fakePlaceKyotoTmp1", "Moss Garden Temple", "Buddhist temple", "Gion", "Kyoto", 35.0037, 135.7788);
+    japan("fakePlaceKyotoTea1", "Kettle Tea House", "Tea house", "Gion", "Kyoto", 35.0049, 135.7752);
+    japan("fakePlaceKyotoBmb1", "Bamboo Walk", "Park", "Arashiyama", "Kyoto", 35.0170, 135.6713);
+    const placeOut = ({ closed: _closed, unlisted: _unlisted, ...place }: Record<string, unknown>) => place;
     if (path === "/travel/places/search" && method === "GET") {
       state.placeSearches.push(url.searchParams.get("q") ?? "");
-      return json(route, Object.values(PLACES).map(placeOut));
+      return json(route, Object.values(PLACES).filter((p) => !p.unlisted).map(placeOut));
     }
     // Made-up ideas from made-up articles: one matched to Google Maps, one not.
     const tripIdeas = path.match(/^\/travel\/trips\/([^/]+)\/ideas$/);
@@ -1067,7 +1114,10 @@ export async function fakeApi(
     }
     const placeLink = path.match(/^\/travel\/bookings\/([^/]+)\/place$/);
     if (placeLink && method === "PUT") {
-      state.plans = state.plans.map((p) => (p.id === placeLink[1] ? { ...p, place_id: body.place_id ?? null } : p));
+      // Linking a place lets the user's own pin go: the place has its own position.
+      state.plans = state.plans.map((p) =>
+        p.id === placeLink[1] ? { ...p, place_id: body.place_id ?? null, ...(body.place_id ? { lat: null, lng: null } : {}) } : p,
+      );
       return json(route, state.plans.find((p) => p.id === placeLink[1]));
     }
     if (path === "/travel/bookings" && method === "GET") return json(route, state.looseBookings);
@@ -1122,6 +1172,26 @@ export async function fakeApi(
       trip.getting_around = body.by;
       return json(route, trip);
     }
+    const tripStops = path.match(/^\/travel\/trips\/([^/]+)\/stops$/);
+    if (tripStops && method === "PUT") {
+      const trip = state.trips.find((t) => t.id === tripStops[1]);
+      if (!trip) return json(route, { detail: "no trip with that id" }, 404);
+      const stops = ((body.stops ?? []) as { name: string; start: string; end: string }[])
+        .map((stop) => ({ name: String(stop.name).trim().replace(/\s+/g, " "), start: stop.start, end: stop.end }))
+        .sort((a, b) => a.start.localeCompare(b.start) || a.end.localeCompare(b.end));
+      // The server's rules: 1-40 characters, inside the trip, in order, only a travel day shared, at most 10.
+      const problem =
+        stops.length > 10 ? "at most 10 stops on a trip"
+        : stops.find((s) => s.name.length < 1 || s.name.length > 40) ? "a stop needs a name of 1 to 40 characters"
+        : stops.find((s) => s.end < s.start) ? "a stop ends before it starts"
+        : stops.find((s) => s.start < String(trip.start) || s.end > String(trip.end)) ? "a stop is outside the trip's dates"
+        : stops.find((s, n) => n > 0 && (s.start < stops[n - 1].end || s.start === stops[n - 1].start)) ? "two stops overlap"
+        : null;
+      if (problem) return json(route, { detail: problem }, 422);
+      state.stopPuts.push(stops);
+      trip.stops = stops;
+      return json(route, trip);
+    }
     const dayLabel = path.match(/^\/travel\/trips\/([^/]+)\/days\/([0-9-]+)$/);
     if (dayLabel && method === "PUT") {
       const trip = state.trips.find((t) => t.id === dayLabel[1]);
@@ -1155,6 +1225,9 @@ export async function fakeApi(
           planned: Object.fromEntries(Object.entries((body.planned ?? {}) as Record<string, string>).map(([k, v]) => [k, home(Number(v))])),
           notes: body.notes ?? null,
         });
+        // Stops that no longer fit the dates go back to following the hotels.
+        const stops = (trip.stops ?? []) as { start: string; end: string }[];
+        if (stops.some((s) => s.start < start || s.end > end)) trip.stops = [];
         return json(route, trip);
       }
       if (method === "DELETE") {
@@ -1195,6 +1268,7 @@ export async function fakeApi(
         days_until: trip.days_until,
         day_number: trip.day_number,
         day_labels: trip.day_labels,
+        stops: trip.stops ?? [],
         photo: trip.photo && !trip.photo_off ? { ...(trip.photo as object), url: `/api/shared/trips/${shared[1]}/photo` } : null,
         bookings: (detail.bookings as Record<string, unknown>[]).filter((b) => b.scheduled).map((b) => Object.fromEntries(keep.map((k) => [k, b[k] ?? null]))),
       });
@@ -1231,6 +1305,8 @@ export async function fakeApi(
         name: body.name, day: body.day, at: body.at, note: body.note, cost: null, logged: false, manual: true,
         reference: body.reference ?? null, booked_via: body.booked_via ?? null, category: body.category ?? null,
         place_id: body.place_id ?? null, ends_at: body.ends_at ?? null, link: body.link ?? null, list_name: body.list_name ?? null, order: null,
+        // The user's own pin, only on a plan without a Google Maps place.
+        lat: body.place_id ? null : (body.lat ?? null), lng: body.place_id ? null : (body.lng ?? null),
         scheduled: Boolean(body.day), ...(body.day ? {} : { starts: "2026-09-28", ends: null }),
       };
       state.plans.push(plan);
@@ -1242,6 +1318,7 @@ export async function fakeApi(
         p.id === planEdit[1]
           ? {
               ...p, at: body.at, day: body.day, starts: body.day ?? p.starts, scheduled: Boolean(body.day), name: body.name, title: body.name, category: body.category ?? null,
+              ...("lat" in body && !p.place_id ? { lat: body.lat ?? null, lng: body.lng ?? null } : {}),
               ...("ends_at" in body ? { ends_at: body.ends_at } : {}), ...("link" in body ? { link: body.link } : {}), ...("list_name" in body ? { list_name: body.list_name } : {}),
               ...(body.day !== p.day ? { order: null } : {}),
             }
@@ -1325,7 +1402,7 @@ export async function fakeApi(
       const trip = {
         id: "trip9", destination: "Tokyo", start: "2027-01-10", end: "2027-01-17", days: 8, currency: "JPY",
         budget: { amount: "6800.0000", currency: "SGD" }, companions: [], set_aside: { amount: "2267.0000", currency: "SGD" },
-        planned: {}, status: "upcoming", days_until: 104, day_number: null, notes: null, day_labels: {},
+        planned: {}, status: "upcoming", days_until: 104, day_number: null, notes: null, day_labels: {}, stops: [],
       };
       state.trips = [trip, ...state.trips];
       return json(route, trip, 201);
@@ -2050,8 +2127,18 @@ export async function fakeApi(
     route.fulfill({
       contentType: "text/javascript",
       body: `(() => {
-        const log = (window.__map = { markers: [], lines: 0, key: new URL(document.currentScript.src).searchParams.get("key") });
-        class Map { constructor(el) { el.dataset.map = "ready"; } fitBounds() {} setCenter() {} setZoom() {} panTo() {} }
+        const log = (window.__map = { markers: [], lines: 0, circles: [], key: new URL(document.currentScript.src).searchParams.get("key") });
+        // Holding the map: longPress(lat, lng) presses at that spot and lets go a little after the page's 550 ms.
+        class Map {
+          constructor(el) { el.dataset.map = "ready"; this.on = {}; log.longPress = (lat, lng) => {
+            const at = { latLng: { lat: () => lat, lng: () => lng } };
+            (this.on.mousedown || []).forEach((f) => f(at));
+            setTimeout(() => (this.on.mouseup || []).forEach((f) => f(at)), 700);
+          }; }
+          fitBounds() {} setCenter() {} setZoom() {} panTo() {}
+          addListener(e, f) { (this.on[e] = this.on[e] || []).push(f); }
+        }
+        class Circle { constructor(o) { this.o = o; log.circles.push(this); } setMap(m) { if (!m) log.circles = log.circles.filter((x) => x !== this); } }
         class Marker {
           constructor(o) { this.o = o; this.click = null; log.markers.push(this); }
           setMap(m) { if (!m) log.markers = log.markers.filter((x) => x !== this); }
@@ -2059,7 +2146,7 @@ export async function fakeApi(
         }
         class Polyline { constructor(o) { this.o = o; log.lines += 1; } setMap(m) { if (!m) log.lines -= 1; } }
         class LatLngBounds { extend() {} }
-        const libraries = { maps: { Map, Polyline }, marker: { Marker }, core: { LatLngBounds, SymbolPath: { CIRCLE: 0 } } };
+        const libraries = { maps: { Map, Polyline, Circle }, marker: { Marker }, core: { LatLngBounds, SymbolPath: { CIRCLE: 0 } } };
         window.google = { maps: { importLibrary: async (name) => libraries[name] } };
         window[new URL(document.currentScript.src).searchParams.get("callback")]();
       })();`,

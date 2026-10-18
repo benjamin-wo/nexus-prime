@@ -18,6 +18,7 @@ from uuid import UUID
 from nexus.domain.ledger import UserId
 from nexus.domain.money import Money
 from nexus.domain.places import place_id as _place_id
+from nexus.domain.places import point as _point
 from nexus.domain.travel_research import safe_url
 from nexus.domain.trips import Trip, TripStatus, clean_notes, hide_private
 
@@ -227,6 +228,10 @@ class BookingDraft:
     # A flight's or train's airports and stations on Google Maps: (what was searched
     # for, like "BCN airport", its place id or "" when there's none). Only ids are kept.
     stations: tuple[tuple[str, str], ...] = ()
+    # The user's own pin on the map (never Google's coordinates, which can't be kept):
+    # only on a plan or place to visit that isn't linked to a Google Maps place.
+    lat: float | None = None
+    lng: float | None = None
 
     def station(self, name: str) -> str | None:
         """The place id found for an airport or station; "" when looked up and not
@@ -295,6 +300,8 @@ class BookingDraft:
             "order": self.order,
             "follows": self.follows.isoformat(timespec="minutes") if self.follows else None,
             "stations": dict(self.stations),
+            "lat": self.lat,
+            "lng": self.lng,
         }
 
     @classmethod
@@ -308,6 +315,8 @@ class BookingDraft:
         link = safe_url(data.get("link"))
         if kind is BookingKind.ACTIVITY:
             at = _clock(data.get("at"))
+            place = _place_id(data.get("place_id"))
+            pin = None if place else _point(data.get("lat"), data.get("lng"))
             plan = cls(
                 kind=kind,
                 provider=None,
@@ -323,12 +332,14 @@ class BookingDraft:
                 reference=_reference(data.get("reference")),
                 booked_via=_text(data.get("booked_via")),
                 category=_text(data.get("category"), limit=MAX_CATEGORY),
-                place_id=_place_id(data.get("place_id")),
+                place_id=place,
                 ends_at=_ends(at, data.get("ends_at")),
                 link=link,
                 list_name=_text(data.get("list_name"), limit=MAX_LIST),
                 order=_order(data.get("order")),
                 follows=None if at else _clock(data.get("follows")),
+                lat=pin.lat if pin else None,
+                lng=pin.lng if pin else None,
             )
             # Without a day, it's a place to visit on the trip, not yet on a day.
             return plan if plan.name else None

@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { api, type Booking, type Hop, type LinkedPlace, type TravelMode, type TripDetail } from "../api";
+import { distance } from "../geo";
 import { type GMap, type GOverlay, loadMaps, type MapsApi, onMapsAuthFailure } from "../maps";
 import { duration } from "./TripArrange";
 import { sortKey } from "./TripBits";
@@ -286,9 +287,7 @@ const MODE: Record<TravelMode, { icon: string; words: string }> = {
   drive: { icon: "🚗", words: "drive" },
 };
 
-export function distance(metres: number): string {
-  return metres < 1000 ? `${Math.round(metres / 10) * 10} m` : `${(metres / 1000).toFixed(1)} km`;
-}
+export { distance } from "../geo";
 
 /** Calls ``children`` with the day's travel times, asked for only once the day is
  * near the screen (each one is a call to Google). */

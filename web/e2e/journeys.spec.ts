@@ -2365,13 +2365,13 @@ test("Next up names a free day while planning, and its button opens the Ideas ta
   await page.reload();
   const strip = page.getByRole("region", { name: "Next up" });
   // The flight is on day 1; day 2 has nothing yet, and no ideas to fill it with.
-  await expect(strip).toContainText("Day 2 is still free.");
+  await expect(strip).toContainText("Day 2 in Seoul is still free.");
   await expect(strip).not.toContainText("could fill it");
 
   // With ideas saved, it says how many could fill the day.
   state.plans.push(idea("pl2", "Lantern Alley", { list_name: "Nightlife" }), idea("pl3", "Namdaemun Market", { list_name: "Shopping" }));
   await page.reload();
-  await expect(strip).toContainText("Day 2 is still free. 2 of your ideas could fill it.");
+  await expect(strip).toContainText("Day 2 in Seoul is still free. 2 of your ideas could fill it.");
   await strip.getByRole("button", { name: /^Find ideas:/ }).click();
   await expect(page.getByRole("navigation", { name: "Trip sections" }).getByRole("button", { name: "Ideas", exact: true })).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("list", { name: "Ideas" })).toContainText("Lantern Alley");
@@ -2590,6 +2590,230 @@ test("the open tab stays in the address: reload keeps it, and Back goes to the t
   // A link straight to a tab opens on it.
   await page.goto("/travel/trips/trip1?tab=prep");
   expect(await current()).toBe("Prep");
+});
+
+// --- stops, suggested day labels and the Ideas map ---------------------------------------
+
+/** A stay with a linked Google Maps place, so its city and area are known. */
+const stayAt = (id: string, hotel: string, from: string, to: string, placeId: string) =>
+  tripEntry(id, { kind: "hotel", title: hotel, hotel, starts: from, ends: to, check_in: from, check_out: to, scheduled: true, place_id: placeId });
+
+/** What the fake Google Maps drew: the pins (title, fill) and the rings' labels. */
+const drawn = (page: Page) =>
+  page.evaluate(() => {
+    const log = (window as unknown as { __map?: { markers: { o: { title: string; icon: { fillColor?: string } } }[]; circles: unknown[] } }).__map;
+    return { pins: (log?.markers ?? []).map((m) => [m.o.title, m.o.icon.fillColor ?? ""]), rings: log?.circles.length ?? 0 };
+  });
+const pressPin = (page: Page, title: string) =>
+  page.evaluate((t) => (window as unknown as { __map: { markers: { o: { title: string }; click: () => void }[] } }).__map.markers.find((m) => m.o.title === t)!.click(), title);
+/** Shows the Ideas map: on a phone through the List/Map switch, beside the list on a wide screen. */
+async function showIdeasMap(page: Page) {
+  await openTab(page, "Ideas");
+  const switcher = page.getByRole("group", { name: "Show ideas as" }).getByRole("button", { name: "Map", exact: true });
+  if (await switcher.isVisible()) await switcher.click();
+  await expect(page.getByRole("region", { name: "Map" })).toBeVisible();
+}
+/** A Seoul trip with a plan on Day 2 (noodles) and Day 3 (market), each linked to a place, and ideas
+ * with their own pins: one 120 m from Day 2, one 1.3 km from Day 3, and one with no position. */
+async function seoulWithIdeas(page: Page, mapKey: string | null) {
+  const state = await fakeApi(page);
+  state.mapKey = mapKey;
+  await addTrip(page, "Seoul", "2026-11-10", "2026-11-13");
+  state.plans.push(
+    planOn("pl1", "Hanok Noodle Bar", "2026-11-11", { at: "12:00", place_id: "fakePlaceNoodle01" }),
+    planOn("pl2", "Namdaemun Market", "2026-11-12", { at: "12:00", place_id: "fakePlaceMarket01" }),
+    idea("pl3", "Lantern Alley", { list_name: "Nightlife", lat: 37.566, lng: 126.9902 }),
+    idea("pl4", "Hilltop Tower", { list_name: "Outdoors", lat: 37.5512, lng: 126.9882 }),
+    idea("pl5", "Secret Garden", { list_name: "Outdoors" }),
+  );
+  await page.reload();
+  return state;
+}
+
+test("stops follow the stays, are edited and saved, and Use suggested puts them back", async ({ page }) => {
+  const state = await fakeApi(page);
+  await addTrip(page, "Japan", "2026-11-10", "2026-11-16");
+  state.plans.push(
+    stayAt("pl1", "Hotel Kumo Shinjuku", "2026-11-10", "2026-11-13", "fakePlaceTokyoInn1"),
+    stayAt("pl2", "Machiya Inn Higashiyama", "2026-11-13", "2026-11-16", "fakePlaceKyotoInn1"),
+  );
+  await page.reload();
+
+  // Two stays in two cities: a stop each, named by the city, with a travel day between.
+  const stops = page.getByRole("list", { name: "Stops" });
+  const tokyo = stops.getByRole("button", { name: /^Tokyo/ });
+  const kyoto = stops.getByRole("button", { name: /^Kyoto/ });
+  await expect(stops.getByRole("button")).toHaveCount(2);
+  await expect(tokyo).toContainText("3 nights");
+  await expect(kyoto).toContainText("3 nights");
+  await expect(stops.getByRole("listitem", { name: /^Travel day/ })).toHaveCount(1);
+  const pills = itineraryOf(page).getByRole("navigation", { name: "Days" });
+  await expect(pills.getByTitle("Travel day: Tokyo to Kyoto", { exact: true })).toHaveCount(1);
+  await expect(pills.getByTitle("Tokyo", { exact: true }).first()).toBeVisible();
+
+  // A tap on a stop opens its first day.
+  await kyoto.click();
+  await expect(pills.getByRole("button", { name: /13/ })).toHaveAttribute("aria-current", "true");
+
+  // Edit: they still follow the stays. A stop starting before the last one ends is refused, and nothing is sent.
+  await page.getByRole("button", { name: "Edit stops" }).click();
+  const sheet = page.getByRole("dialog", { name: "Stops" });
+  await expect(sheet).toContainText("These follow your places to stay until you save them.");
+  await expect(sheet.getByLabel("Name of stop 1")).toHaveValue("Tokyo");
+  await expect(sheet.getByLabel("Stop 2 starts")).toHaveValue("2026-11-13");
+  await sheet.getByLabel("Stop 2 starts").fill("2026-11-11");
+  await sheet.getByRole("button", { name: "Save" }).click();
+  await expect(sheet.getByRole("alert")).toContainText("overlap");
+  expect(state.stopPuts).toEqual([]);
+
+  // Rename Kyoto and meet in the middle a day earlier: saved as the stops.
+  await sheet.getByLabel("Name of stop 2").fill("Kyoto and Nara");
+  await sheet.getByLabel("Stop 1 ends").fill("2026-11-12");
+  await sheet.getByLabel("Stop 2 starts").fill("2026-11-12");
+  await sheet.getByRole("button", { name: "Save" }).click();
+  await expect(sheet).toHaveCount(0);
+  expect(state.stopPuts).toEqual([
+    [
+      { name: "Tokyo", start: "2026-11-10", end: "2026-11-12" },
+      { name: "Kyoto and Nara", start: "2026-11-12", end: "2026-11-16" },
+    ],
+  ]);
+  await expect(stops.getByRole("button", { name: /^Kyoto and Nara/ })).toContainText("4 nights");
+  await expect(tokyo).toContainText("2 nights");
+  await expect(pills.getByTitle("Travel day: Tokyo to Kyoto and Nara", { exact: true })).toHaveCount(1);
+
+  // Saved stops no longer follow the stays; Use suggested puts them back.
+  await page.getByRole("button", { name: "Edit stops" }).click();
+  await expect(sheet).not.toContainText("These follow your places to stay");
+  await sheet.getByRole("button", { name: "Use suggested" }).click();
+  await expect(sheet).toHaveCount(0);
+  expect(state.stopPuts.at(-1)).toEqual([]);
+  await expect(stops.getByRole("button", { name: /^Kyoto and Nara/ })).toHaveCount(0);
+  await expect(kyoto).toContainText("3 nights");
+  await expect(tokyo).toContainText("3 nights");
+});
+
+test("a day's suggested label comes from its places, is marked Suggested, and is accepted from the pencil", async ({ page }) => {
+  const state = await fakeApi(page);
+  await addTrip(page, "Seoul", "2026-11-10", "2026-11-13");
+  state.plans.push(
+    planOn("pl1", "Hanok Noodle Bar", "2026-11-11", { at: "12:00", place_id: "fakePlaceNoodle01" }),
+    planOn("pl2", "Namdaemun Market", "2026-11-11", { at: "15:00", place_id: "fakePlaceMarket01" }),
+  );
+  await page.reload();
+  const labels = () => (state.trips[0] as { day_labels: Record<string, string> }).day_labels;
+  await itineraryOf(page).getByRole("navigation", { name: "Days" }).getByRole("button", { name: /11/ }).click();
+  const dayTwo = page.locator("#day-2026-11-11");
+
+  // The area both places are in and what they are; nothing is saved yet.
+  await expect(dayTwo.getByRole("heading", { level: 3 })).toContainText("Jung-gu · food");
+  await expect(dayTwo.locator(".suggest-chip")).toHaveText("Suggested");
+  expect(labels()).toEqual({});
+  // A day with nothing on it has nothing to suggest.
+  await expect(page.locator("#day-2026-11-12").locator(".suggest-chip")).toHaveCount(0);
+
+  // The pencil opens it filled in; saving keeps it, and the chip goes.
+  await dayTwo.getByRole("button", { name: "Name this day" }).click();
+  await expect(dayTwo.getByLabel("Name for this day")).toHaveValue("Jung-gu · food");
+  await dayTwo.getByRole("button", { name: "Save" }).click();
+  await expect.poll(labels).toEqual({ "2026-11-11": "Jung-gu · food" });
+  await expect(dayTwo.getByRole("heading", { level: 3 })).toContainText("Jung-gu · food");
+  await expect(dayTwo.locator(".suggest-chip")).toHaveCount(0);
+
+  // Whatever is typed wins over the suggestion.
+  await dayTwo.getByRole("button", { name: "Name this day" }).click();
+  await dayTwo.getByLabel("Name for this day").fill("Noodle crawl");
+  await dayTwo.getByRole("button", { name: "Save" }).click();
+  await expect.poll(labels).toEqual({ "2026-11-11": "Noodle crawl" });
+  await expect(dayTwo.getByRole("heading", { level: 3 })).toContainText("Noodle crawl");
+  await expect(dayTwo.getByRole("heading", { level: 3 })).not.toContainText("Jung-gu");
+});
+
+test("the Ideas map pins ideas by list, rings the days, and a pin opens the picker with the nearest day first", async ({ page }) => {
+  const state = await seoulWithIdeas(page, "test-browser-key");
+  await showIdeasMap(page);
+  expect(await page.evaluate(() => (window as unknown as { __map: { key: string } }).__map.key)).toBe("test-browser-key");
+
+  // A pin for each idea with a position, in its list's colour; a ring and a name for each day with plans.
+  await expect.poll(async () => (await drawn(page)).pins.map(([title]) => title).sort()).toEqual([
+    "Day 2 · Jung-gu · food", "Day 3 · Jung-gu · food", "Hilltop Tower", "Lantern Alley",
+  ]);
+  const { pins, rings } = await drawn(page);
+  expect(rings).toBe(2);
+  const fill = (title: string) => pins.find(([t]) => t === title)![1];
+  expect(fill("Lantern Alley")).toMatch(/^#[0-9a-f]{6}$/i); // a real colour, not a CSS variable Google can't read
+  expect(fill("Hilltop Tower")).toMatch(/^#[0-9a-f]{6}$/i);
+  expect(fill("Lantern Alley")).not.toBe(fill("Hilltop Tower")); // different lists, different colours
+  // The idea with no position is listed under the map, not pinned.
+  await expect(page.getByRole("region", { name: "Map" })).toContainText("Not on the map: link a place to pin it. Secret Garden");
+
+  // Tap a pin: the day with the nearest plans comes first, with how far it is.
+  await pressPin(page, "Hilltop Tower");
+  const picker = page.getByRole("dialog", { name: "Put on a day" });
+  await expect(picker).toContainText("Hilltop Tower");
+  const closest = picker.getByRole("region", { name: "Closest days" });
+  await expect(closest.getByRole("button")).toHaveCount(2);
+  await expect(closest.getByRole("button").first()).toContainText("Day 3");
+  await expect(closest.getByRole("button").first()).toContainText("1.3 km · 1 plan");
+  await expect(closest.getByRole("button").nth(1)).toContainText("Day 2");
+  await expect(closest.getByRole("button").nth(1)).toContainText("1.5 km · 1 plan");
+
+  // Choosing it puts the idea on that day, after what's there.
+  await closest.getByRole("button").first().click();
+  await expect(picker).toHaveCount(0);
+  await expect.poll(() => state.moves).toEqual(["pl4>2026-11-12@pl2"]);
+  await openTab(page, "Plan");
+  await itineraryOf(page).getByRole("navigation", { name: "Days" }).getByRole("button", { name: /12/ }).click();
+  await expect(itineraryOf(page).getByRole("list", { name: /^Day 3/ })).toContainText("Hilltop Tower");
+});
+
+test("holding the Ideas map drops a pin that becomes an idea, then goes on a day shown on Plan", async ({ page }) => {
+  const state = await seoulWithIdeas(page, "test-browser-key");
+  await showIdeasMap(page);
+  await expect.poll(async () => (await drawn(page)).rings).toBe(2);
+
+  // A long press asks what to call the pin.
+  await page.waitForFunction(() => Boolean((window as unknown as { __map?: { longPress?: unknown } }).__map?.longPress));
+  await page.evaluate(() => (window as unknown as { __map: { longPress: (a: number, b: number) => void } }).__map.longPress(37.57, 126.99));
+  const prompt = page.getByRole("dialog", { name: "Drop a pin here" });
+  await expect(prompt.getByLabel("Name")).toHaveValue("Dropped pin");
+  await prompt.getByLabel("Name").fill("Rooftop Bar");
+  await prompt.getByRole("button", { name: "Save pin" }).click();
+
+  // It is saved as an idea with the pin's own position, and the day picker opens for it.
+  const picker = page.getByRole("dialog", { name: "Put on a day" });
+  await expect(picker).toContainText("Rooftop Bar");
+  expect(state.plans.find((p) => p.name === "Rooftop Bar")).toMatchObject({ id: "pl6", scheduled: false, lat: 37.57, lng: 126.99, place_id: null });
+  const closest = picker.getByRole("region", { name: "Closest days" });
+  await expect(closest.getByRole("button").first()).toContainText("Day 2");
+  await expect(closest.getByRole("button").first()).toContainText("550 m");
+  await closest.getByRole("button").first().click();
+  await expect.poll(() => state.moves).toEqual(["pl6>2026-11-11@pl1"]);
+
+  // On Plan, it is on Day 2.
+  await openTab(page, "Plan");
+  await itineraryOf(page).getByRole("navigation", { name: "Days" }).getByRole("button", { name: /11/ }).click();
+  await expect(itineraryOf(page).getByRole("list", { name: /^Day 2/ })).toContainText("Rooftop Bar");
+});
+
+test("an idea's row says which day it is near, with its distance", async ({ page }) => {
+  await seoulWithIdeas(page, "test-browser-key");
+  await openTab(page, "Ideas");
+  const rows = page.getByRole("list", { name: "Ideas" });
+  await expect(rows.getByRole("listitem").filter({ hasText: "Lantern Alley" })).toContainText("Near Day 2 · 120 m");
+  await expect(rows.getByRole("listitem").filter({ hasText: "Hilltop Tower" })).toContainText("Near Day 3 · 1.3 km");
+  // No position: nothing to measure, so it is not called near anything.
+  await expect(rows.getByRole("listitem").filter({ hasText: "Secret Garden" })).not.toContainText("Near Day");
+});
+
+test("without a map key the Ideas tab has no Map switch, but rows still say what is near", async ({ page }) => {
+  await seoulWithIdeas(page, null);
+  await openTab(page, "Ideas");
+  await expect(page.getByRole("list", { name: "Ideas" })).toContainText("Lantern Alley");
+  await expect(page.getByRole("group", { name: "Show ideas as" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Map", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Map" })).toHaveCount(0);
+  await expect(page.getByRole("list", { name: "Ideas" })).toContainText("Near Day 2 · 120 m");
 });
 
 // --- scheduled moves, and moves recognised by a wallet's words ---------------------------

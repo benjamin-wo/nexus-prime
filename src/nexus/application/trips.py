@@ -9,7 +9,8 @@ home currency at the rate for the day it was spent.
 
 import re
 import secrets
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
+from contextlib import suppress
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 from enum import StrEnum
@@ -27,6 +28,7 @@ from nexus.domain.ledger import Direction, User, UserId, same_person
 from nexus.domain.money import Money
 from nexus.domain.packing import Outlook, PackItem, clean_list, suggestions
 from nexus.domain.planning import paydays
+from nexus.domain.stops import suggest_stops
 from nexus.domain.trips import (
     MAX_TRIPS,
     GettingAround,
@@ -34,6 +36,7 @@ from nexus.domain.trips import (
     Readiness,
     SetAside,
     Stay,
+    Stop,
     Trip,
     TripItem,
     TripSpending,
@@ -45,6 +48,7 @@ from nexus.domain.trips import (
     clean_destination,
     clean_notes,
     clean_planned,
+    clean_stops,
     describe_trip,
     hide_private,
     home_amount,
@@ -147,6 +151,8 @@ async def update_trip(
             getting_around=current.getting_around,
             hop_modes=current.hop_modes,
         )
+        with suppress(InvalidInput):  # else the new dates leave them out: back to the hotels'
+            trip = replace(trip, stops=clean_stops(trip, current.stops))
         await uow.trips.update_trip(trip, user.home_currency)
         if (trip.destination, trip.start) != (current.destination, current.start):
             # Somewhere or some season else: a new header photo.
@@ -167,6 +173,21 @@ async def set_day_label(
         if current is None:
             raise NotFound("no trip with that id")
         trip = replace(current, day_labels=clean_day_label(current, day, label), updated_at=now)
+        await uow.trips.update_trip(trip, user.home_currency)
+        await uow.commit()
+    return trip
+
+
+async def set_stops(
+    uow: UnitOfWork, user: User, trip_id: UUID, stops: Iterable[Stop], *, now: datetime
+) -> Trip:
+    """Sets the trip's stops (cities or areas, by dates); none at all goes back to
+    following the hotels."""
+    async with uow:
+        current = await uow.trips.get_trip(user.id, trip_id)
+        if current is None:
+            raise NotFound("no trip with that id")
+        trip = replace(current, stops=clean_stops(current, stops), updated_at=now)
         await uow.trips.update_trip(trip, user.home_currency)
         await uow.commit()
     return trip
@@ -583,6 +604,13 @@ def describe_view(view: TripView) -> list[str]:
         lines.append(
             "Places to visit, not on a day yet: "
             + "; ".join(b.draft.describe() for b in places)
+            + "."
+        )
+    stops = trip.stops or suggest_stops(trip, view.bookings, {})
+    if trip.stops or len(stops) > 1:
+        lines.append(
+            ("Stops: " if trip.stops else "Stops (from the hotels): ")
+            + "; ".join(f"{s.name} {s.start:%a %d %b} to {s.end:%a %d %b}" for s in stops)
             + "."
         )
     if trip.day_labels:

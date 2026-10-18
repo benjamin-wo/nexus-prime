@@ -38,9 +38,12 @@ from nexus.domain.places import (
 log = logging.getLogger(__name__)
 
 BASE_URL = "https://places.googleapis.com/v1"
+# addressComponents (for a place's area) is billed in the same tier as formattedAddress
+# and location (Text Search Pro / Place Details Essentials), below the rating and price
+# fields already asked for, so it doesn't raise the SKU of either request.
 _BASIC = (
     "id,displayName,formattedAddress,primaryTypeDisplayName,rating,userRatingCount,"
-    "priceLevel,googleMapsUri,businessStatus,location"
+    "priceLevel,googleMapsUri,businessStatus,location,addressComponents"
 )
 SEARCH_FIELDS = ",".join(f"places.{f}" for f in _BASIC.split(","))
 DETAIL_FIELDS = (
@@ -250,7 +253,39 @@ def parse_place(row: Any, *, detailed: bool = False) -> Place | None:
         photo=_photo(row.get("photos")) if detailed else None,
         detailed=detailed,
         location=_location(row.get("location")),
+        area=_area(row.get("addressComponents")),
+        city=_city(row.get("addressComponents")),
     )
+
+
+# Which of Google's address components name an area or a city, best first.
+_AREA_TYPES = ("sublocality_level_1", "sublocality", "neighborhood", "locality", "postal_town")
+_CITY_TYPES = ("locality", "postal_town", "administrative_area_level_2")
+
+
+def _area(components: Any) -> str | None:
+    """The neighbourhood from the address components: its sublocality, else its
+    neighbourhood, else its locality."""
+    return _component(components, _AREA_TYPES)
+
+
+def _city(components: Any) -> str | None:
+    """The city from the address components: its locality, else its postal town, else
+    its second-level administrative area."""
+    return _component(components, _CITY_TYPES)
+
+
+def _component(components: Any, types: tuple[str, ...]) -> str | None:
+    if not isinstance(components, list):
+        return None
+    for wanted in types:
+        for row in components:
+            if not isinstance(row, dict) or wanted not in (row.get("types") or []):
+                continue
+            found = quoted(row.get("longText") or row.get("shortText"), 40)
+            if found:
+                return found
+    return None
 
 
 def _location(value: Any) -> Point | None:

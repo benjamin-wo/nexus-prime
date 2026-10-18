@@ -24,6 +24,8 @@ from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.ledger import UserId
 from nexus.domain.places import Place, PlacePhoto, place_id
 from nexus.domain.routes import stations_on
+from nexus.domain.stops import suggest_stops
+from nexus.domain.trips import Stop, Trip
 
 log = logging.getLogger(__name__)
 
@@ -186,7 +188,10 @@ async def link_place(
             raise NotFound("no booking with that id")
         if not linkable(current):
             raise InvalidInput("only plans, places to visit and hotels go on Google Maps")
-        changed = replace(current, draft=replace(current.draft, place_id=pid))
+        draft = replace(current.draft, place_id=pid)
+        if pid:  # the place has its own position: the user's pin is let go
+            draft = replace(draft, lat=None, lng=None)
+        changed = replace(current, draft=draft)
         await uow.trips.update_booking(changed)
         await uow.commit()
     return changed
@@ -234,6 +239,20 @@ async def trip_places(
         if (place := found.get(pid)) is not None:
             result.append(LinkedPlace(b.id, place, None, name, stops))
     return result
+
+
+async def suggested_stops(
+    places: Places | None, user_id: UserId, trip: Trip, bookings: Sequence[Booking]
+) -> tuple[Stop, ...]:
+    """The stops the hotels suggest, named by the city of each hotel's Google Maps place
+    where it's linked. Without Google Maps (or when it can't be asked) the hotels'
+    addresses and the destination name them."""
+    ids = [
+        b.draft.place_id for b in bookings if b.draft.kind is BookingKind.HOTEL and b.draft.place_id
+    ]
+    found = await places.many(user_id, ids) if places is not None and ids else {}
+    cities = {pid: p.city for pid, p in found.items() if p.city}
+    return suggest_stops(trip, bookings, cities)
 
 
 def station_stops(b: Booking, name: str) -> tuple[tuple[date, str], ...]:

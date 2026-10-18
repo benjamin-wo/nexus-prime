@@ -12,6 +12,8 @@ export interface GMap {
   setCenter(at: LatLng): void;
   setZoom(zoom: number): void;
   panTo(at: LatLng): void;
+  /** A press, release or drag on the map (a touch counts); ``latLng`` is where. */
+  addListener(event: "mousedown" | "mouseup" | "dragstart" | "zoom_changed", handler: (e: { latLng?: { lat(): number; lng(): number } }) => void): unknown;
 }
 export interface GOverlay {
   setMap(map: GMap | null): void;
@@ -27,6 +29,7 @@ export interface MapsApi {
   Map: new (element: HTMLElement, options: Record<string, unknown>) => GMap;
   Marker: new (options: Record<string, unknown>) => GMarker;
   Polyline: new (options: Record<string, unknown>) => GOverlay;
+  Circle: new (options: Record<string, unknown>) => GOverlay;
   LatLngBounds: new () => GBounds;
   /** google.maps.SymbolPath.CIRCLE, for round pins. */
   circle: unknown;
@@ -58,6 +61,7 @@ export function loadMaps(key: string): Promise<MapsApi> {
           resolve({
             Map: m.Map as MapsApi["Map"],
             Polyline: m.Polyline as MapsApi["Polyline"],
+            Circle: m.Circle as MapsApi["Circle"],
             Marker: marker.Marker as MapsApi["Marker"],
             LatLngBounds: core.LatLngBounds as MapsApi["LatLngBounds"],
             circle: (core.SymbolPath as { CIRCLE: unknown } | undefined)?.CIRCLE ?? 0,

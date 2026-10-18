@@ -18,8 +18,10 @@ import {
 } from "@dnd-kit/core";
 import { type FormEvent, type KeyboardEvent, type ReactNode, createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 
-import { api, type Booking, type DayNote, type Hop, type TripDetail } from "../api";
-import { sortKey } from "./TripBits";
+import { api, type Booking, type DayNote, type Hop, type LinkedPlace, type TripDetail, type TripStop } from "../api";
+import { distance, metresBetween, type Point } from "../geo";
+import { sortKey, stopOfDay, stopsOf, suggestLabel } from "./TripBits";
+import { useLinkedPlaces } from "./TripPlaces";
 
 const dayName = (iso: string) => new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(iso));
 
@@ -533,7 +535,8 @@ export type PickerDay = {
   number: number;
   /** "Wed 7 Apr". */
   name: string;
-  /** The day's own label, else "Free day" when nothing is on it, else empty. */
+  /** The day's own label, else a suggested one, else "Free day" when nothing is on it,
+   * else empty. */
   label: string;
   /** Entries on the day, not counting the one being put there. */
   plans: number;
@@ -541,42 +544,166 @@ export type PickerDay = {
   here: boolean;
   /** The entry it would go after: the last on the day. Null on an empty day. */
   last: string | null;
+  /** In "Closest days": how far the day's places are from the idea, in metres. */
+  metres?: number;
 };
+
+/** A day's circle on the map: the middle of its places, and how far they spread. */
+export type Zone = Point & { radius: number };
+
+/** Days with places within this far of an idea are "Closest days". */
+export const CLOSE_METRES = 15_000;
+/** A row says "Near Day 6" when the nearest day's places are this close. */
+export const NEAR_METRES = 3_000;
+const CLOSEST_SHOWN = 5;
+const FREE_SHOWN = 6;
+
+/** What's known about where each day is, worked out from the places Google Maps gave
+ * us this visit (never stored) and the user's own pins. */
+export type Nearby = {
+  linked: Map<string, LinkedPlace>;
+  stops: TripStop[];
+  /** Each day's circle, for the days with something on the map. */
+  zones: Map<string, Zone>;
+  /** Each day's name: its own label, else the suggested one. */
+  labels: Map<string, string>;
+};
+
+/** Where an entry is: its Google Maps place if linked, else the user's own pin. */
+export function pointOf(booking: Pick<Booking, "id" | "lat" | "lng">, linked: Map<string, LinkedPlace>): Point | null {
+  const place = linked.get(booking.id)?.place;
+  if (place && typeof place.lat === "number" && typeof place.lng === "number") return { lat: place.lat, lng: place.lng };
+  if (typeof booking.lat === "number" && typeof booking.lng === "number") return { lat: booking.lat, lng: booking.lng };
+  return null;
+}
+
+function tripDays(trip: Pick<TripDetail["trip"], "start" | "end">): string[] {
+  const days: string[] = [];
+  for (let t = Date.parse(trip.start); t <= Date.parse(trip.end) && days.length < 120; t += DAY_MS) days.push(new Date(t).toISOString().slice(0, 10));
+  return days;
+}
+
+/** Each day's circle: centred on the mean of its plans' places and pins, and wide
+ * enough to hold them (at least 400 m, at most 3 km). */
+export function dayZones(detail: Pick<TripDetail, "trip" | "bookings">, linked: Map<string, LinkedPlace>): Map<string, Zone> {
+  const byDay = new Map<string, Point[]>();
+  for (const b of detail.bookings) {
+    if (b.kind !== "activity" || !b.scheduled) continue;
+    const at = pointOf(b, linked);
+    if (!at) continue;
+    const day = b.day ?? b.starts;
+    byDay.set(day, [...(byDay.get(day) ?? []), at]);
+  }
+  const zones = new Map<string, Zone>();
+  for (const [day, points] of byDay) {
+    const centre = { lat: points.reduce((n, p) => n + p.lat, 0) / points.length, lng: points.reduce((n, p) => n + p.lng, 0) / points.length };
+    const spread = Math.max(...points.map((p) => metresBetween(centre, p)));
+    zones.set(day, { ...centre, radius: Math.min(3000, Math.max(400, spread * 1.2)) });
+  }
+  return zones;
+}
+
+/** The trip's stops, day circles and day names, for ranking days near an idea. */
+export function nearbyOf(detail: TripDetail, linked: Map<string, LinkedPlace>): Nearby {
+  const spots = spotsOf(detail);
+  const labels = new Map<string, string>();
+  for (const iso of tripDays(detail.trip)) {
+    const label = detail.trip.day_labels?.[iso] || suggestLabel(spots.get(daySpot(iso)) ?? [], linked);
+    if (label) labels.set(iso, label);
+  }
+  return { linked, stops: stopsOf(detail), zones: dayZones(detail, linked), labels };
+}
+
+const sameStop = (a: TripStop | null, b: TripStop | null) => a !== null && b !== null && a.start === b.start && a.name === b.name;
 
 /** The days a plan or idea can be put on, for the day picker: the day open on Plan
  * first (if it's a trip day), then every day of the trip, each with its label and how
  * much is on it. ``here`` is the day it is on now; ``lastIdea`` is where it would go
- * at the end of Ideas. */
+ * at the end of Ideas.
+ *
+ * With ``near`` and coordinates for the idea (its place or its own pin), the days are
+ * also ranked: ``closest`` (places within 15 km, nearest first, with ``metres``),
+ * ``free`` days in the stop it falls in, and the ``other`` stops' days. ``ranked``
+ * says there are coordinates; without them the order is as it always was. */
 export function pickerDays(
   detail: Pick<TripDetail, "trip" | "bookings" | "days" | "places_order">,
-  booking: Pick<Booking, "id" | "scheduled" | "day" | "starts">,
+  booking: Pick<Booking, "id" | "scheduled" | "day" | "starts" | "lat" | "lng">,
   viewing: string | null,
-): { viewing: PickerDay | null; days: PickerDay[]; here: PickerDay | null; lastIdea: string | null } {
+  near?: Nearby,
+): {
+  viewing: PickerDay | null;
+  days: PickerDay[];
+  here: PickerDay | null;
+  lastIdea: string | null;
+  ranked: boolean;
+  closest: PickerDay[];
+  free: PickerDay[];
+  /** The stop the idea falls in: where the nearest day is, else the one being viewed. */
+  home: string | null;
+  other: { name: string; days: PickerDay[] }[];
+} {
   const { trip } = detail;
   const spots = spotsOf(detail);
   const current = booking.scheduled ? (booking.day ?? booking.starts) : null;
   const days: PickerDay[] = [];
   const first = Date.parse(trip.start);
-  for (let t = first; t <= Date.parse(trip.end) && days.length < 120; t += DAY_MS) {
-    const iso = new Date(t).toISOString().slice(0, 10);
+  for (const iso of tripDays(trip)) {
     const ids = (spots.get(daySpot(iso)) ?? []).filter((b) => b.id !== booking.id).map((b) => b.id);
     days.push({
       iso,
-      number: Math.round((t - first) / DAY_MS) + 1,
+      number: Math.round((Date.parse(iso) - first) / DAY_MS) + 1,
       name: shortDay(iso),
-      label: trip.day_labels?.[iso] || (ids.length === 0 ? "Free day" : ""),
+      label: trip.day_labels?.[iso] || near?.labels.get(iso) || (ids.length === 0 ? "Free day" : ""),
       plans: ids.length,
       here: iso === current,
       last: ids.at(-1) ?? null,
     });
   }
   const ideas = (spots.get(PLACES) ?? []).filter((b) => b.id !== booking.id);
+
+  const stops = near?.stops ?? [];
+  const point = near ? pointOf(booking, near.linked) : null;
+  const metres = new Map<string, number>();
+  if (near && point) for (const d of days) {
+    const zone = near.zones.get(d.iso);
+    if (zone) metres.set(d.iso, metresBetween(point, zone));
+  }
+  const byDistance = days.filter((d) => metres.has(d.iso)).sort((a, b) => metres.get(a.iso)! - metres.get(b.iso)!);
+  const closest = byDistance
+    .filter((d) => metres.get(d.iso)! <= CLOSE_METRES)
+    .slice(0, CLOSEST_SHOWN)
+    .map((d) => ({ ...d, metres: metres.get(d.iso) }));
+  const home = (byDistance[0] ? stopOfDay(stops, byDistance[0].iso) : null) ?? (viewing ? stopOfDay(stops, viewing) : null);
+  const free = days
+    .filter((d) => d.plans === 0 && (!home || sameStop(stopOfDay(stops, d.iso), home)))
+    .slice(0, FREE_SHOWN);
+  const other = stops
+    .filter((s) => home && !sameStop(s, home))
+    .map((s) => ({ name: s.name, days: days.filter((d) => sameStop(stopOfDay(stops, d.iso), s)) }))
+    .filter((o) => o.days.length > 0);
   return {
     viewing: days.find((d) => d.iso === viewing) ?? null,
     days,
     here: days.find((d) => d.here) ?? null,
     lastIdea: ideas.at(-1)?.id ?? null,
+    ranked: point !== null,
+    closest,
+    free,
+    home: home?.name ?? null,
+    other,
   };
+}
+
+/** What an idea's row says about the plan: "On Day 3" once planned, "Near Day 6 · 1.2 km"
+ * when the nearest day's places are within 3 km, else "Fits free Day 4" for an empty
+ * day in the stop it falls in. */
+export function ideaHint(detail: TripDetail, booking: Booking, near: Nearby, viewing: string | null = null): string | null {
+  const picker = pickerDays(detail, booking, viewing, near);
+  if (picker.here) return `On Day ${picker.here.number}`;
+  const nearest = picker.closest[0];
+  if (nearest?.metres !== undefined && nearest.metres <= NEAR_METRES) return `Near Day ${nearest.number} · ${distance(nearest.metres)}`;
+  const free = picker.free[0];
+  return free ? `Fits free Day ${free.number}` : null;
 }
 
 /** Puts a plan or idea on a day (or back in Ideas): a sheet from the bottom on phones,
@@ -584,7 +711,8 @@ export function pickerDays(
 export function DayPickerSheet({ detail, booking, viewing, onClose }: { detail: TripDetail; booking: Booking; viewing: string | null; onClose: () => void }) {
   const { move } = useArrange(detail);
   const sheet = useRef<HTMLElement>(null);
-  const picker = useMemo(() => pickerDays(detail, booking, viewing), [detail, booking, viewing]);
+  const linked = useLinkedPlaces();
+  const picker = useMemo(() => pickerDays(detail, booking, viewing, nearbyOf(detail, linked)), [detail, booking, viewing, linked]);
 
   // The first day is focused as the sheet opens, and the focus goes back when it closes.
   useEffect(() => {
@@ -623,9 +751,9 @@ export function DayPickerSheet({ detail, booking, viewing, onClose }: { detail: 
           {d.label && <span className="caption">{d.label}</span>}
         </span>
         {d.here && <span className="badge badge-out">Here now</span>}
-        {d.plans > 0 && (
+        {(d.metres !== undefined || d.plans > 0) && (
           <span className="caption day-option-count">
-            {d.plans} {d.plans === 1 ? "plan" : "plans"}
+            {[d.metres !== undefined ? distance(d.metres) : null, d.plans > 0 ? `${d.plans} ${d.plans === 1 ? "plan" : "plans"}` : null].filter(Boolean).join(" · ")}
           </span>
         )}
       </button>
@@ -642,7 +770,16 @@ export function DayPickerSheet({ detail, booking, viewing, onClose }: { detail: 
           </button>
         </div>
         <p className="day-picker-for">{booking.title}</p>
-        {picker.viewing && (
+        {picker.ranked && picker.closest.length > 0 && (
+          <section aria-labelledby="day-picker-closest">
+            <h3 id="day-picker-closest" className="day-picker-heading">
+              Closest days
+            </h3>
+            <ul className="day-options">{picker.closest.map(option)}</ul>
+          </section>
+        )}
+        {/* Already offered among the closest days: not again under Viewing. */}
+        {picker.viewing && !(picker.ranked && picker.closest.some((d) => d.iso === picker.viewing?.iso)) && (
           <section aria-labelledby="day-picker-viewing">
             <h3 id="day-picker-viewing" className="day-picker-heading">
               Viewing
@@ -650,6 +787,21 @@ export function DayPickerSheet({ detail, booking, viewing, onClose }: { detail: 
             <ul className="day-options">{option(picker.viewing)}</ul>
           </section>
         )}
+        {picker.ranked && picker.free.length > 0 && (
+          <section aria-labelledby="day-picker-free">
+            <h3 id="day-picker-free" className="day-picker-heading">
+              Free days
+            </h3>
+            <ul className="day-options">{picker.free.map(option)}</ul>
+          </section>
+        )}
+        {picker.ranked &&
+          picker.other.map((o, i) => (
+            <section key={`${o.name}-${i}`} aria-label={`In ${o.name} instead`}>
+              <h3 className="day-picker-heading">In {o.name} instead</h3>
+              <ul className="day-options">{o.days.map(option)}</ul>
+            </section>
+          ))}
         <section aria-labelledby="day-picker-all">
           <h3 id="day-picker-all" className="day-picker-heading">
             All days

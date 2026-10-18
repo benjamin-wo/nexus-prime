@@ -148,6 +148,56 @@ GOOGLE_PLACE: dict[str, Any] = {
 }
 
 
+def test_the_area_is_the_sublocality_then_the_neighbourhood_then_the_locality() -> None:
+    def area(*components: tuple[str, ...]) -> str | None:
+        found = parse_place(
+            {
+                **GOOGLE_PLACE,
+                "addressComponents": [
+                    {"longText": c[0], "shortText": c[0], "types": list(c[1:])} for c in components
+                ],
+            }
+        )
+        assert found is not None
+        return found.area
+
+    city, ward, hood = (
+        ("Seoul", "locality"),
+        ("Jung-gu", "sublocality_level_1"),
+        ("Myeong", "neighborhood"),
+    )
+    assert area(city, hood, ward) == "Jung-gu"
+    assert area(city, hood) == "Myeong"
+    assert area(city, ("Korea", "country")) == "Seoul"
+    assert area(("Korea", "country")) is None
+    assert area(("<b>Gion</b>", "sublocality")) == "(b)Gion(/b)"  # someone else's text, quoted
+    assert parse_place(GOOGLE_PLACE) is not None and parse_place(GOOGLE_PLACE).area is None  # type: ignore[union-attr]
+    assert parse_place({**GOOGLE_PLACE, "addressComponents": "junk"}) is not None
+
+
+def test_the_city_is_the_locality_then_the_postal_town_then_the_county() -> None:
+    def city(*components: tuple[str, ...]) -> str | None:
+        found = parse_place(
+            {
+                **GOOGLE_PLACE,
+                "addressComponents": [
+                    {"longText": c[0], "shortText": c[0], "types": list(c[1:])} for c in components
+                ],
+            }
+        )
+        assert found is not None
+        return found.city
+
+    ward = ("Shinjuku City", "sublocality_level_1")
+    county = ("Greater Example", "administrative_area_level_2")
+    assert city(county, ("Exampleton", "postal_town"), ward, ("Tokyo", "locality")) == "Tokyo"
+    assert city(county, ("Exampleton", "postal_town")) == "Exampleton"
+    assert city(("Example Prefecture", "administrative_area_level_1"), county, ward) == county[0]
+    assert city(ward, ("Japan", "country")) is None  # a ward isn't a city
+    assert city(("<b>Tokyo</b>", "locality")) == "(b)Tokyo(/b)"
+    assert parse_place(GOOGLE_PLACE) is not None and parse_place(GOOGLE_PLACE).city is None  # type: ignore[union-attr]
+
+
 def test_reading_googles_json() -> None:
     place = parse_place(GOOGLE_PLACE, detailed=True)
     assert place is not None
@@ -182,6 +232,7 @@ async def test_the_google_client_asks_for_only_what_it_shows() -> None:
         assert detail is not None and detail.detailed and detail.reviews
         assert await google.details("fakePlace0099") is None
     search, details, _ = seen
+    assert "places.addressComponents" in SEARCH_FIELDS and "addressComponents" in DETAIL_FIELDS
     assert search.method == "POST" and search.headers["X-Goog-FieldMask"] == SEARCH_FIELDS
     assert json.loads(search.content) == {
         "textQuery": "noodles, Seoul",

@@ -565,6 +565,10 @@ export type PlanBody = {
 };
 export type PlanDetail = { brief: PlanBrief; plan: PlanBody; closes: { day: string; close: string }[] };
 
+/** Where the trip is for a stretch of days: a city or area, first to last day. One stop's
+ * last day may be the next one's first (the travel day). */
+export type TripStop = { name: string; start: string; end: string };
+
 /** A trip (Travel). Budget, set-aside and planned amounts are in the home currency. */
 export type Trip = {
   id: string;
@@ -589,6 +593,9 @@ export type Trip = {
   packing?: PackItem[];
   /** How longer hops go: public transport, or a hire car. */
   getting_around?: "transit" | "car";
+  /** The stops the user set, in date order; empty means they follow the hotels (see
+   * TripDetail.suggested_stops). */
+  stops: TripStop[];
 };
 
 export type PackItem = { text: string; done: boolean };
@@ -644,6 +651,10 @@ export type Booking = {
   cost: Money | null;
   logged: boolean;
   manual: boolean;
+  /** The user's own pin on the map, for a plan with no Google Maps place (never Google's
+   * coordinates, which can't be kept). Dropped once a place is linked. */
+  lat?: number | null;
+  lng?: number | null;
 };
 
 /** A place as Google Maps shows it: fetched when shown, only its id is kept. */
@@ -669,6 +680,10 @@ export type Place = {
   /** Where it is, for the trip map (fetched with the place, never stored). */
   lat?: number | null;
   lng?: number | null;
+  /** The neighbourhood it's in ("Gion"): fetched with the place, never stored. */
+  area?: string | null;
+  /** The city it's in ("Kyoto"): names a trip's stop. Fetched with the place, never stored. */
+  city?: string | null;
 };
 /** A place a travel guide or article recommends, with the page it came from and its
  * Google Maps match when there is one. Nothing is saved until the user picks it. */
@@ -711,6 +726,7 @@ export type Hop = {
  * who's going. */
 export type SharedBooking = Pick<Booking, "kind" | "title" | "provider" | "starts" | "ends" | "segments" | "hotel" | "address" | "check_in" | "check_out" | "day" | "at" | "category">;
 export type SharedTrip = Pick<Trip, "destination" | "start" | "end" | "days" | "status" | "days_until" | "day_number" | "day_labels" | "photo"> & {
+  stops: TripStop[];
   bookings: SharedBooking[];
 };
 export type TripShare = { token: string | null };
@@ -733,6 +749,9 @@ export type TripDetail = {
   places: boolean;
   /** Quick ideas from travel guides and articles are set up. */
   ideas?: boolean;
+  /** The stops the hotels suggest (named by each hotel's area where Google Maps knows it):
+   * what the page shows until the user sets their own in trip.stops. */
+  suggested_stops: TripStop[];
   /** Travel times between a day's stops are set up. */
   routes?: boolean;
   /** The browser key for Google's map; null when there's no map. */

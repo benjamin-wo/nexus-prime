@@ -9,7 +9,7 @@ const smooth = () =>
 
 /** A day's pill: opens the day, and takes a dragged plan (held over it, it opens the
  * day so the plan can be put in its place there). */
-function DayPill({ iso, label, current, onOpen }: { iso: string; label: string; current: boolean; onOpen: () => void }) {
+function DayPill({ iso, label, current, mark, title, onOpen }: { iso: string; label: string; current: boolean; mark?: ReactNode; title?: string; onOpen: () => void }) {
   const pill = useDayPill(`day:${iso}`);
   // The page redraws all through a drag: the timer only restarts when the hold does.
   const open = useRef(onOpen);
@@ -25,8 +25,10 @@ function DayPill({ iso, label, current, onOpen }: { iso: string; label: string; 
       type="button"
       className={`day-pill${pill.over ? " drop-over" : ""}`}
       aria-current={current ? "true" : undefined}
+      title={title}
       onClick={onOpen}
     >
+      {mark}
       {label}
     </button>
   );
@@ -68,6 +70,8 @@ export function DayCarousel({
   onPick,
   follow,
   pill,
+  mark,
+  markTitle,
   name,
   children,
 }: {
@@ -78,6 +82,10 @@ export function DayCarousel({
   /** A day to bring into view, like where a plan carried by keyboard would land. */
   follow?: string | null;
   pill: (iso: string) => string;
+  /** Something small before a pill's text (a stop's dot, a travel icon): decoration, so
+   * the pill is still named by its day; ``markTitle`` says what it means on hover. */
+  mark?: (iso: string) => ReactNode;
+  markTitle?: (iso: string) => string | undefined;
   /** How the day is read out: "Day 2 · Wed, 21 Oct". */
   name: (iso: string) => string;
   /** A day's content; ``near`` for the day in view and those either side. */
@@ -161,7 +169,7 @@ export function DayCarousel({
     <div className="day-carousel" role="region" aria-roledescription="carousel" aria-label="Days of the trip">
       <nav ref={strip} className="day-strip" aria-label="Days">
         {days.map((d, i) => (
-          <DayPill key={d} iso={d} label={pill(d)} current={i === shown} onOpen={() => go(i)} />
+          <DayPill key={d} iso={d} label={pill(d)} mark={mark?.(d)} title={markTitle?.(d)} current={i === shown} onOpen={() => go(i)} />
         ))}
       </nav>
       {days.length > 1 && (
