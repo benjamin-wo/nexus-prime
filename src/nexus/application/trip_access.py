@@ -1,0 +1,301 @@
+"""Shared trips: who may open a trip, inviting people to it, and what they changed.
+
+Every request about a trip first asks ``open_trip`` (or ``open_booking``) what the
+person may do. It answers with the trip's owner, and the ordinary trip use cases then
+run as that owner: a member's edits are the owner's trip being edited, so nothing
+needs a second copy. Someone with no access gets the same "no trip" as for a trip that
+doesn't exist, so the answer never says whether a trip is there.
+"""
+
+import logging
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import date, datetime
+from uuid import UUID, uuid4
+
+from nexus.application import trips as trip_cases
+from nexus.application.ports import UnitOfWork
+from nexus.domain.access import new_token, token_hash
+from nexus.domain.bookings import Booking
+from nexus.domain.errors import Conflict, Forbidden, InvalidInput, NotFound
+from nexus.domain.ledger import Role, User, UserId
+from nexus.domain.trip_access import (
+    INVITE_TTL,
+    MAX_MEMBERS,
+    MAX_OPEN_INVITES,
+    Activity,
+    TripAccess,
+    TripInvite,
+    TripMember,
+    clean_summary,
+    without_money,
+    without_trip_money,
+)
+from nexus.domain.trips import Readiness, Trip, TripStatus
+
+log = logging.getLogger(__name__)
+
+type UowFactory = Callable[[], UnitOfWork]
+
+OWNER_ONLY = "only the trip's owner can do that"
+NO_INVITE = "this invite is invalid, used or expired"
+ACTIVITY_SHOWN = 20
+
+
+@dataclass(frozen=True, slots=True)
+class Opened:
+    """A trip (or booking) the person may reach. Run its use cases as ``owner``."""
+
+    access: TripAccess
+    owner: User
+    booking: Booking | None = None
+
+
+async def _owner_of(uow: UnitOfWork, actor: User, access: TripAccess) -> User:
+    if access.owner_id == actor.id:
+        return actor
+    owner = await uow.ledger.get_user(access.owner_id)
+    if owner is None:  # pragma: no cover - the trip's foreign key holds the owner
+        raise NotFound("no trip with that id")
+    return owner
+
+
+async def open_trip(
+    uow: UnitOfWork, actor: User, trip_id: UUID, *, owner_only: bool = False
+) -> Opened:
+    """What ``actor`` may do on the trip. NotFound for a trip they have no part in (as
+    for one that doesn't exist); Forbidden for a member where only the owner may act."""
+    async with uow:
+        access = await uow.trips.trip_access(actor.id, trip_id)
+        if access is None:
+            raise NotFound("no trip with that id")
+        if owner_only and not access.is_owner:
+            raise Forbidden(OWNER_ONLY)
+        return Opened(access, await _owner_of(uow, actor, access))
+
+
+async def open_booking(
+    uow: UnitOfWork, actor: User, booking_id: UUID, *, owner_only: bool = False
+) -> Opened:
+    """The same for a booking, through its trip; one on no trip is its owner's alone."""
+    async with uow:
+        access = await uow.trips.booking_access(actor.id, booking_id)
+        if access is None:
+            raise NotFound("no booking with that id")
+        if owner_only and not access.is_owner:
+            raise Forbidden(OWNER_ONLY)
+        booking = await uow.trips.get_booking(access.owner_id, booking_id)
+        if booking is None:  # pragma: no cover - deleted in between
+            raise NotFound("no booking with that id")
+        return Opened(access, await _owner_of(uow, actor, access), booking)
+
+
+# --- what a member sees of the trip page -----------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class PlanView:
+    """The trip page as a member gets it: the plan and nothing else. Built from the
+    trip and its bookings alone, so no ledger query is ever made for it."""
+
+    trip: Trip  # without budget, set-aside or planned amounts
+    today: date
+    status: TripStatus
+    bookings: list[Booking]  # without costs
+    ready: Readiness  # with no budget check
+
+
+async def plan_view(
+    uow: UnitOfWork, owner_id: UserId, trip_id: UUID, viewer: User, *, now: datetime
+) -> PlanView:
+    async with uow:
+        trip = await uow.trips.get_trip(owner_id, trip_id)
+        if trip is None:
+            raise NotFound("no trip with that id")
+        bookings = await uow.trips.list_bookings(owner_id, trip_id=trip_id)
+    today = trip_cases.local_today(viewer, now)
+    ready = trip_cases.readiness_of(trip, bookings)
+    return PlanView(
+        trip=without_trip_money(trip),
+        today=today,
+        status=trip.status(today),
+        bookings=[without_money(b) for b in bookings],
+        # The budget isn't theirs to see, so it isn't one of the things left to do.
+        ready=Readiness(ready.nights_without_stay, ready.has_transport, False),
+    )
+
+
+async def shared_trips(uow: UnitOfWork, member_id: UserId) -> list[tuple[Trip, str | None]]:
+    """The trips someone was added to, money removed, each with its owner's name."""
+    async with uow:
+        found = await uow.trips.list_member_trips(member_id)
+    return [(without_trip_money(t), name) for t, name in found]
+
+
+# --- inviting people ---------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class IssuedTripInvite:
+    token: str  # shown once; only its hash is kept
+    invite: TripInvite
+
+
+async def create_invite(
+    uow: UnitOfWork, actor: User, trip_id: UUID, *, now: datetime
+) -> IssuedTripInvite:
+    """A single-use link that adds one person to the trip, valid for 7 days. A guest
+    account may be made for someone with none only when the app's owner issues it."""
+    async with uow:
+        access = await uow.trips.trip_access(actor.id, trip_id)
+        if access is None:
+            raise NotFound("no trip with that id")
+        if not access.is_owner:
+            raise Forbidden(OWNER_ONLY)
+        if await uow.trips.count_members(trip_id) >= MAX_MEMBERS:
+            raise InvalidInput(f"a trip can have at most {MAX_MEMBERS} people on it besides you")
+        if len(await uow.trips.list_open_trip_invites(actor.id, trip_id, now)) >= MAX_OPEN_INVITES:
+            raise InvalidInput(f"keep at most {MAX_OPEN_INVITES} open invites; cancel one first")
+        token = new_token()
+        invite = TripInvite(
+            uuid4(),
+            token_hash(token),
+            trip_id,
+            actor.id,
+            now,
+            now + INVITE_TTL,
+            may_create_guest=actor.role is Role.OWNER,
+        )
+        await uow.trips.insert_trip_invite(invite)
+        await uow.commit()
+    return IssuedTripInvite(token, invite)
+
+
+async def open_invites(
+    uow: UnitOfWork, actor: User, trip_id: UUID, *, now: datetime
+) -> list[TripInvite]:
+    """The trip's links that can still be used (owner only)."""
+    async with uow:
+        await _require_owner(uow, actor, trip_id)
+        return await uow.trips.list_open_trip_invites(actor.id, trip_id, now)
+
+
+async def revoke_invite(
+    uow: UnitOfWork, actor: User, trip_id: UUID, invite_id: UUID, *, now: datetime
+) -> None:
+    async with uow:
+        await _require_owner(uow, actor, trip_id)
+        if not await uow.trips.revoke_trip_invite(actor.id, trip_id, invite_id, now):
+            raise NotFound("no open invite with that id")
+        await uow.commit()
+
+
+async def _require_owner(uow: UnitOfWork, actor: User, trip_id: UUID) -> None:
+    access = await uow.trips.trip_access(actor.id, trip_id)
+    if access is None:
+        raise NotFound("no trip with that id")
+    if not access.is_owner:
+        raise Forbidden(OWNER_ONLY)
+
+
+@dataclass(frozen=True, slots=True)
+class Joined:
+    trip_id: UUID
+    owner_id: UserId
+    new: bool  # False when they were on the trip already
+
+
+async def join_with_invite(
+    uow: UnitOfWork, user: User, invite: TripInvite, *, now: datetime
+) -> Joined | None:
+    """Adds ``user`` to the invite's trip and spends the invite, inside the caller's
+    unit of work (with the invite row locked). None when the invite can't be used.
+    Someone already on the trip is left as they are and the invite is kept; so is
+    the owner, who can't join their own trip (Conflict)."""
+    trip_id, owner_id = invite.trip_id, invite.owner_id
+    if owner_id == user.id:
+        raise Conflict("this is your own trip")
+    already = await uow.trips.trip_access(user.id, trip_id) is not None
+    if not invite.usable(now):
+        # Opening the same link twice is harmless for the person it was spent on.
+        if already and invite.redeemed_by == user.id:
+            return Joined(trip_id, owner_id, False)
+        return None
+    if already:
+        return Joined(trip_id, owner_id, False)
+    if await uow.trips.count_members(trip_id) >= MAX_MEMBERS:
+        raise InvalidInput(f"a trip can have at most {MAX_MEMBERS} people on it besides the owner")
+    await uow.trips.add_member(owner_id, trip_id, user.id, invite.id, now)
+    await uow.trips.redeem_trip_invite(invite.id, user.id, now)
+    return Joined(trip_id, owner_id, True)
+
+
+async def accept_invite(uow: UnitOfWork, user: User, token: str, *, now: datetime) -> Joined:
+    """Joins the trip an invite link is for. NotFound, with one message, for a link that
+    is unknown, used, cancelled or expired."""
+    async with uow:
+        invite = await uow.trips.get_trip_invite(token_hash(token), for_update=True)
+        if invite is None:
+            raise NotFound(NO_INVITE)
+        joined = await join_with_invite(uow, user, invite, now=now)
+        if joined is None:
+            raise NotFound(NO_INVITE)
+        await uow.commit()
+    return joined
+
+
+# --- who is on a trip ----------------------------------------------------------------------
+
+
+async def list_members(uow: UnitOfWork, actor: User, trip_id: UUID) -> list[TripMember]:
+    """The owner and the members; anyone on the trip may ask."""
+    async with uow:
+        access = await uow.trips.trip_access(actor.id, trip_id)
+        if access is None:
+            raise NotFound("no trip with that id")
+        return await uow.trips.list_members(access.owner_id, trip_id)
+
+
+async def remove_member(uow: UnitOfWork, actor: User, trip_id: UUID, member_id: UserId) -> None:
+    """The owner takes someone off the trip, or a member leaves it. Their access ends
+    at once; what they changed stays."""
+    async with uow:
+        access = await uow.trips.trip_access(actor.id, trip_id)
+        if access is None:
+            raise NotFound("no trip with that id")
+        if not access.is_owner and member_id != actor.id:
+            raise Forbidden(OWNER_ONLY)
+        if not await uow.trips.remove_member(access.owner_id, trip_id, member_id):
+            raise NotFound("no one on this trip with that id")
+        await uow.commit()
+
+
+# --- what people changed -------------------------------------------------------------------
+
+
+async def record(uow: UnitOfWork, access: TripAccess, summary: str, *, now: datetime) -> None:
+    """Notes an edit on a trip that has members, in a few words. Trips nobody shares
+    keep no activity. Never fails the edit it describes."""
+    if access.trip_id is None:
+        return
+    try:
+        async with uow:
+            if await uow.trips.count_members(access.trip_id) == 0:
+                return
+            text = clean_summary(summary)
+            if text:
+                await uow.trips.add_activity(
+                    access.owner_id, access.trip_id, access.actor_id, text, now
+                )
+                await uow.commit()
+    except Exception:
+        log.warning("could not record trip activity", exc_info=True)
+
+
+async def activity(uow: UnitOfWork, actor: User, trip_id: UUID) -> list[Activity]:
+    """The latest changes, newest first."""
+    async with uow:
+        access = await uow.trips.trip_access(actor.id, trip_id)
+        if access is None:
+            raise NotFound("no trip with that id")
+        return await uow.trips.list_activity(access.owner_id, trip_id, limit=ACTIVITY_SHOWN)

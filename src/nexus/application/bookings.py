@@ -344,10 +344,13 @@ async def edit_booking(
     booking_id: UUID,
     details: dict[str, object],
     cost: Money | None,
+    *,
+    keep_cost: bool = False,
 ) -> Booking:
     """Changes an entry's details, by hand or read from email (a corrected time).
     What the change doesn't mention (its Google Maps place, end time, link, list and
-    place in the day) is kept; a plan moved to another day goes where its time fits."""
+    place in the day) is kept; a plan moved to another day goes where its time fits.
+    With ``keep_cost`` the entry keeps the cost it had, whatever ``cost`` says."""
     if cost is not None and not cost.is_positive:
         raise InvalidInput("a cost must be more than zero")
     async with uow:
@@ -359,7 +362,7 @@ async def edit_booking(
             draft = replace(draft, order=None, follows=None)
         if current.trip_id is not None and draft.list_name != current.draft.list_name:
             _check_lists(await uow.trips.list_bookings(user_id, trip_id=current.trip_id), draft)
-        changed = replace(current, draft=draft, cost=cost)
+        changed = replace(current, draft=draft, cost=current.cost if keep_cost else cost)
         await uow.trips.update_booking(changed)
         await uow.commit()
     return changed

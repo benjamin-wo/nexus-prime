@@ -15,6 +15,8 @@ from datetime import datetime, timedelta
 from typing import Any
 from urllib.parse import parse_qsl
 
+from nexus.domain.trip_access import clean_name
+
 MAX_AGE = timedelta(days=1)
 CLOCK_SKEW = timedelta(minutes=5)
 _FIELDS = {"id", "first_name", "last_name", "username", "photo_url", "auth_date", "hash"}
@@ -29,6 +31,16 @@ class TelegramIdentity:
     telegram_user_id: int
     first_name: str | None
     username: str | None
+    last_name: str | None = None
+
+    @property
+    def display_name(self) -> str | None:
+        """What other people on a shared trip see: the first name and the last initial
+        ("Alex T."). Nothing when Telegram gave no name; never the username."""
+        initial = (
+            f"{self.last_name.strip()[0]}." if self.last_name and self.last_name.strip() else None
+        )
+        return clean_name(self.first_name, initial)
 
 
 def verify_login(payload: dict[str, Any], bot_token: str, *, now: datetime) -> TelegramIdentity:
@@ -47,7 +59,12 @@ def verify_login(payload: dict[str, Any], bot_token: str, *, now: datetime) -> T
     except (ValueError, OverflowError, OSError) as exc:
         raise LoginRejected("malformed login data") from exc
     _check_age(signed_at, now)
-    return TelegramIdentity(telegram_user_id, fields.get("first_name"), fields.get("username"))
+    return TelegramIdentity(
+        telegram_user_id,
+        fields.get("first_name"),
+        fields.get("username"),
+        fields.get("last_name"),
+    )
 
 
 def _check_age(signed_at: datetime, now: datetime) -> None:
@@ -84,11 +101,16 @@ def verify_webapp(init_data: str, bot_token: str, *, now: datetime) -> TelegramI
     except (ValueError, OverflowError, OSError, TypeError, KeyError) as exc:
         raise LoginRejected("malformed init data") from exc
     _check_age(signed_at, now)
-    first_name, username = user.get("first_name"), user.get("username")
+    first_name, username, last_name = (
+        user.get("first_name"),
+        user.get("username"),
+        user.get("last_name"),
+    )
     return TelegramIdentity(
         telegram_user_id,
         first_name if isinstance(first_name, str) else None,
         username if isinstance(username, str) else None,
+        last_name if isinstance(last_name, str) else None,
     )
 
 

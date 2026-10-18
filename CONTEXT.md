@@ -5,7 +5,7 @@ The shared language for code, tests and docs. When a term here and a name in cod
 ## Product
 
 - **Surface**: a way the user reaches the agent. There are two: **Telegram** (quick capture on the phone) and the **Web cockpit** (reviewing and managing money). Both call the same agent and the same use cases.
-- **Owner**: the user who runs the deployment and issues invites. **Member**: an invited user. Every user's data is strictly private; there are no shared ledgers.
+- **Owner**: the user who runs the deployment and issues invites. **Member**: an invited user. Every user's data is strictly private; there are no shared ledgers. The one thing people share is a trip's plan (see **Trip owner, trip member**).
 - **Invite**: a single-use token, valid for 24 hours, that lets one person sign in to the web cockpit with Telegram login.
 
 ## Ledger
@@ -48,10 +48,14 @@ The shared language for code, tests and docs. When a term here and a name in cod
 - **Merged results**: the finder's one list of places, each once: a Google Maps result and a guide idea for the same place are one card, with the rating, the guide's words and source link, and a tag for each that found it.
 - **Research into ideas**: saving a trip research's areas as **ideas** on a trip, each under a list named after its area, skipping what is already there and matching Google Maps places when one clearly fits. The research's city is offered as a **stop**, with a confirmation that says what it changes. Nothing is booked.
 - **Own pin**: a point the user dropped on the Ideas map, kept with its idea. It is the user's own coordinate, so it is stored; Google's coordinates are fetched with each place and never kept.
-- **Traveller**: a person going on a trip, by name (the trip's companions). "You" are always in it. A traveller is only a name: it isn't linked to another Nexus user, and nothing is shared with them.
+- **Traveller**: a person going on a trip, by name (the trip's companions). "You" are always in it. A traveller is only a name: it isn't linked to another Nexus user, and nothing is shared with them (a person who can edit the trip is a **trip member**, not a traveller).
 - **Even split**: a trip setting, on by default. While it is on and someone else is going, the trip's unsplit costs are offered under **To split**; nothing is split until the user says so, one cost or all of them after a confirmation. A cost the user keeps out is **Just mine**.
 - **They paid**: a cost a traveller paid and the user shares, recorded on the trip. The user's **share** (an equal share, the user's first) is what they owe that person. It is not the user's spending until it is settled and the user chooses to record it.
 - **Balance**: where the user stands with one person on a trip: what they owe the user less what the user owes them, netted in the home currency, as "Alex owes you SGD 768.00" or "You owe Sam SGD 40.00". **Settle up** with them records what happened item by item (their IOUs paid back, the user's share of what they paid as spent), not the net. Nexus never moves money.
+- **Trip owner, trip member**: the owner is the user whose trip it is; a trip member is someone they invited (by a **trip invite**) who can edit the trip's plan: days, places, stops, packing, notes, bookings (never what anything cost). A member never sees or changes the trip's money, and money in the ledger is only ever the owner's. This is separate from an app **Member** above, and from a **traveller**, who is only a name. Someone with no part in a trip is told there is no such trip.
+- **Trip invite**: a single-use link, valid for 7 days, that adds one person to a trip. Only its hash is kept. If the app's **Owner** made it, someone with no account may sign in with it and get a **guest** account.
+- **Guest**: a user made by a trip invite. They can open the trips shared with them and nothing else; every other route refuses them. A guest's role is never changed by anything, and an existing account is never made a guest.
+- **Trip activity**: what the people on a shared trip changed in its plan ("added Dinner at Sushi Ten"), newest first, last 20 shown. Kept only for trips with at least one member; never money.
 - **Share settings**: what a trip's read-only link shows. Bookings (flights, stays, tickets) can be hidden; money, booking references, notes, packing and who's going are never shown.
 
 ## Agent

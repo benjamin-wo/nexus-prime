@@ -20,6 +20,9 @@ MAX_NAME = 100
 class Role(StrEnum):
     OWNER = "owner"
     MEMBER = "member"
+    # Someone a trip's owner brought in with a trip invite: can open the trips shared
+    # with them and nothing else.
+    GUEST = "guest"
 
 
 class Direction(StrEnum):
@@ -68,6 +71,8 @@ class User:
     role: Role
     created_at: datetime
     web_access_granted_at: datetime | None = None
+    # Their Telegram first name (and last initial), shown to the people on a shared trip.
+    display_name: str | None = None
 
     @property
     def has_web_access(self) -> bool:

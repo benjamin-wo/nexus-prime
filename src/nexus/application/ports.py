@@ -62,6 +62,7 @@ from nexus.domain.recurring import Subscription
 from nexus.domain.rules import CategoryRule
 from nexus.domain.settle import PaidByOther
 from nexus.domain.statements import SavedMapping, StatementImport
+from nexus.domain.trip_access import Activity, TripAccess, TripInvite, TripMember
 from nexus.domain.trips import Share, Trip
 
 
@@ -142,6 +143,7 @@ class LedgerRepository(Protocol):
     async def insert_user_if_absent(self, user: User) -> bool: ...
     async def get_user_by_telegram_id(self, telegram_user_id: int) -> User | None: ...
     async def get_user(self, user_id: UserId) -> User | None: ...
+    async def set_display_name(self, user_id: UserId, name: str) -> None: ...
 
     # categories
     async def insert_category(self, category: Category) -> None: ...
@@ -681,6 +683,63 @@ class TripRepository(Protocol):
     async def set_payment_settled(
         self, user_id: UserId, trip_id: UUID, payment_id: UUID, at: datetime | None
     ) -> None: ...
+
+    # --- sharing a trip's plan with other people ---------------------------------
+    async def trip_access(self, actor_id: UserId, trip_id: UUID) -> TripAccess | None:
+        """What ``actor_id`` may do on the trip: owner if it is theirs, member if they
+        were added to it, None for anyone else (and for a trip that doesn't exist)."""
+        ...
+
+    async def booking_access(self, actor_id: UserId, booking_id: UUID) -> TripAccess | None:
+        """The same for a booking, through the trip it is on. A booking on no trip is
+        reachable by its owner only."""
+        ...
+
+    async def list_member_trips(self, member_id: UserId) -> list[tuple[Trip, str | None]]:
+        """The trips someone was added to (not their own), each with its owner's name."""
+        ...
+
+    async def owner_name(self, owner_id: UserId) -> str | None: ...
+    async def list_members(self, owner_id: UserId, trip_id: UUID) -> list[TripMember]:
+        """The owner first, then the members in the order they joined."""
+        ...
+
+    async def count_members(self, trip_id: UUID) -> int: ...
+    async def add_member(
+        self,
+        owner_id: UserId,
+        trip_id: UUID,
+        member_id: UserId,
+        invite_id: UUID | None,
+        at: datetime,
+    ) -> bool:
+        """False when they were members already."""
+        ...
+
+    async def remove_member(self, owner_id: UserId, trip_id: UUID, member_id: UserId) -> bool: ...
+    async def insert_trip_invite(self, invite: TripInvite) -> None: ...
+    async def get_trip_invite(
+        self, token_hash: str, *, for_update: bool = False
+    ) -> TripInvite | None: ...
+    async def list_open_trip_invites(
+        self, owner_id: UserId, trip_id: UUID, now: datetime
+    ) -> list[TripInvite]:
+        """Links that can still be used, oldest first."""
+        ...
+
+    async def revoke_trip_invite(
+        self, owner_id: UserId, trip_id: UUID, invite_id: UUID, at: datetime
+    ) -> bool: ...
+    async def redeem_trip_invite(self, invite_id: UUID, user_id: UserId, at: datetime) -> bool:
+        """False when it was redeemed or revoked meanwhile."""
+        ...
+
+    async def add_activity(
+        self, owner_id: UserId, trip_id: UUID, actor_id: UserId, summary: str, at: datetime
+    ) -> None: ...
+    async def list_activity(self, owner_id: UserId, trip_id: UUID, *, limit: int) -> list[Activity]:
+        """Newest first."""
+        ...
 
 
 class InvestmentRepository(Protocol):
