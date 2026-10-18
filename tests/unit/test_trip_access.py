@@ -65,6 +65,31 @@ def test_names_are_short_and_plain() -> None:
     assert len(clean_name("x" * 200) or "") == MAX_NAME
 
 
+def test_names_and_summaries_lose_every_invisible_or_direction_character() -> None:
+    """Characters that show nothing, or turn the line around, would let a name pass for
+    another ("T" and "T" + a word joiner look the same) or garble what is near it."""
+    invisible = [
+        0x00AD,  # soft hyphen
+        0x061C,  # Arabic letter mark
+        0x180E,  # Mongolian vowel separator
+        0x200B, 0x200C, 0x200D, 0x200E, 0x200F,  # zero-width and direction marks
+        0x2028, 0x2029,  # line and paragraph separators
+        0x202A, 0x202B, 0x202C, 0x202D, 0x202E,  # embeddings and overrides
+        0x2060, 0x2061, 0x2062, 0x2063, 0x2064,  # word joiner, invisible operators
+        0x2066, 0x2067, 0x2068, 0x2069,  # isolates
+        0x206A, 0x206F,  # deprecated format characters
+        0xFEFF,  # byte order mark
+        0xFFF9, 0xFFFA, 0xFFFB,  # annotation characters
+        0xE0041, 0xE007F,  # tag characters
+    ]  # fmt: skip
+    for code in invisible:
+        mark = chr(code)
+        assert clean_name("T" + mark) == "T", hex(code)
+        assert clean_name("A" + mark + "B") == "A B", hex(code)
+        assert clean_summary("moved" + mark + "Dinner") == "moved Dinner", hex(code)
+    assert clean_name(chr(0x2060), chr(0xFEFF)) is None
+
+
 def test_a_telegram_name_is_the_first_name_and_last_initial() -> None:
     def name(first: str | None, last: str | None) -> str | None:
         return TelegramIdentity(1, first, "a_username", last).display_name

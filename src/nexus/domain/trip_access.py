@@ -25,7 +25,14 @@ MAX_NAME = 40
 # What a person sees in place of a name nobody has set.
 UNKNOWN_NAME = "Someone"
 
-_CONTROL = re.compile("[\x00-\x1f\x7f-\x9f\u200b-\u200f\u2028-\u202e\u2066-\u2069]")
+# Control characters and the invisible ones that make a name look like another's or flip
+# the line around it: soft hyphen, the Arabic letter mark, Mongolian vowel separator,
+# zero-width and direction marks, line/paragraph separators, embeddings and isolates, word
+# joiner and the invisible operators, the byte order mark, annotation characters and tags.
+_CONTROL = re.compile(
+    "[\x00-\x1f\x7f-\x9f\u00ad\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f"
+    "\ufeff\ufff9-\ufffb\U000e0000-\U000e007f]"
+)
 
 
 class TripRole(StrEnum):

@@ -32,7 +32,9 @@ def upgrade() -> None:
         sa.Column("owner_id", sa.UUID(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("may_create_guest", sa.Boolean(), server_default=sa.text("false"), nullable=False),
+        sa.Column(
+            "may_create_guest", sa.Boolean(), server_default=sa.text("false"), nullable=False
+        ),
         sa.Column("redeemed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("redeemed_by", sa.UUID(), nullable=True),
         sa.Column("revoked_at", sa.DateTime(timezone=True), nullable=True),

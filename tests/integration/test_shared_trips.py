@@ -183,12 +183,12 @@ async def test_migration_0046_goes_up_and_down(
     config.attributes["configure_logger"] = False
     await asyncio.to_thread(command.downgrade, config, "0045")
     async with engine.connect() as db:
-        tables = set(
+        tables: set[str] = set(
             (await db.execute(text("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")))
             .scalars()
             .all()
         )
-        columns = set(
+        columns: set[str] = set(
             (
                 await db.execute(
                     text(
@@ -205,7 +205,7 @@ async def test_migration_0046_goes_up_and_down(
                 text("SELECT role, web_access_granted_at FROM users WHERE id = :id"), {"id": guest}
             )
         ).one()
-        sessions = (
+        sessions: int = (
             await db.execute(
                 text("SELECT count(*) FROM web_sessions WHERE user_id = :id"), {"id": guest}
             )
@@ -561,7 +561,9 @@ async def test_invites_are_single_use_expire_and_can_be_cancelled(shared: Shared
 
     # Only a hash is kept, and the list never shows the link.
     async with world.engine.connect() as db:
-        hashes = (await db.execute(select(trip_invites.c.token_hash))).scalars().all()
+        hashes: list[str] = list(
+            (await db.execute(select(trip_invites.c.token_hash))).scalars().all()
+        )
     assert token_hash(token) in hashes and token not in hashes
     listed = (await owner.get(f"{shared.path}/invites")).json()
     assert [set(i) for i in listed] == [{"id", "created_at", "expires_at"}]
@@ -715,7 +717,10 @@ async def test_the_widget_redirect_takes_a_new_member_to_the_trip(shared: Shared
 
 async def test_the_name_others_see_is_refreshed_at_each_sign_in(shared: Shared) -> None:
     owner = shared.owner
-    names = lambda members: [m["name"] for m in members]  # noqa: E731
+
+    def names(members: list[dict[str, str]]) -> list[str]:
+        return [m["name"] for m in members]
+
     assert names((await owner.get(f"{shared.path}/members")).json()) == ["T", "Sam"]
     await sign_in(shared.world, PEER, first="Samuel", last="Ng")
     assert names((await owner.get(f"{shared.path}/members")).json()) == ["T", "Samuel N."]
@@ -807,7 +812,7 @@ def test_only_the_routes_a_guest_needs_let_a_guest_in() -> None:
         for route in router.routes:
             assert isinstance(route, APIRoute)
             guards = _guards(route)
-            for method in route.methods - {"HEAD", "OPTIONS"}:
+            for method in (route.methods or set()) - {"HEAD", "OPTIONS"}:
                 if "trip" in guards:
                     open_to_guests.add((method, route.path))
                 elif not guards:

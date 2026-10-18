@@ -123,7 +123,13 @@ async def add_from_screenshot(
             chosen = next((t for t in trips if t.id == trip_id), None)
             if chosen is None:
                 raise NotFound("no trip with that id")
-        existing = [b.draft for b in await uow.trips.list_bookings(user.id)]
+        # Sent from a trip's page, only that trip's entries count as already there: what
+        # the owner keeps on their other trips is not for someone on this one to learn
+        # (a member's screenshot would otherwise be told "already on the itinerary").
+        existing = [
+            b.draft
+            for b in await uow.trips.list_bookings(user.id, trip_id=chosen.id if chosen else None)
+        ]
         ahead = [t for t in trips if t.status(today) is not TripStatus.FINISHED]
         for draft, cost in entries:
             if any(_same(draft, e) for e in existing):
