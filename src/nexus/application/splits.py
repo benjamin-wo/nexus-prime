@@ -48,9 +48,11 @@ async def split_bill(
     participants: list[ShareRequest],
     *,
     include_self: bool = True,
+    if_unsplit: bool = False,
 ) -> SplitResult:
     """Record who owes the user for a bill they paid. Replaces any earlier split
-    of the same bill, as long as nobody has repaid against it yet."""
+    of the same bill, as long as nobody has repaid against it yet; with ``if_unsplit``,
+    a bill that already has a split is left alone (Conflict) instead."""
     async with uow:
         repo = uow.ledger
         tx = await repo.get_transaction(actor, transaction_id, for_update=True)
@@ -60,6 +62,8 @@ async def split_bill(
             raise InvalidInput("this transaction is deleted; restore it first")
         if tx.direction is not Direction.OUT:
             raise InvalidInput("only money out can be split")
+        if if_unsplit and await repo.list_splits(actor, tx.id):
+            raise Conflict("this bill is already split")
         if await repo.has_settlements(actor, tx.id):
             raise Conflict("repayments were already recorded against this bill's split")
 

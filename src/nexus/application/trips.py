@@ -28,6 +28,14 @@ from nexus.domain.ledger import Direction, User, UserId, same_person
 from nexus.domain.money import Money
 from nexus.domain.packing import Outlook, PackItem, clean_list, suggestions
 from nexus.domain.planning import paydays
+from nexus.domain.settle import (
+    Debt,
+    DebtKind,
+    PaidByOther,
+    PersonBalance,
+    describe_balance,
+    settle_up,
+)
 from nexus.domain.stops import suggest_stops
 from nexus.domain.trips import (
     MAX_TRIPS,
@@ -35,6 +43,7 @@ from nexus.domain.trips import (
     Owed,
     Readiness,
     SetAside,
+    Share,
     Stay,
     Stop,
     Trip,
@@ -150,6 +159,8 @@ async def update_trip(
             packing=current.packing,
             getting_around=current.getting_around,
             hop_modes=current.hop_modes,
+            split_evenly=current.split_evenly,
+            not_split=current.not_split,
         )
         with suppress(InvalidInput):  # else the new dates leave them out: back to the hotels'
             trip = replace(trip, stops=clean_stops(trip, current.stops))
@@ -247,28 +258,42 @@ async def get_trip(uow: UnitOfWork, user_id: UserId, trip_id: UUID) -> Trip:
 SHARE_TOKEN = re.compile(r"^[A-Za-z0-9_-]{32,64}$")
 
 
-async def share_link(uow: UnitOfWork, user_id: UserId, trip_id: UUID) -> str | None:
-    """The trip's link token, if it's shared."""
+async def share_link(uow: UnitOfWork, user_id: UserId, trip_id: UUID) -> Share | None:
+    """The trip's link, if it's shared."""
     async with uow:
         if await uow.trips.get_trip(user_id, trip_id) is None:
             raise NotFound("no trip with that id")
-        return await uow.trips.share_token(user_id, trip_id)
+        return await uow.trips.get_share(user_id, trip_id)
 
 
 async def share_trip(
-    uow: UnitOfWork, user_id: UserId, trip_id: UUID, *, renew: bool, now: datetime
-) -> str:
+    uow: UnitOfWork,
+    user_id: UserId,
+    trip_id: UUID,
+    *,
+    renew: bool,
+    show_bookings: bool | None = None,
+    now: datetime,
+) -> Share:
     """The trip's link, made if it has none. ``renew`` replaces it with a new one, so
-    the old link stops working."""
+    the old link stops working. ``show_bookings`` sets whether the link shows flights,
+    stays and tickets (on for a new link); left out, the link keeps what it had."""
     async with uow:
         if await uow.trips.get_trip(user_id, trip_id) is None:
             raise NotFound("no trip with that id")
-        token = None if renew else await uow.trips.share_token(user_id, trip_id)
-        if token is None:
-            token = secrets.token_urlsafe(32)
-            await uow.trips.set_share(user_id, trip_id, token, now)
+        current = await uow.trips.get_share(user_id, trip_id)
+        if current is None or renew:
+            kept = current.show_bookings if current else True
+            show = kept if show_bookings is None else show_bookings
+            share = Share(secrets.token_urlsafe(32), show)
+            await uow.trips.set_share(user_id, trip_id, share, now)
             await uow.commit()
-        return token
+            return share
+        if show_bookings is not None and show_bookings != current.show_bookings:
+            await uow.trips.set_show_bookings(user_id, trip_id, show_bookings)
+            await uow.commit()
+            return Share(current.token, show_bookings)
+        return current
 
 
 async def stop_sharing(uow: UnitOfWork, user_id: UserId, trip_id: UUID) -> None:
@@ -280,17 +305,33 @@ async def stop_sharing(uow: UnitOfWork, user_id: UserId, trip_id: UUID) -> None:
         await uow.commit()
 
 
-async def open_shared(uow: UnitOfWork, token: str) -> tuple[Trip, list[Booking]]:
-    """The trip a link opens and its bookings. NotFound for a malformed, unknown or
+@dataclass(frozen=True, slots=True)
+class SharedTrip:
+    trip: Trip
+    bookings: list[Booking]  # what the link shows
+    show_bookings: bool
+    # Days a hidden booking starts or ends on (dates only), so the page can say
+    # "Travel day" rather than "Free day".
+    hidden_days: list[date]
+
+
+async def open_shared(uow: UnitOfWork, token: str) -> SharedTrip:
+    """The trip a link opens and the bookings it shows (none of the flights, stays and
+    tickets when the owner turned them off). NotFound for a malformed, unknown or
     stopped link, all alike, so a link can't be probed."""
     if not SHARE_TOKEN.match(token):
         raise NotFound("this link doesn't open a trip")
     async with uow:
-        trip = await uow.trips.shared_trip(token)
-        if trip is None:
+        found = await uow.trips.shared_trip(token)
+        if found is None:
             raise NotFound("this link doesn't open a trip")
+        trip, share = found
         bookings = await uow.trips.list_bookings(trip.user_id, trip_id=trip.id)
-    return trip, bookings
+    if share.show_bookings:
+        return SharedTrip(trip, bookings, True, [])
+    hidden = [b for b in bookings if b.scheduled and b.is_booking]
+    days = {d for b in hidden for d in (b.draft.starts, b.draft.ends) if d is not None}
+    return SharedTrip(trip, [b for b in bookings if not b.is_booking], False, sorted(days))
 
 
 def current_or_next(trips: list[Trip], today: date) -> Trip | None:
@@ -377,15 +418,29 @@ class TripView:
     # The budget less what's spent and what's booked but not logged.
     to_spend: Money | None = None
     ready: Readiness = field(default_factory=lambda: Readiness([], False, False))
+    # Costs not split yet while the trip splits evenly (newest first), and the ones
+    # the user marked "just mine".
+    to_split: list[TripItem] = field(default_factory=list)
+    just_mine: list[UUID] = field(default_factory=list)
+    # What fellow travellers paid that the user shares in, and where the user stands
+    # with each person (what they owe less what's owed them), in the home currency.
+    paid_by_others: list[PaidByOther] = field(default_factory=list)
+    balances: list[PersonBalance] = field(default_factory=list)
 
     @property
     def days_until(self) -> int:
         return (self.trip.start - self.today).days
 
 
-async def _items(
-    uow: UowFactory, rates: RateSource, user: User, trip: Trip
-) -> tuple[list[TripItem], set[UUID]]:
+@dataclass(frozen=True, slots=True)
+class Spent:
+    items: list[TripItem]
+    ids: set[UUID]  # every expense on the trip
+    unsplit: set[UUID]  # of those, the ones nobody owes a share of
+    labels: dict[UUID, str | None]  # who each was paid to
+
+
+async def spent_on(uow: UowFactory, rates: RateSource, user: User, trip: Trip) -> Spent:
     async with uow() as tx:
         expenses = await tx.trips.trip_expenses(user.id, trip, user.timezone, limit=MAX_EXPENSES)
     home = user.home_currency
@@ -404,7 +459,12 @@ async def _items(
         for e, amount in own
         if amount.is_positive
     ]
-    return items, {e.transaction.id for e in expenses}
+    return Spent(
+        items,
+        {e.transaction.id for e in expenses},
+        {e.transaction.id for e in expenses if e.others.is_zero},
+        {e.transaction.id: e.transaction.counterparty for e in expenses},
+    )
 
 
 async def _owed(
@@ -429,6 +489,54 @@ async def _owed(
     return owed
 
 
+async def balances_for(
+    uow: UowFactory, rates: RateSource, user: User, trip: Trip, spent: Spent, today: date
+) -> tuple[list[PaidByOther], list[PersonBalance]]:
+    """The payments others made, and where the user stands with each person: what they
+    owe on the trip's expenses less the user's share of what they paid, at today's
+    rates."""
+    async with uow() as tx:
+        ious = [
+            i for i in await tx.ledger.open_ious(user.id) if i.split.transaction_id in spent.ids
+        ]
+        payments = await tx.trips.list_payments(user.id, trip.id)
+    home = user.home_currency
+    open_payments = [p for p in payments if not p.settled]
+    found = await fx.rates_for(
+        rates,
+        home,
+        [(i.outstanding.currency, today) for i in ious]
+        + [(p.amount.currency, today) for p in open_payments],
+    )
+    tz = ZoneInfo(user.timezone)
+    owed_to_me = [
+        Debt(
+            DebtKind.IOU,
+            i.split.id,
+            i.split.participant_name,
+            i.outstanding,
+            fx.convert(i.outstanding, today, home, found).home,
+            spent.labels.get(i.split.transaction_id),
+            i.expense_occurred_at.astimezone(tz).date(),
+        )
+        for i in ious
+    ]
+    owed_by_me = [
+        Debt(
+            DebtKind.PAYMENT,
+            p.id,
+            p.person,
+            p.my_share,
+            fx.convert(p.my_share, today, home, found).home,
+            p.note,
+            p.paid_on,
+        )
+        for p in open_payments
+    ]
+    balances = settle_up(owed_to_me, owed_by_me, home, travellers=trip.companions)
+    return payments, balances
+
+
 async def _fits(uow: UowFactory, rates: RateSource, user: User, trip: Trip, now: datetime) -> bool:
     """Whether what's expected in, less what's expected out (the set-aside included),
     stays at or above zero from today to the day before the trip."""
@@ -450,7 +558,8 @@ async def _view(
 ) -> TripView:
     today = local_today(user, now)
     home = user.home_currency
-    items, ids = await _items(uow, rates, user, trip)
+    found_spent = await spent_on(uow, rates, user, trip)
+    items, ids = found_spent.items, found_spent.ids
     async with uow() as tx:
         schedule = await tx.planning.get_salary_schedule(user.id)
     done: list[date] = []
@@ -490,6 +599,15 @@ async def _view(
         if b.transaction_id is None or b.transaction_id not in ids:
             unlogged = unlogged + converted
     spent = spending(trip, items, today, home)
+    payments, balances = await balances_for(uow, rates, user, trip, found_spent, today)
+    offered = trip.split_evenly and bool(trip.companions)
+    to_split = [
+        i
+        for i in reversed(items)  # newest first
+        if offered
+        and i.transaction_id in found_spent.unsplit
+        and i.transaction_id not in trip.not_split
+    ]
     to_spend = trip.budget - spent.spent - unlogged if trip.budget else None
     return TripView(
         trip=trip,
@@ -504,6 +622,10 @@ async def _view(
         booked=booked if costed else None,
         booked_unlogged=unlogged if costed else None,
         to_spend=to_spend,
+        to_split=to_split,
+        just_mine=[i for i in trip.not_split if i in ids],
+        paid_by_others=payments,
+        balances=balances,
         ready=readiness(
             trip,
             [
@@ -536,8 +658,9 @@ async def to_settle(
     found: list[tuple[Trip, list[Owed]]] = []
     for trip in await list_trips(uow(), user.id):
         if trip.status(today) is TripStatus.FINISHED and (today - trip.end).days <= SETTLE_DAYS:
-            _, ids = await _items(uow, rates, user, trip)
-            owed = await _owed(uow, rates, user, ids, today)
+            owed = await _owed(
+                uow, rates, user, (await spent_on(uow, rates, user, trip)).ids, today
+            )
             if owed:
                 found.append((trip, owed))
     return found
@@ -636,6 +759,37 @@ def describe_view(view: TripView) -> list[str]:
         lines.append(
             "Still owed for this trip: "
             + "; ".join(f"{o.name} {', '.join(str(m) for m in o.amounts)}" for o in view.owed)
+        )
+    if trip.companions:
+        lines.append(
+            "Costs are split evenly with the people going."
+            if trip.split_evenly
+            else "Costs are not split evenly by default for this trip."
+        )
+    if view.to_split:
+        total = sum((i.home for i in view.to_split if i.home), Money.zero(home))
+        lines.append(
+            f"{len(view.to_split)} costs on this trip aren't split yet (about {total} in all); "
+            "split_trip_costs splits them evenly."
+        )
+    paid = [p for p in view.paid_by_others if not p.settled]
+    if paid:
+        lines.append(
+            "Paid by other people, not settled yet: "
+            + "; ".join(
+                f"{p.person} paid {p.amount}"
+                + (f" for {p.note}" if p.note else "")
+                + f" (the user's share {p.my_share})"
+                for p in paid
+            )
+            + "."
+        )
+    if view.balances:
+        lines.append(
+            "Where the user stands with each person (what they owe less what the user owes "
+            "them, in the home currency): "
+            + "; ".join(describe_balance(b) for b in view.balances)
+            + "."
         )
     return lines
 

@@ -1,7 +1,7 @@
 ---
 name: trips
 description: "Trips (Travel department): trips the user is planning or on, with dates, the currency spent there, a budget in the home currency, who's going and money set aside each payday; what's been spent on a trip, what's left, and who still owes what afterwards. Nexus never books or buys anything."
-tools: [research_trip, research_to_trip, find_ideas, find_places, place_info, add_to_itinerary, change_itinerary_entry, remove_from_itinerary, label_trip_day, create_trip, update_trip, delete_trip, list_trips, trip_status, add_to_trip, remove_from_trip, find_transactions, split_bill, list_ious]
+tools: [research_trip, research_to_trip, find_ideas, find_places, place_info, add_to_itinerary, change_itinerary_entry, remove_from_itinerary, label_trip_day, create_trip, update_trip, delete_trip, list_trips, trip_status, add_to_trip, remove_from_trip, find_transactions, split_bill, list_ious, split_trip_costs, they_paid, settle_up]
 ---
 # Trips
 
@@ -9,8 +9,26 @@ tools: [research_trip, research_to_trip, find_ideas, find_places, place_info, ad
   `create_trip`. Fill in the currency spent there yourself (Japan JPY, Bali IDR,
   Bangkok THB); ask for the dates if you don't have both. Never make up a budget: leave
   it out unless the user gives one. Budgets and set-aside are in the home currency.
-- "with Ann and Ben": put them in `companions`. Splitting a bill with them is the usual
-  `split_bill`; the trip's settle-up comes from those IOUs.
+- "with Ann and Ben": put them in `companions` (the travellers). Splitting one bill with
+  them is the usual `split_bill`; the trip's settle-up comes from those IOUs.
+- Costs on a trip are split evenly with the travellers, but only when the user says so:
+  "split the Japan trip costs with Ann", "split everything for Tokyo": `split_trip_costs`
+  (every cost on the trip not split yet, an equal share each, the user included). It asks
+  first, and says if there's nothing to split or nobody else is going. To split one bill
+  unevenly, use `split_bill`.
+- "Alex paid 460 for the ryokan": `they_paid` with the person (they must be a traveller on
+  the trip, else say to add them to the trip first), the amount, and what it was for. It
+  is split evenly with everyone going; the user's share is what they owe Alex. It is not
+  an expense of the user's, and nothing goes in the ledger, until they settle up.
+- "who owes who for Japan?", "what do I owe Alex?": `settle_up` with the trip and no
+  person. It nets each person: what they owe the user less what the user owes them, in
+  the home currency (`trip_status` shows the same lines). Quote the figures as they are.
+- "settle up with Alex for Japan", "Alex and I are square": `settle_up` with the person.
+  It asks first. It marks what they owe on the trip as paid back (recorded as money in,
+  as "Ann paid me back" is) and what they paid as settled, and records the user's share of
+  what they paid as an expense unless `log` is false. Nexus never moves money: it only
+  records what the user says has happened. Don't call it for a plain repayment on its
+  own ("ann paid me back 40" is `record_income`).
 - "put aside 500 each payday for Japan": `update_trip` with `set_aside` (or set it in
   `create_trip`). It shows as a planned outflow on each payday before the trip in the
   cash-flow forecast. It needs a pay schedule; if there isn't one, say so.

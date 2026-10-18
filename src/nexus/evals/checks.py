@@ -455,3 +455,25 @@ class Booked:
                 continue
             return True
         return False
+
+
+@dataclass(frozen=True, slots=True)
+class TheyPaid:
+    """A fellow traveller's payment like this is noted on a trip, unsettled."""
+
+    person: str  # any case
+    amount: str  # the whole bill, in any currency
+
+    def describe(self) -> str:
+        return f"a trip payment of {self.amount} noted as paid by {self.person}"
+
+    async def holds(self, world: World) -> bool:
+        async with world.uow() as tx:
+            trips = await tx.trips.list_trips(world.user.id)
+            payments = [p for t in trips for p in await tx.trips.list_payments(world.user.id, t.id)]
+        return any(
+            p.person.casefold() == self.person.casefold()
+            and p.amount.amount == Decimal(self.amount)
+            and not p.settled
+            for p in payments
+        )
