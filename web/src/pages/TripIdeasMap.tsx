@@ -14,6 +14,14 @@ export const DROPPED_PIN = "Dropped pin";
 
 const stopKey = (s: TripStop) => `${s.name}|${s.start}`;
 
+/** A colour Google's map can paint: its pins are drawn as images, where a CSS variable
+ * ("var(--accent)", which is what list colours are) means nothing, so it's looked up here. */
+export function paintable(color: string): string {
+  const name = /^var\((--[\w-]+)\)$/.exec(color.trim())?.[1];
+  if (!name || typeof document === "undefined") return color;
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#6b7280";
+}
+
 /** A small question after a long press: what to call the pin. */
 function PinPrompt({ onSave, onClose }: { onSave: (name: string) => Promise<void>; onClose: () => void }) {
   const [name, setName] = useState(DROPPED_PIN);
@@ -232,7 +240,7 @@ export function IdeasMap({ detail, apiKey, ideas, color, near, viewing, onPick, 
         position: p.at,
         title: p.title,
         zIndex: 2,
-        icon: { path: api.circle, scale: 9, fillColor: p.color, fillOpacity: 1, strokeColor: "#ffffff", strokeWeight: 2 },
+        icon: { path: api.circle, scale: 9, fillColor: paintable(p.color), fillOpacity: 1, strokeColor: "#ffffff", strokeWeight: 2 },
       });
       marker.addListener("click", () => {
         const b = tappable.find((i) => i.id === p.id);

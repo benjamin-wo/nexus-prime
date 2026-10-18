@@ -42,6 +42,9 @@ The shared language for code, tests and docs. When a term here and a name in cod
 - **Plan**: something the user means to do on a day, such as dinner or a tour. A time is optional. A plan is an `activity` entry with a day.
 - **Idea**: a place saved with no day yet (an `activity` entry with no day, kept in a list such as Food or Nightlife). Putting it on a day makes it a plan; taking it off a day makes it an idea again.
 - **Next up**: the one thing to do next on a trip, shown as a strip under its cover with a button: the first gap while planning, the next booking in the last week, what's next today while it's on, who still owes you after it.
+- **Stop**: a place a trip is in, such as Tokyo then Kyoto, with the days it is there. The day one stop ends and the next begins is the travel day. Stops follow the hotel stays (grouped by city) until the user edits and saves their own.
+- **Suggested label**: a day's name worked out from where its places are and what they are ("Gion · temples & food"), shown with a Suggested chip until the user accepts or types their own. A label the user typed always wins; a suggestion is never saved by itself.
+- **Own pin**: a point the user dropped on the Ideas map, kept with its idea. It is the user's own coordinate, so it is stored; Google's coordinates are fetched with each place and never kept.
 
 ## Agent
 

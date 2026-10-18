@@ -778,7 +778,8 @@ export function DayPickerSheet({ detail, booking, viewing, onClose }: { detail: 
             <ul className="day-options">{picker.closest.map(option)}</ul>
           </section>
         )}
-        {picker.viewing && (
+        {/* Already offered among the closest days: not again under Viewing. */}
+        {picker.viewing && !(picker.ranked && picker.closest.some((d) => d.iso === picker.viewing?.iso)) && (
           <section aria-labelledby="day-picker-viewing">
             <h3 id="day-picker-viewing" className="day-picker-heading">
               Viewing

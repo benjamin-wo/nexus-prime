@@ -758,7 +758,7 @@ export async function fakeApi(
     if (path === "/travel/currency") {
       // Made-up lookups: a few places, and one that isn't found.
       const place = (url.searchParams.get("place") ?? "").toLowerCase();
-      const known: Record<string, [string, string]> = { tokyo: ["JPY", "Japan"], osaka: ["JPY", "Japan"], seoul: ["KRW", "South Korea"], bali: ["IDR", "Indonesia"] };
+      const known: Record<string, [string, string]> = { tokyo: ["JPY", "Japan"], osaka: ["JPY", "Japan"], japan: ["JPY", "Japan"], seoul: ["KRW", "South Korea"], bali: ["IDR", "Indonesia"] };
       const hit = Object.entries(known).find(([k]) => place.startsWith(k));
       return json(route, hit ? { currency: hit[1][0], country: hit[1][1] } : { currency: null, country: null });
     }
@@ -980,10 +980,26 @@ export async function fakeApi(
       price: null, maps_url: "https://maps.example/airport", website: null, phone: null, summary: null, status: "OPERATIONAL", hours: [],
       reviews: [], lat: 41.29, lng: 2.07, area: null, city: "Exampleton", closed: null,
     };
-    const placeOut = ({ closed: _closed, ...place }: Record<string, unknown>) => place;
+    // Made-up places in two Japanese cities, for stops and day areas. They never turn up in a
+    // search (``unlisted``), so they only appear when a test links them to a plan.
+    const japan = (id: string, name: string, kind: string, area: string, city: string, lat: number, lng: number) => {
+      PLACES[id] = {
+        id, name, address: `1 Example-dori, ${area}, ${city}`, kind, rating: "4.4", ratings: 900, price: null, maps_url: `https://maps.example/${id}`,
+        website: null, phone: null, summary: null, status: "OPERATIONAL", hours: [], reviews: [], lat, lng, area, city, closed: null, unlisted: true,
+      };
+    };
+    japan("fakePlaceTokyoInn1", "Hotel Kumo Shinjuku", "Hotel", "Shinjuku", "Tokyo", 35.6896, 139.7006);
+    japan("fakePlaceKyotoInn1", "Machiya Inn Higashiyama", "Inn", "Higashiyama", "Kyoto", 35.0036, 135.7785);
+    japan("fakePlaceTokyoShr1", "Lantern Shrine", "Shinto shrine", "Asakusa", "Tokyo", 35.7148, 139.7967);
+    japan("fakePlaceTokyoRmn1", "Counter Ramen Ichi", "Ramen restaurant", "Asakusa", "Tokyo", 35.7121, 139.7961);
+    japan("fakePlaceTokyoMus1", "Paper Crane Museum", "Museum", "Ueno", "Tokyo", 35.7189, 139.7745);
+    japan("fakePlaceKyotoTmp1", "Moss Garden Temple", "Buddhist temple", "Gion", "Kyoto", 35.0037, 135.7788);
+    japan("fakePlaceKyotoTea1", "Kettle Tea House", "Tea house", "Gion", "Kyoto", 35.0049, 135.7752);
+    japan("fakePlaceKyotoBmb1", "Bamboo Walk", "Park", "Arashiyama", "Kyoto", 35.0170, 135.6713);
+    const placeOut = ({ closed: _closed, unlisted: _unlisted, ...place }: Record<string, unknown>) => place;
     if (path === "/travel/places/search" && method === "GET") {
       state.placeSearches.push(url.searchParams.get("q") ?? "");
-      return json(route, Object.values(PLACES).map(placeOut));
+      return json(route, Object.values(PLACES).filter((p) => !p.unlisted).map(placeOut));
     }
     // Made-up ideas from made-up articles: one matched to Google Maps, one not.
     const tripIdeas = path.match(/^\/travel\/trips\/([^/]+)\/ideas$/);

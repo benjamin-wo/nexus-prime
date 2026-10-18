@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Booking, TripDetail } from "../api";
 import { nearbyOf } from "./TripArrange";
-import { IdeasMap } from "./TripIdeasMap";
+import { IdeasMap, paintable } from "./TripIdeasMap";
 import { renderWithProviders } from "../testing";
 
 // A stand-in for Google's script: it records what the page draws and lets a test press the map.
@@ -104,5 +104,14 @@ describe("the ideas map", () => {
     act(() => fake.on.mouseup.forEach((f) => f({})));
     await new Promise((r) => setTimeout(r, 700));
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("paintable", () => {
+  it("looks a CSS variable up, since Google's pins are images that can't", () => {
+    document.documentElement.style.setProperty("--list-test", "#abcdef");
+    expect(paintable("var(--list-test)")).toBe("#abcdef");
+    expect(paintable("var(--not-defined)")).toBe("#6b7280");
+    expect(paintable("#123456")).toBe("#123456");
   });
 });
