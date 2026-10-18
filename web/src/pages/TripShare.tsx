@@ -12,8 +12,12 @@ export function ShareSheet({ trip, onClose }: { trip: Trip; onClose: () => void 
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Before there is a link the switch only picks what the new link will start with.
+  const [draft, setDraft] = useState(true);
+  const [saved, setSaved] = useState(false);
   const field = useRef<HTMLInputElement>(null);
   const token = share.data?.token ?? null;
+  const showBookings = token ? (share.data?.show_bookings ?? true) : draft;
   const link = token ? `${window.location.origin}/shared/${token}` : null;
 
   useEffect(() => {
@@ -24,25 +28,36 @@ export function ShareSheet({ trip, onClose }: { trip: Trip; onClose: () => void 
     return () => window.removeEventListener("keydown", keydown);
   }, [onClose]);
 
-  async function change(call: () => Promise<TripShare | undefined>) {
+  async function change(call: () => Promise<TripShare | undefined>): Promise<boolean> {
     setBusy(true);
     setError(null);
     setCopied(false);
+    setSaved(false);
     try {
       const result = await call();
-      client.setQueryData(key, result ?? { token: null });
+      client.setQueryData(key, result ?? { token: null, show_bookings: true });
+      return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't change the link. Try again.");
+      return false;
     } finally {
       setBusy(false);
     }
   }
 
-  const create = () => change(() => api<TripShare>(`/travel/trips/${trip.id}/share`, { method: "POST", body: {} }));
+  const create = () => change(() => api<TripShare>(`/travel/trips/${trip.id}/share`, { method: "POST", body: { show_bookings: draft } }));
   const renew = () => {
     if (!window.confirm("Make a new link? The old one stops working, so anyone using it needs the new one.")) return;
     void change(() => api<TripShare>(`/travel/trips/${trip.id}/share`, { method: "POST", body: { renew: true } }));
   };
+  async function toggleBookings(on: boolean) {
+    if (!token) {
+      setDraft(on);
+      return;
+    }
+    const ok = await change(() => api<TripShare>(`/travel/trips/${trip.id}/share`, { method: "POST", body: { show_bookings: on } }));
+    setSaved(ok);
+  }
   const stop = () => {
     if (!window.confirm("Stop sharing? The link stops working for everyone who has it.")) return;
     void change(() => api<undefined>(`/travel/trips/${trip.id}/share`, { method: "DELETE" }));
@@ -69,14 +84,20 @@ export function ShareSheet({ trip, onClose }: { trip: Trip; onClose: () => void 
             ×
           </button>
         </div>
-        <p className="caption">
-          Anyone with the link can see the days, times, flights, trains, places to stay and plans, with their addresses. Nobody can change anything.
+        <p className="caption">Shows the days, plans and ideas. Never money, booking references, notes or who's going.</p>
+        <label className="share-switch">
+          <input
+            type="checkbox"
+            role="switch"
+            checked={showBookings}
+            disabled={busy || !share.isSuccess}
+            onChange={(e) => void toggleBookings(e.target.checked)}
+          />
+          <span>Show bookings (flights, stays, tickets)</span>
+        </label>
+        <p className="caption share-saved" role="status">
+          {saved ? "Saved" : ""}
         </p>
-        <ul className="share-hidden" aria-label="Kept private">
-          <li>Prices, the budget and spending</li>
-          <li>Booking references and where it was booked</li>
-          <li>Notes and who's going</li>
-        </ul>
         {share.isLoading && <p className="caption">Loading…</p>}
         {share.isError && (
           <p className="error-text" role="alert">
