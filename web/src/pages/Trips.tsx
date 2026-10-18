@@ -731,6 +731,11 @@ function Itinerary({ detail, day, onDay, onChange, onAdd, onIdeas }: {
               <button type="button" className="btn btn-ghost btn-small" onClick={() => onAdd({ kind: "activity", day: d })}>
                 {addLabel}
               </button>
+              {inTrip(d) && (detail.places || detail.ideas) && (
+                <button type="button" className="btn btn-ghost btn-small" onClick={() => onAdd({ kind: "activity", day: d, near: true })} aria-label={`Find ideas near here, Day ${n}`}>
+                  Find ideas near here
+                </button>
+              )}
             </div>
           </div>
         );
@@ -1066,7 +1071,7 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
         </section>
       )}
       {data && (
-        <TripPlacesProvider tripId={id} destination={data.trip.destination} enabled={data.places} ideas={data.ideas ?? false} onChange={refresh}>
+        <TripPlacesProvider tripId={id} destination={data.trip.destination} enabled={data.places} ideas={data.ideas ?? false} detail={data} onChange={refresh}>
           <ArrangeProvider detail={data} days={days} on={stage !== "after"} onChange={refresh}>
           {reading && (
             <p className="state" role="status">

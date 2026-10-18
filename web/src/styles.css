@@ -1606,6 +1606,20 @@ html.keyboard .bottom-nav, html.keyboard .trip-fab-button, html.keyboard .trip-f
   .ideas-map-canvas { height: min(560px, calc(100vh - 260px)); }
 }
 
+/* Trip page: finder */
+/* Where to look and quick themes sit under the search field, scrolling sideways rather than wrapping tall on a phone. */
+.find-scopes, .find-themes { margin-top: var(--space-2); }
+.find-scopes .day-pill, .find-themes .day-pill { min-height: 44px; }
+.find-themes .day-pill { font-weight: 500; }
+.find-themes .day-pill:disabled { opacity: 0.6; cursor: default; }
+.find-results { margin-top: var(--space-3); }
+.find-card { align-items: start; }
+.find-card .wrap { min-width: 0; overflow-wrap: anywhere; }
+.find-tags { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-top: var(--space-1); }
+.find-tags .chip { color: var(--text-muted); border: 1px solid var(--border-subtle); background: none; font-weight: 500; }
+.find-actions { display: grid; gap: var(--space-1); justify-items: stretch; flex: none; }
+.find-actions .btn { white-space: nowrap; min-height: 44px; }
+
 /* Trip page: money and prep */
 .planned-form { margin-top: var(--space-3); }
 .planned-form .field { flex: 1 1 160px; }

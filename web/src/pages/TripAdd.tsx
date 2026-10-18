@@ -12,6 +12,8 @@ export type AddPreset = {
   /** Straight to finding a place, saved as a plan on ``day`` at this time. */
   find?: boolean;
   at?: string;
+  /** Straight to finding ideas near ``day``: saved as ideas, or added to the day from the results. */
+  near?: boolean;
 };
 
 /** The three things a trip holds, each with its own short form. */
@@ -164,7 +166,7 @@ export function AddSheet({
 }) {
   const home = useHome();
   const [view, setView] = useState<"menu" | "type" | "booking" | "plan" | "idea" | "place">(
-    preset?.find && places ? "place" : preset ? formFor(preset.kind) : "menu",
+    (preset?.find || preset?.near) && places ? "place" : preset ? formFor(preset.kind) : "menu",
   );
   // Back to the choices and into another form: it starts on the kind picked there.
   const [kind, setKind] = useState<EntryKind>(preset?.kind ?? "flight");
@@ -266,7 +268,9 @@ export function AddSheet({
           />
         )}
 
-        {view === "place" && <SavePlaces open day={preset?.find ? preset.day : undefined} at={preset?.find ? preset.at : undefined} onDone={onChanged} />}
+        {view === "place" && (
+          <SavePlaces open day={preset?.find ? preset.day : undefined} at={preset?.find ? preset.at : undefined} near={preset?.find || preset?.near ? preset.day : undefined} viewing={viewing} onDone={onChanged} />
+        )}
       </section>
     </div>
   );
