@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from decimal import ROUND_CEILING, Decimal
 from enum import StrEnum
+from itertools import pairwise
 from uuid import UUID
 
 from nexus.domain.errors import InvalidInput
@@ -45,6 +46,20 @@ MAX_HOP_MODES = 200
 
 
 @dataclass(frozen=True, slots=True)
+class Stop:
+    """Where the trip is for a stretch of days: a city or area, from its first day to
+    its last. One stop's last day may be the next one's first (the travel day)."""
+
+    name: str
+    start: date
+    end: date
+
+    @property
+    def nights(self) -> int:
+        return (self.end - self.start).days
+
+
+@dataclass(frozen=True, slots=True)
 class Trip:
     id: UUID
     user_id: UserId
@@ -67,6 +82,8 @@ class Trip:
     packing: tuple[PackItem, ...] = ()
     getting_around: GettingAround = GettingAround.TRANSIT
     hop_modes: dict[str, str] = field(default_factory=dict)  # see MAX_HOP_MODES
+    # The stops the user set, in order. Empty: they follow the hotels (suggest_stops).
+    stops: tuple[Stop, ...] = ()
 
     @property
     def days(self) -> int:
@@ -148,6 +165,41 @@ def clean_day_label(trip: Trip, day: date, raw: str | None) -> dict[date, str]:
     else:
         labels.pop(day, None)
     return labels
+
+
+MAX_STOPS = 10
+MAX_STOP_NAME = 40
+
+
+def clean_stop_name(raw: str) -> str:
+    """A stop's name on one line, 1 to MAX_STOP_NAME characters."""
+    text = " ".join(raw.split())
+    if not text:
+        raise InvalidInput("a stop needs a name")
+    if len(text) > MAX_STOP_NAME:
+        raise InvalidInput(f"a stop's name can be at most {MAX_STOP_NAME} characters")
+    return text
+
+
+def clean_stops(trip: Trip, raw: Iterable[Stop]) -> tuple[Stop, ...]:
+    """The trip's stops from what was given: named, inside the trip, in date order and
+    not overlapping (one stop may end the day the next begins). Nothing at all means
+    "follow the hotels" again."""
+    found = sorted(
+        (Stop(clean_stop_name(s.name), s.start, s.end) for s in raw),
+        key=lambda s: (s.start, s.end),
+    )
+    if len(found) > MAX_STOPS:
+        raise InvalidInput(f"at most {MAX_STOPS} stops on a trip")
+    for stop in found:
+        if stop.end < stop.start:
+            raise InvalidInput(f"{stop.name} ends before it starts")
+        if stop.start < trip.start or stop.end > trip.end:
+            raise InvalidInput(f"{stop.name} is outside the trip's dates")
+    for before, after in pairwise(found):
+        if after.start < before.end or after.start == before.start:
+            raise InvalidInput(f"{before.name} and {after.name} overlap")
+    return tuple(found)
 
 
 def clean_currency(raw: str) -> str:

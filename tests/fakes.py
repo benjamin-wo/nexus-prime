@@ -470,6 +470,8 @@ def fake_place(
     reviews: tuple[str, ...] = (),
     address: str = "1 Example Street",
     location: Point | None = None,
+    area: str | None = None,
+    city: str | None = None,
 ) -> Place:
     """A made-up Google Maps place, open 11:00 to 22:00 except ``closed_on``."""
     periods = tuple(Period(d, time(11), d, time(22)) for d in range(7) if d != closed_on)
@@ -489,6 +491,8 @@ def fake_place(
         ),
         photo=PlacePhoto(f"places/{pid}/photos/ref1", "A. Photographer", "https://maps.example/p"),
         location=location,
+        area=area,
+        city=city,
     )
 
 

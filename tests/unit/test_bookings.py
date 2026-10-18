@@ -166,3 +166,22 @@ def test_a_plan_without_a_day_is_a_place_to_visit() -> None:
     assert BookingDraft.from_dict({"kind": "activity", "category": "Food"}) is None  # no name
     place = Booking(uuid4(), USER, None, None, d, None, None, MADE)
     assert not place.scheduled
+
+
+def test_a_pin_is_the_users_own_and_only_on_a_plan_without_a_place() -> None:
+    plan = {"kind": "activity", "name": "Palace gate", "lat": 37.57012345, "lng": 126.9769}
+    pinned = BookingDraft.from_dict(plan)
+    assert pinned is not None and (pinned.lat, pinned.lng) == (37.570123, 126.9769)
+    again = BookingDraft.from_dict(pinned.as_dict())
+    assert again == pinned  # round-trips through what's stored
+    # Linked to a Google Maps place: the place has its own position, so the pin goes.
+    linked = BookingDraft.from_dict({**plan, "place_id": "fakePlace0001"})
+    assert linked is not None and (linked.lat, linked.lng) == (None, None)
+    # Half a pin, one off the globe or not a number: no pin. A hotel has none either.
+    for bad in ({"lng": None}, {"lat": 95}, {"lat": "37.5"}, {"lat": True}, {"lat": float("nan")}):
+        bare = BookingDraft.from_dict({**plan, **bad})
+        assert bare is not None and (bare.lat, bare.lng) == (None, None)
+    hotel = BookingDraft.from_dict(
+        {"kind": "hotel", "hotel": "Inn", "check_in": "2026-12-10", "lat": 1.0, "lng": 2.0}
+    )
+    assert hotel is not None and (hotel.lat, hotel.lng) == (None, None)

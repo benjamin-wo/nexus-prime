@@ -15,7 +15,7 @@ from nexus.domain.destination_photos import DestinationPhoto, Season
 from nexus.domain.ledger import Direction, TransactionStatus, UserId
 from nexus.domain.money import Money
 from nexus.domain.packing import PackItem, from_rows
-from nexus.domain.trips import GettingAround, Trip
+from nexus.domain.trips import GettingAround, Stop, Trip
 from nexus.infra.db.ledger_repository import _transaction
 from nexus.infra.db.tables import (
     categories,
@@ -52,6 +52,10 @@ def _trip(row: Row[Any]) -> Trip:
         packing=from_rows(row.packing),
         getting_around=GettingAround(row.getting_around),
         hop_modes={k: v for k, v in (row.hop_modes or {}).items() if isinstance(v, str)},
+        stops=tuple(
+            Stop(r["name"], date.fromisoformat(r["start"]), date.fromisoformat(r["end"]))
+            for r in (row.stops or [])
+        ),
     )
 
 
@@ -70,6 +74,10 @@ def _values(trip: Trip, home: str) -> dict[str, Any]:
         "day_labels": {k.isoformat(): v for k, v in sorted(trip.day_labels.items())},
         "getting_around": trip.getting_around.value,
         "hop_modes": trip.hop_modes,
+        "stops": [
+            {"name": s.name, "start": s.start.isoformat(), "end": s.end.isoformat()}
+            for s in trip.stops
+        ],
         "updated_at": trip.updated_at,
     }
 

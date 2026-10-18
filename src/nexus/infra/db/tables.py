@@ -932,6 +932,8 @@ trips = Table(
     # hop between two entries, {"<from>:<to>": "drive"} (migration 0038).
     Column("getting_around", Text, nullable=False, server_default=text("'transit'")),
     Column("hop_modes", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    # The stops the user set, [{"name", "start", "end"}]; empty follows the hotels (0044).
+    Column("stops", JSONB, nullable=False, server_default=text("'[]'::jsonb")),
     ForeignKeyConstraint(["user_id"], ["users.id"]),
     ForeignKeyConstraint(["photo_id"], ["destination_photos.id"], ondelete="SET NULL"),
     UniqueConstraint("id", "user_id"),

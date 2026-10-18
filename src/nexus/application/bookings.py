@@ -259,7 +259,7 @@ def _check_lists(existing: list[Booking], draft: BookingDraft) -> None:
 
 # Kept from the entry as it was when an edit doesn't mention them (the web form and
 # the chat change only what they show or what the user named).
-KEPT = ("place_id", "ends_at", "link", "list_name", "order", "follows", "stations")
+KEPT = ("place_id", "ends_at", "link", "list_name", "order", "follows", "stations", "lat", "lng")
 
 
 def _draft(details: dict[str, object], kept: BookingDraft | None = None) -> BookingDraft:

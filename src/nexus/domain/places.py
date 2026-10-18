@@ -91,7 +91,11 @@ def photo_name(value: object) -> str | None:
 @dataclass(frozen=True, slots=True)
 class Point:
     """Where a place is, in degrees. Fetched with the place and never stored: Google
-    allows coordinates to be kept only for a while."""
+    allows coordinates to be kept only for a while.
+
+    The one exception is a pin the user drops themselves (``BookingDraft.lat/lng``, on a
+    plan with no Google Maps place): that is their own coordinate, not Google's, so it
+    is kept with the entry."""
 
     lat: float
     lng: float
@@ -135,6 +139,12 @@ class Place:
     photo: PlacePhoto | None = None
     detailed: bool = False  # fetched with hours and reviews, not just from a search
     location: Point | None = None
+    # The neighbourhood it's in ("Gion", "Shinjuku"): the sublocality, else the
+    # neighbourhood, else the locality. Fetched with the place, never stored.
+    area: str | None = None
+    # The city it's in ("Tokyo", "Kyoto"): the locality, else the postal town, else the
+    # second-level administrative area. Names a trip's stop. Fetched, never stored.
+    city: str | None = None
 
     @property
     def price(self) -> str | None:
