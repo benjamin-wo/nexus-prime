@@ -153,9 +153,12 @@ export function Shell({
               Nexus <span className="brand-accent">Prime</span>
             </span>
           </Link>
-          <button type="button" className="btn btn-ghost" onClick={onLogout}>
-            Sign out
-          </button>
+          <div className="guest-user">
+            {me.user.display_name && <span className="guest-name">{me.user.display_name}</span>}
+            <button type="button" className="btn btn-ghost" onClick={onLogout}>
+              Sign out
+            </button>
+          </div>
         </header>
         <main className="main-viewport" ref={viewport}>
           <div className="content" ref={content}>

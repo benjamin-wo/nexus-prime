@@ -28,13 +28,18 @@ import { Plan } from "./pages/Plan";
 import { Settings } from "./pages/Settings";
 import { TripInvite } from "./pages/TripInvite";
 import { Upcoming } from "./pages/Upcoming";
-import { initData, miniApp } from "./telegram";
+import { initData, miniApp, tripInviteIn } from "./telegram";
 
 /** Inside Telegram, sign in with the Mini App's launch data instead of the widget. */
 async function miniAppSignIn(): Promise<Me | null> {
   if (!initData) return null;
   try {
-    return await api<Me>("/auth/webapp", { method: "POST", body: { init_data: initData } });
+    // Opened from a trip's invite link: the server joins them to the trip as it signs them in.
+    const tripInvite = tripInviteIn(window.location.pathname);
+    return await api<Me>("/auth/webapp", {
+      method: "POST",
+      body: tripInvite ? { init_data: initData, trip_invite: tripInvite } : { init_data: initData },
+    });
   } catch (e) {
     if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
       miniApp.error = e.status === 403 ? "access" : "signin";

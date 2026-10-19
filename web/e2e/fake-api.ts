@@ -186,6 +186,8 @@ export async function fakeApi(
     activity: Record<string, { actor: string; summary: string; at: string }[]>;
     /** The bodies of PUT /travel/trips/{id}/notes, in order. */
     notesPuts: Record<string, unknown>[];
+    /** Whether Settings tells the user when someone changes a trip they share (GET and PUT /trip-alerts). */
+    tripAlerts: boolean;
     inviteCount: number;
     /** Expenses split evenly from the trip page, by transaction id. */
     splitDone: string[];
@@ -259,6 +261,7 @@ export async function fakeApi(
     forbidden: [],
     activity: {},
     notesPuts: [],
+    tripAlerts: true,
     inviteCount: 0,
     splitDone: [],
     justMine: {},
@@ -537,6 +540,7 @@ export async function fakeApi(
           role: "owner",
           home_currency: "SGD",
           timezone: "Asia/Singapore",
+          display_name: "Sam R.",
         },
         csrf_token: "csrf-1",
       });
@@ -566,6 +570,7 @@ export async function fakeApi(
           role: guest ? "guest" : "owner",
           home_currency: "SGD",
           timezone: "Asia/Singapore",
+          display_name: guest ? "Gus L." : "Sam R.",
         },
         csrf_token: "csrf-1",
       });
@@ -2141,6 +2146,10 @@ export async function fakeApi(
       const found = state.subs.find((s) => s.id === sub[1]);
       if (found) found.status = sub[2] === "track" ? "active" : "dismissed";
       return route.fulfill({ status: 204 });
+    }
+    if (path === "/trip-alerts") {
+      if (method === "PUT") state.tripAlerts = Boolean(body.enabled);
+      return json(route, { enabled: state.tripAlerts });
     }
     if (path === "/notifications") {
       if (method === "PUT") {

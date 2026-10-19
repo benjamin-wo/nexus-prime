@@ -84,7 +84,8 @@ test("a trip you were added to has no Money tab, no cost field and says whose it
   // Adding a booking or a plan has no cost or currency.
   await page.locator(".trip-fab-button, .trip-add-desktop").filter({ visible: true }).click();
   const add = page.getByRole("dialog", { name: "Add to Lisbon" });
-  await expect(add.getByRole("button", { name: "Type it" })).toHaveCount(0);
+  // The chat of their own account finds the trip by name, so a member can type it (a guest has no chat).
+  await expect(add.getByRole("button", { name: "Type it" })).toHaveCount(1);
   await add.getByRole("button", { name: /A booking/ }).click();
   await add.getByText("More details").click();
   await expect(add.getByLabel("Booking reference")).toBeVisible();
@@ -165,6 +166,8 @@ test("a guest on a trip is asked for nothing a guest can't have", async ({ page 
   const state = await fakeApi(page, { guest: true });
   state.trips = [sharedTrip()];
   await page.goto("/travel");
+  // The header says who is signed in, beside Sign out.
+  await expect(page.locator(".guest-bar").getByText("Gus L.")).toBeVisible();
   await expect(page.getByRole("region", { name: "Shared with you" }).getByRole("link", { name: "Lisbon" })).toBeVisible();
   await expect(page.getByRole("button", { name: "New trip" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Where to next?" })).toHaveCount(0);

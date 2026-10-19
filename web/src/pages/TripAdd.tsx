@@ -77,7 +77,8 @@ function TypeIt({ trip, preset, onChanged }: { trip: Trip; preset: AddPreset | n
     setText("");
     setLines((l) => [...l, { who: "you", text: said }]);
     // The trip goes with it, so "Thursday" and "the hotel" mean this trip's.
-    const message = `For my ${trip.destination} trip (${when}), add this: ${said}`;
+    const whose = trip.role === "member" ? "the" : "my";
+    const message = `For ${whose} ${trip.destination} trip${trip.role === "member" ? " shared with me" : ""} (${when}), add this: ${said}`;
     void run(api<Reply[]>("/chat", { method: "POST", body: { message } }));
   }
 
@@ -152,9 +153,10 @@ export function AddSheet({
   onClose: () => void;
 }) {
   const home = useHome();
-  // "Type it" is the chat (POST /chat): a guest has none, and a member's chat knows their own trips, not this one.
+  // "Type it" is the chat (POST /chat): a guest has none. A member of someone's trip has the chat of their
+  // own account, which finds that trip by name and may change its plan (never its money).
   const appRole = useAppRole();
-  const typing = trip.role !== "member" && appRole !== "guest";
+  const typing = appRole !== "guest";
   const [view, setView] = useState<"menu" | "type" | "booking" | "plan" | "idea" | "place">(
     (preset?.find || preset?.near) && places ? "place" : preset ? formFor(preset.kind) : "menu",
   );

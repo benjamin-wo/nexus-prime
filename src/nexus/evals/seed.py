@@ -11,7 +11,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from decimal import Decimal
-from uuid import uuid4
+from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 from nexus.application import bills as bill_cases
@@ -21,6 +21,7 @@ from nexus.application import category_rules as rule_cases
 from nexus.application import salary as salary_cases
 from nexus.application import splits as split_cases
 from nexus.application import transactions as tx_cases
+from nexus.application import trip_access as access_cases
 from nexus.application import trips as trip_cases
 from nexus.application import wallets as wallet_cases
 from nexus.application.categories import list_categories
@@ -78,12 +79,44 @@ ANN_OWES = "40.00"  # from the Jumbo Seafood dinner, split three ways
 DINING_BUDGET = "300.00"
 
 
+# The owner of the shared Japan trip gets this id on top of the case user's.
+OWNER_OFFSET = 5_000_000
+OWNER_NAME = "Alex"
+JAPAN_BUDGET = "3000"
+
+
 @dataclass(frozen=True, slots=True)
 class Seeded:
     user: User
+    # With ``shared``: the made-up person who owns the Japan trip the user was added to,
+    # and the trip's id. Otherwise the user owns the trip and these are None.
+    owner: User | None = None
+    trip_id: UUID | None = None
 
 
-async def seed_user(new_uow: UowFactory, telegram_id: int) -> Seeded:
+async def _japan(new_uow: UowFactory, owner: User) -> UUID:
+    """A trip to Japan in December with a budget and a hotel, for ``owner``."""
+    trip = await trip_cases.create_trip(
+        new_uow(),
+        owner,
+        trip_cases.TripDraft(
+            "Tokyo, Japan", date(2026, 12, 10), date(2026, 12, 18), "JPY",
+            Money.of(JAPAN_BUDGET, "SGD"), ["Ann"],
+        ),
+        now=NOW,
+    )  # fmt: skip
+    await booking_cases.add_manual(
+        new_uow(), owner.id, trip.id,
+        {"kind": "hotel", "hotel": "Hotel Sakura", "check_in": "2026-12-10",
+         "check_out": "2026-12-14"},
+        None, now=NOW,
+    )  # fmt: skip
+    return trip.id
+
+
+async def seed_user(new_uow: UowFactory, telegram_id: int, *, shared: bool = False) -> Seeded:
+    """The case's user. With ``shared`` they don't own the Japan trip: Alex does, and
+    the user was added to it as a member."""
     user = (
         await register_user(
             new_uow(),
@@ -153,19 +186,23 @@ async def seed_user(new_uow: UowFactory, telegram_id: int) -> Seeded:
             )
         )
         await db.commit()
-    trip = await trip_cases.create_trip(
-        new_uow(),
-        user,
-        trip_cases.TripDraft(
-            "Tokyo, Japan", date(2026, 12, 10), date(2026, 12, 18), "JPY",
-            Money.of("3000", "SGD"), ["Ann"],
-        ),
-        now=NOW,
-    )  # fmt: skip
-    await booking_cases.add_manual(
-        new_uow(), user.id, trip.id,
-        {"kind": "hotel", "hotel": "Hotel Sakura", "check_in": "2026-12-10",
-         "check_out": "2026-12-14"},
-        None, now=NOW,
-    )  # fmt: skip
-    return Seeded(user)
+    if not shared:
+        return Seeded(user, trip_id=await _japan(new_uow, user))
+    owner = (
+        await register_user(
+            new_uow(),
+            RegisterUser(
+                telegram_user_id=telegram_id + OWNER_OFFSET,
+                telegram_chat_id=telegram_id + OWNER_OFFSET,
+                home_currency="SGD",
+                timezone="Asia/Singapore",
+            ),
+        )
+    ).user
+    async with new_uow() as db:
+        await db.ledger.set_display_name(owner.id, OWNER_NAME)
+        await db.commit()
+    trip_id = await _japan(new_uow, owner)
+    issued = await access_cases.create_invite(new_uow(), owner, trip_id, now=NOW)
+    await access_cases.accept_invite(new_uow(), user, issued.token, now=NOW)
+    return Seeded(user, owner, trip_id)

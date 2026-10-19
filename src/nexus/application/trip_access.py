@@ -19,7 +19,7 @@ from nexus.application.budgets import TELEGRAM_SEND
 from nexus.application.ports import UnitOfWork
 from nexus.domain.access import new_token, token_hash
 from nexus.domain.bookings import Booking
-from nexus.domain.errors import Conflict, Forbidden, InvalidInput, NotFound
+from nexus.domain.errors import Forbidden, InvalidInput, NotFound
 from nexus.domain.ledger import Role, User, UserId
 from nexus.domain.trip_access import (
     DIGEST_EVERY,
@@ -30,13 +30,14 @@ from nexus.domain.trip_access import (
     TripAccess,
     TripInvite,
     TripMember,
+    clean_name,
     clean_summary,
     digest_key,
     digest_text,
     without_money,
     without_trip_money,
 )
-from nexus.domain.trips import Readiness, Trip, TripStatus
+from nexus.domain.trips import Readiness, Trip, TripStatus, describe_trip
 
 log = logging.getLogger(__name__)
 
@@ -138,6 +139,125 @@ async def shared_trips(uow: UnitOfWork, member_id: UserId) -> list[tuple[Trip, s
     return [(without_trip_money(t), name) for t, name in found]
 
 
+# --- finding a trip by name, for the chat ------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class Found:
+    """A trip found by name for someone in chat: one of their own, or one they were added
+    to. ``trip`` is as they may see it, so a member's has no money in it. Plan edits run
+    as the trip's owner (``owner_id``) and are noted in its activity; anything with money
+    in it, or that changes the trip itself, asks ``require_owner`` first."""
+
+    trip: Trip
+    opened: Opened
+
+    @property
+    def shared(self) -> bool:
+        """True when the person is a member of someone else's trip."""
+        return not self.opened.access.is_owner
+
+    @property
+    def owner_id(self) -> UserId:
+        return self.opened.access.owner_id
+
+    @property
+    def owner(self) -> User:
+        return self.opened.owner
+
+    @property
+    def owner_label(self) -> str:
+        return clean_name(self.owner.display_name) or "the trip's owner"
+
+    @property
+    def whose(self) -> str:
+        """What follows the trip's name in a sentence: nothing for one's own trip."""
+        return f" ({self.owner_label}'s trip)" if self.shared else ""
+
+
+def refusal(owner_label: str) -> str:
+    return f"Only {owner_label} can change money or the trip's details on a shared trip."
+
+
+def require_owner(found: Found) -> Trip:
+    """The trip, for what only its owner may do (money, dates, travellers, deleting it,
+    sharing it). Forbidden, saying who can, for a member."""
+    if found.shared:
+        raise Forbidden(refusal(found.owner_label))
+    return found.trip
+
+
+def _candidate(trip: Trip, owner: str | None) -> str:
+    whose = "yours" if owner is None else f"{clean_name(owner) or 'someone'}'s"
+    return f"{trip.destination} ({trip.start:%d %b %Y} to {trip.end:%d %b %Y}, {whose})"
+
+
+async def find_trip(uow: UowFactory, actor: User, name: str | None, *, now: datetime) -> Found:
+    """A trip by its destination ("Japan" finds "Tokyo, Japan") among the actor's own
+    trips and the ones they were added to; with no name, the one that's on or next.
+    Several matching trips where one is someone else's is an InvalidInput listing them,
+    so the person is asked which (several of their own: the one that's on or next, as
+    ever). Access is checked by ``open_trip``, as for the web."""
+    own = await trip_cases.list_trips(uow(), actor.id)
+    shared = await shared_trips(uow(), actor.id)
+    owners: dict[UUID, str | None] = {t.id: owner for t, owner in shared}
+    trips = [*own, *(t for t, _ in shared)]
+    if not trips:
+        raise NotFound("no trips yet")
+    today = trip_cases.local_today(actor, now)
+    if not name or not name.strip():
+        picked = trip_cases.current_or_next(trips, today)
+    else:
+        matches = trip_cases.named(trips, name)
+        if not matches:
+            raise NotFound(
+                f"no trip to {name.strip()}; trips: " + ", ".join(t.destination for t in trips)
+            )
+        if len(matches) > 1 and any(t.id in owners for t in matches):
+            listed = "; ".join(_candidate(t, owners.get(t.id)) for t in matches)
+            raise InvalidInput(
+                f"{len(matches)} trips match {name.strip()!r}: {listed}. Ask which one."
+            )
+        picked = trip_cases.current_or_next(matches, today) or matches[0]
+    if picked is None:  # pragma: no cover - there are trips
+        raise NotFound("no trips yet")
+    opened = await open_trip(uow(), actor, picked.id)
+    return Found(picked, opened)
+
+
+async def shared_trip_named_in(uow: UowFactory, actor: User, text: str) -> Found | None:
+    """The one trip the actor was added to whose destination ("Tokyo", "Japan") the text
+    mentions, for a screenshot sent with a caption like "add these to our Japan trip".
+    None when none or several do, or when one of their own trips is mentioned too (a
+    screenshot then goes where it always did, by its dates). Access is checked by
+    ``open_trip``."""
+    said = text.casefold()
+    if not said.strip():
+        return None
+    shared = await shared_trips(uow(), actor.id)
+    if not shared:
+        return None
+
+    def mentioned(trip: Trip) -> bool:
+        parts = (p.strip().casefold() for p in trip.destination.split(","))
+        return any(len(p) >= 3 and p in said for p in parts)
+
+    if any(mentioned(t) for t in await trip_cases.list_trips(uow(), actor.id)):
+        return None
+    hits = [t for t, _ in shared if mentioned(t)]
+    if len(hits) != 1:
+        return None
+    return Found(hits[0], await open_trip(uow(), actor, hits[0].id))
+
+
+def describe_plan(plan: PlanView) -> list[str]:
+    """A member's trip for chat: the plan only, with no money in it."""
+    return [
+        describe_trip(plan.trip, plan.today) + ".",
+        *trip_cases.plan_lines(plan.trip, plan.bookings, plan.ready, plan.status),
+    ]
+
+
 # --- inviting people ---------------------------------------------------------------------
 
 
@@ -209,6 +329,7 @@ class Joined:
     trip_id: UUID
     owner_id: UserId
     new: bool  # False when they were on the trip already
+    own: bool = False  # True when the trip is theirs: the link was made by themselves
 
 
 async def join_with_invite(
@@ -217,10 +338,11 @@ async def join_with_invite(
     """Adds ``user`` to the invite's trip and spends the invite, inside the caller's
     unit of work (with the invite row locked). None when the invite can't be used.
     Someone already on the trip is left as they are and the invite is kept; so is
-    the owner, who can't join their own trip (Conflict)."""
+    the owner, who can't join their own trip: they get the trip back, marked ``own``,
+    and the invite is neither spent nor checked."""
     trip_id, owner_id = invite.trip_id, invite.owner_id
     if owner_id == user.id:
-        raise Conflict("this is your own trip")
+        return Joined(trip_id, owner_id, False, own=True)
     already = await uow.trips.trip_access(user.id, trip_id) is not None
     if not invite.usable(now):
         # Opening the same link twice is harmless for the person it was spent on.

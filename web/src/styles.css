@@ -1782,6 +1782,12 @@ a.photo-credit:hover { text-decoration: underline; }
   display: flex; align-items: center; gap: 10px; min-height: 44px;
   font-size: 1.0625rem; font-weight: 600; color: var(--text-white); text-decoration: none;
 }
+/* Who is signed in, beside Sign out; a long name is cut short rather than pushing it off. */
+.guest-user { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+.guest-name {
+  min-width: 0; max-width: 12rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: #e4e4e7; font-size: 0.8125rem;
+}
 @media (max-width: 900px) {
   .guest-bar { padding: var(--space-2) var(--space-4); }
   /* No bottom bar to leave room for. */

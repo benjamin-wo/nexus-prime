@@ -5,8 +5,8 @@ import { describe, expect, it } from "vitest";
 import type { Me } from "../api";
 import { Shell } from "./Shell";
 
-const user = (role: Me["user"]["role"]): Me => ({
-  user: { telegram_user_id: 1, role, home_currency: "SGD", timezone: "Asia/Singapore" },
+const user = (role: Me["user"]["role"], display_name?: string | null): Me => ({
+  user: { telegram_user_id: 1, role, home_currency: "SGD", timezone: "Asia/Singapore", display_name },
   csrf_token: "c",
 });
 
@@ -41,5 +41,15 @@ describe("the shell", () => {
     expect(screen.queryByRole("navigation", { name: "Main (mobile)" })).toBeNull();
     // The app's name is the only link, and it goes to Travel.
     expect(screen.getAllByRole("link").map((l) => l.getAttribute("href"))).toEqual(["/travel"]);
+  });
+
+  it("shows a guest who is signed in beside Sign out, and nothing when they have no name", () => {
+    const { unmount } = shell(user("guest", "Gus L."));
+    expect(screen.getByText("Gus L.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sign out" })).toBeInTheDocument();
+    unmount();
+    shell(user("guest", null));
+    expect(screen.queryByText("Gus L.")).toBeNull();
+    expect(screen.getByRole("button", { name: "Sign out" })).toBeInTheDocument();
   });
 });

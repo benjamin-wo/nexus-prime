@@ -268,6 +268,8 @@ class UserOut(Model):
     role: str
     home_currency: str
     timezone: str
+    # Their Telegram name, kept at sign-in; None for someone who hasn't one.
+    display_name: str | None = None
 
 
 class MeOut(Model):
@@ -284,6 +286,7 @@ def me_out(user: User, csrf: str, joined_trip: UUID | None = None) -> MeOut:
             role=user.role.value,
             home_currency=user.home_currency,
             timezone=user.timezone,
+            display_name=user.display_name,
         ),
         csrf_token=csrf,
         joined_trip=joined_trip,
@@ -429,6 +432,8 @@ async def login(body: LoginIn, request: Request, response: Response, web: Runtim
 
 class WebAppLoginIn(Model):
     init_data: str = Field(min_length=1, max_length=4096)
+    # A trip invite, as for the widget sign-in: the Mini App has no other way to carry it.
+    trip_invite: str | None = None
 
 
 @router.post("/auth/webapp")
@@ -442,9 +447,9 @@ async def login_webapp(
         identity = verify_webapp(body.init_data, _bot_token(web), now=now)
     except LoginRejected as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
-    logged_in = await _open_session(web, identity, None, now)
+    logged_in = await _open_session(web, identity, None, now, body.trip_invite)
     set_session_cookie(response, web, logged_in.token, embedded=True)
-    return me_out(logged_in.user, logged_in.session.csrf_token)
+    return me_out(logged_in.user, logged_in.session.csrf_token, logged_in.joined_trip)
 
 
 @router.get("/auth/telegram/callback", include_in_schema=False)

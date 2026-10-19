@@ -4,7 +4,7 @@ import { useParams, useSearchParams } from "react-router-dom";
 
 import { api } from "../api";
 import { TelegramLogin } from "../components/TelegramLogin";
-import { initData, miniApp, openExternal } from "../telegram";
+import { initData, miniApp } from "../telegram";
 
 const ERRORS: Record<string, string> = {
   signin: "That sign-in couldn't be verified. Please try again.",
@@ -46,12 +46,12 @@ export function LoginPage({ trip = false }: { trip?: boolean }) {
     else tripNote("clear");
   }, [trip]);
 
-  // Inside Telegram the widget can't help: the launch data already said who this is. It can't carry
-  // a trip invite either (the server only reads one from the widget), so a trip invite is opened in the browser.
+  // Inside Telegram the widget can't help: the launch data already said who this is, and the Mini App
+  // sign-in carried the trip invite too. So the page only shows up when that sign-in was refused.
   let error: string | undefined;
   if (initData) {
-    if (!trip) error = miniApp.error === "access" ? ERRORS.access : "Sign-in failed. Close and reopen the app.";
-    else if (miniApp.error === "signin") error = "Sign-in failed. Close and reopen the app.";
+    if (miniApp.error === "access") error = trip ? TRIP_ACCESS : ERRORS.access;
+    else error = "Sign-in failed. Close and reopen the app.";
   } else {
     const code = search.get("error") ?? "";
     error = code === "access" && afterTrip ? TRIP_ACCESS : ERRORS[code];
@@ -65,7 +65,7 @@ export function LoginPage({ trip = false }: { trip?: boolean }) {
               Nexus <span style={{ color: "var(--accent)" }}>Prime</span>
             </p>
             <h1>You've been invited to a trip</h1>
-            <p className="secondary">{initData ? "Open this link in your browser to join." : "Sign in with Telegram to join."}</p>
+            {!initData && <p className="secondary">Sign in with Telegram to join.</p>}
           </>
         ) : (
           <>
@@ -82,13 +82,7 @@ export function LoginPage({ trip = false }: { trip?: boolean }) {
             {error}
           </p>
         )}
-        {initData ? (
-          trip ? (
-            <button type="button" className="btn btn-primary" onClick={() => openExternal(window.location.href)}>
-              Open in browser
-            </button>
-          ) : null
-        ) : config.data ? (
+        {initData ? null : config.data ? (
           <TelegramLogin bot={config.data.bot_username} invite={trip ? undefined : token} tripInvite={trip ? token : undefined} />
         ) : config.isError ? (
           <p className="error-text">Sign-in isn't available right now.</p>

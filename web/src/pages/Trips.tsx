@@ -1197,11 +1197,18 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
                   onDay={(iso) => (iso === null ? setMapAll(true) : pickDay(iso))}
                 />
               </div>
-              {onAsk && stage !== "after" && !member && (
+              {onAsk && stage !== "after" && (
                 <button
                   type="button"
                   className="btn btn-ghost trip-ask"
-                  onClick={() => onAsk(`How's my ${data.trip.destination} trip looking? What's booked, what's missing and what's left in the budget?`)}
+                  onClick={() =>
+                    onAsk(
+                      // A member's chat sees the plan only: no budget to ask about.
+                      member
+                        ? `How's the ${data.trip.destination} trip shared with me looking? What's booked and what's missing?`
+                        : `How's my ${data.trip.destination} trip looking? What's booked, what's missing and what's left in the budget?`,
+                    )
+                  }
                 >
                   <Icon name="sparkle" size={16} className="icon-inline" />
                   Ask Nexus about this trip

@@ -83,13 +83,13 @@ const planOnly = (t: Trip, over: Partial<TripDetail> = {}): TripDetail =>
 const owner: TripMember = { id: "u1", name: "Alex T.", role: "owner", added_at: null, you: false };
 const sam: TripMember = { id: "u3", name: "Sam R.", role: "member", added_at: "2026-09-21T03:00:00Z", you: true };
 
-function renderTrip(path: string) {
+function renderTrip(path: string, onAsk?: (text: string) => void) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[path]}>
         <Routes>
-          <Route path="/travel/trips/:id" element={<TripPage />} />
+          <Route path="/travel/trips/:id" element={<TripPage onAsk={onAsk} />} />
           <Route path="/travel" element={<p>Trips list</p>} />
         </Routes>
       </MemoryRouter>
@@ -124,7 +124,14 @@ describe("a trip you were added to", () => {
     expect(screen.queryByRole("button", { name: "Share the plan" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Trip options" })).toBeNull();
     expect(screen.queryByRole("menuitem", { name: "Delete trip" })).toBeNull();
-    expect(screen.queryByRole("button", { name: /Ask Nexus about this trip/ })).toBeNull();
+  });
+
+  it("lets a member ask Nexus about the plan, with no budget in the question", async () => {
+    mockApi(handlers());
+    const asked: string[] = [];
+    renderTrip("/travel/trips/t2", (text) => asked.push(text));
+    await userEvent.setup().click(await screen.findByRole("button", { name: /Ask Nexus about this trip/ }));
+    expect(asked).toEqual(["How's the Lisbon trip shared with me looking? What's booked and what's missing?"]);
   });
 
   it("shows the people on the trip as the faces, owner first", async () => {

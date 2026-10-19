@@ -26,6 +26,8 @@ from nexus.evals.checks import (
     PayIs,
     Remembers,
     RuleIs,
+    SharedBooked,
+    SharedTripIs,
     TheyPaid,
     UpdatesAre,
 )
@@ -107,6 +109,8 @@ class Case:
     max_reply: int | None = None  # the last reply's length at most
     checks: tuple[Check, ...] = ()
     target: str | None = None  # the M8 part expected to make this pass
+    # The user is a member of Alex's Japan trip (not its owner): see ``seed.seed_user``.
+    shared: bool = False
 
 
 def _t(*texts: str | Turn) -> tuple[Turn, ...]:
@@ -813,6 +817,30 @@ CASES: tuple[Case, ...] = (
         _t("add dinner at Sushi Ten on 12 Dec at 7pm to my Japan trip"),
         calls=(Call("add_to_itinerary", {"kind": "activity", "name": Has("sushi ten")}),),
         confirms=True,
+    ),
+    # A trip someone else shared: the user is a member, Alex owns it. Plan edits go
+    # through; money and the trip's details are Alex's.
+    Case(
+        "shared-trip-add-plan",
+        "log",
+        _t("add dinner at Sushi Ten to our Japan trip on Saturday the 12th at 7pm"),
+        shared=True,
+        calls=(Call("add_to_itinerary", {"kind": "activity", "name": Has("sushi ten")}),),
+        forbid=("create_trip", "research_trip", "update_trip"),
+        confirms=True,
+        checks=(SharedBooked("Sushi Ten", starts=date(2026, 12, 12)),),
+    ),
+    Case(
+        "shared-trip-budget-refused",
+        "log",
+        _t("set the Japan budget to 5000"),
+        shared=True,
+        calls=(Call("update_trip"),),
+        forbid=("set_budget", "create_trip"),
+        unchanged=True,
+        confirms=False,
+        reply=("alex",),
+        checks=(SharedTripIs(seed.JAPAN_BUDGET),),
     ),
     Case(
         "itinerary-change-hotel",

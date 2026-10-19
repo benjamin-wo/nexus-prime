@@ -9,6 +9,8 @@ type Opened = { tripId: string; notice: string | null };
 /** Joins the trip the link is for. A trip already on is just opened, with nothing said. */
 async function join(token: string): Promise<Opened> {
   const joined = await api<JoinedTrip>(acceptInvitePath(token), { method: "POST" });
+  // Their own link: nothing is joined, so the trip just opens, with a word on what the link is for.
+  if (joined.own) return { tripId: joined.trip_id, notice: "That's your own invite link. Send it to the person you want on the trip." };
   if (!joined.new) return { tripId: joined.trip_id, notice: null };
   // The name is only for the notice, so not finding it never stops them joining.
   let notice = "You've joined the trip.";
@@ -48,20 +50,6 @@ export function TripInvite({ me }: { me: Me }) {
 
   if (opened.isError) {
     const status = opened.error instanceof ApiError ? opened.error.status : 0;
-    if (status === 409) {
-      // The server says no more than that, so there is no trip to open.
-      return (
-        <div className="login">
-          <section className="card">
-            <h1>That's your own invite link</h1>
-            <p className="secondary">Send it to the person you want on the trip. It adds one person, once.</p>
-            <Link className="btn btn-primary" to="/travel">
-              Go to Trips
-            </Link>
-          </section>
-        </div>
-      );
-    }
     if (status === 404 || status === 410) {
       return (
         <div className="login">

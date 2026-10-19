@@ -2001,16 +2001,18 @@ async def trip_activity(trip_id: str, auth: TripAuth, web: Runtime) -> list[Acti
 class JoinedOut(Model):
     trip_id: UUID
     new: bool  # false when they were on the trip already
+    own: bool = False  # true when the link is their own trip's: nothing is joined
 
 
 @router.post("/invites/{token}/accept")
 async def accept_invite(token: str, auth: TripAuth, web: Runtime) -> JoinedOut:
     """Joins the trip an invite link is for, for anyone signed in (guests included).
-    The link works once. 404 for one that is unknown, used, cancelled or expired, 409
-    for the owner's own trip."""
+    The link works once. 404 for one that is unknown, used, cancelled or expired. The
+    owner opening their own trip's link gets the trip back with ``own`` true and joins
+    nothing, so the page can open it."""
     limit(web, auth, "join")
     joined = await access_cases.accept_invite(web.uow(), auth.user, token, now=web.clock())
-    return JoinedOut(trip_id=joined.trip_id, new=joined.new)
+    return JoinedOut(trip_id=joined.trip_id, new=joined.new, own=joined.own)
 
 
 # Opened by anyone with the link, signed in or not. What it shows is an allow-list: the

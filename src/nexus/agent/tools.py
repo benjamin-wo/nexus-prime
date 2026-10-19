@@ -37,6 +37,7 @@ from nexus.application import splits as split_cases
 from nexus.application import subscriptions as subscription_cases
 from nexus.application import transactions as tx_cases
 from nexus.application import travel_research as trip_research
+from nexus.application import trip_access as access_cases
 from nexus.application import trip_split
 from nexus.application import trips as trip_cases
 from nexus.application import wallets as wallet_cases
@@ -50,7 +51,7 @@ from nexus.application.web_lookup import WebLookup
 from nexus.domain import itinerary
 from nexus.domain.bookings import Booking, BookingDraft, BookingKind
 from nexus.domain.email import InboundEmail
-from nexus.domain.errors import InvalidInput, NexusError, NotFound
+from nexus.domain.errors import Forbidden, InvalidInput, NexusError, NotFound
 from nexus.domain.history import describe as describe_history
 from nexus.domain.investments import clean_quantity, clean_symbol, describe_position
 from nexus.domain.ledger import (
@@ -74,6 +75,7 @@ from nexus.domain.planning import Cadence, PayRule
 from nexus.domain.rules import clean_pattern
 from nexus.domain.settle import Debt as SettleDebt
 from nexus.domain.settle import PersonBalance, describe_balance
+from nexus.domain.trip_access import clean_name, without_money
 from nexus.domain.trips import Trip, TripItem, describe_trip
 
 type UowFactory = Callable[[], UnitOfWork]
@@ -2127,6 +2129,31 @@ class TripNameArgs(Args):
     )
 
 
+async def _found(ctx: ToolContext, name: str | None) -> access_cases.Found:
+    """The trip by name among the user's own and the ones they were added to. Who may do
+    what on it is decided here, as for the web: see ``access_cases.find_trip``."""
+    return await access_cases.find_trip(ctx.uow, ctx.user, name, now=ctx.now)
+
+
+async def _mine(ctx: ToolContext, name: str | None) -> Trip:
+    """A trip the user owns, for what touches money or changes the trip itself. On a
+    trip they were added to, this refuses before anything is read or changed."""
+    return access_cases.require_owner(await _found(ctx, name))
+
+
+async def _noted(ctx: ToolContext, found: access_cases.Found, summary: str) -> None:
+    """Notes a plan change in the trip's activity (when the trip is shared), as the web
+    does, so its owner's Telegram summary fires."""
+    await access_cases.record(ctx.uow(), found.opened.access, summary, now=ctx.now)
+
+
+def _price_left_out(found: access_cases.Found, cost: str | None) -> str:
+    """What to say when a member gave a price: costs on a shared trip are the owner's."""
+    if not (found.shared and cost):
+        return ""
+    return f" I left the price out: only {found.owner_label} can add costs on a shared trip."
+
+
 class TripChangeArgs(TripNameArgs):
     destination: str | None = None
     start: str | None = Field(None, description="New first day, like 2027-01-10")
@@ -2140,8 +2167,22 @@ class TripChangeArgs(TripNameArgs):
     )
 
 
-async def _changed_trip(ctx: ToolContext, a: TripChangeArgs) -> tuple[UUID, trip_cases.TripDraft]:
-    trip = await trip_cases.find_trip(ctx.uow(), ctx.user, a.trip, now=ctx.now)
+_DETAILS = ("destination", "start", "end", "currency", "budget", "companions", "set_aside")
+
+
+def _only_notes(a: TripChangeArgs) -> bool:
+    return a.notes is not None and all(getattr(a, f) is None for f in _DETAILS)
+
+
+async def _changed_trip(
+    ctx: ToolContext, a: TripChangeArgs
+) -> tuple[access_cases.Found, trip_cases.TripDraft]:
+    found = await _found(ctx, a.trip)
+    if found.shared and not _only_notes(a):
+        # A member edits the plan and the notes; the dates, travellers and money are the
+        # owner's.
+        raise Forbidden(access_cases.refusal(found.owner_label))
+    trip = found.trip
     d = trip_cases.draft_of(trip)
     changed = replace(
         d,
@@ -2154,22 +2195,33 @@ async def _changed_trip(ctx: ToolContext, a: TripChangeArgs) -> tuple[UUID, trip
         set_aside=_home_money(ctx, a.set_aside) if a.set_aside is not None else d.set_aside,
         notes=a.notes if a.notes is not None else d.notes,
     )
-    return trip.id, changed
+    return found, changed
 
 
 async def _describe_update_trip(ctx: ToolContext, a: TripChangeArgs) -> str:
-    _, changed = await _changed_trip(ctx, a)
+    found, changed = await _changed_trip(ctx, a)
+    if found.shared:
+        return (
+            f"Change the notes on the {found.trip.destination} trip{found.whose} to: "
+            f'"{" / ".join((changed.notes or "").splitlines())}"?'
+        )
     return f"Change the trip to: {_draft_line(changed)}?"
 
 
 async def _update_trip(ctx: ToolContext, a: TripChangeArgs) -> ToolResult:
-    trip_id, changed = await _changed_trip(ctx, a)
-    trip = await trip_cases.update_trip(ctx.uow(), ctx.user, trip_id, changed, now=ctx.now)
+    found, changed = await _changed_trip(ctx, a)
+    if found.shared:
+        trip = await trip_cases.set_notes(
+            ctx.uow(), found.owner, found.trip.id, changed.notes, now=ctx.now
+        )
+        await _noted(ctx, found, "changed the notes")
+        return ToolResult(f"Notes changed on the {trip.destination} trip{found.whose}.", wrote=True)
+    trip = await trip_cases.update_trip(ctx.uow(), ctx.user, found.trip.id, changed, now=ctx.now)
     return ToolResult(f"Trip updated: {_draft_line(trip_cases.draft_of(trip))}.", wrote=True)
 
 
 async def _describe_delete_trip(ctx: ToolContext, a: TripNameArgs) -> str:
-    trip = await trip_cases.find_trip(ctx.uow(), ctx.user, a.trip, now=ctx.now)
+    trip = await _mine(ctx, a.trip)
     return (
         f"Delete the trip to {trip.destination} ({trip.start:%d %b} to {trip.end:%d %b})? "
         "Its expenses stay in the ledger."
@@ -2177,37 +2229,63 @@ async def _describe_delete_trip(ctx: ToolContext, a: TripNameArgs) -> str:
 
 
 async def _delete_trip(ctx: ToolContext, a: TripNameArgs) -> ToolResult:
-    trip = await trip_cases.find_trip(ctx.uow(), ctx.user, a.trip, now=ctx.now)
+    trip = await _mine(ctx, a.trip)
     await trip_cases.delete_trip(ctx.uow(), ctx.user.id, trip.id)
     return ToolResult(f"Deleted the trip to {trip.destination}.", wrote=True)
 
 
 async def _list_trips(ctx: ToolContext, _: NoArgs) -> ToolResult:
     trips = await trip_cases.list_trips(ctx.uow(), ctx.user.id)
-    if not trips:
+    shared = await access_cases.shared_trips(ctx.uow(), ctx.user.id)
+    if not trips and not shared:
         return ToolResult(
             'No trips yet. The user can say "I\'m going to Tokyo 10-20 Jan, budget 3000".'
         )
     today = ctx.today()
-    return ToolResult("Trips:\n" + "\n".join(f"- {describe_trip(t, today)}" for t in trips))
+    lines = [f"- {describe_trip(t, today)}" for t in trips]
+    # Trips they were added to: the plan only, so no budget or any money is in these.
+    lines += [
+        f"- {describe_trip(t, today)} [{_owner(name)}'s trip, shared with the user: they "
+        "can change its plan, not its money or details]"
+        for t, name in shared
+    ]
+    return ToolResult("Trips:\n" + "\n".join(lines))
+
+
+def _owner(name: str | None) -> str:
+    return clean_name(name) or "someone"
 
 
 async def _trip_status(ctx: ToolContext, a: TripNameArgs) -> ToolResult:
-    trip = await trip_cases.find_trip(ctx.uow(), ctx.user, a.trip, now=ctx.now)
-    view = await trip_cases.trip_view(ctx.uow, _rates(ctx), ctx.user, trip.id, now=ctx.now)
-    lines = trip_cases.describe_view(view)
+    found = await _found(ctx, a.trip)
+    trip = found.trip
+    if found.shared:
+        # The plan as a member sees it: nothing is worked out from the owner's ledger.
+        plan = await access_cases.plan_view(
+            ctx.uow(), found.owner_id, trip.id, ctx.user, now=ctx.now
+        )
+        lines = access_cases.describe_plan(plan)
+        bookings = plan.bookings
+        head = (
+            f"The {trip.destination} plan, shared with the user by {found.owner_label}. It has "
+            f"no money in it, and only {found.owner_label} can see or change that "
+            "(quote it as it is):"
+        )
+    else:
+        view = await trip_cases.trip_view(ctx.uow, _rates(ctx), ctx.user, trip.id, now=ctx.now)
+        lines = trip_cases.describe_view(view)
+        bookings = view.bookings
+        head = "Trip figures, worked out in code (quote them as they are):"
     watch = [
         f"{day:%a %d %b}: {note.text}"
-        for day in itinerary.days_of(view.bookings)
+        for day in itinerary.days_of(bookings)
         for note in itinerary.day_notes(
-            itinerary.on_day(view.bookings, day), day, in_trip=trip.start <= day <= trip.end
+            itinerary.on_day(bookings, day), day, in_trip=trip.start <= day <= trip.end
         )
     ]
     if watch:
         lines += ["Worth a look on the itinerary (worked out in code):", *watch]
-    return ToolResult(
-        "Trip figures, worked out in code (quote them as they are):\n" + "\n".join(lines)
-    )
+    return ToolResult(head + "\n" + "\n".join(lines))
 
 
 class TripExpenseArgs(TripNameArgs):
@@ -2215,7 +2293,7 @@ class TripExpenseArgs(TripNameArgs):
 
 
 async def _trip_and_expense(ctx: ToolContext, a: TripExpenseArgs) -> tuple[Trip, Transaction]:
-    trip = await trip_cases.find_trip(ctx.uow(), ctx.user, a.trip, now=ctx.now)
+    trip = await _mine(ctx, a.trip)
     return trip, await _load(ctx, a.transaction_id)
 
 
@@ -2255,7 +2333,7 @@ def _people(names: Iterable[str]) -> str:
 
 
 async def _unsplit(ctx: ToolContext, a: TripNameArgs) -> tuple[Trip, list[TripItem]]:
-    trip = await trip_cases.find_trip(ctx.uow(), ctx.user, a.trip, now=ctx.now)
+    trip = await _mine(ctx, a.trip)
     if not trip.companions:
         raise InvalidInput(
             f"nobody else is on the {trip.destination} trip yet; add the people going first"
@@ -2300,7 +2378,7 @@ class TheyPaidArgs(TripNameArgs):
 async def _they_paid_plan(
     ctx: ToolContext, a: TheyPaidArgs
 ) -> tuple[Trip, str, tuple[str, ...], Money, Money]:
-    trip = await trip_cases.find_trip(ctx.uow(), ctx.user, a.trip, now=ctx.now)
+    trip = await _mine(ctx, a.trip)
     amount = parse_money(ctx, a.amount, a.currency)
     payer, others, share = trip_split.preview_payment(trip, a.person, amount, None)
     return trip, payer, others, amount, share
@@ -2368,7 +2446,7 @@ def _balance_lines(people: list[PersonBalance]) -> list[str]:
 async def _describe_settle_up(ctx: ToolContext, a: SettleUpArgs) -> str:
     if not a.person:
         return ""  # just looking: nothing to confirm
-    trip = await trip_cases.find_trip(ctx.uow(), ctx.user, a.trip, now=ctx.now)
+    trip = await _mine(ctx, a.trip)
     _, people = await trip_split.balances(ctx.uow, _rates(ctx), ctx.user, trip.id, now=ctx.now)
     b = trip_split.find_balance(people, a.person)
     steps = []
@@ -2391,7 +2469,7 @@ async def _describe_settle_up(ctx: ToolContext, a: SettleUpArgs) -> str:
 
 
 async def _settle_up(ctx: ToolContext, a: SettleUpArgs) -> ToolResult:
-    trip = await trip_cases.find_trip(ctx.uow(), ctx.user, a.trip, now=ctx.now)
+    trip = await _mine(ctx, a.trip)
     if not a.person:
         _, people = await trip_split.balances(ctx.uow, _rates(ctx), ctx.user, trip.id, now=ctx.now)
         if not people:
@@ -2500,8 +2578,9 @@ async def _place_for(
 
 async def _itinerary_entry(
     ctx: ToolContext, a: ItineraryArgs
-) -> tuple[Trip, BookingDraft, Money | None, Place | None]:
-    trip = await trip_cases.find_trip(ctx.uow(), ctx.user, a.trip, now=ctx.now)
+) -> tuple[access_cases.Found, BookingDraft, Money | None, Place | None]:
+    found = await _found(ctx, a.trip)
+    trip = found.trip
     if a.kind == "hotel" and not a.day:
         # "add my hotel, Hotel Sakura": the stay is the whole trip unless said otherwise.
         a = a.model_copy(
@@ -2513,11 +2592,12 @@ async def _itinerary_entry(
             "a plan or place needs a name, a hotel its check-in day, and a flight or train "
             "its departure time"
         )
-    cost = parse_money(ctx, a.cost, a.currency) if a.cost else None
+    # What an entry cost is the owner's money: a member's entry carries none.
+    cost = parse_money(ctx, a.cost, a.currency) if a.cost and not found.shared else None
     place = await _place_for(ctx, trip, draft, a.google_place)
     if place is not None:
         draft = replace(draft, place_id=place.id)
-    return trip, draft, cost, place
+    return found, draft, cost, place
 
 
 def _on_maps(place: Place | None) -> str:
@@ -2528,20 +2608,27 @@ def _on_maps(place: Place | None) -> str:
 
 
 async def _describe_add_to_itinerary(ctx: ToolContext, a: ItineraryArgs) -> str:
-    trip, draft, cost, place = await _itinerary_entry(ctx, a)
+    found, draft, cost, place = await _itinerary_entry(ctx, a)
     price = f", {cost}" if cost else ""
-    return f"Add to the {trip.destination} itinerary: {draft.describe()}{price}?{_on_maps(place)}"
+    return (
+        f"Add to the {found.trip.destination} itinerary{found.whose}: "
+        f"{draft.describe()}{price}?{_on_maps(place)}{_price_left_out(found, a.cost)}"
+    )
 
 
 async def _add_to_itinerary(ctx: ToolContext, a: ItineraryArgs) -> ToolResult:
-    trip, draft, cost, place = await _itinerary_entry(ctx, a)
-    await booking_cases.add_manual(
-        ctx.uow(), ctx.user.id, trip.id, draft.as_dict(), cost, now=ctx.now
+    found, draft, cost, place = await _itinerary_entry(ctx, a)
+    booking = await booking_cases.add_manual(
+        ctx.uow(), found.owner_id, found.trip.id, draft.as_dict(), cost, now=ctx.now
     )
-    text = f"Added to the {trip.destination} itinerary: {draft.describe()}.{_on_maps(place)}"
+    await _noted(ctx, found, f"added {booking.draft.title}")
+    text = (
+        f"Added to the {found.trip.destination} itinerary{found.whose}: "
+        f"{draft.describe()}.{_on_maps(place)}"
+    )
     if place is not None and (warning := place.warning(draft.day, draft.at)):
         text += f" Note: {warning} (Google Maps' regular hours)."
-    return ToolResult(text, wrote=True)
+    return ToolResult(text + _price_left_out(found, a.cost), wrote=True)
 
 
 class ScopedArgs(TripNameArgs):
@@ -2566,7 +2653,7 @@ class FindPlacesArgs(ScopedArgs):
 
 async def _trip_destination(ctx: ToolContext, name: str | None) -> str | None:
     try:
-        return (await trip_cases.find_trip(ctx.uow(), ctx.user, name, now=ctx.now)).destination
+        return (await _found(ctx, name)).trip.destination
     except NotFound:
         return None
 
@@ -2577,7 +2664,8 @@ async def _search_scope(ctx: ToolContext, a: ScopedArgs) -> place_cases.SearchSc
     if not a.stop and not a.day:
         destination = await _trip_destination(ctx, a.trip)
         return place_cases.SearchScope(destination) if destination else None
-    trip = await trip_cases.find_trip(ctx.uow(), ctx.user, a.trip, now=ctx.now)
+    found = await _found(ctx, a.trip)
+    trip = found.trip
     day: date | None = None
     if a.day:
         wanted = a.day.strip().casefold().removeprefix("day").strip()
@@ -2587,7 +2675,7 @@ async def _search_scope(ctx: ToolContext, a: ScopedArgs) -> place_cases.SearchSc
             else parse_day(ctx, a.day).date()
         )
     _, scope = await place_cases.search_scope(
-        ctx.uow(), ctx.places, ctx.user.id, trip.id, stop=a.stop or None, day=day
+        ctx.uow(), ctx.places, found.owner_id, trip.id, stop=a.stop or None, day=day
     )
     return scope
 
@@ -2707,12 +2795,13 @@ async def _place_info(ctx: ToolContext, a: PlaceInfoArgs) -> ToolResult:
     entry: Booking | None = None
     wanted: str | None = None
     try:
-        trip = await trip_cases.find_trip(ctx.uow(), ctx.user, a.trip, now=ctx.now)
+        opened = await _found(ctx, a.trip)
+        trip: Trip | None = opened.trip
     except NotFound:
-        trip = None
-    if trip is not None:
+        opened, trip = None, None
+    if opened is not None and trip is not None:
         async with ctx.uow() as tx:
-            items = await tx.trips.list_bookings(ctx.user.id, trip_id=trip.id)
+            items = await tx.trips.list_bookings(opened.owner_id, trip_id=trip.id)
         named = a.place.strip().casefold()
         matches = [b for b in items if b.draft.place_id and named in b.draft.title.casefold()]
         if len(matches) == 1:
@@ -2745,27 +2834,29 @@ class ItineraryItemArgs(TripNameArgs):
     item: str = Field(description="The entry's name or part of it, as the user says it")
 
 
-async def _find_item(ctx: ToolContext, a: ItineraryItemArgs) -> tuple[Trip, Booking]:
-    trip = await trip_cases.find_trip(ctx.uow(), ctx.user, a.trip, now=ctx.now)
+async def _find_item(ctx: ToolContext, a: ItineraryItemArgs) -> tuple[access_cases.Found, Booking]:
+    found = await _found(ctx, a.trip)
     async with ctx.uow() as tx:
-        items = await tx.trips.list_bookings(ctx.user.id, trip_id=trip.id)
+        items = await tx.trips.list_bookings(found.owner_id, trip_id=found.trip.id)
     wanted = a.item.strip().casefold()
-    found = [b for b in items if wanted in b.draft.title.casefold()]
-    if len(found) != 1:
+    matches = [b for b in items if wanted in b.draft.title.casefold()]
+    if len(matches) != 1:
         listed = "; ".join(b.draft.title for b in items) or "nothing yet"
         raise NotFound(f"no single itinerary entry matches {a.item!r}; the itinerary has: {listed}")
-    return trip, found[0]
+    # A member never gets what the entry cost.
+    return found, without_money(matches[0]) if found.shared else matches[0]
 
 
 async def _describe_remove_from_itinerary(ctx: ToolContext, a: ItineraryItemArgs) -> str:
-    trip, item = await _find_item(ctx, a)
-    return f"Take {item.draft.describe()} off the {trip.destination} itinerary?"
+    found, item = await _find_item(ctx, a)
+    return f"Take {item.draft.describe()} off the {found.trip.destination} itinerary{found.whose}?"
 
 
 async def _remove_from_itinerary(ctx: ToolContext, a: ItineraryItemArgs) -> ToolResult:
-    trip, item = await _find_item(ctx, a)
-    await booking_cases.delete_booking(ctx.uow(), ctx.user.id, item.id)
-    return ToolResult(f"Taken off the {trip.destination} itinerary.", wrote=True)
+    found, item = await _find_item(ctx, a)
+    await booking_cases.delete_booking(ctx.uow(), found.owner_id, item.id)
+    await _noted(ctx, found, f"removed {item.draft.title}")
+    return ToolResult(f"Taken off the {found.trip.destination} itinerary{found.whose}.", wrote=True)
 
 
 class DayLabelArgs(TripNameArgs):
@@ -2774,11 +2865,22 @@ class DayLabelArgs(TripNameArgs):
 
 
 async def _label_day(ctx: ToolContext, a: DayLabelArgs) -> ToolResult:
-    trip = await trip_cases.find_trip(ctx.uow(), ctx.user, a.trip, now=ctx.now)
+    found = await _found(ctx, a.trip)
     day = parse_day(ctx, a.day).date()
-    await trip_cases.set_day_label(ctx.uow(), ctx.user, trip.id, day, a.label, now=ctx.now)
+    trip = await trip_cases.set_day_label(
+        ctx.uow(), found.owner, found.trip.id, day, a.label, now=ctx.now
+    )
+    number = (day - trip.start).days + 1
+    label = trip.day_labels.get(day)
+    await _noted(
+        ctx,
+        found,
+        f'named Day {number} "{label}"' if label else f"cleared the name of Day {number}",
+    )
     what = f"labelled {a.label.strip()!r}" if a.label.strip() else "unlabelled"
-    return ToolResult(f"{day:%a %d %b} of the {trip.destination} trip is {what}.", wrote=True)
+    return ToolResult(
+        f"{day:%a %d %b} of the {trip.destination} trip{found.whose} is {what}.", wrote=True
+    )
 
 
 class ItineraryChangeArgs(ItineraryItemArgs):
@@ -2817,9 +2919,9 @@ class ItineraryChangeArgs(ItineraryItemArgs):
 
 async def _changed_entry(
     ctx: ToolContext, a: ItineraryChangeArgs
-) -> tuple[Trip, Booking, BookingDraft, Money | None]:
+) -> tuple[access_cases.Found, Booking, BookingDraft, Money | None]:
     """The entry with only what the user changed: the rest is kept."""
-    trip, item = await _find_item(ctx, a)
+    found, item = await _find_item(ctx, a)
     data = item.draft.as_dict()
     hotel = item.draft.kind is BookingKind.HOTEL
     fields = {
@@ -2850,12 +2952,17 @@ async def _changed_entry(
     draft = BookingDraft.from_dict(data)
     if draft is None:
         raise InvalidInput("that change leaves the entry without a date")
-    cost = parse_money(ctx, a.cost, a.currency) if a.cost else item.cost
-    return trip, item, draft, cost
+    # A member's change keeps the cost the entry had (it is the owner's money).
+    cost = parse_money(ctx, a.cost, a.currency) if a.cost and not found.shared else item.cost
+    return found, item, draft, cost
 
 
 async def _after(
-    ctx: ToolContext, a: ItineraryChangeArgs, trip: Trip, item: Booking, draft: BookingDraft
+    ctx: ToolContext,
+    a: ItineraryChangeArgs,
+    found: access_cases.Found,
+    item: Booking,
+    draft: BookingDraft,
 ) -> tuple[bool, Booking | None]:
     """Whether the plan is to be placed in its day's order, and after which entry (None:
     first)."""
@@ -2867,36 +2974,44 @@ async def _after(
     if wanted == "first":
         return True, None
     async with ctx.uow() as tx:
-        items = await tx.trips.list_bookings(ctx.user.id, trip_id=trip.id)
+        items = await tx.trips.list_bookings(found.owner_id, trip_id=found.trip.id)
     there = [b for b in itinerary.on_day(items, draft.day) if b.id != item.id]
-    found = [b for b in there if wanted in b.draft.title.casefold()]
-    if len(found) != 1:
+    matches = [b for b in there if wanted in b.draft.title.casefold()]
+    if len(matches) != 1:
         listed = "; ".join(b.draft.title for b in there) or "nothing else"
         raise NotFound(f"no single entry that day matches {a.after!r}; that day has: {listed}")
-    return True, found[0]
+    return True, matches[0]
 
 
 async def _describe_change_itinerary(ctx: ToolContext, a: ItineraryChangeArgs) -> str:
-    trip, item, draft, cost = await _changed_entry(ctx, a)
+    found, item, draft, cost = await _changed_entry(ctx, a)
     price = f", {cost}" if cost else ""
-    moving, after = await _after(ctx, a, trip, item, draft)
+    moving, after = await _after(ctx, a, found, item, draft)
     where = (f", after {after.draft.title}" if after else ", first that day") if moving else ""
     return (
-        f"Change {item.draft.describe()} on the {trip.destination} itinerary to "
-        f"{draft.describe()}{price}{where}?"
+        f"Change {item.draft.describe()} on the {found.trip.destination} itinerary{found.whose} "
+        f"to {draft.describe()}{price}{where}?{_price_left_out(found, a.cost)}"
     )
 
 
 async def _change_itinerary(ctx: ToolContext, a: ItineraryChangeArgs) -> ToolResult:
-    trip, item, draft, cost = await _changed_entry(ctx, a)
-    moving, after = await _after(ctx, a, trip, item, draft)
-    await booking_cases.edit_booking(ctx.uow(), ctx.user.id, item.id, draft.as_dict(), cost)
+    found, item, draft, cost = await _changed_entry(ctx, a)
+    moving, after = await _after(ctx, a, found, item, draft)
+    changed = await booking_cases.edit_booking(
+        ctx.uow(), found.owner_id, item.id, draft.as_dict(), cost, keep_cost=found.shared
+    )
+    await _noted(ctx, found, f"changed {changed.draft.title}")
     if moving:
-        await booking_cases.move_entry(
-            ctx.uow(), ctx.user.id, item.id, draft.day, after.id if after else None
+        moved = await booking_cases.move_entry(
+            ctx.uow(), found.owner_id, item.id, draft.day, after.id if after else None
         )
+        if moved.draft.day is not None:
+            number = (moved.draft.day - found.trip.start).days + 1
+            await _noted(ctx, found, f"moved {moved.draft.title} to Day {number}")
     return ToolResult(
-        f"Changed on the {trip.destination} itinerary: {draft.describe()}.", wrote=True
+        f"Changed on the {found.trip.destination} itinerary{found.whose}: {draft.describe()}."
+        + _price_left_out(found, a.cost),
+        wrote=True,
     )
 
 
@@ -2966,7 +3081,7 @@ class ResearchToTripArgs(TripNameArgs):
 
 
 async def _research_for(ctx: ToolContext, a: ResearchToTripArgs) -> tuple[Trip, UUID, list[str]]:
-    trip = await trip_cases.find_trip(ctx.uow(), ctx.user, a.trip, now=ctx.now)
+    trip = await _mine(ctx, a.trip)  # ideas from a research are the owner's to add
     try:
         run_id = await trip_research.latest_research(
             ctx.uow(), ctx.user, a.research or trip.destination, now=ctx.now
@@ -3428,8 +3543,9 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
         ),
         ToolSpec(
             "update_trip",
-            "Change a saved trip's dates, budget, companions, currency or set-aside. Asks "
-            "the user to confirm.",
+            "Change a saved trip's dates, budget, companions, currency, set-aside or notes. "
+            "On a trip the user was added to, only the notes can be changed. Asks the user "
+            "to confirm.",
             TripChangeArgs,
             _update_trip,
             confirm=_describe_update_trip,
@@ -3441,12 +3557,18 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             _delete_trip,
             confirm=_describe_delete_trip,
         ),
-        ToolSpec("list_trips", "The user's trips, past and coming up.", NoArgs, _list_trips),
+        ToolSpec(
+            "list_trips",
+            "The user's trips, past and coming up, and the trips others have shared with them.",
+            NoArgs,
+            _list_trips,
+        ),
         ToolSpec(
             "trip_status",
             "One trip's money: spent so far, left in the budget, per day, by category, "
             "money set aside, costs not split yet, what others paid, and who owes who "
-            "(netted) for it.",
+            "(netted) for it. For a trip someone else shared with the user, the plan only, "
+            "with no money.",
             TripNameArgs,
             _trip_status,
         ),

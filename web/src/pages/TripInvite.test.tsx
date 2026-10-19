@@ -71,11 +71,13 @@ describe("a trip invite for someone signed in", () => {
     expect(await screen.findByText("Trip t9 opened with no notice")).toBeInTheDocument();
   });
 
-  it("tells the owner it is their own link", async () => {
-    answer({ "POST /travel/invites/tok123/accept": [409, { detail: "that's your own trip" }] });
+  it("opens the trip for the owner who tries their own link, saying what it is for", async () => {
+    const calls = answer({ "POST /travel/invites/tok123/accept": [200, { trip_id: "t9", new: false, own: true }] });
     open(member);
-    expect(await screen.findByRole("heading", { name: "That's your own invite link" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Go to Trips" })).toHaveAttribute("href", "/travel");
+    expect(
+      await screen.findByText("Trip t9 opened: That's your own invite link. Send it to the person you want on the trip."),
+    ).toBeInTheDocument();
+    expect(calls).toEqual(["POST /travel/invites/tok123/accept"]);
   });
 
   it("explains a link that is used, expired or unknown, and points to Home", async () => {
