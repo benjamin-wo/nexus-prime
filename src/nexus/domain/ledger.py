@@ -73,6 +73,8 @@ class User:
     web_access_granted_at: datetime | None = None
     # Their Telegram first name (and last initial), shown to the people on a shared trip.
     display_name: str | None = None
+    # Whether they are told on Telegram when someone else changes a trip they share.
+    trip_activity_alerts: bool = True
 
     @property
     def has_web_access(self) -> bool:

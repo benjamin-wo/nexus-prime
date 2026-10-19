@@ -2065,6 +2065,32 @@ async def set_notifications(body: UpdatesIn, auth: Auth, web: Runtime) -> Update
     return _updates_out(updated)
 
 
+# --- Telegram message when someone changes a trip the user shares ---------------------
+
+
+class TripAlertsOut(Model):
+    enabled: bool  # on by default
+
+
+@router.get("/trip-alerts")
+async def trip_alerts(auth: Auth, web: Runtime) -> TripAlertsOut:
+    return TripAlertsOut(enabled=auth.user.trip_activity_alerts)
+
+
+class TripAlertsIn(Model):
+    enabled: bool
+
+
+@router.put("/trip-alerts")
+async def set_trip_alerts(body: TripAlertsIn, auth: Auth, web: Runtime) -> TripAlertsOut:
+    """Whether the user is told on Telegram when someone else changes a trip they share
+    (one message per trip every 30 minutes at most)."""
+    async with web.uow() as uow:
+        await uow.ledger.set_trip_activity_alerts(auth.user.id, body.enabled)
+        await uow.commit()
+    return TripAlertsOut(enabled=body.enabled)
+
+
 # --- departments and their runs --------------------------------------------------------
 
 

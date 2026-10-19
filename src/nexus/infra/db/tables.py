@@ -70,6 +70,9 @@ users = Table(
     # What other people see for them on a shared trip: their Telegram first name (and
     # last initial), refreshed on every web sign-in (migration 0046).
     Column("display_name", Text),
+    # Whether the owner of a shared trip is told on Telegram when someone else changes
+    # it (migration 0047).
+    Column("trip_activity_alerts", Boolean, nullable=False, server_default=text("true")),
     CheckConstraint("role IN ('owner', 'member', 'guest')", name="role"),
     CheckConstraint("home_currency ~ '^[A-Z]{3}$'", name="home_currency"),
 )
@@ -941,6 +944,8 @@ trips = Table(
     # marked "just mine" so they aren't offered again (transaction ids) (0045).
     Column("split_evenly", Boolean, nullable=False, server_default=text("true")),
     Column("not_split", JSONB, nullable=False, server_default=text("'[]'::jsonb")),
+    # Where the last Telegram summary of other people's changes stopped (0047).
+    Column("activity_digest_at", TZ),
     ForeignKeyConstraint(["user_id"], ["users.id"]),
     ForeignKeyConstraint(["photo_id"], ["destination_photos.id"], ondelete="SET NULL"),
     UniqueConstraint("id", "user_id"),

@@ -322,6 +322,8 @@ export type Updates = {
   description: string;
   options: Record<Frequency, string>;
 };
+/** Whether the user is told on Telegram when someone else changes a trip they share. */
+export type TripAlerts = { enabled: boolean };
 export type Reply = { text: string; buttons: { label: string; data: string }[][] };
 /** The running chat as the user saw it, oldest first; notifications aren't part of it. */
 export type ChatHistory = {

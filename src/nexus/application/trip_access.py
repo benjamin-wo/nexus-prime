@@ -11,15 +11,18 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime
+from typing import Any
 from uuid import UUID, uuid4
 
 from nexus.application import trips as trip_cases
+from nexus.application.budgets import TELEGRAM_SEND
 from nexus.application.ports import UnitOfWork
 from nexus.domain.access import new_token, token_hash
 from nexus.domain.bookings import Booking
 from nexus.domain.errors import Conflict, Forbidden, InvalidInput, NotFound
 from nexus.domain.ledger import Role, User, UserId
 from nexus.domain.trip_access import (
+    DIGEST_EVERY,
     INVITE_TTL,
     MAX_MEMBERS,
     MAX_OPEN_INVITES,
@@ -28,6 +31,8 @@ from nexus.domain.trip_access import (
     TripInvite,
     TripMember,
     clean_summary,
+    digest_key,
+    digest_text,
     without_money,
     without_trip_money,
 )
@@ -40,6 +45,7 @@ type UowFactory = Callable[[], UnitOfWork]
 OWNER_ONLY = "only the trip's owner can do that"
 NO_INVITE = "this invite is invalid, used or expired"
 ACTIVITY_SHOWN = 20
+DIGEST_JOB = "trip.activity_digest"
 
 
 @dataclass(frozen=True, slots=True)
@@ -275,7 +281,9 @@ async def remove_member(uow: UnitOfWork, actor: User, trip_id: UUID, member_id: 
 
 async def record(uow: UnitOfWork, access: TripAccess, summary: str, *, now: datetime) -> None:
     """Notes an edit on a trip that has members, in a few words. Trips nobody shares
-    keep no activity. Never fails the edit it describes."""
+    keep no activity. A member's edit also queues the owner's Telegram summary for 30
+    minutes on (every edit before it goes shares that one job). Never fails the edit it
+    describes."""
     if access.trip_id is None:
         return
     try:
@@ -284,9 +292,19 @@ async def record(uow: UnitOfWork, access: TripAccess, summary: str, *, now: date
                 return
             text = clean_summary(summary)
             if text:
+                # Held so a summary being made right now either sees this edit or leaves
+                # the next summary's key to it; never neither.
+                state = await uow.trips.digest_state(access.trip_id, for_update=True)
                 await uow.trips.add_activity(
                     access.owner_id, access.trip_id, access.actor_id, text, now
                 )
+                if state is not None and not access.is_owner:
+                    await uow.jobs.enqueue(
+                        DIGEST_JOB,
+                        {"user_id": str(access.owner_id), "trip_id": str(access.trip_id)},
+                        dedupe_key=digest_key(access.trip_id, state.last_at),
+                        run_at=now + DIGEST_EVERY,
+                    )
                 await uow.commit()
     except Exception:
         log.warning("could not record trip activity", exc_info=True)
@@ -299,3 +317,54 @@ async def activity(uow: UnitOfWork, actor: User, trip_id: UUID) -> list[Activity
         if access is None:
             raise NotFound("no trip with that id")
         return await uow.trips.list_activity(access.owner_id, trip_id, limit=ACTIVITY_SHOWN)
+
+
+async def send_digest(
+    uow: UowFactory, owner_id: UserId, trip_id: UUID, *, now: datetime, origin: str | None
+) -> bool:
+    """The job behind ``record``: tells the trip's owner on Telegram what other people
+    changed since the last summary. True if a message was queued.
+
+    Changes up to ``now`` count as told whether or not the owner hears of them (setting
+    off, no Telegram chat), so turning the setting on never replays them. The whole
+    thing is one transaction with the trip held, so a retry finds nothing left to say.
+    A trip deleted meanwhile is nothing to do; someone removed meanwhile is still
+    reported. Edits that landed after ``now`` queue the next summary.
+    """
+    async with uow() as tx:
+        state = await tx.trips.digest_state(trip_id, for_update=True)
+        if state is None or state.owner_id != owner_id:
+            return False
+        owner = await tx.ledger.get_user(owner_id)
+        changes = await tx.trips.changes_by_others(
+            owner_id, trip_id, after=state.last_at, until=now
+        )
+        await tx.trips.set_digest_at(trip_id, now)
+        text = digest_text(state.destination, changes)
+        sent = False
+        if (
+            text
+            and owner is not None
+            and owner.trip_activity_alerts
+            and owner.telegram_chat_id is not None
+        ):
+            payload: dict[str, Any] = {"user_id": str(owner_id), "text": text}
+            if origin:
+                payload["buttons"] = [
+                    [{"label": "Open the trip", "data": f"url:{origin}/travel/trips/{trip_id}"}]
+                ]
+            sent = await tx.jobs.enqueue(
+                TELEGRAM_SEND,
+                payload,
+                dedupe_key=f"{digest_key(trip_id, state.last_at)}:send",
+                run_at=now,
+            )
+        if await tx.trips.changes_by_others(owner_id, trip_id, after=now, until=None):
+            await tx.jobs.enqueue(
+                DIGEST_JOB,
+                {"user_id": str(owner_id), "trip_id": str(trip_id)},
+                dedupe_key=digest_key(trip_id, now),
+                run_at=now + DIGEST_EVERY,
+            )
+        await tx.commit()
+    return sent

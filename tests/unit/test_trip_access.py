@@ -1,7 +1,7 @@
 """The rules of a shared trip that need no database: names, invites and what a member
 is shown. Every name and figure here is made up."""
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta, timezone
 from uuid import uuid4
 
 from nexus.channels.web.telegram_login import TelegramIdentity
@@ -13,11 +13,14 @@ from nexus.domain.trip_access import (
     INVITE_TTL,
     MAX_NAME,
     MAX_SUMMARY,
+    Activity,
     TripAccess,
     TripInvite,
     TripRole,
     clean_name,
     clean_summary,
+    digest_key,
+    digest_text,
     without_money,
     without_trip_money,
 )
@@ -143,3 +146,63 @@ def test_a_member_sees_a_trip_and_its_bookings_without_money() -> None:
     plain = without_money(booking)
     assert (plain.cost, plain.transaction_id) == (None, None)
     assert plain.draft.reference == "R-1"  # references stay
+
+
+# --- the owner's Telegram summary -------------------------------------------------------
+
+
+def changes(*pairs: tuple[str, str]) -> list[Activity]:
+    return [Activity(who, what, NOW + timedelta(minutes=n)) for n, (who, what) in enumerate(pairs)]
+
+
+def test_a_summary_names_the_person_and_what_they_did() -> None:
+    found = changes(
+        ("Alex T.", "added Dinner at Sushi Ten"), ("Alex T.", "moved Senso-ji to Day 2")
+    )
+    assert digest_text("Tokyo", found) == (
+        "Alex T. changed Tokyo: added Dinner at Sushi Ten, moved Senso-ji to Day 2"
+    )
+
+
+def test_a_summary_names_everyone_who_changed_something_once() -> None:
+    two = changes(("Alex", "added Lunch"), ("Sam", "changed the notes"), ("Alex", "added Walk"))
+    assert (
+        digest_text("Tokyo", two)
+        == "Alex and Sam changed Tokyo: added Lunch, changed the notes, added Walk"
+    )
+    three = changes(("Alex", "added Lunch"), ("Sam", "added Walk"), ("Jo", "added Tea"))
+    text = digest_text("Tokyo", three)
+    assert text is not None and text.startswith("Alex, Sam and Jo changed Tokyo: ")
+
+
+def test_a_summary_lists_five_changes_and_counts_the_rest() -> None:
+    eight = changes(*[("Alex", f"added Stop {n}") for n in range(1, 9)])
+    assert digest_text("Tokyo", eight) == (
+        "Alex changed Tokyo: added Stop 1, added Stop 2, added Stop 3, added Stop 4, "
+        "added Stop 5 and 3 more"
+    )
+    five = changes(*[("Alex", f"added Stop {n}") for n in range(1, 6)])
+    text = digest_text("Tokyo", five)
+    assert text is not None and "more" not in text
+
+
+def test_the_same_change_made_twice_is_told_once() -> None:
+    found = changes(("Alex", "changed the notes"), ("Alex", "changed the notes"))
+    assert digest_text("Tokyo", found) == "Alex changed Tokyo: changed the notes"
+
+
+def test_someone_with_no_name_is_someone_and_no_changes_say_nothing() -> None:
+    assert digest_text("Tokyo", changes(("Someone", "added Lunch"))) == (
+        "Someone changed Tokyo: added Lunch"
+    )
+    assert digest_text("Tokyo", []) is None
+
+
+def test_a_summarys_key_changes_once_the_last_one_has_gone() -> None:
+    trip = uuid4()
+    first = digest_key(trip, None)
+    later = digest_key(trip, NOW)
+    assert first != later and first == digest_key(trip, None)
+    # The same moment in another time zone is the same key.
+    assert later == digest_key(trip, NOW.astimezone(timezone(timedelta(hours=8))))
+    assert digest_key(uuid4(), None) != first

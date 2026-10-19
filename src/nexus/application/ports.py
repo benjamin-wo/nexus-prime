@@ -62,7 +62,7 @@ from nexus.domain.recurring import Subscription
 from nexus.domain.rules import CategoryRule
 from nexus.domain.settle import PaidByOther
 from nexus.domain.statements import SavedMapping, StatementImport
-from nexus.domain.trip_access import Activity, TripAccess, TripInvite, TripMember
+from nexus.domain.trip_access import Activity, DigestState, TripAccess, TripInvite, TripMember
 from nexus.domain.trips import Share, Trip
 
 
@@ -144,6 +144,7 @@ class LedgerRepository(Protocol):
     async def get_user_by_telegram_id(self, telegram_user_id: int) -> User | None: ...
     async def get_user(self, user_id: UserId) -> User | None: ...
     async def set_display_name(self, user_id: UserId, name: str) -> None: ...
+    async def set_trip_activity_alerts(self, user_id: UserId, on: bool) -> None: ...
 
     # categories
     async def insert_category(self, category: Category) -> None: ...
@@ -739,6 +740,19 @@ class TripRepository(Protocol):
     ) -> None: ...
     async def list_activity(self, owner_id: UserId, trip_id: UUID, *, limit: int) -> list[Activity]:
         """Newest first."""
+        ...
+
+    async def digest_state(self, trip_id: UUID, *, for_update: bool = False) -> DigestState | None:
+        """None when the trip is gone. ``for_update`` holds the trip so that a change
+        being recorded and a summary being made can't miss each other."""
+        ...
+
+    async def set_digest_at(self, trip_id: UUID, at: datetime) -> None: ...
+    async def changes_by_others(
+        self, owner_id: UserId, trip_id: UUID, *, after: datetime | None, until: datetime | None
+    ) -> list[Activity]:
+        """What anyone but the owner changed after ``after`` up to ``until`` (both
+        optional), oldest first."""
         ...
 
 

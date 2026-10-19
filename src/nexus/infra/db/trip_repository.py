@@ -19,6 +19,7 @@ from nexus.domain.settle import PaidByOther
 from nexus.domain.trip_access import (
     UNKNOWN_NAME,
     Activity,
+    DigestState,
     TripAccess,
     TripInvite,
     TripMember,
@@ -684,6 +685,41 @@ class SqlTripRepository:
             .order_by(a.at.desc(), a.id)
             .limit(limit)
         )
+        return [Activity(r.display_name or UNKNOWN_NAME, r.summary, r.at) for r in rows]
+
+    async def digest_state(self, trip_id: UUID, *, for_update: bool = False) -> DigestState | None:
+        stmt = select(trips.c.user_id, trips.c.destination, trips.c.activity_digest_at).where(
+            trips.c.id == trip_id
+        )
+        if for_update:
+            stmt = stmt.with_for_update(
+                key_share=True
+            )  # FOR NO KEY UPDATE: foreign keys still work
+        row = (await self._db.execute(stmt)).first()
+        if row is None:
+            return None
+        return DigestState(UserId(row.user_id), row.destination, row.activity_digest_at)
+
+    async def set_digest_at(self, trip_id: UUID, at: datetime) -> None:
+        await self._db.execute(
+            update(trips).where(trips.c.id == trip_id).values(activity_digest_at=at)
+        )
+
+    async def changes_by_others(
+        self, owner_id: UserId, trip_id: UUID, *, after: datetime | None, until: datetime | None
+    ) -> list[Activity]:
+        a = trip_activity.c
+        stmt = (
+            select(a.summary, a.at, users.c.display_name)
+            .join(users, users.c.id == a.actor_id)
+            .where(a.owner_id == owner_id, a.trip_id == trip_id, a.actor_id != owner_id)
+            .order_by(a.at, a.id)
+        )
+        if after is not None:
+            stmt = stmt.where(a.at > after)
+        if until is not None:
+            stmt = stmt.where(a.at <= until)
+        rows = await self._db.execute(stmt)
         return [Activity(r.display_name or UNKNOWN_NAME, r.summary, r.at) for r in rows]
 
     # --- reminders --------------------------------------------------------------------
