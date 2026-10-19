@@ -154,7 +154,14 @@ export type ImportRecord = {
 export type Page = { items: Transaction[]; total: number };
 export type Category = { id: string; name: string };
 export type Me = {
-  user: { telegram_user_id: number; role: "owner" | "member" | "guest"; home_currency: string; timezone: string };
+  user: {
+    telegram_user_id: number;
+    role: "owner" | "member" | "guest";
+    home_currency: string;
+    timezone: string;
+    /** Their Telegram first name and last initial ("Alex T."), as other people on a trip see them. */
+    display_name?: string | null;
+  };
   csrf_token: string;
   /** Set by a sign-in that added the person to a trip with a trip invite. */
   joined_trip?: string | null;
@@ -322,6 +329,8 @@ export type Updates = {
   description: string;
   options: Record<Frequency, string>;
 };
+/** Whether the user is told on Telegram when someone else changes a trip they share. */
+export type TripAlerts = { enabled: boolean };
 export type Reply = { text: string; buttons: { label: string; data: string }[][] };
 /** The running chat as the user saw it, oldest first; notifications aren't part of it. */
 export type ChatHistory = {
@@ -949,8 +958,9 @@ export type TripInvite = { id: string; created_at: string; expires_at: string };
 export type IssuedTripInvite = TripInvite & { token: string; url: string };
 /** One change to the plan of a shared trip, newest first (the latest 20). */
 export type TripActivity = { actor: string; summary: string; at: string };
-/** `POST /travel/invites/{token}/accept`: `new` is false when they were on the trip already. */
-export type JoinedTrip = { trip_id: string; new: boolean };
+/** `POST /travel/invites/{token}/accept`: `new` is false when they were on the trip already, and `own`
+ * is true when the link is their own trip's (nothing is joined; the trip is theirs to open). */
+export type JoinedTrip = { trip_id: string; new: boolean; own?: boolean };
 /** The path for the trip's members (`GET`), or one of them (`DELETE`: the owner removes someone,
  * a member removes themselves). */
 export const tripMembersPath = (tripId: string, memberId?: string) =>

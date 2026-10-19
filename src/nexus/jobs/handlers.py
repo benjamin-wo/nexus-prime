@@ -23,6 +23,7 @@ from nexus.application import receipts as receipt_cases
 from nexus.application import research as research_cases
 from nexus.application import salary as salary_cases
 from nexus.application import subscriptions as subscription_cases
+from nexus.application import trip_access as trip_access_cases
 from nexus.application.budgets import TELEGRAM_SEND, UowFactory
 from nexus.application.email import EmailRuntime
 from nexus.application.fx import RateSource
@@ -96,6 +97,7 @@ def build_handlers(
     prices: PriceSource | None = None,
     news: NewsSource | None = None,
     photos: photo_cases.PhotoFinder | None = None,
+    origin: str | None = None,
 ) -> dict[str, Handler]:
     async def send(payload: dict[str, Any]) -> Defer | None:
         """Message a user on Telegram, but not during their quiet hours."""
@@ -261,6 +263,16 @@ def build_handlers(
         if sent:
             log.info("travel: queued %d reminders", sent)
 
+    async def trip_digest(payload: dict[str, Any]) -> None:
+        """Tell a trip's owner what other people changed in it."""
+        await trip_access_cases.send_digest(
+            uow,
+            UserId(UUID(payload["user_id"])),
+            UUID(payload["trip_id"]),
+            now=clock(),
+            origin=origin,
+        )
+
     registry = departments or department_cases.default_registry()
     progress = TelegramProgress(telegram)
 
@@ -285,6 +297,7 @@ def build_handlers(
         photo_cases.PHOTOS_JOB: trip_photos,
         plan_cases.FOLLOW_JOB: follow_plans,
         booking_cases.REMIND_JOB: travel_reminders,
+        trip_access_cases.DIGEST_JOB: trip_digest,
         department_cases.STEP_JOB: department_step,
         UNDO_EXPIRE: expire_undo,
         MEMORY_UPDATE: update_memory,

@@ -47,6 +47,7 @@ from nexus.application import splits as split_cases
 from nexus.application import subscriptions as subscription_cases
 from nexus.application import transactions as tx_cases
 from nexus.application import travel_research as research_cases
+from nexus.application import trip_access as access_cases
 from nexus.application.categories import list_categories
 from nexus.application.fx import RateSource
 from nexus.application.limits import RateLimiter
@@ -543,13 +544,42 @@ class AgentService:
     ) -> list[Reply] | None:
         """A screenshot of bookings or plans put on the user's trips. None when it
         isn't one and the user didn't say it was."""
+        # A caption naming a trip the user was added to puts the screenshot on that trip,
+        # as the owner's, with its prices left out (a cost is the owner's money).
+        shared = (
+            await access_cases.shared_trip_named_in(
+                self._uow, await get_user(self._uow(), actor), caption
+            )
+            if caption
+            else None
+        )
         try:
-            result = await self.read_trip_screenshot(actor, image, mime_type, caption, asked=asked)
+            result = await self.read_trip_screenshot(
+                shared.owner_id if shared else actor,
+                image,
+                mime_type,
+                caption,
+                trip_id=shared.trip.id if shared else None,
+                asked=asked,
+                with_costs=shared is None,
+            )
         except InvalidInput as exc:
             return [Reply(str(exc))] if asked else None
         if result is None:
             return None
         replies = [Reply(booking_cases.describe_screenshot(result))]
+        if shared is not None:
+            if result.saved:
+                await access_cases.record(
+                    self._uow(), shared.opened.access, "read a screenshot onto the itinerary",
+                    now=self._clock(),
+                )  # fmt: skip
+            replies.append(
+                Reply(
+                    f"That's {shared.owner_label}'s trip, so I left out any prices: only "
+                    f"{shared.owner_label} can add costs."
+                )
+            )
         asks = [s for s in result.saved if s.trip is None and s.ask]
         for saved in asks[:ASK_AT_MOST]:
             text, rows = booking_cases.which_trip(saved)

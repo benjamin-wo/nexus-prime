@@ -2756,7 +2756,7 @@ test("a new idea from the + on Ideas goes in a new list, and shows with its list
   await expect(ideas).toContainText("Ramen Street");
 });
 
-test("the notes on Prep are saved with the whole trip, and are there after a reload", async ({ page }) => {
+test("the notes on Prep are saved on their own, and are there after a reload", async ({ page }) => {
   const state = await fakeApi(page);
   await addTrip(page, "Seoul", "2026-11-10", "2026-11-13", (form) => form.getByLabel(/^Budget/).fill("3000"));
   await openTab(page, "Prep");
@@ -2765,14 +2765,15 @@ test("the notes on Prep are saved with the whole trip, and are there after a rel
   await expect(save).toBeDisabled(); // nothing changed yet
   await notes.fill("Visa not needed. Meet Ann at Gate 3.");
   await save.click();
-  // The whole trip goes with it, so nothing else is lost.
-  await expect.poll(() => state.tripPuts.at(-1)).toMatchObject({ destination: "Seoul", start: "2026-11-10", end: "2026-11-13", currency: "KRW", budget: "3000", notes: "Visa not needed. Meet Ann at Gate 3." });
+  // Only the notes go (their own endpoint, as a member's do), so nothing else about the trip can change.
+  await expect.poll(() => state.notesPuts.at(-1)).toEqual({ notes: "Visa not needed. Meet Ann at Gate 3." });
+  expect(state.tripPuts).toHaveLength(0);
   await expect(page.getByRole("region", { name: "Notes" })).toContainText("Saved");
 
   // Leaving the field saves too.
   await notes.fill("Visa not needed. Meet Ann at Gate 3. Bring cash.");
   await notes.blur();
-  await expect.poll(() => state.tripPuts.at(-1)).toMatchObject({ notes: "Visa not needed. Meet Ann at Gate 3. Bring cash." });
+  await expect.poll(() => state.notesPuts.at(-1)).toEqual({ notes: "Visa not needed. Meet Ann at Gate 3. Bring cash." });
   await expect.poll(() => state.trips[0]).toMatchObject({ notes: "Visa not needed. Meet Ann at Gate 3. Bring cash." });
 
   // After a reload the page is on Prep, with the notes in the field.

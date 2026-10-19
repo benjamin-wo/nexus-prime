@@ -7,8 +7,9 @@ and what anything cost; those stay between the owner and the owner's ledger.
 """
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from uuid import UUID
 
@@ -21,6 +22,10 @@ INVITE_TTL = timedelta(days=7)
 MAX_OPEN_INVITES = 10
 MAX_MEMBERS = 10
 MAX_SUMMARY = 200
+# The owner hears about other people's changes to a trip at most this often, in one
+# message that lists up to DIGEST_LINES of them.
+DIGEST_EVERY = timedelta(minutes=30)
+DIGEST_LINES = 5
 MAX_NAME = 40
 # What a person sees in place of a name nobody has set.
 UNKNOWN_NAME = "Someone"
@@ -91,6 +96,43 @@ class Activity:
     actor: str
     summary: str
     at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class DigestState:
+    """Where a trip's Telegram summary of other people's changes stands."""
+
+    owner_id: UserId
+    destination: str
+    last_at: datetime | None  # what the last summary covered up to; None before the first
+
+
+def digest_key(trip_id: UUID, last_at: datetime | None) -> str:
+    """The dedupe key of a trip's next summary. Every edit made before it goes out
+    shares the key (so they make one job); once it has gone, ``last_at`` moves and the
+    next edit gets a new one."""
+    since = last_at.astimezone(UTC).isoformat() if last_at else "first"
+    return f"trip.activity_digest:{trip_id}:{since}"
+
+
+def _join(names: Sequence[str]) -> str:
+    if len(names) <= 1:
+        return "".join(names)
+    return f"{', '.join(names[:-1])} and {names[-1]}"
+
+
+def digest_text(destination: str, changes: Sequence[Activity]) -> str | None:
+    """One message about what other people changed, oldest first: "Alex and Sam changed
+    Tokyo: added Dinner at Sushi Ten, moved Senso-ji to Day 2". The same change twice
+    counts once; past five, the rest are counted ("and 3 more"). None for no changes."""
+    names = list(dict.fromkeys(c.actor for c in changes))
+    lines = list(dict.fromkeys(c.summary for c in changes))
+    if not names or not lines:
+        return None
+    shown = ", ".join(lines[:DIGEST_LINES])
+    if len(lines) > DIGEST_LINES:
+        shown += f" and {len(lines) - DIGEST_LINES} more"
+    return f"{_join(names)} changed {destination}: {shown}"
 
 
 def clean_name(*parts: str | None) -> str | None:

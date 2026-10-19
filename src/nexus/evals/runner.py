@@ -60,6 +60,8 @@ _DATA_TABLES = (
     "notification_settings",
     "wallets",
 )
+# What the owner of a shared trip keeps: a change to either is a change to the trip.
+_TRIP_TABLES = ("trips", "trip_bookings", "trip_activity")
 
 
 class FixedRates:
@@ -245,13 +247,18 @@ async def _turn(agent: Agent, user: User, turn: Turn, ref: str) -> TurnLog:
     return log
 
 
-async def fingerprint(engine: AsyncEngine, user: User) -> str:
-    """A hash of the user's data, to tell whether anything changed."""
+async def fingerprint(engine: AsyncEngine, user: User, owner: User | None = None) -> str:
+    """A hash of the user's data, to tell whether anything changed. For a trip shared
+    with the user, the owner's trip and its entries count too."""
     digest = hashlib.sha256()
+    wanted = [(name, user) for name in _DATA_TABLES]
+    if owner is not None:
+        wanted += [(name, owner) for name in _TRIP_TABLES]
     async with engine.connect() as db:
-        for name in _DATA_TABLES:
+        for name, whose in wanted:
             table = tables.metadata.tables[name]
-            rows = await db.execute(select(table).where(table.c.user_id == user.id))
+            by = table.c.owner_id if name == "trip_activity" else table.c.user_id
+            rows = await db.execute(select(table).where(by == whose.id))
             for text in sorted(repr(tuple(r)) for r in rows):
                 digest.update(f"{name}:{text}\n".encode())
     return digest.hexdigest()
@@ -335,20 +342,24 @@ async def run_case(
     vision: BaseChatModel | None = None,
     memory: BaseChatModel | None = None,
 ) -> CaseResult:
-    seeded = await seed.seed_user(lambda: SqlUnitOfWork(engine), telegram_id)
+    seeded = await seed.seed_user(lambda: SqlUnitOfWork(engine), telegram_id, shared=case.shared)
     user = seeded.user
     agent = Agent(engine, model, photo_cache, vision, memory)
-    world = World(agent.uow, user, frozenset(t.id for t in await World(
-        agent.uow, user, frozenset()
-    ).transactions()))  # fmt: skip
-    before = await fingerprint(engine, user)
+    world = World(
+        agent.uow,
+        user,
+        frozenset(t.id for t in await World(agent.uow, user, frozenset()).transactions()),
+        seeded.owner,
+        seeded.trip_id,
+    )
+    before = await fingerprint(engine, user, seeded.owner)
     turns: list[TurnLog] = []
     try:
         for n, turn in enumerate(case.turns):
             turns.append(await _turn(agent, user, turn, f"eval:{case.id}:{n}"))
     except Exception as exc:  # a crash fails the case, not the run
         return CaseResult(case, turns, [], error=f"{type(exc).__name__}: {exc}")
-    changed = await fingerprint(engine, user) != before
+    changed = await fingerprint(engine, user, seeded.owner) != before
     return CaseResult(case, turns, await grade(case, turns, world, changed))
 
 

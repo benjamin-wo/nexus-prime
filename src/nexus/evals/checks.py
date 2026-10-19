@@ -29,6 +29,9 @@ class World:
     uow: UowFactory
     user: User
     seeded: frozenset[UUID]  # transaction ids from the seed
+    # For a case where the user was added to someone else's Japan trip: its owner and id.
+    owner: User | None = None
+    trip_id: UUID | None = None
 
     async def transactions(self) -> list[Transaction]:
         page = await tx_cases.list_ledger(
@@ -476,4 +479,50 @@ class TheyPaid:
             and p.amount.amount == Decimal(self.amount)
             and not p.settled
             for p in payments
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class SharedBooked:
+    """An itinerary entry like this is on the Japan trip the user was added to, in its
+    owner's account and with no cost."""
+
+    title: str  # found in its title, any case
+    starts: date | None = None
+
+    def describe(self) -> str:
+        when = f" from {self.starts}" if self.starts else ""
+        return f"an entry '{self.title}'{when}, with no cost, on the shared trip"
+
+    async def holds(self, world: World) -> bool:
+        if world.owner is None or world.trip_id is None:
+            return False
+        async with world.uow() as tx:
+            bookings = await tx.trips.list_bookings(world.owner.id, trip_id=world.trip_id)
+        return any(
+            self.title.casefold() in b.draft.title.casefold()
+            and b.cost is None
+            and (self.starts is None or b.draft.starts == self.starts)
+            for b in bookings
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class SharedTripIs:
+    """The Japan trip the user was added to still has this budget."""
+
+    budget: str
+
+    def describe(self) -> str:
+        return f"the shared trip's budget still {self.budget}"
+
+    async def holds(self, world: World) -> bool:
+        if world.owner is None or world.trip_id is None:
+            return False
+        async with world.uow() as tx:
+            trip = await tx.trips.get_trip(world.owner.id, world.trip_id)
+        return (
+            trip is not None
+            and trip.budget is not None
+            and trip.budget.amount == Decimal(self.budget)
         )

@@ -21,6 +21,29 @@ describe("the add sheet", () => {
     expect(screen.queryByText(/Fill in a form/)).toBeNull();
   });
 
+  const me = (role: "owner" | "member" | "guest") => ({ user: { telegram_user_id: 1, role, home_currency: "SGD", timezone: "Asia/Singapore" }, csrf_token: "c" });
+
+  it("offers Type it to a member of someone's trip, and says which trip it is", async () => {
+    Element.prototype.scrollIntoView = () => {}; // jsdom has none
+    const calls = mockApi({ "GET /me": () => me("member"), "POST /chat": () => [{ text: "Added.", buttons: [] }] });
+    renderWithProviders(sheet({ trip: { ...trip, role: "member" } as unknown as Trip }));
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Type it" }));
+    await user.type(screen.getByLabelText("Tell Nexus about a booking"), "Dinner at Sushi Ten on Saturday at 7pm");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findByText("Added.");
+    expect(calls.find((c) => c.path === "/chat")?.body).toEqual({
+      message: "For the Tokyo trip shared with me (Nov 10 to Nov 13), add this: Dinner at Sushi Ten on Saturday at 7pm",
+    });
+  });
+
+  it("keeps Type it from a guest, who has no chat", async () => {
+    mockApi({ "GET /me": () => me("guest") });
+    renderWithProviders(sheet({ trip: { ...trip, role: "member" } as unknown as Trip }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Type it" })).toBeNull());
+    expect(screen.getByRole("button", { name: "Find a place" })).toBeInTheDocument();
+  });
+
   it("saves a plan on the day open, then refreshes and closes", async () => {
     const calls = mockApi({ "POST /travel/trips/t1/bookings": () => ({}) });
     let changed = 0;

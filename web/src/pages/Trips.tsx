@@ -2,13 +2,13 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, Fragment, type ReactNode, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
-import { api, type Booking, type Hop, type ScreenshotRead, type Trip, type TripDetail } from "../api";
+import { ApiError, api, type Booking, type Hop, type ScreenshotRead, type Trip, type TripDetail } from "../api";
 import { Icon, type IconName } from "../components/Icon";
 import { base64 } from "../files";
 import { formatMoney } from "../format";
 import { ResearchList } from "./Research";
 import { type AddPreset, AddSheet } from "./TripAdd";
-import { BookingLines, Companions, OpenLink, PhotoCredit, TripCard, coverStyle, day, landingOn, landsOnly, leavingOn, legTimes, sortKey, suggestLabel, todayIso, tripWhen, useHome } from "./TripBits";
+import { BookingLines, OpenLink, PhotoCredit, TripCard, coverStyle, day, isMember, landingOn, landsOnly, leavingOn, legTimes, sharedBy, sortKey, suggestLabel, todayIso, tripWhen, useAppRole, useHome } from "./TripBits";
 import { DayCarousel } from "./DayCarousel";
 import { type Fix, type Go, type Stage, dayIsFree, nextUp, stageOf } from "./TripStage";
 import { ArrangeProvider, DayNotes, DayPickerSheet, DropZone, type Spot, daySpot, useArrange, useDragEntry } from "./TripArrange";
@@ -18,7 +18,9 @@ import { StopsRow, StopsSheet, pillMark, pillTitle } from "./TripStops";
 import { EntryEditor } from "./TripEntry";
 import { IdeasTab, listOf } from "./TripIdeas";
 import { MoneyTab, NameChips } from "./TripMoney";
+import { ActivityLine } from "./TripActivity";
 import { PrepTab } from "./TripPrep";
+import { TripFaces, hasMembers, useMembers } from "./TripPeople";
 import { ShareSheet } from "./TripShare";
 import { TodayView } from "./TripToday";
 
@@ -279,7 +281,14 @@ export function TripsPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
   const home = useHome();
   const trips = useQuery({ queryKey: ["trips"], queryFn: () => api<Trip[]>("/travel/trips") });
   const [adding, setAdding] = useState(false);
-  const all = trips.data ?? [];
+  // A guest only has the trips they were invited to: nothing here starts, researches or
+  // sorts a trip of their own, and what asks for their own bookings or research stays unasked.
+  // Nothing of their own is asked or shown until /me says so (it is already known once signed in).
+  const role = useAppRole();
+  const guest = role === undefined || role === "guest";
+  const everything = trips.data ?? [];
+  const all = everything.filter((t) => !isMember(t));
+  const shared = everything.filter(isMember);
   const groups: [string, Trip[]][] = [
     ["On now", all.filter((t) => t.status === "ongoing")],
     ["Coming up", all.filter((t) => t.status === "upcoming").reverse()],
@@ -291,16 +300,18 @@ export function TripsPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
       <div className="page-head">
         <div>
           <h1>Trips</h1>
-          <p className="muted">Each trip keeps its bookings, plans and money together. Nexus never books anything.</p>
+          <p className="muted">
+            {role === "guest" ? "The trips you were invited to." : "Each trip keeps its bookings, plans and money together. Nexus never books anything."}
+          </p>
         </div>
-        {!adding && (
+        {!adding && !guest && (
           <button type="button" className="btn btn-primary" onClick={() => setAdding(true)}>
             New trip
           </button>
         )}
       </div>
 
-      {adding && (
+      {adding && !guest && (
         <section className="card" aria-labelledby="new-trip" data-no-reveal>
           <div className="card-head">
             <h2 id="new-trip">New trip</h2>
@@ -317,19 +328,21 @@ export function TripsPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
       )}
       {trips.isLoading && <p className="state">Loading…</p>}
       {trips.isError && <p className="error-text">Couldn't load your trips.</p>}
-      {trips.data && all.length === 0 && !adding && (
+      {trips.data && everything.length === 0 && !adding && (
         <section className="card">
           <p className="state">
-            No trips yet. Add one here, or tell Nexus: "I'm going to Tokyo 10 to 20 Jan, budget 3000", or "I want to go to Japan in
-            January" to have it researched.
+            {guest
+              ? "You're not on any trips yet. Open an invite link to join one."
+              : `No trips yet. Add one here, or tell Nexus: "I'm going to Tokyo 10 to 20 Jan, budget 3000", or "I want to go to Japan in January" to have it researched.`}
           </p>
         </section>
       )}
       {groups.slice(0, 2).filter(([, list]) => list.length > 0).map(([title, list]) => tripGroup(title, list))}
-      {!adding && <WhereNext onAsk={onAsk} onAdd={() => setAdding(true)} />}
-      <LooseBookings trips={all} />
+      {!adding && !guest && <WhereNext onAsk={onAsk} onAdd={() => setAdding(true)} />}
+      {!guest && <LooseBookings trips={all} />}
       {groups.slice(2).filter(([, list]) => list.length > 0).map(([title, list]) => tripGroup(title, list))}
-      <ResearchList />
+      {shared.length > 0 && tripGroup("Shared with you", shared)}
+      {!guest && <ResearchList />}
     </>
   );
 }
@@ -918,7 +931,15 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
   const navigate = useNavigate();
   const home = useHome();
   const [params, setParams] = useSearchParams();
-  const detail = useQuery({ queryKey: ["trip", id], queryFn: () => api<TripDetail>(`/travel/trips/${id}`) });
+  const detail = useQuery({
+    queryKey: ["trip", id],
+    queryFn: () => api<TripDetail>(`/travel/trips/${id}`),
+    // Someone else's change turns up when the window comes back; a 404 (removed, or left) is an answer, not a blip to retry.
+    refetchOnWindowFocus: true,
+    retry: (failures, error) => !(error instanceof ApiError && error.status === 404) && failures < 3,
+  });
+  // Taken off the trip (or it's gone): the server tells a person with no part in a trip there is no such trip.
+  const gone = detail.error instanceof ApiError && detail.error.status === 404;
   const [editing, setEditing] = useState(false);
   const [sheet, setSheet] = useState<{ preset: AddPreset | null } | null>(null);
   const [sharing, setSharing] = useState(false);
@@ -930,7 +951,9 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
   const [addingPacking, setAddingPacking] = useState(false);
   // The map shows every day, not just the one open.
   const [mapAll, setMapAll] = useState(false);
-  const data = detail.data;
+  const data = gone ? undefined : detail.data;
+  const member = data ? isMember(data.trip) : false;
+  const members = useMembers(id, Boolean(data));
   const stage: Stage = data ? stageOf(data) : "planning";
   const refresh = () =>
     Promise.all([
@@ -942,8 +965,25 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
     ]);
 
   // The open tab lives in the address, so Back goes to the one before.
+  // A member has no Money tab: money is the owner's, so its address opens Plan.
   const asked = params.get("tab");
-  const tab: Tab = isTab(asked) ? asked : stage === "after" ? "money" : "plan";
+  const tab: Tab = isTab(asked) && !(member && asked === "money") ? asked : stage === "after" && !member ? "money" : "plan";
+  useEffect(() => {
+    if (member && asked === "money") {
+      setParams(
+        (was) => {
+          const query = new URLSearchParams(was);
+          query.set("tab", "plan");
+          return query;
+        },
+        { replace: true },
+      );
+    }
+  }, [member, asked, setParams]);
+  // A trip that's gone from the list too, so it isn't offered again.
+  useEffect(() => {
+    if (gone) void client.invalidateQueries({ queryKey: ["trips"] });
+  }, [gone, client]);
   // A + pressed on one tab doesn't wait for the next visit to it.
   useEffect(() => {
     setAddingCost(false);
@@ -980,8 +1020,10 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
   }
 
   function fix(f: Fix) {
-    if (f === "budget") setEditing(true);
-    else setSheet({ preset: f });
+    if (f === "budget") {
+      // The budget is the owner's.
+      if (!member) setEditing(true);
+    } else setSheet({ preset: f });
   }
 
   function go(to: Go) {
@@ -1034,10 +1076,11 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
           </Link>
           {data && !editing && (
             <div className="cover-actions">
-              <button type="button" className="cover-button" onClick={() => setSharing(true)} aria-label="Share the plan">
-                Share
+              <button type="button" className="cover-button" onClick={() => setSharing(true)} aria-label={member ? "People on this trip" : "Share the plan"}>
+                {member ? "People" : "Share"}
               </button>
-              <TripMenu trip={data.trip} onEdit={() => setEditing(true)} onDelete={() => void remove()} onChange={refresh} />
+              {/* Editing the trip, its photo and deleting it are the owner's. */}
+              {!member && <TripMenu trip={data.trip} onEdit={() => setEditing(true)} onDelete={() => void remove()} onChange={refresh} />}
             </div>
           )}
         </div>
@@ -1049,14 +1092,26 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
                 {day(data.trip.start)} – {day(data.trip.end)} · {data.trip.days} {data.trip.days === 1 ? "day" : "days"}
               </span>
               <span className="pill">{tripWhen(data.trip)}</span>
-              <Companions names={data.trip.companions} />
+              <TripFaces trip={data.trip} members={members.data} />
             </p>
           )}
+          {data && member && <p className="trip-shared-by">{sharedBy(data.trip)}</p>}
           {data?.trip.photo && <PhotoCredit photo={data.trip.photo} />}
         </div>
       </header>
       {detail.isLoading && <p className="state">Loading…</p>}
-      {detail.isError && (
+      {gone && (
+        <section className="card trip-gone" aria-labelledby="trip-gone">
+          <h2 id="trip-gone">You're no longer on this trip.</h2>
+          <p className="caption">The owner may have taken you off it, or deleted it.</p>
+          <div className="actions">
+            <Link className="btn btn-soft" to="/travel">
+              Go to your trips
+            </Link>
+          </div>
+        </section>
+      )}
+      {detail.isError && !gone && (
         <p className="error-text" role="alert">
           {detail.error instanceof Error ? detail.error.message : "Couldn't load that trip."}
         </p>
@@ -1113,10 +1168,11 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
           )}
 
           <NextUpStrip detail={data} onGo={go} />
+          {tab === "plan" && <ActivityLine tripId={id} shared={hasMembers(members.data)} />}
 
           <div className="trip-tabbar">
             <nav className="trip-tabs" aria-label="Trip sections">
-              {TABS.map(([name, label]) => (
+              {TABS.filter(([name]) => !(member && name === "money")).map(([name, label]) => (
                 <button key={name} type="button" className="trip-tab" aria-current={tab === name ? "page" : undefined} onClick={() => open(name)}>
                   {label}
                 </button>
@@ -1145,7 +1201,14 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
                 <button
                   type="button"
                   className="btn btn-ghost trip-ask"
-                  onClick={() => onAsk(`How's my ${data.trip.destination} trip looking? What's booked, what's missing and what's left in the budget?`)}
+                  onClick={() =>
+                    onAsk(
+                      // A member's chat sees the plan only: no budget to ask about.
+                      member
+                        ? `How's the ${data.trip.destination} trip shared with me looking? What's booked and what's missing?`
+                        : `How's my ${data.trip.destination} trip looking? What's booked, what's missing and what's left in the budget?`,
+                    )
+                  }
                 >
                   <Icon name="sparkle" size={16} className="icon-inline" />
                   Ask Nexus about this trip
@@ -1175,7 +1238,7 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
               onClose={() => setSheet(null)}
             />
           )}
-          {sharing && <ShareSheet trip={data.trip} onClose={() => setSharing(false)} />}
+          {sharing && <ShareSheet trip={data.trip} onClose={() => setSharing(false)} onLeft={() => navigate("/travel")} />}
           </ArrangeProvider>
         </TripPlacesProvider>
       )}

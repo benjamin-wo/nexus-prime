@@ -1,7 +1,6 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
 
-import { api, type Trip, type TripDetail } from "../api";
-import { tripBody } from "./TripEntry";
+import { api, tripNotesPath, type Trip, type TripDetail } from "../api";
 import { PackingCard, WeatherCard } from "./TripExtras";
 import { type Fix, StillToSort } from "./TripStage";
 
@@ -30,7 +29,8 @@ function NotesEditor({ trip, onChange }: { trip: Trip; onChange: () => void }) {
     setBusy(true);
     setError(null);
     try {
-      await api(`/travel/trips/${trip.id}`, { method: "PUT", body: tripBody(trip, { notes: text.trim() || null }) });
+      // Its own endpoint, so it changes the notes and nothing else: the only way a member can, and the same for the owner.
+      await api(tripNotesPath(trip.id), { method: "PUT", body: { notes: text.trim() || null } });
       onChange();
       setDone(true);
     } catch (e) {

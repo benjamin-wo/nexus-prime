@@ -677,6 +677,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                         prices,
                         news,
                         await _photos(resolved, extra, stack, models),
+                        origin,
                     )
                     schedules = list(SCHEDULES)
                     if resolved.ops_tickets_enabled:

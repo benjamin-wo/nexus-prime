@@ -62,8 +62,8 @@ export function Companions({ names }: { names: string[] }) {
   const shown = names.slice(0, 3);
   return (
     <span className="avatars" aria-label={`With ${names.join(", ")}`} title={names.join(", ")}>
-      {shown.map((n) => (
-        <span key={n} className="avatar" aria-hidden="true">
+      {shown.map((n, i) => (
+        <span key={`${n}-${i}`} className="avatar" aria-hidden="true">
           {initials(n)}
         </span>
       ))}
@@ -98,6 +98,7 @@ export function TripCard({ trip }: { trip: Trip }) {
           {day(trip.start)} to {day(trip.end)} · {trip.days} {trip.days === 1 ? "day" : "days"}
           {nights > 0 && ` · ${nights} ${nights === 1 ? "night" : "nights"}`}
         </span>
+        {isMember(trip) && <span className="trip-card-meta">{sharedBy(trip)}</span>}
         <span className="trip-card-foot">
           {trip.budget ? <span>Budget {formatMoney(trip.budget)}</span> : <span />}
           <Companions names={trip.companions} />
@@ -178,6 +179,20 @@ export function useHome(): string {
   const me = useQuery({ queryKey: ["me"], queryFn: () => api<Me>("/me") });
   return me.data?.user.home_currency ?? "";
 }
+
+/** The signed-in person's role in the app: "guest" can only open the trips they were invited
+ * to, so anything that asks for their own trips, bookings or research waits on this. Undefined
+ * until `/me` has loaded. */
+export function useAppRole(): Me["user"]["role"] | undefined {
+  const me = useQuery({ queryKey: ["me"], queryFn: () => api<Me>("/me") });
+  return me.data?.user.role;
+}
+
+/** A trip the person was added to, rather than owns: the plan and no money. */
+export const isMember = (trip: Pick<Trip, "role">): boolean => trip.role === "member";
+
+/** Whose trip a shared one is, for the line under its title and on its card. */
+export const sharedBy = (trip: Pick<Trip, "owner_name">): string => (trip.owner_name ? `Shared by ${trip.owner_name}` : "Shared with you");
 
 /** Where it was booked and its reference, which the user can copy for the counter or the app. */
 export function BookedWith({ booking }: { booking: Booking }) {

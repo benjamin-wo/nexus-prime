@@ -4,7 +4,7 @@ import { api, type Reply, type Trip } from "../api";
 import { Icon, type IconName } from "../components/Icon";
 import { formatShortDate } from "../format";
 import { EntryEditor, type EntryKind } from "./TripEntry";
-import { useHome } from "./TripBits";
+import { useAppRole, useHome } from "./TripBits";
 import { SavePlaces } from "./TripPlaces";
 
 export type AddPreset = {
@@ -77,7 +77,8 @@ function TypeIt({ trip, preset, onChanged }: { trip: Trip; preset: AddPreset | n
     setText("");
     setLines((l) => [...l, { who: "you", text: said }]);
     // The trip goes with it, so "Thursday" and "the hotel" mean this trip's.
-    const message = `For my ${trip.destination} trip (${when}), add this: ${said}`;
+    const whose = trip.role === "member" ? "the" : "my";
+    const message = `For ${whose} ${trip.destination} trip${trip.role === "member" ? " shared with me" : ""} (${when}), add this: ${said}`;
     void run(api<Reply[]>("/chat", { method: "POST", body: { message } }));
   }
 
@@ -152,6 +153,10 @@ export function AddSheet({
   onClose: () => void;
 }) {
   const home = useHome();
+  // "Type it" is the chat (POST /chat): a guest has none. A member of someone's trip has the chat of their
+  // own account, which finds that trip by name and may change its plan (never its money).
+  const appRole = useAppRole();
+  const typing = appRole !== "guest";
   const [view, setView] = useState<"menu" | "type" | "booking" | "plan" | "idea" | "place">(
     (preset?.find || preset?.near) && places ? "place" : preset ? formFor(preset.kind) : "menu",
   );
@@ -209,9 +214,11 @@ export function AddSheet({
             <div className="quick-ways">
               <span className="caption">Quick ways</span>
               <div className="quick">
-                <button type="button" className="btn btn-soft" onClick={() => setView("type")}>
-                  Type it
-                </button>
+                {typing && (
+                  <button type="button" className="btn btn-soft" onClick={() => setView("type")}>
+                    Type it
+                  </button>
+                )}
                 <label className="btn btn-soft">
                   Screenshot or photo
                   <input

@@ -8,6 +8,7 @@ from decimal import Decimal
 
 import pytest
 from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import AIMessage
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nexus.agent.skills import SkillLibrary
@@ -188,3 +189,71 @@ async def test_the_seed_has_wallets_but_no_moves(engine: AsyncEngine) -> None:
         SqlUnitOfWork(engine), user.id, LedgerQuery(direction=Direction.MOVE)
     )
     assert page.total == 0
+
+
+async def test_the_shared_trip_cases_seed_a_member_and_grade_the_owners_trip(
+    engine: AsyncEngine,
+) -> None:
+    seeded = await seed.seed_user(lambda: SqlUnitOfWork(engine), 779, shared=True)
+    assert seeded.owner is not None and seeded.trip_id is not None
+    async with SqlUnitOfWork(engine) as db:
+        assert await db.trips.list_trips(seeded.user.id) == []  # the user owns no trip
+        assert [t.destination for t, _ in await db.trips.list_member_trips(seeded.user.id)] == [
+            "Tokyo, Japan"
+        ]
+        owner = await db.ledger.get_user(seeded.owner.id)
+    assert owner is not None and owner.display_name == seed.OWNER_NAME
+
+    scripts: dict[str, Callable[[], BaseChatModel]] = {
+        "shared-trip-add-plan": lambda: scripted(
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "add_to_itinerary",
+                        "args": {
+                            "kind": "activity",
+                            "name": "Dinner at Sushi Ten",
+                            "day": "2026-12-12",
+                            "time": "19:00",
+                        },
+                        "id": "call-sushi",
+                    }
+                ],
+            ),
+            say("Added dinner at Sushi Ten to Alex's Japan trip."),
+        ),
+        "shared-trip-budget-refused": lambda: scripted(
+            call("update_trip", trip="Japan", budget="5000"),
+            say("Only Alex can change money or the trip's details on a shared trip."),
+        ),
+    }
+    results = {
+        r.case.id: r
+        for r in await run_cases(
+            engine, lambda case: scripts[case.id](), _only(*scripts), concurrency=2
+        )
+    }
+    for good in scripts:
+        assert results[good].passed, (good, results[good].failures, results[good].error)
+    assert results["shared-trip-add-plan"].turns[0].confirmations == 1
+    assert results["shared-trip-budget-refused"].turns[0].confirmations == 0
+
+    # A model that changes the budget anyway, or that adds nothing, is graded on the
+    # owner's trip, not on the member's own data.
+    wrong = {
+        "shared-trip-add-plan": lambda: scripted(say("Sure, I added it.")),
+        "shared-trip-budget-refused": lambda: scripted(say("Done, the Japan budget is 5000.")),
+    }
+    failed = {
+        r.case.id: r
+        for r in await run_cases(
+            engine,
+            lambda case: wrong[case.id](),
+            _only(*wrong),
+            concurrency=2,
+            first_telegram_id=910_000,
+        )
+    }
+    assert any("Sushi Ten" in f for f in failed["shared-trip-add-plan"].failures)
+    assert "reply lacks 'alex'" in failed["shared-trip-budget-refused"].failures

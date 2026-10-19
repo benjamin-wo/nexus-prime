@@ -1155,7 +1155,7 @@ async def test_guessing_invite_links_is_rate_limited(
 async def test_an_invite_for_one_trip_adds_nobody_to_another(scene: Scene) -> None:
     token_a = (await scene.invite_to(scene.a))["token"]
     joined = await scene.outsider.send("POST", f"/api/travel/invites/{token_a}/accept")
-    assert joined.json() == {"trip_id": scene.trip_a, "new": True}
+    assert joined.json() == {"trip_id": scene.trip_a, "new": True, "own": False}
     assert (await scene.outsider.get(scene.b)).status_code == 404
     assert (await scene.outsider.get(scene.a)).status_code == 200
     # The same through sign-in: a new guest gets trip A and nothing else.
@@ -1224,7 +1224,8 @@ async def test_only_the_app_owners_invites_make_guests(scene: Scene) -> None:
 async def test_the_owner_cannot_use_their_own_invite(scene: Scene) -> None:
     token = (await scene.invite_to(scene.a))["token"]
     own = await scene.owner.send("POST", f"/api/travel/invites/{token}/accept")
-    assert own.status_code == 409
+    assert own.status_code == 200
+    assert own.json() == {"trip_id": scene.trip_a, "new": False, "own": True}
     members = await column(scene.engine, "SELECT member_id FROM trip_members")
     assert scene.owner_id not in {str(m) for m in members}
     # The link is not spent by it: someone else can still use it.
@@ -1478,7 +1479,11 @@ async def test_leaving_a_trip_does_not_let_an_old_invite_back_in(scene: Scene) -
     # A new link from the owner does.
     new = (await scene.invite_to(a))["token"]
     back = await pia.send("POST", f"/api/travel/invites/{new}/accept")
-    assert back.status_code == 200 and back.json() == {"trip_id": scene.trip_a, "new": True}
+    assert back.status_code == 200 and back.json() == {
+        "trip_id": scene.trip_a,
+        "new": True,
+        "own": False,
+    }
     assert (await pia.get(a)).status_code == 200
 
 

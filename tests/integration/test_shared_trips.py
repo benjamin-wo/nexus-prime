@@ -5,6 +5,7 @@ and figure here is made up."""
 
 import asyncio
 import base64
+import json
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
@@ -25,9 +26,9 @@ from nexus.application.users import RegisterUser, register_user
 from nexus.channels.web import api as web_api
 from nexus.channels.web import email_api, investments_api, ops_api, travel_api
 from nexus.channels.web.security import authenticated, signed_in
-from nexus.channels.web.telegram_login import sign_for_tests
+from nexus.channels.web.telegram_login import sign_for_tests, sign_webapp_for_tests
 from nexus.domain.access import token_hash
-from nexus.domain.errors import Conflict, Forbidden, NotFound
+from nexus.domain.errors import Forbidden, NotFound
 from nexus.domain.ledger import Role, UserId
 from nexus.domain.trip_access import TripRole
 from nexus.infra.db.migrations import alembic_config
@@ -156,7 +157,11 @@ async def shared(world: World) -> Shared:
     ours = Shared(world, owner, member, outsider, trip, path)
     token = (await ours.invite())["token"]
     joined = await member.send("POST", f"/api/travel/invites/{token}/accept")
-    assert joined.status_code == 200 and joined.json() == {"trip_id": trip, "new": True}
+    assert joined.status_code == 200 and joined.json() == {
+        "trip_id": trip,
+        "new": True,
+        "own": False,
+    }
     return ours
 
 
@@ -569,14 +574,19 @@ async def test_invites_are_single_use_expire_and_can_be_cancelled(shared: Shared
     assert [set(i) for i in listed] == [{"id", "created_at", "expires_at"}]
     assert token not in (await owner.get(f"{shared.path}/invites")).text
 
-    # The owner can't join their own trip; the link is kept.
+    # The owner can't join their own trip; they get it back to open, and the link is kept.
     own = await owner.send("POST", f"/api/travel/invites/{token}/accept")
-    assert own.status_code == 409
+    assert own.status_code == 200
+    assert own.json() == {"trip_id": shared.trip, "new": False, "own": True}
     joined = await outsider.send("POST", f"/api/travel/invites/{token}/accept")
     assert joined.status_code == 200 and joined.json()["new"] is True
     # Spent: the same person opening it again is fine, anyone else is told it is used.
     again = await outsider.send("POST", f"/api/travel/invites/{token}/accept")
-    assert again.status_code == 200 and again.json() == {"trip_id": shared.trip, "new": False}
+    assert again.status_code == 200 and again.json() == {
+        "trip_id": shared.trip,
+        "new": False,
+        "own": False,
+    }
     third = await app_member(world, owner, 844, "Kim")
     used = await third.send("POST", f"/api/travel/invites/{token}/accept")
     assert used.status_code == 404 and "invalid, used or expired" in used.json()["detail"]
@@ -699,6 +709,97 @@ async def test_a_trip_invite_never_changes_an_existing_account(shared: Shared) -
     # The invites that weren't spent are still open: the one the allow-listed user was
     # refused with, and this one.
     assert len((await owner.get(f"{shared.path}/invites")).json()) == 2
+
+
+async def sign_in_webapp(
+    world: World,
+    telegram_id: int,
+    *,
+    first: str = "Sam",
+    last: str | None = None,
+    trip_invite: str | None = None,
+) -> tuple[Browser, Response]:
+    """Signs in from inside Telegram (the Mini App), with a trip invite if given."""
+    user: dict[str, Any] = {"id": telegram_id, "first_name": first}
+    if last:
+        user["last_name"] = last
+    fields = {
+        "query_id": "AAH",
+        "user": json.dumps(user),
+        "auth_date": str(int(world.clock.now.timestamp())),
+    }
+    body: dict[str, Any] = {"init_data": sign_webapp_for_tests(fields, TOKEN)}
+    if trip_invite:
+        body["trip_invite"] = trip_invite
+    browser = world.browser()
+    response = await browser.client.post("/api/auth/webapp", json=body, headers={"Origin": ORIGIN})
+    if response.status_code == 200:
+        browser.csrf = response.json()["csrf_token"]
+    return browser, response
+
+
+async def test_the_mini_app_signs_in_with_a_trip_invite_as_the_widget_does(
+    shared: Shared,
+) -> None:
+    world = shared.world
+    invite = await shared.invite()
+    world.clock.now = NOW + timedelta(minutes=5)  # after Sam joined
+    # The app owner's invite makes a guest of someone with no account, and joins them.
+    browser, response = await sign_in_webapp(
+        world, GUEST, first="Gus", last="Lim", trip_invite=invite["token"]
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["user"]["role"] == "guest" and body["joined_trip"] == shared.trip
+    assert body["user"]["display_name"] == "Gus L."
+    detail = await browser.get(shared.path)
+    assert detail.status_code == 200 and detail.json()["trip"]["role"] == "member"
+    me = (await browser.get("/api/me")).json()
+    assert me["user"]["role"] == "guest" and me["user"]["display_name"]
+    # The link is spent; the guest signs in again without it, and nobody else can use it.
+    _, again = await sign_in_webapp(world, GUEST, first="Gus", last="Lim")
+    assert again.status_code == 200 and again.json()["joined_trip"] is None
+    _, reused = await sign_in_webapp(world, 855, trip_invite=invite["token"])
+    assert reused.status_code == 403 and "invalid, used or expired" in reused.json()["detail"]
+
+
+async def test_the_mini_app_follows_the_same_rules_for_everyone_else(shared: Shared) -> None:
+    world = shared.world
+    # Someone who may sign in anyway is added to the trip, keeping their role.
+    invite = await shared.invite()
+    browser, response = await sign_in_webapp(
+        world, OUTSIDER, first="Zed", trip_invite=invite["token"]
+    )
+    assert response.status_code == 200
+    assert response.json()["user"]["role"] == "member"
+    assert response.json()["joined_trip"] == shared.trip
+    assert (await browser.get("/api/transactions")).status_code == 200
+
+    # An ordinary user's invite can't bring in someone with no account, and makes none.
+    mine = await make_trip(shared.member, destination="Kyoto")
+    made = await shared.member.send("POST", f"/api/travel/trips/{mine}/invites")
+    stranger, refused = await sign_in_webapp(world, 866, trip_invite=made.json()["token"])
+    assert refused.status_code == 403 and "ask the trip's owner for an app invite" in refused.text
+    assert (await stranger.get("/api/me")).status_code == 401
+    async with world.engine.connect() as db:
+        assert await db.scalar(select(users.c.id).where(users.c.telegram_user_id == 866)) is None
+    _, bogus = await sign_in_webapp(world, 866, trip_invite="not-a-real-invite")
+    assert bogus.status_code == 403
+
+    # A link that can't be used doesn't stop someone who may sign in anyway, and the owner
+    # signing in with their own trip's invite is a plain sign-in.
+    _, plain = await sign_in_webapp(world, PEER, trip_invite="not-a-real-invite")
+    assert plain.status_code == 200 and plain.json()["joined_trip"] is None
+    own = await shared.invite()
+    owner, same = await sign_in_webapp(world, OWNER, first="T", trip_invite=own["token"])
+    assert same.status_code == 200 and same.json()["joined_trip"] is None
+    assert len((await owner.get(f"{shared.path}/invites")).json()) == 1
+
+
+async def test_me_has_the_display_name_for_the_guest_header(shared: Shared) -> None:
+    me = (await shared.member.get("/api/me")).json()
+    assert me["user"]["display_name"] == "Sam"
+    assert (await shared.owner.get("/api/me")).json()["user"]["display_name"] == "T"
 
 
 async def test_the_widget_redirect_takes_a_new_member_to_the_trip(shared: Shared) -> None:
@@ -994,10 +1095,10 @@ async def test_the_use_cases_refuse_a_member_the_owners_work(uow: UowFactory) ->
         await access_cases.create_invite(uow(), stranger, trip.id, now=NOW)
     with pytest.raises(NotFound):
         await access_cases.open_booking(uow(), friend, uuid4())
-    # The owner can't take their own invite.
+    # The owner can't take their own invite: they get their trip back, joined to nothing.
     issued = await access_cases.create_invite(uow(), owner, trip.id, now=NOW)
-    with pytest.raises(Conflict):
-        await access_cases.accept_invite(uow(), owner, issued.token, now=NOW)
+    own = await access_cases.accept_invite(uow(), owner, issued.token, now=NOW)
+    assert (own.trip_id, own.new, own.own) == (trip.id, False, True)
     # A member's plan view has no money in it and needs no ledger.
     view = await access_cases.plan_view(uow(), owner.id, trip.id, friend, now=NOW)
     assert view.trip.budget is None and view.ready.has_budget is False

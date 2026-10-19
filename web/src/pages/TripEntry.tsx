@@ -133,6 +133,8 @@ export function EntryEditor({ trip, home, entry, preset, lists = [], onDone, onM
   onMove?: () => void;
 }) {
   const tripId = trip.id;
+  // What an entry cost is the owner's money: a member never sees or sends it.
+  const member = trip.role === "member";
   // New entries start on the trip's dates (or the day they're added from), so the date
   // pickers open on the right month.
   const start = preset?.day ?? trip.start;
@@ -157,7 +159,7 @@ export function EntryEditor({ trip, home, entry, preset, lists = [], onDone, onM
     setError(null);
     setBusy(true);
     try {
-      const body = bodyOf(f, home);
+      const body = member ? { ...bodyOf(f, home), cost: null, currency: null } : bodyOf(f, home);
       if (entry) await api(`/travel/bookings/${entry.id}`, { method: "PUT", body });
       else await api(`/travel/trips/${tripId}/bookings`, { method: "POST", body });
       onDone(true);
@@ -348,16 +350,18 @@ export function EntryEditor({ trip, home, entry, preset, lists = [], onDone, onM
             Note
             <input className="input" value={f.note} maxLength={300} onChange={set("note")} placeholder="Seat, what to bring…" />
           </label>
-          <div className="trip-form-row">
-            <label className="field">
-              Cost
-              <input className="input" inputMode="decimal" value={f.cost} onChange={set("cost")} placeholder="Optional" />
-            </label>
-            <label className="field">
-              Currency
-              <input className="input" value={f.currency} maxLength={3} onChange={set("currency")} placeholder={home} />
-            </label>
-          </div>
+          {!member && (
+            <div className="trip-form-row">
+              <label className="field">
+                Cost
+                <input className="input" inputMode="decimal" value={f.cost} onChange={set("cost")} placeholder="Optional" />
+              </label>
+              <label className="field">
+                Currency
+                <input className="input" value={f.currency} maxLength={3} onChange={set("currency")} placeholder={home} />
+              </label>
+            </div>
+          )}
         </div>
       </details>
       {error && (

@@ -32,6 +32,18 @@ export function readInitData(hash: string): string | null {
 /** Captured once at startup, before anything rewrites the URL. */
 export const initData: string | null = readInitData(window.location.hash);
 
+/** The trip invite in an address (`/trip-invite/:token`), or null. The Mini App sign-in sends it along,
+ * so opening a trip's link inside Telegram joins the trip as the widget's sign-in does. */
+export function tripInviteIn(pathname: string): string | null {
+  const found = /^\/trip-invite\/([^/?#]+)/.exec(pathname);
+  if (!found) return null;
+  try {
+    return decodeURIComponent(found[1]);
+  } catch {
+    return null;
+  }
+}
+
 /** Set when a Mini App sign-in is refused, for the sign-in page to explain. */
 export const miniApp: { error?: "access" | "signin" } = {};
 

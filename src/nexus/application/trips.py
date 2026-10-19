@@ -359,6 +359,14 @@ def current_or_next(trips: list[Trip], today: date) -> Trip | None:
     return max(trips, key=lambda t: t.end) if trips else None
 
 
+def named(trips: Iterable[Trip], name: str) -> list[Trip]:
+    """The trips whose destination ``name`` is part of ("Japan" finds "Tokyo, Japan")."""
+    wanted = name.strip().casefold()
+    return [
+        t for t in trips if wanted in t.destination.casefold() or same_person(t.destination, name)
+    ]
+
+
 async def find_trip(uow: UnitOfWork, user: User, name: str | None, *, now: datetime) -> Trip:
     """A trip by its destination ("Japan" finds "Tokyo, Japan"); with no name, the
     one that's on or next."""
@@ -371,10 +379,7 @@ async def find_trip(uow: UnitOfWork, user: User, name: str | None, *, now: datet
         if found is None:
             raise NotFound("no trips yet")
         return found
-    wanted = name.strip().casefold()
-    matches = [
-        t for t in trips if wanted in t.destination.casefold() or same_person(t.destination, name)
-    ]
+    matches = named(trips, name)
     if not matches:
         raise NotFound(
             f"no trip to {name.strip()}; trips: " + ", ".join(t.destination for t in trips)
@@ -684,6 +689,43 @@ async def to_settle(
     return found
 
 
+def plan_lines(
+    trip: Trip, bookings: list[Booking], ready: Readiness, status: TripStatus
+) -> list[str]:
+    """The plan for chat, with no money in it: what's on the itinerary, the places still
+    to visit, stops, named days and what the trip still needs."""
+    lines: list[str] = []
+    on_days = [b for b in bookings if b.scheduled]
+    places = [b for b in bookings if not b.scheduled]
+    if on_days:
+        lines.append("Bookings: " + "; ".join(b.draft.describe() for b in on_days) + ".")
+    if places:
+        lines.append(
+            "Places to visit, not on a day yet: "
+            + "; ".join(b.draft.describe() for b in places)
+            + "."
+        )
+    stops = trip.stops or suggest_stops(trip, bookings, {})
+    if trip.stops or len(stops) > 1:
+        lines.append(
+            ("Stops: " if trip.stops else "Stops (from the hotels): ")
+            + "; ".join(f"{s.name} {s.start:%a %d %b} to {s.end:%a %d %b}" for s in stops)
+            + "."
+        )
+    if trip.day_labels:
+        lines.append(
+            "Days: "
+            + "; ".join(f"{d:%a %d %b} {label}" for d, label in sorted(trip.day_labels.items()))
+            + "."
+        )
+    if ready.nights_without_stay and status is not TripStatus.FINISHED:
+        nights = ", ".join(f"{n:%a %d %b}" for n in ready.nights_without_stay)
+        lines.append(f"No place to stay on the itinerary yet for the night of: {nights}.")
+    if not ready.has_transport and status is TripStatus.UPCOMING:
+        lines.append("No flight or train on the itinerary yet.")
+    return lines
+
+
 def describe_view(view: TripView) -> list[str]:
     """For chat: every figure worked out in code."""
     trip, s, home = view.trip, view.spending, view.spending.spent.currency
@@ -737,35 +779,7 @@ def describe_view(view: TripView) -> list[str]:
                 f"To cover the budget by the trip, set aside about {a.suggested} on each of "
                 f"the {a.paydays_left} paydays before it."
             )
-    on_days = [b for b in view.bookings if b.scheduled]
-    places = [b for b in view.bookings if not b.scheduled]
-    if on_days:
-        lines.append("Bookings: " + "; ".join(b.draft.describe() for b in on_days) + ".")
-    if places:
-        lines.append(
-            "Places to visit, not on a day yet: "
-            + "; ".join(b.draft.describe() for b in places)
-            + "."
-        )
-    stops = trip.stops or suggest_stops(trip, view.bookings, {})
-    if trip.stops or len(stops) > 1:
-        lines.append(
-            ("Stops: " if trip.stops else "Stops (from the hotels): ")
-            + "; ".join(f"{s.name} {s.start:%a %d %b} to {s.end:%a %d %b}" for s in stops)
-            + "."
-        )
-    if trip.day_labels:
-        lines.append(
-            "Days: "
-            + "; ".join(f"{d:%a %d %b} {label}" for d, label in sorted(trip.day_labels.items()))
-            + "."
-        )
-    r = view.ready
-    if r.nights_without_stay and view.status is not TripStatus.FINISHED:
-        nights = ", ".join(f"{n:%a %d %b}" for n in r.nights_without_stay)
-        lines.append(f"No place to stay on the itinerary yet for the night of: {nights}.")
-    if not r.has_transport and view.status is TripStatus.UPCOMING:
-        lines.append("No flight or train on the itinerary yet.")
+    lines += plan_lines(trip, view.bookings, view.ready, view.status)
     if view.booked is not None:
         line = f"Booked: {view.booked}"
         if view.booked_unlogged and view.booked_unlogged.is_positive:
