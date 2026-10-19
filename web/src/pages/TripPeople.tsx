@@ -110,7 +110,10 @@ export function PeopleSection({ trip, onLeft }: { trip: Trip; onLeft: () => void
 
   return (
     <section className="share-section" aria-labelledby="share-people">
-      <h3 id="share-people">People</h3>
+      {/* A member's sheet is already titled "People on this trip": the heading stays for screen readers. */}
+      <h3 id="share-people" className={owner ? undefined : "sr-only"}>
+        People
+      </h3>
       {members.isLoading && <p className="caption">Loading…</p>}
       {members.isError && (
         <p className="error-text" role="alert">

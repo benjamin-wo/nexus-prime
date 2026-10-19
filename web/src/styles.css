@@ -1786,7 +1786,7 @@ a.photo-credit:hover { text-decoration: underline; }
 .guest-user { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
 .guest-name {
   min-width: 0; max-width: 12rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  color: #e4e4e7; font-size: 0.8125rem;
+  color: var(--text-secondary); font-size: 0.8125rem;
 }
 @media (max-width: 900px) {
   .guest-bar { padding: var(--space-2) var(--space-4); }
@@ -1810,7 +1810,7 @@ a.photo-credit:hover { text-decoration: underline; }
 .people-row .wrap { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .people-row .btn { flex: none; }
 .activity-line {
-  display: block; width: 100%; padding: var(--space-1) var(--space-2); border: 0; background: none; font: inherit; font-size: 0.8125rem;
+  display: block; width: 100%; padding: var(--space-1) var(--space-4); border: 0; background: none; font: inherit; font-size: 0.8125rem;
   text-align: left; color: var(--text-muted); cursor: pointer; border-radius: var(--radius-inner); overflow-wrap: anywhere;
 }
 .activity-line:hover, .activity-line:focus-visible { background: var(--bg-card-hover); color: var(--text-primary); }
