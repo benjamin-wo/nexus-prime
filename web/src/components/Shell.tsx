@@ -1,5 +1,5 @@
 import { type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
-import { NavLink, useLocation, useNavigate } from "react-router-dom";
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 
 import type { Me } from "../api";
 import { DEPARTMENTS, departmentFor } from "../departments";
@@ -82,9 +82,24 @@ function useTelegramColours(home: boolean) {
   );
 }
 
+/** The brand mark, as the rail and a guest's header show it. */
+function BrandMark() {
+  return (
+    <span className="brand-mark" aria-hidden="true">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"
+        strokeLinecap="round" strokeLinejoin="round" focusable="false">
+        <path d="M5 19V5l14 14V5" />
+      </svg>
+    </span>
+  );
+}
+
 /** The front desk (Home), a switcher for the departments behind it, Settings and
  * Nexus: a rail on wide screens; on phones a dark bottom bar with Nexus in the
- * middle. A department's own pages are tabs along the top of its section. */
+ * middle. A department's own pages are tabs along the top of its section.
+ *
+ * A guest (someone a trip's owner brought in) gets none of that: a slim header with
+ * the app's name and Sign out above their trips, and no chat. */
 export function Shell({
   me,
   onOpenChat,
@@ -128,6 +143,28 @@ export function Shell({
       <span className="nav-label">Settings</span>
     </NavLink>
   );
+  if (me.user.role === "guest") {
+    return (
+      <div className={`shell guest-shell${scrolling ? " scrolling-down" : ""}`}>
+        <header className="guest-bar">
+          <Link className="guest-brand" to="/travel">
+            <BrandMark />
+            <span>
+              Nexus <span className="brand-accent">Prime</span>
+            </span>
+          </Link>
+          <button type="button" className="btn btn-ghost" onClick={onLogout}>
+            Sign out
+          </button>
+        </header>
+        <main className="main-viewport" ref={viewport}>
+          <div className="content" ref={content}>
+            {children}
+          </div>
+        </main>
+      </div>
+    );
+  }
   const nexus = (where: string) => (
     <button type="button" className={`nexus-button ${where}`} aria-label="Ask Nexus" title="Ask Nexus" onClick={onOpenChat}>
       <Icon name="sparkle" size={22} />
@@ -138,12 +175,7 @@ export function Shell({
     <div className={`shell${scrolling ? " scrolling-down" : ""}`}>
       <nav className="rail" aria-label="Main">
         <div className="brand">
-          <span className="brand-mark" aria-hidden="true">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"
-              strokeLinecap="round" strokeLinejoin="round" focusable="false">
-              <path d="M5 19V5l14 14V5" />
-            </svg>
-          </span>
+          <BrandMark />
           <span>
             Nexus <span className="brand-accent">Prime</span>
           </span>

@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useState } from "react";
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { useCallback, useEffect, useState } from "react";
+import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 
 import { api, ApiError, type EditedTransaction, type Me, type RuleSuggestion, setCsrf, type Transaction } from "./api";
 import { ChatDrawer } from "./components/ChatDrawer";
@@ -23,9 +23,10 @@ import { TripPage, TripsPage } from "./pages/Trips";
 import { WatchlistPage } from "./pages/Watchlist";
 import { ImportPage } from "./pages/Import";
 import { Ledger } from "./pages/Ledger";
-import { LoginPage } from "./pages/LoginPage";
+import { forgetTripNote, LoginPage } from "./pages/LoginPage";
 import { Plan } from "./pages/Plan";
 import { Settings } from "./pages/Settings";
+import { TripInvite } from "./pages/TripInvite";
 import { Upcoming } from "./pages/Upcoming";
 import { initData, miniApp } from "./telegram";
 
@@ -61,8 +62,52 @@ function useMe() {
   });
 }
 
+/** A one-time line handed over by the page that sent us here (joining a trip says so), shown as a
+ * Toast and then forgotten, so reloading the page doesn't say it again. */
+function useRouteNotice(): [string | null, (notice: string | null) => void] {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const sent = (location.state as { notice?: string | null } | null)?.notice ?? null;
+  const [notice, setNotice] = useState<string | null>(sent);
+  useEffect(() => {
+    if (location.state && "notice" in (location.state as object)) {
+      navigate({ pathname: location.pathname, search: location.search, hash: location.hash }, { replace: true, state: null });
+    }
+  }, [location, navigate]);
+  return [notice, setNotice];
+}
+
+/** Ends the session and sends everyone back to the sign-in page. */
+function useLogout() {
+  const client = useQueryClient();
+  return async () => {
+    await api("/auth/logout", { method: "POST" }).catch(() => undefined);
+    client.setQueryData(["me"], null);
+  };
+}
+
+/** What a guest gets: the trips they are on and nothing else. No chat, no other department, no
+ * Settings. The queries of the full app live in `Cockpit`, which a guest never mounts, so nothing
+ * here asks the server for anything it refuses a guest. */
+function GuestApp({ me }: { me: Me }) {
+  const logout = useLogout();
+  const [notice, setNotice] = useRouteNotice();
+  const closeNotice = useCallback(() => setNotice(null), [setNotice]);
+  return (
+    <Shell me={me} onOpenChat={() => undefined} onLogout={logout}>
+      <Routes>
+        <Route path="/travel" element={<TripsPage />} />
+        <Route path="/travel/trips/:id" element={<TripPage />} />
+        <Route path="*" element={<Navigate to="/travel" replace />} />
+      </Routes>
+      {notice && <Toast message={notice} onClose={closeNotice} />}
+    </Shell>
+  );
+}
+
 function Cockpit({ me }: { me: Me }) {
   const client = useQueryClient();
+  const logout = useLogout();
   // The chat drawer, opened empty or with a question asked on Home.
   const [chat, setChat] = useState<{ ask?: string } | null>(null);
   const [sheet, setSheet] = useState<{ editing?: Transaction } | null>(null);
@@ -76,11 +121,6 @@ function Cockpit({ me }: { me: Me }) {
   }, [client]);
   const closeSheet = useCallback(() => setSheet(null), []);
   const closeChat = useCallback(() => setChat(null), []);
-
-  async function logout() {
-    await api("/auth/logout", { method: "POST" }).catch(() => undefined);
-    client.setQueryData(["me"], null);
-  }
 
   return (
     <Shell me={me} onOpenChat={() => setChat({})} onLogout={logout}>
@@ -153,8 +193,19 @@ function Cockpit({ me }: { me: Me }) {
   );
 }
 
+/** Where someone lands after signing in: a guest has Travel and nothing else, and a sign-in that
+ * joined a trip opens it. */
+function landing(me: Me): string {
+  if (me.joined_trip) return `/travel/trips/${me.joined_trip}`;
+  return me.user.role === "guest" ? "/travel" : "/";
+}
+
 function Gate() {
   const me = useMe();
+  useEffect(() => {
+    // Signed in: a note left for the sign-in page about a trip invite is out of date.
+    if (me.data) forgetTripNote();
+  }, [me.data]);
   if (me.isLoading) return <p className="state">Loading…</p>;
   if (me.isError) return <p className="state error-text">Couldn't reach Nexus. Please reload.</p>;
   return (
@@ -162,9 +213,22 @@ function Gate() {
       {/* Opened from a one-time link, often without a session. */}
       <Route path="/connect/gmail" element={<ConnectGmail />} />
       <Route path="/connect/gmail/done" element={<ConnectDone />} />
-      <Route path="/invite/:token" element={me.data ? <Navigate to="/" replace /> : <LoginPage />} />
-      <Route path="/login" element={me.data ? <Navigate to="/" replace /> : <LoginPage />} />
-      <Route path="*" element={me.data ? <Cockpit me={me.data} /> : <Navigate to="/login" replace />} />
+      <Route path="/invite/:token" element={me.data ? <Navigate to={landing(me.data)} replace /> : <LoginPage />} />
+      {/* A trip's invite link: signed in joins the trip; signed out signs in with the link, and the server joins them. */}
+      <Route path="/trip-invite/:token" element={me.data ? <TripInvite me={me.data} /> : <LoginPage trip />} />
+      <Route path="/login" element={me.data ? <Navigate to={landing(me.data)} replace /> : <LoginPage />} />
+      <Route
+        path="*"
+        element={
+          !me.data ? (
+            <Navigate to="/login" replace />
+          ) : me.data.user.role === "guest" ? (
+            <GuestApp me={me.data} />
+          ) : (
+            <Cockpit me={me.data} />
+          )
+        }
+      />
     </Routes>
   );
 }
