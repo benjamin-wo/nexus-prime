@@ -66,10 +66,23 @@ export const RESEARCH_AREAS = [
 /** The signed-in user's name on the trips they own, as `owner_name` and the members list give it. */
 const OWNER_NAME = "Ben";
 
+/** A trip the signed-in user was added to (they are a member; the owner is `ownerName`). A test puts it
+ * in `state.trips`. */
+export function sharedTrip(over: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: "shared1", destination: "Lisbon", start: "2026-11-10", end: "2026-11-12", days: 3, currency: "EUR", budget: null,
+    companions: [], set_aside: null, planned: {}, status: "upcoming", days_until: 43, day_number: null, notes: null,
+    day_labels: {}, stops: [], split_evenly: true, role: "member", owner_name: "Alex T.", packing: [], ...over,
+  };
+}
+
 export async function fakeApi(
   page: Page,
   {
     signedIn = true,
+    /** Signed in as a guest, someone a trip's owner brought in: only the trip routes, /me and sign-out
+     * answer; every other route is refused with a 403 and noted in `state.forbidden`. */
+    guest = false,
     emailConnected = false,
     forwarding = false,
     splitBill = false,
@@ -167,6 +180,8 @@ export async function fakeApi(
     /** Invite tokens that, accepted, join the signed-in user to a trip (token to trip id): what a
      * test fills in, as the fake user already owns every trip it makes. */
     joinable: Record<string, string>;
+    /** Requests a guest made that the server refuses a guest ("METHOD /path"). */
+    forbidden: string[];
     /** A shared trip's recent changes by trip id, newest first; a test may fill it. */
     activity: Record<string, { actor: string; summary: string; at: string }[]>;
     /** The bodies of PUT /travel/trips/{id}/notes, in order. */
@@ -241,6 +256,7 @@ export async function fakeApi(
     members: {},
     invites: {},
     joinable: {},
+    forbidden: [],
     activity: {},
     notesPuts: [],
     inviteCount: 0,
@@ -528,6 +544,18 @@ export async function fakeApi(
     if (method !== "GET" && request.headers()["x-csrf-token"] !== "csrf-1") {
       return json(route, { detail: "missing or wrong CSRF token" }, 403);
     }
+    // A guest is let into the trip routes, /me and sign-out only, like the server's TripAuth.
+    const guestMay =
+      path === "/config" ||
+      path === "/me" ||
+      path === "/auth/logout" ||
+      path.startsWith("/shared/") ||
+      /^\/travel\/(trips|photos|places|currency|invites)(\/|$)/.test(path) ||
+      /^\/travel\/bookings\/[^/]+/.test(path);
+    if (guest && session && !guestMay) {
+      state.forbidden.push(`${method} ${path}`);
+      return json(route, { detail: "guests can only open the trips they are on" }, 403);
+    }
     if (path === "/config")
       return json(route, { bot_username: "nexus_test_bot" });
     if (path === "/me") {
@@ -535,7 +563,7 @@ export async function fakeApi(
       return json(route, {
         user: {
           telegram_user_id: 1,
-          role: "owner",
+          role: guest ? "guest" : "owner",
           home_currency: "SGD",
           timezone: "Asia/Singapore",
         },
@@ -833,6 +861,15 @@ export async function fakeApi(
       const hit = Object.entries(known).find(([k]) => place.startsWith(k));
       return json(route, hit ? { currency: hit[1][0], country: hit[1][1] } : { currency: null, country: null });
     }
+    // What the server refuses a member of a trip: the owner's own routes and everything about money.
+    const ownerOnly = (method: string, rest: string) =>
+      (method === "PUT" && rest === "") ||
+      (method === "DELETE" && rest === "") ||
+      /^\/(share|invites|photo|split-evenly|split|keep-mine|paid-by-others|settle|expenses)(\/|$)/.test(rest);
+    const asMember = path.match(/^\/travel\/trips\/([^/]+)(\/.*)?$/);
+    if (asMember && state.trips.find((t) => t.id === asMember[1])?.role === "member" && ownerOnly(method, asMember[2] ?? "")) {
+      return json(route, { detail: "only the trip's owner can do that" }, 403);
+    }
     if (path === "/travel/trips" && method === "GET") return json(route, state.trips);
     if (path === "/travel/photos/ph1") {
       // A 1x1 PNG stands in for the photo.
@@ -1028,7 +1065,7 @@ export async function fakeApi(
           };
         });
     };
-    const tripDetail = (trip: Record<string, unknown>) => {
+    const ownerDetail = (trip: Record<string, unknown>) => {
       const items = [
         { transaction_id: "k1", day: "2026-09-28", counterparty: "Ichiran", category: "Dining Out", amount: { amount: "2000.0000", currency: "JPY" }, home: home(18), linked: false },
         { transaction_id: "k2", day: "2026-08-01", counterparty: "Air ticket", category: "Travel", amount: home(800), home: home(800), linked: true },
@@ -1102,6 +1139,29 @@ export async function fakeApi(
         ideas: true,
         routes: state.mapKey !== null,
         map_key: state.mapKey,
+      };
+    };
+    /** A trip with `role: "member"` (one the signed-in user was added to) is served as the server serves it
+     * to a member: the plan, with no budget, spending, set-aside, costs or who owes what. */
+    const tripDetail = (trip: Record<string, unknown>) => {
+      const full = ownerDetail(trip);
+      if (trip.role !== "member") return full;
+      return {
+        ...full,
+        trip: { ...trip, budget: null, set_aside: null, planned: {} },
+        bookings: (full.bookings as Record<string, unknown>[]).map((b) => ({ ...b, cost: null, logged: false })),
+        booked: null,
+        booked_unlogged: null,
+        to_spend: null,
+        spending: null,
+        saving: null,
+        owed: [],
+        to_split: [],
+        just_mine: [],
+        paid_by_others: [],
+        balances: [],
+        items: [],
+        ready: { ...full.ready, has_budget: false },
       };
     };
     // Made-up Google Maps places: names, ratings and reviews are all invented.
@@ -1543,8 +1603,23 @@ export async function fakeApi(
       const id = String(trip.id);
       const [, , what, other] = sharedTrip;
       const people = state.members[id] ?? [];
+      const asMemberOf = trip.role === "member";
       if (what === "members" && !other && method === "GET") {
+        // On a trip the user was added to, the owner is someone else and the user is the first member.
+        if (asMemberOf) {
+          return json(route, [
+            { id: "u-lead", name: String(trip.owner_name ?? "Someone"), role: "owner", added_at: null, you: false },
+            { id: "u-me", name: OWNER_NAME, role: "member", added_at: "2026-09-20T03:00:00Z", you: true },
+            ...people,
+          ]);
+        }
         return json(route, [{ id: "u-owner", name: OWNER_NAME, role: "owner", added_at: null, you: true }, ...people]);
+      }
+      if (what === "members" && other && method === "DELETE" && asMemberOf) {
+        // A member can only remove themselves: leaving ends their access.
+        if (other !== "u-me") return json(route, { detail: "only the trip's owner can do that" }, 403);
+        state.trips = state.trips.filter((t) => t !== trip);
+        return route.fulfill({ status: 204 });
       }
       if (what === "members" && other && method === "DELETE") {
         if (!people.some((m) => m.id === other)) return json(route, { detail: "no one with that id is on this trip" }, 404);

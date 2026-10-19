@@ -1770,3 +1770,47 @@ a.photo-credit:hover { text-decoration: underline; }
 @media (pointer: coarse) {
   .packing-remove { min-width: 44px; min-height: 44px; }
 }
+
+/* Shared trips: joining and guests */
+/* A guest's app: a slim header over their trips, with no rail and no bottom bar. */
+.shell.guest-shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+.guest-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+  padding: var(--space-2) var(--space-6); background: var(--bg-frame); border-bottom: 1px solid var(--border-subtle);
+}
+.guest-brand {
+  display: flex; align-items: center; gap: 10px; min-height: 44px;
+  font-size: 1.0625rem; font-weight: 600; color: var(--text-white); text-decoration: none;
+}
+@media (max-width: 900px) {
+  .guest-bar { padding: var(--space-2) var(--space-4); }
+  /* No bottom bar to leave room for. */
+  .guest-shell .main-viewport { padding-bottom: calc(var(--space-8) + env(safe-area-inset-bottom)); }
+  .guest-shell .trip-page > .trip-fab-button { bottom: calc(var(--space-5) + env(safe-area-inset-bottom)); }
+  .guest-shell .toast { bottom: calc(var(--space-4) + env(safe-area-inset-bottom)); }
+}
+
+/* Shared trips: people, member view, activity */
+.trip-shared-by { margin: 0; color: #e4e4e7; font-size: 0.8125rem; }
+.trip-gone { display: grid; gap: var(--space-3); justify-items: start; }
+.trip-gone h2, .trip-gone p { margin: 0; }
+.share-section { display: grid; gap: var(--space-3); }
+.share-section h3 { margin: 0; }
+.share-section + .share-section { padding-top: var(--space-4); border-top: 1px solid var(--border-subtle); }
+.share-invite { display: grid; gap: var(--space-2); }
+.share-invite .caption { margin: 0; }
+.people-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-1); }
+.people-row { display: flex; align-items: center; gap: var(--space-3); min-height: 44px; padding: var(--space-1) 0; }
+.people-row .wrap { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.people-row .btn { flex: none; }
+.activity-line {
+  display: block; width: 100%; padding: var(--space-1) var(--space-2); border: 0; background: none; font: inherit; font-size: 0.8125rem;
+  text-align: left; color: var(--text-muted); cursor: pointer; border-radius: var(--radius-inner); overflow-wrap: anywhere;
+}
+.activity-line:hover, .activity-line:focus-visible { background: var(--bg-card-hover); color: var(--text-primary); }
+.activity-line .wrap { color: var(--text-secondary); }
+@media (pointer: coarse) {
+  .activity-line { min-height: 44px; }
+}
+.activity-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); }
+.activity-list li { display: grid; gap: 2px; }

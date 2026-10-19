@@ -35,7 +35,8 @@ export function stillToSort(detail: TripDetail): { text: string; action: string;
     });
   }
   if (!r.has_transport) items.push({ text: "No flight or train yet", action: "Add", fix: { kind: "flight" } });
-  if (!r.has_budget) items.push({ text: "No budget yet", action: "Set", fix: "budget" });
+  // The budget is the owner's money: a member never sees it, so never hears it is missing.
+  if (!r.has_budget && detail.trip.role !== "member") items.push({ text: "No budget yet", action: "Set", fix: "budget" });
   return items;
 }
 
@@ -150,7 +151,7 @@ export function StillToSort({ detail, onFix, quiet = false }: { detail: TripDeta
     return quiet ? null : (
       <p className="sorted-line" role="status">
         <Icon name="check" size={16} className="icon-inline" />
-        All sorted: a place every night, a way there and a budget.
+        {detail.trip.role === "member" ? "All sorted: a place every night and a way there." : "All sorted: a place every night, a way there and a budget."}
       </p>
     );
   }
