@@ -29,7 +29,7 @@ test("the owner makes an invite link, sees it once with how long it works, and c
   await expect(sheet.getByRole("heading", { name: "Read-only link" })).toBeVisible();
 
   await sheet.getByRole("button", { name: "Invite someone" }).click();
-  await expect(sheet.getByLabel("Invite link")).toHaveValue(/\/trip-invite\/fakeInvite0001x+$/);
+  await expect(sheet.getByLabel("Invite link", { exact: true })).toHaveValue(/\/trip-invite\/fakeInvite0001x+$/);
   await expect(sheet.getByText("Works once, for 7 days.")).toBeVisible();
   const open = sheet.getByRole("list", { name: "Invite links not used yet" });
   await expect(open.getByRole("listitem")).toHaveCount(1);
@@ -37,7 +37,7 @@ test("the owner makes an invite link, sees it once with how long it works, and c
 
   await open.getByRole("button", { name: /^Cancel the invite/ }).click();
   await expect(sheet.getByRole("list", { name: "Invite links not used yet" })).toHaveCount(0);
-  await expect(sheet.getByLabel("Invite link")).toHaveCount(0);
+  await expect(sheet.getByLabel("Invite link", { exact: true })).toHaveCount(0);
   expect(state.invites.trip1).toHaveLength(0);
 });
 
@@ -87,10 +87,12 @@ test("a trip you were added to has no Money tab, no cost field and says whose it
   // The chat of their own account finds the trip by name, so a member can type it (a guest has no chat).
   await expect(add.getByRole("button", { name: "Type it" })).toHaveCount(1);
   await add.getByRole("button", { name: /A booking/ }).click();
-  await add.getByText("More details").click();
-  await expect(add.getByLabel("Booking reference")).toBeVisible();
-  await expect(add.getByLabel("Cost")).toHaveCount(0);
-  await expect(add.getByLabel("Currency")).toHaveCount(0);
+  // The sheet is named for the step it is on now.
+  const booking = page.getByRole("dialog", { name: "Add a booking" });
+  await booking.getByText("More details").click();
+  await expect(booking.getByLabel("Booking reference")).toBeVisible();
+  await expect(booking.getByLabel("Cost")).toHaveCount(0);
+  await expect(booking.getByLabel("Currency")).toHaveCount(0);
 });
 
 test("a member's notes are saved through the notes endpoint", async ({ page }) => {

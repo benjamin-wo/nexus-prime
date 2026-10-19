@@ -118,7 +118,8 @@ function Cockpit({ me }: { me: Me }) {
   const [sheet, setSheet] = useState<{ editing?: Transaction } | null>(null);
   // After a category correction: offer a rule, and change nothing unless accepted.
   const [offer, setOffer] = useState<{ transactionId: string; suggestion: RuleSuggestion } | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  // Also a line handed over by the page that sent us here (joining a trip says so).
+  const [notice, setNotice] = useRouteNotice();
   const closeOffer = useCallback(() => setOffer(null), []);
   const closeNotice = useCallback(() => setNotice(null), []);
   const refresh = useCallback(() => {

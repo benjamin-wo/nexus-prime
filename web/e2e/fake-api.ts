@@ -1665,8 +1665,9 @@ export async function fakeApi(
         delete state.joinable[token];
         return json(route, { trip_id: tripId, new: true });
       }
-      const own = Object.values(state.invites).some((list) => list.some((i) => i.token === token));
-      if (own) return json(route, { detail: "that's your own trip" }, 409);
+      // The owner's own link joins nothing and is not spent: the server answers 200 with `own`.
+      const ownTrip = Object.entries(state.invites).find(([, list]) => list.some((i) => i.token === token));
+      if (ownTrip) return json(route, { trip_id: ownTrip[0], new: false, own: true });
       return json(route, { detail: "that invite link doesn't work" }, 404);
     }
     const shared = path.match(/^\/shared\/trips\/([^/]+)(\/photo)?$/);

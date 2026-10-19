@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { fakeApi } from "./fake-api";
+import { fakeApi, sharedTrip } from "./fake-api";
 
 /** A trip someone else owns, as a member or guest is shown it. */
 const kyoto = {
@@ -48,9 +48,13 @@ test("a trip invite that doesn't work says so and points the way back", async ({
 
 test("the owner opening their own invite link is told so", async ({ page }) => {
   const state = await fakeApi(page);
+  state.trips = [sharedTrip({ id: "trip1", destination: "Tokyo", role: "owner", owner_name: "Ben" })];
   state.invites.trip1 = [{ id: "inv1", created_at: "2026-09-28T03:00:00Z", expires_at: "2026-10-05T03:00:00Z", token: "ownLink0001" }];
   await page.goto("/trip-invite/ownLink0001");
-  await expect(page.getByRole("heading", { name: "That's your own invite link" })).toBeVisible();
+  await expect(page).toHaveURL(/\/travel\/trips\/trip1$/);
+  await expect(page.getByText("That's your own invite link. Send it to the person you want on the trip.")).toBeVisible();
+  // Nothing was joined, and the link is still there to send.
+  expect(state.invites.trip1).toHaveLength(1);
 });
 
 test("signed out, a trip invite asks for Telegram and carries the link through sign-in", async ({ page }) => {
@@ -67,7 +71,7 @@ test("a guest sees only Travel, with no chat, and nothing the server refuses is 
   state.trips = [kyoto];
   await page.goto("/travel");
   await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Kyoto" }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: "Kyoto" })).toBeVisible();
 
   // No other department, Settings or chat, in the header, a rail or a bar.
   for (const name of ["Home", "Accounting", "Investment", "Settings"]) {
