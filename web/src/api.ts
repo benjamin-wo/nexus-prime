@@ -328,6 +328,14 @@ export type Updates = {
   daily_at: string;
   description: string;
   options: Record<Frequency, string>;
+  /** HH:MM, local time. Nothing is sent between quiet_start and quiet_end (it may cross
+   * midnight), except an urgent stop on a stock held; the same time twice means no quiet hours. */
+  quiet_start: string;
+  quiet_end: string;
+  /** A stock moving this much (%) in a day is a big move worth a message: 1 to 20. */
+  move_alert_percent: string;
+  /** The 08:00 summary of how the US market did, on a morning after a trading day. */
+  market_summary: boolean;
 };
 /** Whether the user is told on Telegram when someone else changes a trip they share. */
 export type TripAlerts = { enabled: boolean };
@@ -455,6 +463,45 @@ export type Portfolio = {
   draft: HoldingsDraft | null;
   screenshots: boolean;
   prices: boolean;
+};
+
+/** Where the market is, for wording: open now, closed after trading today, or not yet open today
+ * (so the figures are the last session's). */
+export type Session = "live" | "closed_today" | "previous";
+export type Mover = {
+  symbol: string;
+  /** False for a watched stock, shown when nothing is held. */
+  held: boolean;
+  price: string;
+  day_percent: string;
+  price_kind: PriceKind;
+  /** When the price was traded; null for an official close. */
+  price_at: string | null;
+  price_day: string;
+  /** The day's newest headline, published since the session opened. */
+  headline: NewsItem | null;
+};
+/** What moved today: the portfolio's change and its three biggest movers. */
+export type Today = {
+  session: Session;
+  /** The trading day (New York) the figures belong to. */
+  day: string;
+  change: Money | null;
+  percent: string | null;
+  price_kind: PriceKind;
+  as_of_at: string | null;
+  holds: boolean;
+  movers: Mover[];
+  prices: boolean;
+};
+/** A short reading of the day's headlines for one stock's move (POST /investments/today/{symbol}/why). */
+export type Why = {
+  symbol: string;
+  day: string;
+  day_percent: string;
+  text: string;
+  headlines: NewsItem[];
+  cached: boolean;
 };
 
 export type Watched = {

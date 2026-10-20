@@ -5,6 +5,7 @@ from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime, time
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -27,9 +28,11 @@ from nexus.domain.money import Money
 from nexus.domain.notifications import (
     Frequency,
     NotificationSettings,
+    describe_quiet,
     heading,
     is_due,
     label,
+    move_percent,
 )
 
 type UowFactory = Callable[[], UnitOfWork]
@@ -75,6 +78,48 @@ async def set_frequency(
         await uow.planning.save_notifications(updated, now)
         await uow.commit()
     return updated
+
+
+async def set_market(
+    uow: UnitOfWork,
+    user_id: UserId,
+    *,
+    now: datetime,
+    move_alert_percent: Decimal | float | int | str | None = None,
+    market_summary: bool | None = None,
+    quiet_start: time | None = None,
+    quiet_end: time | None = None,
+) -> NotificationSettings:
+    """Change the stock market alerts: how big a move in a day (1% to 20%) is worth a
+    message, the morning summary, and the user's quiet hours (equal times: none). What is
+    left out stays as it was."""
+    threshold = None if move_alert_percent is None else move_percent(move_alert_percent)
+    async with uow:
+        current = await uow.planning.get_notifications(user_id, for_update=True)
+        updated = replace(
+            current,
+            move_alert_percent=threshold if threshold is not None else current.move_alert_percent,
+            market_summary=(current.market_summary if market_summary is None else market_summary),
+            quiet_start=_minute(current.quiet_start if quiet_start is None else quiet_start),
+            quiet_end=_minute(current.quiet_end if quiet_end is None else quiet_end),
+        )
+        await uow.planning.save_notifications(updated, now)
+        await uow.commit()
+    return updated
+
+
+def _minute(at: time) -> time:
+    return at.replace(second=0, microsecond=0, tzinfo=None)
+
+
+def describe_market(settings: NotificationSettings) -> str:
+    """The stock market alerts and quiet hours, for the chat."""
+    summary = "on" if settings.market_summary else "off"
+    return (
+        f"Stock alerts: a move of {settings.move_alert_percent}% or more in a day; the morning "
+        f"summary is {summary}. Quiet hours: "
+        f"{describe_quiet(settings.quiet_start, settings.quiet_end)}."
+    )
 
 
 def describe(settings: NotificationSettings) -> str:

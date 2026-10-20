@@ -36,6 +36,7 @@ from nexus.application.fx import RateSource
 from nexus.application.ideas import IdeaFinder
 from nexus.application.limits import RateLimiter
 from nexus.application.market import PriceSource
+from nexus.application.moves import Explainer
 from nexus.application.places import Places, PlaceSource
 from nexus.application.plans import plan_kind
 from nexus.application.ports import (
@@ -726,6 +727,9 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                         prices=prices is not None,
                         news=news is not None,
                         quotes=quotes,
+                        explainer=Explainer(
+                            build_memory_model(resolved, models.primary), clock=clock
+                        ),
                         places=places,
                         routes=await _routes(resolved, extra, stack, clock),
                         ideas=ideas,

@@ -27,6 +27,7 @@ from nexus.application import email as email_cases
 from nexus.application import income as income_cases
 from nexus.application import investments as investment_cases
 from nexus.application import ledger_questions as question_cases
+from nexus.application import moves as move_cases
 from nexus.application import notifications as notify_cases
 from nexus.application import places as place_cases
 from nexus.application import plans as plan_cases
@@ -1559,6 +1560,58 @@ async def _dividends(ctx: ToolContext, _: NoArgs) -> ToolResult:
 
 class SymbolArgs(Args):
     symbol: str = Field(description="The ticker, e.g. NVDA")
+
+
+async def _what_moved_today(ctx: ToolContext, _: NoArgs) -> ToolResult:
+    report = await move_cases.today(ctx.uow, _rates(ctx), ctx.user, now=ctx.now)
+    return ToolResult(move_cases.describe_today(report, ctx.tz))
+
+
+class MarketAlertsArgs(Args):
+    move_percent: Decimal | None = Field(
+        None,
+        description="How big a move in a day is worth a message, in percent, 1 to 20 "
+        '("only alert me on 3% moves" is 3). Leave empty to keep it.',
+    )
+    morning_summary: bool | None = Field(
+        None,
+        description="The 08:00 summary of how the US market did (false: stop it). Leave "
+        "empty to keep it.",
+    )
+    quiet_start: str | None = Field(
+        None,
+        description="When quiet hours start, 24-hour HH:MM in the user's timezone "
+        '("not after 10pm" is 22:00). Equal to quiet_end means no quiet hours.',
+    )
+    quiet_end: str | None = Field(
+        None, description="When quiet hours end, 24-hour HH:MM (7am is 07:00)"
+    )
+
+
+def _clock_time(raw: str | None) -> time | None:
+    if raw is None:
+        return None
+    try:
+        return time.fromisoformat(raw.strip())
+    except ValueError as exc:
+        raise InvalidInput("give the time as HH:MM, 24-hour, e.g. 22:30") from exc
+
+
+async def _set_market_alerts(ctx: ToolContext, a: MarketAlertsArgs) -> ToolResult:
+    start, end = _clock_time(a.quiet_start), _clock_time(a.quiet_end)
+    if a.move_percent is None and a.morning_summary is None and start is None and end is None:
+        current = await notify_cases.get_settings(ctx.uow(), ctx.user.id)
+        return ToolResult(notify_cases.describe_market(current))
+    updated = await notify_cases.set_market(
+        ctx.uow(),
+        ctx.user.id,
+        now=ctx.now,
+        move_alert_percent=a.move_percent,
+        market_summary=a.morning_summary,
+        quiet_start=start,
+        quiet_end=end,
+    )
+    return ToolResult("Done. " + notify_cases.describe_market(updated), wrote=True)
 
 
 async def _stock_levels(ctx: ToolContext, a: SymbolArgs) -> ToolResult:
@@ -3245,7 +3298,7 @@ READ_ONLY = frozenset(
         "find_likely_moves", "load_skill",
         "place_info", "plan_record", "query_ledger", "show_dividends", "show_pay_schedule",
         "show_plan", "show_portfolio", "show_watchlist", "spending_summary", "stock_levels",
-        "trade_history", "trip_status",
+        "trade_history", "trip_status", "what_moved_today",
     }
 )  # fmt: skip
 
@@ -3338,6 +3391,23 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             "and the total return. Read-only.",
             NoArgs,
             _portfolio,
+        ),
+        ToolSpec(
+            "what_moved_today",
+            "What moved today in the user's stocks: the portfolio's change in the day and its "
+            "three biggest movers (the watched stocks if nothing is held), each with its "
+            "price, when it was traded and the day's newest headline. Live while the US "
+            "market is open. Read-only.",
+            NoArgs,
+            _what_moved_today,
+        ),
+        ToolSpec(
+            "set_market_alerts",
+            "Show or change the stock market messages on Telegram: how big a move in a day "
+            "is worth a message (1 to 20 percent), the 08:00 morning summary of the US "
+            "market, and the user's quiet hours. With nothing given, shows the settings.",
+            MarketAlertsArgs,
+            _set_market_alerts,
         ),
         ToolSpec(
             "record_trade",

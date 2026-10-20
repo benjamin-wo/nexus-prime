@@ -1,16 +1,18 @@
 """How often a user hears about their transactions on Telegram. Pure rules, no I/O.
 
 Everyone gets an end-of-day summary unless they choose otherwise. The preset
-summaries are due at fixed local times outside quiet hours (22:00-08:00); the
-daily one goes at a time the user can choose, quiet hours or not, since they
-picked it.
+summaries are due at fixed local times outside quiet hours (the user's own, 23:00 to
+08:00 unless changed); the daily one goes at a time the user can choose, quiet hours or
+not, since they picked it.
 """
 
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from enum import StrEnum
 from zoneinfo import ZoneInfo
 
+from nexus.domain.errors import InvalidInput
 from nexus.domain.ledger import UserId
 
 
@@ -29,6 +31,15 @@ DAILY_AT = time(21)
 THRICE_DAILY_AT = (time(9), time(14), time(20))
 HOURLY_FROM, HOURLY_TO = 8, 21  # the first and last hourly summary of the day
 
+# Quiet hours, local time: nothing is sent between the start and the end (a window may
+# cross midnight) except what is urgent or timed by the user. Equal times mean none.
+QUIET_START = time(23)
+QUIET_END = time(8)
+# A stock moving this much (%) in a day is a big move; the user may pick 1 to 20.
+MOVE_PERCENT = Decimal("5.0")
+MIN_MOVE_PERCENT = Decimal(1)
+MAX_MOVE_PERCENT = Decimal(20)
+
 LABELS = {
     Frequency.INSTANT: "as it happens",
     Frequency.HOURLY: "every hour (8am to 9pm)",
@@ -46,6 +57,10 @@ class NotificationSettings:
     # first check, which starts counting from then rather than replaying history.
     notified_until: datetime | None = None
     daily_at: time = DAILY_AT  # when the daily summary goes, local time
+    quiet_start: time = QUIET_START
+    quiet_end: time = QUIET_END
+    move_alert_percent: Decimal = MOVE_PERCENT  # a big move in a day, in %
+    market_summary: bool = True  # the morning summary of the US market
 
 
 def clock(at: time) -> str:
@@ -55,6 +70,24 @@ def clock(at: time) -> str:
     if at == time(12):
         return "noon"
     return at.strftime("%-I%p" if at.minute == 0 else "%-I:%M%p").lower()
+
+
+def move_percent(raw: Decimal | float | int | str) -> Decimal:
+    """A big-move threshold in percent, 1 to 20, to one decimal place."""
+    try:
+        value = Decimal(str(raw)).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+    except (InvalidOperation, ValueError) as exc:
+        raise InvalidInput("give the size of a big move as a percentage, such as 5") from exc
+    if not value.is_finite() or not MIN_MOVE_PERCENT <= value <= MAX_MOVE_PERCENT:
+        raise InvalidInput(
+            f"a big move can be {MIN_MOVE_PERCENT}% to {MAX_MOVE_PERCENT}% in a day, not {raw}%"
+        )
+    return value
+
+
+def describe_quiet(start: time, end: time) -> str:
+    """ "11pm to 8am", or "none" when the two are the same."""
+    return "none" if start == end else f"{clock(start)} to {clock(end)}"
 
 
 def label(frequency: Frequency, daily_at: time = DAILY_AT) -> str:

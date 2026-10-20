@@ -25,6 +25,8 @@ JOINS: Sequence[Window] = ((20, timedelta(minutes=10)),)
 # A stock page asking the quote provider about its stock (the provider's own limit is
 # shared by everyone).
 QUOTES: Sequence[Window] = ((30, timedelta(minutes=5)),)
+# A reading of why a stock moved: a model call each (the answer is kept for 30 minutes).
+WHY: Sequence[Window] = ((6, timedelta(minutes=1)), (60, timedelta(days=1)))
 DEFAULT_RULES: Mapping[str, Sequence[Window]] = {
     "message": MESSAGES,
     "import": IMPORTS,
@@ -34,6 +36,7 @@ DEFAULT_RULES: Mapping[str, Sequence[Window]] = {
     "invite": INVITES,
     "join": JOINS,
     "quote": QUOTES,
+    "why": WHY,
 }
 
 

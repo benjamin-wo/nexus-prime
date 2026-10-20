@@ -38,9 +38,11 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from nexus.application import research
+from nexus.application.alerting import Alert, Outcome, deliver
 from nexus.application.budgets import TELEGRAM_SEND
 from nexus.application.departments import Departments, RunKind, Step, StepContext, start_run
 from nexus.application.ports import UnitOfWork
+from nexus.domain.alerts import KIND_OF
 from nexus.domain.departments import Run
 from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.history import describe as describe_history
@@ -979,7 +981,10 @@ def event_text(plan: SavedPlan, event: PlanEvent, followed: Followed) -> str:
 
 async def follow_plans(uow: UowFactory, *, now: datetime) -> int:
     """Check every open plan against the days since it was last checked, save what
-    happened and queue an alert for each event. Returns how many alerts were queued."""
+    happened and alert for each event. An event the live price already alerted that day
+    (see ``market_alerts``) isn't sent again. An alert goes out now, unless it falls in the
+    user's quiet hours and their morning summary is on: then it is held for that summary.
+    Returns how many alerts were queued or held."""
     async with uow() as tx:
         followed_plans = await tx.investments.plans_to_follow()
     queued = 0
@@ -991,22 +996,42 @@ async def follow_plans(uow: UowFactory, *, now: datetime) -> int:
             continue
         async with uow() as tx:
             await tx.investments.save_followed(p.user_id, p.id, f, at=now)
-            for event in f.events if p.alerts else []:
-                queued += await tx.jobs.enqueue(
-                    TELEGRAM_SEND,
-                    {
-                        "user_id": str(p.user_id),
-                        "text": event_text(p, event, f),
-                        "buttons": [
-                            [{"label": "Stop alerts for this plan", "data": f"plan:mute:{p.id}"}]
-                        ]
-                        if f.status is PlanStatus.OPEN
-                        else [],
-                    },
-                    dedupe_key=f"plan:{p.id}:{event.kind.value}",
-                    run_at=now,
-                )
+            if p.alerts and f.events:
+                queued += await _alert_events(tx, p, f, now)
             await tx.commit()
+    return queued
+
+
+async def _alert_events(tx: UnitOfWork, p: SavedPlan, f: Followed, now: datetime) -> int:
+    """Alert the plan's user to what the days since the last check showed. Returns how
+    many alerts were queued or held."""
+    user = await tx.ledger.get_user(p.user_id)
+    if user is None:  # pragma: no cover - a plan's user exists
+        return 0
+    settings = await tx.planning.get_notifications(p.user_id)
+    queued = 0
+    for event in f.events:
+        text = event_text(p, event, f)
+        key = f"plan:{p.id}:{event.kind.value}"
+        kind = KIND_OF.get(event.kind)
+        if kind is None:  # ran out: nothing a live price could have said
+            queued += await tx.jobs.enqueue(
+                TELEGRAM_SEND,
+                {"user_id": str(p.user_id), "text": text, "buttons": []},
+                dedupe_key=key,
+                run_at=now,
+            )
+            continue
+        mute = ("Stop alerts for this plan", f"plan:mute:{p.id}")
+        alert = Alert(
+            p.symbol,
+            kind,
+            event.day,
+            text,
+            buttons=(mute,) if f.status is PlanStatus.OPEN else (),
+            dedupe_key=key,
+        )
+        queued += await deliver(tx, user, settings, alert, now=now) is not Outcome.DUPLICATE
     return queued
 
 

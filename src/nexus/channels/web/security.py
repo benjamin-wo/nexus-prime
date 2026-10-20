@@ -26,6 +26,7 @@ from nexus.application.email import EmailRuntime
 from nexus.application.fx import RateSource
 from nexus.application.ideas import IdeaFinder
 from nexus.application.limits import RateLimiter
+from nexus.application.moves import Explainer
 from nexus.application.places import Places
 from nexus.application.ports import ReceiptStore, StatementPageReader
 from nexus.application.quotes import Quotes
@@ -56,6 +57,7 @@ class WebRuntime:
     prices: bool = False  # daily stock prices are set up
     news: bool = False  # company news and earnings dates are set up
     quotes: Quotes | None = None  # live stock quotes; None = not set up
+    explainer: Explainer | None = None  # reads a stock's headlines for why it moved
     places: Places | None = None  # Google Maps places on trips; None = not set up
     routes: Routes | None = None  # travel times between a day's stops; None = not set up
     ideas: IdeaFinder | None = None  # quick ideas for a trip; None = not set up

@@ -489,10 +489,17 @@ notification_settings = Table(
     Column("notified_until", TZ),
     Column("daily_at", Time),  # when the daily summary goes, local time; NULL is 21:00
     Column("updated_at", TZ, nullable=False),
+    # Quiet hours (local time; equal means none), how big a move in a day is a big move
+    # (%), and whether the morning summary of the US market is on (migration 0050).
+    Column("quiet_start", Time, nullable=False, server_default=text("'23:00:00'")),
+    Column("quiet_end", Time, nullable=False, server_default=text("'08:00:00'")),
+    Column("move_alert_percent", Numeric(4, 1), nullable=False, server_default=text("5")),
+    Column("market_summary", Boolean, nullable=False, server_default=text("true")),
     ForeignKeyConstraint(["user_id"], ["users.id"]),
     CheckConstraint(
         "frequency IN ('instant', 'hourly', 'thrice_daily', 'daily', 'off')", name="frequency"
     ),
+    CheckConstraint("move_alert_percent BETWEEN 1 AND 20", name="move_alert_percent"),
 )
 
 # What Nexus remembers about a user, from their own words (see nexus.domain.memory).
@@ -594,6 +601,27 @@ market_quotes = Table(
     Column("open", Numeric(19, 4)),
     Column("quoted_at", TZ, nullable=False),  # when it was traded
     Column("fetched_at", TZ, nullable=False),
+)
+
+# An alert about a stock during the US session, kept once per user, stock, kind and
+# trading day (New York date). Sent at once, or held unsent for the morning summary
+# (migration 0050).
+market_alerts = Table(
+    "market_alerts",
+    metadata,
+    _uuid_pk(),
+    _user_fk(),
+    Column("symbol", Text, nullable=False),
+    Column("kind", Text, nullable=False),
+    Column("day", Date, nullable=False),
+    Column("text", Text, nullable=False),
+    Column("urgent", Boolean, nullable=False, server_default=text("false")),
+    Column("created_at", TZ, nullable=False),
+    Column("sent_at", TZ),
+    ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+    UniqueConstraint("user_id", "symbol", "kind", "day"),
+    CheckConstraint("kind IN ('plan_entry', 'plan_stop', 'plan_target', 'big_move')", name="kind"),
+    Index("ix_market_alerts_user_id_day", "user_id", "day"),
 )
 
 # Trades the user told Nexus about, buy or sell (migration 0031).

@@ -17,6 +17,8 @@ from nexus.application import destination_photos as photo_cases
 from nexus.application import email as email_cases
 from nexus.application import investments as investment_cases
 from nexus.application import market as market_cases
+from nexus.application import market_alerts as alert_cases
+from nexus.application import market_summary as summary_cases
 from nexus.application import notifications as notify_cases
 from nexus.application import plans as plan_cases
 from nexus.application import quotes as quote_cases
@@ -60,6 +62,7 @@ SCHEDULES = (
     Schedule(market_cases.REFRESH_JOB, timedelta(hours=1)),
     Schedule(market_cases.NEWS_JOB, timedelta(hours=1)),
     Schedule(quote_cases.REFRESH_JOB, timedelta(minutes=5)),
+    Schedule(summary_cases.SWEEP_JOB, timedelta(minutes=10)),
     Schedule(plan_cases.FOLLOW_JOB, timedelta(hours=1)),
     Schedule(booking_cases.REMIND_JOB, timedelta(hours=1)),
     Schedule(photo_cases.PHOTOS_JOB, timedelta(minutes=30)),
@@ -107,14 +110,19 @@ def build_handlers(
         """Message a user on Telegram, but not during their quiet hours."""
         async with uow() as tx:
             user = await tx.ledger.get_user(UserId(UUID(payload["user_id"])))
+            settings = await tx.planning.get_notifications(UserId(UUID(payload["user_id"])))
         if user is None or user.telegram_chat_id is None:
             return None  # nobody to tell; nothing to retry
         # A message the user timed themselves (their daily summary) goes when they
-        # asked, quiet hours or not.
+        # asked, and an urgent one (a stop on a stock they hold) at once: quiet hours or not.
         later = (
             None
-            if payload.get("anytime")
-            else quiet_until(clock().astimezone(ZoneInfo(user.timezone)))
+            if payload.get("anytime") or payload.get("urgent")
+            else quiet_until(
+                clock().astimezone(ZoneInfo(user.timezone)),
+                settings.quiet_start,
+                settings.quiet_end,
+            )
         )
         if later is not None:
             return Defer(later)
@@ -248,9 +256,27 @@ def build_handlers(
 
     async def refresh_quotes(_: dict[str, Any]) -> None:
         if quotes is not None:
-            fetched = await quote_cases.refresh(uow, quotes, now=clock())
+            now = clock()
+            fetched = await quote_cases.refresh(uow, quotes, now=now)
             if fetched:
                 log.info("quote refresh: fetched %d stocks", fetched)
+                try:  # alerts never fail the refresh
+                    alerts = await alert_cases.check(
+                        uow, await quotes.status(now, max_age=quote_cases.RUN_STATUS_AGE), now=now
+                    )
+                except Exception:
+                    log.exception("market alerts failed")
+                else:
+                    if alerts:
+                        log.info("market alerts: made %d", alerts)
+
+    async def sweep_market_summary(_: dict[str, Any]) -> None:
+        queued = await summary_cases.sweep(uow, now=clock())
+        if queued:
+            log.info("market summary: queued %d", queued)
+
+    async def market_summary_for(payload: dict[str, Any]) -> None:
+        await summary_cases.send(uow, rates, payload, now=clock())
 
     async def trip_photos(_: dict[str, Any]) -> None:
         if photos is not None:
@@ -305,6 +331,8 @@ def build_handlers(
         market_cases.REFRESH_JOB: refresh_prices,
         market_cases.NEWS_JOB: refresh_news,
         quote_cases.REFRESH_JOB: refresh_quotes,
+        summary_cases.SWEEP_JOB: sweep_market_summary,
+        summary_cases.USER_JOB: market_summary_for,
         photo_cases.PHOTOS_JOB: trip_photos,
         plan_cases.FOLLOW_JOB: follow_plans,
         booking_cases.REMIND_JOB: travel_reminders,

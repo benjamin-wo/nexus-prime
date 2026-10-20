@@ -9,6 +9,7 @@ from sqlalchemy import Row, delete, func, insert, select, union, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from nexus.domain.alerts import AlertKind, MarketAlert
 from nexus.domain.investments import (
     Dividend,
     DraftStatus,
@@ -28,6 +29,7 @@ from nexus.infra.db.tables import (
     dividends,
     holding_drafts,
     holdings,
+    market_alerts,
     market_bars,
     market_earnings,
     market_news,
@@ -632,3 +634,72 @@ class SqlInvestmentRepository:
             update(plans).where(p.user_id == user_id, p.id == plan_id).values(alerts=on)
         )
         return bool(result.rowcount)
+
+    # --- alerts during the US session ---
+
+    async def insert_alert(self, alert: MarketAlert) -> bool:
+        result = await self._db.execute(
+            pg_insert(market_alerts)
+            .values(
+                id=alert.id,
+                user_id=alert.user_id,
+                symbol=alert.symbol,
+                kind=alert.kind.value,
+                day=alert.day,
+                text=alert.text,
+                urgent=alert.urgent,
+                created_at=alert.created_at,
+                sent_at=alert.sent_at,
+            )
+            .on_conflict_do_nothing(
+                index_elements=[
+                    market_alerts.c.user_id,
+                    market_alerts.c.symbol,
+                    market_alerts.c.kind,
+                    market_alerts.c.day,
+                ]
+            )
+        )
+        return bool(result.rowcount)
+
+    async def alert_exists(self, user_id: UserId, symbol: str, kind: AlertKind, day: date) -> bool:
+        a = market_alerts.c
+        row = (
+            await self._db.execute(
+                select(a.id).where(
+                    a.user_id == user_id, a.symbol == symbol, a.kind == kind.value, a.day == day
+                )
+            )
+        ).first()
+        return row is not None
+
+    async def unsent_alerts(self, user_id: UserId, day: date) -> list[MarketAlert]:
+        a = market_alerts.c
+        rows = await self._db.execute(
+            select(market_alerts)
+            .where(a.user_id == user_id, a.day == day, a.sent_at.is_(None))
+            .order_by(a.created_at, a.symbol)
+        )
+        return [
+            MarketAlert(
+                id=r.id,
+                user_id=UserId(r.user_id),
+                symbol=r.symbol,
+                kind=AlertKind(r.kind),
+                day=r.day,
+                text=r.text,
+                urgent=r.urgent,
+                created_at=r.created_at,
+                sent_at=r.sent_at,
+            )
+            for r in rows
+        ]
+
+    async def mark_alerts_sent(self, user_id: UserId, alert_ids: list[UUID], at: datetime) -> None:
+        if alert_ids:
+            a = market_alerts.c
+            await self._db.execute(
+                update(market_alerts)
+                .where(a.user_id == user_id, a.id.in_(alert_ids))
+                .values(sent_at=at)
+            )
