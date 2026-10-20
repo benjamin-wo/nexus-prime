@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 
 import { api, type Booking, type LinkedPlace, type Me, type Trip, type TripDetail, type TripPhoto, type TripStop } from "../api";
 import { Icon } from "../components/Icon";
-import { formatMoney, formatShortDate } from "../format";
+import { formatShortDate } from "../format";
 import { PlaceLine } from "./TripPlaces";
 
 export const day = (iso: string) => formatShortDate(iso, "UTC");
@@ -84,25 +84,49 @@ export function tripWhen(trip: Pick<Trip, "status" | "day_number" | "days" | "en
   return `In ${trip.days_until} days`;
 }
 
-/** A trip on Travel's home: its cover, where, when and who. */
+/** A trip's photo as a background, or the gradient it gets without one. */
+const photoBackground = (trip: Pick<Trip, "photo" | "destination">): string => (trip.photo ? `url("${trip.photo.url}")` : coverGradient(trip.destination));
+
+/** "2 Jan to 5 Jan". */
+export const tripDates = (trip: Pick<Trip, "start" | "end">): string => `${day(trip.start)} to ${day(trip.end)}`;
+
+/** A trip on Travel's home: its photo, then where, when and who on white. The destination is
+ * the link and stretches over the whole card. */
 export function TripCard({ trip }: { trip: Trip }) {
   const nights = trip.days - 1;
   return (
-    <li className="trip-card" style={coverStyle(trip)}>
-      <span className="trip-card-chip">{tripWhen(trip)}</span>
+    <li className="trip-card">
+      <span className="trip-card-photo" style={{ backgroundImage: photoBackground(trip) }} aria-hidden="true" />
       <span className="trip-card-body">
-        <Link className="trip-card-link" to={`/travel/trips/${trip.id}`}>
-          {trip.destination}
-        </Link>
-        <span className="trip-card-meta">
-          {day(trip.start)} to {day(trip.end)} · {trip.days} {trip.days === 1 ? "day" : "days"}
-          {nights > 0 && ` · ${nights} ${nights === 1 ? "night" : "nights"}`}
+        <span className="trip-card-top">
+          <Link className="trip-card-link accent-serif" to={`/travel/trips/${trip.id}`}>
+            {trip.destination}
+          </Link>
+          <span className="trip-card-when">{tripWhen(trip)}</span>
         </span>
-        {isMember(trip) && <span className="trip-card-meta">{sharedBy(trip)}</span>}
-        <span className="trip-card-foot">
-          {trip.budget ? <span>Budget {formatMoney(trip.budget)}</span> : <span />}
+        <span className="trip-card-line">
+          <span className="trip-card-meta">
+            {tripDates(trip)} · {trip.days} {trip.days === 1 ? "day" : "days"}
+            {nights > 0 && ` · ${nights} ${nights === 1 ? "night" : "nights"}`}
+          </span>
           <Companions names={trip.companions} />
         </span>
+        {isMember(trip) && <span className="trip-card-meta">{sharedBy(trip)}</span>}
+      </span>
+    </li>
+  );
+}
+
+/** A past trip as a compact row: a small faded photo, the name (the link) and its dates. */
+export function TripRow({ trip }: { trip: Trip }) {
+  return (
+    <li className="trip-row">
+      <span className="trip-row-thumb" style={{ backgroundImage: photoBackground(trip) }} aria-hidden="true" />
+      <span className="trip-row-text">
+        <Link className="trip-row-link" to={`/travel/trips/${trip.id}`}>
+          {trip.destination}
+        </Link>
+        <span className="trip-row-dates">{tripDates(trip)}</span>
       </span>
     </li>
   );

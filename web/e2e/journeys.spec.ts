@@ -794,8 +794,15 @@ test("nothing spills sideways on a small phone", async ({ page }) => {
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     const offenders = await page.evaluate(() => {
       const width = document.documentElement.clientWidth;
+      // A row that scrolls on purpose (the "Where to next" chips) keeps its overflow inside itself.
+      const inScroller = (el: Element) => {
+        for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+          if (["auto", "scroll"].includes(getComputedStyle(p).overflowX) && p.getBoundingClientRect().right <= width + 1) return true;
+        }
+        return false;
+      };
       return [...document.querySelectorAll("body *")]
-        .filter((el) => el.getBoundingClientRect().right > width + 1)
+        .filter((el) => el.getBoundingClientRect().right > width + 1 && !inScroller(el))
         .map(
           (el) =>
             `${el.tagName.toLowerCase()}.${(el as HTMLElement).className}`,
@@ -1088,7 +1095,7 @@ test("departments have their own pages, and old links still work", async ({ page
   await expect(page.getByRole("heading", { name: "Plan", level: 1 })).toBeVisible();
   const nav = page.getByRole("navigation", { name: isMobile ? "Main (mobile)" : "Main", exact: true });
   await nav.getByRole("link", { name: "Travel" }).click();
-  await expect(page.getByRole("heading", { name: "Trips", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your trips", level: 1 })).toBeVisible();
   await expect(page.getByText(/never books anything/)).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Accounting pages" })).toHaveCount(0);
   await nav.getByRole("link", { name: "Home" }).click();
@@ -1388,12 +1395,19 @@ test("trip research shows sourced prices and a budget, and becomes a trip", asyn
   await page.goto("/travel");
   await page.getByRole("region", { name: "Research" }).getByRole("link", { name: "Research: Tokyo" }).click();
   await expect(page.getByRole("heading", { name: "Tokyo", level: 1 })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Budget" })).toContainText("About SGD 4,602–6,760 for 2");
-  await expect(page.getByRole("region", { name: "Budget" })).toContainText("It fits your cash flow");
+  const estimate = page.getByRole("region", { name: "Estimated cost" });
+  await expect(estimate).toContainText("SGD 4,602–6,760");
+  await expect(estimate).toContainText("for 7 nights, 2 travellers");
+  await expect(estimate).toContainText("Fits your budget of SGD 6,800");
+  await expect(estimate).toContainText("It fits your cash flow");
   const costs = page.getByRole("region", { name: "Costs" });
   await expect(costs).toContainText("JPY 8,000–15,000 · SGD 72–135");
   await expect(costs.getByRole("link", { name: "[2]" })).toHaveAttribute("href", "https://flights.example.com/s");
-  await expect(page.getByRole("region", { name: "Sources" }).getByRole("link", { name: "Tokyo guide" })).toHaveAttribute("rel", /noopener/);
+  // The sources are folded away until asked for.
+  const sources = page.getByRole("region", { name: /^Sources/ });
+  await expect(sources.getByRole("link", { name: "Tokyo guide" })).toBeHidden();
+  await sources.getByRole("button", { name: "Sources · 2" }).click();
+  await expect(sources.getByRole("link", { name: "Tokyo guide" })).toHaveAttribute("rel", /noopener/);
   await page.getByRole("button", { name: "Make it a trip" }).click();
   // The trip is made; the areas' ideas are asked about before leaving, and "Not now" goes on.
   await expect(page.getByRole("heading", { name: "Add the ideas from these areas to the trip too?" })).toBeVisible();
@@ -2036,12 +2050,17 @@ test("a day rearranged: dragged, moved by keyboard or menu, with what to watch o
   const grip = page.getByRole("button", { name: "Drag Tea house" });
   // Mid-screen, clear of the bars that stick at the top (a phone has three of them).
   await grip.evaluate((el) => el.scrollIntoView({ block: "center" }));
-  // The days slide sideways: wait until day 2 has slid fully into the card.
+  // The days slide sideways and the page may still be scrolling: wait until day 2 is fully in
+  // the card and the grip has stopped moving.
+  let last = "";
   await expect
     .poll(async () => {
       const [g, card] = [await grip.boundingBox(), await itinerary.boundingBox()];
-      return Boolean(g && card && g.x > card.x && g.x + g.width < card.x + card.width);
-    })
+      const now = JSON.stringify(g);
+      const still = now === last;
+      last = now;
+      return Boolean(still && g && card && g.x > card.x && g.x + g.width < card.x + card.width);
+    }, { intervals: [150] })
     .toBe(true);
   const from = (await grip.boundingBox())!;
   const onto = (await page.locator("#entry-pl1").boundingBox())!;
@@ -2634,7 +2653,7 @@ test("a shared link can leave bookings out, and the shared page says so", async 
   const text = await page.locator("main").innerText();
   for (const hidden of ["ZZ12", "Hotel Kumo", "Staying at", "HK55821"]) expect(text).not.toContain(hidden);
   await expect(plan.getByText("Travel day")).toHaveCount(2);
-  await expect(plan.getByText("Nothing planned yet")).toHaveCount(0);
+  await expect(plan.getByText("Free day")).toHaveCount(0);
 
   // Back on, the bookings return and the note goes.
   await page.goto("/travel/trips/trip1");

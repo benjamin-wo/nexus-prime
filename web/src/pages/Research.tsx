@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { api, type Research, type ResearchIdeasOut, type Run, type Trip, type TripDetail, type TripStop } from "../api";
+import { Icon } from "../components/Icon";
 import { formatRange, formatWholeMoney, formatShortDate } from "../format";
 import { stopsOf } from "./TripBits";
 
@@ -292,16 +293,16 @@ export function ResearchList() {
   const mine = (runs.data ?? []).filter((r) => r.kind === "travel.research");
   if (mine.length === 0) return null;
   return (
-    <section className="card" aria-labelledby="research">
+    <section className="card quiet-list" aria-labelledby="research">
       <div className="card-head">
         <h2 id="research">Research</h2>
       </div>
-      <ul className="feed">
+      <ul className="quiet-rows">
         {mine.map((r) => (
-          <li key={r.id} className="run-row">
-            <span className="wrap">
-              {r.status === "done" ? <Link to={`/travel/research/${r.id}`}>{r.title}</Link> : r.title}
-              <br />
+          <li key={r.id} className="quiet-row">
+            <Icon name={r.status === "done" ? "sparkle" : "find"} size={18} className="quiet-row-icon" />
+            <span className="quiet-row-text">
+              {r.status === "done" ? <Link to={`/travel/research/${r.id}`}>{r.title}</Link> : <span className="quiet-row-title">{r.title}</span>}
               <span className="caption">{r.status === "done" ? `Ready ${formatShortDate(r.finished_at ?? r.created_at)}` : r.progress}</span>
             </span>
           </li>
@@ -311,7 +312,89 @@ export function ResearchList() {
   );
 }
 
-/** One trip's research: when to go, costs with sources, where to stay and the budget. */
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+/** How the estimate sits against the budget, in plain words; null with no budget or no estimate.
+ * "fits" when even the top of the range is within it, "over" when the whole range is past it, and
+ * "could" when only the top of the range is. */
+export function budgetLine(r: Pick<Research, "estimate_low" | "estimate_high" | "budget" | "home_currency">): { kind: "fits" | "could" | "over"; text: string } | null {
+  if (!positive(r.estimate_low) || !positive(r.estimate_high) || !positive(r.budget)) return null;
+  const budget = Number(r.budget);
+  const of = `your budget of ${wholeMoney(r.budget, r.home_currency)}`;
+  const by = (amount: number) => wholeMoney(String(Math.round(amount)), r.home_currency);
+  if (Number(r.estimate_high) <= budget) return { kind: "fits", text: `Fits ${of}` };
+  if (Number(r.estimate_low) <= budget) return { kind: "could", text: `Could go over ${of} by up to ${by(Number(r.estimate_high) - budget)}` };
+  return { kind: "over", text: `Over ${of} by about ${by(Number(r.estimate_low) - budget)}` };
+}
+
+/** The first card: what the whole trip might cost, against the budget when there is one. */
+export function ResearchSummary({ r }: { r: Research }) {
+  const line = budgetLine(r);
+  return (
+    <section className="card money-summary" aria-labelledby="budget-card">
+      <h2 id="budget-card" className="money-label">
+        Estimated cost
+      </h2>
+      {positive(r.estimate_low) && positive(r.estimate_high) ? (
+        <>
+          <p className="money-figure">{wholeRange(r.estimate_low, r.estimate_high, r.home_currency)}</p>
+          <p className="money-left">
+            for {plural(r.nights, "night")}, {plural(r.travellers, "traveller")}
+          </p>
+        </>
+      ) : (
+        <p className="muted">Not enough sourced prices to estimate the whole trip.</p>
+      )}
+      {line && <p className={`money-left${line.kind === "fits" ? "" : " money-over"}`}>{line.text}</p>}
+      {r.estimate_lines.length > 0 && (
+        <ul className="research-lines">
+          {r.estimate_lines.map((l) => (
+            <li key={l}>{l}</li>
+          ))}
+        </ul>
+      )}
+      {positive(r.set_aside) && positive(r.budget) && (
+        <p className="money-left">
+          Put aside {wholeMoney(r.set_aside, r.home_currency)} on each of the {r.paydays_left} paydays before then for a{" "}
+          {wholeMoney(r.budget, r.home_currency)} budget.{" "}
+          {r.fits === true && <span className="budget-state-ok-strong">It fits your cash flow.</span>}
+          {r.fits === false && <span className="budget-state-over">That's tight for your cash flow.</span>}
+        </p>
+      )}
+      <p className="money-note">Worked out from the prices below</p>
+    </section>
+  );
+}
+
+/** The pages the figures came from, folded away until asked for. */
+export function ResearchSources({ r }: { r: Research }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <section className="card research-sources" aria-labelledby="sources">
+      <h2 id="sources" className="research-sources-h">
+        <button type="button" className="research-sources-btn" aria-expanded={open} aria-controls="sources-list" onClick={() => setOpen(!open)}>
+          <span>Sources · {r.sources.length}</span>
+          <Icon name="chevron" size={18} className="research-chev" />
+        </button>
+      </h2>
+      <div id="sources-list" className="research-sources-panel" hidden={!open}>
+        <p className="caption">Other people's pages; nothing is booked</p>
+        <ol className="sources">
+          {r.sources.map((s) => (
+            <li key={s.id} value={s.id}>
+              <a href={s.url} target="_blank" rel="noopener noreferrer nofollow">
+                {s.title}
+              </a>{" "}
+              <span className="caption">checked {day(s.checked_on)}</span>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </section>
+  );
+}
+
+/** One trip's research: the estimated cost, when to go, costs with sources and where to stay. */
 export function ResearchPage() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
@@ -340,30 +423,33 @@ export function ResearchPage() {
   }
 
   return (
-    <>
-      <div className="page-head">
-        <div>
-          <p className="caption">
-            <Link to="/travel">Trips</Link>
-          </p>
-          <h1>{r ? r.destination : "Research"}</h1>
-          {r && (
-            <p className="muted">
-              {day(r.start)} to {day(r.end)} · {r.nights} nights · {r.travellers} {r.travellers === 1 ? "traveller" : "travellers"}
-            </p>
-          )}
+    <div className="research-page">
+      <header className="research-head">
+        <Link className="btn btn-ghost research-back" to="/travel">
+          <Icon name="chevron" size={16} className="icon-back" />
+          Trips
+        </Link>
+        <div className="research-head-row">
+          <div className="research-head-text">
+            <h1 className="accent-serif research-title">{r ? r.destination : "Research"}</h1>
+            {r && (
+              <p className="research-meta">
+                {day(r.start)} to {day(r.end)} · {plural(r.nights, "night")} · {plural(r.travellers, "traveller")}
+              </p>
+            )}
+          </div>
+          {r &&
+            (r.trip_id ? (
+              <Link className="btn btn-soft" to={`/travel/trips/${r.trip_id}`}>
+                Open the trip
+              </Link>
+            ) : (
+              <button type="button" className="btn btn-primary" onClick={() => void makeTrip()}>
+                Make it a trip
+              </button>
+            ))}
         </div>
-        {r &&
-          (r.trip_id ? (
-            <Link className="btn btn-soft" to={`/travel/trips/${r.trip_id}`}>
-              Open the trip
-            </Link>
-          ) : (
-            <button type="button" className="btn btn-primary" onClick={() => void makeTrip()}>
-              Make it a trip
-            </button>
-          ))}
-      </div>
+      </header>
       {error && (
         <p className="error-text" role="alert">
           {error}
@@ -378,44 +464,18 @@ export function ResearchPage() {
       )}
       {r && (
         <>
-          <section className="card" aria-labelledby="budget-card">
-            <div className="card-head">
-              <h2 id="budget-card">Budget</h2>
-              <span className="caption">Worked out from the prices below</span>
-            </div>
-            {positive(r.estimate_low) && positive(r.estimate_high) ? (
-              <p>
-                About <strong>{wholeRange(r.estimate_low, r.estimate_high, r.home_currency)}</strong>{" "}
-                for {r.travellers}.
-              </p>
-            ) : (
-              <p className="muted">Not enough sourced prices to estimate the whole trip.</p>
-            )}
-            {r.estimate_lines.length > 0 && (
-              <ul className="caption">
-                {r.estimate_lines.map((l) => (
-                  <li key={l}>{l}</li>
-                ))}
-              </ul>
-            )}
-            {positive(r.set_aside) && positive(r.budget) && (
-              <p>
-                Put aside {wholeMoney(r.set_aside, r.home_currency)} on each of the {r.paydays_left} paydays before then for a{" "}
-                {wholeMoney(r.budget, r.home_currency)} budget.{" "}
-                {r.fits === true && <span className="budget-state-ok-strong">It fits your cash flow.</span>}
-                {r.fits === false && <span className="budget-state-over">That's tight for your cash flow.</span>}
-              </p>
-            )}
-          </section>
+          <ResearchSummary r={r} />
           <section className="card" aria-labelledby="when-to-go">
             <div className="card-head">
               <h2 id="when-to-go">When to go</h2>
             </div>
-            {r.when_summary && <p>{r.when_summary}</p>}
-            <ul>
+            {r.when_summary && <p className="research-lede">{r.when_summary}</p>}
+            <ul className="research-rows">
               {r.when.map((p) => (
-                <li key={p.text}>
-                  {p.text} <Cite id={p.source} research={r} />
+                <li key={p.text} className="research-row">
+                  <span className="research-row-plain">
+                    {p.text} <Cite id={p.source} research={r} />
+                  </span>
                 </li>
               ))}
             </ul>
@@ -428,62 +488,49 @@ export function ResearchPage() {
             {r.prices.length === 0 ? (
               <p className="state">No prices with a source were found.</p>
             ) : (
-              <div className="table-wrap">
-                <table className="holdings">
-                  <thead>
-                    <tr>
-                      <th scope="col">What</th>
-                      <th scope="col" className="num">
-                        Range
-                      </th>
-                      <th scope="col">Source</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {r.prices.map((p) => (
-                      <tr key={`${p.label}:${p.source}`}>
-                        <td>
-                          {p.label}
-                          <br />
-                          <span className="caption">per {p.per}</span>
-                        </td>
-                        <td className="num">
-                          {wholeRange(p.low, p.high, p.currency)}
-                          {positive(p.home_low) && positive(p.home_high) && p.currency !== r.home_currency && (
-                            <span className="caption"> · {wholeRange(p.home_low, p.home_high, r.home_currency)}</span>
-                          )}
-                        </td>
-                        <td>
-                          <Cite id={p.source} research={r} />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <ul className="research-rows">
+                {r.prices.map((p) => (
+                  <li key={`${p.label}:${p.source}`} className="research-row">
+                    <span className="research-row-main">
+                      <span className="research-row-title">
+                        {p.label} <Cite id={p.source} research={r} />
+                      </span>
+                      <span className="research-row-sub">per {p.per}</span>
+                    </span>
+                    <span className="research-row-amount">
+                      <span className="num">{wholeRange(p.low, p.high, p.currency)}</span>
+                      {positive(p.home_low) && positive(p.home_high) && p.currency !== r.home_currency && (
+                        <span className="caption"> · {wholeRange(p.home_low, p.home_high, r.home_currency)}</span>
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ul>
             )}
           </section>
           <section className="card" aria-labelledby="where-to-stay">
             <div className="card-head">
               <h2 id="where-to-stay">Where to stay</h2>
             </div>
-            {r.areas.map((a) => (
-              <div key={a.name} className="area">
-                <div className="area-head">
-                  <h3>
-                    {a.name} <Cite id={a.source} research={r} />
-                  </h3>
-                  {a.things.length > 0 && (
-                    <label className="area-save">
-                      <input type="checkbox" checked={!unticked.includes(a.name)} onChange={(e) => toggle(a.name, e.target.checked)} aria-label={`Save its ideas from ${a.name}`} />
-                      <span>Save its ideas</span>
-                    </label>
-                  )}
+            <div className="research-areas">
+              {r.areas.map((a) => (
+                <div key={a.name} className="area">
+                  <div className="area-head">
+                    <h3>
+                      {a.name} <Cite id={a.source} research={r} />
+                    </h3>
+                    {a.things.length > 0 && (
+                      <label className="area-save">
+                        <input type="checkbox" checked={!unticked.includes(a.name)} onChange={(e) => toggle(a.name, e.target.checked)} aria-label={`Save its ideas from ${a.name}`} />
+                        <span>Save its ideas</span>
+                      </label>
+                    )}
+                  </div>
+                  <p className="muted">{a.why}</p>
+                  {a.things.length > 0 && <p className="caption">{a.things.join(" · ")}</p>}
                 </div>
-                <p className="muted">{a.why}</p>
-                {a.things.length > 0 && <p className="caption">{a.things.join(" · ")}</p>}
-              </div>
-            ))}
+              ))}
+            </div>
             {withIdeas.length > 0 && (
               <div className="research-actions">
                 <button type="button" className="btn btn-soft" disabled={ticked.length === 0} onClick={() => setStep({ kind: "pick" })}>
@@ -495,29 +542,14 @@ export function ResearchPage() {
               </div>
             )}
             {r.getting_around && (
-              <p>
+              <p className="research-around">
                 <strong>Getting around:</strong> {r.getting_around} <Cite id={r.getting_around_source} research={r} />
               </p>
             )}
           </section>
-          <section className="card" aria-labelledby="sources">
-            <div className="card-head">
-              <h2 id="sources">Sources</h2>
-              <span className="caption">Other people's pages; nothing is booked</span>
-            </div>
-            <ol className="sources">
-              {r.sources.map((s) => (
-                <li key={s.id} value={s.id}>
-                  <a href={s.url} target="_blank" rel="noopener noreferrer nofollow">
-                    {s.title}
-                  </a>{" "}
-                  <span className="caption">checked {day(s.checked_on)}</span>
-                </li>
-              ))}
-            </ol>
-          </section>
+          <ResearchSources r={r} />
         </>
       )}
-    </>
+    </div>
   );
 }

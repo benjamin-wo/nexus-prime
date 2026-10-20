@@ -48,6 +48,87 @@ describe("the trips list", () => {
     expect(screen.queryByRole("region", { name: "Shared with you" })).toBeNull();
   });
 
+  it("heads the list 'Your trips' with a count of what is on and coming up, leaving out zero parts", async () => {
+    const now = trip({ id: "n1", destination: "Osaka", status: "ongoing", day_number: 2, days_until: 0 });
+    const soon = trip({ id: "s1", destination: "Seoul", days_until: 10 });
+    mockApi({ "GET /me": () => me("owner"), "GET /travel/trips": () => [now, mine, soon], "GET /travel/bookings": () => [], "GET /runs": () => [] });
+    renderWithProviders(<TripsPage />);
+    expect(await screen.findByRole("heading", { level: 1, name: "Your trips" })).toBeInTheDocument();
+    expect(await screen.findByText("1 on now · 2 coming up")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "New trip" })).toBeInTheDocument();
+  });
+
+  it("omits a zero part of the count, and the whole line when there are no trips on or ahead", async () => {
+    mockApi({ "GET /me": () => me("owner"), "GET /travel/trips": () => [mine], "GET /travel/bookings": () => [], "GET /runs": () => [] });
+    const first = renderWithProviders(<TripsPage />);
+    expect(await screen.findByText("1 coming up")).toBeInTheDocument();
+    first.unmount();
+
+    mockApi({ "GET /me": () => me("owner"), "GET /travel/trips": () => [], "GET /travel/bookings": () => [], "GET /runs": () => [] });
+    const { container } = renderWithProviders(<TripsPage />);
+    await screen.findByText(/No trips yet/);
+    expect(container.querySelector(".trips-summary")).toBeNull();
+  });
+
+  it("keeps past trips behind a button, shut at first, and opens them as rows linking to each trip", async () => {
+    const old = trip({ id: "p1", destination: "Paris", status: "finished", start: "2026-01-02", end: "2026-01-05", days_until: -200 });
+    const older = trip({ id: "p2", destination: "Rome", status: "finished", start: "2025-01-02", end: "2025-01-05", days_until: -500 });
+    mockApi({ "GET /me": () => me("owner"), "GET /travel/trips": () => [mine, old, older], "GET /travel/bookings": () => [], "GET /runs": () => [] });
+    renderWithProviders(<TripsPage />);
+    const toggle = await screen.findByRole("button", { name: "Past trips · 2" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("link", { name: "Paris" })).toBeNull();
+    await userEvent.setup().click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(toggle.getAttribute("aria-controls")).toBe(screen.getByRole("link", { name: "Paris" }).closest("ul")?.id);
+    expect(screen.getByRole("link", { name: "Rome" })).toHaveAttribute("href", "/travel/trips/p2");
+    await userEvent.setup().click(toggle);
+    expect(screen.queryByRole("link", { name: "Paris" })).toBeNull();
+  });
+
+  it("has no Past trips button when there are none", async () => {
+    mockApi({ "GET /me": () => me("owner"), "GET /travel/trips": () => [mine], "GET /travel/bookings": () => [], "GET /runs": () => [] });
+    renderWithProviders(<TripsPage />);
+    await screen.findByRole("link", { name: "Tokyo" });
+    expect(screen.queryByRole("button", { name: /Past trips/ })).toBeNull();
+  });
+
+  it("stacks the sections: on now, coming up, shared, where to next, bookings to sort, research, then past", async () => {
+    const now = trip({ id: "n1", destination: "Osaka", status: "ongoing", day_number: 2, days_until: 0 });
+    const old = trip({ id: "p1", destination: "Paris", status: "finished", start: "2026-01-02", end: "2026-01-05", days_until: -200 });
+    const loose = { id: "b1", kind: "hotel", title: "Hotel Sakura", provider: null, segments: [], starts: "2027-04-02", cost: null, logged: false } as unknown as Booking;
+    const run = { id: "rs1", kind: "travel.research", title: "Research: Tokyo", status: "done", progress: "done", created_at: "2026-09-28T03:00:00Z", finished_at: "2026-09-28T03:03:00Z" };
+    mockApi({
+      "GET /me": () => me("owner"),
+      "GET /travel/trips": () => [old, shared, mine, now],
+      "GET /travel/bookings": () => [loose],
+      "GET /runs": () => [run],
+    });
+    renderWithProviders(<TripsPage onAsk={() => {}} />);
+    await screen.findByRole("region", { name: "Research" });
+    await screen.findByRole("region", { name: "Bookings not on a trip" });
+    expect(screen.getAllByRole("region").map((r) => r.getAttribute("aria-label") ?? document.getElementById(r.getAttribute("aria-labelledby") ?? "")?.textContent)).toEqual([
+      "On now",
+      "Coming up",
+      "Shared with you",
+      "Where to next?",
+      "Bookings not on a trip",
+      "Research",
+      "Past trips",
+    ]);
+  });
+
+  it("makes each trip card one link named by the destination, with the when pill, dates, days and nights, and no budget", async () => {
+    mockApi({ "GET /me": () => me("owner"), "GET /travel/trips": () => [{ ...mine, companions: ["Ann Lee"] }], "GET /travel/bookings": () => [], "GET /runs": () => [] });
+    renderWithProviders(<TripsPage />);
+    const card = (await screen.findByRole("link", { name: "Tokyo" })).closest("li") as HTMLElement;
+    expect(within(card).getAllByRole("link")).toHaveLength(1);
+    expect(within(card).getByText("In 120 days")).toBeInTheDocument();
+    expect(card).toHaveTextContent("Apr 2 to Apr 5 · 4 days · 3 nights");
+    expect(within(card).getByLabelText("With Ann Lee")).toBeInTheDocument();
+    expect(card).not.toHaveTextContent(/Budget/);
+  });
+
   it("gives a guest only the trips they are on, and never asks for what a guest can't have", async () => {
     const calls = mockApi({
       "GET /me": () => me("guest"),
@@ -59,6 +140,7 @@ describe("the trips list", () => {
     renderWithProviders(<TripsPage onAsk={() => {}} />);
     const section = await screen.findByRole("region", { name: "Shared with you" });
     expect(within(section).getByRole("link", { name: "Lisbon" })).toBeInTheDocument();
+    expect(screen.getByText("The trips you were invited to.")).toBeInTheDocument();
     for (const name of ["New trip", "Add a trip", "Research it"]) expect(screen.queryByRole("button", { name })).toBeNull();
     expect(screen.queryByRole("heading", { name: "Where to next?" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "Bookings not on a trip" })).toBeNull();

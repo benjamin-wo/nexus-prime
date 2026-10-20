@@ -23,7 +23,7 @@ describe("the app for a guest", () => {
     const calls = asGuest();
     window.history.pushState({}, "", "/accounting/ledger");
     render(<App client={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
-    expect(await screen.findByRole("heading", { name: "Trips" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Your trips" })).toBeInTheDocument();
     expect(window.location.pathname).toBe("/travel");
     expect(screen.queryByRole("button", { name: "Ask Nexus" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Settings" })).toBeNull();
