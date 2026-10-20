@@ -946,6 +946,10 @@ trips = Table(
     Column("not_split", JSONB, nullable=False, server_default=text("'[]'::jsonb")),
     # Where the last Telegram summary of other people's changes stopped (0047).
     Column("activity_digest_at", TZ),
+    # The Prep tab: to-dos, [{"id", "text", "due", "done"}], and the keys of the
+    # suggestions the user said aren't needed (0048).
+    Column("todos", JSONB, nullable=False, server_default=text("'[]'::jsonb")),
+    Column("prep_dismissed", JSONB, nullable=False, server_default=text("'[]'::jsonb")),
     ForeignKeyConstraint(["user_id"], ["users.id"]),
     ForeignKeyConstraint(["photo_id"], ["destination_photos.id"], ondelete="SET NULL"),
     UniqueConstraint("id", "user_id"),
@@ -1078,6 +1082,41 @@ trip_links = Table(
     Index("ix_trip_links_user_id_transaction_id", "user_id", "transaction_id"),
 )
 
+
+# Cover and documents on a trip's Prep tab: travel insurance, a visa, other documents. The
+# reference is the user's own (never a card or passport number); the cost is the owner's
+# money, counted with the trip's bookings until it is logged as an expense (0048).
+trip_covers = Table(
+    "trip_covers",
+    metadata,
+    _uuid_pk(),
+    _user_fk(),
+    Column("trip_id", UUID(as_uuid=True), nullable=False),
+    Column("kind", Text, nullable=False),
+    Column("name", Text, nullable=False),
+    Column("reference", Text),
+    Column("phone", Text),
+    Column("starts", Date),
+    Column("ends", Date),
+    Column("cost_amount", MONEY),
+    Column("cost_currency", CURRENCY),
+    Column("logged_transaction_id", UUID(as_uuid=True)),
+    Column("note", Text),
+    Column("created_at", TZ, nullable=False),
+    Column("updated_at", TZ, nullable=False),
+    ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+    ForeignKeyConstraint(["trip_id", "user_id"], ["trips.id", "trips.user_id"], ondelete="CASCADE"),
+    ForeignKeyConstraint(["logged_transaction_id"], ["transactions.id"], ondelete="SET NULL"),
+    CheckConstraint("kind IN ('insurance', 'visa', 'document', 'other')", name="kind"),
+    CheckConstraint("char_length(name) BETWEEN 1 AND 80", name="name_length"),
+    CheckConstraint("reference IS NULL OR char_length(reference) <= 60", name="reference_length"),
+    CheckConstraint("phone IS NULL OR char_length(phone) <= 30", name="phone_length"),
+    CheckConstraint("note IS NULL OR char_length(note) <= 200", name="note_length"),
+    CheckConstraint("starts IS NULL OR ends IS NULL OR ends >= starts", name="dates"),
+    CheckConstraint("cost_amount IS NULL OR cost_amount > 0", name="cost_positive"),
+    CheckConstraint("(cost_amount IS NULL) = (cost_currency IS NULL)", name="cost"),
+    Index("ix_trip_covers_user_id_trip_id", "user_id", "trip_id"),
+)
 
 # A flight, hotel or train booking read from email (M11b), or an itinerary entry the
 # user added by hand (no email_id), including plans. Only what's needed to travel;

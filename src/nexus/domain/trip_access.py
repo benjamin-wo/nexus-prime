@@ -15,6 +15,7 @@ from uuid import UUID
 
 from nexus.domain.bookings import Booking
 from nexus.domain.ledger import UserId
+from nexus.domain.prep import Cover
 from nexus.domain.trips import Trip
 
 INVITE_TTL = timedelta(days=7)
@@ -161,3 +162,9 @@ def without_trip_money(trip: Trip) -> Trip:
     """A trip as a member sees it: no budget, set-aside or planned amounts, and nothing
     of how its costs are split (the setting, or the expense ids kept out of it)."""
     return replace(trip, budget=None, set_aside=None, planned={}, split_evenly=True, not_split=())
+
+
+def without_cover_money(cover: Cover) -> Cover:
+    """A cover as a member sees it: what it cost and the expense it was logged as are
+    left off. The reference and phone stay, as a booking's reference does."""
+    return replace(cover, draft=replace(cover.draft, cost=None), logged_transaction_id=None)

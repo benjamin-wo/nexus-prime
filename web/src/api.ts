@@ -618,6 +618,52 @@ export type Trip = {
 
 export type PackItem = { text: string; done: boolean };
 
+/** A to-do on a trip's Prep tab. `due` is a date (YYYY-MM-DD) or null; one due tomorrow is reminded
+ * of in the morning unless it's done. `id` is short and stable: send it back with each save. */
+export type Todo = { id: string; text: string; due: string | null; done: boolean };
+/** What a to-do is sent as in `PUT /travel/trips/{id}/todos` (the whole list, replacing it): `id` is
+ * left out for a new one. At most 50, each at most 80 characters. */
+export type TodoIn = { id?: string | null; text: string; due?: string | null; done?: boolean };
+
+export type CoverKind = "insurance" | "visa" | "document" | "other";
+/** Cover and documents on the Prep tab: a policy, a visa, another document. `reference` is the user's
+ * own (a card or passport number is refused, 422). `cost` and `logged` are the owner's money: null and
+ * false for a member of the trip (`trip.role`), who never sees or sets them. */
+export type Cover = {
+  id: string;
+  kind: CoverKind;
+  name: string;
+  reference: string | null;
+  /** The number to call: digits, +, spaces, - and brackets. */
+  phone: string | null;
+  starts: string | null;
+  ends: string | null;
+  /** Counted in the trip's `booked` (and `booked_unlogged` until it is logged) like a booking's cost. */
+  cost: Money | null;
+  /** Its cost has been recorded as an expense (`POST .../covers/{id}/log`). */
+  logged: boolean;
+  note: string | null;
+};
+/** The body of `POST /travel/trips/{id}/covers` and `PUT .../covers/{id}` (an edit sends the whole cover).
+ * `cost` is only for the trip's owner (403 for a member), in `currency` or the home currency. */
+export type CoverIn = {
+  kind: CoverKind;
+  name: string;
+  reference?: string | null;
+  phone?: string | null;
+  starts?: string | null;
+  ends?: string | null;
+  cost?: string | null;
+  currency?: string | null;
+  note?: string | null;
+};
+/** Something the trip probably still needs, worked out on the server (never by a model) and left out
+ * once done or dismissed. `add_cover` opens the cover form; `add_todo` adds `text` as a to-do. */
+export type PrepSuggestion = { key: string; text: string; sub: string; action: "add_cover" | "add_todo" };
+/** The Prep tab's lists: what `PUT .../todos`, `POST .../prep/dismiss` and `DELETE .../prep/dismiss/{key}`
+ * answer with, as the person asking sees them. */
+export type Prep = { todos: Todo[]; covers: Cover[]; prep_suggestions: PrepSuggestion[] };
+
 /** The forecast once it reaches the trip, else the same dates in recent years. */
 export type TripWeather = {
   place: string;
@@ -910,6 +956,7 @@ export type TripDetail = {
   routes?: boolean;
   /** The browser key for Google's map; null when there's no map. */
   map_key?: string | null;
+  /** Bookings' costs and covers' costs, together (a cover is listed under "Bookings paid" from `covers`). */
   booked: Money | null;
   booked_unlogged: Money | null;
   to_spend: Money | null;
@@ -929,6 +976,11 @@ export type TripDetail = {
   paid_by_others: PaidByOther[];
   /** Where the user stands with each person (open items only), A to Z. */
   balances: Balance[];
+  /** The Prep tab, always sent by the server (optional here so older fixtures still type-check). Anyone on
+   * the trip reads and edits the to-dos and covers; a member's covers have `cost` null and `logged` false. */
+  todos?: Todo[];
+  covers?: Cover[];
+  prep_suggestions?: PrepSuggestion[];
   items: {
     transaction_id: string;
     day: string;
@@ -972,6 +1024,20 @@ export const tripInvitesPath = (tripId: string, inviteId?: string) =>
 export const tripActivityPath = (tripId: string) => `/travel/trips/${tripId}/activity`;
 /** The path for `PUT /travel/trips/{id}/notes` (body `{ notes: string | null }`), how a member edits the notes. */
 export const tripNotesPath = (tripId: string) => `/travel/trips/${tripId}/notes`;
+/** The path for `PUT /travel/trips/{id}/todos` (body `{ todos: TodoIn[] }`, answers `Prep`). */
+export const tripTodosPath = (tripId: string) => `/travel/trips/${tripId}/todos`;
+/** The path for `POST /travel/trips/{id}/prep/dismiss` (body `{ key }`, "Not needed") or, with a key,
+ * `DELETE .../prep/dismiss/{key}` (bring the suggestion back). Both answer `Prep`. */
+export const tripDismissPath = (tripId: string, key?: string) =>
+  `/travel/trips/${tripId}/prep/dismiss${key ? `/${encodeURIComponent(key)}` : ""}`;
+/** The path for `POST /travel/trips/{id}/covers` (body `CoverIn`, 201 with the `Cover`) or one of them:
+ * `PUT` (body `CoverIn`, answers the `Cover`) and `DELETE` (204). */
+export const tripCoversPath = (tripId: string, coverId?: string) =>
+  `/travel/trips/${tripId}/covers${coverId ? `/${coverId}` : ""}`;
+/** The path for `POST /travel/trips/{id}/covers/{cover}/log` (owner only; no body): records the cover's cost
+ * as an expense (Travel) that counts towards the trip. Answers the `Cover`, logged. 409 if it already is,
+ * 422 if it has no cost. Nexus pays nothing. */
+export const tripCoverLogPath = (tripId: string, coverId: string) => `/travel/trips/${tripId}/covers/${coverId}/log`;
 /** The path for `POST /travel/invites/{token}/accept`. */
 export const acceptInvitePath = (token: string) => `/travel/invites/${encodeURIComponent(token)}/accept`;
 

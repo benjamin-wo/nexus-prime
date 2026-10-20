@@ -5,7 +5,6 @@ Travel never books or buys anything. A trip is made by hand ("Tokyo 10-20 Jan,
 budget S$3,000") or, later, from research.
 """
 
-import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
@@ -18,6 +17,8 @@ from nexus.domain.errors import InvalidInput
 from nexus.domain.ledger import UserId, clean_name, require_positive
 from nexus.domain.money import Money
 from nexus.domain.packing import PackItem
+from nexus.domain.prep import Todo
+from nexus.domain.private import hide_private as hide_private  # also imported from here
 
 MAX_TRIPS = 50
 MAX_TRIP_DAYS = 120
@@ -88,6 +89,9 @@ class Trip:
     # the expenses the user marked "just mine" so they aren't offered again.
     split_evenly: bool = True
     not_split: tuple[UUID, ...] = ()
+    # The Prep tab: to-dos, and the suggestions the user said aren't needed (see prep.py).
+    todos: tuple[Todo, ...] = ()
+    prep_dismissed: tuple[str, ...] = ()
 
     @property
     def days(self) -> int:
@@ -122,38 +126,6 @@ def clean_destination(raw: str) -> str:
 
 
 MAX_NOTES = 2000
-# Numbers a note shouldn't keep, even the owner's own: a card number (15 or 16
-# digits starting 3 to 6 that pass the card checksum, so a ticket number isn't
-# taken for one), a card's security code and a passport number. Booking references,
-# ticket and loyalty numbers are kept: they're the user's, and what they need at
-# the counter.
-_CARD = re.compile(r"(?<![\d-])[3-6](?:[ -]?\d){14,15}(?![\d-])")
-_PASSPORT = re.compile(
-    r"(?i)\b(passport)(?:\s+(?:no\.?|number))?\s*[:#]?\s*(?=[A-Z0-9]*\d)[A-Z0-9]{6,9}\b"
-)
-_SECURITY_CODE = re.compile(r"(?i)\b(cvv2?|cvc|security code)\s*[:#]?\s*\d{3,4}\b")
-
-
-def _luhn(digits: str) -> bool:
-    total = 0
-    for n, ch in enumerate(reversed(digits)):
-        d = int(ch)
-        if n % 2:
-            d = d * 2 - 9 if d > 4 else d * 2
-        total += d
-    return total % 10 == 0
-
-
-def _card(match: re.Match[str]) -> str:
-    digits = re.sub(r"\D", "", match.group(0))
-    return f"•••• {digits[-4:]}" if _luhn(digits) else match.group(0)
-
-
-def hide_private(text: str) -> str:
-    """Hides card numbers (keeping the last four), security codes and passport numbers."""
-    text = _CARD.sub(_card, text)
-    text = _PASSPORT.sub(lambda m: f"{m.group(1)} •••", text)
-    return _SECURITY_CODE.sub(lambda m: f"{m.group(1)} •••", text)
 
 
 def clean_notes(raw: str | None) -> str | None:

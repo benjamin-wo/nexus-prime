@@ -15,6 +15,8 @@ from nexus.domain.destination_photos import DestinationPhoto, Season
 from nexus.domain.ledger import Direction, TransactionStatus, UserId
 from nexus.domain.money import Money
 from nexus.domain.packing import PackItem, from_rows
+from nexus.domain.prep import Cover, CoverDraft, CoverKind, Todo
+from nexus.domain.prep import from_rows as todos_from_rows
 from nexus.domain.settle import PaidByOther
 from nexus.domain.trip_access import (
     UNKNOWN_NAME,
@@ -34,6 +36,7 @@ from nexus.infra.db.tables import (
     transactions,
     trip_activity,
     trip_bookings,
+    trip_covers,
     trip_invites,
     trip_links,
     trip_members,
@@ -73,6 +76,8 @@ def _trip(row: Row[Any]) -> Trip:
         ),
         split_evenly=row.split_evenly,
         not_split=tuple(UUID(i) for i in (row.not_split or [])),
+        todos=todos_from_rows(row.todos),
+        prep_dismissed=tuple(k for k in (row.prep_dismissed or []) if isinstance(k, str)),
     )
 
 
@@ -858,6 +863,66 @@ class SqlTripRepository:
             .values(packing=[i.to_dict() for i in items], updated_at=at)
         )
 
+    # --- the Prep tab: to-dos, dismissed suggestions and cover ---------------------------
+
+    async def set_todos(
+        self, user_id: UserId, trip_id: UUID, todos: tuple[Todo, ...], at: datetime
+    ) -> None:
+        await self._db.execute(
+            update(trips)
+            .where(trips.c.user_id == user_id, trips.c.id == trip_id)
+            .values(todos=[t.to_dict() for t in todos], updated_at=at)
+        )
+
+    async def set_prep_dismissed(
+        self, user_id: UserId, trip_id: UUID, keys: tuple[str, ...], at: datetime
+    ) -> None:
+        await self._db.execute(
+            update(trips)
+            .where(trips.c.user_id == user_id, trips.c.id == trip_id)
+            .values(prep_dismissed=list(keys), updated_at=at)
+        )
+
+    async def insert_cover(self, cover: Cover) -> None:
+        await self._db.execute(insert(trip_covers).values(**_cover_values(cover)))
+
+    async def update_cover(self, cover: Cover) -> None:
+        values = _cover_values(cover)
+        for fixed in ("id", "user_id", "trip_id", "created_at"):
+            del values[fixed]
+        c = trip_covers.c
+        await self._db.execute(
+            update(trip_covers)
+            .where(c.user_id == cover.user_id, c.trip_id == cover.trip_id, c.id == cover.id)
+            .values(**values)
+        )
+
+    async def get_cover(
+        self, user_id: UserId, trip_id: UUID, cover_id: UUID, *, for_update: bool = False
+    ) -> Cover | None:
+        c = trip_covers.c
+        query = select(trip_covers).where(
+            c.user_id == user_id, c.trip_id == trip_id, c.id == cover_id
+        )
+        row = (await self._db.execute(query.with_for_update() if for_update else query)).first()
+        return _cover(row) if row else None
+
+    async def list_covers(self, user_id: UserId, trip_id: UUID) -> list[Cover]:
+        c = trip_covers.c
+        rows = await self._db.execute(
+            select(trip_covers)
+            .where(c.user_id == user_id, c.trip_id == trip_id)
+            .order_by(c.created_at, c.id)
+        )
+        return [_cover(r) for r in rows]
+
+    async def delete_cover(self, user_id: UserId, trip_id: UUID, cover_id: UUID) -> bool:
+        c = trip_covers.c
+        result = await self._db.execute(
+            delete(trip_covers).where(c.user_id == user_id, c.trip_id == trip_id, c.id == cover_id)
+        )
+        return bool(result.rowcount)
+
     async def set_hop_modes(self, user_id: UserId, trip_id: UUID, modes: dict[str, str]) -> None:
         await self._db.execute(
             update(trips)
@@ -923,6 +988,48 @@ def _payment(row: Row[Any]) -> PaidByOther:
         split_with=tuple(row.split_with),
         settled_at=row.settled_at,
         created_at=row.created_at,
+    )
+
+
+def _cover_values(cover: Cover) -> dict[str, Any]:
+    d = cover.draft
+    return {
+        "id": cover.id,
+        "user_id": cover.user_id,
+        "trip_id": cover.trip_id,
+        "kind": d.kind.value,
+        "name": d.name,
+        "reference": d.reference,
+        "phone": d.phone,
+        "starts": d.starts,
+        "ends": d.ends,
+        "cost_amount": d.cost.amount if d.cost else None,
+        "cost_currency": d.cost.currency if d.cost else None,
+        "logged_transaction_id": cover.logged_transaction_id,
+        "note": d.note,
+        "created_at": cover.created_at,
+        "updated_at": cover.updated_at,
+    }
+
+
+def _cover(row: Row[Any]) -> Cover:
+    return Cover(
+        id=row.id,
+        user_id=UserId(row.user_id),
+        trip_id=row.trip_id,
+        draft=CoverDraft(
+            kind=CoverKind(row.kind),
+            name=row.name,
+            reference=row.reference,
+            phone=row.phone,
+            starts=row.starts,
+            ends=row.ends,
+            cost=Money(row.cost_amount, row.cost_currency) if row.cost_amount is not None else None,
+            note=row.note,
+        ),
+        logged_transaction_id=row.logged_transaction_id,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
     )
 
 

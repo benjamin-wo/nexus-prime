@@ -280,6 +280,51 @@ async def test_a_member_changes_the_notes_and_nothing_else_of_the_trip(japan: Ja
     assert await japan.stored() == before
 
 
+async def test_a_member_adds_to_dos_and_cover_to_the_owners_trip_without_a_price(
+    japan: Japan,
+) -> None:
+    done = await japan.use(
+        japan.sam, "add_trip_todo", {"trip": "japan", "text": "Get yen", "due": "2026-12-08"}
+    )
+    assert done == (
+        "Added to the Tokyo, Japan trip's to-do list (Alex's trip): Get yen, due Tue 08 Dec. "
+        "I'll remind them the day before."
+    )
+    args = {
+        "trip": "japan", "kind": "insurance", "name": "Harbour Cover", "reference": "TX-4471",
+        "phone": "+65 6123 4567", "cost": "89", "currency": "SGD",
+    }  # fmt: skip
+    asked = await japan.asked(japan.sam, "add_trip_cover", args)
+    assert asked == (
+        "Add to the Tokyo, Japan trip's cover and documents (Alex's trip): Harbour Cover "
+        "(insurance, ref TX-4471, phone +65 6123 4567)? "
+        "I left the price out: only Alex can add costs on a shared trip."
+    )
+    saved = await japan.use(japan.sam, "add_trip_cover", args)
+    assert "counts under Money" not in saved and "89" not in saved
+    assert saved.endswith("I left the price out: only Alex can add costs on a shared trip.")
+    async with japan.uow() as tx:
+        [cover] = await tx.trips.list_covers(japan.alex.id, japan.trip.id)
+    assert (cover.user_id, cover.cost, cover.logged_transaction_id) == (japan.alex.id, None, None)
+    assert [t.text for t in (await japan.stored()).todos] == ["Get yen"]
+    assert sorted(await japan.activity()) == [
+        "Sam T.: added Harbour Cover to cover and documents",
+        "Sam T.: added the to-do Get yen",
+    ]
+    # The member's view of the trip lists both, with no price; the owner's counts the cost.
+    status = await japan.use(japan.sam, "trip_status", {"trip": "japan"})
+    assert "To do: Get yen (due Tue 08 Dec)." in status
+    assert "Cover and documents: Harbour Cover (insurance, ref TX-4471" in status
+    assert "89" not in status
+    # Someone with no part in the trip finds no trip.
+    for tool, other in (
+        ("add_trip_todo", {"trip": "Tokyo", "text": "Mine now"}),
+        ("add_trip_cover", {"trip": "Tokyo", "kind": "visa", "name": "Mine now"}),
+    ):
+        assert await japan.use(japan.rin, tool, other) == "Error: no trips yet"
+    assert len((await japan.stored()).todos) == 1
+
+
 async def test_a_member_searches_for_places_near_the_owners_trip(japan: Japan) -> None:
     found = await japan.use(japan.sam, "find_places", {"query": "noodles", "day": "2"})
     assert japan.places.searches == ["noodles, Tokyo, Japan"]

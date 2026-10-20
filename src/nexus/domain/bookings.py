@@ -19,8 +19,9 @@ from nexus.domain.ledger import UserId
 from nexus.domain.money import Money
 from nexus.domain.places import place_id as _place_id
 from nexus.domain.places import point as _point
+from nexus.domain.private import hide_private
 from nexus.domain.travel_research import safe_url
-from nexus.domain.trips import Trip, TripStatus, clean_notes, hide_private
+from nexus.domain.trips import Trip, TripStatus, clean_notes
 
 MAX_SEGMENTS = 6
 MAX_TEXT = 120
@@ -34,6 +35,8 @@ PASSPORT_DAYS = 30
 CHECK_IN_BEFORE = timedelta(hours=24)
 # The hotel's address on the morning of check-in, from this hour.
 HOTEL_MORNING = time(8)
+# A to-do due tomorrow is reminded of from this hour today.
+TODO_MORNING = HOTEL_MORNING
 
 
 class BookingKind(StrEnum):
@@ -506,6 +509,26 @@ def booking_reminders(booking: Booking, now: datetime) -> list[Reminder]:
                 Reminder(
                     f"hotel:{booking.id}",
                     f"🏨 Checking in today at {d.hotel or d.provider or 'your hotel'}{where}.",
+                )
+            )
+    return found
+
+
+def todo_reminders(trip: Trip, now: datetime) -> list[Reminder]:
+    """One reminder a day ahead of each to-do that has a due date and isn't done: from
+    the usual morning hour of the day before, through that day. ``now`` is the user's
+    local time (no timezone). The key names the to-do and its due date, so changing the
+    date earns a new reminder and sending twice never happens."""
+    found: list[Reminder] = []
+    for todo in trip.todos:
+        if todo.done or todo.due is None:
+            continue
+        morning = datetime.combine(todo.due - timedelta(days=1), TODO_MORNING)
+        if morning <= now < datetime.combine(todo.due, time(0)):
+            found.append(
+                Reminder(
+                    f"todo:{trip.id}:{todo.id}:{todo.due.isoformat()}",
+                    f"Tomorrow: {todo.text} for {trip.destination}",
                 )
             )
     return found

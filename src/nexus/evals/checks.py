@@ -461,6 +461,69 @@ class Booked:
 
 
 @dataclass(frozen=True, slots=True)
+class Covered:
+    """Cover or a document like this is on a trip."""
+
+    name: str  # found in its name, any case
+    kind: str | None = None
+    reference: str | None = None
+    phone: str | None = None
+    cost: str | None = None  # the amount, in any currency
+
+    def describe(self) -> str:
+        parts = [f"cover or a document '{self.name}'"]
+        if self.kind:
+            parts.append(f"of kind {self.kind}")
+        if self.reference:
+            parts.append(f"ref {self.reference}")
+        if self.phone:
+            parts.append(f"phone {self.phone}")
+        if self.cost:
+            parts.append(f"costing {self.cost}")
+        return ", ".join(parts)
+
+    async def holds(self, world: World) -> bool:
+        async with world.uow() as tx:
+            for trip in await tx.trips.list_trips(world.user.id):
+                for cover in await tx.trips.list_covers(world.user.id, trip.id):
+                    d = cover.draft
+                    if self.name.casefold() not in d.name.casefold():
+                        continue
+                    if self.kind and d.kind.value != self.kind:
+                        continue
+                    if self.reference and (d.reference or "").replace(" ", "") != self.reference:
+                        continue
+                    if self.phone and (d.phone or "").replace(" ", "") != self.phone.replace(
+                        " ", ""
+                    ):
+                        continue
+                    if self.cost and (d.cost is None or d.cost.amount != Decimal(self.cost)):
+                        continue
+                    return True
+        return False
+
+
+@dataclass(frozen=True, slots=True)
+class TodoAdded:
+    """A to-do like this is on a trip, with this due date if one is given."""
+
+    text: str  # found in its words, any case
+    due: date | None = None
+
+    def describe(self) -> str:
+        return f"a to-do '{self.text}'" + (f" due {self.due}" if self.due else "")
+
+    async def holds(self, world: World) -> bool:
+        async with world.uow() as tx:
+            trips = await tx.trips.list_trips(world.user.id)
+        return any(
+            self.text.casefold() in t.text.casefold() and (self.due is None or t.due == self.due)
+            for trip in trips
+            for t in trip.todos
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class TheyPaid:
     """A fellow traveller's payment like this is noted on a trip, unsettled."""
 
