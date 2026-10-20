@@ -2050,12 +2050,17 @@ test("a day rearranged: dragged, moved by keyboard or menu, with what to watch o
   const grip = page.getByRole("button", { name: "Drag Tea house" });
   // Mid-screen, clear of the bars that stick at the top (a phone has three of them).
   await grip.evaluate((el) => el.scrollIntoView({ block: "center" }));
-  // The days slide sideways: wait until day 2 has slid fully into the card.
+  // The days slide sideways and the page may still be scrolling: wait until day 2 is fully in
+  // the card and the grip has stopped moving.
+  let last = "";
   await expect
     .poll(async () => {
       const [g, card] = [await grip.boundingBox(), await itinerary.boundingBox()];
-      return Boolean(g && card && g.x > card.x && g.x + g.width < card.x + card.width);
-    })
+      const now = JSON.stringify(g);
+      const still = now === last;
+      last = now;
+      return Boolean(still && g && card && g.x > card.x && g.x + g.width < card.x + card.width);
+    }, { intervals: [150] })
     .toBe(true);
   const from = (await grip.boundingBox())!;
   const onto = (await page.locator("#entry-pl1").boundingBox())!;
