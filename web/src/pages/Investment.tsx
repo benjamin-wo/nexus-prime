@@ -3,7 +3,7 @@ import { type ChangeEvent, type FormEvent, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { api, type Dividends, type Holding, type HoldingsDraft, type Portfolio, type PortfolioTotals, type TradeRecord } from "../api";
-import { formatChange, formatMoney, formatPercent, formatShortDate } from "../format";
+import { formatChange, formatMoney, formatPercent, formatShortDate, priceWhen } from "../format";
 import { base64 } from "../files";
 import { Foldaway } from "../components/Foldaway";
 
@@ -338,7 +338,7 @@ function HoldingRow({ position, onChanged }: { position: Holding; onChanged: () 
         <>
           <td className="num" data-label="Shares">{shares(position.quantity)}</td>
           <td className="num" data-label="Avg cost">{formatMoney(position.average_cost)}</td>
-          <td className="num" data-label="Last close">
+          <td className="num" data-label="Price">
             {position.price ? formatMoney(position.price) : <span className="muted">—</span>}
           </td>
           <td className="num" data-label="Value">
@@ -371,7 +371,9 @@ function priceNote(data: Portfolio | undefined): string {
   if (!data.prices) return "Prices aren't set up";
   const t = data.totals;
   const parts = [];
-  if (t.as_of) parts.push(`Closing prices of ${formatShortDate(t.as_of, "UTC")}`);
+  if (t.price_kind === "live" && t.as_of_at) parts.push(priceWhen("live", t.as_of_at, t.as_of).replace("Live,", "Live prices,"));
+  else if (t.price_kind === "provisional_close" && t.as_of) parts.push(`Closing prices of ${formatShortDate(t.as_of, "UTC")}, not final`);
+  else if (t.as_of) parts.push(`Closing prices of ${formatShortDate(t.as_of, "UTC")}`);
   if (t.missing.length) parts.push(`no price yet for ${t.missing.join(", ")}`);
   return parts.join("; ") || "Fetching prices…";
 }
@@ -430,7 +432,7 @@ export function InvestmentPage() {
       <div className="page-head">
         <div>
           <h1>Portfolio</h1>
-          <p className="muted">What you hold and what it's worth at the last close. Research only: Nexus never trades.</p>
+          <p className="muted">What you hold and what it's worth at the latest price (live while the US market is open). Research only: Nexus never trades.</p>
         </div>
         {portfolio.data?.screenshots && (
           <label className="btn btn-primary">
@@ -471,7 +473,7 @@ export function InvestmentPage() {
                   <th scope="col">Stock</th>
                   <th scope="col" className="num">Shares</th>
                   <th scope="col" className="num">Avg cost</th>
-                  <th scope="col" className="num">Last close</th>
+                  <th scope="col" className="num">Price</th>
                   <th scope="col" className="num">Value</th>
                   <th scope="col" className="num">Gain</th>
                   <th scope="col"><span className="sr-only">Actions</span></th>

@@ -26,6 +26,7 @@ import {
   formatMoney,
   formatPercent,
   formatShortDate,
+  priceWhen,
 } from "../format";
 import { AccentTitle, CountUp } from "../motion";
 import { tripWhen } from "./Trips";
@@ -405,6 +406,11 @@ function PortfolioCard({ portfolio }: { portfolio?: Portfolio }) {
           <span className="figure-value">
             <CountUp value={totals?.value ? formatMoney(totals.value) : "…"} />
           </span>
+          {totals && totals.price_kind !== "close" && (
+            <span className="caption">
+              {priceWhen(totals.price_kind, totals.as_of_at, totals.as_of)}
+            </span>
+          )}
           {totals?.day_change && (
             <p
               className={Number(totals.day_change.amount) >= 0 ? "up" : "down"}

@@ -67,6 +67,7 @@ from nexus.domain.ledger import (
     plan_split,
 )
 from nexus.domain.levels import describe as describe_levels
+from nexus.domain.market import describe_price_time
 from nexus.domain.money import Money
 from nexus.domain.notifications import Frequency
 from nexus.domain.odds import describe_ranges
@@ -1466,15 +1467,16 @@ async def _combine_duplicates(ctx: ToolContext, a: MergeDuplicatesArgs) -> ToolR
 
 
 async def _portfolio(ctx: ToolContext, _: NoArgs) -> ToolResult:
-    valued = await investment_cases.valuation(ctx.uow(), _rates(ctx), ctx.user)
+    valued = await investment_cases.valuation(ctx.uow(), _rates(ctx), ctx.user, now=ctx.now)
     if not valued.rows:
         return ToolResult(
             "No holdings yet. The user can send a screenshot of their broker's portfolio "
             'screen, or tell you a trade ("I bought 10 NVDA at 118").'
         )
     return ToolResult(
-        "Holdings at the last daily close (not live prices):\n"
-        + investment_cases.describe_valuation(valued)
+        "Holdings at the latest price (each line says when its price is from: a live price "
+        "only while the US market is open, otherwise the last close; give that time when you "
+        "quote a price):\n" + investment_cases.describe_valuation(valued, ctx.tz)
     )
 
 
@@ -1561,14 +1563,22 @@ class SymbolArgs(Args):
 
 async def _stock_levels(ctx: ToolContext, a: SymbolArgs) -> ToolResult:
     symbol = clean_symbol(a.symbol)
-    view = await research_cases.stock(ctx.uow(), ctx.user, symbol, today=ctx.today())
-    lines = [f"{symbol} (USD, daily closes; levels worked out in code, not live prices):"]
+    view = await research_cases.stock(ctx.uow(), ctx.user, symbol, today=ctx.today(), now=ctx.now)
+    lines = [f"{symbol} (USD, daily closes; levels worked out in code, not by a model):"]
     if view.held:
         lines.append(f"The user holds {describe_position(view.held)}.")
     elif view.watching:
         lines.append("On the user's watchlist.")
+    if view.price:
+        p = view.price
+        lines.append(
+            f"Price {p.price:,.2f} {describe_price_time(p.kind, p.at, p.day, ctx.tz)} "
+            "(give that time when you quote it)."
+        )
     if view.levels:
         lines += describe_levels(view.levels)
+        if view.now_vs_levels:
+            lines.append("Now against its levels: " + "; ".join(view.now_vs_levels))
         if view.ranges:
             lines.append(
                 "Likely closes from its own past volatility (not a forecast; no view on direction):"
@@ -1622,14 +1632,17 @@ async def _unwatch(ctx: ToolContext, a: SymbolArgs) -> ToolResult:
 
 
 async def _show_watchlist(ctx: ToolContext, _: NoArgs) -> ToolResult:
-    rows = await research_cases.watched(ctx.uow(), ctx.user.id, today=ctx.today())
+    rows = await research_cases.watched(ctx.uow(), ctx.user.id, today=ctx.today(), now=ctx.now)
     if not rows:
         return ToolResult('The watchlist is empty. The user can say "watch AMD".')
-    lines = ["Watchlist (last daily close, USD):"]
+    lines = [
+        "Watchlist (USD; each price says when it is from, live only while the market is open):"
+    ]
     for r in rows:
         line = r.symbol
-        if r.latest:
-            line += f": {r.latest.close:,.2f} on {r.latest.day:%d %b}"
+        if r.price:
+            when = describe_price_time(r.price.kind, r.price.at, r.price.day, ctx.tz)
+            line += f": {r.price.price:,.2f} {when}"
         if r.earnings:
             line += f"; earnings {r.earnings.day:%d %b}"
         lines.append(f"- {line}")
@@ -3319,7 +3332,8 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
         ),
         ToolSpec(
             "show_portfolio",
-            "The user's stock holdings: shares, average cost, last close, value and gain "
+            "The user's stock holdings: shares, average cost, latest price (live while the US "
+            "market is open, else the last close), value and gain "
             "or loss in their home currency, plus what sales locked in, dividends received "
             "and the total return. Read-only.",
             NoArgs,

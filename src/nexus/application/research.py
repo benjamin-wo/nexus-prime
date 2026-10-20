@@ -19,8 +19,8 @@ from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.history import MARKET, History, history
 from nexus.domain.investments import Position
 from nexus.domain.ledger import User, UserId
-from nexus.domain.levels import YEAR_DAYS, Levels, compute
-from nexus.domain.market import Bar
+from nexus.domain.levels import YEAR_DAYS, Levels, compute, now_vs_levels
+from nexus.domain.market import Bar, MarketStatus, Picked, pick_price
 from nexus.domain.news import EarningsDate, NewsItem, dedupe
 from nexus.domain.odds import Range, ranges, returns
 
@@ -139,9 +139,21 @@ class StockView:
     moves: list[float] = field(default_factory=list)  # the last year's daily log returns
     # Its last year in numbers (see domain.history); None until a month of prices.
     history: History | None = None
+    # The price to show: live while the market is open, else the last close; None until
+    # there is any. And how it stands against the levels, as short facts.
+    price: Picked | None = None
+    now_vs_levels: list[str] = field(default_factory=list)
 
 
-async def stock(uow: UnitOfWork, user: User, symbol: str, *, today: date) -> StockView:
+async def stock(
+    uow: UnitOfWork,
+    user: User,
+    symbol: str,
+    *,
+    today: date,
+    now: datetime,
+    status: MarketStatus | None = None,
+) -> StockView:
     async with uow:
         held = {h.position.symbol: h.position for h in await uow.investments.list_holdings(user.id)}
         watching = symbol in await uow.investments.list_watch(user.id)
@@ -153,7 +165,11 @@ async def stock(uow: UnitOfWork, user: User, symbol: str, *, today: date) -> Sto
         past = await uow.investments.past_earnings(
             symbol, today - timedelta(days=PAST_EARNINGS_DAYS), today
         )
+        quote = (await uow.investments.quotes([symbol])).get(symbol)
     levels = compute(bars)
+    price = pick_price(
+        bars[-1] if bars else None, bars[-2] if len(bars) > 1 else None, quote, status, now
+    )
     moves = returns(bars)
     return StockView(
         symbol=symbol,
@@ -165,6 +181,8 @@ async def stock(uow: UnitOfWork, user: User, symbol: str, *, today: date) -> Sto
         ranges=ranges(levels.close, moves) if levels else [],
         moves=moves,
         history=history(bars, market, past),
+        price=price,
+        now_vs_levels=now_vs_levels(price.price, levels) if price and levels else [],
     )
 
 
@@ -181,23 +199,36 @@ class Watched:
     latest: Bar | None
     previous: Bar | None
     earnings: EarningsDate | None
+    # The price to show (live while the market is open, else the last close).
+    price: Picked | None = None
 
 
-async def watched(uow: UnitOfWork, user_id: UserId, *, today: date) -> list[Watched]:
-    """The user's watchlist with each stock's last two closes and next earnings."""
+async def watched(
+    uow: UnitOfWork,
+    user_id: UserId,
+    *,
+    today: date,
+    now: datetime,
+    status: MarketStatus | None = None,
+) -> list[Watched]:
+    """The user's watchlist with each stock's last two closes, its price now and next
+    earnings."""
     async with uow:
         symbols = await uow.investments.list_watch(user_id)
         bars = await uow.investments.latest_bars(symbols)
+        quotes = await uow.investments.quotes(symbols)
         earnings = await uow.investments.upcoming_earnings(symbols, today)
     rows = []
     for s in symbols:
         found = bars.get(s, [])
+        latest, previous = (found[0] if found else None), (found[1] if len(found) > 1 else None)
         rows.append(
             Watched(
                 s,
-                found[0] if found else None,
-                found[1] if len(found) > 1 else None,
+                latest,
+                previous,
                 earnings.get(s),
+                pick_price(latest, previous, quotes.get(s), status, now),
             )
         )
     return rows

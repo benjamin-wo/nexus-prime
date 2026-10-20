@@ -49,7 +49,7 @@ from nexus.domain.ledger import (
     UserId,
     Wallet,
 )
-from nexus.domain.market import Bar
+from nexus.domain.market import Bar, Quote
 from nexus.domain.memory import Memory, MemoryKind
 from nexus.domain.money import Money
 from nexus.domain.news import EarningsDate, NewsItem
@@ -824,6 +824,19 @@ class InvestmentRepository(Protocol):
 
     async def tracked_symbols(self) -> list[str]:
         """Across all users: every stock someone holds or watches."""
+        ...
+
+    async def upsert_quotes(self, quotes: list[Quote], *, at: datetime) -> None:
+        """Keep each stock's latest quote, noting when it was fetched."""
+        ...
+
+    async def quotes(self, symbols: list[str]) -> dict[str, Quote]: ...
+    async def quotes_fetched(self, symbols: list[str]) -> dict[str, datetime]:
+        """When each stock's quote was last fetched; those never fetched are left out."""
+        ...
+
+    async def unlisted(self, symbols: list[str]) -> set[str]:
+        """Those the price provider doesn't list."""
         ...
 
     async def bars(self, symbol: str, count: int) -> list[Bar]:

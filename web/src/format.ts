@@ -1,4 +1,4 @@
-import type { Money, Transaction } from "./api";
+import type { Money, PriceKind, Transaction } from "./api";
 
 export type MoneyOptions = {
   /** No decimals, for figures that are whole numbers ("SGD 4,602"). */
@@ -103,4 +103,13 @@ export function formatPercent(percent: string): string {
   const value = Number(percent);
   const text = `${Math.abs(value).toLocaleString(undefined, { maximumFractionDigits: 2 })}%`;
   return value > 0 ? `+${text}` : value < 0 ? `−${text}` : text;
+}
+
+/** When a price is from: "Live, 10:42 pm", "Close of 25 Sep, not final", or "Close of 25 Sep". */
+export function priceWhen(kind: PriceKind | null, at: string | null, day: string | null): string {
+  if (kind === "live" && at) {
+    return `Live, ${new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(new Date(at))}`;
+  }
+  const close = day ? `Close of ${formatShortDate(day, "UTC")}` : "Close";
+  return kind === "provisional_close" ? `${close}, not final` : close;
 }

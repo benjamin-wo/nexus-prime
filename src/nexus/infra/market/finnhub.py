@@ -1,5 +1,5 @@
 """Company news and earnings dates from Finnhub (free tier: North American
-companies, 60 calls a minute).
+companies, 60 calls a minute). Quotes and market status are in ``finnhub_quotes``.
 
 ``GET /company-news?symbol=…&from=…&to=…`` and ``GET /calendar/earnings?symbol=…``.
 The key goes in a header, never the URL. Everything that comes back is someone
@@ -31,6 +31,38 @@ MAX_ITEMS = 50  # per stock per fetch: the newest
 _TIMING = {"bmo": "before open", "amc": "after close"}
 
 
+async def get_json(
+    http: httpx.AsyncClient,
+    base_url: str,
+    key: str,
+    path: str,
+    params: dict[str, str],
+    *,
+    error: type[Exception],
+    rate_limited: type[Exception],
+    seconds: float = 15.0,
+) -> Any:
+    """One Finnhub GET, the answer as JSON. The key goes in a header, never the URL.
+    Failures are raised as ``error``, and a 429 as ``rate_limited``."""
+    try:
+        response = await http.get(
+            f"{base_url.rstrip('/')}{path}",
+            params=params,
+            headers={"X-Finnhub-Token": key},
+            timeout=seconds,
+        )
+    except httpx.HTTPError as exc:
+        raise error(f"request failed: {type(exc).__name__}") from exc
+    if response.status_code == 429:
+        raise rate_limited("HTTP 429")
+    if response.status_code != 200:
+        raise error(f"HTTP {response.status_code}")
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise error("unexpected response") from exc
+
+
 class FinnhubNews:
     def __init__(self, http: httpx.AsyncClient, api_key: str, *, base_url: str = BASE_URL) -> None:
         self._http = http
@@ -38,23 +70,15 @@ class FinnhubNews:
         self._base_url = base_url.rstrip("/")
 
     async def _get(self, path: str, params: dict[str, str]) -> Any:
-        try:
-            response = await self._http.get(
-                f"{self._base_url}{path}",
-                params=params,
-                headers={"X-Finnhub-Token": self._key},
-                timeout=15.0,
-            )
-        except httpx.HTTPError as exc:
-            raise NewsSourceError(f"request failed: {type(exc).__name__}") from exc
-        if response.status_code == 429:
-            raise NewsRateLimited("HTTP 429")
-        if response.status_code != 200:
-            raise NewsSourceError(f"HTTP {response.status_code}")
-        try:
-            return response.json()
-        except ValueError as exc:
-            raise NewsSourceError("unexpected response") from exc
+        return await get_json(
+            self._http,
+            self._base_url,
+            self._key,
+            path,
+            params,
+            error=NewsSourceError,
+            rate_limited=NewsRateLimited,
+        )
 
     async def news(self, symbol: str, start: date, end: date) -> list[NewsItem]:
         rows = await self._get(

@@ -24,6 +24,7 @@ from nexus.application.fx import Rate
 from nexus.application.market import PriceSourceError
 from nexus.application.places import PlacesError
 from nexus.application.ports import MailboxGrant, MailboxRevoked
+from nexus.application.quotes import QuoteRateLimited, QuoteSourceError
 from nexus.application.research import NewsSourceError
 from nexus.application.routes import Leg, RoutesError
 from nexus.application.weather import WeatherError
@@ -31,7 +32,7 @@ from nexus.channels.telegram.client import TelegramError
 from nexus.domain.bookings import BookingDraft
 from nexus.domain.email import ExpenseDraft, FetchedEmail, Screening
 from nexus.domain.errors import InvalidInput
-from nexus.domain.market import Bar
+from nexus.domain.market import Bar, MarketStatus, Quote
 from nexus.domain.news import EarningsDate, NewsItem
 from nexus.domain.places import Circle, Period, Place, PlacePhoto, Point, Review
 from nexus.domain.routes import Mode
@@ -239,6 +240,46 @@ class FakeNews:
             for d in self.earnings_days.get(symbol, [])
             if start <= d <= end
         ]
+
+
+@dataclass
+class FakeQuotes:
+    """Made-up quotes per ticker, and the market's status. A ticker not listed has no
+    quote; one in ``failing`` raises like a provider that's down; after
+    ``limit_after`` quotes it answers 429. ``on_quote`` runs on each ask (to pass time)."""
+
+    quotes: dict[str, Quote] = field(default_factory=dict)
+    status: MarketStatus | None = None  # None: the status call fails
+    failing: set[str] = field(default_factory=set)
+    limit_after: int | None = None
+    on_quote: Callable[[str], Any] | None = None
+    asked: list[str] = field(default_factory=list)
+    status_asked: int = 0
+
+    async def quote(self, symbol: str) -> Quote | None:
+        self.asked.append(symbol)
+        if self.limit_after is not None and len(self.asked) > self.limit_after:
+            raise QuoteRateLimited("HTTP 429")
+        if self.on_quote is not None:
+            result = self.on_quote(symbol)
+            if hasattr(result, "__await__"):
+                await result
+        if symbol in self.failing:
+            raise QuoteSourceError("HTTP 503")
+        return self.quotes.get(symbol)
+
+    async def market_status(self) -> MarketStatus:
+        self.status_asked += 1
+        if self.status is None:
+            raise QuoteSourceError("HTTP 503")
+        return self.status
+
+
+def quote(symbol: str, price: str, prev_close: str, at: datetime) -> Quote:
+    return Quote(
+        symbol, Decimal(price), Decimal(prev_close), Decimal(price), Decimal(price),
+        Decimal(price), at,
+    )  # fmt: skip
 
 
 def bar(symbol: str, day: date, close: str) -> Bar:

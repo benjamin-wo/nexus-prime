@@ -117,7 +117,7 @@ The code follows a clean, layered architecture. `domain` holds pure rules with n
 | Agent | LangGraph with a Postgres checkpointer, human-in-the-loop interrupts, skills loaded on demand, provider-agnostic LLM adapter |
 | Frontend | React 19, TypeScript, Vite, TanStack Query, React Router |
 | Data | PostgreSQL 16: 56 tables, 46 migrations, a job queue in the same database; receipts in a private S3-compatible bucket |
-| Outside data | Frankfurter (FX), Tiingo (prices), Finnhub (news), SerpApi and Tavily web search, with OpenRouter as fallback (trip research, ideas, chat lookups and plans' news articles, quarantined, cached), Wikivoyage (travel guides), Google Places and Routes (travel times), Wikipedia and Wikimedia Commons (destination photos), Open-Meteo (weather) |
+| Outside data | Frankfurter (FX), Tiingo (daily prices), Finnhub (news, earnings dates and live quotes), SerpApi and Tavily web search, with OpenRouter as fallback (trip research, ideas, chat lookups and plans' news articles, quarantined, cached), Wikivoyage (travel guides), Google Places and Routes (travel times), Wikipedia and Wikimedia Commons (destination photos), Open-Meteo (weather) |
 | Channels | Telegram Bot API (webhook, inline buttons, Mini App), cookie sessions with CSRF |
 | Quality | ruff, mypy `--strict`, pytest, Vitest, Playwright, GitHub Actions |
 | Deploy | Docker multi-stage build on Railway; migrations run as a pre-deploy step and the app refuses to start on an unmigrated schema |

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo
 
 from nexus.application.budgets import TELEGRAM_SEND
 from nexus.application.fx import RateSource, convert, rates_for
@@ -32,7 +33,15 @@ from nexus.domain.investments import (
     sell,
 )
 from nexus.domain.ledger import User, UserId
-from nexus.domain.market import Valued, percent, value
+from nexus.domain.market import (
+    MarketStatus,
+    PriceKind,
+    Valued,
+    describe_price_time,
+    live_value,
+    percent,
+    pick_price,
+)
 from nexus.domain.money import Money
 
 type UowFactory = Callable[[], UnitOfWork]
@@ -222,9 +231,10 @@ class Row:
 
 @dataclass(frozen=True, slots=True)
 class Valuation:
-    """The portfolio at the last close, in the user's home currency. Gains use
-    today's exchange rate for cost and value alike: Nexus doesn't know when each
-    share was bought, so it can't know the rate paid."""
+    """The portfolio at the latest prices (live while the market is open, else the last
+    close), in the user's home currency. Gains use the exchange rate of the prices' day
+    for cost and value alike: Nexus doesn't know when each share was bought, so it can't
+    know the rate paid."""
 
     rows: list[Row]
     home: str
@@ -234,12 +244,17 @@ class Valuation:
     gain_percent: Decimal | None
     day_change: Money | None
     day_percent: Decimal | None
-    as_of: date | None  # the latest close used
+    as_of: date | None  # the latest trading day used
     missing: list[str]  # stocks left out of the totals (no price or no rate yet)
     # Locked in by sales and received as dividends (after tax withheld), in the home
     # currency at today's rate; None when there are none.
     realised: Money | None = None
     dividends: Money | None = None
+    # When the newest live or provisional price was traded (None if all are closes), and
+    # the most live kind of price in the totals: live if any row is, else provisional
+    # close if any is, else close.
+    as_of_at: datetime | None = None
+    price_kind: PriceKind = PriceKind.CLOSE
 
     @property
     def total_return(self) -> Money | None:
@@ -250,10 +265,21 @@ class Valuation:
         return sum(parts[1:], parts[0])
 
 
-async def valuation(uow: UnitOfWork, rates: RateSource, user: User) -> Valuation:
+async def valuation(
+    uow: UnitOfWork,
+    rates: RateSource,
+    user: User,
+    *,
+    now: datetime,
+    status: MarketStatus | None = None,
+) -> Valuation:
+    """The user's holdings at the price ``pick_price`` chooses for each: the stored quote
+    while the market is open (``status``, or the usual hours if unknown), else the close."""
     async with uow:
         held = await uow.investments.list_holdings(user.id)
-        bars = await uow.investments.latest_bars([h.position.symbol for h in held])
+        symbols = [h.position.symbol for h in held]
+        bars = await uow.investments.latest_bars(symbols)
+        quotes = await uow.investments.quotes(symbols)
         trades = await uow.investments.list_trades(user.id)
         paid = await uow.investments.list_dividends(user.id)
     home = user.home_currency
@@ -263,8 +289,15 @@ async def valuation(uow: UnitOfWork, rates: RateSource, user: User) -> Valuation
         # against them.
         same = h.position.average_cost.currency == PRICE_CURRENCY
         found = bars.get(h.position.symbol, []) if same else []
-        previous = found[1] if len(found) > 1 else None
-        valued.append((h, value(h.position, found[0], previous) if found else None))
+        quote = quotes.get(h.position.symbol) if same else None
+        picked = pick_price(
+            found[0] if found else None,
+            found[1] if len(found) > 1 else None,
+            quote,
+            status,
+            now,
+        )
+        valued.append((h, live_value(h.position, picked) if picked else None))
     wanted = [(v.price.currency, v.price_day) for _, v in valued if v is not None]
     looked_up = await rates_for(rates, home, wanted)
 
@@ -294,6 +327,9 @@ async def valuation(uow: UnitOfWork, rates: RateSource, user: User) -> Valuation
             changed = True
     counted = len(held) > len(missing)
     as_of = max((v.price_day for _, v in valued if v is not None), default=None)
+    kinds = {v.price_kind for _, v in valued if v is not None}
+    kind = next((k for k in (PriceKind.LIVE, PriceKind.PROVISIONAL_CLOSE) if k in kinds), None)
+    as_of_at = max((v.price_at for _, v in valued if v and v.price_at), default=None)
     day = as_of or max((t.traded_on for t in trades), default=date.today())
     locked = await _in_home(
         rates, home, [t.realised for t in trades if t.realised is not None], day
@@ -312,6 +348,8 @@ async def valuation(uow: UnitOfWork, rates: RateSource, user: User) -> Valuation
         missing=missing,
         realised=locked,
         dividends=income,
+        as_of_at=as_of_at,
+        price_kind=kind or PriceKind.CLOSE,
     )
 
 
@@ -464,8 +502,9 @@ def describe_shares(quantity: Decimal) -> str:
     return f"{plain(quantity):,f}"
 
 
-def describe_valuation(v: Valuation) -> str:
-    """The portfolio in a few lines, for the chat."""
+def describe_valuation(v: Valuation, tz: ZoneInfo) -> str:
+    """The portfolio in a few lines, for the chat, with when each price is from in the
+    user's timezone ("at 10:42pm (live)", "at the close on Fri 17 Oct")."""
     if not v.rows:
         return "You don't have any holdings saved yet. Send a screenshot of your portfolio."
     lines = []
@@ -473,7 +512,8 @@ def describe_valuation(v: Valuation) -> str:
         line = describe_position(row.holding.position)
         p = row.valued
         if p is not None:
-            line += f"; {p.price} on {p.price_day:%d %b}, worth {p.value}"
+            when = describe_price_time(p.price_kind, p.price_at, p.price_day, tz)
+            line += f"; {p.price} {when}, worth {p.value}"
             if p.gain_percent is not None:
                 line += f" ({p.gain_percent:+}%)"
         lines.append(f"• {line}")

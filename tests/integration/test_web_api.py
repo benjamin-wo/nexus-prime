@@ -31,6 +31,7 @@ from nexus.application.transactions import NewTransaction, log_transaction
 from nexus.application.web_search import WebAnswer
 from nexus.channels.web.telegram_login import sign_for_tests, sign_webapp_for_tests
 from nexus.domain.ledger import Direction, Source, UserId
+from nexus.domain.market import MarketStatus
 from nexus.domain.money import Money
 from nexus.domain.places import Point
 from nexus.infra.crypto.fernet import FernetCipher
@@ -48,6 +49,7 @@ from tests.fakes import (
     FakeNews,
     FakePlaces,
     FakePrices,
+    FakeQuotes,
     FakeRates,
     FakeRoutes,
     FakeStatementPages,
@@ -154,6 +156,7 @@ class World:
     engine: AsyncEngine
     mailbox: FakeMailbox
     forwarding: FakeForwarding
+    quotes: FakeQuotes  # live quotes; the market is shut until a test opens it
 
     def browser(self) -> Browser:
         return Browser(self.app, self.clock)
@@ -165,6 +168,7 @@ async def world(engine: AsyncEngine, empty_database_url: str) -> AsyncIterator[W
     bucket = FakeBucket()
     mailbox = FakeMailbox()
     forwarding = FakeForwarding()
+    quotes = FakeQuotes(status=MarketStatus(False, None, None, NOW))
     model = scripted()
     telegram = FakeTelegram()
     rates = FakeRates({("USD", "SGD"): {date(2026, 9, 25): "1.2905", date(2026, 9, 28): "1.3000"}})
@@ -199,6 +203,7 @@ async def world(engine: AsyncEngine, empty_database_url: str) -> AsyncIterator[W
             statement_pages=FakeStatementPages(),
             prices=FakePrices(),
             news=FakeNews(),
+            quotes=quotes,
             places=FakePlaces([PLACE]),
             routes=FakeRoutes(),
             weather=FakeWeather(),
@@ -211,7 +216,7 @@ async def world(engine: AsyncEngine, empty_database_url: str) -> AsyncIterator[W
         ),
     )
     async with app.router.lifespan_context(app):
-        yield World(app, clock, model, telegram, rates, bucket, engine, mailbox, forwarding)
+        yield World(app, clock, model, telegram, rates, bucket, engine, mailbox, forwarding, quotes)
 
 
 async def owner_and_invite(world: World) -> tuple[Browser, str]:
@@ -1587,6 +1592,8 @@ async def test_watchlist_and_a_stock_page_on_the_web(world: World) -> None:
             "symbol": "AMD",
             "price": "129.50",
             "price_day": "2026-09-25",
+            "price_kind": "close",
+            "price_at": None,
             "day_percent": "0.39",
             "earnings": {"day": "2026-10-29", "timing": "after close"},
         }

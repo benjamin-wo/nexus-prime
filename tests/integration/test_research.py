@@ -63,16 +63,16 @@ async def test_watched_stocks_get_prices_news_and_levels(uow: UowFactory) -> Non
     await research_cases.refresh_news(uow, news, now=NOW + timedelta(hours=1))
     assert news.asked == ["NVDA"]
 
-    view = await research_cases.stock(uow(), user, "AMD", today=NOW.date())
+    view = await research_cases.stock(uow(), user, "AMD", today=NOW.date(), now=NOW)
     assert view.watching and view.held is None
     assert view.levels is not None and view.levels.close == Decimal("129.50")
     assert view.levels.averages[20] == Decimal("124.75")
     assert view.levels.averages[50] == Decimal("117.25")
     assert view.earnings is not None and view.earnings.day == date(2026, 10, 29)
     assert [n.headline for n in view.news] == ["ACME rival opens a plant!"]  # once, earliest
-    held = await research_cases.stock(uow(), user, "NVDA", today=NOW.date())
+    held = await research_cases.stock(uow(), user, "NVDA", today=NOW.date(), now=NOW)
     assert held.held is not None and held.levels is None  # five days isn't enough
-    rows = await research_cases.watched(uow(), user.id, today=NOW.date())
+    rows = await research_cases.watched(uow(), user.id, today=NOW.date(), now=NOW)
     assert [(r.symbol, r.latest.close if r.latest else None) for r in rows] == [
         ("AMD", Decimal("129.50"))
     ]

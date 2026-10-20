@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { api, type Levels, type PriceRange, type Stock } from "../api";
-import { formatShortDate } from "../format";
+import { formatShortDate, priceWhen } from "../format";
 import { verdictTone } from "./Plans";
 
 const usd = (amount: string) => Number(amount).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -36,6 +36,32 @@ function Ladder({ levels }: { levels: Levels }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+/** The price now, when it isn't a close (live while the market is open), and how the price
+ * stands against the levels. */
+function NowCard({ stock }: { stock: Stock }) {
+  const closed = stock.price_kind === "close";
+  return (
+    <section className="card" aria-labelledby="now">
+      <div className="card-head">
+        <h2 id="now">{closed ? "Against its levels" : "Now"}</h2>
+        {!closed && <span className="caption">{priceWhen(stock.price_kind, stock.price_at, stock.price_day)}</span>}
+      </div>
+      {!closed && stock.price && (
+        <p>
+          <strong className="num">USD {usd(stock.price)}</strong>
+        </p>
+      )}
+      {stock.now_vs_levels.length > 0 && (
+        <ul className="feed" aria-label="Price against its levels">
+          {stock.now_vs_levels.map((fact) => (
+            <li key={fact}>{fact}</li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
@@ -203,6 +229,7 @@ export function StockPage() {
           {stock.error instanceof Error ? stock.error.message : "Couldn't load that stock."}
         </p>
       )}
+      {data?.price && (data.price_kind !== "close" || data.now_vs_levels.length > 0) && <NowCard stock={data} />}
       {data && (data.levels ? (
         <LevelsCard levels={data.levels} />
       ) : (

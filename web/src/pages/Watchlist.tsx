@@ -3,7 +3,7 @@ import { type FormEvent, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { api, type Watchlist } from "../api";
-import { formatPercent, formatShortDate } from "../format";
+import { formatPercent, formatShortDate, priceWhen } from "../format";
 
 const usd = (amount: string) => Number(amount).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -71,7 +71,7 @@ export function WatchlistPage() {
                   )}
                   <br />
                   <span className="caption">
-                    {s.price_day ? `Close of ${formatShortDate(s.price_day, "UTC")}` : "Price coming"}
+                    {s.price_day ? priceWhen(s.price_kind, s.price_at, s.price_day) : "Price coming"}
                     {s.earnings && ` · earnings ${formatShortDate(s.earnings.day, "UTC")}`}
                   </span>
                 </span>

@@ -28,6 +28,7 @@ from nexus.application.ideas import IdeaFinder
 from nexus.application.limits import RateLimiter
 from nexus.application.places import Places
 from nexus.application.ports import ReceiptStore, StatementPageReader
+from nexus.application.quotes import Quotes
 from nexus.application.routes import Routes
 from nexus.application.weather import Weather
 from nexus.domain.access import Session
@@ -54,6 +55,7 @@ class WebRuntime:
     departments: Departments = field(default_factory=default_registry)
     prices: bool = False  # daily stock prices are set up
     news: bool = False  # company news and earnings dates are set up
+    quotes: Quotes | None = None  # live stock quotes; None = not set up
     places: Places | None = None  # Google Maps places on trips; None = not set up
     routes: Routes | None = None  # travel times between a day's stops; None = not set up
     ideas: IdeaFinder | None = None  # quick ideas for a trip; None = not set up

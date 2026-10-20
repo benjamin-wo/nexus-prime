@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from nexus.application import investments as investment_cases
 from nexus.application import plans as plan_cases
+from nexus.application import quotes as quote_cases
 from nexus.application import research as research_cases
 from nexus.channels.web.api import MoneyOut, money
 from nexus.channels.web.security import Auth, Runtime, limit
@@ -28,7 +29,7 @@ from nexus.domain.investments import (
     plain,
 )
 from nexus.domain.levels import Levels
-from nexus.domain.market import percent
+from nexus.domain.market import PriceKind, percent
 from nexus.domain.money import Money
 from nexus.domain.news import EarningsDate
 from nexus.domain.plans import FOLLOWED, SavedPlan
@@ -62,9 +63,12 @@ def _earnings(e: EarningsDate | None) -> EarningsOut | None:
 
 class HoldingOut(PositionOut):
     updated_at: datetime
-    # At the last close; all None until the stock has a price.
+    # At the latest price (live while the market is open, else the last close); all
+    # None until the stock has a price.
     price: MoneyOut | None = None
-    price_day: date | None = None
+    price_day: date | None = None  # the trading day the price belongs to
+    price_kind: PriceKind | None = None
+    price_at: datetime | None = None  # when it was traded; None for an official close
     value: MoneyOut | None = None
     gain: MoneyOut | None = None
     gain_percent: Decimal | None = None
@@ -82,7 +86,7 @@ class DraftOut(Model):
 
 
 class TotalsOut(Model):
-    """The portfolio in the home currency, at the last close."""
+    """The portfolio in the home currency, at the latest prices."""
 
     value: MoneyOut | None
     cost: MoneyOut | None
@@ -90,7 +94,9 @@ class TotalsOut(Model):
     gain_percent: Decimal | None
     day_change: MoneyOut | None
     day_percent: Decimal | None
-    as_of: date | None
+    as_of: date | None  # the latest trading day used
+    as_of_at: datetime | None  # when the newest live or provisional price was traded
+    price_kind: PriceKind  # live if any holding's price is, else provisional_close, else close
     missing: list[str]  # stocks left out (no price or exchange rate yet)
     realised: MoneyOut | None  # locked in by sales
     dividends: MoneyOut | None  # received, after tax withheld
@@ -129,6 +135,8 @@ def _holding(row: investment_cases.Row, earnings: EarningsDate | None) -> Holdin
         update={
             "price": money(v.price),
             "price_day": v.price_day,
+            "price_kind": v.price_kind,
+            "price_at": v.price_at,
             "value": money(v.value),
             "gain": money(v.gain),
             "gain_percent": v.gain_percent,
@@ -148,6 +156,8 @@ def _totals(v: investment_cases.Valuation) -> TotalsOut:
         day_change=_optional(v.day_change),
         day_percent=v.day_percent,
         as_of=v.as_of,
+        as_of_at=v.as_of_at,
+        price_kind=v.price_kind,
         missing=v.missing,
         realised=_optional(v.realised),
         dividends=_optional(v.dividends),
@@ -166,7 +176,12 @@ def _draft(draft: HoldingsDraft, held: list[Position]) -> DraftOut:
 
 @router.get("")
 async def portfolio(auth: Auth, web: Runtime) -> PortfolioOut:
-    valued = await investment_cases.valuation(web.uow(), web.rates, auth.user)
+    now = web.clock()
+    # Fresh quotes for the user's own holdings first (when the market is open).
+    status = await quote_cases.refresh_own(web.uow, web.quotes, auth.user.id, now=now, held=True)
+    valued = await investment_cases.valuation(
+        web.uow(), web.rates, auth.user, now=now, status=status
+    )
     draft = await investment_cases.waiting_draft(web.uow(), auth.user.id)
     held = [row.holding.position for row in valued.rows]
     earnings = await research_cases.next_earnings(
@@ -346,8 +361,10 @@ async def dividends(auth: Auth, web: Runtime) -> DividendsOut:
 
 class WatchedOut(Model):
     symbol: str
-    price: Decimal | None  # last close, USD
-    price_day: date | None
+    price: Decimal | None  # live while the market is open, else the last close; USD
+    price_day: date | None  # the trading day the price belongs to
+    price_kind: PriceKind | None
+    price_at: datetime | None  # when it was traded; None for an official close
     day_percent: Decimal | None
     earnings: EarningsOut | None
 
@@ -360,16 +377,22 @@ class WatchlistOut(Model):
 
 @router.get("/watchlist")
 async def watchlist(auth: Auth, web: Runtime) -> WatchlistOut:
-    rows = await research_cases.watched(web.uow(), auth.user.id, today=web.clock().date())
+    now = web.clock()
+    status = await quote_cases.refresh_own(web.uow, web.quotes, auth.user.id, now=now, watched=True)
+    rows = await research_cases.watched(
+        web.uow(), auth.user.id, today=now.date(), now=now, status=status
+    )
     return WatchlistOut(
         stocks=[
             WatchedOut(
                 symbol=r.symbol,
-                price=r.latest.close.quantize(Decimal("0.01")) if r.latest else None,
-                price_day=r.latest.day if r.latest else None,
+                price=r.price.price.quantize(Decimal("0.01")) if r.price else None,
+                price_day=r.price.day if r.price else None,
+                price_kind=r.price.kind if r.price else None,
+                price_at=r.price.at if r.price else None,
                 day_percent=(
-                    percent(r.latest.close - r.previous.close, r.previous.close)
-                    if r.latest and r.previous
+                    percent(r.price.price - r.price.previous, r.price.previous)
+                    if r.price and r.price.previous
                     else None
                 ),
                 earnings=_earnings(r.earnings),
@@ -507,12 +530,31 @@ class StockOut(Model):
     plans_enabled: bool
     ranges: list[RangeOut]  # likely closes in a week, a month and three months
     history: list[str] = []  # its last year in numbers, as lines
+    # Live while the market is open, else the last close; None until it has any price.
+    price: Decimal | None = None
+    price_day: date | None = None
+    price_kind: PriceKind | None = None
+    price_at: datetime | None = None  # when it was traded; None for an official close
+    now_vs_levels: list[str] = []  # how that price stands against the levels, as short facts
 
 
 @router.get("/stocks/{symbol}")
 async def stock(symbol: str, auth: Auth, web: Runtime) -> StockOut:
-    today = web.clock().date()
-    view = await research_cases.stock(web.uow(), auth.user, clean_symbol(symbol), today=today)
+    now = web.clock()
+    today = now.date()
+    ticker = clean_symbol(symbol)  # checked before anything is asked of the quote provider
+    # The one stock the page is about, whoever holds it; the limit keeps a member from
+    # using up the provider's allowance on tickers they page through.
+    status = await quote_cases.refresh_own(
+        web.uow,
+        web.quotes,
+        auth.user.id,
+        now=now,
+        symbol=ticker if web.limits.allow("quote", auth.user.id) else None,
+    )
+    view = await research_cases.stock(
+        web.uow(), auth.user, ticker, today=today, now=now, status=status
+    )
     saved = await plan_cases.list_plans(web.uow(), auth.user.id, symbol=view.symbol)
     return StockOut(
         ranges=[
@@ -527,6 +569,11 @@ async def stock(symbol: str, auth: Auth, web: Runtime) -> StockOut:
             for r in view.ranges
         ],
         history=describe_history(view.history) if view.history else [],
+        price=view.price.price.quantize(Decimal("0.01")) if view.price else None,
+        price_day=view.price.day if view.price else None,
+        price_kind=view.price.kind if view.price else None,
+        price_at=view.price.at if view.price else None,
+        now_vs_levels=view.now_vs_levels,
         symbol=view.symbol,
         held=_position(view.held) if view.held else None,
         watching=view.watching,

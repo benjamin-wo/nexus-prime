@@ -1135,6 +1135,47 @@ test("holdings from a screenshot are checked, saved, edited and removed", async 
   await expect(page.getByRole("list", { name: "Largest holdings" })).toContainText("NVDA");
 });
 
+test("prices are live while the market is open, provisional after the close, else the close", async ({ page }) => {
+  const state = await fakeApi(page);
+  const usd = (amount: string) => ({ amount, currency: "USD" });
+  state.holdings = [{ symbol: "NVDA", quantity: "10", average_cost: usd("118.4000"), cost: usd("1184.0000"), updated_at: "2026-09-28T03:00:00Z" }];
+  state.watching = ["AMD"];
+  const holdings = page.getByRole("region", { name: "Holdings" });
+
+  // Shut: the daily closes, as before.
+  await page.goto("/investment");
+  await expect(holdings.getByRole("row").filter({ hasText: "NVDA" })).toContainText("130.25");
+  await expect(holdings).toContainText("Closing prices of 25 Sep");
+  await expect(holdings).not.toContainText("Live");
+
+  // Open: the live quote, with the day's change against the quote's own previous close.
+  state.market = "open";
+  await page.reload();
+  await expect(holdings.getByRole("row").filter({ hasText: "NVDA" })).toContainText("131.50");
+  await expect(holdings).toContainText("Live prices,");
+  await page.goto("/investment/watchlist");
+  await expect(page.getByRole("list", { name: "Watched stocks" })).toContainText("AMD · USD 131.75");
+  await expect(page.getByRole("list", { name: "Watched stocks" })).toContainText("Live,");
+  await page.goto("/investment/stocks/AMD");
+  const now = page.getByRole("region", { name: "Now", exact: true });
+  await expect(now).toContainText("USD 131.75");
+  await expect(now).toContainText("Live,");
+  await expect(now.getByRole("list", { name: "Price against its levels" })).toContainText("0.6% above resistance at 131.00");
+
+  // After the close, before the official bar: the last price, marked as not final.
+  state.market = "after_close";
+  await page.goto("/investment");
+  await expect(holdings).toContainText("not final");
+  await page.goto("/investment/stocks/AMD");
+  await expect(page.getByRole("region", { name: "Now", exact: true })).toContainText("Close of 28 Sep, not final");
+
+  // A stale or later quote time shows in the page.
+  state.market = "open";
+  state.quotes.AMD = { price: "129.00", prev_close: "129.50", quoted_at: "2026-09-28T15:30:00Z" };
+  await page.goto("/investment/stocks/AMD");
+  await expect(page.getByRole("list", { name: "Price against its levels" })).toContainText("1.6% below resistance at 131.00");
+});
+
 test("a sale is recorded with what it locked in, and dividends are expected", async ({ page }) => {
   const state = await fakeApi(page);
   await page.goto("/investment");

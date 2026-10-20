@@ -273,7 +273,7 @@ async def test_a_plan_carries_odds_from_replaying_past_moves(uow: UowFactory) ->
     user = await person(uow)
     await research_cases.watch(uow(), user.id, "AMD", now=NOW)
     await market_cases.refresh(uow, FakePrices({"AMD": uneven(120)}), now=NOW)
-    view = await research_cases.stock(uow(), user, "AMD", today=NOW.date())
+    view = await research_cases.stock(uow(), user, "AMD", today=NOW.date(), now=NOW)
     assert [r.label for r in view.ranges] == ["1 week", "1 month", "3 months"]
     assert view.levels is not None and view.ranges[1].low_68 < view.levels.close
     team = analysts()
@@ -460,7 +460,7 @@ async def test_the_market_and_past_earnings_feed_the_history(uow: UowFactory) ->
     await research_cases.refresh_news(uow, news, now=NOW)
     # Fetched again: the future date is replaced, the past one kept.
     await research_cases.refresh_news(uow, news, now=NOW + timedelta(hours=7))
-    view = await research_cases.stock(uow(), user, "AMD", today=NOW.date())
+    view = await research_cases.stock(uow(), user, "AMD", today=NOW.date(), now=NOW)
     assert view.earnings is not None and view.earnings.day == date(2026, 10, 27)
     h = view.history
     assert h is not None
