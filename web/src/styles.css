@@ -649,7 +649,7 @@ a.btn { text-decoration: none; }
 /* A date and time needs the room to read in full: one to a line. */
 @media (max-width: 600px) { .trip-form-row:has(input[type="datetime-local"]) { grid-template-columns: minmax(0, 1fr); } }
 .trip-card-meter { margin-top: var(--space-2); }
-.cite { font-size: 0.8em; vertical-align: super; text-decoration: none; }
+.cite { font-size: max(0.8em, 13px); vertical-align: super; text-decoration: none; }
 .area + .area { margin-top: var(--space-3); }
 .area h3 { margin: 0; font-size: 1rem; }
 .sources { margin: 0; padding-left: 1.5em; display: grid; gap: var(--space-2); overflow-wrap: anywhere; }

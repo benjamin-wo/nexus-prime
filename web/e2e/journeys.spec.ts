@@ -794,8 +794,15 @@ test("nothing spills sideways on a small phone", async ({ page }) => {
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     const offenders = await page.evaluate(() => {
       const width = document.documentElement.clientWidth;
+      // A row that scrolls on purpose (the "Where to next" chips) keeps its overflow inside itself.
+      const inScroller = (el: Element) => {
+        for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+          if (["auto", "scroll"].includes(getComputedStyle(p).overflowX) && p.getBoundingClientRect().right <= width + 1) return true;
+        }
+        return false;
+      };
       return [...document.querySelectorAll("body *")]
-        .filter((el) => el.getBoundingClientRect().right > width + 1)
+        .filter((el) => el.getBoundingClientRect().right > width + 1 && !inScroller(el))
         .map(
           (el) =>
             `${el.tagName.toLowerCase()}.${(el as HTMLElement).className}`,
