@@ -2,10 +2,12 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ChangeEvent, type FormEvent, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { api, type Dividends, type Holding, type HoldingsDraft, type Portfolio, type PortfolioTotals, type TradeRecord } from "../api";
+import { api, type Dividends, type Holding, type HoldingsDraft, type Portfolio, type PortfolioTotals, type PriceKind, type TradeRecord } from "../api";
 import { formatChange, formatMoney, formatPercent, formatShortDate } from "../format";
+import { livePolling } from "../prices";
 import { base64 } from "../files";
 import { Foldaway } from "../components/Foldaway";
+import { PriceWhen } from "../components/PriceWhen";
 
 const shares = (quantity: string) => Number(quantity).toLocaleString("en-US", { maximumFractionDigits: 8 });
 
@@ -284,7 +286,8 @@ function DividendsCard() {
   );
 }
 
-function HoldingRow({ position, onChanged }: { position: Holding; onChanged: () => void }) {
+/** `kind` is the kind of the card's own label: a row whose price is of another kind says so. */
+function HoldingRow({ position, kind, onChanged }: { position: Holding; kind: PriceKind; onChanged: () => void }) {
   const [editing, setEditing] = useState(false);
   const [quantity, setQuantity] = useState(position.quantity);
   const [cost, setCost] = useState(position.average_cost.amount);
@@ -338,8 +341,14 @@ function HoldingRow({ position, onChanged }: { position: Holding; onChanged: () 
         <>
           <td className="num" data-label="Shares">{shares(position.quantity)}</td>
           <td className="num" data-label="Avg cost">{formatMoney(position.average_cost)}</td>
-          <td className="num" data-label="Last close">
+          <td className="num" data-label="Price">
             {position.price ? formatMoney(position.price) : <span className="muted">—</span>}
+            {position.price && position.price_kind !== kind && (
+              <>
+                <br />
+                <PriceWhen kind={position.price_kind} at={position.price_at} day={position.price_day} />
+              </>
+            )}
           </td>
           <td className="num" data-label="Value">
             {position.value ? formatMoney(position.value) : formatMoney(position.cost)}
@@ -366,20 +375,29 @@ function HoldingRow({ position, onChanged }: { position: Holding; onChanged: () 
   );
 }
 
-function priceNote(data: Portfolio | undefined): string {
-  if (!data || data.holdings.length === 0) return "";
-  if (!data.prices) return "Prices aren't set up";
+/** When the prices in the table are from, and which stocks have none. */
+function PriceNote({ data }: { data: Portfolio | undefined }) {
+  if (!data || data.holdings.length === 0) return null;
+  if (!data.prices) return <span className="caption">Prices aren't set up</span>;
   const t = data.totals;
-  const parts = [];
-  if (t.as_of) parts.push(`Closing prices of ${formatShortDate(t.as_of, "UTC")}`);
-  if (t.missing.length) parts.push(`no price yet for ${t.missing.join(", ")}`);
-  return parts.join("; ") || "Fetching prices…";
+  const missing = t.missing.length ? `no price yet for ${t.missing.join(", ")}` : null;
+  if (!t.as_of && !t.as_of_at) return <span className="caption">{missing ?? "Fetching prices…"}</span>;
+  return (
+    <PriceWhen kind={t.price_kind} at={t.as_of_at} day={t.as_of}>
+      {missing}
+    </PriceWhen>
+  );
 }
 
 /** The Investment department: holdings, from a broker screenshot or typed in. */
 export function InvestmentPage() {
   const client = useQueryClient();
-  const portfolio = useQuery({ queryKey: ["investments"], queryFn: () => api<Portfolio>("/investments") });
+  const portfolio = useQuery({
+    queryKey: ["investments"],
+    queryFn: () => api<Portfolio>("/investments"),
+    // Every minute while the prices are live and the page is in view.
+    refetchInterval: (query) => livePolling(query.state.data?.totals.price_kind),
+  });
   const [reading, setReading] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -430,7 +448,7 @@ export function InvestmentPage() {
       <div className="page-head">
         <div>
           <h1>Portfolio</h1>
-          <p className="muted">What you hold and what it's worth at the last close. Research only: Nexus never trades.</p>
+          <p className="muted">What you hold and what it's worth at the latest price (live while the US market is open). Research only: Nexus never trades.</p>
         </div>
         {portfolio.data?.screenshots && (
           <label className="btn btn-primary">
@@ -454,7 +472,7 @@ export function InvestmentPage() {
       <section className="card" aria-labelledby="holdings">
         <div className="card-head">
           <h2 id="holdings">Holdings</h2>
-          <span className="caption">{priceNote(portfolio.data)}</span>
+          <PriceNote data={portfolio.data} />
         </div>
         {portfolio.data && <Totals totals={portfolio.data.totals} />}
         {portfolio.isLoading && <p className="state">Loading…</p>}
@@ -471,7 +489,7 @@ export function InvestmentPage() {
                   <th scope="col">Stock</th>
                   <th scope="col" className="num">Shares</th>
                   <th scope="col" className="num">Avg cost</th>
-                  <th scope="col" className="num">Last close</th>
+                  <th scope="col" className="num">Price</th>
                   <th scope="col" className="num">Value</th>
                   <th scope="col" className="num">Gain</th>
                   <th scope="col"><span className="sr-only">Actions</span></th>
@@ -479,7 +497,7 @@ export function InvestmentPage() {
               </thead>
               <tbody>
                 {holdings.map((p) => (
-                  <HoldingRow key={`${p.symbol}:${p.updated_at}`} position={p} onChanged={refresh} />
+                  <HoldingRow key={`${p.symbol}:${p.updated_at}`} position={p} kind={portfolio.data?.totals.price_kind ?? "close"} onChanged={refresh} />
                 ))}
               </tbody>
             </table>

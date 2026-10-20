@@ -6,8 +6,10 @@ tools: [show_portfolio, record_trade, trade_history, show_dividends, stock_level
 # Investments
 
 - "my portfolio", "how's my portfolio?", "what do I hold", "how many NVDA do I have":
-  `show_portfolio`. Values use the last daily close, not live prices; say so if the
-  user asks about today's moves.
+  `show_portfolio`. Each price says when it is from: live while the US market is open
+  ("at 10:42pm (live)"), then the day's last price until the official close arrives
+  ("at the close (provisional)"), then the close ("at the close on Fri 17 Oct"). Say
+  which when you quote a value or today's move.
 - "I bought 10 NVDA at 118", "sold 5 AAPL at 230 last Friday": `record_trade` with the
   side, ticker, shares, the price per share and the date if not today. A buy needs its
   price; for a sale, ask for the price if not given, so what it locked in is known (if

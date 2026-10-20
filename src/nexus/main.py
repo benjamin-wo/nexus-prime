@@ -45,6 +45,7 @@ from nexus.application.ports import (
     SignInMailbox,
     StatementPageReader,
 )
+from nexus.application.quotes import Quotes, QuoteSource
 from nexus.application.rate_store import StoredRates
 from nexus.application.research import NewsSource
 from nexus.application.routes import Routes, RouteSource
@@ -88,6 +89,7 @@ from nexus.infra.llm.factory import (
 )
 from nexus.infra.logs import configure_logging
 from nexus.infra.market.finnhub import FinnhubNews
+from nexus.infra.market.finnhub_quotes import FinnhubQuotes
 from nexus.infra.market.tiingo import TiingoPrices
 from nexus.infra.ops_store import OpsStore
 from nexus.infra.photos.wikipedia import WikipediaPhotos
@@ -122,6 +124,7 @@ class Overrides:
     rates: RateSource | None = None
     prices: PriceSource | None = None
     news: NewsSource | None = None
+    quotes: QuoteSource | None = None
     places: PlaceSource | None = None
     routes: RouteSource | None = None
     receipt_store: ReceiptStore | None = None
@@ -184,6 +187,18 @@ async def _news(
         return None
     http = await stack.enter_async_context(timed_client())
     return FinnhubNews(http, key.get_secret_value())
+
+
+async def _quotes(settings: Settings, overrides: Overrides, stack: AsyncExitStack) -> Quotes | None:
+    """Live stock quotes and the market's status, when a Finnhub key is set."""
+    if overrides.quotes is not None:
+        return Quotes(overrides.quotes)
+    key = settings.finnhub_api_key
+    if key is None:
+        log.warning("FINNHUB_API_KEY is not set; stock prices won't be live")
+        return None
+    http = await stack.enter_async_context(timed_client())
+    return Quotes(FinnhubQuotes(http, key.get_secret_value()))
 
 
 async def _places(
@@ -646,6 +661,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                     rates = StoredRates(FrankfurterRates(http), lambda: SqlUnitOfWork(engine))
                 prices = await _prices(resolved, extra, stack)
                 news = await _news(resolved, extra, stack)
+                quotes = await _quotes(resolved, extra, stack)
                 archive = _receipt_store(resolved, extra)
                 if archive is None:
                     log.warning("receipt storage is not configured; receipt photos won't be kept")
@@ -678,6 +694,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                         news,
                         await _photos(resolved, extra, stack, models),
                         origin,
+                        quotes,
                     )
                     schedules = list(SCHEDULES)
                     if resolved.ops_tickets_enabled:
@@ -708,6 +725,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                         departments=departments,
                         prices=prices is not None,
                         news=news is not None,
+                        quotes=quotes,
                         places=places,
                         routes=await _routes(resolved, extra, stack, clock),
                         ideas=ideas,

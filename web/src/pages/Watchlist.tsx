@@ -3,7 +3,9 @@ import { type FormEvent, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { api, type Watchlist } from "../api";
+import { PriceWhen } from "../components/PriceWhen";
 import { formatPercent, formatShortDate } from "../format";
+import { livePolling } from "../prices";
 
 const usd = (amount: string) => Number(amount).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -11,7 +13,13 @@ const usd = (amount: string) => Number(amount).toLocaleString("en-US", { minimum
  * for them as for holdings. */
 export function WatchlistPage() {
   const client = useQueryClient();
-  const list = useQuery({ queryKey: ["watchlist"], queryFn: () => api<Watchlist>("/investments/watchlist") });
+  const list = useQuery({
+    queryKey: ["watchlist"],
+    queryFn: () => api<Watchlist>("/investments/watchlist"),
+    // Every minute while any price is live and the page is in view.
+    refetchInterval: (query) =>
+      livePolling(query.state.data?.stocks.some((s) => s.price_kind === "live") ? "live" : null),
+  });
   const [symbol, setSymbol] = useState("");
   const [error, setError] = useState<string | null>(null);
   const refresh = () => void client.invalidateQueries({ queryKey: ["watchlist"] });
@@ -70,10 +78,15 @@ export function WatchlistPage() {
                     </>
                   )}
                   <br />
-                  <span className="caption">
-                    {s.price_day ? `Close of ${formatShortDate(s.price_day, "UTC")}` : "Price coming"}
-                    {s.earnings && ` · earnings ${formatShortDate(s.earnings.day, "UTC")}`}
-                  </span>
+                  {s.price_day ? (
+                    <PriceWhen kind={s.price_kind} at={s.price_at} day={s.price_day}>
+                      {s.earnings && `earnings ${formatShortDate(s.earnings.day, "UTC")}`}
+                    </PriceWhen>
+                  ) : (
+                    <span className="caption">
+                      Price coming{s.earnings && ` · earnings ${formatShortDate(s.earnings.day, "UTC")}`}
+                    </span>
+                  )}
                 </span>
                 <button type="button" className="btn btn-small" onClick={() => void remove(s.symbol)} aria-label={`Stop watching ${s.symbol}`}>
                   Remove

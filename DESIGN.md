@@ -160,6 +160,11 @@ All spacing derives from a 4px base unit.
 - Icon tile (42px, `--bg-raised`), title and caption, value on the right; rows divided by `--border-card`
 - Used for what needs you, holdings, the latest transactions and budgets
 
+### Investment
+
+- **Prices**: every price says when it is from, in one muted caption (13px, `.caption`) built by `priceWhen` in `format.ts` and shown with `PriceWhen`: "Live · 10:42pm" while the US market is open (with a 6px emerald dot, the only mark of live), "Close (provisional) · 4:00am" after the close until the official close arrives, and "Close of Fri 16 Oct" otherwise. Times are in the browser's timezone. The label sits in the Holdings card's heading row, under the price on the watchlist and stock page, and under the total on Home's portfolio card; a holding whose price is of another kind than the card's says so under its price. While a price is live and the page is in view, Portfolio, Watchlist, a stock and Home's portfolio card ask again every 60 seconds (`livePolling`) and on window focus; a close is not polled.
+- **Stock page**: the Price card holds the price, then under it a quiet list of up to three facts against the levels ("1.2% below resistance at 131.00", "10.4% above its 50-day average (117.25)") in caption text, with no heading of their own. The page's one primary is Make a plan.
+
 ### Transaction ledger
 
 - **Structure**: heading, direction filter, type filter, search, primary action, transaction table/list

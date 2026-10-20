@@ -103,6 +103,32 @@ export async function fakeApi(
   } = {},
 ) {
   let session = signedIn;
+  /** What the made-up quotes are right now: live, or (after the close) provisional. */
+  const quoteKind = () => (state.market === "open" ? "live" : "provisional_close");
+  /** AMD's price on its stock page: its quote while the market is "open" or "after_close", else
+   * its close, with the short facts against its levels (support 121.00, resistance 131.00, 50-day 117.25). */
+  const amdPrice = () => {
+    const quote = state.market === "closed" ? undefined : state.quotes.AMD;
+    const price = quote ? Number(quote.price) : 129.5;
+    const levels: [number, string][] = [[121, "support"], [112.4, "support"], [131, "resistance"]];
+    const below = levels.filter(([v]) => v <= price).sort((a, b) => b[0] - a[0])[0];
+    const above = levels.filter(([v]) => v > price).sort((a, b) => a[0] - b[0])[0];
+    const near = [below && { level: below, under: true }, above && { level: above, under: false }]
+      .filter((n): n is { level: [number, string]; under: boolean } => Boolean(n))
+      .map((n) => ({ ...n, gap: Math.abs(price - n.level[0]) / price }))
+      .filter((n) => n.gap <= 0.05)
+      .sort((a, b) => a.gap - b.gap)
+      .map((n) => `${(n.gap * 100).toFixed(1)}% ${n.under ? "above" : "below"} ${n.level[1]} at ${n.level[0].toFixed(2)}`);
+    const average = ((price - 117.25) / 117.25) * 100;
+    const facts = [...near, `${Math.abs(average).toFixed(1)}% ${average >= 0 ? "above" : "below"} its 50-day average (117.25)`].slice(0, 3);
+    return {
+      price: price.toFixed(2),
+      price_day: quote ? "2026-09-28" : "2026-09-25",
+      price_kind: quote ? quoteKind() : "close",
+      price_at: quote ? quote.quoted_at : null,
+      now_vs_levels: facts,
+    };
+  };
   type FakeBudget = { id: string; category_id: string | null; limit: number; spent: number };
   type FakeBill = {
     id: string;
@@ -166,6 +192,11 @@ export async function fakeApi(
     draft: Record<string, unknown> | null;
     screenshots: number;
     watching: string[];
+    /** The US market in the fake: "closed" shows the daily closes (the default), "open" the live
+     * quotes below, "after_close" those quotes as provisional closes. Tests change it. */
+    market: "closed" | "open" | "after_close";
+    /** The made-up latest quote per symbol; move `quoted_at` (an ISO instant) to test the times. */
+    quotes: Record<string, { price: string; prev_close: string; quoted_at: string }>;
     trips: Record<string, unknown>[];
     trades: Record<string, unknown>[];
     tripItems: string[];
@@ -286,6 +317,11 @@ export async function fakeApi(
     cancelled: [],
     holdings: [],
     watching: [],
+    market: "closed",
+    quotes: {
+      NVDA: { price: "131.50", prev_close: "130.25", quoted_at: "2026-09-28T14:41:00Z" },
+      AMD: { price: "131.75", prev_close: "129.50", quoted_at: "2026-09-28T14:41:00Z" },
+    },
     trips: [],
     shares: {},
     shareBookings: {},
@@ -654,36 +690,45 @@ export async function fakeApi(
       });
     }
     if (path === "/investments" && method === "GET") {
-      // Made-up closes: NVDA has one, AAPL doesn't yet. 1 USD = 1.30 SGD.
+      // Made-up closes: NVDA has one, AAPL doesn't yet. 1 USD = 1.30 SGD. While the market is
+      // "open" or "after_close", a stock with a quote is priced at it (see state.market).
       const closes: Record<string, [string, string]> = { NVDA: ["130.25", "128.00"] };
       const sgd = (amount: number) => ({ amount: amount.toFixed(4), currency: "SGD" });
       let total = 0;
       let gain = 0;
       const missing: string[] = [];
+      let newest: string | null = null;
       const holdings = state.holdings.map((h) => {
         const close = closes[h.symbol];
-        if (!close) {
+        const quote = state.market === "closed" ? undefined : state.quotes[h.symbol];
+        if (!close && !quote) {
           missing.push(h.symbol);
-          return { ...h, price: null, price_day: null, value: null, gain: null, gain_percent: null, day_change: null, day_percent: null, value_home: null, earnings: null };
+          return { ...h, price: null, price_day: null, price_kind: null, price_at: null, value: null, gain: null, gain_percent: null, day_change: null, day_percent: null, value_home: null, earnings: null };
         }
-        const value = Number(h.quantity) * Number(close[0]);
+        const price = quote ? quote.price : close[0];
+        const before = quote ? quote.prev_close : close[1];
+        if (quote && (!newest || quote.quoted_at > newest)) newest = quote.quoted_at;
+        const value = Number(h.quantity) * Number(price);
         const up = value - Number(h.cost.amount);
         total += value * 1.3;
         gain += up * 1.3;
         return {
           ...h,
-          price: usd(close[0]),
-          price_day: "2026-09-25",
+          price: usd(price),
+          price_day: quote ? "2026-09-28" : "2026-09-25",
+          price_kind: quote ? quoteKind() : "close",
+          price_at: quote ? quote.quoted_at : null,
           value: usd(value.toFixed(4)),
           gain: usd(up.toFixed(4)),
           gain_percent: ((up / Number(h.cost.amount)) * 100).toFixed(2),
-          day_change: usd((Number(h.quantity) * (Number(close[0]) - Number(close[1]))).toFixed(4)),
-          day_percent: "1.76",
+          day_change: usd((Number(h.quantity) * (Number(price) - Number(before))).toFixed(4)),
+          day_percent: (((Number(price) - Number(before)) / Number(before)) * 100).toFixed(2),
           value_home: sgd(value * 1.3),
           earnings: { day: "2026-10-29", timing: "after close" },
         };
       });
       const priced = holdings.length > missing.length;
+      const kinds = holdings.map((h) => h.price_kind);
       return json(route, {
         holdings,
         totals: {
@@ -693,7 +738,9 @@ export async function fakeApi(
           gain_percent: priced ? ((gain / (total - gain)) * 100).toFixed(2) : null,
           day_change: null,
           day_percent: null,
-          as_of: priced ? "2026-09-25" : null,
+          as_of: priced ? (newest ? "2026-09-28" : "2026-09-25") : null,
+          as_of_at: newest,
+          price_kind: kinds.includes("live") ? "live" : kinds.includes("provisional_close") ? "provisional_close" : "close",
           missing,
           realised: state.trades.some((t) => t.realised) ? sgd(1.3 * state.trades.reduce((n, t) => n + Number((t.realised as { amount: string } | null)?.amount ?? 0), 0)) : null,
           dividends: null,
@@ -706,13 +753,29 @@ export async function fakeApi(
     }
     if (path === "/investments/watchlist" && method === "GET") {
       return json(route, {
-        stocks: state.watching.map((symbol) => ({
-          symbol,
-          price: symbol === "AMD" ? "129.50" : null,
-          price_day: symbol === "AMD" ? "2026-09-25" : null,
-          day_percent: symbol === "AMD" ? "0.39" : null,
-          earnings: null,
-        })),
+        stocks: state.watching.map((symbol) => {
+          const quote = state.market === "closed" ? undefined : state.quotes[symbol];
+          if (quote && symbol === "AMD") {
+            return {
+              symbol,
+              price: quote.price,
+              price_day: "2026-09-28",
+              price_kind: quoteKind(),
+              price_at: quote.quoted_at,
+              day_percent: (((Number(quote.price) - Number(quote.prev_close)) / Number(quote.prev_close)) * 100).toFixed(2),
+              earnings: null,
+            };
+          }
+          return {
+            symbol,
+            price: symbol === "AMD" ? "129.50" : null,
+            price_day: symbol === "AMD" ? "2026-09-25" : null,
+            price_kind: symbol === "AMD" ? "close" : null,
+            price_at: null,
+            day_percent: symbol === "AMD" ? "0.39" : null,
+            earnings: null,
+          };
+        }),
         prices: true,
         news: true,
       });
@@ -776,6 +839,7 @@ export async function fakeApi(
         news_enabled: true,
         plan: symbol === "AMD" && state.planStarted ? PLAN_BRIEF : null,
         plans_enabled: true,
+        ...(symbol === "AMD" ? amdPrice() : { price: null, price_day: null, price_kind: null, price_at: null, now_vs_levels: [] }),
       });
     }
     const startPlan = path.match(/^\/investments\/stocks\/([A-Za-z.]+)\/plan$/);

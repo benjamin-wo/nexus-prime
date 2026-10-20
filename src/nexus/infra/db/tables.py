@@ -581,6 +581,21 @@ market_bars = Table(
     PrimaryKeyConstraint("symbol", "day"),
 )
 
+# The latest quote per stock, shared by every user: market data, not anyone's own.
+# Overwritten by each fetch (migration 0049).
+market_quotes = Table(
+    "market_quotes",
+    metadata,
+    Column("symbol", Text, primary_key=True),
+    Column("price", Numeric(19, 4), nullable=False),
+    Column("prev_close", Numeric(19, 4), nullable=False),
+    Column("high", Numeric(19, 4)),
+    Column("low", Numeric(19, 4)),
+    Column("open", Numeric(19, 4)),
+    Column("quoted_at", TZ, nullable=False),  # when it was traded
+    Column("fetched_at", TZ, nullable=False),
+)
+
 # Trades the user told Nexus about, buy or sell (migration 0031).
 trades = Table(
     "trades",

@@ -61,6 +61,12 @@ The shared language for code, tests and docs. When a term here and a name in cod
 - **Trip activity**: what the people on a shared trip changed in its plan ("added Dinner at Sushi Ten"), newest first, last 20 shown. Kept only for trips with at least one member; never money.
 - **Share settings**: what a trip's read-only link shows. Bookings (flights, stays, tickets) can be hidden; money, booking references, notes, packing, to-dos, cover and documents and who's going are never shown.
 
+## Investment
+
+- **Close**: a stock's official end-of-day price (Tiingo). Levels, plans and history are worked out from closes only.
+- **Live price**: a stock's latest trade (a Finnhub quote) while the US regular session is open and the quote is from today. It replaces the last close in values and day changes, and is shown with the time it was traded.
+- **Provisional close**: after the close, the quote's last price for that day, shown until Tiingo's end-of-day bar for the day arrives and replaces it. Shown as "at the close (provisional)".
+
 ## Agent
 
 - **Agent**: one LangGraph tool-chaining loop with a bounded number of steps. Tools call use cases; they never touch the database directly.

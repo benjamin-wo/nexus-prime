@@ -20,7 +20,7 @@ from nexus.domain.investments import (
     plain,
 )
 from nexus.domain.ledger import UserId
-from nexus.domain.market import Bar
+from nexus.domain.market import Bar, Quote
 from nexus.domain.money import Money
 from nexus.domain.news import EarningsDate, NewsItem
 from nexus.domain.plans import FOLLOWED, Followed, PlanStatus, SavedPlan, Verdict
@@ -31,6 +31,7 @@ from nexus.infra.db.tables import (
     market_bars,
     market_earnings,
     market_news,
+    market_quotes,
     market_symbols,
     news_fetches,
     plans,
@@ -371,6 +372,62 @@ class SqlInvestmentRepository:
         )
         found = [_bar_row(r) for r in rows]
         return found[::-1]
+
+    # --- quotes, shared by every user ---
+
+    async def upsert_quotes(self, quotes: list[Quote], *, at: datetime) -> None:
+        """Keep each stock's latest quote (an older one is replaced), noting when it was
+        fetched."""
+        for quote in quotes:
+            values = {
+                "price": quote.price,
+                "prev_close": quote.prev_close,
+                "high": quote.high,
+                "low": quote.low,
+                "open": quote.open,
+                "quoted_at": quote.quoted_at,
+                "fetched_at": at,
+            }
+            await self._db.execute(
+                pg_insert(market_quotes)
+                .values(symbol=quote.symbol, **values)
+                .on_conflict_do_update(index_elements=[market_quotes.c.symbol], set_=values)
+            )
+
+    async def quotes(self, symbols: list[str]) -> dict[str, Quote]:
+        if not symbols:
+            return {}
+        q = market_quotes.c
+        rows = await self._db.execute(select(market_quotes).where(q.symbol.in_(symbols)))
+        return {
+            r.symbol: Quote(
+                symbol=r.symbol,
+                price=r.price,
+                prev_close=r.prev_close,
+                high=r.high,
+                low=r.low,
+                open=r.open,
+                quoted_at=r.quoted_at,
+            )
+            for r in rows
+        }
+
+    async def quotes_fetched(self, symbols: list[str]) -> dict[str, datetime]:
+        if not symbols:
+            return {}
+        q = market_quotes.c
+        rows = await self._db.execute(select(q.symbol, q.fetched_at).where(q.symbol.in_(symbols)))
+        return {r.symbol: r.fetched_at for r in rows}
+
+    async def unlisted(self, symbols: list[str]) -> set[str]:
+        """Those the price provider doesn't list (no prices, so probably no quote)."""
+        if not symbols:
+            return set()
+        m = market_symbols.c
+        rows = await self._db.execute(
+            select(m.symbol).where(m.symbol.in_(symbols), m.known.is_(False))
+        )
+        return {r.symbol for r in rows}
 
     # --- watchlist ---
 

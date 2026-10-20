@@ -194,3 +194,48 @@ def describe(levels: Levels) -> list[str]:
     lines.append(f"Resistance (recent swing highs): {money(levels.resistance)}")
     lines.append(f"52-week range: {levels.year_low:,.2f} to {levels.year_high:,.2f}")
     return lines
+
+
+# A support or resistance level this close to the price (a share of it) is worth saying.
+NEAR_LEVEL = Decimal("0.05")
+MAX_FACTS = 3
+_TENTH = Decimal("0.1")
+
+
+def now_vs_levels(price: Decimal, levels: Levels) -> list[str]:
+    """Up to three short facts on where the price stands now (live or a close) against
+    the levels: the nearest support below and resistance above when within 5% of the
+    price, then how far it is from the 50- and 200-day averages. A level the price has
+    moved through still counts, named for what it was ("1.0% above resistance at 180.00")."""
+    if price <= 0:
+        return []
+    facts: list[str] = []
+    marked = [(v, "support") for v in levels.support] + [
+        (v, "resistance") for v in levels.resistance
+    ]
+    below = [m for m in marked if m[0] <= price]
+    above = [m for m in marked if m[0] > price]
+    near: list[tuple[Decimal, str, bool]] = []
+    if below:
+        level, name = max(below)
+        near.append((level, name, True))
+    if above:
+        level, name = min(above)
+        near.append((level, name, False))
+    near.sort(key=lambda n: abs(price - n[0]))
+    for level, name, under_price in near:
+        gap = abs(price - level) / price
+        if gap <= NEAR_LEVEL:
+            way = "above" if under_price else "below"
+            facts.append(f"{_pct(gap * 100)}% {way} {name} at {level:,.2f}")
+    for days in (50, 200):
+        average = levels.averages.get(days)
+        if average:
+            diff = (price - average) / average * 100
+            way = "above" if diff >= 0 else "below"
+            facts.append(f"{_pct(abs(diff))}% {way} its {days}-day average ({average:,.2f})")
+    return facts[:MAX_FACTS]
+
+
+def _pct(value: Decimal) -> Decimal:
+    return value.quantize(_TENTH, rounding=ROUND_HALF_UP)

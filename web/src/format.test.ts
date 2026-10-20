@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatMoney, formatRange, formatWholeMoney, formatWithHome } from "./format";
+import { formatClock, formatMoney, formatRange, formatWholeMoney, formatWithHome, priceWhen } from "./format";
 
 // Intl puts a no-break space after the currency code.
 const plain = (text: string) => text.replace(/ /g, " ");
@@ -45,5 +45,34 @@ describe("formatWholeMoney", () => {
   it("leaves the decimals off", () => {
     expect(plain(formatWholeMoney(money("6760")))).toBe("SGD 6,760");
     expect(plain(formatMoney(money("818")))).toBe("SGD 818.00");
+  });
+});
+
+describe("priceWhen", () => {
+  const SGT = "Asia/Singapore";
+
+  it("writes a clock time lowercase and tight, in the given timezone", () => {
+    expect(formatClock("2026-10-19T14:42:00Z", SGT)).toBe("10:42pm");
+    expect(formatClock("2026-10-19T20:00:00Z", SGT)).toBe("4:00am");
+    expect(formatClock("2026-10-19T14:42:00Z", "America/New_York")).toBe("10:42am");
+  });
+
+  it("labels a live price with its time", () => {
+    expect(priceWhen("live", "2026-10-19T14:42:00Z", "2026-10-19", SGT)).toBe("Live · 10:42pm");
+  });
+
+  it("labels a provisional close with the time of the last price", () => {
+    expect(priceWhen("provisional_close", "2026-10-19T20:00:00Z", "2026-10-19", SGT)).toBe("Close (provisional) · 4:00am");
+  });
+
+  it("labels an official close with its trading day, whatever the timezone", () => {
+    expect(priceWhen("close", null, "2026-10-16", "Pacific/Auckland")).toMatch(/^Close of Fri,? (16 Oct|Oct 16)$/);
+  });
+
+  it("falls back to the plain words when the time or day is missing", () => {
+    expect(priceWhen("live", null, null)).toBe("Live");
+    expect(priceWhen("provisional_close", null, null)).toBe("Close (provisional)");
+    expect(priceWhen("close", null, null)).toBe("Close");
+    expect(priceWhen(null, null, null)).toBe("Close");
   });
 });

@@ -19,6 +19,7 @@ from nexus.application import investments as investment_cases
 from nexus.application import market as market_cases
 from nexus.application import notifications as notify_cases
 from nexus.application import plans as plan_cases
+from nexus.application import quotes as quote_cases
 from nexus.application import receipts as receipt_cases
 from nexus.application import research as research_cases
 from nexus.application import salary as salary_cases
@@ -29,6 +30,7 @@ from nexus.application.email import EmailRuntime
 from nexus.application.fx import RateSource
 from nexus.application.market import PriceSource
 from nexus.application.ports import ReceiptStore
+from nexus.application.quotes import Quotes
 from nexus.application.research import NewsSource
 from nexus.channels.telegram.client import TelegramClient, TelegramError
 from nexus.channels.telegram.webhook import UNDO_EXPIRE, kept_buttons
@@ -57,6 +59,7 @@ SCHEDULES = (
     Schedule(SUBSCRIPTIONS_SWEEP, timedelta(hours=6)),
     Schedule(market_cases.REFRESH_JOB, timedelta(hours=1)),
     Schedule(market_cases.NEWS_JOB, timedelta(hours=1)),
+    Schedule(quote_cases.REFRESH_JOB, timedelta(minutes=5)),
     Schedule(plan_cases.FOLLOW_JOB, timedelta(hours=1)),
     Schedule(booking_cases.REMIND_JOB, timedelta(hours=1)),
     Schedule(photo_cases.PHOTOS_JOB, timedelta(minutes=30)),
@@ -98,6 +101,7 @@ def build_handlers(
     news: NewsSource | None = None,
     photos: photo_cases.PhotoFinder | None = None,
     origin: str | None = None,
+    quotes: Quotes | None = None,
 ) -> dict[str, Handler]:
     async def send(payload: dict[str, Any]) -> Defer | None:
         """Message a user on Telegram, but not during their quiet hours."""
@@ -242,6 +246,12 @@ def build_handlers(
                 if found:
                     log.info("price refresh: recorded %d dividends", found)
 
+    async def refresh_quotes(_: dict[str, Any]) -> None:
+        if quotes is not None:
+            fetched = await quote_cases.refresh(uow, quotes, now=clock())
+            if fetched:
+                log.info("quote refresh: fetched %d stocks", fetched)
+
     async def trip_photos(_: dict[str, Any]) -> None:
         if photos is not None:
             done = await photo_cases.sweep(uow, photos, now=clock())
@@ -294,6 +304,7 @@ def build_handlers(
     return {
         market_cases.REFRESH_JOB: refresh_prices,
         market_cases.NEWS_JOB: refresh_news,
+        quote_cases.REFRESH_JOB: refresh_quotes,
         photo_cases.PHOTOS_JOB: trip_photos,
         plan_cases.FOLLOW_JOB: follow_plans,
         booking_cases.REMIND_JOB: travel_reminders,

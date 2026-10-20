@@ -80,6 +80,11 @@ h1 { font-size: 2rem; font-weight: 600; line-height: 1.2; letter-spacing: -0.02e
 h2 { font-size: 1.125rem; font-weight: 600; line-height: 1.3; color: var(--text-white); margin: 0; }
 h3 { font-size: 1rem; font-weight: 600; line-height: 1.4; color: var(--text-white); margin: 0; }
 .caption { font-size: 0.8125rem; font-weight: 500; line-height: 1.4; color: var(--text-muted); }
+.price-when { display: inline-flex; align-items: center; gap: 6px; }
+.figure-value + .price-when { display: flex; margin-top: var(--space-1); }
+.price-now { font-size: 1.5rem; font-weight: 600; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; color: var(--text-white); }
+.quiet-list { display: grid; gap: var(--space-1); list-style: none; margin: var(--space-2) 0 0; padding: 0; }
+.live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--emerald-accent); flex: none; }
 .muted { color: var(--text-muted); }
 .secondary { color: var(--text-secondary); }
 .num { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 0.9rem; }

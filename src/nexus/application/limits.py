@@ -22,6 +22,9 @@ WEB: Sequence[Window] = ((5, timedelta(minutes=1)), (20, timedelta(days=1)))
 # Making trip invite links, and trying one to join a trip.
 INVITES: Sequence[Window] = ((20, timedelta(hours=1)),)
 JOINS: Sequence[Window] = ((20, timedelta(minutes=10)),)
+# A stock page asking the quote provider about its stock (the provider's own limit is
+# shared by everyone).
+QUOTES: Sequence[Window] = ((30, timedelta(minutes=5)),)
 DEFAULT_RULES: Mapping[str, Sequence[Window]] = {
     "message": MESSAGES,
     "import": IMPORTS,
@@ -30,6 +33,7 @@ DEFAULT_RULES: Mapping[str, Sequence[Window]] = {
     "web": WEB,
     "invite": INVITES,
     "join": JOINS,
+    "quote": QUOTES,
 }
 
 

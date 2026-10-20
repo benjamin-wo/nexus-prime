@@ -27,6 +27,8 @@ import {
   formatPercent,
   formatShortDate,
 } from "../format";
+import { livePolling } from "../prices";
+import { PriceWhen } from "../components/PriceWhen";
 import { AccentTitle, CountUp } from "../motion";
 import { tripWhen } from "./Trips";
 
@@ -405,6 +407,9 @@ function PortfolioCard({ portfolio }: { portfolio?: Portfolio }) {
           <span className="figure-value">
             <CountUp value={totals?.value ? formatMoney(totals.value) : "…"} />
           </span>
+          {totals && (totals.as_of || totals.as_of_at) && (
+            <PriceWhen kind={totals.price_kind} at={totals.as_of_at} day={totals.as_of} />
+          )}
           {totals?.day_change && (
             <p
               className={Number(totals.day_change.amount) >= 0 ? "up" : "down"}
@@ -697,6 +702,8 @@ export function Home({
   const portfolio = useQuery({
     queryKey: ["investments"],
     queryFn: () => api<Portfolio>("/investments"),
+    // Every minute while the portfolio's prices are live and the page is in view.
+    refetchInterval: (query) => livePolling(query.state.data?.totals.price_kind),
   }).data;
   const trip = useQuery({
     queryKey: ["next-trip"],

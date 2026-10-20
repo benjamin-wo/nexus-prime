@@ -80,7 +80,8 @@ class Settings(BaseSettings):
 
     # --- Daily stock prices (Tiingo end-of-day). Unset = holdings aren't valued. ---
     tiingo_api_key: SecretStr | None = None
-    # --- Company news and earnings dates (Finnhub). Unset = none are fetched. ---
+    # --- Company news, earnings dates and live quotes (Finnhub). Unset = none are fetched,
+    # and prices stay at the last close. ---
     finnhub_api_key: SecretStr | None = None
 
     # --- The Investment research team (OpenRouter model ids). Unset: the analysts use

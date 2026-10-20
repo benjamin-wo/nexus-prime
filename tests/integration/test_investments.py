@@ -3,6 +3,7 @@ trades the user tells Nexus about. Every ticker and figure here is made up."""
 
 from datetime import date, timedelta
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 import pytest
 from langchain_core.messages import AIMessage
@@ -26,6 +27,8 @@ from tests.integration.test_agent import build, only
 from tests.integration.test_email import person
 
 pytestmark = pytest.mark.integration
+
+SGT = ZoneInfo("Asia/Singapore")
 
 
 def usd(amount: str) -> Money:
@@ -217,7 +220,7 @@ async def test_holdings_are_valued_in_the_home_currency(uow: UowFactory) -> None
     prices = FakePrices({"NVDA": {date(2026, 9, 24): "128", date(2026, 9, 25): "130.255"}})
     await market_cases.refresh(uow, prices, now=NOW)
     rates = FakeRates({("USD", "SGD"): {date(2026, 9, 25): "1.2905"}})
-    v = await investment_cases.valuation(uow(), rates, user)
+    v = await investment_cases.valuation(uow(), rates, user, now=NOW)
     nvda = next(r for r in v.rows if r.holding.position.symbol == "NVDA")
     assert nvda.valued is not None and nvda.valued.value == usd("1302.55")
     assert nvda.value_home == Money(Decimal("1680.94"), "SGD")
@@ -229,14 +232,15 @@ async def test_holdings_are_valued_in_the_home_currency(uow: UowFactory) -> None
     assert v.day_percent == Decimal("1.76")
     assert v.as_of == date(2026, 9, 25)
     assert v.missing == ["AAPL"]
-    text = investment_cases.describe_valuation(v)
-    assert "• NVDA: 10 at 118.40 USD avg; 130.26 USD on 25 Sep, worth 1302.55 USD (+10.01%)" in (
-        text
-    )
+    text = investment_cases.describe_valuation(v, SGT)
+    assert (
+        "• NVDA: 10 at 118.40 USD avg; 130.26 USD at the close on Fri 25 Sep, "
+        "worth 1302.55 USD (+10.01%)"
+    ) in text
     assert "Total 1680.94 SGD, up 152.99 (+10.01%); +29.10 (+1.76%) on the day." in text
     assert text.endswith("No price yet for AAPL.")
     # Without an exchange rate the stock is shown but left out of the totals.
-    bare = await investment_cases.valuation(uow(), FakeRates(), user)
+    bare = await investment_cases.valuation(uow(), FakeRates(), user, now=NOW)
     assert bare.value is None and bare.missing == ["AAPL", "NVDA"]
 
 
@@ -291,11 +295,11 @@ async def test_a_sale_records_what_it_locked_in_and_the_history_keeps_it(
     prices = FakePrices({"NVDA": {date(2026, 9, 24): "128", date(2026, 9, 25): "130"}})
     await market_cases.refresh(uow, prices, now=NOW)
     rates = FakeRates({("USD", "SGD"): {date(2026, 9, 25): "1.30"}})
-    v = await investment_cases.valuation(uow(), rates, user)
+    v = await investment_cases.valuation(uow(), rates, user, now=NOW)
     assert v.realised == Money(Decimal("260.00"), "SGD")
     assert v.gain == Money(Decimal("195.00"), "SGD")  # 5 shares, 30 up each
     assert v.total_return == Money(Decimal("455.00"), "SGD")
-    text = investment_cases.describe_valuation(v)
+    text = investment_cases.describe_valuation(v, SGT)
     assert "Locked in by sales: +260.00 SGD." in text
     assert "Total return (held, sold and dividends): +455.00 SGD." in text
 
@@ -343,7 +347,7 @@ async def test_dividends_on_shares_held_when_they_went_ex(
     )
     newcomer_view = await investment_cases.dividend_view(uow, rates, newcomer, now=NOW)
     assert newcomer_view.received == [] and newcomer_view.expected[0].payments == 2
-    v = await investment_cases.valuation(uow(), rates, holder)
+    v = await investment_cases.valuation(uow(), rates, holder, now=NOW)
     assert v.dividends == Money(Decimal("0.36"), "SGD")
 
 

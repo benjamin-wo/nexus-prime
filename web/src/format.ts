@@ -1,4 +1,4 @@
-import type { Money, Transaction } from "./api";
+import type { Money, PriceKind, Transaction } from "./api";
 
 export type MoneyOptions = {
   /** No decimals, for figures that are whole numbers ("SGD 4,602"). */
@@ -103,4 +103,24 @@ export function formatPercent(percent: string): string {
   const value = Number(percent);
   const text = `${Math.abs(value).toLocaleString(undefined, { maximumFractionDigits: 2 })}%`;
   return value > 0 ? `+${text}` : value < 0 ? `−${text}` : text;
+}
+
+/** A clock time in the browser's timezone, short and lowercase: "10:42pm", or "22:42" where the
+ * locale uses 24 hours. */
+export function formatClock(iso: string, timeZone?: string): string {
+  return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit", timeZone })
+    .format(new Date(iso))
+    .replace(/[\s\u202f]*([ap])\.?m\.?$/i, (_, half: string) => `${half.toLowerCase()}m`);
+}
+
+/** When a price is from: "Live · 10:42pm", "Close (provisional) · 4:00am" (the day's last price
+ * until the official close arrives) or "Close of Fri 17 Oct". Times are in the browser's timezone;
+ * `day` is the trading day. */
+export function priceWhen(kind: PriceKind | null, at: string | null, day: string | null, timeZone?: string): string {
+  const clock = at ? ` · ${formatClock(at, timeZone)}` : "";
+  if (kind === "live") return `Live${clock}`;
+  if (kind === "provisional_close") return `Close (provisional)${clock}`;
+  if (!day) return "Close";
+  const date = new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+  return `Close of ${date.format(new Date(day))}`;
 }

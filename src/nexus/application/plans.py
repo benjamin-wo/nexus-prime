@@ -339,7 +339,7 @@ def gather_step(
 ) -> Callable[[StepContext], Any]:
     async def gather(ctx: StepContext) -> dict[str, Any]:
         symbol = ctx.task["symbol"]
-        view = await research.stock(uow(), ctx.user, symbol, today=ctx.now.date())
+        view = await research.stock(uow(), ctx.user, symbol, today=ctx.now.date(), now=ctx.now)
         if view.levels is None:
             raise InvalidInput(f"there isn't a month of prices for {symbol} yet")
         async with uow() as tx:

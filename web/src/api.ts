@@ -389,11 +389,20 @@ export type Position = { symbol: string; quantity: string; average_cost: Money; 
 export type HoldingsDraft = { id: string; positions: Position[]; changes: string[]; first: boolean };
 export type EarningsDate = { day: string; timing: string | null };
 
-/** A holding at the last daily close; the price fields are null until it has a price. */
+/** What a price is: live while the US market is open, the day's last price until the official
+ * close arrives (provisional), or an official close. */
+export type PriceKind = "live" | "provisional_close" | "close";
+
+/** A holding at its latest price (live while the market is open, else the last close); the price
+ * fields are null until it has a price. */
 export type Holding = Position & {
   updated_at: string;
   price: Money | null;
+  /** The trading day the price belongs to. */
   price_day: string | null;
+  price_kind: PriceKind | null;
+  /** When the price was traded; null for an official close. */
+  price_at: string | null;
   value: Money | null;
   gain: Money | null;
   gain_percent: string | null;
@@ -410,6 +419,10 @@ export type PortfolioTotals = {
   day_change: Money | null;
   day_percent: string | null;
   as_of: string | null;
+  /** When the newest live or provisional price was traded; null when all are closes. */
+  as_of_at: string | null;
+  /** Live if any holding's price is, else provisional_close if any is, else close. */
+  price_kind: PriceKind;
   missing: string[];
   realised: Money | null;
   dividends: Money | null;
@@ -448,6 +461,8 @@ export type Watched = {
   symbol: string;
   price: string | null;
   price_day: string | null;
+  price_kind: PriceKind | null;
+  price_at: string | null;
   day_percent: string | null;
   earnings: EarningsDate | null;
 };
@@ -484,6 +499,13 @@ export type Stock = {
   news_enabled: boolean;
   plan: PlanBrief | null;
   plans_enabled: boolean;
+  /** Live while the market is open, else the last close; null until it has any price. */
+  price: string | null;
+  price_day: string | null;
+  price_kind: PriceKind | null;
+  price_at: string | null;
+  /** Up to three short facts: that price against the 50- and 200-day averages and the nearest levels. */
+  now_vs_levels: string[];
 };
 
 export type PlanBrief = {
