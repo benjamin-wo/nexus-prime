@@ -799,6 +799,8 @@ details.section[open] > summary { margin-bottom: var(--space-3); }
 .timeline-hop { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); padding: 0 var(--space-3); font-size: 0.8125rem; color: var(--text-secondary); }
 .timeline-hop .wrap { flex: 1 1 160px; min-width: 0; }
 .timeline-hop .badge { margin-left: var(--space-2); }
+/* The Plan's Check in and Check out badges. */
+.timeline-strip .badge { font-size: 0.8125rem; }
 .hop-back { color: var(--text-primary); font-weight: 600; }
 .timeline-hop select { font: inherit; font-size: 0.8125rem; color: var(--text-primary); background: var(--bg-input); border: 1px solid var(--border-card); border-radius: 6px; padding: 2px var(--space-1); }
 .entry-flash { outline: 2px solid var(--cyan-accent); outline-offset: 2px; transition: outline-color var(--t-standard); }
@@ -850,11 +852,8 @@ details.section[open] > summary { margin-bottom: var(--space-3); }
 .place-hours li { font-size: 0.875rem; }
 .place-reviews li { margin-bottom: var(--space-2); overflow-wrap: anywhere; }
 .place-finder { margin: var(--space-2) 0; }
-.place-finder .inline-form { display: flex; flex-wrap: wrap; gap: var(--space-1); }
-.place-finder .inline-form input { flex: 1 1 12rem; min-width: 0; }
 .idea-section { display: grid; gap: var(--space-2); margin-top: var(--space-3); }
 .idea-why { color: var(--text-secondary); font-size: 0.875rem; }
-.idea-row a.caption { white-space: nowrap; }
 
 /* --- home (theme v2) --- */
 .pill {
@@ -1137,14 +1136,6 @@ html.keyboard .bottom-nav, html.keyboard .trip-fab-button, html.keyboard .trip-f
 .to-sort-list .wrap { flex: 1; min-width: 0; }
 .to-sort-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--status-warning); flex: none; }
 .sorted-line { margin: 0; color: var(--emerald-accent); font-size: 0.875rem; }
-.money-bar, .spending-now, .trip-totals { display: grid; gap: var(--space-2); }
-.money-bar-head { display: flex; justify-content: space-between; align-items: center; }
-.money-bar-figure { margin: 0; font-size: 1.5rem; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text-white); }
-.money-bar-figure .caption { font-size: 0.875rem; font-weight: 500; }
-.money-bar p.caption, .spending-now p.caption { margin: 0; }
-.totals-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
-.totals-list li { display: flex; justify-content: space-between; gap: var(--space-3); color: var(--text-secondary); }
-.totals-list .num { color: var(--text-white); }
 .gap-line {
   display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin: 0;
   padding: var(--space-2) var(--space-3); border-radius: 10px; border: 1px dashed var(--status-warning-border);
@@ -1164,18 +1155,7 @@ html.keyboard .bottom-nav, html.keyboard .trip-fab-button, html.keyboard .trip-f
 .move-ask-open { justify-self: start; }
 .wallet-name { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); min-width: 0; }
 
-/* The one way to add: a sheet from the bottom on phones, a dialog on desktop. */
-.sheet-backdrop { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; background: rgba(27, 35, 51, 0.4); animation: fade var(--t-standard); padding: var(--space-4); }
-/* While a sheet is open the page behind it stays put, even as the keyboard opens. */
-.main-viewport:has(.sheet-backdrop) { overflow: hidden; }
-.add-sheet {
-  overscroll-behavior: contain;
-  width: min(480px, 100%); max-height: min(640px, 90dvh); overflow-y: auto; display: grid; gap: var(--space-3); align-content: start;
-  padding: var(--space-5); border-radius: 22px; border: 1px solid var(--border-card); background: var(--bg-card); box-shadow: var(--shadow-modal);
-  animation: sheet-up var(--t-emphasis);
-}
-.add-sheet-head { display: flex; align-items: center; gap: var(--space-2); }
-.add-sheet-head h2 { flex: 1; min-width: 0; margin: 0; }
+/* Adding: the ways to add (the sheet itself is under Sheets, at the end). */
 .ways { display: grid; gap: var(--space-2); }
 .ways-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .way {
@@ -1195,10 +1175,6 @@ html.keyboard .bottom-nav, html.keyboard .trip-fab-button, html.keyboard .trip-f
 .type-it-line.nexus { justify-self: start; background: var(--accent-soft); border: 1px solid var(--accent-border); border-bottom-left-radius: 4px; }
 .type-it-form { display: flex; gap: var(--space-2); }
 .type-it-form .input { flex: 1; min-width: 0; }
-@media (max-width: 900px) {
-  .sheet-backdrop { place-items: end center; padding: 0; }
-  .add-sheet { width: 100%; border-radius: 22px 22px 0 0; padding-bottom: calc(var(--space-5) + env(safe-area-inset-bottom)); max-height: 88dvh; }
-}
 @media (max-width: 720px) {
   .trip-cover-compact { margin-left: 0; margin-right: 0; min-height: 150px; }
 }
@@ -1209,6 +1185,7 @@ html.keyboard .bottom-nav, html.keyboard .trip-fab-button, html.keyboard .trip-f
 .share-link .input { flex: 1; min-width: 0; }
 @media (min-width: 721px) and (pointer: fine) { .share-link .input { font-size: 0.875rem; } }
 .share-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.share-actions > .btn-ghost:first-child { margin-left: -12px; }
 /* Share settings */
 .share-switch { display: flex; align-items: center; gap: var(--space-3); min-height: 44px; cursor: pointer; font-weight: 500; }
 .share-switch input { width: 22px; height: 22px; flex: none; accent-color: var(--accent-text); cursor: inherit; }
@@ -1463,7 +1440,6 @@ html.keyboard .bottom-nav, html.keyboard .trip-fab-button, html.keyboard .trip-f
 .stops-form .actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .stops-form .actions .btn, .stops-edit-row > .btn, .stops-add { min-height: 44px; }
 @media (min-width: 560px) {
-  .stops-sheet { width: min(680px, 100%); }
   .stops-edit-row { grid-template-columns: auto minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) auto; }
   .stops-date { grid-column: auto; }
   .stops-edit-row > .btn { grid-column: auto; grid-row: auto; }
@@ -1490,31 +1466,7 @@ html.keyboard .bottom-nav, html.keyboard .trip-fab-button, html.keyboard .trip-f
 }
 
 /* Trip page: ideas */
-/* An idea: grip | list dot | name and details | cost | button. The grip column is there
-   only while ideas can be dragged, so rows line up either way. */
-.place-list { gap: 0; }
-.place-row { display: grid; grid-template-columns: 10px minmax(0, 1fr) 88px 104px; align-items: center; gap: var(--space-2) var(--space-3); padding: var(--space-3) 0; border-bottom: 1px solid var(--border-subtle); }
-.place-list > .place-row:last-child { border-bottom: 0; }
-.place-list.can-drag > .place-row { grid-template-columns: 28px 10px minmax(0, 1fr) 88px 104px; }
-.place-grip { display: none; }
-.can-drag .place-grip { display: flex; margin-left: calc(-1 * var(--space-1)); }
-.list-dot { width: 10px; height: 10px; border-radius: 50%; }
-.place-text { display: grid; gap: 2px; justify-items: start; min-width: 0; }
-.place-name { display: grid; gap: 2px; justify-items: start; min-height: 44px; align-content: center; padding: 0; margin: 0; border: 0; background: none; font: inherit; color: var(--text-primary); text-align: left; cursor: pointer; }
-.place-name:hover strong, .place-name:focus-visible strong { text-decoration: underline; text-underline-offset: 3px; }
-.place-cost { justify-self: end; white-space: nowrap; color: var(--text-secondary); }
-.place-cost:empty { display: none; }
-.place-action { justify-self: end; }
-.place-action .btn { white-space: nowrap; }
-@media (max-width: 720px) {
-  /* The button stays on the right of the idea, as on desktop; the cost goes under the text. */
-  .place-row { grid-template-columns: 10px minmax(0, 1fr) auto; }
-  .place-list.can-drag > .place-row { grid-template-columns: 28px 10px minmax(0, 1fr) auto; }
-  .place-action { grid-column: -2; grid-row: 1; align-self: center; }
-  .place-cost { grid-column: 2; grid-row: 2; justify-self: start; }
-  .place-list.can-drag > .place-row > .place-cost { grid-column: 3; }
-  .place-action .btn { min-height: 44px; padding: 0 var(--space-3); }
-}
+/* An idea's row is styled under "Ideas and finder v2" at the end of this file. */
 /* The day picker: every day of the trip as a row a thumb hits first time. */
 .day-picker-for { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
 .day-picker-heading { margin: var(--space-2) 0 var(--space-1); font-size: 0.8125rem; font-weight: 600; color: var(--text-muted); }
@@ -1532,8 +1484,6 @@ html.keyboard .bottom-nav, html.keyboard .trip-fab-button, html.keyboard .trip-f
 
 /* Trip page: ideas map */
 /* A phone shows the list or the map, picked with the switch above; from 1024px they sit side by side. */
-.ideas-switch { margin-bottom: var(--space-3); }
-.ideas-switch .tab { min-height: 44px; min-width: 88px; }
 .ideas-layout { display: grid; gap: var(--space-4); grid-template-columns: minmax(0, 1fr); align-items: start; }
 .ideas-layout > .card { margin: 0; }
 .ideas-layout[data-view="map"] > .ideas { display: none; }
@@ -1541,25 +1491,12 @@ html.keyboard .bottom-nav, html.keyboard .trip-fab-button, html.keyboard .trip-f
 .stop-switch { margin: var(--space-2) 0; }
 .stop-switch .day-pill { display: inline-flex; align-items: center; gap: var(--space-2); min-height: 44px; }
 .ideas-unpinned { margin: var(--space-2) 0 0; overflow-wrap: anywhere; }
-.idea-hint { color: var(--accent-text); font-weight: 500; }
 .pin-prompt .actions .btn { min-height: 44px; }
 @media (min-width: 1024px) {
-  .ideas-switch { display: none; }
   .ideas-layout[data-view="map"] > .ideas { display: block; }
 }
 
-/* Trip page: finder */
-/* Where to look and quick themes sit under the search field, scrolling sideways rather than wrapping tall on a phone. */
-.find-scopes, .find-themes { margin-top: var(--space-2); }
-.find-scopes .day-pill, .find-themes .day-pill { min-height: 44px; }
-.find-themes .day-pill:disabled { opacity: 0.6; cursor: default; }
-.find-results { margin-top: var(--space-3); }
-.find-card { align-items: start; }
-.find-card .wrap { min-width: 0; overflow-wrap: anywhere; }
-.find-tags { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-top: var(--space-1); }
-.find-tags .chip { color: var(--text-muted); border: 1px solid var(--border-subtle); background: none; font-weight: 500; }
-.find-actions { display: grid; gap: var(--space-1); justify-items: stretch; flex: none; }
-.find-actions .btn { white-space: nowrap; min-height: 44px; }
+/* The finder is styled under "Ideas and finder v2" at the end of this file. */
 
 /* Trip page: money and prep */
 .planned-form { margin-top: var(--space-3); }
@@ -1568,7 +1505,7 @@ html.keyboard .bottom-nav, html.keyboard .trip-fab-button, html.keyboard .trip-f
 .prep-notes textarea.input { font-size: 16px; min-height: 120px; resize: vertical; }
 .prep-notes-actions { display: flex; justify-content: flex-end; }
 @media (pointer: coarse) {
-  .money-list .btn-small, .to-sort-list .btn-small, .packing-list .btn-small { min-height: 44px; }
+  .to-sort-list .btn-small, .packing-list .btn-small { min-height: 44px; }
   .planned-form > .btn, .prep-notes-actions .btn { min-height: 44px; }
 }
 @media (max-width: 720px) {
@@ -1604,10 +1541,6 @@ html.keyboard .bottom-nav, html.keyboard .trip-fab-button, html.keyboard .trip-f
 }
 .switch-row[aria-checked="true"] .switch-track { background: var(--accent); border-color: var(--accent); }
 .switch-row[aria-checked="true"] .switch-thumb { transform: translateX(18px); background: #fff; }
-.cost-row .row-actions { display: inline-flex; flex-wrap: wrap; gap: var(--space-2); justify-content: flex-end; }
-.cost-row .num { text-align: right; white-space: nowrap; }
-.cost-row > .wrap { flex: 1 1 160px; min-width: 0; overflow-wrap: anywhere; }
-.cost-row > .num { flex: none; }
 .people-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--space-3); }
 .people-actions .btn { min-height: 44px; }
 .choice-actions { margin-top: 0; }
@@ -1617,34 +1550,14 @@ html.keyboard .bottom-nav, html.keyboard .trip-fab-button, html.keyboard .trip-f
 .split-outcome { display: grid; gap: var(--space-1); margin-top: var(--space-3); padding: var(--space-3); border-radius: var(--radius-inner); background: var(--bg-input); }
 .split-outcome p, .split-outcome ul { margin: 0; }
 .split-outcome ul { padding-left: var(--space-5); }
-.kept-mine { margin-top: var(--space-3); }
 .paid-form { display: grid; gap: var(--space-3); margin-top: var(--space-3); }
 .paid-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--space-3); }
 .check-list { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); }
 .check-row { display: inline-flex; align-items: center; gap: var(--space-2); min-height: 44px; cursor: pointer; }
 .check-row input { width: 20px; height: 20px; accent-color: var(--accent); flex: none; }
-.paid-row.is-settled, .paid-row.is-settled .caption { color: var(--text-muted); }
-.paid-row { display: grid; gap: var(--space-2); }
-.settle-list { gap: var(--space-3); }
-.settle-row { display: grid; gap: var(--space-2); padding-bottom: var(--space-3); border-bottom: 1px solid var(--border-subtle); }
-.settle-row:last-child { border-bottom: 0; padding-bottom: 0; }
-.settle-row p { margin: 0; }
-.settle-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
-.settle-main {
-  flex: 1 1 auto; display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-width: 0; min-height: 44px;
-  padding: 0; border: 0; background: none; color: var(--text-primary); font: inherit; font-weight: 600; text-align: left;
-}
-button.settle-main { cursor: pointer; }
-button.settle-main:hover > .wrap { text-decoration: underline dotted; text-underline-offset: 3px; }
-.settle-head .btn { flex: none; min-height: 44px; }
-.settle-row .peek h3 { margin: var(--space-2) 0 0; }
 @media (max-width: 720px) {
-  .cost-row { flex-wrap: wrap; }
-  .cost-row .row-actions { flex: 1 1 100%; justify-content: flex-start; }
-  .cost-row .row-actions .btn { flex: 1 1 0; }
   .confirm-box .people-actions .btn, .paid-form .people-actions .btn { flex: 1 1 100%; }
 }
-.cost-row .btn-small, .paid-row .btn-small { min-height: 44px; }
 
 /* Research into a trip */
 .area-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
@@ -1785,7 +1698,10 @@ a.photo-credit:hover { text-decoration: underline; }
 .day-slide { flex: 0 0 100%; min-width: 0; align-self: start; scroll-snap-align: start; scroll-snap-stop: always; }
 @media (prefers-reduced-motion: reduce) { .day-track { transition: none; } }
 /* Getting around and directions: in the trip menu's sheet, or as a quiet line under the map. */
-.ways-sheet .trip-ways { flex-direction: column; align-items: flex-start; margin: 0; gap: var(--space-3); }
+.ways-sheet .trip-ways { display: grid; margin: 0; gap: var(--space-4); }
+/* Each picker is a label over a full-width select, so the two line up. */
+.ways-sheet .map-app { display: grid; gap: var(--space-1); }
+.ways-sheet .map-app select { width: 100%; min-height: 44px; padding: 0 var(--space-3); font-size: 1rem; border-radius: 10px; }
 .trip-map > .trip-ways { margin: var(--space-3) 0 0; }
 /* Money and Prep read as a column on a wide screen, not stretched across it. */
 .trip-narrow { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); min-width: 0; }
@@ -1896,4 +1812,219 @@ a.photo-credit:hover { text-decoration: underline; }
 .trip-tab[aria-current="page"] { color: var(--text-white); background: var(--bg-card); box-shadow: 0 1px 3px rgba(27, 35, 51, 0.12); }
 @media (prefers-reduced-motion: reduce) {
   .trip-v2 .trip-slim { animation: none; }
+}
+
+/* Sheets */
+/* One sheet for the travel pages: a bottom sheet on a phone, a centred dialog from 721px. */
+.sheet-backdrop { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: var(--space-4); background: rgba(27, 35, 51, 0.4); animation: fade var(--t-standard); }
+/* While a sheet is open the page behind it stays put, even as the keyboard opens. */
+body:has(.sheet-backdrop) .main-viewport { overflow: hidden; }
+.sheet-dialog {
+  display: flex; flex-direction: column; width: min(640px, calc(100vw - 48px)); max-height: 85vh; max-height: 85dvh; overflow: hidden;
+  border-radius: 20px; border: 1px solid var(--border-card); background: var(--bg-card); box-shadow: var(--shadow-modal);
+  animation: rise var(--t-standard);
+}
+.sheet-dialog:focus { outline: none; }
+.sheet-grab { display: none; flex: none; width: 36px; height: 4px; margin: var(--space-2) auto 0; border-radius: 2px; background: var(--border-card); }
+.sheet-head { flex: none; display: flex; align-items: center; gap: var(--space-2); min-height: 44px; padding: var(--space-4) var(--space-4) var(--space-2) var(--space-5); }
+.sheet-head h2 { flex: 1; min-width: 0; margin: 0; font-size: 17px; font-weight: 600; line-height: 1.3; text-transform: none; letter-spacing: normal; overflow-wrap: anywhere; }
+.sheet-icon {
+  flex: none; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 12px;
+  background: transparent; color: var(--text-secondary); font: inherit; cursor: pointer; transition: background var(--t-micro), color var(--t-micro);
+}
+.sheet-icon:hover, .sheet-icon:focus-visible { background: var(--bg-card-hover); color: var(--text-primary); }
+@media (hover: none) { .sheet-icon:hover { background: transparent; color: var(--text-secondary); } }
+.sheet-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: grid; gap: var(--space-3); align-content: start; padding: var(--space-2) var(--space-5) var(--space-5); }
+.sheet-foot { flex: none; padding: var(--space-3) var(--space-5) var(--space-5); border-top: 1px solid var(--border-subtle); }
+.day-picker-body { display: grid; gap: var(--space-3); }
+@media (max-width: 720px) {
+  .sheet-backdrop { place-items: end center; padding: 0; }
+  .sheet-dialog { width: 100%; max-height: 90vh; max-height: 90dvh; border-radius: 20px 20px 0 0; border-bottom: 0; animation: sheet-up var(--t-emphasis); }
+  .sheet-grab { display: block; }
+  .sheet-head { padding: var(--space-2) var(--space-3) var(--space-2) var(--space-4); }
+  .sheet-body { padding: var(--space-2) var(--space-4) var(--space-4); }
+  .sheet-foot { padding: var(--space-3) var(--space-4) var(--space-4); }
+  .sheet-dialog > :last-child { padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom)); }
+}
+@media (prefers-reduced-motion: reduce) { .sheet-backdrop, .sheet-dialog { animation: none; } }
+
+/* Ideas and finder v2 */
+/* Top of Ideas: the List/Map switch (phones only) at the left, the one primary at the right. */
+.ideas-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-3); }
+.ideas-find { margin-left: auto; min-height: 44px; }
+.ideas-switch { display: inline-flex; gap: 2px; padding: 4px; border-radius: 14px; background: #e3e9f1; }
+.ideas-switch button {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 var(--space-3); border: 0; border-radius: 10px;
+  background: none; color: var(--text-secondary); font: inherit; font-size: 0.8125rem; font-weight: 600; cursor: pointer;
+  transition: color var(--t-standard), background var(--t-standard), box-shadow var(--t-standard);
+}
+.ideas-switch button:hover { color: var(--text-primary); }
+.ideas-switch button[aria-pressed="true"] { color: var(--text-white); background: var(--bg-card); box-shadow: 0 1px 3px rgba(27, 35, 51, 0.12); }
+@media (min-width: 1024px) { .ideas-switch { display: none; } }
+
+/* The heading with its Arrange / Done text button, and the lists in one row that scrolls sideways. */
+.ideas-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); min-height: 40px; }
+.ideas-head h2 { font-size: 16px; font-weight: 600; }
+.ideas-arrange { color: var(--accent-text); font-weight: 600; }
+.ideas .list-chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 3px; margin: calc(var(--space-2) - 3px) -3px; }
+.ideas .list-chips::-webkit-scrollbar { display: none; }
+
+/* An idea: one quiet row in the card, 64px at least, divided by a hairline. */
+.place-list { list-style: none; margin: var(--space-2) 0 0; padding: 0; }
+.place-row { border-bottom: 1px solid var(--border-subtle); }
+.place-list > .place-row:last-child, .place-list > .place-editing:last-child { border-bottom: 0; }
+.place-editing { padding: var(--space-3) 0; }
+.place-main { display: flex; align-items: center; gap: var(--space-3); min-height: 64px; padding: var(--space-2) 0; }
+.place-grip { display: none; }
+.can-drag .place-grip { display: flex; flex: none; width: 28px; margin-left: calc(-1 * var(--space-1)); }
+.list-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; }
+.place-name {
+  flex: 1 1 auto; min-width: 0; display: grid; gap: 2px; justify-items: start; align-content: center; min-height: 44px; padding: 0; margin: 0;
+  border: 0; background: none; font: inherit; color: var(--text-primary); text-align: left; cursor: pointer;
+}
+.place-name strong { font-weight: 600; overflow-wrap: anywhere; }
+.place-name:hover strong, .place-name:focus-visible strong { text-decoration: underline; text-underline-offset: 3px; }
+.place-meta {
+  font-size: 0.8125rem; line-height: 1.35; color: var(--text-muted); overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+}
+.place-cost { flex: none; white-space: nowrap; color: var(--text-secondary); }
+.place-cost:empty { display: none; }
+.place-action { flex: none; display: flex; }
+.place-action .btn { white-space: nowrap; min-height: 44px; }
+.place-day {
+  display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 12px;
+  background: var(--accent-soft); color: var(--accent-text); cursor: pointer; transition: background var(--t-micro);
+}
+.place-day:hover { background: rgba(62, 82, 182, 0.16); }
+.place-day:active { transform: scale(0.96); }
+/* Open: its note, Google Maps, place details, then Change and Remove (quiet rose). */
+.place-open { display: grid; gap: var(--space-2); justify-items: start; padding: 0 0 var(--space-3) calc(10px + var(--space-3)); }
+.can-drag .place-open { padding-left: calc(38px + var(--space-3) * 2); }
+.place-note { margin: 0; font-size: 0.875rem; color: var(--text-secondary); overflow-wrap: anywhere; }
+.place-links { display: flex; flex-wrap: wrap; gap: 0 var(--space-3); }
+.place-links .entry-link { display: inline-flex; align-items: center; min-height: 32px; margin: 0; }
+.place-open-actions { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-left: calc(-1 * var(--space-3)); }
+.place-open-actions .btn { min-height: 40px; }
+.place-open-actions .btn-danger { border-color: transparent; }
+
+/* The finder, in a sheet: search, one scope chip, themes in a row, where it looks, results. */
+.place-finder { display: grid; gap: var(--space-3); margin: var(--space-2) 0; }
+.find-sheet .sheet-body { min-height: min(340px, 60dvh); }
+.find-form { display: flex; align-items: center; gap: var(--space-2); }
+.find-field { position: relative; flex: 1 1 auto; min-width: 0; display: block; }
+.find-field > svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-muted); pointer-events: none; }
+.find-field .input { padding-left: 38px; }
+.find-form .btn { flex: none; min-height: 44px; }
+.find-scope { position: relative; justify-self: start; }
+.find-scope-chip { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; }
+.find-menu {
+  position: absolute; z-index: 5; top: calc(100% + 4px); left: 0; display: grid; min-width: 220px; max-width: min(320px, calc(100vw - 48px)); padding: var(--space-1);
+  border-radius: 14px; border: 1px solid var(--border-card); background: var(--bg-card); box-shadow: var(--shadow-modal);
+}
+.find-menu-item {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: 44px; padding: 0 var(--space-3); border: 0; border-radius: 10px;
+  background: none; color: var(--text-primary); font: inherit; text-align: left; cursor: pointer;
+}
+.find-menu-item:hover, .find-menu-item:focus-visible { background: var(--bg-card-hover); }
+.find-menu-item[aria-checked="true"] { color: var(--accent-text); font-weight: 600; }
+.find-themes { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 3px; margin: -3px; }
+.find-themes::-webkit-scrollbar { display: none; }
+.find-themes .day-pill { min-height: 40px; }
+.find-themes .day-pill:disabled { opacity: 0.6; cursor: default; }
+.find-where, .find-status { margin: 0; }
+.find-results { list-style: none; margin: 0; padding: 0; }
+.find-card { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) 0; border-bottom: 1px solid var(--border-subtle); }
+.find-card:last-child { border-bottom: 0; }
+.find-photo, .find-tile { flex: none; width: 56px; height: 56px; margin: 0; border-radius: 14px; overflow: hidden; }
+.find-photo img { display: block; width: 56px; height: 56px; object-fit: cover; background: var(--bg-raised); }
+.find-tile { display: grid; place-items: center; background: var(--accent-soft); color: var(--accent-text); }
+.find-text { flex: 1 1 auto; min-width: 0; display: grid; gap: 2px; }
+.find-text strong { font-weight: 600; overflow-wrap: anywhere; }
+.find-meta { font-size: 0.8125rem; line-height: 1.35; color: var(--text-muted); overflow-wrap: anywhere; }
+.find-meta .idea-why { font-size: inherit; color: inherit; }
+.find-meta .place-rating { color: var(--text-secondary); }
+.find-meta a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.find-actions { flex: none; display: grid; gap: var(--space-1); justify-items: stretch; }
+.find-actions .btn { min-height: 44px; white-space: nowrap; }
+.find-saved { background: var(--emerald-soft); color: var(--emerald-accent); font-weight: 600; }
+.find-saved:disabled { opacity: 1; cursor: default; }
+
+/* Money tab v2 */
+/* Summary: one card, a stacked bar of spent / booked / planned, and what is left. */
+.money-summary { display: grid; gap: var(--space-3); }
+.money-label { margin: 0; font-size: 0.8125rem; font-weight: 600; line-height: 1.4; color: var(--text-muted); }
+.money-figure { margin: 0; font-size: 1.75rem; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums; color: var(--text-white); overflow-wrap: anywhere; }
+.money-of { font-size: 0.9375rem; font-weight: 500; color: var(--text-muted); }
+.money-track { display: flex; gap: 2px; height: 12px; border-radius: 999px; overflow: hidden; background: var(--bg-input); border: 1px solid var(--border-card); }
+.money-track.is-over { border-color: var(--status-warning); }
+.money-seg { display: block; flex: none; height: 100%; max-width: 100%; }
+.money-seg-spent { background: var(--accent); }
+.money-seg-booked { background: var(--pal-sky); }
+.money-seg-planned { background: repeating-linear-gradient(135deg, var(--pal-cornflower) 0 2px, var(--pal-icy) 2px 6px); }
+.money-legend { margin: 0; font-size: 0.8125rem; line-height: 1.5; color: var(--text-secondary); }
+.money-key { display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 3px; vertical-align: -1px; }
+.money-left { margin: 0; font-size: 0.9375rem; color: var(--text-secondary); }
+.money-left .num { color: var(--text-white); }
+.money-over, .money-left.money-over .num { color: var(--status-warning); }
+.money-note { margin: 0; font-size: 0.8125rem; line-height: 1.4; color: var(--text-muted); }
+[data-reveal="in"] .money-track .money-seg { transform-origin: left center; animation: fill-x 700ms cubic-bezier(0.16, 1, 0.3, 1) calc(var(--reveal-delay, 0ms) + 100ms) both; }
+/* To do: costs to split and people to settle up with. */
+.money-todo { display: grid; gap: var(--space-3); }
+.todo-list { list-style: none; margin: 0; padding: 0; display: grid; }
+.todo-item { display: grid; gap: var(--space-2); padding: var(--space-3) 0; }
+.todo-item + .todo-item { border-top: 1px solid var(--border-subtle); }
+.todo-item:first-child { padding-top: 0; }
+.todo-row { display: flex; align-items: center; gap: var(--space-3); }
+.todo-row .btn { flex: none; min-height: 44px; }
+.todo-text { flex: 1 1 auto; min-width: 0; display: grid; gap: 2px; }
+.todo-title { font-weight: 600; color: var(--text-primary); overflow-wrap: anywhere; }
+.todo-sub { font-size: 0.8125rem; line-height: 1.4; color: var(--text-muted); overflow-wrap: anywhere; }
+.todo-avatar { flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
+.todo-more { justify-self: start; min-height: 40px; margin-left: -12px; }
+.todo-quiet { margin: 0; font-size: 0.9375rem; color: var(--text-secondary); }
+.todo-parts { padding-left: 0; }
+.todo-parts h3 { margin: var(--space-2) 0 0; }
+/* Details: an accordion, one section open at a time. */
+.money-details h2 { margin-bottom: var(--space-2); }
+.money-sec + .money-sec { border-top: 1px solid var(--border-subtle); }
+.money-sec-h { margin: 0; font-size: inherit; line-height: inherit; }
+.money-sec-btn {
+  display: flex; align-items: center; gap: var(--space-3); width: 100%; min-height: 56px; padding: 0; border: 0; background: none;
+  color: var(--text-primary); font: inherit; text-align: left; cursor: pointer;
+}
+.money-sec-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
+.money-sec-btn:hover .money-sec-title { color: var(--accent-text); }
+@media (hover: none) { .money-sec-btn:hover .money-sec-title { color: inherit; } }
+.money-sec-title { flex: 1 1 auto; min-width: 0; font-weight: 600; }
+.money-sec-sum { flex: 0 1 auto; min-width: 0; font-size: 0.8125rem; color: var(--text-muted); text-align: right; overflow-wrap: anywhere; }
+.money-chev { flex: none; color: var(--text-muted); transition: transform var(--t-micro); }
+[aria-expanded="true"] > .money-chev { transform: rotate(90deg); }
+.money-sec-panel { display: grid; gap: var(--space-3); padding: 0 0 var(--space-4); }
+.money-sec-panel[hidden] { display: none; }
+.money-sec-panel > p { margin: 0; }
+.money-secs .bars { margin: 0; }
+.money-add { justify-self: start; }
+.money-form { display: grid; gap: var(--space-2); }
+.money-switch { display: grid; gap: var(--space-1); }
+/* Rows inside a section: title, a 13px line under it, the amount on the right; divided, not carded. */
+.money-rows { list-style: none; margin: 0; padding: 0; display: grid; }
+.money-rows > li + li { border-top: 1px solid var(--border-subtle); }
+.money-rows > li.is-settled .money-row-title, .money-rows > li.is-settled .money-row-sub, .money-rows > li.is-settled .num { color: var(--text-muted); }
+.money-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); padding: var(--space-3) 0; }
+.money-row-main { flex: 1 1 160px; min-width: 0; display: grid; gap: 2px; }
+.money-row-title { font-weight: 500; overflow-wrap: anywhere; }
+.money-row-sub { font-size: 0.8125rem; line-height: 1.4; color: var(--text-muted); overflow-wrap: anywhere; }
+.money-row-amount { flex: none; display: grid; justify-items: end; gap: 2px; max-width: 100%; text-align: right; }
+.money-row-actions { flex: none; display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-1); }
+.money-tag { display: inline-flex; align-items: center; min-height: 20px; padding: 0 8px; border-radius: 999px; background: var(--bg-raised); color: var(--text-secondary); font-size: 0.8125rem; font-weight: 600; }
+.money-tag-split { background: var(--status-warning-soft); color: var(--status-warning); }
+@media (pointer: coarse) { .money-row .btn-small { min-height: 44px; } }
+@media (max-width: 720px) {
+  .money-figure { font-size: 1.5rem; }
+  .money-row-actions { flex: 1 1 100%; justify-content: flex-start; margin-left: -12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .money-chev { transition: none; }
+  [data-reveal] .money-track .money-seg { animation: none; }
 }

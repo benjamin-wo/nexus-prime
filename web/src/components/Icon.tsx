@@ -19,6 +19,7 @@ export type IconName =
   | "up"
   | "down"
   | "chevron"
+  | "chevronLeft"
   | "check"
   | "flight"
   | "stay"
@@ -45,6 +46,11 @@ export type IconName =
   | "order"
   | "landing"
   | "edit"
+  | "list"
+  | "map"
+  | "calendarPlus"
+  | "chevronDown"
+  | "trash"
   | "x";
 
 const PATHS: Record<IconName, string[]> = {
@@ -80,6 +86,7 @@ const PATHS: Record<IconName, string[]> = {
   up: ["M7 17L17 7", "M8 7h9v9"],
   down: ["M7 7l10 10", "M17 8v9H8"],
   chevron: ["M9 6l6 6-6 6"],
+  chevronLeft: ["M15 6l-6 6 6 6"],
   check: ["M5 12.5l4.5 4.5L19 7.5"],
   flight: ["M2 16l20-6-2-3-7 2-5-5-2 1 3 6-5 1-2-2-1 1z"],
   stay: ["M3 18V7", "M3 14h18v4", "M21 14v-2a3 3 0 0 0-3-3h-7v5", "M7 11.5h.01"],
@@ -147,6 +154,11 @@ const PATHS: Record<IconName, string[]> = {
   order: ["M8 20V5", "M4.5 8.5L8 5l3.5 3.5", "M16 4v15", "M12.5 15.5L16 19l3.5-3.5"],
   landing: ["M3 20h18", "M3 8l4 1 4 3 5.5 1.5a2 2 0 0 1-.5 3.9L5 15z"],
   edit: ["M4 20h4L19 9l-4-4L4 16z", "M13.5 6.5l4 4"],
+  list: ["M8 6h12M8 12h12M8 18h12", "M4 6h.01M4 12h.01M4 18h.01"],
+  map: ["M9 4L3 6v14l6-2 6 2 6-2V4l-6 2z", "M9 4v14M15 6v14"],
+  calendarPlus: ["M4 6h16v14H4z", "M4 10h16M8 3v4M16 3v4", "M12 13v5M9.5 15.5h5"],
+  chevronDown: ["M6 9l6 6 6-6"],
+  trash: ["M4 7h16", "M10 11v6M14 11v6", "M6 7l1 13h10l1-13", "M9 7V4h6v3"],
   x: ["M6 6l12 12", "M18 6L6 18"],
 };
 

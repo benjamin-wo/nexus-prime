@@ -1,6 +1,9 @@
+import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
+
 import type { Idea, Place, SearchScope, TripStop } from "../api";
+import { Icon, type IconName } from "../components/Icon";
 import { stopOfDay } from "./TripBits";
-import { Rating } from "./TripPlaces";
+import { PlacePicture, Rating } from "./TripPlaces";
 
 /** Where a search for the trip looks: all of it, one of its stops, or round one day's places. */
 export type Scope = {
@@ -158,21 +161,101 @@ export const listFor = (f: Found, theme: string | null): string | null => theme 
 /** What a button saves: as an idea in ``list``, or as a plan on ``day``. */
 export type PickCtx = { list: string | null; day: string | null; dayNumber: number | null };
 
-/** The scope row: whole trip, each stop, and near a day. */
-export function ScopeRow({ scopes, value, onPick }: { scopes: Scope[]; value: string; onPick: (scope: Scope) => void }) {
+/** Stop names as a sentence: "Tokyo", "Tokyo and Kyoto", "Tokyo, Kyoto and Osaka". */
+const joinNames = (names: string[]) => (names.length < 2 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`);
+
+/** One line saying where a search looks, and whether guides are read with Google. */
+export function whereCaption({ scope, scopes, destination, withIdeas }: { scope: Scope | null; scopes: Scope[]; destination: string; withIdeas: boolean }): string {
+  let text: string;
+  if (scope?.day) text = `Within about 2 km of Day ${scope.number}'s plans.`;
+  else if (scope?.stop) text = `In ${scope.stop}.`;
+  else {
+    const stops = scopes.filter((s) => s.stop).map((s) => s.stop as string);
+    text = stops.length > 1 ? `Across ${joinNames(stops)}.` : `Near ${destination}.`;
+  }
+  return withIdeas ? `${text} Google and guides together.` : text;
+}
+
+/** Where to look, as one chip with the current scope; it opens the whole trip, each stop
+ * and near a day as a menu. */
+export function ScopeMenu({ scopes, value, onPick }: { scopes: Scope[]; value: string; onPick: (scope: Scope) => void }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const chip = useRef<HTMLButtonElement>(null);
+  const menuId = useId();
+
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: PointerEvent) => {
+      if (!box.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", away);
+    box.current?.querySelector<HTMLElement>('[role="menuitemradio"][aria-checked="true"]')?.focus();
+    return () => document.removeEventListener("pointerdown", away);
+  }, [open]);
+
   if (scopes.length < 2) return null;
+  const current = scopes.find((s) => s.key === value) ?? scopes[0];
+
+  function key(e: KeyboardEvent) {
+    if (!open) return;
+    if (e.key === "Escape") {
+      // Closes the menu, not the sheet round it.
+      e.stopPropagation();
+      setOpen(false);
+      chip.current?.focus();
+    } else if (e.key === "Tab") {
+      setOpen(false);
+    } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const items = [...(box.current?.querySelectorAll<HTMLElement>('[role="menuitemradio"]') ?? [])];
+      const at = items.indexOf(document.activeElement as HTMLElement);
+      const next = e.key === "ArrowDown" ? (at + 1) % items.length : (at <= 0 ? items.length : at) - 1;
+      items[next]?.focus();
+    }
+  }
+
   return (
-    <div className="chips find-scopes" role="group" aria-label="Look in">
-      {scopes.map((s) => (
-        <button key={s.key} type="button" className="day-pill" aria-pressed={s.key === value} onClick={() => onPick(s)}>
-          {s.label}
-        </button>
-      ))}
+    <div className="find-scope" role="group" aria-label="Look in" ref={box} onKeyDown={key}>
+      <button
+        ref={chip}
+        type="button"
+        className="day-pill find-scope-chip"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={open ? menuId : undefined}
+        aria-label={`Look in: ${current.label}`}
+        onClick={() => setOpen(!open)}
+      >
+        {current.label}
+        <Icon name="chevronDown" size={16} />
+      </button>
+      {open && (
+        <div id={menuId} className="find-menu" role="menu" aria-label="Look in">
+          {scopes.map((s) => (
+            <button
+              key={s.key}
+              type="button"
+              role="menuitemradio"
+              aria-checked={s.key === current.key}
+              className="find-menu-item"
+              onClick={() => {
+                setOpen(false);
+                chip.current?.focus();
+                if (s.key !== current.key) onPick(s);
+              }}
+            >
+              {s.label}
+              {s.key === current.key && <Icon name="check" size={16} />}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-/** Quick themes that fill the search and run it. */
+/** Quick themes that fill the search and run it, in one row that scrolls sideways. */
 export function ThemeChips({ value, disabled, onPick }: { value: string | null; disabled: boolean; onPick: (theme: { label: string; query: string }) => void }) {
   return (
     <div className="chips find-themes" role="group" aria-label="Themes">
@@ -185,9 +268,24 @@ export function ThemeChips({ value, disabled, onPick }: { value: string | null; 
   );
 }
 
+/** The icon on a result with no photo, by what it is. */
+function tileIcon(f: Found): IconName {
+  const kind = `${f.kind ?? ""} ${f.listKind ?? ""}`;
+  if (/food|restaurant|ramen|sushi|caf[eé]|coffee|noodle|bakery|bar\b|izakaya|market/i.test(kind)) return "food";
+  if (/hotel|stay|inn\b|hostel|ryokan|lodging/i.test(kind)) return "stay";
+  if (/museum|gallery|ticket|theat|show/i.test(kind)) return "ticket";
+  return "place";
+}
+
+/** Chains the parts of a meta line with a middle dot. */
+function dotted(parts: ReactNode[]): ReactNode[] {
+  return parts.flatMap((part, i) => (i === 0 ? [part] : [" · ", part]));
+}
+
 /** The merged results. ``pickLabel`` saves a result (as an idea unless the finder was
- * opened to add to a day); ``dayScope`` adds "Add to Day N" beside it. */
-export function ResultList({ results, label, pickLabel, saveText, busy, dayScope, onPick }: {
+ * opened to add to a day); ``dayScope`` adds "Add to Day N" beside it. A saved result
+ * says so and the list stays, so several can be saved. */
+export function ResultList({ results, label, pickLabel, saveText, busy, dayScope, saved, onPick }: {
   results: Found[];
   label: string;
   pickLabel: string;
@@ -196,40 +294,69 @@ export function ResultList({ results, label, pickLabel, saveText, busy, dayScope
   busy: boolean;
   /** When the search is near a day: the day the second button adds to. */
   dayScope: Scope | null;
+  /** Keys of the results already saved. */
+  saved?: ReadonlySet<string>;
   onPick: (found: Found, to: "list" | "day") => void;
 }) {
   return (
-    <ul className="feed find-results" aria-label={label}>
+    <ul className="find-results" aria-label={label}>
       {results.map((f) => {
         const where = f.area ?? f.address;
+        const source = f.source ? (
+          <a key="source" href={f.source.url} target="_blank" rel="noopener noreferrer nofollow" title={f.source.title} aria-label={`From a guide: ${f.source.title}`}>
+            From a guide
+          </a>
+        ) : (
+          "From a guide"
+        );
+        const guide = [...(f.why ? [<span key="why" className="idea-why">“{f.why}”</span>] : []), source];
+        const meta = f.from.includes("google")
+          ? dotted([...(f.place && f.place.rating !== null ? [<Rating key="rating" place={f.place} />] : []), ...(where ? [where] : []), "Google Maps"])
+          : dotted(f.why ? guide : [...(where ? [where] : []), ...guide]);
+        const isSaved = saved?.has(f.key) ?? false;
         return (
-          <li key={f.key} className="run-row idea-row find-card">
-            <span className="wrap">
-              <strong>{f.name}</strong> {f.place && <Rating place={f.place} />}
-              <br />
-              <span className="caption">{[f.kind, f.price, where].filter(Boolean).join(" · ")}</span>
-              {f.why && f.source && (
-                <>
-                  <br />
-                  <span className="idea-why">“{f.why}”</span>{" "}
-                  <a className="caption" href={f.source.url} target="_blank" rel="noopener noreferrer nofollow">
-                    {f.source.title}
-                  </a>
-                </>
-              )}
-              <span className="find-tags">
-                {f.from.includes("google") && <span className="chip">Google Maps</span>}
-                {f.from.includes("guides") && <span className="chip">From guides</span>}
+          <li key={f.key} className="find-card">
+            {f.place?.photo_url ? (
+              <PlacePicture place={f.place} tile />
+            ) : (
+              <span className="find-tile" aria-hidden="true">
+                <Icon name={tileIcon(f)} size={24} />
               </span>
+            )}
+            <span className="find-text">
+              <strong>{f.name}</strong>
+              <span className="find-meta">{meta}</span>
+              {f.from.includes("google") && f.from.includes("guides") && <span className="find-meta">{dotted(guide)}</span>}
+              {/* Google asks for the photo's author to be shown with it. */}
+              {f.place?.photo_url && (
+                <span className="find-meta find-credit">
+                  {f.place.photo_author_url ? (
+                    <a href={f.place.photo_author_url} target="_blank" rel="noopener noreferrer">
+                      Photo{f.place.photo_author ? ` by ${f.place.photo_author}` : ""}, Google Maps
+                    </a>
+                  ) : (
+                    <>Photo{f.place.photo_author ? ` by ${f.place.photo_author}` : ""}, Google Maps</>
+                  )}
+                </span>
+              )}
             </span>
             <span className="find-actions">
-              <button type="button" className="btn btn-soft btn-small" disabled={busy} onClick={() => onPick(f, "list")} aria-label={`${pickLabel}: ${f.name}`}>
-                {saveText ?? pickLabel}
-              </button>
-              {dayScope && (
-                <button type="button" className="btn btn-soft btn-small" disabled={busy} onClick={() => onPick(f, "day")} aria-label={`Add to Day ${dayScope.number}: ${f.name}`}>
-                  Add to Day {dayScope.number}
+              {isSaved ? (
+                <button type="button" className="btn find-saved" disabled aria-label={`${f.name} is saved`}>
+                  <Icon name="check" size={16} />
+                  Saved
                 </button>
+              ) : (
+                <>
+                  <button type="button" className="btn btn-soft" disabled={busy} onClick={() => onPick(f, "list")} aria-label={`${pickLabel}: ${f.name}`}>
+                    {saveText ?? pickLabel}
+                  </button>
+                  {dayScope && (
+                    <button type="button" className="btn btn-soft" disabled={busy} onClick={() => onPick(f, "day")} aria-label={`Add to Day ${dayScope.number}: ${f.name}`}>
+                      Add to Day {dayScope.number}
+                    </button>
+                  )}
+                </>
               )}
             </span>
           </li>

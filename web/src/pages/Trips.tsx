@@ -1,10 +1,10 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type CSSProperties, type FormEvent, Fragment, type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { ApiError, api, type Booking, type Hop, type ScreenshotRead, type Trip, type TripDetail } from "../api";
 import { Icon, type IconName } from "../components/Icon";
+import { Sheet } from "../components/Sheet";
 import { base64 } from "../files";
 import { formatMoney } from "../format";
 import { ResearchList } from "./Research";
@@ -830,29 +830,13 @@ function LooseBookings({ trips }: { trips: Trip[] }) {
 /** How longer hops go and which app directions open in: a small sheet off the trip's menu,
  * for the owner. Out in the body, since the cover's light text colours would carry into it. */
 function WaysSheet({ trip, onChange, onClose }: { trip: Trip; onChange: () => void; onClose: () => void }) {
-  useEffect(() => {
-    const keydown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", keydown);
-    return () => window.removeEventListener("keydown", keydown);
-  }, [onClose]);
-  return createPortal(
-    <div className="sheet-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <section className="add-sheet ways-sheet" role="dialog" aria-modal="true" aria-labelledby="ways-sheet-title">
-        <div className="add-sheet-head">
-          <h2 id="ways-sheet-title">Getting around and directions</h2>
-          <button type="button" className="btn btn-ghost btn-small" onClick={onClose} aria-label="Close">
-            ×
-          </button>
-        </div>
-        <div className="trip-ways">
-          <GettingAroundPicker trip={trip} onChange={onChange} />
-          <MapAppPicker />
-        </div>
-      </section>
-    </div>,
-    document.body,
+  return (
+    <Sheet title="Getting around and directions" titleId="ways-sheet-title" className="ways-sheet" onClose={onClose}>
+      <div className="trip-ways">
+        <GettingAroundPicker trip={trip} onChange={onChange} />
+        <MapAppPicker />
+      </div>
+    </Sheet>
   );
 }
 

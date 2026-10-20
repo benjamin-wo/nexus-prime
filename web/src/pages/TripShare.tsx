@@ -1,7 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
 import { api, type Trip, type TripShare } from "../api";
+import { Sheet } from "../components/Sheet";
 import { PeopleSection } from "./TripPeople";
 
 /** The trip's share sheet. People: who is on the trip, inviting someone (the owner) or leaving
@@ -10,32 +11,11 @@ import { PeopleSection } from "./TripPeople";
 export function ShareSheet({ trip, onClose, onLeft }: { trip: Trip; onClose: () => void; onLeft?: () => void }) {
   const member = trip.role === "member";
   return (
-    <div className="sheet-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <section className="add-sheet share-sheet" role="dialog" aria-modal="true" aria-labelledby="share-sheet-title">
-        <SheetKeys onClose={onClose} />
-        <div className="add-sheet-head">
-          <h2 id="share-sheet-title">{member ? "People on this trip" : "Share the plan"}</h2>
-          <button type="button" className="btn btn-ghost btn-small" onClick={onClose} aria-label="Close">
-            ×
-          </button>
-        </div>
-        <PeopleSection trip={trip} onLeft={onLeft ?? onClose} />
-        {!member && <ReadOnlyLink trip={trip} />}
-      </section>
-    </div>
+    <Sheet title={member ? "People on this trip" : "Share the plan"} titleId="share-sheet-title" className="share-sheet" onClose={onClose}>
+      <PeopleSection trip={trip} onLeft={onLeft ?? onClose} />
+      {!member && <ReadOnlyLink trip={trip} />}
+    </Sheet>
   );
-}
-
-/** Escape closes the sheet. */
-function SheetKeys({ onClose }: { onClose: () => void }) {
-  useEffect(() => {
-    const keydown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", keydown);
-    return () => window.removeEventListener("keydown", keydown);
-  }, [onClose]);
-  return null;
 }
 
 /** The read-only link and its switch: the owner's alone. */

@@ -1273,6 +1273,14 @@ async function openTab(page: Page, name: TripTab) {
   await expect(tab).toHaveAttribute("aria-current", "page");
 }
 
+/** Opens one section of the Money tab's Details (one is open at a time) and returns it. */
+async function openSection(page: Page, name: string) {
+  const header = page.getByRole("button", { name: new RegExp(`^${name}`) });
+  if ((await header.getAttribute("aria-expanded")) !== "true") await header.click();
+  await expect(header).toHaveAttribute("aria-expanded", "true");
+  return page.getByRole("region", { name, exact: true });
+}
+
 /** The trip page's + for the open tab: a floating button on a phone, a button in the header beside Share on a wide screen. */
 const tripAdd = (page: Page) => page.locator(".trip-fab-button, .trip-add-desktop").filter({ visible: true });
 
@@ -1330,25 +1338,31 @@ test("a trip is added and shows its spending, set-aside and settle-up", async ({
   await expect(page.getByRole("region", { name: "Next up" })).toContainText("9 nights without a place to stay");
   await expect(itineraryOf(page)).toContainText("ZZ12 SIN → NRT");
   await expect(itineraryOf(page)).toContainText("08:25 → 16:05");
-  // Prep keeps everything still to sort, and Money the money in one bar.
+  // Prep keeps everything still to sort, and Money the money in one card.
   await openTab(page, "Prep");
   await expect(page.getByRole("region", { name: /Still to sort/ })).toContainText("9 nights without a place to stay");
   await openTab(page, "Money");
-  await expect(page.getByRole("region", { name: "Money", exact: true })).toContainText("of SGD 3,000.00");
+  const summary = page.getByRole("region", { name: "Spent and booked", exact: true });
+  await expect(summary).toContainText("SGD 1,638.00");
+  await expect(summary).toContainText("of SGD 3,000.00");
+  await expect(summary).toContainText("Spent SGD 818.00 · Booked SGD 820.00 · Planned SGD 582.00");
+  await expect(summary).toContainText("Left after planned costs SGD 780.00");
+  // What needs doing with the people going comes next.
+  await expect(page.getByRole("region", { name: "To do" })).toContainText("Ann owes you");
 
-  // Everything about the money is on the one page, unfolded.
-  const spending = page.getByRole("region", { name: "Where it goes" });
-  await expect(spending).toContainText("SGD 818.00 of SGD 3,000.00");
-  await expect(spending).toContainText("SGD 800.00 before the trip");
+  // The rest is in Details, one section open at a time.
+  const spending = await openSection(page, "Where it goes");
+  await expect(spending).toContainText("SGD 800.00 was spent before the trip");
   // A category opens to the trip expenses behind it.
   await spending.getByRole("button", { name: /^Dining Out:/ }).click();
   await expect(spending.getByRole("list", { name: "Dining Out expenses" })).toContainText("Ichiran");
   await expect(spending.getByRole("list", { name: "Dining Out expenses" })).not.toContainText("Air ticket");
+  await openSection(page, "Planned costs");
   await expect(page.getByRole("list", { name: "Planned costs" })).toContainText("Dining Out");
-  await expect(page.getByRole("region", { name: "Setting money aside" })).toContainText("SGD 1,500.00 each payday would cover it");
-  await expect(page.getByRole("region", { name: "Settle up" })).toContainText("Ann");
-  await expect(spending).toContainText("SGD 820.00 not logged yet");
-  const expenses = page.getByRole("region", { name: "Expenses" });
+  await expect(spending).toHaveCount(0); // opening another section closes this one
+  await expect(await openSection(page, "Setting money aside")).toContainText("SGD 1,500.00 each payday would cover it");
+  await expect(await openSection(page, "Bookings paid")).toContainText("SGD 820.00 not logged as an expense yet");
+  const expenses = await openSection(page, "Expenses");
   await expect(expenses.getByText("added by hand")).toBeVisible();
   await expenses.getByRole("button", { name: "Take Air ticket off the trip" }).click();
   await expect(expenses.getByText("Air ticket")).toHaveCount(0);
@@ -1550,21 +1564,27 @@ test("places from Google Maps: saved, linked, rated, and flagged when usually cl
   const state = await fakeApi(page);
   await addTrip(page, "Seoul", "2026-11-10", "2026-11-13");
 
-  // Found on Google Maps and saved as an idea, with its place kept. Finding sits at the top of Ideas.
+  // Found on Google Maps and saved as an idea, with its place kept. Finding is the Find ideas button at the top of Ideas, in a sheet.
   await openTab(page, "Ideas");
-  await page.getByRole("button", { name: "Find places or ideas" }).click();
+  await page.getByRole("button", { name: "Find ideas", exact: true }).click();
   await page.getByRole("search", { name: "Search Google Maps" }).getByLabel("Look for").fill("noodles");
   await page.getByRole("button", { name: "Search", exact: true }).click();
   const results = page.getByRole("list", { name: "Results" });
-  await expect(results).toContainText("Hanok Noodle Bar Rated 4.6 (2,310)");
+  await expect(results).toContainText("Hanok Noodle Bar");
+  await expect(results).toContainText("Rated 4.6 (2,310)");
   await expect.poll(() => state.placeSearches).toEqual(["noodles"]);
   // One word reads as a name: only Google Maps is asked; ideas are a tap away.
   await expect(page.getByRole("button", { name: /Ideas from guides and articles/ })).toBeVisible();
   expect(state.ideaSearches).toEqual([]);
   await results.getByRole("button", { name: "Save: Hanok Noodle Bar" }).click();
+  // The sheet stays open, with the result marked saved, so several can be kept.
+  await expect(results.getByRole("button", { name: "Hanok Noodle Bar is saved" })).toBeDisabled();
+  await page.keyboard.press("Escape");
   const places = page.getByRole("list", { name: "Ideas" });
   await expect(places).toContainText("Hanok Noodle Bar");
   await expect.poll(() => state.plans[0]).toMatchObject({ name: "Hanok Noodle Bar", category: "Noodle shop", place_id: "fakePlaceNoodle01" });
+  // Its row opens to show the rating and details.
+  await places.getByRole("button", { name: /^Hanok Noodle Bar/ }).click();
   await expect(places.getByLabel("Rated 4.6 out of 5 from 2310 ratings")).toBeVisible();
 
   // Its details: a summary, reviews credited to their authors, and Google Maps.
@@ -1588,6 +1608,7 @@ test("places from Google Maps: saved, linked, rated, and flagged when usually cl
   const entry = page.getByRole("dialog", { name: "Add an idea" }).getByRole("form", { name: "Add to the itinerary" });
   await entry.getByLabel("Name", { exact: true }).fill("Namdaemun Market");
   await entry.getByRole("button", { name: "Add" }).click();
+  await places.getByRole("button", { name: /^Namdaemun Market/ }).click();
   await places.getByRole("button", { name: "Find Namdaemun Market on Google Maps" }).click();
   await expect(page.getByRole("search", { name: "Search Google Maps" }).getByLabel("Look for")).toHaveValue("Namdaemun Market");
   await page.getByRole("button", { name: "Search", exact: true }).click();
@@ -1829,7 +1850,7 @@ test("ideas from guides and articles: asked for in words, credited, saved to the
   await expect(source).toHaveAttribute("href", "https://food.example.com/seoul-noodles");
   await expect(source).toHaveAttribute("rel", /noopener/);
   await expect(results.getByLabel("Rated 4.6 out of 5 from 2310 ratings")).toBeVisible();
-  await expect(results).toContainText("Nightlife · Euljiro");
+  await expect(results).toContainText("From a guide");
 
   // Saving one without a Google Maps match keeps its name, kind and area.
   await results.getByRole("button", { name: "Save: Lantern Alley" }).click();
@@ -2013,14 +2034,22 @@ test("a day rearranged: dragged, moved by keyboard or menu, with what to watch o
 
   // Dragged by its grip to above the temple: one call, and the day follows it.
   const grip = page.getByRole("button", { name: "Drag Tea house" });
-  await grip.scrollIntoViewIfNeeded();
-  await expect.poll(async () => (await grip.boundingBox())?.x ?? -1).toBeGreaterThan(0);
+  // Mid-screen, clear of the bars that stick at the top (a phone has three of them).
+  await grip.evaluate((el) => el.scrollIntoView({ block: "center" }));
+  // The days slide sideways: wait until day 2 has slid fully into the card.
+  await expect
+    .poll(async () => {
+      const [g, card] = [await grip.boundingBox(), await itinerary.boundingBox()];
+      return Boolean(g && card && g.x > card.x && g.x + g.width < card.x + card.width);
+    })
+    .toBe(true);
   const from = (await grip.boundingBox())!;
   const onto = (await page.locator("#entry-pl1").boundingBox())!;
   await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
   await page.mouse.down();
   await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2 - 10, { steps: 3 });
-  await page.mouse.move(onto.x + 40, onto.y + 4, { steps: 8 });
+  // Well inside the top half of the temple, so it lands above it.
+  await page.mouse.move(onto.x + 40, onto.y + Math.min(12, onto.height / 4), { steps: 8 });
   await expect(page.locator("#entry-pl1")).toHaveClass(/drop-before/);
   await page.mouse.up();
   await expect.poll(() => state.moves).toEqual(["pl2>2026-11-11@first"]);
@@ -2052,6 +2081,9 @@ test("a day rearranged: dragged, moved by keyboard or menu, with what to watch o
   await expect(places).toContainText("Namdaemun Market");
   await lists.getByRole("button", { name: "All" }).click();
   await expect(places.getByRole("listitem")).toHaveCount(2);
+  // Grips show only while arranging.
+  await expect(page.getByRole("button", { name: "Drag Lantern Alley" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Arrange", exact: true }).click();
   const keys = page.getByRole("button", { name: "Drag Lantern Alley" });
   await keys.focus();
   await page.keyboard.press("Space");
@@ -2306,16 +2338,16 @@ test("after a trip: settling up comes first, then what it cost", async ({ page }
   await openTab(page, "Plan");
   await expect(page.getByRole("region", { name: "Next up" })).toContainText("Ann still owes you");
   await openTab(page, "Money");
-  const settle = page.getByRole("region", { name: "Settle up" });
+  const settle = page.getByRole("region", { name: "To do" });
   await expect(settle).toContainText("Ann");
-  const numbers = page.getByRole("region", { name: "The trip in numbers" });
-  // Settle up now fills the first screen, so the figures below it count up once scrolled to.
+  const numbers = page.getByRole("region", { name: "The trip cost" });
+  // To do fills the first screen, so the figures below it count up once scrolled to.
   await numbers.scrollIntoViewIfNeeded();
   await expect(numbers).toContainText("SGD 818.00");
   // Settling up sits above what it cost.
   expect((await settle.boundingBox())!.y).toBeLessThan((await numbers.boundingBox())!.y);
   await expect(tripAdd(page)).toHaveCount(0);
-  await expect(page.getByRole("region", { name: "Expenses" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Expenses/ })).toBeVisible();
 });
 
 /** A finished-looking trip on the Money tab with these people going. */
@@ -2340,18 +2372,22 @@ const paidByAnn = (note: string, paidOn: string) => ({
   settled_at: null,
 });
 
-test("travellers are added and removed on the Money tab, and the split card follows them", async ({ page }) => {
+test("travellers are added and removed on the Money tab, and the split switch follows them", async ({ page }) => {
   const state = await moneyTrip(page, []);
-  const travellers = page.getByRole("region", { name: "Travellers" });
+  await expect(page.getByRole("button", { name: /^Travellers/ })).toContainText("You");
+  const travellers = await openSection(page, "Travellers");
   await expect(travellers.getByRole("list", { name: "Who's going" })).toHaveText("You");
-  // Nobody else is going, so there is nothing to split yet.
-  await expect(page.getByRole("heading", { name: "Split costs" })).toHaveCount(0);
+  // Nobody else is going, so there is nothing to split yet, and no To do.
+  await expect(travellers.getByRole("switch", { name: "Split costs evenly" })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "To do" })).toHaveCount(0);
 
   await travellers.getByRole("textbox", { name: "Add a traveller" }).fill("Ann");
   await travellers.getByRole("button", { name: "Add" }).click();
   await expect.poll(() => state.tripPuts.at(-1)).toMatchObject({ companions: ["Ann"] });
   await expect(travellers.getByRole("list", { name: "Who's going" })).toContainText("Ann");
-  await expect(page.getByRole("heading", { name: "Split costs" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Travellers/ })).toContainText("You and Ann");
+  await expect(travellers.getByRole("switch", { name: "Split costs evenly" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "To do" })).toBeVisible();
   // Enter adds too, and a name already there (any case) is not added twice.
   await travellers.getByRole("textbox", { name: "Add a traveller" }).fill("ben");
   await travellers.getByRole("textbox", { name: "Add a traveller" }).press("Enter");
@@ -2365,14 +2401,20 @@ test("travellers are added and removed on the Money tab, and the split card foll
   await travellers.getByRole("button", { name: "Remove ben" }).click();
   await expect.poll(() => state.tripPuts.at(-1)).toMatchObject({ companions: [] });
   await expect(travellers.getByRole("list", { name: "Who's going" })).toHaveText("You");
-  await expect(page.getByRole("heading", { name: "Split costs" })).toHaveCount(0);
+  await expect(travellers.getByRole("switch", { name: "Split costs evenly" })).toHaveCount(0);
 });
 
-test("split all evenly asks first, then the shares show in Settle up", async ({ page }) => {
+test("split all evenly asks first, then the shares show in To do", async ({ page }) => {
   const state = await moneyTrip(page, ["Ann", "Ben"]);
-  const split = page.getByRole("region", { name: "Split costs" });
-  // Even splitting is on by default, and offers the trip's costs without changing anything.
-  await expect(split.getByRole("switch", { name: "Split costs evenly" })).toHaveAttribute("aria-checked", "true");
+  // Even splitting is on by default (the switch is with the travellers), and offers the trip's costs without changing anything.
+  const travellers = await openSection(page, "Travellers");
+  await expect(travellers.getByRole("switch", { name: "Split costs evenly" })).toHaveAttribute("aria-checked", "true");
+  const split = page.getByRole("region", { name: "To do" });
+  await expect(split).toContainText("2 costs to split");
+  await expect(split).toContainText("SGD 818.00");
+  await expect(split).toContainText("Ichiran");
+  await expect(split).toContainText("Air ticket");
+  await split.getByRole("button", { name: "See costs" }).click();
   await expect(split.getByRole("list", { name: "To split" })).toContainText("Ichiran");
   await expect(split.getByRole("list", { name: "To split" })).toContainText("Air ticket");
   expect(state.splitPosts).toEqual([]);
@@ -2380,50 +2422,50 @@ test("split all evenly asks first, then the shares show in Settle up", async ({ 
   await split.getByRole("button", { name: "Split all evenly" }).click();
   const confirm = split.getByRole("group", { name: "Confirm splitting all" });
   await expect(confirm).toContainText("Split 2 costs (SGD 818.00) evenly with Ann and Ben?");
-  // Cancelling splits nothing.
-  await confirm.getByRole("button", { name: "Cancel" }).click();
+  await expect(confirm).toContainText("Each share is about SGD 272.67.");
+  // Not now splits nothing.
+  await confirm.getByRole("button", { name: "Not now" }).click();
   await expect(confirm).toHaveCount(0);
   expect(state.splitPosts).toEqual([]);
 
   await split.getByRole("button", { name: "Split all evenly" }).click();
-  await confirm.getByRole("button", { name: "Split them" }).click();
+  await confirm.getByRole("button", { name: "Split evenly" }).click();
   await expect.poll(() => state.splitPosts).toEqual([{ all: true }]);
   await expect(split.getByRole("status")).toContainText("Split 2 costs evenly with Ann and Ben");
   await expect(split.getByRole("list", { name: "To split" })).toHaveCount(0);
-  await expect(split).toContainText("Nothing left to split.");
+  await expect(split).not.toContainText("costs to split");
 
-  // The IOUs show up in Settle up: what Ann owes now includes her shares of both bills.
-  const settle = page.getByRole("region", { name: "Settle up" });
-  const rows = settle.getByRole("list", { name: "Still to settle" });
-  await expect(rows.getByRole("button", { name: /^Ann owes you/ })).toBeVisible();
-  await expect(rows.getByRole("button", { name: /^Ben owes you/ })).toBeVisible();
-  await rows.getByRole("button", { name: /^Ann owes you/ }).click();
-  const parts = rows.getByRole("list", { name: "What Ann owes you" });
+  // The IOUs show up as people to settle with: what Ann owes now includes her shares of both bills.
+  const ann = split.getByRole("listitem").filter({ hasText: "Ann owes you" });
+  await expect(ann).toBeVisible();
+  await expect(split.getByRole("listitem").filter({ hasText: "Ben owes you" })).toBeVisible();
+  await ann.getByRole("button", { name: "Details" }).click();
+  const parts = ann.getByRole("list", { name: "What Ann owes you" });
   await expect(parts).toContainText("Dinner");
   await expect(parts).toContainText("Ichiran");
   await expect(parts).toContainText("Air ticket");
   // Nothing is moved: this only records.
-  await expect(settle).toContainText("It doesn't move money");
+  await expect(split).toContainText("It doesn't move money");
 });
 
 test("the even split can be switched off, and one cost kept as just mine and offered again", async ({ page }) => {
   const state = await moneyTrip(page, ["Ann"]);
-  const split = page.getByRole("region", { name: "Split costs" });
+  const split = page.getByRole("region", { name: "To do" });
+  await split.getByRole("button", { name: "See costs" }).click();
   const toSplit = split.getByRole("list", { name: "To split" });
 
   await split.getByRole("button", { name: "Keep Ichiran as just mine" }).click();
   await expect.poll(() => state.keepMinePosts).toEqual([{ transaction_ids: ["k1"], keep: true }]);
   await expect(toSplit).not.toContainText("Ichiran");
   await expect(toSplit).toContainText("Air ticket");
-  // It is set aside, not lost: still listed, and offered again on request.
-  const kept = split.getByText("Kept as just mine (1)");
-  await kept.click();
-  const keptList = split.getByRole("list", { name: "Kept as just mine" });
-  await expect(keptList).toContainText("Ichiran");
-  await split.getByRole("button", { name: "Offer Ichiran for splitting again" }).click();
+  // It is set aside, not lost: still listed in Expenses as just mine, and offered again on request.
+  const expenses = await openSection(page, "Expenses");
+  await expect(expenses.getByRole("listitem").filter({ hasText: "Ichiran" })).toContainText("Just mine");
+  await expenses.getByRole("button", { name: "Offer Ichiran for splitting again" }).click();
   await expect.poll(() => state.keepMinePosts.at(-1)).toEqual({ transaction_ids: ["k1"], keep: false });
   await expect(toSplit).toContainText("Ichiran");
-  await expect(split.getByText(/^Kept as just mine/)).toHaveCount(0);
+  await expect(expenses.getByRole("listitem").filter({ hasText: "Ichiran" })).toContainText("To split");
+  await expect(expenses.getByRole("button", { name: "Offer Ichiran for splitting again" })).toHaveCount(0);
   // Nothing was split along the way.
   expect(state.splitPosts).toEqual([]);
 
@@ -2431,15 +2473,18 @@ test("the even split can be switched off, and one cost kept as just mine and off
   await split.getByRole("button", { name: "Split Air ticket evenly" }).click();
   await expect.poll(() => state.splitPosts).toEqual([{ transaction_ids: ["k2"] }]);
   await expect(toSplit).not.toContainText("Air ticket");
+  await expect(expenses.getByRole("listitem").filter({ hasText: "Air ticket" })).toContainText("Split with Ann");
 
   // Switching it off stops offering costs; on again brings them back.
-  const toggle = split.getByRole("switch", { name: "Split costs evenly" });
+  const travellers = await openSection(page, "Travellers");
+  const toggle = travellers.getByRole("switch", { name: "Split costs evenly" });
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-checked", "false");
-  await expect(split.getByRole("list", { name: "To split" })).toHaveCount(0);
+  await expect(split).not.toContainText("to split");
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-checked", "true");
-  await expect(split.getByRole("list", { name: "To split" })).toContainText("Ichiran");
+  await expect(split).toContainText("1 cost to split");
+  await expect(split).toContainText("Ichiran");
 });
 
 test("someone else paid: it is listed with your share and nets against what they owe you", async ({ page }) => {
@@ -2456,19 +2501,20 @@ test("someone else paid: it is listed with your share and nets against what they
   await expect(form.getByRole("group", { name: "Split with (you're in it too)" })).toContainText("Ben");
   await form.getByRole("button", { name: "Save" }).click();
 
-  const paid = page.getByRole("region", { name: "Paid by others" });
+  await expect(form).toHaveCount(0);
+  const paid = await openSection(page, "Paid by others");
   await expect(paid).toContainText("Ann paid for Ryokan");
   await expect(paid).toContainText("split with you, Ben");
   await expect(paid).toContainText("your share JPY 20,000");
   expect(state.paidByOthers.trip1).toHaveLength(1);
 
   // Ann already owed JPY 15,000 (SGD 135.00); your share of the ryokan is SGD 180.00, so you owe her the difference.
-  const rows = page.getByRole("region", { name: "Settle up" }).getByRole("list", { name: "Still to settle" });
-  const ann = rows.getByRole("button", { name: /^You owe Ann/ });
-  await expect(ann).toHaveText("You owe Ann SGD 45.00");
-  await ann.click();
-  await expect(rows.getByRole("list", { name: "What you owe Ann" })).toContainText("Ryokan");
-  await expect(rows.getByRole("list", { name: "What Ann owes you" })).toContainText("Dinner");
+  const todo = page.getByRole("region", { name: "To do" });
+  const ann = todo.getByRole("listitem").filter({ hasText: "You owe Ann" });
+  await expect(ann).toContainText("You owe Ann SGD 45.00");
+  await ann.getByRole("button", { name: "Details" }).click();
+  await expect(ann.getByRole("list", { name: "What you owe Ann" })).toContainText("Ryokan");
+  await expect(ann.getByRole("list", { name: "What Ann owes you" })).toContainText("Dinner");
 
   // Taking it away puts the balance back.
   await paid.getByRole("button", { name: "Remove what Ann, Ryokan paid" }).click();
@@ -2477,9 +2523,10 @@ test("someone else paid: it is listed with your share and nets against what they
   await expect(paid).toContainText("Ann paid for Ryokan");
   await paid.getByRole("button", { name: "Remove what Ann, Ryokan paid" }).click();
   await sure.getByRole("button", { name: "Remove" }).click();
-  await expect(page.getByRole("region", { name: "Paid by others" })).toHaveCount(0);
+  // With nothing paid by others, the section is gone.
+  await expect(page.getByRole("button", { name: /^Paid by others/ })).toHaveCount(0);
   expect(state.paidByOthers.trip1).toEqual([]);
-  await expect(rows.getByRole("button", { name: /^Ann owes you/ })).toHaveText("Ann owes you SGD 135.00");
+  await expect(todo.getByRole("listitem").filter({ hasText: "Ann owes you" })).toContainText("Ann owes you SGD 135.00");
 });
 
 test("a payment someone else made can be changed", async ({ page }) => {
@@ -2487,7 +2534,7 @@ test("a payment someone else made can be changed", async ({ page }) => {
   state.paidByOthers.trip1 = [paidByAnn("Ryokan", "2026-09-20")];
   await page.reload();
   await openTab(page, "Money");
-  const paid = page.getByRole("region", { name: "Paid by others" });
+  const paid = await openSection(page, "Paid by others");
   await paid.getByRole("button", { name: "Change what Ann, Ryokan paid" }).click();
   const form = page.getByRole("form", { name: "Change what Ann paid" });
   await form.getByLabel("Amount").fill("30000");
@@ -2500,45 +2547,43 @@ test("mark settled records the payment, with or without counting your share as s
   state.paidByOthers.trip1 = [paidByAnn("Ryokan", "2026-09-20"), { ...paidByAnn("Taxi", "2026-09-21"), id: "pay2", person: "Ben", split_with: ["Ann"] }];
   await page.reload();
   await openTab(page, "Money");
-  const settle = page.getByRole("region", { name: "Settle up" });
-  const rows = settle.getByRole("list", { name: "Still to settle" });
+  const settle = page.getByRole("region", { name: "To do" });
 
-  // Ann: you owe her more than she owes you. Counting your share as spent is on, and says what it records.
-  await settle.getByRole("button", { name: "Mark settled with Ann" }).click();
+  // Ann: you owe her more than she owes you. Logging the payment is on, and says what it records.
+  await settle.getByRole("button", { name: "Settle up with Ann" }).click();
   const confirm = settle.getByRole("group", { name: "Settle up with Ann" });
   const record = confirm.getByRole("checkbox", { name: "Also record my share as spent" });
   await expect(record).toBeChecked();
   await expect(confirm).toContainText("Nexus doesn't move any money.");
-  // Cancelling records nothing.
-  await confirm.getByRole("button", { name: "Cancel" }).click();
+  // Not now records nothing.
+  await confirm.getByRole("button", { name: "Not now" }).click();
   await expect(confirm).toHaveCount(0);
   expect(state.settlePosts).toEqual([]);
-  await settle.getByRole("button", { name: "Mark settled with Ann" }).click();
-  await confirm.getByRole("button", { name: "Yes, mark settled" }).click();
+  await settle.getByRole("button", { name: "Settle up with Ann" }).click();
+  await confirm.getByRole("button", { name: "Mark settled" }).click();
   await expect.poll(() => state.settlePosts).toEqual([{ person: "Ann", log: true }]);
   await expect(settle.getByRole("status")).toContainText("Settled with Ann: 1 IOU from Ann marked paid back");
   await expect(settle.getByRole("status")).toContainText("1 payment you owed Ann marked paid, JPY 20,000 recorded as spent");
-  await expect(rows.getByRole("button", { name: /Ann/ })).toHaveCount(0);
+  await expect(settle.getByRole("button", { name: "Settle up with Ann" })).toHaveCount(0);
 
   // Ben: left unticked, it is marked paid without touching what you've spent.
-  await settle.getByRole("button", { name: "Mark settled with Ben" }).click();
+  await settle.getByRole("button", { name: "Settle up with Ben" }).click();
   const benConfirm = settle.getByRole("group", { name: "Settle up with Ben" });
   await benConfirm.getByRole("checkbox", { name: "Also record my share as spent" }).uncheck();
-  await benConfirm.getByRole("button", { name: "Yes, mark settled" }).click();
+  await benConfirm.getByRole("button", { name: "Mark settled" }).click();
   await expect.poll(() => state.settlePosts.at(-1)).toEqual({ person: "Ben", log: false });
   await expect(settle.getByRole("status")).toContainText("nothing added to what you've spent");
-  await expect(settle).toContainText("Nothing left to settle.");
-  await expect(rows).toHaveCount(0);
+  await expect(settle.getByRole("button", { name: /^Settle up with/ })).toHaveCount(0);
 });
 
 test("when they only owe you, settling has no spending choice", async ({ page }) => {
   const state = await moneyTrip(page, ["Ann"]);
-  const settle = page.getByRole("region", { name: "Settle up" });
-  await settle.getByRole("button", { name: "Mark settled with Ann" }).click();
+  const settle = page.getByRole("region", { name: "To do" });
+  await settle.getByRole("button", { name: "Settle up with Ann" }).click();
   const confirm = settle.getByRole("group", { name: "Settle up with Ann" });
   await expect(confirm.getByRole("checkbox")).toHaveCount(0);
   await expect(confirm).toContainText("Ann paid you back");
-  await confirm.getByRole("button", { name: "Yes, mark settled" }).click();
+  await confirm.getByRole("button", { name: "Mark settled" }).click();
   await expect.poll(() => state.settlePosts).toEqual([{ person: "Ann", log: false }]);
   await expect(settle.getByRole("status")).toContainText("Settled with Ann: 1 IOU from Ann marked paid back");
 });
@@ -2903,7 +2948,7 @@ test("the open tab stays in the address: reload keeps it, and Back goes to the t
   // Reload: still Money.
   await page.reload();
   expect(await current()).toBe("Money");
-  await expect(page.getByRole("region", { name: "Where it goes" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Where it goes/ })).toBeVisible();
 
   // Back goes to Ideas, then Plan, on the day that was open.
   await page.goBack();
@@ -3383,8 +3428,15 @@ test("entries that look like moves are reviewed one at a time from the Wallets c
 
 // --- finding by stop, day or theme, and research into ideas -------------------------------
 
-/** The scope row and the theme chips of the finder that is open. */
+/** The scope chip (with its menu) and the theme chips of the finder that is open. */
 const lookIn = (page: Page) => page.getByRole("group", { name: "Look in" });
+const scopeChip = (page: Page) => lookIn(page).getByRole("button", { name: /^Look in:/ });
+/** Opens the scope menu and picks one: "Whole trip", "In Kyoto", "Near Day 2"… */
+async function lookInPick(page: Page, name: string | RegExp) {
+  await scopeChip(page).click();
+  await lookIn(page).getByRole("menuitemradio", { name }).click();
+}
+const openFinder = (page: Page) => page.getByRole("button", { name: "Find ideas", exact: true }).click();
 const themesOf = (page: Page) => page.getByRole("group", { name: "Themes" });
 const finderBox = (page: Page) => page.getByRole("search", { name: "Search Google Maps" }).getByLabel("Look for");
 
@@ -3403,17 +3455,20 @@ async function japanWithStops(page: Page) {
 test("a search looks in one stop or the whole trip, and asks again when the scope changes", async ({ page }) => {
   const state = await japanWithStops(page);
   await openTab(page, "Ideas");
-  await page.getByRole("button", { name: "Find places or ideas" }).click();
+  await openFinder(page);
 
-  // Whole trip, a button for each stop, and the day open on Plan. The stop of that day is where it begins.
+  // One chip with the scope, and a menu of the whole trip, each stop and the day open on Plan. The stop of that day is where it begins.
   const scope = lookIn(page);
-  await expect(scope.getByRole("button")).toHaveText(["Whole trip", "In Tokyo", "In Kyoto", /^Near Day 1/]);
-  await expect(scope.getByRole("button", { name: "In Tokyo" })).toHaveAttribute("aria-pressed", "true");
-  await expect(scope.getByRole("button", { name: "Whole trip" })).toHaveAttribute("aria-pressed", "false");
+  await expect(scopeChip(page)).toHaveAccessibleName("Look in: In Tokyo");
+  await expect(page.getByRole("dialog", { name: "Find ideas" })).toContainText("In Tokyo.");
+  await scopeChip(page).click();
+  await expect(scope.getByRole("menuitemradio")).toHaveText(["Whole trip", "In Tokyo", "In Kyoto", /^Near Day 1/]);
+  await expect(scope.getByRole("menuitemradio", { name: "In Tokyo" })).toHaveAttribute("aria-checked", "true");
+  await expect(scope.getByRole("menuitemradio", { name: "Whole trip" })).toHaveAttribute("aria-checked", "false");
 
   // "In Kyoto" sends the stop with both requests; the trip's destination isn't in the text.
-  await scope.getByRole("button", { name: "In Kyoto" }).click();
-  await expect(scope.getByRole("button", { name: "In Kyoto" })).toHaveAttribute("aria-pressed", "true");
+  await scope.getByRole("menuitemradio", { name: "In Kyoto" }).click();
+  await expect(scopeChip(page)).toHaveAccessibleName("Look in: In Kyoto");
   await finderBox(page).fill("best ramen");
   await page.getByRole("button", { name: "Search", exact: true }).click();
   const results = page.getByRole("list", { name: "Results" });
@@ -3422,10 +3477,11 @@ test("a search looks in one stop or the whole trip, and asks again when the scop
   await expect.poll(() => state.ideaScopes).toEqual([{ q: "best ramen", stop: "Kyoto", day: null }]);
 
   // Looking somewhere else asks the same question again, there.
-  await scope.getByRole("button", { name: "In Tokyo" }).click();
+  await lookInPick(page, "In Tokyo");
   await expect.poll(() => state.placeScopes.at(-1)).toEqual({ q: "best ramen", trip_id: "trip1", stop: "Tokyo", day: null });
   await expect.poll(() => state.ideaScopes.at(-1)).toEqual({ q: "best ramen", stop: "Tokyo", day: null });
-  await scope.getByRole("button", { name: "Whole trip" }).click();
+  await lookInPick(page, "Whole trip");
+  await expect(page.getByRole("dialog", { name: "Find ideas" })).toContainText("Across Tokyo and Kyoto.");
   await expect.poll(() => state.placeScopes.at(-1)).toEqual({ q: "best ramen", trip_id: "trip1", stop: null, day: null });
   await expect.poll(() => state.ideaScopes.at(-1)).toEqual({ q: "best ramen", stop: null, day: null });
   expect(state.placeScopes).toHaveLength(3);
@@ -3434,7 +3490,7 @@ test("a search looks in one stop or the whole trip, and asks again when the scop
 test("a theme chip fills the search and runs it, and what is saved goes in a list of that theme", async ({ page }) => {
   const state = await japanWithStops(page);
   await openTab(page, "Ideas");
-  await page.getByRole("button", { name: "Find places or ideas" }).click();
+  await openFinder(page);
   const themes = themesOf(page);
   await expect(themes.getByRole("button")).toHaveText(["Food", "Sights", "Museums", "Nature", "Shopping", "Nightlife", "Rainy day"]);
 
@@ -3450,10 +3506,12 @@ test("a theme chip fills the search and runs it, and what is saved goes in a lis
   // Saved under the theme, not the guide's kind (Nightlife).
   await results.getByRole("button", { name: "Save: Lantern Alley" }).click();
   await expect.poll(() => state.plans.at(-1)).toMatchObject({ name: "Lantern Alley", day: null, list_name: "Food", place_id: null });
+  await expect(results.getByRole("button", { name: "Lantern Alley is saved" })).toBeDisabled();
+  await page.keyboard.press("Escape");
   await expect(page.getByRole("list", { name: "Ideas" })).toContainText("Lantern Alley");
 
   // Typing by hand lets the theme go: a next save is filed by the guide's kind.
-  await page.getByRole("button", { name: "Find places or ideas" }).click();
+  await openFinder(page);
   await themesOf(page).getByRole("button", { name: "Rainy day" }).click();
   await expect(finderBox(page)).toHaveValue("Rainy day");
   await finderBox(page).fill("best quiet cafes");
@@ -3474,9 +3532,8 @@ test("Find ideas near here on a day opens the finder near it, adds to that day, 
 
   // It opens on "Near Day 2", the day it was opened from.
   const sheet = page.getByRole("dialog");
-  const scope = lookIn(page);
-  await expect(scope.getByRole("button", { name: /^Near Day 2/ })).toHaveAttribute("aria-pressed", "true");
-  await expect(scope.getByRole("button", { name: "Whole trip" })).toHaveAttribute("aria-pressed", "false");
+  await expect(scopeChip(page)).toHaveAccessibleName(/^Look in: Near Day 2/);
+  await expect(sheet).toContainText("Within about 2 km of Day 2's plans.");
   await finderBox(page).fill("best coffee");
   await page.getByRole("button", { name: "Search", exact: true }).click();
   const results = page.getByRole("list", { name: "Results" });
@@ -3498,7 +3555,7 @@ test("Find ideas near here on a day opens the finder near it, adds to that day, 
   await finderBox(page).fill("best coffee");
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await expect(results).toContainText("Namdaemun Market");
-  await lookIn(page).getByRole("button", { name: "Whole trip" }).click();
+  await lookInPick(page, "Whole trip");
   await expect.poll(() => state.placeScopes.at(-1)).toEqual({ q: "best coffee", trip_id: "trip1", stop: null, day: null });
   await expect(results.getByRole("button", { name: /^Add to Day 2:/ })).toHaveCount(0);
 });
@@ -3507,7 +3564,7 @@ test("a place found by Google Maps and by a guide is one card, with its rating, 
   const state = await fakeApi(page);
   await addTrip(page, "Seoul", "2026-11-10", "2026-11-13");
   await openTab(page, "Ideas");
-  await page.getByRole("button", { name: "Find places or ideas" }).click();
+  await openFinder(page);
   await finderBox(page).fill("best noodles");
   await page.getByRole("button", { name: "Search", exact: true }).click();
   const results = page.getByRole("list", { name: "Results" });
@@ -3519,10 +3576,15 @@ test("a place found by Google Maps and by a guide is one card, with its rating, 
   await expect(card.getByLabel("Rated 4.6 out of 5 from 2310 ratings")).toBeVisible();
   await expect(card).toContainText("“Hand-pulled noodles worth the queue.”");
   await expect(card.getByRole("link", { name: "Seoul's best noodles" })).toHaveAttribute("href", "https://food.example.com/seoul-noodles");
-  await expect(card.locator(".find-tags .chip")).toHaveText(["Google Maps", "From guides"]);
-  // A place only one of them knew carries only that tag.
-  await expect(results.getByRole("listitem").filter({ hasText: "Namdaemun Market" }).locator(".find-tags .chip")).toHaveText(["Google Maps"]);
-  await expect(results.getByRole("listitem").filter({ hasText: "Lantern Alley" }).locator(".find-tags .chip")).toHaveText(["From guides"]);
+  await expect(card).toContainText("Google Maps");
+  await expect(card).toContainText("From a guide");
+  // A place only one of them knew says only that.
+  const market = results.getByRole("listitem").filter({ hasText: "Namdaemun Market" });
+  await expect(market).toContainText("Google Maps");
+  await expect(market).not.toContainText("From a guide");
+  const alley = results.getByRole("listitem").filter({ hasText: "Lantern Alley" });
+  await expect(alley).toContainText("From a guide");
+  await expect(alley).not.toContainText("Google Maps");
   // Saving the merged card keeps the Google place.
   await card.getByRole("button", { name: "Save: Hanok Noodle Bar" }).click();
   await expect.poll(() => state.plans.filter((p) => p.name === "Hanok Noodle Bar")).toHaveLength(1);
