@@ -139,6 +139,9 @@ export function dayPath(pins: Pin[], day: string): Pin[] {
   return path;
 }
 
+/** How longer hops go, as the picker and the line under the map word it. */
+export const GETTING_AROUND = { transit: "Public transport", car: "Hire car" } as const;
+
 /** The trip on a Google map: every place it knows where to find, coloured by day,
  * with a day's route when a day is shown. The day is the page's: ``day`` null shows
  * every day, and the button on the map switches between that and ``selected``, the day
@@ -276,6 +279,10 @@ export function TripMap({ detail, day, selected, onDay }: {
           </ul>
           {day !== null && shown.length === 0 && <p className="caption">Nothing on the map that day.</p>}
         </>
+      )}
+      {/* A member can't change it (the owner does, from the trip's menu): they just see it. */}
+      {detail.trip.role === "member" && detail.routes && detail.places && (
+        <p className="caption trip-ways">Getting around: {GETTING_AROUND[detail.trip.getting_around ?? "transit"].toLowerCase()}</p>
       )}
     </section>
   );

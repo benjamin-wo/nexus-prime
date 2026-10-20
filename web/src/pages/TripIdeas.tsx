@@ -113,7 +113,8 @@ export function IdeasTab({ detail, onChange, viewing }: { detail: TripDetail; on
 
   return (
     <>
-    {mapKey && (
+    {/* Wide, the list and the map sit side by side and there is nothing to switch. */}
+    {mapKey && !wide && (
       <div className="tabs ideas-switch" role="group" aria-label="Show ideas as">
         {(["list", "map"] as const).map((v) => (
           <button key={v} type="button" className="tab" aria-pressed={view === v} onClick={() => setView(v)}>
@@ -122,7 +123,7 @@ export function IdeasTab({ detail, onChange, viewing }: { detail: TripDetail; on
         ))}
       </div>
     )}
-    <div className="ideas-layout" data-view={mapKey ? view : "list"}>
+    <div className="ideas-layout" data-view={mapKey && !wide ? view : "list"}>
     <section id="section-place" className="card ideas" aria-labelledby="ideas-title">
       <h2 id="ideas-title" className="sr-only">
         Ideas

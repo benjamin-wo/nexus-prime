@@ -1,8 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Booking, Trip, TripActivity, TripDetail, TripMember } from "../api";
 import { mockApi, renderWithProviders } from "../testing";
@@ -209,5 +209,127 @@ describe("the activity line on a trip", () => {
     await new Promise((resolve) => setTimeout(resolve, 30));
     expect(screen.queryByRole("button", { name: /added Dinner/ })).toBeNull();
     expect(calls.some((c) => c.path.endsWith("/activity"))).toBe(false);
+  });
+});
+
+describe("the trip page's header", () => {
+  const handlers = (t: Trip, role: "owner" | "member" = "owner") => ({
+    "GET /me": () => me(role),
+    [`GET /travel/trips/${t.id}`]: () => planOnly(t),
+    [`GET /travel/trips/${t.id}/members`]: () => [owner, sam],
+    [`GET /travel/trips/${t.id}/activity`]: () => [] as TripActivity[],
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("shows the big cover on Plan, with the title below the photo and no slim bar", async () => {
+    mockApi(handlers(mine));
+    const { container } = renderTrip("/travel/trips/t1");
+    await screen.findByRole("navigation", { name: "Trip sections" });
+    const hero = container.querySelector(".trip-hero") as HTMLElement;
+    expect(hero).not.toBeNull();
+    expect(container.querySelector(".trip-slim")).toBeNull();
+    // The title is under the photo, not on it.
+    expect(within(hero).getByRole("heading", { level: 1, name: "Tokyo" })).toBeInTheDocument();
+    expect(hero.querySelector(".trip-hero-photo")).not.toContainElement(within(hero).getByRole("heading", { level: 1 }));
+    expect(within(hero).getByRole("link", { name: "Back to trips" })).toHaveAttribute("href", "/travel");
+    expect(within(hero).getByRole("button", { name: "Share the plan" })).toBeInTheDocument();
+    expect(within(hero).getByRole("button", { name: "Trip options" })).toBeInTheDocument();
+  });
+
+  it("swaps the cover for a slim bar on the other tabs", async () => {
+    mockApi(handlers(mine));
+    for (const tab of ["ideas", "money", "prep"]) {
+      const { container, unmount } = renderTrip(`/travel/trips/t1?tab=${tab}`);
+      await screen.findByRole("navigation", { name: "Trip sections" });
+      expect(container.querySelector(".trip-hero")).toBeNull();
+      const bar = container.querySelector(".trip-slim") as HTMLElement;
+      expect(bar).not.toBeNull();
+      expect(within(bar).getByRole("heading", { level: 1, name: "Tokyo" })).toBeInTheDocument();
+      expect(within(bar).getByRole("link", { name: "Back to trips" })).toBeInTheDocument();
+      expect(within(bar).getByRole("button", { name: "Share the plan" })).toBeInTheDocument();
+      expect(within(bar).getByRole("button", { name: "Trip options" })).toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it("shows the slim bar on Plan once the cover has scrolled out of view, and only one set of buttons", async () => {
+    let seen: IntersectionObserverCallback = () => {};
+    class Seen {
+      constructor(callback: IntersectionObserverCallback) {
+        seen = callback;
+      }
+      observe() {}
+      disconnect() {}
+      unobserve() {}
+      takeRecords() {
+        return [];
+      }
+    }
+    vi.stubGlobal("IntersectionObserver", Seen);
+    mockApi(handlers(mine));
+    const { container } = renderTrip("/travel/trips/t1");
+    await screen.findByRole("navigation", { name: "Trip sections" });
+    expect(container.querySelector(".trip-slim")).toBeNull();
+    act(() => seen([{ isIntersecting: false } as IntersectionObserverEntry], {} as IntersectionObserver));
+    const bar = container.querySelector(".trip-slim") as HTMLElement;
+    expect(bar).not.toBeNull();
+    // The cover stays in place, but its buttons step aside for the bar's.
+    expect(container.querySelector(".trip-hero")).not.toBeNull();
+    expect(screen.getAllByRole("link", { name: "Back to trips" })).toEqual([within(bar).getByRole("link", { name: "Back to trips" })]);
+    expect(screen.getAllByRole("button", { name: "Share the plan" })).toHaveLength(1);
+    act(() => seen([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver));
+    expect(container.querySelector(".trip-slim")).toBeNull();
+    expect(screen.getAllByRole("button", { name: "Share the plan" })).toHaveLength(1);
+  });
+
+  it("puts Next up in the header on Plan only", async () => {
+    mockApi(handlers(shared, "member"));
+    const { container, unmount } = renderTrip("/travel/trips/t2");
+    const strip = await screen.findByRole("region", { name: "Next up" });
+    expect(container.querySelector(".trip-hero")).toContainElement(strip);
+    expect(within(strip).getByRole("button")).toBeInTheDocument();
+    unmount();
+    renderTrip("/travel/trips/t2?tab=prep");
+    await screen.findByRole("navigation", { name: "Trip sections" });
+    expect(screen.queryByRole("region", { name: "Next up" })).toBeNull();
+  });
+
+  it("marks the open tab with aria-current", async () => {
+    mockApi(handlers(mine));
+    renderTrip("/travel/trips/t1?tab=ideas");
+    const tabs = await screen.findByRole("navigation", { name: "Trip sections" });
+    expect(within(tabs).getAllByRole("button").map((b) => b.textContent)).toEqual(["Plan", "Ideas", "Money", "Prep"]);
+    expect(within(tabs).getByRole("button", { name: "Ideas" })).toHaveAttribute("aria-current", "page");
+    expect(within(tabs).getByRole("button", { name: "Plan" })).not.toHaveAttribute("aria-current");
+    await userEvent.setup().click(within(tabs).getByRole("button", { name: "Plan" }));
+    await waitFor(() => expect(within(tabs).getByRole("button", { name: "Plan" })).toHaveAttribute("aria-current", "page"));
+    expect(within(tabs).getByRole("button", { name: "Ideas" })).not.toHaveAttribute("aria-current");
+  });
+
+  it("has the one Add button in the header row beside Share, named for what it adds", async () => {
+    mockApi(handlers(mine));
+    const { container, unmount } = renderTrip("/travel/trips/t1");
+    await screen.findByRole("navigation", { name: "Trip sections" });
+    const add = container.querySelector(".trip-hero .trip-actions .trip-add-desktop") as HTMLElement;
+    expect(add).toHaveAttribute("aria-label", "Add to Day 1");
+    expect(add).toHaveClass("btn-primary");
+    expect(add).toHaveTextContent(/^Add$/);
+    expect(add.previousElementSibling).toBe(within(add.parentElement as HTMLElement).getByRole("button", { name: "Share the plan" }));
+    // Not in the tab bar any more.
+    expect(container.querySelector(".trip-tabbar .trip-add-desktop")).toBeNull();
+    unmount();
+    const other = renderTrip("/travel/trips/t1?tab=ideas");
+    await screen.findByRole("navigation", { name: "Trip sections" });
+    expect(other.container.querySelector(".trip-slim .trip-add-desktop")).toHaveAttribute("aria-label", "Add an idea");
+  });
+
+  it("gives a member People and no menu, and 'Shared by' under the title", async () => {
+    mockApi(handlers(shared, "member"));
+    const { container } = renderTrip("/travel/trips/t2");
+    await screen.findByRole("navigation", { name: "Trip sections" });
+    const hero = container.querySelector(".trip-hero") as HTMLElement;
+    expect(within(hero).getByRole("button", { name: "People on this trip" })).toHaveTextContent("People");
+    expect(within(hero).queryByRole("button", { name: "Trip options" })).toBeNull();
+    expect(within(hero).getByText("Shared by Alex T.")).toBeInTheDocument();
   });
 });

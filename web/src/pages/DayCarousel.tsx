@@ -34,36 +34,25 @@ function DayPill({ iso, label, current, mark, title, onOpen }: { iso: string; la
   );
 }
 
-/** One day, in a box the same height for every day: a busy day scrolls inside it,
- * fading at the bottom while there's more below. */
-function DaySlide({ label, children }: { label: string; children: ReactNode }) {
+/** One day, as tall as its content: the carousel's track takes the height of the day in
+ * view (``measure`` is handed this slide's element while it's the one in view). */
+function DaySlide({ label, current, measure, children }: { label: string; current: boolean; measure: (el: HTMLDivElement | null) => void; children: ReactNode }) {
   const box = useRef<HTMLDivElement>(null);
-  const [more, setMore] = useState(false);
-  const check = useCallback(() => {
-    const el = box.current;
-    if (el) setMore(el.scrollTop + el.clientHeight < el.scrollHeight - 4);
-  }, []);
-  useEffect(() => {
-    const el = box.current;
-    check();
-    if (!el || typeof ResizeObserver === "undefined") return;
-    // Plans added, opened or taken away change how much there is.
-    const watch = new ResizeObserver(check);
-    watch.observe(el);
-    if (el.firstElementChild) watch.observe(el.firstElementChild);
-    return () => watch.disconnect();
-  }, [check]);
+  useLayoutEffect(() => {
+    if (current) measure(box.current);
+  }, [current, measure]);
   return (
-    <div ref={box} className={`day-slide${more ? " more-below" : ""}`} role="group" aria-roledescription="slide" aria-label={label} onScroll={check}>
+    <div ref={box} className="day-slide" role="group" aria-roledescription="slide" aria-label={label}>
       {children}
     </div>
   );
 }
 
 /** The itinerary a day at a time: swipe between days, or pick one from the pills.
- * Every day stays on the page (so travel times, links and moves work as before), each
- * in a box of the same height. The day in view is the page's (``value``): a swipe or a
- * pill asks for another with ``onPick``. */
+ * Every day stays on the page (so travel times, links and moves work as before), and
+ * the track is as tall as the day in view, growing and shrinking as the day does. The
+ * day in view is the page's (``value``): a swipe or a pill asks for another with
+ * ``onPick``. */
 export function DayCarousel({
   days,
   value,
@@ -97,6 +86,24 @@ export function DayCarousel({
   // The slide a scroll we started is heading for: its in-between positions aren't swipes.
   const aim = useRef<{ index: number; timer: number } | null>(null);
   const opened = useRef(false);
+  // The track's height: that of the day in view, found by watching its slide.
+  const [height, setHeight] = useState<number | null>(null);
+  const watched = useRef<{ el: HTMLDivElement; watch: ResizeObserver | null } | null>(null);
+  const measure = useCallback((el: HTMLDivElement | null) => {
+    watched.current?.watch?.disconnect();
+    watched.current = null;
+    if (!el) return;
+    const read = () => {
+      const h = Math.ceil(el.getBoundingClientRect().height);
+      setHeight(h > 0 ? h : null);
+    };
+    read();
+    // Plans added, opened or taken away change how much there is.
+    const watch = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(read);
+    watch?.observe(el);
+    watched.current = { el, watch };
+  }, []);
+  useEffect(() => () => watched.current?.watch?.disconnect(), []);
 
   const scrollTo = useCallback((i: number, behavior: ScrollBehavior) => {
     const el = track.current;
@@ -146,18 +153,11 @@ export function DayCarousel({
   }
 
   // Keep the day's pill in view in the strip, moving it only when it's out of view
-  // (so a pill a plan is held over stays under it). Across the top on a phone, down
-  // the side on a wide screen.
+  // (so a pill a plan is held over stays under it).
   useEffect(() => {
     const bar = strip.current;
     const chosen = bar?.children[shown] as HTMLElement | undefined;
     if (!bar || !chosen) return;
-    if (getComputedStyle(bar).flexDirection === "column") {
-      const top = chosen.offsetTop - bar.offsetTop;
-      if (top >= bar.scrollTop && top + chosen.offsetHeight <= bar.scrollTop + bar.clientHeight) return;
-      bar.scrollTo?.({ top: Math.max(0, top - (bar.clientHeight - chosen.offsetHeight) / 2), behavior: smooth() });
-      return;
-    }
     const start = chosen.offsetLeft - bar.offsetLeft;
     if (start >= bar.scrollLeft && start + chosen.offsetWidth <= bar.scrollLeft + bar.clientWidth) return;
     const left = start - (bar.clientWidth - chosen.offsetWidth) / 2;
@@ -192,9 +192,9 @@ export function DayCarousel({
           </button>
         </div>
       )}
-      <div ref={track} className="day-track" onScroll={onScroll}>
+      <div ref={track} className="day-track" style={height === null ? undefined : { height }} onScroll={onScroll}>
         {days.map((d, i) => (
-          <DaySlide key={d} label={`${name(d)}, ${i + 1} of ${days.length}`}>
+          <DaySlide key={d} label={`${name(d)}, ${i + 1} of ${days.length}`} current={i === shown} measure={measure}>
             {children(d, Math.abs(i - shown) <= 1)}
           </DaySlide>
         ))}

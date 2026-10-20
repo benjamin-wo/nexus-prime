@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, Fragment, type ReactNode, useEffect, useMemo, useState } from "react";
+import { type CSSProperties, type FormEvent, Fragment, type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { ApiError, api, type Booking, type Hop, type ScreenshotRead, type Trip, type TripDetail } from "../api";
@@ -12,7 +13,7 @@ import { BookingLines, OpenLink, PhotoCredit, TripCard, coverStyle, day, isMembe
 import { DayCarousel } from "./DayCarousel";
 import { type Fix, type Go, type Stage, dayIsFree, nextUp, stageOf } from "./TripStage";
 import { ArrangeProvider, DayNotes, DayPickerSheet, DropZone, type Spot, daySpot, useArrange, useDragEntry } from "./TripArrange";
-import { DayHops, HopLine, MapAppPicker, TripMap } from "./TripMap";
+import { DayHops, GETTING_AROUND, HopLine, MapAppPicker, TripMap } from "./TripMap";
 import { TripPlacesProvider, useLinkedPlaces } from "./TripPlaces";
 import { StopsRow, StopsSheet, pillMark, pillTitle } from "./TripStops";
 import { EntryEditor } from "./TripEntry";
@@ -757,12 +758,6 @@ function Itinerary({ detail, day, onDay, onChange, onAdd, onIdeas }: {
         }}
       </DayCarousel>
       <p className="caption">Times are local.</p>
-      {detail.routes && detail.places && (
-        <p className="trip-ways">
-          <GettingAroundPicker trip={detail.trip} onChange={onChange} />
-          <MapAppPicker />
-        </p>
-      )}
     </section>
     {/* Outside the card: a card's own stacking would put the sheet under the tab bar on a phone. */}
     {picking && <DayPickerSheet detail={detail} booking={picking} viewing={day} onClose={() => setPicking(null)} />}
@@ -771,7 +766,8 @@ function Itinerary({ detail, day, onDay, onChange, onAdd, onIdeas }: {
   );
 }
 
-/** Public transport or a hire car: how longer hops go, unless one was picked. */
+/** Public transport or a hire car: how longer hops go, unless one was picked. Reached from
+ * the trip's menu (``TripMenu``), with the app directions open in. */
 function GettingAroundPicker({ trip, onChange }: { trip: Trip; onChange: () => void }) {
   const [busy, setBusy] = useState(false);
   async function choose(by: string) {
@@ -784,8 +780,8 @@ function GettingAroundPicker({ trip, onChange }: { trip: Trip; onChange: () => v
     <label className="caption map-app">
       Getting around{" "}
       <select value={trip.getting_around ?? "transit"} disabled={busy} onChange={(e) => void choose(e.target.value)}>
-        <option value="transit">Public transport</option>
-        <option value="car">Hire car</option>
+        <option value="transit">{GETTING_AROUND.transit}</option>
+        <option value="car">{GETTING_AROUND.car}</option>
       </select>
     </label>
   );
@@ -831,9 +827,43 @@ function LooseBookings({ trips }: { trips: Trip[] }) {
   );
 }
 
-/** A trip's menu: its cover photo, changing it and deleting it. */
+/** How longer hops go and which app directions open in: a small sheet off the trip's menu,
+ * for the owner. Out in the body, since the cover's light text colours would carry into it. */
+function WaysSheet({ trip, onChange, onClose }: { trip: Trip; onChange: () => void; onClose: () => void }) {
+  useEffect(() => {
+    const keydown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", keydown);
+    return () => window.removeEventListener("keydown", keydown);
+  }, [onClose]);
+  return createPortal(
+    <div className="sheet-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <section className="add-sheet ways-sheet" role="dialog" aria-modal="true" aria-labelledby="ways-sheet-title">
+        <div className="add-sheet-head">
+          <h2 id="ways-sheet-title">Getting around and directions</h2>
+          <button type="button" className="btn btn-ghost btn-small" onClick={onClose} aria-label="Close">
+            ×
+          </button>
+        </div>
+        <div className="trip-ways">
+          <GettingAroundPicker trip={trip} onChange={onChange} />
+          <MapAppPicker />
+        </div>
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
+/** A trip's menu: its cover photo, changing it and deleting it, and (where the trip has maps
+ * and routes) how it gets around. */
 function TripMenu({ trip, onEdit, onDelete, onChange }: { trip: Trip; onEdit: () => void; onDelete: () => void; onChange: () => void }) {
   const [open, setOpen] = useState(false);
+  // Only a trip with places and routes has anything to pick; the page already holds that.
+  const detail = useQueryClient().getQueryData<TripDetail>(["trip", trip.id]);
+  const ways = Boolean(detail?.routes && detail.places);
+  const [waysOpen, setWaysOpen] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   async function photo(choice: "next" | "off" | "on") {
     setNote(null);
@@ -859,7 +889,7 @@ function TripMenu({ trip, onEdit, onDelete, onChange }: { trip: Trip; onEdit: ()
   );
   return (
     <div className="trip-menu">
-      <button type="button" className="cover-button" aria-label="Trip options" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
+      <button type="button" className="trip-chip trip-chip-icon" aria-label="Trip options" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
         ⋯
       </button>
       {open && (
@@ -868,6 +898,11 @@ function TripMenu({ trip, onEdit, onDelete, onChange }: { trip: Trip; onEdit: ()
             setOpen(false);
             onEdit();
           })}
+          {ways &&
+            item("Getting around and directions", () => {
+              setOpen(false);
+              setWaysOpen(true);
+            })}
           {trip.photo_off ? item("Show a photo", () => void photo("on")) : item("Another photo", () => void photo("next"))}
           {!trip.photo_off && item("No photo", () => void photo("off"))}
           {item(
@@ -885,6 +920,7 @@ function TripMenu({ trip, onEdit, onDelete, onChange }: { trip: Trip; onEdit: ()
           )}
         </div>
       )}
+      {waysOpen && <WaysSheet trip={trip} onChange={onChange} onClose={() => setWaysOpen(false)} />}
     </div>
   );
 }
@@ -904,7 +940,7 @@ function ideaLists(detail: TripDetail): string[] {
   return [...new Set(lists.filter(Boolean))];
 }
 
-/** The one thing to do next, as a slim strip under the trip's header. */
+/** The one thing to do next, as one quiet line in the trip's header on Plan. */
 function NextUpStrip({ detail, onGo }: { detail: TripDetail; onGo: (go: Go) => void }) {
   // The ideas that could fill a free day: everything not yet on a day.
   const ideas = detail.bookings.filter((b) => b.kind === "activity" && !b.scheduled).length;
@@ -912,15 +948,72 @@ function NextUpStrip({ detail, onGo }: { detail: TripDetail; onGo: (go: Go) => v
   if (!next) return null;
   return (
     <section className="next-up" aria-label="Next up">
-      <div className="next-up-body">
-        <span className="next-up-label">Next up</span>
-        <p className="next-up-text">{next.text}</p>
-      </div>
-      <button type="button" className="btn btn-soft btn-small" onClick={() => onGo(next.go)} aria-label={`${next.action}: ${next.text}`}>
+      <Icon name="sparkle" size={16} className="next-up-icon" />
+      <p className="next-up-text">{next.text}</p>
+      <button type="button" className="btn btn-ghost next-up-action" onClick={() => onGo(next.go)} aria-label={`${next.action}: ${next.text}`}>
         {next.action}
       </button>
     </section>
   );
+}
+
+/** The trip's photo for the cover and the slim bar's thumbnail: the photo itself, with no fade over it. */
+const heroStyle = (trip: Trip): CSSProperties => (trip.photo ? { backgroundImage: `url("${trip.photo.url}")` } : coverStyle(trip));
+
+/** The header's actions, on the cover and in the slim bar: Share (People for a member), the
+ * one Add on a wide screen, and the owner's ⋯ menu. */
+function TripActions({ trip, member, editing, add, onShare, onEdit, onDelete, onChange }: {
+  trip: Trip;
+  member: boolean;
+  editing: boolean;
+  add: { label: string; run: () => void } | null;
+  onShare: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  onChange: () => void;
+}) {
+  return (
+    <div className="trip-actions">
+      {!editing && (
+        <button type="button" className="trip-chip" onClick={onShare} aria-label={member ? "People on this trip" : "Share the plan"}>
+          {member ? "People" : "Share"}
+        </button>
+      )}
+      {add && (
+        <button type="button" className="btn btn-primary trip-add-desktop" onClick={add.run} aria-label={add.label}>
+          <Icon name="plus" size={16} />
+          Add
+        </button>
+      )}
+      {/* Editing the trip, its photo and deleting it are the owner's. */}
+      {!editing && !member && <TripMenu trip={trip} onEdit={onEdit} onDelete={onDelete} onChange={onChange} />}
+    </div>
+  );
+}
+
+/** The height of the slim bar: the cover counts as gone once its photo is behind it. */
+const SLIM_BAR = 56;
+
+/** Whether the cover's photo has scrolled up behind the slim bar. Without an observer it never has. */
+function useCoverGone(photo: RefObject<HTMLElement | null>, on: boolean): boolean {
+  const [gone, setGone] = useState(false);
+  useEffect(() => {
+    const el = photo.current;
+    if (!on || !el || typeof IntersectionObserver === "undefined") {
+      setGone(false);
+      return;
+    }
+    const seen = new IntersectionObserver(([entry]) => setGone(!entry.isIntersecting), {
+      root: el.closest(".main-viewport"),
+      rootMargin: `-${SLIM_BAR}px 0px 0px 0px`,
+    });
+    seen.observe(el);
+    return () => {
+      seen.disconnect();
+      setGone(false);
+    };
+  }, [photo, on]);
+  return gone;
 }
 
 /** One trip, on one page that follows it: Plan, Ideas, Money and Prep as tabs, and under
@@ -1066,39 +1159,77 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
     prep: { label: "Add to packing", run: () => setAddingPacking(true) },
   };
   const add = adds[tab];
+  const canAdd = stage !== "after";
+
+  // The big cover is Plan's; on the other tabs, or once the photo has scrolled away, a slim sticky bar stands in.
+  const cover = tab === "plan";
+  const photo = useRef<HTMLDivElement>(null);
+  const coverGone = useCoverGone(photo, cover);
+  const away = cover && coverGone;
+  const slim = !cover || away;
+  const actions = data ? (
+    <TripActions
+      trip={data.trip}
+      member={member}
+      editing={editing}
+      add={canAdd ? add : null}
+      onShare={() => setSharing(true)}
+      onEdit={() => setEditing(true)}
+      onDelete={() => void remove()}
+      onChange={refresh}
+    />
+  ) : null;
+  const dates = data ? `${day(data.trip.start)} – ${day(data.trip.end)}` : "";
+  const SlimName = cover ? "p" : "h1";
 
   return (
-    <div className="trip-page">
-      <header className="trip-cover trip-cover-compact" style={data ? coverStyle(data.trip) : undefined}>
-        <div className="trip-cover-top">
-          <Link className="cover-button" to="/travel" aria-label="Back to trips">
-            <span aria-hidden="true">‹</span> Trips
+    <div className="trip-page trip-v2" data-tab={tab} data-cover={cover && !away ? "in" : "out"}>
+      {slim && (
+        <div className="trip-slim" data-over={cover || undefined}>
+          <Link className="trip-icon-button" to="/travel" aria-label="Back to trips">
+            <Icon name="chevron" size={20} className="icon-back" />
           </Link>
-          {data && !editing && (
-            <div className="cover-actions">
-              <button type="button" className="cover-button" onClick={() => setSharing(true)} aria-label={member ? "People on this trip" : "Share the plan"}>
-                {member ? "People" : "Share"}
-              </button>
-              {/* Editing the trip, its photo and deleting it are the owner's. */}
-              {!member && <TripMenu trip={data.trip} onEdit={() => setEditing(true)} onDelete={() => void remove()} onChange={refresh} />}
+          <span className="trip-slim-thumb" style={data ? heroStyle(data.trip) : undefined} aria-hidden="true" />
+          <div className="trip-slim-title">
+            <SlimName className="accent-serif trip-slim-name">{data?.trip.destination ?? "Trip"}</SlimName>
+            {data && <span className="trip-slim-dates">{dates}</span>}
+          </div>
+          {actions}
+        </div>
+      )}
+      {cover && (
+        <header className="trip-hero">
+          <div ref={photo} className={`trip-hero-photo${data?.trip.photo ? "" : " no-photo"}`} style={data ? heroStyle(data.trip) : undefined}>
+            <div className="trip-hero-bar" aria-hidden={away || undefined} inert={away}>
+              <Link className="trip-chip" to="/travel" aria-label="Back to trips">
+                <Icon name="chevron" size={16} className="icon-back" />
+                Trips
+              </Link>
+              {actions}
             </div>
-          )}
-        </div>
-        <div className="trip-cover-main">
-          <h1>{data?.trip.destination ?? "Trip"}</h1>
-          {data && (
-            <p className="trip-meta">
-              <span>
-                {day(data.trip.start)} – {day(data.trip.end)} · {data.trip.days} {data.trip.days === 1 ? "day" : "days"}
-              </span>
-              <span className="pill">{tripWhen(data.trip)}</span>
-              <TripFaces trip={data.trip} members={members.data} />
-            </p>
-          )}
-          {data && member && <p className="trip-shared-by">{sharedBy(data.trip)}</p>}
-          {data?.trip.photo && <PhotoCredit photo={data.trip.photo} />}
-        </div>
-      </header>
+            {data?.trip.photo && (
+              <div className="trip-hero-credit" aria-hidden={away || undefined} inert={away}>
+                <PhotoCredit photo={data.trip.photo} />
+              </div>
+            )}
+          </div>
+          <div className="trip-hero-body">
+            <h1 className="accent-serif trip-hero-title">{data?.trip.destination ?? "Trip"}</h1>
+            {data && (
+              <p className="trip-hero-meta">
+                <span>
+                  {dates} · {data.trip.days} {data.trip.days === 1 ? "day" : "days"}
+                </span>
+                <span className="pill">{tripWhen(data.trip)}</span>
+                <TripFaces trip={data.trip} members={members.data} />
+              </p>
+            )}
+            {data && member && <p className="trip-hero-shared">{sharedBy(data.trip)}</p>}
+            {data && <NextUpStrip detail={data} onGo={go} />}
+            {data && <ActivityLine tripId={id} shared={hasMembers(members.data)} />}
+          </div>
+        </header>
+      )}
       {detail.isLoading && <p className="state">Loading…</p>}
       {gone && (
         <section className="card trip-gone" aria-labelledby="trip-gone">
@@ -1167,9 +1298,6 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
             </section>
           )}
 
-          <NextUpStrip detail={data} onGo={go} />
-          {tab === "plan" && <ActivityLine tripId={id} shared={hasMembers(members.data)} />}
-
           <div className="trip-tabbar">
             <nav className="trip-tabs" aria-label="Trip sections">
               {TABS.filter(([name]) => !(member && name === "money")).map(([name, label]) => (
@@ -1178,11 +1306,6 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
                 </button>
               ))}
             </nav>
-            {stage !== "after" && (
-              <button type="button" className="btn btn-primary trip-add-desktop" onClick={add.run}>
-                {add.label}
-              </button>
-            )}
           </div>
 
           {tab === "plan" && (
@@ -1217,8 +1340,16 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
             </>
           )}
           {tab === "ideas" && <IdeasTab detail={data} onChange={refresh} viewing={selectedDay || null} />}
-          {tab === "money" && <MoneyTab detail={data} onChange={refresh} adding={addingCost} onAddDone={() => setAddingCost(false)} />}
-          {tab === "prep" && <PrepTab detail={data} onChange={refresh} onFix={fix} adding={addingPacking} onAddDone={() => setAddingPacking(false)} />}
+          {tab === "money" && (
+            <div className="trip-narrow trip-money-tab">
+              <MoneyTab detail={data} onChange={refresh} adding={addingCost} onAddDone={() => setAddingCost(false)} />
+            </div>
+          )}
+          {tab === "prep" && (
+            <div className="trip-narrow trip-prep-tab">
+              <PrepTab detail={data} onChange={refresh} onFix={fix} adding={addingPacking} onAddDone={() => setAddingPacking(false)} />
+            </div>
+          )}
 
           {stage !== "after" && (
             <button type="button" className="trip-fab-button" aria-label={add.label} onClick={add.run}>
