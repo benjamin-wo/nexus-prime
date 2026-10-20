@@ -2169,6 +2169,8 @@ body:has(.sheet-backdrop) .main-viewport { overflow: hidden; }
 .prep-sheet-foot { display: flex; align-items: center; gap: var(--space-2); }
 .prep-sheet-foot .btn { min-height: 44px; }
 .prep-sheet-foot .btn-primary { margin-left: auto; }
+/* A quiet button's own padding would push its text in from the fields' edge. */
+.prep-sheet-foot .btn-ghost { margin-left: calc(-1 * var(--space-4)); }
 .prep-sheet textarea.input { resize: vertical; }
 .day-pill[aria-checked="true"] { background: var(--accent-soft); color: var(--accent-text); border-color: var(--accent-border); font-weight: 600; }
 

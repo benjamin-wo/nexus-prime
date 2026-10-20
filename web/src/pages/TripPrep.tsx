@@ -83,7 +83,7 @@ function NotesEditor({ trip, onChange }: { trip: Trip; onChange: () => void }) {
           />
         </label>
         <div className="prep-notes-actions">
-          <button type="submit" className="btn btn-primary" disabled={!changed || busy}>
+          <button type="submit" className="btn btn-soft" disabled={!changed || busy}>
             {busy ? "Saving…" : "Save"}
           </button>
         </div>
