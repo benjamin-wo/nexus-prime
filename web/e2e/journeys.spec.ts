@@ -1914,7 +1914,11 @@ test("the trip on a map, coloured by day, with travel times between stops", asyn
 
 /** The owner's way to the getting-around and directions pickers: the trip's ⋯ menu, then its sheet. */
 async function openWays(page: Page) {
-  await page.getByRole("button", { name: "Trip options" }).click();
+  // The ⋯ is on the cover, and on the slim bar once the cover's photo has scrolled away: when that
+  // happens the cover's goes hidden, so a click that began on it is tried again on the bar's.
+  await expect(async () => {
+    await page.getByRole("button", { name: "Trip options" }).click({ timeout: 1_000 });
+  }).toPass();
   await page.getByRole("menuitem", { name: "Getting around and directions" }).click();
   return page.getByRole("dialog", { name: "Getting around and directions" });
 }
