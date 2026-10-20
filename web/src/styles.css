@@ -2178,3 +2178,16 @@ body:has(.sheet-backdrop) .main-viewport { overflow: hidden; }
 /* Weather: the same card, its days as quiet tiles */
 .weather-range { margin: 0 0 var(--space-3); font-size: 1.25rem; font-weight: 600; }
 .weather-day { flex: none; min-width: 72px; display: grid; justify-items: center; gap: 2px; padding: var(--space-2) var(--space-3); border-radius: var(--radius-inner); border: 1px solid var(--border-subtle); background: var(--bg-card); text-align: center; }
+
+/* Plan rows open before editing */
+/* A tap on a row opens it (the whole-row button toggles); Change in the open part opens the editor.
+   The open part takes its own taps, where the collapsed row's text lets them through to the toggle. */
+.entry-row > .entry-open { pointer-events: auto; position: relative; z-index: 1; flex: 1 1 100%; display: grid; gap: var(--space-1); justify-items: start; min-width: 0; padding-top: var(--space-1); border-top: 1px solid var(--border-subtle); }
+.entry-open .entry-address, .entry-open .entry-note { margin: 0; overflow-wrap: anywhere; }
+.entry-open .entry-note { color: var(--text-secondary); }
+.entry-open .entry-link { margin: 0; }
+.entry-open-actions { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-left: calc(-1 * var(--space-3)); }
+.entry-open-actions .btn { min-height: 40px; }
+@media (max-width: 900px), (pointer: coarse) {
+  .entry-open-actions .btn { min-height: 44px; }
+}

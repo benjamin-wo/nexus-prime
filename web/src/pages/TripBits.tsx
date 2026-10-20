@@ -258,16 +258,18 @@ export function BookingLines({ booking, noTime = false }: { booking: Booking; no
   );
 }
 
-function KindLines({ booking, noTime }: { booking: Booking; noTime: boolean }) {
+/** What an entry says about its kind. ``glance``: only what reads at a glance (times and
+ * dates), leaving the address and note for where the entry is opened. */
+export function KindLines({ booking, noTime, glance = false }: { booking: Booking; noTime: boolean; glance?: boolean }) {
   // Nothing the entry's title or day already says.
-  const note = booking.note && !onlyNamesDay(booking.note) && (
+  const note = !glance && booking.note && !onlyNamesDay(booking.note) && (
     <span className="caption">
       {booking.note}
       <br />
     </span>
   );
   if (booking.kind === "activity") {
-    const address = booking.address && !repeatsTitle(booking.address, booking.title) ? booking.address : null;
+    const address = !glance && booking.address && !repeatsTitle(booking.address, booking.title) ? booking.address : null;
     return (
       <>
         <span className="caption">
@@ -285,7 +287,7 @@ function KindLines({ booking, noTime }: { booking: Booking; noTime: boolean }) {
         <span className="caption">
           {booking.check_in && `Check in ${day(booking.check_in)}`}
           {booking.check_out && ` · out ${day(booking.check_out)}`}
-          {booking.address && ` · ${booking.address}`}
+          {!glance && booking.address && ` · ${booking.address}`}
           <br />
         </span>
         {note}

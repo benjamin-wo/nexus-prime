@@ -86,6 +86,8 @@ export function DayCarousel({
   // The slide a scroll we started is heading for: its in-between positions aren't swipes.
   const aim = useRef<{ index: number; timer: number } | null>(null);
   const opened = useRef(false);
+  const scrolling = useRef(0);
+  useEffect(() => () => window.clearTimeout(scrolling.current), []);
   // The track's height: that of the day in view, found by watching its slide.
   const [height, setHeight] = useState<number | null>(null);
   // The height eases only when another day comes into view. When the day in view grows (an
@@ -156,7 +158,12 @@ export function DayCarousel({
   // A swipe (or focus moving into another day) scrolls the track: follow it.
   function onScroll() {
     const el = track.current;
-    if (!el || el.clientWidth === 0) return;
+    if (!el) return;
+    // Marked while it moves, so a tap that is really the thumb catching a scroll isn't read as a tap on a plan.
+    el.dataset.scrolling = "true";
+    window.clearTimeout(scrolling.current);
+    scrolling.current = window.setTimeout(() => delete el.dataset.scrolling, 150);
+    if (el.clientWidth === 0) return;
     if (aim.current) {
       if (Math.abs(el.scrollLeft - aim.current.index * el.clientWidth) > 2) return;
       window.clearTimeout(aim.current.timer);

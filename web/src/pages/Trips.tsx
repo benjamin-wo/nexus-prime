@@ -9,12 +9,12 @@ import { base64 } from "../files";
 import { formatMoney } from "../format";
 import { ResearchList } from "./Research";
 import { type AddPreset, AddSheet } from "./TripAdd";
-import { BookingLines, OpenLink, PhotoCredit, TripCard, TripRow, coverStyle, day, isMember, landingOn, landsOnly, leavingOn, legTimes, sharedBy, sortKey, suggestLabel, todayIso, tripWhen, useAppRole, useHome } from "./TripBits";
+import { BookedWith, BookingLines, KindLines, OpenLink, PhotoCredit, TripCard, TripRow, coverStyle, day, isMember, landingOn, landsOnly, leavingOn, legTimes, onlyNamesDay, repeatsTitle, sharedBy, sortKey, suggestLabel, todayIso, tripWhen, useAppRole, useHome } from "./TripBits";
 import { DayCarousel } from "./DayCarousel";
 import { type Fix, type Go, type Stage, dayIsFree, nextUp, stageOf } from "./TripStage";
 import { ArrangeProvider, DayNotes, DayPickerSheet, DropZone, type Spot, daySpot, useArrange, useDragEntry } from "./TripArrange";
 import { DayHops, GETTING_AROUND, HopLine, MapAppPicker, TripMap } from "./TripMap";
-import { TripPlacesProvider, useLinkedPlaces } from "./TripPlaces";
+import { PlaceLine, PlaceWarning, TripPlacesProvider, useLinkedPlaces } from "./TripPlaces";
 import { StopsRow, StopsSheet, pillMark, pillTitle } from "./TripStops";
 import { EntryEditor } from "./TripEntry";
 import { IdeasTab, listOf } from "./TripIdeas";
@@ -482,31 +482,85 @@ function Lock() {
   );
 }
 
-/** The whole row as one tap that opens the entry to change. A button laid over the row,
- * so links and buttons inside it (the grip, Open link) stay their own. */
-function Tap({ booking, onEdit }: { booking: Booking; onEdit?: () => void }) {
-  if (!onEdit) return null;
-  return <button type="button" className="entry-tap" onClick={onEdit} aria-label={`Change ${booking.title}`} />;
+/** A tap that moves further than this between pressing and lifting was a scroll or a swipe. */
+const TAP_SLOP = 8;
+
+/** The open part of a plan row: where it is, its place on Google Maps, link, note and
+ * booking reference, with Change (which opens the editor; Remove stays there). */
+function EntryOpen({ booking, id, onEdit }: { booking: Booking; id: string; onEdit: () => void }) {
+  const address = booking.address && !repeatsTitle(booking.address, booking.title) ? booking.address : null;
+  const note = booking.note && !onlyNamesDay(booking.note) ? booking.note : null;
+  return (
+    <div id={id} className="entry-open">
+      {address && <p className="caption entry-address">{address}</p>}
+      <PlaceLine booking={booking} />
+      <OpenLink booking={booking} />
+      {note && <p className="caption entry-note">{note}</p>}
+      <BookedWith booking={booking} />
+      <div className="entry-open-actions">
+        <button type="button" className="btn btn-ghost btn-small" onClick={onEdit} aria-label={`Change ${booking.title}`}>
+          <Icon name="edit" size={16} />
+          Change
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** A plan row opens before it edits. The whole row is one button laid over it (``toggle``,
+ * so links and buttons inside stay their own), which opens and folds ``panel``; Change in
+ * the panel opens the editor. A press that moved, or landed while the days were scrolling,
+ * was a swipe and does nothing. Each row opens and folds on its own. Without ``onEdit``
+ * (a read-only line) there is neither. */
+function useRowOpen(booking: Booking, onEdit?: () => void) {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  const down = useRef<{ x: number; y: number; scrolling: boolean } | null>(null);
+  if (!onEdit) return { toggle: null, panel: null };
+  const toggle = (
+    <button
+      type="button"
+      className="entry-tap"
+      aria-label={`Open ${booking.title}`}
+      aria-expanded={open}
+      aria-controls={open ? id : undefined}
+      onPointerDown={(e) => {
+        down.current = { x: e.clientX, y: e.clientY, scrolling: Boolean(e.currentTarget.closest("[data-scrolling]")) };
+      }}
+      onPointerCancel={() => {
+        down.current = null;
+      }}
+      onClick={(e) => {
+        const start = down.current;
+        down.current = null;
+        if (start && (start.scrolling || Math.hypot(e.clientX - start.x, e.clientY - start.y) > TAP_SLOP)) return;
+        if (e.currentTarget.closest("[data-scrolling]")) return;
+        setOpen(!open);
+      }}
+    />
+  );
+  return { toggle, panel: open ? <EntryOpen booking={booking} id={id} onEdit={onEdit} /> : null };
 }
 
 /** A flight or train as a slim strip, a hotel check-in or check-out, or a numbered stop.
- * ``onEdit``: tapping the entry opens it to change. */
+ * ``onEdit``: tapping the entry opens it, and Change there opens it to change. */
 function TimelineEntry({ booking, iso, stop, spot, onEdit }: { booking: Booking; iso: string; stop: number | null; spot?: Spot; onEdit?: () => void }) {
   const drag = useDragEntry(booking, spot);
+  const { toggle, panel } = useRowOpen(booking, onEdit);
   if (booking.kind === "hotel") {
     const out = booking.check_out === iso && booking.check_in !== iso;
     return (
       <li ref={drag.ref} className={`timeline-strip entry-row${drag.className}`} id={out ? undefined : `entry-${booking.id}`}>
-        {!out && <Tap booking={booking} onEdit={onEdit} />}
+        {!out && toggle}
         <Icon name="stay" size={18} />
         <span className="wrap">
           <strong>{booking.hotel ?? booking.title}</strong>
           {!out && <br />}
-          {!out && <BookingLines booking={booking} />}
-          {!out && <OpenLink booking={booking} />}
+          {!out && <KindLines booking={booking} noTime glance />}
         </span>
         <span className={`badge ${out ? "badge-pending" : "badge-in"}`}>{out ? "Check out" : "Check in"}</span>
         <Lock />
+        {!out && panel}
       </li>
     );
   }
@@ -517,7 +571,7 @@ function TimelineEntry({ booking, iso, stop, spot, onEdit }: { booking: Booking;
     const from = legs[0];
     return (
       <li ref={drag.ref} className={`timeline-strip timeline-landing entry-row${drag.className}`} id={`land-${booking.id}`}>
-        <Tap booking={booking} onEdit={onEdit} />
+        {toggle}
         <Icon name={booking.kind === "flight" ? "landing" : "train"} size={18} />
         <span className="wrap">
           <strong>
@@ -531,6 +585,7 @@ function TimelineEntry({ booking, iso, stop, spot, onEdit }: { booking: Booking;
           </span>
         </span>
         <Lock />
+        {panel}
       </li>
     );
   }
@@ -539,7 +594,7 @@ function TimelineEntry({ booking, iso, stop, spot, onEdit }: { booking: Booking;
     const legs = leavingOn(booking, iso);
     return (
       <li ref={drag.ref} className={`timeline-strip entry-row${drag.className}`} id={`leave-${booking.id}-${iso}`}>
-        <Tap booking={booking} onEdit={onEdit} />
+        {toggle}
         <Icon name={KIND_ICON[booking.kind]} size={18} />
         <span className="wrap">
           {legs.map((l, n) => (
@@ -552,29 +607,30 @@ function TimelineEntry({ booking, iso, stop, spot, onEdit }: { booking: Booking;
           ))}
         </span>
         <Lock />
+        {panel}
       </li>
     );
   }
   if (booking.kind === "flight" || booking.kind === "rail") {
     return (
       <li ref={drag.ref} className={`timeline-strip entry-row${drag.className}`} id={`entry-${booking.id}`}>
-        <Tap booking={booking} onEdit={onEdit} />
+        {toggle}
         <Icon name={KIND_ICON[booking.kind]} size={18} />
         <span className="wrap">
           <strong>{booking.title}</strong>
           {booking.provider && <span className="caption"> · {booking.provider}</span>}
           <br />
-          <BookingLines booking={booking} />
-          <OpenLink booking={booking} />
+          <KindLines booking={booking} noTime glance />
         </span>
         {booking.cost && <span className="num">{formatMoney(booking.cost)}</span>}
         <Lock />
+        {panel}
       </li>
     );
   }
   return (
     <li ref={drag.ref} className={`timeline-stop entry-row${drag.className}`} id={`entry-${booking.id}`}>
-      <Tap booking={booking} onEdit={onEdit} />
+      {toggle}
       {drag.handle}
       <span className="stop-number" aria-hidden="true">
         {stop}
@@ -588,11 +644,11 @@ function TimelineEntry({ booking, iso, stop, spot, onEdit }: { booking: Booking;
           </span>
         )}
         {booking.category && <span className="caption"> · {booking.category}</span>}
-        <br />
-        <BookingLines booking={booking} noTime />
-        <OpenLink booking={booking} />
+        {/* Open, the plan shows it with the place's details. */}
+        {!panel && <PlaceWarning booking={booking} />}
       </span>
       {booking.cost && <span className="num">{formatMoney(booking.cost)}</span>}
+      {panel}
     </li>
   );
 }
