@@ -112,7 +112,13 @@ export function DayCarousel({
     if (behavior === "auto") {
       aim.current = null;
     } else {
-      aim.current = { index: i, timer: window.setTimeout(() => (aim.current = null), 800) };
+      // A slide the browser cut short (the track changing size under it, a busy page)
+      // would leave the old day showing: once it should be over, make sure it got there.
+      const settle = () => {
+        aim.current = null;
+        if (el.clientWidth > 0 && Math.round(el.scrollLeft / el.clientWidth) !== i) el.scrollTo({ left: i * el.clientWidth, behavior: "auto" });
+      };
+      aim.current = { index: i, timer: window.setTimeout(settle, 800) };
     }
     el.scrollTo({ left: i * el.clientWidth, behavior });
   }, []);

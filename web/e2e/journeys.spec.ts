@@ -2034,14 +2034,22 @@ test("a day rearranged: dragged, moved by keyboard or menu, with what to watch o
 
   // Dragged by its grip to above the temple: one call, and the day follows it.
   const grip = page.getByRole("button", { name: "Drag Tea house" });
-  await grip.scrollIntoViewIfNeeded();
-  await expect.poll(async () => (await grip.boundingBox())?.x ?? -1).toBeGreaterThan(0);
+  // Mid-screen, clear of the bars that stick at the top (a phone has three of them).
+  await grip.evaluate((el) => el.scrollIntoView({ block: "center" }));
+  // The days slide sideways: wait until day 2 has slid fully into the card.
+  await expect
+    .poll(async () => {
+      const [g, card] = [await grip.boundingBox(), await itinerary.boundingBox()];
+      return Boolean(g && card && g.x > card.x && g.x + g.width < card.x + card.width);
+    })
+    .toBe(true);
   const from = (await grip.boundingBox())!;
   const onto = (await page.locator("#entry-pl1").boundingBox())!;
   await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
   await page.mouse.down();
   await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2 - 10, { steps: 3 });
-  await page.mouse.move(onto.x + 40, onto.y + 4, { steps: 8 });
+  // Well inside the top half of the temple, so it lands above it.
+  await page.mouse.move(onto.x + 40, onto.y + Math.min(12, onto.height / 4), { steps: 8 });
   await expect(page.locator("#entry-pl1")).toHaveClass(/drop-before/);
   await page.mouse.up();
   await expect.poll(() => state.moves).toEqual(["pl2>2026-11-11@first"]);
