@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { type CSSProperties, type FormEvent, Fragment, type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type FormEvent, Fragment, type ReactNode, type RefObject, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { ApiError, api, type Booking, type Hop, type ScreenshotRead, type Trip, type TripDetail } from "../api";
@@ -9,7 +9,7 @@ import { base64 } from "../files";
 import { formatMoney } from "../format";
 import { ResearchList } from "./Research";
 import { type AddPreset, AddSheet } from "./TripAdd";
-import { BookingLines, OpenLink, PhotoCredit, TripCard, coverStyle, day, isMember, landingOn, landsOnly, leavingOn, legTimes, sharedBy, sortKey, suggestLabel, todayIso, tripWhen, useAppRole, useHome } from "./TripBits";
+import { BookingLines, OpenLink, PhotoCredit, TripCard, TripRow, coverStyle, day, isMember, landingOn, landsOnly, leavingOn, legTimes, sharedBy, sortKey, suggestLabel, todayIso, tripWhen, useAppRole, useHome } from "./TripBits";
 import { DayCarousel } from "./DayCarousel";
 import { type Fix, type Go, type Stage, dayIsFree, nextUp, stageOf } from "./TripStage";
 import { ArrangeProvider, DayNotes, DayPickerSheet, DropZone, type Spot, daySpot, useArrange, useDragEntry } from "./TripArrange";
@@ -249,7 +249,7 @@ function WhereNext({ onAsk, onAdd }: { onAsk?: (text: string) => void; onAdd: ()
     setWhere("");
   }
   return (
-    <section className="card where-next" aria-labelledby="where-next">
+    <section className="where-next" aria-labelledby="where-next">
       <h2 id="where-next">Where to next?</h2>
       {onAsk && (
         <form className="where-form" onSubmit={go} aria-label="Research a trip">
@@ -259,7 +259,7 @@ function WhereNext({ onAsk, onAdd }: { onAsk?: (text: string) => void; onAdd: ()
           </button>
         </form>
       )}
-      <div className="chips">
+      <div className="chips where-chips">
         {onAsk &&
           WHERE_IDEAS.map((idea) => (
             <button key={idea} type="button" className="day-pill" onClick={() => ask(idea)}>
@@ -290,23 +290,23 @@ export function TripsPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
   const everything = trips.data ?? [];
   const all = everything.filter((t) => !isMember(t));
   const shared = everything.filter(isMember);
-  const groups: [string, Trip[]][] = [
-    ["On now", all.filter((t) => t.status === "ongoing")],
-    ["Coming up", all.filter((t) => t.status === "upcoming").reverse()],
-    ["Past", all.filter((t) => t.status === "finished")],
-  ];
+  const onNow = all.filter((t) => t.status === "ongoing");
+  const comingUp = all.filter((t) => t.status === "upcoming").reverse();
+  const past = all.filter((t) => t.status === "finished");
+  const summary = [onNow.length > 0 && `${onNow.length} on now`, comingUp.length > 0 && `${comingUp.length} coming up`].filter(Boolean).join(" · ");
 
   return (
     <>
-      <div className="page-head">
+      <div className="page-head trips-head">
         <div>
-          <h1>Trips</h1>
-          <p className="muted">
-            {role === "guest" ? "The trips you were invited to." : "Each trip keeps its bookings, plans and money together. Nexus never books anything."}
-          </p>
+          <h1>
+            Your <span className="accent-serif">trips</span>
+          </h1>
+          {role === "guest" ? <p className="trips-summary">The trips you were invited to.</p> : summary && <p className="trips-summary">{summary}</p>}
         </div>
         {!adding && !guest && (
           <button type="button" className="btn btn-primary" onClick={() => setAdding(true)}>
+            <Icon name="plus" size={16} />
             New trip
           </button>
         )}
@@ -338,12 +338,14 @@ export function TripsPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
           </p>
         </section>
       )}
-      {groups.slice(0, 2).filter(([, list]) => list.length > 0).map(([title, list]) => tripGroup(title, list))}
+      {onNow.length > 0 && tripGroup("On now", onNow)}
+      {comingUp.length > 0 && tripGroup("Coming up", comingUp)}
+      {shared.length > 0 && tripGroup("Shared with you", shared)}
       {!adding && !guest && <WhereNext onAsk={onAsk} onAdd={() => setAdding(true)} />}
       {!guest && <LooseBookings trips={all} />}
-      {groups.slice(2).filter(([, list]) => list.length > 0).map(([title, list]) => tripGroup(title, list))}
-      {shared.length > 0 && tripGroup("Shared with you", shared)}
       {!guest && <ResearchList />}
+      {past.length > 0 && <PastTrips list={past} />}
+      {!guest && <p className="caption trips-foot">Each trip keeps its bookings, plans and money together. Nexus never books anything.</p>}
     </>
   );
 }
@@ -352,9 +354,28 @@ function tripGroup(title: string, list: Trip[]) {
   return (
     <section key={title} className="trip-group" aria-label={title}>
       <h2>{title}</h2>
-      <ul className={`trip-cards${title === "Past" ? " trip-cards-past" : ""}`}>
+      <ul className="trip-cards">
         {list.map((t) => (
           <TripCard key={t.id} trip={t} />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** Past trips: shut behind one button, then compact rows. */
+function PastTrips({ list }: { list: Trip[] }) {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  return (
+    <section className="trip-group trip-past" aria-label="Past trips">
+      <button type="button" className="trip-past-button" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>
+        Past trips · {list.length}
+        <Icon name="chevron" size={16} className="money-chev" />
+      </button>
+      <ul className="trip-rows" id={id} hidden={!open}>
+        {list.map((t) => (
+          <TripRow key={t.id} trip={t} />
         ))}
       </ul>
     </section>
@@ -802,14 +823,14 @@ function LooseBookings({ trips }: { trips: Trip[] }) {
   }
 
   return (
-    <section className="card" aria-labelledby="loose-bookings">
+    <section className="card quiet-list" aria-labelledby="loose-bookings">
       <div className="card-head">
         <h2 id="loose-bookings">Bookings not on a trip</h2>
       </div>
-      <ul className="feed">
+      <ul className="quiet-rows">
         {loose.data.map((b) => (
           <BookingRow key={b.id} booking={b}>
-            <select className="input" aria-label={`Trip for ${b.title}`} value="" onChange={(e) => void move(b, e.target.value)}>
+            <select className="input quiet-select" aria-label={`Trip for ${b.title}`} value="" onChange={(e) => void move(b, e.target.value)}>
               <option value="" disabled>
                 Put on a trip…
               </option>
