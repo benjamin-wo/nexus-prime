@@ -768,13 +768,6 @@ a.btn { text-decoration: none; }
 .avatar { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-size: 0.8125rem; font-weight: 700; color: var(--text-white); background: var(--bg-card-hover); border: 2px solid var(--bg-card); }
 .avatar + .avatar { margin-left: -8px; }
 .avatar.more { color: var(--text-secondary); }
-.trip-tabs {
-  position: sticky; top: var(--space-2); z-index: 5; display: flex; gap: 4px; margin-bottom: var(--space-4); padding: 4px;
-  border-radius: 14px; border: 1px solid var(--border-card); background: var(--bg-card); box-shadow: 0 6px 18px rgba(27, 35, 51, 0.14);
-}
-.trip-tab { flex: 1; min-height: 40px; padding: 0 var(--space-2); border: 0; border-radius: 10px; background: none; color: var(--text-muted); font: inherit; font-weight: 600; cursor: pointer; transition: color var(--t-standard), background var(--t-standard); }
-.trip-tab:hover { color: var(--text-primary); }
-.trip-tab[aria-current="page"] { color: var(--text-white); background: var(--bg-raised); }
 .import-banner { border-color: var(--emerald-border); display: grid; gap: var(--space-2); margin-bottom: var(--space-4); }
 .reservation-bar { display: flex; gap: var(--space-2); overflow-x: auto; margin-bottom: var(--space-4); padding-bottom: var(--space-1); }
 .reservation-chip { display: inline-flex; align-items: center; gap: var(--space-2); white-space: nowrap; min-height: 36px; padding: 0 var(--space-3); border-radius: 8px; border: 1px solid var(--border-card); background: var(--bg-card); color: var(--text-primary); text-decoration: none; font-weight: 600; }
@@ -790,7 +783,7 @@ details.section[open] > summary { margin-bottom: var(--space-3); }
 .checklist li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
 .checklist li.done { color: var(--emerald-accent); }
 .checklist li.todo { color: var(--status-warning); }
-.day-strip { position: sticky; top: 64px; z-index: 4; display: flex; gap: var(--space-2); overflow-x: auto; margin: 0 calc(-1 * var(--space-4)) var(--space-3); padding: var(--space-2) var(--space-4); background: var(--bg-card); border-bottom: 1px solid var(--border-subtle); }
+.day-strip { position: sticky; z-index: 4; display: flex; gap: var(--space-2); overflow-x: auto; margin: 0 calc(-1 * var(--space-4)) var(--space-3); padding: var(--space-2) var(--space-4); background: var(--bg-card); border-bottom: 1px solid var(--border-subtle); }
 .day-pill { flex: none; min-height: 32px; padding: 0 var(--space-3); border-radius: 999px; border: 1px solid var(--border-card); background: var(--bg-card); color: var(--text-primary); font: inherit; font-weight: 600; cursor: pointer; transition: background var(--t-micro), border-color var(--t-micro); }
 .day-pill:hover, .day-pill:focus-visible { background: var(--bg-card-hover); }
 .itinerary-day { scroll-margin-top: 110px; }
@@ -838,19 +831,6 @@ details.section[open] > summary { margin-bottom: var(--space-3); }
 .day-controls { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin: 0 0 var(--space-2); }
 .day-controls .btn { min-width: 40px; font-size: 1.25rem; line-height: 1; }
 .day-controls .caption { text-align: center; }
-/* The same height every day, room for three or four plans; a busy day scrolls inside. */
-.day-track {
-  --day-height: 27rem;
-  display: flex; height: var(--day-height); overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory;
-  overscroll-behavior-x: contain; scrollbar-width: none;
-}
-.day-track::-webkit-scrollbar { display: none; }
-.day-slide {
-  flex: 0 0 100%; min-width: 0; height: 100%; overflow-y: auto; overscroll-behavior-y: contain;
-  scroll-snap-align: start; scroll-snap-stop: always; scrollbar-width: thin;
-}
-.day-slide.more-below { mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent); -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent); }
-@media (max-width: 720px) { .day-track { --day-height: min(34rem, 68vh); } }
 .trip-map-canvas { height: 260px; border-radius: 10px; overflow: hidden; background: var(--bg-input); }
 .trip-map-full { position: fixed; inset: 0; z-index: 25; margin: 0; border-radius: 0; display: flex; flex-direction: column; padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom)); }
 .trip-map-full .trip-map-canvas { flex: 1; height: auto; }
@@ -859,7 +839,6 @@ details.section[open] > summary { margin-bottom: var(--space-3); }
 .trip-fab-menu .btn { justify-content: flex-start; }
 @media (max-width: 900px) {
   .trip-fab { right: var(--space-4); bottom: calc(76px + 64px + env(safe-area-inset-bottom)); }
-  .trip-tabs, .day-strip { top: 0; }
 }
 
 /* Google Maps places on trip entries */
@@ -1145,7 +1124,6 @@ html.keyboard .bottom-nav, html.keyboard .trip-fab-button, html.keyboard .trip-f
 .trip-page { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); padding-bottom: 72px; }
 .trip-cover-compact { min-height: 170px; margin: 0; gap: var(--space-6); }
 .trip-menu { position: relative; }
-.trip-menu .cover-button { min-width: 40px; justify-content: center; font-size: 1.1rem; letter-spacing: 0.08em; }
 .trip-menu-list {
   position: absolute; right: 0; top: calc(100% + 6px); z-index: 12; display: grid; gap: 2px; min-width: 190px; padding: var(--space-2);
   border-radius: 14px; border: 1px solid var(--border-card); background: var(--bg-card-hover); box-shadow: var(--shadow-modal);
@@ -1419,25 +1397,15 @@ html.keyboard .bottom-nav, html.keyboard .trip-fab-button, html.keyboard .trip-f
 
 /* Trip page: tabs and plan */
 /* Next up: the one thing to do next, a slim card under the header. */
-.next-up { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-radius: var(--radius-inner); border: 1px solid var(--accent-border); background: var(--accent-soft); }
-.next-up-body { flex: 1; min-width: 0; display: grid; gap: 2px; }
-.next-up-label { font-size: 0.8125rem; font-weight: 600; color: var(--accent-text); }
-.next-up-text { margin: 0; overflow-wrap: anywhere; }
-.next-up .btn { flex: none; }
 /* The tab row sticks to the top; on a wide screen the tab's + sits at its right. A sticky box
    keeps off the padding of the area it scrolls in, so on this page the top space is the page's
    own and scrolls away, and the row sticks flush. */
 .main-viewport:has(.trip-page) { padding-top: 0; }
 .trip-page { padding-top: 40px; }
 @media (max-width: 900px) { .trip-page { padding-top: var(--space-4); } }
-.trip-tabbar { position: sticky; top: 0; z-index: 6; display: flex; align-items: center; gap: var(--space-3); padding: var(--space-1) 0; background: var(--bg-shell); }
-.trip-tabbar .trip-tabs { position: static; flex: 1; min-width: 0; margin: 0; }
-.trip-tab { min-height: 44px; }
-.trip-add-desktop { display: none; flex: none; min-height: 44px; white-space: nowrap; }
 /* Plan: the day pills, the day and the map. Stacked on a phone, the pills across the top. */
 .plan-layout { display: grid; gap: var(--space-4); grid-template-columns: minmax(0, 1fr); align-items: start; margin-bottom: var(--space-4); }
 .plan-layout > .card { margin: 0; }
-.plan-layout .day-strip { top: 62px; }
 .trip-map-buttons { display: inline-flex; gap: var(--space-1); }
 /* A day's heading: where it falls small, what it is large, a pencil to name it. */
 .day-head { align-items: flex-start; }
@@ -1457,26 +1425,13 @@ html.keyboard .bottom-nav, html.keyboard .trip-fab-button, html.keyboard .trip-f
 .entry-row > .drag-handle, .entry-row .wrap :is(a, button, select, input) { pointer-events: auto; position: relative; z-index: 1; }
 .entry-lock { flex: none; margin-left: auto; color: var(--text-muted); }
 @media (min-width: 1024px) {
-  .trip-add-desktop { display: inline-flex; }
   .trip-page > .trip-fab-button { display: none; }
   .trip-map-toggle { display: none; }
-  .plan-layout { grid-template-columns: minmax(0, 1fr) minmax(260px, 34%); }
   .plan-layout > .today-view { grid-column: 1 / -1; }
-  .plan-layout > .trip-map { position: sticky; top: 76px; }
-  .plan-layout .trip-map-canvas { height: min(560px, calc(100vh - 240px)); }
-  /* The pills down the left, the day beside them. */
-  .itinerary-card .day-carousel { display: grid; grid-template-columns: 8.5rem minmax(0, 1fr); column-gap: var(--space-4); align-items: start; }
-  .itinerary-card .day-strip {
-    grid-column: 1; grid-row: 1 / span 2; align-self: start; position: sticky; top: 76px; flex-direction: column; gap: var(--space-1);
-    max-height: calc(100vh - 100px); margin: 0; padding: 0; border: 0; background: none; overflow-x: hidden; overflow-y: auto;
-  }
-  .itinerary-card .day-pill { border-radius: var(--radius-inner); text-align: left; }
-  .itinerary-card .day-controls { grid-column: 2; grid-row: 1; }
-  .itinerary-card .day-track { grid-column: 2; grid-row: 2; --day-height: min(40rem, calc(100vh - 260px)); }
 }
 /* Thumbs: the controls on the trip page are 44px tall on a phone. */
 @media (max-width: 900px), (pointer: coarse) {
-  .next-up .btn, .itinerary-card .btn-small, .plan-layout .trip-map .btn-small, .itinerary-card .day-pill { min-height: 44px; }
+  .itinerary-card .btn-small, .plan-layout .trip-map .btn-small, .itinerary-card .day-pill { min-height: 44px; }
   .day-edit { width: 44px; height: 44px; }
   .day-controls .btn { min-width: 44px; }
 }
@@ -1590,10 +1545,7 @@ html.keyboard .bottom-nav, html.keyboard .trip-fab-button, html.keyboard .trip-f
 .pin-prompt .actions .btn { min-height: 44px; }
 @media (min-width: 1024px) {
   .ideas-switch { display: none; }
-  .ideas-layout { grid-template-columns: minmax(0, 1fr) minmax(320px, 42%); }
   .ideas-layout[data-view="map"] > .ideas { display: block; }
-  .ideas-layout > .ideas-map { position: sticky; top: 76px; }
-  .ideas-map-canvas { height: min(560px, calc(100vh - 260px)); }
 }
 
 /* Trip page: finder */
@@ -1720,9 +1672,6 @@ button.settle-main:hover > .wrap { text-decoration: underline dotted; text-under
 /* Secondary button: a soft indigo tint. Grey .btn stays for a neutral cancel or back. */
 .btn-soft { background: var(--accent-soft); border-color: transparent; color: var(--accent-text); font-weight: 600; }
 .btn-soft:hover:not(:disabled) { background: rgba(62, 82, 182, 0.16); }
-/* The next-up strip is already tinted, so its button goes white there. */
-.next-up .btn-soft { background: var(--bg-card); }
-.next-up .btn-soft:hover:not(:disabled) { background: var(--bg-card-hover); }
 /* Small buttons over the cover reach 40px on touch screens too. */
 @media (pointer: coarse) {
   .cover-button, .trip-cover .actions .btn { min-height: 40px; }
@@ -1797,7 +1746,6 @@ a.photo-credit:hover { text-decoration: underline; }
 }
 
 /* Shared trips: people, member view, activity */
-.trip-shared-by { margin: 0; color: #e4e4e7; font-size: 0.8125rem; }
 .trip-gone { display: grid; gap: var(--space-3); justify-items: start; }
 .trip-gone h2, .trip-gone p { margin: 0; }
 .share-section { display: grid; gap: var(--space-3); }
@@ -1820,3 +1768,132 @@ a.photo-credit:hover { text-decoration: underline; }
 }
 .activity-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); }
 .activity-list li { display: grid; gap: 2px; }
+
+/* Trip page v2: day view and layout */
+/* The day pills are one sticky strip across Plan, under the stuck header and tab bar
+   (--trip-sticky-top is the height of those, set on .trip-page). */
+.itinerary-card { --card-pad: var(--space-6); }
+@media (max-width: 720px) { .itinerary-card { --card-pad: var(--space-4); } }
+.itinerary-card .day-strip { top: var(--trip-sticky-top, 0px); margin-inline: calc(-1 * var(--card-pad)); padding-inline: var(--card-pad); scrollbar-width: thin; }
+/* The itinerary a day at a time: the track is as tall as the day in view (DayCarousel sets
+   its height from that slide) and the days sit side by side to swipe between. */
+.day-track {
+  display: flex; align-items: flex-start; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain; scrollbar-width: none; transition: height var(--t-standard);
+}
+.day-track::-webkit-scrollbar { display: none; }
+.day-slide { flex: 0 0 100%; min-width: 0; align-self: start; scroll-snap-align: start; scroll-snap-stop: always; }
+@media (prefers-reduced-motion: reduce) { .day-track { transition: none; } }
+/* Getting around and directions: in the trip menu's sheet, or as a quiet line under the map. */
+.ways-sheet .trip-ways { flex-direction: column; align-items: flex-start; margin: 0; gap: var(--space-3); }
+.trip-map > .trip-ways { margin: var(--space-3) 0 0; }
+/* Money and Prep read as a column on a wide screen, not stretched across it. */
+.trip-narrow { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); min-width: 0; }
+/* Plan and Ideas: the list or day on the left, the map on the right and stuck in view. */
+@media (min-width: 1024px) {
+  .plan-layout { grid-template-columns: minmax(0, 3fr) minmax(300px, 2fr); }
+  .plan-layout > .trip-map { position: sticky; top: calc(var(--trip-sticky-top, 0px) + 12px); }
+  .plan-layout .trip-map-canvas { height: min(600px, calc(100vh - var(--trip-sticky-top, 0px) - 40px)); }
+  .ideas-layout { grid-template-columns: minmax(0, 3fr) minmax(300px, 2fr); }
+  .ideas-layout > .ideas-map { position: sticky; top: calc(var(--trip-sticky-top, 0px) + 12px); }
+  .ideas-map-canvas { height: min(600px, calc(100vh - var(--trip-sticky-top, 0px) - 40px)); }
+  .trip-narrow { max-width: 760px; margin-inline: auto; width: 100%; }
+}
+/* Phones: room under the last item for the Add button (52px), its gap above the bottom bar,
+   so it never covers the last plan or a day's pencil. The main area adds the bar itself. */
+@media (max-width: 900px) {
+  .trip-page { padding-bottom: calc(52px + var(--space-5) + var(--space-4)); }
+}
+
+/* Trip page v2: header, next up, tab bar */
+/* The page is a column (not a grid) so its sticky children stick for the whole page. The header
+   is a cover on Plan and a slim bar elsewhere. --trip-sticky-top is the height of everything
+   stuck above the content (slim bar + tab bar): sticky things inside a tab use it as their top. */
+.trip-page.trip-v2 {
+  --trip-slim-h: 56px; --trip-tabbar-h: 56px; --trip-gutter: var(--space-4);
+  --trip-sticky-top: calc(var(--trip-slim-h) + var(--trip-tabbar-h));
+  display: flex; flex-direction: column; gap: var(--space-4); padding-top: 0;
+}
+@media (min-width: 901px) {
+  .trip-page.trip-v2 { --trip-gutter: 48px; }
+  .trip-page.trip-v2[data-tab="plan"] { padding-top: 40px; }
+}
+/* Slim bar: back, a thumbnail, the title with its dates, then the actions. On Plan it overlaps the
+   cover's place in the flow (negative bottom margin), so it can come and go without moving the page. */
+.trip-v2 .trip-slim {
+  position: sticky; top: 0; z-index: 8; display: flex; align-items: center; gap: var(--space-3); height: var(--trip-slim-h);
+  margin: 0 calc(-1 * var(--trip-gutter)); padding: 0 var(--trip-gutter); background: var(--bg-card);
+  box-shadow: 0 1px 0 var(--border-subtle), 0 8px 16px -12px rgba(27, 35, 51, 0.3); animation: trip-slim-in 160ms ease-out;
+}
+.trip-v2 .trip-slim[data-over] { margin-bottom: calc(-1 * (var(--trip-slim-h) + var(--space-4))); }
+@keyframes trip-slim-in { from { opacity: 0; } to { opacity: 1; } }
+.trip-slim-thumb { flex: none; width: 36px; height: 36px; border-radius: 10px; background-color: var(--bg-raised); background-size: cover; background-position: center; }
+.trip-slim-title { flex: 1; min-width: 0; display: grid; line-height: 1.15; }
+.trip-v2 .trip-slim-name { margin: 0; font-size: 1.3125rem; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.trip-slim-dates { font-size: 0.8125rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.icon-back { transform: rotate(180deg); }
+.trip-icon-button {
+  flex: none; display: inline-grid; place-items: center; width: 40px; height: 40px; margin-left: calc(-1 * var(--space-2)); border-radius: 50%;
+  color: var(--text-primary); text-decoration: none; transition: background var(--t-micro);
+}
+.trip-icon-button:hover, .trip-icon-button:focus-visible { background: var(--bg-card-hover); }
+/* Round and pill buttons: Back, Share and ⋯. Over the cover's photo they are light glass with dark text. */
+.trip-actions { flex: none; display: flex; align-items: center; gap: var(--space-2); }
+.trip-chip {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--space-1); min-width: 40px; min-height: 40px; padding: 0 14px;
+  border: 0; border-radius: 999px; background: var(--bg-raised); color: var(--text-primary); font: inherit; font-weight: 600;
+  text-decoration: none; cursor: pointer; transition: background var(--t-micro);
+}
+.trip-chip:hover { background: #dfe6ef; }
+.trip-chip-icon { padding: 0; font-size: 1.1rem; letter-spacing: 0.08em; }
+.trip-chip .icon-back { margin-left: -4px; }
+.trip-hero .trip-chip { background: rgba(255, 255, 255, 0.94); color: #1b2333; box-shadow: 0 1px 6px rgba(27, 35, 51, 0.28); }
+.trip-hero .trip-chip:hover { background: #fff; }
+.trip-actions .btn-primary { min-height: 40px; padding: 0 var(--space-4) 0 14px; gap: 6px; white-space: nowrap; }
+.trip-hero .trip-actions .btn-primary { box-shadow: 0 1px 6px rgba(27, 35, 51, 0.28); }
+.trip-add-desktop { display: none; }
+@media (min-width: 1024px) { .trip-add-desktop { display: inline-flex; } }
+/* Cover (Plan): the photo alone, full-bleed on a phone; the title and the rest below it, on white. */
+.trip-v2 .trip-hero { margin: 0 calc(-1 * var(--trip-gutter)); background: var(--bg-card); border-bottom: 1px solid var(--border-subtle); }
+.trip-hero-photo { position: relative; z-index: 1; height: 190px; background-color: var(--bg-raised); background-size: cover; background-position: center; }
+.trip-hero-photo.no-photo { height: 120px; }
+.trip-hero-bar { position: absolute; inset: 12px 12px auto 12px; display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-2); }
+.trip-hero-bar[aria-hidden="true"] { visibility: hidden; }
+.trip-hero-credit { display: contents; }
+.trip-hero-credit[aria-hidden="true"] { display: none; }
+.trip-hero-body { display: grid; gap: var(--space-2); padding: var(--space-4) var(--space-4) var(--space-3); }
+.trip-v2 .trip-hero-title { margin: 0; font-size: 2.25rem; line-height: 1.05; overflow-wrap: anywhere; }
+.trip-hero-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin: 0; color: var(--text-secondary); }
+.trip-hero-shared { margin: 0; color: var(--text-muted); font-size: 0.8125rem; }
+@media (min-width: 901px) {
+  .trip-v2 .trip-hero { margin: 0; border: 1px solid var(--border-card); border-radius: var(--radius); box-shadow: var(--shadow-card); }
+  .trip-hero-photo { height: 240px; border-radius: var(--radius) var(--radius) 0 0; }
+  .trip-hero-photo.no-photo { height: 140px; }
+  .trip-hero-bar { inset: 16px 16px auto 16px; }
+  .trip-hero-body { padding: var(--space-6) var(--space-6) var(--space-4); }
+  .trip-v2 .trip-hero-title { font-size: 3rem; }
+}
+/* Next up: one quiet line in the header, the action a quiet text button at its right. */
+.next-up { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-1); padding-top: var(--space-2); border-top: 1px solid var(--border-subtle); }
+.next-up-icon { flex: none; color: var(--accent-text); }
+.next-up-text { flex: 1; min-width: 0; margin: 0; font-size: 0.875rem; overflow-wrap: anywhere; }
+.next-up .next-up-action { flex: none; min-height: 40px; padding: 0 var(--space-3); color: var(--accent-text); font-weight: 600; }
+.trip-hero-body .activity-line { padding-left: 0; padding-right: 0; }
+@media (max-width: 900px), (pointer: coarse) { .next-up .next-up-action { min-height: 44px; } }
+/* Tab bar: a pale track with the open tab raised in white, like Accounting's. It sticks under the slim bar. */
+.trip-v2 .trip-tabbar {
+  position: sticky; top: var(--trip-slim-h); z-index: 7; box-sizing: border-box; display: flex; align-items: center; height: var(--trip-tabbar-h);
+  margin: 0 calc(-1 * var(--trip-gutter)); padding: 4px var(--trip-gutter); background: var(--bg-shell);
+}
+.trip-v2[data-cover="in"] .trip-tabbar { top: 0; }
+.trip-tabs { flex: 1; min-width: 0; max-width: 440px; display: flex; gap: 2px; padding: 4px; border-radius: 14px; background: #e3e9f1; }
+.trip-tab {
+  flex: 1 1 0; min-width: 0; min-height: 40px; padding: 0 var(--space-2); border: 0; border-radius: 10px; background: none; color: var(--text-secondary);
+  font: inherit; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
+  transition: color var(--t-standard), background var(--t-standard), box-shadow var(--t-standard);
+}
+.trip-tab:hover { color: var(--text-primary); }
+.trip-tab[aria-current="page"] { color: var(--text-white); background: var(--bg-card); box-shadow: 0 1px 3px rgba(27, 35, 51, 0.12); }
+@media (prefers-reduced-motion: reduce) {
+  .trip-v2 .trip-slim { animation: none; }
+}

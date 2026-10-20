@@ -1273,7 +1273,7 @@ async function openTab(page: Page, name: TripTab) {
   await expect(tab).toHaveAttribute("aria-current", "page");
 }
 
-/** The trip page's + for the open tab: a floating button on a phone, a button beside the tabs on a wide screen. */
+/** The trip page's + for the open tab: a floating button on a phone, a button in the header beside Share on a wide screen. */
 const tripAdd = (page: Page) => page.locator(".trip-fab-button, .trip-add-desktop").filter({ visible: true });
 
 /** The Itinerary card on the Plan tab. */
@@ -1888,12 +1888,14 @@ test("the trip on a map, coloured by day, with travel times between stops", asyn
   expect(state.hopModes).toEqual(["transit"]);
   // Directions can open in another maps app, remembered on this device; it gets only the
   // entries' own names, never Google's place ids.
-  await page.getByLabel("Directions open in").selectOption("apple");
+  await (await openWays(page)).getByLabel("Directions open in").selectOption("apple");
+  await page.keyboard.press("Escape");
   await expect(hop.getByRole("link", { name: "Directions" })).toHaveAttribute("href", "https://maps.apple.com/?saddr=Hanok+Noodle+Bar&daddr=Namdaemun+Market&dirflg=r");
   await page.reload();
   await page.getByRole("heading", { name: /^Day 3 ·/ }).scrollIntoViewIfNeeded();
-  await expect(page.getByLabel("Directions open in")).toHaveValue("apple");
-  await page.getByLabel("Directions open in").selectOption("google");
+  await expect((await openWays(page)).getByLabel("Directions open in")).toHaveValue("apple");
+  await page.getByRole("dialog", { name: "Getting around and directions" }).getByLabel("Directions open in").selectOption("google");
+  await page.keyboard.press("Escape");
 
   // Tapping a pin finds its plan on the itinerary.
   await page.evaluate(() => (window as unknown as { __map: { markers: { click: () => void }[] } }).__map.markers[1].click());
@@ -1909,6 +1911,17 @@ test("the trip on a map, coloured by day, with travel times between stops", asyn
     await expect(map.getByRole("button", { name: "Full screen" })).toBeHidden();
   }
 });
+
+/** The owner's way to the getting-around and directions pickers: the trip's ⋯ menu, then its sheet. */
+async function openWays(page: Page) {
+  // The ⋯ is on the cover, and on the slim bar once the cover's photo has scrolled away: when that
+  // happens the cover's goes hidden, so a click that began on it is tried again on the bar's.
+  await expect(async () => {
+    await page.getByRole("button", { name: "Trip options" }).click({ timeout: 1_000 });
+  }).toPass();
+  await page.getByRole("menuitem", { name: "Getting around and directions" }).click();
+  return page.getByRole("dialog", { name: "Getting around and directions" });
+}
 
 test("the itinerary goes a day at a time: swipe, pick a day, drop a plan on another day", async ({ page }) => {
   const state = await fakeApi(page);
@@ -2183,7 +2196,8 @@ test("a travel day: the overnight flight lands, then the way to the hotel", asyn
   await expect(notes).toContainText("Arrive around 11:35 (land 09:15, then 2 h 20 min) · check-in from 15:00 · about 3 h 30 min to fill");
 
   // With a hire car the longer hops drive.
-  await page.getByLabel("Getting around").selectOption("car");
+  await (await openWays(page)).getByLabel("Getting around").selectOption("car");
+  await page.keyboard.press("Escape");
   await expect.poll(() => state.trips[0].getting_around).toBe("car");
   await expect(hop).toContainText("1 h 30 min drive");
   await expect(notes).toContainText("Arrive around 10:45 (land 09:15, then 1 h 30 min) · check-in from 15:00 · about 4 h 15 min to fill");
@@ -2286,9 +2300,12 @@ test("after a trip: settling up comes first, then what it cost", async ({ page }
   await addTrip(page, "Osaka", "2026-11-10", "2026-11-12");
   state.trips[0] = { ...state.trips[0], status: "finished", companions: ["Ann"] };
   await page.reload();
-  // It opens on Money, with the strip under the cover saying who still owes.
+  // It opens on Money; Next up is Plan's, and there it says who still owes.
   await expect(page.getByRole("navigation", { name: "Trip sections" }).getByRole("button", { name: "Money", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("region", { name: "Next up" })).toHaveCount(0);
+  await openTab(page, "Plan");
   await expect(page.getByRole("region", { name: "Next up" })).toContainText("Ann still owes you");
+  await openTab(page, "Money");
   const settle = page.getByRole("region", { name: "Settle up" });
   await expect(settle).toContainText("Ann");
   const numbers = page.getByRole("region", { name: "The trip in numbers" });
