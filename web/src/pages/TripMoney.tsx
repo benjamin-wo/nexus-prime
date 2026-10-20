@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useState } from "react";
 
 import {
   api,
@@ -10,11 +10,13 @@ import {
   type SettleResult,
   type SplitBody,
   type SplitResult,
+  type ToSplit,
   type Trip,
   type TripDetail,
   type TripSaving,
   type TripSpending,
 } from "../api";
+import { Icon } from "../components/Icon";
 import { formatMoney, formatWithHome } from "../format";
 import { CountUp } from "../motion";
 import { day } from "./TripBits";
@@ -23,26 +25,8 @@ import { balanceAmount, stageOf } from "./TripStage";
 
 const amount = (m: Money | null) => (m ? Number(m.amount) : 0);
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
-
-export function Figure({ label, value, note }: { label: string; value: Money | null; note?: string }) {
-  if (!value) return null;
-  return (
-    <div>
-      <dt>{label}</dt>
-      <dd className="num">{formatMoney(value)}</dd>
-      {note && <dd className="caption">{note}</dd>}
-    </div>
-  );
-}
-
-export function BudgetMeter({ percent }: { percent: number }) {
-  const tone = percent >= 100 ? " meter-over" : percent >= 80 ? " meter-warn" : "";
-  return (
-    <div className={`meter${tone}`} role="progressbar" aria-label="Budget used" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}>
-      <span style={{ width: `${Math.min(100, percent)}%` }} />
-    </div>
-  );
-}
+const moneyOf = (value: number, currency: string): Money => ({ amount: String(Math.round(value * 100) / 100), currency });
+const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
 type TripCategory = TripSpending["categories"][number];
 
@@ -97,40 +81,20 @@ export function SpendingRow({ category: c, biggest, items }: { category: TripCat
   );
 }
 
-export function Spending({ detail }: { detail: TripDetail }) {
+/** Spending by category (each opening to its expenses), and after the trip planned against actual. */
+function WhereItGoes({ detail }: { detail: TripDetail }) {
   const { trip, spending: s } = detail;
   if (!s) return null; // a member of the trip gets no money
   const biggest = Math.max(1, ...s.categories.map((c) => Number(c.spent.amount)));
+  const planned = s.categories.filter((c) => c.planned);
+  const compare = trip.status === "finished" && (trip.budget !== null || planned.length > 0);
+  const notes = [
+    Number(s.before.amount) > 0 && `${formatMoney(s.before)} was spent before the trip.`,
+    s.per_day && Number(s.per_day.amount) > 0 && `An average of ${formatMoney(s.per_day)} a day.`,
+  ].filter(Boolean);
   return (
-    <section className="card" aria-labelledby="trip-spending">
-      <div className="card-head">
-        <h2 id="trip-spending">Where it goes</h2>
-        <span className="caption">Your share, in {s.spent.currency} at each day's rate</span>
-      </div>
-      {trip.budget && s.percent !== null && (
-        <div className="budget solo">
-          <div className="budget-head">
-            <span>
-              {formatMoney(s.spent)} of {formatMoney(trip.budget)}
-            </span>
-            <span className={`num ${s.percent >= 100 ? "budget-state-over" : s.percent >= 80 ? "budget-state-warn" : ""}`}>{s.percent}%</span>
-          </div>
-          <BudgetMeter percent={s.percent} />
-        </div>
-      )}
-      <dl className="totals" aria-label="Trip totals">
-        <Figure label="Spent" value={s.spent} note={Number(s.before.amount) > 0 ? `${formatMoney(s.before)} before the trip` : undefined} />
-        {s.left && <Figure label={Number(s.left.amount) < 0 ? "Over budget" : "Left"} value={{ ...s.left, amount: String(Math.abs(Number(s.left.amount))) }} />}
-        <Figure label="Today" value={s.today} />
-        <Figure label="Average a day" value={s.per_day} />
-        <Figure label="To stay on budget" value={s.per_day_left} note="a day, for the rest of the trip" />
-        <Figure
-          label="Booked"
-          value={detail.booked}
-          note={detail.booked_unlogged && Number(detail.booked_unlogged.amount) > 0 ? `${formatMoney(detail.booked_unlogged)} not logged yet` : undefined}
-        />
-        {detail.booked && <Figure label="Still to spend" value={detail.to_spend} note="the budget less what's spent and booked" />}
-      </dl>
+    <>
+      <p className="money-note">Your share, in {s.spent.currency} at each day's rate</p>
       {s.categories.length > 0 && (
         <ul className="bars" aria-label="Biggest categories">
           {s.categories.slice(0, trip.status === "finished" ? undefined : 5).map((c) => (
@@ -144,56 +108,46 @@ export function Spending({ detail }: { detail: TripDetail }) {
         </ul>
       )}
       {detail.items.length === 0 && (
-        <p className="state">
+        <p className="money-note">
           Nothing spent yet. Expenses in {trip.currency} between {day(trip.start)} and {day(trip.end)} count by themselves.
         </p>
       )}
-      {s.unconverted > 0 && <p className="caption">{s.unconverted} expenses have no exchange rate yet and aren't counted.</p>}
-    </section>
-  );
-}
-
-export function PlannedVsActual({ detail }: { detail: TripDetail }) {
-  if (!detail.spending) return null;
-  const rows = detail.spending.categories.filter((c) => c.planned);
-  if (detail.trip.status !== "finished" || (!detail.trip.budget && rows.length === 0)) return null;
-  return (
-    <section className="card" aria-labelledby="planned-actual">
-      <div className="card-head">
-        <h2 id="planned-actual">Planned against actual</h2>
-      </div>
-      <div className="table-wrap">
-      <table className="holdings">
-        <thead>
-          <tr>
-            <th scope="col">What</th>
-            <th scope="col" className="num">
-              Planned
-            </th>
-            <th scope="col" className="num">
-              Actual
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {detail.trip.budget && (
-            <tr>
-              <td>Whole trip</td>
-              <td className="num">{formatMoney(detail.trip.budget)}</td>
-              <td className="num">{formatMoney(detail.spending.spent)}</td>
-            </tr>
-          )}
-          {rows.map((c) => (
-            <tr key={c.name}>
-              <td>{c.name}</td>
-              <td className="num">{c.planned && formatMoney(c.planned)}</td>
-              <td className="num">{formatMoney(c.spent)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      </div>
-    </section>
+      {notes.length > 0 && <p className="money-note">{notes.join(" ")}</p>}
+      {s.unconverted > 0 && <p className="money-note">{s.unconverted} expenses have no exchange rate yet and aren't counted.</p>}
+      {compare && (
+        <div className="table-wrap">
+          <table className="holdings" aria-label="Planned against actual">
+            <thead>
+              <tr>
+                <th scope="col">What</th>
+                <th scope="col" className="num">
+                  Planned
+                </th>
+                <th scope="col" className="num">
+                  Actual
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {trip.budget && (
+                <tr>
+                  <td>Whole trip</td>
+                  <td className="num">{formatMoney(trip.budget)}</td>
+                  <td className="num">{formatMoney(s.spent)}</td>
+                </tr>
+              )}
+              {planned.map((c) => (
+                <tr key={c.name}>
+                  <td>{c.name}</td>
+                  <td className="num">{c.planned && formatMoney(c.planned)}</td>
+                  <td className="num">{formatMoney(c.spent)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -212,35 +166,27 @@ export function setAsideText(
   return `${formatMoney(a.per_payday)} each payday${progress.length > 0 ? `: ${progress.join(", ")}` : ""} (${left}).`;
 }
 
-export function SetAside({ detail }: { detail: TripDetail }) {
-  const { trip, saving: a } = detail;
-  if (!a || trip.status !== "upcoming") return null;
-  return (
-    <section className="card" aria-labelledby="set-aside">
-      <div className="card-head">
-        <h2 id="set-aside">Setting money aside</h2>
-      </div>
-      {!a.pay_schedule ? (
-        <p className="muted">Set your pay schedule (Accounting, Plan) and Nexus can plan an amount to put aside each payday.</p>
-      ) : positive(a.per_payday) ? (
-        <>
-          <p>{setAsideText(a, a.next_payday ? day(a.next_payday) : null)}</p>
-          {a.covers_budget === false && positive(a.suggested) && (
-            <p className="budget-state-warn">That's short of the budget: {formatMoney(a.suggested)} each payday would cover it.</p>
-          )}
-          {a.covers_budget && <p className="budget-state-ok-strong">That covers the budget.</p>}
-          {a.fits === false && <p className="budget-state-over">With it, the cash-flow forecast to the trip goes below zero.</p>}
-          {a.fits && <p className="caption">It fits the cash-flow forecast, where it shows on each payday.</p>}
-        </>
-      ) : positive(a.suggested) ? (
-        <p className="muted">
-          Put aside about {formatMoney(a.suggested)} on each of the {a.paydays_left} paydays before the trip to cover the budget. Edit the trip
-          to plan it.
-        </p>
-      ) : (
-        <p className="muted">Add a budget, or an amount to set aside, and Nexus plans it into your paydays.</p>
+function SetAside({ detail }: { detail: TripDetail }) {
+  const a = detail.saving;
+  if (!a) return null;
+  return !a.pay_schedule ? (
+    <p className="muted">Set your pay schedule (Accounting, Plan) and Nexus can plan an amount to put aside each payday.</p>
+  ) : positive(a.per_payday) ? (
+    <>
+      <p>{setAsideText(a, a.next_payday ? day(a.next_payday) : null)}</p>
+      {a.covers_budget === false && positive(a.suggested) && (
+        <p className="budget-state-warn">That's short of the budget: {formatMoney(a.suggested)} each payday would cover it.</p>
       )}
-    </section>
+      {a.covers_budget && <p className="budget-state-ok-strong">That covers the budget.</p>}
+      {a.fits === false && <p className="budget-state-over">With it, the cash-flow forecast to the trip goes below zero.</p>}
+      {a.fits && <p className="money-note">It fits the cash-flow forecast, where it shows on each payday.</p>}
+    </>
+  ) : positive(a.suggested) ? (
+    <p className="muted">
+      Put aside about {formatMoney(a.suggested)} on each of the {a.paydays_left} paydays before the trip to cover the budget. Edit the trip to plan it.
+    </p>
+  ) : (
+    <p className="muted">Add a budget, or an amount to set aside, and Nexus plans it into your paydays.</p>
   );
 }
 
@@ -336,6 +282,42 @@ export function settledText(r: SettleResult): string {
   return parts.length === 0 ? `Nothing was left to settle with ${r.person}.` : `Settled with ${r.person}: ${parts.join("; ")}.`;
 }
 
+/** "Split 3 costs (SGD 612.40) evenly with Alex? Each share is SGD 306.20." The share is
+ * left out when some costs have no exchange rate yet (the total isn't whole). */
+export function splitAskText(items: { home: Money | null }[], names: string[], home: string): string {
+  const question = splitConfirmText(items, names, home);
+  const { total, unrated } = totalOf(items, home);
+  if (unrated > 0 || items.length === 0) return question;
+  const cents = Math.round(Number(total.amount) * 100);
+  const people = names.length + 1;
+  const share = moneyOf(cents / people / 100, home);
+  return `${question} Each share is ${cents % people === 0 ? "" : "about "}${formatMoney(share)}.`;
+}
+
+/** The line under "3 costs to split": the total, then the first three titles and how many more. */
+export function toSplitSub(items: ToSplit[], home: string): string {
+  const titles = items.slice(0, 3).map((i) => i.counterparty ?? "Expense");
+  const names = items.length > 3 ? `${titles.join(", ")} and ${items.length - 3} more` : titles.join(", ");
+  const { total, unrated } = totalOf(items, home);
+  return unrated < items.length ? `${formatMoney(total)} · ${names}` : names;
+}
+
+/** What's planned and not spent yet: each planned cost less what's already spent in that
+ * category and what's booked for it and not logged (in the home currency). */
+export function plannedAhead(detail: TripDetail): number {
+  const s = detail.spending;
+  if (!s) return 0;
+  let sum = 0;
+  for (const [name, cost] of Object.entries(detail.trip.planned)) {
+    const spent = s.categories.filter((c) => sameName(c.name, name)).reduce((t, c) => t + amount(c.spent), 0);
+    const booked = detail.bookings
+      .filter((b) => b.scheduled && !b.logged && b.cost && b.cost.currency === s.spent.currency && b.category && sameName(b.category, name))
+      .reduce((t, b) => t + amount(b.cost), 0);
+    sum += Math.max(0, amount(cost) - spent - booked);
+  }
+  return sum;
+}
+
 /** Names as chips after "You", with a field to add more. It saves nothing: ``onChange`` gets
  * the new list (the trip form keeps it for Save, the Travellers card saves it at once).
  * ``addOnBlur``: a name typed and left behind is added, so Save doesn't lose it. */
@@ -418,52 +400,11 @@ export function NameChips({
   );
 }
 
-/** Who's going, saved with the trip as people are added or removed. */
-function TravellersCard({ trip, onChange }: { trip: Trip; onChange: () => void }) {
+/** Who's going, saved with the trip as people are added or removed, and whether costs are
+ * offered for an even split. */
+function TravellersPanel({ trip, onChange }: { trip: Trip; onChange: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  async function save(companions: string[]) {
-    setBusy(true);
-    setError(null);
-    try {
-      await api(`/travel/trips/${trip.id}`, { method: "PUT", body: tripBody(trip, { companions }) });
-      onChange();
-    } catch (e) {
-      setError(failure(e, "Couldn't save that"));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <section className="card" aria-labelledby="trip-travellers">
-      <div className="card-head">
-        <h2 id="trip-travellers">Travellers</h2>
-        <span className="caption">Add the people going to split costs and settle up with them</span>
-      </div>
-      <NameChips names={trip.companions} busy={busy} onChange={(names) => void save(names)} />
-      {error && (
-        <p className="error-text" role="alert">
-          {error}
-        </p>
-      )}
-    </section>
-  );
-}
-
-/** Costs not split yet, with a way to split each, split them all, or keep one as just mine. */
-function SplitCard({ detail, onChange }: { detail: TripDetail; onChange: () => void }) {
-  const { trip } = detail;
-  const home = detail.spending?.spent.currency ?? detail.trip.currency; // spending is null only for a member, who never sees this
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [confirming, setConfirming] = useState(false);
-  const [outcome, setOutcome] = useState<{ result: SplitResult; names: Map<string, string> } | null>(null);
-  const others = trip.companions;
-  if (others.length === 0) return null;
-  const items = detail.to_split;
-  const kept = detail.items.filter((i) => detail.just_mine.includes(i.transaction_id));
 
   async function run(work: () => Promise<void>, fallback: string) {
     setBusy(true);
@@ -478,120 +419,41 @@ function SplitCard({ detail, onChange }: { detail: TripDetail; onChange: () => v
     }
   }
 
-  const split = (body: SplitBody) =>
+  const save = (companions: string[]) =>
     run(async () => {
-      const names = new Map(items.map((i) => [i.transaction_id, i.counterparty ?? "Expense"]));
-      const result = await api<SplitResult>(`/travel/trips/${trip.id}/split`, { method: "POST", body });
-      setConfirming(false);
-      setOutcome({ result, names });
-    }, "Couldn't split that");
-
-  const keepMine = (ids: string[], keep: boolean) =>
-    run(async () => {
-      await api(`/travel/trips/${trip.id}/keep-mine`, { method: "POST", body: { transaction_ids: ids, keep } });
-      setOutcome(null);
-    }, "Couldn't change that");
+      await api(`/travel/trips/${trip.id}`, { method: "PUT", body: tripBody(trip, { companions }) });
+    }, "Couldn't save that");
 
   const setEvenly = (on: boolean) =>
     run(async () => {
       await api(`/travel/trips/${trip.id}/split-evenly`, { method: "PUT", body: { on } });
-      setConfirming(false);
     }, "Couldn't change that");
 
   return (
-    <section className="card" aria-labelledby="trip-split">
-      <div className="card-head">
-        <h2 id="trip-split">Split costs</h2>
-        <span className="caption">With {joinNames(others)}</span>
-      </div>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={trip.split_evenly}
-        aria-describedby="trip-split-note"
-        className="switch-row"
-        disabled={busy}
-        onClick={() => void setEvenly(!trip.split_evenly)}
-      >
-        <span>Split costs evenly</span>
-        <span className="switch-track" aria-hidden="true">
-          <span className="switch-thumb" />
-        </span>
-      </button>
-      <p className="caption" id="trip-split-note">
-        {trip.split_evenly
-          ? "Costs on this trip are offered for an even split. Nothing changes until you split them."
-          : "Off: costs aren't offered for splitting here. You can still split a bill in chat."}
-      </p>
-      {trip.split_evenly &&
-        (items.length === 0 ? (
-          <p className="state">Nothing left to split.</p>
-        ) : (
-          <>
-            <ul className="feed money-list" aria-label="To split">
-              {items.map((i) => {
-                const name = i.counterparty ?? "this cost";
-                return (
-                  <li key={i.transaction_id} className="run-row cost-row">
-                    <span className="wrap">
-                      {i.counterparty ?? "Expense"}
-                      <br />
-                      <span className="caption">{day(i.day)}</span>
-                    </span>
-                    <span className="num">{formatWithHome(i.amount, i.home)}</span>
-                    <span className="row-actions">
-                      <button type="button" className="btn btn-soft btn-small" disabled={busy} aria-label={`Split ${name} evenly`} onClick={() => void split({ transaction_ids: [i.transaction_id] })}>
-                        Split
-                      </button>
-                      <button type="button" className="btn btn-soft btn-small" disabled={busy} aria-label={`Keep ${name} as just mine`} onClick={() => void keepMine([i.transaction_id], true)}>
-                        Just mine
-                      </button>
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-            {confirming ? (
-              <div className="confirm-box" role="group" aria-label="Confirm splitting all">
-                <p>{splitConfirmText(items, others, home)}</p>
-                <div className="people-actions">
-                  <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void split({ all: true })}>
-                    {busy ? "Splitting…" : "Split them"}
-                  </button>
-                  <button type="button" className="btn" disabled={busy} onClick={() => setConfirming(false)}>
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="people-actions">
-                <button type="button" className="btn btn-primary" disabled={busy} onClick={() => setConfirming(true)}>
-                  Split all evenly
-                </button>
-              </div>
-            )}
-          </>
-        ))}
-      {outcome && (
-        <div className="split-outcome" role="status">
-          {outcome.result.done.length > 0 && (
-            <p>
-              Split {plural(outcome.result.done.length, "cost")} evenly with {joinNames(outcome.result.with_people)}. Your share is{" "}
-              {moneyList(sumByCurrency(outcome.result.done.map((d) => d.own_share)))}.
-            </p>
-          )}
-          {outcome.result.skipped.length > 0 && (
-            <>
-              <p>Left alone:</p>
-              <ul>
-                {outcome.result.skipped.map((s) => (
-                  <li key={s.transaction_id}>
-                    {outcome.names.get(s.transaction_id) ?? "Expense"}: {s.reason}
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
+    <>
+      <p className="money-note">Add the people going to split costs and settle up with them</p>
+      <NameChips names={trip.companions} busy={busy} onChange={(names) => void save(names)} />
+      {trip.companions.length > 0 && (
+        <div className="money-switch">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={trip.split_evenly}
+            aria-describedby="trip-split-note"
+            className="switch-row"
+            disabled={busy}
+            onClick={() => void setEvenly(!trip.split_evenly)}
+          >
+            <span>Split costs evenly</span>
+            <span className="switch-track" aria-hidden="true">
+              <span className="switch-thumb" />
+            </span>
+          </button>
+          <p className="money-note" id="trip-split-note">
+            {trip.split_evenly
+              ? "Costs on this trip are offered for an even split. Nothing changes until you split them."
+              : "Off: costs aren't offered for splitting here. You can still split a bill in chat."}
+          </p>
         </div>
       )}
       {error && (
@@ -599,27 +461,7 @@ function SplitCard({ detail, onChange }: { detail: TripDetail; onChange: () => v
           {error}
         </p>
       )}
-      {trip.split_evenly && kept.length > 0 && (
-        <details className="more kept-mine">
-          <summary>Kept as just mine ({kept.length})</summary>
-          <ul className="feed money-list" aria-label="Kept as just mine">
-            {kept.map((i) => (
-              <li key={i.transaction_id} className="run-row cost-row">
-                <span className="wrap">
-                  {i.counterparty ?? "Expense"}
-                  <br />
-                  <span className="caption">{day(i.day)}</span>
-                </span>
-                <span className="num">{formatWithHome(i.amount, i.home)}</span>
-                <button type="button" className="btn btn-soft btn-small" disabled={busy} aria-label={`Offer ${i.counterparty ?? "this cost"} for splitting again`} onClick={() => void keepMine([i.transaction_id], false)}>
-                  Offer again
-                </button>
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
-    </section>
+    </>
   );
 }
 
@@ -729,15 +571,289 @@ function PaidForm({ trip, home, payment, onChange, onDone }: { trip: Trip; home:
   );
 }
 
+
+function BalanceParts({ b, id }: { b: Balance; id: string }) {
+  const line = (p: BalancePart, fallback: string) => (
+    <li key={`${p.kind}-${p.id}`} className="peek-row">
+      <span className="caption peek-day">{p.on ? day(p.on) : ""}</span>
+      <span className="wrap">{p.label ?? fallback}</span>
+      <span className="num">{formatWithHome(p.amount, p.home)}</span>
+    </li>
+  );
+  return (
+    <div className="peek todo-parts" id={id}>
+      {b.owes_you.length > 0 && (
+        <>
+          <h3 className="caption">{b.person} owes you</h3>
+          <ul className="peek-list" aria-label={`What ${b.person} owes you`}>
+            {b.owes_you.map((p) => line(p, "Shared bill"))}
+          </ul>
+        </>
+      )}
+      {b.you_owe.length > 0 && (
+        <>
+          <h3 className="caption">You owe {b.person}</h3>
+          <ul className="peek-list" aria-label={`What you owe ${b.person}`}>
+            {b.you_owe.map((p) => line(p, `Paid by ${b.person}`))}
+          </ul>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** One person to settle with: where you stand, Settle up (confirmed in place first), and the items behind it. */
+function SettleRow({ trip, b, onSettled }: { trip: Trip; b: Balance; onSettled: (result: SettleResult) => void }) {
+  const key = b.person.replace(/\W+/g, "-");
+  const [open, setOpen] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [log, setLog] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const hasParts = b.owes_you.length + b.you_owe.length > 0;
+  const hasShare = b.you_owe.length > 0;
+
+  async function settle() {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await api<SettleResult>(`/travel/trips/${trip.id}/settle`, {
+        method: "POST",
+        body: { person: b.person, log: hasShare && log },
+      });
+      onSettled(result);
+    } catch (e) {
+      setError(failure(e, "Couldn't mark that settled"));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <li className="todo-item">
+      <div className="todo-row">
+        <span className="todo-avatar" aria-hidden="true">
+          {b.person.trim().charAt(0).toUpperCase()}
+        </span>
+        <div className="todo-text">
+          <span className="todo-title">{balanceWords(b)}</span>
+          {b.net === null && b.net_by_currency.length > 0 && (
+            <span className="todo-sub">Some of this is in other currencies with no exchange rate yet, so it isn't added into one amount.</span>
+          )}
+        </div>
+        {hasParts && !confirming && (
+          <button type="button" className="btn btn-soft" aria-label={`Settle up with ${b.person}`} onClick={() => setConfirming(true)}>
+            Settle up
+          </button>
+        )}
+      </div>
+      {hasParts && (
+        <button type="button" className="btn btn-ghost btn-small todo-more" aria-expanded={open} aria-controls={`settle-parts-${key}`} onClick={() => setOpen(!open)}>
+          Details
+          <Icon name="chevron" size={16} className="money-chev" />
+        </button>
+      )}
+      {open && <BalanceParts b={b} id={`settle-parts-${key}`} />}
+      {confirming && (
+        <div className="confirm-box" role="group" aria-label={`Settle up with ${b.person}`}>
+          <p>{settleConfirmText(b, hasShare && log)}</p>
+          {hasShare && (
+            <label className="check-row">
+              <input type="checkbox" checked={log} disabled={busy} onChange={(e) => setLog(e.target.checked)} />
+              Also record my share as spent
+            </label>
+          )}
+          <div className="people-actions">
+            <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void settle()}>
+              {busy ? "Recording…" : "Mark settled"}
+            </button>
+            <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => setConfirming(false)}>
+              Not now
+            </button>
+          </div>
+        </div>
+      )}
+      {error && (
+        <p className="error-text" role="alert">
+          {error}
+        </p>
+      )}
+    </li>
+  );
+}
+
+/** What needs doing with the people going: costs to split and people to settle up with. Only
+ * there when someone else is going (or something was just done); otherwise nothing. */
+function TodoCard({ detail, onChange }: { detail: TripDetail; onChange: () => void }) {
+  const { trip, balances } = detail;
+  const home = detail.spending?.spent.currency ?? trip.currency; // spending is null only for a member, who never sees this
+  const others = trip.companions;
+  const items = detail.to_split;
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [seeing, setSeeing] = useState(false);
+  const [outcome, setOutcome] = useState<{ result: SplitResult; names: Map<string, string> } | null>(null);
+  const [done, setDone] = useState<string[]>([]);
+  useEffect(() => {
+    if (items.length === 0) {
+      setConfirming(false);
+      setSeeing(false);
+    }
+  }, [items.length]);
+  if (others.length === 0 && balances.length === 0 && !outcome && done.length === 0) return null;
+
+  async function run(work: () => Promise<void>, fallback: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      await work();
+      onChange();
+    } catch (e) {
+      setError(failure(e, fallback));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const split = (body: SplitBody) =>
+    run(async () => {
+      const names = new Map(items.map((i) => [i.transaction_id, i.counterparty ?? "Expense"]));
+      const result = await api<SplitResult>(`/travel/trips/${trip.id}/split`, { method: "POST", body });
+      setConfirming(false);
+      setOutcome({ result, names });
+    }, "Couldn't split that");
+
+  const keepMine = (ids: string[]) =>
+    run(async () => {
+      await api(`/travel/trips/${trip.id}/keep-mine`, { method: "POST", body: { transaction_ids: ids, keep: true } });
+      setOutcome(null);
+    }, "Couldn't change that");
+
+  return (
+    <section className="card money-todo" aria-labelledby="money-todo">
+      <h2 id="money-todo">To do</h2>
+      {balances.length > 0 && <p className="money-note">Nexus records what you say happened. It doesn't move money.</p>}
+      {outcome && (
+        <div className="split-outcome" role="status">
+          {outcome.result.done.length > 0 && (
+            <p>
+              Split {plural(outcome.result.done.length, "cost")} evenly with {joinNames(outcome.result.with_people)}. Your share is{" "}
+              {moneyList(sumByCurrency(outcome.result.done.map((d) => d.own_share)))}.
+            </p>
+          )}
+          {outcome.result.skipped.length > 0 && (
+            <>
+              <p>Left alone:</p>
+              <ul>
+                {outcome.result.skipped.map((s) => (
+                  <li key={s.transaction_id}>
+                    {outcome.names.get(s.transaction_id) ?? "Expense"}: {s.reason}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      )}
+      {done.length > 0 && (
+        <div className="split-outcome" role="status">
+          {done.map((text) => (
+            <p key={text}>{text}</p>
+          ))}
+        </div>
+      )}
+      {(items.length > 0 || balances.length > 0) && (
+        <ul className="todo-list">
+          {items.length > 0 && (
+            <li className="todo-item">
+              <div className="todo-row">
+                <div className="todo-text">
+                  <span className="todo-title">{plural(items.length, "cost")} to split</span>
+                  <span className="todo-sub">{toSplitSub(items, home)}</span>
+                </div>
+                {!confirming && (
+                  <button type="button" className="btn btn-soft" disabled={busy} aria-label="Split all evenly" onClick={() => setConfirming(true)}>
+                    Split
+                  </button>
+                )}
+              </div>
+              {confirming && (
+                <div className="confirm-box" role="group" aria-label="Confirm splitting all">
+                  <p>{splitAskText(items, others, home)}</p>
+                  <div className="people-actions">
+                    <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void split({ all: true })}>
+                      {busy ? "Splitting…" : "Split evenly"}
+                    </button>
+                    <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => setConfirming(false)}>
+                      Not now
+                    </button>
+                  </div>
+                </div>
+              )}
+              <button type="button" className="btn btn-ghost btn-small todo-more" aria-expanded={seeing} aria-controls="todo-costs" onClick={() => setSeeing(!seeing)}>
+                See costs
+                <Icon name="chevron" size={16} className="money-chev" />
+              </button>
+              {seeing && (
+                <ul className="money-rows" id="todo-costs" aria-label="To split">
+                  {items.map((i) => {
+                    const name = i.counterparty ?? "this cost";
+                    return (
+                      <li key={i.transaction_id}>
+                        <div className="money-row">
+                          <div className="money-row-main">
+                            <span className="money-row-title">{i.counterparty ?? "Expense"}</span>
+                            <span className="money-row-sub">{day(i.day)}</span>
+                          </div>
+                          <span className="num money-row-amount">{formatWithHome(i.amount, i.home)}</span>
+                          <span className="money-row-actions">
+                            <button type="button" className="btn btn-soft btn-small" disabled={busy} aria-label={`Split ${name} evenly`} onClick={() => void split({ transaction_ids: [i.transaction_id] })}>
+                              Split
+                            </button>
+                            <button type="button" className="btn btn-soft btn-small" disabled={busy} aria-label={`Keep ${name} as just mine`} onClick={() => void keepMine([i.transaction_id])}>
+                              Just mine
+                            </button>
+                          </span>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </li>
+          )}
+          {balances.map((b) => (
+            <SettleRow
+              key={b.person}
+              trip={trip}
+              b={b}
+              onSettled={(result) => {
+                setDone((was) => [...was, settledText(result)]);
+                onChange();
+              }}
+            />
+          ))}
+        </ul>
+      )}
+      {others.length > 0 && items.length === 0 && balances.length === 0 && <p className="todo-quiet">All split and settled with {joinNames(others)}.</p>}
+      {error && (
+        <p className="error-text" role="alert">
+          {error}
+        </p>
+      )}
+    </section>
+  );
+}
+
+
 /** What fellow travellers paid for, each with a way to change or remove it. Settled ones stay, muted. */
-function PaidByOthers({ detail, onChange }: { detail: TripDetail; onChange: () => void }) {
+function PaidByOthersPanel({ detail, onChange }: { detail: TripDetail; onChange: () => void }) {
   const { trip, paid_by_others: payments } = detail;
   const home = detail.spending?.spent.currency ?? detail.trip.currency; // spending is null only for a member, who never sees this
   const [editing, setEditing] = useState<string | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  if (payments.length === 0) return null;
 
   async function remove(p: PaidByOther) {
     setBusy(true);
@@ -754,12 +870,9 @@ function PaidByOthers({ detail, onChange }: { detail: TripDetail; onChange: () =
   }
 
   return (
-    <section className="card" aria-labelledby="trip-paid">
-      <div className="card-head">
-        <h2 id="trip-paid">Paid by others</h2>
-        <span className="caption">Your share is what you owe them</span>
-      </div>
-      <ul className="feed money-list" aria-label="Paid by others">
+    <>
+      <p className="money-note">Your share is what you owe them</p>
+      <ul className="money-rows" aria-label="Paid by others">
         {payments.map((p) => {
           const what = `${p.person}${p.note ? `, ${p.note}` : ""}`;
           if (editing === p.id) {
@@ -770,24 +883,25 @@ function PaidByOthers({ detail, onChange }: { detail: TripDetail; onChange: () =
             );
           }
           return (
-            <li key={p.id} className={`paid-row${p.settled ? " is-settled" : ""}`}>
-              <div className="run-row cost-row">
-                <span className="wrap">
-                  {p.person} paid{p.note ? ` for ${p.note}` : ""}
-                  <br />
-                  <span className="caption">
+            <li key={p.id} className={p.settled ? "is-settled" : undefined}>
+              <div className="money-row">
+                <div className="money-row-main">
+                  <span className="money-row-title">
+                    {p.person} paid{p.note ? ` for ${p.note}` : ""}
+                  </span>
+                  <span className="money-row-sub">
                     {day(p.paid_on)} · split with you{p.split_with.length > 0 ? `, ${joinNames(p.split_with)}` : ""}
                     {p.settled && " · settled"}
                   </span>
-                </span>
-                <span className="num">
-                  {formatMoney(p.amount)}
-                  <br />
-                  <span className="caption">your share {formatMoney(p.my_share)}</span>
+                </div>
+                <span className="money-row-amount">
+                  <span className="num">{formatMoney(p.amount)}</span>
+                  <span className="money-row-sub">your share {formatMoney(p.my_share)}</span>
                 </span>
                 {!p.settled && removing !== p.id && (
-                  <span className="row-actions">
-                    <button type="button" className="btn btn-soft btn-small" aria-label={`Change what ${what} paid`} onClick={() => setEditing(p.id)}>
+                  <span className="money-row-actions">
+                    <button type="button" className="btn btn-ghost btn-small" aria-label={`Change what ${what} paid`} onClick={() => setEditing(p.id)}>
+                      <Icon name="edit" size={16} />
                       Edit
                     </button>
                     <button type="button" className="btn btn-ghost btn-danger btn-small" aria-label={`Remove what ${what} paid`} onClick={() => setRemoving(p.id)}>
@@ -818,153 +932,7 @@ function PaidByOthers({ detail, onChange }: { detail: TripDetail; onChange: () =
           {error}
         </p>
       )}
-    </section>
-  );
-}
-
-function BalanceParts({ b, id }: { b: Balance; id: string }) {
-  const line = (p: BalancePart, fallback: string) => (
-    <li key={`${p.kind}-${p.id}`} className="peek-row">
-      <span className="caption peek-day">{p.on ? day(p.on) : ""}</span>
-      <span className="wrap">{p.label ?? fallback}</span>
-      <span className="num">
-        {formatWithHome(p.amount, p.home)}
-      </span>
-    </li>
-  );
-  return (
-    <div className="peek" id={id}>
-      {b.owes_you.length > 0 && (
-        <>
-          <h3 className="caption">{b.person} owes you</h3>
-          <ul className="peek-list" aria-label={`What ${b.person} owes you`}>
-            {b.owes_you.map((p) => line(p, "Shared bill"))}
-          </ul>
-        </>
-      )}
-      {b.you_owe.length > 0 && (
-        <>
-          <h3 className="caption">You owe {b.person}</h3>
-          <ul className="peek-list" aria-label={`What you owe ${b.person}`}>
-            {b.you_owe.map((p) => line(p, `Paid by ${b.person}`))}
-          </ul>
-        </>
-      )}
-    </div>
-  );
-}
-
-/** One person: where you stand, the items behind it, and Mark settled (confirmed first). */
-function BalanceRow({ trip, b, onSettled }: { trip: Trip; b: Balance; onSettled: (result: SettleResult) => void }) {
-  const key = b.person.replace(/\W+/g, "-");
-  const [open, setOpen] = useState(false);
-  const [confirming, setConfirming] = useState(false);
-  const [log, setLog] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const hasParts = b.owes_you.length + b.you_owe.length > 0;
-  const hasShare = b.you_owe.length > 0;
-
-  async function settle() {
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await api<SettleResult>(`/travel/trips/${trip.id}/settle`, {
-        method: "POST",
-        body: { person: b.person, log: hasShare && log },
-      });
-      onSettled(result);
-    } catch (e) {
-      setError(failure(e, "Couldn't mark that settled"));
-      setBusy(false);
-    }
-  }
-
-  return (
-    <li className="settle-row">
-      <div className="settle-head">
-        {hasParts ? (
-          <button type="button" className="settle-main" aria-expanded={open} aria-controls={`settle-parts-${key}`} onClick={() => setOpen(!open)}>
-            <span className="wrap">{balanceWords(b)}</span>
-            <span className="chevron" aria-hidden="true" />
-          </button>
-        ) : (
-          <span className="settle-main wrap">{balanceWords(b)}</span>
-        )}
-        {hasParts && !confirming && (
-          <button type="button" className="btn btn-soft btn-small" aria-label={`Mark settled with ${b.person}`} onClick={() => setConfirming(true)}>
-            Mark settled
-          </button>
-        )}
-      </div>
-      {b.net === null && b.net_by_currency.length > 0 && (
-        <p className="caption">Some of this is in other currencies with no exchange rate yet, so it isn't added into one amount.</p>
-      )}
-      {open && <BalanceParts b={b} id={`settle-parts-${key}`} />}
-      {confirming && (
-        <div className="confirm-box" role="group" aria-label={`Settle up with ${b.person}`}>
-          <p>{settleConfirmText(b, hasShare && log)}</p>
-          {hasShare && (
-            <label className="check-row">
-              <input type="checkbox" checked={log} disabled={busy} onChange={(e) => setLog(e.target.checked)} />
-              Also record my share as spent
-            </label>
-          )}
-          <div className="people-actions">
-            <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void settle()}>
-              {busy ? "Recording…" : "Yes, mark settled"}
-            </button>
-            <button type="button" className="btn" disabled={busy} onClick={() => setConfirming(false)}>
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-      {error && (
-        <p className="error-text" role="alert">
-          {error}
-        </p>
-      )}
-    </li>
-  );
-}
-
-/** One row per person you split with: what they owe you net of what you owe them. */
-export function SettleUp({ detail, onChange }: { detail: TripDetail; onChange: () => void }) {
-  const [done, setDone] = useState<string[]>([]);
-  const { balances, trip } = detail;
-  if (balances.length === 0 && done.length === 0 && trip.companions.length === 0) return null;
-  return (
-    <section className="card" aria-labelledby="settle-up">
-      <div className="card-head">
-        <h2 id="settle-up">Settle up</h2>
-        <span className="caption">Nexus records what you say happened. It doesn't move money.</span>
-      </div>
-      {done.length > 0 && (
-        <div className="split-outcome" role="status">
-          {done.map((text) => (
-            <p key={text}>{text}</p>
-          ))}
-        </div>
-      )}
-      {balances.length === 0 ? (
-        <p className="state">Nothing left to settle.</p>
-      ) : (
-        <ul className="feed settle-list" aria-label="Still to settle">
-          {balances.map((b) => (
-            <BalanceRow
-              key={b.person}
-              trip={trip}
-              b={b}
-              onSettled={(result) => {
-                setDone((was) => [...was, settledText(result)]);
-                onChange();
-              }}
-            />
-          ))}
-        </ul>
-      )}
-    </section>
+    </>
   );
 }
 
@@ -990,52 +958,113 @@ function AddChoice({ onPick, onCancel }: { onPick: (kind: "planned" | "paid") =>
   );
 }
 
-function PaidAdd({ trip, home, onChange, onDone }: { trip: Trip; home: string; onChange: () => void; onDone: () => void }) {
-  return (
-    <section className="card" aria-labelledby="paid-add">
-      <div className="card-head">
-        <h2 id="paid-add">Someone else paid</h2>
-        <span className="caption">Your share is what you owe them. Nothing is added to your spending until you settle up.</span>
-      </div>
-      <PaidForm trip={trip} home={home} onChange={onChange} onDone={onDone} />
-    </section>
-  );
+/** How an expense stands with the people going, from what the trip already says: still to
+ * split, kept as just mine, or (once costs are offered and it isn't either) split. */
+function expenseTag(detail: TripDetail, id: string): { text: string; split: boolean } | null {
+  const { trip } = detail;
+  if (trip.companions.length === 0) return null;
+  if (detail.just_mine.includes(id)) return { text: "Just mine", split: false };
+  if (!trip.split_evenly) return null;
+  if (detail.to_split.some((c) => c.transaction_id === id)) return { text: "To split", split: true };
+  return { text: `Split with ${joinNames(trip.companions)}`, split: false };
 }
 
-/** Every expense on the trip, each with a way to take it off. */
-export function Expenses({ detail, onTakeOff }: { detail: TripDetail; onTakeOff: (transactionId: string) => void }) {
+/** Every expense on the trip, each tagged and with a way to take it off; and where someone else's payment is added. */
+function ExpensesPanel({
+  detail,
+  onTakeOff,
+  onChange,
+  paying,
+  onPay,
+  onPayDone,
+}: {
+  detail: TripDetail;
+  onTakeOff: (transactionId: string) => void;
+  onChange: () => void;
+  paying: boolean;
+  onPay: () => void;
+  onPayDone: () => void;
+}) {
+  const { trip } = detail;
+  const home = detail.spending?.spent.currency ?? trip.currency; // spending is null only for a member, who never sees this
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function offerAgain(id: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      await api(`/travel/trips/${trip.id}/keep-mine`, { method: "POST", body: { transaction_ids: [id], keep: false } });
+      onChange();
+    } catch (e) {
+      setError(failure(e, "Couldn't change that"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
-    <section className="card" aria-labelledby="trip-expenses">
-      <div className="card-head">
-        <h2 id="trip-expenses">Expenses</h2>
-        <span className="caption">To count something else, like flights paid earlier, tell Nexus "add it to {detail.trip.destination}"</span>
-      </div>
+    <>
+      <p className="money-note">To count something else, like flights paid earlier, tell Nexus "add it to {trip.destination}"</p>
       {detail.items.length === 0 ? (
-        <p className="state">None yet.</p>
+        <p className="money-note">None yet.</p>
       ) : (
-        <ul className="feed money-list" aria-label="Trip expenses">
-          {detail.items.map((i) => (
-            <li key={i.transaction_id} className="run-row">
-              <span className="wrap">
-                {i.counterparty ?? "Expense"}
-                <br />
-                <span className="caption">
-                  {day(i.day)}
-                  {i.category && ` · ${i.category}`}
-                  {i.linked && " · added by hand"}
-                </span>
-              </span>
-              <span className="num">
-                {formatWithHome(i.amount, i.home)}
-              </span>
-              <button type="button" className="btn btn-small" onClick={() => onTakeOff(i.transaction_id)} aria-label={`Take ${i.counterparty ?? "this expense"} off the trip`}>
-                Take off
-              </button>
-            </li>
-          ))}
+        <ul className="money-rows" aria-label="Trip expenses">
+          {detail.items.map((i) => {
+            const tag = expenseTag(detail, i.transaction_id);
+            const name = i.counterparty ?? "this cost";
+            return (
+              <li key={i.transaction_id}>
+                <div className="money-row">
+                  <div className="money-row-main">
+                    <span className="money-row-title">{i.counterparty ?? "Expense"}</span>
+                    <span className="money-row-sub">
+                      {day(i.day)}
+                      {i.category && ` · ${i.category}`}
+                      {i.linked && " · added by hand"}
+                      {tag && (
+                        <>
+                          {" "}
+                          <span className={`money-tag${tag.split ? " money-tag-split" : ""}`}>{tag.text}</span>
+                        </>
+                      )}
+                    </span>
+                  </div>
+                  <span className="num money-row-amount">{formatWithHome(i.amount, i.home)}</span>
+                  <span className="money-row-actions">
+                    {tag?.text === "Just mine" && trip.split_evenly && (
+                      <button type="button" className="btn btn-ghost btn-small" disabled={busy} aria-label={`Offer ${name} for splitting again`} onClick={() => void offerAgain(i.transaction_id)}>
+                        Offer again
+                      </button>
+                    )}
+                    <button type="button" className="btn btn-ghost btn-small" onClick={() => onTakeOff(i.transaction_id)} aria-label={`Take ${i.counterparty ?? "this expense"} off the trip`}>
+                      Take off
+                    </button>
+                  </span>
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
-    </section>
+      {error && (
+        <p className="error-text" role="alert">
+          {error}
+        </p>
+      )}
+      {trip.companions.length > 0 &&
+        (paying ? (
+          <div className="money-form">
+            <p className="money-note">Your share is what you owe them. Nothing is added to your spending until you settle up.</p>
+            <PaidForm trip={trip} home={home} onChange={onChange} onDone={onPayDone} />
+          </div>
+        ) : (
+          <button type="button" className="btn btn-ghost money-add" onClick={onPay}>
+            <Icon name="plus" size={16} />
+            Someone else paid
+          </button>
+        ))}
+    </>
   );
 }
 
@@ -1045,7 +1074,7 @@ async function savePlanned(trip: Trip, planned: Record<string, string>) {
   await api(`/travel/trips/${trip.id}`, { method: "PUT", body: tripBody(trip, { planned }) });
 }
 
-/** The + on the Money tab: one planned cost, a name and an amount. */
+/** One planned cost, a name and an amount. */
 function PlannedForm({ trip, currency, onChange, onDone }: { trip: Trip; currency: string; onChange: () => void; onDone: () => void }) {
   const [name, setName] = useState("");
   const [value, setValue] = useState("");
@@ -1069,11 +1098,8 @@ function PlannedForm({ trip, currency, onChange, onDone }: { trip: Trip; currenc
   }
 
   return (
-    <section className="card" aria-labelledby="planned-add">
-      <div className="card-head">
-        <h2 id="planned-add">Add a planned cost</h2>
-        <span className="caption">Something you expect to pay for, like flights or a tour</span>
-      </div>
+    <div className="money-form">
+      <p className="money-note">Something you expect to pay for, like flights or a tour</p>
       <form className="budget-add planned-form" onSubmit={(e) => void submit(e)} aria-label="Add a planned cost">
         <label className="field">
           Name
@@ -1095,16 +1121,29 @@ function PlannedForm({ trip, currency, onChange, onDone }: { trip: Trip; currenc
           {error}
         </p>
       )}
-    </section>
+    </div>
   );
 }
 
-/** What's planned to be paid for, each with a way to drop it. Nothing when there are none. */
-function PlannedCosts({ trip, onChange }: { trip: Trip; onChange: () => void }) {
+/** What's planned to be paid for, each with a way to drop it, and where one is added. */
+function PlannedPanel({
+  detail,
+  onChange,
+  adding,
+  onAdd,
+  onAddDone,
+}: {
+  detail: TripDetail;
+  onChange: () => void;
+  adding: boolean;
+  onAdd: () => void;
+  onAddDone: () => void;
+}) {
+  const { trip } = detail;
+  const home = detail.spending?.spent.currency ?? trip.currency; // spending is null only for a member, who never sees this
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const entries = Object.entries(trip.planned);
-  if (entries.length === 0) return null;
 
   async function remove(name: string) {
     const { [name]: _gone, ...rest } = tripBody(trip).planned;
@@ -1120,207 +1159,268 @@ function PlannedCosts({ trip, onChange }: { trip: Trip; onChange: () => void }) 
     }
   }
 
+  const spentIn = (name: string) =>
+    (detail.spending?.categories ?? []).filter((c) => sameName(c.name, name)).reduce((t, c) => t + amount(c.spent), 0);
+
   return (
-    <section className="card" aria-labelledby="planned-costs">
-      <div className="card-head">
-        <h2 id="planned-costs">Planned costs</h2>
-        <span className="caption">Counted against the budget once they're spent</span>
-      </div>
-      <ul className="feed money-list" aria-label="Planned costs">
-        {entries.map(([name, cost]) => (
-          <li key={name} className="run-row">
-            <span className="wrap">{name}</span>
-            <span className="num">{formatMoney(cost)}</span>
-            <button type="button" className="btn btn-ghost btn-danger btn-small" disabled={busy !== null} onClick={() => void remove(name)} aria-label={`Remove planned cost ${name}`}>
-              Remove
-            </button>
-          </li>
-        ))}
-      </ul>
+    <>
+      <p className="money-note">Counted against the budget once they're spent</p>
+      {entries.length === 0 ? (
+        <p className="money-note">None yet.</p>
+      ) : (
+        <ul className="money-rows" aria-label="Planned costs">
+          {entries.map(([name, cost]) => {
+            const spent = spentIn(name);
+            return (
+              <li key={name}>
+                <div className="money-row">
+                  <div className="money-row-main">
+                    <span className="money-row-title">{name}</span>
+                    <span className="money-row-sub">{spent > 0 ? `${formatMoney(moneyOf(spent, home))} spent so far` : "Nothing spent yet"}</span>
+                  </div>
+                  <span className="num money-row-amount">{formatMoney(cost)}</span>
+                  <span className="money-row-actions">
+                    <button type="button" className="btn btn-ghost btn-danger btn-small" disabled={busy !== null} onClick={() => void remove(name)} aria-label={`Remove planned cost ${name}`}>
+                      Remove
+                    </button>
+                  </span>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
       {error && (
         <p className="error-text" role="alert">
           {error}
         </p>
       )}
+      {adding ? (
+        <PlannedForm trip={trip} currency={home} onChange={onChange} onDone={onAddDone} />
+      ) : (
+        <button type="button" className="btn btn-ghost money-add" onClick={onAdd}>
+          <Icon name="plus" size={16} />
+          Add a planned cost
+        </button>
+      )}
+    </>
+  );
+}
+
+/** The bookings on the trip that carry a cost, and how much of it isn't logged as an expense yet. */
+function BookingsPanel({ detail }: { detail: TripDetail }) {
+  const costed = bookingsPaid(detail);
+  const unlogged = detail.booked_unlogged;
+  return (
+    <>
+      {positive(unlogged) && <p className="money-note">{formatMoney(unlogged)} not logged as an expense yet</p>}
+      <ul className="money-rows" aria-label="Bookings paid">
+        {costed.map((b) => (
+          <li key={b.id}>
+            <div className="money-row">
+              <div className="money-row-main">
+                <span className="money-row-title">{b.title}</span>
+                <span className="money-row-sub">
+                  {day(b.starts)} · {b.logged ? "Logged as an expense" : "Not logged yet"}
+                </span>
+              </div>
+              <span className="num money-row-amount">{b.cost && formatMoney(b.cost)}</span>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+/** The trip's bookings that carry a cost (a place to visit with no day isn't booked yet). */
+const bookingsPaid = (detail: TripDetail) => detail.bookings.filter((b) => b.cost !== null && b.scheduled);
+
+type SectionId = "where" | "planned" | "aside" | "bookings" | "expenses" | "paid" | "travellers";
+
+/** One row of the Details accordion: a 56px header button, and its content when open. */
+function Section({ id, title, summary, open, onToggle, children }: { id: SectionId; title: string; summary: string; open: boolean; onToggle: () => void; children: ReactNode }) {
+  const base = `money-sec-${id}`;
+  return (
+    <div className="money-sec">
+      <h3 className="money-sec-h">
+        <button type="button" className="money-sec-btn" aria-expanded={open} aria-controls={`${base}-panel`} onClick={onToggle}>
+          <span className="money-sec-title" id={`${base}-title`}>
+            {title}
+          </span>
+          <span className="money-sec-sum">{summary}</span>
+          <Icon name="chevron" size={16} className="money-chev" />
+        </button>
+      </h3>
+      <div className="money-sec-panel" id={`${base}-panel`} role="region" aria-labelledby={`${base}-title`} hidden={!open}>
+        {open && children}
+      </div>
+    </div>
+  );
+}
+
+/** The one card at the top of the Money tab. Before the trip: spent and booked against the
+ * budget, with what's planned still to come. While it's on: spent so far. After: what it cost. */
+export function MoneySummary({ detail }: { detail: TripDetail }) {
+  const s = detail.spending;
+  if (!s) return null; // a member of the trip gets no money
+  const t = detail.trip;
+  const stage = stageOf(detail);
+  const after = stage === "after";
+  const cur = s.spent.currency;
+  const budget = t.budget ? Number(t.budget.amount) : null;
+  const spent = amount(s.spent);
+  const booked = after ? 0 : Math.max(0, amount(detail.booked_unlogged));
+  const planned = after ? 0 : Math.max(0, plannedAhead(detail));
+  const committed = spent + booked + planned;
+  const headline = stage === "planning" || stage === "soon" ? spent + booked : spent;
+  const label = after ? "The trip cost" : stage === "during" ? "Spent so far" : "Spent and booked";
+  const parts = [
+    { key: "spent", text: "Spent", value: spent },
+    { key: "booked", text: "Booked", value: booked },
+    { key: "planned", text: "Planned", value: planned },
+  ].filter((p) => p.value > 0);
+  const scale = budget !== null ? Math.max(budget, committed) : committed;
+  const left = budget !== null ? budget - committed : null;
+  const over = left !== null && left < 0;
+  const diff = after && budget ? Math.round(((spent - budget) / budget) * 100) : null;
+  const daysLeft = Math.max(t.days - (t.day_number ?? 1) + 1, 1);
+  const local = detail.items.filter((i) => i.amount.currency === t.currency).reduce((sum, i) => sum + Number(i.amount.amount), 0);
+  const nowLine = [
+    positive(s.per_day_left) && `${formatMoney(s.per_day_left)} a day left for ${plural(daysLeft, "day")}`,
+    positive(s.today) && `${formatMoney(s.today)} today`,
+    local > 0 && t.currency !== cur && `${formatMoney(moneyOf(local, t.currency))} spent in ${t.currency}`,
+  ].filter(Boolean);
+  const barLabel = `${parts.map((p) => `${p.text.toLowerCase()} ${formatMoney(moneyOf(p.value, cur))}`).join(", ") || "nothing yet"}${t.budget ? ` of ${formatMoney(t.budget)}` : ""}`;
+
+  return (
+    <section className="card money-summary" aria-labelledby="money-summary">
+      <h2 id="money-summary" className="money-label">
+        {label}
+      </h2>
+      <p className="money-figure">
+        <CountUp value={formatMoney(moneyOf(headline, cur))} />
+        {t.budget && <> <span className="money-of">of {formatMoney(t.budget)}</span></>}
+      </p>
+      {budget !== null && scale > 0 && (
+        <div className={`money-track${over || (diff !== null && diff > 0) ? " is-over" : ""}`} role="img" aria-label={barLabel}>
+          {(after ? [{ key: "spent", text: "Spent", value: spent }] : parts).map((p) => (
+            <span key={p.key} className={`money-seg money-seg-${p.key}`} style={{ width: `${(p.value / scale) * 100}%` }} />
+          ))}
+        </div>
+      )}
+      {!after && parts.length > 0 && (
+        <p className="money-legend">
+          {parts.map((p, n) => (
+            <span key={p.key}>
+              {n > 0 && <span aria-hidden="true"> · </span>}
+              <span className={`money-key money-seg-${p.key}`} aria-hidden="true" />
+              {p.text} {formatMoney(moneyOf(p.value, cur))}
+            </span>
+          ))}
+        </p>
+      )}
+      {!after && left !== null && (
+        <p className={`money-left${over ? " money-over" : ""}`}>
+          {over ? "Over by " : "Left after planned costs "}
+          <span className="num">{formatMoney(moneyOf(Math.abs(left), cur))}</span>
+        </p>
+      )}
+      {stage === "during" && nowLine.length > 0 && <p className="money-note">{nowLine.join(" · ")}</p>}
+      {stage === "during" && <p className="money-note">Log what you spend on Telegram: "ramen 1200 yen".</p>}
+      {after && diff !== null && (
+        <p className={`money-left${diff > 0 ? " money-over" : ""}`}>{diff === 0 ? "On budget" : `${Math.abs(diff)}% ${diff > 0 ? "over" : "under"} budget`}</p>
+      )}
+      {after && t.companions.length > 0 && <p className="money-note">Your share, with {joinNames(t.companions)}</p>}
     </section>
   );
 }
 
-/** The Money tab: the summary for where the trip is, then everything behind it, unfolded.
+/** The Money tab: one summary, what needs doing, then the details one section at a time.
  * ``adding``: the tab's + was pressed: a planned cost, or (with other travellers) a choice
  * between that and a cost someone else paid. */
 export function MoneyTab({ detail, onChange, adding, onAddDone }: { detail: TripDetail; onChange: () => void; adding: boolean; onAddDone: () => void }) {
   const stage = stageOf(detail);
+  const { trip } = detail;
   const [error, setError] = useState<string | null>(null);
   const [kind, setKind] = useState<"planned" | "paid" | null>(null);
-  const home = detail.spending?.spent.currency ?? detail.trip.currency; // spending is null only for a member, who never sees this
-  const hasOthers = detail.trip.companions.length > 0;
+  const [form, setForm] = useState<"planned" | "paid" | null>(null);
+  const [open, setOpen] = useState<SectionId | null>(null);
+  const hasOthers = trip.companions.length > 0;
   useEffect(() => {
     if (!adding) setKind(null);
   }, [adding]);
   const adds = adding ? (hasOthers ? kind : "planned") : null;
+  // The tab's + opens the section its form lives in.
+  useEffect(() => {
+    if (adds) setOpen(adds === "planned" ? "planned" : "expenses");
+  }, [adds]);
+  const showForm = (which: "planned" | "paid") => adds === which || form === which;
+  const formDone = () => {
+    setForm(null);
+    if (adding) onAddDone();
+  };
 
   async function takeOff(transactionId: string) {
     setError(null);
     try {
-      await api(`/travel/trips/${detail.trip.id}/expenses/${transactionId}`, { method: "DELETE" });
+      await api(`/travel/trips/${trip.id}/expenses/${transactionId}`, { method: "DELETE" });
       onChange();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't take that off");
     }
   }
 
-  const splitting = (
-    <>
-      <SplitCard detail={detail} onChange={onChange} />
-      <PaidByOthers detail={detail} onChange={onChange} />
-    </>
-  );
+  const s = detail.spending;
+  const toggle = (id: SectionId) => setOpen(open === id ? null : id);
+  const planned = Object.keys(trip.planned).length;
+  const costed = bookingsPaid(detail);
+  const payments = detail.paid_by_others;
+  const todo = <TodoCard detail={detail} onChange={onChange} />;
   return (
     <>
       {adding && hasOthers && kind === null && <AddChoice onPick={setKind} onCancel={onAddDone} />}
-      {adds === "planned" && <PlannedForm trip={detail.trip} currency={home} onChange={onChange} onDone={onAddDone} />}
-      {adds === "paid" && <PaidAdd trip={detail.trip} home={home} onChange={onChange} onDone={onAddDone} />}
       {/* After the trip, settling up comes first, then what it cost. */}
-      {stage === "after" && (
-        <>
-          <SettleUp detail={detail} onChange={onChange} />
-          {splitting}
-        </>
-      )}
-      {stage === "during" ? <SpendingNow detail={detail} /> : stage === "after" ? <TripTotals detail={detail} /> : <MoneyBar detail={detail} />}
-      <Spending detail={detail} />
-      <PlannedVsActual detail={detail} />
-      <PlannedCosts trip={detail.trip} onChange={onChange} />
-      <SetAside detail={detail} />
-      <TravellersCard trip={detail.trip} onChange={onChange} />
-      {stage !== "after" && (
-        <>
-          {splitting}
-          <SettleUp detail={detail} onChange={onChange} />
-        </>
-      )}
-      <Expenses detail={detail} onTakeOff={(t) => void takeOff(t)} />
+      {stage === "after" && todo}
+      <MoneySummary detail={detail} />
+      {stage !== "after" && todo}
+      <section className="card money-details" aria-labelledby="money-details">
+        <h2 id="money-details">Details</h2>
+        <div className="money-secs">
+          <Section id="where" title="Where it goes" summary={s ? plural(s.categories.length, "category", "categories") : ""} open={open === "where"} onToggle={() => toggle("where")}>
+            <WhereItGoes detail={detail} />
+          </Section>
+          <Section id="planned" title="Planned costs" summary={planned === 0 ? "None yet" : plural(planned, "cost")} open={open === "planned"} onToggle={() => toggle("planned")}>
+            <PlannedPanel detail={detail} onChange={onChange} adding={showForm("planned")} onAdd={() => setForm("planned")} onAddDone={formDone} />
+          </Section>
+          {detail.saving && trip.status === "upcoming" && (
+            <Section id="aside" title="Setting money aside" summary={positive(detail.saving.per_payday) ? "Monthly" : "Not set"} open={open === "aside"} onToggle={() => toggle("aside")}>
+              <SetAside detail={detail} />
+            </Section>
+          )}
+          {costed.length > 0 && (
+            <Section id="bookings" title="Bookings paid" summary={plural(costed.length, "booking")} open={open === "bookings"} onToggle={() => toggle("bookings")}>
+              <BookingsPanel detail={detail} />
+            </Section>
+          )}
+          <Section id="expenses" title="Expenses" summary={detail.items.length === 0 ? "None yet" : `${detail.items.length} so far`} open={open === "expenses"} onToggle={() => toggle("expenses")}>
+            <ExpensesPanel detail={detail} onTakeOff={(t) => void takeOff(t)} onChange={onChange} paying={showForm("paid")} onPay={() => setForm("paid")} onPayDone={formDone} />
+          </Section>
+          {payments.length > 0 && (
+            <Section id="paid" title="Paid by others" summary={plural(payments.length, "payment")} open={open === "paid"} onToggle={() => toggle("paid")}>
+              <PaidByOthersPanel detail={detail} onChange={onChange} />
+            </Section>
+          )}
+          <Section id="travellers" title="Travellers" summary={`You${hasOthers ? ` and ${joinNames(trip.companions)}` : ""}`} open={open === "travellers"} onToggle={() => toggle("travellers")}>
+            <TravellersPanel trip={trip} onChange={onChange} />
+          </Section>
+        </div>
+      </section>
       {error && (
         <p className="error-text" role="alert">
           {error}
         </p>
       )}
     </>
-  );
-}
-
-/** Before the trip: what's booked and spent against the budget, in one bar.
- * Without ``onOpen`` it has no Details button (the Money tab is already the details). */
-export function MoneyBar({ detail, onOpen }: { detail: TripDetail; onOpen?: () => void }) {
-  const spending = detail.spending;
-  if (!spending) return null;
-  const budget = detail.trip.budget;
-  const committed = amount(spending.spent) + amount(detail.booked_unlogged);
-  const currency = spending.spent.currency;
-  const percent = budget ? Math.min(100, Math.round((committed / Number(budget.amount)) * 100)) : 0;
-  return (
-    <section className="card money-bar" aria-labelledby="money-bar">
-      <div className="money-bar-head">
-        <h2 id="money-bar">
-          Money
-        </h2>
-        {onOpen && (
-          <button type="button" className="btn btn-ghost btn-small" onClick={onOpen}>
-            Details
-          </button>
-        )}
-      </div>
-      <p className="money-bar-figure">
-        <CountUp value={formatMoney({ amount: String(committed), currency })} />
-        <span className="caption"> {budget ? `of ${formatMoney(budget)}` : "booked and spent · no budget yet"}</span>
-      </p>
-      {budget && (
-        <div className={`meter${committed > Number(budget.amount) ? " meter-over" : ""}`} aria-hidden="true">
-          <span style={{ width: `${percent}%` }} />
-        </div>
-      )}
-      <p className="caption">
-        {positive(detail.booked) ? `Booked ${formatMoney(detail.booked)}` : "Nothing booked yet"}
-        {amount(spending.spent) > 0 && ` · spent ${formatMoney(spending.spent)}`}
-      </p>
-    </section>
-  );
-}
-
-/** While the trip is on: spent against the budget, what's left each day, and what's
- * been spent in the trip's own currency (logged on Telegram). */
-export function SpendingNow({ detail }: { detail: TripDetail }) {
-  const s = detail.spending;
-  if (!s) return null;
-  const t = detail.trip;
-  const budget = t.budget;
-  const local = detail.items.filter((i) => i.amount.currency === t.currency).reduce((sum, i) => sum + Number(i.amount.amount), 0);
-  const daysLeft = Math.max(t.days - (t.day_number ?? 1) + 1, 1);
-  const over = (s.percent ?? 0) > 100;
-  return (
-    <section className="card spending-now" aria-labelledby="spending-now">
-      <h2 id="spending-now">
-        Spent so far
-      </h2>
-      <p className="money-bar-figure">
-        <CountUp value={formatMoney(s.spent)} />
-        {budget && <span className="caption"> of {formatMoney(budget)}</span>}
-      </p>
-      {budget && (
-        <div className={`meter${over ? " meter-over" : ""}`} aria-hidden="true">
-          <span style={{ width: `${Math.min(s.percent ?? 0, 100)}%` }} />
-        </div>
-      )}
-      <p className="caption">
-        {positive(s.per_day_left)
-          ? `${formatMoney(s.per_day_left)} a day left for ${plural(daysLeft, "day")}`
-          : budget
-            ? over
-              ? "Over budget"
-              : "On budget"
-            : "No budget set"}
-        {local > 0 && ` · ${formatMoney({ amount: String(local), currency: t.currency })} spent in ${t.currency}`}
-        {s.today && amount(s.today) > 0 && ` · ${formatMoney(s.today)} today`}
-      </p>
-      <p className="caption">Log what you spend on Telegram: "ramen 1200 yen".</p>
-    </section>
-  );
-}
-
-/** After the trip: the total against the budget, by category. */
-export function TripTotals({ detail }: { detail: TripDetail }) {
-  const s = detail.spending;
-  if (!s) return null;
-  const budget = detail.trip.budget;
-  const total = amount(s.spent);
-  const diff = budget ? Math.round(((total - Number(budget.amount)) / Number(budget.amount)) * 100) : null;
-  const cats = [...s.categories].sort((a, b) => amount(b.spent) - amount(a.spent));
-  return (
-    <section className="card trip-totals" aria-labelledby="trip-totals">
-      <h2 id="trip-totals">
-        The trip in numbers
-      </h2>
-      <p className="money-bar-figure">
-        <CountUp value={formatMoney(s.spent)} />
-        {budget && (
-          <span className="caption">
-            {" "}
-            of {formatMoney(budget)}
-            {diff !== null && diff !== 0 && ` · ${Math.abs(diff)}% ${diff > 0 ? "over" : "under"}`}
-          </span>
-        )}
-      </p>
-      {cats.length > 0 && (
-        <ul className="totals-list" aria-label="By category">
-          {cats.map((c) => (
-            <li key={c.name}>
-              <span>{c.name}</span>
-              <span className="num">{formatMoney(c.spent)}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
   );
 }

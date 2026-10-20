@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Idea, Place, TripStop } from "../api";
-import { findScopes, firstScope, listFor, mergeResults, normName, scopeParams, THEMES } from "./TripFind";
+import { findScopes, firstScope, listFor, mergeResults, normName, scopeParams, THEMES, whereCaption } from "./TripFind";
 import { wantsIdeas } from "./TripPlaces";
 
 // Made-up places and guides.
@@ -109,5 +109,26 @@ describe("theme chips", () => {
   it("are the seven themes, each an idea-ish query so guides are read too", () => {
     expect(THEMES.map((t) => t.label)).toEqual(["Food", "Sights", "Museums", "Nature", "Shopping", "Nightlife", "Rainy day"]);
     for (const t of THEMES) expect(wantsIdeas(t.query)).toBe(true);
+  });
+});
+
+describe("the line saying where a search looks", () => {
+  const scopes = findScopes({ stops: [tokyo, kyoto, { name: "Osaka", start: "2027-04-09", end: "2027-04-10" }], start: "2027-04-02", end: "2027-04-10", day: "2027-04-06" });
+  const caption = (key: string, withIdeas = false) =>
+    whereCaption({ scope: scopes.find((s) => s.key === key) ?? null, scopes, destination: "Japan", withIdeas });
+
+  it("names every stop for the whole trip, one stop for a stop, and the day's plans for a day", () => {
+    expect(caption("trip")).toBe("Across Tokyo, Kyoto and Osaka.");
+    expect(caption("stop:Kyoto")).toBe("In Kyoto.");
+    expect(caption("day:2027-04-06")).toBe("Within about 2 km of Day 5's plans.");
+  });
+
+  it("adds that guides are read too only when ideas are on", () => {
+    expect(caption("trip", true)).toBe("Across Tokyo, Kyoto and Osaka. Google and guides together.");
+  });
+
+  it("falls back to the destination when the trip has no stops", () => {
+    const one = findScopes({ stops: [], ...trip });
+    expect(whereCaption({ scope: one[0], scopes: one, destination: "Seoul", withIdeas: false })).toBe("Near Seoul.");
   });
 });

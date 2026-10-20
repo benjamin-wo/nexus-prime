@@ -1,10 +1,11 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
 import type { Trip } from "../api";
 import { mockApi, renderWithProviders } from "../testing";
 import { AddSheet } from "./TripAdd";
+import { TripPlacesProvider } from "./TripPlaces";
 
 const trip = { id: "t1", destination: "Tokyo", start: "2026-11-10", end: "2026-11-13", currency: "JPY" } as unknown as Trip;
 const sheet = (over: Partial<Parameters<typeof AddSheet>[0]> = {}) => (
@@ -87,5 +88,21 @@ describe("the add sheet", () => {
     await user.click(screen.getByRole("button", { name: "Add" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("not mocked");
     expect(calls.find((c) => c.method === "POST")?.body).toMatchObject({ kind: "activity", name: "Fish market", day: null, list_name: "Eat" });
+  });
+
+  it("shows the finder inline in the same sheet, not in a second one", async () => {
+    mockApi({ "GET /travel/trips/t1/places": () => [] });
+    renderWithProviders(
+      <TripPlacesProvider tripId="t1" destination="Tokyo" enabled ideas={false} onChange={() => {}}>
+        {sheet()}
+      </TripPlacesProvider>,
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Find a place" }));
+    const dialogs = screen.getAllByRole("dialog");
+    expect(dialogs).toHaveLength(1);
+    expect(dialogs[0]).toHaveAccessibleName("Find a place");
+    expect(within(dialogs[0]).getByRole("search", { name: "Search Google Maps" })).toBeInTheDocument();
+    expect(within(dialogs[0]).queryByRole("button", { name: "Cancel" })).toBeNull();
   });
 });

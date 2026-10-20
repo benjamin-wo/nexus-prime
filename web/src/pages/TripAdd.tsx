@@ -243,7 +243,7 @@ export function AddSheet({
       )}
 
       {view === "place" && (
-        <SavePlaces open day={preset?.find ? preset.day : undefined} at={preset?.find ? preset.at : undefined} near={preset?.find || preset?.near ? preset.day : undefined} viewing={viewing} onDone={onChanged} />
+        <SavePlaces inSheet day={preset?.find ? preset.day : undefined} at={preset?.find ? preset.at : undefined} near={preset?.find || preset?.near ? preset.day : undefined} viewing={viewing} onDone={onChanged} />
       )}
     </Sheet>
   );

@@ -3,9 +3,10 @@ import { createContext, type FormEvent, type ReactNode, useContext, useRef, useS
 
 import { api, type Booking, type Ideas, type LinkedPlace, type Place, placeSearchPath, type SearchScope, tripIdeasPath, type TripDetail } from "../api";
 import { Icon } from "../components/Icon";
+import { Sheet } from "../components/Sheet";
 import { nearbyOf } from "./TripArrange";
 import { stopsOf } from "./TripBits";
-import { findScopes, firstScope, listFor, type Found, mergeResults, type PickCtx, ResultList, type Scope, ScopeRow, scopeParams, ThemeChips } from "./TripFind";
+import { findScopes, firstScope, listFor, type Found, mergeResults, type PickCtx, ResultList, type Scope, ScopeMenu, scopeParams, ThemeChips, whereCaption } from "./TripFind";
 
 /** What the trip page knows about Google Maps: whether it's set up, and the details
  * of the entries linked to a place (fetched when shown; only place ids are kept); and
@@ -61,10 +62,18 @@ export function PlaceThumb({ booking }: { booking: Booking }) {
 }
 
 /** A place's Google Maps photo, credited to its author; nothing when it has none.
- * Large in a place's details, a thumbnail elsewhere. */
-function PlacePicture({ place, large = false }: { place: Place; large?: boolean }) {
+ * Large in a place's details, a thumbnail elsewhere, a small rounded tile beside a search result
+ * (whose row shows the credit). */
+export function PlacePicture({ place, large = false, tile = false }: { place: Place; large?: boolean; tile?: boolean }) {
   if (!place.photo_url) return null;
   const credit = `Photo${place.photo_author ? ` by ${place.photo_author}` : ""}, Google Maps`;
+  if (tile) {
+    return (
+      <figure className="find-photo" title={credit}>
+        <img src={place.photo_url} alt="" loading="lazy" width={56} height={56} />
+      </figure>
+    );
+  }
   const size = large ? 240 : 64;
   return (
     <figure className={`place-thumb${large ? " place-photo" : ""}`}>
@@ -160,8 +169,10 @@ export function wantsIdeas(query: string): boolean {
 /** Search Google Maps, near the trip's destination, and pick a result. With ``ideas``, a
  * query that asks for ideas also reads travel guides and articles, merged into the same
  * list once they're in (they take longer). With ``scopes`` the search can look in one stop
- * or near a day, and ``themes`` adds quick searches. */
-export function PlaceFinder({ initial, pickLabel, saveText, onPick, ideas: ideasOn = false, scopes, firstScopeKey, themes = false, addsToDay = false, onCancel }: {
+ * or near a day, and ``themes`` adds quick searches. A result that is picked stays in the
+ * list, marked saved, so several can be kept. ``onCancel`` adds a Cancel button, for a
+ * finder that is not in a sheet of its own; ``status`` says what was last saved. */
+export function PlaceFinder({ initial, pickLabel, saveText, onPick, ideas: ideasOn = false, scopes, firstScopeKey, themes = false, addsToDay = false, status = null, onCancel }: {
   initial: string;
   pickLabel: string;
   /** The pick button's words when they say more than ``pickLabel`` (its name stays ``pickLabel``). */
@@ -173,7 +184,8 @@ export function PlaceFinder({ initial, pickLabel, saveText, onPick, ideas: ideas
   themes?: boolean;
   /** The pick button already adds to a day, so there's no second "Add to Day N" beside it. */
   addsToDay?: boolean;
-  onCancel: () => void;
+  status?: string | null;
+  onCancel?: () => void;
 }) {
   const places = useContext(Context);
   const [query, setQuery] = useState(initial);
@@ -184,6 +196,7 @@ export function PlaceFinder({ initial, pickLabel, saveText, onPick, ideas: ideas
   const [theme, setTheme] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState<ReadonlySet<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   // Only the latest search may show its answer: a slower earlier one is dropped.
   const latest = useRef(0);
@@ -238,8 +251,10 @@ export function PlaceFinder({ initial, pickLabel, saveText, onPick, ideas: ideas
     setError(null);
     try {
       await onPick(f, to === "day" && dayScope ? { list: null, day: dayScope.day ?? null, dayNumber: dayScope.number ?? null } : { list: listFor(f, asked?.theme ?? null), day: null, dayNumber: null });
+      setSaved((was) => new Set(was).add(f.key));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't save that");
+    } finally {
       setBusy(false);
     }
   }
@@ -248,27 +263,32 @@ export function PlaceFinder({ initial, pickLabel, saveText, onPick, ideas: ideas
   const shown = found !== null || ideas !== null;
   return (
     <div className="place-finder">
-      <form role="search" aria-label={google ? "Search Google Maps" : "Find ideas"} onSubmit={(e) => void search(e)} className="inline-form">
-        <input
-          className="input"
-          aria-label="Look for"
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setTheme(null);
-          }}
-          placeholder={withIdeas ? `Best ramen, a rainy day, or a place's name` : `Ramen near ${places.destination}`}
-          maxLength={120}
-        />
-        <button type="submit" className="btn btn-small btn-primary" disabled={waiting}>
+      <form role="search" aria-label={google ? "Search Google Maps" : "Find ideas"} onSubmit={(e) => void search(e)} className="find-form">
+        <span className="find-field">
+          <Icon name="find" size={18} />
+          <input
+            className="input"
+            aria-label="Look for"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setTheme(null);
+            }}
+            placeholder={withIdeas ? `Best ramen, a rainy day, or a place's name` : `Ramen near ${places.destination}`}
+            maxLength={120}
+          />
+        </span>
+        <button type="submit" className="btn btn-primary" disabled={waiting}>
           Search
         </button>
-        <button type="button" className="btn btn-small btn-ghost" onClick={onCancel}>
-          Cancel
-        </button>
+        {onCancel && (
+          <button type="button" className="btn btn-ghost" onClick={onCancel}>
+            Cancel
+          </button>
+        )}
       </form>
       {scopes && (
-        <ScopeRow
+        <ScopeMenu
           scopes={scopes}
           value={scope?.key ?? ""}
           onPick={(s) => {
@@ -289,6 +309,12 @@ export function PlaceFinder({ initial, pickLabel, saveText, onPick, ideas: ideas
           }}
         />
       )}
+      {scopes && <p className="caption find-where">{whereCaption({ scope, scopes, destination: places.destination, withIdeas })}</p>}
+      {status && (
+        <p className="caption find-status" role="status">
+          {status}
+        </p>
+      )}
       {error && (
         <p className="error-text" role="alert">
           {error}
@@ -302,6 +328,7 @@ export function PlaceFinder({ initial, pickLabel, saveText, onPick, ideas: ideas
           saveText={saveText}
           busy={busy}
           dayScope={dayScope}
+          saved={saved}
           onPick={(f, to) => void pick(f, to)}
         />
       )}
@@ -389,9 +416,9 @@ export function PlaceLine({ booking }: { booking: Booking }) {
 }
 
 /** Find places on Google Maps (and in guides and articles) and keep them as Ideas. It looks
- * over the whole trip, in one stop, or near a day. */
-export function SavePlaces({ open = false, day, at, near, viewing, onDone }: {
-  open?: boolean;
+ * over the whole trip, in one stop, or near a day. It opens in its own sheet, "Find ideas"
+ * (closed with ``onClose``), or, with ``inSheet``, sits inline in the sheet it is already in. */
+export function SavePlaces({ day, at, near, viewing, onDone, onClose, inSheet = false }: {
   /** Saved as a plan on this day (at this time) instead of an idea. */
   day?: string;
   at?: string;
@@ -400,9 +427,10 @@ export function SavePlaces({ open = false, day, at, near, viewing, onDone }: {
   /** The day open on Plan: offered as "Near Day N", and its stop is where a trip with several stops begins. */
   viewing?: string | null;
   onDone?: () => void;
+  onClose?: () => void;
+  inSheet?: boolean;
 } = {}) {
   const places = useContext(Context);
-  const [finding, setFinding] = useState(open);
   const [saved, setSaved] = useState<string | null>(null);
   if (!places || !(places.enabled || places.ideas)) return null;
 
@@ -417,26 +445,10 @@ export function SavePlaces({ open = false, day, at, near, viewing, onDone }: {
       },
     });
     setSaved(day ? `Saved ${f.name}.` : ctx.day ? `Added ${f.name} to Day ${ctx.dayNumber}.` : `Saved ${f.name} to Ideas.`);
-    setFinding(false);
     places!.onChange();
     onDone?.();
   }
 
-  if (!finding) {
-    return (
-      <>
-        <button type="button" className="btn btn-ghost btn-small" onClick={() => setFinding(true)}>
-          <Icon name="find" size={16} className="icon-inline" />
-          {places.ideas ? "Find places or ideas" : "Find places on Google Maps"}
-        </button>
-        {saved && (
-          <p className="caption" role="status">
-            {saved}
-          </p>
-        )}
-      </>
-    );
-  }
   const detail = places.detail;
   const stops = detail ? stopsOf(detail) : [];
   const from = near ?? day ?? null;
@@ -447,19 +459,25 @@ export function SavePlaces({ open = false, day, at, near, viewing, onDone }: {
     day: from ?? viewing,
     labels: detail ? nearbyOf(detail, places.linked).labels : undefined,
   });
-  return (
+  const finder = (
     <PlaceFinder
       initial=""
       pickLabel={day ? "Add" : "Save"}
       saveText={day ? undefined : "Save to Ideas"}
-      onCancel={() => setFinding(false)}
       onPick={save}
       ideas={places.ideas}
       scopes={scopes}
       firstScopeKey={firstScope(scopes, { near: from, viewing, stops })}
       themes
       addsToDay={Boolean(day)}
+      status={saved}
     />
+  );
+  if (inSheet) return finder;
+  return (
+    <Sheet title="Find ideas" className="find-sheet" onClose={onClose ?? (() => undefined)}>
+      {finder}
+    </Sheet>
   );
 }
 

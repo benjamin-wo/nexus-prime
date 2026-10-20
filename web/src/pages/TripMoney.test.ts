@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import type { Balance, BalancePart, Money, SettleResult } from "../api";
-import { balanceWords, joinNames, partsTotal, setAsideText, settleConfirmText, settledText, splitConfirmText, sumByCurrency, totalOf } from "./TripMoney";
+import type { Balance, BalancePart, Money, SettleResult, ToSplit, TripDetail } from "../api";
+import { balanceWords, joinNames, partsTotal, plannedAhead, setAsideText, settleConfirmText, settledText, splitAskText, splitConfirmText, sumByCurrency, toSplitSub, totalOf } from "./TripMoney";
 import { balanceAmount } from "./TripStage";
 
 // Made-up people and amounts only. Intl puts a no-break space after the currency code.
@@ -82,6 +82,58 @@ describe("splitting everything", () => {
       "Split 2 costs (SGD 90.00, not counting 1 cost with no exchange rate yet) evenly with Alex?",
     );
     expect(plain(splitConfirmText([cost(null)], ["Alex"], "SGD"))).toBe("Split 1 cost evenly with Alex?");
+  });
+});
+
+describe("the question in the To do card", () => {
+  const cost = (amount: string | null) => ({ home: amount === null ? null : sgd(amount) });
+  const item = (title: string | null, amount: string | null): ToSplit => ({
+    transaction_id: title ?? "x",
+    day: "2027-04-02",
+    counterparty: title,
+    category: null,
+    amount: sgd(amount ?? "0"),
+    home: amount === null ? null : sgd(amount),
+  });
+
+  it("adds each share to the question", () => {
+    expect(plain(splitAskText([cost("300"), cost("312.4")], ["Alex"], "SGD"))).toBe("Split 2 costs (SGD 612.40) evenly with Alex? Each share is SGD 306.20.");
+    expect(plain(splitAskText([cost("100")], ["Alex", "Sam"], "SGD"))).toBe("Split 1 cost (SGD 100.00) evenly with Alex and Sam? Each share is about SGD 33.33.");
+  });
+
+  it("leaves the share out when a cost has no exchange rate yet", () => {
+    expect(plain(splitAskText([cost("90"), cost(null)], ["Alex"], "SGD"))).toBe(
+      "Split 2 costs (SGD 90.00, not counting 1 cost with no exchange rate yet) evenly with Alex?",
+    );
+  });
+
+  it("names the first three costs under the count, and how many more", () => {
+    const some = [item("Wi-Fi", "12.40"), item("teamLab", "300"), item("Ryokan deposit", "300")];
+    expect(plain(toSplitSub(some, "SGD"))).toBe("SGD 612.40 · Wi-Fi, teamLab, Ryokan deposit");
+    expect(plain(toSplitSub([...some, item(null, "20"), item("Taxi", "5")], "SGD"))).toBe("SGD 637.40 · Wi-Fi, teamLab, Ryokan deposit and 2 more");
+    expect(plain(toSplitSub([item("Wi-Fi", null)], "SGD"))).toBe("Wi-Fi");
+  });
+});
+
+describe("what is planned and not spent yet", () => {
+  const detail = (planned: Record<string, Money>, spent: [string, string][], bookings: object[] = []) =>
+    ({
+      trip: { planned },
+      spending: { spent: sgd("0"), categories: spent.map(([name, amount]) => ({ name, planned: null, spent: sgd(amount) })) },
+      bookings,
+    }) as unknown as TripDetail;
+
+  it("is each planned cost less what is already spent in it", () => {
+    expect(plannedAhead(detail({ "Dining Out": sgd("600"), Tours: sgd("200") }, [["dining out", "150"]]))).toBe(650);
+  });
+
+  it("never counts a category that is over its plan as negative", () => {
+    expect(plannedAhead(detail({ Tours: sgd("200") }, [["Tours", "250"]]))).toBe(0);
+  });
+
+  it("takes off a booking for it that is not logged yet", () => {
+    const hotel = { scheduled: true, logged: false, cost: sgd("500"), category: "Stay" };
+    expect(plannedAhead(detail({ Stay: sgd("800") }, [], [hotel, { ...hotel, logged: true }]))).toBe(300);
   });
 });
 
