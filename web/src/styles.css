@@ -1609,11 +1609,12 @@ a.photo-credit:hover { text-decoration: underline; }
    its height from that slide) and the days sit side by side to swipe between. */
 .day-track {
   display: flex; align-items: flex-start; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory;
-  overscroll-behavior-x: contain; scrollbar-width: none; transition: height var(--t-standard);
+  overscroll-behavior-x: contain; scrollbar-width: none;
 }
 .day-track::-webkit-scrollbar { display: none; }
+.day-track[data-easing] { transition: height var(--t-standard); }
 .day-slide { flex: 0 0 100%; min-width: 0; align-self: start; scroll-snap-align: start; scroll-snap-stop: always; }
-@media (prefers-reduced-motion: reduce) { .day-track { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .day-track[data-easing] { transition: none; } }
 /* Getting around and directions: in the trip menu's sheet, or as a quiet line under the map. */
 .ways-sheet .trip-ways { display: grid; margin: 0; gap: var(--space-4); }
 /* Each picker is a label over a full-width select, so the two line up. */

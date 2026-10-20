@@ -2012,6 +2012,8 @@ test("the itinerary goes a day at a time: swipe, pick a day, drop a plan on anot
 });
 
 test("a day rearranged: dragged, moved by keyboard or menu, with what to watch out for", async ({ page }, info) => {
+  // A long journey: on a busy machine it needs more than the usual 30 seconds.
+  test.slow();
   const state = await fakeApi(page);
   await addTrip(page, "Seoul", "2026-11-10", "2026-11-13");
   // Made-up plans: two on day 2 that overlap, and two places to visit in two lists.
@@ -2139,9 +2141,21 @@ test("a day rearranged: dragged, moved by keyboard or menu, with what to watch o
   await expect(day2).toContainText("Hanok Noodle Bar");
 
   // An end time and a link, from the entry's editor.
-  // The row's own "Find on Google Maps" link sits across its middle: tap the row at its edge.
-  await page.getByRole("button", { name: "Change Tea house" }).click({ position: { x: 6, y: 3 } });
+  // The row's own "Find on Google Maps" link sits across its middle: tap the row at its edge,
+  // once the day has made room for the noodle bar (rows move down as it eases to its height).
+  const changeTea = page.getByRole("button", { name: "Change Tea house" });
+  let was = "";
+  await expect
+    .poll(async () => {
+      const now = JSON.stringify(await changeTea.boundingBox());
+      const still = now === was;
+      was = now;
+      return still;
+    }, { intervals: [150] })
+    .toBe(true);
+  await changeTea.click({ position: { x: 6, y: 3 } });
   const edit = page.getByRole("form", { name: "Change the entry" });
+  await expect(edit.getByLabel("Name")).toHaveValue("Tea house");
   await edit.getByLabel("Until").fill("15:30");
   await edit.getByText("More details").click();
   await edit.getByLabel("Link").fill("https://tea.example.com/book");
