@@ -51,6 +51,11 @@ export type IconName =
   | "calendarPlus"
   | "chevronDown"
   | "trash"
+  | "checkbox"
+  | "document"
+  | "stamp"
+  | "copy"
+  | "suitcase"
   | "x";
 
 const PATHS: Record<IconName, string[]> = {
@@ -159,6 +164,11 @@ const PATHS: Record<IconName, string[]> = {
   calendarPlus: ["M4 6h16v14H4z", "M4 10h16M8 3v4M16 3v4", "M12 13v5M9.5 15.5h5"],
   chevronDown: ["M6 9l6 6 6-6"],
   trash: ["M4 7h16", "M10 11v6M14 11v6", "M6 7l1 13h10l1-13", "M9 7V4h6v3"],
+  checkbox: ["M7 4h10a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3z", "M8.5 12.5l2.5 2.5 4.5-5"],
+  document: ["M6 3h8l4 4v14H6z", "M14 3v4h4", "M9 12h6M9 16h6"],
+  stamp: ["M12 3a3 3 0 0 0-2 5c0 2-3 2-3 5h10c0-3-3-3-3-5a3 3 0 0 0-2-5z", "M5 17h14v3H5z"],
+  copy: ["M9 9h11v11H9z", "M15 9V4H4v11h5"],
+  suitcase: ["M5 8h14v12H5z", "M9 8V5h6v3", "M9 12v4M15 12v4"],
   x: ["M6 6l12 12", "M18 6L6 18"],
 };
 

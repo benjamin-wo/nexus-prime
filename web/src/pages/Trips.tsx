@@ -1161,7 +1161,7 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
     plan: { label: data && dayNo >= 1 && dayNo <= data.trip.days ? `Add to Day ${dayNo}` : "Add to this day", run: () => setSheet({ preset: null }) },
     ideas: { label: "Add an idea", run: () => setSheet({ preset: { kind: "place" } }) },
     money: { label: "Add a planned cost", run: () => setAddingCost(true) },
-    prep: { label: "Add to packing", run: () => setAddingPacking(true) },
+    prep: { label: "Add to prep", run: () => setAddingPacking(true) },
   };
   const add = adds[tab];
   const canAdd = stage !== "after";

@@ -1345,9 +1345,9 @@ test("a trip is added and shows its spending, set-aside and settle-up", async ({
   await expect(page.getByRole("region", { name: "Next up" })).toContainText("9 nights without a place to stay");
   await expect(itineraryOf(page)).toContainText("ZZ12 SIN → NRT");
   await expect(itineraryOf(page)).toContainText("08:25 → 16:05");
-  // Prep keeps everything still to sort, and Money the money in one card.
+  // Prep keeps everything still to sort (in Getting ready), and Money the money in one card.
   await openTab(page, "Prep");
-  await expect(page.getByRole("region", { name: /Still to sort/ })).toContainText("9 nights without a place to stay");
+  await expect(page.getByRole("region", { name: "Getting ready" })).toContainText("9 nights without a place to stay");
   await openTab(page, "Money");
   const summary = page.getByRole("region", { name: "Spent and booked", exact: true });
   await expect(summary).toContainText("SGD 1,638.00");
@@ -1533,8 +1533,7 @@ test("the trip overview: getting ready, places to visit, and labelled days", asy
   // What's still to sort waits on Prep, and the strip under the cover says the first thing.
   await expect(page.getByRole("region", { name: "Next up" })).toContainText("3 nights without a place to stay");
   await openTab(page, "Prep");
-  const toSort = page.getByRole("region", { name: /Still to sort/ });
-  await expect(toSort).toContainText("Still to sort · 2");
+  const toSort = page.getByRole("region", { name: "Getting ready" });
   await expect(toSort).toContainText("3 nights without a place to stay");
   await expect(toSort).toContainText("No budget yet");
   // Set opens the trip to add a budget.
@@ -2877,11 +2876,12 @@ test("packing is there months before the trip, and the + on Prep adds to it", as
   await packing.getByRole("checkbox", { name: "Passport" }).check();
   await expect(packing).toContainText("1 of 3 packed");
 
-  // The + on this tab adds to the list: it takes you to the field. (On a phone it steps aside
-  // while the page scrolls down, and is back at the top.)
+  // The + on this tab asks what to add; "Something to pack" takes you to the packing field. (On a phone it
+  // steps aside while the page scrolls down, and is back at the top.)
   await page.locator(".main-viewport").evaluate((el) => el.scrollTo({ top: 0 }));
-  await expect(tripAdd(page)).toHaveAccessibleName("Add to packing");
+  await expect(tripAdd(page)).toHaveAccessibleName("Add to prep");
   await tripAdd(page).click();
+  await page.getByRole("dialog", { name: "Add to prep" }).getByRole("button", { name: /Something to pack/ }).click();
   await expect(packing.getByLabel("Thing to pack")).toBeFocused();
   await page.keyboard.type("Sunscreen");
   await page.keyboard.press("Enter");

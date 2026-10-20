@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 
 import { Icon, type IconName } from "../components/Icon";
 import { api, type PackItem, type Trip, type TripWeather } from "../api";
@@ -44,7 +44,7 @@ export function WeatherCard({ trip }: { trip: Trip }) {
   const highs = w.days.map((d) => d.high).filter((n): n is number => n !== null);
   const lows = w.days.map((d) => d.low).filter((n): n is number => n !== null);
   return (
-    <section className="card weather-card" aria-labelledby="trip-weather">
+    <section className="card prep-card weather-card" aria-labelledby="trip-weather">
       <div className="card-head">
         <h2 id="trip-weather">Weather in {w.place}</h2>
         <span className="caption">{w.kind === "forecast" ? "Forecast" : `Typical for these dates, last ${w.years} years`}</span>
@@ -79,6 +79,7 @@ export function WeatherCard({ trip }: { trip: Trip }) {
  * ``adding``: the tab's + was pressed, so bring the add field into view and focus it. */
 export function PackingCard({ trip, onChange, adding = false, onAddDone }: { trip: Trip; onChange: () => void; adding?: boolean; onAddDone?: () => void }) {
   const addRef = useRef<HTMLInputElement>(null);
+  const packId = useId();
   useEffect(() => {
     if (!adding) return;
     addRef.current?.scrollIntoView?.({ block: "center", behavior: "smooth" });
@@ -127,7 +128,7 @@ export function PackingCard({ trip, onChange, adding = false, onAddDone }: { tri
   }
 
   return (
-    <section className="card packing-card" aria-labelledby="trip-packing">
+    <section className="card prep-card packing-card" aria-labelledby="trip-packing">
       <div className="card-head">
         <h2 id="trip-packing">Packing list</h2>
         {items.length > 0 && (
@@ -142,19 +143,29 @@ export function PackingCard({ trip, onChange, adding = false, onAddDone }: { tri
         </div>
       )}
       {items.length === 0 && <p className="state">Nothing on the list yet. Add things, or let Nexus suggest the usual for this trip.</p>}
-      <ul className="packing-list" aria-label="Things to pack">
-        {items.map((item, i) => (
-          <li key={`${item.text}-${i}`} className={item.done ? "is-done" : undefined}>
-            <label>
-              <input type="checkbox" checked={item.done} onChange={() => void save(items.map((x, j) => (j === i ? { ...x, done: !x.done } : x)))} />
-              <span>{item.text}</span>
-            </label>
-            <button type="button" className="btn btn-ghost btn-small packing-remove" aria-label={`Remove ${item.text}`} onClick={() => void save(items.filter((_, j) => j !== i))}>
-              <Icon name="x" size={18} />
-            </button>
-          </li>
-        ))}
-      </ul>
+      {items.length > 0 && (
+        <ul className="prep-rows" aria-label="Things to pack">
+          {items.map((item, i) => (
+            <li key={`${item.text}-${i}`} className={`prep-row prep-todo${item.done ? " is-done" : ""}`}>
+              <input
+                id={`${packId}-${i}`}
+                type="checkbox"
+                className="prep-check"
+                checked={item.done}
+                onChange={() => void save(items.map((x, j) => (j === i ? { ...x, done: !x.done } : x)))}
+              />
+              <div className="prep-main">
+                <label htmlFor={`${packId}-${i}`} className="prep-title">
+                  {item.text}
+                </label>
+              </div>
+              <button type="button" className="btn btn-ghost prep-remove" aria-label={`Remove ${item.text}`} onClick={() => void save(items.filter((_, j) => j !== i))}>
+                <Icon name="x" size={18} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
       <form className="packing-add" onSubmit={add} aria-label="Add to the packing list">
         <input ref={addRef} className="input" value={text} maxLength={60} onChange={(e) => setText(e.target.value)} placeholder="Add something, e.g. Swimsuit" aria-label="Thing to pack" />
         <button type="submit" className="btn btn-soft" disabled={!text.trim()}>

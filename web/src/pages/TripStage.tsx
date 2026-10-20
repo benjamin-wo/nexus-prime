@@ -1,5 +1,4 @@
 import type { Balance, Booking, TripDetail } from "../api";
-import { Icon } from "../components/Icon";
 import { formatMoney, formatShortDate } from "../format";
 import { sortKey, stopOfDay, stopsOf } from "./TripBits";
 
@@ -144,35 +143,8 @@ export function balanceAmount(b: Pick<Balance, "net" | "net_by_currency">): stri
   return b.net_by_currency.map(unsigned).join(" + ");
 }
 
-/** The gaps, first on a trip that's being planned. Nothing when it's all sorted. */
-export function StillToSort({ detail, onFix, quiet = false }: { detail: TripDetail; onFix: (fix: Fix) => void; quiet?: boolean }) {
-  const items = stillToSort(detail);
-  if (items.length === 0) {
-    return quiet ? null : (
-      <p className="sorted-line" role="status">
-        <Icon name="check" size={16} className="icon-inline" />
-        {detail.trip.role === "member" ? "All sorted: a place every night and a way there." : "All sorted: a place every night, a way there and a budget."}
-      </p>
-    );
-  }
-  return (
-    <section className="card to-sort" aria-labelledby="to-sort">
-      <h2 id="to-sort">
-        Still to sort · {items.length}
-      </h2>
-      <ul className="to-sort-list">
-        {items.map((i) => (
-          <li key={i.text}>
-            <span className="to-sort-dot" aria-hidden="true" />
-            <span className="wrap">{i.text}</span>
-            <button type="button" className="btn btn-soft btn-small" onClick={() => onFix(i.fix)} aria-label={`${i.action}: ${i.text}`}>
-              {i.action}
-            </button>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
+/** What the Prep tab says once nothing is left to sort. A member has no budget to set, so none is asked for. */
+export const sortedText = (detail: Pick<TripDetail, "trip">): string =>
+  detail.trip.role === "member" ? "All sorted: a place every night and a way there." : "All sorted: a place every night, a way there and a budget.";
 
 // The money summaries live with the rest of the Money tab; re-exported while the old page still imports them here.
