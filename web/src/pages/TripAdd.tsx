@@ -2,6 +2,7 @@ import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import { api, type Reply, type Trip } from "../api";
 import { Icon, type IconName } from "../components/Icon";
+import { Sheet } from "../components/Sheet";
 import { formatShortDate } from "../format";
 import { EntryEditor, type EntryKind } from "./TripEntry";
 import { useAppRole, useHome } from "./TripBits";
@@ -163,109 +164,87 @@ export function AddSheet({
   // Back to the choices and into another form: it starts on the kind picked there.
   const [kind, setKind] = useState<EntryKind>(preset?.kind ?? "flight");
 
-  useEffect(() => {
-    const key = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", key);
-    return () => window.removeEventListener("keydown", key);
-  }, [onClose]);
-
   const form = view === "booking" || view === "plan" || view === "idea";
   const title = view === "type" ? "Type it" : view === "place" ? "Find a place" : form ? FORM_TITLES[view] : `Add to ${trip.destination}`;
   return (
-    <div className="sheet-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <section className="add-sheet" role="dialog" aria-modal="true" aria-labelledby="add-sheet-title">
-        <div className="add-sheet-head">
-          {view !== "menu" && (
-            <button type="button" className="btn btn-ghost btn-small" onClick={() => setView("menu")} aria-label="Back to the ways to add">
-              ‹
-            </button>
-          )}
-          <h2 id="add-sheet-title">{title}</h2>
-          <button type="button" className="btn btn-ghost btn-small" onClick={onClose} aria-label="Close">
-            ×
-          </button>
-        </div>
-
-        {view === "menu" && (
-          <>
-            <div className="ways">
-              {CHOICES.map((c) => (
-                <button
-                  key={c.form}
-                  type="button"
-                  className="way main"
-                  onClick={() => {
-                    setKind(c.kind);
-                    setView(c.form);
-                  }}
-                >
-                  <span className="way-icon" aria-hidden="true">
-                    <Icon name={c.icon} size={22} />
-                  </span>
-                  <span>
-                    <strong>{c.title}</strong>
-                    <span className="caption">{c.text}</span>
-                  </span>
+    <Sheet title={title} titleId="add-sheet-title" onClose={onClose} onBack={view !== "menu" ? () => setView("menu") : undefined} backLabel="Back to the ways to add">
+      {view === "menu" && (
+        <>
+          <div className="ways">
+            {CHOICES.map((c) => (
+              <button
+                key={c.form}
+                type="button"
+                className="way main"
+                onClick={() => {
+                  setKind(c.kind);
+                  setView(c.form);
+                }}
+              >
+                <span className="way-icon" aria-hidden="true">
+                  <Icon name={c.icon} size={22} />
+                </span>
+                <span>
+                  <strong>{c.title}</strong>
+                  <span className="caption">{c.text}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+          <div className="quick-ways">
+            <span className="caption">Quick ways</span>
+            <div className="quick">
+              {typing && (
+                <button type="button" className="btn btn-soft" onClick={() => setView("type")}>
+                  Type it
                 </button>
-              ))}
+              )}
+              <label className="btn btn-soft">
+                Screenshot or photo
+                <input
+                  className="sr-only"
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  aria-label="Screenshot or photo"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (file) {
+                      onClose();
+                      onScreenshot(file);
+                    }
+                  }}
+                />
+              </label>
+              {places && (
+                <button type="button" className="btn btn-soft" onClick={() => setView("place")}>
+                  Find a place
+                </button>
+              )}
             </div>
-            <div className="quick-ways">
-              <span className="caption">Quick ways</span>
-              <div className="quick">
-                {typing && (
-                  <button type="button" className="btn btn-soft" onClick={() => setView("type")}>
-                    Type it
-                  </button>
-                )}
-                <label className="btn btn-soft">
-                  Screenshot or photo
-                  <input
-                    className="sr-only"
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp"
-                    aria-label="Screenshot or photo"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      e.target.value = "";
-                      if (file) {
-                        onClose();
-                        onScreenshot(file);
-                      }
-                    }}
-                  />
-                </label>
-                {places && (
-                  <button type="button" className="btn btn-soft" onClick={() => setView("place")}>
-                    Find a place
-                  </button>
-                )}
-              </div>
-            </div>
-          </>
-        )}
+          </div>
+        </>
+      )}
 
-        {view === "type" && <TypeIt trip={trip} preset={preset} onChanged={onChanged} />}
+      {view === "type" && <TypeIt trip={trip} preset={preset} onChanged={onChanged} />}
 
-        {form && (
-          <EntryEditor
-            key={view}
-            trip={trip}
-            home={home || trip.currency}
-            lists={lists}
-            preset={{ kind, day: preset?.day ?? viewing ?? undefined }}
-            onDone={(saved) => {
-              if (saved) onChanged();
-              onClose();
-            }}
-          />
-        )}
+      {form && (
+        <EntryEditor
+          key={view}
+          trip={trip}
+          home={home || trip.currency}
+          lists={lists}
+          preset={{ kind, day: preset?.day ?? viewing ?? undefined }}
+          onDone={(saved) => {
+            if (saved) onChanged();
+            onClose();
+          }}
+        />
+      )}
 
-        {view === "place" && (
-          <SavePlaces open day={preset?.find ? preset.day : undefined} at={preset?.find ? preset.at : undefined} near={preset?.find || preset?.near ? preset.day : undefined} viewing={viewing} onDone={onChanged} />
-        )}
-      </section>
-    </div>
+      {view === "place" && (
+        <SavePlaces open day={preset?.find ? preset.day : undefined} at={preset?.find ? preset.at : undefined} near={preset?.find || preset?.near ? preset.day : undefined} viewing={viewing} onDone={onChanged} />
+      )}
+    </Sheet>
   );
 }

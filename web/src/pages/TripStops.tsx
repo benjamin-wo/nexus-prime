@@ -1,7 +1,8 @@
-import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
+import { Fragment, type ReactNode, useRef, useState } from "react";
 
 import { api, type Trip, type TripDetail, type TripStop } from "../api";
 import { Icon } from "../components/Icon";
+import { Sheet } from "../components/Sheet";
 import { day, stopColor, stopOfDay, stopsOf } from "./TripBits";
 
 const DAY_MS = 86400000;
@@ -120,14 +121,6 @@ export function StopsSheet({ trip, detail, onClose, onSaved }: { trip: Trip; det
   const [error, setError] = useState<string | null>(null);
   const saved = (trip.stops ?? []).length > 0;
 
-  useEffect(() => {
-    const keydown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", keydown);
-    return () => window.removeEventListener("keydown", keydown);
-  }, [onClose]);
-
   const change = (key: number, patch: Partial<TripStop>) => setRows((was) => was.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   const add = () => setRows((was) => [...was, fresh({ name: "", start: was.at(-1)?.end ?? trip.start, end: trip.end })]);
 
@@ -145,65 +138,57 @@ export function StopsSheet({ trip, detail, onClose, onSaved }: { trip: Trip; det
   }
 
   return (
-    <div className="sheet-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <section className="add-sheet stops-sheet" role="dialog" aria-modal="true" aria-labelledby="stops-sheet-title">
-        <div className="add-sheet-head">
-          <h2 id="stops-sheet-title">Stops</h2>
-          <button type="button" className="btn btn-ghost btn-small" onClick={onClose} aria-label="Close">
-            ×
+    <Sheet title="Stops" titleId="stops-sheet-title" className="stops-sheet" onClose={onClose}>
+      <p className="caption">
+        Where you are, and when. A travel day is the day one stop ends and the next starts.
+        {!saved && " These follow your places to stay until you save them."}
+      </p>
+      <form
+        className="stops-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void send(rows.map(({ name, start, end }) => ({ name: name.trim(), start, end })));
+        }}
+      >
+        <ul className="stops-edit">
+          {rows.map((r, i) => (
+            <li key={r.key} className="stops-edit-row">
+              <span className="stop-dot" style={{ background: stopColor(i) }} aria-hidden="true" />
+              <input className="input stops-name" value={r.name} maxLength={40} onChange={(e) => change(r.key, { name: e.target.value })} placeholder="City or area, e.g. Kyoto" aria-label={`Name of stop ${i + 1}`} />
+              <label className="stops-date">
+                <span className="caption">From</span>
+                <input className="input" type="date" value={r.start} min={trip.start} max={trip.end} onChange={(e) => change(r.key, { start: e.target.value })} aria-label={`Stop ${i + 1} starts`} />
+              </label>
+              <label className="stops-date">
+                <span className="caption">To</span>
+                <input className="input" type="date" value={r.end} min={trip.start} max={trip.end} onChange={(e) => change(r.key, { end: e.target.value })} aria-label={`Stop ${i + 1} ends`} />
+              </label>
+              <button type="button" className="btn btn-ghost btn-danger btn-small" onClick={() => setRows((was) => was.filter((x) => x.key !== r.key))} aria-label={`Remove stop ${i + 1}`}>
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+        {rows.length === 0 && <p className="caption">No stops: saving goes back to the ones your places to stay suggest.</p>}
+        {rows.length < 10 && (
+          <button type="button" className="btn btn-ghost btn-small stops-add" onClick={add}>
+            Add stop
+          </button>
+        )}
+        {error && (
+          <p className="error-text" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="actions">
+          <button type="submit" className="btn btn-primary" disabled={busy}>
+            {busy ? "Saving…" : "Save"}
+          </button>
+          <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => void send([])}>
+            Use suggested
           </button>
         </div>
-        <p className="caption">
-          Where you are, and when. A travel day is the day one stop ends and the next starts.
-          {!saved && " These follow your places to stay until you save them."}
-        </p>
-        <form
-          className="stops-form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void send(rows.map(({ name, start, end }) => ({ name: name.trim(), start, end })));
-          }}
-        >
-          <ul className="stops-edit">
-            {rows.map((r, i) => (
-              <li key={r.key} className="stops-edit-row">
-                <span className="stop-dot" style={{ background: stopColor(i) }} aria-hidden="true" />
-                <input className="input stops-name" value={r.name} maxLength={40} onChange={(e) => change(r.key, { name: e.target.value })} placeholder="City or area, e.g. Kyoto" aria-label={`Name of stop ${i + 1}`} />
-                <label className="stops-date">
-                  <span className="caption">From</span>
-                  <input className="input" type="date" value={r.start} min={trip.start} max={trip.end} onChange={(e) => change(r.key, { start: e.target.value })} aria-label={`Stop ${i + 1} starts`} />
-                </label>
-                <label className="stops-date">
-                  <span className="caption">To</span>
-                  <input className="input" type="date" value={r.end} min={trip.start} max={trip.end} onChange={(e) => change(r.key, { end: e.target.value })} aria-label={`Stop ${i + 1} ends`} />
-                </label>
-                <button type="button" className="btn btn-ghost btn-danger btn-small" onClick={() => setRows((was) => was.filter((x) => x.key !== r.key))} aria-label={`Remove stop ${i + 1}`}>
-                  Remove
-                </button>
-              </li>
-            ))}
-          </ul>
-          {rows.length === 0 && <p className="caption">No stops: saving goes back to the ones your places to stay suggest.</p>}
-          {rows.length < 10 && (
-            <button type="button" className="btn btn-ghost btn-small stops-add" onClick={add}>
-              Add stop
-            </button>
-          )}
-          {error && (
-            <p className="error-text" role="alert">
-              {error}
-            </p>
-          )}
-          <div className="actions">
-            <button type="submit" className="btn btn-primary" disabled={busy}>
-              {busy ? "Saving…" : "Save"}
-            </button>
-            <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => void send([])}>
-              Use suggested
-            </button>
-          </div>
-        </form>
-      </section>
-    </div>
+      </form>
+    </Sheet>
   );
 }

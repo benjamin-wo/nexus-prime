@@ -799,6 +799,8 @@ details.section[open] > summary { margin-bottom: var(--space-3); }
 .timeline-hop { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); padding: 0 var(--space-3); font-size: 0.8125rem; color: var(--text-secondary); }
 .timeline-hop .wrap { flex: 1 1 160px; min-width: 0; }
 .timeline-hop .badge { margin-left: var(--space-2); }
+/* The Plan's Check in and Check out badges. */
+.timeline-strip .badge { font-size: 0.8125rem; }
 .hop-back { color: var(--text-primary); font-weight: 600; }
 .timeline-hop select { font: inherit; font-size: 0.8125rem; color: var(--text-primary); background: var(--bg-input); border: 1px solid var(--border-card); border-radius: 6px; padding: 2px var(--space-1); }
 .entry-flash { outline: 2px solid var(--cyan-accent); outline-offset: 2px; transition: outline-color var(--t-standard); }
@@ -1164,18 +1166,7 @@ html.keyboard .bottom-nav, html.keyboard .trip-fab-button, html.keyboard .trip-f
 .move-ask-open { justify-self: start; }
 .wallet-name { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); min-width: 0; }
 
-/* The one way to add: a sheet from the bottom on phones, a dialog on desktop. */
-.sheet-backdrop { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; background: rgba(27, 35, 51, 0.4); animation: fade var(--t-standard); padding: var(--space-4); }
-/* While a sheet is open the page behind it stays put, even as the keyboard opens. */
-.main-viewport:has(.sheet-backdrop) { overflow: hidden; }
-.add-sheet {
-  overscroll-behavior: contain;
-  width: min(480px, 100%); max-height: min(640px, 90dvh); overflow-y: auto; display: grid; gap: var(--space-3); align-content: start;
-  padding: var(--space-5); border-radius: 22px; border: 1px solid var(--border-card); background: var(--bg-card); box-shadow: var(--shadow-modal);
-  animation: sheet-up var(--t-emphasis);
-}
-.add-sheet-head { display: flex; align-items: center; gap: var(--space-2); }
-.add-sheet-head h2 { flex: 1; min-width: 0; margin: 0; }
+/* Adding: the ways to add (the sheet itself is under Sheets, at the end). */
 .ways { display: grid; gap: var(--space-2); }
 .ways-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .way {
@@ -1195,10 +1186,6 @@ html.keyboard .bottom-nav, html.keyboard .trip-fab-button, html.keyboard .trip-f
 .type-it-line.nexus { justify-self: start; background: var(--accent-soft); border: 1px solid var(--accent-border); border-bottom-left-radius: 4px; }
 .type-it-form { display: flex; gap: var(--space-2); }
 .type-it-form .input { flex: 1; min-width: 0; }
-@media (max-width: 900px) {
-  .sheet-backdrop { place-items: end center; padding: 0; }
-  .add-sheet { width: 100%; border-radius: 22px 22px 0 0; padding-bottom: calc(var(--space-5) + env(safe-area-inset-bottom)); max-height: 88dvh; }
-}
 @media (max-width: 720px) {
   .trip-cover-compact { margin-left: 0; margin-right: 0; min-height: 150px; }
 }
@@ -1463,7 +1450,6 @@ html.keyboard .bottom-nav, html.keyboard .trip-fab-button, html.keyboard .trip-f
 .stops-form .actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .stops-form .actions .btn, .stops-edit-row > .btn, .stops-add { min-height: 44px; }
 @media (min-width: 560px) {
-  .stops-sheet { width: min(680px, 100%); }
   .stops-edit-row { grid-template-columns: auto minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) auto; }
   .stops-date { grid-column: auto; }
   .stops-edit-row > .btn { grid-column: auto; grid-row: auto; }
@@ -1897,3 +1883,37 @@ a.photo-credit:hover { text-decoration: underline; }
 @media (prefers-reduced-motion: reduce) {
   .trip-v2 .trip-slim { animation: none; }
 }
+
+/* Sheets */
+/* One sheet for the travel pages: a bottom sheet on a phone, a centred dialog from 721px. */
+.sheet-backdrop { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: var(--space-4); background: rgba(27, 35, 51, 0.4); animation: fade var(--t-standard); }
+/* While a sheet is open the page behind it stays put, even as the keyboard opens. */
+.main-viewport:has(.sheet-backdrop) { overflow: hidden; }
+.sheet-dialog {
+  display: flex; flex-direction: column; width: min(640px, calc(100vw - 48px)); max-height: 85vh; max-height: 85dvh; overflow: hidden;
+  border-radius: 20px; border: 1px solid var(--border-card); background: var(--bg-card); box-shadow: var(--shadow-modal);
+  animation: rise var(--t-standard);
+}
+.sheet-dialog:focus { outline: none; }
+.sheet-grab { display: none; flex: none; width: 36px; height: 4px; margin: var(--space-2) auto 0; border-radius: 2px; background: var(--border-card); }
+.sheet-head { flex: none; display: flex; align-items: center; gap: var(--space-2); min-height: 44px; padding: var(--space-4) var(--space-4) var(--space-2) var(--space-5); }
+.sheet-head h2 { flex: 1; min-width: 0; margin: 0; font-size: 17px; font-weight: 600; line-height: 1.3; text-transform: none; letter-spacing: normal; overflow-wrap: anywhere; }
+.sheet-icon {
+  flex: none; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 12px;
+  background: transparent; color: var(--text-secondary); font: inherit; cursor: pointer; transition: background var(--t-micro), color var(--t-micro);
+}
+.sheet-icon:hover, .sheet-icon:focus-visible { background: var(--bg-card-hover); color: var(--text-primary); }
+@media (hover: none) { .sheet-icon:hover { background: transparent; color: var(--text-secondary); } }
+.sheet-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: grid; gap: var(--space-3); align-content: start; padding: var(--space-2) var(--space-5) var(--space-5); }
+.sheet-foot { flex: none; padding: var(--space-3) var(--space-5) var(--space-5); border-top: 1px solid var(--border-subtle); }
+.day-picker-body { display: grid; gap: var(--space-3); }
+@media (max-width: 720px) {
+  .sheet-backdrop { place-items: end center; padding: 0; }
+  .sheet-dialog { width: 100%; max-height: 90vh; max-height: 90dvh; border-radius: 20px 20px 0 0; border-bottom: 0; animation: sheet-up var(--t-emphasis); }
+  .sheet-grab { display: block; }
+  .sheet-head { padding: var(--space-2) var(--space-3) var(--space-2) var(--space-4); }
+  .sheet-body { padding: var(--space-2) var(--space-4) var(--space-4); }
+  .sheet-foot { padding: var(--space-3) var(--space-4) var(--space-4); }
+  .sheet-dialog > :last-child { padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom)); }
+}
+@media (prefers-reduced-motion: reduce) { .sheet-backdrop, .sheet-dialog { animation: none; } }

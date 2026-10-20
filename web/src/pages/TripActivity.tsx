@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { api, type TripActivity, tripActivityPath } from "../api";
+import { Sheet } from "../components/Sheet";
 import { formatShortDate } from "../format";
 
 const MINUTE = 60_000;
@@ -69,35 +70,20 @@ export function ActivityLine({ tripId, shared }: { tripId: string; shared: boole
 
 /** The last 20 changes to the plan, newest first. */
 export function ActivitySheet({ items, onClose }: { items: TripActivity[]; onClose: () => void }) {
-  useEffect(() => {
-    const keydown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", keydown);
-    return () => window.removeEventListener("keydown", keydown);
-  }, [onClose]);
   return (
-    <div className="sheet-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <section className="add-sheet" role="dialog" aria-modal="true" aria-labelledby="activity-sheet-title">
-        <div className="add-sheet-head">
-          <h2 id="activity-sheet-title">Recent changes</h2>
-          <button type="button" className="btn btn-ghost btn-small" onClick={onClose} aria-label="Close">
-            ×
-          </button>
-        </div>
-        {items.length === 0 ? (
-          <p className="caption">Nothing has changed yet.</p>
-        ) : (
-          <ul className="activity-list">
-            {items.slice(0, 20).map((item, n) => (
-              <li key={`${item.at}-${n}`}>
-                <span className="wrap">{activityText(item)}</span>
-                <span className="caption">{timeAgo(item.at)}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-    </div>
+    <Sheet title="Recent changes" titleId="activity-sheet-title" onClose={onClose}>
+      {items.length === 0 ? (
+        <p className="caption">Nothing has changed yet.</p>
+      ) : (
+        <ul className="activity-list">
+          {items.slice(0, 20).map((item, n) => (
+            <li key={`${item.at}-${n}`}>
+              <span className="wrap">{activityText(item)}</span>
+              <span className="caption">{timeAgo(item.at)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Sheet>
   );
 }

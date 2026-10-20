@@ -19,6 +19,7 @@ export type IconName =
   | "up"
   | "down"
   | "chevron"
+  | "chevronLeft"
   | "check"
   | "flight"
   | "stay"
@@ -80,6 +81,7 @@ const PATHS: Record<IconName, string[]> = {
   up: ["M7 17L17 7", "M8 7h9v9"],
   down: ["M7 7l10 10", "M17 8v9H8"],
   chevron: ["M9 6l6 6-6 6"],
+  chevronLeft: ["M15 6l-6 6 6 6"],
   check: ["M5 12.5l4.5 4.5L19 7.5"],
   flight: ["M2 16l20-6-2-3-7 2-5-5-2 1 3 6-5 1-2-2-1 1z"],
   stay: ["M3 18V7", "M3 14h18v4", "M21 14v-2a3 3 0 0 0-3-3h-7v5", "M7 11.5h.01"],

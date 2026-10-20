@@ -20,6 +20,7 @@ import { type FormEvent, type KeyboardEvent, type ReactNode, createContext, useC
 
 import { api, type Booking, type DayNote, type Hop, type LinkedPlace, type TripDetail, type TripStop } from "../api";
 import { Icon, type IconName } from "../components/Icon";
+import { Sheet } from "../components/Sheet";
 import { distance, metresBetween, type Point } from "../geo";
 import { sortKey, stopOfDay, stopsOf, suggestLabel } from "./TripBits";
 import { useLinkedPlaces } from "./TripPlaces";
@@ -711,26 +712,14 @@ export function ideaHint(detail: TripDetail, booking: Booking, near: Nearby, vie
  * a dialog on desktop. A day takes it at the end. ``viewing``: the day open on Plan. */
 export function DayPickerSheet({ detail, booking, viewing, onClose }: { detail: TripDetail; booking: Booking; viewing: string | null; onClose: () => void }) {
   const { move } = useArrange(detail);
-  const sheet = useRef<HTMLElement>(null);
+  const sheet = useRef<HTMLDivElement>(null);
   const linked = useLinkedPlaces();
   const picker = useMemo(() => pickerDays(detail, booking, viewing, nearbyOf(detail, linked)), [detail, booking, viewing, linked]);
 
-  // The first day is focused as the sheet opens, and the focus goes back when it closes.
+  // The first day is focused as the sheet opens (the sheet puts the focus back when it closes).
   useEffect(() => {
-    const before = document.activeElement;
     sheet.current?.querySelector<HTMLButtonElement>(".day-option")?.focus();
-    return () => {
-      if (before instanceof HTMLElement) before.focus();
-    };
   }, []);
-
-  useEffect(() => {
-    const key = (e: globalThis.KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", key);
-    return () => window.removeEventListener("keydown", key);
-  }, [onClose]);
 
   // The sheet closes at once; the provider keeps the move going and shows what the
   // server answers.
@@ -762,14 +751,8 @@ export function DayPickerSheet({ detail, booking, viewing, onClose }: { detail: 
   );
 
   return (
-    <div className="sheet-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <section ref={sheet} className="add-sheet day-picker" role="dialog" aria-modal="true" aria-labelledby="day-picker-title">
-        <div className="add-sheet-head">
-          <h2 id="day-picker-title">Put on a day</h2>
-          <button type="button" className="btn btn-ghost btn-small" onClick={onClose} aria-label="Close">
-            ×
-          </button>
-        </div>
+    <Sheet title="Put on a day" titleId="day-picker-title" className="day-picker" onClose={onClose}>
+      <div ref={sheet} className="day-picker-body">
         <p className="day-picker-for">{booking.title}</p>
         {picker.ranked && picker.closest.length > 0 && (
           <section aria-labelledby="day-picker-closest">
@@ -818,7 +801,7 @@ export function DayPickerSheet({ detail, booking, viewing, onClose }: { detail: 
             Keep it as an idea
           </button>
         )}
-      </section>
-    </div>
+      </div>
+    </Sheet>
   );
 }

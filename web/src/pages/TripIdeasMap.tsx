@@ -1,6 +1,7 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import type { Booking, TripDetail, TripStop } from "../api";
+import { Sheet } from "../components/Sheet";
 import { type Point, metresBetween } from "../geo";
 import { type GMap, type GOverlay, loadMaps, type MapsApi, onMapsAuthFailure } from "../maps";
 import { type Nearby, pointOf } from "./TripArrange";
@@ -33,11 +34,6 @@ function PinPrompt({ onSave, onClose }: { onSave: (name: string) => Promise<void
     input.current?.focus();
     input.current?.select();
   }, []);
-  useEffect(() => {
-    const key = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", key);
-    return () => window.removeEventListener("keydown", key);
-  }, [onClose]);
 
   async function save(event: FormEvent) {
     event.preventDefault();
@@ -52,34 +48,26 @@ function PinPrompt({ onSave, onClose }: { onSave: (name: string) => Promise<void
   }
 
   return (
-    <div className="sheet-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <form className="add-sheet pin-prompt" role="dialog" aria-modal="true" aria-labelledby="pin-prompt-title" onSubmit={save}>
-        <div className="add-sheet-head">
-          <h2 id="pin-prompt-title">Drop a pin here</h2>
-          <button type="button" className="btn btn-ghost btn-small" onClick={onClose} aria-label="Close">
-            ×
-          </button>
-        </div>
-        <label className="field">
-          Name
-          <input ref={input} className="input" value={name} maxLength={120} onChange={(e) => setName(e.target.value)} />
-        </label>
-        <p className="caption">It's saved as an idea at this spot, then you pick its day.</p>
-        {error && (
-          <p className="error-text" role="alert">
-            {error}
-          </p>
-        )}
-        <span className="actions">
-          <button type="submit" className="btn btn-primary" disabled={busy}>
-            Save pin
-          </button>
-          <button type="button" className="btn" onClick={onClose}>
-            Cancel
-          </button>
-        </span>
-      </form>
-    </div>
+    <Sheet as="form" title="Drop a pin here" titleId="pin-prompt-title" className="pin-prompt" onClose={onClose} onSubmit={save}>
+      <label className="field">
+        Name
+        <input ref={input} className="input" value={name} maxLength={120} onChange={(e) => setName(e.target.value)} />
+      </label>
+      <p className="caption">It's saved as an idea at this spot, then you pick its day.</p>
+      {error && (
+        <p className="error-text" role="alert">
+          {error}
+        </p>
+      )}
+      <span className="actions">
+        <button type="submit" className="btn btn-primary" disabled={busy}>
+          Save pin
+        </button>
+        <button type="button" className="btn" onClick={onClose}>
+          Cancel
+        </button>
+      </span>
+    </Sheet>
   );
 }
 
