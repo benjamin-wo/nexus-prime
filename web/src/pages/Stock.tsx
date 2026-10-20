@@ -3,7 +3,9 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { api, type Levels, type PriceRange, type Stock } from "../api";
+import { PriceWhen } from "../components/PriceWhen";
 import { formatShortDate, priceWhen } from "../format";
+import { livePolling } from "../prices";
 import { verdictTone } from "./Plans";
 
 const usd = (amount: string) => Number(amount).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -39,25 +41,24 @@ function Ladder({ levels }: { levels: Levels }) {
   );
 }
 
-/** The price now, when it isn't a close (live while the market is open), and how the price
- * stands against the levels. */
-function NowCard({ stock }: { stock: Stock }) {
-  const closed = stock.price_kind === "close";
+/** The latest price (live while the market is open) with when it is from, and under it, quietly,
+ * how it stands against the levels. */
+function PriceCard({ stock }: { stock: Stock }) {
   return (
-    <section className="card" aria-labelledby="now">
+    <section className="card" aria-labelledby="price">
       <div className="card-head">
-        <h2 id="now">{closed ? "Against its levels" : "Now"}</h2>
-        {!closed && <span className="caption">{priceWhen(stock.price_kind, stock.price_at, stock.price_day)}</span>}
+        <h2 id="price">Price</h2>
+        <PriceWhen kind={stock.price_kind} at={stock.price_at} day={stock.price_day} />
       </div>
-      {!closed && stock.price && (
+      {stock.price && (
         <p>
-          <strong className="num">USD {usd(stock.price)}</strong>
+          <strong className="price-now">USD {usd(stock.price)}</strong>
         </p>
       )}
       {stock.now_vs_levels.length > 0 && (
-        <ul className="feed" aria-label="Price against its levels">
+        <ul className="quiet-list" aria-label="Price against its levels">
           {stock.now_vs_levels.map((fact) => (
-            <li key={fact}>{fact}</li>
+            <li key={fact} className="caption">{fact}</li>
           ))}
         </ul>
       )}
@@ -73,7 +74,7 @@ function LevelsCard({ levels }: { levels: Levels }) {
     <section className="card" aria-labelledby="levels">
       <div className="card-head">
         <h2 id="levels">Levels</h2>
-        <span className="caption">Close of {formatShortDate(levels.as_of, "UTC")} · worked out from daily prices</span>
+        <span className="caption">{priceWhen("close", null, levels.as_of)} · worked out from daily prices</span>
       </div>
       <Ladder levels={levels} />
       <p className="caption">Support and resistance are recent swing lows and highs (the last 6 months).</p>
@@ -177,7 +178,12 @@ function RangesCard({ ranges }: { ranges: PriceRange[] }) {
 export function StockPage() {
   const { symbol = "" } = useParams();
   const client = useQueryClient();
-  const stock = useQuery({ queryKey: ["stock", symbol], queryFn: () => api<Stock>(`/investments/stocks/${symbol}`) });
+  const stock = useQuery({
+    queryKey: ["stock", symbol],
+    queryFn: () => api<Stock>(`/investments/stocks/${symbol}`),
+    // Every minute while the price is live and the page is in view.
+    refetchInterval: (query) => livePolling(query.state.data?.price_kind),
+  });
   const data = stock.data;
   const [started, setStarted] = useState<string | null>(null);
   const [planError, setPlanError] = useState<string | null>(null);
@@ -229,7 +235,7 @@ export function StockPage() {
           {stock.error instanceof Error ? stock.error.message : "Couldn't load that stock."}
         </p>
       )}
-      {data?.price && (data.price_kind !== "close" || data.now_vs_levels.length > 0) && <NowCard stock={data} />}
+      {data?.price && <PriceCard stock={data} />}
       {data && (data.levels ? (
         <LevelsCard levels={data.levels} />
       ) : (
