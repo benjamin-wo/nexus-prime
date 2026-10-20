@@ -1411,7 +1411,7 @@ export function MoneyTab({ detail, onChange, adding, onAddDone }: { detail: Trip
               <PaidByOthersPanel detail={detail} onChange={onChange} />
             </Section>
           )}
-          <Section id="travellers" title="Travellers" summary={`You${hasOthers ? ` and ${joinNames(trip.companions)}` : ""}`} open={open === "travellers"} onToggle={() => toggle("travellers")}>
+          <Section id="travellers" title="Travellers" summary={joinNames(["You", ...trip.companions])} open={open === "travellers"} onToggle={() => toggle("travellers")}>
             <TravellersPanel trip={trip} onChange={onChange} />
           </Section>
         </div>

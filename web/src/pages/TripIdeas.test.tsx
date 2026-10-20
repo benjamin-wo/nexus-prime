@@ -150,13 +150,14 @@ describe("the ideas list", () => {
     expect(screen.queryByRole("button", { name: "Drag Fish market" })).toBeNull();
   });
 
-  it("has Find ideas as the one primary, with the List/Map switch beside it on a phone", async () => {
+  it("has Find ideas as a soft button (the trip's + stays the one primary), with the List/Map switch beside it on a phone", async () => {
     screenIs(false);
     renderIdeas({ ...withIdeas, map_key: "k" });
     const switcher = await screen.findByRole("group", { name: "Show ideas as" });
     expect(within(switcher).getAllByRole("button").map((b) => b.textContent)).toEqual(["List", "Map"]);
     expect(within(switcher).getByRole("button", { name: "List" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "Find ideas" })).toHaveClass("btn-primary");
+    expect(screen.getByRole("button", { name: "Find ideas" })).toHaveClass("btn-soft");
+    expect(screen.getByRole("button", { name: "Find ideas" })).not.toHaveClass("btn-primary");
     expect(screen.queryByRole("button", { name: "Find places or ideas" })).toBeNull();
   });
 });

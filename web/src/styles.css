@@ -1185,6 +1185,7 @@ html.keyboard .bottom-nav, html.keyboard .trip-fab-button, html.keyboard .trip-f
 .share-link .input { flex: 1; min-width: 0; }
 @media (min-width: 721px) and (pointer: fine) { .share-link .input { font-size: 0.875rem; } }
 .share-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.share-actions > .btn-ghost:first-child { margin-left: -12px; }
 /* Share settings */
 .share-switch { display: flex; align-items: center; gap: var(--space-3); min-height: 44px; cursor: pointer; font-weight: 500; }
 .share-switch input { width: 22px; height: 22px; flex: none; accent-color: var(--accent-text); cursor: inherit; }
@@ -1697,7 +1698,10 @@ a.photo-credit:hover { text-decoration: underline; }
 .day-slide { flex: 0 0 100%; min-width: 0; align-self: start; scroll-snap-align: start; scroll-snap-stop: always; }
 @media (prefers-reduced-motion: reduce) { .day-track { transition: none; } }
 /* Getting around and directions: in the trip menu's sheet, or as a quiet line under the map. */
-.ways-sheet .trip-ways { flex-direction: column; align-items: flex-start; margin: 0; gap: var(--space-3); }
+.ways-sheet .trip-ways { display: grid; margin: 0; gap: var(--space-4); }
+/* Each picker is a label over a full-width select, so the two line up. */
+.ways-sheet .map-app { display: grid; gap: var(--space-1); }
+.ways-sheet .map-app select { width: 100%; min-height: 44px; padding: 0 var(--space-3); font-size: 1rem; border-radius: 10px; }
 .trip-map > .trip-ways { margin: var(--space-3) 0 0; }
 /* Money and Prep read as a column on a wide screen, not stretched across it. */
 .trip-narrow { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); min-width: 0; }
@@ -1814,7 +1818,7 @@ a.photo-credit:hover { text-decoration: underline; }
 /* One sheet for the travel pages: a bottom sheet on a phone, a centred dialog from 721px. */
 .sheet-backdrop { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: var(--space-4); background: rgba(27, 35, 51, 0.4); animation: fade var(--t-standard); }
 /* While a sheet is open the page behind it stays put, even as the keyboard opens. */
-.main-viewport:has(.sheet-backdrop) { overflow: hidden; }
+body:has(.sheet-backdrop) .main-viewport { overflow: hidden; }
 .sheet-dialog {
   display: flex; flex-direction: column; width: min(640px, calc(100vw - 48px)); max-height: 85vh; max-height: 85dvh; overflow: hidden;
   border-radius: 20px; border: 1px solid var(--border-card); background: var(--bg-card); box-shadow: var(--shadow-modal);
@@ -1977,7 +1981,7 @@ a.photo-credit:hover { text-decoration: underline; }
 .todo-title { font-weight: 600; color: var(--text-primary); overflow-wrap: anywhere; }
 .todo-sub { font-size: 0.8125rem; line-height: 1.4; color: var(--text-muted); overflow-wrap: anywhere; }
 .todo-avatar { flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
-.todo-more { justify-self: start; min-height: 40px; }
+.todo-more { justify-self: start; min-height: 40px; margin-left: -12px; }
 .todo-quiet { margin: 0; font-size: 0.9375rem; color: var(--text-secondary); }
 .todo-parts { padding-left: 0; }
 .todo-parts h3 { margin: var(--space-2) 0 0; }
@@ -2018,7 +2022,7 @@ a.photo-credit:hover { text-decoration: underline; }
 @media (pointer: coarse) { .money-row .btn-small { min-height: 44px; } }
 @media (max-width: 720px) {
   .money-figure { font-size: 1.5rem; }
-  .money-row-actions { flex: 1 1 100%; justify-content: flex-start; }
+  .money-row-actions { flex: 1 1 100%; justify-content: flex-start; margin-left: -12px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .money-chev { transition: none; }

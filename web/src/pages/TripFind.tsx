@@ -311,7 +311,7 @@ export function ResultList({ results, label, pickLabel, saveText, busy, dayScope
         );
         const guide = [...(f.why ? [<span key="why" className="idea-why">“{f.why}”</span>] : []), source];
         const meta = f.from.includes("google")
-          ? dotted([...(f.place ? [<Rating key="rating" place={f.place} />] : []), ...(where ? [where] : []), "Google Maps"])
+          ? dotted([...(f.place && f.place.rating !== null ? [<Rating key="rating" place={f.place} />] : []), ...(where ? [where] : []), "Google Maps"])
           : dotted(f.why ? guide : [...(where ? [where] : []), ...guide]);
         const isSaved = saved?.has(f.key) ?? false;
         return (

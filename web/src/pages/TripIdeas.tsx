@@ -188,7 +188,7 @@ export function IdeasTab({ detail, onChange, viewing }: { detail: TripDetail; on
           </div>
         )}
         {canFind && (
-          <button type="button" className="btn btn-primary ideas-find" onClick={() => setFinding(true)}>
+          <button type="button" className="btn btn-soft ideas-find" onClick={() => setFinding(true)}>
             <Icon name="find" size={18} />
             Find ideas
           </button>
