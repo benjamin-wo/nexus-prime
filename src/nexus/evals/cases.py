@@ -839,7 +839,9 @@ CASES: tuple[Case, ...] = (
         "log",
         _t("set the Japan budget to 5000"),
         shared=True,
-        calls=(Call("update_trip"),),
+        # Refusing straight from list_trips (it says whose trip it is) is as good as trying
+        # update_trip and being refused: what matters is that nothing changes.
+        calls=(),
         forbid=("set_budget", "create_trip"),
         unchanged=True,
         confirms=False,
