@@ -57,6 +57,7 @@ from nexus.domain.notifications import NotificationSettings
 from nexus.domain.packing import PackItem
 from nexus.domain.planning import Bill, BillOccurrence, Budget, SalarySchedule
 from nexus.domain.plans import Followed, SavedPlan
+from nexus.domain.prep import Cover, Todo
 from nexus.domain.receipts import Receipt
 from nexus.domain.recurring import Subscription
 from nexus.domain.rules import CategoryRule
@@ -667,6 +668,22 @@ class TripRepository(Protocol):
     async def set_packing(
         self, user_id: UserId, trip_id: UUID, items: tuple[PackItem, ...], at: datetime
     ) -> None: ...
+    async def set_todos(
+        self, user_id: UserId, trip_id: UUID, todos: tuple[Todo, ...], at: datetime
+    ) -> None: ...
+    async def set_prep_dismissed(
+        self, user_id: UserId, trip_id: UUID, keys: tuple[str, ...], at: datetime
+    ) -> None: ...
+    async def insert_cover(self, cover: Cover) -> None: ...
+    async def update_cover(self, cover: Cover) -> None: ...
+    async def get_cover(
+        self, user_id: UserId, trip_id: UUID, cover_id: UUID, *, for_update: bool = False
+    ) -> Cover | None: ...
+    async def list_covers(self, user_id: UserId, trip_id: UUID) -> list[Cover]:
+        """Oldest first."""
+        ...
+
+    async def delete_cover(self, user_id: UserId, trip_id: UUID, cover_id: UUID) -> bool: ...
     async def set_hop_modes(
         self, user_id: UserId, trip_id: UUID, modes: dict[str, str]
     ) -> None: ...

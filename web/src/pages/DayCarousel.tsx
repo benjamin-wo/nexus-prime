@@ -88,18 +88,26 @@ export function DayCarousel({
   const opened = useRef(false);
   // The track's height: that of the day in view, found by watching its slide.
   const [height, setHeight] = useState<number | null>(null);
+  // The height eases only when another day comes into view. When the day in view grows (an
+  // editor opening, a plan added) it follows at once, so nothing new sits hidden below the
+  // track's edge while it catches up.
+  const [easing, setEasing] = useState(false);
+  const last = useRef<number | null>(null);
   const watched = useRef<{ el: HTMLDivElement; watch: ResizeObserver | null } | null>(null);
   const measure = useCallback((el: HTMLDivElement | null) => {
     watched.current?.watch?.disconnect();
     watched.current = null;
     if (!el) return;
-    const read = () => {
+    const read = (switching: boolean) => {
       const h = Math.ceil(el.getBoundingClientRect().height);
+      if (!switching && h === last.current) return;
+      last.current = h;
+      setEasing(switching);
       setHeight(h > 0 ? h : null);
     };
-    read();
+    read(true);
     // Plans added, opened or taken away change how much there is.
-    const watch = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(read);
+    const watch = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => read(false));
     watch?.observe(el);
     watched.current = { el, watch };
   }, []);
@@ -198,7 +206,7 @@ export function DayCarousel({
           </button>
         </div>
       )}
-      <div ref={track} className="day-track" style={height === null ? undefined : { height }} onScroll={onScroll}>
+      <div ref={track} className="day-track" data-easing={easing || undefined} style={height === null ? undefined : { height }} onScroll={onScroll}>
         {days.map((d, i) => (
           <DaySlide key={d} label={`${name(d)}, ${i + 1} of ${days.length}`} current={i === shown} measure={measure}>
             {children(d, Math.abs(i - shown) <= 1)}

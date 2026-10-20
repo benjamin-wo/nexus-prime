@@ -4,6 +4,7 @@ import {
   api,
   type Balance,
   type BalancePart,
+  type Cover,
   type Money,
   type PaidByOther,
   type PaidByOtherBody,
@@ -21,6 +22,7 @@ import { formatMoney, formatWithHome } from "../format";
 import { CountUp } from "../motion";
 import { day } from "./TripBits";
 import { tripBody } from "./TripEntry";
+import { KIND_LABEL, LogAction, LogConfirm, useCoverLog } from "./TripPrepParts";
 import { balanceAmount, stageOf } from "./TripStage";
 
 const amount = (m: Money | null) => (m ? Number(m.amount) : 0);
@@ -1207,9 +1209,31 @@ function PlannedPanel({
   );
 }
 
-/** The bookings on the trip that carry a cost, and how much of it isn't logged as an expense yet. */
-function BookingsPanel({ detail }: { detail: TripDetail }) {
+/** A cover or document with a cost, listed with the bookings: "Logged", or Log it (asked first, in place). */
+function CoverPaid({ cover, tripId, onChange }: { cover: Cover; tripId: string; onChange: () => void }) {
+  const log = useCoverLog(tripId, cover, () => onChange());
+  return (
+    <li>
+      <div className="money-row">
+        <div className="money-row-main">
+          <span className="money-row-title">{cover.name}</span>
+          <span className="money-row-sub">{KIND_LABEL[cover.kind]} · from Prep</span>
+        </div>
+        <span className="num money-row-amount">{cover.cost && formatMoney(cover.cost)}</span>
+        <span className="money-row-actions">
+          <LogAction cover={cover} log={log} />
+        </span>
+      </div>
+      {log.confirming && <LogConfirm cover={cover} log={log} />}
+    </li>
+  );
+}
+
+/** The bookings on the trip that carry a cost, and how much of it isn't logged as an expense yet.
+ * Covers and documents from Prep that cost something are listed after them. */
+function BookingsPanel({ detail, onChange }: { detail: TripDetail; onChange: () => void }) {
   const costed = bookingsPaid(detail);
+  const covers = coversPaid(detail);
   const unlogged = detail.booked_unlogged;
   return (
     <>
@@ -1228,6 +1252,9 @@ function BookingsPanel({ detail }: { detail: TripDetail }) {
             </div>
           </li>
         ))}
+        {covers.map((c) => (
+          <CoverPaid key={c.id} cover={c} tripId={detail.trip.id} onChange={onChange} />
+        ))}
       </ul>
     </>
   );
@@ -1235,6 +1262,8 @@ function BookingsPanel({ detail }: { detail: TripDetail }) {
 
 /** The trip's bookings that carry a cost (a place to visit with no day isn't booked yet). */
 const bookingsPaid = (detail: TripDetail) => detail.bookings.filter((b) => b.cost !== null && b.scheduled);
+/** The covers and documents from Prep that carry a cost (the owner's: a member never has one). */
+const coversPaid = (detail: TripDetail) => (detail.covers ?? []).filter((c) => c.cost !== null);
 
 type SectionId = "where" | "planned" | "aside" | "bookings" | "expenses" | "paid" | "travellers";
 
@@ -1374,7 +1403,7 @@ export function MoneyTab({ detail, onChange, adding, onAddDone }: { detail: Trip
   const s = detail.spending;
   const toggle = (id: SectionId) => setOpen(open === id ? null : id);
   const planned = Object.keys(trip.planned).length;
-  const costed = bookingsPaid(detail);
+  const costed = bookingsPaid(detail).length + coversPaid(detail).length;
   const payments = detail.paid_by_others;
   const todo = <TodoCard detail={detail} onChange={onChange} />;
   return (
@@ -1398,9 +1427,9 @@ export function MoneyTab({ detail, onChange, adding, onAddDone }: { detail: Trip
               <SetAside detail={detail} />
             </Section>
           )}
-          {costed.length > 0 && (
-            <Section id="bookings" title="Bookings paid" summary={plural(costed.length, "booking")} open={open === "bookings"} onToggle={() => toggle("bookings")}>
-              <BookingsPanel detail={detail} />
+          {costed > 0 && (
+            <Section id="bookings" title="Bookings paid" summary={plural(costed, "booking")} open={open === "bookings"} onToggle={() => toggle("bookings")}>
+              <BookingsPanel detail={detail} onChange={onChange} />
             </Section>
           )}
           <Section id="expenses" title="Expenses" summary={detail.items.length === 0 ? "None yet" : `${detail.items.length} so far`} open={open === "expenses"} onToggle={() => toggle("expenses")}>

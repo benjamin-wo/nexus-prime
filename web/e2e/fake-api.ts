@@ -126,11 +126,36 @@ export async function fakeApi(
     settled: boolean;
     settled_at: string | null;
   };
+  type FakeItem = {
+    transaction_id: string;
+    day: string;
+    counterparty: string | null;
+    category: string;
+    amount: { amount: string; currency: string };
+    home: { amount: string; currency: string } | null;
+    linked: boolean;
+  };
+  type FakeTodo = { id: string; text: string; due: string | null; done: boolean };
+  /** A cover as stored: `cost` is the owner's, and `logged` is set by POST .../covers/{id}/log. */
+  type FakeCover = {
+    id: string;
+    kind: string;
+    name: string;
+    reference: string | null;
+    phone: string | null;
+    starts: string | null;
+    ends: string | null;
+    cost: { amount: string; currency: string } | null;
+    logged: boolean;
+    note: string | null;
+  };
   type FakeMember = { id: string; name: string; role: "owner" | "member"; added_at: string | null; you: boolean };
   type FakeInvite = { id: string; created_at: string; expires_at: string };
   type FakeRule = { id: string; pattern: string; category_id: string; category_name: string; explanation: string };
   type FakeSalary = { rule: string; day: number | null; anchor: string | null; usual: string | null };
   let annRepaid = false;
+  /** Counts the to-dos and covers made here, for their ids. */
+  let coverCount = 0;
   let dailyAt = "21:00";
   const state: {
     txs: Tx[];
@@ -186,6 +211,16 @@ export async function fakeApi(
     activity: Record<string, { actor: string; summary: string; at: string }[]>;
     /** The bodies of PUT /travel/trips/{id}/notes, in order. */
     notesPuts: Record<string, unknown>[];
+    /** A trip's to-dos by trip id, as PUT /travel/trips/{id}/todos last saved them (a test may fill it). */
+    todos: Record<string, FakeTodo[]>;
+    /** A trip's cover and documents by trip id (a test may fill it). */
+    covers: Record<string, FakeCover[]>;
+    /** The suggestions marked "Not needed", by trip id. */
+    dismissed: Record<string, string[]>;
+    /** Every request to the Prep routes ("METHOD /path" and its body), in order. */
+    prepRequests: { request: string; body: unknown }[];
+    /** Expenses made by logging a cover's cost, by trip id: they count in the trip's spending. */
+    coverItems: Record<string, FakeItem[]>;
     /** Whether Settings tells the user when someone changes a trip they share (GET and PUT /trip-alerts). */
     tripAlerts: boolean;
     inviteCount: number;
@@ -261,6 +296,11 @@ export async function fakeApi(
     forbidden: [],
     activity: {},
     notesPuts: [],
+    todos: {},
+    covers: {},
+    dismissed: {},
+    prepRequests: [],
+    coverItems: {},
     tripAlerts: true,
     inviteCount: 0,
     splitDone: [],
@@ -1070,12 +1110,42 @@ export async function fakeApi(
           };
         });
     };
+    /** What the server suggests, worked out the same way: nothing at home (SGD), else insurance, entry rules,
+     * passport and money, each left out once a cover or a to-do covers it or the user said "Not needed". */
+    const prepSuggestions = (trip: Record<string, unknown>) => {
+      const id = String(trip.id);
+      if (trip.currency === "SGD") return [];
+      const todos = state.todos[id] ?? [];
+      const covers = state.covers[id] ?? [];
+      const mentions = (...words: string[]) => todos.some((t) => words.some((w) => t.text.toLowerCase().includes(w)));
+      const country = String(trip.destination).split(",").map((part) => part.trim()).filter(Boolean).pop() ?? String(trip.destination);
+      const found = [];
+      if (!covers.some((c) => c.kind === "insurance")) {
+        found.push({ key: "insurance", text: "Travel insurance", sub: "Medical and cancellation cover for the dates", action: "add_cover" });
+      }
+      if (!covers.some((c) => c.kind === "visa") && !mentions("visa", "entry rule")) {
+        found.push({ key: "visa", text: `Check entry rules for ${country}`, sub: "Visas and passport validity", action: "add_todo" });
+      }
+      if (!mentions("passport")) {
+        found.push({ key: "passport", text: "Passport valid 6 months after you're back", sub: "Many countries ask for it at the border", action: "add_todo" });
+      }
+      if (Number(trip.days) - 1 >= 1 && !mentions("money", "cash", "card")) {
+        found.push({ key: "money", text: "Tell your bank / sort a travel card", sub: "So your card works while you're away", action: "add_todo" });
+      }
+      return found.filter((s) => !(state.dismissed[id] ?? []).includes(s.key));
+    };
     const ownerDetail = (trip: Record<string, unknown>) => {
-      const items = [
+      const own: FakeItem[] = [
         { transaction_id: "k1", day: "2026-09-28", counterparty: "Ichiran", category: "Dining Out", amount: { amount: "2000.0000", currency: "JPY" }, home: home(18), linked: false },
         { transaction_id: "k2", day: "2026-08-01", counterparty: "Air ticket", category: "Travel", amount: home(800), home: home(800), linked: true },
       ].filter((i) => state.tripItems.includes(i.transaction_id));
-      const spent = items.reduce((total, i) => total + Number(i.home.amount), 0);
+      const items: FakeItem[] = [...own, ...(state.coverItems[String(trip.id)] ?? [])];
+      // A cover's cost counts as booked, like a booking's, until it is logged (the home rates above; no rate: left out).
+      const covers = state.covers[String(trip.id)] ?? [];
+      const coverCosts = covers.flatMap((c) => (c.cost ? [{ c, home: homeOf(c.cost) }] : [])).filter((x) => x.home !== null);
+      const coverBooked = coverCosts.reduce((total, x) => total + Number(x.home!.amount), 0);
+      const coverUnlogged = coverCosts.filter((x) => !x.c.logged).reduce((total, x) => total + Number(x.home!.amount), 0);
+      const spent = items.reduce((total, i) => total + Number(i.home?.amount ?? 0), 0);
       const budget = trip.budget as { amount: string } | null;
       return {
         trip,
@@ -1116,8 +1186,11 @@ export async function fakeApi(
         balances: balancesFor(trip),
         items,
         bookings: [...(state.flight ? [{ ...FLIGHT, trip_id: trip.id }] : []), ...state.plans],
-        booked: home(820),
-        booked_unlogged: home(820),
+        booked: home(820 + coverBooked),
+        booked_unlogged: home(820 + coverUnlogged),
+        todos: state.todos[String(trip.id)] ?? [],
+        covers,
+        prep_suggestions: prepSuggestions(trip),
         ready: (() => {
           const hotels = state.plans.filter((p) => p.kind === "hotel") as { check_in: string; check_out: string }[];
           const nights: string[] = [];
@@ -1128,7 +1201,7 @@ export async function fakeApi(
           const done = (nights.length ? 0 : 1) + 1 + (trip.budget ? 1 : 0);
           return { nights_without_stay: nights, has_transport: true, has_budget: Boolean(trip.budget), done, total: 3 };
         })(),
-        to_spend: budget ? home(Number(budget.amount) - spent - 820) : null,
+        to_spend: budget ? home(Number(budget.amount) - spent - 820 - coverUnlogged) : null,
         days: (() => {
           const all = [...(state.flight ? [FLIGHT] : []), ...state.plans];
           const landings = all.flatMap((b) => legsOf(b).map((s) => s.arrives?.slice(0, 10) ?? "")).filter(Boolean);
@@ -1155,6 +1228,7 @@ export async function fakeApi(
         ...full,
         trip: { ...trip, budget: null, set_aside: null, planned: {} },
         bookings: (full.bookings as Record<string, unknown>[]).map((b) => ({ ...b, cost: null, logged: false })),
+        covers: (full.covers as FakeCover[]).map((c) => ({ ...c, cost: null, logged: false })),
         booked: null,
         booked_unlogged: null,
         to_spend: null,
@@ -1393,6 +1467,105 @@ export async function fakeApi(
         high: 18 + i, low: 9, rain: i === 1 ? 70 : 10, summary: i === 1 ? "Light rain" : "Clear", code: i === 1 ? 61 : 0,
       }));
       return json(route, { place: `${String(trip.destination)}, Exampleland`, kind: "typical", years: 3, days });
+    }
+    // The Prep tab: to-dos, "Not needed" and cover and documents, as the server answers them. A trip the
+    // user was added to (`role: "member"`) sees covers without a cost and can't set or log one.
+    const tripPrep = path.match(/^\/travel\/trips\/([^/]+)\/(todos|prep\/dismiss|covers)(?:\/([^/]+))?(\/log)?$/);
+    if (tripPrep) {
+      const trip = state.trips.find((t) => t.id === tripPrep[1]);
+      if (!trip) return json(route, { detail: "no trip with that id" }, 404);
+      const id = String(trip.id);
+      const [, , what, other, log] = tripPrep;
+      state.prepRequests.push({ request: `${method} ${path}`, body });
+      const member = trip.role === "member";
+      const seen = (c: FakeCover) => (member ? { ...c, cost: null, logged: false } : c);
+      const prep = () => ({ todos: state.todos[id] ?? [], covers: (state.covers[id] ?? []).map(seen), prep_suggestions: prepSuggestions(trip) });
+      const noteShared = (summary: string) => {
+        if ((state.members[id] ?? []).length > 0 || member) {
+          state.activity[id] = [{ actor: OWNER_NAME, summary, at: "2026-09-28T03:00:00Z" }, ...(state.activity[id] ?? [])];
+        }
+      };
+      if (what === "todos" && method === "PUT") {
+        const given = (body.todos as { id?: string | null; text: string; due?: string | null; done?: boolean }[]) ?? [];
+        if (given.length > 50 || given.some((t) => t.text.length > 80)) return json(route, { detail: "keep at most 50 things on the to-do list" }, 422);
+        const seenText = new Set<string>();
+        const kept: FakeTodo[] = [];
+        for (const t of given) {
+          const text = t.text.split(/\s+/).filter(Boolean).join(" ");
+          if (!text || seenText.has(text.toLowerCase())) continue;
+          seenText.add(text.toLowerCase());
+          const taken = kept.some((k) => k.id === t.id);
+          kept.push({ id: t.id && !taken ? t.id : `todo${++coverCount}`, text, due: t.due ?? null, done: Boolean(t.done) });
+        }
+        state.todos[id] = kept;
+        noteShared("changed the to-do list");
+        return json(route, prep());
+      }
+      if (what === "prep/dismiss") {
+        const key = method === "POST" ? String(body.key) : String(other);
+        if (!["insurance", "visa", "passport", "money"].includes(key)) return json(route, { detail: `there's no suggestion called '${key}'` }, 422);
+        const rest = (state.dismissed[id] ?? []).filter((k) => k !== key);
+        state.dismissed[id] = method === "POST" ? [...rest, key] : rest;
+        noteShared(method === "POST" ? "marked a prep suggestion as not needed" : "brought back a prep suggestion");
+        return json(route, prep());
+      }
+      const list = state.covers[id] ?? [];
+      const asCover = (b: Record<string, unknown>, keep?: FakeCover): FakeCover | string => {
+        const name = String(b.name ?? "").split(/\s+/).filter(Boolean).join(" ");
+        if (!name) return "a cover needs a name";
+        if (/passport/i.test(name) && b.reference) return "a passport's number isn't kept; leave the reference out";
+        if (/\b(?:\d[ -]?){15,16}\b/.test(String(b.reference ?? ""))) return "a reference can't hold a card or passport number; leave it out";
+        if (b.phone && !/^[0-9+()\- ]+$/.test(String(b.phone))) return "a phone number can only have digits, +, spaces, - and brackets";
+        if (b.starts && b.ends && String(b.ends) < String(b.starts)) return "a cover can't end before it starts";
+        const cost = member ? (keep?.cost ?? null) : b.cost ? moneyOf(Number(String(b.cost).replace(/,/g, "")), String(b.currency ?? "SGD").toUpperCase()) : null;
+        return {
+          id: keep?.id ?? `cover${++coverCount}`,
+          kind: String(b.kind),
+          name,
+          reference: b.reference ? String(b.reference).trim() : null,
+          phone: b.phone ? String(b.phone).trim() : null,
+          starts: (b.starts as string | null) ?? null,
+          ends: (b.ends as string | null) ?? null,
+          cost,
+          logged: keep?.logged ?? false,
+          note: b.note ? String(b.note).trim() : null,
+        };
+      };
+      if (what === "covers" && !other && method === "POST") {
+        if (member && (body.cost || body.currency)) return json(route, { detail: "only the trip's owner can do that" }, 403);
+        if (list.length >= 30) return json(route, { detail: "a trip keeps at most 30 covers and documents" }, 422);
+        const made = asCover(body);
+        if (typeof made === "string") return json(route, { detail: made }, 422);
+        state.covers[id] = [...list, made];
+        noteShared(`added ${made.name} to cover and documents`);
+        return json(route, seen(made), 201);
+      }
+      const found = list.find((c) => c.id === other);
+      if (what === "covers" && other && !found) return json(route, { detail: "no cover with that id" }, 404);
+      if (what === "covers" && found && log && method === "POST") {
+        if (member) return json(route, { detail: "only the trip's owner can do that" }, 403);
+        if (!found.cost) return json(route, { detail: "this cover has no cost to log" }, 422);
+        if (found.logged) return json(route, { detail: "this cost is already logged as an expense" }, 409);
+        found.logged = true;
+        state.coverItems[id] = [
+          ...(state.coverItems[id] ?? []),
+          { transaction_id: `cv-${found.id}`, day: "2026-09-28", counterparty: found.name, category: "Travel", amount: found.cost, home: homeOf(found.cost), linked: true },
+        ];
+        return json(route, found);
+      }
+      if (what === "covers" && found && method === "PUT") {
+        if (member && (body.cost || body.currency)) return json(route, { detail: "only the trip's owner can do that" }, 403);
+        const changed = asCover(body, found);
+        if (typeof changed === "string") return json(route, { detail: changed }, 422);
+        state.covers[id] = list.map((c) => (c === found ? changed : c));
+        noteShared(`changed ${changed.name} in cover and documents`);
+        return json(route, seen(changed));
+      }
+      if (what === "covers" && found && method === "DELETE") {
+        state.covers[id] = list.filter((c) => c !== found);
+        noteShared(`removed ${found.name} from cover and documents`);
+        return route.fulfill({ status: 204 });
+      }
     }
     const tripPacking = path.match(/^\/travel\/trips\/([^/]+)\/packing(\/suggest)?$/);
     if (tripPacking) {

@@ -9,7 +9,7 @@ home currency at the rate for the day it was spent.
 
 import re
 import secrets
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
@@ -28,6 +28,8 @@ from nexus.domain.ledger import Direction, User, UserId, same_person
 from nexus.domain.money import Money
 from nexus.domain.packing import Outlook, PackItem, clean_list, suggestions
 from nexus.domain.planning import paydays
+from nexus.domain.prep import Cover
+from nexus.domain.private import hide_private
 from nexus.domain.settle import (
     Debt,
     DebtKind,
@@ -59,7 +61,6 @@ from nexus.domain.trips import (
     clean_planned,
     clean_stops,
     describe_trip,
-    hide_private,
     home_amount,
     readiness,
     set_aside,
@@ -161,6 +162,8 @@ async def update_trip(
             hop_modes=current.hop_modes,
             split_evenly=current.split_evenly,
             not_split=current.not_split,
+            todos=current.todos,
+            prep_dismissed=current.prep_dismissed,
         )
         with suppress(InvalidInput):  # else the new dates leave them out: back to the hotels'
             trip = replace(trip, stops=clean_stops(trip, current.stops))
@@ -432,7 +435,8 @@ class TripView:
     # Bookings on the trip (its itinerary), and their cost in the home currency.
     bookings: list[Booking] = field(default_factory=list)
     booked: Money | None = None
-    # Booked but not logged yet, so not in what's spent.
+    # Booked but not logged yet, so not in what's spent. Covers (insurance, a visa) with
+    # a cost count here exactly as bookings do.
     booked_unlogged: Money | None = None
     # The budget less what's spent and what's booked but not logged.
     to_spend: Money | None = None
@@ -445,6 +449,8 @@ class TripView:
     # with each person (what they owe less what's owed them), in the home currency.
     paid_by_others: list[PaidByOther] = field(default_factory=list)
     balances: list[PersonBalance] = field(default_factory=list)
+    # Cover and documents on the Prep tab, oldest first, with their costs.
+    covers: list[Cover] = field(default_factory=list)
 
     @property
     def days_until(self) -> int:
@@ -603,19 +609,27 @@ async def _view(
         )
     async with uow() as tx:
         bookings = await tx.trips.list_bookings(user.id, trip_id=trip.id)
+        covers = await tx.trips.list_covers(user.id, trip.id)
     tz = ZoneInfo(user.timezone)
-    # A place to visit without a day isn't booked yet, so its cost isn't counted.
+    # Each cost, the day its rate is for, and the expense it was logged as. A place to
+    # visit without a day isn't booked yet, so its cost isn't counted; a cover's is.
     costed = [
-        (b, b.cost, b.created_at.astimezone(tz).date()) for b in bookings if b.cost and b.scheduled
+        (b.cost, b.created_at.astimezone(tz).date(), b.transaction_id)
+        for b in bookings
+        if b.cost and b.scheduled
+    ] + [
+        (c.cost, c.created_at.astimezone(tz).date(), c.logged_transaction_id)
+        for c in covers
+        if c.cost
     ]
-    found = await fx.rates_for(rates, home, ((c.currency, d) for _, c, d in costed))
+    found = await fx.rates_for(rates, home, ((cost.currency, d) for cost, d, _ in costed))
     booked = unlogged = Money.zero(home)
-    for b, cost, day in costed:
+    for cost, day, logged_as in costed:
         converted = fx.convert(cost, day, home, found).home
         if converted is None:
             continue
         booked = booked + converted
-        if b.transaction_id is None or b.transaction_id not in ids:
+        if logged_as is None or logged_as not in ids:
             unlogged = unlogged + converted
     spent = spending(trip, items, today, home)
     payments, balances = await balances_for(uow, rates, user, trip, found_spent, today)
@@ -646,6 +660,7 @@ async def _view(
         paid_by_others=payments,
         balances=balances,
         ready=readiness_of(trip, bookings),
+        covers=covers,
     )
 
 
@@ -690,10 +705,15 @@ async def to_settle(
 
 
 def plan_lines(
-    trip: Trip, bookings: list[Booking], ready: Readiness, status: TripStatus
+    trip: Trip,
+    bookings: list[Booking],
+    ready: Readiness,
+    status: TripStatus,
+    covers: Sequence[Cover] = (),
 ) -> list[str]:
     """The plan for chat, with no money in it: what's on the itinerary, the places still
-    to visit, stops, named days and what the trip still needs."""
+    to visit, stops, named days, the to-dos, cover and documents (never what they cost)
+    and what the trip still needs."""
     lines: list[str] = []
     on_days = [b for b in bookings if b.scheduled]
     places = [b for b in bookings if not b.scheduled]
@@ -718,6 +738,21 @@ def plan_lines(
             + "; ".join(f"{d:%a %d %b} {label}" for d, label in sorted(trip.day_labels.items()))
             + "."
         )
+    open_todos = [t for t in trip.todos if not t.done]
+    if open_todos:
+        lines.append(
+            "To do: "
+            + "; ".join(t.text + (f" (due {t.due:%a %d %b})" if t.due else "") for t in open_todos)
+            + (
+                f". {len(trip.todos) - len(open_todos)} done."
+                if len(open_todos) < len(trip.todos)
+                else "."
+            )
+        )
+    elif trip.todos:
+        lines.append(f"To do: all {len(trip.todos)} done.")
+    if covers:
+        lines.append("Cover and documents: " + "; ".join(c.describe() for c in covers) + ".")
     if ready.nights_without_stay and status is not TripStatus.FINISHED:
         nights = ", ".join(f"{n:%a %d %b}" for n in ready.nights_without_stay)
         lines.append(f"No place to stay on the itinerary yet for the night of: {nights}.")
@@ -779,7 +814,18 @@ def describe_view(view: TripView) -> list[str]:
                 f"To cover the budget by the trip, set aside about {a.suggested} on each of "
                 f"the {a.paydays_left} paydays before it."
             )
-    lines += plan_lines(trip, view.bookings, view.ready, view.status)
+    lines += plan_lines(trip, view.bookings, view.ready, view.status, view.covers)
+    costed = [c for c in view.covers if c.cost]
+    if costed:
+        lines.append(
+            "Cover costs (counted in what's booked): "
+            + "; ".join(
+                f"{c.name} {c.cost}, "
+                + ("logged as an expense" if c.logged_transaction_id else "not logged yet")
+                for c in costed
+            )
+            + "."
+        )
     if view.booked is not None:
         line = f"Booked: {view.booked}"
         if view.booked_unlogged and view.booked_unlogged.is_positive:

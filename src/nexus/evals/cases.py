@@ -17,6 +17,7 @@ from nexus.evals.checks import (
     CategoryIs,
     Changed,
     Check,
+    Covered,
     Deleted,
     Logged,
     Moved,
@@ -29,6 +30,7 @@ from nexus.evals.checks import (
     SharedBooked,
     SharedTripIs,
     TheyPaid,
+    TodoAdded,
     UpdatesAre,
 )
 
@@ -50,6 +52,8 @@ WRITES = (
     "split_bill",
     "split_trip_costs",
     "they_paid",
+    "add_trip_todo",
+    "add_trip_cover",
     "set_budget",
     "remove_budget",
     "add_bill",
@@ -835,7 +839,9 @@ CASES: tuple[Case, ...] = (
         "log",
         _t("set the Japan budget to 5000"),
         shared=True,
-        calls=(Call("update_trip"),),
+        # Refusing straight from list_trips (it says whose trip it is) is as good as trying
+        # update_trip and being refused: what matters is that nothing changes.
+        calls=(),
         forbid=("set_budget", "create_trip"),
         unchanged=True,
         confirms=False,
@@ -875,6 +881,43 @@ CASES: tuple[Case, ...] = (
         "log",
         _t("we're in Kyoto on 15 Dec"),
         calls=(Call("label_trip_day", {"day": Has("2026-12-15"), "label": Has("kyoto")}),),
+    ),
+    Case(
+        "trip-add-cover",
+        "log",
+        _t(
+            "add travel insurance for japan: Harbour Cover, SGD 89, policy TX-4471, "
+            "emergency +65 6123 4567"
+        ),
+        calls=(
+            Call(
+                "add_trip_cover",
+                {
+                    "kind": "insurance",
+                    "name": Has("harbour"),
+                    "reference": "TX-4471",
+                    "phone": Has("6123"),
+                    "cost": "89",
+                },
+            ),
+        ),
+        forbid=("log_expense", "add_to_itinerary", "update_trip"),
+        confirms=True,
+        checks=(
+            Covered(
+                "Harbour", kind="insurance", reference="TX-4471", phone="+6561234567", cost="89"
+            ),
+            NotLogged("89"),
+        ),
+    ),
+    Case(
+        "trip-add-todo-due",
+        "log",
+        _t("remind me to get yen two days before japan"),
+        calls=(Call("add_trip_todo", {"text": Has("yen"), "due": Has("2026-12-08")}),),
+        forbid=("update_trip", "add_to_itinerary", "log_expense"),
+        confirms=False,
+        checks=(TodoAdded("yen", due=date(2026, 12, 8)),),
     ),
     Case(
         "trip-nights-missing",

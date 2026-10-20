@@ -20,6 +20,7 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi.routing import APIRoute
 from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nexus.application.clock import utcnow
@@ -27,6 +28,7 @@ from nexus.application.users import RegisterUser, register_user
 from nexus.channels.web.security import authenticated, signed_in
 from nexus.domain.access import token_hash
 from nexus.domain.ledger import UserId
+from nexus.domain.prep import Cover, CoverDraft, CoverKind
 from nexus.infra.db.tables import trip_invites, users
 from nexus.infra.db.uow import SqlUnitOfWork
 from tests.fakes import NOW
@@ -55,7 +57,11 @@ MEMBER_ID, OUTSIDER_ID, PEER_B_ID, EX_ID, GUEST_A_ID, GUEST_B_ID = 811, 822, 833
 # reach anyone but the owner.
 BUDGET, SET_ASIDE, PLANNED = "4321.09", "1234.56", "777.77"
 DINNER_COST, TAXI, PAID_FOR_ME, B_COST = "987.65", "555.43", "321.09", "111.11"
-SECRETS = (BUDGET, SET_ASIDE, PLANNED, DINNER_COST, TAXI, PAID_FOR_ME, B_COST)
+COVER_COST = "246.81"  # what the trip's insurance cost
+SECRETS = (BUDGET, SET_ASIDE, PLANNED, DINNER_COST, TAXI, PAID_FOR_ME, B_COST, COVER_COST)
+COVER = {
+    "kind": "insurance", "name": "Harbour Cover", "reference": "TX-4471", "phone": "+65 6123 4567",
+}  # fmt: skip
 TRIP_A = {**TRIP, "budget": BUDGET, "set_aside": SET_ASIDE, "planned": {"Dining Out": PLANNED}}
 IMAGE = base64.b64encode(b"a made-up screenshot").decode()
 OWNER_NOTE = "Owner-only: pay the deposit"  # in the owner's expenses, not on the trip
@@ -87,6 +93,7 @@ class Scene:
     b_booking: str = ""  # a booking on B with a cost
     taxi: str = ""  # the owner's expense on A
     payment: str = ""  # something a friend paid for, on A
+    cover: str = ""  # the insurance on A, with a cost
     invite: str = ""  # an open invite to A (its id)
     owner_id: str = ""  # the app owner's user id
     ids: dict[str, str] = field(default_factory=dict)  # name -> user id, on trip A
@@ -153,6 +160,13 @@ async def build_scene(world: World) -> Scene:
     )
     assert paid.status_code == 201, paid.text
     scene.payment = paid.json()["id"]
+    made_cover = await owner.send(
+        "POST", f"{scene.a}/covers", {**COVER, "cost": COVER_COST, "currency": "SGD"}
+    )
+    assert made_cover.status_code == 201, made_cover.text
+    scene.cover = made_cover.json()["id"]
+    todo = {"todos": [{"text": "Get yen", "due": "2026-12-08"}]}
+    assert (await owner.send("PUT", f"{scene.a}/todos", todo)).status_code == 200
     split = await owner.send("POST", f"{scene.a}/split", {"all": True})
     assert split.status_code == 200 and split.json()["done"], split.text
     scene.owner_id = next(m["id"] for m in (await owner.get(f"{scene.a}/members")).json())
@@ -192,7 +206,7 @@ async def scene(world: World) -> Scene:
 # What a trip request could touch, one table at a time.
 TRIP_TABLES = (
     "trips", "trip_bookings", "trip_members", "trip_invites", "trip_activity", "trip_links",
-    "trip_paid_by_others", "trip_shares", "transactions", "splits", "settlements",
+    "trip_paid_by_others", "trip_covers", "trip_shares", "transactions", "splits", "settlements",
     "transaction_revisions", "transaction_sources", "categories", "wallets", "users",
     "budgets", "chat_log", "memories", "plans", "department_runs",
 )  # fmt: skip
@@ -370,6 +384,13 @@ CALLS: dict[tuple[str, str], Call] = {
     ("POST", f"{T}/photo"): ("", {"choice": "off"}),
     ("PUT", f"{T}/packing"): ("", PACKING),
     ("POST", f"{T}/packing/suggest"): ("", None),
+    ("PUT", f"{T}/todos"): ("", {"todos": [{"text": "Get yen", "due": "2026-12-08"}]}),
+    ("POST", f"{T}/prep/dismiss"): ("", {"key": "money"}),
+    ("DELETE", f"{T}/prep/dismiss/{{key}}"): ("", None),
+    ("POST", f"{T}/covers"): ("", COVER),
+    ("PUT", f"{T}/covers/{{cover_id}}"): ("", COVER),
+    ("DELETE", f"{T}/covers/{{cover_id}}"): ("", None),
+    ("POST", f"{T}/covers/{{cover_id}}/log"): ("", None),
     ("GET", f"{T}/weather"): ("", None),
     ("GET", f"{T}/share"): ("", None),
     ("POST", f"{T}/share"): ("", {}),
@@ -452,6 +473,8 @@ def ids_of(scene: Scene, **changes: str) -> dict[str, str]:
         "day": "2026-12-12",
         "transaction_id": scene.taxi,
         "payment_id": scene.payment,
+        "cover_id": scene.cover,
+        "key": "money",
         "invite_id": scene.invite,
         "member_id": scene.ids["Sam"],
         "start_id": scene.lunch,
@@ -601,7 +624,13 @@ async def test_the_matrix_control_the_owner_gets_through_every_route(scene: Scen
     calls and none is stopped by the access check or by the request's shape."""
     ordered = sorted(
         classified(scene),
-        key=lambda r: (r[1] == "DELETE", r[2] == f"{T}", r[2].endswith("/members/{member_id}")),
+        key=lambda r: (
+            r[1] == "DELETE",
+            r[2] == f"{T}",
+            r[2].endswith("/members/{member_id}"),
+            # The owner's edit of the insurance sends no cost, so log it first.
+            (r[1], r[2]) == ("PUT", f"{T}/covers/{{cover_id}}"),
+        ),
     )
     for _, method, template, _ in ordered:
         got = await call(scene.owner, scene, method, template)
@@ -631,6 +660,12 @@ GUEST_MAY = {
     ("PUT", f"{T}/getting-around"),
     ("PUT", f"{T}/packing"),
     ("POST", f"{T}/packing/suggest"),
+    ("PUT", f"{T}/todos"),
+    ("POST", f"{T}/prep/dismiss"),
+    ("DELETE", f"{T}/prep/dismiss/{{key}}"),
+    ("POST", f"{T}/covers"),
+    ("PUT", f"{T}/covers/{{cover_id}}"),
+    ("DELETE", f"{T}/covers/{{cover_id}}"),
     ("GET", f"{T}/weather"),
     ("GET", f"{T}/ideas"),
     ("GET", f"{T}/places"),
@@ -762,11 +797,13 @@ async def owners_money(scene: Scene) -> Any:
     assert page["trip"]["budget"]["amount"].startswith(BUDGET)
     assert next(b for b in page["bookings"] if b["id"] == scene.dinner)["cost"] is not None
     assert page["paid_by_others"] and page["spending"]["spent"]
+    assert next(c for c in page["covers"] if c["id"] == scene.cover)["cost"] is not None
     return {
         key: page[key]
         for key in ("spending", "saving", "owed", "items", "paid_by_others", "balances", "to_split")
     } | {
         "budget": page["trip"]["budget"],
+        "cover": [c for c in page["covers"] if c["id"] == scene.cover],
         "costs": {
             b["id"]: b["cost"] for b in page["bookings"] if b["id"] in (scene.dinner, scene.lunch)
         },
@@ -825,10 +862,13 @@ async def test_nothing_a_member_can_read_or_write_carries_the_owners_money(scene
         )
         assert back.status_code == 200
         fresh = (await who.send("POST", f"{scene.a}/bookings", PLAN)).json()["id"]
+        fresh_cover = (await who.send("POST", f"{scene.a}/covers", COVER)).json()["id"]
         # Reads first, then the writes, then leaving the trip.
         order = sorted(keys, key=lambda k: (k[0] != "GET", k[0] == "DELETE", "members" in k[1]))
         for method, template in order:
             changes = {"booking_id": fresh} if (method, template) == ("DELETE", B) else {}
+            if (method, template) == ("DELETE", f"{T}/covers/{{cover_id}}"):
+                changes = {"cover_id": fresh_cover}
             if template.endswith("/members/{member_id}"):
                 break  # leaving is tried last, below
             if template == "/api/travel/photos/{photo_id}":
@@ -863,6 +903,135 @@ async def test_a_members_page_has_the_plan_and_no_trace_of_the_money(scene: Scen
     listed = await scene.member.get("/api/travel/trips")
     assert [t["destination"] for t in listed.json()] == ["Tokyo"]
     assert "Osaka" not in listed.text and "9999.99" not in listed.text
+    # The Prep tab is the plan's: to-dos and cover are there, the cover's cost is not.
+    assert [(t["text"], t["due"]) for t in page["todos"]] == [("Get yen", "2026-12-08")]
+    [cover] = page["covers"]
+    assert (cover["name"], cover["reference"], cover["phone"]) == (
+        "Harbour Cover", "TX-4471", "+65 6123 4567",
+    )  # fmt: skip
+    assert (cover["cost"], cover["logged"]) == (None, False)
+    assert page["prep_suggestions"]
+
+
+async def cover_cost_in_database(scene: Scene) -> Any:
+    return await one(
+        scene.engine, "SELECT cost_amount FROM trip_covers WHERE id = :id", id=UUID(scene.cover)
+    )
+
+
+async def test_other_people_cannot_read_or_change_the_trips_to_dos_and_cover(scene: Scene) -> None:
+    """Someone with no part in trip A (an outsider, a member of the owner's other trip,
+    someone taken off, a guest of the other trip) finds no to-dos or cover, whatever they
+    send, and not one row moves. The owner's own other trip is no way in either."""
+    a, b = scene.a, scene.b
+    before = await snapshot(scene.engine)
+    cost = await cover_cost_in_database(scene)
+    for who in (scene.outsider, scene.peer_b, scene.ex, scene.guest_b):
+        page = await who.get(a)
+        assert (page.status_code, page.json()) == (404, {"detail": "no trip with that id"})
+        for method, path, body in [
+            ("PUT", f"{a}/todos", {"todos": [{"text": "Hacked"}]}),
+            ("POST", f"{a}/covers", COVER),
+            ("PUT", f"{a}/covers/{scene.cover}", {**COVER, "name": "Hacked"}),
+            ("DELETE", f"{a}/covers/{scene.cover}", None),
+            ("POST", f"{a}/covers/{scene.cover}/log", None),
+            ("POST", f"{a}/prep/dismiss", {"key": "money"}),
+            ("DELETE", f"{a}/prep/dismiss/money", None),
+        ]:
+            got = await who.send(method, path, body)
+            want = {403, 404} if who is scene.guest_b else {404}
+            assert got.status_code in want, (who, method, path, got.status_code)
+            assert (
+                "Harbour" not in got.text and COVER_COST not in got.text and "yen" not in got.text
+            )
+    # A trip they ARE on is no way to the cover of trip A, nor is the owner's other trip.
+    for who, path in ((scene.peer_b, b), (scene.owner, b)):
+        for method, tail, body in [
+            ("PUT", f"/covers/{scene.cover}", COVER),
+            ("DELETE", f"/covers/{scene.cover}", None),
+        ]:
+            got = await who.send(method, path + tail, body)
+            assert got.status_code == 404, (who, method, tail)
+    assert (await scene.owner.send("POST", f"{b}/covers/{scene.cover}/log")).status_code == 404
+    assert changed(before, await snapshot(scene.engine)) == {}
+    assert await cover_cost_in_database(scene) == cost
+    page = (await scene.owner.get(a)).json()
+    assert [c["name"] for c in page["covers"]] == ["Harbour Cover"]
+    assert [t["text"] for t in page["todos"]] == ["Get yen"]
+    assert (await scene.owner.get(b)).json()["covers"] == []
+
+    # The database itself refuses a cover on someone else's trip.
+    stranger = await one(
+        scene.engine, "SELECT id FROM users WHERE telegram_user_id = :t", t=OUTSIDER_ID
+    )
+    with pytest.raises(IntegrityError):
+        async with scene.uow() as tx:
+            await tx.trips.insert_cover(
+                Cover(
+                    uuid4(),
+                    UserId(stranger),
+                    UUID(scene.trip_a),
+                    CoverDraft(CoverKind.OTHER, "Planted"),
+                    None,
+                    NOW,
+                    NOW,
+                )
+            )
+
+
+async def test_a_member_and_a_guest_edit_the_to_dos_and_never_see_a_cover_cost(
+    scene: Scene,
+) -> None:
+    """To-dos and cover are the plan's, so a member or a guest reads and edits them like
+    packing. What a cover cost, and the expense it was logged as, are the owner's: they
+    are never in what they read, can't be set by them, and survive their edits."""
+    a = scene.a
+    cost = await cover_cost_in_database(scene)
+    for who, name in ((scene.member, "Sam"), (scene.guest_a, "Gus")):
+        put = await who.send("PUT", f"{a}/todos", {"todos": [{"text": f"{name}'s to-do"}]})
+        assert put.status_code == 200, put.text
+        assert [t["text"] for t in put.json()["todos"]] == [f"{name}'s to-do"]
+        assert_no_money(put, "PUT todos")
+        mine = await who.send("POST", f"{a}/covers", {"kind": "visa", "name": f"{name}'s visa"})
+        assert mine.status_code == 201 and mine.json()["cost"] is None
+        edit = await who.send(
+            "PUT", f"{a}/covers/{scene.cover}", {**COVER, "phone": "+65 6000 0000"}
+        )
+        assert edit.status_code == 200, edit.text
+        assert (edit.json()["cost"], edit.json()["logged"]) == (None, False)
+        assert_no_money(edit, "PUT cover")
+        page = await who.get(a)
+        assert_no_money(page, "trip page")
+        seen = next(c for c in page.json()["covers"] if c["id"] == scene.cover)
+        assert (seen["cost"], seen["logged"], seen["phone"]) == (None, False, "+65 6000 0000")
+        # Not to set, not to log, whatever the spelling.
+        for body in ({**COVER, "cost": "1"}, {**COVER, "currency": "USD"}, {**COVER, "cost": " "}):
+            if body.get("cost") == " ":
+                assert (await who.send("POST", f"{a}/covers", body)).status_code == 201
+                continue
+            assert (await who.send("POST", f"{a}/covers", body)).status_code == 403
+            assert (await who.send("PUT", f"{a}/covers/{scene.cover}", body)).status_code == 403
+        logged = await who.send("POST", f"{a}/covers/{scene.cover}/log")
+        assert logged.status_code == 403
+        assert logged.json()["detail"] == (GUEST_MESSAGE if who is scene.guest_a else MONEY_MESSAGE)
+    # The owner's cost is as they left it, nothing was logged, and the ledger is untouched.
+    assert await cover_cost_in_database(scene) == cost
+    assert (
+        await one(
+            scene.engine,
+            "SELECT logged_transaction_id FROM trip_covers WHERE id = :id",
+            id=UUID(scene.cover),
+        )
+        is None
+    )
+    page = (await scene.owner.get(a)).json()
+    mine = next(c for c in page["covers"] if c["id"] == scene.cover)
+    assert mine["cost"]["amount"].startswith(COVER_COST) and mine["logged"] is False
+    # What they changed is in the activity, without a figure.
+    feed = (await scene.owner.get(f"{a}/activity")).text
+    assert "to-do list" in feed and "cover and documents" in feed
+    for secret in SECRETS:
+        assert secret not in feed
 
 
 # --- 4. the owner's ledger stays the owner's ----------------------------------------------------
@@ -1683,6 +1852,9 @@ async def test_the_shared_link_is_still_read_only_and_still_hides_the_money(scen
     assert page["bookings"] and all(set(b) == SHARED_BOOKING_KEYS for b in page["bookings"])
     for secret in (*SECRETS, "1111.11", "HK-REF-9", "R-1", "Bring cash", "Taxi"):
         assert secret not in seen.text, secret
+    # The Prep tab is not on the link either: no to-dos, no cover, no policy number.
+    for word in ("Get yen", "todo", "cover", "Harbour", "TX-4471", "6123 4567"):
+        assert word not in seen.text, word
     assert list(money_keys(page)) == []
     assert "Ann" not in seen.text  # who is going is not on the link either
 

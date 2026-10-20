@@ -24,6 +24,7 @@ from nexus.domain.bookings import (
     booking_reminders,
     matching_trips,
     passport_reminder,
+    todo_reminders,
 )
 from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.ledger import User, UserId
@@ -433,9 +434,9 @@ async def delete_booking(uow: UnitOfWork, user_id: UserId, booking_id: UUID) -> 
 
 async def remind(uow: UowFactory, user: User, *, now: datetime) -> int:
     """Sends the travel reminders now due, each once: the passport and visa about a
-    month before a trip abroad, online check-in about a day before a flight, and
-    the hotel's address on the morning of check-in. Quiet hours apply as for any
-    message."""
+    month before a trip abroad, online check-in about a day before a flight, the
+    hotel's address on the morning of check-in, and a to-do with a due date (not done)
+    the day before. Quiet hours apply as for any message."""
     local = now.astimezone(ZoneInfo(user.timezone))
     today = local.date()
     sent = 0
@@ -449,6 +450,9 @@ async def remind(uow: UowFactory, user: User, *, now: datetime) -> int:
         ]
         for b in bookings:
             due += booking_reminders(b, local.replace(tzinfo=None))
+        for t in trips:
+            if t.status(today) is not TripStatus.FINISHED:
+                due += todo_reminders(t, local.replace(tzinfo=None))
         for reminder in due:
             if await tx.trips.claim_reminder(user.id, reminder.key, now):
                 await tx.jobs.enqueue(

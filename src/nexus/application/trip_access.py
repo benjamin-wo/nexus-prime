@@ -21,6 +21,7 @@ from nexus.domain.access import new_token, token_hash
 from nexus.domain.bookings import Booking
 from nexus.domain.errors import Forbidden, InvalidInput, NotFound
 from nexus.domain.ledger import Role, User, UserId
+from nexus.domain.prep import Cover
 from nexus.domain.trip_access import (
     DIGEST_EVERY,
     INVITE_TTL,
@@ -34,6 +35,7 @@ from nexus.domain.trip_access import (
     clean_summary,
     digest_key,
     digest_text,
+    without_cover_money,
     without_money,
     without_trip_money,
 )
@@ -110,6 +112,7 @@ class PlanView:
     status: TripStatus
     bookings: list[Booking]  # without costs
     ready: Readiness  # with no budget check
+    covers: list[Cover]  # without costs or the expense each was logged as
 
 
 async def plan_view(
@@ -120,6 +123,7 @@ async def plan_view(
         if trip is None:
             raise NotFound("no trip with that id")
         bookings = await uow.trips.list_bookings(owner_id, trip_id=trip_id)
+        covers = await uow.trips.list_covers(owner_id, trip_id)
     today = trip_cases.local_today(viewer, now)
     ready = trip_cases.readiness_of(trip, bookings)
     return PlanView(
@@ -129,6 +133,7 @@ async def plan_view(
         bookings=[without_money(b) for b in bookings],
         # The budget isn't theirs to see, so it isn't one of the things left to do.
         ready=Readiness(ready.nights_without_stay, ready.has_transport, False),
+        covers=[without_cover_money(c) for c in covers],
     )
 
 
@@ -254,7 +259,7 @@ def describe_plan(plan: PlanView) -> list[str]:
     """A member's trip for chat: the plan only, with no money in it."""
     return [
         describe_trip(plan.trip, plan.today) + ".",
-        *trip_cases.plan_lines(plan.trip, plan.bookings, plan.ready, plan.status),
+        *trip_cases.plan_lines(plan.trip, plan.bookings, plan.ready, plan.status, plan.covers),
     ]
 
 

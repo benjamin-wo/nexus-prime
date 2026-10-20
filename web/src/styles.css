@@ -967,19 +967,12 @@ a.ask-chip { display: inline-flex; align-items: center; text-decoration: none; }
 .stay-card .place-thumb { width: 72px; }
 .stay-card .place-thumb img { width: 72px; height: 72px; }
 .weather-card .card-head { flex-wrap: wrap; }
-.weather-range { margin: 0 0 var(--space-3); font-size: 1.5rem; font-weight: 600; }
 .weather-days { list-style: none; margin: 0 0 var(--space-3); padding: 0 0 var(--space-1); display: flex; gap: var(--space-2); overflow-x: auto; }
-.weather-day { flex: none; min-width: 72px; display: grid; justify-items: center; gap: 2px; padding: var(--space-2); border-radius: var(--radius-inner); background: var(--bg-input); text-align: center; }
 .weather-icon { font-size: 1.375rem; line-height: 1.2; }
 .weather-day .is-wet { color: var(--accent-text); font-weight: 600; }
 .weather-day:has(.is-wet) .weather-icon { color: var(--sky-accent); }
 .meter-sky span { background: var(--sky-accent); }
 .packing-card .meter { margin-bottom: var(--space-3); }
-.packing-list { list-style: none; margin: 0 0 var(--space-3); padding: 0; display: grid; gap: 2px; }
-.packing-list li { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); min-height: 40px; }
-.packing-list label { display: flex; align-items: center; gap: var(--space-2); min-width: 0; flex: 1; cursor: pointer; overflow-wrap: anywhere; }
-.packing-list input { width: 18px; height: 18px; accent-color: var(--accent); flex: none; }
-.packing-list li.is-done span { color: var(--text-muted); text-decoration: line-through; }
 .packing-add { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .packing-add .input { flex: 1 1 180px; min-width: 0; }
 .photo-menu { position: relative; }
@@ -1080,11 +1073,6 @@ html.keyboard .bottom-nav, html.keyboard .trip-fab-button, html.keyboard .trip-f
 .trip-menu-list .btn { justify-content: flex-start; background: transparent; border-color: transparent; }
 .trip-menu-list .caption { margin: 0; padding: 0 var(--space-2); max-width: 220px; }
 .eyebrow { margin: 0; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-muted); }
-.to-sort { display: grid; gap: var(--space-3); border-color: var(--status-warning-border); }
-.to-sort-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
-.to-sort-list li { display: flex; align-items: center; gap: var(--space-3); }
-.to-sort-list .wrap { flex: 1; min-width: 0; }
-.to-sort-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--status-warning); flex: none; }
 .sorted-line { margin: 0; color: var(--emerald-accent); font-size: 0.875rem; }
 .gap-line {
   display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin: 0;
@@ -1445,7 +1433,6 @@ html.keyboard .bottom-nav, html.keyboard .trip-fab-button, html.keyboard .trip-f
 .prep-notes textarea.input { font-size: 16px; min-height: 120px; resize: vertical; }
 .prep-notes-actions { display: flex; justify-content: flex-end; }
 @media (pointer: coarse) {
-  .to-sort-list .btn-small, .packing-list .btn-small { min-height: 44px; }
   .planned-form > .btn, .prep-notes-actions .btn { min-height: 44px; }
 }
 @media (max-width: 720px) {
@@ -1562,11 +1549,6 @@ html.keyboard .bottom-nav, html.keyboard .trip-fab-button, html.keyboard .trip-f
 .photo-credit { max-width: 260px; padding: var(--space-2) var(--space-3); border-radius: var(--radius-inner); background: rgba(9, 9, 11, 0.8); color: #fff; font-size: 0.8125rem; line-height: 1.4; text-decoration: none; overflow-wrap: anywhere; }
 a.photo-credit:hover { text-decoration: underline; }
 
-/* A quiet icon-only button, 40px (44px on touch), like the packing list's remove. */
-.packing-remove { flex: none; min-width: 40px; min-height: 40px; padding: 0; }
-@media (pointer: coarse) {
-  .packing-remove { min-width: 44px; min-height: 44px; }
-}
 
 /* Shared trips: joining and guests */
 /* A guest's app: a slim header over their trips, with no rail and no bottom bar. */
@@ -1627,11 +1609,12 @@ a.photo-credit:hover { text-decoration: underline; }
    its height from that slide) and the days sit side by side to swipe between. */
 .day-track {
   display: flex; align-items: flex-start; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory;
-  overscroll-behavior-x: contain; scrollbar-width: none; transition: height var(--t-standard);
+  overscroll-behavior-x: contain; scrollbar-width: none;
 }
 .day-track::-webkit-scrollbar { display: none; }
+.day-track[data-easing] { transition: height var(--t-standard); }
 .day-slide { flex: 0 0 100%; min-width: 0; align-self: start; scroll-snap-align: start; scroll-snap-stop: always; }
-@media (prefers-reduced-motion: reduce) { .day-track { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .day-track[data-easing] { transition: none; } }
 /* Getting around and directions: in the trip menu's sheet, or as a quiet line under the map. */
 .ways-sheet .trip-ways { display: grid; margin: 0; gap: var(--space-4); }
 /* Each picker is a label over a full-width select, so the two line up. */
@@ -2117,3 +2100,81 @@ body:has(.sheet-backdrop) .main-viewport { overflow: hidden; }
 .research-sources-panel p { margin: 0; }
 @media (prefers-reduced-motion: reduce) { .research-chev { transition: none; } }
 .trips-foot { margin: var(--space-6) 0 0; text-align: center; }
+
+/* Prep tab v2 */
+/* Getting ready, Cover and documents and Packing list share one row look: rows in a white card, divided by hairlines. */
+.prep-card > .card-head { margin-bottom: var(--space-3); }
+.prep-rows { list-style: none; margin: 0; padding: 0; display: grid; }
+.prep-rows > li + li { border-top: 1px solid var(--border-subtle); }
+.prep-row { display: flex; align-items: center; gap: var(--space-3); min-height: 56px; padding: var(--space-2) 0; }
+.prep-icon { flex: none; width: 24px; display: grid; place-items: center; color: var(--text-muted); }
+.prep-icon.is-warn { color: var(--status-warning); }
+.prep-main { flex: 1 1 0; min-width: 0; display: grid; gap: 2px; text-align: left; }
+.prep-title { font-weight: 600; color: var(--text-primary); overflow-wrap: anywhere; }
+.prep-sub { font-size: 0.8125rem; line-height: 1.4; color: var(--text-muted); overflow-wrap: anywhere; }
+.prep-sub.is-overdue { color: var(--status-warning); font-weight: 600; }
+.prep-card .sorted-line { margin: 0 0 var(--space-3); }
+.prep-card > .caption { margin: var(--space-2) 0 0; }
+.prep-card .btn-small { min-height: 40px; }
+.prep-actions { flex: none; display: inline-flex; align-items: center; gap: var(--space-1); }
+@media (max-width: 520px) {
+  .prep-suggestion { flex-wrap: wrap; }
+  .prep-suggestion .prep-main { flex: 1 1 calc(100% - 36px); }
+  .prep-suggestion .prep-actions { flex: 1 1 100%; padding-left: 36px; }
+}
+@media (pointer: coarse) { .prep-card .btn-small, .prep-act { min-height: 44px; } }
+
+/* A to-do or a thing to pack: a round checkbox named by its text. */
+.prep-check {
+  appearance: none; -webkit-appearance: none; flex: none; width: 24px; height: 24px; margin: 0; border-radius: 50%;
+  border: 2px solid var(--text-muted); background: var(--bg-card); cursor: pointer;
+  transition: background var(--t-micro), border-color var(--t-micro);
+}
+.prep-check:checked {
+  border-color: var(--accent);
+  background: var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 12.5l4 4L18 8'/%3E%3C/svg%3E") center / 16px no-repeat;
+}
+.prep-check:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.prep-todo .prep-title { font-weight: 500; cursor: pointer; }
+.prep-todo.is-done .prep-title { color: var(--text-muted); text-decoration: line-through; }
+.prep-todo.is-done .prep-sub { color: var(--text-muted); }
+/* A quiet icon-only button, 40px (44px on touch). */
+.prep-remove { flex: none; min-width: 40px; min-height: 40px; padding: 0; color: var(--text-muted); }
+@media (pointer: coarse) { .prep-remove { min-width: 44px; min-height: 44px; } }
+
+/* Cover and documents */
+.prep-cover > .confirm-box { margin: 0 0 var(--space-3); }
+.prep-open { appearance: none; background: none; border: 0; padding: var(--space-2) 0; min-height: 44px; font: inherit; color: inherit; cursor: pointer; border-radius: 8px; }
+.prep-open:hover .prep-title { color: var(--accent-text); }
+@media (hover: none) { .prep-open:hover .prep-title { color: inherit; } }
+.prep-open:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.prep-cost { flex: none; display: grid; justify-items: end; gap: var(--space-1); text-align: right; }
+.prep-logged { display: inline-flex; align-items: center; gap: 4px; font-size: 0.8125rem; font-weight: 600; color: var(--emerald-accent); }
+/* Call and Copy sit under the name, their words lined up with it (the icon column is 24px, the gap 12px, a ghost button pulls 12px left). */
+.prep-acts { display: flex; flex-wrap: wrap; gap: 0 var(--space-2); padding: 0 0 var(--space-2) 24px; }
+.prep-acts .btn { text-decoration: none; }
+.prep-add-cover { margin: var(--space-2) 0 0 -12px; min-height: 44px; }
+
+/* The to-do form under the list */
+.prep-add { display: grid; gap: var(--space-2); margin-top: var(--space-3); }
+.prep-rows ~ .prep-add { padding-top: var(--space-3); border-top: 1px solid var(--border-subtle); }
+.prep-add-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-2); }
+.prep-add-text { flex: 1 1 200px; min-width: 0; width: auto; }
+.prep-add-date { flex: 0 1 170px; }
+.prep-add .btn { min-height: 44px; }
+.prep-add .caption { margin: 0; }
+.packing-card .packing-add { margin-top: var(--space-3); }
+.packing-add .btn { min-height: 44px; }
+
+/* The cover sheet */
+.prep-sheet-foot { display: flex; align-items: center; gap: var(--space-2); }
+.prep-sheet-foot .btn { min-height: 44px; }
+.prep-sheet-foot .btn-primary { margin-left: auto; }
+/* A quiet button's own padding would push its text in from the fields' edge. */
+.prep-sheet-foot .btn-ghost { margin-left: calc(-1 * var(--space-4)); }
+.prep-sheet textarea.input { resize: vertical; }
+.day-pill[aria-checked="true"] { background: var(--accent-soft); color: var(--accent-text); border-color: var(--accent-border); font-weight: 600; }
+
+/* Weather: the same card, its days as quiet tiles */
+.weather-range { margin: 0 0 var(--space-3); font-size: 1.25rem; font-weight: 600; }
+.weather-day { flex: none; min-width: 72px; display: grid; justify-items: center; gap: 2px; padding: var(--space-2) var(--space-3); border-radius: var(--radius-inner); border: 1px solid var(--border-subtle); background: var(--bg-card); text-align: center; }

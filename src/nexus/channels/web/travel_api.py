@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from nexus.application import bookings as booking_cases
 from nexus.application import destination_photos as photo_cases
 from nexus.application import places as place_cases
+from nexus.application import prep as prep_cases
 from nexus.application import routes as route_cases
 from nexus.application import travel_research as research_cases
 from nexus.application import trip_access as access_cases
@@ -36,10 +37,28 @@ from nexus.domain.ledger import User, UserId
 from nexus.domain.money import Money
 from nexus.domain.packing import MAX_ITEM, MAX_ITEMS, PackItem
 from nexus.domain.places import Place
+from nexus.domain.prep import (
+    MAX_COVER_NAME,
+    MAX_COVER_NOTE,
+    MAX_COVER_PHONE,
+    MAX_COVER_REFERENCE,
+    MAX_TODO,
+    MAX_TODOS,
+    Cover,
+    CoverDraft,
+    CoverKind,
+    Suggestion,
+    Todo,
+)
 from nexus.domain.routes import Mode
 from nexus.domain.settle import Debt as SettleDebt
 from nexus.domain.settle import PaidByOther, PersonBalance
-from nexus.domain.trip_access import TripRole, without_money, without_trip_money
+from nexus.domain.trip_access import (
+    TripRole,
+    without_cover_money,
+    without_money,
+    without_trip_money,
+)
 from nexus.domain.trips import (
     MAX_COMPANIONS,
     MAX_DAY_LABEL,
@@ -97,6 +116,73 @@ def _photo(photo: DestinationPhoto | None) -> PhotoOut | None:
 class PackItemOut(Model):
     text: str
     done: bool
+
+
+class TodoOut(Model):
+    id: str
+    text: str
+    due: date | None
+    done: bool
+
+
+class CoverOut(Model):
+    """Cover and documents: a policy, a visa, another document. The reference is the
+    user's own (never a card or passport number). ``cost`` and ``logged`` are the owner's
+    money: null and false for a member of the trip."""
+
+    id: UUID
+    kind: str  # insurance, visa, document, other
+    name: str
+    reference: str | None
+    phone: str | None
+    starts: date | None
+    ends: date | None
+    cost: MoneyOut | None  # counted in the trip's booked total until it is logged
+    logged: bool  # its cost is in the ledger
+    note: str | None
+
+
+class PrepSuggestionOut(Model):
+    key: str  # what "Not needed" sends
+    text: str
+    sub: str
+    action: str  # "add_cover" opens the cover form; "add_todo" adds `text` as a to-do
+
+
+class PrepOut(Model):
+    """The Prep tab's lists, as the person who opened the trip sees them."""
+
+    todos: list[TodoOut]
+    covers: list[CoverOut]
+    prep_suggestions: list[PrepSuggestionOut]
+
+
+def _todo(t: Todo) -> TodoOut:
+    return TodoOut(id=t.id, text=t.text, due=t.due, done=t.done)
+
+
+def _cover(c: Cover, *, member: bool = False) -> CoverOut:
+    """``member``: for someone on the owner's trip, with what the cover cost and the
+    expense it was logged as removed. Its reference and phone stay."""
+    if member:
+        c = without_cover_money(c)
+    d = c.draft
+    return CoverOut(
+        id=c.id,
+        kind=d.kind.value,
+        name=d.name,
+        reference=d.reference,
+        phone=d.phone,
+        starts=d.starts,
+        ends=d.ends,
+        cost=_m(d.cost),
+        logged=c.logged_transaction_id is not None,
+        note=d.note,
+    )
+
+
+def _suggestion(s: Suggestion) -> PrepSuggestionOut:
+    return PrepSuggestionOut(key=s.key, text=s.text, sub=s.sub, action=s.action)
 
 
 class StopOut(Model):
@@ -489,6 +575,14 @@ class TripDetailOut(Model):
     paid_by_others: list[PaidByOtherOut] = Field(default_factory=list)  # oldest first
     # Where the user stands with each person (open items only), A to Z.
     balances: list[BalanceOut] = Field(default_factory=list)
+    # The Prep tab. To-dos and cover and documents are plan data that anyone on the trip
+    # reads and edits; a member's covers have `cost` null and `logged` false. A cover with
+    # a cost counts in `booked` (and `booked_unlogged` until it is logged) exactly as a
+    # booking's does, and the Money tab's "Bookings paid" lists it from `covers`.
+    # `prep_suggestions` are worked out in code and leave out what is done or dismissed.
+    todos: list[TodoOut] = Field(default_factory=list)
+    covers: list[CoverOut] = Field(default_factory=list)
+    prep_suggestions: list[PrepSuggestionOut] = Field(default_factory=list)
 
 
 def map_key(settings: Settings) -> str | None:
@@ -506,11 +600,11 @@ def _detail(
     web: WebRuntime | None = None,
     photos: dict[UUID, DestinationPhoto] | None = None,
     suggested: tuple[Stop, ...] = (),
-    owner_name: str | None = None,
+    owner: User | None = None,
 ) -> TripDetailOut:
     s, a = view.spending, view.saving
     return TripDetailOut(
-        trip=_trip(view.trip, view.today, photos, owner_name=owner_name),
+        trip=_trip(view.trip, view.today, photos, owner_name=owner.display_name if owner else None),
         spending=SpendingOut(
             spent=money(s.spent),
             left=_m(s.left),
@@ -585,6 +679,13 @@ def _detail(
         just_mine=list(view.just_mine),
         paid_by_others=[_paid(p) for p in view.paid_by_others],
         balances=[_balance(b) for b in view.balances],
+        todos=[_todo(t) for t in view.trip.todos],
+        covers=[_cover(c) for c in view.covers],
+        prep_suggestions=(
+            [_suggestion(x) for x in prep_cases.suggestions_for(view.trip, owner, view.covers)]
+            if owner
+            else []
+        ),
     )
 
 
@@ -622,6 +723,11 @@ def _plan_detail(
         map_key=map_key(web.settings) if web.places else None,
         ideas=web.ideas is not None,
         suggested_stops=_stops(suggested),
+        todos=[_todo(t) for t in view.trip.todos],
+        covers=[_cover(c, member=True) for c in view.covers],
+        prep_suggestions=[
+            _suggestion(x) for x in prep_cases.suggestions_for(view.trip, opened.owner, view.covers)
+        ],
     )
 
 
@@ -729,7 +835,7 @@ async def next_trip(auth: Auth, web: Runtime) -> TripDetailOut | None:
 async def _detailed(view: trip_cases.TripView, web: WebRuntime, user: User) -> TripDetailOut:
     suggested = await place_cases.suggested_stops(web.places, user.id, view.trip, view.bookings)
     photos = await photo_cases.photos_of(web.uow(), [view.trip])
-    return _detail(view, web, photos, suggested, owner_name=user.display_name)
+    return _detail(view, web, photos, suggested, owner=user)
 
 
 @router.get("/trips/{trip_id}")
@@ -1802,6 +1908,178 @@ async def suggest_packing(trip_id: str, auth: TripAuth, web: Runtime) -> TripOut
     )
     await _note(web, opened, "added suggestions to the packing list")
     return await _with_photo(web, trip, today, **_viewer(opened))
+
+
+# --- the Prep tab: to-dos, cover and documents ----------------------------------------------
+
+# Everything here is for anyone on the trip, owner, member or guest, as packing is: it is
+# plan data. What a cover cost is the owner's money, so a member never sees it, never sets
+# it and can't log it.
+
+
+async def _prep_out(
+    web: WebRuntime, opened: access_cases.Opened, trip_id: UUID, trip: Trip | None = None
+) -> PrepOut:
+    owner = opened.access.owner_id
+    current = trip or await trip_cases.get_trip(web.uow(), owner, trip_id)
+    covers = await prep_cases.list_covers(web.uow(), owner, trip_id)
+    member = not opened.access.is_owner
+    return PrepOut(
+        todos=[_todo(t) for t in current.todos],
+        covers=[_cover(c, member=member) for c in covers],
+        prep_suggestions=[
+            _suggestion(x) for x in prep_cases.suggestions_for(current, opened.owner, covers)
+        ],
+    )
+
+
+class TodoIn(Model):
+    id: str | None = Field(None, max_length=16)  # left out for a new one
+    text: str = Field(max_length=MAX_TODO)
+    due: date | None = None
+    done: bool = False
+
+
+class TodosIn(Model):
+    todos: list[TodoIn] = Field(max_length=MAX_TODOS)
+
+
+@router.put("/trips/{trip_id}/todos")
+async def set_todos(trip_id: str, body: TodosIn, auth: TripAuth, web: Runtime) -> PrepOut:
+    """The whole to-do list, ticks and due dates included (like the packing list). A to-do
+    due tomorrow gets one reminder in the morning, unless it is done."""
+    opened = await _open(web, auth, trip_id)
+    trip = await prep_cases.set_todos(
+        web.uow(),
+        opened.owner,
+        _uuid(trip_id),
+        [Todo(t.id or "", t.text, t.due, t.done) for t in body.todos],
+        now=web.clock(),
+    )
+    await _note(web, opened, "changed the to-do list")
+    return await _prep_out(web, opened, trip.id, trip)
+
+
+class DismissIn(Model):
+    key: str = Field(max_length=20)
+
+
+@router.post("/trips/{trip_id}/prep/dismiss")
+async def dismiss_suggestion(
+    trip_id: str, body: DismissIn, auth: TripAuth, web: Runtime
+) -> PrepOut:
+    """ "Not needed" for a prep suggestion (one of: {keys}). Safe to repeat."""
+    opened = await _open(web, auth, trip_id)
+    trip = await prep_cases.dismiss(
+        web.uow(), opened.owner, _uuid(trip_id), body.key, now=web.clock()
+    )
+    await _note(web, opened, "marked a prep suggestion as not needed")
+    return await _prep_out(web, opened, trip.id, trip)
+
+
+@router.delete("/trips/{trip_id}/prep/dismiss/{key}")
+async def restore_suggestion(trip_id: str, key: str, auth: TripAuth, web: Runtime) -> PrepOut:
+    """Takes "Not needed" back: the suggestion is offered again (if it still applies)."""
+    opened = await _open(web, auth, trip_id)
+    trip = await prep_cases.dismiss(
+        web.uow(), opened.owner, _uuid(trip_id), key, now=web.clock(), undo=True
+    )
+    await _note(web, opened, "brought back a prep suggestion")
+    return await _prep_out(web, opened, trip.id, trip)
+
+
+class CoverIn(Model):
+    """A cover or document. A cost may be in any currency (the home one if left out); only
+    the trip's owner may give one."""
+
+    kind: CoverKind
+    name: str = Field(min_length=1, max_length=MAX_COVER_NAME)
+    reference: str | None = Field(None, max_length=MAX_COVER_REFERENCE)
+    phone: str | None = Field(None, max_length=MAX_COVER_PHONE)
+    starts: date | None = None
+    ends: date | None = None
+    cost: str | None = Field(None, max_length=32)
+    currency: str | None = Field(None, pattern="^[A-Za-z]{3}$")
+    note: str | None = Field(None, max_length=MAX_COVER_NOTE)
+
+
+def _cover_draft(user: User, body: CoverIn) -> CoverDraft:
+    cost = None
+    if body.cost is not None and body.cost.strip():
+        cost = Money.of(body.cost.replace(",", ""), (body.currency or user.home_currency).upper())
+    return CoverDraft(
+        kind=body.kind,
+        name=body.name,
+        reference=body.reference,
+        phone=body.phone,
+        starts=body.starts,
+        ends=body.ends,
+        cost=cost,
+        note=body.note,
+    )
+
+
+def _no_cover_cost_for_members(opened: access_cases.Opened, body: CoverIn) -> None:
+    """What a cover cost is the owner's money: a member can't set it."""
+    if not opened.access.is_owner and (
+        (body.cost is not None and body.cost.strip()) or body.currency
+    ):
+        raise Forbidden(access_cases.OWNER_ONLY)
+
+
+@router.post("/trips/{trip_id}/covers", status_code=201)
+async def add_cover(trip_id: str, body: CoverIn, auth: TripAuth, web: Runtime) -> CoverOut:
+    """Adds cover or a document. A member can't give a cost (403)."""
+    opened = await _open(web, auth, trip_id)
+    _no_cover_cost_for_members(opened, body)
+    cover = await prep_cases.add_cover(
+        web.uow(), opened.owner, _uuid(trip_id), _cover_draft(opened.owner, body), now=web.clock()
+    )
+    await _note(web, opened, f"added {cover.name} to cover and documents")
+    return _cover(cover, member=not opened.access.is_owner)
+
+
+@router.put("/trips/{trip_id}/covers/{cover_id}")
+async def edit_cover(
+    trip_id: str, cover_id: str, body: CoverIn, auth: TripAuth, web: Runtime
+) -> CoverOut:
+    """Changes a cover. A member can't give a cost (403), and the cover keeps the cost
+    it had."""
+    opened = await _open(web, auth, trip_id)
+    _no_cover_cost_for_members(opened, body)
+    cover = await prep_cases.edit_cover(
+        web.uow(),
+        opened.owner,
+        _uuid(trip_id),
+        _uuid(cover_id, "cover"),
+        _cover_draft(opened.owner, body),
+        now=web.clock(),
+        keep_cost=not opened.access.is_owner,
+    )
+    await _note(web, opened, f"changed {cover.name} in cover and documents")
+    return _cover(cover, member=not opened.access.is_owner)
+
+
+@router.delete("/trips/{trip_id}/covers/{cover_id}", status_code=204)
+async def delete_cover(trip_id: str, cover_id: str, auth: TripAuth, web: Runtime) -> None:
+    """Forgets a cover. An expense logged for it stays in the ledger."""
+    opened = await _open(web, auth, trip_id)
+    cover = await prep_cases.delete_cover(
+        web.uow(), opened.owner, _uuid(trip_id), _uuid(cover_id, "cover")
+    )
+    await _note(web, opened, f"removed {cover.name} from cover and documents")
+
+
+@router.post("/trips/{trip_id}/covers/{cover_id}/log")
+async def log_cover(trip_id: str, cover_id: str, auth: Auth, web: Runtime) -> CoverOut:
+    """Records the cover's cost as an expense (Travel, to the cover's name) that counts
+    towards the trip. Owner only. Nexus pays nothing: this only records. 409 when it is
+    logged already, 422 when the cover has no cost."""
+    opened = await _open(web, auth, trip_id, owner_only=True)
+    cover, _ = await prep_cases.log_cover(
+        web.uow(), opened.owner, _uuid(trip_id), _uuid(cover_id, "cover"), now=web.clock()
+    )
+    return _cover(cover)
 
 
 class WeatherDayOut(Model):
