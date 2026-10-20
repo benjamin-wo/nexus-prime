@@ -415,6 +415,20 @@ export function PlaceLine({ booking }: { booking: Booking }) {
   );
 }
 
+/** A linked place's warning ("Usually closed on Thursdays") on its own, for a folded plan row:
+ * worth seeing without opening the plan. */
+export function PlaceWarning({ booking }: { booking: Booking }) {
+  const places = useContext(Context);
+  const warning = places?.enabled ? places.linked.get(booking.id)?.warning : null;
+  if (!warning) return null;
+  return (
+    <span className="place-warning" role="note">
+      <Icon name="warning" size={16} className="icon-inline" />
+      {warning}
+    </span>
+  );
+}
+
 /** Find places on Google Maps (and in guides and articles) and keep them as Ideas. It looks
  * over the whole trip, in one stop, or near a day. It opens in its own sheet, "Find ideas"
  * (closed with ``onClose``), or, with ``inSheet``, sits inline in the sheet it is already in. */

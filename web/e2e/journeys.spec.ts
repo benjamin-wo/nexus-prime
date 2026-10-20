@@ -1294,6 +1294,22 @@ const tripAdd = (page: Page) => page.locator(".trip-fab-button, .trip-add-deskto
 /** The Itinerary card on the Plan tab. */
 const itineraryOf = (page: Page) => page.getByRole("region", { name: "Itinerary" });
 
+/** A tap on a plan row opens it (a tap while the days are still sliding is ignored, so it is
+ * retried until the row is open); Change in the open row opens the editor. */
+async function openEntry(page: Page, title: string) {
+  const itinerary = itineraryOf(page);
+  const row = itinerary.getByRole("button", { name: `Open ${title}`, exact: true });
+  await expect(async () => {
+    if ((await row.getAttribute("aria-expanded", { timeout: 1000 })) !== "true") await row.click({ timeout: 1000 });
+    await expect(row).toHaveAttribute("aria-expanded", "true", { timeout: 1000 });
+  }).toPass();
+}
+
+async function editEntry(page: Page, title: string) {
+  await openEntry(page, title);
+  await itineraryOf(page).getByRole("button", { name: `Change ${title}`, exact: true }).click();
+}
+
 /** The trip's add sheet, opened from the open tab's +. */
 async function openAddSheet(page: Page, trip: string) {
   await tripAdd(page).click();
@@ -1438,20 +1454,30 @@ test("plans are added to a trip's itinerary by hand, day by day, and changed", a
   const itinerary = itineraryOf(page);
   await expect(itinerary.getByRole("list", { name: /^Day 3/ })).toContainText("Dinner at Sushi Ten");
   await expect(itinerary.getByRole("list", { name: /^Day 3/ })).toContainText("19:00");
-  await expect(itinerary).toContainText("1-2-3 Ginza");
   await expect.poll(() => state.plans[0]).toMatchObject({ name: "Dinner at Sushi Ten", day: "2026-11-12", at: "19:00", address: "1-2-3 Ginza" });
 
   // Tap the entry to change it, in place: no separate Edit button or menu, so the timeline reads cleanly.
   await itinerary.getByRole("navigation", { name: "Days" }).getByRole("button", { name: /12/ }).click();
   await expect(itinerary.getByRole("button", { name: "Edit Dinner at Sushi Ten" })).toHaveCount(0);
-  await itinerary.getByRole("button", { name: "Change Dinner at Sushi Ten" }).click();
+  // A tap opens the row (address, Change) without the editor; a second tap folds it.
+  const dinner = itinerary.getByRole("button", { name: "Open Dinner at Sushi Ten", exact: true });
+  await expect(itinerary.getByRole("button", { name: "Change Dinner at Sushi Ten" })).toHaveCount(0);
+  await openEntry(page, "Dinner at Sushi Ten");
+  await expect(dinner).toHaveAttribute("aria-expanded", "true");
+  await expect(itinerary.getByRole("form", { name: "Change the entry" })).toHaveCount(0);
+  await expect(itinerary.getByRole("button", { name: "Change Dinner at Sushi Ten" })).toBeVisible();
+  await expect(itinerary).toContainText("1-2-3 Ginza");
+  await dinner.click({ position: { x: 6, y: 3 } }); // the open part below takes its own taps
+  await expect(dinner).toHaveAttribute("aria-expanded", "false");
+  await expect(itinerary.getByRole("button", { name: "Change Dinner at Sushi Ten" })).toHaveCount(0);
+  await editEntry(page, "Dinner at Sushi Ten");
   const edit = itinerary.getByRole("form", { name: "Change the entry" });
   await edit.getByLabel("Time", { exact: true }).fill("20:00");
   await edit.getByRole("button", { name: "Save" }).click();
   await expect(itinerary.getByRole("list", { name: /^Day 3/ })).toContainText("20:00");
 
   page.once("dialog", (d) => void d.accept());
-  await itinerary.getByRole("button", { name: "Change Dinner at Sushi Ten" }).click();
+  await editEntry(page, "Dinner at Sushi Ten");
   await itinerary.getByRole("form", { name: "Change the entry" }).getByRole("button", { name: "Remove" }).click();
   await expect(itinerary).not.toContainText("Dinner at Sushi Ten");
   await expect.poll(() => state.plans).toEqual([]);
@@ -1494,7 +1520,6 @@ test("a booking screenshot goes on the itinerary with its reference", async ({ p
   const state = await fakeApi(page);
   await addTrip(page, "Tokyo", "2026-11-10", "2026-11-19");
   const itinerary = itineraryOf(page);
-  await expect(itinerary).toContainText("Booked on Acme Air · Ref ZK4P7Q"); // from email
   const sheet = await openAddSheet(page, "Tokyo");
   await sheet.getByLabel("Screenshot or photo").setInputFiles({
     name: "booking.png",
@@ -1504,11 +1529,15 @@ test("a booking screenshot goes on the itinerary with its reference", async ({ p
   const imported = page.getByRole("status", { name: "Imported from a screenshot" });
   await expect(imported).toContainText("Added to your Tokyo trip");
   await expect(imported).toContainText("Does everything look right?");
+  await openEntry(page, "Hotel Kumo, 3 nights");
   await expect(itinerary).toContainText("Booked on Agoda · Ref 9876543210");
   await expect(itinerary.getByRole("button", { name: "Copy reference 9876543210" })).toBeVisible();
   await imported.getByRole("button", { name: "Looks right" }).click();
   await expect(imported).toHaveCount(0);
   await expect.poll(() => state.plans[0]).toMatchObject({ hotel: "Hotel Kumo", reference: "9876543210" });
+  // The flight's own booking (from an email) is there when its row is opened.
+  await openEntry(page, "ZZ12 SIN → NRT");
+  await expect(itinerary).toContainText("Booked on Acme Air · Ref ZK4P7Q");
 });
 
 test("the trip overview: getting ready, places to visit, and labelled days", async ({ page }) => {
@@ -1613,6 +1642,9 @@ test("places from Google Maps: saved, linked, rated, and flagged when usually cl
   await expect(page.getByRole("list", { name: "Ideas" })).toHaveCount(0);
   await expect.poll(() => state.plans[0]).toMatchObject({ day: "2026-11-12", place_id: "fakePlaceNoodle01" });
   await openTab(page, "Plan");
+  // Seen on the folded plan, and once (with the place's details) when it's opened.
+  await expect(itineraryOf(page).getByRole("note")).toHaveText("Usually closed on Thursdays");
+  await openEntry(page, "Hanok Noodle Bar");
   await expect(itineraryOf(page).getByRole("note")).toHaveText("Usually closed on Thursdays");
 
   // A place added by hand is linked to Google Maps from its row.
@@ -1693,6 +1725,7 @@ test("a trip's weather, packing list, cover photo and stop photos", async ({ pag
   await itinerary.getByRole("navigation", { name: "Days" }).getByRole("button", { name: /3/ }).click();
   // The photo stays folded until the plan's details are opened.
   await expect(itinerary.getByRole("img", { name: "Hanok Noodle Bar" })).toHaveCount(0);
+  await openEntry(page, "Hanok Noodle Bar");
   await itinerary.getByRole("button", { name: "Show details for Hanok Noodle Bar" }).click();
   await expect(itinerary.getByRole("img", { name: "Hanok Noodle Bar" })).toBeVisible();
   await expect(itinerary.getByRole("link", { name: "Photo by A. Photographer, Google Maps" })).toHaveAttribute("href", "https://maps.example/u/2");
@@ -2121,7 +2154,7 @@ test("a day rearranged: dragged, moved by keyboard or menu, with what to watch o
 
   // Or from the entry's editor, without dragging: the temple after it on day 3.
   await itinerary.getByRole("navigation", { name: "Days" }).getByRole("button", { name: /11/ }).click();
-  await page.getByRole("button", { name: "Change Old Temple" }).click({ position: { x: 6, y: 3 } });
+  await editEntry(page, "Old Temple");
   await page.getByRole("button", { name: "Move to…" }).click();
   await page.getByRole("dialog", { name: "Put on a day" }).getByRole("region", { name: "All days" }).getByRole("button", { name: /^Day 3 ·/ }).click();
   await expect.poll(() => state.moves.at(-1)).toBe("pl1>2026-11-12@pl3");
@@ -2141,9 +2174,8 @@ test("a day rearranged: dragged, moved by keyboard or menu, with what to watch o
   await expect(day2).toContainText("Hanok Noodle Bar");
 
   // An end time and a link, from the entry's editor.
-  // The row's own "Find on Google Maps" link sits across its middle: tap the row at its edge,
-  // once the day has made room for the noodle bar (rows move down as it eases to its height).
-  const changeTea = page.getByRole("button", { name: "Change Tea house" });
+  // Tap the row once the day has made room for the noodle bar (rows move down as it eases to its height).
+  const changeTea = page.getByRole("button", { name: "Open Tea house" });
   let was = "";
   await expect
     .poll(async () => {
@@ -2153,7 +2185,7 @@ test("a day rearranged: dragged, moved by keyboard or menu, with what to watch o
       return still;
     }, { intervals: [150] })
     .toBe(true);
-  await changeTea.click({ position: { x: 6, y: 3 } });
+  await editEntry(page, "Tea house");
   const edit = page.getByRole("form", { name: "Change the entry" });
   await expect(edit.getByLabel("Name")).toHaveValue("Tea house");
   await edit.getByLabel("Until").fill("15:30");
@@ -2162,6 +2194,7 @@ test("a day rearranged: dragged, moved by keyboard or menu, with what to watch o
   await edit.getByRole("button", { name: "Save" }).click();
   await expect.poll(() => state.plans.find((p) => p.id === "pl2")).toMatchObject({ ends_at: "15:30", link: "https://tea.example.com/book" });
   await expect(page.locator("#entry-pl2 .time-pill")).toHaveText("14:00–15:30");
+  await openEntry(page, "Tea house");
   const link = page.getByRole("link", { name: "Open the link for Tea house" });
   await expect(link).toHaveAttribute("href", "https://tea.example.com/book");
   await expect(link).toHaveAttribute("rel", /noopener/);
@@ -2318,7 +2351,7 @@ test("trip forms don't jump when a field is tapped", async ({ page }, info) => {
   }
 
   // So does a plan opened to change in place, by tapping it.
-  await itineraryOf(page).getByRole("button", { name: "Change ZZ12 SIN → NRT" }).click();
+  await editEntry(page, "ZZ12 SIN → NRT");
   const change = itineraryOf(page).getByRole("form", { name: "Change the entry" });
   await expect(change).toBeVisible();
   await expect(change).not.toHaveAttribute("data-reveal", /.*/);
@@ -2807,7 +2840,7 @@ test("an idea is put on a day from Ideas, shows on that day of Plan, and is take
   await expect(itineraryOf(page).getByRole("heading", { name: /^Day 3/ })).toContainText("1 plan");
 
   // Its day picker has the way back: take it off, and it is an idea again.
-  await itineraryOf(page).getByRole("button", { name: "Change Lantern Alley" }).click({ position: { x: 6, y: 3 } });
+  await editEntry(page, "Lantern Alley");
   await itineraryOf(page).getByRole("button", { name: "Move to…" }).click();
   const back = page.getByRole("dialog", { name: "Put on a day" });
   await expect(back.getByRole("region", { name: "All days" }).getByRole("button", { name: /^Day 3 ·/ })).toContainText("Here now");

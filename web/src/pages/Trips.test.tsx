@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -413,5 +413,103 @@ describe("the trip page's header", () => {
     expect(within(hero).getByRole("button", { name: "People on this trip" })).toHaveTextContent("People");
     expect(within(hero).queryByRole("button", { name: "Trip options" })).toBeNull();
     expect(within(hero).getByText("Shared by Alex T.")).toBeInTheDocument();
+  });
+});
+
+describe("a plan row on Plan", () => {
+  const dinner = {
+    id: "b1", trip_id: "t2", kind: "activity", title: "Dinner at Sushi Ten", provider: null, starts: "2027-05-03", ends: null, segments: [], hotel: null,
+    address: "1-2-3 Ginza", check_in: null, check_out: null, name: "Dinner at Sushi Ten", day: "2027-05-03", at: "19:00", note: "Ask for the counter",
+    reference: "SUSHI42", booked_via: null, category: "Food", place_id: null, scheduled: true, cost: null, logged: false, manual: true,
+  } as unknown as Booking;
+  const handlers = () => ({
+    "GET /me": () => me("member"),
+    "GET /travel/trips/t2": () => planOnly(shared, { bookings: [dinner] }),
+    "GET /travel/trips/t2/members": () => [owner, sam],
+    "GET /travel/trips/t2/activity": () => [] as TripActivity[],
+  });
+  const open = () => screen.findByRole("button", { name: "Open Dinner at Sushi Ten" });
+
+  it("opens on a tap, showing the address, note and reference, and not the editor", async () => {
+    mockApi(handlers());
+    renderTrip("/travel/trips/t2?day=2027-05-03");
+    const row = await open();
+    expect(row).toHaveAttribute("aria-expanded", "false");
+    // Folded: only the time, name and kind; the details wait.
+    expect(screen.queryByText("1-2-3 Ginza")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Change Dinner at Sushi Ten" })).toBeNull();
+    await userEvent.setup().click(row);
+    expect(row).toHaveAttribute("aria-expanded", "true");
+    expect(row).toHaveAttribute("aria-controls");
+    expect(screen.getByText("1-2-3 Ginza")).toBeInTheDocument();
+    expect(screen.getByText("Ask for the counter")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy reference SUSHI42" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Change Dinner at Sushi Ten" })).toBeInTheDocument();
+    expect(screen.queryByRole("form", { name: "Change the entry" })).toBeNull();
+  });
+
+  it("opens the editor from Change, for a member too", async () => {
+    mockApi(handlers());
+    renderTrip("/travel/trips/t2?day=2027-05-03");
+    const user = userEvent.setup();
+    await user.click(await open());
+    await user.click(screen.getByRole("button", { name: "Change Dinner at Sushi Ten" }));
+    const form = await screen.findByRole("form", { name: "Change the entry" });
+    expect(within(form).getByLabelText("Name")).toHaveValue("Dinner at Sushi Ten");
+    expect(screen.queryByRole("button", { name: "Open Dinner at Sushi Ten" })).toBeNull();
+  });
+
+  it("folds on a second tap", async () => {
+    mockApi(handlers());
+    renderTrip("/travel/trips/t2?day=2027-05-03");
+    const user = userEvent.setup();
+    const row = await open();
+    await user.click(row);
+    await user.click(row);
+    expect(row).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: "Change Dinner at Sushi Ten" })).toBeNull();
+    expect(screen.queryByText("1-2-3 Ginza")).toBeNull();
+  });
+
+  it("opens from the keyboard, the toggle being a real button", async () => {
+    mockApi(handlers());
+    renderTrip("/travel/trips/t2?day=2027-05-03");
+    const user = userEvent.setup();
+    const row = await open();
+    row.focus();
+    await user.keyboard("{Enter}");
+    expect(row).toHaveAttribute("aria-expanded", "true");
+    await user.keyboard(" ");
+    expect(row).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("ignores a press that moved: a swipe, not a tap", async () => {
+    mockApi(handlers());
+    renderTrip("/travel/trips/t2?day=2027-05-03");
+    const row = await open();
+    fireEvent.pointerDown(row, { clientX: 100, clientY: 50, pointerId: 1 });
+    fireEvent.click(row, { clientX: 120, clientY: 50, detail: 1 });
+    expect(row).toHaveAttribute("aria-expanded", "false");
+    // A press that stayed put is a tap.
+    fireEvent.pointerDown(row, { clientX: 100, clientY: 50, pointerId: 1 });
+    fireEvent.click(row, { clientX: 103, clientY: 52, detail: 1 });
+    expect(row).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("ignores a tap while the days are scrolling", async () => {
+    mockApi(handlers());
+    const { container } = renderTrip("/travel/trips/t2?day=2027-05-03");
+    const row = await open();
+    const track = container.querySelector(".day-track") as HTMLElement;
+    fireEvent.scroll(track);
+    expect(track).toHaveAttribute("data-scrolling", "true");
+    fireEvent.pointerDown(row, { clientX: 100, clientY: 50, pointerId: 1 });
+    fireEvent.click(row, { clientX: 100, clientY: 50, detail: 1 });
+    expect(row).toHaveAttribute("aria-expanded", "false");
+    // It settles, and a tap opens the row again.
+    await waitFor(() => expect(track).not.toHaveAttribute("data-scrolling"));
+    fireEvent.pointerDown(row, { clientX: 100, clientY: 50, pointerId: 1 });
+    fireEvent.click(row, { clientX: 100, clientY: 50, detail: 1 });
+    expect(row).toHaveAttribute("aria-expanded", "true");
   });
 });
