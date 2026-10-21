@@ -1499,6 +1499,51 @@ test("a research plan is started from a stock and read with its chart and source
   await expect(cite).toHaveAttribute("rel", /noopener/);
 });
 
+test("a plan can be kept fresh from its page, and the list tags it", async ({ page }) => {
+  const state = await fakeApi(page);
+  state.planStarted = true;
+  await page.goto("/investment/plans/p1");
+  // The price the plan was written with, and when it was from.
+  await expect(page.getByText("Price 129.50", { exact: true })).toBeVisible();
+  await expect(page.locator(".plan-price")).toContainText("Close of");
+  const fresh = page.getByRole("region", { name: "Keep this plan fresh" });
+  await expect(fresh).toContainText("Nexus re-runs it when the price moves a lot, after earnings, or once a week.");
+  const toggle = fresh.getByRole("checkbox", { name: "Keep this plan fresh" });
+  await expect(toggle).not.toBeChecked();
+  await toggle.check();
+  await expect.poll(() => state.planKeepFresh).toBe(true);
+  await expect(toggle).toBeChecked();
+  await page.locator(".page-head").getByRole("link", { name: "Plans", exact: true }).click();
+  await expect(page.getByRole("link", { name: /AMD: Wait for a dip to buy/ })).toContainText("Fresh");
+  // The finished plan is never tagged.
+  await expect(page.getByRole("link", { name: /MSFT: Keep holding/ })).not.toContainText("Fresh");
+  // Off again: the tag goes.
+  await page.getByRole("link", { name: /AMD: Wait for a dip to buy/ }).click();
+  await page.getByRole("checkbox", { name: "Keep this plan fresh" }).uncheck();
+  await expect.poll(() => state.planKeepFresh).toBe(false);
+  await page.locator(".page-head").getByRole("link", { name: "Plans", exact: true }).click();
+  await expect(page.getByRole("link", { name: /AMD: Wait for a dip to buy/ })).not.toContainText("Fresh");
+});
+
+test("a refreshed plan links back to the one it replaced, and the old one to the new", async ({ page }) => {
+  const state = await fakeApi(page);
+  state.planStarted = true;
+  state.planRefreshed = true;
+  await page.goto("/investment/plans/p1");
+  await page.getByRole("link", { name: /^Refreshed from the plan of/ }).click();
+  await expect(page).toHaveURL(/\/investment\/plans\/p2$/);
+  // The old plan says it was refreshed, can't be kept fresh, and points forward.
+  await expect(page.getByRole("region", { name: "How it's going" })).toContainText("Refreshed");
+  await expect(page.getByRole("checkbox", { name: "Keep this plan fresh" })).toHaveCount(0);
+  await page.getByRole("link", { name: "A newer plan replaced this one" }).click();
+  await expect(page).toHaveURL(/\/investment\/plans\/p1$/);
+  // In the list the old plan is labelled, not scored.
+  await page.locator(".page-head").getByRole("link", { name: "Plans", exact: true }).click();
+  const list = page.getByRole("list", { name: "Plans" });
+  await expect(list.getByRole("link", { name: /AMD: Wait for a pullback/ })).toContainText("Refreshed");
+  await expect(page.getByRole("region", { name: "Track record" }).getByLabel("Plan results")).toContainText("Hit target1");
+});
+
 /** Adds a trip from the Travel page with just where and when; the currency is found
  * from the place. ``more`` fills the optional fields. */
 async function addTrip(page: Page, where: string, from: string, to: string, more?: (form: Locator) => Promise<void>) {

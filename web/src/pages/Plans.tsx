@@ -2,7 +2,17 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type PointerEvent, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
-import { api, type PlanBody, type PlanBrief, type PlanDetail, type PlanOdds, type PlanRecord, type PlanStep } from "../api";
+import {
+  api,
+  type PlanBody,
+  type PlanBrief,
+  type PlanDetail,
+  type PlanOdds,
+  type PlanRecord,
+  type PlanStep,
+  setPlanKeepFresh,
+} from "../api";
+import { PriceWhen } from "../components/PriceWhen";
 import { formatDate, formatShortDate } from "../format";
 
 const usd = (amount: string | number) =>
@@ -11,6 +21,8 @@ const usd = (amount: string | number) =>
 /** Every plan the research team has written, newest first. */
 /** Where a plan stands: open, or how it ended. */
 export function PlanStatus({ plan }: { plan: PlanBrief }) {
+  // Replaced by its own refresh: closed, never scored, and shown whether or not it was followed.
+  if (plan.status === "refreshed") return <span className="badge status-refreshed">🔄 Refreshed</span>;
   if (!plan.followed) return null;
   const result = plan.result_percent !== null ? ` ${Number(plan.result_percent) > 0 ? "+" : ""}${plan.result_percent}%` : "";
   const label =
@@ -26,6 +38,12 @@ export function PlanStatus({ plan }: { plan: PlanBrief }) {
             ? "⏳ Open, bought"
             : "⏳ Open, waiting to buy";
   return <span className={`badge status-${plan.status}`}>{label}</span>;
+}
+
+/** A small tag on an open plan that Nexus makes again by itself. */
+export function FreshTag({ plan }: { plan: PlanBrief }) {
+  if (plan.status !== "open" || !plan.keep_fresh) return null;
+  return <span className="badge badge-fresh">Fresh</span>;
 }
 
 function TrackRecord() {
@@ -113,7 +131,10 @@ export function PlansPage() {
                     <span className="muted">{p.reason}</span>
                   </span>
                   <span className="caption">
-                    <PlanStatus plan={p} />
+                    <span className="plan-tags">
+                      <PlanStatus plan={p} />
+                      <FreshTag plan={p} />
+                    </span>
                     <br />
                     {formatShortDate(p.created_at)}
                   </span>
@@ -319,7 +340,9 @@ function Following({ brief }: { brief: PlanBrief }) {
       ? brief.entered_on
         ? "It's being followed after each US close: you'll get a message if it reaches its target or its stop, or runs out."
         : "It's being followed after each US close: you'll get a message when it dips into the buy zone, and again at its target or stop."
-      : `It finished on ${formatShortDate(brief.outcome_day!, "UTC")}${brief.outcome_price ? ` at ${usd(brief.outcome_price)}` : ""}.`;
+      : brief.status === "refreshed"
+        ? "Nexus made a newer plan to replace it, so this one isn't scored."
+        : `It finished on ${formatShortDate(brief.outcome_day!, "UTC")}${brief.outcome_price ? ` at ${usd(brief.outcome_price)}` : ""}.`;
   return (
     <section className="card following" aria-labelledby="following">
       <div className="card-head">
@@ -333,6 +356,66 @@ function Following({ brief }: { brief: PlanBrief }) {
         </label>
       )}
     </section>
+  );
+}
+
+/** The switch that has Nexus make an open plan again by itself when it goes stale. The change shows
+ * at once and is put back, with the reason, if the server refuses it. */
+export function KeepFresh({ brief }: { brief: PlanBrief }) {
+  const client = useQueryClient();
+  const [pending, setPending] = useState<boolean | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  if (brief.status !== "open") return null;
+  const on = pending ?? brief.keep_fresh;
+  async function toggle() {
+    setError(null);
+    setPending(!on);
+    try {
+      await setPlanKeepFresh(brief.id, !on);
+    } catch (e) {
+      setPending(null);
+      setError(e instanceof Error ? e.message : "Couldn't change that. Try again.");
+    }
+    await Promise.all([
+      client.invalidateQueries({ queryKey: ["plan", brief.id] }),
+      client.invalidateQueries({ queryKey: ["plans"] }),
+    ]);
+    setPending(null);
+  }
+  return (
+    <section className="card keep-fresh" aria-label="Keep this plan fresh">
+      <label className="toggle">
+        <input
+          type="checkbox"
+          checked={on}
+          disabled={pending !== null}
+          aria-describedby={`keep-fresh-${brief.id}`}
+          onChange={() => void toggle()}
+        />{" "}
+        Keep this plan fresh
+      </label>
+      <p className="caption" id={`keep-fresh-${brief.id}`}>
+        Nexus re-runs it when the price moves a lot, after earnings, or once a week.
+      </p>
+      {error && (
+        <p className="error-text" role="alert">
+          {error}
+        </p>
+      )}
+    </section>
+  );
+}
+
+/** A plan that was replaced points to the plan that replaced it, found in the plans list (the
+ * same query as the Plans page, so it is usually already there). */
+function NewerPlan({ id }: { id: string }) {
+  const plans = useQuery({ queryKey: ["plans"], queryFn: () => api<PlanBrief[]>("/investments/plans") });
+  const newer = plans.data?.find((p) => p.refreshed_from?.id === id);
+  if (!newer) return null;
+  return (
+    <p className="caption plan-trail">
+      <Link to={`/investment/plans/${newer.id}`}>A newer plan replaced this one</Link>
+    </p>
   );
 }
 
@@ -411,12 +494,26 @@ export function PlanPage() {
             )}
           </p>
           <h1>{plan ? `${plan.symbol} plan` : "Plan"}</h1>
+          {data && plan && data.brief.price !== null && (
+            <p className="plan-price">
+              <strong className="num">Price {usd(data.brief.price)}</strong>
+              <PriceWhen kind={data.brief.price_kind} at={data.brief.price_at} day={plan.as_of} />
+            </p>
+          )}
           {data && plan && (
             <p className="muted">
               Closing price {usd(plan.close)} on {formatShortDate(plan.as_of, "UTC")} · made {formatDate(data.brief.created_at)}
               {data.brief.expired && " · expired: ask for a fresh one"}
             </p>
           )}
+          {data?.brief.refreshed_from && (
+            <p className="caption plan-trail">
+              <Link to={`/investment/plans/${data.brief.refreshed_from.id}`}>
+                Refreshed from the plan of {formatShortDate(data.brief.refreshed_from.created_at)}
+              </Link>
+            </p>
+          )}
+          {data?.brief.status === "refreshed" && <NewerPlan id={data.brief.id} />}
         </div>
       </div>
       {detail.isLoading && <p className="state">Loading…</p>}
@@ -448,12 +545,19 @@ export function PlanPage() {
               </p>
             )}
             <p>{plan.summary}</p>
+            {plan.notes?.map((note) => (
+              <p key={note} className="callout" role="note">
+                ⚠️ {note}
+              </p>
+            ))}
             {plan.incomplete && plan.incomplete.length > 0 && (
               <p className="callout" role="note">
                 ⚠️ The write-up is missing {plan.incomplete.join(" and ")} this time; the prices and game plan are complete.
               </p>
             )}
           </section>
+
+          <KeepFresh brief={data.brief} />
 
           <Following brief={data.brief} />
 
