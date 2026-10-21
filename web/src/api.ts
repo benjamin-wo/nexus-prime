@@ -664,7 +664,7 @@ export type PlanDetail = {
   plan: PlanBody;
   closes: { day: string; close: string }[];
   /** The user's newest plan that replaced this one (a refresh, or a plan asked for by hand over a kept-fresh one). */
-  replaced_by?: { id: string; created_at: string } | null;
+  replaced_by: { id: string; created_at: string } | null;
 };
 
 /** Turn Keep fresh on or off for an open plan (`PUT /investments/plans/{id}/keep-fresh`, 204). */

@@ -406,12 +406,8 @@ export function KeepFresh({ brief }: { brief: PlanBrief }) {
   );
 }
 
-/** A plan that was replaced points to the plan that replaced it, found in the plans list (the
- * same query as the Plans page, so it is usually already there). */
-function NewerPlan({ id }: { id: string }) {
-  const plans = useQuery({ queryKey: ["plans"], queryFn: () => api<PlanBrief[]>("/investments/plans") });
-  const newer = plans.data?.find((p) => p.refreshed_from?.id === id);
-  if (!newer) return null;
+/** A plan that was replaced points to the plan that replaced it (`replaced_by` on its detail). */
+function NewerPlan({ newer }: { newer: NonNullable<PlanDetail["replaced_by"]> }) {
   return (
     <p className="caption plan-trail">
       <Link to={`/investment/plans/${newer.id}`}>A newer plan replaced this one</Link>
@@ -513,7 +509,7 @@ export function PlanPage() {
               </Link>
             </p>
           )}
-          {data?.brief.status === "refreshed" && <NewerPlan id={data.brief.id} />}
+          {data?.replaced_by && <NewerPlan newer={data.replaced_by} />}
         </div>
       </div>
       {detail.isLoading && <p className="state">Loading…</p>}

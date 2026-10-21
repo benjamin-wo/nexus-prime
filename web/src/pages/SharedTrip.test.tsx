@@ -118,6 +118,18 @@ describe("the shared page", () => {
     expect(row).toHaveTextContent("Check in");
   });
 
+  it("puts a hotel's address on its own line under the check-out day, and drops both on that day", async () => {
+    const hotel = booking({ kind: "hotel", title: "Hotel Kumo, 2 nights", hotel: "Hotel Kumo", address: "4-5-6 Asakusa", starts: "2027-03-02", check_in: "2027-03-02", check_out: "2027-03-04" });
+    await open(trip({ bookings: [hotel] }));
+    const days = screen.getAllByRole("listitem").map((li) => li.querySelector(".shared-main"));
+    const [checkIn, checkOut] = days as HTMLElement[];
+    const lines = Array.from(checkIn.querySelectorAll(".caption")).map((c) => c.textContent);
+    expect(lines).toEqual([expect.stringMatching(/^Until /), "4-5-6 Asakusa"]);
+    expect(checkIn).not.toHaveTextContent("·");
+    // On the check-out day it is just the name and the badge.
+    expect(checkOut.querySelector(".caption")).toBeNull();
+  });
+
   it("notes hidden bookings, and calls the days they fall on travel days", async () => {
     await open(trip({ show_bookings: false, hidden_days: ["2027-03-02"], bookings: [] }));
     expect(screen.getByRole("note")).toHaveTextContent("Bookings aren't shown on this link.");

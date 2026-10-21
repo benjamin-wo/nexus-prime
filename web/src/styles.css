@@ -654,6 +654,10 @@ a.btn { text-decoration: none; }
   .holdings td[data-label] { grid-column: 1 / -1; display: flex; justify-content: space-between; gap: var(--space-2); }
   .holdings td[data-label]::before { content: attr(data-label); color: var(--text-muted); }
 }
+/* A holding's price says when it is from. In the table the caption above it says so once for a
+ * price of the common kind; in the phone card each price keeps its own. */
+.holdings .price-cell { display: grid; justify-items: end; }
+@media (min-width: 901px) { .holdings .when-common { display: none; } }
 
 /* Trips */
 .trip-form { display: grid; gap: var(--space-3); }
