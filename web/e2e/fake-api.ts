@@ -41,6 +41,11 @@ const PLAN_BRIEF = {
   result_percent: null,
   alerts: true,
   followed: true,
+  keep_fresh: false,
+  refreshed_from: null,
+  price: "129.50",
+  price_at: null,
+  price_kind: "close",
 };
 
 const FINISHED_PLAN = {
@@ -272,6 +277,8 @@ export async function fakeApi(
     settlePosts: Record<string, unknown>[];
     planStarted: boolean;
     planAlerts: boolean;
+    /** Whether the made-up plan p1 is kept fresh (PUT /investments/plans/p1/keep-fresh). */
+    planKeepFresh: boolean;
     cancelled: string[];
     budgets: FakeBudget[];
     bills: FakeBill[];
@@ -388,6 +395,7 @@ export async function fakeApi(
     photoChoices: [],
     planStarted: false,
     planAlerts: true,
+    planKeepFresh: false,
     draft: null,
     screenshots: 0,
     txs: [
@@ -928,10 +936,14 @@ export async function fakeApi(
       });
     }
     if (path === "/investments/plans" && method === "GET") {
-      return json(route, state.planStarted ? [{ ...PLAN_BRIEF, alerts: state.planAlerts }, FINISHED_PLAN] : [FINISHED_PLAN]);
+      return json(route, state.planStarted ? [{ ...PLAN_BRIEF, alerts: state.planAlerts, keep_fresh: state.planKeepFresh }, FINISHED_PLAN] : [FINISHED_PLAN]);
     }
     if (path === "/investments/plans/p1/alerts" && method === "POST") {
       state.planAlerts = Boolean(body.on);
+      return route.fulfill({ status: 204 });
+    }
+    if (path === "/investments/plans/p1/keep-fresh" && method === "PUT") {
+      state.planKeepFresh = Boolean(body.on);
       return route.fulfill({ status: 204 });
     }
     if (path === "/investments/plans/p1" && method === "GET") {
@@ -940,7 +952,7 @@ export async function fakeApi(
         close: (100 + i * 0.5).toFixed(2),
       }));
       return json(route, {
-        brief: { ...PLAN_BRIEF, alerts: state.planAlerts },
+        brief: { ...PLAN_BRIEF, alerts: state.planAlerts, keep_fresh: state.planKeepFresh },
         closes,
         plan: {
           symbol: "AMD",

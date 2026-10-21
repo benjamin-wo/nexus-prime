@@ -115,3 +115,16 @@ class SqlRunRepository:
             )
         ).one()
         return Usage(int(row[0]), int(row[1]), Decimal(row[2]))
+
+    async def active_runs(self, user_id: UserId, kind: str) -> list[Run]:
+        r = department_runs.c
+        rows = await self._db.execute(
+            select(department_runs)
+            .where(
+                r.user_id == user_id,
+                r.kind == kind,
+                r.status.notin_([s.value for s in FINISHED]),
+            )
+            .order_by(r.created_at)
+        )
+        return [_run(row) for row in rows]

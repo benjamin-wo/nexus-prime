@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import Row, delete, func, insert, select, union, update
+from sqlalchemy import Row, Select, and_, delete, func, insert, select, union, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -21,7 +21,7 @@ from nexus.domain.investments import (
     plain,
 )
 from nexus.domain.ledger import UserId
-from nexus.domain.market import Bar, Quote
+from nexus.domain.market import Bar, PriceKind, Quote
 from nexus.domain.money import Money
 from nexus.domain.news import EarningsDate, NewsItem
 from nexus.domain.plans import FOLLOWED, Followed, PlanStatus, SavedPlan, Verdict
@@ -84,6 +84,24 @@ def _plan(row: Row[Any]) -> SavedPlan:
         outcome_day=row.outcome_day,
         result_percent=row.result_percent,
         alerts=row.alerts,
+        keep_fresh=row.keep_fresh,
+        refreshed_from=row.refreshed_from,
+        refreshed_from_at=row.refreshed_from_at,
+        last_refresh_check=row.last_refresh_check,
+        price=row.price,
+        price_at=row.price_at,
+        price_kind=PriceKind(row.price_kind) if row.price_kind else None,
+    )
+
+
+def _plans_select() -> Select[Any]:
+    """Plans, each with when the plan it replaced was made (``refreshed_from_at``)."""
+    before = plans.alias("before")
+    return select(plans, before.c.created_at.label("refreshed_from_at")).select_from(
+        plans.outerjoin(
+            before,
+            and_(plans.c.refreshed_from == before.c.id, plans.c.user_id == before.c.user_id),
+        )
     )
 
 
@@ -578,6 +596,13 @@ class SqlInvestmentRepository:
                 body=plan.body,
                 status=plan.status.value,
                 created_at=plan.created_at,
+                alerts=plan.alerts,
+                keep_fresh=plan.keep_fresh,
+                refreshed_from=plan.refreshed_from,
+                last_refresh_check=plan.last_refresh_check,
+                price=plan.price,
+                price_at=plan.price_at,
+                price_kind=plan.price_kind.value if plan.price_kind else None,
             )
         )
 
@@ -586,7 +611,7 @@ class SqlInvestmentRepository:
     ) -> list[SavedPlan]:
         """Newest first."""
         p = plans.c
-        stmt = select(plans).where(p.user_id == user_id)
+        stmt = _plans_select().where(p.user_id == user_id)
         if symbol is not None:
             stmt = stmt.where(p.symbol == symbol)
         rows = await self._db.execute(stmt.order_by(p.created_at.desc()).limit(limit))
@@ -595,7 +620,7 @@ class SqlInvestmentRepository:
     async def get_plan(self, user_id: UserId, plan_id: UUID) -> SavedPlan | None:
         p = plans.c
         row = (
-            await self._db.execute(select(plans).where(p.user_id == user_id, p.id == plan_id))
+            await self._db.execute(_plans_select().where(p.user_id == user_id, p.id == plan_id))
         ).first()
         return _plan(row) if row else None
 
@@ -603,11 +628,56 @@ class SqlInvestmentRepository:
         """Across all users: open plans that make a call worth following."""
         p = plans.c
         rows = await self._db.execute(
-            select(plans)
+            _plans_select()
             .where(p.status == PlanStatus.OPEN.value, p.verdict.in_([v.value for v in FOLLOWED]))
             .order_by(p.created_at)
         )
         return [_plan(r) for r in rows]
+
+    async def plans_to_refresh(self) -> list[SavedPlan]:
+        """Across all users: open plans with Keep fresh on, oldest first."""
+        p = plans.c
+        rows = await self._db.execute(
+            _plans_select()
+            .where(p.status == PlanStatus.OPEN.value, p.keep_fresh.is_(True))
+            .order_by(p.created_at)
+        )
+        return [_plan(r) for r in rows]
+
+    async def set_plan_keep_fresh(self, user_id: UserId, plan_id: UUID, on: bool) -> bool:
+        """False when the user has no such open plan."""
+        p = plans.c
+        result = await self._db.execute(
+            update(plans)
+            .where(p.user_id == user_id, p.id == plan_id, p.status == PlanStatus.OPEN.value)
+            .values(keep_fresh=on)
+        )
+        return bool(result.rowcount)
+
+    async def mark_refresh_check(self, user_id: UserId, plan_id: UUID, at: datetime) -> None:
+        p = plans.c
+        await self._db.execute(
+            update(plans).where(p.user_id == user_id, p.id == plan_id).values(last_refresh_check=at)
+        )
+
+    async def refresh_checks_since(self, user_id: UserId, since: datetime) -> int:
+        """How many of the user's plans were sent for an automatic refresh since."""
+        p = plans.c
+        count = await self._db.execute(
+            select(func.count()).where(p.user_id == user_id, p.last_refresh_check >= since)
+        )
+        return int(count.scalar_one())
+
+    async def close_refreshed(self, user_id: UserId, plan_id: UUID, *, at: datetime) -> bool:
+        """Close an open plan its refresh replaced. A plan that finished meanwhile keeps
+        its own outcome (False)."""
+        p = plans.c
+        result = await self._db.execute(
+            update(plans)
+            .where(p.user_id == user_id, p.id == plan_id, p.status == PlanStatus.OPEN.value)
+            .values(status=PlanStatus.REFRESHED.value, closed_at=at, keep_fresh=False)
+        )
+        return bool(result.rowcount)
 
     async def save_followed(
         self, user_id: UserId, plan_id: UUID, followed: Followed, *, at: datetime

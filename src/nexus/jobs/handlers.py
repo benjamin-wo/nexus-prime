@@ -20,6 +20,7 @@ from nexus.application import market as market_cases
 from nexus.application import market_alerts as alert_cases
 from nexus.application import market_summary as summary_cases
 from nexus.application import notifications as notify_cases
+from nexus.application import plan_refresh as refresh_cases
 from nexus.application import plans as plan_cases
 from nexus.application import quotes as quote_cases
 from nexus.application import receipts as receipt_cases
@@ -64,6 +65,7 @@ SCHEDULES = (
     Schedule(quote_cases.REFRESH_JOB, timedelta(minutes=5)),
     Schedule(summary_cases.SWEEP_JOB, timedelta(minutes=10)),
     Schedule(plan_cases.FOLLOW_JOB, timedelta(hours=1)),
+    Schedule(refresh_cases.REFRESH_JOB, timedelta(hours=1)),
     Schedule(booking_cases.REMIND_JOB, timedelta(hours=1)),
     Schedule(photo_cases.PHOTOS_JOB, timedelta(minutes=30)),
 )
@@ -77,6 +79,8 @@ class TelegramProgress:
         self._telegram = telegram
 
     async def show(self, run: Run, user: User, text: str) -> tuple[int | None, int | None]:
+        if plan_cases.is_automatic(run):  # a plan refreshing by itself says nothing
+            return run.chat_id, run.message_id
         chat_id = run.chat_id or user.telegram_chat_id
         if chat_id is None:
             return None, None
@@ -286,13 +290,26 @@ def build_handlers(
 
     async def refresh_news(_: dict[str, Any]) -> None:
         if news is not None:
-            fetched = await research_cases.refresh_news(uow, news, now=clock())
+            now = clock()
+            # An hour per stock while the US session is on, else six: ask the same market
+            # status as the quotes do (the usual hours stand in when it can't be fetched).
+            status = (
+                await quotes.status(now, max_age=quote_cases.RUN_STATUS_AGE)
+                if quotes is not None
+                else None
+            )
+            fetched = await research_cases.refresh_news(uow, news, now=now, status=status)
             log.info("news refresh: fetched %d stocks", fetched)
 
     async def follow_plans(_: dict[str, Any]) -> None:
         alerts = await plan_cases.follow_plans(uow, now=clock())
         if alerts:
             log.info("plans: queued %d alerts", alerts)
+
+    async def refresh_plans(_: dict[str, Any]) -> None:
+        started = await refresh_cases.refresh_plans(uow, registry, quotes, now=clock())
+        if started:
+            log.info("plans: started %d refreshes", started)
 
     async def travel_reminders(_: dict[str, Any]) -> None:
         sent = await booking_cases.remind_everyone(uow, now=clock())
@@ -335,6 +352,7 @@ def build_handlers(
         summary_cases.USER_JOB: market_summary_for,
         photo_cases.PHOTOS_JOB: trip_photos,
         plan_cases.FOLLOW_JOB: follow_plans,
+        refresh_cases.REFRESH_JOB: refresh_plans,
         booking_cases.REMIND_JOB: travel_reminders,
         trip_access_cases.DIGEST_JOB: trip_digest,
         department_cases.STEP_JOB: department_step,

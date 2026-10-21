@@ -568,6 +568,13 @@ def _levels(levels: Levels) -> LevelsOut:
     )
 
 
+class RefreshedFromOut(Model):
+    """The plan a refresh replaced."""
+
+    id: UUID
+    created_at: datetime
+
+
 class PlanBrief(Model):
     id: UUID
     symbol: str
@@ -579,13 +586,20 @@ class PlanBrief(Model):
     created_at: datetime
     valid_until: date
     expired: bool
-    status: str  # "open", "target", "stopped" or "expired"
+    status: str  # "open", "target", "stopped", "expired" or "refreshed" (replaced by its refresh)
     entered_on: date | None  # the buy zone was reached (a held stock: always)
     outcome_day: date | None
     outcome_price: Decimal | None
     result_percent: Decimal | None
     alerts: bool
     followed: bool  # makes a call that's followed and scored
+    # Made again by itself when it goes stale (open plans only).
+    keep_fresh: bool = False
+    refreshed_from: RefreshedFromOut | None = None  # the plan this one replaced
+    # The price it was written with: live, provisional close or close (none on older plans).
+    price: Decimal | None = None
+    price_at: datetime | None = None  # when it was traded; none for a close
+    price_kind: PriceKind | None = None
 
 
 def _brief(p: SavedPlan, today: date) -> PlanBrief:
@@ -608,6 +622,15 @@ def _brief(p: SavedPlan, today: date) -> PlanBrief:
         result_percent=p.result_percent,
         alerts=p.alerts,
         followed=p.verdict in FOLLOWED,
+        keep_fresh=p.keep_fresh,
+        refreshed_from=(
+            RefreshedFromOut(id=p.refreshed_from, created_at=p.refreshed_from_at)
+            if p.refreshed_from is not None and p.refreshed_from_at is not None
+            else None
+        ),
+        price=p.price.quantize(Decimal("0.01")) if p.price is not None else None,
+        price_at=p.price_at,
+        price_kind=p.price_kind,
     )
 
 
@@ -746,6 +769,21 @@ async def plan_alerts(plan_id: str, body: AlertsIn, auth: Auth, web: Runtime) ->
     except ValueError as exc:
         raise NotFound("that plan isn't in your list") from exc
     await plan_cases.set_alerts(web.uow(), auth.user.id, key, on=body.on)
+
+
+class KeepFreshIn(Model):
+    on: bool
+
+
+@router.put("/plans/{plan_id}/keep-fresh", status_code=204)
+async def plan_keep_fresh(plan_id: str, body: KeepFreshIn, auth: Auth, web: Runtime) -> None:
+    """Make the plan again by itself when it goes stale. The user's own open plans only
+    (404 for any other, 422 for one that has finished)."""
+    try:
+        key = UUID(plan_id)
+    except ValueError as exc:
+        raise NotFound("that plan isn't in your list") from exc
+    await plan_cases.set_keep_fresh(web.uow(), auth.user.id, key, on=body.on)
 
 
 @router.get("/plans")

@@ -1722,19 +1722,55 @@ async def _show_plan(ctx: ToolContext, a: SymbolArgs) -> ToolResult:
             f'No plan for {symbol} yet. The user can ask for one ("plan for {symbol}").'
         )
     latest = saved[0]
-    stale = " (expired: ask for a fresh one)" if latest.valid_until < ctx.today() else ""
+    stale = (
+        " (expired: ask for a fresh one)"
+        if latest.valid_until < ctx.today() and not latest.keep_fresh
+        else ""
+    )
     outcome = {
         "target": f" It hit its first target on {latest.outcome_day}.",
         "stopped": f" It was stopped out on {latest.outcome_day}.",
         "expired": f" It ran out on {latest.outcome_day}.",
+        "refreshed": " It was replaced by a refresh.",
     }.get(latest.status.value, "")
     if latest.result_percent is not None:
         outcome += f" Result {latest.result_percent:+}%."
     stale += outcome
+    if latest.refreshed_from_at is not None:
+        stale += (
+            f" It replaced the plan made on {latest.refreshed_from_at.astimezone(ctx.tz):%d %b}."
+        )
+    if latest.keep_fresh:
+        stale += " Keep fresh is on: it is made again by itself when it goes stale."
     return ToolResult(
         f"Latest plan for {symbol}, made {latest.created_at.astimezone(ctx.tz):%d %b}{stale}. "
         "Its figures were worked out in code; quote them as they are:\n"
-        + plan_cases.describe_plan(latest.body)
+        + plan_cases.describe_plan(latest.body, ctx.tz)
+    )
+
+
+class KeepFreshArgs(Args):
+    symbol: str = Field(description="The ticker of the plan, e.g. NVDA")
+    on: bool = Field(
+        True,
+        description="True: make the plan again by itself when it goes stale (the price moves, "
+        "earnings come out, it gets old or runs out). False: stop doing that.",
+    )
+
+
+async def _keep_plan_fresh(ctx: ToolContext, a: KeepFreshArgs) -> ToolResult:
+    symbol = clean_symbol(a.symbol)
+    await plan_cases.set_keep_fresh_for(ctx.uow, ctx.user.id, symbol, on=a.on)
+    if not a.on:
+        return ToolResult(
+            f"Done: the {symbol} plan won't be refreshed by itself any more.", wrote=True
+        )
+    return ToolResult(
+        f"Done: the {symbol} plan will be made again by itself when it goes stale (the price "
+        "moves over a typical day's range, earnings come out, it is a week old or runs out), "
+        "at most once a day, and replaced by the new one. You'll get a message only when the "
+        "verdict changes or the entry, stop or first target moves a good deal.",
+        wrote=True,
     )
 
 
@@ -3452,6 +3488,15 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             "The latest research plan made for a stock. Read-only.",
             SymbolArgs,
             _show_plan,
+        ),
+        ToolSpec(
+            "keep_plan_fresh",
+            "Turn Keep fresh on or off for the user's open plan for a stock: the plan is made "
+            "again by itself when the price moves a lot, earnings come out, it is a week old "
+            "or it runs out, and the new one replaces it. For 'keep my NVDA plan fresh' "
+            "(on) and 'stop refreshing my NVDA plan' (off).",
+            KeepFreshArgs,
+            _keep_plan_fresh,
         ),
         ToolSpec(
             "plan_record",

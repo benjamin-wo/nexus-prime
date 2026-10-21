@@ -415,6 +415,22 @@ class MarketAlertsAre:
 
 
 @dataclass(frozen=True, slots=True)
+class KeepFreshIs:
+    """The user's open plan for a stock is (or is not) set to be refreshed by itself."""
+
+    symbol: str
+    on: bool
+
+    def describe(self) -> str:
+        return f"{self.symbol} plan keep fresh {'on' if self.on else 'off'}"
+
+    async def holds(self, world: World) -> bool:
+        async with world.uow() as tx:
+            plans = await tx.investments.list_plans(world.user.id, symbol=self.symbol)
+        return bool(plans) and plans[0].keep_fresh is self.on
+
+
+@dataclass(frozen=True, slots=True)
 class Remembers:
     """Some memory mentions ``text`` (or, with ``present=False``, none does)."""
 
