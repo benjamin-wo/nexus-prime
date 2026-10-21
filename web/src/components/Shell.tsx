@@ -37,7 +37,7 @@ const DETAIL: [RegExp, string][] = [
   [/^\/travel\/(trips|research)\/./, "/travel"],
   [/^\/investment\/stocks\/./, "/investment/watchlist"],
   [/^\/investment\/plans\/./, "/investment/plans"],
-  [/^\/accounting\/import/, "/accounting/ledger"],
+  [/^\/settings\/./, "/settings"],
 ];
 
 /** In Telegram, its own back button (top left) on a page inside a section. */
@@ -119,7 +119,9 @@ export function Shell({
   const viewport = useRef<HTMLElement>(null);
   const scrolling = useScrollingDown(viewport, pathname);
   useReveal(content);
-  const links = [
+  // The rail names each place in full; the bottom bar on a phone uses a short word under the icon,
+  // and its accessible name keeps the full one ("Money (Accounting)").
+  const links = (bar: boolean) => [
     <NavLink key="home" to="/" end className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
       <span className="nav-glyph" aria-hidden="true">
         <Icon name="home" />
@@ -127,11 +129,16 @@ export function Shell({
       <span className="nav-label">Home</span>
     </NavLink>,
     ...DEPARTMENTS.map((d) => (
-      <NavLink key={d.name} to={d.path} className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
+      <NavLink
+        key={d.name}
+        to={d.path}
+        className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}
+        aria-label={bar && d.short !== d.label ? `${d.short} (${d.label})` : undefined}
+      >
         <span className="nav-glyph" aria-hidden="true">
           <Icon name={departmentIcon(d.name)} />
         </span>
-        <span className="nav-label">{d.label}</span>
+        <span className="nav-label">{bar ? d.short : d.label}</span>
       </NavLink>
     )),
   ];
@@ -183,7 +190,7 @@ export function Shell({
             Nexus <span className="brand-accent">Prime</span>
           </span>
         </div>
-        {links}
+        {links(false)}
         {settings}
         {nexus("in-rail")}
         <div className="spacer" />
@@ -212,12 +219,12 @@ export function Shell({
           {children}
         </div>
       </main>
-      {/* Home and Accounting, Nexus in the middle, then Investment and Travel. Settings
-          is on Home (top right). */}
+      {/* Home and Money, Nexus in the middle, then Invest and Travel, each with a short label
+          under its icon. Settings is on Home (top right). */}
       <nav className="bottom-nav" aria-label="Main (mobile)">
-        {links.slice(0, 2)}
+        {links(true).slice(0, 2)}
         {nexus("in-bar")}
-        {links.slice(2)}
+        {links(true).slice(2)}
       </nav>
     </div>
   );

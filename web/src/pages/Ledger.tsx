@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 
 import {
   api,
@@ -13,6 +13,8 @@ import {
   receiptUrl,
   type Transaction,
 } from "../api";
+import { Icon } from "../components/Icon";
+import { Menu } from "../components/Menu";
 import { MoneyTrail } from "../components/MoneyTrail";
 import { DirectionBadge } from "../components/Badge";
 import { Toast } from "../components/Toast";
@@ -40,7 +42,7 @@ function ranges(timezone: string): Range[] {
   const [ly, lm] = m === 1 ? [y - 1, 12] : [y, m - 1];
   const lastDay = new Date(Date.UTC(ly, lm, 0)).getUTCDate();
   return [
-    { key: "any", label: "All", start: "", end: "" },
+    { key: "any", label: "All dates", start: "", end: "" },
     { key: "this", label: "This month", start: iso(y, m, 1), end: "" },
     { key: "last", label: "Last month", start: iso(ly, lm, 1), end: iso(ly, lm, lastDay) },
   ];
@@ -181,6 +183,18 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
   const filtered = view !== "all" || Boolean(debounced || start || end || category);
   const categoryName = category === "none" ? "Uncategorised" : names.get(category);
 
+  // One control for the usual ranges; "Custom dates" keeps what is set and shows the two date boxes.
+  function pickDates(value: string) {
+    const range = presets.find((r) => r.key === value);
+    if (!range) {
+      setCustom(true);
+      return;
+    }
+    setCustom(false);
+    setStart(range.start);
+    setEnd(range.end);
+  }
+
   function clearCategory() {
     setCategory("");
     setParams(
@@ -194,18 +208,20 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
 
   return (
     <>
-      <div className="page-head">
+      <div className="page-head page-head-row">
         <h1>Ledger</h1>
         <div className="quick">
-          <Link className="btn" to="/accounting/import">
-            Import statement
-          </Link>
-          <a className="btn" href={exportHref} download>
-            Export CSV
-          </a>
-          <button type="button" className="btn btn-primary" onClick={onAdd}>
-            Add transaction
+          <button type="button" className="btn btn-primary" aria-label="Add transaction" onClick={onAdd}>
+            <Icon name="plus" size={18} />
+            Add
           </button>
+          <Menu
+            label="More"
+            items={[
+              { key: "import", label: "Import statement", to: "/settings/import" },
+              { key: "export", label: "Export CSV", href: exportHref, download: true },
+            ]}
+          />
         </div>
       </div>
 
@@ -223,33 +239,24 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
             <input
               className="input"
               type="search"
-              placeholder="Search merchant or notes"
+              placeholder="Search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           </label>
-          <div className="chips range-chips" role="group" aria-label="When">
-            {presets.map((r) => (
-              <button
-                key={r.key}
-                type="button"
-                className="day-pill"
-                aria-pressed={!custom && preset?.key === r.key}
-                onClick={() => {
-                  setCustom(false);
-                  setStart(r.start);
-                  setEnd(r.end);
-                }}
-              >
-                {r.label}
-              </button>
-            ))}
-            <button type="button" className="day-pill" aria-pressed={custom} onClick={() => setCustom(true)}>
-              Custom
-            </button>
-          </div>
+          <label className="dates">
+            <span className="sr-only">Dates</span>
+            <select className="input" value={custom || !preset ? "custom" : preset.key} onChange={(e) => pickDates(e.target.value)}>
+              {presets.map((r) => (
+                <option key={r.key} value={r.key}>
+                  {r.label}
+                </option>
+              ))}
+              <option value="custom">Custom</option>
+            </select>
+          </label>
           {custom && (
-            <>
+            <div className="date-range">
               <label className="date-field">
                 <span className="date-caption">From</span>
                 <input className="input" type="date" value={start} onChange={(e) => setStart(e.target.value)} />
@@ -258,7 +265,7 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
                 <span className="date-caption">To</span>
                 <input className="input" type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
               </label>
-            </>
+            </div>
           )}
           {category && (
             <span className="filter-chip">
@@ -366,6 +373,10 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
                       >
                         {tx.counterparty ?? (tx.direction === "move" ? moveLabel(tx) : "No merchant")}
                       </button>
+                      {/* On a phone the Category column is gone: its name sits under the merchant. */}
+                      {tx.category_id && names.get(tx.category_id) && (
+                        <div className="caption category-line">{names.get(tx.category_id)}</div>
+                      )}
                       {tx.direction === "move" && tx.counterparty && (
                         <div className="caption">{moveLabel(tx)}</div>
                       )}

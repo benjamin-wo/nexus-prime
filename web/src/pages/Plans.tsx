@@ -104,7 +104,7 @@ export function PlansPage() {
     <>
       <div className="page-head">
         <div>
-          <h1>Plans</h1>
+          <h1>Trade plans</h1>
           <p className="muted">Swing-trade research for days to weeks. Research only: never an order.</p>
         </div>
       </div>
@@ -121,7 +121,7 @@ export function PlansPage() {
           </p>
         )}
         {plans.data && plans.data.length > 0 && (
-          <ul className="feed" aria-label="Plans">
+          <ul className="feed" aria-label="Trade plans">
             {plans.data.map((p) => (
               <li key={p.id}>
                 <Link className="feed-item" to={`/investment/plans/${p.id}`}>
@@ -481,7 +481,7 @@ export function PlanPage() {
       <div className="page-head">
         <div>
           <p className="caption">
-            <Link to="/investment/plans">Plans</Link>
+            <Link to="/investment/plans">Trade plans</Link>
             {plan && (
               <>
                 {" "}

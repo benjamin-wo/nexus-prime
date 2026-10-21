@@ -45,7 +45,7 @@ export function MoneyGlance({ spent, overall, pace }: { spent?: Money; overall?:
             </div>
           )}
           {pace && <p className="caption">{pace.detail}</p>}
-          {!pace && <p className="muted">Set a budget on the Plan page to see how it is going.</p>}
+          {!pace && <p className="muted">Set a budget on the Budgets page to see how it is going.</p>}
         </>
       )}
     </Block>

@@ -867,7 +867,7 @@ async def _nudge(tx: UnitOfWork, user: User, connection: EmailConnection, now: d
             "text": f"I haven't received any forwarded emails at {connection.address} {since}. "
             "If you still want receipts logged from email, check your forwarding rule, or "
             "ask me to test your email setup. If you've stopped, you can disconnect it on "
-            "the Email page.",
+            "the Receipts by email page in Settings.",
         },
         dedupe_key=f"email.quiet:{connection.id}:{now.date().isoformat()}",
         run_at=now,

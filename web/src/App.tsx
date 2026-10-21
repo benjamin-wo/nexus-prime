@@ -21,10 +21,10 @@ import { ResearchPage } from "./pages/Research";
 import { SharedTripPage } from "./pages/SharedTrip";
 import { TripPage, TripsPage } from "./pages/Trips";
 import { WatchlistPage } from "./pages/Watchlist";
+import { BudgetsPage } from "./pages/BudgetsPage";
 import { ImportPage } from "./pages/Import";
 import { Ledger } from "./pages/Ledger";
 import { forgetTripNote, LoginPage } from "./pages/LoginPage";
-import { Plan } from "./pages/Plan";
 import { Settings } from "./pages/Settings";
 import { TripInvite } from "./pages/TripInvite";
 import { Upcoming } from "./pages/Upcoming";
@@ -137,10 +137,8 @@ function Cockpit({ me }: { me: Me }) {
           path="/accounting/ledger"
           element={<Ledger me={me} onAdd={() => setSheet({})} onEdit={(tx) => setSheet({ editing: tx })} />}
         />
-        <Route path="/accounting/plan" element={<Plan me={me} />} />
+        <Route path="/accounting/budgets" element={<BudgetsPage me={me} />} />
         <Route path="/accounting/cashflow" element={<CashFlowPage />} />
-        <Route path="/accounting/email" element={<EmailPage me={me} />} />
-        <Route path="/accounting/import" element={<ImportPage />} />
         <Route path="/investment" element={<InvestmentPage />} />
         <Route path="/investment/watchlist" element={<WatchlistPage />} />
         <Route path="/investment/stocks/:symbol" element={<StockPage />} />
@@ -153,11 +151,18 @@ function Cockpit({ me }: { me: Me }) {
           <Route key={d.name} path={d.path} element={<Upcoming department={d} />} />
         ))}
         <Route path="/settings" element={<Settings />} />
+        <Route path="/settings/email" element={<EmailPage me={me} />} />
+        <Route path="/settings/import" element={<ImportPage />} />
         {/* Where pages used to live, so old links and bookmarks still work. */}
-        {["ledger", "plan", "cashflow", "email", "import"].map((page) => (
-          <Route key={page} path={`/${page}`} element={<Navigate to={`/accounting/${page}`} replace />} />
-        ))}
-        <Route path="/budgets" element={<Navigate to="/accounting/plan" replace />} />
+        <Route path="/accounting/plan" element={<Navigate to="/accounting/budgets" replace />} />
+        <Route path="/accounting/email" element={<Navigate to="/settings/email" replace />} />
+        <Route path="/accounting/import" element={<Navigate to="/settings/import" replace />} />
+        <Route path="/ledger" element={<Navigate to="/accounting/ledger" replace />} />
+        <Route path="/cashflow" element={<Navigate to="/accounting/cashflow" replace />} />
+        <Route path="/plan" element={<Navigate to="/accounting/budgets" replace />} />
+        <Route path="/budgets" element={<Navigate to="/accounting/budgets" replace />} />
+        <Route path="/email" element={<Navigate to="/settings/email" replace />} />
+        <Route path="/import" element={<Navigate to="/settings/import" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       {sheet && (

@@ -91,9 +91,9 @@ test("the setup checklist shows what is left, and Hide puts it away for good", a
   await expect(steps.filter({ hasText: "Add your stocks" }).getByRole("link")).toHaveCount(0);
   await expect(steps.filter({ hasText: "Set your payday" }).getByRole("link", { name: "Set up Set your payday" })).toHaveAttribute(
     "href",
-    "/accounting/plan",
+    "/accounting/budgets",
   );
-  await expect(steps.filter({ hasText: "Set a monthly budget" }).getByRole("link")).toHaveAttribute("href", "/accounting/plan");
+  await expect(steps.filter({ hasText: "Set a monthly budget" }).getByRole("link")).toHaveAttribute("href", "/accounting/budgets");
   // Receipts can also be asked of Nexus in the chat.
   await steps.filter({ hasText: "Get receipts" }).getByRole("button", { name: /Ask Nexus/ }).click();
   const chat = page.getByRole("dialog", { name: "Chat" });

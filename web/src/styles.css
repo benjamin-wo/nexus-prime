@@ -288,6 +288,15 @@ input[type="date"].input, input[type="time"].input, input[type="datetime-local"]
 .tab { flex: none; min-height: 32px; padding: 0 var(--space-3); border-radius: 7px; border: 0; background: transparent; color: var(--text-secondary); font: inherit; font-weight: 600; cursor: pointer; }
 .tab[aria-pressed="true"] { background: var(--bg-card-hover); color: var(--text-white); }
 .filters .search { flex: 1 1 200px; }
+/* The date range is one select beside the search; "Custom dates" adds the two date boxes. */
+.filters .dates { flex: 0 0 auto; display: block; }
+.filters .dates .input { width: auto; min-width: 150px; }
+.date-range { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+/* The category under the merchant is for phones; wider screens have the Category column. */
+.category-line { display: none; }
+/* A page head whose actions stay beside the title, on a phone too. */
+.page-head-row { flex-wrap: nowrap; align-items: center; }
+.page-head-row .quick { flex-wrap: nowrap; flex: 0 0 auto; }
 .filter-chip {
   display: inline-flex; align-items: center; gap: var(--space-1); min-height: 36px; padding: 0 var(--space-1) 0 var(--space-3);
   border-radius: 999px; border: 1px solid var(--border-card); background: var(--bg-input); color: var(--text-primary); font-weight: 600;
@@ -421,7 +430,14 @@ table.ledger { width: 100%; border-collapse: collapse; }
   /* All five views on one row. */
   .filters .tabs { display: flex; width: 100%; }
   .filters .tab { flex: 1 1 auto; padding: 0 var(--space-2); font-size: 0.74rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .filters .search { flex-basis: 100%; }
+  /* The search takes most of its row, the dates control the rest (under it on the narrowest). */
+  .filters .search { flex: 3 1 120px; min-width: 0; }
+  .filters .dates { flex: 1 0 auto; }
+  .filters .dates .input { width: 100%; min-width: 0; }
+  /* From and To share a row of their own under the search. */
+  .date-range { flex: 1 1 100%; flex-wrap: nowrap; }
+  .page-head.page-head-row > :not(:first-child) { flex: 0 0 auto; }
+  .page-head.page-head-row .quick > .btn { flex: 0 0 auto; }
   /* The two dates share a row, each with a visible caption. iOS draws date
      inputs at its own size and blank when empty, so reset its appearance. */
   .filters .date-field { flex: 1 1 0; min-width: 0; display: grid; gap: 2px; }
@@ -452,12 +468,16 @@ table.ledger { width: 100%; border-collapse: collapse; }
     display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
     font-weight: 500;
   }
+  .ledger td.merchant .category-line { display: block; -webkit-line-clamp: none; line-clamp: none; white-space: nowrap; text-overflow: ellipsis; font-weight: 500; }
   .table-wrap { overflow-x: visible; }
   .bulkbar { flex-wrap: wrap; }
   .pager { flex-wrap: wrap; gap: var(--space-2); }
 }
 @media (max-width: 359px) {
-  .filters .tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* The five views wrap onto a second line rather than shrink to "Mo…". */
+  .filters .tabs { flex-wrap: wrap; }
+  .filters .tab { overflow: visible; text-overflow: clip; }
+  .page-head-row { flex-wrap: wrap; }
   /* The smallest phones: the tabs tighten (and may shorten) rather than scroll. */
   .dept-tabs { gap: 2px; }
   .dept-tab { flex: 1 1 auto; min-width: 0; padding: 0 4px; font-size: 0.8125rem; overflow: hidden; text-overflow: ellipsis; }
@@ -1327,10 +1347,18 @@ html.keyboard .bottom-nav, html.keyboard .trip-fab-button, html.keyboard .trip-f
   .bottom-nav .nav-link { flex: 1 1 0; min-height: 48px; padding: 0; border-radius: 14px; color: var(--bar-text); background: transparent; }
   .bottom-nav .nav-link:hover { background: transparent; color: #fff; }
   .bottom-nav .nav-link.active, .bottom-nav .nav-link.active .nav-glyph { color: #fff; background: transparent; }
-  /* Icons only, as in the reference; the names stay for screen readers. */
-  .bottom-nav .nav-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  /* Each tab is its icon over a short label (Home, Money, Invest, Travel). The active one is
+     white and bold on a soft pill, so it reads without colour alone. */
+  .bottom-nav .nav-label { display: block; max-width: 100%; font-size: 0.6875rem; font-weight: 500; line-height: 1.1; letter-spacing: 0.01em; overflow: hidden; }
+  .bottom-nav .nav-link.active { background: rgba(255, 255, 255, 0.1); }
+  .bottom-nav .nav-link.active .nav-label { font-weight: 700; }
   .bottom-nav .nav-glyph { width: 24px; height: 24px; }
   .nexus-button.in-bar { display: grid; place-items: center; flex: 0 0 auto; width: 64px; height: 44px; border-radius: 999px; color: #fff; }
+}
+/* The smallest phones: the bar gives its side padding back to the four labelled tabs. */
+@media (max-width: 359px) {
+  .bottom-nav { padding-left: var(--space-2); padding-right: var(--space-2); gap: 2px; }
+  .bottom-nav .nav-label { font-size: 0.65625rem; letter-spacing: 0; }
 }
 
 /* Trip page: tabs and plan */
@@ -1879,6 +1907,24 @@ body:has(.sheet-backdrop) .main-viewport { overflow: hidden; }
 }
 .find-menu-item:hover, .find-menu-item:focus-visible { background: var(--bg-card-hover); }
 .find-menu-item[aria-checked="true"] { color: var(--accent-text); font-weight: 600; }
+/* A "More" menu: a button and a short list under it, on the right. */
+.menu { position: relative; }
+.menu > .btn { min-height: 44px; }
+.menu-list {
+  position: absolute; z-index: 12; top: calc(100% + 4px); right: 0; display: grid; min-width: 200px; max-width: calc(100vw - 32px); padding: var(--space-1);
+  border-radius: 14px; border: 1px solid var(--border-card); background: var(--bg-card); box-shadow: var(--shadow-modal);
+}
+.menu-item {
+  display: flex; align-items: center; min-height: 44px; padding: 0 var(--space-3); border: 0; border-radius: 10px;
+  background: none; color: var(--text-primary); font: inherit; text-align: left; text-decoration: none; cursor: pointer; white-space: nowrap;
+}
+.menu-item:hover, .menu-item:focus-visible { background: var(--bg-card-hover); }
+/* The way back from a page inside Settings. */
+.back-link {
+  display: inline-flex; align-items: center; gap: var(--space-1); min-height: 44px; margin: 0 0 var(--space-1) calc(-1 * var(--space-1));
+  padding: 0 var(--space-2) 0 var(--space-1); border-radius: 10px; color: var(--text-secondary); font-size: 0.875rem; font-weight: 500; text-decoration: none;
+}
+.back-link:hover, .back-link:focus-visible { background: var(--bg-card-hover); color: var(--text-primary); }
 .find-themes { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 3px; margin: -3px; }
 .find-themes::-webkit-scrollbar { display: none; }
 .find-themes .day-pill { min-height: 40px; }

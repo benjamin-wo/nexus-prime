@@ -26,8 +26,8 @@ tools: [log_expense, find_transactions, edit_transaction, delete_transaction, re
 
 ## Bank statements
 - To bring in a whole statement, the user imports its CSV or PDF on the web app:
-  Ledger → Import statement. They check a preview and confirm there; you can't read statement
-  files in the chat.
+  Ledger → More → Import statement (or Settings → Import a statement). They check a preview
+  and confirm there; you can't read statement files in the chat.
 
 ## Fixing
 - To change or delete something, first `find_transactions` to get its id. If several

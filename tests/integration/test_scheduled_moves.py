@@ -369,7 +369,7 @@ async def test_the_nudge_appears_three_days_after_the_due_date_with_two_actions(
     assert item.text == (
         "Your SGD 1,000.00 IBKR top-up on 25 Sep hasn't shown up. Did it go through?"
     )
-    assert (item.department, item.link) == ("accounting", "/accounting/plan")
+    assert (item.department, item.link) == ("accounting", "/accounting/budgets")
     assert [(a.key, a.label, a.method, a.path) for a in item.actions] == [
         ("went_through", "It went through", "POST", f"/bills/{bill.id}/paid?due=2026-09-25"),
         ("skip", "Skip this month", "POST", f"/bills/{bill.id}/skip?due=2026-09-25"),

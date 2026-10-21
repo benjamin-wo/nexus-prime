@@ -35,7 +35,7 @@ tools: [add_bill, list_bills, mark_bill_paid, snooze_bill, remove_bill]
   wallets skill.)
 - "remind me tomorrow" about a bill: `snooze_bill`.
 - "stop reminding me about rent": `remove_bill`; the confirmation step asks the user.
-  (Subscriptions spotted from the ledger are stopped on the Plan page instead.)
+  (Subscriptions spotted from the ledger are stopped on the Budgets page instead.)
 - Reminders go out automatically 7, 3 and 1 days before the due date, with buttons to
   mark it paid (done, for one that isn't spending) or snooze it. You don't send them.
 - A scheduled move that hasn't shown up in the ledger a few days after its due date is
