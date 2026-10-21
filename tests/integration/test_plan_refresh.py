@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nexus.agent.tools import ToolContext, build_tools, run_tool
 from nexus.application import departments as department_cases
+from nexus.application import market as market_cases
 from nexus.application import plan_refresh as refresh_cases
 from nexus.application import plans as plan_cases
 from nexus.application import research as research_cases
@@ -35,7 +36,16 @@ from nexus.infra.db.migrations import alembic_config
 from nexus.infra.db.tables import jobs, plans
 from nexus.jobs.handlers import TelegramProgress, build_handlers
 from nexus.jobs.runner import Defer
-from tests.fakes import NOW, FakeNews, FakeQuotes, FakeRates, FakeTelegram, bar, quote
+from tests.fakes import (
+    NOW,
+    FakeNews,
+    FakePrices,
+    FakeQuotes,
+    FakeRates,
+    FakeTelegram,
+    bar,
+    quote,
+)
 from tests.integration import test_web_api
 from tests.integration.conftest import UowFactory, upgrade
 from tests.integration.test_email import person
@@ -306,6 +316,24 @@ async def test_a_plan_past_its_date_is_refreshed_instead_of_running_out(uow: Uow
     assert (await plan_list(uow, user))[0].status is PlanStatus.EXPIRED
 
 
+async def test_a_kept_fresh_plan_that_is_not_refreshed_runs_out_after_three_days(
+    uow: UowFactory, engine: AsyncEngine
+) -> None:
+    user = await ready(uow)
+    old = await kept_fresh(uow, user)
+    assert old.valid_until == date(2026, 10, 12)
+    # Three days on, the 15th, it is still held open for its refresh...
+    assert await plan_cases.follow_plans(uow, now=datetime(2026, 10, 15, 5, 0, tzinfo=UTC)) == 0
+    assert (await plan_list(uow, user))[0].status is PlanStatus.OPEN
+    assert await telegram_texts(engine) == []
+    # ...the 16th it ends as any plan does, with the usual message.
+    assert await plan_cases.follow_plans(uow, now=datetime(2026, 10, 16, 5, 0, tzinfo=UTC)) == 1
+    [ended] = await plan_list(uow, user)
+    assert ended.status is PlanStatus.EXPIRED and ended.keep_fresh
+    [sent] = await telegram_texts(engine)
+    assert "ran out on 12 Oct" in sent["text"]
+
+
 async def test_a_price_more_than_an_atr_from_the_plans_is_stale(uow: UowFactory) -> None:
     user = await ready(uow)
     old = await kept_fresh(uow, user)
@@ -440,7 +468,7 @@ async def test_a_refresh_replaces_the_old_plan_which_the_record_leaves_out(
     assert plan_cases.describe_record(record).startswith(
         "No plans have finished yet (1 still open)"
     )
-    assert await plan_cases.follow_plans(uow, now=week + timedelta(days=30)) == 0
+    assert await plan_cases.follow_plans(uow, now=week + timedelta(days=15)) == 0
     after = await plan_list(uow, user)
     assert [p.status for p in after] == [PlanStatus.OPEN, PlanStatus.REFRESHED]
     # The new plan is not made again at once.
@@ -482,6 +510,75 @@ async def test_a_plan_the_user_stopped_refreshing_meanwhile_is_not_kept_fresh(
     await finish_at(uow, registry, user, run, week)
     new, replaced = await plan_list(uow, user)
     assert not new.keep_fresh and replaced.status is PlanStatus.REFRESHED
+
+
+async def test_a_plan_by_hand_replaces_the_kept_fresh_plans_for_the_stock(
+    uow: UowFactory, engine: AsyncEngine
+) -> None:
+    user, other = await ready(uow), await person(uow, 5151)
+    stale = open_plan(user, "AMD", "140.00", keep_fresh=True)  # made on 25 Sep
+    newest = replace(
+        open_plan(user, "AMD", "141.00", keep_fresh=True),
+        created_at=NOW - timedelta(days=1),
+        alerts=False,
+    )
+    quiet = open_plan(user, "AMD", "140.00", keep_fresh=False)
+    elsewhere = open_plan(user, "NVDA", "400.00", keep_fresh=True)
+    theirs = open_plan(other, "AMD", "140.00", keep_fresh=True)
+    async with uow() as tx:
+        for each in (stale, newest, quiet, elsewhere, theirs):
+            await tx.investments.insert_plan(each)
+        await tx.commit()
+    hand = await make_plan(uow, user, at=NOW + timedelta(hours=2))
+    assert hand.id != newest.id and hand.status is PlanStatus.OPEN
+    # It links to the newest and takes over its settings.
+    assert hand.refreshed_from == newest.id and hand.refreshed_from_at == newest.created_at
+    assert hand.keep_fresh and not hand.alerts
+    mine = {p.id: p for p in await plan_list(uow, user)}
+    for gone in (newest, stale):  # every kept-fresh plan for the stock is closed
+        assert mine[gone.id].status is PlanStatus.REFRESHED and not mine[gone.id].keep_fresh
+    assert mine[quiet.id].status is PlanStatus.OPEN  # Keep fresh off: left as it was
+    for kept in (elsewhere, theirs):  # another stock, another user
+        found = await plan_cases.get_plan(uow(), kept.user_id, kept.id)
+        assert found.status is PlanStatus.OPEN and found.keep_fresh
+    async with engine.connect() as db:
+        closed = (
+            await db.execute(select(plans.c.closed_at).where(plans.c.id == stale.id))
+        ).scalar()
+    assert closed == NOW + timedelta(hours=2)
+    assert await telegram_texts(engine) == []  # they asked for it: no message
+    # Not scored, and the record counts the new plan and the plan kept open.
+    record, _ = await plan_cases.track_record(uow(), user.id)
+    assert (record.finished, record.open) == (0, 3)  # hand, quiet and the NVDA one
+
+
+async def test_a_refresh_after_a_plan_by_hand_took_over_replaces_that_one(
+    uow: UowFactory,
+) -> None:
+    user = await ready(uow)
+    old = await kept_fresh(uow, user)
+    week = NOW + timedelta(days=7)
+    started, registry = await refresh(uow, week)
+    assert started == 1
+    [run] = await active(uow, user)
+    hand = await make_plan(uow, user, at=week + timedelta(minutes=1))  # asked while it ran
+    assert hand.refreshed_from == old.id
+    await finish_at(uow, registry, user, run, week + timedelta(minutes=2))
+    mine = {p.id: p for p in await plan_list(uow, user)}
+    still_open = [p for p in mine.values() if p.status is PlanStatus.OPEN]
+    assert len(still_open) == 1  # only the refresh, which took over from the hand plan
+    [last] = still_open
+    assert last.refreshed_from == hand.id and last.keep_fresh
+    assert mine[hand.id].status is PlanStatus.REFRESHED
+
+
+async def test_a_plan_by_hand_with_nothing_kept_fresh_stands_alone(uow: UowFactory) -> None:
+    user = await ready(uow)
+    first = await make_plan(uow, user)
+    assert not first.keep_fresh
+    second = await make_plan(uow, user, at=NOW + timedelta(hours=2))
+    assert second.refreshed_from is None and not second.keep_fresh
+    assert {p.status for p in await plan_list(uow, user)} == {PlanStatus.OPEN}
 
 
 async def telegram_texts(engine: AsyncEngine) -> list[dict[str, Any]]:
@@ -695,6 +792,34 @@ async def test_a_plan_carries_its_price_and_the_plan_it_replaced_through_the_api
     assert page["plan"]["id"] == str(second.id) and page["plan"]["price_kind"] == "live"
 
 
+async def test_a_plan_detail_says_which_plan_replaced_it(world: World) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+    web = world.app.state.web
+    async with web.uow() as tx:
+        me = await tx.ledger.get_user_by_telegram_id(OWNER)
+    assert me is not None
+    first = open_plan(me, "AMD", "140.00", keep_fresh=True)
+    second = replace(
+        open_plan(me, "AMD", "140.00", keep_fresh=True),
+        refreshed_from=first.id,
+        created_at=first.created_at + timedelta(days=5),
+    )
+    third = replace(  # a later one by hand over the same plan, as a race could leave
+        second, id=uuid4(), refreshed_from=first.id, created_at=first.created_at + timedelta(days=9)
+    )
+    async with web.uow() as tx:
+        for each in (first, second, third):
+            await tx.investments.insert_plan(each)
+        await tx.investments.close_refreshed(me.id, first.id, at=NOW)
+        await tx.commit()
+    detail = (await owner.get(f"/api/investments/plans/{first.id}")).json()
+    assert detail["replaced_by"]["id"] == str(third.id)  # the newest
+    assert datetime.fromisoformat(detail["replaced_by"]["created_at"]) == third.created_at
+    for newer in (second, third):  # the newer plans were not replaced by anything
+        assert (await owner.get(f"/api/investments/plans/{newer.id}")).json()["replaced_by"] is None
+
+
 # --- news every hour in the session -------------------------------------------------------------
 
 
@@ -770,6 +895,48 @@ async def test_hourly_news_keeps_the_cap_and_the_longest_waiting_come_first(
         )
         == 0
     )
+
+
+async def test_a_stock_with_a_kept_fresh_plan_is_tracked_though_nobody_holds_it(
+    uow: UowFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    user = await person(uow)
+    kept = open_plan(user, "NVDA", "400.00", keep_fresh=True)
+    async with uow() as tx:
+        assert await tx.investments.tracked_symbols() == []
+        await tx.investments.insert_plan(kept)
+        await tx.investments.insert_plan(open_plan(user, "TSLA", "250.00", keep_fresh=False))
+        await tx.commit()
+    await research_cases.watch(uow(), user.id, "AMD", now=NOW)
+    await research_cases.watch(uow(), user.id, "NVDA", now=NOW)
+    async with uow() as tx:
+        assert await tx.investments.tracked_symbols() == ["AMD", "NVDA"]  # listed once
+    await research_cases.unwatch(uow(), user.id, "NVDA")  # now only the plan keeps it
+    async with uow() as tx:
+        assert await tx.investments.tracked_symbols() == ["AMD", "NVDA"]
+    # The jobs fetch it: its news, and its prices.
+    news = FakeNews()
+    assert await research_cases.refresh_news(uow, news, now=NOW) == 2
+    assert sorted(news.asked) == ["AMD", "NVDA"]
+    prices = FakePrices({"NVDA": history(80)})
+    await market_cases.refresh(uow, prices, now=NOW)
+    assert "NVDA" in {symbol for symbol, _, _ in prices.asked}
+    assert "TSLA" not in {symbol for symbol, _, _ in prices.asked}
+    # The run caps still hold: the one that waited longest is next.
+    monkeypatch.setattr(research_cases, "MAX_PER_REFRESH", 1)
+    later = NOW + timedelta(hours=7)
+    news.asked.clear()
+    assert await research_cases.refresh_news(uow, news, now=later) == 1
+    assert await research_cases.refresh_news(uow, news, now=later) == 1
+    assert sorted(news.asked) == ["AMD", "NVDA"]
+    # Once the plan is closed or the switch is off, it is no longer tracked.
+    async with uow() as tx:
+        await tx.investments.set_plan_keep_fresh(user.id, kept.id, False)
+        assert await tx.investments.tracked_symbols() == ["AMD"]
+        await tx.investments.set_plan_keep_fresh(user.id, kept.id, True)
+        assert await tx.investments.tracked_symbols() == ["AMD", "NVDA"]
+        await tx.investments.close_refreshed(user.id, kept.id, at=NOW)
+        assert await tx.investments.tracked_symbols() == ["AMD"]
 
 
 # --- the migration --------------------------------------------------------------------------------

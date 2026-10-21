@@ -982,6 +982,7 @@ export async function fakeApi(
       }));
       return json(route, {
         brief: path.endsWith("/p2") ? REFRESHED_PLAN : currentPlan(),
+        replaced_by: path.endsWith("/p2") ? { id: "p1", created_at: currentPlan().created_at } : null,
         closes,
         plan: {
           symbol: "AMD",

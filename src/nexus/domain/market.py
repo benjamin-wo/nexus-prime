@@ -24,6 +24,9 @@ REGULAR_OPEN = time(9, 30)
 REGULAR_CLOSE = time(16, 0)
 # A quote stamped later than this ahead of now is a bad clock or bad data, not a price.
 CLOCK_SKEW = timedelta(minutes=5)
+# Closing-auction prints can be stamped a little after 16:00; a quote stamped later than this
+# is an after-hours trade, not the close.
+CLOSE_PRINTS = timedelta(minutes=5)
 
 # The days the NYSE is shut on a weekday, for 2026 and 2027. The exchange's own status
 # names a holiday only on the day itself; this list is what says that last Monday was one
@@ -217,9 +220,10 @@ def pick_price(
     """Which price to show: the live quote while the market is open and the quote is
     from today; the quote's last price after the close until that day's official bar
     arrives (provisional); otherwise the last close. A quote from a trading day no newer
-    than the latest bar, from a past day while the market is open, from before the open
-    on its own day, or stamped in the future is ignored. None when there is no bar and
-    no usable quote."""
+    than the latest bar, from a past day while the market is open, or stamped in the future
+    is ignored. So is one stamped outside the regular session on its own day when the
+    session is over (before the open, or more than ``CLOSE_PRINTS`` after the close: an
+    extended-hours trade is not the close). None when there is no bar and no usable quote."""
     local = now.astimezone(US_MARKET)
     if quote is not None and quote.price > 0:
         day = trading_day(quote.quoted_at)
@@ -228,7 +232,9 @@ def pick_price(
             if regular_open(status, now):
                 if day == local.date():
                     return Picked(quote.price, before, day, quote.quoted_at, PriceKind.LIVE)
-            elif day < local.date() or _after_close(status, local):
+            elif (day < local.date() or _after_close(status, local)) and regular_hours(
+                quote.quoted_at
+            ):
                 return Picked(
                     quote.price, before, day, quote.quoted_at, PriceKind.PROVISIONAL_CLOSE
                 )
@@ -238,6 +244,14 @@ def pick_price(
         latest.close, previous.close if previous is not None else None, latest.day, None,
         PriceKind.CLOSE,
     )  # fmt: skip
+
+
+def regular_hours(quoted_at: datetime) -> bool:
+    """Whether a quote was stamped in its day's regular session (and the closing prints:
+    ``CLOSE_PRINTS`` after 16:00)."""
+    at = quoted_at.astimezone(US_MARKET)
+    close = datetime.combine(at.date(), REGULAR_CLOSE, US_MARKET) + CLOSE_PRINTS
+    return REGULAR_OPEN <= at.time() and at <= close
 
 
 def _after_close(status: MarketStatus | None, local: datetime) -> bool:

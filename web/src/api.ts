@@ -659,7 +659,13 @@ export type PlanBody = {
   notes?: string[];
   atr?: string | null;
 };
-export type PlanDetail = { brief: PlanBrief; plan: PlanBody; closes: { day: string; close: string }[] };
+export type PlanDetail = {
+  brief: PlanBrief;
+  plan: PlanBody;
+  closes: { day: string; close: string }[];
+  /** The user's newest plan that replaced this one (a refresh, or a plan asked for by hand over a kept-fresh one). */
+  replaced_by?: { id: string; created_at: string } | null;
+};
 
 /** Turn Keep fresh on or off for an open plan (`PUT /investments/plans/{id}/keep-fresh`, 204). */
 export function setPlanKeepFresh(id: string, on: boolean): Promise<void> {

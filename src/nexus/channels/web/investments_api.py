@@ -569,7 +569,7 @@ def _levels(levels: Levels) -> LevelsOut:
 
 
 class RefreshedFromOut(Model):
-    """The plan a refresh replaced."""
+    """The plan on the other end of a refresh: the one this replaced, or the one replacing it."""
 
     id: UUID
     created_at: datetime
@@ -801,6 +801,7 @@ class PlanOut(Model):
     brief: PlanBrief
     plan: dict[str, Any]  # the full write-up, as the research team returned it
     closes: list[ClosePoint]  # recent daily closes, for the chart
+    replaced_by: RefreshedFromOut | None = None  # the newest plan that replaced this one
 
 
 CHART_DAYS = 90
@@ -815,10 +816,12 @@ async def plan(plan_id: str, auth: Auth, web: Runtime) -> PlanOut:
     saved = await plan_cases.get_plan(web.uow(), auth.user.id, key)
     async with web.uow() as tx:
         bars = await tx.investments.bars(saved.symbol, CHART_DAYS)
+        newer = await tx.investments.replaced_by(auth.user.id, saved.id)
     return PlanOut(
         brief=_brief(saved, web.clock().date()),
         plan=saved.body,
         closes=[ClosePoint(day=b.day, close=b.close.quantize(Decimal("0.01"))) for b in bars],
+        replaced_by=RefreshedFromOut(id=newer.id, created_at=newer.created_at) if newer else None,
     )
 
 

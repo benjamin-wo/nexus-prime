@@ -828,7 +828,8 @@ class InvestmentRepository(Protocol):
         ...
 
     async def tracked_symbols(self) -> list[str]:
-        """Across all users: every stock someone holds or watches."""
+        """Across all users: every stock someone holds or watches, or has an open plan for
+        with Keep fresh on."""
         ...
 
     async def upsert_quotes(self, quotes: list[Quote], *, at: datetime) -> None:
@@ -900,6 +901,14 @@ class InvestmentRepository(Protocol):
 
     async def close_refreshed(self, user_id: UserId, plan_id: UUID, *, at: datetime) -> bool:
         """Close an open plan its refresh replaced; False if it had finished meanwhile."""
+        ...
+
+    async def open_kept_fresh_plans(self, user_id: UserId, symbol: str) -> list[SavedPlan]:
+        """The user's open plans for a stock with Keep fresh on, newest first."""
+        ...
+
+    async def replaced_by(self, user_id: UserId, plan_id: UUID) -> SavedPlan | None:
+        """The user's newest plan that replaced this one (its ``refreshed_from``)."""
         ...
 
     # Alerts during the US session, once per user, stock, kind and trading day.

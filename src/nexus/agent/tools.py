@@ -2523,7 +2523,11 @@ async def _they_paid(ctx: ToolContext, a: TheyPaidArgs) -> ToolResult:
 class SettleUpArgs(TripNameArgs):
     person: str | None = Field(
         None,
-        description="Who the user has settled up with; leave out to just see who owes who",
+        description=(
+            'The person to settle up with, as the user named them: "settle up with Ann" is '
+            'person="Ann". Leave out only for a question like "who owes who", which just '
+            "shows the balances"
+        ),
     )
     log: bool = Field(
         True,
@@ -3827,7 +3831,10 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             "Who owes who for a trip, each person netted (what they owe the user less what "
             "the user owes them). With a person, record that the user and that person have "
             "settled up: their IOUs on the trip are marked paid back and what they paid is "
-            "settled. Asks the user to confirm. Moves no money.",
+            "settled. Always pass the person when the user says to settle up with someone "
+            '("settle up with Ann for Japan"): it shows the balance and asks the user to '
+            'confirm, so look nothing up first. Leave it out for "who owes who". Moves no '
+            "money.",
             SettleUpArgs,
             _settle_up,
             confirm=_describe_settle_up,
