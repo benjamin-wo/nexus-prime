@@ -1142,7 +1142,7 @@ test.describe("prices by market state", () => {
   const usd = (amount: string) => ({ amount, currency: "USD" });
   const nvda = [{ symbol: "NVDA", quantity: "10", average_cost: usd("118.4000"), cost: usd("1184.0000"), updated_at: "2026-09-28T03:00:00Z" }];
 
-  test("prices are live while the market is open, provisional after the close, else the close", async ({ page }) => {
+  test("prices are live while the market is open, provisional after the close, else the close", async ({ page, isMobile }) => {
     const state = await fakeApi(page);
     state.holdings = nvda;
     state.watching = ["AMD"];
@@ -1157,6 +1157,11 @@ test.describe("prices by market state", () => {
     await expect(holdings).toContainText("Close of Fri, Sep 25");
     await expect(holdings).not.toContainText("Live");
     await expect(holdings).not.toContainText("provisional");
+    // The table's caption says it once; on a phone each holding's card says it too, so a close is never taken for the price now.
+    const nvdaPrice = holdings.getByRole("row").filter({ hasText: "NVDA" }).locator("td[data-label='Price'] .price-when");
+    if (isMobile) await expect(nvdaPrice).toBeVisible();
+    else await expect(nvdaPrice).toBeHidden();
+    await expect(nvdaPrice).toContainText("Close of Fri, Sep 25");
     await page.goto("/investment/watchlist");
     await expect(watched).toContainText("AMD · USD 129.50");
     await expect(watched).toContainText("Close of Fri, Sep 25");
@@ -1171,7 +1176,8 @@ test.describe("prices by market state", () => {
     await page.goto("/investment");
     await expect(holdings.getByRole("row").filter({ hasText: "NVDA" })).toContainText("131.50");
     await expect(holdings).toContainText("Live · 10:41pm");
-    await expect(holdings.locator(".live-dot")).toHaveCount(1);
+    // The table's caption, and on a phone the holding's own card.
+    await expect(holdings.locator(".live-dot:visible")).toHaveCount(isMobile ? 2 : 1);
     await page.goto("/investment/watchlist");
     await expect(watched).toContainText("AMD · USD 131.75");
     await expect(watched).toContainText("Live · 10:41pm");
@@ -1186,6 +1192,7 @@ test.describe("prices by market state", () => {
     await expect(holdings).toContainText("Close (provisional) · 10:41pm");
     await expect(holdings).not.toContainText("Live");
     await expect(holdings.locator(".live-dot")).toHaveCount(0);
+    await expect(holdings.getByRole("row").filter({ hasText: "NVDA" })).toContainText("Close (provisional) · 10:41pm");
     await page.goto("/investment/watchlist");
     await expect(watched).toContainText("Close (provisional) · 10:41pm");
     await page.goto("/investment/stocks/AMD");
@@ -2153,6 +2160,8 @@ test("a trip's plan is shared by a read-only link that shows no money, reference
   await expect(plan).toContainText("ZZ12 SIN → NRT");
   await expect(plan).toContainText("08:25 → 16:05");
   await expect(plan).toContainText("Staying at Hotel Kumo");
+  // The hotel's address is a line of its own under how long the stay runs.
+  await expect(plan.locator(".shared-row").filter({ hasText: "Check in" }).locator(".caption")).toHaveText([/^Until /, "1-2-3 Example-cho, Tokyo"]);
   await expect(plan.getByRole("link", { name: "Open Fish market breakfast in Google Maps" })).toHaveAttribute(
     "href",
     "https://www.google.com/maps/search/?api=1&query=Fish%20market%20breakfast%2C%204-5%20Market%20St%2C%20Tokyo",

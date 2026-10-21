@@ -135,6 +135,43 @@ def test_after_the_close_the_last_quote_is_a_provisional_close_until_the_bar_arr
     assert (official.price, official.previous, official.at) == (D("103.8"), D("100"), None)
 
 
+def test_a_quote_stamped_after_hours_is_not_the_provisional_close() -> None:
+    closed = status(False, "post-market")
+    # The closing prints just after 16:00 still are the close.
+    prints = pick_price(
+        LATEST, BEFORE, quote("104", "2026-10-19 16:02"), closed, ny("2026-10-19 16:30")
+    )
+    assert prints is not None and prints.kind is PriceKind.PROVISIONAL_CLOSE
+    assert prints.price == D("104")
+    edge = pick_price(
+        LATEST, BEFORE, quote("104", "2026-10-19 16:05"), closed, ny("2026-10-19 16:30")
+    )
+    assert edge is not None and edge.kind is PriceKind.PROVISIONAL_CLOSE
+    # An after-hours trade is not: the last bar's close stands.
+    late = quote("109", "2026-10-19 19:42")
+    got = pick_price(LATEST, BEFORE, late, closed, ny("2026-10-19 19:45"))
+    assert got is not None and got.kind is PriceKind.CLOSE
+    assert (got.price, got.day, got.at) == (D("100"), FRI, None)
+    just_over = quote("109", "2026-10-19 16:06")
+    over = pick_price(LATEST, BEFORE, just_over, closed, ny("2026-10-19 16:30"))
+    assert over is not None and over.kind is PriceKind.CLOSE
+    # The same on a day that has passed (the weekend), and before the open on its own day.
+    weekend = pick_price(
+        BEFORE, None, quote("109", "2026-10-16 19:42"), status(False), ny("2026-10-17 12:00")
+    )
+    assert weekend is not None and weekend.kind is PriceKind.CLOSE and weekend.price == D("98")
+    early = pick_price(
+        LATEST, BEFORE, quote("109", "2026-10-19 07:30"), closed, ny("2026-10-19 17:00")
+    )
+    assert early is not None and early.kind is PriceKind.CLOSE and early.price == D("100")
+
+
+def test_the_live_price_in_the_session_is_the_same_whatever_the_after_hours_rule() -> None:
+    q = quote("103", "2026-10-19 15:59")
+    got = pick_price(LATEST, BEFORE, q, OPEN, ny("2026-10-19 15:59:30"))
+    assert got is not None and got.kind is PriceKind.LIVE and got.price == D("103")
+
+
 def test_a_provisional_close_carries_over_a_weekend() -> None:
     q = quote("104", "2026-10-16 16:00", prev="102")
     got = pick_price(BEFORE, None, q, status(False), ny("2026-10-17 12:00"))

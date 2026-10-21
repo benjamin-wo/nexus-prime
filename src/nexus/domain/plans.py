@@ -568,6 +568,16 @@ class Followed:
     events: list[PlanEvent]
 
 
+def follow_day(plan: SavedPlan, today: date) -> date:
+    """The day to follow a plan through. A plan kept fresh doesn't run out at once: the
+    refresh replaces it once its date has passed, so for ``KEEP_FRESH_GRACE`` after that
+    date it is followed only up to the date. If the refresh hasn't happened by then, it
+    ends as any plan does."""
+    if plan.keep_fresh and today <= plan.valid_until + KEEP_FRESH_GRACE:
+        return min(today, plan.valid_until)
+    return today
+
+
 def follow(plan: SavedPlan, bars: Sequence[Bar], *, today: date) -> Followed:
     """Walk the trading days after the plan (and after the last check), oldest first.
 
@@ -675,6 +685,9 @@ REFRESH_MOVE_ATR = Decimal(1)
 REFRESH_AGE = timedelta(days=7)
 REFRESH_EVERY = timedelta(hours=24)
 REFRESH_PER_USER = 10
+# A plan with Keep fresh on isn't run out by the follow for this long after its date, to
+# give the refresh a chance; after that it ends as any plan does.
+KEEP_FRESH_GRACE = timedelta(days=3)
 # The user is told of a refresh when the verdict changed or the entry, stop or first target
 # moved by more than this many ATR. Otherwise it is made quietly.
 NOTIFY_MOVE_ATR = Decimal("0.5")

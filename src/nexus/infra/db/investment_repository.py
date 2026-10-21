@@ -200,8 +200,12 @@ class SqlInvestmentRepository:
         return [r.symbol for r in rows]
 
     async def tracked_symbols(self) -> list[str]:
-        """Across all users: every stock someone holds or watches."""
-        both = union(select(holdings.c.symbol), select(watchlist.c.symbol)).subquery()
+        """Across all users: every stock someone holds or watches, or has an open plan for
+        with Keep fresh on."""
+        kept = select(plans.c.symbol).where(
+            plans.c.status == PlanStatus.OPEN.value, plans.c.keep_fresh.is_(True)
+        )
+        both = union(select(holdings.c.symbol), select(watchlist.c.symbol), kept).subquery()
         rows = await self._db.execute(select(both.c.symbol).order_by(both.c.symbol))
         return [r.symbol for r in rows]
 
@@ -678,6 +682,34 @@ class SqlInvestmentRepository:
             .values(status=PlanStatus.REFRESHED.value, closed_at=at, keep_fresh=False)
         )
         return bool(result.rowcount)
+
+    async def open_kept_fresh_plans(self, user_id: UserId, symbol: str) -> list[SavedPlan]:
+        """The user's open plans for a stock with Keep fresh on, newest first."""
+        p = plans.c
+        rows = await self._db.execute(
+            _plans_select()
+            .where(
+                p.user_id == user_id,
+                p.symbol == symbol,
+                p.status == PlanStatus.OPEN.value,
+                p.keep_fresh.is_(True),
+            )
+            .order_by(p.created_at.desc())
+        )
+        return [_plan(r) for r in rows]
+
+    async def replaced_by(self, user_id: UserId, plan_id: UUID) -> SavedPlan | None:
+        """The user's newest plan that replaced this one (its ``refreshed_from``)."""
+        p = plans.c
+        row = (
+            await self._db.execute(
+                _plans_select()
+                .where(p.user_id == user_id, p.refreshed_from == plan_id)
+                .order_by(p.created_at.desc())
+                .limit(1)
+            )
+        ).first()
+        return _plan(row) if row else None
 
     async def save_followed(
         self, user_id: UserId, plan_id: UUID, followed: Followed, *, at: datetime

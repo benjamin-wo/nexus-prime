@@ -70,6 +70,7 @@ from nexus.domain.plans import (
     Target,
     Verdict,
     follow,
+    follow_day,
     keep_supported,
     plan,
     playbook,
@@ -802,7 +803,10 @@ async def _save(uow: UowFactory, ctx: StepContext, result: PlanResult) -> None:
     """Save the plan. A refresh that started by itself also takes over from the plan it
     replaces: it links to it, keeps its Keep fresh and alert settings as they are now, and
     closes it as refreshed (unless it finished meanwhile: its outcome stands). The user is
-    told when the verdict changed or the entry, stop or first target moved a good deal."""
+    told when the verdict changed or the entry, stop or first target moved a good deal.
+    A plan the user asked for takes over the same way from their open plans for the stock
+    with Keep fresh on (the newest is linked, all are closed), without a message: they
+    just asked for it."""
     async with uow() as tx:
         saved = SavedPlan(
             id=result.plan_id,
@@ -823,19 +827,29 @@ async def _save(uow: UowFactory, ctx: StepContext, result: PlanResult) -> None:
             price_at=result.price_at,
             price_kind=result.price_kind,
         )
-        old = None
-        if earlier := ctx.task.get("refresh_of"):
-            old = await tx.investments.get_plan(ctx.user.id, UUID(str(earlier)))
-        if old is not None and old.symbol == result.symbol:
+        refresh_of = ctx.task.get("refresh_of")
+        replaced: list[SavedPlan] = []  # newest first; the first is the one it links to
+        if refresh_of:
+            old = await tx.investments.get_plan(ctx.user.id, UUID(str(refresh_of)))
+            if old is not None and old.status is PlanStatus.REFRESHED:
+                # A plan the user asked for took over while this one was being written:
+                # take over from that one instead, so two plans aren't left open.
+                newer = await tx.investments.open_kept_fresh_plans(ctx.user.id, old.symbol)
+                old = newer[0] if newer else old
+            if old is not None and old.symbol == result.symbol:
+                replaced = [old]
+                saved = replace(
+                    saved, refreshed_from=old.id, keep_fresh=old.keep_fresh, alerts=old.alerts
+                )
+        elif replaced := await tx.investments.open_kept_fresh_plans(ctx.user.id, result.symbol):
             saved = replace(
-                saved, refreshed_from=old.id, keep_fresh=old.keep_fresh, alerts=old.alerts
+                saved, refreshed_from=replaced[0].id, keep_fresh=True, alerts=replaced[0].alerts
             )
-        else:
-            old = None
         await tx.investments.insert_plan(saved)
-        if old is not None:
+        for old in replaced:
             await tx.investments.close_refreshed(ctx.user.id, old.id, at=ctx.now)
-            text = refresh_message(old, saved, ctx.task.get("refresh_why") or "it was due")
+        if refresh_of and replaced:
+            text = refresh_message(replaced[0], saved, ctx.task.get("refresh_why") or "it was due")
             if text is not None:
                 # Through the normal send: it waits out quiet hours and is not urgent.
                 await tx.jobs.enqueue(
@@ -1114,9 +1128,9 @@ async def follow_plans(uow: UowFactory, *, now: datetime) -> int:
     for p in followed_plans:
         async with uow() as tx:
             bars = await tx.investments.bars(p.symbol, FOLLOW_BARS)
-        # A plan kept fresh doesn't run out: the refresh replaces it once its date has
-        # passed (see plan_refresh), so the follow never closes it as expired.
-        f = follow(p, bars, today=min(now.date(), p.valid_until) if p.keep_fresh else now.date())
+        # A plan kept fresh isn't run out for a while after its date: the refresh replaces
+        # it first (see plan_refresh).
+        f = follow(p, bars, today=follow_day(p, now.date()))
         if f.checked_through == p.checked_through and f.status is p.status and not f.events:
             continue
         async with uow() as tx:

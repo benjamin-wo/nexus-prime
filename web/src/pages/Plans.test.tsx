@@ -35,9 +35,10 @@ const brief: PlanBrief = {
   price_kind: "live",
 };
 
-function detail(over: Partial<PlanBrief> = {}, notes: string[] = []): PlanDetail {
+function detail(over: Partial<PlanBrief> = {}, notes: string[] = [], replacedBy: PlanDetail["replaced_by"] = null): PlanDetail {
   return {
     brief: { ...brief, ...over },
+    replaced_by: replacedBy,
     closes: [],
     plan: {
       symbol: "ACME",
@@ -186,28 +187,32 @@ describe("a plan and the one it replaced", () => {
     expect(screen.queryByText(/Refreshed from/)).not.toBeInTheDocument();
   });
 
-  it("is labelled Refreshed and points to the newer plan", async () => {
-    mockApi({
-      "GET /investments/plans/p1": () => detail({ id: "p1", status: "refreshed" }),
-      "GET /investments/plans": () => [
-        { ...brief, id: "p2", refreshed_from: { id: "p1", created_at: "2026-10-07T09:00:00Z" } },
-        { ...brief, id: "p1", status: "refreshed" },
-      ],
+  it("is labelled Refreshed and points to the newer plan the detail names", async () => {
+    const calls = mockApi({
+      "GET /investments/plans/p1": () => detail({ id: "p1", status: "refreshed" }, [], { id: "p2", created_at: "2026-10-14T09:00:00Z" }),
     });
     renderPlan("p1");
     expect(await screen.findByText("🔄 Refreshed")).toBeInTheDocument();
     const link = await screen.findByRole("link", { name: "A newer plan replaced this one" });
     expect(link).toHaveAttribute("href", "/investment/plans/p2");
+    // It doesn't go looking through the plans list for it.
+    expect(calls.some((c) => c.path === "/investments/plans")).toBe(false);
   });
 
-  it("is just the label when no newer plan is in the list", async () => {
-    mockApi({
-      "GET /investments/plans/p1": () => detail({ id: "p1", status: "refreshed" }),
-      "GET /investments/plans": () => [{ ...brief, id: "p1", status: "refreshed" }],
-    });
+  it("is just the label when nothing replaced it", async () => {
+    mockApi({ "GET /investments/plans/p1": () => detail({ id: "p1", status: "refreshed" }) });
     renderPlan("p1");
     expect(await screen.findByText("🔄 Refreshed")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "A newer plan replaced this one" })).not.toBeInTheDocument();
+  });
+
+  it("points to a plan asked for by hand over it, whatever its own status", async () => {
+    mockApi({
+      "GET /investments/plans/p1": () => detail({ id: "p1", status: "open" }, [], { id: "p3", created_at: "2026-10-15T09:00:00Z" }),
+    });
+    renderPlan("p1");
+    const link = await screen.findByRole("link", { name: "A newer plan replaced this one" });
+    expect(link).toHaveAttribute("href", "/investment/plans/p3");
   });
 });
 

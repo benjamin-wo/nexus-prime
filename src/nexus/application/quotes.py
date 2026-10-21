@@ -22,7 +22,14 @@ from nexus.application.ports import UnitOfWork
 from nexus.domain.history import MARKET
 from nexus.domain.investments import clean_symbol
 from nexus.domain.ledger import UserId
-from nexus.domain.market import MarketStatus, Quote, just_closed, regular_open
+from nexus.domain.market import (
+    US_MARKET,
+    MarketStatus,
+    Quote,
+    just_closed,
+    regular_hours,
+    regular_open,
+)
 
 log = logging.getLogger(__name__)
 
@@ -143,6 +150,21 @@ async def _keep(uow: UowFactory, quotes: list[Quote], now: datetime) -> None:
         async with uow() as tx:
             await tx.investments.upsert_quotes(quotes, at=now)
             await tx.commit()
+        _note_extended(quotes)
+
+
+def _note_extended(quotes: list[Quote]) -> None:
+    """Say how many of the quotes just stored were stamped outside the regular session, to
+    learn from the logs whether the provider's quote includes extended-hours trades."""
+    outside = [q.quoted_at for q in quotes if not regular_hours(q.quoted_at)]
+    if outside:
+        latest = max(outside).astimezone(US_MARKET)
+        log.info(
+            "quotes: %d of %d stamped outside regular hours (latest %s ET)",
+            len(outside),
+            len(quotes),
+            f"{latest:%H:%M}",
+        )
 
 
 async def refresh_own(

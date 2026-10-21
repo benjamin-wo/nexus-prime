@@ -288,7 +288,7 @@ function DividendsCard() {
 }
 
 /** `kind` is the kind of the card's own label: a row whose price is of another kind says so. */
-function HoldingRow({ position, kind, onChanged }: { position: Holding; kind: PriceKind; onChanged: () => void }) {
+export function HoldingRow({ position, kind, onChanged }: { position: Holding; kind: PriceKind; onChanged: () => void }) {
   const [editing, setEditing] = useState(false);
   const [quantity, setQuantity] = useState(position.quantity);
   const [cost, setCost] = useState(position.average_cost.amount);
@@ -343,13 +343,14 @@ function HoldingRow({ position, kind, onChanged }: { position: Holding; kind: Pr
           <td className="num" data-label="Shares">{shares(position.quantity)}</td>
           <td className="num" data-label="Avg cost">{formatMoney(position.average_cost)}</td>
           <td className="num" data-label="Price">
-            {position.price ? formatMoney(position.price) : <span className="muted">—</span>}
-            {position.price && position.price_kind !== kind && (
-              <>
-                <br />
-                <PriceWhen kind={position.price_kind} at={position.price_at} day={position.price_day} />
-              </>
-            )}
+            <span className="price-cell">
+              {position.price ? formatMoney(position.price) : <span className="muted">—</span>}
+              {position.price && (
+                <span className={position.price_kind === kind ? "when-common" : undefined}>
+                  <PriceWhen kind={position.price_kind} at={position.price_at} day={position.price_day} />
+                </span>
+              )}
+            </span>
           </td>
           <td className="num" data-label="Value">
             {position.value ? formatMoney(position.value) : formatMoney(position.cost)}

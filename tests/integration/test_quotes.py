@@ -4,6 +4,7 @@ worth at them. Every ticker and figure here is made up. October 2026 is still da
 time in New York (UTC-4)."""
 
 import asyncio
+import logging
 import types
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -95,6 +96,35 @@ async def test_the_job_fetches_held_and_watched_stocks_and_the_market(uow: UowFa
         "SPY": Decimal("103"),
     }
     assert set((await fetched(uow, "NVDA", "AMD", "SPY")).values()) == {MON_OPEN}
+
+
+async def test_quotes_stamped_outside_regular_hours_are_counted_in_the_log(
+    uow: UowFactory, caplog: pytest.LogCaptureFixture
+) -> None:
+    user = await person(uow)
+    await hold(uow, user, "NVDA")
+    await hold(uow, user, "AMD")
+    stamped = {
+        "NVDA": quote("NVDA", "103", "100", ny("2026-10-19 10:41")),  # in the session
+        "AMD": quote("AMD", "109", "100", ny("2026-10-19 07:30")),  # before the open
+        "SPY": quote("SPY", "103", "100", ny("2026-10-18 19:42")),  # after hours
+    }
+    caplog.set_level(logging.INFO, logger="nexus.application.quotes")
+    fake = FakeQuotes(stamped, status=OPEN)
+    assert await quote_cases.refresh(uow, Quotes(fake), now=MON_OPEN) == 3
+    [line] = [r.getMessage() for r in caplog.records if r.getMessage().startswith("quotes:")]
+    assert line == "quotes: 2 of 3 stamped outside regular hours (latest 07:30 ET)"
+    # A page's refresh stores through the same step; closing prints are regular.
+    caplog.clear()
+    page = FakeQuotes({"NVDA": quote("NVDA", "104", "100", ny("2026-10-19 10:42"))}, status=OPEN)
+    await quote_cases.refresh_own(uow, Quotes(page), user.id, now=MON_OPEN, held=True)
+    assert not [r for r in caplog.records if r.getMessage().startswith("quotes:")]
+    late = FakeQuotes({"NVDA": quote("NVDA", "104", "100", ny("2026-10-19 19:42"))}, status=OPEN)
+    await quote_cases.refresh_own(
+        uow, Quotes(late), user.id, now=MON_OPEN + timedelta(minutes=5), held=True
+    )
+    [page_line] = [r.getMessage() for r in caplog.records if r.getMessage().startswith("quotes:")]
+    assert page_line == "quotes: 1 of 1 stamped outside regular hours (latest 19:42 ET)"
 
 
 async def test_a_stock_the_provider_doesnt_list_is_not_asked_about(uow: UowFactory) -> None:

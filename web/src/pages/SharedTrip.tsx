@@ -50,12 +50,8 @@ function Entry({ booking, iso }: { booking: SharedBooking; iso: string }) {
         </span>
         <span className="shared-main">
           <strong>{name}</strong>
-          {!out && (booking.check_out || booking.address) && (
-            <span className="caption">
-              {booking.check_out && `Until ${day(booking.check_out)}`}
-              {booking.address && `${booking.check_out ? " · " : ""}${booking.address}`}
-            </span>
-          )}
+          {!out && booking.check_out && <span className="caption">Until {day(booking.check_out)}</span>}
+          {!out && booking.address && <span className="caption">{booking.address}</span>}
         </span>
         <span className={`badge ${out ? "badge-pending" : "badge-in"}`}>{out ? "Check out" : "Check in"}</span>
         {!out && <MapsLink query={[name, booking.address].filter(Boolean).join(", ")} name={name} />}

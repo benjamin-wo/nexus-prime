@@ -21,10 +21,16 @@ and closes it as ``refreshed`` (see ``plans._save``), and the user is told by Te
 quiet hours applying, only if the verdict changed or the entry, stop or first target moved
 by more than half an ATR.
 
-Ordering with ``plans.follow``: following a plan whose Keep fresh is on never closes it
-as expired (``follow_plans`` stops short of the valid-until date), so an expired plan is
-still open here and gets refreshed instead of just running out, whichever job runs first.
-Turning Keep fresh off lets the next follow expire it as usual.
+Ordering with ``plans.follow``: for ``KEEP_FRESH_GRACE`` (3 days) after the valid-until
+date, following a plan whose Keep fresh is on doesn't close it as expired (``follow_plans``
+stops short of the date), so an expired plan is still open here and gets refreshed instead
+of just running out, whichever job runs first, and a refresh that can't start is tried
+every hour. Past the grace the follow expires it like any plan, with the usual message, so
+a plan kept fresh never stays open for ever. Turning Keep fresh off lets the next follow
+expire it as usual.
+
+A plan the user asks for by hand also replaces their open Keep fresh plans for the stock
+(``plans._save``), without a message.
 """
 
 import logging

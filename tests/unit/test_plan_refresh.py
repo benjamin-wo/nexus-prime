@@ -11,12 +11,15 @@ import pytest
 from nexus.application.research import NEWS_EVERY, NEWS_IN_SESSION, news_every
 from nexus.domain.market import MarketStatus, PriceKind
 from nexus.domain.plans import (
+    KEEP_FRESH_GRACE,
     PlanNumbers,
     PlanStatus,
     RefreshKind,
     RefreshReason,
     SavedPlan,
     Verdict,
+    follow,
+    follow_day,
     plan,
     price_notes,
     record,
@@ -231,6 +234,36 @@ def test_an_entry_that_appears_or_goes_is_told() -> None:
     same_verdict = refreshed(entry_low=None, entry_high=None)
     message = refresh_message(refreshed(), same_verdict, "price moved 1.4 ATR")
     assert message is not None and "still Wait. No entry zone" in message
+
+
+# --- the follow gives a kept plan time to be refreshed ---------------------------------------
+
+
+def test_a_kept_fresh_plan_is_followed_only_to_its_date_for_three_days_after_it() -> None:
+    kept = saved(keep_fresh=True)
+    ends = kept.valid_until
+    assert KEEP_FRESH_GRACE == timedelta(days=3)
+    assert follow_day(kept, ends - timedelta(days=2)) == ends - timedelta(days=2)
+    assert follow_day(kept, ends) == ends
+    assert follow_day(kept, ends + timedelta(days=1)) == ends
+    assert follow_day(kept, ends + KEEP_FRESH_GRACE) == ends  # the last day of the grace
+    after = ends + KEEP_FRESH_GRACE + timedelta(days=1)
+    assert follow_day(kept, after) == after  # then it is followed as any plan
+
+
+def test_a_plan_without_keep_fresh_is_followed_to_today() -> None:
+    plain = saved()
+    later = plain.valid_until + timedelta(days=1)
+    assert follow_day(plain, later) == later
+
+
+def test_a_kept_fresh_plan_runs_out_only_once_the_grace_is_over() -> None:
+    kept = saved(keep_fresh=True)
+    ends = kept.valid_until
+    inside = follow(kept, [], today=follow_day(kept, ends + KEEP_FRESH_GRACE))
+    assert inside.status is PlanStatus.OPEN
+    over = ends + KEEP_FRESH_GRACE + timedelta(days=1)
+    assert follow(kept, [], today=follow_day(kept, over)).status is PlanStatus.EXPIRED
 
 
 # --- the record leaves replaced plans out -------------------------------------------------
