@@ -75,6 +75,8 @@ class User:
     display_name: str | None = None
     # Whether they are told on Telegram when someone else changes a trip they share.
     trip_activity_alerts: bool = True
+    # When they put away Home's setup checklist; None while it is shown.
+    setup_dismissed_at: datetime | None = None
 
     @property
     def has_web_access(self) -> bool:

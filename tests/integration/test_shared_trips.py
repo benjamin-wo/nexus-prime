@@ -852,6 +852,8 @@ async def test_a_guest_is_refused_by_ordinary_routes_and_allowed_on_the_trip(
     guest = await make_guest(shared)
     for method, path, body in [
         ("GET", "/api/home", None),
+        ("GET", "/api/setup", None),
+        ("POST", "/api/setup/dismiss", None),
         ("GET", "/api/transactions", None),
         ("GET", "/api/summary", None),
         ("GET", "/api/categories", None),

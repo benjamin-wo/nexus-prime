@@ -6,6 +6,8 @@ The shared language for code, tests and docs. When a term here and a name in cod
 
 - **Surface**: a way the user reaches the agent. There are two: **Telegram** (quick capture on the phone) and the **Web cockpit** (reviewing and managing money). Both call the same agent and the same use cases.
 - **Owner**: the user who runs the deployment and issues invites. **Member**: an invited user. Every user's data is strictly private; there are no shared ledgers. The one thing people share is a trip's plan (see **Trip owner, trip member**).
+- **Needs you**: Home's list of what each department is waiting on the user for, each item linking to the page that settles it. Sorted by `when`: urgent first (`now`), then items about today, then the rest (`soon`), and by department within each. Stock items about "today" follow the New York trading day; travel items follow the user's own date.
+- **Setup checklist**: the four first steps on Home (payday, receipts in automatically, stocks, a monthly budget), each done or not by what the user already has. The user can dismiss it; it never changes anything by itself.
 - **Invite**: a single-use token, valid for 24 hours, that lets one person sign in to the web cockpit with Telegram login.
 
 ## Ledger

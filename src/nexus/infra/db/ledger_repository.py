@@ -89,6 +89,7 @@ def _user(row: Row[Any]) -> User:
         web_access_granted_at=row.web_access_granted_at,
         display_name=row.display_name,
         trip_activity_alerts=row.trip_activity_alerts,
+        setup_dismissed_at=row.setup_dismissed_at,
     )
 
 
@@ -260,6 +261,11 @@ class SqlLedgerRepository:
     async def set_trip_activity_alerts(self, user_id: UserId, on: bool) -> None:
         await self._db.execute(
             update(users).where(users.c.id == user_id).values(trip_activity_alerts=on)
+        )
+
+    async def set_setup_dismissed(self, user_id: UserId, at: datetime | None) -> None:
+        await self._db.execute(
+            update(users).where(users.c.id == user_id).values(setup_dismissed_at=at)
         )
 
     # --- categories -------------------------------------------------------------

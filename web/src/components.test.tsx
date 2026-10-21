@@ -263,12 +263,12 @@ describe("brief", () => {
     expect(text(brief({ overall, plan: plan({ budget_left: null, tighter: null }) }))).toMatch(/^Nothing needs you/);
     expect(text(brief({ overall }))).toMatch(/^Nothing needs you/);
     // It sits before the rest of the brief.
-    const needs = [{ department: "accounting", kind: "bill", text: "x", link: "/", urgent: false, actions: [] }];
+    const needs = [{ department: "accounting", kind: "bill", text: "x", link: "/", urgent: false, when: "soon" as const, actions: [] }];
     expect(text(brief({ overall, plan: plan(), needs }))).toMatch(/budget left\. 1 thing needs you below\.$/);
   });
 
   it("only highlights the figures", () => {
-    const parts = brief({ spent: sgd("10"), needs: [{ department: "accounting", kind: "bill", text: "x", link: "/", urgent: false, actions: [] }] });
+    const parts = brief({ spent: sgd("10"), needs: [{ department: "accounting", kind: "bill", text: "x", link: "/", urgent: false, when: "soon" as const, actions: [] }] });
     expect(parts.filter((p) => p.hl).map((p) => p.text)).toEqual([expect.stringMatching(/10\.00/)]);
     expect(text(parts)).toMatch(/ 1 thing needs you below\.$/);
   });
