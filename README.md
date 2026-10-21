@@ -6,12 +6,12 @@
 ![mypy strict](https://img.shields.io/badge/mypy-strict-2a6db2)
 ![Postgres 16](https://img.shields.io/badge/postgres-16-336791)
 
-**A personal finance assistant you talk to.** Text the Telegram bot "lunch at Maxwell 8.40" or send it a receipt photo, and it's in your ledger. Open the web cockpit, on desktop or inside Telegram as a Mini App, and Nexus opens with a brief of your month. Three departments share one assistant: **Accounting** (spending, budgets, bills, payday), **Investment** (holdings, research and trade plans; it never trades) and **Travel** (trips, bookings, itineraries; it never books).
+**A personal finance assistant you talk to.** Text the Telegram bot "lunch at Maxwell 8.40" or send it a receipt photo, and it's in your ledger. Open the web cockpit, on desktop or inside Telegram as a Mini App, and Nexus opens with a brief of your month and what needs you today. Three departments share one assistant: **Accounting** (spending, budgets, bills, payday), **Investment** (holdings, research and trade plans; it never trades) and **Travel** (trips, bookings, itineraries; it never books).
 
 One LLM agent serves both surfaces, but the parts that must be right, like money, identity and who can see what, never depend on the model.
 
 <p align="center">
-  <img src="docs/screenshots/home.png" alt="Home on a phone: Nexus's brief of the month with suggested questions, and six months of spending" width="30%">
+  <img src="docs/screenshots/home.png" alt="Home on a phone: Nexus's brief of the month, then what needs you today, marked when it is urgent" width="30%">
   <img src="docs/screenshots/ledger.png" alt="Ledger on a phone: filters, search and transactions, one with a receipt" width="30%">
   <img src="docs/screenshots/trip.png" alt="A trip on a phone: a cover photo with dates and companions, tabs, and the next flight as a boarding pass" width="30%">
 </p>
@@ -58,7 +58,7 @@ One LLM agent serves both surfaces, but the parts that must be right, like money
 - **Shared trips:** invite someone to a trip with a single-use link (valid 7 days) and they can edit its plan (days, places, stops, packing, notes), never its money; people the app's owner invites can join with just a Telegram sign-in and see only the trips they are on. The trip keeps a short log of who changed what. The server side is in; the screens come next.
 
 **Everywhere**
-- **Web cockpit:** Home with Nexus's brief and suggested questions, a page per department, a filterable ledger with CSV export, and a chat drawer that keeps one running conversation, shared with Telegram. It is mobile-first and opens inside Telegram already signed in.
+- **Web cockpit:** Home as a Today page (Nexus's brief, what needs you across money, stocks and trips with the urgent first, a short setup checklist, and your month, portfolio and next trip at a glance; a trip that is on leads it), a page per department, a filterable ledger with CSV export, and a chat drawer that keeps one running conversation, shared with Telegram. It is mobile-first and opens inside Telegram already signed in.
 - **Private by construction.** It is invite-only, and each user's data is isolated by the database schema itself, not just by application code.
 
 ## Architecture

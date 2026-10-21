@@ -5,7 +5,6 @@ import { Link } from "react-router-dom";
 import { api, ApiError, type Mover, type Session, type Today, type Why } from "../api";
 import { formatChange, formatPercent } from "../format";
 import { livePolling } from "../prices";
-import { Block } from "./Block";
 import { Icon } from "./Icon";
 import { PriceWhen } from "./PriceWhen";
 
@@ -100,9 +99,9 @@ function MoverRow({ mover }: { mover: Mover }) {
 }
 
 /** How the portfolio did in the latest US session and its biggest movers, with a headline for
- * each and a button that reads the day's headlines for why. Home puts it in a titled block, the
- * Portfolio page in a card. Shown only when there is something to say. */
-export function TodayCard({ as = "card" }: { as?: "card" | "block" }) {
+ * each and a button that reads the day's headlines for why: a card on the Portfolio page. Shown
+ * only when there is something to say. */
+export function TodayCard() {
   const today = useQuery({
     queryKey: ["investments", "today"],
     queryFn: () => api<Today>("/investments/today"),
@@ -132,13 +131,6 @@ export function TodayCard({ as = "card" }: { as?: "card" | "block" }) {
     </>
   );
 
-  if (as === "block") {
-    return (
-      <Block id="today" title={title} action={when}>
-        {body}
-      </Block>
-    );
-  }
   return (
     <section className="card" aria-labelledby="today">
       <div className="card-head">

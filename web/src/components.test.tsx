@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ledgerParams, type Me, type Reply, type Transaction } from "./api";
 import { Amount } from "./components/Amount";
-import { brief } from "./brief";
+import { brief, monthShare, notableMove, pace } from "./brief";
 import { CategoryBars } from "./components/CategoryBars";
 import { ChatDrawer } from "./components/ChatDrawer";
 import { formatMoney } from "./format";
@@ -263,13 +263,82 @@ describe("brief", () => {
     expect(text(brief({ overall, plan: plan({ budget_left: null, tighter: null }) }))).toMatch(/^Nothing needs you/);
     expect(text(brief({ overall }))).toMatch(/^Nothing needs you/);
     // It sits before the rest of the brief.
-    const needs = [{ department: "accounting", kind: "bill", text: "x", link: "/", urgent: false, actions: [] }];
+    const needs = [{ department: "accounting", kind: "bill", text: "x", link: "/", urgent: false, when: "soon" as const, actions: [] }];
     expect(text(brief({ overall, plan: plan(), needs }))).toMatch(/budget left\. 1 thing needs you below\.$/);
   });
 
+  describe("across areas", () => {
+    const mover = (symbol: string, day_percent: string, held = true) => ({
+      symbol, held, price: "131.50", day_percent, price_kind: "live" as const, price_at: null, price_day: "2026-09-28", headline: null,
+    });
+    const today = (movers: ReturnType<typeof mover>[], session: "live" | "closed_today" | "previous" = "live") => ({
+      session, day: "2026-09-28", change: sgd("16.25"), percent: "0.96", price_kind: "live" as const, as_of_at: null, holds: true, movers, prices: true,
+    });
+
+    it("takes the held stock that moved most, when it moved by 3% or more", () => {
+      expect(notableMove(today([mover("AMD", "1.2"), mover("NVDA", "-5.1")]))).toEqual({ symbol: "NVDA", percent: -5.1, session: "live" });
+      expect(notableMove(today([mover("AMD", "2.9"), mover("NVDA", "-2.1")]))).toBeNull();
+      expect(notableMove(today([mover("AMD", "3")]))).toMatchObject({ symbol: "AMD" });
+      // A watched stock is not the user's, and no session is nothing to say.
+      expect(notableMove(today([mover("AMD", "9", false)]))).toBeNull();
+      expect(notableMove(undefined)).toBeNull();
+      expect(notableMove(null)).toBeNull();
+    });
+
+    it("adds one short market clause after the money, with the figure lit", () => {
+      const move = notableMove(today([mover("NVDA", "-5.1")]));
+      const parts = brief({ spent: sgd("300"), lastMonthToDate: sgd("400"), move });
+      expect(text(parts)).toMatch(/^You've spent SGD\s?300\.00 this month, SGD\s?100\.00 less than by this time last month\. NVDA is down 5% today\.$/);
+      expect(parts.filter((p) => p.hl).map((p) => p.text)).toEqual([expect.stringMatching(/300\.00/), expect.stringMatching(/100\.00/), "5%"]);
+      expect(text(brief({ move: notableMove(today([mover("AMD", "4.4")])) }))).toBe("AMD is up 4% today.");
+      // After the close, and before the next open, it says which session.
+      expect(text(brief({ move: notableMove(today([mover("AMD", "4.4")], "closed_today")) }))).toBe("AMD rose 4% today.");
+      expect(text(brief({ move: notableMove(today([mover("NVDA", "-5.1")], "previous")) }))).toBe("NVDA fell 5% in the last session.");
+    });
+
+    it("says money, then the market, then the trip, then what needs the person", () => {
+      const move = notableMove(today([mover("NVDA", "-5.1")]));
+      const trip = {
+        trip: { destination: "Tokyo", status: "ongoing", day_number: 3, days: 6 },
+        ready: { nights_without_stay: [] },
+      } as unknown as Parameters<typeof brief>[0]["trip"];
+      const needs = [{ department: "investment", kind: "plan_hit", text: "x", link: "/", urgent: true, when: "now" as const, actions: [] }];
+      expect(text(brief({ spent: sgd("300"), move, trip, needs }))).toMatch(
+        /^You've spent SGD\s?300\.00 this month\. NVDA is down 5% today\. You're on day 3 of 6 in Tokyo\. 1 thing needs you below\.$/,
+      );
+    });
+  });
+
   it("only highlights the figures", () => {
-    const parts = brief({ spent: sgd("10"), needs: [{ department: "accounting", kind: "bill", text: "x", link: "/", urgent: false, actions: [] }] });
+    const parts = brief({ spent: sgd("10"), needs: [{ department: "accounting", kind: "bill", text: "x", link: "/", urgent: false, when: "soon" as const, actions: [] }] });
     expect(parts.filter((p) => p.hl).map((p) => p.text)).toEqual([expect.stringMatching(/10\.00/)]);
     expect(text(parts)).toMatch(/ 1 thing needs you below\.$/);
+  });
+});
+
+describe("pace", () => {
+  const sgd = (amount: string) => ({ amount, currency: "SGD" });
+  const budget = (percent: number) => ({ id: "b", category_id: null, name: "Overall", limit: sgd("1000"), spent: sgd(String(percent * 10)), remaining: sgd("0"), percent, unconverted: [] });
+  const midMonth = new Date("2026-10-16T04:00:00Z"); // 16 of 31 in Singapore: 52%
+
+  it("works out how far through the month it is on the user's calendar", () => {
+    expect(monthShare("Asia/Singapore", midMonth)).toBe(52);
+    expect(monthShare("Asia/Singapore", new Date("2026-02-28T04:00:00Z"))).toBe(100);
+    // 17:00 UTC on the 15th is already the 16th in Singapore.
+    expect(monthShare("Asia/Singapore", new Date("2026-10-15T17:00:00Z"))).toBe(52);
+    expect(monthShare("America/New_York", new Date("2026-10-15T17:00:00Z"))).toBe(48);
+  });
+
+  it("compares the share of the budget used with the share of the month gone", () => {
+    const at = (percent: number) => pace({ overall: budget(percent), timezone: "Asia/Singapore", now: midMonth });
+    expect(at(70)).toMatchObject({ label: "Ahead of pace", ahead: true, used: 70, detail: "70% of your budget used, 52% through the month" });
+    expect(at(50)).toMatchObject({ label: "On pace", ahead: false });
+    expect(at(40)).toMatchObject({ label: "Under pace", ahead: false });
+  });
+
+  it("falls back to last month by this date, and to nothing", () => {
+    expect(pace({ lastMonthToDate: sgd("1200"), timezone: "Asia/Singapore", now: midMonth })?.detail).toMatch(/^Last month by now: SGD\s?1,200\.00$/);
+    expect(pace({ lastMonthToDate: sgd("1200"), timezone: "Asia/Singapore", now: midMonth })?.label).toBeUndefined();
+    expect(pace({ timezone: "Asia/Singapore", now: midMonth })).toBeNull();
   });
 });

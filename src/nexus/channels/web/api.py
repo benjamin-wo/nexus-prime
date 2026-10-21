@@ -28,6 +28,7 @@ from nexus.application import memory as memory_cases
 from nexus.application import notifications as notify_cases
 from nexus.application import receipts as receipt_cases
 from nexus.application import salary as salary_cases
+from nexus.application import setup as setup_cases
 from nexus.application import splits as split_cases
 from nexus.application import statements as statement_cases
 from nexus.application import subscriptions as subscription_cases
@@ -2168,6 +2169,9 @@ class FeedItemOut(Model):
     text: str
     link: str
     urgent: bool
+    # How soon it needs the user, and the list's order: "now" (urgent), "today" (about
+    # something today) or "soon" (the rest). The list comes sorted by it.
+    when: str
     actions: list[FeedActionOut]  # buttons that settle the item; usually none
 
 
@@ -2182,6 +2186,7 @@ async def home(auth: Auth, web: Runtime) -> list[FeedItemOut]:
             text=i.text,
             link=i.link,
             urgent=i.urgent,
+            when=i.when,
             actions=[
                 FeedActionOut(key=a.key, label=a.label, method=a.method, path=a.path)
                 for a in i.actions
@@ -2189,6 +2194,38 @@ async def home(auth: Auth, web: Runtime) -> list[FeedItemOut]:
         )
         for i in items
     ]
+
+
+class SetupItemOut(Model):
+    key: str
+    label: str
+    done: bool
+    link: str  # the web page where it is done
+    ask: str  # a sentence the web can send to the chat to do it there
+
+
+class SetupOut(Model):
+    dismissed: bool
+    items: list[SetupItemOut]
+
+
+@router.get("/setup")
+async def setup(auth: Auth, web: Runtime) -> SetupOut:
+    """Home's setup checklist: what is already set up and what isn't."""
+    found = await setup_cases.checklist(web.uow(), auth.user)
+    return SetupOut(
+        dismissed=found.dismissed,
+        items=[
+            SetupItemOut(key=i.key, label=i.label, done=i.done, link=i.link, ask=i.ask)
+            for i in found.items
+        ],
+    )
+
+
+@router.post("/setup/dismiss", status_code=204)
+async def dismiss_setup(auth: Auth, web: Runtime) -> None:
+    """Put the checklist away. Safe to repeat."""
+    await setup_cases.dismiss(web.uow(), auth.user, now=web.clock())
 
 
 class RunOut(Model):

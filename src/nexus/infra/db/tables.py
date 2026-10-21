@@ -73,6 +73,8 @@ users = Table(
     # Whether the owner of a shared trip is told on Telegram when someone else changes
     # it (migration 0047).
     Column("trip_activity_alerts", Boolean, nullable=False, server_default=text("true")),
+    # When they put away Home's setup checklist (migration 0052); null while it is shown.
+    Column("setup_dismissed_at", TZ),
     CheckConstraint("role IN ('owner', 'member', 'guest')", name="role"),
     CheckConstraint("home_currency ~ '^[A-Z]{3}$'", name="home_currency"),
 )

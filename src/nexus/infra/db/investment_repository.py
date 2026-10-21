@@ -94,6 +94,20 @@ def _plan(row: Row[Any]) -> SavedPlan:
     )
 
 
+def _alert(row: Row[Any]) -> MarketAlert:
+    return MarketAlert(
+        id=row.id,
+        user_id=UserId(row.user_id),
+        symbol=row.symbol,
+        kind=AlertKind(row.kind),
+        day=row.day,
+        text=row.text,
+        urgent=row.urgent,
+        created_at=row.created_at,
+        sent_at=row.sent_at,
+    )
+
+
 def _plans_select() -> Select[Any]:
     """Plans, each with when the plan it replaced was made (``refreshed_from_at``)."""
     before = plans.alias("before")
@@ -775,6 +789,15 @@ class SqlInvestmentRepository:
         ).first()
         return row is not None
 
+    async def alerts_on(self, user_id: UserId, day: date) -> list[MarketAlert]:
+        a = market_alerts.c
+        rows = await self._db.execute(
+            select(market_alerts)
+            .where(a.user_id == user_id, a.day == day)
+            .order_by(a.created_at, a.symbol)
+        )
+        return [_alert(r) for r in rows]
+
     async def unsent_alerts(self, user_id: UserId, day: date) -> list[MarketAlert]:
         a = market_alerts.c
         rows = await self._db.execute(
@@ -782,20 +805,7 @@ class SqlInvestmentRepository:
             .where(a.user_id == user_id, a.day == day, a.sent_at.is_(None))
             .order_by(a.created_at, a.symbol)
         )
-        return [
-            MarketAlert(
-                id=r.id,
-                user_id=UserId(r.user_id),
-                symbol=r.symbol,
-                kind=AlertKind(r.kind),
-                day=r.day,
-                text=r.text,
-                urgent=r.urgent,
-                created_at=r.created_at,
-                sent_at=r.sent_at,
-            )
-            for r in rows
-        ]
+        return [_alert(r) for r in rows]
 
     async def mark_alerts_sent(self, user_id: UserId, alert_ids: list[UUID], at: datetime) -> None:
         if alert_ids:

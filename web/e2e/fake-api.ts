@@ -1,5 +1,7 @@
 import type { Page, Route } from "@playwright/test";
 
+import type { Setup } from "../src/api";
+
 type WalletRef = { id: string; name: string; kind: string };
 
 type Tx = {
@@ -119,6 +121,11 @@ export async function fakeApi(
     emailMove = false,
     /** Two entries that look like moves, for the review on the Wallets card. */
     likelyMoves = false,
+    /** Home's Today items: a stop reached, a big move, earnings, a flight tomorrow and trip prep, in the order the server sorts them. */
+    todayItems = false,
+    /** A trip that is on, day 3 of 6 in Tokyo (the dates follow today): a stay, a late plan today, a flight home,
+     * and today's spending against its budget. Home leads with it. */
+    tripMode = false,
   } = {},
 ) {
   let session = signedIn;
@@ -305,6 +312,10 @@ export async function fakeApi(
     importBodies: { include: number[]; moves: { row: number; as_move: string | null }[] }[];
     /** Scheduled moves that haven't shown up, as Home nudges: bill id and due date. */
     missed: { bill: string; due: string }[];
+    /** Home's setup checklist, as GET /setup answers; POST /setup/dismiss sets `dismissed`. */
+    setup: Setup;
+    /** What an ongoing trip's spending says about today (null: nothing, as for a trip that isn't on). */
+    tripNow: { today: { amount: string; currency: string }; per_day_left: { amount: string; currency: string } } | null;
     /** Emails answered "Move": the email and what was sent. */
     emailMoves: { id: string; body: Record<string, unknown> }[];
     memories: { id: string; kind: string; text: string; happened_on: string | null; updated_at: string }[];
@@ -433,6 +444,16 @@ export async function fakeApi(
     imports: [],
     importBodies: [],
     missed: [],
+    setup: {
+      dismissed: false,
+      items: [
+        { key: "payday", label: "Set your payday", done: false, link: "/accounting/plan", ask: "Help me set my payday" },
+        { key: "receipts", label: "Get receipts in automatically", done: false, link: "/accounting/email", ask: "Help me get my receipts in from email automatically" },
+        { key: "investments", label: "Add your stocks", done: true, link: "/investment", ask: "Help me add my stocks" },
+        { key: "budget", label: "Set a monthly budget", done: false, link: "/accounting/plan", ask: "Help me set a monthly budget" },
+      ],
+    },
+    tripNow: null,
     emailMoves: [],
     memories: [
       { id: "m1", kind: "fact", text: "Ann is the user's sister.", happened_on: null, updated_at: "2026-09-28T06:00:00Z" },
@@ -573,6 +594,30 @@ export async function fakeApi(
     alert.duplicate = twin(receipt);
     receipt.duplicate = twin(alert);
     state.txs.push(alert, receipt);
+  }
+  if (tripMode) {
+    const sgd = (amount: string) => ({ amount, currency: "SGD" });
+    const base = Date.parse(new Date().toLocaleDateString("en-CA"));
+    const at = (offset: number) => new Date(base + offset * 86400000).toISOString().slice(0, 10);
+    const [start, day, end] = [at(-2), at(0), at(3)];
+    const plan = { provider: null, segments: [], hotel: null, address: null, check_in: null, check_out: null, name: null, day: null, at: null, note: null, reference: null, booked_via: null, category: null, scheduled: true, cost: null, logged: false, manual: true };
+    state.trips = [
+      {
+        id: "tripnow", destination: "Tokyo", start, end, days: 6, currency: "JPY", budget: sgd("2400.0000"), companions: [], set_aside: null, planned: {},
+        status: "ongoing", days_until: 0, day_number: 3, notes: null, day_labels: {}, stops: [], split_evenly: true, role: "owner", owner_name: OWNER_NAME, packing: [],
+      },
+    ];
+    state.flight = false;
+    state.tripNow = { today: sgd("42.0000"), per_day_left: sgd("380.0000") };
+    state.plans.push(
+      { ...plan, id: "pl-stay", trip_id: "tripnow", kind: "hotel", title: "Hotel Kumo Shinjuku", starts: start, ends: end, hotel: "Hotel Kumo Shinjuku", address: "1-2-3 Shinjuku", check_in: start, check_out: end, reference: "HK4471", booked_via: "Agoda" },
+      { ...plan, id: "pl-early", trip_id: "tripnow", kind: "activity", title: "Early market walk", starts: day, ends: day, name: "Early market walk", day, at: "00:01" },
+      { ...plan, id: "pl-late", trip_id: "tripnow", kind: "activity", title: "Late ramen at Fuji", starts: day, ends: day, name: "Late ramen at Fuji", day, at: "23:59" },
+      {
+        ...plan, id: "pl-home", trip_id: "tripnow", kind: "flight", title: "ZZ13 NRT → SIN", provider: "Acme Air", starts: end, ends: end, manual: false, reference: "ZK9R2M", booked_via: "Acme Air",
+        segments: [{ number: "ZZ13", origin: "NRT", destination: "SIN", departs: `${end}T18:10`, arrives: `${end}T23:55` }],
+      },
+    );
   }
   const categories = [
     { id: "food", name: "Dining Out" },
@@ -1325,9 +1370,9 @@ export async function fakeApi(
           left: budget ? home(Number(budget.amount) - spent) : null,
           percent: budget ? Math.floor((spent * 100) / Number(budget.amount)) : null,
           before: home(state.tripItems.includes("k2") ? 800 : 0),
-          today: null,
+          today: state.tripNow?.today ?? null,
           per_day: null,
-          per_day_left: null,
+          per_day_left: state.tripNow?.per_day_left ?? null,
           categories: items.map((i) => ({ name: i.category, planned: null, spent: i.home })),
           unconverted: 0,
         },
@@ -2117,17 +2162,41 @@ export async function fakeApi(
           text: `Your ${shown} ${bill.name} on ${shortDay(due)} hasn't shown up. Did it go through?`,
           link: "/accounting/plan",
           urgent: false,
+          when: "soon",
           actions: [
             { key: "went_through", label: "It went through", method: "POST", path: `/bills/${id}/paid?due=${due}` },
             { key: "skip", label: "Skip this month", method: "POST", path: `/bills/${id}/skip?due=${due}` },
           ],
         };
       });
+      // The server sorts: urgent, then about today, then the rest; by department within each.
+      const today = todayItems
+        ? [
+            { department: "investment", kind: "plan_hit", text: "NVDA reached its stop (182.40)", link: "/investment/plans/p1", urgent: true, when: "now", actions: [] },
+            { department: "travel", kind: "booking_soon", text: "Check in at Hotel Sakura today", link: "/travel/trips/t1", urgent: true, when: "now", actions: [] },
+            { department: "investment", kind: "big_move", text: "AMD \u22126.2% today", link: "/investment/stocks/AMD", urgent: false, when: "today", actions: [] },
+          ]
+        : [];
+      const soon = todayItems
+        ? [
+            { department: "investment", kind: "earnings", text: "MSFT reports earnings tomorrow", link: "/investment/stocks/MSFT", urgent: false, when: "soon", actions: [] },
+            { department: "travel", kind: "booking_soon", text: "Flight SQ12 to Tokyo tomorrow 09:40", link: "/travel/trips/t1", urgent: false, when: "soon", actions: [] },
+            { department: "travel", kind: "prep", text: "3 things to sort before Tokyo", link: "/travel/trips/t1?tab=prep", urgent: false, when: "soon", actions: [] },
+          ]
+        : [];
       return json(route, [
+        ...today.filter((i) => i.when === "now"),
+        ...today.filter((i) => i.when === "today"),
         ...nudges,
-        { department: "accounting", kind: "email", text: "2 receipts from email waiting for you", link: "/accounting/email", urgent: false, actions: [] },
-        { department: "accounting", kind: "bill", text: "Rent (SGD 1,800.00) due tomorrow", link: "/accounting/plan", urgent: false, actions: [] },
+        { department: "accounting", kind: "email", text: "2 receipts from email waiting for you", link: "/accounting/email", urgent: false, when: "soon", actions: [] },
+        { department: "accounting", kind: "bill", text: "Rent (SGD 1,800.00) due tomorrow", link: "/accounting/plan", urgent: false, when: "soon", actions: [] },
+        ...soon,
       ]);
+    }
+    if (path === "/setup" && method === "GET") return json(route, state.setup);
+    if (path === "/setup/dismiss" && method === "POST") {
+      state.setup.dismissed = true;
+      return route.fulfill({ status: 204 });
     }
     if (path === "/departments" && method === "GET") {
       return json(route, [{ name: "accounting", label: "Accounting", emoji: "🧾", blurb: "Spending." }]);

@@ -902,17 +902,6 @@ details.section[open] > summary { margin-bottom: var(--space-3); }
 }
 .row-main { flex: 1; min-width: 0; display: grid; gap: 2px; }
 .row-main a { color: var(--text-white); text-decoration: none; font-weight: 500; }
-.budget-list { display: grid; gap: var(--space-5); margin: 0; padding: 0; list-style: none; }
-.budget-list li { display: grid; gap: var(--space-2); }
-.budget-line-head { display: flex; justify-content: space-between; gap: var(--space-2); flex-wrap: wrap; }
-.day-tiles { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: var(--space-2); margin: var(--space-4) 0; padding: 0; list-style: none; }
-.day-tile {
-  display: grid; justify-items: center; gap: 2px; padding: var(--space-2) 0; border-radius: var(--radius-inner);
-  background: var(--bg-card-hover); font-variant-numeric: tabular-nums; font-weight: 500;
-}
-.day-tile.edge { background: var(--accent); color: #fff; }
-.day-tile.edge .caption { color: #3a1a06; }
-.day-tile.gap { background: var(--status-warning-soft); outline: 1px solid var(--status-warning); outline-offset: -1px; }
 @media (max-width: 720px) {
   .ask-chip { min-height: 38px; padding: 0 var(--space-3); font-size: 0.8125rem; text-align: left; }
   .pair, .stack { gap: var(--space-4); }
@@ -1269,20 +1258,45 @@ html.keyboard .bottom-nav, html.keyboard .trip-fab-button, html.keyboard .trip-f
 .hero-brief { margin: 0; max-width: 640px; font-size: 1.0625rem; line-height: 1.5; font-weight: 500; }
 /* Light text on the hero: a faint shadow keeps it crisp where it's lightest. */
 .hero-top, .hero-figure, .hero-note, .hero-brief { text-shadow: 0 1px 2px rgba(27, 35, 51, 0.25); }
-.hero .ask-chip { background: rgba(255, 255, 255, 0.94); border-color: transparent; color: #1c1917; }
-.hero .ask-chip:hover { background: #fff; }
-.hero .ask {
-  align-items: center; gap: var(--space-2); padding: 6px 6px 6px var(--space-4); border-radius: 18px;
-  background: #fff; box-shadow: 0 8px 24px -12px rgba(27, 35, 51, 0.45);
-}
-.hero .ask-input { color: #1c1917; }
-.hero .ask-input::placeholder { color: #78716c; }
 @media (max-width: 900px) {
   /* On a phone the hero runs to the edges and the top, fading into the page. */
   .hero {
-    margin: calc(-1 * var(--space-4)) calc(-1 * var(--space-4)) 0; padding: var(--space-5) var(--space-4) var(--space-6);
-    border-radius: 0; background: linear-gradient(180deg, var(--hero-top) 0%, var(--hero-mid) 66%, var(--pal-mist) 88%, var(--bg-shell) 100%);
+    margin: calc(-1 * var(--space-4)) calc(-1 * var(--space-4)) 0; padding: var(--space-5) var(--space-4) calc(var(--space-8) * 1.5);
+    border-radius: 0; background: linear-gradient(180deg, var(--hero-top) 0%, var(--hero-mid) 82%, var(--pal-mist) 94%, var(--bg-shell) 100%);
   }
+}
+
+/* --- Today (Home): Needs you and the setup list on the left, the glance cards on the right --- */
+.spend-card .mini-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.today { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-6); align-items: start; }
+@media (min-width: 1024px) { .today { grid-template-columns: minmax(0, 3fr) minmax(300px, 2fr); } }
+@media (max-width: 720px) { .today { gap: var(--space-4); } }
+.badge-now { color: var(--status-warning); background: var(--status-warning-soft); border-color: var(--status-warning-border); font-size: 0.8125rem; flex: none; }
+.needs-more { margin: var(--space-2) 0 0 -12px; }
+.working { padding: var(--space-4) var(--space-5); }
+.working .feed { gap: var(--space-3); }
+.ask-panel { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); }
+/* Long suggestions wrap inside their pill rather than pushing the card wider on a narrow phone. */
+.ask-panel .ask-chip { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.ask-panel .ask { align-items: center; gap: var(--space-2); padding: 4px 4px 4px var(--space-4); border-radius: 16px; background: var(--bg-input); border: 1px solid var(--border-card); }
+.ask-panel .ask:focus-within { border-color: var(--accent-border); box-shadow: 0 0 0 3px var(--accent-soft); }
+.glance { display: grid; gap: var(--space-2); align-content: start; }
+.glance > .meter { margin: var(--space-1) 0; }
+.glance > p { margin: 0; }
+.glance-figure { font-size: 1.5rem; font-weight: 600; letter-spacing: -0.01em; line-height: 1.2; color: var(--text-white); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.glance-line { font-weight: 500; font-variant-numeric: tabular-nums; }
+.pace-ahead { color: var(--status-warning); font-weight: 600; }
+.mode-lines { display: grid; gap: var(--space-4); margin: 0; padding: 0; list-style: none; }
+@media (min-width: 720px) { .mode-lines { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); } }
+.mode-lines li { display: flex; align-items: flex-start; gap: var(--space-3); min-width: 0; overflow-wrap: anywhere; }
+.mode-lines svg { flex: none; margin-top: 2px; color: var(--accent-text); }
+.setup-note { margin: 0 0 var(--space-2); }
+.setup-row.is-done .wrap { color: var(--text-muted); }
+.setup-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-1); }
+.ring { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--border-card); }
+@media (max-width: 720px) {
+  .setup-row { flex-wrap: wrap; }
+  .setup-actions { flex: 1 1 100%; justify-content: flex-start; padding-left: calc(38px + var(--space-3)); }
 }
 
 /* A section whose title sits above its card. */

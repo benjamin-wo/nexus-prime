@@ -180,7 +180,7 @@ export type Summary = {
   /** Spending, plus moved from Spending to anything but a card. */
   total_out?: Money;
 };
-/** Money out per month for Home's chart, oldest first, ending with this month so far. */
+/** Money out per month for the chart on the Accounting overview (and last month by this date, for Home), oldest first, ending with this month so far. */
 export type Spending = {
   currency: string;
   months: { month: string; spent: Money; to_date: boolean }[];
@@ -372,10 +372,25 @@ export type FeedItem = {
   text: string;
   link: string;
   urgent: boolean;
+  /** How soon it needs the user, and the order the list comes in: "now" (urgent), "today" (about something today), then "soon". */
+  when: "now" | "today" | "soon";
   /** Buttons that settle the item; `path` is relative to /api. */
   actions: FeedAction[];
 };
 export type FeedAction = { key: string; label: string; method: string; path: string };
+
+/** One step of Home's setup checklist. */
+export type SetupItem = {
+  key: "payday" | "receipts" | "investments" | "budget";
+  label: string;
+  done: boolean;
+  /** The page where it is done. */
+  link: string;
+  /** A sentence the web can send to the chat to do it there. */
+  ask: string;
+};
+/** `GET /api/setup`. Once `dismissed`, the checklist is put away (the items still come, for the same data). */
+export type Setup = { dismissed: boolean; items: SetupItem[] };
 
 /** A department's long piece of work, saved step by step. */
 export type Run = {

@@ -1057,15 +1057,32 @@ test("home is the front desk: what needs you, what's running, and each departmen
   await expect(nexus).toContainText("spent this month");
   await expect(nexus).toContainText("than by this time last month.");
   await expect(nexus).toContainText("2 things need you below.");
+  // The chart and the budgets list are no longer on Home; the month, the portfolio and the next trip are at a glance.
+  await expect(page.getByRole("list", { name: "Spending by month" })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Budgets this month" })).toHaveCount(0);
+  const money = page.getByRole("region", { name: "Money this month" });
+  await expect(money).toContainText("SGD 37.40");
+  await expect(money).toContainText("Last month by now:");
+  await expect(money.getByRole("link", { name: "Details" })).toHaveAttribute("href", "/accounting");
+  await expect(page.getByRole("region", { name: "Portfolio today" })).toContainText("No holdings yet");
+  await expect(page.getByRole("region", { name: "Next trip" })).toContainText("No trip coming up");
+});
+
+test("the spending by month chart is on the Accounting overview", async ({ page }) => {
+  await fakeApi(page);
+  await page.goto("/accounting");
+  const card = page.getByRole("region", { name: "Spending by month" });
   // Six months of spending, this month so far last; the tiles compare and explain.
-  const months = page.getByRole("list", { name: "Spending by month" });
+  const months = card.getByRole("list", { name: "Spending by month" });
   await expect(months.getByRole("listitem")).toHaveCount(6);
   await expect(months.getByRole("listitem").last()).toContainText("Sep so far");
-  // A usual month, rather than the brief's comparison again.
-  await expect(page.locator(".mini-tile").getByText("A usual month")).toBeVisible();
-  await expect(page.getByText("Against last month")).toHaveCount(0);
-  await expect(page.getByText("Biggest category")).toBeVisible();
-  await expect(page.getByRole("region", { name: "Budgets this month" })).toContainText("No budgets yet");
+  // A usual month, rather than a comparison again; "Where it went" already names the biggest category.
+  await expect(card.locator(".mini-tile").getByText("A usual month")).toBeVisible();
+  await expect(card.getByText("Biggest category")).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Where it went" })).toBeVisible();
+  // Home no longer has it.
+  await page.goto("/");
+  await expect(page.getByRole("list", { name: "Spending by month" })).toHaveCount(0);
 });
 
 test("a suggested question on home opens the chat with it", async ({ page }) => {
@@ -1131,8 +1148,10 @@ test("holdings from a screenshot are checked, saved, edited and removed", async 
   await holdings.getByRole("button", { name: "Remove AAPL" }).click();
   await expect(holdings.getByRole("rowheader", { name: "AAPL" })).toHaveCount(0);
   await page.goto("/");
-  await expect(page.getByRole("region", { name: "Portfolio" })).toContainText("SGD");
-  await expect(page.getByRole("list", { name: "Largest holdings" })).toContainText("NVDA");
+  const glance = page.getByRole("region", { name: "Portfolio today" });
+  await expect(glance).toContainText("SGD");
+  await expect(glance.getByRole("link", { name: "Open" })).toHaveAttribute("href", "/investment");
+  await expect(page.getByRole("list", { name: "Largest holdings" })).toHaveCount(0);
 });
 
 test.describe("prices by market state", () => {
@@ -1209,7 +1228,7 @@ test.describe("prices by market state", () => {
   test("the Home portfolio card says when its total is from", async ({ page }) => {
     const state = await fakeApi(page);
     state.holdings = nvda;
-    const card = page.getByRole("region", { name: "Portfolio" });
+    const card = page.getByRole("region", { name: "Portfolio today" });
     await page.goto("/");
     await expect(card).toContainText("Close of Fri, Sep 25");
     state.market = "open";
@@ -1260,37 +1279,33 @@ test.describe("what moved today", () => {
     { symbol: "AMD", quantity: "25", average_cost: usd("110.0000"), cost: usd("2750.0000"), updated_at: "2026-09-28T03:00:00Z" },
   ];
 
-  test("the Today card shows the session on Home and Portfolio, live and after the close", async ({ page }) => {
+  test("the Today card shows the session on Portfolio, live and after the close", async ({ page }) => {
     const state = await fakeApi(page);
     state.holdings = held;
     state.market = "open";
+    await page.goto("/investment");
+    const card = page.getByRole("region", { name: "Today", exact: true });
+    await expect(card).toContainText("Live · 10:41pm");
+    await expect(card.locator(".live-dot")).toHaveCount(1);
+    await expect(card.locator(".today-change.up")).toContainText(/\+SGD\s89\.3[78]\s\+1\.51%/);
+    const rows = card.getByRole("list", { name: "Biggest movers" }).getByRole("listitem");
+    await expect(rows).toHaveCount(2);
+    // The biggest move first, with its price, and a stock link.
+    await expect(rows.nth(0)).toContainText("AMD");
+    await expect(rows.nth(0)).toContainText("+1.74%");
+    await expect(rows.nth(0)).toContainText("USD 131.75");
+    await expect(rows.nth(0).getByRole("link", { name: "AMD" })).toHaveAttribute("href", "/investment/stocks/AMD");
+    await expect(rows.nth(1)).toContainText("+0.96%");
+    const headline = rows.nth(1).getByRole("link", { name: "Nvidia wins a big order" });
+    await expect(headline).toHaveAttribute("href", "https://news.example/nvda/1");
 
-    for (const path of ["/", "/investment"]) {
-      state.market = "open";
-      await page.goto(path);
-      const card = page.getByRole("region", { name: "Today", exact: true });
-      await expect(card).toContainText("Live · 10:41pm");
-      await expect(card.locator(".live-dot")).toHaveCount(1);
-      await expect(card.locator(".today-change.up")).toContainText(/\+SGD\s89\.3[78]\s\+1\.51%/);
-      const rows = card.getByRole("list", { name: "Biggest movers" }).getByRole("listitem");
-      await expect(rows).toHaveCount(2);
-      // The biggest move first, with its price, and a stock link.
-      await expect(rows.nth(0)).toContainText("AMD");
-      await expect(rows.nth(0)).toContainText("+1.74%");
-      await expect(rows.nth(0)).toContainText("USD 131.75");
-      await expect(rows.nth(0).getByRole("link", { name: "AMD" })).toHaveAttribute("href", "/investment/stocks/AMD");
-      await expect(rows.nth(1)).toContainText("+0.96%");
-      const headline = rows.nth(1).getByRole("link", { name: "Nvidia wins a big order" });
-      await expect(headline).toHaveAttribute("href", "https://news.example/nvda/1");
-
-      // After the close, before the official bar.
-      state.market = "after_close";
-      await page.reload();
-      const closed = page.getByRole("region", { name: "Today's session" });
-      await expect(closed).toContainText("Close (provisional) · 10:41pm");
-      await expect(closed.locator(".live-dot")).toHaveCount(0);
-      await expect(closed.getByRole("listitem")).toHaveCount(2);
-    }
+    // After the close, before the official bar.
+    state.market = "after_close";
+    await page.reload();
+    const closed = page.getByRole("region", { name: "Today's session" });
+    await expect(closed).toContainText("Close (provisional) · 10:41pm");
+    await expect(closed.locator(".live-dot")).toHaveCount(0);
+    await expect(closed.getByRole("listitem")).toHaveCount(2);
 
     // Before the next open: only the last session's closes.
     state.market = "closed";
@@ -1312,7 +1327,7 @@ test.describe("what moved today", () => {
       limited = false;
       return route.fulfill({ status: 429, contentType: "application/json", body: JSON.stringify({ detail: "Too many requests" }) });
     });
-    await page.goto("/");
+    await page.goto("/investment");
     const card = page.getByRole("region", { name: "Today", exact: true });
     const nvda = card.getByRole("listitem").filter({ hasText: "NVDA" });
     await nvda.getByRole("button", { name: "Why did it move?" }).click();
@@ -1338,8 +1353,19 @@ test.describe("what moved today", () => {
     await expect(page.getByRole("region", { name: "Holdings" })).toBeVisible();
     await expect(page.getByRole("region", { name: /Today|Last session/ })).toHaveCount(0);
     await page.goto("/");
-    await expect(page.getByRole("region", { name: "Portfolio" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Portfolio today" })).toBeVisible();
     await expect(page.getByRole("region", { name: /Today|Last session/ })).toHaveCount(0);
+  });
+
+  test("Home has no Today card; the Portfolio page keeps it", async ({ page }) => {
+    const state = await fakeApi(page);
+    state.holdings = held;
+    state.market = "open";
+    await page.goto("/");
+    await expect(page.getByRole("region", { name: "Portfolio today" })).toBeVisible();
+    await expect(page.getByRole("list", { name: "Biggest movers" })).toHaveCount(0);
+    await page.goto("/investment");
+    await expect(page.getByRole("list", { name: "Biggest movers" })).toBeVisible();
   });
 });
 
@@ -1690,8 +1716,8 @@ test("a trip is added and shows its spending, set-aside and settle-up", async ({
   await expect.poll(() => state.tripItems).toEqual(["k1"]);
 
   await page.goto("/");
-  const trip = page.getByRole("region", { name: "Tokyo" });
-  await expect(trip).toContainText("In 43 days");
+  const trip = page.getByRole("region", { name: "Next trip" });
+  await expect(trip).toContainText("Tokyo in 43 days");
   await expect(page.getByRole("region", { name: "Nexus" })).toContainText("Tokyo trip is in 43 days");
   await page.goto("/travel");
   const coming = page.getByRole("region", { name: "Coming up" });
@@ -3038,11 +3064,11 @@ test("cards rise into view and figures count up, unless less motion is asked for
 test("each section is its own rounded card, its title above it, with room either side", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/");
-  const budgets = page.getByRole("region", { name: "Budgets this month" });
-  const card = budgets.locator(".card");
+  const money = page.getByRole("region", { name: "Money this month" });
+  const card = money.locator(".card");
   await expect(card).toBeVisible();
   // The title sits above the card, not inside it.
-  const title = (await budgets.getByRole("heading", { name: "Budgets this month" }).boundingBox())!;
+  const title = (await money.getByRole("heading", { name: "Money this month" }).boundingBox())!;
   const box = (await card.boundingBox())!;
   expect(title.y + title.height).toBeLessThanOrEqual(box.y);
   expect(box.x).toBeGreaterThan(0);

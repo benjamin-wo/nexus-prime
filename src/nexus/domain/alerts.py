@@ -5,6 +5,7 @@ A plan is followed on daily bars after the close (see ``domain.plans``); these r
 at the live price in between. An alert is kept once per user, stock, kind and trading day.
 """
 
+import re
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal
@@ -94,6 +95,16 @@ def move_text(symbol: str, change: Decimal, price: Decimal, at: datetime, tz: Zo
     and the price."""
     icon = "📉" if change < 0 else "📈"
     return f"{icon} {symbol} {signed(change)} today at {clock_time(at, tz)}, {price:,.2f}"
+
+
+_MOVE_IN_TEXT = re.compile(rf" ([+{MINUS}]\d+\.\d%) today at ")
+
+
+def moved_in(text: str) -> str | None:
+    """The change ("+5.4%") a big-move alert's ``text`` (from ``move_text``) told, else None.
+    The change itself isn't stored apart from the words."""
+    found = _MOVE_IN_TEXT.search(text)
+    return found.group(1) if found else None
 
 
 def stop_text(plan: SavedPlan, price: Decimal, at: datetime, tz: ZoneInfo) -> str:
