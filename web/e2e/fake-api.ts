@@ -123,6 +123,9 @@ export async function fakeApi(
     likelyMoves = false,
     /** Home's Today items: a stop reached, a big move, earnings, a flight tomorrow and trip prep, in the order the server sorts them. */
     todayItems = false,
+    /** A trip that is on, day 3 of 6 in Tokyo (the dates follow today): a stay, a late plan today, a flight home,
+     * and today's spending against its budget. Home leads with it. */
+    tripMode = false,
   } = {},
 ) {
   let session = signedIn;
@@ -311,6 +314,8 @@ export async function fakeApi(
     missed: { bill: string; due: string }[];
     /** Home's setup checklist, as GET /setup answers; POST /setup/dismiss sets `dismissed`. */
     setup: Setup;
+    /** What an ongoing trip's spending says about today (null: nothing, as for a trip that isn't on). */
+    tripNow: { today: { amount: string; currency: string }; per_day_left: { amount: string; currency: string } } | null;
     /** Emails answered "Move": the email and what was sent. */
     emailMoves: { id: string; body: Record<string, unknown> }[];
     memories: { id: string; kind: string; text: string; happened_on: string | null; updated_at: string }[];
@@ -442,12 +447,13 @@ export async function fakeApi(
     setup: {
       dismissed: false,
       items: [
-        { key: "payday", label: "Set your payday", done: false, link: "/accounting/plan", ask: "My payday is the 25th" },
+        { key: "payday", label: "Set your payday", done: false, link: "/accounting/plan", ask: "Help me set my payday" },
         { key: "receipts", label: "Get receipts in automatically", done: false, link: "/accounting/email", ask: "Help me get my receipts in from email automatically" },
-        { key: "investments", label: "Add your stocks", done: true, link: "/investment", ask: "Add NVDA to my watchlist" },
-        { key: "budget", label: "Set a monthly budget", done: false, link: "/accounting/plan", ask: "Set my monthly budget to 2000" },
+        { key: "investments", label: "Add your stocks", done: true, link: "/investment", ask: "Help me add my stocks" },
+        { key: "budget", label: "Set a monthly budget", done: false, link: "/accounting/plan", ask: "Help me set a monthly budget" },
       ],
     },
+    tripNow: null,
     emailMoves: [],
     memories: [
       { id: "m1", kind: "fact", text: "Ann is the user's sister.", happened_on: null, updated_at: "2026-09-28T06:00:00Z" },
@@ -588,6 +594,30 @@ export async function fakeApi(
     alert.duplicate = twin(receipt);
     receipt.duplicate = twin(alert);
     state.txs.push(alert, receipt);
+  }
+  if (tripMode) {
+    const sgd = (amount: string) => ({ amount, currency: "SGD" });
+    const base = Date.parse(new Date().toLocaleDateString("en-CA"));
+    const at = (offset: number) => new Date(base + offset * 86400000).toISOString().slice(0, 10);
+    const [start, day, end] = [at(-2), at(0), at(3)];
+    const plan = { provider: null, segments: [], hotel: null, address: null, check_in: null, check_out: null, name: null, day: null, at: null, note: null, reference: null, booked_via: null, category: null, scheduled: true, cost: null, logged: false, manual: true };
+    state.trips = [
+      {
+        id: "tripnow", destination: "Tokyo", start, end, days: 6, currency: "JPY", budget: sgd("2400.0000"), companions: [], set_aside: null, planned: {},
+        status: "ongoing", days_until: 0, day_number: 3, notes: null, day_labels: {}, stops: [], split_evenly: true, role: "owner", owner_name: OWNER_NAME, packing: [],
+      },
+    ];
+    state.flight = false;
+    state.tripNow = { today: sgd("42.0000"), per_day_left: sgd("380.0000") };
+    state.plans.push(
+      { ...plan, id: "pl-stay", trip_id: "tripnow", kind: "hotel", title: "Hotel Kumo Shinjuku", starts: start, ends: end, hotel: "Hotel Kumo Shinjuku", address: "1-2-3 Shinjuku", check_in: start, check_out: end, reference: "HK4471", booked_via: "Agoda" },
+      { ...plan, id: "pl-early", trip_id: "tripnow", kind: "activity", title: "Early market walk", starts: day, ends: day, name: "Early market walk", day, at: "00:01" },
+      { ...plan, id: "pl-late", trip_id: "tripnow", kind: "activity", title: "Late ramen at Fuji", starts: day, ends: day, name: "Late ramen at Fuji", day, at: "23:59" },
+      {
+        ...plan, id: "pl-home", trip_id: "tripnow", kind: "flight", title: "ZZ13 NRT → SIN", provider: "Acme Air", starts: end, ends: end, manual: false, reference: "ZK9R2M", booked_via: "Acme Air",
+        segments: [{ number: "ZZ13", origin: "NRT", destination: "SIN", departs: `${end}T18:10`, arrives: `${end}T23:55` }],
+      },
+    );
   }
   const categories = [
     { id: "food", name: "Dining Out" },
@@ -1340,9 +1370,9 @@ export async function fakeApi(
           left: budget ? home(Number(budget.amount) - spent) : null,
           percent: budget ? Math.floor((spent * 100) / Number(budget.amount)) : null,
           before: home(state.tripItems.includes("k2") ? 800 : 0),
-          today: null,
+          today: state.tripNow?.today ?? null,
           per_day: null,
-          per_day_left: null,
+          per_day_left: state.tripNow?.per_day_left ?? null,
           categories: items.map((i) => ({ name: i.category, planned: null, spent: i.home })),
           unconverted: 0,
         },

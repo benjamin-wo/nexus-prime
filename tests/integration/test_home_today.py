@@ -514,7 +514,7 @@ async def test_a_new_user_has_nothing_set_up(uow: UowFactory) -> None:
         ("budget", "Set a monthly budget", False),
     ]
     assert all(i.link.startswith("/") and i.ask.strip() for i in found.items)
-    assert found.items[0].ask == "My payday is the 25th"
+    assert found.items[0].ask == "Help me set my payday"
 
 
 async def test_each_step_is_done_by_what_the_user_has(uow: UowFactory) -> None:

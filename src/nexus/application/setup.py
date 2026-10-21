@@ -47,7 +47,7 @@ async def checklist(uow: UnitOfWork, user: User) -> Setup:
                 "Set your payday",
                 has_payday,
                 "/accounting/plan",
-                "My payday is the 25th",
+                "Help me set my payday",
             ),
             SetupItem(
                 "receipts",
@@ -61,14 +61,14 @@ async def checklist(uow: UnitOfWork, user: User) -> Setup:
                 "Add your stocks",
                 has_stocks,
                 "/investment",
-                "Add NVDA to my watchlist",
+                "Help me add my stocks",
             ),
             SetupItem(
                 "budget",
                 "Set a monthly budget",
                 has_budget,
                 "/accounting/plan",
-                "Set my monthly budget to 2000",
+                "Help me set a monthly budget",
             ),
         ],
     )

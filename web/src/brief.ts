@@ -1,8 +1,26 @@
-import type { Budget, BudgetMonth, FeedItem, Money, TripDetail } from "./api";
+import type { Budget, BudgetMonth, FeedItem, Money, Session, Today, TripDetail } from "./api";
 import { formatMoney } from "./format";
 
 /** A run of the brief: plain text, or a figure shown in the accent colour. */
 export type Part = { text: string; hl?: boolean };
+
+/** The biggest move among the stocks held, when it is big enough to be worth a line. */
+export type MarketMove = { symbol: string; percent: number; session: Session };
+
+/** A move this big, in percent, is mentioned in the brief. */
+export const NOTABLE_MOVE = 3;
+
+/** The held stock that moved most in the latest US session, if it moved by at least
+ * `NOTABLE_MOVE` percent. */
+export function notableMove(today?: Today | null): MarketMove | null {
+  let best: MarketMove | null = null;
+  for (const m of today?.movers ?? []) {
+    const percent = Number(m.day_percent);
+    if (!m.held || !Number.isFinite(percent)) continue;
+    if (!best || Math.abs(percent) > Math.abs(best.percent)) best = { symbol: m.symbol, percent, session: today!.session };
+  }
+  return best && Math.abs(best.percent) >= NOTABLE_MOVE ? best : null;
+}
 
 export type BriefInput = {
   spent?: Money;
@@ -12,6 +30,8 @@ export type BriefInput = {
   needs?: FeedItem[];
   /** This month's plan: what's left to spend once what's still due is paid. */
   plan?: BudgetMonth;
+  /** The biggest held mover of the latest session, when notable (see `notableMove`). */
+  move?: MarketMove | null;
 };
 
 function money(amount: number, currency: string): string {
@@ -40,8 +60,44 @@ export function standing({ spent, overall, lastMonthToDate }: BriefInput): { tex
   };
 }
 
+/** How far through the month it is, 0 to 100, on the user's calendar. */
+export function monthShare(timezone: string, now: Date = new Date()): number {
+  const [y, m, d] = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(now).split("-").map(Number);
+  return Math.round((d / new Date(Date.UTC(y, m, 0)).getUTCDate()) * 100);
+}
+
+export type Pace = {
+  /** "Ahead of pace", "On pace" or "Under pace"; only against a budget. */
+  label?: string;
+  /** Spending is running ahead of the month. */
+  ahead?: boolean;
+  /** The share of the overall budget used, when there is one. */
+  used?: number;
+  detail: string;
+};
+
+/** How spending is going for the month: against the overall budget (the share used next
+ * to the share of the month gone), else against last month by the same date. Null when
+ * there is nothing to compare with. */
+export function pace({
+  overall,
+  lastMonthToDate,
+  timezone,
+  now,
+}: Pick<BriefInput, "overall" | "lastMonthToDate"> & { timezone: string; now?: Date }): Pace | null {
+  if (overall) {
+    const gone = monthShare(timezone, now);
+    const used = overall.percent;
+    const label = used > gone + 5 ? "Ahead of pace" : used < gone - 5 ? "Under pace" : "On pace";
+    return { label, ahead: used > gone + 5, used, detail: `${used}% of your budget used, ${gone}% through the month` };
+  }
+  if (lastMonthToDate) return { detail: `Last month by now: ${formatMoney(lastMonthToDate)}` };
+  return null;
+}
+
 /** Home's opening lines, written in code from the user's own figures: this month's
- * spending against the budget (or last month), the next trip, and what needs them.
+ * spending against the budget (or last month), a notable move in the stocks held, the
+ * next trip, and what needs them.
  * Nothing here is a model's words, so every figure is the app's own. */
 export function brief({
   spent,
@@ -50,6 +106,7 @@ export function brief({
   trip,
   needs,
   plan,
+  move,
 }: BriefInput): Part[] {
   const parts: Part[] = [];
   if (spent) {
@@ -99,6 +156,19 @@ export function brief({
       { text: formatMoney(plan.budget_left), hl: true },
       { text: " budget left." },
     );
+  if (move) {
+    const down = move.percent < 0;
+    const shown = `${Math.round(Math.abs(move.percent))}%`;
+    const space = parts.length ? " " : "";
+    if (move.session === "live")
+      parts.push({ text: `${space}${move.symbol} is ${down ? "down" : "up"} ` }, { text: shown, hl: true }, { text: " today." });
+    else
+      parts.push(
+        { text: `${space}${move.symbol} ${down ? "fell" : "rose"} ` },
+        { text: shown, hl: true },
+        { text: move.session === "closed_today" ? " today." : " in the last session." },
+      );
+  }
   if (trip && trip.trip.status !== "finished") {
     const t = trip.trip;
     const gaps = trip.ready.nights_without_stay.length;

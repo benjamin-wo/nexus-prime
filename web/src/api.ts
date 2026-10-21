@@ -180,7 +180,7 @@ export type Summary = {
   /** Spending, plus moved from Spending to anything but a card. */
   total_out?: Money;
 };
-/** Money out per month for Home's chart, oldest first, ending with this month so far. */
+/** Money out per month for the chart on the Accounting overview (and last month by this date, for Home), oldest first, ending with this month so far. */
 export type Spending = {
   currency: string;
   months: { month: string; spent: Money; to_date: boolean }[];
