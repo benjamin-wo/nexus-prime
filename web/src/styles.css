@@ -1275,7 +1275,9 @@ html.keyboard .bottom-nav, html.keyboard .trip-fab-button, html.keyboard .trip-f
 .needs-more { margin: var(--space-2) 0 0 -12px; }
 .working { padding: var(--space-4) var(--space-5); }
 .working .feed { gap: var(--space-3); }
-.ask-panel { display: grid; gap: var(--space-4); }
+.ask-panel { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); }
+/* Long suggestions wrap inside their pill rather than pushing the card wider on a narrow phone. */
+.ask-panel .ask-chip { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 .ask-panel .ask { align-items: center; gap: var(--space-2); padding: 4px 4px 4px var(--space-4); border-radius: 16px; background: var(--bg-input); border: 1px solid var(--border-card); }
 .ask-panel .ask:focus-within { border-color: var(--accent-border); box-shadow: 0 0 0 3px var(--accent-soft); }
 .glance { display: grid; gap: var(--space-2); align-content: start; }
