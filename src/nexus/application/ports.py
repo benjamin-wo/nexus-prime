@@ -14,6 +14,7 @@ from uuid import UUID
 
 from nexus.application.fx import Rate
 from nexus.domain.access import Invite, Session
+from nexus.domain.alerts import AlertKind, MarketAlert
 from nexus.domain.bookings import Booking, BookingDraft
 from nexus.domain.chat import ChatLine
 from nexus.domain.departments import Run, Usage
@@ -880,6 +881,22 @@ class InvestmentRepository(Protocol):
         self, user_id: UserId, plan_id: UUID, followed: Followed, *, at: datetime
     ) -> None: ...
     async def set_plan_alerts(self, user_id: UserId, plan_id: UUID, on: bool) -> bool: ...
+
+    # Alerts during the US session, once per user, stock, kind and trading day.
+    async def insert_alert(self, alert: MarketAlert) -> bool:
+        """False when the user already has an alert of this kind for the stock that day."""
+        ...
+
+    async def alert_exists(
+        self, user_id: UserId, symbol: str, kind: AlertKind, day: date
+    ) -> bool: ...
+    async def unsent_alerts(self, user_id: UserId, day: date) -> list[MarketAlert]:
+        """The alerts of this trading day held for the morning summary, oldest first."""
+        ...
+
+    async def mark_alerts_sent(
+        self, user_id: UserId, alert_ids: list[UUID], at: datetime
+    ) -> None: ...
 
 
 class RateRepository(Protocol):

@@ -25,6 +25,37 @@ REGULAR_CLOSE = time(16, 0)
 # A quote stamped later than this ahead of now is a bad clock or bad data, not a price.
 CLOCK_SKEW = timedelta(minutes=5)
 
+# The days the NYSE is shut on a weekday, for 2026 and 2027. The exchange's own status
+# names a holiday only on the day itself; this list is what says that last Monday was one
+# (the morning summary skips the morning after, and "previous session" steps over them).
+# Early closes at 13:00 aren't kept. Weekend holidays are observed on the Friday before or
+# the Monday after, as the NYSE does; it doesn't observe New Year's Day on a Saturday, so
+# 31 December 2027 is a trading day. Add the next year's before this one ends.
+NYSE_HOLIDAYS: frozenset[date] = frozenset(
+    {
+        date(2026, 1, 1),  # New Year's Day
+        date(2026, 1, 19),  # Martin Luther King Jr. Day
+        date(2026, 2, 16),  # Washington's Birthday
+        date(2026, 4, 3),  # Good Friday
+        date(2026, 5, 25),  # Memorial Day
+        date(2026, 6, 19),  # Juneteenth
+        date(2026, 7, 3),  # Independence Day (4 July is a Saturday)
+        date(2026, 9, 7),  # Labor Day
+        date(2026, 11, 26),  # Thanksgiving Day
+        date(2026, 12, 25),  # Christmas Day
+        date(2027, 1, 1),  # New Year's Day
+        date(2027, 1, 18),  # Martin Luther King Jr. Day
+        date(2027, 2, 15),  # Washington's Birthday
+        date(2027, 3, 26),  # Good Friday
+        date(2027, 5, 31),  # Memorial Day
+        date(2027, 6, 18),  # Juneteenth (19 June is a Saturday)
+        date(2027, 7, 5),  # Independence Day (4 July is a Sunday)
+        date(2027, 9, 6),  # Labor Day
+        date(2027, 11, 25),  # Thanksgiving Day
+        date(2027, 12, 24),  # Christmas Day (25 December is a Saturday)
+    }
+)
+
 
 @dataclass(frozen=True, slots=True)
 class Bar:
@@ -80,6 +111,64 @@ class PriceKind(StrEnum):
 def trading_day(quoted_at: datetime) -> date:
     """The New York date a quote was made on."""
     return quoted_at.astimezone(US_MARKET).date()
+
+
+def is_holiday(day: date) -> bool:
+    """A weekday the NYSE is shut (from the list above, which covers 2026 and 2027 only)."""
+    return day in NYSE_HOLIDAYS
+
+
+def is_trading_day(day: date) -> bool:
+    """A weekday that isn't a listed holiday."""
+    return day.weekday() < 5 and not is_holiday(day)
+
+
+def previous_trading_day(day: date) -> date:
+    """The trading day before ``day``."""
+    found = day - timedelta(days=1)
+    while not is_trading_day(found):
+        found -= timedelta(days=1)
+    return found
+
+
+def last_weekday_closed(now: datetime) -> date:
+    """The latest weekday (holiday or not) whose 16:00 close has passed in New York."""
+    local = now.astimezone(US_MARKET)
+    day = local.date() if local.time() >= REGULAR_CLOSE else local.date() - timedelta(days=1)
+    while day.weekday() >= 5:
+        day -= timedelta(days=1)
+    return day
+
+
+def session_open_at(day: date) -> datetime:
+    """When the regular session opens on ``day``, New York time."""
+    return datetime.combine(day, REGULAR_OPEN, US_MARKET)
+
+
+class Session(StrEnum):
+    """Where the US market is, for wording: "today" is the New York date."""
+
+    LIVE = "live"  # the regular session is on
+    CLOSED_TODAY = "closed_today"  # it traded today and has closed
+    PREVIOUS = "previous"  # it hasn't opened today (or won't: a weekend or a holiday)
+
+
+def session_of(status: MarketStatus | None, now: datetime) -> Session:
+    if regular_open(status, now):
+        return Session.LIVE
+    local = now.astimezone(US_MARKET)
+    shut_today = status is not None and bool(status.holiday)
+    if is_trading_day(local.date()) and not shut_today and local.time() >= REGULAR_CLOSE:
+        return Session.CLOSED_TODAY
+    return Session.PREVIOUS
+
+
+def session_day(status: MarketStatus | None, now: datetime) -> date:
+    """The trading day the latest prices belong to: today while the market is open or has
+    closed, else the last day it traded."""
+    if session_of(status, now) is not Session.PREVIOUS:
+        return now.astimezone(US_MARKET).date()
+    return previous_trading_day(now.astimezone(US_MARKET).date())
 
 
 def market_open(now: datetime) -> bool:

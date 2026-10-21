@@ -5,6 +5,7 @@ import base64
 import binascii
 from collections.abc import Mapping as MappingType
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 from typing import Annotated, Any, Literal
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -2041,6 +2042,10 @@ class UpdatesOut(Model):
     daily_at: str  # HH:MM, the daily summary's time
     description: str
     options: dict[Frequency, str]
+    quiet_start: str  # HH:MM, local time; the same as quiet_end means no quiet hours
+    quiet_end: str
+    move_alert_percent: Decimal  # a stock moving this much in a day is a big move: 1 to 20
+    market_summary: bool  # the morning summary of the US market
 
 
 def _updates_out(settings: NotificationSettings) -> UpdatesOut:
@@ -2049,6 +2054,10 @@ def _updates_out(settings: NotificationSettings) -> UpdatesOut:
         daily_at=settings.daily_at.strftime("%H:%M"),
         description=notify_cases.describe(settings),
         options={f: label(f, settings.daily_at) for f in Frequency},
+        quiet_start=settings.quiet_start.strftime("%H:%M"),
+        quiet_end=settings.quiet_end.strftime("%H:%M"),
+        move_alert_percent=settings.move_alert_percent,
+        market_summary=settings.market_summary,
     )
 
 
@@ -2058,15 +2067,46 @@ async def notifications(auth: Auth, web: Runtime) -> UpdatesOut:
 
 
 class UpdatesIn(Model):
-    frequency: Frequency
+    """What to change; what is left out stays as it was."""
+
+    frequency: Frequency | None = None
     daily_at: time | None = None  # only with daily
+    quiet_start: time | None = None
+    quiet_end: time | None = None
+    move_alert_percent: Decimal | None = None  # 1 to 20
+    market_summary: bool | None = None
 
 
 @router.put("/notifications")
 async def set_notifications(body: UpdatesIn, auth: Auth, web: Runtime) -> UpdatesOut:
-    updated = await notify_cases.set_frequency(
-        web.uow(), auth.user.id, body.frequency, now=web.clock(), daily_at=body.daily_at
-    )
+    now = web.clock()
+    updated = await notify_cases.get_settings(web.uow(), auth.user.id)
+    if body.frequency is not None or body.daily_at is not None:
+        updated = await notify_cases.set_frequency(
+            web.uow(),
+            auth.user.id,
+            body.frequency or updated.frequency,
+            now=now,
+            daily_at=body.daily_at,
+        )
+    if any(
+        v is not None
+        for v in (
+            body.quiet_start,
+            body.quiet_end,
+            body.move_alert_percent,
+            body.market_summary,
+        )
+    ):
+        updated = await notify_cases.set_market(
+            web.uow(),
+            auth.user.id,
+            now=now,
+            move_alert_percent=body.move_alert_percent,
+            market_summary=body.market_summary,
+            quiet_start=body.quiet_start,
+            quiet_end=body.quiet_end,
+        )
     return _updates_out(updated)
 
 

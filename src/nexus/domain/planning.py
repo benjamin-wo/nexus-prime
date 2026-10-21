@@ -11,10 +11,6 @@ from nexus.domain.money import Money
 # Alert when monthly spending reaches these percentages of a budget.
 THRESHOLDS = (50, 80, 100)
 
-# No notifications between 22:00 and 08:00 in the user's timezone.
-QUIET_START = time(22)
-QUIET_END = time(8)
-
 
 @dataclass(frozen=True, slots=True)
 class Budget:
@@ -51,18 +47,26 @@ def next_month_start(day: date) -> date:
     return (first + timedelta(days=32)).replace(day=1)
 
 
-def quiet_until(local: datetime) -> datetime | None:
+def quiet_until(local: datetime, start: time, end: time) -> datetime | None:
     """When a notification due at ``local`` may be sent, or None if it may go now.
 
-    ``local`` must be timezone-aware, in the user's timezone.
+    Quiet hours run from ``start`` to ``end`` (local time) and may cross midnight
+    (23:00 to 08:00); equal times mean there are none. ``local`` must be
+    timezone-aware, in the user's timezone.
     """
     if local.tzinfo is None:
         raise ValueError("local time must be timezone-aware")
-    now = local.timetz().replace(tzinfo=None)
-    if QUIET_END <= now < QUIET_START:
+    if start == end:
         return None
-    day = local.date() if now < QUIET_END else local.date() + timedelta(days=1)
-    return datetime.combine(day, QUIET_END, tzinfo=local.tzinfo)
+    now = local.timetz().replace(tzinfo=None)
+    if start < end:  # within one day: 01:00 to 06:00
+        if not start <= now < end:
+            return None
+        return datetime.combine(local.date(), end, tzinfo=local.tzinfo)
+    if end <= now < start:  # crossing midnight: the daytime is the free part
+        return None
+    day = local.date() if now < end else local.date() + timedelta(days=1)
+    return datetime.combine(day, end, tzinfo=local.tzinfo)
 
 
 # --- bills --------------------------------------------------------------------------

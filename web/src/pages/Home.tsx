@@ -29,6 +29,7 @@ import {
 } from "../format";
 import { livePolling } from "../prices";
 import { PriceWhen } from "../components/PriceWhen";
+import { TodayCard } from "../components/TodayCard";
 import { AccentTitle, CountUp } from "../motion";
 import { tripWhen } from "./Trips";
 
@@ -752,6 +753,8 @@ export function Home({
         <SpendingCard spending={spending} summary={summary} overall={overall} />
         <PortfolioCard portfolio={portfolio} />
       </div>
+
+      <TodayCard as="block" />
 
       <div className="pair">
         <div className="stack">

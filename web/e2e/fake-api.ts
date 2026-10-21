@@ -183,6 +183,7 @@ export async function fakeApi(
   /** Counts the to-dos and covers made here, for their ids. */
   let coverCount = 0;
   let dailyAt = "21:00";
+  const marketAlerts = { quiet_start: "23:00", quiet_end: "08:00", move_alert_percent: "5.0", market_summary: true };
   const state: {
     txs: Tx[];
     lastPress?: string;
@@ -192,6 +193,8 @@ export async function fakeApi(
     draft: Record<string, unknown> | null;
     screenshots: number;
     watching: string[];
+    /** How many readings of a move were asked for per symbol; the second is "cached". */
+    whyAsked: Record<string, number>;
     /** The US market in the fake: "closed" shows the daily closes (the default), "open" the live
      * quotes below, "after_close" those quotes as provisional closes. Tests change it. */
     market: "closed" | "open" | "after_close";
@@ -317,6 +320,7 @@ export async function fakeApi(
     cancelled: [],
     holdings: [],
     watching: [],
+    whyAsked: {},
     market: "closed",
     quotes: {
       NVDA: { price: "131.50", prev_close: "130.25", quoted_at: "2026-09-28T14:41:00Z" },
@@ -749,6 +753,67 @@ export async function fakeApi(
         draft: state.draft,
         screenshots: true,
         prices: true,
+      });
+    }
+    if (path === "/investments/today" && method === "GET") {
+      // What moved today, from the same made-up closes and quotes as the portfolio. NVDA has a
+      // headline once the market has opened; the session follows state.market.
+      const closes: Record<string, [string, string]> = { NVDA: ["130.25", "128.00"] };
+      const live = state.market !== "closed";
+      const rows = state.holdings.flatMap((h) => {
+        const quote = live ? state.quotes[h.symbol] : undefined;
+        const close = closes[h.symbol];
+        if (!quote && !close) return [];
+        const price = quote ? quote.price : close[0];
+        const before = quote ? quote.prev_close : close[1];
+        const percent = ((Number(price) - Number(before)) / Number(before)) * 100;
+        return [{ h, price, before, percent, quote }];
+      });
+      const biggest = [...rows].sort((a, b) => Math.abs(b.percent) - Math.abs(a.percent)).slice(0, 3);
+      const change = rows.reduce((n, r) => n + Number(r.h.quantity) * (Number(r.price) - Number(r.before)), 0);
+      const worth = rows.reduce((n, r) => n + Number(r.h.quantity) * Number(r.before), 0);
+      return json(route, {
+        session: state.market === "open" ? "live" : state.market === "after_close" ? "closed_today" : "previous",
+        day: live ? "2026-09-28" : "2026-09-25",
+        change: rows.length ? { amount: (change * 1.3).toFixed(4), currency: "SGD" } : null,
+        percent: rows.length ? ((change / worth) * 100).toFixed(2) : null,
+        price_kind: state.market === "open" ? "live" : state.market === "after_close" ? "provisional_close" : "close",
+        as_of_at: live ? "2026-09-28T14:41:00Z" : null,
+        holds: state.holdings.length > 0,
+        movers: biggest.map((r) => ({
+          symbol: r.h.symbol,
+          held: true,
+          price: Number(r.price).toFixed(2),
+          day_percent: r.percent.toFixed(2),
+          price_kind: r.quote ? quoteKind() : "close",
+          price_at: r.quote ? r.quote.quoted_at : null,
+          price_day: r.quote ? "2026-09-28" : "2026-09-25",
+          headline:
+            live && r.h.symbol === "NVDA"
+              ? { headline: "Nvidia wins a big order", source: "Wire", url: "https://news.example/nvda/1", summary: "", published_at: "2026-09-28T14:00:00Z" }
+              : null,
+        })),
+        prices: true,
+      });
+    }
+    const why = path.match(/^\/investments\/today\/([A-Za-z.]+)\/why$/);
+    if (why && method === "POST") {
+      const symbol = why[1].toUpperCase();
+      if (!state.holdings.some((h) => h.symbol === symbol) && !state.watching.includes(symbol)) {
+        return json(route, { detail: `${symbol} isn't a stock you hold or watch` }, 404);
+      }
+      const asked = (state.whyAsked[symbol] ?? 0) + 1;
+      state.whyAsked[symbol] = asked;
+      return json(route, {
+        symbol,
+        day: "2026-09-28",
+        day_percent: "0.96",
+        text:
+          symbol === "NVDA"
+            ? "Nvidia won a big order, which may explain the rise. Chip stocks were also mostly higher."
+            : `No headlines from today explain the move in ${symbol}.`,
+        headlines: [],
+        cached: asked > 1,
       });
     }
     if (path === "/investments/watchlist" && method === "GET") {
@@ -2391,8 +2456,18 @@ export async function fakeApi(
     }
     if (path === "/notifications") {
       if (method === "PUT") {
-        state.frequency = body.frequency;
+        if (body.frequency) state.frequency = body.frequency;
         if (body.daily_at) dailyAt = body.daily_at;
+        if (body.quiet_start) marketAlerts.quiet_start = body.quiet_start;
+        if (body.quiet_end) marketAlerts.quiet_end = body.quiet_end;
+        if (body.move_alert_percent !== undefined && body.move_alert_percent !== null) {
+          const percent = Number(body.move_alert_percent);
+          if (!(percent >= 1 && percent <= 20)) {
+            return json(route, { detail: "a big move can be 1.0% to 20.0% in a day" }, 422);
+          }
+          marketAlerts.move_alert_percent = percent.toFixed(1);
+        }
+        if (typeof body.market_summary === "boolean") marketAlerts.market_summary = body.market_summary;
       }
       const [h, m] = dailyAt.split(":").map(Number);
       const at = `${h % 12 || 12}${m ? `:${String(m).padStart(2, "0")}` : ""}${h < 12 ? "am" : "pm"}`;
@@ -2409,7 +2484,7 @@ export async function fakeApi(
           : state.frequency === "instant"
             ? "You get a message for each transaction as it happens."
             : `You get a summary of your transactions ${options[state.frequency as keyof typeof options]}.`;
-      return json(route, { frequency: state.frequency, daily_at: dailyAt, description, options });
+      return json(route, { frequency: state.frequency, daily_at: dailyAt, description, options, ...marketAlerts });
     }
     if (path === "/salary" && method === "GET") {
       const pay = state.salary;

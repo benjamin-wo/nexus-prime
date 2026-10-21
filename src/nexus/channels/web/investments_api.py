@@ -12,6 +12,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field
 
 from nexus.application import investments as investment_cases
+from nexus.application import moves as move_cases
 from nexus.application import plans as plan_cases
 from nexus.application import quotes as quote_cases
 from nexus.application import research as research_cases
@@ -29,9 +30,9 @@ from nexus.domain.investments import (
     plain,
 )
 from nexus.domain.levels import Levels
-from nexus.domain.market import PriceKind, percent
+from nexus.domain.market import PriceKind, Session, percent
 from nexus.domain.money import Money
-from nexus.domain.news import EarningsDate
+from nexus.domain.news import EarningsDate, NewsItem
 from nexus.domain.plans import FOLLOWED, SavedPlan
 
 router = APIRouter(prefix="/api/investments")
@@ -193,6 +194,116 @@ async def portfolio(auth: Auth, web: Runtime) -> PortfolioOut:
         draft=_draft(draft, held) if draft else None,
         screenshots=web.service.reads_portfolios,
         prices=web.prices,
+    )
+
+
+# --- what moved today, and why --------------------------------------------------------------
+
+
+class NewsOut(Model):
+    headline: str
+    source: str
+    url: str
+    summary: str
+    published_at: datetime
+
+
+def _news(n: NewsItem) -> NewsOut:
+    return NewsOut(
+        headline=n.headline,
+        source=n.source,
+        url=n.url,
+        summary=n.summary,
+        published_at=n.published_at,
+    )
+
+
+class MoverOut(Model):
+    symbol: str
+    held: bool  # false: a watched stock (shown when nothing is held)
+    price: Decimal  # USD
+    day_percent: Decimal
+    price_kind: PriceKind
+    price_at: datetime | None  # when it was traded; None for an official close
+    price_day: date
+    headline: NewsOut | None  # the day's newest, published since the session opened
+
+
+class TodayOut(Model):
+    session: Session  # "live", "closed_today" or "previous": for wording
+    day: date  # the trading day (New York) the figures belong to
+    change: MoneyOut | None  # the portfolio's change in the day, in the home currency
+    percent: Decimal | None
+    price_kind: PriceKind
+    as_of_at: datetime | None
+    holds: bool
+    movers: list[MoverOut]  # the three biggest by percent: holdings, else watched stocks
+    prices: bool
+
+
+@router.get("/today")
+async def today(auth: Auth, web: Runtime) -> TodayOut:
+    """What moved today: the portfolio's change and its biggest movers, each with the
+    day's newest headline."""
+    now = web.clock()
+    status = await quote_cases.refresh_own(
+        web.uow, web.quotes, auth.user.id, now=now, held=True, watched=True
+    )
+    report = await move_cases.today(web.uow, web.rates, auth.user, now=now, status=status)
+    return TodayOut(
+        session=report.session,
+        day=report.day,
+        change=_optional(report.change),
+        percent=report.percent,
+        price_kind=report.kind,
+        as_of_at=report.as_of_at,
+        holds=report.holds,
+        movers=[
+            MoverOut(
+                symbol=m.symbol,
+                held=m.held,
+                price=m.price,
+                day_percent=m.percent,
+                price_kind=m.kind,
+                price_at=m.at,
+                price_day=m.day,
+                headline=_news(m.headline) if m.headline else None,
+            )
+            for m in report.movers
+        ],
+        prices=web.prices,
+    )
+
+
+class WhyOut(Model):
+    symbol: str
+    day: date
+    day_percent: Decimal
+    text: str  # two or three sentences; no advice
+    headlines: list[NewsOut]  # what it was read from, newest first
+    cached: bool
+
+
+@router.post("/today/{symbol}/why")
+async def why(symbol: str, auth: Auth, web: Runtime) -> WhyOut:
+    """Why one of the user's held or watched stocks moved today, read from the day's
+    headlines. Kept for 30 minutes per stock and day."""
+    ticker = clean_symbol(symbol)
+    limit(web, auth, "why")
+    if web.explainer is None:
+        raise InvalidInput("reading why a stock moved isn't set up")
+    now = web.clock()
+    status = await quote_cases.refresh_own(
+        web.uow, web.quotes, auth.user.id, now=now, held=True, watched=True
+    )
+    found = await move_cases.why(web.uow, web.explainer, auth.user, ticker, now=now, status=status)
+    return WhyOut(
+        symbol=found.symbol,
+        day=found.day,
+        day_percent=found.percent,
+        text=found.text,
+        headlines=[_news(n) for n in found.headlines],
+        cached=found.cached,
     )
 
 
@@ -457,14 +568,6 @@ def _levels(levels: Levels) -> LevelsOut:
     )
 
 
-class NewsOut(Model):
-    headline: str
-    source: str
-    url: str
-    summary: str
-    published_at: datetime
-
-
 class PlanBrief(Model):
     id: UUID
     symbol: str
@@ -579,16 +682,7 @@ async def stock(symbol: str, auth: Auth, web: Runtime) -> StockOut:
         watching=view.watching,
         levels=_levels(view.levels) if view.levels else None,
         earnings=_earnings(view.earnings),
-        news=[
-            NewsOut(
-                headline=n.headline,
-                source=n.source,
-                url=n.url,
-                summary=n.summary,
-                published_at=n.published_at,
-            )
-            for n in view.news
-        ],
+        news=[_news(n) for n in view.news],
         prices=web.prices,
         news_enabled=web.news,
         plan=_brief(saved[0], today) if saved else None,

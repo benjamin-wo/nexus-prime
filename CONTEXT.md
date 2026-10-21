@@ -66,6 +66,9 @@ The shared language for code, tests and docs. When a term here and a name in cod
 - **Close**: a stock's official end-of-day price (Tiingo). Levels, plans and history are worked out from closes only.
 - **Live price**: a stock's latest trade (a Finnhub quote) while the US regular session is open and the quote is from today. It replaces the last close in values and day changes, and is shown with the time it was traded.
 - **Provisional close**: after the close, the quote's last price for that day, shown until Tiingo's end-of-day bar for the day arrives and replaces it. Shown as "at the close (provisional)".
+- **Big move**: a held or watched stock up or down by the user's threshold or more (5% unless they pick 1 to 20) in a day, against the previous close. Told once per stock and trading day while the US market is open, as "NVDA −5.4% today at 10:42pm, 182.40". A plan's own prices reached (buy zone, stop, first target) are told the same way.
+- **Morning summary**: one Telegram message at 08:00 in the user's timezone, on a morning after a US trading day, if they hold or watch a stock and haven't turned it off: the portfolio's change in that session, its three biggest movers with a headline, and what was held back overnight. It is sent whatever quiet hours say. It skips the morning after a market holiday and never repeats Friday over a weekend.
+- **Quiet hours**: the stretch of the user's day (11pm to 8am unless they change it; it may cross midnight, and equal times mean none) when Telegram messages wait. Not held back: a message the user timed themselves, the morning summary, and a stop on a stock they hold. What the stock alerts hold back during quiet hours is left for the morning summary.
 
 ## Agent
 

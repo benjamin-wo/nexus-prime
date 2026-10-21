@@ -1,4 +1,4 @@
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -6,6 +6,7 @@ import pytest
 
 from nexus.domain.ledger import UserId
 from nexus.domain.money import Money
+from nexus.domain.notifications import QUIET_END, QUIET_START
 from nexus.domain.planning import (
     Cadence,
     PayRule,
@@ -62,20 +63,61 @@ def test_month_bounds_roll_over_the_year() -> None:
     ("local", "until"),
     [
         (datetime(2026, 9, 28, 8, 0, tzinfo=SGT), None),
-        (datetime(2026, 9, 28, 21, 59, tzinfo=SGT), None),
-        (datetime(2026, 9, 28, 22, 0, tzinfo=SGT), datetime(2026, 9, 29, 8, 0, tzinfo=SGT)),
+        (datetime(2026, 9, 28, 22, 59, tzinfo=SGT), None),
+        (datetime(2026, 9, 28, 23, 0, tzinfo=SGT), datetime(2026, 9, 29, 8, 0, tzinfo=SGT)),
         (datetime(2026, 9, 30, 23, 30, tzinfo=SGT), datetime(2026, 10, 1, 8, 0, tzinfo=SGT)),
         (datetime(2026, 9, 28, 7, 59, tzinfo=SGT), datetime(2026, 9, 28, 8, 0, tzinfo=SGT)),
         (datetime(2026, 9, 28, 0, 0, tzinfo=SGT), datetime(2026, 9, 28, 8, 0, tzinfo=SGT)),
     ],
 )
-def test_quiet_hours(local: datetime, until: datetime | None) -> None:
-    assert quiet_until(local) == until
+def test_the_default_quiet_hours_cross_midnight(local: datetime, until: datetime | None) -> None:
+    assert quiet_until(local, QUIET_START, QUIET_END) == until
+
+
+@pytest.mark.parametrize(
+    ("local", "until"),
+    [
+        (datetime(2026, 9, 28, 21, 59, tzinfo=SGT), None),
+        (datetime(2026, 9, 28, 22, 0, tzinfo=SGT), datetime(2026, 9, 29, 7, 30, tzinfo=SGT)),
+        (datetime(2026, 9, 29, 0, 0, tzinfo=SGT), datetime(2026, 9, 29, 7, 30, tzinfo=SGT)),
+        (datetime(2026, 9, 29, 7, 29, tzinfo=SGT), datetime(2026, 9, 29, 7, 30, tzinfo=SGT)),
+        (datetime(2026, 9, 29, 7, 30, tzinfo=SGT), None),
+    ],
+)
+def test_quiet_hours_are_the_users_own(local: datetime, until: datetime | None) -> None:
+    assert quiet_until(local, time(22), time(7, 30)) == until
+
+
+@pytest.mark.parametrize(
+    ("local", "until"),
+    [
+        (datetime(2026, 9, 28, 0, 59, tzinfo=SGT), None),
+        (datetime(2026, 9, 28, 1, 0, tzinfo=SGT), datetime(2026, 9, 28, 6, 0, tzinfo=SGT)),
+        (datetime(2026, 9, 28, 5, 59, tzinfo=SGT), datetime(2026, 9, 28, 6, 0, tzinfo=SGT)),
+        (datetime(2026, 9, 28, 6, 0, tzinfo=SGT), None),
+        (datetime(2026, 9, 28, 23, 0, tzinfo=SGT), None),
+    ],
+)
+def test_quiet_hours_within_one_day(local: datetime, until: datetime | None) -> None:
+    assert quiet_until(local, time(1), time(6)) == until
+
+
+@pytest.mark.parametrize("hour", [0, 3, 8, 12, 23])
+def test_equal_start_and_end_mean_no_quiet_hours(hour: int) -> None:
+    assert quiet_until(datetime(2026, 9, 28, hour, 0, tzinfo=SGT), time(23), time(23)) is None
+    assert quiet_until(datetime(2026, 9, 28, hour, 0, tzinfo=SGT), time(0), time(0)) is None
+
+
+def test_quiet_hours_ending_at_midnight() -> None:
+    assert quiet_until(datetime(2026, 9, 28, 23, 0, tzinfo=SGT), time(22), time(0)) == datetime(
+        2026, 9, 29, 0, 0, tzinfo=SGT
+    )
+    assert quiet_until(datetime(2026, 9, 28, 12, 0, tzinfo=SGT), time(22), time(0)) is None
 
 
 def test_quiet_hours_need_a_timezone() -> None:
     with pytest.raises(ValueError, match="timezone"):
-        quiet_until(datetime(2026, 9, 28, 12))
+        quiet_until(datetime(2026, 9, 28, 12), QUIET_START, QUIET_END)
 
 
 def test_slots_align_to_the_interval() -> None:

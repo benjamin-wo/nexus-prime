@@ -390,6 +390,31 @@ class UpdatesAre:
 
 
 @dataclass(frozen=True, slots=True)
+class MarketAlertsAre:
+    """The stock market alert settings: the size of a big move (%), the morning summary
+    on or off. What is left out isn't checked."""
+
+    move_percent: str | None = None
+    summary: bool | None = None
+
+    def describe(self) -> str:
+        parts = []
+        if self.move_percent is not None:
+            parts.append(f"big moves at {self.move_percent}%")
+        if self.summary is not None:
+            parts.append(f"morning summary {'on' if self.summary else 'off'}")
+        return "market alerts: " + ", ".join(parts)
+
+    async def holds(self, world: World) -> bool:
+        settings = await notification_cases.get_settings(world.uow(), world.user.id)
+        if self.move_percent is not None and settings.move_alert_percent != Decimal(
+            self.move_percent
+        ):
+            return False
+        return self.summary is None or settings.market_summary is self.summary
+
+
+@dataclass(frozen=True, slots=True)
 class Remembers:
     """Some memory mentions ``text`` (or, with ``present=False``, none does)."""
 

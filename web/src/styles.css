@@ -2196,3 +2196,37 @@ body:has(.sheet-backdrop) .main-viewport { overflow: hidden; }
 @media (max-width: 900px), (pointer: coarse) {
   .entry-open-actions .btn { min-height: 44px; }
 }
+
+/* Today: the portfolio's change in the latest session and its biggest movers. */
+.today-change { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); margin: 0; }
+.today-change .figure-value { color: inherit; }
+.today-percent { font-size: 1.0625rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.movers { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: var(--space-4) var(--space-8); list-style: none; margin: var(--space-4) 0 0; padding: 0; }
+.movers:first-child { margin-top: 0; }
+.mover { display: grid; align-content: start; gap: var(--space-1); }
+/* One column, as on a phone: rows divided by a rule. */
+@media (max-width: 719px) {
+  .movers { gap: 0; }
+  .mover { padding: var(--space-3) 0; border-top: 1px solid var(--border-card); }
+  .mover:first-child { border-top: 0; padding-top: 0; }
+  .mover:last-child { padding-bottom: 0; }
+}
+.mover-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3); }
+.mover-symbol { font-weight: 600; }
+.mover-percent { font-weight: 600; font-variant-numeric: tabular-nums; }
+.mover-price { margin-left: auto; font-variant-numeric: tabular-nums; }
+.mover-headline { margin: 0; font-size: 0.8125rem; line-height: 1.4; color: var(--text-muted); }
+.mover-headline a { color: var(--text-muted); text-decoration: underline; text-underline-offset: 2px; }
+.mover-headline a:hover { color: var(--text-primary); }
+.mover-ask { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-left: calc(-1 * var(--space-3)); }
+.mover-ask .btn { color: var(--text-secondary); }
+.mover-why { display: grid; gap: var(--space-1); padding: var(--space-2) var(--space-3); border-radius: var(--radius-inner); background: var(--bg-raised); }
+.mover-why p { margin: 0; font-size: 0.9375rem; }
+
+/* Settings: the investment fields inside the Telegram updates card. */
+.settings-group { display: grid; gap: var(--space-4); margin-top: var(--space-5); padding-top: var(--space-5); border-top: 1px solid var(--border-card); }
+.quiet-times { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+.quiet-times .field { flex: 1 1 140px; }
+.setting { display: grid; gap: var(--space-1); }
+.setting > p { margin: 0; }
+.setting .share-switch { min-height: 44px; }

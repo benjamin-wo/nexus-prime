@@ -1244,6 +1244,143 @@ test.describe("prices by market state", () => {
   });
 });
 
+test.describe("what moved today", () => {
+  test.use({ locale: "en-US", timezoneId: "Asia/Singapore" });
+
+  const usd = (amount: string) => ({ amount, currency: "USD" });
+  const held = [
+    { symbol: "NVDA", quantity: "10", average_cost: usd("118.4000"), cost: usd("1184.0000"), updated_at: "2026-09-28T03:00:00Z" },
+    { symbol: "AMD", quantity: "25", average_cost: usd("110.0000"), cost: usd("2750.0000"), updated_at: "2026-09-28T03:00:00Z" },
+  ];
+
+  test("the Today card shows the session on Home and Portfolio, live and after the close", async ({ page }) => {
+    const state = await fakeApi(page);
+    state.holdings = held;
+    state.market = "open";
+
+    for (const path of ["/", "/investment"]) {
+      state.market = "open";
+      await page.goto(path);
+      const card = page.getByRole("region", { name: "Today", exact: true });
+      await expect(card).toContainText("Live · 10:41pm");
+      await expect(card.locator(".live-dot")).toHaveCount(1);
+      await expect(card.locator(".today-change.up")).toContainText(/\+SGD\s89\.3[78]\s\+1\.51%/);
+      const rows = card.getByRole("list", { name: "Biggest movers" }).getByRole("listitem");
+      await expect(rows).toHaveCount(2);
+      // The biggest move first, with its price, and a stock link.
+      await expect(rows.nth(0)).toContainText("AMD");
+      await expect(rows.nth(0)).toContainText("+1.74%");
+      await expect(rows.nth(0)).toContainText("USD 131.75");
+      await expect(rows.nth(0).getByRole("link", { name: "AMD" })).toHaveAttribute("href", "/investment/stocks/AMD");
+      await expect(rows.nth(1)).toContainText("+0.96%");
+      const headline = rows.nth(1).getByRole("link", { name: "Nvidia wins a big order" });
+      await expect(headline).toHaveAttribute("href", "https://news.example/nvda/1");
+
+      // After the close, before the official bar.
+      state.market = "after_close";
+      await page.reload();
+      const closed = page.getByRole("region", { name: "Today's session" });
+      await expect(closed).toContainText("Close (provisional) · 10:41pm");
+      await expect(closed.locator(".live-dot")).toHaveCount(0);
+      await expect(closed.getByRole("listitem")).toHaveCount(2);
+    }
+
+    // Before the next open: only the last session's closes.
+    state.market = "closed";
+    await page.goto("/investment");
+    const last = page.getByRole("region", { name: "Last session" });
+    await expect(last).toContainText("Close of Fri, Sep 25");
+    await expect(last.getByRole("listitem")).toHaveCount(1);
+    await expect(last).toContainText("NVDA");
+    await expect(last).toContainText("+1.76%");
+  });
+
+  test("Why did it move? answers in place, and says to wait after a 429", async ({ page }) => {
+    const state = await fakeApi(page);
+    state.holdings = held;
+    state.market = "open";
+    let limited = true;
+    await page.route("**/api/investments/today/AMD/why", async (route) => {
+      if (!limited) return route.fallback();
+      limited = false;
+      return route.fulfill({ status: 429, contentType: "application/json", body: JSON.stringify({ detail: "Too many requests" }) });
+    });
+    await page.goto("/");
+    const card = page.getByRole("region", { name: "Today", exact: true });
+    const nvda = card.getByRole("listitem").filter({ hasText: "NVDA" });
+    await nvda.getByRole("button", { name: "Why did it move?" }).click();
+    await expect(nvda).toContainText("Nvidia won a big order, which may explain the rise.");
+    await expect(nvda).toContainText("From today's headlines");
+    await expect(nvda.getByRole("button")).toHaveCount(0);
+    expect(state.whyAsked).toEqual({ NVDA: 1 });
+
+    const amd = card.getByRole("listitem").filter({ hasText: "AMD" });
+    await amd.getByRole("button", { name: "Why did it move?" }).click();
+    await expect(amd.getByRole("alert")).toHaveText("Try again in a minute");
+    await amd.getByRole("button", { name: "Why did it move?" }).click();
+    await expect(amd).toContainText("No headlines from today explain the move in AMD.");
+    // The other row kept its answer.
+    await expect(nvda).toContainText("Nvidia won a big order");
+  });
+
+  test("the Today card is hidden when nothing is held or watched", async ({ page }) => {
+    const state = await fakeApi(page);
+    state.market = "open";
+    await page.goto("/investment");
+    await expect(page.getByRole("heading", { name: "Portfolio", level: 1 })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Holdings" })).toBeVisible();
+    await expect(page.getByRole("region", { name: /Today|Last session/ })).toHaveCount(0);
+    await page.goto("/");
+    await expect(page.getByRole("region", { name: "Portfolio" })).toBeVisible();
+    await expect(page.getByRole("region", { name: /Today|Last session/ })).toHaveCount(0);
+  });
+});
+
+test("big move alerts, quiet hours and the morning summary are saved one field at a time", async ({ page }) => {
+  await fakeApi(page);
+  const puts: unknown[] = [];
+  page.on("request", (request) => {
+    if (request.method() === "PUT" && new URL(request.url()).pathname === "/api/notifications") puts.push(request.postDataJSON());
+  });
+  await page.goto("/settings");
+  const card = page.getByRole("region", { name: "Telegram updates" });
+  await expect(card.getByLabel("From", { exact: true })).toHaveValue("23:00");
+  await expect(card.getByLabel("To", { exact: true })).toHaveValue("08:00");
+  await expect(card.getByLabel("Big move alerts (%)")).toHaveValue("5");
+  await expect(card.getByRole("switch", { name: "Morning investment summary" })).toBeChecked();
+  await expect(card.getByText("Nexus holds its messages in these hours. A broken stop on a stock you hold still comes through.")).toBeVisible();
+  await expect(card.getByText("At 8am after each US trading day.")).toBeVisible();
+
+  await card.getByLabel("From", { exact: true }).fill("22:30");
+  await expect.poll(() => puts).toEqual([{ quiet_start: "22:30" }]);
+  await card.getByLabel("To", { exact: true }).fill("07:15");
+  await expect.poll(() => puts).toEqual([{ quiet_start: "22:30" }, { quiet_end: "07:15" }]);
+
+  const move = card.getByLabel("Big move alerts (%)");
+  await move.fill("8");
+  await move.press("Enter");
+  await expect.poll(() => puts.length).toBe(3);
+  expect(puts[2]).toEqual({ move_alert_percent: 8 });
+
+  await card.getByRole("switch", { name: "Morning investment summary" }).click();
+  await expect(card.getByRole("switch", { name: "Morning investment summary" })).not.toBeChecked();
+  await expect.poll(() => puts.length).toBe(4);
+  expect(puts[3]).toEqual({ market_summary: false });
+
+  // All of it is still there after a reload.
+  await page.reload();
+  await expect(card.getByLabel("From", { exact: true })).toHaveValue("22:30");
+  await expect(card.getByLabel("To", { exact: true })).toHaveValue("07:15");
+  await expect(card.getByLabel("Big move alerts (%)")).toHaveValue("8");
+  await expect(card.getByRole("switch", { name: "Morning investment summary" })).not.toBeChecked();
+
+  // A threshold the server refuses is shown and not kept.
+  await move.fill("40");
+  await move.press("Enter");
+  await expect(card.getByRole("alert")).toContainText("a big move can be 1.0% to 20.0% in a day");
+  await expect(move).toHaveValue("8");
+});
+
 test("a sale is recorded with what it locked in, and dividends are expected", async ({ page }) => {
   const state = await fakeApi(page);
   await page.goto("/investment");

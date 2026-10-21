@@ -425,6 +425,10 @@ class SqlPlanningRepository:
             Frequency(row.frequency),
             row.notified_until,
             row.daily_at if row.daily_at is not None else DAILY_AT,
+            row.quiet_start,
+            row.quiet_end,
+            row.move_alert_percent,
+            row.market_summary,
         )
 
     async def save_notifications(self, settings: NotificationSettings, now: datetime) -> None:
@@ -432,6 +436,10 @@ class SqlPlanningRepository:
             "frequency": settings.frequency.value,
             "notified_until": settings.notified_until,
             "daily_at": settings.daily_at,
+            "quiet_start": settings.quiet_start,
+            "quiet_end": settings.quiet_end,
+            "move_alert_percent": settings.move_alert_percent,
+            "market_summary": settings.market_summary,
             "updated_at": now,
         }
         stmt = pg_insert(notification_settings).values(user_id=settings.user_id, **values)
