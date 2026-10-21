@@ -185,6 +185,36 @@ async def refresh_own(
     return status
 
 
+async def refresh_symbol(
+    uow: UowFactory, quotes: Quotes | None, symbol: str, *, now: datetime
+) -> MarketStatus | None:
+    """For a plan run: refresh one stock's quote when the regular session is on, or in the
+    20 minutes after the close (for the closing price), and the stored quote is more than a
+    minute old. Gives up after 3 seconds and ignores any failure: what is stored is used.
+    Returns the market's status as known (None if unknown), to price with."""
+    if quotes is None:
+        return None
+    status: MarketStatus | None = None
+    got: list[Quote] = []
+    try:
+        async with asyncio.timeout(REQUEST_BUDGET_SECONDS):
+            status = await quotes.status(now)
+            if regular_open(status, now) or just_closed(status, now, CLOSE_WINDOW) is not None:
+                async with uow() as tx:
+                    fetched = (await tx.investments.quotes_fetched([symbol])).get(symbol, _NEVER)
+                if now - fetched > FRESH_FOR:
+                    await _ask(quotes.source, symbol, got)
+    except TimeoutError:
+        log.info("a quote for a plan took too long; using what is stored")
+    except Exception:
+        log.exception("a quote for a plan couldn't be refreshed")
+    try:
+        await _keep(uow, got, now)
+    except Exception:
+        log.exception("a quote for a plan couldn't be stored")
+    return status
+
+
 async def _own_symbols(
     uow: UowFactory, user_id: UserId, *, held: bool, watched: bool, symbol: str | None
 ) -> list[str]:

@@ -1,7 +1,7 @@
 ---
 name: investments
 description: "Stocks (Investment department): the user's holdings and what they're worth, their watchlist, one stock's levels from daily prices, news and earnings dates, and research plans (entry, stop, targets), what moved today, and the market alerts and morning summary. Holdings come from a broker screenshot or trades they tell you about. Research only; Nexus never trades."
-tools: [show_portfolio, record_trade, trade_history, show_dividends, stock_levels, research_plan, show_plan, plan_record, show_watchlist, watch_stock, unwatch_stock, what_moved_today, set_market_alerts]
+tools: [show_portfolio, record_trade, trade_history, show_dividends, stock_levels, research_plan, show_plan, keep_plan_fresh, plan_record, show_watchlist, watch_stock, unwatch_stock, what_moved_today, set_market_alerts]
 ---
 # Investments
 
@@ -37,6 +37,17 @@ tools: [show_portfolio, record_trade, trade_history, show_dividends, stock_level
   NVDA": `research_plan`. It runs in the background; tell the user it's started and
   where the plan will arrive. Don't answer with levels of your own meanwhile.
 - "what was the plan for NVDA?", "show my AMD plan": `show_plan`.
+- "keep my NVDA plan fresh", "keep refreshing my AMD plan", "stop refreshing my NVDA plan":
+  `keep_plan_fresh` with the ticker and `on` (true to keep it fresh, false to stop). It is for
+  a plan that is still open: if there isn't one, say so and offer `research_plan`. A plan
+  kept fresh is made again by itself when the price moves more than a typical day's range
+  from the one it was written with, earnings come out, it is a week old or it runs out (at
+  most once a day), and the new one replaces it. The user hears about it only when the
+  verdict changes or the entry, stop or first target moves a good deal. Say that, not that
+  the plan "will be updated all the time".
+- A plan says what price it was written with ("Price 182.40 at 10:42pm (live)", or at the
+  close). Quote that time with the price. When it carries a "price is already" note, tell the
+  user first: the figures come from the last close and the live price has moved past them.
 - Plans carry odds: how often each target closed before the stop when the past year's
   daily moves are replayed. Quote them as "in about N% of replays", never as a
   prediction or a promise.

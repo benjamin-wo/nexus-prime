@@ -41,6 +41,11 @@ const PLAN_BRIEF = {
   result_percent: null,
   alerts: true,
   followed: true,
+  keep_fresh: false,
+  refreshed_from: null,
+  price: "129.50",
+  price_at: null,
+  price_kind: "close",
 };
 
 const FINISHED_PLAN = {
@@ -55,6 +60,20 @@ const FINISHED_PLAN = {
   outcome_day: "2026-09-22",
   outcome_price: "441.00",
   result_percent: "4.6",
+};
+
+/** The older plan the made-up p1 replaced when `state.planRefreshed` is on: closed as refreshed. */
+const REFRESHED_PLAN = {
+  ...PLAN_BRIEF,
+  id: "p2",
+  headline: "AMD: Wait for a pullback",
+  verdict_text: "Wait for a pullback",
+  created_at: "2026-09-21T04:00:00Z",
+  valid_until: "2026-10-05",
+  status: "refreshed",
+  alerts: false,
+  keep_fresh: false,
+  price: "127.80",
 };
 
 /** The made-up research's areas (Tokyo): what the ideas endpoint files under a list per area. */
@@ -272,6 +291,10 @@ export async function fakeApi(
     settlePosts: Record<string, unknown>[];
     planStarted: boolean;
     planAlerts: boolean;
+    /** Whether the made-up plan p1 is kept fresh (PUT /investments/plans/p1/keep-fresh). */
+    planKeepFresh: boolean;
+    /** Whether p1 replaced an older plan, p2, that was closed as refreshed. */
+    planRefreshed: boolean;
     cancelled: string[];
     budgets: FakeBudget[];
     bills: FakeBill[];
@@ -388,6 +411,8 @@ export async function fakeApi(
     photoChoices: [],
     planStarted: false,
     planAlerts: true,
+    planKeepFresh: false,
+    planRefreshed: false,
     draft: null,
     screenshots: 0,
     txs: [
@@ -596,6 +621,13 @@ export async function fakeApi(
   };
   const categoryName = (id: string) => categories.find((c) => c.id === id)?.name ?? id;
   const live = () => state.txs.filter((t) => !t.deleted);
+  /** The made-up plan p1 as the list and its page give it now. */
+  const currentPlan = () => ({
+    ...PLAN_BRIEF,
+    alerts: state.planAlerts,
+    keep_fresh: state.planKeepFresh,
+    refreshed_from: state.planRefreshed ? { id: REFRESHED_PLAN.id, created_at: REFRESHED_PLAN.created_at } : null,
+  });
   const json = (route: Route, body: unknown, status = 200) =>
     route.fulfill({
       status,
@@ -928,19 +960,28 @@ export async function fakeApi(
       });
     }
     if (path === "/investments/plans" && method === "GET") {
-      return json(route, state.planStarted ? [{ ...PLAN_BRIEF, alerts: state.planAlerts }, FINISHED_PLAN] : [FINISHED_PLAN]);
+      return json(
+        route,
+        state.planStarted
+          ? [currentPlan(), FINISHED_PLAN, ...(state.planRefreshed ? [REFRESHED_PLAN] : [])]
+          : [FINISHED_PLAN],
+      );
     }
     if (path === "/investments/plans/p1/alerts" && method === "POST") {
       state.planAlerts = Boolean(body.on);
       return route.fulfill({ status: 204 });
     }
-    if (path === "/investments/plans/p1" && method === "GET") {
+    if (path === "/investments/plans/p1/keep-fresh" && method === "PUT") {
+      state.planKeepFresh = Boolean(body.on);
+      return route.fulfill({ status: 204 });
+    }
+    if ((path === "/investments/plans/p1" || (path === "/investments/plans/p2" && state.planRefreshed)) && method === "GET") {
       const closes = Array.from({ length: 60 }, (_, i) => ({
         day: new Date(Date.UTC(2026, 6, 28 + i)).toISOString().slice(0, 10),
         close: (100 + i * 0.5).toFixed(2),
       }));
       return json(route, {
-        brief: { ...PLAN_BRIEF, alerts: state.planAlerts },
+        brief: path.endsWith("/p2") ? REFRESHED_PLAN : currentPlan(),
         closes,
         plan: {
           symbol: "AMD",

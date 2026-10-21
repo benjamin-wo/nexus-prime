@@ -1,7 +1,8 @@
 """The made-up user every evaluation case starts from: two months of ordinary
 spending in Singapore, a salary, a split dinner, a budget, bills, a pay schedule,
-a category rule, a tracked subscription, a trip to Japan in December, and wallets
-(IBKR, Savings, Card) with no moves between them. Nothing here is real data.
+a category rule, a tracked subscription, a trip to Japan in December, wallets
+(IBKR, Savings, Card) with no moves between them, and two open research plans (NVDA, and
+AMD with Keep fresh on). Nothing here is real data.
 
 "Now" is Monday 28 September 2026, 2pm in Singapore. The figures the cases check
 against are the constants below; a test recomputes them from the ledger.
@@ -25,11 +26,13 @@ from nexus.application import trip_access as access_cases
 from nexus.application import trips as trip_cases
 from nexus.application import wallets as wallet_cases
 from nexus.application.categories import list_categories
+from nexus.application.plans import PlanResult
 from nexus.application.ports import UnitOfWork
 from nexus.application.users import RegisterUser, register_user
 from nexus.domain.ledger import Direction, ShareRequest, Source, User
 from nexus.domain.money import Money
 from nexus.domain.planning import Cadence, PayRule
+from nexus.domain.plans import PlanStatus, SavedPlan, Verdict
 from nexus.domain.recurring import Subscription, SubscriptionStatus, merchant_key
 
 type UowFactory = Callable[[], UnitOfWork]
@@ -114,6 +117,62 @@ async def _japan(new_uow: UowFactory, owner: User) -> UUID:
     return trip.id
 
 
+def open_plan(user: User, symbol: str, close: str, *, keep_fresh: bool) -> SavedPlan:
+    """A made-up open research plan: wait for a dip to a buy zone, with a stop and a target."""
+    low, high, stop, target = (
+        Decimal(close) * Decimal(f) for f in ("0.94", "0.96", "0.90", "1.10")
+    )
+    low, high, stop, target = (v.quantize(Decimal("0.01")) for v in (low, high, stop, target))
+    made = datetime(2026, 9, 25, 22, 0, tzinfo=TZ)
+    result = PlanResult(
+        plan_id=uuid4(),
+        symbol=symbol,
+        as_of=date(2026, 9, 25),
+        close=Decimal(close),
+        verdict=Verdict.WAIT,
+        verdict_text="Wait for a dip to buy",
+        reason="It's above the buy zone; support at the 50-day average is a better price.",
+        entry_low=low,
+        entry_high=high,
+        entry_why="50-day average",
+        stop=stop,
+        risk=high - stop,
+        targets=[],
+        valid_until=date(2026, 10, 9),
+        earnings_in_window=None,
+        trend=None,
+        held=None,
+        held_gain_percent=None,
+        levels=[],
+        technical="",
+        news=[],
+        risks=[],
+        bull=[],
+        bear=[],
+        summary="Wait for a dip to the buy zone.",
+        invalidation=f"A daily close below {stop} would prove it wrong.",
+        sources=[],
+        atr=Decimal("3.50"),
+    )
+    return SavedPlan(
+        id=result.plan_id,
+        user_id=user.id,
+        run_id=None,
+        symbol=symbol,
+        verdict=result.verdict,
+        as_of=result.as_of,
+        valid_until=result.valid_until,
+        close=result.close,
+        entry_low=low,
+        entry_high=high,
+        stop=stop,
+        body=result.model_dump(mode="json"),
+        status=PlanStatus.OPEN,
+        created_at=made,
+        keep_fresh=keep_fresh,
+    )
+
+
 async def seed_user(new_uow: UowFactory, telegram_id: int, *, shared: bool = False) -> Seeded:
     """The case's user. With ``shared`` they don't own the Japan trip: Alex does, and
     the user was added to it as a member."""
@@ -169,6 +228,8 @@ async def seed_user(new_uow: UowFactory, telegram_id: int, *, shared: bool = Fal
     await salary_cases.set_baseline(new_uow(), user, Money.of("5000", "SGD"), now=NOW)
     await rule_cases.set_rule(new_uow(), user, "grab", cats["Transport"], now=NOW)
     async with new_uow() as db:
+        await db.investments.insert_plan(open_plan(user, "NVDA", "130.00", keep_fresh=False))
+        await db.investments.insert_plan(open_plan(user, "AMD", "140.00", keep_fresh=True))
         await db.planning.insert_subscription(
             Subscription(
                 id=uuid4(),

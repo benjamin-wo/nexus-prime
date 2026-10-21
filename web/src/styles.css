@@ -625,7 +625,17 @@ a.btn { text-decoration: none; }
 .badge.status-target { color: var(--emerald-accent); border-color: var(--emerald-border); }
 .badge.status-stopped { color: var(--rose-accent); border-color: rgba(244, 63, 94, 0.35); }
 .badge.status-open { color: var(--status-warning); border-color: var(--status-warning-border); }
+.badge.status-refreshed { color: var(--text-muted); border-color: var(--border-card); }
 .toggle { display: inline-flex; align-items: center; gap: var(--space-2); cursor: pointer; }
+/* Plans that keep themselves fresh: the price line, the switch, the Fresh tag and the links between a plan and the one that replaced it */
+.plan-price { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-2); margin: var(--space-1) 0 0; }
+.plan-price strong { font-size: 1rem; color: var(--text-white); }
+.plan-trail { margin: var(--space-1) 0 0; }
+.plan-tags { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-1); }
+.badge.badge-fresh { color: var(--accent-text); background: var(--accent-soft); border-color: var(--accent-border); }
+.keep-fresh .toggle { min-height: 44px; font-weight: 600; }
+.keep-fresh .caption { margin: 0; }
+.keep-fresh .error-text { margin: var(--space-2) 0 0; }
 .spending-toggle { flex: 1 1 100%; display: grid; gap: var(--space-1); }
 .debate { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--space-3); }
 .cite { font-size: 0.8em; margin-left: 2px; }

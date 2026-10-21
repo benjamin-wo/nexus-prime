@@ -502,6 +502,8 @@ async def _registry(
     rates: RateSource,
     stack: AsyncExitStack,
     web: Web | None = None,
+    news: NewsSource | None = None,
+    quotes: Quotes | None = None,
 ) -> Departments:
     """The departments, with the Investment research team and, with travel's web
     search, the Travel researcher (live flight and hotel prices too with a SerpApi
@@ -509,7 +511,7 @@ async def _registry(
     uow = lambda: SqlUnitOfWork(engine)  # noqa: E731
     analyst, lead = build_research_models(settings, models.primary)
     reviewer = build_research_reviewer(settings)
-    kinds = [plan_kind(uow, analyst, lead, reviewer, web.news if web else None)]
+    kinds = [plan_kind(uow, analyst, lead, reviewer, web.news if web else None, news, quotes)]
     if web is not None:
         http = await stack.enter_async_context(timed_client())
         prices = (
@@ -670,7 +672,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                 email = await _email_runtime(resolved, extra, stack, models, resolved.public_origin)
                 web = await _web(resolved, engine, stack, extra.clock or utcnow)
                 departments = extra.departments or await _registry(
-                    resolved, engine, models, rates, stack, web
+                    resolved, engine, models, rates, stack, web, news, quotes
                 )
                 places = await _places(resolved, extra, stack, extra.clock or utcnow)
                 ideas = await _ideas(resolved, extra, stack, web, places, extra.clock or utcnow)

@@ -28,20 +28,25 @@ didn't work out is dropped. Research only: nothing here trades.
 import asyncio
 import logging
 from collections.abc import Callable, Sequence
+from dataclasses import replace
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Protocol
 from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
+from nexus.application import quotes as quote_cases
 from nexus.application import research
 from nexus.application.alerting import Alert, Outcome, deliver
 from nexus.application.budgets import TELEGRAM_SEND
 from nexus.application.departments import Departments, RunKind, Step, StepContext, start_run
 from nexus.application.ports import UnitOfWork
+from nexus.application.quotes import Quotes
+from nexus.application.research import NewsSource
 from nexus.domain.alerts import KIND_OF
 from nexus.domain.departments import Run
 from nexus.domain.errors import InvalidInput, NotFound
@@ -50,6 +55,7 @@ from nexus.domain.investments import clean_symbol, describe_position
 from nexus.domain.ledger import User, UserId
 from nexus.domain.levels import Levels
 from nexus.domain.levels import describe as describe_levels
+from nexus.domain.market import PriceKind, describe_price_time
 from nexus.domain.odds import PlanOdds, describe_odds, describe_ranges, plan_odds, trading_days
 from nexus.domain.plans import (
     FOLLOWED,
@@ -67,7 +73,9 @@ from nexus.domain.plans import (
     keep_supported,
     plan,
     playbook,
+    price_notes,
     record,
+    refresh_message,
 )
 
 log = logging.getLogger(__name__)
@@ -103,6 +111,10 @@ PARTS = {
 
 class PlanTask(BaseModel):
     symbol: str = Field(min_length=1, max_length=12)
+    # Set when the plan is a refresh that started by itself (Keep fresh): the plan it
+    # replaces, and why, in a few words for the message ("price moved 2.3 ATR").
+    refresh_of: UUID | None = None
+    refresh_why: str | None = Field(None, max_length=80)
 
 
 class TargetOut(BaseModel):
@@ -192,6 +204,14 @@ class PlanResult(BaseModel):
     history: list[str] = []  # its last year in numbers (see domain.history)
     # Parts a writer couldn't finish (see PARTS); the numbers are always complete.
     incomplete: list[str] = []
+    # The price the plan was written with: live while the market is open, the day's last
+    # before the official close, else the close (see domain.market.pick_price). The numbers
+    # above still come from daily closes; ``notes`` says when this price is already past them.
+    price: Decimal | None = None
+    price_at: datetime | None = None
+    price_kind: PriceKind | None = None
+    notes: list[str] = []
+    atr: Decimal | None = None  # a typical day's move when it was made (Keep fresh uses it)
 
 
 # --- what each analyst returns -----------------------------------------------------
@@ -298,8 +318,10 @@ async def _ask[M: BaseModel](
 # --- step 1: the numbers ----------------------------------------------------------
 
 
-def _figures(numbers: PlanNumbers, levels: Levels) -> list[Decimal]:
+def _figures(numbers: PlanNumbers, levels: Levels, price: Decimal | None = None) -> list[Decimal]:
     allowed = set(numbers.prices())
+    if price is not None:
+        allowed.add(price)
     allowed.update(levels.support + levels.resistance + list(levels.averages.values()))
     allowed.update({levels.year_high, levels.year_low})
     if levels.atr is not None:
@@ -337,11 +359,23 @@ async def _articles(reader: ArticleReader | None, sources: list[dict[str, Any]])
 
 
 def gather_step(
-    uow: UowFactory, reader: ArticleReader | None = None
+    uow: UowFactory,
+    reader: ArticleReader | None = None,
+    news: NewsSource | None = None,
+    quotes: Quotes | None = None,
 ) -> Callable[[StepContext], Any]:
+    """The first step. It starts by reading today: the stock's news and earnings dates
+    fresh (unless fetched in the last 15 minutes) and, while the market is open or just
+    closed, its quote (unless fetched in the last minute). A source that fails leaves
+    the stored data to be used."""
+
     async def gather(ctx: StepContext) -> dict[str, Any]:
         symbol = ctx.task["symbol"]
-        view = await research.stock(uow(), ctx.user, symbol, today=ctx.now.date(), now=ctx.now)
+        await research.refresh_symbol_news(uow, news, symbol, now=ctx.now)
+        status = await quote_cases.refresh_symbol(uow, quotes, symbol, now=ctx.now)
+        view = await research.stock(
+            uow(), ctx.user, symbol, today=ctx.now.date(), now=ctx.now, status=status
+        )
         if view.levels is None:
             raise InvalidInput(f"there isn't a month of prices for {symbol} yet")
         async with uow() as tx:
@@ -355,6 +389,11 @@ def gather_step(
             previous_target=_first_target(earlier[0].body) if earlier and view.held else None,
         )
         odds = _odds(numbers, view.moves)
+        # The numbers stay worked out from the closes; the price now is passed along, and
+        # a note says when it is already past the buy zone or the stop.
+        picked = view.price
+        price = picked.price.quantize(Decimal("0.01")) if picked else None
+        notes = price_notes(numbers, price, picked.kind) if picked and price else []
         bands = [p for r in view.ranges for p in (r.low_68, r.high_68, r.low_90, r.high_90)]
         sources = [
             {
@@ -373,7 +412,7 @@ def gather_step(
                 str(f)
                 for f in sorted(
                     {
-                        *_figures(numbers, view.levels),
+                        *_figures(numbers, view.levels, price),
                         *([odds.reference] if odds else []),
                         *bands,
                     }
@@ -389,6 +428,17 @@ def gather_step(
                 else []
             ),
             "odds": _odds_json(odds),
+            "price": (
+                {
+                    "price": str(price),
+                    "at": picked.at.isoformat() if picked.at else None,
+                    "kind": picked.kind.value,
+                }
+                if picked and price
+                else None
+            ),
+            "notes": notes,
+            "atr": _s(view.levels.atr),
             "ranges": describe_ranges(view.ranges),
             "history": describe_history(view.history) if view.history else [],
             "held": describe_position(view.held) if view.held else None,
@@ -507,10 +557,28 @@ def _numbers(data: dict[str, Any]) -> PlanNumbers:
     )
 
 
+def price_line(
+    price: Decimal, kind: PriceKind, at: datetime | None, day: date, tz: ZoneInfo
+) -> str:
+    """ "Price 182.40 at 10:42pm (live)", the time in the user's timezone."""
+    return f"Price {price:,.2f} {describe_price_time(kind, at, day, tz)}"
+
+
 def _brief(ctx: StepContext) -> str:
     """The figures every analyst sees."""
     facts = ctx.output("levels")
     lines = [f"Stock: {ctx.task['symbol']} (USD, daily closes)"]
+    if facts.get("price"):  # plans made before the price was kept have none
+        found = facts["price"]
+        lines.append(
+            price_line(
+                Decimal(found["price"]),
+                PriceKind(found["kind"]),
+                datetime.fromisoformat(found["at"]) if found["at"] else None,
+                date.fromisoformat(facts["numbers"]["as_of"]),
+                ZoneInfo(ctx.user.timezone),
+            )
+        )
     lines += facts["levels"]
     if facts.get("history"):
         lines += ["Its last year, worked out from its prices:", *facts["history"]]
@@ -521,6 +589,7 @@ def _brief(ctx: StepContext) -> str:
             *facts["ranges"],
         ]
     lines += facts["plan"]
+    lines += [f"Note: {note}" for note in facts.get("notes") or []]
     if facts.get("earnings"):
         day = date.fromisoformat(facts["earnings"])
         inside = facts["numbers"].get("earnings_in_window")
@@ -661,6 +730,7 @@ def lead_step(
             view = None
             missing.append("lead")
         numbers = _numbers(facts["numbers"])
+        quoted = facts.get("price")  # plans made before the price was kept have none
         stop_line = (
             f"A daily close below {numbers.stop} would prove it wrong."
             if numbers.stop is not None
@@ -715,6 +785,11 @@ def lead_step(
             ranges=facts.get("ranges") or [],
             history=facts.get("history") or [],
             incomplete=[PARTS[m] for m in missing if m in PARTS],
+            price=Decimal(quoted["price"]) if quoted else None,
+            price_at=datetime.fromisoformat(quoted["at"]) if quoted and quoted["at"] else None,
+            price_kind=PriceKind(quoted["kind"]) if quoted else None,
+            notes=facts.get("notes") or [],
+            atr=Decimal(facts["atr"]) if facts.get("atr") else None,
         )
         if save:
             await _save(uow, ctx, result)
@@ -724,25 +799,51 @@ def lead_step(
 
 
 async def _save(uow: UowFactory, ctx: StepContext, result: PlanResult) -> None:
+    """Save the plan. A refresh that started by itself also takes over from the plan it
+    replaces: it links to it, keeps its Keep fresh and alert settings as they are now, and
+    closes it as refreshed (unless it finished meanwhile: its outcome stands). The user is
+    told when the verdict changed or the entry, stop or first target moved a good deal."""
     async with uow() as tx:
-        await tx.investments.insert_plan(
-            SavedPlan(
-                id=result.plan_id,
-                user_id=ctx.user.id,
-                run_id=ctx.run.id,
-                symbol=result.symbol,
-                verdict=result.verdict,
-                as_of=result.as_of,
-                valid_until=result.valid_until,
-                close=result.close,
-                entry_low=result.entry_low,
-                entry_high=result.entry_high,
-                stop=result.stop,
-                body=result.model_dump(mode="json"),
-                status=PlanStatus.OPEN,
-                created_at=ctx.now,
-            )
+        saved = SavedPlan(
+            id=result.plan_id,
+            user_id=ctx.user.id,
+            run_id=ctx.run.id,
+            symbol=result.symbol,
+            verdict=result.verdict,
+            as_of=result.as_of,
+            valid_until=result.valid_until,
+            close=result.close,
+            entry_low=result.entry_low,
+            entry_high=result.entry_high,
+            stop=result.stop,
+            body=result.model_dump(mode="json"),
+            status=PlanStatus.OPEN,
+            created_at=ctx.now,
+            price=result.price,
+            price_at=result.price_at,
+            price_kind=result.price_kind,
         )
+        old = None
+        if earlier := ctx.task.get("refresh_of"):
+            old = await tx.investments.get_plan(ctx.user.id, UUID(str(earlier)))
+        if old is not None and old.symbol == result.symbol:
+            saved = replace(
+                saved, refreshed_from=old.id, keep_fresh=old.keep_fresh, alerts=old.alerts
+            )
+        else:
+            old = None
+        await tx.investments.insert_plan(saved)
+        if old is not None:
+            await tx.investments.close_refreshed(ctx.user.id, old.id, at=ctx.now)
+            text = refresh_message(old, saved, ctx.task.get("refresh_why") or "it was due")
+            if text is not None:
+                # Through the normal send: it waits out quiet hours and is not urgent.
+                await tx.jobs.enqueue(
+                    TELEGRAM_SEND,
+                    {"user_id": str(ctx.user.id), "text": text, "buttons": []},
+                    dedupe_key=f"plan-refresh:{saved.id}",
+                    run_at=ctx.now,
+                )
         await tx.commit()
 
 
@@ -843,8 +944,8 @@ def summary_line(result: BaseModel) -> str:
         else []
     )  # fmt: skip
     return "\n".join(
-        [f"{r.symbol}: {r.verdict_text}. {r.reason}", *game_plan(r), *([odds] if odds else []),
-         *note]
+        [f"{r.symbol}: {r.verdict_text}. {r.reason}", *game_plan(r), *(f"⚠️ {n}" for n in r.notes),
+         *([odds] if odds else []), *note]
     )  # fmt: skip
 
 
@@ -859,9 +960,11 @@ def plan_kind(
     lead: BaseChatModel | None = None,
     reviewer: BaseChatModel | None = None,
     reader: ArticleReader | None = None,
+    news: NewsSource | None = None,
+    quotes: Quotes | None = None,
 ) -> RunKind:
     steps = [
-        Step("levels", "working out the levels", gather_step(uow, reader)),
+        Step("levels", "working out the levels", gather_step(uow, reader, news, quotes)),
         Step("analysts", "analysts reading the chart and the news", analysts_step(analyst)),
         Step(
             "lead",
@@ -889,9 +992,17 @@ def plan_kind(
 
 
 async def start_plan(
-    uow: UowFactory, registry: Departments, user: User, symbol: str, *, now: datetime
+    uow: UowFactory,
+    registry: Departments,
+    user: User,
+    symbol: str,
+    *,
+    now: datetime,
+    refresh_of: UUID | None = None,
+    refresh_why: str | None = None,
 ) -> Run:
-    """Start a plan, once there's enough price history for one."""
+    """Start a plan, once there's enough price history for one. ``refresh_of`` makes it a
+    refresh of that plan that started by itself (see ``is_automatic``)."""
     symbol = clean_symbol(symbol)
     if KIND not in registry.kinds:
         raise InvalidInput("research plans aren't set up")
@@ -902,7 +1013,16 @@ async def start_plan(
             f"I need about a month of prices for {symbol} first. "
             f'Watch it ("watch {symbol}") and ask again once they\'re in.'
         )
-    return await start_run(uow(), registry, user, KIND, {"symbol": symbol}, now=now)
+    task: dict[str, Any] = {"symbol": symbol}
+    if refresh_of is not None:
+        task |= {"refresh_of": str(refresh_of), "refresh_why": refresh_why}
+    return await start_run(uow(), registry, user, KIND, task, now=now)
+
+
+def is_automatic(run: Run) -> bool:
+    """Whether a run is a refresh that started by itself: it shows no progress and sends
+    no message of its own (the user hears of it only if the plan changed a good deal)."""
+    return run.kind == KIND and bool(run.task.get("refresh_of"))
 
 
 async def list_plans(
@@ -920,10 +1040,13 @@ async def get_plan(uow: UnitOfWork, user_id: UserId, plan_id: UUID) -> SavedPlan
     return found
 
 
-def describe_plan(body: dict[str, Any]) -> str:
-    """A saved plan in a few lines, for the chat."""
+def describe_plan(body: dict[str, Any], tz: ZoneInfo | None = None) -> str:
+    """A saved plan in a few lines, for the chat. With the user's timezone it opens on the
+    price it was written with ("Price 182.40 at 10:42pm (live)")."""
     r = PlanResult.model_validate(body)
     lines = [summary_line(r), r.summary, f"What would prove it wrong: {r.invalidation}"]
+    if r.price is not None and r.price_kind is not None and tz is not None:
+        lines.insert(0, price_line(r.price, r.price_kind, r.price_at, r.as_of, tz))
     if r.average_cost is not None and r.held_gain_percent is not None:
         lines.insert(
             1, f"You're {r.held_gain_percent:+}% on your average cost of {r.average_cost}."
@@ -991,7 +1114,9 @@ async def follow_plans(uow: UowFactory, *, now: datetime) -> int:
     for p in followed_plans:
         async with uow() as tx:
             bars = await tx.investments.bars(p.symbol, FOLLOW_BARS)
-        f = follow(p, bars, today=now.date())
+        # A plan kept fresh doesn't run out: the refresh replaces it once its date has
+        # passed (see plan_refresh), so the follow never closes it as expired.
+        f = follow(p, bars, today=min(now.date(), p.valid_until) if p.keep_fresh else now.date())
         if f.checked_through == p.checked_through and f.status is p.status and not f.events:
             continue
         async with uow() as tx:
@@ -1042,11 +1167,36 @@ async def set_alerts(uow: UnitOfWork, user_id: UserId, plan_id: UUID, *, on: boo
         await uow.commit()
 
 
+async def set_keep_fresh(uow: UnitOfWork, user_id: UserId, plan_id: UUID, *, on: bool) -> SavedPlan:
+    """Turn Keep fresh on or off for one of the user's open plans."""
+    async with uow:
+        found = await uow.investments.get_plan(user_id, plan_id)
+        if found is None:
+            raise NotFound("that plan isn't in your list")
+        if found.status is not PlanStatus.OPEN:
+            raise InvalidInput("that plan has finished; ask for a fresh plan to keep fresh")
+        await uow.investments.set_plan_keep_fresh(user_id, plan_id, on)
+        await uow.commit()
+    return replace(found, keep_fresh=on)
+
+
+async def set_keep_fresh_for(
+    uow: UowFactory, user_id: UserId, symbol: str, *, on: bool
+) -> SavedPlan:
+    """The same for the user's open plan for a stock (the newest, if there are several)."""
+    saved = await list_plans(uow(), user_id, symbol=symbol)
+    open_plans = [p for p in saved if p.status is PlanStatus.OPEN]
+    if not open_plans:
+        raise NotFound(f"there's no open plan for {symbol}; ask for one first")
+    return await set_keep_fresh(uow(), user_id, open_plans[0].id, on=on)
+
+
 async def track_record(uow: UnitOfWork, user_id: UserId) -> tuple[Record, list[SavedPlan]]:
     """The record over every plan, and the finished ones newest first."""
     async with uow:
         saved = await uow.investments.list_plans(user_id, limit=500)
-    finished = [p for p in saved if p.verdict in FOLLOWED and p.status is not PlanStatus.OPEN]
+    done = (PlanStatus.OPEN, PlanStatus.REFRESHED)  # not finished: open, or replaced
+    finished = [p for p in saved if p.verdict in FOLLOWED and p.status not in done]
     return record(saved), finished
 
 

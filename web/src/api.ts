@@ -566,13 +566,23 @@ export type PlanBrief = {
   created_at: string;
   valid_until: string;
   expired: boolean;
-  status: "open" | "target" | "stopped" | "expired";
+  /** "refreshed": replaced by its own refresh (Keep fresh); it is closed and not scored. */
+  status: "open" | "target" | "stopped" | "expired" | "refreshed";
   entered_on: string | null;
   outcome_day: string | null;
   outcome_price: string | null;
   result_percent: string | null;
   alerts: boolean;
   followed: boolean;
+  /** Made again by itself when it goes stale (price moved over an ATR, earnings, a week old, ran out). */
+  keep_fresh: boolean;
+  /** The plan this one replaced, and when that was made. */
+  refreshed_from: { id: string; created_at: string } | null;
+  /** The price the plan was written with: live, the day's last before the close, or the close
+   * (null on plans made before prices were kept). `price_at` is when it was traded; null for a close. */
+  price: string | null;
+  price_at: string | null;
+  price_kind: PriceKind | null;
 };
 export type PlanRecord = {
   finished: number;
@@ -642,8 +652,19 @@ export type PlanBody = {
   odds?: PlanOdds | null;
   ranges?: string[];
   history?: string[];
+  /** The price now when it was written, and when it is already past the buy zone or the stop (plain notes). */
+  price?: string | null;
+  price_at?: string | null;
+  price_kind?: PriceKind | null;
+  notes?: string[];
+  atr?: string | null;
 };
 export type PlanDetail = { brief: PlanBrief; plan: PlanBody; closes: { day: string; close: string }[] };
+
+/** Turn Keep fresh on or off for an open plan (`PUT /investments/plans/{id}/keep-fresh`, 204). */
+export function setPlanKeepFresh(id: string, on: boolean): Promise<void> {
+  return api(`/investments/plans/${id}/keep-fresh`, { method: "PUT", body: { on } });
+}
 
 /** Where the trip is for a stretch of days: a city or area, first to last day. One stop's
  * last day may be the next one's first (the travel day). */

@@ -595,6 +595,10 @@ class RunRepository(Protocol):
         """Runs going now, and started and spent since ``since``."""
         ...
 
+    async def active_runs(self, user_id: UserId, kind: str) -> list[Run]:
+        """The user's unfinished runs of this kind."""
+        ...
+
 
 @dataclass(frozen=True, slots=True)
 class TripExpense:
@@ -881,6 +885,22 @@ class InvestmentRepository(Protocol):
         self, user_id: UserId, plan_id: UUID, followed: Followed, *, at: datetime
     ) -> None: ...
     async def set_plan_alerts(self, user_id: UserId, plan_id: UUID, on: bool) -> bool: ...
+    async def plans_to_refresh(self) -> list[SavedPlan]:
+        """Across all users: open plans with Keep fresh on, oldest first."""
+        ...
+
+    async def set_plan_keep_fresh(self, user_id: UserId, plan_id: UUID, on: bool) -> bool:
+        """False when the user has no such open plan."""
+        ...
+
+    async def mark_refresh_check(self, user_id: UserId, plan_id: UUID, at: datetime) -> None: ...
+    async def refresh_checks_since(self, user_id: UserId, since: datetime) -> int:
+        """How many of the user's plans were sent for an automatic refresh since."""
+        ...
+
+    async def close_refreshed(self, user_id: UserId, plan_id: UUID, *, at: datetime) -> bool:
+        """Close an open plan its refresh replaced; False if it had finished meanwhile."""
+        ...
 
     # Alerts during the US session, once per user, stock, kind and trading day.
     async def insert_alert(self, alert: MarketAlert) -> bool:

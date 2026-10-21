@@ -31,7 +31,7 @@ from uuid import UUID
 from nexus.domain.investments import Position
 from nexus.domain.ledger import UserId
 from nexus.domain.levels import Levels
-from nexus.domain.market import Bar
+from nexus.domain.market import US_MARKET, Bar, PriceKind
 from nexus.domain.odds import Calibration, calibration
 
 ZONE_ATR = Decimal("0.5")  # the buy zone's height
@@ -63,6 +63,16 @@ class Verdict(StrEnum):
     TRIM = "trim"  # reached the last plan's first target
     EXIT = "exit"  # closed below the last plan's stop
 
+
+# The verdict in a word or two, for a short message.
+VERDICT_SHORT = {
+    Verdict.IN_ZONE: "Buy",
+    Verdict.WAIT: "Wait",
+    Verdict.NO_TRADE: "No trade",
+    Verdict.HOLD: "Hold",
+    Verdict.TRIM: "Take profit",
+    Verdict.EXIT: "Cut it",
+}
 
 # The headline, in plain words.
 VERDICT_TEXT = {
@@ -437,6 +447,8 @@ class PlanStatus(StrEnum):
     TARGET = "target"  # reached a target (M13d)
     STOPPED = "stopped"  # closed below the stop (M13d)
     EXPIRED = "expired"  # ran past its valid-until date (M13d)
+    # Replaced by a refresh of itself (Keep fresh). It never finished, so it isn't scored.
+    REFRESHED = "refreshed"
 
 
 @dataclass(frozen=True, slots=True)
@@ -464,6 +476,15 @@ class SavedPlan:
     outcome_day: date | None = None
     result_percent: Decimal | None = None  # from the buy price (or the close, if held)
     alerts: bool = True
+    # Keep it fresh: refreshed by itself when it goes stale (see ``refresh_reason``).
+    keep_fresh: bool = False
+    refreshed_from: UUID | None = None  # the plan this one replaced, and when that was made
+    refreshed_from_at: datetime | None = None
+    last_refresh_check: datetime | None = None  # when it was last sent for an automatic refresh
+    # The price it was written with (a live quote, a provisional close or a close).
+    price: Decimal | None = None
+    price_at: datetime | None = None
+    price_kind: PriceKind | None = None
 
     @property
     def held(self) -> bool:
@@ -473,6 +494,13 @@ class SavedPlan:
     def first_target(self) -> Decimal | None:
         targets = self.body.get("targets") or []
         return Decimal(str(targets[0]["price"])) if targets else None
+
+    @property
+    def atr(self) -> Decimal | None:
+        """A typical day's move when the plan was made (plans before Keep fresh don't
+        have it)."""
+        found = self.body.get("atr")
+        return Decimal(str(found)) if found is not None else None
 
     @property
     def reference(self) -> Decimal | None:
@@ -489,6 +517,28 @@ HELD_VERDICTS = frozenset({Verdict.HOLD, Verdict.TRIM, Verdict.EXIT})
 # Plans that make a call worth following and scoring. "Not a good setup" and "time
 # to cut it" don't: there's nothing to buy or keep.
 FOLLOWED = frozenset({Verdict.IN_ZONE, Verdict.WAIT, Verdict.HOLD, Verdict.TRIM})
+
+
+def price_notes(n: PlanNumbers, price: Decimal, kind: PriceKind) -> list[str]:
+    """Plain notes for a price that has already gone past what the plan says. The plan's
+    numbers come from daily closes; ``price`` is the live price (or the day's last, before
+    the official close), so it may already sit in or under the buy zone, or under the
+    stop. Nothing for a plan that makes no call, or when the price is the close itself."""
+    if kind is PriceKind.CLOSE or n.verdict not in FOLLOWED:
+        return []
+    now = f"{price:,.2f}"
+    check = "The plan is worked out from the last close, so check where things stand before acting."
+    if n.stop is not None and price < n.stop:
+        return [f"The price is already under the stop: {now} now, stop {n.stop}. {check}"]
+    if n.entry_low is None or n.entry_high is None:
+        return []
+    zone = "add-more zone" if n.average_cost is not None else "buy zone"
+    where = f"{n.entry_low} to {n.entry_high}" if n.entry_low != n.entry_high else f"{n.entry_low}"
+    if price < n.entry_low:
+        return [f"The price is already under the {zone}: {now} now, {zone} {where}. {check}"]
+    if n.close > n.entry_high and price <= n.entry_high:
+        return [f"The price is already in the {zone}: {now} now, {zone} {where}."]
+    return []
 
 
 class EventKind(StrEnum):
@@ -580,7 +630,9 @@ class Record:
 
 
 def record(plans: Sequence[SavedPlan]) -> Record:
-    followed = [p for p in plans if p.verdict in FOLLOWED]
+    """Plans replaced by their own refresh are left out: they were closed before they
+    finished, and the plan that replaced them is the one that gets scored."""
+    followed = [p for p in plans if p.verdict in FOLLOWED and p.status is not PlanStatus.REFRESHED]
     done = [p for p in followed if p.status is not PlanStatus.OPEN]
     results = [p.result_percent for p in done if p.result_percent is not None]
     average = (
@@ -611,3 +663,121 @@ def _first_chance(body: dict[str, Any]) -> int | None:
     odds = body.get("odds") or {}
     targets = odds.get("targets") or []
     return int(targets[0]["chance"]) if targets else None
+
+
+# --- keeping a plan fresh -----------------------------------------------------------
+
+# A plan with Keep fresh on is made again when the price has moved this many typical days'
+# moves (ATR) from the one it was written with, when it is this old, when its date has
+# passed, or when the stock reported earnings since. At most once a day for a plan, and
+# this many times a day for a user.
+REFRESH_MOVE_ATR = Decimal(1)
+REFRESH_AGE = timedelta(days=7)
+REFRESH_EVERY = timedelta(hours=24)
+REFRESH_PER_USER = 10
+# The user is told of a refresh when the verdict changed or the entry, stop or first target
+# moved by more than this many ATR. Otherwise it is made quietly.
+NOTIFY_MOVE_ATR = Decimal("0.5")
+
+
+class RefreshKind(StrEnum):
+    EXPIRED = "expired"  # its valid-until date has passed
+    MOVED = "moved"  # the price is over an ATR from the plan's
+    EARNINGS = "earnings"  # the stock reported since the plan was made
+    AGE = "age"  # a week old
+
+
+@dataclass(frozen=True, slots=True)
+class RefreshReason:
+    kind: RefreshKind
+    atrs: Decimal | None = None  # how far the price moved, for MOVED
+
+    @property
+    def text(self) -> str:
+        """Why, for the message: "price moved 2.3 ATR"."""
+        if self.kind is RefreshKind.MOVED and self.atrs is not None:
+            return f"price moved {self.atrs} ATR"
+        return {
+            RefreshKind.EXPIRED: "it had run out",
+            RefreshKind.MOVED: "price moved",
+            RefreshKind.EARNINGS: "earnings are out",
+            RefreshKind.AGE: "it was a week old",
+        }[self.kind]
+
+
+def refresh_reason(
+    plan: SavedPlan,
+    *,
+    now: datetime,
+    price: Decimal | None,
+    atr: Decimal | None,
+    earnings: Sequence[date],
+) -> RefreshReason | None:
+    """Why an open plan should be made again, or None. In this order: its date has passed
+    (a New York date, as the market's days are); the live or last price is over one ATR
+    from the price the plan was written with (its close, for a plan made before prices were
+    kept); the stock reported earnings (any of ``earnings``) after the plan was made and
+    that day is now past; or it is a week old. ``atr`` is the plan's own, else today's."""
+    today = now.astimezone(US_MARKET).date()
+    if plan.valid_until < today:
+        return RefreshReason(RefreshKind.EXPIRED)
+    if price is not None and atr is not None and atr > 0:
+        away = abs(price - (plan.price if plan.price is not None else plan.close)) / atr
+        if away > REFRESH_MOVE_ATR:
+            return RefreshReason(RefreshKind.MOVED, away.quantize(Decimal("0.1"), ROUND_HALF_UP))
+    made = plan.created_at.astimezone(US_MARKET).date()
+    if any(made < day < today for day in earnings):
+        return RefreshReason(RefreshKind.EARNINGS)
+    if now - plan.created_at >= REFRESH_AGE:
+        return RefreshReason(RefreshKind.AGE)
+    return None
+
+
+def _entry_middle(plan: SavedPlan) -> Decimal | None:
+    if plan.entry_low is None or plan.entry_high is None:
+        return None
+    return (plan.entry_low + plan.entry_high) / 2
+
+
+def _moved(before: Decimal | None, after: Decimal | None, atr: Decimal | None) -> bool:
+    """Whether a price moved by more than half an ATR, or appeared or went."""
+    if before is None or after is None:
+        return before is not after
+    return atr is not None and atr > 0 and abs(after - before) > atr * NOTIFY_MOVE_ATR
+
+
+EN_DASH = "\N{EN DASH}"
+
+
+def _price_text(value: Decimal) -> str:
+    text = f"{value:,.2f}"
+    return text.removesuffix(".00")
+
+
+def refresh_message(old: SavedPlan, new: SavedPlan, why: str) -> str | None:
+    """What to tell the user about a refresh, or None when nothing worth a message
+    changed: "NVDA plan refreshed (price moved 2.3 ATR): now Wait, was Buy. Entry
+    170 to 174, stop 165." (with an en dash between the two prices). Plain text, no link."""
+    atr = new.atr or old.atr
+    if (
+        old.verdict is new.verdict
+        and not _moved(_entry_middle(old), _entry_middle(new), atr)
+        and not _moved(old.stop, new.stop, atr)
+        and not _moved(old.first_target, new.first_target, atr)
+    ):
+        return None
+    verdict = (
+        f"now {VERDICT_SHORT[new.verdict]}, was {VERDICT_SHORT[old.verdict]}."
+        if old.verdict is not new.verdict
+        else f"still {VERDICT_SHORT[new.verdict]}."
+    )
+    if new.entry_low is None or new.entry_high is None:
+        entry = "No entry zone"
+    elif new.entry_low == new.entry_high:
+        entry = f"Entry {_price_text(new.entry_low)}"
+    else:
+        entry = f"Entry {_price_text(new.entry_low)}{EN_DASH}{_price_text(new.entry_high)}"
+    stop = f"stop {_price_text(new.stop)}" if new.stop is not None else "no stop"
+    target = new.first_target
+    first = f" First target {_price_text(target)}." if target is not None else ""
+    return f"{new.symbol} plan refreshed ({why}): {verdict} {entry}, {stop}.{first}"

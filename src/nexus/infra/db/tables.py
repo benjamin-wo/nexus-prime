@@ -746,8 +746,25 @@ plans = Table(
     Column("outcome_day", Date),
     Column("result_percent", Numeric(9, 1)),
     Column("alerts", Boolean, nullable=False, server_default=text("true")),
+    # Keeping it fresh (0051): refreshed by itself when it goes stale; the plan this one
+    # replaced; when it was last sent for an automatic refresh; and the price it was
+    # written with (a live quote, a provisional close or a close).
+    Column("keep_fresh", Boolean, nullable=False, server_default=text("false")),
+    Column("refreshed_from", UUID(as_uuid=True)),
+    Column("last_refresh_check", TZ),
+    Column("price", Numeric(19, 4)),
+    Column("price_at", TZ),
+    Column("price_kind", Text),
     ForeignKeyConstraint(["user_id"], ["users.id"]),
-    CheckConstraint("status IN ('open', 'target', 'stopped', 'expired')", name="status"),
+    ForeignKeyConstraint(
+        ["refreshed_from", "user_id"],
+        ["plans.id", "plans.user_id"],
+        ondelete="SET NULL (refreshed_from)",
+    ),
+    UniqueConstraint("id", "user_id"),
+    CheckConstraint(
+        "status IN ('open', 'target', 'stopped', 'expired', 'refreshed')", name="status"
+    ),
     Index("ix_plans_user_id_created_at", "user_id", "created_at"),
     Index("ix_plans_status", "status"),
 )
