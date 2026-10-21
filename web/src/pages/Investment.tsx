@@ -8,6 +8,7 @@ import { livePolling } from "../prices";
 import { base64 } from "../files";
 import { Foldaway } from "../components/Foldaway";
 import { PriceWhen } from "../components/PriceWhen";
+import { TodayCard } from "../components/TodayCard";
 
 const shares = (quantity: string) => Number(quantity).toLocaleString("en-US", { maximumFractionDigits: 8 });
 
@@ -468,6 +469,8 @@ export function InvestmentPage() {
           }}
         />
       )}
+
+      <TodayCard />
 
       <section className="card" aria-labelledby="holdings">
         <div className="card-head">
