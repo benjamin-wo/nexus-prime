@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it } from "vitest";
@@ -227,6 +227,21 @@ describe("the plan's notes", () => {
 });
 
 describe("the plans list", () => {
+  it("is called Trade plans, and a single plan links back to it", async () => {
+    mockApi({
+      "GET /investments/plans/record": () => record,
+      "GET /investments/plans": () => [{ ...brief, headline: "ACME: wait" }],
+    });
+    renderList();
+    expect(screen.getByRole("heading", { name: "Trade plans", level: 1 })).toBeInTheDocument();
+    expect(await screen.findByRole("list", { name: "Trade plans" })).toBeInTheDocument();
+    cleanup();
+    mockApi({ "GET /investments/plans/p2": () => detail() });
+    renderPlan();
+    expect(await screen.findByRole("heading", { name: "ACME plan", level: 1 })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Trade plans" })).toHaveAttribute("href", "/investment/plans");
+  });
+
   it("tags open plans that keep themselves fresh, and labels the replaced ones", async () => {
     mockApi({
       "GET /investments/plans/record": () => record,

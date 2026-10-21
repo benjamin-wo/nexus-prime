@@ -4,6 +4,7 @@ import { useState } from "react";
 import { api, type TripAlerts } from "../api";
 import { CategoriesSection } from "./Categories";
 import { EmailCard } from "./Email";
+import { ImportCard } from "./Import";
 import { MemorySection } from "./Memory";
 import { RulesSection } from "./Rules";
 import { UpdatesSection } from "./Updates";
@@ -64,31 +65,32 @@ function TripAlertsSection() {
   );
 }
 
-/** Account-wide settings, then each department's own. */
+/** Settings in three groups: how Nexus reaches you, what it connects to, and your data. */
 export function Settings() {
   return (
     <>
       <div className="page-head">
         <div>
           <h1>Settings</h1>
-          <p className="muted">How Nexus works for you, then each department's own settings.</p>
+          <p className="muted">How Nexus reaches you, what it connects to, and the data it keeps for you.</p>
         </div>
       </div>
-      <h2 className="section-title">Account</h2>
+      <h2 className="section-title">Notifications</h2>
       <div className="plan-grid">
         <UpdatesSection />
-        <MemorySection />
-      </div>
-      <h2 className="section-title">Travel</h2>
-      <div className="plan-grid">
         <TripAlertsSection />
       </div>
-      <h2 className="section-title">Accounting</h2>
+      <h2 className="section-title">Connections</h2>
       <div className="plan-grid">
         <EmailCard />
+        <ImportCard />
+      </div>
+      <h2 className="section-title">Your data</h2>
+      <div className="plan-grid">
         <CategoriesSection />
         <WalletsSection />
         <RulesSection />
+        <MemorySection />
       </div>
     </>
   );

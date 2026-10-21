@@ -17,7 +17,7 @@ const item = (text: string, when: FeedItem["when"], over: Partial<FeedItem> = {}
   department: "accounting",
   kind: "bill",
   text,
-  link: "/accounting/plan",
+  link: "/accounting/budgets",
   urgent: when === "now",
   when,
   actions: [],
@@ -27,10 +27,10 @@ const item = (text: string, when: FeedItem["when"], over: Partial<FeedItem> = {}
 const setup = (done: boolean[] = [false, false, true, false], dismissed = false): Setup => ({
   dismissed,
   items: [
-    { key: "payday", label: "Set your payday", done: done[0], link: "/accounting/plan", ask: "Help me set my payday" },
-    { key: "receipts", label: "Get receipts in automatically", done: done[1], link: "/accounting/email", ask: "Help me get my receipts in from email automatically" },
+    { key: "payday", label: "Set your payday", done: done[0], link: "/accounting/budgets", ask: "Help me set my payday" },
+    { key: "receipts", label: "Get receipts in automatically", done: done[1], link: "/settings/email", ask: "Help me get my receipts in from email automatically" },
     { key: "investments", label: "Add your stocks", done: done[2], link: "/investment", ask: "Help me add my stocks" },
-    { key: "budget", label: "Set a monthly budget", done: done[3], link: "/accounting/plan", ask: "Help me set a monthly budget" },
+    { key: "budget", label: "Set a monthly budget", done: done[3], link: "/accounting/budgets", ask: "Help me set a monthly budget" },
   ],
 });
 
@@ -210,7 +210,7 @@ describe("Home: Needs you", () => {
     // soon: neither
     expect(within(rows[4]).queryByText("Now")).toBeNull();
     expect(rows[4]).not.toHaveTextContent("Today");
-    expect(within(rows[4]).getByRole("link")).toHaveAttribute("href", "/accounting/plan");
+    expect(within(rows[4]).getByRole("link")).toHaveAttribute("href", "/accounting/budgets");
   });
 
   it("keeps an item's buttons, which settle it there", async () => {
@@ -238,8 +238,8 @@ describe("Home: Get set up", () => {
     expect(card).toHaveTextContent("3 steps left.");
     expect(within(steps[2]).getByText("Done")).toBeInTheDocument();
     expect(within(steps[2]).queryByRole("link")).toBeNull();
-    expect(within(steps[0]).getByRole("link", { name: /^Set up\s?Set your payday$/ })).toHaveAttribute("href", "/accounting/plan");
-    expect(within(steps[3]).getByRole("link", { name: /Set up/ })).toHaveAttribute("href", "/accounting/plan");
+    expect(within(steps[0]).getByRole("link", { name: /^Set up\s?Set your payday$/ })).toHaveAttribute("href", "/accounting/budgets");
+    expect(within(steps[3]).getByRole("link", { name: /Set up/ })).toHaveAttribute("href", "/accounting/budgets");
     // Every step can also be asked of Nexus, as a plain request for help.
     expect(within(steps[2]).queryByRole("button")).toBeNull();
     const user = userEvent.setup();
@@ -410,7 +410,7 @@ describe("Home: at a glance", () => {
     expect(within(trip).getByRole("link", { name: "Plan a trip" })).toHaveAttribute("href", "/travel");
     const money = screen.getByRole("region", { name: "Money this month" });
     await waitFor(() => expect(money).toHaveTextContent("SGD"));
-    expect(money).toHaveTextContent("Set a budget on the Plan page");
+    expect(money).toHaveTextContent("Set a budget on the Budgets page");
   });
 
   it("shows the month against last month by this date when there is no budget", async () => {

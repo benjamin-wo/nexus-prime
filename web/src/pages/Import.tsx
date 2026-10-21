@@ -10,6 +10,7 @@ import {
   type ImportRow,
   type Wallet,
 } from "../api";
+import { BackLink } from "../components/BackLink";
 import { formatDate, formatMoney } from "../format";
 
 const MAX_CSV_BYTES = 2_000_000;
@@ -504,15 +505,13 @@ export function ImportPage() {
     <>
       <div className="page-head">
         <div>
+          <BackLink to="/settings">Back to Settings</BackLink>
           <h1>Import a statement</h1>
           <p className="muted">
             A CSV or PDF statement from your bank or card. Nothing is added
             until you check it and confirm.
           </p>
         </div>
-        <Link className="btn" to="/accounting/ledger">
-          Back to ledger
-        </Link>
       </div>
 
       <section className="card" aria-labelledby="import-file">
@@ -750,5 +749,20 @@ export function ImportPage() {
         )}
       </section>
     </>
+  );
+}
+
+/** On the Settings page, under Connections: the way in to the Import a statement page. */
+export function ImportCard() {
+  return (
+    <section className="card" aria-labelledby="import-card">
+      <div className="card-head">
+        <h2 id="import-card">Import a statement</h2>
+        <Link className="btn" to="/settings/import">
+          Open
+        </Link>
+      </div>
+      <p className="caption">A CSV or PDF from your bank or card. You check it before anything is added.</p>
+    </section>
   );
 }

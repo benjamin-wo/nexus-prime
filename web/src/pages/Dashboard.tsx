@@ -238,12 +238,12 @@ function Nudge({
             >
               Show me
             </button>
-            <Link className="ask-chip" to="/accounting/plan">
+            <Link className="ask-chip" to="/accounting/budgets">
               Change budgets
             </Link>
           </>
         ) : (
-          <Link className="ask-chip" to="/accounting/plan">
+          <Link className="ask-chip" to="/accounting/budgets">
             Set a budget
           </Link>
         )}

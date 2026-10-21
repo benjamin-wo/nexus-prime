@@ -172,7 +172,7 @@ function SetAside({ detail }: { detail: TripDetail }) {
   const a = detail.saving;
   if (!a) return null;
   return !a.pay_schedule ? (
-    <p className="muted">Set your pay schedule (Accounting, Plan) and Nexus can plan an amount to put aside each payday.</p>
+    <p className="muted">Set your pay schedule (Accounting, Budgets) and Nexus can plan an amount to put aside each payday.</p>
   ) : positive(a.per_payday) ? (
     <>
       <p>{setAsideText(a, a.next_payday ? day(a.next_payday) : null)}</p>

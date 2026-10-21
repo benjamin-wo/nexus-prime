@@ -447,10 +447,10 @@ export async function fakeApi(
     setup: {
       dismissed: false,
       items: [
-        { key: "payday", label: "Set your payday", done: false, link: "/accounting/plan", ask: "Help me set my payday" },
-        { key: "receipts", label: "Get receipts in automatically", done: false, link: "/accounting/email", ask: "Help me get my receipts in from email automatically" },
+        { key: "payday", label: "Set your payday", done: false, link: "/accounting/budgets", ask: "Help me set my payday" },
+        { key: "receipts", label: "Get receipts in automatically", done: false, link: "/settings/email", ask: "Help me get my receipts in from email automatically" },
         { key: "investments", label: "Add your stocks", done: true, link: "/investment", ask: "Help me add my stocks" },
-        { key: "budget", label: "Set a monthly budget", done: false, link: "/accounting/plan", ask: "Help me set a monthly budget" },
+        { key: "budget", label: "Set a monthly budget", done: false, link: "/accounting/budgets", ask: "Help me set a monthly budget" },
       ],
     },
     tripNow: null,
@@ -2160,7 +2160,7 @@ export async function fakeApi(
           department: "accounting",
           kind: "missed_move",
           text: `Your ${shown} ${bill.name} on ${shortDay(due)} hasn't shown up. Did it go through?`,
-          link: "/accounting/plan",
+          link: "/accounting/budgets",
           urgent: false,
           when: "soon",
           actions: [
@@ -2188,8 +2188,8 @@ export async function fakeApi(
         ...today.filter((i) => i.when === "now"),
         ...today.filter((i) => i.when === "today"),
         ...nudges,
-        { department: "accounting", kind: "email", text: "2 receipts from email waiting for you", link: "/accounting/email", urgent: false, when: "soon", actions: [] },
-        { department: "accounting", kind: "bill", text: "Rent (SGD 1,800.00) due tomorrow", link: "/accounting/plan", urgent: false, when: "soon", actions: [] },
+        { department: "accounting", kind: "email", text: "2 receipts from email waiting for you", link: "/settings/email", urgent: false, when: "soon", actions: [] },
+        { department: "accounting", kind: "bill", text: "Rent (SGD 1,800.00) due tomorrow", link: "/accounting/budgets", urgent: false, when: "soon", actions: [] },
         ...soon,
       ]);
     }

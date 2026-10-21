@@ -10,6 +10,7 @@ import {
   type InboundEmail,
   type Me,
 } from "../api";
+import { BackLink } from "../components/BackLink";
 import { formatDate } from "../format";
 
 const LABELS: Record<EmailStatus, string> = {
@@ -237,7 +238,8 @@ export function EmailPage({ me }: { me: Me }) {
     <>
       <div className="page-head">
         <div>
-          <h1>Email</h1>
+          <BackLink to="/settings">Back to Settings</BackLink>
+          <h1>Receipts by email</h1>
           <p className="muted">Receipts found in your email. Nothing is logged until you say so.</p>
         </div>
       </div>
@@ -296,24 +298,27 @@ export function EmailPage({ me }: { me: Me }) {
   );
 }
 
-/** On the Settings page, only once a mailbox is connected. */
+/** On the Settings page, under Connections: the way in to the Receipts by email page. */
 export function EmailCard() {
   const overview = useQuery({ queryKey: ["email"], queryFn: () => api<EmailOverview>("/email") });
   const data = overview.data;
-  if (!data || data.connections.length === 0) return null;
-  const waiting = data.emails.filter((e) => e.status === "pending").length;
+  const waiting = data?.emails.filter((e) => e.status === "pending").length ?? 0;
   return (
     <section className="card" aria-labelledby="email-card">
       <div className="card-head">
-        <h2 id="email-card">Email receipts</h2>
-        <Link className="btn" to="/accounting/email">
+        <h2 id="email-card">Receipts by email</h2>
+        <Link className="btn" to="/settings/email">
           Open
         </Link>
       </div>
-      <p className="caption">
-        {data.connections.map((c) => c.address).join(", ")}
-        {waiting > 0 ? ` · ${waiting} waiting for you` : ""}
-      </p>
+      {data && data.connections.length > 0 ? (
+        <p className="caption">
+          {data.connections.map((c) => c.address).join(", ")}
+          {waiting > 0 ? ` · ${waiting} waiting for you` : ""}
+        </p>
+      ) : (
+        <p className="caption">{data ? "Not connected. Nexus can log receipts from your email." : "Receipts found in your email."}</p>
+      )}
     </section>
   );
 }

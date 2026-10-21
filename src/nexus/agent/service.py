@@ -829,7 +829,7 @@ class AgentService:
                 tracked = await subscription_cases.track(self._uow(), actor, found, now=now)
                 return Reply(
                     f"Tracking {tracked.name}. I'll tell you if the price changes. "
-                    "Your subscriptions are on the Plan page."
+                    "Your subscriptions are on the Budgets page."
                 )
             if action == "skip":
                 await subscription_cases.dismiss(self._uow(), actor, found, now=now)

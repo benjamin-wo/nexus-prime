@@ -13,5 +13,5 @@ tools: [list_subscriptions]
 - Once tracked, Nexus says when the price changes. It never cancels anything: cancelling
   is done with the provider.
 - To stop tracking one, or answer a waiting question, point them to the Subscriptions
-  card on the Plan page.
+  card on the Budgets page.
 - A bill they want reminding about before it's due is different: that's the bills skill.

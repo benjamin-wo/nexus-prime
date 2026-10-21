@@ -1393,7 +1393,9 @@ async def _email_status(ctx: ToolContext, _: NoArgs) -> ToolResult:
     summary = ", ".join(f"{n} {s.replace('_', ' ')}" for s, n in sorted(counts.items()))
     lines.append(f"This week: {summary or 'no receipt-like emails'}.")
     lines += email_cases.sender_checklist(found.emails)
-    lines.append("The Email page in the web app lists each one and what happened to it.")
+    lines.append(
+        "Receipts by email (in Settings, in the web app) lists each one and what happened to it."
+    )
     return ToolResult("\n".join(lines))
 
 
@@ -1413,9 +1415,9 @@ async def _subscriptions(ctx: ToolContext, _: NoArgs) -> ToolResult:
         lines.append(
             "Waiting for the user's answer: "
             + ", ".join(v.subscription.name for v in found.proposed)
-            + " (Track it / No on the Plan page)."
+            + " (Track it / No on the Budgets page)."
         )
-    lines.append("To stop tracking one, use the Plan page.")
+    lines.append("To stop tracking one, use the Budgets page.")
     return ToolResult("\n".join(lines))
 
 
@@ -1710,7 +1712,7 @@ async def _research_plan(ctx: ToolContext, a: SymbolArgs) -> ToolResult:
         f"Started '{run.title}': {run.steps_total} steps (levels, technical, news, bull and "
         "bear, lead analyst), usually a minute or two. Progress shows in one Telegram "
         "message with a Cancel button, and the plan arrives there and on the web app's "
-        "Plans page. Don't guess the plan's levels meanwhile."
+        "Trade plans page. Don't guess the plan's levels meanwhile."
     )
 
 

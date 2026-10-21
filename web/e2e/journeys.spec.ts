@@ -42,7 +42,7 @@ test.afterEach(async ({ page }, info) => {
 
 test("signed-out visitors get the Telegram sign-in", async ({ page }) => {
   await fakeApi(page, { signedIn: false });
-  await page.goto("/ledger");
+  await page.goto("/accounting/ledger");
   await expect(page).toHaveURL(/\/login$/);
   await expect(
     page.getByText("Sign in with your Telegram account."),
@@ -155,7 +155,7 @@ test("a move between wallets shows neutrally and is not counted as spending or i
   await expect(latest).toContainText(/SGD.800\.00/);
   await expect(latest).not.toContainText(/[+−-]/);
 
-  await page.goto("/ledger");
+  await page.goto("/accounting/ledger");
   const row = page.getByRole("row").filter({ hasText: "→ Investments" });
   await expect(row.getByRole("button", { name: "→ Investments", exact: true })).toBeVisible();
   await expect(row.locator("td.amount")).toContainText(/SGD.800\.00/);
@@ -399,13 +399,13 @@ test("log an expense from the entry sheet", async ({ page }) => {
   await sheet.getByLabel("Paid to").fill("Kopi");
   await sheet.getByRole("button", { name: "Save" }).click();
   await expect(sheet).toBeHidden();
-  await page.goto("/ledger");
+  await page.goto("/accounting/ledger");
   await expect(page.getByRole("button", { name: "Kopi" })).toBeVisible();
 });
 
 test("bulk delete asks first and can be undone", async ({ page }, info) => {
   await fakeApi(page);
-  await page.goto("/ledger");
+  await page.goto("/accounting/ledger");
   // On a phone the tick boxes wait for "Select".
   if (info.project.name === "mobile") {
     await expect(page.getByRole("checkbox", { name: /Select Grab/ })).toBeHidden();
@@ -475,9 +475,10 @@ test("the app never throws while chatting", async ({ page }) => {
 
 test("export links carry the current filters", async ({ page }) => {
   await fakeApi(page);
-  await page.goto("/ledger");
+  await page.goto("/accounting/ledger");
   await page.getByRole("button", { name: "Money in" }).click();
-  await expect(page.getByRole("link", { name: "Export CSV" })).toHaveAttribute(
+  await page.getByRole("button", { name: "More" }).click();
+  await expect(page.getByRole("menuitem", { name: "Export CSV" })).toHaveAttribute(
     "href",
     "/api/export.csv?direction=in",
   );
@@ -493,8 +494,8 @@ test("sign out returns to the sign-in page", async ({ page, isMobile }) => {
 
 test("set a budget, see how much is used, change and remove it", async ({ page }) => {
   await fakeApi(page);
-  await page.goto("/plan");
-  await expect(page.getByRole("heading", { name: "Plan", level: 1 })).toBeVisible();
+  await page.goto("/accounting/budgets");
+  await expect(page.getByRole("heading", { name: "Budgets", level: 1 })).toBeVisible();
   const budgets = page.getByRole("region", { name: "Budgets" });
   await expect(budgets.getByText("No budgets yet. Add one below.")).toBeVisible();
 
@@ -523,7 +524,7 @@ test("set a budget, see how much is used, change and remove it", async ({ page }
 test("the budgets card shows total out and left to spend, with the lower of that and budget left marked", async ({ page }) => {
   const state = await fakeApi(page);
   state.budgets.push({ id: "b1", category_id: null, limit: 2000, spent: 600 });
-  await page.goto("/plan");
+  await page.goto("/accounting/budgets");
   const budgets = page.getByRole("region", { name: "Budgets" });
   const total = budgets.getByRole("group", { name: "Total out of Spending" });
   await expect(total).toContainText(/SGD.2,600\.00/);
@@ -543,7 +544,7 @@ test("the budgets card shows total out and left to spend, with the lower of that
 
 test("without an overall budget the card still shows total out and left to spend, and a plan that outgrows income is flagged", async ({ page }) => {
   await fakeApi(page, { planWarning: true });
-  await page.goto("/plan");
+  await page.goto("/accounting/budgets");
   const budgets = page.getByRole("region", { name: "Budgets" });
   await expect(budgets.getByRole("group", { name: "Total out of Spending" })).toContainText(/SGD.2,600\.00/);
   await expect(budgets.getByRole("group", { name: "Left to spend" })).toContainText(/SGD.1,100\.00/);
@@ -563,7 +564,7 @@ test("home says when less is left to spend than the budget shows", async ({ page
 
 test("set when you're paid and your usual salary", async ({ page }) => {
   await fakeApi(page);
-  await page.goto("/plan");
+  await page.goto("/accounting/budgets");
   const payday = page.getByRole("region", { name: "Payday" });
   const when = payday.getByRole("form", { name: "When you're paid" });
   await when.getByLabel("I'm paid on").selectOption({ label: "A day of the month" });
@@ -584,7 +585,7 @@ test("set when you're paid and your usual salary", async ({ page }) => {
 
 test("add a bill, snooze its reminders and stop tracking it", async ({ page }) => {
   await fakeApi(page);
-  await page.goto("/plan");
+  await page.goto("/accounting/budgets");
   await expect(page.getByText(/^Nothing scheduled yet/)).toBeVisible();
   const form = page.getByRole("form", { name: "Add a scheduled payment" });
   await expect(form.getByLabel("Counts as spending")).toBeChecked();
@@ -608,7 +609,7 @@ test("add a bill, snooze its reminders and stop tracking it", async ({ page }) =
 
 test("a regular investment is named freely and marked done without counting as spending", async ({ page }) => {
   const state = await fakeApi(page);
-  await page.goto("/plan");
+  await page.goto("/accounting/budgets");
   const form = page.getByRole("form", { name: "Add a scheduled payment" });
   await form.getByLabel("Name").fill("Index fund");
   await form.getByLabel("Next due").fill("2026-10-05");
@@ -628,7 +629,7 @@ test("a regular investment is named freely and marked done without counting as s
 
 test("mark a bill with no set amount paid and log what was paid", async ({ page }) => {
   await fakeApi(page);
-  await page.goto("/plan");
+  await page.goto("/accounting/budgets");
   const form = page.getByRole("form", { name: "Add a scheduled payment" });
   await form.getByLabel("Name").fill("Electricity");
   await form.getByLabel("Next due").fill("2026-10-01");
@@ -643,7 +644,7 @@ test("mark a bill with no set amount paid and log what was paid", async ({ page 
 
 test("a category correction offers a rule, saved only when accepted", async ({ page }) => {
   const state = await fakeApi(page);
-  await page.goto("/ledger");
+  await page.goto("/accounting/ledger");
   await page.getByRole("button", { name: "Grab", exact: true }).click();
   const sheet = page.getByRole("dialog", { name: "Edit transaction" });
   await sheet.getByLabel("Category").selectOption({ label: "Transport" });
@@ -673,7 +674,7 @@ test("a category correction offers a rule, saved only when accepted", async ({ p
 
 test("a kept receipt opens through the app's own link", async ({ page }) => {
   await fakeApi(page);
-  await page.goto("/ledger");
+  await page.goto("/accounting/ledger");
   const link = page.getByRole("link", { name: "Receipt" });
   await expect(link).toHaveCount(1);
   await expect(link).toHaveAttribute("href", "/api/transactions/t1/receipt");
@@ -700,17 +701,19 @@ test("a Connect Gmail link explains Google's warning before sign-in", async ({ p
   await expect(page.getByRole("heading", { name: "Gmail connected" })).toBeVisible();
 });
 
-test("email is out of sight until connected, then shows what happened to each email", async ({ page }) => {
+test("Receipts by email is a Settings card before it is connected, then shows what happened to each email", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/settings");
   await expect(page.getByRole("region", { name: "Category rules" })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Email receipts" })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Receipts by email" }).getByText(/Not connected/)).toBeVisible();
 
   await fakeApi(page, { emailConnected: true });
   await page.goto("/settings");
-  const card = page.getByRole("region", { name: "Email receipts" });
+  const card = page.getByRole("region", { name: "Receipts by email" });
   await expect(card.getByText("ann@gmail.com · 1 waiting for you")).toBeVisible();
   await card.getByRole("link", { name: "Open" }).click();
+  await expect(page).toHaveURL(/\/settings\/email$/);
+  await expect(page.getByRole("heading", { name: "Receipts by email", level: 1 })).toBeVisible();
 
   const checked = page.getByRole("region", { name: "Checked emails" });
   const grab = checked.getByRole("listitem").filter({ hasText: "Grab" });
@@ -730,7 +733,7 @@ test("email is out of sight until connected, then shows what happened to each em
 
 test("a forwarding address shows as one, with a way to copy it", async ({ page }) => {
   await fakeApi(page, { forwarding: true });
-  await page.goto("/email");
+  await page.goto("/settings/email");
   const mailboxes = page.getByRole("region", { name: "Connected" });
   const row = mailboxes.getByRole("listitem").filter({ hasText: "nexus-3f9a2c7e1b04@agentmail.to" });
   await expect(row.getByText("Your forwarding address: forward receipts here.")).toBeVisible();
@@ -742,7 +745,7 @@ test("a forwarding address shows as one, with a way to copy it", async ({ page }
 
 test("subscriptions: a proposal is tracked on request, and a price change shows", async ({ page }) => {
   await fakeApi(page);
-  await page.goto("/plan");
+  await page.goto("/accounting/budgets");
   const card = page.getByRole("region", { name: "Subscriptions" });
   await expect(card.getByText(/^About SGD\s17\.98 a month$/)).toBeVisible();
   const netflix = card.getByRole("list", { name: "Tracked subscriptions" }).getByRole("listitem");
@@ -755,7 +758,7 @@ test("subscriptions: a proposal is tracked on request, and a price change shows"
 
 test("cash flow shows logged and expected days, with detail on tap", async ({ page }) => {
   await fakeApi(page);
-  await page.goto("/cashflow");
+  await page.goto("/accounting/cashflow");
   await expect(page.getByRole("heading", { name: "Cash flow", level: 1 })).toBeVisible();
   await expect(page.getByRole("heading", { name: "September 2026" })).toBeVisible();
   const days = page.getByRole("group", { name: "Days" });
@@ -788,7 +791,7 @@ test("telegram updates default to an end-of-day summary and can be changed", asy
 test("nothing spills sideways on a small phone", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 568 });
   await fakeApi(page, { emailConnected: true });
-  const pages = ["/", "/accounting", "/ledger", "/plan", "/settings", "/email", "/cashflow", "/investment", "/investment/watchlist", "/investment/stocks/AMD", "/investment/plans", "/investment/plans/p1", "/travel", "/travel/research/rs1"];
+  const pages = ["/", "/accounting", "/accounting/ledger", "/accounting/budgets", "/settings", "/settings/email", "/settings/import", "/accounting/cashflow", "/investment", "/investment/watchlist", "/investment/stocks/AMD", "/investment/plans", "/investment/plans/p1", "/travel", "/travel/research/rs1"];
   for (const path of [...pages, "/connect/gmail?t=good"]) {
     await page.goto(path);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
@@ -882,9 +885,9 @@ test("delete a category and find its expense under Other", async ({ page }) => {
   await expect(ledger.getByRole("button", { name: "Maxwell Food Centre", exact: true })).toBeVisible();
 });
 
-test("the cog opens Settings, and Plan keeps only planning", async ({ page }, info) => {
+test("the cog opens Settings, which is grouped, and Budgets keeps only budgeting", async ({ page }, info) => {
   await fakeApi(page);
-  await page.goto("/plan");
+  await page.goto("/accounting/budgets");
   await expect(page.getByRole("region", { name: "Budgets" })).toBeVisible();
   await expect(page.getByRole("region", { name: "Categories" })).toHaveCount(0);
   // On a phone Settings is the cog at the top of Home; on a wide screen, in the rail.
@@ -892,14 +895,17 @@ test("the cog opens Settings, and Plan keeps only planning", async ({ page }, in
   await page.getByRole("link", { name: "Settings" }).filter({ visible: true }).click();
   await expect(page).toHaveURL(/\/settings$/);
   await expect(page.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible();
-  for (const name of ["Telegram updates", "Categories", "Wallets", "Category rules", "What Nexus remembers"])
+  await expect(page.locator("h2.section-title")).toHaveText(["Notifications", "Connections", "Your data"]);
+  for (const name of ["Telegram updates", "Shared trips", "Receipts by email", "Import a statement", "Categories", "Wallets", "Category rules", "What Nexus remembers"])
     await expect(page.getByRole("region", { name })).toBeVisible();
 });
 
 test("import a bank statement: preview, tick, confirm, undo", async ({ page }) => {
   await fakeApi(page);
-  await page.goto("/ledger");
-  await page.getByRole("link", { name: "Import statement" }).click();
+  await page.goto("/accounting/ledger");
+  await page.getByRole("button", { name: "More" }).click();
+  await page.getByRole("menuitem", { name: "Import statement" }).click();
+  await expect(page).toHaveURL(/\/settings\/import$/);
   await expect(page.getByRole("heading", { name: "Import a statement", level: 1 })).toBeVisible();
   await page.getByLabel("Choose a CSV or PDF").setInputFiles({
     name: "sept.csv",
@@ -923,7 +929,7 @@ test("import a bank statement: preview, tick, confirm, undo", async ({ page }) =
 
 test("import a locked PDF statement", async ({ page }) => {
   await fakeApi(page);
-  await page.goto("/import");
+  await page.goto("/settings/import");
   await page.getByLabel("Choose a CSV or PDF").setInputFiles({
     name: "estatement.pdf",
     mimeType: "application/pdf",
@@ -943,7 +949,7 @@ test("import a locked PDF statement", async ({ page }) => {
 
 test("import a scanned PDF statement", async ({ page }) => {
   await fakeApi(page);
-  await page.goto("/import");
+  await page.goto("/settings/import");
   await page.getByLabel("Choose a CSV or PDF").setInputFiles({
     name: "scanned-statement.pdf",
     mimeType: "application/pdf",
@@ -969,7 +975,7 @@ test("see and forget what Nexus remembers", async ({ page }) => {
 
 test("Nexus sits in the middle of the bar on a phone, in the rail on a wide screen, and opens the chat", async ({ page }, info) => {
   await fakeApi(page);
-  await page.goto("/plan");
+  await page.goto("/accounting/budgets");
   const where = info.project.name === "mobile" ? "Main (mobile)" : "Main";
   const nexus = page.getByRole("navigation", { name: where, exact: true }).getByRole("button", { name: "Ask Nexus" });
   await expect(nexus).toBeVisible();
@@ -1007,7 +1013,7 @@ test("mark that someone paid back what they owe", async ({ page }) => {
 
 test("follow a split bill to its repayment and back", async ({ page }) => {
   await fakeApi(page, { splitBill: true });
-  await page.goto("/ledger");
+  await page.goto("/accounting/ledger");
   await expect(page.getByText(/Split · your share SGD\s10\.00/)).toBeVisible();
   await expect(page.getByText(/Ann owes SGD\s10\.00/)).toBeVisible();
   await page.getByRole("button", { name: "Open the bill Wei Ming paid back: Hotpot Place" }).click();
@@ -1019,7 +1025,7 @@ test("follow a split bill to its repayment and back", async ({ page }) => {
 
 test("one payment recorded twice is merged, or kept as two", async ({ page }) => {
   await fakeApi(page, { twins: true });
-  await page.goto("/ledger");
+  await page.goto("/accounting/ledger");
   const alert = page.getByRole("row").filter({ hasText: "Card alert" });
   await expect(alert.getByText(/^Possible duplicate of Grab Singapore/)).toBeVisible();
   await alert.getByRole("button", { name: "Merge" }).click();
@@ -1030,7 +1036,7 @@ test("one payment recorded twice is merged, or kept as two", async ({ page }) =>
 
 test("two payments flagged as one can be marked as two", async ({ page }) => {
   await fakeApi(page, { twins: true });
-  await page.goto("/ledger");
+  await page.goto("/accounting/ledger");
   const receipt = page.getByRole("row").filter({ hasText: "Your Grab e-receipt" });
   await receipt.getByRole("button", { name: "Not a duplicate" }).click();
   await expect(page.getByText(/^Possible duplicate/)).toHaveCount(0);
@@ -1043,7 +1049,7 @@ test("home is the front desk: what needs you, what's running, and each departmen
   const needs = page.getByRole("region", { name: "Needs you" });
   await expect(needs.getByRole("link", { name: /2 receipts from email waiting for you/ })).toHaveAttribute(
     "href",
-    "/accounting/email",
+    "/settings/email",
   );
   await expect(needs.getByRole("link", { name: /Rent \(SGD 1,800\.00\) due tomorrow/ })).toBeVisible();
   const working = page.getByRole("region", { name: "Working on" });
@@ -1105,11 +1111,13 @@ test("asking on home opens the chat with the question", async ({ page }) => {
 
 test("departments have their own pages, and old links still work", async ({ page, isMobile }) => {
   await fakeApi(page);
-  await page.goto("/ledger");
+  await page.goto("/accounting/ledger");
   await expect(page).toHaveURL(/\/accounting\/ledger$/);
   const tabs = page.getByRole("navigation", { name: "Accounting pages" });
-  await tabs.getByRole("link", { name: "Plan" }).click();
-  await expect(page.getByRole("heading", { name: "Plan", level: 1 })).toBeVisible();
+  await expect(tabs.getByRole("link")).toHaveText(["Overview", "Ledger", "Budgets", "Cash flow"]);
+  await tabs.getByRole("link", { name: "Budgets" }).click();
+  await expect(page).toHaveURL(/\/accounting\/budgets$/);
+  await expect(page.getByRole("heading", { name: "Budgets", level: 1 })).toBeVisible();
   const nav = page.getByRole("navigation", { name: isMobile ? "Main (mobile)" : "Main", exact: true });
   await nav.getByRole("link", { name: "Travel" }).click();
   await expect(page.getByRole("heading", { name: "Your trips", level: 1 })).toBeVisible();
@@ -1546,7 +1554,7 @@ test("a plan can be kept fresh from its page, and the list tags it", async ({ pa
   await toggle.check();
   await expect.poll(() => state.planKeepFresh).toBe(true);
   await expect(toggle).toBeChecked();
-  await page.locator(".page-head").getByRole("link", { name: "Plans", exact: true }).click();
+  await page.locator(".page-head").getByRole("link", { name: "Trade plans", exact: true }).click();
   await expect(page.getByRole("link", { name: /AMD: Wait for a dip to buy/ })).toContainText("Fresh");
   // The finished plan is never tagged.
   await expect(page.getByRole("link", { name: /MSFT: Keep holding/ })).not.toContainText("Fresh");
@@ -1554,7 +1562,7 @@ test("a plan can be kept fresh from its page, and the list tags it", async ({ pa
   await page.getByRole("link", { name: /AMD: Wait for a dip to buy/ }).click();
   await page.getByRole("checkbox", { name: "Keep this plan fresh" }).uncheck();
   await expect.poll(() => state.planKeepFresh).toBe(false);
-  await page.locator(".page-head").getByRole("link", { name: "Plans", exact: true }).click();
+  await page.locator(".page-head").getByRole("link", { name: "Trade plans", exact: true }).click();
   await expect(page.getByRole("link", { name: /AMD: Wait for a dip to buy/ })).not.toContainText("Fresh");
 });
 
@@ -1571,8 +1579,8 @@ test("a refreshed plan links back to the one it replaced, and the old one to the
   await page.getByRole("link", { name: "A newer plan replaced this one" }).click();
   await expect(page).toHaveURL(/\/investment\/plans\/p1$/);
   // In the list the old plan is labelled, not scored.
-  await page.locator(".page-head").getByRole("link", { name: "Plans", exact: true }).click();
-  const list = page.getByRole("list", { name: "Plans" });
+  await page.locator(".page-head").getByRole("link", { name: "Trade plans", exact: true }).click();
+  const list = page.getByRole("list", { name: "Trade plans" });
   await expect(list.getByRole("link", { name: /AMD: Wait for a pullback/ })).toContainText("Refreshed");
   await expect(page.getByRole("region", { name: "Track record" }).getByLabel("Plan results")).toContainText("Hit target1");
 });
@@ -3583,7 +3591,7 @@ test("without a map key the Ideas tab has no Map switch, but rows still say what
 
 test("a scheduled move picks its wallet, which is only offered when it isn't spending", async ({ page }) => {
   const state = await fakeApi(page, { ibkr: true });
-  await page.goto("/plan");
+  await page.goto("/accounting/budgets");
   const form = page.getByRole("form", { name: "Add a scheduled payment" });
   await expect(form.getByLabel("Moves money to (optional)")).toHaveCount(0); // spending
   await form.getByLabel("Counts as spending").uncheck();
@@ -3624,7 +3632,7 @@ test("a scheduled move picks its wallet, which is only offered when it isn't spe
 
 test("a payment that isn't spending can be linked to a wallet afterwards", async ({ page }) => {
   const state = await fakeApi(page, { ibkr: true });
-  await page.goto("/plan");
+  await page.goto("/accounting/budgets");
   const form = page.getByRole("form", { name: "Add a scheduled payment" });
   await form.getByLabel("Name").fill("Index fund");
   await form.getByLabel("Next due").fill("2026-10-05");
@@ -3702,7 +3710,7 @@ test("a nudge's button shows the error inline when the API refuses", async ({ pa
 
 test("an import preview shows rows that name a wallet as moves, and sends back what it shows", async ({ page }) => {
   const state = await fakeApi(page, { ibkr: true });
-  await page.goto("/accounting/import");
+  await page.goto("/settings/import");
   await page.getByLabel("Choose a CSV or PDF").setInputFiles({
     name: "sept.csv",
     mimeType: "text/csv",
@@ -3745,7 +3753,7 @@ test("an import preview shows rows that name a wallet as moves, and sends back w
 
 test("an unticked move row is not sent, and an ordinary entry can be made a move again", async ({ page }) => {
   const state = await fakeApi(page, { ibkr: true });
-  await page.goto("/accounting/import");
+  await page.goto("/settings/import");
   await page.getByLabel("Choose a CSV or PDF").setInputFiles({
     name: "sept.csv",
     mimeType: "text/csv",
@@ -3765,7 +3773,7 @@ test("an unticked move row is not sent, and an ordinary entry can be made a move
 
 test("an email that names a wallet asks whether it was a move", async ({ page }) => {
   const state = await fakeApi(page, { emailConnected: true, ibkr: true, emailMove: true });
-  await page.goto("/accounting/email");
+  await page.goto("/settings/email");
   const checked = page.getByRole("region", { name: "Checked emails" });
   const ibkr = checked.getByRole("listitem").filter({ hasText: "Transfer to IBKR" });
   await expect(ibkr.getByText("Was this a move to IBKR?")).toBeVisible();
@@ -3787,7 +3795,7 @@ test("an email that names a wallet asks whether it was a move", async ({ page })
 
 test("'Expense' on a move question logs the email as usual", async ({ page }) => {
   const state = await fakeApi(page, { emailConnected: true, ibkr: true, emailMove: true });
-  await page.goto("/accounting/email");
+  await page.goto("/settings/email");
   const ibkr = page.getByRole("region", { name: "Checked emails" }).getByRole("listitem").filter({ hasText: "Transfer to IBKR" });
   await ibkr.getByRole("button", { name: "Expense" }).click();
   await expect(ibkr.getByText("Logged")).toBeVisible();

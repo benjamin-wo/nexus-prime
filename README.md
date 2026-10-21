@@ -24,26 +24,26 @@ One LLM agent serves both surfaces, but the parts that must be right, like money
   - "grab 12 yesterday", "coffee 5.50 USD", "split dinner 120 with Ann and Ben", "Ann paid me back 40".
   - Logging by hand on the web suggests where you've paid before as you type, and your most frequent places are one tap away, with the usual amount and category filled in.
   - Receipt photos are read by a vision model and logged after you confirm. The photo is kept privately with the expense.
-  - Ask it to log automatically and it offers **Connect Gmail**, or for other mail (Outlook, iCloud, work) your own **forwarding address** with steps for a receipts-only rule. Receipts become Telegram questions (**Log it / Skip**), with an Email page showing what happened to each one.
+  - Ask it to log automatically and it offers **Connect Gmail**, or for other mail (Outlook, iCloud, work) your own **forwarding address** with steps for a receipts-only rule. Receipts become Telegram questions (**Log it / Skip**), with a Receipts by email page (Settings, under Connections) showing what happened to each one.
 - **Anything consequential asks first.** Edits, deletes, splits and budget removal show a Confirm / Cancel prompt. It survives restarts, because the conversation state lives in Postgres.
 - **One currency view.**
   - Totals are in your home currency.
   - Each foreign-currency row shows its converted amount, the rate used and the day that rate was published.
   - An amount with no rate is flagged, never guessed.
 - **Images, files and albums on Telegram:** a quick first look decides what each one is (a receipt, a bill, a payslip, a portfolio, a booking, a chart) and sends it to the right reader; a question about an image gets an answer instead of an entry. Nothing read from an image changes your data unless your own words ask it to.
-- **Every expense has a category.** Twelve common ones to start (Dining Out, Groceries, Transport, Shopping, Bills & Utilities, Socialising, Health, Travel, Activities, Subscriptions & Software, Income, Other), and you can add, rename, merge or delete your own from chat or the Settings page (the cog in the nav). A category you name wins, then a rule, then the model's best guess; anything left goes to Other.
+- **Every expense has a category.** Twelve common ones to start (Dining Out, Groceries, Transport, Shopping, Bills & Utilities, Socialising, Health, Travel, Activities, Subscriptions & Software, Income, Other), and you can add, rename, merge or delete your own from chat or the Settings page (the cog on Home on a phone, in the rail on a wide screen). A category you name wins, then a rule, then the model's best guess; anything left goes to Other.
 - **Category rules you can see.** "grab" → Transport files new expenses automatically, and "why is this in Transport?" gets a real answer. Correcting a category offers a rule change, but never makes one without asking.
 - **Budgets:** monthly limits, overall or per category, with Telegram alerts at 50%, 80% and 100%, each sent once.
 - **Wallets and moves:** a Spending wallet for everyone, plus savings, investment and card wallets. Moving money between them ("moved 800 to my IBKR") isn't spending or income, so budgets and totals ignore it; Nexus shows what you put away, your saving rate, the total out of Spending, and what's left to spend after this month's bills and scheduled moves. Scheduled top-ups log their move when marked done, statements and emails spot moves by each wallet's words, and Home asks when a top-up hasn't shown up.
 - **Bills:** reminders 7, 3 and 1 days before, with Mark paid and Snooze buttons. Marking one paid logs it in the month's spending (once). It never pays anything.
-- **Subscriptions:** after three regular, similar charges from one merchant, Nexus asks whether to track it; tracked ones show on the Plan page with a monthly total, and a price change is flagged.
+- **Subscriptions:** after three regular, similar charges from one merchant, Nexus asks whether to track it; tracked ones show on the Budgets page with a monthly total, and a price change is flagged.
 - **Cash flow:** a month calendar of net money movement per day: what was logged so far, and what bills, tracked subscriptions and payday are expected to bring. Movement only, never a balance. Also in chat: "what's coming up?"
 - **Telegram updates:** by default, a summary of the day's spending at 9pm. Users can switch to updates as they happen, hourly, 3 times a day, or off, in chat or on the Settings page.
 - **Payday:**
   - A check-in on payday, with weekend paydays moved to Friday.
   - Your usual salary changes only when you confirm it.
-- **Statements and duplicates:** import a bank statement (CSV, or PDF with its password used once and never kept), with saved column mappings; likely duplicates from email, statements and chat are paired for one tap to merge or keep.
-- **Memory:** Nexus remembers facts and preferences about you across conversations, shown and deletable in Settings, and every reply sees a snapshot of your money.
+- **Statements and duplicates:** import a bank statement from Settings or the Ledger's More menu (CSV, or PDF with its password used once and never kept), with saved column mappings; likely duplicates from email, statements and chat are paired for one tap to merge or keep.
+- **Memory:** Nexus remembers facts and preferences about you across conversations, shown and deletable in Settings under Your data, and every reply sees a snapshot of your money.
 
 **Investment** (research only; it never trades or connects to a broker)
 - **Holdings** from a broker screenshot or typed trades, valued daily in your home currency, with gains from sales and dividends received and expected.
@@ -58,7 +58,7 @@ One LLM agent serves both surfaces, but the parts that must be right, like money
 - **Shared trips:** invite someone to a trip with a single-use link (valid 7 days) and they can edit its plan (days, places, stops, packing, notes), never its money; people the app's owner invites can join with just a Telegram sign-in and see only the trips they are on. The trip keeps a short log of who changed what. The server side is in; the screens come next.
 
 **Everywhere**
-- **Web cockpit:** Home as a Today page (Nexus's brief, what needs you across money, stocks and trips with the urgent first, a short setup checklist, and your month, portfolio and next trip at a glance; a trip that is on leads it), a page per department, a filterable ledger with CSV export, and a chat drawer that keeps one running conversation, shared with Telegram. It is mobile-first and opens inside Telegram already signed in.
+- **Web cockpit:** Home as a Today page (Nexus's brief, what needs you across money, stocks and trips with the urgent first, a short setup checklist, and your month, portfolio and next trip at a glance; a trip that is on leads it), a page per department (Accounting's tabs are Overview, Ledger, Budgets and Cash flow; Investment's are Portfolio, Watchlist and Trade plans), a filterable ledger with CSV export, Settings in three groups (Notifications, Connections, Your data), and a chat drawer that keeps one running conversation, shared with Telegram. It is mobile-first and opens inside Telegram already signed in.
 - **Private by construction.** It is invite-only, and each user's data is isolated by the database schema itself, not just by application code.
 
 ## Architecture

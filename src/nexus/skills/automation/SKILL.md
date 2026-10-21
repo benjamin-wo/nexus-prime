@@ -37,5 +37,6 @@ asks before logging each one. It never logs anything without a Confirm.
 - "is email working?", "why wasn't my Grab receipt logged?", "what should my filter
   include?": `email_status`. It lists which senders sent receipts and which sent other
   mail, so they know what to keep in or leave out of a filter. Then point them to the
-  Email page in the web app, which lists every email checked and what happened to it.
-- To disconnect, they use the Email page.
+  Receipts by email page (Settings → Receipts by email) in the web app, which lists every
+  email checked and what happened to it.
+- To disconnect, they use that page.

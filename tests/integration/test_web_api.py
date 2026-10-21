@@ -1513,10 +1513,10 @@ async def test_home_lists_what_needs_the_user(world: World) -> None:
         (
             "budget",
             "Dining Out budget is at 85% (85.00 SGD of 100.00 SGD)",
-            "/accounting/plan",
+            "/accounting/budgets",
             False,
         ),
-        ("bill", "Rent (1800.00 SGD) due tomorrow", "/accounting/plan", False),
+        ("bill", "Rent (1800.00 SGD) due tomorrow", "/accounting/budgets", False),
     ]
 
 

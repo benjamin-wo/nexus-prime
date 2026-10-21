@@ -493,7 +493,7 @@ def _from_checks(checks: Checks) -> Iterable[Problem]:
             topic="Connected mailboxes stopped working",
             count=checks.broken_mailboxes,
             hint="Usually an expired or revoked Gmail grant: the user reconnects on the "
-            "Email page.",
+            "Receipts by email page in Settings.",
         )
     used = sum(checks.search_credits.values())
     if checks.search_monthly and used >= 0.9 * checks.search_monthly:

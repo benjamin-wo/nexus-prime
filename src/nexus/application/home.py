@@ -88,7 +88,7 @@ async def needs_you(
                 "accounting",
                 "email",
                 f"{_plural(len(waiting), 'receipt', 'receipts')} from email waiting for you",
-                "/accounting/email",
+                "/settings/email",
             )
         )
     pairs = await duplicate_cases.find_pairs(
@@ -112,7 +112,7 @@ async def needs_you(
                     "budget",
                     f"{status.name} budget {'is over' if over else 'is at'} {status.percent}%"
                     f" ({status.spent} of {status.budget.limit})",
-                    "/accounting/plan",
+                    "/accounting/budgets",
                     urgent=over,
                 )
             )
@@ -125,7 +125,7 @@ async def needs_you(
                 "accounting",
                 "missed_move",
                 missed.text(),
-                "/accounting/plan",
+                "/accounting/budgets",
                 urgent=False,
                 actions=(
                     FeedAction(
@@ -160,7 +160,7 @@ async def needs_you(
                     "accounting",
                     "bill",
                     f"{view.bill.name}{amount} {when}",
-                    "/accounting/plan",
+                    "/accounting/budgets",
                     urgent=days <= 0,
                 )
             )
