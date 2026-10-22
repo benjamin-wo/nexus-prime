@@ -168,7 +168,7 @@ export function UpdatesSection() {
                 />
               </label>
               <p id="daily-cap-hint" className="caption">
-                After this many (3 to 20), the rest wait for a digest. Urgent messages, ones with buttons and your summaries still come.
+                After this many (3 to 20), the rest go into your digest. Urgent messages, ones with buttons and your summaries don't count; they still come.
               </p>
             </div>
           </div>

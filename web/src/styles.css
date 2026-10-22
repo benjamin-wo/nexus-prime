@@ -2304,3 +2304,32 @@ body:has(.sheet-backdrop) .main-viewport { overflow: hidden; }
 .setting { display: grid; gap: var(--space-1); }
 .setting > p { margin: 0; }
 .setting .share-switch { min-height: 44px; }
+
+/* --- Notifications: what was sent on Telegram, a day at a time --- */
+.note { align-items: flex-start; }
+.note.urgent .row-icon { color: var(--status-warning); background: var(--status-warning-soft); }
+.note-text {
+  margin: 0; white-space: pre-line; overflow-wrap: anywhere; font-weight: 500; color: var(--text-white);
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
+}
+.note-text.open { display: block; overflow: visible; }
+.note-text a { color: inherit; text-decoration: none; }
+.note-text a:hover, .note-text a:focus-visible { text-decoration: underline; text-underline-offset: 3px; }
+.note-toggle { justify-self: start; margin-left: -12px; color: var(--accent-text); }
+.note-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); }
+.note-urgent { color: var(--status-warning); }
+.note-status { max-width: 100%; border-radius: 12px; line-height: 1.3; }
+.note-sent { color: var(--emerald-accent); background: var(--emerald-soft); border-color: var(--emerald-border); }
+.note-held { color: var(--status-warning); background: var(--status-warning-soft); border-color: var(--status-warning-border); }
+.note-digested { color: var(--accent-text); background: var(--accent-soft); border-color: var(--accent-border); }
+.note-dropped { color: var(--text-muted); border-color: var(--border-card); }
+
+/* Home's hero holds three round buttons (Log expense, Notifications, Settings): on a small phone they
+ * get smaller and, if the greeting still leaves no room, drop under it instead of spilling out. */
+.hero-top { flex-wrap: wrap; }
+.hero-actions { margin-left: auto; }
+@media (max-width: 360px) {
+  .hero-top { gap: var(--space-2); }
+  .hero-actions { gap: 6px; }
+  .hero .round-btn { width: 40px; height: 40px; }
+}

@@ -6,6 +6,7 @@ import { CategoriesSection } from "./Categories";
 import { EmailCard } from "./Email";
 import { ImportCard } from "./Import";
 import { MemorySection } from "./Memory";
+import { NotificationsCard } from "./Notifications";
 import { RulesSection } from "./Rules";
 import { UpdatesSection } from "./Updates";
 import { WalletsSection } from "./Wallets";
@@ -79,6 +80,7 @@ export function Settings() {
       <div className="plan-grid">
         <UpdatesSection />
         <TripAlertsSection />
+        <NotificationsCard />
       </div>
       <h2 className="section-title">Connections</h2>
       <div className="plan-grid">

@@ -56,6 +56,14 @@ describe("where pages live now", () => {
     expect(within(rail).getByRole("link", { name: "Settings" })).toHaveAttribute("aria-current", "page");
   });
 
+  it("opens Notifications at /settings/notifications, inside Settings", async () => {
+    await open("/settings/notifications", "Notifications");
+    expect(screen.getByRole("link", { name: "Back to Settings" })).toHaveAttribute("href", "/settings");
+    const rail = screen.getByRole("navigation", { name: "Main" });
+    expect(within(rail).getByRole("link", { name: "Settings" })).toHaveAttribute("aria-current", "page");
+    expect(screen.queryByRole("navigation", { name: "Accounting pages" })).toBeNull();
+  });
+
   it("keeps the other old addresses working", async () => {
     await open("/ledger", "Ledger");
     expect(window.location.pathname).toBe("/accounting/ledger");

@@ -162,6 +162,17 @@ describe("Home: the brief", () => {
   });
 });
 
+describe("Home: the hero's buttons", () => {
+  it("has round Log expense, Notifications and Settings buttons, the bell opening the notifications page", async () => {
+    serve();
+    renderHome();
+    const hero = await screen.findByRole("region", { name: "Nexus" });
+    expect(within(hero).getByRole("button", { name: "Log expense" })).toBeInTheDocument();
+    expect(within(hero).getByRole("link", { name: "Notifications" })).toHaveAttribute("href", "/settings/notifications");
+    expect(within(hero).getByRole("link", { name: "Settings" })).toHaveAttribute("href", "/settings");
+  });
+});
+
 describe("Home: Needs you", () => {
   const many = (n: number) =>
     Array.from({ length: n }, (_, i) => item(`Thing ${i + 1}`, i < 2 ? "now" : i < 4 ? "today" : "soon", { kind: `k${i}`, department: i % 2 ? "investment" : "travel" }));
