@@ -56,6 +56,7 @@ export type IconName =
   | "stamp"
   | "copy"
   | "suitcase"
+  | "bell"
   | "x";
 
 const PATHS: Record<IconName, string[]> = {
@@ -169,6 +170,7 @@ const PATHS: Record<IconName, string[]> = {
   stamp: ["M12 3a3 3 0 0 0-2 5c0 2-3 2-3 5h10c0-3-3-3-3-5a3 3 0 0 0-2-5z", "M5 17h14v3H5z"],
   copy: ["M9 9h11v11H9z", "M15 9V4H4v11h5"],
   suitcase: ["M5 8h14v12H5z", "M9 8V5h6v3", "M9 12v4M15 12v4"],
+  bell: ["M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9z", "M10.3 21a2 2 0 0 0 3.4 0"],
   x: ["M6 6l12 12", "M18 6L6 18"],
 };
 

@@ -61,6 +61,7 @@ async def test_payday_checkin_once_after_nine(engine: AsyncEngine, uow: UowFacto
     labels = [b["label"] for b in payload["buttons"][0]]
     assert labels == ["Log 5000.00 SGD", "Not yet"]
     assert payload["buttons"][0][0]["data"] == "salary:log:2026-10-23"
+    assert (payload["kind"], payload["level"]) == ("payday", "now")
 
 
 async def test_checkin_without_a_usual_salary_asks_for_the_amount(

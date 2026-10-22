@@ -4,7 +4,7 @@ Every method is scoped to one user. Implementations must filter on
 ``user_id`` in the query itself, never after loading.
 """
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from enum import StrEnum
@@ -54,7 +54,7 @@ from nexus.domain.market import Bar, Quote
 from nexus.domain.memory import Memory, MemoryKind
 from nexus.domain.money import Money
 from nexus.domain.news import EarningsDate, NewsItem
-from nexus.domain.notifications import NotificationSettings
+from nexus.domain.notifications import Notification, NotificationSettings, Status
 from nexus.domain.packing import PackItem
 from nexus.domain.planning import Bill, BillOccurrence, Budget, SalarySchedule
 from nexus.domain.plans import Followed, SavedPlan
@@ -422,6 +422,56 @@ class JobQueue(Protocol):
 
     async def cancel(self, dedupe_key: str) -> bool:
         """Drop the job queued under this key if it hasn't started. False if none was."""
+        ...
+
+
+class NotificationRepository(Protocol):
+    """The record of Telegram messages. Every call is scoped to one user, except the ones
+    that say they are not."""
+
+    async def insert(self, record: Notification) -> None: ...
+    async def get(
+        self, user_id: UserId, notification_id: UUID, *, for_update: bool = False
+    ) -> Notification | None: ...
+    async def update(self, record: Notification) -> None:
+        """Save a record's status, send time, hold time and digest."""
+        ...
+
+    async def count_sent(
+        self, user_id: UserId, start: datetime, end: datetime, *, except_kinds: Collection[str]
+    ) -> int:
+        """Messages sent from ``start`` up to ``end`` that count toward the day's cap: not
+        urgent, and not of the kinds named."""
+        ...
+
+    async def users_with_digest_due(self, now: datetime) -> list[UserId]:
+        """Across all users: who has held messages without buttons whose time has come."""
+        ...
+
+    async def due_for_digest(self, user_id: UserId, now: datetime) -> list[Notification]:
+        """Held messages without buttons whose time has come, oldest first, locked."""
+        ...
+
+    async def close_held(
+        self,
+        user_id: UserId,
+        ids: Collection[UUID],
+        status: Status,
+        *,
+        at: datetime,
+        digest_id: UUID | None = None,
+    ) -> None:
+        """Mark held messages digested (at ``at``, in ``digest_id``) or dropped."""
+        ...
+
+    async def recent(
+        self, user_id: UserId, since: datetime, limit: int = 500
+    ) -> list[Notification]:
+        """Newest first."""
+        ...
+
+    async def prune(self, before: datetime) -> int:
+        """Across all users: forget what was made before ``before``. Returns how many."""
         ...
 
 
@@ -970,6 +1020,8 @@ class UnitOfWork(Protocol):
     def jobs(self) -> JobQueue: ...
     @property
     def email(self) -> EmailRepository: ...
+    @property
+    def notifications(self) -> NotificationRepository: ...
     @property
     def memory(self) -> MemoryRepository: ...
     @property

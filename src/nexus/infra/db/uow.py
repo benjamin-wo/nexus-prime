@@ -7,6 +7,7 @@ from nexus.infra.db.email_repository import SqlEmailRepository
 from nexus.infra.db.investment_repository import SqlInvestmentRepository
 from nexus.infra.db.ledger_repository import SqlLedgerRepository
 from nexus.infra.db.memory_repository import SqlMemoryRepository
+from nexus.infra.db.notification_repository import SqlNotificationRepository
 from nexus.infra.db.planning_repository import SqlJobQueue, SqlPlanningRepository
 from nexus.infra.db.rate_repository import SqlRateRepository
 from nexus.infra.db.runs_repository import SqlRunRepository
@@ -27,6 +28,7 @@ class SqlUnitOfWork:
         self._planning: SqlPlanningRepository | None = None
         self._jobs: SqlJobQueue | None = None
         self._email: SqlEmailRepository | None = None
+        self._notifications: SqlNotificationRepository | None = None
         self._memory: SqlMemoryRepository | None = None
         self._statements: SqlStatementRepository | None = None
         self._runs: SqlRunRepository | None = None
@@ -58,6 +60,12 @@ class SqlUnitOfWork:
         if self._email is None:
             raise RuntimeError("unit of work is not active")
         return self._email
+
+    @property
+    def notifications(self) -> SqlNotificationRepository:
+        if self._notifications is None:
+            raise RuntimeError("unit of work is not active")
+        return self._notifications
 
     @property
     def memory(self) -> SqlMemoryRepository:
@@ -111,6 +119,7 @@ class SqlUnitOfWork:
         self._planning = SqlPlanningRepository(self._connection)
         self._jobs = SqlJobQueue(self._connection)
         self._email = SqlEmailRepository(self._connection)
+        self._notifications = SqlNotificationRepository(self._connection)
         self._memory = SqlMemoryRepository(self._connection)
         self._statements = SqlStatementRepository(self._connection)
         self._runs = SqlRunRepository(self._connection)

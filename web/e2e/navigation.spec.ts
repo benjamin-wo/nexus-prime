@@ -65,6 +65,73 @@ test("Settings leads to Receipts by email and back, with Settings still marked",
   await expect(page).toHaveURL(/\/settings$/);
 });
 
+test.describe("Notifications", () => {
+  // Times are in the user's timezone; the made-up messages are around this moment.
+  test.use({ locale: "en-US", timezoneId: "Asia/Singapore" });
+
+  test("opens from the bell on Home, shows the days, goes back to Settings and shows up in Settings", async ({ page, isMobile }) => {
+    await fakeApi(page);
+    await page.clock.setFixedTime(new Date("2026-10-22T04:00:00Z"));
+    await page.goto("/");
+    const hero = page.getByRole("region", { name: "Nexus" });
+    const bell = hero.getByRole("link", { name: "Notifications" });
+    await expect(bell).toBeVisible();
+    // The three round buttons stay inside the hero and apart from each other.
+    const buttons = await hero.locator(".round-btn").evaluateAll((els) => els.map((el) => el.getBoundingClientRect()));
+    expect(buttons).toHaveLength(3);
+    for (const [a, b] of [[0, 1], [1, 2]]) expect(buttons[b].left).toBeGreaterThanOrEqual(buttons[a].right);
+    await bell.click();
+    await expect(page).toHaveURL(/\/settings\/notifications$/);
+    await expect(page.getByRole("heading", { name: "Notifications", level: 1 })).toBeVisible();
+    await expect(page.getByText(/Urgent ones always come/)).toBeVisible();
+    await expect(page.locator("main h2, .main-viewport h2")).toHaveText(["Today", "Yesterday", /Tue,? (Oct 20|20 Oct)/, /Fri,? (Oct 9|9 Oct)/]);
+
+    const today = page.getByRole("region", { name: "Today" });
+    const tsla = today.getByRole("listitem").filter({ hasText: "TSLA is down 6.2%" });
+    await expect(tsla.getByText("Urgent")).toBeVisible();
+    await expect(tsla.getByText("Sent")).toBeVisible();
+    await expect(tsla.getByRole("link", { name: /TSLA is down/ })).toHaveAttribute("href", "/investment/stocks/TSLA");
+    await expect(today.getByRole("listitem").filter({ hasText: "Fresh Mart" }).getByText("Held until 8:00am")).toBeVisible();
+    const yesterday = page.getByRole("region", { name: "Yesterday" });
+    await expect(yesterday.getByText("In a digest")).toHaveCount(2);
+    await expect(page.getByText("Not sent — Telegram not linked")).toBeVisible();
+
+    // A long message shows two lines until Show more.
+    const summary = page.getByRole("listitem").filter({ hasText: "Good morning. Your portfolio" });
+    const text = summary.locator(".note-text");
+    const folded = (await text.boundingBox())!.height;
+    await summary.getByRole("button", { name: "Show more" }).click();
+    expect((await text.boundingBox())!.height).toBeGreaterThan(folded * 1.5);
+    await summary.getByRole("button", { name: "Show less" }).click();
+    expect((await text.boundingBox())!.height).toBe(folded);
+
+    if (!isMobile) {
+      const rail = page.getByRole("navigation", { name: "Main", exact: true });
+      await expect(rail.getByRole("link", { name: "Settings" })).toHaveAttribute("aria-current", "page");
+    }
+    await expect(page.getByRole("navigation", { name: "Accounting pages" })).toHaveCount(0);
+    await page.getByRole("link", { name: "Back to Settings" }).click();
+    await expect(page).toHaveURL(/\/settings$/);
+
+    await page.getByRole("region", { name: "Notifications" }).getByRole("link", { name: "Open" }).click();
+    await expect(page).toHaveURL(/\/settings\/notifications$/);
+  });
+
+  test("a message's link opens what it is about", async ({ page }) => {
+    await fakeApi(page);
+    await page.goto("/settings/notifications");
+    await page.getByRole("link", { name: /Reminder: Rent is due/ }).click();
+    await expect(page).toHaveURL(/\/accounting$/);
+  });
+
+  test("says so when nothing was sent", async ({ page }) => {
+    await fakeApi(page);
+    await page.route("**/api/notifications/history", (route) => route.fulfill({ json: [] }));
+    await page.goto("/settings/notifications");
+    await expect(page.getByText("Nothing sent in the last 30 days.")).toBeVisible();
+  });
+});
+
 test("the Ledger has a compact Add and a More menu that opens, closes and goes to the import", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/accounting/ledger");
@@ -130,7 +197,9 @@ test("a Ledger row names its category under the merchant on a phone, and in its 
     const merchant = (await row.getByRole("button", { name: "Maxwell Food Centre" }).boundingBox())!;
     const category = (await caption.boundingBox())!;
     const amount = (await row.locator("td.amount").boundingBox())!;
-    expect(category.y).toBeGreaterThanOrEqual(merchant.y + merchant.height - 2);
+    // On a line of its own: it starts below the middle of the merchant's line (font metrics
+    // differ between machines, so not pinned to the merchant's exact bottom edge).
+    expect(category.y).toBeGreaterThan(merchant.y + merchant.height / 2);
     expect(category.x + category.width).toBeLessThanOrEqual(amount.x + 1);
   } else {
     await expect(caption).toBeHidden();

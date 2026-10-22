@@ -27,12 +27,17 @@ from nexus.domain.ledger import (
 from nexus.domain.money import Money
 from nexus.domain.notifications import (
     Frequency,
+    Kind,
+    Level,
     NotificationSettings,
     describe_quiet,
     heading,
     is_due,
     label,
     move_percent,
+)
+from nexus.domain.notifications import (
+    daily_cap as cap_of,
 )
 
 type UowFactory = Callable[[], UnitOfWork]
@@ -89,11 +94,14 @@ async def set_market(
     market_summary: bool | None = None,
     quiet_start: time | None = None,
     quiet_end: time | None = None,
+    daily_cap: int | float | str | None = None,
 ) -> NotificationSettings:
     """Change the stock market alerts: how big a move in a day (1% to 20%) is worth a
-    message, the morning summary, and the user's quiet hours (equal times: none). What is
-    left out stays as it was."""
+    message, the morning summary, and the user's quiet hours (equal times: none); and how
+    many messages a day (3 to 20) go before the rest wait for a digest. What is left out
+    stays as it was."""
     threshold = None if move_alert_percent is None else move_percent(move_alert_percent)
+    cap = None if daily_cap is None else cap_of(daily_cap)
     async with uow:
         current = await uow.planning.get_notifications(user_id, for_update=True)
         updated = replace(
@@ -102,6 +110,7 @@ async def set_market(
             market_summary=(current.market_summary if market_summary is None else market_summary),
             quiet_start=_minute(current.quiet_start if quiet_start is None else quiet_start),
             quiet_end=_minute(current.quiet_end if quiet_end is None else quiet_end),
+            daily_cap=cap if cap is not None else current.daily_cap,
         )
         await uow.planning.save_notifications(updated, now)
         await uow.commit()
@@ -181,7 +190,17 @@ async def notify(
             return False  # the settings changed meanwhile; the next check starts over
         sent = False
         if text:
-            payload: dict[str, Any] = {"user_id": str(user.id), "text": text}
+            payload: dict[str, Any] = {
+                "user_id": str(user.id),
+                "text": text,
+                "level": Level.NOW,
+                "kind": (
+                    Kind.DAILY_SUMMARY
+                    if settings.frequency is Frequency.DAILY
+                    else Kind.TRANSACTION_UPDATE
+                ),
+                "link": "/accounting/ledger",
+            }
             if settings.frequency is Frequency.DAILY:
                 payload["anytime"] = True  # the user chose the time, quiet hours or not
             if buttons:

@@ -160,3 +160,5 @@ async def test_reminders_go_out_once_each(engine: AsyncEngine, uow: UowFactory) 
     sent = [m["text"] for m in await messages(engine)]
     assert any(t.startswith("🛂 Tokyo is 30 days away") for t in sent)
     assert any(t.startswith("✈️ Online check-in for ZZ12") for t in sent)
+    told = [m for m in await messages(engine) if m["text"].startswith(("🛂", "✈️"))]
+    assert {(m["kind"], m["level"]) for m in told} == {("trip_reminder", "now")}

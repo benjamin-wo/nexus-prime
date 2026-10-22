@@ -15,6 +15,7 @@ const base: Updates = {
   quiet_end: "08:00",
   move_alert_percent: "5.0",
   market_summary: true,
+  daily_cap: 6,
 };
 
 function setup() {
@@ -94,5 +95,31 @@ describe("investment notification settings", () => {
     await userEvent.click(await screen.findByRole("switch", { name: "Morning investment summary" }));
     await waitFor(() => expect(puts()).toEqual([{ market_summary: false }]));
     expect(screen.getByRole("switch", { name: "Morning investment summary" })).not.toBeChecked();
+  });
+
+  it("shows the daily limit and saves it once, when the field is left", async () => {
+    const { puts } = setup();
+    const field = await screen.findByLabelText("Messages a day");
+    expect(field).toHaveValue(6);
+    await userEvent.clear(field);
+    await userEvent.type(field, "10");
+    expect(puts()).toEqual([]);
+    await userEvent.tab();
+    await waitFor(() => expect(puts()).toEqual([{ daily_cap: 10 }]));
+    expect(screen.getByLabelText("Messages a day")).toHaveValue(10);
+  });
+
+  it("does not send a daily limit outside 3 to 20 or a fraction", async () => {
+    const { puts } = setup();
+    const field = await screen.findByLabelText("Messages a day");
+    await userEvent.clear(field);
+    await userEvent.type(field, "2");
+    await userEvent.tab();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Enter a whole number from 3 to 20");
+    await userEvent.clear(field);
+    await userEvent.type(field, "4.5");
+    await userEvent.tab();
+    expect(puts()).toEqual([]);
+    expect(screen.getByLabelText("Messages a day")).toHaveValue(6);
   });
 });

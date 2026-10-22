@@ -791,7 +791,7 @@ test("telegram updates default to an end-of-day summary and can be changed", asy
 test("nothing spills sideways on a small phone", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 568 });
   await fakeApi(page, { emailConnected: true });
-  const pages = ["/", "/accounting", "/accounting/ledger", "/accounting/budgets", "/settings", "/settings/email", "/settings/import", "/accounting/cashflow", "/investment", "/investment/watchlist", "/investment/stocks/AMD", "/investment/plans", "/investment/plans/p1", "/travel", "/travel/research/rs1"];
+  const pages = ["/", "/accounting", "/accounting/ledger", "/accounting/budgets", "/settings", "/settings/email", "/settings/import", "/settings/notifications", "/accounting/cashflow", "/investment", "/investment/watchlist", "/investment/stocks/AMD", "/investment/plans", "/investment/plans/p1", "/travel", "/travel/research/rs1"];
   for (const path of [...pages, "/connect/gmail?t=good"]) {
     await page.goto(path);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();

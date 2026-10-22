@@ -48,6 +48,7 @@ async def test_three_monthly_charges_are_proposed_once(
     )
     [[track, no]] = proposal["buttons"]
     assert (track["label"], no["label"]) == ("Track it", "No")
+    assert (proposal["kind"], proposal["level"]) == ("subscription_spotted", "digest")
     found = await subscription_cases.overview(uow(), user.id)
     assert [v.subscription.status for v in found.proposed] == [SubscriptionStatus.PROPOSED]
     assert found.tracked == [] and found.monthly_totals == []
@@ -69,6 +70,7 @@ async def test_tracking_follows_new_charges_and_flags_a_price_change(
     assert change["text"] == (
         "💸 NETFLIX.COM went up from 15.98 SGD to 17.98 SGD a month (charged 12 Oct)."
     )
+    assert (change["kind"], change["level"]) == ("subscription_price", "digest")
     [view] = (await subscription_cases.overview(uow(), user.id)).tracked
     sub = view.subscription
     assert sub.amount == Money.of("17.98", "SGD")

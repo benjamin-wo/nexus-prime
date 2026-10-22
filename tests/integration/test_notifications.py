@@ -167,6 +167,8 @@ async def test_instant_tells_what_the_chat_didnt(engine: AsyncEngine, uow: UowFa
     await log(uow, user, "12.40", sg(28, 9, 7), counterparty="Grab", category="Transport")
     assert await check(uow, user, sg(28, 9, 10))
     [message] = await sent(engine)
+    assert (message["kind"], message["level"]) == ("transaction_update", "now")
+    assert "anytime" not in message  # held in quiet hours, but never counted toward the cap
     assert message["text"] == (
         "🧾 2 new in your ledger:\n"
         "Received 4200.00 SGD at Salary · Income\n"
@@ -231,6 +233,7 @@ async def test_a_daily_summary_at_the_users_own_time(engine: AsyncEngine, uow: U
     [summary] = await sent(engine)
     assert summary["text"].startswith("🧾 Monday")  # 28 Sep, not "Today" on the 29th
     assert summary["anytime"] is True  # the job sends it inside quiet hours
+    assert (summary["kind"], summary["level"]) == ("daily_summary", "now")
     assert (await notify_cases.get_settings(uow(), user.id)).daily_at == time(23, 59)
 
     with pytest.raises(InvalidInput):

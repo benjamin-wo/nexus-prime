@@ -121,6 +121,7 @@ async def test_the_summary_tells_the_portfolio_the_movers_and_what_was_held_back
     ]
     (job,) = await queued(engine, TELEGRAM_SEND)
     assert job.payload["anytime"] is True  # the user's morning, quiet hours or not
+    assert (job.payload["kind"], job.payload["level"]) == ("market_summary", "now")
     async with uow() as tx:
         assert await tx.investments.unsent_alerts(user.id, MONDAY) == []  # marked sent
     assert during.id != after.id

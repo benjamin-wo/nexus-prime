@@ -21,6 +21,7 @@ from nexus.domain.access import new_token, token_hash
 from nexus.domain.bookings import Booking
 from nexus.domain.errors import Forbidden, InvalidInput, NotFound
 from nexus.domain.ledger import Role, User, UserId
+from nexus.domain.notifications import Kind, Level
 from nexus.domain.prep import Cover
 from nexus.domain.trip_access import (
     DIGEST_EVERY,
@@ -475,7 +476,13 @@ async def send_digest(
             and owner.trip_activity_alerts
             and owner.telegram_chat_id is not None
         ):
-            payload: dict[str, Any] = {"user_id": str(owner_id), "text": text}
+            payload: dict[str, Any] = {
+                "user_id": str(owner_id),
+                "text": text,
+                "kind": Kind.TRIP_ACTIVITY,
+                "level": Level.NOW,
+                "link": f"/travel/trips/{trip_id}",
+            }
             if origin:
                 payload["buttons"] = [
                     [{"label": "Open the trip", "data": f"url:{origin}/travel/trips/{trip_id}"}]

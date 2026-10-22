@@ -429,6 +429,7 @@ class SqlPlanningRepository:
             row.quiet_end,
             row.move_alert_percent,
             row.market_summary,
+            row.daily_cap,
         )
 
     async def save_notifications(self, settings: NotificationSettings, now: datetime) -> None:
@@ -440,6 +441,7 @@ class SqlPlanningRepository:
             "quiet_end": settings.quiet_end,
             "move_alert_percent": settings.move_alert_percent,
             "market_summary": settings.market_summary,
+            "daily_cap": settings.daily_cap,
             "updated_at": now,
         }
         stmt = pg_insert(notification_settings).values(user_id=settings.user_id, **values)

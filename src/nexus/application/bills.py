@@ -34,6 +34,7 @@ from nexus.domain.ledger import (
     clean_name,
 )
 from nexus.domain.money import Money, minor_units
+from nexus.domain.notifications import Kind, Level
 from nexus.domain.planning import (
     OVERDUE_GRACE,
     Bill,
@@ -446,6 +447,9 @@ async def send_reminders(uow: UowFactory, user: User, *, now: datetime) -> int:
                             {"label": "Snooze 1 day", "data": f"bill:snooze:{stored.id}"},
                         ]
                     ],
+                    "kind": Kind.BILL_REMINDER,
+                    "level": Level.NOW,
+                    "link": "/accounting",
                 },
                 dedupe_key=f"bill-reminder:{stored.id}:{offset}:{round_}",
                 run_at=now,

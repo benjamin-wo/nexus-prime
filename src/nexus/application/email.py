@@ -78,7 +78,7 @@ from nexus.domain.ledger import (
     WalletKind,
 )
 from nexus.domain.money import Money
-from nexus.domain.notifications import Frequency
+from nexus.domain.notifications import Frequency, Kind, Level
 from nexus.domain.receipts import UNCLAIMED_TTL
 from nexus.domain.wallets import wallet_for
 
@@ -558,7 +558,14 @@ async def _save_booking(
         text, buttons = booking_cases.which_trip(saved)
         await tx.jobs.enqueue(
             TELEGRAM_SEND,
-            {"user_id": str(user.id), "text": text, "buttons": buttons},
+            {
+                "user_id": str(user.id),
+                "text": text,
+                "buttons": buttons,
+                "kind": Kind.BOOKING,
+                "level": Level.NOW,
+                "link": "/travel",
+            },
             dedupe_key=f"trip.ask:{saved.booking.id}",
             run_at=now,
         )
@@ -831,7 +838,13 @@ async def _setup_email(
     else:
         return None
     async with uow() as tx:
-        payload: dict[str, Any] = {"user_id": str(user.id), "text": "\n".join(lines)}
+        payload: dict[str, Any] = {
+            "user_id": str(user.id),
+            "text": "\n".join(lines),
+            "kind": Kind.EMAIL_STATUS,
+            "level": Level.NOW,
+            "link": "/settings/email",
+        }
         if buttons:
             payload["buttons"] = buttons
         await tx.jobs.enqueue(
@@ -868,6 +881,9 @@ async def _nudge(tx: UnitOfWork, user: User, connection: EmailConnection, now: d
             "If you still want receipts logged from email, check your forwarding rule, or "
             "ask me to test your email setup. If you've stopped, you can disconnect it on "
             "the Receipts by email page in Settings.",
+            "kind": Kind.EMAIL_STATUS,
+            "level": Level.NOW,
+            "link": "/settings/email",
         },
         dedupe_key=f"email.quiet:{connection.id}:{now.date().isoformat()}",
         run_at=now,
@@ -897,6 +913,9 @@ async def _ask(
                 "text": f"📧 I found {len(waiting)} receipts from the last 30 days. "
                 "Nothing is logged until you confirm each one.",
                 "buttons": buttons,
+                "kind": Kind.RECEIPT_QUESTION,
+                "level": Level.NOW,
+                "link": "/settings/email",
             },
             dedupe_key=f"email.backfill:{waiting[0].connection_id}",
             run_at=waiting[0].created_at,
@@ -911,7 +930,14 @@ async def _ask(
         text, buttons = question(email, tz, open_ious)
         await tx.jobs.enqueue(
             TELEGRAM_SEND,
-            {"user_id": str(user.id), "text": text, "buttons": buttons},
+            {
+                "user_id": str(user.id),
+                "text": text,
+                "buttons": buttons,
+                "kind": Kind.RECEIPT_QUESTION,
+                "level": Level.NOW,
+                "link": "/settings/email",
+            },
             dedupe_key=f"email.ask:{email.id}",
             run_at=email.created_at,
         )
@@ -937,6 +963,9 @@ async def _broken(uow: UowFactory, user: User, connection: EmailConnection, now:
                 "user_id": str(user.id),
                 "text": f"I can't read {current.address} any more (access was removed or "
                 "expired), so I've stopped checking it. Ask me to connect it again anytime.",
+                "kind": Kind.EMAIL_STATUS,
+                "level": Level.NOW,
+                "link": "/settings/email",
             },
             dedupe_key=f"email.broken:{current.id}:{current.updated_at.isoformat()}",
             run_at=now,

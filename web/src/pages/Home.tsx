@@ -129,6 +129,9 @@ function Hero({
           <button type="button" className="round-btn" aria-label="Log expense" title="Log expense" onClick={onLog}>
             <Icon name="plus" />
           </button>
+          <Link className="round-btn" to="/settings/notifications" aria-label="Notifications" title="Notifications">
+            <Icon name="bell" />
+          </Link>
           <Link className="round-btn" to="/settings" aria-label="Settings" title="Settings">
             <Icon name="settings" />
           </Link>

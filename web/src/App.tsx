@@ -22,6 +22,7 @@ import { SharedTripPage } from "./pages/SharedTrip";
 import { TripPage, TripsPage } from "./pages/Trips";
 import { WatchlistPage } from "./pages/Watchlist";
 import { BudgetsPage } from "./pages/BudgetsPage";
+import { NotificationsPage } from "./pages/Notifications";
 import { ImportPage } from "./pages/Import";
 import { Ledger } from "./pages/Ledger";
 import { forgetTripNote, LoginPage } from "./pages/LoginPage";
@@ -153,6 +154,7 @@ function Cockpit({ me }: { me: Me }) {
         <Route path="/settings" element={<Settings />} />
         <Route path="/settings/email" element={<EmailPage me={me} />} />
         <Route path="/settings/import" element={<ImportPage />} />
+        <Route path="/settings/notifications" element={<NotificationsPage me={me} />} />
         {/* Where pages used to live, so old links and bookmarks still work. */}
         <Route path="/accounting/plan" element={<Navigate to="/accounting/budgets" replace />} />
         <Route path="/accounting/email" element={<Navigate to="/settings/email" replace />} />

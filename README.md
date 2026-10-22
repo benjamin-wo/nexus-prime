@@ -58,7 +58,7 @@ One LLM agent serves both surfaces, but the parts that must be right, like money
 - **Shared trips:** invite someone to a trip with a single-use link (valid 7 days) and they can edit its plan (days, places, stops, packing, notes), never its money; people the app's owner invites can join with just a Telegram sign-in and see only the trips they are on. The trip keeps a short log of who changed what. The server side is in; the screens come next.
 
 **Everywhere**
-- **Web cockpit:** Home as a Today page (Nexus's brief, what needs you across money, stocks and trips with the urgent first, a short setup checklist, and your month, portfolio and next trip at a glance; a trip that is on leads it), a page per department (Accounting's tabs are Overview, Ledger, Budgets and Cash flow; Investment's are Portfolio, Watchlist and Trade plans), a filterable ledger with CSV export, Settings in three groups (Notifications, Connections, Your data), and a chat drawer that keeps one running conversation, shared with Telegram. It is mobile-first and opens inside Telegram already signed in.
+- **Web cockpit:** Home as a Today page (Nexus's brief, what needs you across money, stocks and trips with the urgent first, a short setup checklist, and your month, portfolio and next trip at a glance; a trip that is on leads it), a page per department (Accounting's tabs are Overview, Ledger, Budgets and Cash flow; Investment's are Portfolio, Watchlist and Trade plans), a filterable ledger with CSV export, Settings in three groups (Notifications, Connections, Your data), a Notifications page (from the bell on Home) listing what Nexus sent on Telegram in the last 30 days and what is waiting, and a chat drawer that keeps one running conversation, shared with Telegram. It is mobile-first and opens inside Telegram already signed in.
 - **Private by construction.** It is invite-only, and each user's data is isolated by the database schema itself, not just by application code.
 
 ## Architecture
@@ -93,7 +93,7 @@ The code follows a clean, layered architecture. `domain` holds pure rules with n
 - A Postgres job queue claims work with `FOR UPDATE SKIP LOCKED` under a lease.
 - Recurring work is keyed per time slot, so two app instances overlapping during a deploy can't double-send an alert.
 - Retries back off exponentially.
-- Messages respect quiet hours in each user's timezone.
+- Messages respect quiet hours in each user's timezone, and each user's daily limit: urgent ones go at once, the rest wait for a morning or evening digest once the limit is reached.
 
 **Security fails closed.**
 - Telegram Login and Mini App signatures are verified with HMAC.

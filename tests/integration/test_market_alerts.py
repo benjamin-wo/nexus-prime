@@ -33,7 +33,6 @@ from nexus.domain.plans import EventKind, Followed, PlanEvent, PlanStatus, Saved
 from nexus.infra.db.migrations import alembic_config
 from nexus.infra.db.tables import jobs, market_alerts, users
 from nexus.jobs.handlers import build_handlers
-from nexus.jobs.runner import Defer
 from tests.fakes import FakeQuotes, FakeRates, FakeTelegram, quote
 from tests.integration.conftest import UowFactory, upgrade
 from tests.integration.test_email import person
@@ -138,6 +137,9 @@ async def test_a_price_in_the_buy_zone_alerts_with_the_plans_own_words(
         [{"label": "Stop alerts for this plan", "data": f"plan:mute:{made.id}"}]
     ]
     assert "urgent" not in send and "anytime" not in send
+    # A plan's price alert is something to act on: "now", with a link to the plan.
+    assert (send["kind"], send["level"]) == ("plan_event", "now")
+    assert send["link"] == f"/investment/plans/{made.id}"
 
 
 async def test_a_price_at_the_first_target_alerts_a_plan_already_entered(
@@ -166,7 +168,7 @@ async def test_a_stop_on_a_stock_the_user_holds_is_urgent(
         "🛑 NVDA is at 121.50 as of 10:41pm, at or below its stop of 122.00. The plan says "
         "cut it: the reason to own it has broken."
     )
-    assert send["urgent"] is True
+    assert (send["kind"], send["level"]) == ("plan_event", "urgent")
     (alert,) = await kept(engine)
     assert alert.kind == "plan_stop" and alert.urgent is True
 
@@ -179,7 +181,7 @@ async def test_a_stop_on_a_plan_for_a_stock_not_held_is_not_urgent(
     await price(uow, "NVDA", "2026-10-19 10:42", "121.50")
     assert await check(uow) == 1
     (send,) = await sends(engine)
-    assert "urgent" not in send
+    assert send["level"] == "now"
 
 
 async def test_a_big_move_is_told_for_held_and_watched_stocks(
@@ -206,6 +208,12 @@ async def test_a_big_move_is_told_for_held_and_watched_stocks(
         "📈 AMD +5.0% today at 10:41pm, 157.50",
     }
     assert {a.kind for a in await kept(engine)} == {"big_move"}
+    # A big move is worth knowing, not acting on: it waits for a digest.
+    assert {(s["kind"], s["level"]) for s in await sends(engine)} == {("big_move", "digest")}
+    assert {s["link"] for s in await sends(engine)} == {
+        "/investment/stocks/NVDA",
+        "/investment/stocks/AMD",
+    }
 
 
 async def test_each_user_has_their_own_threshold(uow: UowFactory, engine: AsyncEngine) -> None:
@@ -358,14 +366,21 @@ async def test_a_stop_on_a_held_stock_goes_through_quiet_hours(
     await price(uow, "NVDA", "2026-10-19 11:30", "121.50")
     assert await check(uow, QUIET) == 1
     (send,) = await sends(engine)
-    assert send["urgent"] is True
-    # The sender lets an urgent message through at 23:30 and holds an ordinary one.
+    assert send["level"] == "urgent"
+    # The sender lets an urgent message through at 23:30 and holds an ordinary one for the
+    # morning (kept as held, not sent).
     telegram = FakeTelegram()
     handler = build_handlers(uow, telegram, FakeRates(), lambda: QUIET)[TELEGRAM_SEND]
     assert await handler(send) is None
     assert [s.chat_id for s in telegram.sent] == [4242]
-    assert isinstance(await handler({"user_id": send["user_id"], "text": "ordinary"}), Defer)
+    assert await handler({"user_id": send["user_id"], "text": "ordinary"}) is None
     assert len(telegram.sent) == 1
+    async with uow() as tx:
+        recent = await tx.notifications.recent(user.id, QUIET - timedelta(days=1))
+    assert {(n.text, n.status.value) for n in recent} == {
+        (send["text"], "sent"),
+        ("ordinary", "held"),
+    }
 
 
 async def test_with_the_morning_summary_off_a_quiet_alert_waits_for_quiet_hours_to_end(
@@ -380,9 +395,15 @@ async def test_with_the_morning_summary_off_a_quiet_alert_waits_for_quiet_hours_
     assert "urgent" not in send
     telegram = FakeTelegram()
     handler = build_handlers(uow, telegram, FakeRates(), lambda: QUIET)[TELEGRAM_SEND]
-    later = await handler(send)
-    assert isinstance(later, Defer) and later.until == datetime(2026, 10, 20, 0, 0, tzinfo=UTC)
+    assert await handler(send) is None  # it has a button, so it is queued again for then
     assert telegram.sent == []
+    later = [s for s in await sends(engine) if "notification_id" in s]
+    assert len(later) == 1
+    async with engine.connect() as db:
+        run_at = await db.scalar(
+            select(jobs.c.run_at).where(jobs.c.dedupe_key.like("notification:%"))
+        )
+    assert run_at == datetime(2026, 10, 20, 0, 0, tzinfo=UTC)
 
 
 async def test_a_plan_alone_gets_no_summary_so_its_alert_is_queued_not_held(
@@ -585,11 +606,13 @@ async def test_the_sender_uses_each_users_own_quiet_hours(uow: UowFactory) -> No
     telegram = FakeTelegram()
     send = build_handlers(uow, telegram, FakeRates(), lambda: MON_OPEN)[TELEGRAM_SEND]
     # 22:42 in Singapore.
-    waits = await send({"user_id": str(early.id), "text": "hello"})
-    assert isinstance(waits, Defer)
-    assert waits.until == datetime(2026, 10, 20, 7, 30, tzinfo=ZoneInfo("Asia/Singapore"))
+    assert await send({"user_id": str(early.id), "text": "hello"}) is None
     assert await send({"user_id": str(night.id), "text": "hello"}) is None
     assert [s.chat_id for s in telegram.sent] == [4343]
+    async with uow() as tx:
+        (held,) = await tx.notifications.recent(early.id, MON_OPEN - timedelta(days=1))
+    assert held.status.value == "held"
+    assert held.held_until == datetime(2026, 10, 20, 7, 30, tzinfo=ZoneInfo("Asia/Singapore"))
     # The ones they timed themselves, and urgent ones, go whenever.
     assert await send({"user_id": str(early.id), "text": "a", "anytime": True}) is None
     assert await send({"user_id": str(early.id), "text": "b", "urgent": True}) is None

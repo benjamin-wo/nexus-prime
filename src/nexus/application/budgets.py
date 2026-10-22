@@ -20,6 +20,7 @@ from nexus.application.ports import UnitOfWork
 from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.ledger import User, UserId
 from nexus.domain.money import Money
+from nexus.domain.notifications import Kind, Level
 from nexus.domain.planning import Budget, month_start, next_month_start, reached
 
 type UowFactory = Callable[[], UnitOfWork]
@@ -132,7 +133,14 @@ async def check_budgets(uow: UowFactory, rates: RateSource, user: User, *, now: 
             top = max(new)
             queued += await tx.jobs.enqueue(
                 TELEGRAM_SEND,
-                {"user_id": str(user.id), "text": alert_text(status, top, month)},
+                {
+                    "user_id": str(user.id),
+                    "text": alert_text(status, top, month),
+                    "kind": Kind.BUDGET_ALERT,
+                    # Reaching the limit needs a decision; 50% and 80% are good to know.
+                    "level": Level.NOW if top >= 100 else Level.DIGEST,
+                    "link": "/accounting/budgets",
+                },
                 dedupe_key=f"budget-alert:{budget.id}:{month.isoformat()}:{top}",
                 run_at=now,
             )

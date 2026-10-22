@@ -174,6 +174,8 @@ async def test_research_traces_prices_to_sources_and_becomes_a_trip(
         "label": "Make it a trip",
         "data": f"trip:research:{run.id}",
     }
+    assert (sent[0]["kind"], sent[0]["level"]) == ("research_done", "now")
+    assert sent[0]["link"] == f"/travel/research/{run.id}"
     assert (
         "Estimate for 2: 4,602 to 6,760 SGD" in sent[0]["text"]
         and "Nothing is booked" in sent[0]["text"]
