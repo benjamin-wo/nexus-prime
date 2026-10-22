@@ -382,7 +382,9 @@ table.ledger { width: 100%; border-collapse: collapse; }
 @media (max-width: 900px) {
   .shell { grid-template-columns: minmax(0, 1fr); }
   .rail { display: none; }
-  .main-viewport { padding: var(--space-4) var(--space-4) calc(88px + env(safe-area-inset-bottom)); }
+  /* Room below the last card for the fixed bottom bar: the bar's own height (Shell measures it into
+     --bar-h; 68px of bar is the fallback) with the safe-area inset, and a little air. */
+  .main-viewport { padding: var(--space-4) var(--space-4) calc(var(--bar-h, calc(68px + env(safe-area-inset-bottom))) + var(--space-6)); }
   .bottom-nav {
     display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 15; justify-content: space-around;
     background: var(--bg-frame); border-top: 1px solid var(--border-subtle);
@@ -398,8 +400,6 @@ table.ledger { width: 100%; border-collapse: collapse; }
   /* On a phone each tab is its icon over a short label. */
   .bottom-nav .nav-link { flex-direction: column; gap: 2px; font-size: 0.7rem; line-height: 1.1; }
   .bottom-nav .nav-glyph { margin: 0; font-size: 1.05rem; }
-  /* Room below the last card so the bubble never hides it. */
-  .main-viewport { padding-bottom: calc(148px + env(safe-area-inset-bottom)); }
   .toast { bottom: calc(76px + env(safe-area-inset-bottom)); }
 }
 @media (max-width: 720px) {
@@ -1337,7 +1337,6 @@ html.keyboard .bottom-nav, html.keyboard .trip-fab-button, html.keyboard .trip-f
 .rail { background: var(--bg-card); }
 
 @media (max-width: 900px) {
-  .main-viewport { padding-bottom: calc(104px + env(safe-area-inset-bottom)); }
   .bottom-nav {
     left: 0; right: 0; bottom: 0; align-items: center; justify-content: space-between; gap: var(--space-1);
     padding: 10px var(--space-4) calc(10px + env(safe-area-inset-bottom));

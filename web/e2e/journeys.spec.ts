@@ -1654,7 +1654,9 @@ async function openAddSheet(page: Page, trip: string) {
 test("a trip is added and shows its spending, set-aside and settle-up", async ({ page }) => {
   const state = await fakeApi(page);
   await page.goto("/travel");
-  await expect(page.getByText(/No trips yet/)).toBeVisible();
+  // With no trips the page leads with "Where to next?", not a second card saying the same.
+  await expect(page.getByRole("heading", { name: "Where to next?" })).toBeVisible();
+  await expect(page.getByText(/No trips yet/)).toHaveCount(0);
   await page.getByRole("button", { name: "Add a trip" }).click();
   const form = page.getByRole("form", { name: "Add a trip" });
   // Where and when is all it asks; the currency comes from the place, or is asked for.
