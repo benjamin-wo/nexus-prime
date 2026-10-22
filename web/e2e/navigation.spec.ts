@@ -197,7 +197,9 @@ test("a Ledger row names its category under the merchant on a phone, and in its 
     const merchant = (await row.getByRole("button", { name: "Maxwell Food Centre" }).boundingBox())!;
     const category = (await caption.boundingBox())!;
     const amount = (await row.locator("td.amount").boundingBox())!;
-    expect(category.y).toBeGreaterThanOrEqual(merchant.y + merchant.height - 2);
+    // On a line of its own: it starts below the middle of the merchant's line (font metrics
+    // differ between machines, so not pinned to the merchant's exact bottom edge).
+    expect(category.y).toBeGreaterThan(merchant.y + merchant.height / 2);
     expect(category.x + category.width).toBeLessThanOrEqual(amount.x + 1);
   } else {
     await expect(caption).toBeHidden();
