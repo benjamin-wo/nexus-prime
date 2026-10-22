@@ -49,6 +49,7 @@ from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.evidence import has_figure, mentions
 from nexus.domain.ledger import User
 from nexus.domain.money import Money
+from nexus.domain.notifications import Kind, Level
 from nexus.domain.planning import paydays
 from nexus.domain.travel_research import (
     MAX_NIGHTS,
@@ -678,6 +679,9 @@ def budget_step(uow: UowFactory, rates: RateSource) -> Callable[[StepContext], A
                     "buttons": [
                         [{"label": "Make it a trip", "data": f"trip:research:{ctx.run.id}"}]
                     ],
+                    "kind": Kind.RESEARCH_DONE,
+                    "level": Level.NOW,
+                    "link": f"/travel/research/{ctx.run.id}",
                 },
                 dedupe_key=f"travel.research:{ctx.run.id}",
                 run_at=ctx.now,

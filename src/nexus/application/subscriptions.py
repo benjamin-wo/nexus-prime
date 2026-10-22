@@ -12,6 +12,7 @@ from nexus.application.ports import UnitOfWork
 from nexus.domain.errors import NotFound
 from nexus.domain.ledger import User, UserId
 from nexus.domain.money import Money
+from nexus.domain.notifications import Kind, Level
 from nexus.domain.recurring import (
     CADENCE_WORDS,
     LOOKBACK,
@@ -89,6 +90,9 @@ async def _follow(
                     "user_id": str(user.id),
                     "text": f"💸 {current.name} went {direction} from {current.amount} to "
                     f"{latest.amount} a {per} (charged {latest.day:%-d %b}).",
+                    "kind": Kind.SUBSCRIPTION_PRICE,
+                    "level": Level.DIGEST,
+                    "link": "/accounting",
                 },
                 dedupe_key=f"sub.price:{current.id}:{latest.day.isoformat()}",
                 run_at=now,
@@ -128,6 +132,9 @@ async def _propose(uow: UowFactory, user: User, candidate: Candidate, now: datet
                         {"label": "No", "data": f"sub:skip:{subscription.id}"},
                     ]
                 ],
+                "kind": Kind.SUBSCRIPTION_SPOTTED,
+                "level": Level.DIGEST,
+                "link": "/accounting",
             },
             dedupe_key=f"sub.propose:{subscription.id}",
             run_at=now,

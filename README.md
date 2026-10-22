@@ -93,7 +93,7 @@ The code follows a clean, layered architecture. `domain` holds pure rules with n
 - A Postgres job queue claims work with `FOR UPDATE SKIP LOCKED` under a lease.
 - Recurring work is keyed per time slot, so two app instances overlapping during a deploy can't double-send an alert.
 - Retries back off exponentially.
-- Messages respect quiet hours in each user's timezone.
+- Messages respect quiet hours in each user's timezone, and each user's daily limit: urgent ones go at once, the rest wait for a morning or evening digest once the limit is reached.
 
 **Security fails closed.**
 - Telegram Login and Mini App signatures are verified with HMAC.

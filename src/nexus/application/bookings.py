@@ -29,6 +29,7 @@ from nexus.domain.bookings import (
 from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.ledger import User, UserId
 from nexus.domain.money import Money
+from nexus.domain.notifications import Kind, Level
 from nexus.domain.trips import Trip, TripStatus
 
 log = logging.getLogger(__name__)
@@ -457,7 +458,13 @@ async def remind(uow: UowFactory, user: User, *, now: datetime) -> int:
             if await tx.trips.claim_reminder(user.id, reminder.key, now):
                 await tx.jobs.enqueue(
                     TELEGRAM_SEND,
-                    {"user_id": str(user.id), "text": reminder.text},
+                    {
+                        "user_id": str(user.id),
+                        "text": reminder.text,
+                        "kind": Kind.TRIP_REMINDER,
+                        "level": Level.NOW,
+                        "link": "/travel",
+                    },
                     dedupe_key=f"trip.remind:{user.id}:{reminder.key}",
                     run_at=now,
                 )

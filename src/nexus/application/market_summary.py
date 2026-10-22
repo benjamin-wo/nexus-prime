@@ -37,6 +37,7 @@ from nexus.domain.market import (
 )
 from nexus.domain.money import Money
 from nexus.domain.news import clean_text
+from nexus.domain.notifications import Kind, Level
 
 type UowFactory = Callable[[], UnitOfWork]
 
@@ -122,7 +123,14 @@ async def send(
             return False
         sent = await tx.jobs.enqueue(
             TELEGRAM_SEND,
-            {"user_id": str(user_id), "text": text, "anytime": True},
+            {
+                "user_id": str(user_id),
+                "text": text,
+                "anytime": True,
+                "kind": Kind.MARKET_SUMMARY,
+                "level": Level.NOW,
+                "link": "/investment",
+            },
             dedupe_key=f"{USER_JOB}.send:{user_id}:{local_date.isoformat()}",
             run_at=now,
         )

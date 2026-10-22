@@ -27,6 +27,7 @@ from nexus.channels.web.security import Auth, Runtime, WebRuntime
 from nexus.domain.email import ACTIONABLE, EmailStatus, ExpenseDraft
 from nexus.domain.errors import NexusError, NotFound
 from nexus.domain.money import Money
+from nexus.domain.notifications import Kind, Level
 from nexus.jobs.handlers import EMAIL_SWEEP
 
 router = APIRouter(prefix="/api/email")
@@ -125,6 +126,9 @@ async def callback(
                 "user_id": str(connection.user_id),
                 "text": f"✅ Connected {connection.address}. I'm looking for receipts from "
                 "the last 30 days now. Nothing is logged until you confirm it.",
+                "kind": Kind.EMAIL_STATUS,
+                "level": Level.NOW,
+                "link": "/settings/email",
             },
             dedupe_key=f"email.connected.tell:{connection.id}:{now}",
             run_at=now,

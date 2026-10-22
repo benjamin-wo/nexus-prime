@@ -169,6 +169,7 @@ async def test_the_first_sweep_looks_back_and_asks_once(
     }
     [summary] = await messages(engine)
     assert summary["text"].startswith("📧 I found 2 receipts from the last 30 days.")
+    assert (summary["kind"], summary["level"]) == ("receipt_question", "now")
     assert summary["buttons"] == [
         [{"label": "Review them", "data": "url:https://nexus.test/email"}]
     ]
@@ -193,6 +194,8 @@ async def test_the_first_sweep_looks_back_and_asks_once(
     assert question["text"] == "📧 From your email: 12.00 SGD at Grab on 27 Sep. Log it?"
     [[log_it, skip]] = question["buttons"]
     assert (log_it["label"], skip["label"]) == ("Log it", "Skip")
+    assert (question["kind"], question["level"]) == ("receipt_question", "now")
+    assert question["link"] == "/settings/email"
     assert log_it["data"].startswith("email:log:")
 
 
@@ -273,6 +276,7 @@ async def test_a_revoked_mailbox_stops_and_says_so_once(
     await sweep(uow, user, mailbox, connection, at=NOW + timedelta(minutes=2))
     [told] = await messages(engine)
     assert told["text"].startswith("I can't read ann@gmail.com any more")
+    assert (told["kind"], told["level"]) == ("email_status", "now")
     async with uow() as tx:
         assert await tx.email.connections_to_sweep() == []
         [broken] = await tx.email.list_connections(user.id)

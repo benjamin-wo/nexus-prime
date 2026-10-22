@@ -16,6 +16,7 @@ from nexus.application.ports import UnitOfWork
 from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.ledger import Direction, Source, Transaction, User, UserId
 from nexus.domain.money import Money
+from nexus.domain.notifications import Kind, Level
 from nexus.domain.planning import (
     PAYDAY_CHECKIN,
     PayRule,
@@ -154,7 +155,14 @@ async def payday_checkin(uow: UowFactory, user: User, *, now: datetime) -> int:
             buttons = []
         queued = await tx.jobs.enqueue(
             TELEGRAM_SEND,
-            {"user_id": str(user.id), "text": text, "buttons": buttons},
+            {
+                "user_id": str(user.id),
+                "text": text,
+                "buttons": buttons,
+                "kind": Kind.PAYDAY,
+                "level": Level.NOW,
+                "link": "/accounting",
+            },
             dedupe_key=f"payday:{user.id}:{today.isoformat()}",
             run_at=now,
         )

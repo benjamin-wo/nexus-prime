@@ -336,6 +336,31 @@ export type Updates = {
   move_alert_percent: string;
   /** The 08:00 summary of how the US market did, on a morning after a trading day. */
   market_summary: boolean;
+  /** Messages a day (3 to 20) before the rest wait for a digest. An urgent message, one with
+   * buttons and the summaries the user timed don't count. */
+  daily_cap: number;
+};
+/** How urgent a message to the user on Telegram is: urgent goes at once, now unless it is
+ * quiet hours or the day's cap is used up, digest only in a digest. */
+export type NotificationLevel = "urgent" | "now" | "digest";
+/** What became of it: sent, held for quiet hours or the next digest, told in a digest, or
+ * dropped (no Telegram chat to tell). */
+export type NotificationStatus = "sent" | "held" | "digested" | "dropped";
+/** One message Nexus meant to send the user on Telegram, kept for 30 days (GET
+ * /notifications/history, newest first). */
+export type NotificationEntry = {
+  id: string;
+  /** Short and stable, such as budget_alert or bill_reminder. */
+  kind: string;
+  level: NotificationLevel;
+  text: string;
+  /** A web path that opens what it is about. */
+  link: string | null;
+  status: NotificationStatus;
+  created_at: string;
+  /** When it went, alone or in a digest. */
+  sent_at: string | null;
+  held_until: string | null;
 };
 /** Whether the user is told on Telegram when someone else changes a trip they share. */
 export type TripAlerts = { enabled: boolean };

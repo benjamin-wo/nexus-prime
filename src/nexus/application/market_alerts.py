@@ -148,6 +148,7 @@ def _plan_alerts(
                     _text(plan, kind, picked.price, picked.at, tz),
                     urgent=kind is AlertKind.PLAN_STOP and holds,
                     buttons=(("Stop alerts for this plan", f"plan:mute:{plan.id}"),),
+                    link=f"/investment/plans/{plan.id}",
                 )
             )
     return found

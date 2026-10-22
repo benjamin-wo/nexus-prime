@@ -497,11 +497,38 @@ notification_settings = Table(
     Column("quiet_end", Time, nullable=False, server_default=text("'08:00:00'")),
     Column("move_alert_percent", Numeric(4, 1), nullable=False, server_default=text("5")),
     Column("market_summary", Boolean, nullable=False, server_default=text("true")),
+    # Messages a day before the rest wait for a digest (migration 0053).
+    Column("daily_cap", SmallInteger, nullable=False, server_default=text("6")),
     ForeignKeyConstraint(["user_id"], ["users.id"]),
     CheckConstraint(
         "frequency IN ('instant', 'hourly', 'thrice_daily', 'daily', 'off')", name="frequency"
     ),
     CheckConstraint("move_alert_percent BETWEEN 1 AND 20", name="move_alert_percent"),
+    CheckConstraint("daily_cap BETWEEN 3 AND 20", name="daily_cap"),
+)
+
+# Every message Nexus meant to send on Telegram, kept for 30 days: sent, held for quiet
+# hours or the next digest, told in a digest, or dropped (no chat to tell). See
+# nexus.domain.notifications (migration 0053).
+notifications = Table(
+    "notifications",
+    metadata,
+    _uuid_pk(),
+    _user_fk(),
+    Column("kind", Text, nullable=False),
+    Column("level", Text, nullable=False),
+    Column("text", Text, nullable=False),
+    Column("link", Text),
+    Column("has_buttons", Boolean, nullable=False, server_default=text("false")),
+    Column("created_at", TZ, nullable=False),
+    Column("status", Text, nullable=False),
+    Column("sent_at", TZ),
+    Column("held_until", TZ),
+    Column("digest_id", UUID(as_uuid=True)),
+    ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+    CheckConstraint("level IN ('urgent', 'now', 'digest')", name="level"),
+    CheckConstraint("status IN ('sent', 'held', 'digested', 'dropped')", name="status"),
+    Index("ix_notifications_user_id_created_at", "user_id", "created_at"),
 )
 
 # What Nexus remembers about a user, from their own words (see nexus.domain.memory).

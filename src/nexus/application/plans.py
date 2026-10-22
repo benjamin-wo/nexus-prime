@@ -56,6 +56,7 @@ from nexus.domain.ledger import User, UserId
 from nexus.domain.levels import Levels
 from nexus.domain.levels import describe as describe_levels
 from nexus.domain.market import PriceKind, describe_price_time
+from nexus.domain.notifications import Kind, Level
 from nexus.domain.odds import PlanOdds, describe_odds, describe_ranges, plan_odds, trading_days
 from nexus.domain.plans import (
     FOLLOWED,
@@ -854,7 +855,14 @@ async def _save(uow: UowFactory, ctx: StepContext, result: PlanResult) -> None:
                 # Through the normal send: it waits out quiet hours and is not urgent.
                 await tx.jobs.enqueue(
                     TELEGRAM_SEND,
-                    {"user_id": str(ctx.user.id), "text": text, "buttons": []},
+                    {
+                        "user_id": str(ctx.user.id),
+                        "text": text,
+                        "buttons": [],
+                        "kind": Kind.PLAN_REFRESH,
+                        "level": Level.DIGEST,
+                        "link": f"/investment/plans/{saved.id}",
+                    },
                     dedupe_key=f"plan-refresh:{saved.id}",
                     run_at=ctx.now,
                 )
@@ -1156,7 +1164,14 @@ async def _alert_events(tx: UnitOfWork, p: SavedPlan, f: Followed, now: datetime
         if kind is None:  # ran out: nothing a live price could have said
             queued += await tx.jobs.enqueue(
                 TELEGRAM_SEND,
-                {"user_id": str(p.user_id), "text": text, "buttons": []},
+                {
+                    "user_id": str(p.user_id),
+                    "text": text,
+                    "buttons": [],
+                    "kind": Kind.PLAN_EVENT,
+                    "level": Level.NOW,
+                    "link": f"/investment/plans/{p.id}",
+                },
                 dedupe_key=key,
                 run_at=now,
             )
@@ -1169,6 +1184,7 @@ async def _alert_events(tx: UnitOfWork, p: SavedPlan, f: Followed, now: datetime
             text,
             buttons=(mute,) if f.status is PlanStatus.OPEN else (),
             dedupe_key=key,
+            link=f"/investment/plans/{p.id}",
         )
         queued += await deliver(tx, user, settings, alert, now=now) is not Outcome.DUPLICATE
     return queued

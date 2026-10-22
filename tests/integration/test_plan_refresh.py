@@ -25,6 +25,7 @@ from nexus.application import plan_refresh as refresh_cases
 from nexus.application import plans as plan_cases
 from nexus.application import research as research_cases
 from nexus.application.budgets import TELEGRAM_SEND
+from nexus.application.messaging import send_digests
 from nexus.application.quotes import Quotes
 from nexus.domain.departments import Run, RunStatus
 from nexus.domain.errors import InvalidInput, NotFound
@@ -35,7 +36,6 @@ from nexus.evals.seed import open_plan
 from nexus.infra.db.migrations import alembic_config
 from nexus.infra.db.tables import jobs, plans
 from nexus.jobs.handlers import TelegramProgress, build_handlers
-from nexus.jobs.runner import Defer
 from tests.fakes import (
     NOW,
     FakeNews,
@@ -625,17 +625,20 @@ async def test_a_refresh_that_changed_the_verdict_is_told_through_the_normal_sen
     [message] = await telegram_texts(engine)
     assert message["key"] == f"plan-refresh:{new.id}" and message["buttons"] == []
     assert "urgent" not in message and "anytime" not in message
+    assert (message["kind"], message["level"]) == ("plan_refresh", "digest")
+    assert message["link"] == f"/investment/plans/{new.id}"
     assert message["text"].startswith("AMD plan refreshed (price moved ")
     assert " ATR): now " in message["text"] and ", was Wait. " in message["text"]
     assert "http" not in message["text"]
-    # It goes through the normal send: straight away by day, held during quiet hours.
+    # It goes through the normal send as a digest item: never alone, kept for the evening.
     telegram = FakeTelegram()
     payload = {k: v for k, v in message.items() if k != "key"}
     day = build_handlers(uow, telegram, FakeRates(), lambda: later)[TELEGRAM_SEND]
-    assert await day(payload) is None and telegram.sent[0].text == message["text"]
-    night_time = datetime(2026, 9, 29, 15, 30, tzinfo=UTC)  # 23:30 in Singapore
-    night = build_handlers(uow, FakeTelegram(), FakeRates(), lambda: night_time)[TELEGRAM_SEND]
-    assert isinstance(await night(payload), Defer)
+    assert await day(payload) is None and telegram.sent == []
+    evening = datetime(2026, 9, 29, 11, 0, tzinfo=UTC)  # 19:00 in Singapore
+    assert await send_digests(uow, now=evening) == 1
+    [digest] = [m for m in await telegram_texts(engine) if m["text"].startswith("While")]
+    assert digest["text"] == f"While you were away:\n• {message['text']}"
 
 
 async def test_an_automatic_run_shows_no_progress_but_the_users_own_run_does(

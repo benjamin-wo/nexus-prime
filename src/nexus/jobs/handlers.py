@@ -5,7 +5,6 @@ from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
-from zoneinfo import ZoneInfo
 
 from nexus.agent.memory_writer import MemoryWriter
 from nexus.agent.service import Button
@@ -19,6 +18,7 @@ from nexus.application import investments as investment_cases
 from nexus.application import market as market_cases
 from nexus.application import market_alerts as alert_cases
 from nexus.application import market_summary as summary_cases
+from nexus.application import messaging as message_cases
 from nexus.application import notifications as notify_cases
 from nexus.application import plan_refresh as refresh_cases
 from nexus.application import plans as plan_cases
@@ -39,7 +39,6 @@ from nexus.channels.telegram.client import TelegramClient, TelegramError
 from nexus.channels.telegram.webhook import UNDO_EXPIRE, kept_buttons
 from nexus.domain.departments import Run
 from nexus.domain.ledger import User, UserId
-from nexus.domain.planning import quiet_until
 from nexus.jobs.runner import Defer, Handler, Schedule
 
 log = logging.getLogger(__name__)
@@ -50,6 +49,8 @@ PAYDAY_SWEEP = "salary.sweep"
 RECEIPTS_PURGE = "receipts.purge"
 EMAIL_SWEEP = email_cases.SWEEP_JOB
 NOTIFY_SWEEP = "notify.sweep"
+NOTIFY_DIGEST = message_cases.DIGEST_SWEEP
+NOTIFY_PRUNE = message_cases.PRUNE_JOB
 SUBSCRIPTIONS_SWEEP = "subscriptions.sweep"
 MEMORY_UPDATE = "memory.update"  # in PRIVATE_KINDS: its payload is the user's words
 SCHEDULES = (
@@ -59,6 +60,8 @@ SCHEDULES = (
     Schedule(RECEIPTS_PURGE, timedelta(hours=1)),
     Schedule(EMAIL_SWEEP, timedelta(minutes=15)),
     Schedule(NOTIFY_SWEEP, timedelta(minutes=5)),
+    Schedule(NOTIFY_DIGEST, timedelta(minutes=10)),
+    Schedule(NOTIFY_PRUNE, timedelta(days=1)),
     Schedule(SUBSCRIPTIONS_SWEEP, timedelta(hours=6)),
     Schedule(market_cases.REFRESH_JOB, timedelta(hours=1)),
     Schedule(market_cases.NEWS_JOB, timedelta(hours=1)),
@@ -111,31 +114,15 @@ def build_handlers(
     quotes: Quotes | None = None,
 ) -> dict[str, Handler]:
     async def send(payload: dict[str, Any]) -> Defer | None:
-        """Message a user on Telegram, but not during their quiet hours."""
-        async with uow() as tx:
-            user = await tx.ledger.get_user(UserId(UUID(payload["user_id"])))
-            settings = await tx.planning.get_notifications(UserId(UUID(payload["user_id"])))
-        if user is None or user.telegram_chat_id is None:
-            return None  # nobody to tell; nothing to retry
-        # A message the user timed themselves (their daily summary) goes when they
-        # asked, and an urgent one (a stop on a stock they hold) at once: quiet hours or not.
-        later = (
-            None
-            if payload.get("anytime") or payload.get("urgent")
-            else quiet_until(
-                clock().astimezone(ZoneInfo(user.timezone)),
-                settings.quiet_start,
-                settings.quiet_end,
-            )
-        )
-        if later is not None:
-            return Defer(later)
-        buttons = [
-            [Button(str(b["label"]), str(b["data"])) for b in row]
-            for row in payload.get("buttons") or []
-        ]
-        await telegram.send_message(user.telegram_chat_id, str(payload["text"]), buttons or None)
-        return None
+        """Message a user on Telegram under their notification rules (see
+        ``application.messaging``): at once, held for quiet hours or a digest, and recorded."""
+
+        async def post(chat_id: int, text: str, rows: message_cases.Buttons) -> None:
+            buttons = [[Button(b["label"], b["data"]) for b in row] for row in rows]
+            await telegram.send_message(chat_id, text, buttons or None)
+
+        later = await message_cases.deliver(uow, payload, post, now=clock())
+        return Defer(later) if later is not None else None
 
     async def for_each_user(
         user_ids: list[UserId], what: str, check: Callable[[User], Awaitable[object]]
@@ -218,6 +205,16 @@ def build_handlers(
             "transaction updates",
             lambda user: notify_cases.notify(uow, rates, user, now=clock(), review_url=review_url),
         )
+
+    async def sweep_digests(_: dict[str, Any]) -> None:
+        queued = await message_cases.send_digests(uow, now=clock())
+        if queued:
+            log.info("digests: queued %d", queued)
+
+    async def prune_notifications(_: dict[str, Any]) -> None:
+        gone = await message_cases.prune(uow, now=clock())
+        if gone:
+            log.info("notifications: forgot %d", gone)
 
     async def sweep_subscriptions(_: dict[str, Any]) -> None:
         async with uow() as tx:
@@ -360,6 +357,8 @@ def build_handlers(
         MEMORY_UPDATE: update_memory,
         SUBSCRIPTIONS_SWEEP: sweep_subscriptions,
         NOTIFY_SWEEP: sweep_notifications,
+        NOTIFY_DIGEST: sweep_digests,
+        NOTIFY_PRUNE: prune_notifications,
         EMAIL_SWEEP: sweep_email,
         RECEIPTS_PURGE: purge_receipts,
         TELEGRAM_SEND: send,

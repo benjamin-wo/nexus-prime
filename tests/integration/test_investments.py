@@ -329,7 +329,8 @@ async def test_dividends_on_shares_held_when_they_went_ex(
     assert await investment_cases.collect_dividends(uow, now=NOW) == 0  # once each
     async with engine.connect() as db:
         texts = [r.payload["text"] for r in await db.execute(select(jobs))
-                 if r.kind == "telegram.send"]  # fmt: skip
+                 if r.kind == "telegram.send" and r.payload["kind"] == "dividend"
+                 and r.payload["level"] == "digest"]  # fmt: skip
     assert texts == [
         "💵 NVDA went ex-dividend on 15 Sep: 0.04 USD a share on your 10 shares is 0.40 USD, "
         "0.28 USD after 0.12 USD withheld. It's paid to your broker in the next few weeks."

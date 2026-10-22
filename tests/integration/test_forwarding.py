@@ -101,6 +101,7 @@ async def test_the_providers_confirmation_and_a_test_email_are_answered_in_chat(
         ]
     ]
     assert test["text"].startswith("✅ Your test email from ann@gmail.com arrived.")
+    assert (test["kind"], test["level"]) == ("email_status", "now")
     # Neither is read as a receipt, and neither is answered twice.
     assert await statuses(uow, user) == {"c1": "not_receipt", "t1": "not_receipt"}
     await sweep(uow, user, forwarding, at=NOW + timedelta(minutes=20))
@@ -130,6 +131,7 @@ async def test_a_quiet_address_gets_one_nudge(engine: AsyncEngine, uow: UowFacto
         "I haven't received any forwarded emails at nexus-inbox-1@agentmail.test "
         "since you set it up."
     )
+    assert (nudge["kind"], nudge["level"]) == ("email_status", "now")
 
 
 async def test_disconnecting_deletes_the_address(uow: UowFactory) -> None:

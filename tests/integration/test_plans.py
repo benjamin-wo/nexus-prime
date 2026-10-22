@@ -235,6 +235,8 @@ async def test_plans_are_followed_after_each_close_with_alerts(
     texts = {r.dedupe_key.rsplit(":", 1)[1]: r.payload for r in rows}
     assert texts["entry"]["text"].startswith("🟢 AMD dipped into its buy zone")
     assert texts["entry"]["buttons"] == []  # finished by the time the alerts went out
+    assert {(t["kind"], t["level"]) for t in texts.values()} == {("plan_event", "now")}
+    assert texts["entry"]["link"].startswith("/investment/plans/")
     assert texts["target"]["text"].startswith(f"🎯 AMD reached its first target, {target}")
     # Following again changes nothing and sends nothing twice.
     assert await plan_cases.follow_plans(uow, now=later) == 0

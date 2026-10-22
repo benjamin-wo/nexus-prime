@@ -43,6 +43,7 @@ from nexus.domain.market import (
     pick_price,
 )
 from nexus.domain.money import Money
+from nexus.domain.notifications import Kind, Level
 
 type UowFactory = Callable[[], UnitOfWork]
 
@@ -406,7 +407,13 @@ async def collect_dividends(uow: UowFactory, *, now: datetime) -> int:
                     found += 1
                     await tx.jobs.enqueue(
                         TELEGRAM_SEND,
-                        {"user_id": str(h.user_id), "text": describe_dividend(dividend)},
+                        {
+                            "user_id": str(h.user_id),
+                            "text": describe_dividend(dividend),
+                            "kind": Kind.DIVIDEND,
+                            "level": Level.DIGEST,
+                            "link": "/investment",
+                        },
                         dedupe_key=f"dividend:{dividend.id}",
                         run_at=now,
                     )

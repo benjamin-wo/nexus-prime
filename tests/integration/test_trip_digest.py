@@ -229,6 +229,8 @@ async def test_running_a_summary_twice_sends_it_once(
     assert (first, again) == (True, False)
     (send,) = await rows(engine, TELEGRAM_SEND)
     assert "buttons" not in send.payload  # no web address, no button
+    assert (send.payload["kind"], send.payload["level"]) == ("trip_activity", "now")
+    assert send.payload["link"] == f"/travel/trips/{trip.id}"
 
 
 async def test_an_edit_during_the_job_starts_the_next_summary(

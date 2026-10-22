@@ -3,11 +3,16 @@ ticker, price and headline here is made up."""
 
 from datetime import timedelta
 from typing import Any
+from uuid import uuid4
 
 import pytest
+from sqlalchemy import select
 
 from nexus.application import research as research_cases
 from nexus.application.limits import RateLimiter
+from nexus.domain.notifications import Level, Notification, Status
+from nexus.infra.db.tables import users
+from nexus.infra.db.uow import SqlUnitOfWork
 from tests.fakes import NOW, FakeNews, say
 from tests.integration import test_web_api
 from tests.integration.test_web_api import MEMBER, OWNER, World, owner_and_invite
@@ -196,6 +201,7 @@ async def test_the_market_alert_settings_default_and_change(world: World) -> Non
     current = (await owner.get("/api/notifications")).json()
     assert (current["quiet_start"], current["quiet_end"]) == ("23:00", "08:00")
     assert current["move_alert_percent"] == "5.0" and current["market_summary"] is True
+    assert current["daily_cap"] == 6
     changed = await owner.send(
         "PUT",
         "/api/notifications",
@@ -204,12 +210,14 @@ async def test_the_market_alert_settings_default_and_change(world: World) -> Non
             "quiet_end": "07:00",
             "move_alert_percent": "3",
             "market_summary": False,
+            "daily_cap": 10,
         },
     )
     assert changed.status_code == 200
     again = (await owner.get("/api/notifications")).json()
     assert (again["quiet_start"], again["quiet_end"]) == ("22:30", "07:00")
     assert again["move_alert_percent"] == "3.0" and again["market_summary"] is False
+    assert again["daily_cap"] == 10
     assert again["frequency"] == "daily"  # not touched
 
 
@@ -222,6 +230,16 @@ async def test_changing_how_often_leaves_the_market_alerts_alone(world: World) -
     got = (await owner.get("/api/notifications")).json()
     assert got["frequency"] == "hourly"
     assert got["move_alert_percent"] == "10.0" and got["market_summary"] is False
+
+
+async def test_the_daily_cap_takes_its_limits_and_survives_other_changes(world: World) -> None:
+    owner, _ = await owner_and_invite(world)
+    for cap in (3, 20):
+        sent = await owner.send("PUT", "/api/notifications", {"daily_cap": cap})
+        assert sent.status_code == 200 and sent.json()["daily_cap"] == cap
+    await owner.send("PUT", "/api/notifications", {"market_summary": False})
+    await owner.send("PUT", "/api/notifications", {"frequency": "hourly"})
+    assert (await owner.get("/api/notifications")).json()["daily_cap"] == 20
 
 
 async def test_equal_quiet_times_mean_no_quiet_hours(world: World) -> None:
@@ -241,6 +259,12 @@ async def test_equal_quiet_times_mean_no_quiet_hours(world: World) -> None:
         {"move_alert_percent": 100},
         {"move_alert_percent": -3},
         {"move_alert_percent": "lots"},
+        {"daily_cap": 2},
+        {"daily_cap": 21},
+        {"daily_cap": 0},
+        {"daily_cap": -6},
+        {"daily_cap": 4.5},
+        {"daily_cap": "many"},
         {"quiet_start": "25:00"},
         {"quiet_end": "late"},
         {"market_summary": "sometimes"},
@@ -256,3 +280,94 @@ async def test_bad_settings_are_refused_and_change_nothing(
     refused = await owner.send("PUT", "/api/notifications", body)
     assert refused.status_code == 422
     assert (await owner.get("/api/notifications")).json() == before
+
+
+# --- the record of messages ---------------------------------------------------------------
+
+
+def note(user_id: Any, text: str, status: str, at: Any, **changes: Any) -> Notification:
+    fields: dict[str, Any] = {
+        "kind": "bill_reminder",
+        "level": Level.NOW,
+        "link": "/accounting",
+        "has_buttons": False,
+        "sent_at": at if status == "sent" else None,
+        "held_until": None,
+    }
+    fields.update(changes)
+    return Notification(uuid4(), user_id, text=text, status=Status(status), created_at=at, **fields)
+
+
+async def user_id(world: World, telegram_id: int) -> Any:
+    async with world.engine.connect() as db:
+        return await db.scalar(select(users.c.id).where(users.c.telegram_user_id == telegram_id))
+
+
+async def test_the_history_lists_the_users_messages_of_30_days_newest_first(world: World) -> None:
+    owner, token = await owner_and_invite(world)
+    other = world.browser()
+    assert (await other.login(MEMBER, invite=token)).status_code == 200
+    mine, theirs = await user_id(world, OWNER), await user_id(world, MEMBER)
+    async with SqlUnitOfWork(world.engine) as tx:
+        for made in (
+            note(mine, "Rent is due in 3 days.", "sent", NOW - timedelta(hours=5)),
+            note(
+                mine,
+                "You've used 80% of Food.",
+                "digested",
+                NOW - timedelta(days=2),
+                level=Level.DIGEST,
+                kind="budget_alert",
+                sent_at=NOW - timedelta(days=1),
+            ),
+            note(
+                mine,
+                "Fresh Mart, S$23.40. Log it?",
+                "held",
+                NOW - timedelta(hours=1),
+                kind="receipt_question",
+                has_buttons=True,
+                link=None,
+                held_until=NOW + timedelta(hours=7),
+            ),
+            note(mine, "Too old.", "sent", NOW - timedelta(days=31)),
+            note(theirs, "Not yours.", "sent", NOW - timedelta(hours=2)),
+        ):
+            await tx.notifications.insert(made)
+        await tx.commit()
+    got = await owner.get("/api/notifications/history")
+    assert got.status_code == 200
+    rows = got.json()
+    assert [r["text"] for r in rows] == [
+        "Fresh Mart, S$23.40. Log it?",
+        "Rent is due in 3 days.",
+        "You've used 80% of Food.",
+    ]
+    held, sent, digested = rows
+    assert set(held) == {
+        "id",
+        "kind",
+        "level",
+        "text",
+        "link",
+        "status",
+        "created_at",
+        "sent_at",
+        "held_until",
+    }
+    assert (held["kind"], held["level"], held["status"], held["link"]) == (
+        "receipt_question",
+        "now",
+        "held",
+        None,
+    )
+    assert held["sent_at"] is None and held["held_until"].startswith("2026-09-28T")
+    assert (sent["status"], sent["link"], sent["held_until"]) == ("sent", "/accounting", None)
+    assert (digested["level"], digested["status"]) == ("digest", "digested")
+    assert digested["sent_at"] is not None
+    # The other user sees only their own, and nobody signed out sees any.
+    mine_only = (await other.get("/api/notifications/history")).json()
+    assert [r["text"] for r in mine_only] == ["Not yours."]
+    assert (await world.browser().get("/api/notifications/history")).status_code == 401
+    # The settings route is unchanged beside it.
+    assert (await owner.get("/api/notifications")).json()["frequency"] == "daily"

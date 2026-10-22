@@ -209,7 +209,7 @@ export async function fakeApi(
   /** Counts the to-dos and covers made here, for their ids. */
   let coverCount = 0;
   let dailyAt = "21:00";
-  const marketAlerts = { quiet_start: "23:00", quiet_end: "08:00", move_alert_percent: "5.0", market_summary: true };
+  const marketAlerts = { quiet_start: "23:00", quiet_end: "08:00", move_alert_percent: "5.0", market_summary: true, daily_cap: 6 };
   const state: {
     txs: Tx[];
     lastPress?: string;
@@ -2579,6 +2579,13 @@ export async function fakeApi(
           marketAlerts.move_alert_percent = percent.toFixed(1);
         }
         if (typeof body.market_summary === "boolean") marketAlerts.market_summary = body.market_summary;
+        if (body.daily_cap !== undefined && body.daily_cap !== null) {
+          const cap = Number(body.daily_cap);
+          if (!(Number.isInteger(cap) && cap >= 3 && cap <= 20)) {
+            return json(route, { detail: "the daily limit can be 3 to 20 messages" }, 422);
+          }
+          marketAlerts.daily_cap = cap;
+        }
       }
       const [h, m] = dailyAt.split(":").map(Number);
       const at = `${h % 12 || 12}${m ? `:${String(m).padStart(2, "0")}` : ""}${h < 12 ? "am" : "pm"}`;
@@ -2596,6 +2603,15 @@ export async function fakeApi(
             ? "You get a message for each transaction as it happens."
             : `You get a summary of your transactions ${options[state.frequency as keyof typeof options]}.`;
       return json(route, { frequency: state.frequency, daily_at: dailyAt, description, options, ...marketAlerts });
+    }
+    if (path === "/notifications/history" && method === "GET") {
+      // Made-up messages: one sent, one waiting for quiet hours to end, two told in a digest.
+      return json(route, [
+        { id: "n1", kind: "bill_reminder", level: "now", text: "Reminder: Rent is due in 3 days.", link: "/accounting", status: "sent", created_at: "2026-10-22T01:00:00Z", sent_at: "2026-10-22T01:00:00Z", held_until: null },
+        { id: "n2", kind: "receipt_question", level: "now", text: "Fresh Mart, S$23.40 on 21 Oct. Log it?", link: "/settings/email", status: "held", created_at: "2026-10-21T16:30:00Z", sent_at: null, held_until: "2026-10-22T00:00:00Z" },
+        { id: "n3", kind: "budget_alert", level: "digest", text: "You've used 80% of your overall budget for October: S$800.00 of S$1,000.00.", link: "/accounting/budgets", status: "digested", created_at: "2026-10-21T14:10:00Z", sent_at: "2026-10-22T00:00:00Z", held_until: null },
+        { id: "n4", kind: "big_move", level: "digest", text: "NVDA +5.4% today at 10:42pm, 182.40", link: "/investment/stocks/NVDA", status: "digested", created_at: "2026-10-21T14:42:00Z", sent_at: "2026-10-22T00:00:00Z", held_until: null },
+      ]);
     }
     if (path === "/salary" && method === "GET") {
       const pay = state.salary;

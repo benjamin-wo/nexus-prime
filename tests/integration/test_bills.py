@@ -84,6 +84,10 @@ async def test_reminders_at_7_3_1_days_once_each(engine: AsyncEngine, uow: UowFa
     buttons = (await reminders(engine))[0]["buttons"][0]
     assert [b["label"] for b in buttons] == ["Mark paid", "Snooze 1 day"]
     assert buttons[0]["data"].startswith("bill:paid:")
+    # A reminder with buttons the user acts on: now, with a link to the bills.
+    assert {(p["kind"], p["level"], p["link"]) for p in await reminders(engine)} == {
+        ("bill_reminder", "now", "/accounting")
+    }
 
     # Paid: the next month's due date takes over, with its own reminders.
     paid = await bill_cases.mark_paid(uow, user, rent.id, now=at(date(2026, 10, 15)))

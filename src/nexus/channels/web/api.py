@@ -25,6 +25,7 @@ from nexus.application import departments as department_cases
 from nexus.application import duplicates as duplicate_cases
 from nexus.application import home as home_cases
 from nexus.application import memory as memory_cases
+from nexus.application import messaging as message_cases
 from nexus.application import notifications as notify_cases
 from nexus.application import receipts as receipt_cases
 from nexus.application import salary as salary_cases
@@ -70,7 +71,13 @@ from nexus.domain.ledger import (
     Wallet,
 )
 from nexus.domain.money import Money
-from nexus.domain.notifications import Frequency, NotificationSettings, label
+from nexus.domain.notifications import (
+    Frequency,
+    Level,
+    NotificationSettings,
+    Status,
+    label,
+)
 from nexus.domain.planning import Cadence, PayRule, next_month_start
 from nexus.domain.statement_pdf import PAGE_BREAK
 from nexus.domain.statements import AmountSign, DateOrder, Mapping, StatementImport
@@ -2047,6 +2054,7 @@ class UpdatesOut(Model):
     quiet_end: str
     move_alert_percent: Decimal  # a stock moving this much in a day is a big move: 1 to 20
     market_summary: bool  # the morning summary of the US market
+    daily_cap: int  # messages a day before the rest wait for a digest: 3 to 20
 
 
 def _updates_out(settings: NotificationSettings) -> UpdatesOut:
@@ -2059,6 +2067,7 @@ def _updates_out(settings: NotificationSettings) -> UpdatesOut:
         quiet_end=settings.quiet_end.strftime("%H:%M"),
         move_alert_percent=settings.move_alert_percent,
         market_summary=settings.market_summary,
+        daily_cap=settings.daily_cap,
     )
 
 
@@ -2076,6 +2085,7 @@ class UpdatesIn(Model):
     quiet_end: time | None = None
     move_alert_percent: Decimal | None = None  # 1 to 20
     market_summary: bool | None = None
+    daily_cap: int | None = None  # 3 to 20
 
 
 @router.put("/notifications")
@@ -2097,6 +2107,7 @@ async def set_notifications(body: UpdatesIn, auth: Auth, web: Runtime) -> Update
             body.quiet_end,
             body.move_alert_percent,
             body.market_summary,
+            body.daily_cap,
         )
     ):
         updated = await notify_cases.set_market(
@@ -2107,8 +2118,41 @@ async def set_notifications(body: UpdatesIn, auth: Auth, web: Runtime) -> Update
             market_summary=body.market_summary,
             quiet_start=body.quiet_start,
             quiet_end=body.quiet_end,
+            daily_cap=body.daily_cap,
         )
     return _updates_out(updated)
+
+
+class NotificationOut(Model):
+    id: UUID
+    kind: str
+    level: Level
+    text: str
+    link: str | None  # a web path that opens what it is about
+    status: Status
+    created_at: datetime
+    sent_at: datetime | None  # when it went, alone or in a digest
+    held_until: datetime | None
+
+
+@router.get("/notifications/history")
+async def notification_history(auth: Auth, web: Runtime) -> list[NotificationOut]:
+    """What Nexus meant to tell the user on Telegram in the last 30 days, newest first."""
+    found = await message_cases.history(web.uow(), auth.user.id, now=web.clock())
+    return [
+        NotificationOut(
+            id=n.id,
+            kind=n.kind,
+            level=n.level,
+            text=n.text,
+            link=n.link,
+            status=n.status,
+            created_at=n.created_at,
+            sent_at=n.sent_at,
+            held_until=n.held_until,
+        )
+        for n in found
+    ]
 
 
 # --- Telegram message when someone changes a trip the user shares ---------------------

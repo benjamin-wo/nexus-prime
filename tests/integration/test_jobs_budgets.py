@@ -19,7 +19,7 @@ from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.ledger import Direction, User, UserId
 from nexus.domain.money import Money
 from nexus.infra.db.tables import budget_alerts, jobs
-from nexus.jobs.handlers import BUDGETS_SWEEP, MEMORY_UPDATE, build_handlers
+from nexus.jobs.handlers import BUDGETS_SWEEP, MEMORY_UPDATE, NOTIFY_DIGEST, build_handlers
 from nexus.jobs.runner import MAX_ATTEMPTS, Defer, JobRunner, Schedule
 from tests.fakes import FakeRates, FakeTelegram
 from tests.integration.conftest import UowFactory
@@ -361,25 +361,58 @@ def handlers_for(uow: UowFactory, clock: Clock) -> tuple[FakeTelegram, Callable[
     return telegram, lambda: build_handlers(uow, telegram, FakeRates(), clock)
 
 
-async def test_sweep_sends_alerts_outside_quiet_hours(engine: AsyncEngine, uow: UowFactory) -> None:
+async def test_sweep_holds_a_budget_alert_in_quiet_hours_for_the_morning_digest(
+    engine: AsyncEngine, uow: UowFactory
+) -> None:
     user = await sgt_user(uow)
     await budget_cases.set_budget(uow(), user, None, sgd("100"), now=NOON_SGT)
     late = Clock(datetime(2026, 9, 28, 15, 0, tzinfo=UTC))  # 23:00 in Singapore
     await spend(uow, user.id, "85", late.now)
     telegram, handlers = handlers_for(uow, late)
     runner = JobRunner(
-        engine, handlers(), schedules=[Schedule(BUDGETS_SWEEP, timedelta(minutes=10))], clock=late
+        engine,
+        handlers(),
+        schedules=[
+            Schedule(BUDGETS_SWEEP, timedelta(minutes=10)),
+            Schedule(NOTIFY_DIGEST, timedelta(minutes=10)),
+        ],
+        clock=late,
     )
     await runner.tick()  # sweep queues the alert
-    await runner.tick()  # send is due but it's quiet hours
+    await runner.tick()  # send is due but it's quiet hours: held
     assert telegram.sent == []
     (send,) = [r for r in await job_rows(engine) if r.kind == TELEGRAM_SEND]
-    assert send.run_at == datetime(2026, 9, 29, 0, 0, tzinfo=UTC)  # 08:00 SGT
-    late.now = send.run_at
-    await runner.tick()
+    assert (send.payload["kind"], send.payload["level"]) == ("budget_alert", "digest")
+    assert send.payload["link"] == "/accounting/budgets"
+    async with uow() as tx:
+        (held,) = await tx.notifications.recent(user.id, NOON_SGT - timedelta(days=1))
+    assert held.status.value == "held" and held.held_until == datetime(
+        2026, 9, 29, 0, 0, tzinfo=UTC
+    )  # 08:00 SGT
+    late.now = held.held_until
+    while await runner.tick():  # the digest sweep, then the digest itself
+        pass
     assert [(s.chat_id, s.text) for s in telegram.sent] == [
-        (4242, "You've used 80% of your overall budget for September: 85.00 SGD of 100.00 SGD.")
+        (
+            4242,
+            "While you were away:\n"
+            "• You've used 80% of your overall budget for September: 85.00 SGD of 100.00 SGD.",
+        )
     ]
+
+
+async def test_a_budget_at_its_limit_is_a_now_message_and_at_80_percent_a_digest_one(
+    engine: AsyncEngine, uow: UowFactory
+) -> None:
+    user = await sgt_user(uow)
+    await budget_cases.set_budget(uow(), user, None, sgd("100"), now=NOON_SGT)
+    await spend(uow, user.id, "85", NOON_SGT)
+    assert await budget_cases.check_budgets(uow, FakeRates(), user, now=NOON_SGT) == 1
+    await spend(uow, user.id, "20", NOON_SGT)
+    assert await budget_cases.check_budgets(uow, FakeRates(), user, now=NOON_SGT) == 1
+    levels = {r.payload["text"][:20]: r.payload["level"] for r in await job_rows(engine)}
+    assert sorted(levels.values()) == ["digest", "now"]
+    assert {r.payload["kind"] for r in await job_rows(engine)} == {"budget_alert"}
 
 
 async def test_a_message_the_user_timed_goes_in_quiet_hours(uow: UowFactory) -> None:
@@ -388,7 +421,7 @@ async def test_a_message_the_user_timed_goes_in_quiet_hours(uow: UowFactory) -> 
     late = Clock(datetime(2026, 9, 28, 15, 59, tzinfo=UTC))  # 23:59 SGT
     telegram, handlers = handlers_for(uow, late)
     send = handlers()[TELEGRAM_SEND]
-    waited = await send({"user_id": str(user.id), "text": "budget alert"})
-    assert isinstance(waited, Defer) and telegram.sent == []
+    assert await send({"user_id": str(user.id), "text": "budget alert"}) is None
+    assert telegram.sent == []  # held for the morning digest
     assert await send({"user_id": str(user.id), "text": "🧾 Today", "anytime": True}) is None
     assert [s.text for s in telegram.sent] == ["🧾 Today"]
