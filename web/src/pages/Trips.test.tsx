@@ -66,8 +66,19 @@ describe("the trips list", () => {
 
     mockApi({ "GET /me": () => me("owner"), "GET /travel/trips": () => [], "GET /travel/bookings": () => [], "GET /runs": () => [] });
     const { container } = renderWithProviders(<TripsPage />);
-    await screen.findByText(/No trips yet/);
+    await screen.findByRole("heading", { name: "Where to next?" });
     expect(container.querySelector(".trips-summary")).toBeNull();
+  });
+
+  it("with no trips leads with Where to next and New trip, and has no second empty-state card", async () => {
+    mockApi({ "GET /me": () => me("owner"), "GET /travel/trips": () => [], "GET /travel/bookings": () => [], "GET /runs": () => [] });
+    renderWithProviders(<TripsPage onAsk={() => {}} />);
+    await screen.findByRole("heading", { name: "Where to next?" });
+    expect(screen.getByRole("button", { name: "New trip" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Japan in spring" })).toBeInTheDocument();
+    expect(screen.getByText(/Nexus looks up when to go/)).toBeInTheDocument();
+    expect(screen.queryByText(/No trips yet/)).toBeNull();
+    expect(screen.getByRole("heading", { level: 1 }).closest(".page-head")?.nextElementSibling?.getAttribute("aria-labelledby")).toBe("where-next");
   });
 
   it("keeps past trips behind a button, shut at first, and opens them as rows linking to each trip", async () => {

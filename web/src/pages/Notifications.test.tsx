@@ -147,6 +147,10 @@ describe("Notifications page", () => {
     await open([entry("5", "2026-10-22T00:00:00Z", { text: long })]);
     const more = screen.getByRole("button", { name: "Show more" });
     expect(more).toHaveAttribute("aria-expanded", "false");
+    // Folded it runs on as one paragraph, so the clamp's ellipsis never follows a line-ending full
+    // stop ("session.…") and no "…" of our own is added to the words.
+    expect(document.querySelector(".note-text")?.textContent).toBe(long.replaceAll("\n", " "));
+    expect(document.querySelector(".note-text")?.textContent).not.toContain("…");
     await userEvent.click(more);
     expect(screen.getByRole("button", { name: "Show less" })).toHaveAttribute("aria-expanded", "true");
     expect(document.querySelector(".note-text")).toHaveClass("open");

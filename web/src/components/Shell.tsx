@@ -31,6 +31,22 @@ function useScrollingDown(area: RefObject<HTMLElement | null>, page: string): bo
   return down;
 }
 
+/** The bottom bar's height (its safe-area padding too), kept in --bar-h on the shell so the page's
+ * bottom padding always clears the bar, whatever the text size or the device's inset. */
+function useBarHeight(shell: RefObject<HTMLElement | null>, bar: RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    const root = shell.current;
+    const el = bar.current;
+    if (!root || !el) return;
+    const measure = () => root.style.setProperty("--bar-h", `${el.offsetHeight}px`);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const watcher = new ResizeObserver(measure);
+    watcher.observe(el);
+    return () => watcher.disconnect();
+  }, [shell, bar]);
+}
+
 /** A page inside a section (a trip, a stock, a plan) and where "back" goes when
  * there's no earlier page to return to. */
 const DETAIL: [RegExp, string][] = [
@@ -118,6 +134,9 @@ export function Shell({
   const content = useRef<HTMLDivElement>(null);
   const viewport = useRef<HTMLElement>(null);
   const scrolling = useScrollingDown(viewport, pathname);
+  const shell = useRef<HTMLDivElement>(null);
+  const bar = useRef<HTMLElement>(null);
+  useBarHeight(shell, bar);
   useReveal(content);
   // The rail names each place in full; the bottom bar on a phone uses a short word under the icon,
   // and its accessible name keeps the full one ("Money (Accounting)").
@@ -182,7 +201,7 @@ export function Shell({
     </button>
   );
   return (
-    <div className={`shell${scrolling ? " scrolling-down" : ""}`}>
+    <div className={`shell${scrolling ? " scrolling-down" : ""}`} ref={shell}>
       <nav className="rail" aria-label="Main">
         <div className="brand">
           <BrandMark />
@@ -221,7 +240,7 @@ export function Shell({
       </main>
       {/* Home and Money, Nexus in the middle, then Invest and Travel, each with a short label
           under its icon. Settings is on Home (top right). */}
-      <nav className="bottom-nav" aria-label="Main (mobile)">
+      <nav className="bottom-nav" aria-label="Main (mobile)" ref={bar}>
         {links(true).slice(0, 2)}
         {nexus("in-bar")}
         {links(true).slice(2)}

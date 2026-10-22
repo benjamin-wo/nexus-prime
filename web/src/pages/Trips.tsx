@@ -329,13 +329,11 @@ export function TripsPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
       )}
       {trips.isLoading && <p className="state">Loading…</p>}
       {trips.isError && <p className="error-text">Couldn't load your trips.</p>}
-      {trips.data && everything.length === 0 && !adding && (
+      {/* Someone with trips of their own and none yet is led by "Where to next?" below, which already
+          offers to add one or have Nexus research it; only a guest, who has no such card, is told. */}
+      {trips.data && everything.length === 0 && !adding && guest && (
         <section className="card">
-          <p className="state">
-            {guest
-              ? "You're not on any trips yet. Open an invite link to join one."
-              : `No trips yet. Add one here, or tell Nexus: "I'm going to Tokyo 10 to 20 Jan, budget 3000", or "I want to go to Japan in January" to have it researched.`}
-          </p>
+          <p className="state">You're not on any trips yet. Open an invite link to join one.</p>
         </section>
       )}
       {onNow.length > 0 && tripGroup("On now", onNow)}

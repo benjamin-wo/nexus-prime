@@ -70,7 +70,7 @@ export function statusLabel(entry: NotificationEntry, timeZone: string, now: Dat
   }
 }
 
-/** The message's words, two lines of them until "Show more" (if it is longer). A message with a
+/** The message's words, two lines of them (the CSS clamp adds the one "…") until "Show more" (if it is longer). A message with a
  * link opens it from its text; the button is separate so both work. */
 function MessageText({ entry }: { entry: NotificationEntry }) {
   const [open, setOpen] = useState(false);
@@ -91,11 +91,10 @@ function MessageText({ entry }: { entry: NotificationEntry }) {
     return () => watcher?.disconnect();
   }, [entry.text, open]);
 
-  const words = entry.link?.startsWith("/") ? (
-    <Link to={entry.link}>{entry.text}</Link>
-  ) : (
-    entry.text
-  );
+  // Folded, the text runs on as one paragraph: a line break kept there would end a line on its full
+  // stop and the clamp would add its "…" right after it ("session.…"). Opened, the breaks come back.
+  const shown = open ? entry.text : entry.text.replace(/\s*\n\s*/g, " ");
+  const words = entry.link?.startsWith("/") ? <Link to={entry.link}>{shown}</Link> : shown;
   return (
     <>
       <p id={id} ref={text} className={`note-text${open ? " open" : ""}`}>
