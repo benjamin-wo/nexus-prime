@@ -8,7 +8,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
@@ -48,6 +48,7 @@ from nexus.application import subscriptions as subscription_cases
 from nexus.application import transactions as tx_cases
 from nexus.application import travel_research as research_cases
 from nexus.application import trip_access as access_cases
+from nexus.application import undo as undo_cases
 from nexus.application.categories import list_categories
 from nexus.application.fx import RateSource
 from nexus.application.limits import RateLimiter
@@ -566,12 +567,15 @@ class AgentService:
                 trip_id=shared.trip.id if shared else None,
                 asked=asked,
                 with_costs=shared is None,
+                # The person chatting is who Undo is for, on a shared trip too.
+                record=booking_cases.ChatEdit(uuid4(), actor, self._clock()),
             )
         except InvalidInput as exc:
             return [Reply(str(exc))] if asked else None
         if result is None:
             return None
-        replies = [Reply(booking_cases.describe_screenshot(result))]
+        undoable = any(s.trip is not None for s in result.saved)
+        replies = [Reply(booking_cases.describe_screenshot(result), [[UNDO]] if undoable else [])]
         if shared is not None:
             if result.saved:
                 await access_cases.record(
@@ -608,11 +612,13 @@ class AgentService:
         trip_id: UUID | None = None,
         asked: bool = True,
         with_costs: bool = True,
+        record: booking_cases.ChatEdit | None = None,
     ) -> booking_cases.FromScreenshot | None:
         """Read a screenshot of bookings or plans onto the user's trips (or onto
         ``trip_id``). None when it isn't one and the user didn't say it was;
         InvalidInput when nothing usable was found or it couldn't be read. Without
-        ``with_costs`` any prices on it are dropped, not saved."""
+        ``with_costs`` any prices on it are dropped, not saved. With ``record`` (from chat)
+        what lands on a trip is kept for Undo."""
         if self._trips is None:
             raise InvalidInput("reading screenshots isn't set up yet")
         user = await get_user(self._uow(), actor)
@@ -634,7 +640,7 @@ class AgentService:
         if not entries:
             raise InvalidInput(_NO_ENTRIES.text)
         return await booking_cases.add_from_screenshot(
-            self._uow(), user, entries, trip_id=trip_id, now=now
+            self._uow(), user, entries, trip_id=trip_id, now=now, record=record
         )
 
     async def _holdings_photo(
@@ -990,9 +996,11 @@ class AgentService:
                 async with self._locks[actor]:
                     await self._decline_pending(actor)
                     try:
-                        result = await tx_cases.undo_last(self._uow(), actor)
+                        result = await undo_cases.undo_latest(self._uow(), actor)
                     except NexusError as exc:
                         return [Reply(str(exc).capitalize() + ".")]
+                if isinstance(result, undo_cases.TripUndo):
+                    return [Reply(result.message())]
                 tx = result.transaction
                 what = f"{tx.amount} {tx.counterparty}" if tx.counterparty else str(tx.amount)
                 return [Reply(f"Undone: the {result.undone.value} of {what}.")]

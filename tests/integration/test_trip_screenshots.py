@@ -6,6 +6,7 @@ from datetime import date
 import pytest
 
 from nexus.agent.receipts import ReceiptDraft
+from nexus.agent.service import UNDO
 from nexus.agent.trip_reader import TripShot
 from nexus.application import trips as trip_cases
 from nexus.domain.bookings import BookingKind
@@ -56,6 +57,25 @@ async def test_a_booking_screenshot_lands_on_the_trip_with_its_reference(
     # The same screenshot again adds nothing twice.
     again = only(await agent.handle_photo(user.id, b"png", "image/png", "booking", "p2"))
     assert again.text == "4 are already on the itinerary, so I left them."
+
+
+async def test_undo_takes_a_screenshots_entries_off_the_trip_again(uow: UowFactory) -> None:
+    user = await person(uow)
+    trip = await tokyo(uow, user)
+    agent = build(uow, scripted(), trips=FakeTripReader())
+    reply = only(await agent.handle_photo(user.id, b"png", "image/png", "my hotel booking", "p1"))
+    assert reply.buttons == [[UNDO]]
+    assert len((await trip_cases.trip_view(uow, RATES, user, trip.id, now=NOW)).bookings) == 4
+
+    (undone,) = await agent.quick_action(user.id, "undo")
+    assert undone.text.startswith("Undone: ") and "off the Tokyo trip" in undone.text
+    assert (await trip_cases.trip_view(uow, RATES, user, trip.id, now=NOW)).bookings == []
+    # Sent again it adds them again; a third time nothing is added, so no Undo to offer.
+    again = only(await agent.handle_photo(user.id, b"png", "image/png", "booking", "p2"))
+    assert again.buttons == [[UNDO]]
+    repeat = only(await agent.handle_photo(user.id, b"png", "image/png", "booking", "p3"))
+    assert repeat.text.endswith("already on the itinerary, so I left them.")
+    assert repeat.buttons == []
 
 
 async def test_a_photo_the_receipt_reader_calls_travel_goes_to_the_trip(

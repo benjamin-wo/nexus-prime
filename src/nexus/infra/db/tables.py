@@ -1237,6 +1237,29 @@ trip_bookings = Table(
     Index("ix_trip_bookings_user_id_start_on", "user_id", "start_on"),
 )
 
+# Itinerary changes made from chat, kept so Undo can reverse them (migration 0054). The
+# booking has no foreign key: it may have been deleted since. ``seq`` orders changes
+# made at the same instant.
+trip_changes = Table(
+    "trip_changes",
+    metadata,
+    _uuid_pk(),
+    _user_fk(),
+    Column("trip_id", UUID(as_uuid=True), nullable=False),
+    Column("booking_id", UUID(as_uuid=True), nullable=False),
+    Column("kind", Text, nullable=False),
+    Column("before", JSONB),
+    Column("after", JSONB),
+    Column("batch", UUID(as_uuid=True)),
+    Column("created_at", TZ, nullable=False),
+    Column("undone_at", TZ),
+    Column("seq", BigInteger, Identity(), nullable=False),
+    ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+    ForeignKeyConstraint(["trip_id"], ["trips.id"], ondelete="CASCADE"),
+    CheckConstraint("kind IN ('add', 'remove', 'change')", name="kind"),
+    Index("ix_trip_changes_user_id_created_at", "user_id", text("created_at DESC")),
+)
+
 # Travel reminders already sent (passport, check-in, hotel address), once each.
 trip_reminders = Table(
     "trip_reminders",

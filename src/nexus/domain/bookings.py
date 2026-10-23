@@ -395,6 +395,27 @@ class BookingDraft:
         text = self._what()
         return f"{text[:-1]}; {extra})" if extra else text
 
+    def brief(self) -> str:
+        """The short form for a confirmation or a chat reply: the name with its day and
+        time (a stay's dates), without the address, reference or where it was booked.
+        ``describe`` keeps those, for the places that list an entry in full."""
+        if self.kind is BookingKind.ACTIVITY:
+            if self.day is None:
+                return f"{self.title} (place to visit)"
+            when = f"{self.day:%a %d %b}"
+            if self.at:
+                when += f" {self.at:%H:%M}"
+            return f"{self.title} ({when})"
+        if self.kind is BookingKind.HOTEL:
+            name = self.hotel or self.provider or "Hotel"
+            if not self.check_in:
+                return name
+            stay = f"{self.check_in:%d %b}"
+            if self.check_out:
+                stay += f" to {self.check_out:%d %b}"
+            return f"{name} ({stay})"
+        return self._what()
+
     def _what(self) -> str:
         if self.kind is BookingKind.ACTIVITY and self.day is None:
             tag = f", {self.category}" if self.category else ""

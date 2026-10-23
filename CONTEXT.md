@@ -18,6 +18,7 @@ The shared language for code, tests and docs. When a term here and a name in cod
 - **Source**: where a transaction came from: `text`, `photo`, `email`, `import` or `manual`.
 - **Transaction source record**: the `(user, source, external_id)` key for anything ingested from outside (an email message, a statement row). It outlives a deleted transaction, so it doubles as the **tombstone** that stops the same item being imported again.
 - **Revision**: a snapshot taken on create, edit, delete or restore. Undo and history are built from revisions.
+- **Trip change**: an itinerary entry added, removed or changed from chat, kept with the entry as it was. Undo reverses the newest revision or trip change, and a whole chat message's trip changes (its **batch**) together.
 - **Soft delete**: setting `deleted_at` instead of removing the row, so a delete can be restored.
 - **Split**: one participant's share of a transaction paid by the user. An unpaid split is an **IOU**.
 - **Settlement**: money in that pays off all or part of a split.

@@ -27,6 +27,7 @@ from nexus.domain.trip_access import (
     TripMember,
     TripRole,
 )
+from nexus.domain.trip_changes import ChangeKind, TripChange
 from nexus.domain.trips import GettingAround, Share, Stop, Trip
 from nexus.infra.db.ledger_repository import _transaction
 from nexus.infra.db.tables import (
@@ -36,6 +37,7 @@ from nexus.infra.db.tables import (
     transactions,
     trip_activity,
     trip_bookings,
+    trip_changes,
     trip_covers,
     trip_invites,
     trip_links,
@@ -404,6 +406,56 @@ class SqlTripRepository:
             )
         )
         return bool(result.rowcount)
+
+    # --- itinerary changes made from chat, for Undo -----------------------------------
+
+    async def insert_change(self, change: TripChange) -> None:
+        await self._db.execute(
+            insert(trip_changes).values(
+                id=change.id,
+                user_id=change.user_id,
+                trip_id=change.trip_id,
+                booking_id=change.booking_id,
+                kind=change.kind.value,
+                before=change.before,
+                after=change.after,
+                batch=change.batch,
+                created_at=change.created_at,
+            )
+        )
+
+    async def latest_open_change(self, user_id: UserId) -> TripChange | None:
+        c = trip_changes.c
+        row = (
+            await self._db.execute(
+                select(trip_changes)
+                .where(c.user_id == user_id, c.undone_at.is_(None))
+                .order_by(c.created_at.desc(), c.seq.desc())
+                .limit(1)
+                .with_for_update()
+            )
+        ).first()
+        return _change(row) if row else None
+
+    async def open_batch(self, user_id: UserId, batch: UUID) -> list[TripChange]:
+        c = trip_changes.c
+        rows = await self._db.execute(
+            select(trip_changes)
+            .where(c.user_id == user_id, c.batch == batch, c.undone_at.is_(None))
+            .order_by(c.created_at.desc(), c.seq.desc())
+            .with_for_update()
+        )
+        return [_change(r) for r in rows]
+
+    async def mark_changes_undone(
+        self, user_id: UserId, change_ids: list[UUID], at: datetime
+    ) -> None:
+        c = trip_changes.c
+        await self._db.execute(
+            update(trip_changes)
+            .where(c.user_id == user_id, c.id.in_(change_ids))
+            .values(undone_at=at)
+        )
 
     # --- splitting costs and settling up ---------------------------------------------
 
@@ -1045,6 +1097,21 @@ def _trip_invite(row: Row[Any]) -> TripInvite:
         redeemed_at=row.redeemed_at,
         redeemed_by=UserId(row.redeemed_by) if row.redeemed_by else None,
         revoked_at=row.revoked_at,
+    )
+
+
+def _change(row: Row[Any]) -> TripChange:
+    return TripChange(
+        id=row.id,
+        user_id=UserId(row.user_id),
+        trip_id=row.trip_id,
+        booking_id=row.booking_id,
+        kind=ChangeKind(row.kind),
+        before=row.before,
+        after=row.after,
+        batch=row.batch,
+        created_at=row.created_at,
+        undone_at=row.undone_at,
     )
 
 

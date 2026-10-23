@@ -110,19 +110,17 @@ async def test_hotels_in_chat_default_to_the_trip_and_can_be_changed(uow: UowFac
 
     # No dates given: the stay is the whole trip.
     added = await use("add_to_itinerary", {"kind": "hotel", "name": "Hotel Kawa"})
-    assert added.startswith("Added to the Osaka itinerary: hotel booking (Hotel Kawa")
-    assert added.endswith("10 Dec to 14 Dec).")
+    assert added == "Added Hotel Kawa (10 Dec to 14 Dec) to the Osaka trip."
     await use("add_to_itinerary", {"kind": "activity", "name": "Castle tour", "day": "2026-12-11"})
     # Only what changed changes.
     change = tools["change_itinerary_entry"]
     assert change.confirm is not None
-    asked = await change.confirm(ctx, change.parse({"item": "kawa", "until": "2026-12-13"}))
-    assert asked.startswith("Change hotel booking (Hotel Kawa") and "10 Dec to 13 Dec)?" in asked
+    # Nothing to ask on one's own trip when no cost is involved: it is made at once.
+    assert await change.confirm(ctx, change.parse({"item": "kawa", "until": "2026-12-13"})) == ""
     changed = await use("change_itinerary_entry", {"item": "kawa", "until": "2026-12-13"})
-    assert changed.startswith("Changed on the Osaka itinerary: hotel booking (Hotel Kawa")
-    assert changed.endswith("10 Dec to 13 Dec).")
+    assert changed == "Changed to Hotel Kawa (10 Dec to 13 Dec) on the Osaka trip."
     moved = await use("change_itinerary_entry", {"item": "castle", "time": "10:30"})
-    assert "Castle tour, Fri 11 Dec 10:30" in moved
+    assert moved == "Changed to Castle tour (Fri 11 Dec 10:30) on the Osaka trip."
     async with uow() as tx:
         stored = await tx.trips.list_bookings(user.id)
     (hotel,) = [b for b in stored if b.draft.kind is BookingKind.HOTEL]
@@ -151,7 +149,7 @@ async def test_places_to_visit_days_and_what_the_trip_still_needs(uow: UowFactor
         {"kind": "activity", "name": "Namdaemun Market", "category": "Shopping", "cost": "20000",
          "currency": "KRW"},
     )  # fmt: skip
-    assert saved == ("Added to the Seoul itinerary: place to visit (Namdaemun Market, Shopping).")
+    assert saved == "Added Namdaemun Market (place to visit) to the Seoul trip."
     view = await trip_cases.trip_view(uow, RATES, user, trip.id, now=NOW)
     (place,) = view.bookings
     assert not place.scheduled and view.booked is None  # an idea isn't booked
@@ -163,7 +161,7 @@ async def test_places_to_visit_days_and_what_the_trip_still_needs(uow: UowFactor
 
     # Given a day, it's on the itinerary.
     moved = await use("change_itinerary_entry", {"item": "namdaemun", "day": "2026-12-08"})
-    assert "plan (Namdaemun Market, Tue 08 Dec" in moved
+    assert moved == "Changed to Namdaemun Market (Tue 08 Dec) on the Seoul trip."
     view = await trip_cases.trip_view(uow, RATES, user, trip.id, now=NOW)
     assert view.bookings[0].scheduled
 
@@ -209,7 +207,7 @@ async def test_chat_puts_a_plan_after_another_and_says_what_clashes(uow: UowFact
         {"kind": "activity", "name": "Tea ceremony", "day": day, "time": "14:00",
          "ends": "15:30", "link": "https://tea.example.com/book"},
     )  # fmt: skip
-    assert "Tea ceremony, Fri 11 Dec 14:00 to 15:30" in added
+    assert added == "Added Tea ceremony (Fri 11 Dec 14:00) to the Osaka trip."
     await use(
         "add_to_itinerary", {"kind": "activity", "name": "Castle tour", "day": day, "time": "15:00"}
     )
@@ -219,8 +217,15 @@ async def test_chat_puts_a_plan_after_another_and_says_what_clashes(uow: UowFact
 
     change = tools["change_itinerary_entry"]
     assert change.confirm is not None
-    asked = await change.confirm(ctx, change.parse({"item": "sushi", "after": "castle"}))
-    assert asked.endswith(", after Castle tour?")
+    # Putting a plan in order is no cost: no question. With a cost on the entry there is.
+    assert await change.confirm(ctx, change.parse({"item": "sushi", "after": "castle"})) == ""
+    asked = await change.confirm(
+        ctx, change.parse({"item": "sushi", "after": "castle", "cost": "1200", "currency": "JPY"})
+    )
+    assert asked == (
+        "Change Kaiten sushi (Fri 11 Dec) to Kaiten sushi (Fri 11 Dec), 1200 JPY, after "
+        "Castle tour on the Osaka trip?"
+    )
     await use("change_itinerary_entry", {"item": "sushi", "after": "castle"})
     async with uow() as tx:
         stored = await tx.trips.list_bookings(user.id)

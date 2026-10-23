@@ -20,6 +20,7 @@ from nexus.domain.errors import Conflict, InvalidInput, NotFound, NothingToUndo
 from nexus.domain.ledger import (
     Direction,
     Lineage,
+    Revision,
     RevisionKind,
     Source,
     Split,
@@ -303,61 +304,65 @@ async def undo_last(uow: UnitOfWork, actor: UserId) -> UndoResult:
     Repeated calls walk further back. An undo is not itself undoable.
     """
     async with uow:
-        repo = uow.ledger
-        revision = await repo.latest_open_revision(actor)
+        revision = await uow.ledger.latest_open_revision(actor)
         if revision is None:
             raise NothingToUndo("there is nothing to undo")
-        tx = await repo.get_transaction(actor, revision.transaction_id, for_update=True)
-        if tx is None:  # pragma: no cover - revisions only point at this user's rows
-            raise NotFound("transaction not found")
-        now = utcnow()
-
-        if revision.kind is RevisionKind.CREATE:
-            reverted = replace(tx, deleted_at=now, updated_at=now)
-        elif revision.kind is RevisionKind.SPLIT:
-            if await repo.has_settlements(actor, tx.id):
-                raise Conflict("repayments were recorded against this split, so it can't be undone")
-            previous = (revision.before or {}).get("splits", [])
-            await repo.replace_splits(
-                actor,
-                tx.id,
-                [
-                    Split(
-                        uuid4(),
-                        actor,
-                        tx.id,
-                        item["participant_name"],
-                        Money.of(item["share"], tx.amount.currency),
-                    )
-                    for item in previous
-                ],
-            )
-            reverted = tx
-        else:
-            if revision.before is None:  # pragma: no cover - only CREATE has no snapshot
-                raise NothingToUndo("this change can't be undone")
-            reverted = apply_snapshot(tx, revision.before, now=now)
-            before_category = reverted.category_id
-            if (
-                before_category is not None
-                and await repo.get_category(actor, before_category) is None
-            ):
-                # That category was deleted since: the expense stays where it is now (or,
-                # if it was a move then, goes to the default one).
-                reverted = replace(
-                    reverted, category_id=tx.category_id, category_rule_id=tx.category_rule_id
-                )
-                if reverted.category_id is None:
-                    reverted = replace(
-                        reverted,
-                        category_id=await default_category(repo, actor, reverted.direction),
-                    )
-            reverted = await _keep_existing_wallets(repo, actor, reverted, tx)
-
-        if reverted != tx:
-            await repo.update_transaction(reverted)
-        await repo.mark_undone(actor, revision.id, now)
+        result = await reverse_revision(uow, actor, revision)
         await uow.commit()
+    return result
+
+
+async def reverse_revision(uow: UnitOfWork, actor: UserId, revision: Revision) -> UndoResult:
+    """Undoes one open revision of this user's, inside the caller's unit of work (which
+    commits)."""
+    repo = uow.ledger
+    tx = await repo.get_transaction(actor, revision.transaction_id, for_update=True)
+    if tx is None:  # pragma: no cover - revisions only point at this user's rows
+        raise NotFound("transaction not found")
+    now = utcnow()
+
+    if revision.kind is RevisionKind.CREATE:
+        reverted = replace(tx, deleted_at=now, updated_at=now)
+    elif revision.kind is RevisionKind.SPLIT:
+        if await repo.has_settlements(actor, tx.id):
+            raise Conflict("repayments were recorded against this split, so it can't be undone")
+        previous = (revision.before or {}).get("splits", [])
+        await repo.replace_splits(
+            actor,
+            tx.id,
+            [
+                Split(
+                    uuid4(),
+                    actor,
+                    tx.id,
+                    item["participant_name"],
+                    Money.of(item["share"], tx.amount.currency),
+                )
+                for item in previous
+            ],
+        )
+        reverted = tx
+    else:
+        if revision.before is None:  # pragma: no cover - only CREATE has no snapshot
+            raise NothingToUndo("this change can't be undone")
+        reverted = apply_snapshot(tx, revision.before, now=now)
+        before_category = reverted.category_id
+        if before_category is not None and await repo.get_category(actor, before_category) is None:
+            # That category was deleted since: the expense stays where it is now (or,
+            # if it was a move then, goes to the default one).
+            reverted = replace(
+                reverted, category_id=tx.category_id, category_rule_id=tx.category_rule_id
+            )
+            if reverted.category_id is None:
+                reverted = replace(
+                    reverted,
+                    category_id=await default_category(repo, actor, reverted.direction),
+                )
+        reverted = await _keep_existing_wallets(repo, actor, reverted, tx)
+
+    if reverted != tx:
+        await repo.update_transaction(reverted)
+    await repo.mark_undone(actor, revision.id, now)
     return UndoResult(revision.kind, reverted)
 
 

@@ -8,6 +8,7 @@ afterwards. Nothing here knows which model it's talking to.
 
 import asyncio
 import hashlib
+import re
 import statistics
 import time
 from collections import Counter
@@ -322,6 +323,23 @@ async def grade(case: Case, turns: list[TurnLog], world: World, changed: bool) -
             failures.append(f"said {phrase!r}")
     if case.max_reply is not None and len(last.last_reply) > case.max_reply:
         failures.append(f"reply longer than {case.max_reply} characters")
+    if case.max_lines is not None:
+        lines = [x for x in last.last_reply.splitlines() if x.strip()]
+        if len(lines) > case.max_lines:
+            failures.append(f"reply longer than {case.max_lines} lines")
+    for pattern in case.never_match:
+        if any(re.search(pattern, r, re.IGNORECASE) for t in turns for r in t.replies):
+            failures.append(f"reply matches {pattern!r}")
+    for cap in case.at_most:
+        made = sum(
+            1
+            for name, args in last.calls
+            if name == cap.tool and all(_arg_matches(args.get(k), v) for k, v in cap.args.items())
+        )
+        if made > cap.n:
+            failures.append(
+                f"{made} {cap.tool} calls with {cap.args or 'any arguments'}, max {cap.n}"
+            )
     for check in case.checks:
         try:
             held = await check.holds(world)

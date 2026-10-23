@@ -894,11 +894,13 @@ async def ideas_from_areas(
     areas: Sequence[str],
     *,
     now: datetime,
+    record: booking_cases.ChatEdit | None = None,
 ) -> AreaIdeas:
     """Saves the chosen research areas' things to do as places to visit on a trip, each
     filed under a list named after its area. A thing already on the trip is skipped. Each
     is matched to Google Maps when one result clearly is it (``same_place``); when Google
-    Maps can't be asked or isn't sure, it's saved by name only."""
+    Maps can't be asked or isn't sure, it's saved by name only. With ``record`` (made
+    from chat) the ideas are kept for Undo."""
     result = await research_result(uow(), user, run_id)
     trip = await trip_cases.get_trip(uow(), user.id, trip_id)
     if trip.status(trip_cases.local_today(user, now)) is TripStatus.FINISHED:
@@ -953,7 +955,11 @@ async def ideas_from_areas(
         )
         is not None
     ]
-    added = await booking_cases.add_ideas(uow(), user.id, trip.id, drafts, now=now) if drafts else 0
+    added = (
+        await booking_cases.add_ideas(uow(), user.id, trip.id, drafts, now=now, record=record)
+        if drafts
+        else 0
+    )
     skipped += len(wanted) - len(drafts)
     stops = trip.stops or await suggested_stops(places, user.id, trip, bookings)
     suggestion = " ".join(result.destination.split())[:MAX_STOP_NAME].strip()

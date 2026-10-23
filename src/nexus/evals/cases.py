@@ -95,6 +95,15 @@ class Call:
 
 
 @dataclass(frozen=True, slots=True)
+class AtMost:
+    """No more than ``n`` calls of a tool (matching the arguments) in the case's last turn."""
+
+    tool: str
+    n: int
+    args: dict[str, str | Has] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
 class Turn:
     text: str
     approve: bool = True  # the answer to any confirmation this turn asks for
@@ -115,6 +124,9 @@ class Case:
     reply: tuple[str | tuple[str, ...], ...] = ()  # in the last reply; a tuple: any of
     never_say: tuple[str, ...] = ()  # in no reply at all
     max_reply: int | None = None  # the last reply's length at most
+    max_lines: int | None = None  # the last reply's non-empty lines at most
+    never_match: tuple[str, ...] = ()  # regexes (any case) that match no reply at all
+    at_most: tuple[AtMost, ...] = ()  # caps on tool calls in the last turn
     checks: tuple[Check, ...] = ()
     target: str | None = None  # the M8 part expected to make this pass
     # The user is a member of Alex's Japan trip (not its owner): see ``seed.seed_user``.
@@ -819,6 +831,39 @@ CASES: tuple[Case, ...] = (
         forbid=("add_to_itinerary", "research_trip"),
         unchanged=True,
     ),
+    # Reply style on a trip: a few one-line picks, short replies, no parroting, one pick.
+    Case(
+        "trip-ideas-brief",
+        "ask",
+        _t("are there any interesting things to do in Kyoto on my japan trip"),
+        calls=(Call("find_ideas"),),
+        forbid=("add_to_itinerary", "research_trip", "create_trip"),
+        unchanged=True,
+        max_lines=6,
+        never_match=(r"\(\d{1,3},\d{3}\)", r"\d[\d,]*\s+(reviews|ratings)"),
+    ),
+    Case(
+        "trip-heading-there-no-parrot",
+        "ask",
+        _t(
+            "where should we eat in Osaka? we want the best okonomiyaki",
+            "ok we are heading to Osaka now, since we are skipping lunch",
+        ),
+        forbid=("add_to_itinerary", "research_trip", "create_trip"),
+        unchanged=True,
+        max_lines=3,
+        max_reply=220,
+        never_match=(r"got it\s*[\u2014,-]", r"heading (into|to) osaka now", r"lunch skipped"),
+    ),
+    Case(
+        "trip-castle-and-one-gelato",
+        "log",
+        _t("add Nijo Castle to the 13th of my japan trip, and I want gelato there too"),
+        calls=(Call("add_to_itinerary", {"name": Has("nijo")}),),
+        forbid=("create_trip", "research_trip", "update_trip"),
+        at_most=(AtMost("add_to_itinerary", 1, {"name": Has("gelato")}),),
+        max_lines=4,
+    ),
     Case(
         "research-to-trip",
         "log",
@@ -861,7 +906,19 @@ CASES: tuple[Case, ...] = (
         "log",
         _t("add dinner at Sushi Ten on 12 Dec at 7pm to my Japan trip"),
         calls=(Call("add_to_itinerary", {"kind": "activity", "name": Has("sushi ten")}),),
-        confirms=True,
+        confirms=False,  # the user's own trip, no cost: saved at once, with Undo
+    ),
+    Case(
+        "itinerary-add-plan-with-cost",
+        "log",
+        _t("add dinner at Sushi Ten on 12 Dec at 7pm to my Japan trip, it costs 9000 yen"),
+        calls=(
+            Call(
+                "add_to_itinerary",
+                {"kind": "activity", "name": Has("sushi ten"), "cost": Has("9000")},
+            ),
+        ),
+        confirms=True,  # a cost is money: asked first
     ),
     # A trip someone else shared: the user is a member, Alex owns it. Plan edits go
     # through; money and the trip's details are Alex's.
@@ -896,7 +953,7 @@ CASES: tuple[Case, ...] = (
         calls=(
             Call("change_itinerary_entry", {"item": Has("sakura"), "until": Has("2026-12-15")}),
         ),
-        confirms=True,
+        confirms=False,
     ),
     Case(
         "itinerary-hotel-whole-trip",
@@ -908,14 +965,14 @@ CASES: tuple[Case, ...] = (
                 {"kind": "hotel", "name": Has("ryokan hana"), "day": Has("2026-12-14")},
             ),
         ),
-        confirms=True,
+        confirms=False,
     ),
     Case(
         "itinerary-place-to-visit",
         "log",
         _t("save teamLab Planets to my Tokyo list, it's a museum"),
         checks=(Booked("teamLab", scheduled=False),),
-        confirms=True,
+        confirms=False,
     ),
     Case(
         "itinerary-label-days",

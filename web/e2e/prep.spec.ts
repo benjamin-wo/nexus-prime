@@ -42,6 +42,10 @@ test("a to-do with a date is added from Prep, ticked, and sinks struck through",
   await add.getByLabel("To-do").fill("Book the airport taxi");
   await add.getByLabel("By (optional)").fill(daysAhead(5));
   await add.getByRole("button", { name: "Add", exact: true }).click();
+  // Wait for the first to go through: the form clears then, and would wipe a second
+  // to-do typed before it.
+  await expect(ready.locator(".prep-todo")).toHaveCount(1);
+  await expect(add.getByLabel("To-do")).toHaveValue("");
   await add.getByLabel("To-do").fill("Buy a SIM card");
   await add.getByRole("button", { name: "Add", exact: true }).click();
 
