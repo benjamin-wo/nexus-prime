@@ -10,6 +10,10 @@ allowance for personal use.
 The airports and stations a day's flights and trains leave from and land at are
 looked up on Google Maps once, by name ("BCN airport"), and only their place ids kept
 on the booking, as for a plan's place.
+
+A plan the chat adds to a day without a time is fitted between the day's other entries
+with the travel time to its neighbours as room (``travel_buffers``): a best effort that
+never fails the add, so anything that goes wrong just leaves the usual allowance.
 """
 
 import asyncio
@@ -32,6 +36,7 @@ from nexus.domain.places import Place, metres_between
 from nexus.domain.routes import (
     Hop,
     Mode,
+    Stop,
     beside_airport,
     day_hops,
     default_mode,
@@ -200,6 +205,72 @@ async def hop_time(
         raise NotFound("those two aren't one after the other that day")
     found = await _time(routes, user_id, hop, mode, fallback=False)
     await _keep_pick(uow(), user_id, trip_id, hop, mode)
+    return found
+
+
+def _place_of(b: Booking, day: date, *, coming_from: bool) -> str | None:
+    """The Google place id of where an entry is on the way in or out of: a plan's, or
+    the station a train or flight lands at (``coming_from``) or leaves from."""
+    d = b.draft
+    if d.kind is BookingKind.ACTIVITY:
+        return d.place_id
+    if d.kind in (BookingKind.FLIGHT, BookingKind.RAIL):
+        leave, land = stations_on(b, day)
+        return d.station((land if coming_from else leave) or "") or None
+    return None
+
+
+async def travel_buffers(
+    places: Places,
+    routes: Routes,
+    user_id: UserId,
+    trip: Trip,
+    day: date,
+    place_id: str,
+    *,
+    previous: Sequence[Booking],
+    following: Sequence[Booking],
+    deadline: float,
+) -> dict[UUID, int]:
+    """Minutes to get between a new plan's place and the entries just before it (from
+    them to it) and just after it (from it to them), for each one with a place of its
+    own: walking when close, else the trip's usual way, as for a day's hops. Whatever
+    can't be worked out by the event loop's ``deadline`` (or fails) is left out, and so
+    gets the usual allowance. Never raises."""
+    found: dict[UUID, int] = {}
+    hops: dict[UUID, Hop] = {}
+    for b in previous:
+        pid = _place_of(b, day, coming_from=True)
+        if pid and pid != place_id:
+            hops[b.id] = Hop(Stop(b.id, pid, b.draft.title, None), Stop(b.id, place_id, "", None))
+    for b in following:
+        pid = _place_of(b, day, coming_from=False)
+        if pid and pid != place_id and b.id not in hops:
+            hops[b.id] = Hop(Stop(b.id, place_id, "", None), Stop(b.id, pid, b.draft.title, None))
+    if not hops:
+        return found
+
+    async def one(key: UUID, hop: Hop, places_found: dict[str, Place]) -> None:
+        a, b = places_found.get(hop.start.place_id), places_found.get(hop.end.place_id)
+        metres = (
+            metres_between(a.location, b.location)
+            if a is not None and b is not None and a.location and b.location
+            else None
+        )
+        mode = default_mode(metres, trip.getting_around)
+        timed = await _time(routes, user_id, hop, mode, fallback=True)
+        if timed.minutes is not None:
+            found[key] = timed.minutes
+
+    try:
+        async with asyncio.timeout_at(deadline):
+            ids = {pid for h in hops.values() for pid in (h.start.place_id, h.end.place_id)}
+            details = await places.many(user_id, sorted(ids))
+            await asyncio.gather(
+                *(one(k, h, details) for k, h in hops.items()), return_exceptions=True
+            )
+    except Exception:  # a best effort: the usual allowance stands in
+        log.info("no travel times for a new plan", exc_info=True)
     return found
 
 

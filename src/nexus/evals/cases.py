@@ -920,6 +920,41 @@ CASES: tuple[Case, ...] = (
         ),
         confirms=True,  # a cost is money: asked first
     ),
+    Case(
+        "itinerary-add-plan-no-time",
+        "log",
+        _t("add Kuroshiro Castle to the 12th of my Japan trip"),
+        calls=(
+            Call(
+                "add_to_itinerary",
+                {"kind": "activity", "name": Has("kuroshiro"), "day": Has("2026-12-12")},
+            ),
+        ),
+        # No time was said, so none is made up: Nexus picks a free one itself.
+        at_most=(AtMost("add_to_itinerary", 0, {"time": Has("")}),),
+        confirms=False,
+        max_lines=3,
+    ),
+    Case(
+        "itinerary-gelato-after-the-castle",
+        "log",
+        _t(
+            "add Kuroshiro Castle to the 12th of my Japan trip",
+            "add a gelato stop after the castle",
+        ),
+        calls=(
+            Call(
+                "add_to_itinerary",
+                {"name": Has("gelato"), "after": Has("kuroshiro"), "day": Has("2026-12-12")},
+            ),
+        ),
+        at_most=(
+            AtMost("add_to_itinerary", 1, {"name": Has("gelato")}),
+            AtMost("add_to_itinerary", 0, {"name": Has("gelato"), "time": Has("")}),
+        ),
+        confirms=False,
+        max_lines=3,
+    ),
     # A trip someone else shared: the user is a member, Alex owns it. Plan edits go
     # through; money and the trip's details are Alex's.
     Case(

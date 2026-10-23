@@ -328,7 +328,7 @@ async def test_a_cost_or_a_shared_trip_still_asks_first(uow: UowFactory) -> None
     agent = _agent(uow, model, _ticking())
     for n, (ask, said) in enumerate(
         (
-            ("Add Dinner (Sat 12 Dec), ", "dinner, 30 euros"),
+            ("Add Dinner (Sat 12 Dec 09:00), ", "dinner, 30 euros"),
             ("Change Tapas tour (Sat 12 Dec) to Tapas tour (Sat 12 Dec 20:00)", "tapas later"),
             ("Remove Tapas tour (Sat 12 Dec) from the Spain trip?", "drop the tapas"),
         ),

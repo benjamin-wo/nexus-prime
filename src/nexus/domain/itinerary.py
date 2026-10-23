@@ -14,9 +14,13 @@ Each day can carry notes, worked out here and shown on the trip page and in chat
 two things that overlap, a plan that comes after a later one in the user's order,
 landing well before the hotel's check-in, and three hours or more of free time
 between 09:00 and 21:00 (not on a day spent arriving, nor outside the trip's dates).
+
+A plan added to a day without a time is given one (``pick_slot``): the first gap after
+the earliest it could start that fits its length, clear of everything else timed that
+day, with room to get there and to get on to the next thing.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from enum import StrEnum
@@ -24,6 +28,7 @@ from itertools import pairwise
 from uuid import UUID
 
 from nexus.domain.bookings import Booking, BookingKind, Segment
+from nexus.domain.errors import NotFound
 
 CHECK_IN = time(15, 0)
 # Free time worth saying, and the part of the day it's looked for in.
@@ -32,6 +37,14 @@ DAY_STARTS, DAY_ENDS = time(9, 0), time(21, 0)
 # A plan with a start and no end is taken to last this long when looking for free time.
 USUAL_LENGTH = timedelta(hours=1)
 MAX_NOTES = 5
+# Picking a time for a plan: starts on the quarter hour, ends by 23:00, and leaves this
+# long to get between two places unless a travel time is known.
+SLOT_STEP = 15
+LAST_END = time(23, 0)
+TRAVEL_BUFFER = 15
+# How long a plan usually takes, by its category (anything else: an hour).
+USUAL_MINUTES = {"sight": 90, "food": 60, "shopping": 60, "nature": 120, "nightlife": 90}
+OTHER_MINUTES = 60
 # Landing at least this long before the hotel's check-in is worth a note.
 EARLY_BY = timedelta(hours=2)
 
@@ -287,3 +300,99 @@ def _free(timed: list[tuple[Booking, tuple[time, time | None]]], day: date) -> l
 def renumber(plans: Sequence[Booking]) -> dict[UUID, int]:
     """Each plan's new place, 0 first, for the plans in the order given."""
     return {b.id: i for i, b in enumerate(plans)}
+
+
+def usual_minutes(category: str | None) -> int:
+    """How long a plan of this category usually takes, in minutes."""
+    return USUAL_MINUTES.get((category or "").strip().casefold(), OTHER_MINUTES)
+
+
+@dataclass(frozen=True, slots=True)
+class Slot:
+    start: time
+    end: time
+    previous: Booking | None  # the timed entry just before it, if any
+    next: Booking | None  # the timed entry just after it, if any
+
+
+def _minutes(t: time) -> int:
+    return t.hour * 60 + t.minute
+
+
+def _clock(minutes: int) -> time:
+    return time(minutes // 60, minutes % 60)
+
+
+def _busy(b: Booking, day: date) -> tuple[int, int] | None:
+    """When an entry takes up ``day``, in minutes from midnight: a flight or train from
+    leaving to landing (to the end of the day when it lands later), a plan from its
+    start to its end, or for its usual length when it has none. None for an entry with
+    no time that day (a hotel, a plan with no time)."""
+    span = _span(b, day)
+    if span is None:
+        return None
+    start = _minutes(span[0])
+    end = _minutes(span[1]) if span[1] is not None else start + usual_minutes(b.draft.category)
+    return start, min(max(end, start + 1), 24 * 60 - 1)
+
+
+def finish(b: Booking, day: date) -> time | None:
+    """When an entry is over on ``day`` (a plan with no end taking its usual length), or
+    None when it has no time that day."""
+    busy = _busy(b, day)
+    return _clock(busy[1]) if busy else None
+
+
+def _round_up(minutes: int) -> int:
+    return -(-minutes // SLOT_STEP) * SLOT_STEP
+
+
+def pick_slot(
+    bookings: Sequence[Booking],
+    day: date,
+    *,
+    earliest: time,
+    minutes: int,
+    buffers: Mapping[UUID, int] | None = None,
+    buffer: int = TRAVEL_BUFFER,
+) -> Slot | None:
+    """The first free time on ``day`` for a plan of ``minutes``: starting no earlier than
+    ``earliest`` (rounded up to the next quarter hour), clear of every timed entry
+    (hotels don't count) and ending by 23:00. Each neighbour is kept ``buffers[id]``
+    minutes away (else ``buffer``): to get there after the one before, and on to the one
+    after. None when nothing fits."""
+    timed = sorted(
+        ((busy[0], busy[1], b) for b in on_day(bookings, day) if (busy := _busy(b, day))),
+        key=lambda t: (t[0], t[1]),
+    )
+
+    def room(b: Booking) -> int:
+        return (buffers or {}).get(b.id, buffer)
+
+    start = _round_up(_minutes(earliest) + (1 if earliest.second or earliest.microsecond else 0))
+    while (end := start + minutes) <= _minutes(LAST_END):
+        clashes = [e + room(b) for s, e, b in timed if start < e + room(b) and end + room(b) > s]
+        if not clashes:
+            before = [t for t in timed if t[1] <= start]
+            after = [t for t in timed if t[0] >= end]
+            return Slot(
+                _clock(start),
+                _clock(end),
+                max(before, key=lambda t: (t[1], t[0]))[2] if before else None,
+                min(after, key=lambda t: (t[0], t[1]))[2] if after else None,
+            )
+        start = _round_up(max(clashes))
+    return None
+
+
+def match_entry(
+    items: Sequence[Booking], wanted: str, *, has: str = "the itinerary has"
+) -> Booking:
+    """The one entry whose title contains ``wanted`` (any case), else NotFound saying
+    what ``has`` is there to pick from."""
+    named = wanted.strip().casefold()
+    matches = [b for b in items if named in b.draft.title.casefold()]
+    if len(matches) != 1:
+        listed = "; ".join(b.draft.title for b in items) or "nothing yet"
+        raise NotFound(f"no single itinerary entry matches {wanted!r}; {has}: {listed}")
+    return matches[0]
