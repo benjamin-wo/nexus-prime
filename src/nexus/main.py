@@ -379,7 +379,7 @@ async def _telegram_runtime(
         checkpointer = await stack.enter_async_context(
             postgres_checkpointer(settings.database_url_str)
         )
-    graph = AgentGraph(
+    agent_graph = AgentGraph(
         AgentDeps(
             uow=uow,
             tools=tools,
@@ -398,7 +398,8 @@ async def _telegram_runtime(
             ideas=ideas,
             lookup=lookup,
         )
-    ).compile(checkpointer)
+    )
+    graph = agent_graph.compile(checkpointer)
     receipts: ReceiptReader | None = overrides.receipts
     if receipts is None and models.vision is not None:
         receipts = LlmReceiptReader(models.vision)
@@ -435,6 +436,7 @@ async def _telegram_runtime(
             trips=trip_reader,
             looker=looker,
             primary_model=_model_id(models.primary),
+            condense=agent_graph.condense,
         ),
         client=client,
     )

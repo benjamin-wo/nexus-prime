@@ -14,7 +14,7 @@ import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
-from typing import Annotated, Any, Literal, NotRequired, TypedDict
+from typing import Annotated, Any, Literal, NotRequired, TypedDict, cast
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from langchain_core.language_models import BaseChatModel
@@ -201,6 +201,7 @@ class AgentGraph:
     def __init__(self, deps: AgentDeps) -> None:
         self.deps = deps
         self._models: dict[frozenset[str], Runnable[Any, Any]] = {}
+        self._compiled: CompiledStateGraph[Any, Any, Any, Any] | None = None
 
     # --- helpers ------------------------------------------------------------------
 
@@ -414,7 +415,6 @@ class AgentGraph:
             # Each new message brings every loaded skill a step closer to lapsing.
             "skills": {k: n - 1 for k, n in state.get("skills", {}).items() if n > 1},
         }
-        update.update(await self._condense(state))
         return Command(goto="agent", update=update)
 
     async def _shortcut(
@@ -445,8 +445,36 @@ class AgentGraph:
             log.exception("recalling memories failed")
             return ""
 
+    async def condense(self, config: RunnableConfig) -> bool:
+        """Past HISTORY_LIMIT messages, fold the older ones into the thread's summary
+        and drop them. Run after a reply has gone out (the summary is a model call, so
+        a turn never waits on it); the caller holds the user's lock. Returns whether
+        the thread changed. The agent only ever sends the last HISTORY_LIMIT messages,
+        so a late summary costs nothing but the summary's freshness."""
+        graph = self._compiled
+        if graph is None:
+            raise RuntimeError("compile() the graph before condensing")
+        snapshot = await graph.aget_state(config)
+        # Never touch a thread that is waiting on a confirmation (or mid-run).
+        if snapshot.next or snapshot.interrupts:
+            return False
+        started = time.monotonic()
+        update = await self._condense(cast(AgentState, snapshot.values))
+        if not update:
+            return False
+        # As kernel_reply: its only edge leads to END, so writing as it schedules no
+        # node (as "kernel" would route on to the agent). The write is a new
+        # checkpoint on the thread that the next turn continues from.
+        await graph.aupdate_state(config, update, as_node="kernel_reply")
+        log.info(
+            "condensed %d messages in %.1fs",
+            len(update["messages"]),
+            time.monotonic() - started,
+        )
+        return True
+
     async def _condense(self, state: AgentState) -> dict[str, Any]:
-        """Past HISTORY_LIMIT messages, fold the older ones into the summary."""
+        """The update that folds the older messages into the summary, or {}."""
         messages = state["messages"]
         if len(messages) <= HISTORY_LIMIT:
             return {}
@@ -678,7 +706,8 @@ class AgentGraph:
         graph.add_node("kernel_reply", self.kernel_reply_node)
         graph.add_edge(START, "kernel")
         graph.add_edge("kernel_reply", END)
-        return graph.compile(checkpointer=checkpointer)
+        self._compiled = graph.compile(checkpointer=checkpointer)
+        return self._compiled
 
 
 def _section(title: str, body: str) -> str:
