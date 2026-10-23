@@ -142,6 +142,51 @@ test("a trip that is on leads Home with its day, what is next, today's spending 
   await expect(page.getByRole("region", { name: "Nexus" })).toContainText("You're on day 3 of 6 in Tokyo.");
 });
 
+test("during a trip the Plan tab is one day panel: pills first, each plan once, tonight's stay on a strip", async ({ page }) => {
+  await fakeApi(page, { tripMode: true });
+  await page.clock.setFixedTime(new Date(`${new Date().toLocaleDateString("en-CA")}T04:00:00Z`));
+  await page.goto("/travel/trips/tripnow");
+  const itinerary = page.getByRole("region", { name: "Itinerary" });
+  const pills = itinerary.getByRole("navigation", { name: "Days" });
+  // Every day is on the page, side by side to swipe between: this is the one in view.
+  const day = itinerary.getByRole("group", { name: /^Day 3 · .*, 3 of 6$/ });
+  const plans = day.getByRole("list", { name: /^Day 3 · / });
+  await expect(plans).toBeVisible();
+
+  // The day once: each plan's name appears a single time on the page, there is no second list of them.
+  for (const name of ["Early market walk", "Late ramen at Fuji"]) await expect(page.getByText(name, { exact: true })).toHaveCount(1);
+  await expect(page.getByRole("list", { name: /^Plans for/ })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: /^Day 3 of 6 · / })).toHaveCount(0); // today's reads "Today · …"
+  await expect(day.getByRole("heading", { name: /^Today · Day 3 of 6 · / })).toBeVisible();
+  await expect(day.locator(".day-weather")).toContainText("% rain");
+
+  // Tonight's stay: one strip with directions and the address to copy; the reference is a tap away.
+  const stay = day.locator(".day-stay");
+  await expect(stay).toHaveCount(1);
+  await expect(stay).toContainText("Hotel Kumo Shinjuku");
+  await expect(stay.getByRole("link", { name: "Open Hotel Kumo Shinjuku in Maps" })).toHaveAttribute("href", /google\.com\/maps\/search\/.*Hotel%20Kumo%20Shinjuku/);
+  await expect(stay.getByRole("button", { name: "Copy the address of Hotel Kumo Shinjuku" })).toBeVisible();
+  await expect(stay.getByRole("button", { name: "Copy booking reference HK4471" })).toBeHidden();
+  await stay.getByText("Address and booking").click();
+  await expect(stay.getByRole("button", { name: "Copy booking reference HK4471" })).toBeVisible();
+
+  // In the page's order: the stops and day pills come first, then the day, then its plans.
+  const before = (a: string, b: string) =>
+    page.evaluate(([x, y]) => Boolean(document.querySelector(x)!.compareDocumentPosition(document.querySelector(y)!) & Node.DOCUMENT_POSITION_FOLLOWING), [a, b]);
+  await expect(pills).toBeVisible();
+  const slide = ".day-slide:nth-child(3)";
+  expect(await before(".day-strip", `${slide} .day-stay`)).toBe(true);
+  expect(await before(".day-strip", `${slide} .timeline`)).toBe(true);
+  expect(await before(`${slide} .day-stay`, `${slide} .timeline`)).toBe(true);
+  expect(await before(".stops-row", ".day-strip")).toBe(true);
+  const [strip, panel] = await Promise.all([pills.boundingBox(), plans.boundingBox()]);
+  expect(strip!.y).toBeLessThan(panel!.y);
+
+  // The page never scrolls sideways, even at the narrowest phone.
+  await page.setViewportSize({ width: 320, height: 800 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+});
+
 test("no trip card leads Home when the next trip has not started", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/travel");

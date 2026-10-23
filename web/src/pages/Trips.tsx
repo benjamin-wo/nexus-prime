@@ -23,7 +23,7 @@ import { ActivityLine } from "./TripActivity";
 import { PrepTab } from "./TripPrep";
 import { TripFaces, hasMembers, useMembers } from "./TripPeople";
 import { ShareSheet } from "./TripShare";
-import { TodayView } from "./TripToday";
+import { DayWeather, PlaceActions, StayStrip, useTripWeather } from "./TripDayHead";
 
 export { tripWhen };
 
@@ -416,14 +416,6 @@ function tripDays(detail: TripDetail): string[] {
   return [...days].sort();
 }
 
-/** Nights of a hotel stay after its check-in night, before check-out. */
-function nightsOf(b: Booking): string[] {
-  const nights: string[] = [];
-  if (!b.check_in || !b.check_out) return nights;
-  for (let t = Date.parse(b.check_in) + DAY_MS; t < Date.parse(b.check_out); t += DAY_MS) nights.push(isoDay(t));
-  return nights;
-}
-
 /** One day's label ("Busan"): a pencil that opens its form, edited in place. With no
  * label saved, the form opens with the ``suggested`` one, and saving keeps it. */
 function DayLabel({ trip, iso, suggested, onChange }: { trip: Trip; iso: string; suggested: string | null; onChange: () => void }) {
@@ -496,6 +488,8 @@ function EntryOpen({ booking, id, onEdit }: { booking: Booking; id: string; onEd
       {note && <p className="caption entry-note">{note}</p>}
       <BookedWith booking={booking} />
       <div className="entry-open-actions">
+        {/* A taxi driver's address, and the Maps app: for a hotel too (its strip is on the day). */}
+        {booking.address && <PlaceActions name={booking.hotel ?? booking.title} address={booking.address} />}
         <button type="button" className="btn btn-ghost btn-small" onClick={onEdit} aria-label={`Change ${booking.title}`}>
           <Icon name="edit" size={16} />
           Change
@@ -674,7 +668,10 @@ function Itinerary({ detail, day, onDay, onChange, onAdd, onIdeas }: {
   const scheduled = detail.bookings.filter((b) => b.scheduled);
   const sorted = [...scheduled].sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
   const stays = sorted.filter((b) => b.kind === "hotel" && b.check_in && b.check_out);
-  const staying = (d: string) => stays.filter((b) => nightsOf(b).includes(d));
+  // The stay for the night that starts on a day (its check-in night too).
+  const sleepingAt = (d: string) => stays.find((b) => (b.check_in ?? "") <= d && d < (b.check_out ?? ""));
+  const weather = useTripWeather(detail.trip);
+  const today = todayIso();
   const checkingOut = (d: string) => stays.filter((b) => b.check_out === d);
   const days = tripDays(detail);
   const dayNumber = (iso: string) => Math.round((Date.parse(iso) - Date.parse(detail.trip.start)) / DAY_MS) + 1;
@@ -684,6 +681,13 @@ function Itinerary({ detail, day, onDay, onChange, onAdd, onIdeas }: {
     const n = dayNumber(iso);
     const when = new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(iso));
     return n >= 1 && n <= detail.trip.days ? `Day ${n} · ${when}` : when;
+  };
+  // The day panel's heading: "Today · Day 3 of 6 · Wed, 21 Oct".
+  const dayHeading = (iso: string) => {
+    const n = dayNumber(iso);
+    const when = dayLabel(iso).replace(/^Day \d+ · /, "");
+    const where = n >= 1 && n <= detail.trip.days ? `Day ${n} of ${detail.trip.days} · ${when}` : when;
+    return iso === today ? `Today · ${where}` : where;
   };
 
   // A plan carried by keyboard to another day takes the carousel with it.
@@ -706,6 +710,7 @@ function Itinerary({ detail, day, onDay, onChange, onAdd, onIdeas }: {
         // What the day's places suggest it is called, until the user names it.
         const suggested = inTrip(d) && !named ? suggestLabel(entries, linked) : null;
         const count = entries.length + outs.length;
+        const stay = sleepingAt(d);
         const addLabel = inTrip(d) ? `Add to Day ${n}` : `Add to ${dayPill(d)}`;
         return (
           <div key={d} id={`day-${d}`} className="itinerary-day">
@@ -716,18 +721,14 @@ function Itinerary({ detail, day, onDay, onChange, onAdd, onIdeas }: {
             <div className="day-body">
               <div className="day-head">
                 <h3 className="day-title">
-                  <span className="day-when">{dayLabel(d)}</span>
+                  <span className="day-when">{dayHeading(d)}</span>
                   <span className="day-name">{named || suggested || (free ? "Free day" : `${count} ${count === 1 ? "plan" : "plans"}`)}</span>
                   {suggested && <span className="chip suggest-chip">Suggested</span>}
                 </h3>
                 <DayLabel trip={detail.trip} iso={d} suggested={suggested} onChange={onChange} />
               </div>
-              {staying(d).map((b) => (
-                <p key={b.id} className="caption">
-                  <Icon name="stay" size={16} className="icon-inline" />
-                  Staying at {b.hotel ?? b.title}
-                </p>
-              ))}
+              <DayWeather weather={weather} day={d} />
+              {stay && <StayStrip booking={stay} />}
               {homeless.has(d) && (
                 <p className="gap-line">
                   <span>Nowhere to stay this night yet</span>
@@ -1370,7 +1371,6 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
           {tab === "plan" && (
             <>
               <div className="plan-layout">
-                {stage === "during" && selectedDay && <TodayView detail={data} day={selectedDay} />}
                 <Itinerary detail={data} day={selectedDay} onDay={pickDay} onChange={refresh} onAdd={(preset) => setSheet({ preset })} onIdeas={() => open("ideas")} />
                 <TripMap
                   detail={data}
