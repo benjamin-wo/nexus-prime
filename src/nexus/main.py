@@ -363,6 +363,7 @@ async def _telegram_runtime(
     places: Places | None = None,
     ideas: IdeaFinder | None = None,
     lookup: WebLookup | None = None,
+    routes: Routes | None = None,
 ) -> telegram_webhook.TelegramRuntime:
     def uow() -> SqlUnitOfWork:
         return SqlUnitOfWork(engine)
@@ -393,6 +394,7 @@ async def _telegram_runtime(
             forward_address=_forward_address(uow, email, clock),
             departments=departments,
             places=places,
+            routes=routes,
             ideas=ideas,
             lookup=lookup,
         )
@@ -676,9 +678,10 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                 )
                 places = await _places(resolved, extra, stack, extra.clock or utcnow)
                 ideas = await _ideas(resolved, extra, stack, web, places, extra.clock or utcnow)
+                routes = await _routes(resolved, extra, stack, extra.clock or utcnow)
                 telegram = await _telegram_runtime(
                     resolved, engine, extra, stack, rates, archive, models, email, departments,
-                    places, ideas, _lookup(resolved, extra, web),
+                    places, ideas, _lookup(resolved, extra, web), routes,
                 )  # fmt: skip
                 app.state.telegram = telegram
                 origin = resolved.public_origin
@@ -733,7 +736,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                             build_memory_model(resolved, models.primary), clock=clock
                         ),
                         places=places,
-                        routes=await _routes(resolved, extra, stack, clock),
+                        routes=routes,
                         ideas=ideas,
                         weather=Weather(await _weather_source(extra, stack), clock=clock),
                         scans=_statement_pages(resolved, extra, models),

@@ -48,6 +48,7 @@ from nexus.application.fx import RateSource
 from nexus.application.ideas import IdeaFinder
 from nexus.application.inbound import log_capability_gap
 from nexus.application.places import Places
+from nexus.application.routes import Routes
 from nexus.application.users import get_user
 from nexus.application.web_lookup import WebLookup
 from nexus.domain.errors import DuplicateSource, InvalidInput, NexusError
@@ -135,6 +136,8 @@ class AgentDeps:
     departments: department_cases.Departments | None = None
     # Google Maps places for trips; None: not set up.
     places: Places | None = None
+    # Travel times between places, for fitting a new plan into a day; None: not set up.
+    routes: Routes | None = None
     # Quick ideas for a trip from the web; None: not set up.
     ideas: IdeaFinder | None = None
     # Looking things up on the web; None: not set up.
@@ -241,6 +244,7 @@ class AgentGraph:
             forward_address=self.deps.forward_address,
             departments=self.deps.departments,
             places=self.deps.places,
+            routes=self.deps.routes,
             ideas=self.deps.ideas,
             lookup=self.deps.lookup,
         )

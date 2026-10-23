@@ -22,6 +22,7 @@ from nexus.application import budgets as budget_cases
 from nexus.application import cashflow as cashflow_cases
 from nexus.application import categories as category_cases
 from nexus.application import category_rules as rule_cases
+from nexus.application import day_slots, trip_split
 from nexus.application import duplicates as duplicate_cases
 from nexus.application import email as email_cases
 from nexus.application import income as income_cases
@@ -40,7 +41,6 @@ from nexus.application import subscriptions as subscription_cases
 from nexus.application import transactions as tx_cases
 from nexus.application import travel_research as trip_research
 from nexus.application import trip_access as access_cases
-from nexus.application import trip_split
 from nexus.application import trips as trip_cases
 from nexus.application import undo as undo_cases
 from nexus.application import wallets as wallet_cases
@@ -50,6 +50,7 @@ from nexus.application.ideas import KINDS as IDEA_KINDS
 from nexus.application.ideas import IdeaFinder
 from nexus.application.places import Places, PlacesError
 from nexus.application.ports import LedgerQuery, UnitOfWork
+from nexus.application.routes import Routes
 from nexus.application.web_lookup import WebLookup
 from nexus.domain import itinerary
 from nexus.domain.bookings import Booking, BookingDraft, BookingKind
@@ -100,6 +101,8 @@ class ToolContext:
     departments: Departments | None = None
     # Google Maps places for trips; None when not set up.
     places: Places | None = None
+    # Travel times between places, for fitting a new plan into a day; None when not set up.
+    routes: Routes | None = None
     # Quick ideas for a trip from the web; None when not set up.
     ideas: IdeaFinder | None = None
     # Looking things up on the web; None when not set up.
@@ -2622,8 +2625,25 @@ class ItineraryArgs(TripNameArgs):
     category: str | None = Field(
         None, description="A plan's or place's kind: Food, Sight, Shopping, Nature, Nightlife"
     )
-    time: str | None = Field(None, description="A plan's time, like 19:00")
+    time: str | None = Field(
+        None,
+        description="A plan's time, like 19:00, when the user said one. Leave it out "
+        "otherwise: a plan added to a day without a time is given a free one (today, from "
+        "now, so also leave it out for 'we're heading there now')",
+    )
     ends: str | None = Field(None, description="When a plan ends, if said, like 21:30")
+    after: str | None = Field(
+        None,
+        description="A plan already on that day this one follows ('gelato after the "
+        "castle'): its name or part of it. Only for a plan on a day, with no time said",
+    )
+    minutes: int | None = Field(
+        None,
+        ge=10,
+        le=600,
+        description="How long a plan takes, in minutes, when you can judge it (a gelato "
+        "stop 20, a castle 90); left out: by its category (a meal 60, a sight 90)",
+    )
     until: str | None = Field(None, description="A hotel's check-out day")
     place: str | None = Field(None, description="Where: an address or area")
     link: str | None = Field(
@@ -2694,7 +2714,7 @@ async def _place_for(
 
 async def _itinerary_entry(
     ctx: ToolContext, a: ItineraryArgs
-) -> tuple[access_cases.Found, BookingDraft, Money | None, Place | None]:
+) -> tuple[access_cases.Found, BookingDraft, Money | None, Place | None, day_slots.Fitted]:
     found = await _found(ctx, a.trip)
     trip = found.trip
     if a.kind == "hotel" and not a.day:
@@ -2713,7 +2733,20 @@ async def _itinerary_entry(
     place = await _place_for(ctx, trip, draft, a.google_place)
     if place is not None:
         draft = replace(draft, place_id=place.id)
-    return found, draft, cost, place
+    # A plan on a day with no time gets a free one; a time the user gave stays.
+    fitted = await day_slots.fit_plan(
+        ctx.uow,
+        ctx.places,
+        ctx.routes,
+        ctx.user.id,
+        found.owner_id,
+        trip,
+        draft,
+        now=ctx.now.astimezone(ctx.tz),
+        after=a.after,
+        minutes=a.minutes,
+    )
+    return found, fitted.draft, cost, place, fitted
 
 
 def _matched(place: Place | None, asked: str) -> str:
@@ -2741,16 +2774,67 @@ async def _describe_add_to_itinerary(ctx: ToolContext, a: ItineraryArgs) -> str:
     # before the Google Maps lookup, which the add itself does.
     if _plain(await _found(ctx, a.trip), a.cost):
         return ""
-    found, draft, cost, place = await _itinerary_entry(ctx, a)
+    found, draft, cost, place, fitted = await _itinerary_entry(ctx, a)
     price = f", {cost}" if cost else ""
     return (
         f"Add {draft.brief()}{price} to the {found.trip.destination} trip{found.whose}?"
-        f"{_matched(place, a.name or '')}{_price_left_out(found, a.cost)}"
+        f"{_matched(place, a.name or '')}{_confirm_slot(fitted)}"
+        f"{_price_left_out(found, a.cost)}"
     )
 
 
+def _neighbour(b: Booking, day: date) -> str:
+    """An entry as it's named beside a plan's new time: 'the 15:00 train to Riverton',
+    'Hill Fort'."""
+    d = b.draft
+    if d.kind not in (BookingKind.FLIGHT, BookingKind.RAIL):
+        return d.title
+    what = "train" if d.kind is BookingKind.RAIL else "flight"
+    out, back = itinerary.leaving(b, day), itinerary.landing(b, day)
+    if out and out[0].departs:
+        to = f" to {out[0].destination}" if out[0].destination else ""
+        return f"the {out[0].departs:%H:%M} {what}{to}"
+    if back and back[-1].arrives:
+        origin = f" from {back[-1].origin}" if back[-1].origin else ""
+        return f"the {back[-1].arrives:%H:%M} {what}{origin}"
+    return d.title
+
+
+_NO_ROOM = "no free time that day before 23:00, so it has no time and comes last"
+
+
+def _slot_note(fitted: day_slots.Fitted) -> str:
+    """The time picked for a plan and where it sits among the day's entries ("13:15 to
+    14:45, before the 15:00 train to Riverton"); empty when the user gave a time, or when
+    there was no room."""
+    day, slot = fitted.draft.day, fitted.slot
+    if slot is None or day is None:
+        return ""
+    if fitted.after is not None and itinerary.finish(fitted.after, day) is not None:
+        near = f"after {_neighbour(fitted.after, day)}"
+    elif slot.next is not None:
+        near = f"before {_neighbour(slot.next, day)}"
+    elif slot.previous is not None:
+        near = f"after {_neighbour(slot.previous, day)}"
+    else:
+        near = ""
+    return f"{slot.start:%H:%M}\u2013{slot.end:%H:%M}" + (f", {near}" if near else "")
+
+
+def _confirm_slot(fitted: day_slots.Fitted) -> str:
+    if note := _slot_note(fitted):
+        return f" (time picked: {note})"
+    return f" ({_NO_ROOM})" if fitted.picked else ""
+
+
+def _fitted_line(fitted: day_slots.Fitted) -> str:
+    if note := _slot_note(fitted):
+        return f" Time picked to fit the day: {note}."
+    return f" Not given a time: {_NO_ROOM} (say so)." if fitted.picked else ""
+
+
 async def _add_to_itinerary(ctx: ToolContext, a: ItineraryArgs) -> ToolResult:
-    found, draft, cost, place = await _itinerary_entry(ctx, a)
+    found, draft, cost, place, fitted = await _itinerary_entry(ctx, a)
     booking = await booking_cases.add_manual(
         ctx.uow(),
         found.owner_id,
@@ -2763,7 +2847,7 @@ async def _add_to_itinerary(ctx: ToolContext, a: ItineraryArgs) -> ToolResult:
     await _noted(ctx, found, f"added {booking.draft.title}")
     text = (
         f"Added {draft.brief()} to the {found.trip.destination} trip{found.whose}."
-        f"{_matched(place, a.name or '')}"
+        f"{_matched(place, a.name or '')}{_fitted_line(fitted)}"
     )
     if place is not None and (warning := place.warning(draft.day, draft.at)):
         text += f" Note: {warning} (Google Maps' regular hours)."
@@ -2977,13 +3061,9 @@ async def _find_item(ctx: ToolContext, a: ItineraryItemArgs) -> tuple[access_cas
     found = await _found(ctx, a.trip)
     async with ctx.uow() as tx:
         items = await tx.trips.list_bookings(found.owner_id, trip_id=found.trip.id)
-    wanted = a.item.strip().casefold()
-    matches = [b for b in items if wanted in b.draft.title.casefold()]
-    if len(matches) != 1:
-        listed = "; ".join(b.draft.title for b in items) or "nothing yet"
-        raise NotFound(f"no single itinerary entry matches {a.item!r}; the itinerary has: {listed}")
+    match = itinerary.match_entry(items, a.item)
     # A member never gets what the entry cost.
-    return found, without_money(matches[0]) if found.shared else matches[0]
+    return found, without_money(match) if found.shared else match
 
 
 async def _describe_remove_from_itinerary(ctx: ToolContext, a: ItineraryItemArgs) -> str:
@@ -3899,8 +3979,10 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
         ToolSpec(
             "add_to_itinerary",
             "Add an entry to a trip's itinerary by hand: a plan (dinner, tour, day trip), a "
-            "flight, a hotel stay or a train. Saves at once, with Undo; asks to confirm when it "
-            "carries a cost or is on someone else's trip.",
+            "flight, a hotel stay or a train. A plan on a day with no `time` is given a free "
+            "time by itself (today from now; use `after` to put it after another plan, "
+            "`minutes` for how long it takes); the reply says the time it got. Saves at once, "
+            "with Undo; asks to confirm when it carries a cost or is on someone else's trip.",
             ItineraryArgs,
             _add_to_itinerary,
             confirm=_describe_add_to_itinerary,

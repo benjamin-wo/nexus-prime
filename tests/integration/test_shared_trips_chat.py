@@ -237,7 +237,7 @@ async def test_a_member_is_asked_first_even_with_no_cost_but_the_owner_is_not(
         ("remove_from_itinerary", remove),
     ):
         asked = await japan.asked(japan.sam, tool, {"trip": "Japan", **args})
-        assert asked.endswith("trip (Alex's trip)?"), (tool, asked)
+        assert "trip (Alex's trip)?" in asked, (tool, asked)
         assert "6000" not in asked
     # On the owner's own trip an add with no cost goes through unasked ...
     assert await japan.asked(japan.alex, "add_to_itinerary", add) == ""
@@ -271,7 +271,7 @@ async def test_a_member_changes_moves_and_removes_plans_and_keeps_the_cost(japan
     labelled = await japan.use(japan.sam, "label_trip_day", {"day": "2026-12-12", "label": ""})
     assert "unlabelled" in labelled
     removed = await japan.use(japan.sam, "remove_from_itinerary", {"item": "castle"})
-    assert removed == "Removed Castle (Fri 11 Dec) from the Tokyo, Japan trip (Alex's trip)."
+    assert removed == "Removed Castle (Fri 11 Dec 09:00) from the Tokyo, Japan trip (Alex's trip)."
     assert [
         b.draft.title for b in await japan.bookings() if b.draft.kind is BookingKind.ACTIVITY
     ] == ["Tea ceremony"]
