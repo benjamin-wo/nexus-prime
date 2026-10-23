@@ -25,9 +25,10 @@ from nexus.application import trips as trip_cases
 from nexus.application import undo as undo_cases
 from nexus.application.bookings import ChatEdit
 from nexus.application.clock import utcnow
+from nexus.application.ports import LedgerQuery
 from nexus.domain.bookings import Booking
 from nexus.domain.errors import NothingToUndo
-from nexus.domain.ledger import Direction, User
+from nexus.domain.ledger import Direction, User, UserId
 from nexus.domain.money import Money
 from nexus.domain.trip_changes import ChangeKind, from_snapshot, snapshot
 from nexus.domain.trips import Trip
@@ -86,7 +87,7 @@ async def log_expense(uow: UowFactory, user: User, merchant: str) -> None:
 
 
 async def ledger_count(uow: UowFactory, user: User) -> int:
-    page = await tx_cases.list_ledger(uow(), user.id, tx_cases.LedgerQuery())
+    page = await tx_cases.list_ledger(uow(), user.id, LedgerQuery())
     return page.total
 
 
@@ -499,7 +500,7 @@ def test_a_snapshot_keeps_the_whole_entry() -> None:
     )
     assert draft is not None
     booking = Booking(
-        uuid4(), UUID(int=1), uuid4(), None, draft, Money.of("12.50", "EUR"), uuid4(),
+        uuid4(), UserId(UUID(int=1)), uuid4(), None, draft, Money.of("12.50", "EUR"), uuid4(),
         datetime(2026, 9, 28, 4, 0, tzinfo=UTC),
     )  # fmt: skip
     assert from_snapshot(snapshot(booking)) == booking
