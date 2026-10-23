@@ -48,6 +48,7 @@ from nexus.application import subscriptions as subscription_cases
 from nexus.application import transactions as tx_cases
 from nexus.application import travel_research as research_cases
 from nexus.application import trip_access as access_cases
+from nexus.application import undo as undo_cases
 from nexus.application.categories import list_categories
 from nexus.application.fx import RateSource
 from nexus.application.limits import RateLimiter
@@ -990,9 +991,11 @@ class AgentService:
                 async with self._locks[actor]:
                     await self._decline_pending(actor)
                     try:
-                        result = await tx_cases.undo_last(self._uow(), actor)
+                        result = await undo_cases.undo_latest(self._uow(), actor)
                     except NexusError as exc:
                         return [Reply(str(exc).capitalize() + ".")]
+                if isinstance(result, undo_cases.TripUndo):
+                    return [Reply(result.message())]
                 tx = result.transaction
                 what = f"{tx.amount} {tx.counterparty}" if tx.counterparty else str(tx.amount)
                 return [Reply(f"Undone: the {result.undone.value} of {what}.")]

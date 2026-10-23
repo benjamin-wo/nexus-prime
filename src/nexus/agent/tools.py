@@ -11,7 +11,7 @@ from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
-from uuid import UUID
+from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -42,6 +42,7 @@ from nexus.application import travel_research as trip_research
 from nexus.application import trip_access as access_cases
 from nexus.application import trip_split
 from nexus.application import trips as trip_cases
+from nexus.application import undo as undo_cases
 from nexus.application import wallets as wallet_cases
 from nexus.application.departments import Departments
 from nexus.application.fx import Rate, RateSource
@@ -103,6 +104,9 @@ class ToolContext:
     ideas: IdeaFinder | None = None
     # Looking things up on the web; None when not set up.
     lookup: WebLookup | None = None
+    # Shared by everything the tools change in one chat turn, so Undo reverses it together.
+    # None outside a turn: each change then stands alone.
+    batch: UUID | None = None
 
     @property
     def tz(self) -> ZoneInfo:
@@ -579,7 +583,9 @@ class NoArgs(Args):
 
 
 async def _undo(ctx: ToolContext, _: NoArgs) -> ToolResult:
-    result = await tx_cases.undo_last(ctx.uow(), ctx.user.id)
+    result = await undo_cases.undo_latest(ctx.uow(), ctx.user.id)
+    if isinstance(result, undo_cases.TripUndo):
+        return ToolResult(result.message(), wrote=True)
     tx = await show(ctx, result.transaction)
     return ToolResult(f"Undid the last {result.undone.value}: {tx}", wrote=True)
 
@@ -2717,6 +2723,12 @@ def _on_maps(place: Place | None) -> str:
     return f" On Google Maps as {place.name}{where}."
 
 
+def _chat_edit(ctx: ToolContext) -> booking_cases.ChatEdit:
+    """Has an itinerary change recorded for Undo, under this turn's batch. The actor is
+    the person chatting (on a shared trip, not the owner whose itinerary it is)."""
+    return booking_cases.ChatEdit(ctx.batch or uuid4(), ctx.user.id, ctx.now)
+
+
 async def _describe_add_to_itinerary(ctx: ToolContext, a: ItineraryArgs) -> str:
     found, draft, cost, place = await _itinerary_entry(ctx, a)
     price = f", {cost}" if cost else ""
@@ -2729,7 +2741,13 @@ async def _describe_add_to_itinerary(ctx: ToolContext, a: ItineraryArgs) -> str:
 async def _add_to_itinerary(ctx: ToolContext, a: ItineraryArgs) -> ToolResult:
     found, draft, cost, place = await _itinerary_entry(ctx, a)
     booking = await booking_cases.add_manual(
-        ctx.uow(), found.owner_id, found.trip.id, draft.as_dict(), cost, now=ctx.now
+        ctx.uow(),
+        found.owner_id,
+        found.trip.id,
+        draft.as_dict(),
+        cost,
+        now=ctx.now,
+        record=_chat_edit(ctx),
     )
     await _noted(ctx, found, f"added {booking.draft.title}")
     text = (
@@ -2964,7 +2982,7 @@ async def _describe_remove_from_itinerary(ctx: ToolContext, a: ItineraryItemArgs
 
 async def _remove_from_itinerary(ctx: ToolContext, a: ItineraryItemArgs) -> ToolResult:
     found, item = await _find_item(ctx, a)
-    await booking_cases.delete_booking(ctx.uow(), found.owner_id, item.id)
+    await booking_cases.delete_booking(ctx.uow(), found.owner_id, item.id, record=_chat_edit(ctx))
     await _noted(ctx, found, f"removed {item.draft.title}")
     return ToolResult(f"Taken off the {found.trip.destination} itinerary{found.whose}.", wrote=True)
 
@@ -3192,13 +3210,25 @@ async def _describe_change_itinerary(ctx: ToolContext, a: ItineraryChangeArgs) -
 async def _change_itinerary(ctx: ToolContext, a: ItineraryChangeArgs) -> ToolResult:
     found, item, draft, cost = await _changed_entry(ctx, a)
     moving, after = await _after(ctx, a, found, item, draft)
+    edit = _chat_edit(ctx)
     changed = await booking_cases.edit_booking(
-        ctx.uow(), found.owner_id, item.id, draft.as_dict(), cost, keep_cost=found.shared
+        ctx.uow(),
+        found.owner_id,
+        item.id,
+        draft.as_dict(),
+        cost,
+        keep_cost=found.shared,
+        record=edit,
     )
     await _noted(ctx, found, f"changed {changed.draft.title}")
     if moving:
         moved = await booking_cases.move_entry(
-            ctx.uow(), found.owner_id, item.id, draft.day, after.id if after else None
+            ctx.uow(),
+            found.owner_id,
+            item.id,
+            draft.day,
+            after.id if after else None,
+            record=edit,
         )
         if moved.draft.day is not None:
             number = (moved.draft.day - found.trip.start).days + 1

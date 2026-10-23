@@ -12,10 +12,10 @@ import logging
 import re
 import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from typing import Annotated, Any, Literal, NotRequired, TypedDict
-from uuid import UUID, uuid4
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
@@ -151,6 +151,15 @@ def _last(messages: Sequence[BaseMessage], kind: type[BaseMessage]) -> Any:
         if isinstance(message, kind):
             return message
     raise LookupError(f"no {kind.__name__} in state")
+
+
+def _turn_batch(messages: Sequence[BaseMessage]) -> UUID:
+    """Stands for the turn: derived from the id of the user's latest message, which the
+    state gives every message and keeps across the agent's steps and a pause to confirm."""
+    human = next((m for m in reversed(messages) if isinstance(m, HumanMessage)), None)
+    if human is None or not human.id:
+        return uuid4()
+    return uuid5(NAMESPACE_URL, f"nexus-turn:{human.id}")
 
 
 def _trim(messages: Sequence[AnyMessage]) -> list[AnyMessage]:
@@ -580,7 +589,9 @@ class AgentGraph:
     async def tools_node(
         self, state: AgentState, config: RunnableConfig
     ) -> Command[Literal["agent", "kernel_reply"]]:
-        ctx = await self._context(config)
+        # One batch id for the whole turn (it's rebuilt for every node), so Undo reverses
+        # what one message changed together.
+        ctx = replace(await self._context(config), batch=_turn_batch(state["messages"]))
         request: AIMessage = _last(state["messages"], AIMessage)
         from_kernel = bool(request.additional_kwargs.get(KERNEL))
         results: list[ToolMessage] = []

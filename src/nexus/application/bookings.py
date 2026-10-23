@@ -30,6 +30,7 @@ from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.ledger import User, UserId
 from nexus.domain.money import Money
 from nexus.domain.notifications import Kind, Level
+from nexus.domain.trip_changes import ChangeKind, TripChange, snapshot
 from nexus.domain.trips import Trip, TripStatus
 
 log = logging.getLogger(__name__)
@@ -256,6 +257,46 @@ MAX_BOOKINGS_A_TRIP = 100
 MAX_LISTS_A_TRIP = 12
 
 
+@dataclass(frozen=True, slots=True)
+class ChatEdit:
+    """An itinerary change made from chat. Passed to the use cases below, it has them
+    record the change, in the same transaction, so Undo can reverse it. The changes one
+    chat message makes share a ``batch`` and are undone together. ``actor`` is who made
+    the change (a member of a shared trip edits the owner's itinerary)."""
+
+    batch: UUID
+    actor: UserId
+    at: datetime
+
+
+async def _record(
+    uow: UnitOfWork,
+    edit: ChatEdit | None,
+    kind: ChangeKind,
+    *,
+    before: Booking | None,
+    after: Booking | None,
+) -> None:
+    """Inside the caller's unit of work. Nothing for a change not made from chat, or
+    for an entry that is on no trip."""
+    entry = after or before
+    if edit is None or entry is None or entry.trip_id is None:
+        return
+    await uow.trips.insert_change(
+        TripChange(
+            id=uuid4(),
+            user_id=edit.actor,
+            trip_id=entry.trip_id,
+            booking_id=entry.id,
+            kind=kind,
+            before=snapshot(before) if before else None,
+            after=snapshot(after) if after else None,
+            batch=edit.batch,
+            created_at=edit.at,
+        )
+    )
+
+
 def _check_lists(existing: list[Booking], draft: BookingDraft) -> None:
     """A trip keeps at most MAX_LISTS_A_TRIP lists of places to visit."""
     if not draft.list_name:
@@ -301,8 +342,10 @@ async def add_manual(
     cost: Money | None,
     *,
     now: datetime,
+    record: ChatEdit | None = None,
 ) -> Booking:
-    """An itinerary entry the user adds by hand: a flight, hotel, train or plan."""
+    """An itinerary entry the user adds by hand: a flight, hotel, train or plan. With
+    ``record`` (made from chat) the change is kept for Undo."""
     draft = _draft(details)
     if cost is not None and not cost.is_positive:
         raise InvalidInput("a cost must be more than zero")
@@ -316,6 +359,7 @@ async def add_manual(
         _check_lists(existing, draft)
         booking = Booking(uuid4(), user_id, trip_id, None, draft, cost, None, now)
         await uow.trips.insert_booking(booking)
+        await _record(uow, record, ChangeKind.ADD, before=None, after=booking)
         await uow.commit()
     return booking
 
@@ -354,11 +398,13 @@ async def edit_booking(
     cost: Money | None,
     *,
     keep_cost: bool = False,
+    record: ChatEdit | None = None,
 ) -> Booking:
     """Changes an entry's details, by hand or read from email (a corrected time).
     What the change doesn't mention (its Google Maps place, end time, link, list and
     place in the day) is kept; a plan moved to another day goes where its time fits.
-    With ``keep_cost`` the entry keeps the cost it had, whatever ``cost`` says."""
+    With ``keep_cost`` the entry keeps the cost it had, whatever ``cost`` says. With
+    ``record`` (made from chat) the change is kept for Undo."""
     if cost is not None and not cost.is_positive:
         raise InvalidInput("a cost must be more than zero")
     async with uow:
@@ -372,6 +418,7 @@ async def edit_booking(
             _check_lists(await uow.trips.list_bookings(user_id, trip_id=current.trip_id), draft)
         changed = replace(current, draft=draft, cost=current.cost if keep_cost else cost)
         await uow.trips.update_booking(changed)
+        await _record(uow, record, ChangeKind.CHANGE, before=current, after=changed)
         await uow.commit()
     return changed
 
@@ -382,11 +429,14 @@ async def move_entry(
     booking_id: UUID,
     day: date | None,
     after: UUID | None,
+    *,
+    record: ChatEdit | None = None,
 ) -> Booking:
     """Moves a plan or place to visit: onto ``day`` (None: back to places to visit),
     right after the entry ``after`` there (None: first). Flights, trains and hotel
     nights stay where their booking puts them. The day's plans are numbered afresh in
-    their new order."""
+    their new order. With ``record`` (made from chat) each entry it changes is kept for
+    Undo."""
     async with uow:
         moving = await uow.trips.get_booking(user_id, booking_id)
         if moving is None or moving.trip_id is None:
@@ -414,19 +464,27 @@ async def move_entry(
         moved = replace(moving, draft=replace(moving.draft, day=day, follows=follows))
         plans.insert(place, moved)
         numbers = itinerary.renumber(plans)
+        was = {b.id: b for b in others} | {moving.id: moving}
         for b in plans:
             if b.id != moved.id and b.draft.order == numbers[b.id]:
                 continue
-            await uow.trips.update_booking(replace(b, draft=replace(b.draft, order=numbers[b.id])))
+            renumbered = replace(b, draft=replace(b.draft, order=numbers[b.id]))
+            await uow.trips.update_booking(renumbered)
+            await _record(uow, record, ChangeKind.CHANGE, before=was[b.id], after=renumbered)
         await uow.commit()
     return replace(moved, draft=replace(moved.draft, order=numbers[moved.id]))
 
 
-async def delete_booking(uow: UnitOfWork, user_id: UserId, booking_id: UUID) -> None:
-    """Forgets a booking. Its expense, if logged, stays in the ledger."""
+async def delete_booking(
+    uow: UnitOfWork, user_id: UserId, booking_id: UUID, *, record: ChatEdit | None = None
+) -> None:
+    """Forgets a booking. Its expense, if logged, stays in the ledger. With ``record``
+    (made from chat) the entry is kept for Undo to put back."""
     async with uow:
+        before = await uow.trips.get_booking(user_id, booking_id) if record else None
         if not await uow.trips.delete_booking(user_id, booking_id):
             raise NotFound("no booking with that id")
+        await _record(uow, record, ChangeKind.REMOVE, before=before, after=None)
         await uow.commit()
 
 
