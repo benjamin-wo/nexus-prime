@@ -119,6 +119,9 @@ test("the setup checklist goes by itself once every step is done", async ({ page
 
 test("a trip that is on leads Home with its day, what is next, today's spending and the next booking", async ({ page }) => {
   await fakeApi(page, { tripMode: true });
+  // Noon in Singapore (the user's zone) on the fake trip's day, so "what is next" doesn't
+  // depend on when the test runs: in the minute after midnight there, 00:01 is still ahead.
+  await page.clock.setFixedTime(new Date(`${new Date().toLocaleDateString("en-CA")}T04:00:00Z`));
   await page.goto("/");
   const trip = page.getByRole("region", { name: "Day 3 in Tokyo" });
   await expect(trip).toBeVisible();
