@@ -3,7 +3,7 @@ scope, the ideas a research adds (matched to Google Maps when it clearly is the 
 skipped when already there), what the chat does with both, and whose trips are
 untouched. Every place and name here is made up."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
@@ -16,9 +16,11 @@ from nexus.application import bookings as booking_cases
 from nexus.application import places as place_cases
 from nexus.application import travel_research as research
 from nexus.application import trips as trip_cases
+from nexus.application import undo as undo_cases
 from nexus.application.ideas import IdeaFinder
 from nexus.application.places import Places
 from nexus.application.web_search import WebAnswer
+from nexus.domain.bookings import BookingKind
 from nexus.domain.departments import Run, RunStatus
 from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.ledger import User, UserId
@@ -384,3 +386,23 @@ async def test_research_to_trip_from_chat_confirms_then_adds(uow: UowFactory) ->
     await finished_research(uow, user.id, "Osaka", (("Namba", ("Dotonbori",)),))
     stopless = await run_tool(spec, ctx, {"research": "Osaka"})
     assert "Osaka, which isn't one of the trip's stops" in stopless.text
+
+
+async def test_undo_takes_the_ideas_a_chat_research_added_off_the_trip(uow: UowFactory) -> None:
+    user, trip = await kyoto_and_tokyo(uow)
+    await plan(uow, user, trip, "Tea house")
+    ctx = replace(
+        ToolContext(user, uow, NOW, RATES, places=Places(FakePlaces([GARDEN]))), batch=uuid4()
+    )
+    await finished_research(uow, user.id)
+    added = await run_tool(build_tools(lambda _: "")["research_to_trip"], ctx, {})
+    assert added.wrote and added.text.startswith("Added 6 ideas")
+    assert len(await ideas_of(uow, user, trip)) >= 1
+
+    undone = await undo_cases.undo_latest(uow(), user.id)
+    assert isinstance(undone, undo_cases.TripUndo) and len(undone.items) == 6
+    async with uow() as tx:
+        left = await tx.trips.list_bookings(user.id, trip_id=trip.id)
+    assert sorted(b.draft.title for b in left if b.draft.kind is BookingKind.ACTIVITY) == [
+        "Tea house"
+    ]

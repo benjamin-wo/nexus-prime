@@ -2716,11 +2716,18 @@ async def _itinerary_entry(
     return found, draft, cost, place
 
 
-def _on_maps(place: Place | None) -> str:
-    if place is None:
+def _matched(place: Place | None, asked: str) -> str:
+    """Which Google Maps place an entry matched, but only when its name differs from what
+    was asked ("Ichiran" matching "Ichiran Shibuya" isn't worth saying)."""
+    if place is None or place_cases.named_alike(asked, place):
         return ""
-    where = f", {place.address}" if place.address else ""
-    return f" On Google Maps as {place.name}{where}."
+    return f" (matched {place.name} on Google Maps)"
+
+
+def _plain(found: access_cases.Found, cost: str | None) -> bool:
+    """Whether an itinerary change is on the user's own trip and gives no cost: such a
+    change is made at once (with Undo) instead of asking first."""
+    return not found.shared and not cost
 
 
 def _chat_edit(ctx: ToolContext) -> booking_cases.ChatEdit:
@@ -2730,11 +2737,15 @@ def _chat_edit(ctx: ToolContext) -> booking_cases.ChatEdit:
 
 
 async def _describe_add_to_itinerary(ctx: ToolContext, a: ItineraryArgs) -> str:
+    # On one's own trip with no cost it is added at once (and can be undone). Decided
+    # before the Google Maps lookup, which the add itself does.
+    if _plain(await _found(ctx, a.trip), a.cost):
+        return ""
     found, draft, cost, place = await _itinerary_entry(ctx, a)
     price = f", {cost}" if cost else ""
     return (
-        f"Add to the {found.trip.destination} itinerary{found.whose}: "
-        f"{draft.describe()}{price}?{_on_maps(place)}{_price_left_out(found, a.cost)}"
+        f"Add {draft.brief()}{price} to the {found.trip.destination} trip{found.whose}?"
+        f"{_matched(place, a.name or '')}{_price_left_out(found, a.cost)}"
     )
 
 
@@ -2751,8 +2762,8 @@ async def _add_to_itinerary(ctx: ToolContext, a: ItineraryArgs) -> ToolResult:
     )
     await _noted(ctx, found, f"added {booking.draft.title}")
     text = (
-        f"Added to the {found.trip.destination} itinerary{found.whose}: "
-        f"{draft.describe()}.{_on_maps(place)}"
+        f"Added {draft.brief()} to the {found.trip.destination} trip{found.whose}."
+        f"{_matched(place, a.name or '')}"
     )
     if place is not None and (warning := place.warning(draft.day, draft.at)):
         text += f" Note: {warning} (Google Maps' regular hours)."
@@ -2977,14 +2988,20 @@ async def _find_item(ctx: ToolContext, a: ItineraryItemArgs) -> tuple[access_cas
 
 async def _describe_remove_from_itinerary(ctx: ToolContext, a: ItineraryItemArgs) -> str:
     found, item = await _find_item(ctx, a)
-    return f"Take {item.draft.describe()} off the {found.trip.destination} itinerary{found.whose}?"
+    # An entry with a cost, or an expense logged from it, still asks first.
+    if _plain(found, None) and item.cost is None and item.transaction_id is None:
+        return ""
+    return f"Remove {item.draft.brief()} from the {found.trip.destination} trip{found.whose}?"
 
 
 async def _remove_from_itinerary(ctx: ToolContext, a: ItineraryItemArgs) -> ToolResult:
     found, item = await _find_item(ctx, a)
     await booking_cases.delete_booking(ctx.uow(), found.owner_id, item.id, record=_chat_edit(ctx))
     await _noted(ctx, found, f"removed {item.draft.title}")
-    return ToolResult(f"Taken off the {found.trip.destination} itinerary{found.whose}.", wrote=True)
+    return ToolResult(
+        f"Removed {item.draft.brief()} from the {found.trip.destination} trip{found.whose}.",
+        wrote=True,
+    )
 
 
 class DayLabelArgs(TripNameArgs):
@@ -3131,10 +3148,13 @@ class ItineraryChangeArgs(ItineraryItemArgs):
 
 
 async def _changed_entry(
-    ctx: ToolContext, a: ItineraryChangeArgs
+    ctx: ToolContext,
+    a: ItineraryChangeArgs,
+    opened: tuple[access_cases.Found, Booking] | None = None,
 ) -> tuple[access_cases.Found, Booking, BookingDraft, Money | None]:
-    """The entry with only what the user changed: the rest is kept."""
-    found, item = await _find_item(ctx, a)
+    """The entry with only what the user changed: the rest is kept. ``opened`` is the
+    trip and entry when already looked up."""
+    found, item = opened or await _find_item(ctx, a)
     data = item.draft.as_dict()
     hotel = item.draft.kind is BookingKind.HOTEL
     fields = {
@@ -3197,13 +3217,18 @@ async def _after(
 
 
 async def _describe_change_itinerary(ctx: ToolContext, a: ItineraryChangeArgs) -> str:
-    found, item, draft, cost = await _changed_entry(ctx, a)
+    opened = await _find_item(ctx, a)
+    found, item = opened
+    # An entry that has a cost or a logged expense still asks first, as does a new cost.
+    if _plain(found, a.cost) and item.cost is None and item.transaction_id is None:
+        return ""
+    found, item, draft, cost = await _changed_entry(ctx, a, opened)
     price = f", {cost}" if cost else ""
     moving, after = await _after(ctx, a, found, item, draft)
     where = (f", after {after.draft.title}" if after else ", first that day") if moving else ""
     return (
-        f"Change {item.draft.describe()} on the {found.trip.destination} itinerary{found.whose} "
-        f"to {draft.describe()}{price}{where}?{_price_left_out(found, a.cost)}"
+        f"Change {item.draft.brief()} to {draft.brief()}{price}{where} on the "
+        f"{found.trip.destination} trip{found.whose}?{_price_left_out(found, a.cost)}"
     )
 
 
@@ -3234,7 +3259,7 @@ async def _change_itinerary(ctx: ToolContext, a: ItineraryChangeArgs) -> ToolRes
             number = (moved.draft.day - found.trip.start).days + 1
             await _noted(ctx, found, f"moved {moved.draft.title} to Day {number}")
     return ToolResult(
-        f"Changed on the {found.trip.destination} itinerary{found.whose}: {draft.describe()}."
+        f"Changed to {draft.brief()} on the {found.trip.destination} trip{found.whose}."
         + _price_left_out(found, a.cost),
         wrote=True,
     )
@@ -3332,7 +3357,7 @@ async def _describe_research_to_trip(ctx: ToolContext, a: ResearchToTripArgs) ->
 async def _research_to_trip(ctx: ToolContext, a: ResearchToTripArgs) -> ToolResult:
     trip, run_id, names = await _research_for(ctx, a)
     found = await trip_research.ideas_from_areas(
-        ctx.uow, ctx.places, ctx.user, run_id, trip.id, names, now=ctx.now
+        ctx.uow, ctx.places, ctx.user, run_id, trip.id, names, now=ctx.now, record=_chat_edit(ctx)
     )
     text = f"Added {found.added} ideas to the {trip.destination} trip"
     if found.skipped:
@@ -3874,7 +3899,8 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
         ToolSpec(
             "add_to_itinerary",
             "Add an entry to a trip's itinerary by hand: a plan (dinner, tour, day trip), a "
-            "flight, a hotel stay or a train. Asks the user to confirm.",
+            "flight, a hotel stay or a train. Saves at once, with Undo; asks to confirm when it "
+            "carries a cost or is on someone else's trip.",
             ItineraryArgs,
             _add_to_itinerary,
             confirm=_describe_add_to_itinerary,
@@ -3900,7 +3926,8 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
         ToolSpec(
             "change_itinerary_entry",
             "Change an entry already on a trip's itinerary (a hotel's check-out, a plan's "
-            "time, a flight's departure), keeping what isn't changed. Asks the user to confirm.",
+            "time, a flight's departure), keeping what isn't changed. Saves at once, with Undo; "
+            "asks to confirm when it carries a cost or is on someone else's trip.",
             ItineraryChangeArgs,
             _change_itinerary,
             confirm=_describe_change_itinerary,
@@ -3947,7 +3974,8 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
         ),
         ToolSpec(
             "remove_from_itinerary",
-            "Take an entry off a trip's itinerary. Asks the user to confirm.",
+            "Take an entry off a trip's itinerary. Saves at once, with Undo; asks to confirm "
+            "when the entry has a cost or it is on someone else's trip.",
             ItineraryItemArgs,
             _remove_from_itinerary,
             confirm=_describe_remove_from_itinerary,

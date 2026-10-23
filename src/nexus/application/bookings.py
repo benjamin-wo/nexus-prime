@@ -99,6 +99,18 @@ def _same(a: BookingDraft, b: BookingDraft) -> bool:
 
 
 @dataclass(frozen=True, slots=True)
+class ChatEdit:
+    """An itinerary change made from chat. Passed to the use cases below, it has them
+    record the change, in the same transaction, so Undo can reverse it. The changes one
+    chat message makes share a ``batch`` and are undone together. ``actor`` is who made
+    the change (a member of a shared trip edits the owner's itinerary)."""
+
+    batch: UUID
+    actor: UserId
+    at: datetime
+
+
+@dataclass(frozen=True, slots=True)
 class FromScreenshot:
     saved: list[Saved]
     repeated: int  # entries already on the itinerary, not added again
@@ -111,11 +123,13 @@ async def add_from_screenshot(
     *,
     trip_id: UUID | None = None,
     now: datetime,
+    record: ChatEdit | None = None,
 ) -> FromScreenshot:
     """Itinerary entries read from a screenshot. With ``trip_id`` (sent from a trip's
     page) all go on that trip; otherwise each lands on the trip whose dates it falls
     in, or the user is asked which, as for a booking from email. Entries already on
-    the itinerary aren't added twice."""
+    the itinerary aren't added twice. With ``record`` (made from chat) those that land
+    on a trip are kept for Undo."""
     today = _today(user, now)
     saved: list[Saved] = []
     repeated = 0
@@ -152,6 +166,7 @@ async def add_from_screenshot(
             booking = Booking(uuid4(), user.id, trip.id if trip else None, None, draft, cost,
                               None, now)  # fmt: skip
             await uow.trips.insert_booking(booking)
+            await _record(uow, record, ChangeKind.ADD, before=None, after=booking)
             existing.append(draft)
             ask = [] if trip else sorted(found or ahead, key=lambda t: t.start)[:ASK_TRIPS]
             saved.append(Saved(booking, trip, ask))
@@ -257,18 +272,6 @@ MAX_BOOKINGS_A_TRIP = 100
 MAX_LISTS_A_TRIP = 12
 
 
-@dataclass(frozen=True, slots=True)
-class ChatEdit:
-    """An itinerary change made from chat. Passed to the use cases below, it has them
-    record the change, in the same transaction, so Undo can reverse it. The changes one
-    chat message makes share a ``batch`` and are undone together. ``actor`` is who made
-    the change (a member of a shared trip edits the owner's itinerary)."""
-
-    batch: UUID
-    actor: UserId
-    at: datetime
-
-
 async def _record(
     uow: UnitOfWork,
     edit: ChatEdit | None,
@@ -371,9 +374,11 @@ async def add_ideas(
     drafts: Sequence[BookingDraft],
     *,
     now: datetime,
+    record: ChatEdit | None = None,
 ) -> int:
     """Places to visit added to a trip together, all or none (the trip's caps on
-    entries and lists apply to the whole set)."""
+    entries and lists apply to the whole set). With ``record`` (made from chat) each is
+    kept for Undo."""
     async with uow:
         trip = await uow.trips.get_trip(user_id, trip_id)
         if trip is None:
@@ -385,6 +390,7 @@ async def add_ideas(
             _check_lists(existing, draft)
             booking = Booking(uuid4(), user_id, trip_id, None, draft, None, None, now)
             await uow.trips.insert_booking(booking)
+            await _record(uow, record, ChangeKind.ADD, before=None, after=booking)
             existing.append(booking)
         await uow.commit()
     return len(drafts)

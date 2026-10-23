@@ -61,17 +61,30 @@ async def test_places_from_chat(uow: UowFactory) -> None:
     assert "- Hanok Noodle Bar (Restaurant): rated 4.5/5 from 1,200 ratings" in found
     assert "(place id fakePlaceNoodle01)" in found
 
-    # Added by name: matched to Google Maps, which the confirmation names, and flagged
-    # because Thursdays are usually closed.
+    # Added by name: matched to Google Maps and flagged because Thursdays are usually
+    # closed. On one's own trip with no cost it is added without asking.
     args: dict[str, object] = {"kind": "activity", "name": "Dinner at Hanok Noodle",
             "day": "2026-11-12",
             "time": "19:00"}  # fmt: skip
     spec = tools["add_to_itinerary"]
     assert spec.confirm is not None
-    asked = await spec.confirm(ctx, spec.parse(args))
-    assert asked.endswith("? On Google Maps as Hanok Noodle Bar, 12 Example-ro, Seoul.")
+    assert await spec.confirm(ctx, spec.parse(args)) == ""
+    searched = len(source.searches)
+    assert searched == 1  # asking looked nothing up
     added = await use("add_to_itinerary", args)
-    assert added.endswith("Note: Usually closed on Thursdays (Google Maps' regular hours)."), added
+    assert added == (
+        "Added Dinner at Hanok Noodle (Thu 12 Nov 19:00) to the Seoul trip. "
+        "Note: Usually closed on Thursdays (Google Maps' regular hours)."
+    )  # the match is plain, so no address and no "matched" tail
+    assert len(source.searches) == 2
+    # With a cost it asks first, naming the match only when its name differs from the ask.
+    costly = {**args, "name": "Hanok Noodles and Dumplings", "cost": "30000", "currency": "KRW"}
+    asked = await spec.confirm(ctx, spec.parse(costly))
+    assert asked.startswith("Add Hanok Noodles and Dumplings (Thu 12 Nov 19:00), ")
+    assert asked.endswith(" to the Seoul trip? (matched Hanok Noodle Bar on Google Maps)")
+    assert "Example-ro" not in asked
+    plain = await spec.confirm(ctx, spec.parse({**args, "cost": "30000", "currency": "KRW"}))
+    assert plain.endswith(" to the Seoul trip?")
     async with uow() as tx:
         (dinner,) = await tx.trips.list_bookings(user.id, trip_id=trip.id)
     assert dinner.draft.place_id == "fakePlaceNoodle01"

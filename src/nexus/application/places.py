@@ -9,6 +9,7 @@ free monthly allowance for personal use.
 
 import asyncio
 import logging
+import unicodedata
 from collections import Counter, OrderedDict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
@@ -392,6 +393,22 @@ def same_place(name: str, place: Place) -> bool:
         return True
     wide = {c for c in name if ord(c) > 0x2E80}  # CJK and similar scripts
     return len(wide & set(place.name)) >= 2
+
+
+def _folded(value: str) -> str:
+    return "".join(c for c in unicodedata.normalize("NFKD", value) if not unicodedata.combining(c))
+
+
+def named_alike(name: str, place: Place) -> bool:
+    """Whether a place is named much as asked: the same words give or take fillers
+    ("Dinner at Hanok Noodle" and "Hanok Noodle Bar"), accents and case. Used to say
+    which place was matched only when it isn't plain."""
+    mine, theirs = _words(_folded(name)), _words(_folded(place.name))
+    if mine and theirs and (mine <= theirs or theirs <= mine):
+        return True
+    a, b = (_folded(v).casefold() for v in (name, place.name))
+    a, b = "".join(c for c in a if c.isalnum()), "".join(c for c in b if c.isalnum())
+    return bool(a) and bool(b) and (a in b or b in a)
 
 
 async def best_match(places: Places, user_id: UserId, name: str, query: str) -> Place | None:

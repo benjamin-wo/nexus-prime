@@ -906,7 +906,19 @@ CASES: tuple[Case, ...] = (
         "log",
         _t("add dinner at Sushi Ten on 12 Dec at 7pm to my Japan trip"),
         calls=(Call("add_to_itinerary", {"kind": "activity", "name": Has("sushi ten")}),),
-        confirms=True,
+        confirms=False,  # the user's own trip, no cost: saved at once, with Undo
+    ),
+    Case(
+        "itinerary-add-plan-with-cost",
+        "log",
+        _t("add dinner at Sushi Ten on 12 Dec at 7pm to my Japan trip, it costs 9000 yen"),
+        calls=(
+            Call(
+                "add_to_itinerary",
+                {"kind": "activity", "name": Has("sushi ten"), "cost": Has("9000")},
+            ),
+        ),
+        confirms=True,  # a cost is money: asked first
     ),
     # A trip someone else shared: the user is a member, Alex owns it. Plan edits go
     # through; money and the trip's details are Alex's.
@@ -941,7 +953,7 @@ CASES: tuple[Case, ...] = (
         calls=(
             Call("change_itinerary_entry", {"item": Has("sakura"), "until": Has("2026-12-15")}),
         ),
-        confirms=True,
+        confirms=False,
     ),
     Case(
         "itinerary-hotel-whole-trip",
@@ -953,14 +965,14 @@ CASES: tuple[Case, ...] = (
                 {"kind": "hotel", "name": Has("ryokan hana"), "day": Has("2026-12-14")},
             ),
         ),
-        confirms=True,
+        confirms=False,
     ),
     Case(
         "itinerary-place-to-visit",
         "log",
         _t("save teamLab Planets to my Tokyo list, it's a museum"),
         checks=(Booked("teamLab", scheduled=False),),
-        confirms=True,
+        confirms=False,
     ),
     Case(
         "itinerary-label-days",

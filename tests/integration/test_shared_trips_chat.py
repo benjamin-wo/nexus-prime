@@ -197,14 +197,14 @@ async def test_a_member_adds_a_plan_to_the_owners_trip_without_a_price(
     }
     asked = await japan.asked(japan.sam, "add_to_itinerary", args)
     assert asked.startswith(
-        "Add to the Tokyo, Japan itinerary (Alex's trip): plan (Dinner at Sushi Ten"
+        "Add Dinner at Sushi Ten (Sat 12 Dec 19:00) to the Tokyo, Japan trip (Alex's trip)?"
     )
     assert "9000" not in asked
     assert asked.endswith("I left the price out: only Alex can add costs on a shared trip.")
 
     done = await japan.use(japan.sam, "add_to_itinerary", args)
     assert done.startswith(
-        "Added to the Tokyo, Japan itinerary (Alex's trip): plan (Dinner at Sushi Ten"
+        "Added Dinner at Sushi Ten (Sat 12 Dec 19:00) to the Tokyo, Japan trip (Alex's trip)."
     )
     assert "I left the price out" in done
     (dinner,) = [b for b in await japan.bookings() if b.draft.title == "Dinner at Sushi Ten"]
@@ -224,12 +224,38 @@ async def test_a_member_adds_a_plan_to_the_owners_trip_without_a_price(
         assert await db.scalar(select(func.count()).select_from(transactions)) == 0
 
 
+async def test_a_member_is_asked_first_even_with_no_cost_but_the_owner_is_not(
+    japan: Japan,
+) -> None:
+    add = {"kind": "activity", "name": "Castle", "day": "2026-12-11"}
+    change = {"item": "tea", "time": "15:30"}
+    remove = {"item": "tea"}
+    # On someone else's trip every change asks, and never shows what the owner paid.
+    for tool, args in (
+        ("add_to_itinerary", add),
+        ("change_itinerary_entry", change),
+        ("remove_from_itinerary", remove),
+    ):
+        asked = await japan.asked(japan.sam, tool, {"trip": "Japan", **args})
+        assert asked.endswith("trip (Alex's trip)?"), (tool, asked)
+        assert "6000" not in asked
+    # On the owner's own trip an add with no cost goes through unasked ...
+    assert await japan.asked(japan.alex, "add_to_itinerary", add) == ""
+    # ... but an entry that has a cost (the tea ceremony cost 6000) still asks.
+    assert (await japan.asked(japan.alex, "remove_from_itinerary", remove)).startswith(
+        "Remove Tea ceremony (Fri 11 Dec 14:00) from the Tokyo, Japan trip?"
+    )
+    assert (await japan.asked(japan.alex, "change_itinerary_entry", change)).startswith(
+        "Change Tea ceremony (Fri 11 Dec 14:00) to Tea ceremony (Fri 11 Dec 15:30)"
+    )
+
+
 async def test_a_member_changes_moves_and_removes_plans_and_keeps_the_cost(japan: Japan) -> None:
     changed = await japan.use(
         japan.sam, "change_itinerary_entry", {"item": "tea", "time": "15:30", "cost": "1"}
     )
     assert changed.startswith(
-        "Changed on the Tokyo, Japan itinerary (Alex's trip): plan (Tea ceremony"
+        "Changed to Tea ceremony (Fri 11 Dec 15:30) on the Tokyo, Japan trip (Alex's trip)."
     )
     assert "I left the price out" in changed
     (tea,) = [b for b in await japan.bookings() if b.draft.title == "Tea ceremony"]
@@ -245,7 +271,7 @@ async def test_a_member_changes_moves_and_removes_plans_and_keeps_the_cost(japan
     labelled = await japan.use(japan.sam, "label_trip_day", {"day": "2026-12-12", "label": ""})
     assert "unlabelled" in labelled
     removed = await japan.use(japan.sam, "remove_from_itinerary", {"item": "castle"})
-    assert removed == "Taken off the Tokyo, Japan itinerary (Alex's trip)."
+    assert removed == "Removed Castle (Fri 11 Dec) from the Tokyo, Japan trip (Alex's trip)."
     assert [
         b.draft.title for b in await japan.bookings() if b.draft.kind is BookingKind.ACTIVITY
     ] == ["Tea ceremony"]

@@ -16,7 +16,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nexus.agent.graph import AgentDeps, AgentGraph
-from nexus.agent.service import AgentService, Reply
+from nexus.agent.service import UNDO, AgentService, Reply
 from nexus.agent.skills import SkillLibrary
 from nexus.agent.tools import ToolContext, build_tools, run_tool
 from nexus.application import bookings as booking_cases
@@ -261,6 +261,86 @@ async def test_each_chat_turn_is_its_own_undo(uow: UowFactory) -> None:
     assert await titles(uow, user, trip) == []
     nothing = await agent.quick_action(user.id, "undo")
     assert [r.text for r in nothing] == ["There is nothing to undo."]
+
+
+# --- changes on one's own trip are made at once ------------------------------------------
+
+
+def _call(name: str, args: dict[str, object]) -> AIMessage:
+    return AIMessage(content="", tool_calls=[{"name": name, "args": args, "id": f"c-{uuid4()}"}])
+
+
+def _asks(replies: list[Reply]) -> bool:
+    return any(b.data.startswith("hitl:") for r in replies for row in r.buttons for b in row)
+
+
+async def test_own_trip_changes_without_a_cost_happen_at_once_with_undo(uow: UowFactory) -> None:
+    user = await person(uow)
+    trip = await spain(uow, user)
+    await booking_cases.add_manual(
+        uow(), user.id, trip.id, plan("L'autèntic", at="12:30"), None, now=NOW
+    )
+    await booking_cases.add_manual(
+        uow(), user.id, trip.id, plan("Gelato", at="16:00"), None, now=NOW
+    )
+    model = scripted(
+        _call("add_to_itinerary", plan("Begur Castle")),
+        say("Added."),
+        _call("change_itinerary_entry", {"item": "gelato", "time": "17:30"}),
+        say("Moved."),
+        _call("remove_from_itinerary", {"item": "autèntic"}),
+        say("Removed."),
+    )
+    agent = _agent(uow, model, _ticking())
+
+    added = await agent.handle_text(user.id, "add the castle", "tg:1:1")
+    assert not _asks(added) and added[-1].buttons[-1] == [UNDO]
+    assert await titles(uow, user, trip) == ["Begur Castle", "Gelato", "L'autèntic"]
+    changed = await agent.handle_text(user.id, "gelato later", "tg:1:2")
+    assert not _asks(changed) and changed[-1].buttons[-1] == [UNDO]
+    removed = await agent.handle_text(user.id, "drop l'autentic", "tg:1:3")
+    assert not _asks(removed) and removed[-1].buttons[-1] == [UNDO]
+    assert await titles(uow, user, trip) == ["Begur Castle", "Gelato"]
+
+    undone = await agent.quick_action(user.id, "undo")
+    assert [r.text for r in undone] == ["Undone: L'autèntic back on the Spain trip."]
+    undone = await agent.quick_action(user.id, "undo")
+    assert [r.text for r in undone] == ["Undone: Gelato back as it was on the Spain trip."]
+    undone = await agent.quick_action(user.id, "undo")
+    assert [r.text for r in undone] == ["Undone: Begur Castle off the Spain trip."]
+    stored = {b.draft.title: b.draft.at for b in await bookings(uow, user, trip)}
+    assert stored == {"Gelato": time(16, 0), "L'autèntic": time(12, 30)}
+
+
+async def test_a_cost_or_a_shared_trip_still_asks_first(uow: UowFactory) -> None:
+    user = await person(uow)
+    trip = await spain(uow, user)
+    paid = await booking_cases.add_manual(
+        uow(), user.id, trip.id, plan("Tapas tour"), Money.of("40", "EUR"), now=NOW
+    )
+    model = scripted(
+        _call(
+            "add_to_itinerary",
+            plan("Dinner", cost="30", currency="EUR", place="12 Carrer Example"),
+        ),
+        _call("change_itinerary_entry", {"item": "tapas", "time": "20:00"}),
+        _call("remove_from_itinerary", {"item": "tapas"}),
+    )
+    agent = _agent(uow, model, _ticking())
+    for n, (ask, said) in enumerate(
+        (
+            ("Add Dinner (Sat 12 Dec), ", "dinner, 30 euros"),
+            ("Change Tapas tour (Sat 12 Dec) to Tapas tour (Sat 12 Dec 20:00)", "tapas later"),
+            ("Remove Tapas tour (Sat 12 Dec) from the Spain trip?", "drop the tapas"),
+        ),
+        start=1,
+    ):
+        replies = await agent.handle_text(user.id, said, f"tg:2:{n}")
+        assert _asks(replies) and ask in replies[0].text, replies[0].text
+        assert "Carrer" not in replies[0].text  # no street address
+        await agent.resolve(user.id, replies[0].buttons[0][0].data.split(":")[1], False)
+    assert await titles(uow, user, trip) == ["Tapas tour"]
+    assert (await bookings(uow, user, trip))[0].id == paid.id
 
 
 # --- ledger and itinerary, newest first -------------------------------------------------
