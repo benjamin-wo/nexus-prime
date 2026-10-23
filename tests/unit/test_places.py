@@ -324,6 +324,6 @@ def test_a_match_is_plain_when_the_names_agree_give_or_take_fillers_and_accents(
     assert named_alike("Dinner at Hanok Noodle", noodle)
     assert named_alike("hanok noodle bar", noodle)
     assert not named_alike("Hanok Noodles and Dumplings", noodle)
-    assert named_alike("Autentic", fake_place("fakePlaceAutentic1", "L'Autèntic"))
+    assert named_alike("Verde", fake_place("fakePlaceVerde1", "La Verde"))
     assert named_alike("Ichiran", fake_place("fakePlaceIchiran01", "Ichiran Shibuya"))
     assert named_alike("一蘭", fake_place("fakePlaceIchiran02", "一蘭 渋谷店"))

@@ -189,12 +189,12 @@ def test_a_pin_is_the_users_own_and_only_on_a_plan_without_a_place() -> None:
 
 def test_brief_is_the_short_form_without_address_or_references() -> None:
     plan = BookingDraft.from_dict(
-        {"kind": "activity", "name": "L'autèntic", "day": "2026-12-12", "at": "12:30",
-         "ends_at": "14:00", "address": "12 Carrer Example, Begur", "reference": "R-1",
+        {"kind": "activity", "name": "Casa Verde", "day": "2026-12-12", "at": "12:30",
+         "ends_at": "14:00", "address": "12 Carrer Example, Hillton", "reference": "R-1",
          "booked_via": "Klook"}
     )  # fmt: skip
     assert plan is not None
-    assert plan.brief() == "L'autèntic (Sat 12 Dec 12:30)"
+    assert plan.brief() == "Casa Verde (Sat 12 Dec 12:30)"
     assert "Carrer" in plan.describe() and "R-1" in plan.describe()  # the full form is kept
     idea = BookingDraft.from_dict({"kind": "activity", "name": "Night market", "address": "1 X St"})
     assert idea is not None and idea.brief() == "Night market (place to visit)"
