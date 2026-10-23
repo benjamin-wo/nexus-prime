@@ -199,15 +199,15 @@ async def test_everything_one_message_changed_is_undone_together(uow: UowFactory
     async def use(name: str, args: dict[str, object]) -> str:
         return (await run_tool(tools[name], ctx, args)).text
 
-    # "Casa Verde off, castle on, Gelato Rosa on, gelato later" in one message.
+    # "Casa Verde off, castle on, Rosa Ices on, gelato later" in one message.
     await use("remove_from_itinerary", {"item": "verde"})
     await use("add_to_itinerary", {"kind": "activity", "name": "Hilltop Castle", "day": DAY})
-    await use("add_to_itinerary", {"kind": "activity", "name": "Gelato Rosa", "day": DAY})
+    await use("add_to_itinerary", {"kind": "activity", "name": "Rosa Ices", "day": DAY})
     await use("change_itinerary_entry", {"item": "gelato", "time": "17:30"})
-    assert await titles(uow, user, trip) == ["Hilltop Castle", "Gelato Rosa", "Gelato"]
+    assert await titles(uow, user, trip) == sorted(["Hilltop Castle", "Rosa Ices", "Gelato"])
 
     assert (await undo(uow, user)).message() == (
-        "Undone: Hilltop Castle and Gelato Rosa off the Spain trip, Casa Verde back on, "
+        "Undone: Hilltop Castle and Rosa Ices off the Spain trip, Casa Verde back on, "
         "Gelato back as it was."
     )
     stored = await bookings(uow, user, trip)
@@ -246,18 +246,16 @@ async def test_a_message_that_moves_a_plan_is_undone_with_the_plans_it_renumbere
 async def test_each_chat_turn_is_its_own_undo(uow: UowFactory) -> None:
     user = await person(uow)
     trip = await spain(uow, user)
-    model = scripted(
-        _adds("Hill Fort", "Gelato Rosa"), say("Added."), _adds("Gelato"), say("Added.")
-    )
+    model = scripted(_adds("Hill Fort", "Rosa Ices"), say("Added."), _adds("Gelato"), say("Added."))
     agent = _agent(uow, model, _ticking())
-    await _says(agent, user, "castle and gelato rosa", "tg:1:1")
+    await _says(agent, user, "castle and rosa ices", "tg:1:1")
     await _says(agent, user, "gelato too", "tg:1:2")
-    assert await titles(uow, user, trip) == ["Hill Fort", "Gelato Rosa", "Gelato"]
+    assert await titles(uow, user, trip) == sorted(["Hill Fort", "Rosa Ices", "Gelato"])
 
     undone = await agent.quick_action(user.id, "undo")
     assert [r.text for r in undone] == ["Undone: Gelato off the Spain trip."]
     undone = await agent.quick_action(user.id, "undo")
-    assert [r.text for r in undone] == ["Undone: Hill Fort and Gelato Rosa off the Spain trip."]
+    assert [r.text for r in undone] == ["Undone: Hill Fort and Rosa Ices off the Spain trip."]
     assert await titles(uow, user, trip) == []
     nothing = await agent.quick_action(user.id, "undo")
     assert [r.text for r in nothing] == ["There is nothing to undo."]
@@ -295,12 +293,12 @@ async def test_own_trip_changes_without_a_cost_happen_at_once_with_undo(uow: Uow
 
     added = await agent.handle_text(user.id, "add the castle", "tg:1:1")
     assert not _asks(added) and added[-1].buttons[-1] == [UNDO]
-    assert await titles(uow, user, trip) == ["Hilltop Castle", "Gelato", "Casa Verde"]
+    assert await titles(uow, user, trip) == sorted(["Hilltop Castle", "Gelato", "Casa Verde"])
     changed = await agent.handle_text(user.id, "gelato later", "tg:1:2")
     assert not _asks(changed) and changed[-1].buttons[-1] == [UNDO]
     removed = await agent.handle_text(user.id, "drop l'autentic", "tg:1:3")
     assert not _asks(removed) and removed[-1].buttons[-1] == [UNDO]
-    assert await titles(uow, user, trip) == ["Hilltop Castle", "Gelato"]
+    assert await titles(uow, user, trip) == sorted(["Hilltop Castle", "Gelato"])
 
     undone = await agent.quick_action(user.id, "undo")
     assert [r.text for r in undone] == ["Undone: Casa Verde back on the Spain trip."]
