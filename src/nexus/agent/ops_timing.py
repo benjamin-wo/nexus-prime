@@ -1,6 +1,7 @@
 """Times each model call in a chat turn and notes which model answered, for the
-turn's ops events. Only model names, timings, token counts and error types: never
-the prompt or the reply."""
+turn's ops events, and how long the turn spent building its context (the graph's
+"kernel" step: the money snapshot and memories) and running tools. Only model names,
+timings, token counts and error types: never the prompt or the reply."""
 
 import time
 from typing import Any
@@ -20,13 +21,51 @@ def _model_of(serialized: dict[str, Any] | None, params: dict[str, Any] | None) 
     return str((serialized or {}).get("name") or "unknown")
 
 
+# The graph steps whose time a turn reports, by the name the graph gives them.
+_CONTEXT_NODE = "kernel"
+_TOOLS_NODE = "tools"
+
+
 class TurnTimer(AsyncCallbackHandler):
     """Collects a turn's model calls and records one "model" event for each."""
 
     def __init__(self, primary: str | None) -> None:
         self.primary = primary
         self.calls: list[dict[str, Any]] = []
+        self.context_ms = 0
+        self.tools_ms = 0
         self._started: dict[UUID, tuple[float, str]] = {}
+        self._nodes: dict[UUID, tuple[float, str]] = {}
+
+    async def on_chain_start(
+        self,
+        serialized: dict[str, Any] | None,
+        inputs: dict[str, Any],
+        *,
+        run_id: UUID,
+        metadata: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> None:
+        node = (metadata or {}).get("langgraph_node")
+        if node in (_CONTEXT_NODE, _TOOLS_NODE) and kwargs.get("name") == node:
+            self._nodes[run_id] = (time.monotonic(), node)
+
+    async def on_chain_end(self, outputs: Any, *, run_id: UUID, **kwargs: Any) -> None:
+        self._node_done(run_id)
+
+    async def on_chain_error(self, error: BaseException, *, run_id: UUID, **kwargs: Any) -> None:
+        self._node_done(run_id)
+
+    def _node_done(self, run_id: UUID) -> None:
+        started = self._nodes.pop(run_id, None)
+        if started is None:
+            return
+        began, node = started
+        ms = int((time.monotonic() - began) * 1000)
+        if node == _CONTEXT_NODE:
+            self.context_ms += ms
+        else:
+            self.tools_ms += ms
 
     async def on_chat_model_start(
         self,

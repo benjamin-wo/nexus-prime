@@ -35,7 +35,7 @@ The shared language for code, tests and docs. When a term here and a name in cod
 - **Salary schedule**: pay cadence and baseline amount, as reported by the user in chat. Never inferred from transactions or statements.
 - **Budget**: a monthly limit, overall or per category, with alerts at 50%, 80% and 100%. No rollover.
 - **Cash-flow calendar**: expected money in and out per day and the net movement. Never a predicted balance.
-- **FX rate**: a dated rate from Frankfurter. A conversion uses the latest rate on or before the transaction date and shows that date. A missing rate means "conversion unavailable", never a substitute.
+- **FX rate**: a dated rate from Frankfurter. A conversion uses the latest rate on or before the transaction date and shows that date. If Frankfurter can't answer, the newest kept rate on or before that date stands in, and shows its own date; a missing rate means "conversion unavailable", never a later rate or a guess.
 
 ## Travel
 

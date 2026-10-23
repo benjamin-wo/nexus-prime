@@ -360,3 +360,37 @@ def test_problems_are_ordered_worst_first_and_ids_are_stable() -> None:
     second = ops_report.build(list(reversed(events)), [], [], checks()).problems
     assert [p.severity for p in first] == ["high", "low"]
     assert [p.id for p in first] == [p.id for p in second]
+
+
+def test_a_turn_reports_the_time_in_context_and_tools() -> None:
+    from typing import TypedDict
+
+    from langgraph.graph import END, START, StateGraph
+
+    class State(TypedDict):
+        n: int
+
+    async def kernel(state: State) -> State:
+        await asyncio.sleep(0.06)
+        return {"n": 1}
+
+    async def agent(state: State) -> State:
+        await asyncio.sleep(0.12)  # not context, not tools
+        return {"n": 2}
+
+    async def tools(state: State) -> State:
+        await asyncio.sleep(0.03)
+        return {"n": 3}
+
+    graph = StateGraph(State)
+    graph.add_node("kernel", kernel)
+    graph.add_node("agent", agent)
+    graph.add_node("tools", tools)
+    graph.add_edge(START, "kernel")
+    graph.add_edge("kernel", "agent")
+    graph.add_edge("agent", "tools")
+    graph.add_edge("tools", END)
+    timer = TurnTimer(None)
+    asyncio.run(graph.compile().ainvoke({"n": 0}, {"callbacks": [timer]}))
+    assert 55 <= timer.context_ms < 110
+    assert 25 <= timer.tools_ms < 80
