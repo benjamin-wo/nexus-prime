@@ -989,6 +989,11 @@ class RateRepository(Protocol):
     """Exchange rates already looked up, shared by all users (public reference data)."""
 
     async def stored_rate(self, base: str, quote: str, day: date) -> Rate | None: ...
+    async def latest_rate_on_or_before(self, base: str, quote: str, on: date) -> Rate | None:
+        """The newest kept rate for the pair published on or before ``on``, whichever day
+        it was asked for; never a later one."""
+        ...
+
     async def save_rate(self, day: date, rate: Rate) -> None:
         """Keep ``rate`` as the answer for ``day``; a rate already kept stays."""
         ...

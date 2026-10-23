@@ -110,15 +110,19 @@ SLOW_DOWN = "That's a lot of messages at once. Give me a minute, then try again.
 RECENT_MESSAGES = 3  # the newest, and two before it for context
 
 
-def _log_turn(seconds: float, new: list[BaseMessage]) -> None:
-    """How long a turn took, how many model calls it made and which tools it used:
-    enough to see what makes a reply slow, without anything the user said."""
+def _log_turn(seconds: float, new: list[BaseMessage], timer: TurnTimer) -> None:
+    """How long a turn took and where the time went (building the context, the model,
+    tools), how many model calls it made and which tools it used: enough to see what
+    makes a reply slow, without anything the user said."""
     replies = [m for m in new if isinstance(m, AIMessage)]
     tools = [call["name"] for m in replies for call in m.tool_calls]
     log.log(
         logging.WARNING if seconds >= SLOW_TURN_SECONDS else logging.INFO,
-        "turn took %.1fs: %d model calls, tools: %s",
+        "turn took %.1fs (context %.1fs, model %.1fs, tools %.1fs): %d model calls, tools: %s",
         seconds,
+        timer.context_ms / 1000,
+        timer.model_ms / 1000,
+        timer.tools_ms / 1000,
         len(replies),
         ", ".join(tools) or "none",
     )
@@ -247,7 +251,7 @@ class AgentService:
         new: list[BaseMessage] = [
             m for m in state.values.get("messages", []) if m.id is None or m.id not in seen
         ]
-        _log_turn(clock.monotonic() - started, new)
+        _log_turn(clock.monotonic() - started, new, timer)
         _record_turn(clock.monotonic() - started, new, timer)
         pending = await self._pending(actor)
         if pending is not None:

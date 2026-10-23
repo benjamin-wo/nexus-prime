@@ -25,6 +25,23 @@ class SqlRateRepository:
         ).first()
         return Rate(base, quote, row.value, row.effective) if row else None
 
+    async def latest_rate_on_or_before(self, base: str, quote: str, on: date) -> Rate | None:
+        row = (
+            await self._c.execute(
+                select(fx_rates.c.value, fx_rates.c.effective)
+                .where(
+                    and_(
+                        fx_rates.c.base == base,
+                        fx_rates.c.quote == quote,
+                        fx_rates.c.effective <= on,
+                    )
+                )
+                .order_by(fx_rates.c.effective.desc())
+                .limit(1)
+            )
+        ).first()
+        return Rate(base, quote, row.value, row.effective) if row else None
+
     async def save_rate(self, day: date, rate: Rate) -> None:
         await self._c.execute(
             pg_insert(fx_rates)

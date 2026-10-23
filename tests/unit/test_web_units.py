@@ -142,6 +142,7 @@ def test_a_turn_is_logged_with_what_it_did_never_what_was_said() -> None:
 
     from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
+    from nexus.agent.ops_timing import TurnTimer
     from nexus.agent.service import SLOW_TURN_SECONDS, _log_turn
 
     new = [
@@ -150,6 +151,9 @@ def test_a_turn_is_logged_with_what_it_did_never_what_was_said() -> None:
         ToolMessage(content="ok", tool_call_id="c1"),
         AIMessage(content="Logged."),
     ]
+    timer = TurnTimer(None)
+    timer.context_ms, timer.tools_ms = 400, 300
+    timer.calls.append({"model": "m", "ms": 1_000, "ok": True, "fallback": False})
     seen: list[logging.LogRecord] = []
     logger = logging.getLogger("nexus.agent.service")
     handler = logging.Handler()
@@ -158,12 +162,14 @@ def test_a_turn_is_logged_with_what_it_did_never_what_was_said() -> None:
     level = logger.level
     logger.setLevel(logging.INFO)
     try:
-        _log_turn(2.0, new)
-        _log_turn(SLOW_TURN_SECONDS + 1, new)
+        _log_turn(2.0, new, timer)
+        _log_turn(SLOW_TURN_SECONDS + 1, new, timer)
     finally:
         logger.removeHandler(handler)
         logger.setLevel(level)
     quick, slow = seen
     assert quick.levelno == logging.INFO and slow.levelno == logging.WARNING
-    assert quick.getMessage() == "turn took 2.0s: 2 model calls, tools: add_expense"
+    assert quick.getMessage() == (
+        "turn took 2.0s (context 0.4s, model 1.0s, tools 0.3s): 2 model calls, tools: add_expense"
+    )
     assert all("foodcourt" not in r.getMessage() for r in seen)
