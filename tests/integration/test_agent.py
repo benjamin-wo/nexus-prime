@@ -52,7 +52,7 @@ def build(
     async def health() -> str:
         return "All systems fine."
 
-    graph = AgentGraph(
+    agent_graph = AgentGraph(
         AgentDeps(
             uow=uow,
             tools=build_tools(skills.body),
@@ -65,9 +65,18 @@ def build(
             departments=departments,
             places=places,
         )
-    ).compile(InMemorySaver())
+    )
+    graph = agent_graph.compile(InMemorySaver())
     return AgentService(
-        graph, uow, receipts, lambda: NOW, archive, holdings=holdings, trips=trips, looker=looker
+        graph,
+        uow,
+        receipts,
+        lambda: NOW,
+        archive,
+        holdings=holdings,
+        trips=trips,
+        looker=looker,
+        condense=agent_graph.condense,
     )
 
 

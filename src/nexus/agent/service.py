@@ -201,6 +201,7 @@ class AgentService:
         trips: TripReader | None = None,
         looker: ImageLooker | None = None,
         primary_model: str | None = None,
+        condense: Callable[[RunnableConfig], Awaitable[bool]] | None = None,
     ) -> None:
         self._graph = graph
         # The chat model's id: a turn answered by another model used the fallback.
@@ -225,6 +226,11 @@ class AgentService:
         self._limiter = limiter
         # One turn at a time per user; a turn reads and writes the user's thread.
         self._locks: defaultdict[UserId, asyncio.Lock] = defaultdict(asyncio.Lock)
+        # Folds a long thread's old messages into its summary (AgentGraph.condense), in
+        # the background after the reply; None: threads are never condensed (tests).
+        self._condense = condense
+        # Strong references: a task nobody holds can be collected before it finishes.
+        self._background: set[asyncio.Task[None]] = set()
 
     def _config(self, actor: UserId) -> RunnableConfig:
         return {"configurable": {"thread_id": thread_id(actor), "user_id": str(actor)}}
@@ -259,6 +265,7 @@ class AgentService:
             pid, summary = pending
             buttons = [[Button("Confirm", f"hitl:{pid}:y"), Button("Cancel", f"hitl:{pid}:n")]]
             return [Reply(summary, buttons)]
+        self._condense_soon(actor)
         wrote = any(
             isinstance(m, AIMessage | ToolMessage) and m.additional_kwargs.get(WROTE) for m in new
         )
@@ -274,6 +281,31 @@ class AgentService:
             for row in m.additional_kwargs.get(BUTTONS) or []
         ]
         return [Reply(text or "Done.", extra + ([[UNDO]] if wrote else []))]
+
+    def _condense_soon(self, actor: UserId) -> None:
+        """After a turn, condense the user's thread in the background: the summary is a
+        model call, so the user never waits on it. It takes the user's lock, so it runs
+        once this turn is over and a following turn waits for it, not the other way
+        round. Its failures never reach the user."""
+        if self._condense is None:
+            return
+        task = asyncio.create_task(self._condense_thread(actor, self._condense))
+        self._background.add(task)
+        task.add_done_callback(self._background.discard)
+
+    async def _condense_thread(
+        self, actor: UserId, condense: Callable[[RunnableConfig], Awaitable[bool]]
+    ) -> None:
+        try:
+            async with self._locks[actor]:
+                await condense(self._config(actor))
+        except Exception:
+            log.exception("could not condense the conversation; keeping it as is")
+
+    async def drain(self) -> None:
+        """Wait for background work started by earlier turns (for tests and shutdown)."""
+        while self._background:
+            await asyncio.gather(*self._background, return_exceptions=True)
 
     async def _decline_pending(self, actor: UserId) -> bool:
         if await self._pending(actor) is None:
