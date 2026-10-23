@@ -38,6 +38,7 @@ def test_cases_are_well_formed() -> None:
             assert wanted.tool in tools, (case.id, wanted.tool)
             assert set(wanted.args) <= set(tools[wanted.tool].args.model_fields), case.id
         assert set(case.forbid) <= set(tools), case.id
+        assert {cap.tool for cap in case.at_most} <= set(tools), case.id
         has_expectation = (
             case.calls
             or case.asks
