@@ -1823,7 +1823,7 @@ test("plans are added to a trip's itinerary by hand, day by day, and changed", a
   await entry.getByLabel("Name", { exact: true }).fill("Hotel Kawa");
   await entry.getByLabel("Check out").fill("2026-11-13");
   await entry.getByRole("button", { name: "Add" }).click();
-  await expect(itinerary.getByText("Staying at Hotel Kawa")).toHaveCount(2); // the 11th and 12th
+  await expect(itinerary.locator(".day-stay").filter({ hasText: "Hotel Kawa" })).toHaveCount(3); // the nights of the 10th, 11th and 12th
   await expect(itinerary.getByRole("list", { name: /^Day 4/ })).toContainText("Check out");
   await expect.poll(() => state.plans[0]).toMatchObject({ check_in: "2026-11-10", check_out: "2026-11-13" });
 });
@@ -2100,9 +2100,9 @@ test("the entry sheet suggests where you usually pay, and fills the usual", asyn
   await expect(sheet).toBeVisible();
 });
 
-test("a trip's day on one screen: tonight's stay, the day's plans, addresses and references", async ({ page }) => {
+test("a trip's day is one panel: its weather, tonight's stay, and the plans to edit", async ({ page }) => {
   const state = await fakeApi(page);
-  // On now (the made-up today is 28 Sep): the page opens on today.
+  // On now: the page opens on today (the made-up first day).
   await addTrip(page, "Tokyo", "2026-09-25", "2026-09-28");
   const entry = { trip_id: "trip1", provider: null, segments: [], name: null, day: null, at: null, note: null, cost: null, booked_via: null, category: null, place_id: null, scheduled: true, logged: false, manual: true };
   state.plans.push(
@@ -2113,32 +2113,43 @@ test("a trip's day on one screen: tonight's stay, the day's plans, addresses and
 
   // While the trip is on, Plan opens on the day, and the spending is a tab away.
   await expect(page.getByRole("navigation", { name: "Trip sections" }).getByRole("button", { name: "Plan", exact: true })).toHaveAttribute("aria-current", "page");
-  const view = page.getByRole("region", { name: /September 25/ });
-  await expect(view).toContainText("Day 1 of 4");
-  const plans = view.getByRole("list", { name: /Plans for/ });
-  await expect(plans).toContainText("Check in");
-  await expect(view).toContainText("Tonight");
-  await expect(view.getByRole("button", { name: "Copy booking reference HK55821" }).first()).toBeVisible();
-  await expect(view).toContainText("Tomorrow first: Fish market breakfast at 07:30");
+  const day1 = page.getByRole("group", { name: /^Day 1 · .*, 1 of \d+$/ });
+  await expect(day1.getByRole("heading", { name: /^(Today · )?Day 1 of 4 · / })).toContainText("25");
+  // The weather on a line, and the night's stay as a strip with Maps and Copy; the rest folded.
+  await expect(day1.locator(".day-weather")).toContainText("rain");
+  const stay = day1.locator(".day-stay");
+  await expect(stay).toContainText("Hotel Kumo");
+  await expect(stay.getByRole("link", { name: "Open Hotel Kumo in Maps" })).toBeVisible();
+  await expect(stay.getByRole("button", { name: "Copy the address of Hotel Kumo" })).toBeVisible();
+  await expect(stay.getByRole("button", { name: "Copy booking reference HK55821" })).toBeHidden();
+  await stay.getByText("Address and booking").click();
+  await expect(stay.getByRole("button", { name: "Copy booking reference HK55821" })).toBeVisible();
+  await expect(stay).toContainText("Check out");
+  await expect(stay).toContainText("Agoda");
+  // The day is shown once: its plans are the itinerary's own list, there is no second card for it.
+  await expect(page.getByRole("list", { name: /Plans for/ })).toHaveCount(0);
+  await expect(day1.getByRole("list", { name: /^Day 1 · / })).toContainText("Check in");
   await expect(page.getByRole("button", { name: "Previous day" })).toBeDisabled();
 
-  // The next day, from the one day picker the itinerary and the map share: the plan with its address and a link to directions.
+  // The next day: the plan, opened, with its address, a link to directions and a note.
   await page.getByRole("button", { name: "Next day" }).click();
-  const day2 = page.getByRole("region", { name: /September 26/ });
-  await expect(day2).toContainText("Day 2 of 4");
+  const day2 = page.getByRole("group", { name: /^Day 2 · .*, 2 of \d+$/ });
+  await expect(day2.getByRole("heading", { name: /^Day 2 of 4 · / })).toBeVisible();
+  await expect(day2.getByRole("button", { name: "Copy the address of Hotel Kumo" })).toBeVisible();
+  await expect(day2.getByRole("link", { name: "Open Fish market breakfast in Maps" })).toBeHidden();
+  await openEntry(page, "Fish market breakfast");
   await expect(day2).toContainText("Go early");
   await expect(day2.getByRole("link", { name: "Open Fish market breakfast in Maps" })).toHaveAttribute(
     "href",
     "https://www.google.com/maps/search/?api=1&query=Fish%20market%20breakfast%2C%204-5%20Market%20St%2C%20Tokyo",
   );
-  await expect(day2.getByRole("button", { name: "Copy the address of Hotel Kumo" })).toBeVisible();
 
-  // The last day: checking out, nowhere to sleep needed.
+  // The last day: checking out, and nowhere to sleep that night.
   await page.getByRole("button", { name: "Next day" }).click();
   await page.getByRole("button", { name: "Next day" }).click();
-  const last = page.getByRole("region", { name: /September 28/ });
-  await expect(last.getByRole("list", { name: /Plans for/ })).toContainText("Check out");
-  await expect(last).toContainText("Last day of the trip.");
+  const last = page.getByRole("group", { name: /^Day 4 · .*, 4 of \d+$/ });
+  await expect(last.getByRole("list", { name: /^Day 4 · / })).toContainText("Check out");
+  await expect(last.locator(".day-stay")).toHaveCount(0);
 
   // The rest of the trip is on the same page, day by day.
   const pills = itineraryOf(page).getByRole("navigation", { name: "Days" });
@@ -2278,7 +2289,7 @@ test("the trip on a map, coloured by day, with travel times between stops", asyn
 
   // Between the two on the itinerary: how long it takes (asked for once the day comes
   // into view), and a way to change it.
-  await page.getByRole("heading", { name: /^Day 3 ·/ }).scrollIntoViewIfNeeded();
+  await page.getByRole("heading", { name: /^Day 3 of \d+ ·/ }).scrollIntoViewIfNeeded();
   const hop = page.getByRole("listitem", { name: "From Hanok Noodle Bar to Namdaemun Market" });
   await expect(hop).toContainText("14 min walk · 940 m");
   // The plans keep their numbers (as on the map) once the times arrive.
@@ -2295,7 +2306,7 @@ test("the trip on a map, coloured by day, with travel times between stops", asyn
   await page.keyboard.press("Escape");
   await expect(hop.getByRole("link", { name: "Directions" })).toHaveAttribute("href", "https://maps.apple.com/?saddr=Hanok+Noodle+Bar&daddr=Namdaemun+Market&dirflg=r");
   await page.reload();
-  await page.getByRole("heading", { name: /^Day 3 ·/ }).scrollIntoViewIfNeeded();
+  await page.getByRole("heading", { name: /^Day 3 of \d+ ·/ }).scrollIntoViewIfNeeded();
   await expect((await openWays(page)).getByLabel("Directions open in")).toHaveValue("apple");
   await page.getByRole("dialog", { name: "Getting around and directions" }).getByLabel("Directions open in").selectOption("google");
   await page.keyboard.press("Escape");
