@@ -165,7 +165,7 @@ def test_only_real_zones_are_known(raw: str | None) -> None:
 
 def test_a_zone_the_user_typed_is_found_in_any_case() -> None:
     assert zone_named("europe/madrid") == MADRID
-    assert zone_named("America/Buenos Aires") is None  # the real name has Argentina in it
+    assert zone_named("America/Nowhere Town") is None  # not a zone, though shaped like one
     assert zone_named("america/argentina/buenos aires") == "America/Argentina/Buenos_Aires"
     assert zone_named("Madrid") is None  # a city is for the geocoder
     assert zone_named("UTC") == "UTC"
