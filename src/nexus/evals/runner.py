@@ -16,7 +16,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
@@ -63,6 +63,21 @@ _DATA_TABLES = (
 )
 # What the owner of a shared trip keeps: a change to either is a change to the trip.
 _TRIP_TABLES = ("trips", "trip_bookings", "trip_activity")
+
+
+class Zones:
+    """A few made-up places and their time zones, for set_timezone."""
+
+    PLACES: ClassVar[dict[str, str]] = {
+        "madrid": "Europe/Madrid",
+        "spain": "Europe/Madrid",
+        "tokyo": "Asia/Tokyo",
+        "singapore": "Asia/Singapore",
+    }
+
+    async def zone_of(self, place: str) -> str | None:
+        wanted = place.casefold()
+        return next((z for name, z in self.PLACES.items() if name in wanted), None)
 
 
 class FixedRates:
@@ -177,6 +192,7 @@ class Agent:
                 health=health,
                 clock=lambda: seed.NOW,
                 rates=FixedRates(),
+                zones=Zones(),
             )
         ).compile(InMemorySaver())
         self.service = AgentService(

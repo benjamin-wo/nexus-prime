@@ -75,7 +75,14 @@ users = Table(
     Column("trip_activity_alerts", Boolean, nullable=False, server_default=text("true")),
     # When they put away Home's setup checklist (migration 0052); null while it is shown.
     Column("setup_dismissed_at", TZ),
+    # Where they live, the zone they go back to (migration 0055). ``timezone`` above is the
+    # CURRENT zone: it follows their phone, what they say in chat, or their trip.
+    Column("home_timezone", Text, nullable=False),
+    # What set the current zone, and when their phone or they last said where they are.
+    Column("timezone_source", Text, nullable=False, server_default=text("'home'")),
+    Column("timezone_set_at", TZ),
     CheckConstraint("role IN ('owner', 'member', 'guest')", name="role"),
+    CheckConstraint("timezone_source IN ('home', 'phone', 'chat', 'trip')", name="timezone_source"),
     CheckConstraint("home_currency ~ '^[A-Z]{3}$'", name="home_currency"),
 )
 

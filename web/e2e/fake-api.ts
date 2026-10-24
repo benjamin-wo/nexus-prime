@@ -126,6 +126,10 @@ export async function fakeApi(
     /** A trip that is on, day 3 of 6 in Tokyo (the dates follow today): a stay, a late plan today, a flight home,
      * and today's spending against its budget. Home leads with it. */
     tripMode = false,
+    /** Whether the zone the browser reports on start moves the user's zone, as the real server does. Off by
+     * default so the date-bound journeys stay on Singapore whatever zone this machine is in; the report is
+     * still noted in `state.zonePosts`. */
+    phoneFollows = false,
   } = {},
 ) {
   let session = signedIn;
@@ -210,7 +214,26 @@ export async function fakeApi(
   let coverCount = 0;
   let dailyAt = "21:00";
   const marketAlerts = { quiet_start: "23:00", quiet_end: "08:00", move_alert_percent: "5.0", market_summary: true, daily_cap: 6 };
+  /** The user's time zone, as /me/timezone changes it. Home is Singapore. */
+  const zone = {
+    timezone: "Asia/Singapore",
+    home: "Asia/Singapore",
+    source: "home" as "home" | "phone" | "chat" | "trip",
+    setAt: null as string | null,
+  };
+  const userBody = () => ({
+    telegram_user_id: 1,
+    role: guest ? "guest" : "owner",
+    home_currency: "SGD",
+    timezone: zone.timezone,
+    home_timezone: zone.home,
+    timezone_source: zone.source,
+    timezone_set_at: zone.setAt,
+    display_name: guest ? "Gus L." : "Sam R.",
+  });
   const state: {
+    /** Every POST to /me/timezone and /me/timezone/home, in order: the path and the body sent. */
+    zonePosts: { path: string; body: { timezone?: string; source?: string } | null }[];
     txs: Tx[];
     lastPress?: string;
     chatSent: string[];
@@ -333,6 +356,7 @@ export async function fakeApi(
       emails: Record<string, unknown>[];
     };
   } = {
+    zonePosts: [],
     runs: running
       ? [
           {
@@ -691,16 +715,7 @@ export async function fakeApi(
       if (body?.init_data !== "user=%7B%22id%22%3A1%7D&hash=ok")
         return json(route, { detail: "bad signature" }, 401);
       session = true;
-      return json(route, {
-        user: {
-          telegram_user_id: 1,
-          role: "owner",
-          home_currency: "SGD",
-          timezone: "Asia/Singapore",
-          display_name: "Sam R.",
-        },
-        csrf_token: "csrf-1",
-      });
+      return json(route, { user: { ...userBody(), role: "owner", display_name: "Sam R." }, csrf_token: "csrf-1" });
     }
     if (method !== "GET" && request.headers()["x-csrf-token"] !== "csrf-1") {
       return json(route, { detail: "missing or wrong CSRF token" }, 403);
@@ -721,16 +736,36 @@ export async function fakeApi(
       return json(route, { bot_username: "nexus_test_bot" });
     if (path === "/me") {
       if (!session) return json(route, { detail: "not signed in" }, 401);
-      return json(route, {
-        user: {
-          telegram_user_id: 1,
-          role: guest ? "guest" : "owner",
-          home_currency: "SGD",
-          timezone: "Asia/Singapore",
-          display_name: guest ? "Gus L." : "Sam R.",
-        },
-        csrf_token: "csrf-1",
-      });
+      return json(route, { user: userBody(), csrf_token: "csrf-1" });
+    }
+    if (path === "/me/timezone" && method === "POST") {
+      state.zonePosts.push({ path, body });
+      if (!session) return json(route, { detail: "not signed in" }, 401);
+      const known = (z: unknown) => {
+        try {
+          return typeof z === "string" && Boolean(new Intl.DateTimeFormat("en", { timeZone: z }));
+        } catch {
+          return false;
+        }
+      };
+      if (!known(body?.timezone) || !["phone", "manual"].includes(body?.source)) return json(route, { detail: "unknown time zone" }, 422);
+      const recentlyChosen = zone.source === "chat" && zone.setAt !== null && Date.now() - Date.parse(zone.setAt) < 86_400_000;
+      const moves = body.source === "manual" || (phoneFollows && !recentlyChosen);
+      const changed = moves && body.timezone !== zone.timezone;
+      if (moves) {
+        zone.timezone = body.timezone;
+        zone.source = body.source === "manual" ? "chat" : "phone";
+        zone.setAt = new Date().toISOString();
+      }
+      return json(route, { user: userBody(), csrf_token: "csrf-1", changed });
+    }
+    if (path === "/me/timezone/home" && method === "POST") {
+      state.zonePosts.push({ path, body: null });
+      const changed = zone.timezone !== zone.home;
+      zone.timezone = zone.home;
+      zone.source = "home";
+      zone.setAt = null;
+      return json(route, { user: userBody(), csrf_token: "csrf-1", changed });
     }
     if (path === "/auth/logout") {
       session = false;

@@ -5,6 +5,7 @@ Nothing is stored. Answers are kept in memory for a while (forecasts a few hours
 past years a week), so pages don't ask again on every visit.
 """
 
+import asyncio
 import logging
 from collections import OrderedDict
 from collections.abc import Callable
@@ -33,6 +34,8 @@ FORECAST_FOR = timedelta(hours=3)
 PAST_FOR = timedelta(days=7)
 PLACE_FOR = timedelta(days=30)
 CACHE_SIZE = 500
+# Finding a place's time zone never holds anything up for longer than this.
+ZONE_TIMEOUT = 3.0
 
 
 class WeatherError(Exception):
@@ -84,6 +87,22 @@ class Weather:
         found = await self._source.find(place)
         self._keep(key, found or "none", PLACE_FOR)
         return found
+
+    async def zone_of(self, place: str) -> str | None:
+        """The IANA time zone of a place by name ("Madrid", "Spain"), from the same
+        geocoding (and cache) as the weather. None when the place isn't found or the
+        service is slow or down: it never raises."""
+        if not place.strip():
+            return None
+        try:
+            spot = await asyncio.wait_for(self.spot(place), ZONE_TIMEOUT)
+        except TimeoutError:
+            log.info("time zone lookup timed out")
+            return None
+        except Exception:
+            log.info("time zone lookup failed", exc_info=True)
+            return None
+        return spot.timezone if spot is not None else None
 
     async def for_trip(self, trip: Trip, today: date) -> TripWeather | None:
         """The trip's weather, or None when it's over or the place isn't found.

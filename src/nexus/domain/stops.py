@@ -30,6 +30,12 @@ def _destination(trip: Trip) -> str:
     return " ".join(trip.destination.split())[:MAX_STOP_NAME].strip() or "Trip"
 
 
+def stop_on(stops: Sequence[Stop], day: date) -> Stop | None:
+    """The stop a day is in; on a travel day, the one arrived at."""
+    found = [s for s in stops if s.start <= day <= s.end]
+    return found[-1] if found else None
+
+
 def suggest_stops(
     trip: Trip, bookings: Sequence[Booking], cities: Mapping[str, str]
 ) -> tuple[Stop, ...]:

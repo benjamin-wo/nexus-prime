@@ -1,7 +1,7 @@
 """Weather from Open-Meteo (open-meteo.com): no key, free for non-commercial use, data
 under CC BY 4.0 (the page credits it).
 
-``GET geocoding-api.open-meteo.com/v1/search?name=`` finds a place;
+``GET geocoding-api.open-meteo.com/v1/search?name=`` finds a place (and says its time zone);
 ``GET api.open-meteo.com/v1/forecast`` gives up to 16 days ahead;
 ``GET archive-api.open-meteo.com/v1/archive`` gives recorded days.
 """
@@ -15,6 +15,7 @@ import httpx
 from nexus.application.weather import WeatherError
 from nexus.domain.places import quoted
 from nexus.domain.weather import DayWeather, Spot
+from nexus.domain.whereabouts import known_zone
 
 log = logging.getLogger(__name__)
 
@@ -70,6 +71,7 @@ class OpenMeteo:
             latitude=float(lat),
             longitude=float(lon),
             country_code=_code(row.get("country_code")),
+            timezone=known_zone(row.get("timezone")),
         )
 
     async def forecast(self, spot: Spot, start: date, end: date) -> list[DayWeather]:

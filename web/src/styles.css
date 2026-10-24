@@ -2328,3 +2328,11 @@ body:has(.sheet-backdrop) .main-viewport { overflow: hidden; }
   .hero-actions { gap: 6px; }
   .hero .round-btn { width: 40px; height: 40px; }
 }
+
+/* Settings: the Time zone card. */
+.tz-now strong { font-size: 1.0625rem; font-variant-numeric: tabular-nums; color: var(--text-white); }
+.tz-now p { margin: 0; }
+.tz-actions, .tz-picker .actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-4); }
+.tz-picker { display: grid; gap: var(--space-3); margin-top: var(--space-4); }
+.tz-picker select { min-height: 9.5rem; }
+.tz-picker .actions { margin-top: 0; }

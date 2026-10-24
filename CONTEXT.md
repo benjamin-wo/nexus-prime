@@ -9,6 +9,8 @@ The shared language for code, tests and docs. When a term here and a name in cod
 - **Needs you**: Home's list of what each department is waiting on the user for, each item linking to the page that settles it. Sorted by `when`: urgent first (`now`), then items about today, then the rest (`soon`), and by department within each. Stock items about "today" follow the New York trading day; travel items follow the user's own date.
 - **Setup checklist**: the four first steps on Home (payday, receipts in automatically, stocks, a monthly budget), each done or not by what the user already has. The user can dismiss it; it never changes anything by itself.
 - **Invite**: a single-use token, valid for 24 hours, that lets one person sign in to the web cockpit with Telegram login.
+- **Home time zone**: where the user lives (`home_timezone`); kept for good and what they go back to. Never changed by travelling.
+- **Current time zone**: where the user is now (`users.timezone`); what every "their day" reads. It follows their phone, what they say in chat and their trip, and returns to the **Home time zone** when nothing says otherwise. See "Time zone that follows you" in [`docs/OPERATIONS.md`](docs/OPERATIONS.md).
 
 ## Ledger
 

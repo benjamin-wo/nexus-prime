@@ -25,6 +25,15 @@ class Role(StrEnum):
     GUEST = "guest"
 
 
+class ZoneSource(StrEnum):
+    """What set a user's current time zone (``User.timezone``)."""
+
+    HOME = "home"  # their home zone: nothing has moved them
+    PHONE = "phone"  # the phone said where it is
+    CHAT = "chat"  # the user said where they are (chat, or Settings)
+    TRIP = "trip"  # an ongoing trip's stop
+
+
 class Direction(StrEnum):
     IN = "in"
     OUT = "out"
@@ -66,6 +75,8 @@ class User:
     id: UserId
     telegram_user_id: int
     telegram_chat_id: int | None
+    # The CURRENT time zone: everything that reads "their day" reads this. It follows
+    # where they are (see domain/whereabouts.py); ``home_timezone`` is kept to go back to.
     timezone: str
     home_currency: str
     role: Role
@@ -77,6 +88,16 @@ class User:
     trip_activity_alerts: bool = True
     # When they put away Home's setup checklist; None while it is shown.
     setup_dismissed_at: datetime | None = None
+    # Where they live. Empty means the same as ``timezone`` (a new user's current zone is
+    # their home zone).
+    home_timezone: str = ""
+    timezone_source: ZoneSource = ZoneSource.HOME
+    # When their phone or they last said where they are; None if never.
+    timezone_set_at: datetime | None = None
+
+    def __post_init__(self) -> None:
+        if not self.home_timezone:
+            object.__setattr__(self, "home_timezone", self.timezone)
 
     @property
     def has_web_access(self) -> bool:

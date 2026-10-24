@@ -30,6 +30,7 @@ import { Settings } from "./pages/Settings";
 import { TripInvite } from "./pages/TripInvite";
 import { Upcoming } from "./pages/Upcoming";
 import { initData, miniApp, tripInviteIn } from "./telegram";
+import { useReportTimeZone } from "./timezone";
 
 /** Inside Telegram, sign in with the Mini App's launch data instead of the widget. */
 async function miniAppSignIn(): Promise<Me | null> {
@@ -114,6 +115,8 @@ function GuestApp({ me }: { me: Me }) {
 function Cockpit({ me }: { me: Me }) {
   const client = useQueryClient();
   const logout = useLogout();
+  // Tells Nexus where this browser is, once per page load, without holding anything up.
+  useReportTimeZone(me.user);
   // The chat drawer, opened empty or with a question asked on Home.
   const [chat, setChat] = useState<{ ask?: string } | null>(null);
   const [sheet, setSheet] = useState<{ editing?: Transaction } | null>(null);
@@ -151,7 +154,7 @@ function Cockpit({ me }: { me: Me }) {
         {DEPARTMENTS.filter((d) => d.upcoming).map((d) => (
           <Route key={d.name} path={d.path} element={<Upcoming department={d} />} />
         ))}
-        <Route path="/settings" element={<Settings />} />
+        <Route path="/settings" element={<Settings me={me} />} />
         <Route path="/settings/email" element={<EmailPage me={me} />} />
         <Route path="/settings/import" element={<ImportPage />} />
         <Route path="/settings/notifications" element={<NotificationsPage me={me} />} />

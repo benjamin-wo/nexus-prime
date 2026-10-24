@@ -1,8 +1,15 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
+import type { Me } from "../api";
 import { mockApi, renderWithProviders } from "../testing";
 import { Settings } from "./Settings";
+
+const me = (user: Partial<Me["user"]> = {}): Me => ({
+  user: { telegram_user_id: 1, role: "owner", home_currency: "SGD", timezone: "Asia/Singapore", home_timezone: "Asia/Singapore", timezone_source: "home", timezone_set_at: null, ...user },
+  csrf_token: "c",
+});
 
 const connected = {
   connections: [{ id: "m1", address: "me@example.com", kind: "gmail", status: "ok", last_checked_at: null, last_error: null }],
@@ -23,7 +30,7 @@ function group(title: string): HTMLElement {
 describe("Settings", () => {
   it("is in three groups: Notifications, Connections and Your data, in that order", () => {
     mockApi({});
-    renderWithProviders(<Settings />);
+    renderWithProviders(<Settings me={me()} />);
     expect(screen.getByRole("heading", { name: "Settings", level: 1 })).toBeInTheDocument();
     const titles = [...document.querySelectorAll("h2.section-title")].map((h) => h.textContent);
     expect(titles).toEqual(["Notifications", "Connections", "Your data"]);
@@ -32,9 +39,9 @@ describe("Settings", () => {
 
   it("puts alerts under Notifications, the two ways in under Connections, and the rest under Your data", async () => {
     mockApi({ "GET /email": () => connected });
-    renderWithProviders(<Settings />);
+    renderWithProviders(<Settings me={me()} />);
     const names = (g: HTMLElement) => within(g).getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
-    expect(names(group("Notifications"))).toEqual(expect.arrayContaining(["Shared trips", "Notifications"]));
+    expect(names(group("Notifications"))).toEqual(expect.arrayContaining(["Shared trips", "Notifications", "Time zone"]));
     expect(names(group("Connections"))).toEqual(["Receipts by email", "Import a statement"]);
     const data = names(group("Your data"));
     expect(data).toEqual(expect.arrayContaining(["Categories", "Wallets", "Category rules", "What Nexus remembers"]));
@@ -43,7 +50,7 @@ describe("Settings", () => {
 
   it("links Receipts by email and Import a statement to their pages", async () => {
     mockApi({ "GET /email": () => connected });
-    renderWithProviders(<Settings />);
+    renderWithProviders(<Settings me={me()} />);
     const email = screen.getByRole("region", { name: "Receipts by email" });
     expect(within(email).getByRole("link", { name: "Open" })).toHaveAttribute("href", "/settings/email");
     expect(await within(email).findByText("me@example.com · 1 waiting for you")).toBeInTheDocument();
@@ -53,7 +60,7 @@ describe("Settings", () => {
 
   it("links Notifications, under Notifications, to the list of what was sent", () => {
     mockApi({});
-    renderWithProviders(<Settings />);
+    renderWithProviders(<Settings me={me()} />);
     const card = within(group("Notifications")).getByRole("region", { name: "Notifications" });
     expect(within(card).getByRole("link", { name: "Open" })).toHaveAttribute("href", "/settings/notifications");
     expect(card).toHaveTextContent("in the last 30 days");
@@ -61,9 +68,58 @@ describe("Settings", () => {
 
   it("shows Receipts by email before anything is connected", async () => {
     mockApi({ "GET /email": () => ({ connections: [], emails: [] }) });
-    renderWithProviders(<Settings />);
+    renderWithProviders(<Settings me={me()} />);
     const email = screen.getByRole("region", { name: "Receipts by email" });
     expect(await within(email).findByText(/Not connected/)).toBeInTheDocument();
     expect(within(email).getByRole("link", { name: "Open" })).toHaveAttribute("href", "/settings/email");
+  });
+
+  it("shows the time zone with where it came from, and Home when it differs", () => {
+    mockApi({});
+    renderWithProviders(<Settings me={me({ timezone: "Europe/Madrid", timezone_source: "phone" })} />);
+    const card = screen.getByRole("region", { name: "Time zone" });
+    expect(within(card).getByTestId("time-zone-now")).toHaveTextContent(/^Madrid · UTC\+[12]$/);
+    expect(card).toHaveTextContent("from your phone");
+    expect(card).toHaveTextContent("Home: Singapore");
+    expect(within(card).getByRole("button", { name: "Use home time" })).toBeInTheDocument();
+  });
+
+  it("hides Use home time and Home while on the home zone", () => {
+    mockApi({});
+    renderWithProviders(<Settings me={me()} />);
+    const card = screen.getByRole("region", { name: "Time zone" });
+    expect(card).toHaveTextContent("Singapore · UTC+8");
+    expect(card).not.toHaveTextContent("Home:");
+    expect(within(card).queryByRole("button", { name: "Use home time" })).toBeNull();
+  });
+
+  it("sends a picked zone as a manual choice", async () => {
+    const calls = mockApi({ "POST /me/timezone": () => ({ ...me({ timezone: "Asia/Tokyo", timezone_source: "chat" }), changed: true }) });
+    renderWithProviders(<Settings me={me()} />);
+    const card = screen.getByRole("region", { name: "Time zone" });
+    await userEvent.click(within(card).getByRole("button", { name: "Change" }));
+    await userEvent.type(within(card).getByLabelText("Find a time zone"), "tokyo");
+    await userEvent.selectOptions(within(card).getByRole("listbox", { name: "Time zone" }), "Asia/Tokyo");
+    await userEvent.click(within(card).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(calls.find((c) => c.path === "/me/timezone")?.body).toEqual({ timezone: "Asia/Tokyo", source: "manual" }));
+    expect(await within(card).findByRole("status")).toHaveTextContent("Saved. Nexus now uses Tokyo time.");
+  });
+
+  it("goes back to the home zone", async () => {
+    const calls = mockApi({ "POST /me/timezone/home": () => ({ ...me(), changed: true }) });
+    renderWithProviders(<Settings me={me({ timezone: "Europe/Madrid", timezone_source: "phone" })} />);
+    await userEvent.click(screen.getByRole("button", { name: "Use home time" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/me/timezone/home")).toBe(true));
+    expect(await screen.findByRole("status")).toHaveTextContent("Back on home time, Singapore.");
+  });
+
+  it("shows the server's refusal and keeps the picker open", async () => {
+    mockApi({ "POST /me/timezone": () => new Response(JSON.stringify({ detail: "unknown time zone" }), { status: 422 }) });
+    renderWithProviders(<Settings me={me()} />);
+    const card = screen.getByRole("region", { name: "Time zone" });
+    await userEvent.click(within(card).getByRole("button", { name: "Change" }));
+    await userEvent.click(within(card).getByRole("button", { name: "Save" }));
+    expect(await within(card).findByRole("alert")).toHaveTextContent("unknown time zone");
+    expect(within(card).getByRole("button", { name: "Save" })).toBeInTheDocument();
   });
 });

@@ -28,6 +28,7 @@ from nexus.application import research as research_cases
 from nexus.application import salary as salary_cases
 from nexus.application import subscriptions as subscription_cases
 from nexus.application import trip_access as trip_access_cases
+from nexus.application import whereabouts as whereabouts_cases
 from nexus.application.budgets import TELEGRAM_SEND, UowFactory
 from nexus.application.email import EmailRuntime
 from nexus.application.fx import RateSource
@@ -71,6 +72,7 @@ SCHEDULES = (
     Schedule(refresh_cases.REFRESH_JOB, timedelta(hours=1)),
     Schedule(booking_cases.REMIND_JOB, timedelta(hours=1)),
     Schedule(photo_cases.PHOTOS_JOB, timedelta(minutes=30)),
+    Schedule(whereabouts_cases.FOLLOW_JOB, timedelta(hours=1)),
 )
 
 
@@ -112,6 +114,7 @@ def build_handlers(
     photos: photo_cases.PhotoFinder | None = None,
     origin: str | None = None,
     quotes: Quotes | None = None,
+    zones: whereabouts_cases.ZoneFinder | None = None,
 ) -> dict[str, Handler]:
     async def send(payload: dict[str, Any]) -> Defer | None:
         """Message a user on Telegram under their notification rules (see
@@ -313,6 +316,13 @@ def build_handlers(
         if sent:
             log.info("travel: queued %d reminders", sent)
 
+    async def follow_zones(_: dict[str, Any]) -> None:
+        """Move users with a trip on to where it is today, and home when it is over."""
+        if zones is not None:
+            moved = await whereabouts_cases.follow_trips(uow, zones, now=clock())
+            if moved:
+                log.info("time zones: moved %d users with their trips", moved)
+
     async def trip_digest(payload: dict[str, Any]) -> None:
         """Tell a trip's owner what other people changed in it."""
         await trip_access_cases.send_digest(
@@ -351,6 +361,7 @@ def build_handlers(
         plan_cases.FOLLOW_JOB: follow_plans,
         refresh_cases.REFRESH_JOB: refresh_plans,
         booking_cases.REMIND_JOB: travel_reminders,
+        whereabouts_cases.FOLLOW_JOB: follow_zones,
         trip_access_cases.DIGEST_JOB: trip_digest,
         department_cases.STEP_JOB: department_step,
         UNDO_EXPIRE: expire_undo,
