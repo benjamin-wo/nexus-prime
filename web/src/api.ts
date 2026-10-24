@@ -33,6 +33,50 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
   return data as T;
 }
 
+/** The day as YYYYMMDD, for the export's file name when the server's header can't be read. */
+function today8(): string {
+  const d = new Date();
+  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** The file name in a Content-Disposition header, or null. */
+export function filenameFrom(disposition: string | null): string | null {
+  const found = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition ?? "");
+  if (!found) return null;
+  try {
+    return decodeURIComponent(found[1]).replace(/[\\/]/g, "_");
+  } catch {
+    return null;
+  }
+}
+
+/** Everything Nexus keeps for you, as a zip: fetched as a Blob (same session as every call) and handed
+ * to the browser as a download. Throws an ApiError whose message is fit to show. */
+export async function exportAll(): Promise<void> {
+  const response = await fetch("/api/me/export", { credentials: "same-origin" });
+  if (response.status === 429) {
+    throw new ApiError(429, "You've downloaded your data a few times just now. Try again in a few minutes.");
+  }
+  if (!response.ok) throw new ApiError(response.status, "Couldn't prepare your download. Please try again.");
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filenameFrom(response.headers.get("Content-Disposition")) ?? `nexus-export-${today8()}.zip`;
+  link.hidden = true;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  // Give the browser a moment to start reading the file before letting go of it.
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+/** Deletes the signed-in person's data for good and ends the session (204). 422 if the
+ * confirmation isn't exactly DELETE. */
+export async function deleteEverything(): Promise<void> {
+  await api("/me/delete", { method: "POST", body: { confirm: "DELETE" } });
+}
+
 export type Money = { amount: string; currency: string };
 /** What a person logs by hand: money in or money out. */
 export type Direction = "in" | "out";

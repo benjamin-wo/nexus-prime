@@ -11,6 +11,7 @@ import { NotificationsCard } from "./Notifications";
 import { RulesSection } from "./Rules";
 import { UpdatesSection } from "./Updates";
 import { WalletsSection } from "./Wallets";
+import { YourDataSection } from "./YourData";
 
 /** Whether Nexus messages the user on Telegram when someone else changes a trip they
  * share (at most one message per trip every 30 minutes). */
@@ -212,6 +213,7 @@ export function Settings({ me }: { me: Me }) {
         <WalletsSection />
         <RulesSection />
         <MemorySection />
+        <YourDataSection />
       </div>
     </>
   );

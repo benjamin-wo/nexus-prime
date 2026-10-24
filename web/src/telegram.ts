@@ -12,6 +12,7 @@ type WebApp = {
   setBottomBarColor?(color: string): void;
   disableVerticalSwipes?(): void;
   openLink?(url: string): void;
+  platform?: string;
   BackButton?: { show(): void; hide(): void; onClick(cb: () => void): void; offClick(cb: () => void): void };
   HapticFeedback?: { impactOccurred(style: "light" | "medium"): void; selectionChanged(): void };
 };
@@ -60,6 +61,17 @@ export function openExternal(url: string): void {
   const app = window.Telegram?.WebApp;
   if (app?.openLink) app.openLink(url);
   else window.open(url, "_blank", "noopener,noreferrer");
+}
+
+/** Telegram's phone apps show the Mini App in a webview that may swallow a file download. */
+export function inPhoneWebview(): boolean {
+  const platform = window.Telegram?.WebApp?.platform;
+  return platform === "ios" || platform === "android";
+}
+
+/** Said under a finished export when the download may not have started; null elsewhere. */
+export function downloadNote(webview: boolean): string | null {
+  return webview ? "If the download doesn't start, open Nexus in your browser to download it." : null;
 }
 
 const READY = "nexus:telegram-ready";
