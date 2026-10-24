@@ -527,7 +527,7 @@ async def test_chat_adds_to_dos_and_cover(uow: UowFactory) -> None:
 
 
 async def test_migration_0048_goes_down_and_up_again(
-    engine: AsyncEngine, empty_database_url: str, uow: UowFactory
+    engine: AsyncEngine, empty_database_url: str, uow: UowFactory, admin_engine: AsyncEngine
 ) -> None:
     user = await person(uow)
     trip = await trip_cases.create_trip(uow(), user, draft(), now=NOW)
@@ -537,7 +537,7 @@ async def test_migration_0048_goes_down_and_up_again(
     config = alembic_config(empty_database_url)
     config.attributes["configure_logger"] = False
     await asyncio.to_thread(command.downgrade, config, "0047")
-    async with engine.connect() as db:
+    async with admin_engine.connect() as db:
         tables: set[str] = set(
             (await db.execute(text("SELECT tablename FROM pg_tables"))).scalars()
         )
@@ -553,7 +553,7 @@ async def test_migration_0048_goes_down_and_up_again(
         )
     assert "trip_covers" not in tables and not columns & {"todos", "prep_dismissed"}
     await upgrade(empty_database_url)
-    async with engine.connect() as db:
+    async with admin_engine.connect() as db:
         assert (await db.execute(text("SELECT count(*) FROM trips"))).scalar_one() == 1
         assert (await db.execute(text("SELECT count(*) FROM trip_covers"))).scalar_one() == 0
         assert (await db.execute(text("SELECT todos FROM trips"))).scalar_one() == []

@@ -49,6 +49,7 @@ from nexus.application import transactions as tx_cases
 from nexus.application import travel_research as research_cases
 from nexus.application import trip_access as access_cases
 from nexus.application import undo as undo_cases
+from nexus.application.acting import as_actor
 from nexus.application.categories import list_categories
 from nexus.application.fx import RateSource
 from nexus.application.limits import RateLimiter
@@ -336,6 +337,7 @@ class AgentService:
         except Exception:
             log.exception("could not keep the chat")
 
+    @as_actor
     async def chat_pending(self, actor: UserId) -> Reply | None:
         """The confirmation waiting for an answer, with its buttons, if any."""
         pending = await self._pending(actor)
@@ -345,6 +347,7 @@ class AgentService:
         buttons = [[Button("Confirm", f"hitl:{pid}:y"), Button("Cancel", f"hitl:{pid}:n")]]
         return Reply(summary, buttons)
 
+    @as_actor
     async def handle_text(self, actor: UserId, text: str, ref: str) -> list[Reply]:
         replies = await self._handle_text(actor, text, ref)
         await self._keep(actor, text, replies, ref)
@@ -381,11 +384,13 @@ class AgentService:
         except Exception:
             log.exception("after-turn hook failed")
 
+    @as_actor
     async def handle_photo(
         self, actor: UserId, image: bytes, mime_type: str, caption: str | None, ref: str
     ) -> list[Reply]:
         return await self.handle_images(actor, [Picture(image, mime_type, ref)], caption, ref)
 
+    @as_actor
     async def handle_images(
         self, actor: UserId, pictures: list[Picture], caption: str | None, ref: str
     ) -> list[Reply]:
@@ -466,6 +471,7 @@ class AgentService:
             return await self._receipt_photo(actor, picture, look, caption)
         return None
 
+    @as_actor
     async def handle_pdf(
         self, actor: UserId, data: bytes, name: str, caption: str | None, ref: str
     ) -> list[Reply]:
@@ -498,6 +504,7 @@ class AgentService:
         look = ImageLook(ImageKind.OTHER, None, f"A PDF file named {quoted(name, 80)}", text)
         return await self.ask_about(actor, [look], caption, ref, label="[PDF]")
 
+    @as_actor
     async def ask_about(
         self,
         actor: UserId,
@@ -634,6 +641,7 @@ class AgentService:
     def reads_trip_screenshots(self) -> bool:
         return self._trips is not None
 
+    @as_actor
     async def read_trip_screenshot(
         self,
         actor: UserId,
@@ -701,6 +709,7 @@ class AgentService:
     def reads_portfolios(self) -> bool:
         return self._holdings is not None
 
+    @as_actor
     async def read_portfolio(
         self, actor: UserId, image: bytes, mime_type: str, *, asked: bool = True
     ) -> investment_cases.Proposal | None:
@@ -744,6 +753,7 @@ class AgentService:
             return Reply(str(exc).capitalize() + ".")
         return Reply("I don't know that button.")
 
+    @as_actor
     async def resolve(self, actor: UserId, confirmation_id: str, approved: bool) -> list[Reply]:
         async with self._locks[actor]:
             pending = await self._pending(actor)
@@ -751,6 +761,7 @@ class AgentService:
                 return [Reply("That confirmation has expired. Nothing was changed.")]
             return await self._run(actor, Command(resume={"approved": approved}))
 
+    @as_actor
     async def press(self, actor: UserId, data: str) -> list[Reply]:
         """A button press from any channel: confirmations, Undo and quick actions."""
         # Answers to the chat's own questions are part of the chat; buttons on
@@ -1017,6 +1028,7 @@ class AgentService:
             return Reply(str(exc).capitalize() + ".")
         return Reply("I don't know that button.")
 
+    @as_actor
     async def quick_action(self, actor: UserId, action: str) -> list[Reply]:
         """Buttons that don't need the model."""
         match action:

@@ -379,7 +379,7 @@ async def _telegram_runtime(
         checkpointer = overrides.checkpointer
     else:
         checkpointer = await stack.enter_async_context(
-            postgres_checkpointer(settings.database_url_str)
+            postgres_checkpointer(settings.database_url_str, app_role=settings.db_app_role)
         )
     agent_graph = AgentGraph(
         AgentDeps(
@@ -658,7 +658,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        engine = make_engine(resolved.database_url_str)
+        engine = make_engine(resolved.database_url_str, app_role=resolved.db_app_role)
         async with AsyncExitStack() as stack:
             stack.push_async_callback(engine.dispose)
             await assert_schema_at_head(engine)

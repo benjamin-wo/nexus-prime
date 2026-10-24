@@ -169,7 +169,7 @@ async def shared(world: World) -> Shared:
 
 
 async def test_migration_0046_goes_up_and_down(
-    engine: AsyncEngine, empty_database_url: str, uow: UowFactory
+    engine: AsyncEngine, empty_database_url: str, uow: UowFactory, admin_engine: AsyncEngine
 ) -> None:
     owner = await person(uow, 4242)
     friend = await person(uow, 4343)
@@ -187,7 +187,7 @@ async def test_migration_0046_goes_up_and_down(
     config = alembic_config(empty_database_url)
     config.attributes["configure_logger"] = False
     await asyncio.to_thread(command.downgrade, config, "0045")
-    async with engine.connect() as db:
+    async with admin_engine.connect() as db:
         tables: set[str] = set(
             (await db.execute(text("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")))
             .scalars()
@@ -221,7 +221,7 @@ async def test_migration_0046_goes_up_and_down(
     assert (left.role, left.web_access_granted_at, sessions) == ("member", None, 0)
 
     await upgrade(empty_database_url)
-    async with engine.connect() as db:
+    async with admin_engine.connect() as db:
         assert (await db.execute(text("SELECT count(*) FROM trip_members"))).scalar_one() == 0
         assert (await db.execute(text("SELECT count(*) FROM trips"))).scalar_one() == 1
         await db.execute(text("SELECT display_name FROM users LIMIT 1"))

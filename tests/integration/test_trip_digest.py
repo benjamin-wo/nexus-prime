@@ -332,7 +332,7 @@ async def test_a_members_edit_on_the_web_queues_a_summary_and_the_owners_does_no
 
 
 async def test_migration_0047_goes_up_and_down(
-    engine: AsyncEngine, empty_database_url: str, uow: UowFactory
+    engine: AsyncEngine, empty_database_url: str, uow: UowFactory, admin_engine: AsyncEngine
 ) -> None:
     owner = await person(uow, 4242)
     made = await trip_cases.create_trip(uow(), owner, draft(), now=NOW)
@@ -348,7 +348,7 @@ async def test_migration_0047_goes_up_and_down(
     await asyncio.to_thread(command.downgrade, config, "0046")
 
     async def columns(table: str) -> set[str]:
-        async with engine.connect() as db:
+        async with admin_engine.connect() as db:
             return set(
                 (
                     await db.execute(
@@ -367,7 +367,7 @@ async def test_migration_0047_goes_up_and_down(
     assert "activity_digest_at" not in await columns("trips")
 
     await upgrade(empty_database_url)
-    async with engine.connect() as db:
+    async with admin_engine.connect() as db:
         # Back on, for everyone, and the trip is still there with no summary yet.
         on: bool = (await db.execute(text("SELECT trip_activity_alerts FROM users"))).scalar_one()
         digest: object = (

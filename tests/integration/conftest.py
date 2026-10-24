@@ -11,6 +11,9 @@ from nexus.infra.db.engine import make_engine
 from nexus.infra.db.migrations import alembic_config
 from nexus.infra.db.uow import SqlUnitOfWork
 
+# The role the app runs as: migration 0056 makes it, and row-level security applies to it.
+APP_ROLE = "nexus_app"
+
 type UowFactory = Callable[[], SqlUnitOfWork]
 
 
@@ -24,6 +27,18 @@ async def upgrade(url: str, revision: str = "head") -> None:
 @pytest.fixture
 async def engine(empty_database_url: str) -> AsyncIterator[AsyncEngine]:
     await upgrade(empty_database_url)
+    engine = make_engine(empty_database_url, app_role=APP_ROLE)
+    try:
+        yield engine
+    finally:
+        await engine.dispose()
+
+
+@pytest.fixture
+async def admin_engine(empty_database_url: str) -> AsyncIterator[AsyncEngine]:
+    """The login user's own connection, not switched to the app role: for a test that takes
+    migrations back and forth (a downgrade through 0056 removes the role) or has to read past
+    row-level security."""
     engine = make_engine(empty_database_url)
     try:
         yield engine

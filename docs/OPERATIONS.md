@@ -417,6 +417,44 @@ What stays: shared market data and ops events (they hold a keyed hash for the us
 
 **A new table needs a decision.** `tests/unit/test_user_data_coverage.py` reads the schema and fails when a table with a `user_id`, a foreign key to `users`, or a foreign key chain to such a table (such as a trip's) isn't in `AREAS` or `NOT_EXPORTED`, or is in `SHARED`; when a table is in none of the three; when `ERASE_ORDER` doesn't cover exactly the user's tables, children first; or when a column that names a user isn't one the delete and export match on. A table that is not anyone's goes in `SHARED` with a reason; one that is goes in `AREAS` (and in the `trips` or other builder in `export.py` if it needs shaping) or `NOT_EXPORTED` with a reason, and in `ERASE_ORDER`. `tests/integration/test_your_data.py` puts a row for two users in every one of those tables and checks the export holds only the first user's and the delete leaves nothing of theirs and everything of the other's.
 
+## Row-level security
+
+A second safety net under the per-user queries (migration 0056). Every query in the app already filters by user; Postgres now also refuses the rest, so a query that forgets the filter, or a bug that reaches for another user's row, finds nothing instead of someone's money.
+
+**How it works.** The app's connections log in as the database owner (Railway's `postgres`, the user that runs migrations) and immediately `SET ROLE nexus_app`, a `NOLOGIN` role that owns nothing and has only SELECT, INSERT, UPDATE and DELETE on the tables (and USAGE on the sequences), and only SELECT on `alembic_version`. The owner is not forced through the policies (`ENABLE`, never `FORCE`), so Alembic and the database shell, which don't switch role, see everything. Each user-owned table has a policy `nexus_user_rows` (`FOR ALL`, a `USING` and a `WITH CHECK`):
+
+- With no user named for the transaction (`app.user_id` unset or empty), every row is visible and writable. That is a background job, a sign-in, an admin task.
+- With a user named, only the rows tied to that user, by the same columns the data export and delete use (`user_id`, or `id` on `users`, `created_by`/`redeemed_by` on `invites`, `owner_id`/`member_id` on `trip_members`, `owner_id`/`actor_id` on `trip_activity`). Writing a row for someone else is an error (`new row violates row-level security policy`); changing or deleting theirs affects no rows.
+
+**Who names the user.** `application/acting.py` holds the user in a context variable. The web `signed_in` dependency (so `Auth`, `TripAuth` and the ops routes) sets it once the session is checked; `AgentService` sets it for the turn (unless a web request already did) and the Telegram webhook sets it once the sender is known; `Tracing` and `handle_update` reset it when the request or update ends. `SqlUnitOfWork` reads it when a transaction begins and runs `SELECT set_config('app.user_id', :id, true)` (transaction-local, so it can never outlive the transaction or leak through the pool). Jobs and the session lookup that comes before the user is known never name one.
+
+**A trip's other people.** A member's edit is the owner's trip being edited, so the rows keep the owner's `user_id`. `trips`, `trip_bookings`, `trip_covers` and `trip_changes` are therefore visible and writable to the owner and to the trip's members (`nexus_on_trip(trip_id)`, a `SECURITY DEFINER` function that reads `trip_members` without recursing through its policy), with the same rule for reading and writing. The owner's money on the trip (`trip_paid_by_others`, `trip_links`, `trip_shares`) is the owner's alone, like the ledger. `users`, `trip_members` and `trip_activity` can only be changed by the people they are about, but a second read-only policy `nexus_trip_mates` lets people on the same trip read them (the owner's name and zone, who else is on the trip, what they changed).
+
+**Left without row security, and why.**
+
+- `jobs`: queued work is written for other users by system code and names its user in a payload.
+- `trip_invites`: someone signed in redeems an invite another user made, found by its token hash; the table holds hashes and no content.
+- The LangGraph tables `checkpoints`, `checkpoint_writes`, `checkpoint_blobs`, `checkpoint_migrations`: keyed by chat thread (`user:<id>`), with no user column. They are granted to `nexus_app` like the rest; the checkpointer's own connection pool switches role too. The tables come from migration 0003, never from `setup()`, so the app needs no schema rights.
+- Shared data (`SHARED` in `application/user_data.py`): not anyone's.
+
+Sign-in sessions (`web_sessions`) and `invites` do have policies: the session lookup and the invite redeem run before anyone is named, so they see every row, and the policy only matters if code names a user around them.
+
+**`DB_APP_ROLE`** (default `nexus_app`) is the role the app switches to. Empty turns it off, for a local database that is not yet at migration 0056 or that you want to query as yourself; production keeps the default. The migration creates the role if it does not exist and grants it to the migration user (`GRANT nexus_app TO CURRENT_USER`), which `SET ROLE` needs unless that user is a superuser. The migration therefore needs a user that can create roles: Railway's template `postgres` user is a superuser. `alembic upgrade head` never sets the role (`migrations/env.py` makes its own engine).
+
+**A one-off admin query.** Connect as the login user from the database shell (see the runbook): it is not switched to `nexus_app`, so it sees every row. To see what a user's request sees, name them yourself:
+
+```sql
+BEGIN;
+SET LOCAL ROLE nexus_app;
+SELECT set_config('app.user_id', '<user id>', true);
+SELECT count(*) FROM transactions;  -- only that user's
+ROLLBACK;
+```
+
+**A new table needs a policy.** The default privileges give `nexus_app` access to every table the migration user creates, but not a policy. `tests/integration/test_row_security.py` fails until every table in `AREAS` or `NOT_EXPORTED` (except the exceptions above) has row security and a policy, and no other table has one. Add the `ENABLE ROW LEVEL SECURITY` and `CREATE POLICY` to the migration that creates the table, copying the expression for its tie from 0056.
+
+**On deploy.** The pre-deploy `alembic upgrade head` creates the role, grants, functions and policies as the owner; the old code, which does not switch role, keeps working during the deploy. The new code switches role and starts naming users. Rolling back the code needs nothing: as the owner it is not held to the policies. Downgrading the migration drops the policies, the grants and, when no other database uses it, the role.
+
 ## Connect Gmail
 
 Offered only when a user asks to automate logging ("can you log my expenses automatically?"). Nothing in the app suggests it otherwise.

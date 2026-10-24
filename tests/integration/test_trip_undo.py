@@ -528,7 +528,7 @@ async def test_the_undo_tool_reverses_an_itinerary_change_too(uow: UowFactory) -
 
 
 async def test_migration_0054_goes_down_and_up_again(
-    engine: AsyncEngine, empty_database_url: str, uow: UowFactory
+    engine: AsyncEngine, empty_database_url: str, uow: UowFactory, admin_engine: AsyncEngine
 ) -> None:
     user = await person(uow)
     trip = await spain(uow, user)
@@ -539,7 +539,7 @@ async def test_migration_0054_goes_down_and_up_again(
     config = alembic_config(empty_database_url)
     config.attributes["configure_logger"] = False
     await asyncio.to_thread(command.downgrade, config, "0053")
-    async with engine.connect() as db:
+    async with admin_engine.connect() as db:
         tables: set[str] = set(
             (await db.execute(text("SELECT tablename FROM pg_tables"))).scalars()
         )

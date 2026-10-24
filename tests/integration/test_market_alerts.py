@@ -620,7 +620,7 @@ async def test_the_sender_uses_each_users_own_quiet_hours(uow: UowFactory) -> No
 
 
 async def test_migration_0050_keeps_existing_settings_and_goes_down_and_up_again(
-    engine: AsyncEngine, empty_database_url: str, uow: UowFactory
+    engine: AsyncEngine, empty_database_url: str, uow: UowFactory, admin_engine: AsyncEngine
 ) -> None:
     user = await person(uow)
     await notify_cases.set_frequency(uow(), user.id, Frequency.HOURLY, now=MON_OPEN)
@@ -628,7 +628,7 @@ async def test_migration_0050_keeps_existing_settings_and_goes_down_and_up_again
     config = alembic_config(empty_database_url)
     config.attributes["configure_logger"] = False
     await asyncio.to_thread(command.downgrade, config, "0049")
-    async with engine.connect() as db:
+    async with admin_engine.connect() as db:
         tables: set[str] = set(
             (await db.execute(text("SELECT tablename FROM pg_tables"))).scalars()
         )

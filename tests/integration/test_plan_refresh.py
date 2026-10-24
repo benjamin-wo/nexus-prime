@@ -970,7 +970,7 @@ async def test_the_database_keeps_a_link_to_the_same_users_plan(
 
 
 async def test_migration_0051_goes_down_and_up_again(
-    engine: AsyncEngine, empty_database_url: str, uow: UowFactory
+    engine: AsyncEngine, empty_database_url: str, uow: UowFactory, admin_engine: AsyncEngine
 ) -> None:
     user = await person(uow)
     kept = saved(Verdict.WAIT, user_id=user.id, keep_fresh=True, price=D("139.50"))
@@ -985,7 +985,7 @@ async def test_migration_0051_goes_down_and_up_again(
     config = alembic_config(empty_database_url)
     config.attributes["configure_logger"] = False
     await asyncio.to_thread(command.downgrade, config, "0050")
-    async with engine.connect() as db:
+    async with admin_engine.connect() as db:
         columns: set[str] = set(
             (
                 await db.execute(
@@ -1003,7 +1003,7 @@ async def test_migration_0051_goes_down_and_up_again(
     # A plan its refresh replaced goes back to being one that ran out.
     assert {(r.id, r.status) for r in left} == {(kept.id, "open"), (replaced.id, "expired")}
     await upgrade(empty_database_url)
-    async with engine.connect() as db:
+    async with admin_engine.connect() as db:
         rows = (
             await db.execute(
                 select(

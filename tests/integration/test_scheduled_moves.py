@@ -665,7 +665,7 @@ async def test_remind_me_to_put_money_into_a_wallet_reaches_the_model_and_adds_t
 
 
 async def test_the_migration_round_trips_and_keeps_the_bills(
-    engine: AsyncEngine, uow: UowFactory, empty_database_url: str
+    engine: AsyncEngine, uow: UowFactory, empty_database_url: str, admin_engine: AsyncEngine
 ) -> None:
     import asyncio
 
@@ -681,7 +681,7 @@ async def test_the_migration_round_trips_and_keeps_the_bills(
     config.attributes["configure_logger"] = False
     await asyncio.to_thread(command.downgrade, config, "0042")
     await upgrade(empty_database_url)
-    async with engine.connect() as db:
+    async with admin_engine.connect() as db:
         rows = (await db.execute(select(bills.c.name, bills.c.wallet_id))).all()
     # The pointer went with the column.
     assert [(r.name, r.wallet_id) for r in rows] == [("IBKR top-up", None)]

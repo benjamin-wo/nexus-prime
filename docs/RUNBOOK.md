@@ -13,6 +13,8 @@ What to do when something goes wrong with Nexus in production. For how it's conf
 
 Everything below assumes the Railway CLI, logged in and linked to the project (`railway link`). The database has no public endpoint. App commands (`python -m nexus...`) run from a shell in the app container, `railway ssh --service nexus-app`; SQL, dumps and restores run from a shell in the database's own container, `railway ssh --service Postgres-xYMg`, which has `psql`, `pg_dump` and `pg_restore` at the server's version and `PG*` variables that connect to it (the app image has no Postgres client). Never paste credentials into chat, tickets or the repo.
 
+The app's connections switch to the restricted role `nexus_app` (row-level security, see [`OPERATIONS.md`](OPERATIONS.md)); the database shell does not, so SQL there sees every user's rows. That is what you want for a repair and not what the app sees: to check what one user's request would find, `SET LOCAL ROLE nexus_app` and `set_config('app.user_id', '<id>', true)` inside a transaction. If the app logs `role "nexus_app" does not exist` at startup the migration has not run on that database: run `alembic upgrade head`, or set `DB_APP_ROLE` empty to run as the login user until it has.
+
 ## First look
 
 1. **Is it up?** `curl https://<domain>/healthz` returns `{"status":"ok"}` only when the app can reach the database.
