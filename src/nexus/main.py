@@ -53,7 +53,7 @@ from nexus.application.routes import Routes, RouteSource
 from nexus.application.travel_research import research_kind
 from nexus.application.weather import Weather, WeatherSource
 from nexus.application.web_lookup import WebLookup
-from nexus.application.web_search import KeptReader, KeptSearch, Product, WebSearch
+from nexus.application.web_search import KeptReader, KeptSearch, LiveSearch, Product, WebSearch
 from nexus.application.whereabouts import ZoneFinder
 from nexus.channels.telegram import webhook as telegram_webhook
 from nexus.channels.telegram.client import HttpTelegramClient, TelegramClient
@@ -450,7 +450,7 @@ class Web:
     """Everything that asks the web, each within its product's share of the credits."""
 
     travel: WebSearch
-    general: WebSearch
+    general: LiveSearch
     # Reads the articles behind an investment plan's headlines; None without Tavily.
     news: KeptReader | None
 

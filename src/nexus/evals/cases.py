@@ -882,6 +882,32 @@ CASES: tuple[Case, ...] = (
         unchanged=True,
     ),
     Case(
+        "web-search-protest-now",
+        "ask",
+        # Barcelona is in the made-up zone list (see ``runner.Zones``), so the first turn
+        # puts the user on Europe/Madrid time.
+        _t("I just landed in Barcelona", "is there a protest near Passeig de Gracia right now?"),
+        # A news search for today, and the same question in Spanish or Catalan: any two or
+        # more words will do for the local query.
+        calls=(
+            Call(
+                "web_search",
+                {"question": Has("passeig"), "recent": "today", "local_query": Has(" ")},
+            ),
+        ),
+        at_most=(AtMost("web_search", 2),),
+        forbid=("research_trip", "find_ideas", "find_places", "create_trip"),
+    ),
+    Case(
+        "web-search-strikes-week",
+        "ask",
+        _t("any strikes this week in Lisbon?"),
+        calls=(Call("web_search", {"question": Has("lisbon"), "recent": "week"}),),
+        at_most=(AtMost("web_search", 2),),
+        forbid=("research_trip", "find_ideas", "create_trip"),
+        unchanged=True,
+    ),
+    Case(
         "trip-place-reviews",
         "ask",
         _t("what do the reviews say about Ichiran Shibuya? is it open on Mondays?"),

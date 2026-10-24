@@ -3,13 +3,14 @@ model with no tools, and code keeps a figure only when a page it cites gives it.
 Every page, fee and date here is made up."""
 
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
 
 import pytest
 
 from nexus.application.web_lookup import WebLookup, checked
-from nexus.application.web_search import WebAnswer, WebSearchError
+from nexus.application.web_search import Recency, WebAnswer, WebSearchError
 from nexus.domain.errors import InvalidInput
 from nexus.domain.ledger import UserId
 from nexus.domain.travel_research import Source
@@ -33,9 +34,14 @@ class Web:
     pages: bool = True
     fail: bool = False
     asked: list[str] = field(default_factory=list)
+    options: list[tuple[Recency | None, str | None]] = field(default_factory=list)
+    published: list[datetime | None] = field(default_factory=list)
 
-    async def ask(self, question: str) -> WebAnswer:
+    async def ask(
+        self, question: str, recent: Recency | None = None, local_query: str | None = None
+    ) -> WebAnswer:
         self.asked.append(question)
+        self.options.append((recent, local_query))
         if self.fail:
             raise WebSearchError("HTTP 500")
         if not self.pages:
@@ -45,7 +51,13 @@ class Web:
                 Decimal("0.01"),
             )
         return WebAnswer(
-            "", SOURCES, Decimal(0), [LEVY, "Secret internal page", "Levies are rising."], 1
+            "",
+            SOURCES,
+            Decimal(0),
+            [LEVY, "Secret internal page", "Levies are rising."],
+            1,
+            "tavily",
+            self.published,
         )
 
 
@@ -114,3 +126,32 @@ async def test_lookups_are_capped_and_failures_said_plainly() -> None:
     failing = WebLookup(Web(fail=True), scripted(), clock=lambda: NOW)
     with pytest.raises(InvalidInput, match="isn't answering"):
         await failing.ask(USER, "levy")
+
+
+async def test_recent_and_local_searches_are_passed_on_and_tidied() -> None:
+    web = Web()
+    lookup = WebLookup(web, scripted(*[say("Nothing.")] * 10), clock=lambda: NOW)
+    await lookup.ask(USER, "levy")
+    await lookup.ask(
+        USER, "protest Exampleton today", recent="today", local_query="  protesta   hoy "
+    )
+    await lookup.ask(USER, "strike Exampleton", recent="week", local_query="STRIKE exampleton")
+    await lookup.ask(USER, "strike Exampleton", local_query="ab")
+    # Nothing asked twice or too short to mean anything is sent.
+    assert web.options == [(None, None), ("today", "protesta hoy"), ("week", None), (None, None)]
+
+
+async def test_the_writer_is_told_when_each_page_was_published_for_recent_news() -> None:
+    at = datetime(2026, 9, 28, 2, 30, tzinfo=UTC)
+    web = Web(published=[at, None, None])
+    model = scripted(say("Roads are closed [1]."), say("The levy is 150,000 EXD [1]."))
+    lookup = WebLookup(web, model, clock=lambda: NOW)
+    found = await lookup.ask(USER, "roads closed Exampleton", recent="today")
+    assert [s.published for s in found.sources] == [at]  # only what it cites
+    seen = str(model.seen[0][-1].content)
+    assert "(https://gov.example.com/levy; published 2026-09-28 02:30 UTC)" in seen
+    assert "Now: 2026-09-28 04:00 UTC." in seen and "say when the sources were published" in seen
+    # An ordinary lookup has no date line (a page's date is still given where known).
+    await lookup.ask(USER, "levy")
+    plain = str(model.seen[1][-1].content)
+    assert "Now:" not in plain and "say when the sources" not in plain

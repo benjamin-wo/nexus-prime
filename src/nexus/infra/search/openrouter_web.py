@@ -12,7 +12,7 @@ from typing import Any
 
 import httpx
 
-from nexus.application.web_search import WebAnswer, WebSearchError
+from nexus.application.web_search import Recency, WebAnswer, WebSearchError
 
 log = logging.getLogger(__name__)
 
@@ -43,7 +43,9 @@ class OpenRouterWebSearch:
         self._model = model
         self._routing = routing or {}
 
-    async def ask(self, question: str) -> WebAnswer:
+    async def ask(self, question: str, recent: Recency | None = None) -> WebAnswer:
+        """``recent`` is accepted and ignored: the web plugin can't filter by date, so
+        this answer may not be from today (and gives no publication dates)."""
         body: dict[str, Any] = {
             "model": self._model,
             "messages": [

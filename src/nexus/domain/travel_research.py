@@ -12,7 +12,7 @@ import math
 import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, tzinfo
 from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal, InvalidOperation
 from enum import StrEnum
 from urllib.parse import urlsplit
@@ -41,6 +41,7 @@ class Source:
     url: str
     title: str
     checked_on: date
+    published: datetime | None = None  # when the page was published, if the search said
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,16 +94,39 @@ def clean_text(raw: object, limit: int = MAX_TEXT) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
-def sources_from(found: Iterable[tuple[str, str]], checked_on: date) -> list[Source]:
-    """Numbered, de-duplicated sources from (url, title) pairs; unsafe links dropped."""
+def published_note(published: datetime, now: datetime, zone: tzinfo) -> str:
+    """When a page was published, for the agent: "2h ago / 2026-10-24 17:40", the time in
+    the user's zone and how long before ``now`` it was."""
+    gap = now - published
+    minutes = int(gap.total_seconds() // 60)
+    if minutes < 1:
+        ago = "just now"  # also a date a little in the future
+    elif minutes < 60:
+        ago = f"{minutes} min ago"
+    elif minutes < 24 * 60:
+        ago = f"{minutes // 60}h ago"
+    else:
+        days = minutes // (24 * 60)
+        ago = f"{days} day{'s' if days != 1 else ''} ago"
+    return f"{ago} / {published.astimezone(zone):%Y-%m-%d %H:%M}"
+
+
+def sources_from(
+    found: Iterable[tuple[str, str]],
+    checked_on: date,
+    published: Sequence[datetime | None] = (),
+) -> list[Source]:
+    """Numbered, de-duplicated sources from (url, title) pairs; unsafe links dropped.
+    ``published`` are the pages' dates, in the order of ``found``, where known."""
     kept: list[Source] = []
     seen: set[str] = set()
-    for url, title in found:
+    for n, (url, title) in enumerate(found):
         safe = safe_url(url)
         if safe is None or safe in seen:
             continue
         seen.add(safe)
-        kept.append(Source(len(kept) + 1, safe, clean_text(title, 120) or safe, checked_on))
+        when = published[n] if n < len(published) else None
+        kept.append(Source(len(kept) + 1, safe, clean_text(title, 120) or safe, checked_on, when))
         if len(kept) >= MAX_SOURCES:
             break
     return kept
