@@ -49,6 +49,18 @@ class S3ReceiptStore:
             ContentType=content_type,
         )
 
+    async def get(self, key: str) -> bytes:
+        """The object's bytes; raises if the key is missing."""
+
+        def read() -> bytes:
+            body = self._client.get_object(Bucket=self._bucket, Key=key)["Body"]
+            try:
+                return bytes(body.read())
+            finally:
+                body.close()
+
+        return await asyncio.to_thread(read)
+
     async def delete(self, key: str) -> None:
         """Deleting a missing key succeeds, so a retried purge is harmless."""
         await asyncio.to_thread(self._client.delete_object, Bucket=self._bucket, Key=key)

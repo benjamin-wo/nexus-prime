@@ -105,6 +105,10 @@ export async function fakeApi(
      * answer; every other route is refused with a 403 and noted in `state.forbidden`. */
     guest = false,
     emailConnected = false,
+    /** GET /me/export answers 429, as the server does when it is asked too often. */
+    exportLimited = false,
+    /** POST /me/delete answers 422 even for a right confirmation (to show how a refusal reads). */
+    deleteRefused = false,
     forwarding = false,
     splitBill = false,
     twins = false,
@@ -232,6 +236,10 @@ export async function fakeApi(
     display_name: guest ? "Gus L." : "Sam R.",
   });
   const state: {
+    /** How many times GET /me/export was asked for (429s included). */
+    exports: number;
+    /** Every POST to /me/delete, in order: the body sent and the status it got. */
+    deletes: { body: { confirm?: unknown } | null; status: number }[];
     /** Every POST to /me/timezone and /me/timezone/home, in order: the path and the body sent. */
     zonePosts: { path: string; body: { timezone?: string; source?: string } | null }[];
     txs: Tx[];
@@ -356,6 +364,8 @@ export async function fakeApi(
       emails: Record<string, unknown>[];
     };
   } = {
+    exports: 0,
+    deletes: [],
     zonePosts: [],
     runs: running
       ? [
@@ -766,6 +776,36 @@ export async function fakeApi(
       zone.source = "home";
       zone.setAt = null;
       return json(route, { user: userBody(), csrf_token: "csrf-1", changed });
+    }
+    if (path === "/me/export" && method === "GET") {
+      state.exports += 1;
+      if (!session) return json(route, { detail: "not signed in" }, 401);
+      if (exportLimited) return json(route, { detail: "too many exports, try again later" }, 429);
+      const d = new Date();
+      const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+      // Just the zip signature and an empty directory's end record: enough to look like a zip to a download.
+      const empty = Buffer.from([0x50, 0x4b, 0x05, 0x06, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+      return route.fulfill({
+        status: 200,
+        headers: {
+          "content-type": "application/zip",
+          "content-disposition": `attachment; filename="nexus-export-${stamp}.zip"`,
+        },
+        body: empty,
+      });
+    }
+    if (path === "/me/delete" && method === "POST") {
+      if (!session) {
+        state.deletes.push({ body, status: 401 });
+        return json(route, { detail: "not signed in" }, 401);
+      }
+      if (body?.confirm !== "DELETE" || deleteRefused) {
+        state.deletes.push({ body, status: 422 });
+        return json(route, { detail: "type DELETE to confirm" }, 422);
+      }
+      state.deletes.push({ body, status: 204 });
+      session = false;
+      return route.fulfill({ status: 204 });
     }
     if (path === "/auth/logout") {
       session = false;

@@ -592,6 +592,10 @@ class ReceiptStore(Protocol):
     """Private object storage for receipt files."""
 
     async def put(self, key: str, data: bytes, content_type: str) -> None: ...
+    async def get(self, key: str) -> bytes:
+        """The file's bytes. Raises if the key is missing."""
+        ...
+
     async def delete(self, key: str) -> None: ...
     def download_url(self, key: str, *, filename: str, expires: timedelta) -> str:
         """A link that works for ``expires``, for someone already authorised."""
@@ -1035,6 +1039,22 @@ class WebRepository(Protocol):
     async def add_credits(self, month: date, product: str, credits: int) -> None: ...
 
 
+class UserDataRepository(Protocol):
+    """Everything tied to one user, for "Export all my data" and "Delete my data". Every
+    call is scoped to one user; the tables are named in ``application.user_data``."""
+
+    async def rows(self, user_id: UserId, table: str) -> list[dict[str, Any]]:
+        """All of the user's rows in ``table`` (deleted and archived ones too), as plain
+        values. Columns that hold a secret (tokens, hashes, encrypted grants) are left out."""
+        ...
+
+    async def erase(self, user_id: UserId, *, chat_thread: str) -> None:
+        """Remove every row tied to the user, children before parents, and the chat
+        checkpoints of ``chat_thread``, the users row last. Run it in a transaction that
+        is then committed or rolled back as one."""
+        ...
+
+
 class UnitOfWork(Protocol):
     """One database transaction. Single use: enter it once per use case."""
 
@@ -1062,6 +1082,8 @@ class UnitOfWork(Protocol):
     def rates(self) -> RateRepository: ...
     @property
     def web(self) -> WebRepository: ...
+    @property
+    def user_data(self) -> UserDataRepository: ...
 
     async def __aenter__(self) -> Self: ...
     async def __aexit__(

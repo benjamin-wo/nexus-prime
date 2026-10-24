@@ -1529,6 +1529,7 @@ html.keyboard .bottom-nav, html.keyboard .trip-fab-button, html.keyboard .trip-f
 .choice-actions { margin-top: 0; }
 .confirm-box { display: grid; gap: var(--space-2); margin-top: var(--space-3); padding: var(--space-3); border-radius: var(--radius-inner); border: 1px solid var(--accent-border); background: var(--accent-soft); }
 .confirm-box p { margin: 0; }
+.confirm-danger { border-color: rgba(244, 63, 94, 0.45); background: rgba(244, 63, 94, 0.08); }
 .confirm-box .people-actions { margin-top: 0; }
 .split-outcome { display: grid; gap: var(--space-1); margin-top: var(--space-3); padding: var(--space-3); border-radius: var(--radius-inner); background: var(--bg-input); }
 .split-outcome p, .split-outcome ul { margin: 0; }

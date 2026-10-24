@@ -27,6 +27,8 @@ JOINS: Sequence[Window] = ((20, timedelta(minutes=10)),)
 QUOTES: Sequence[Window] = ((30, timedelta(minutes=5)),)
 # A reading of why a stock moved: a model call each (the answer is kept for 30 minutes).
 WHY: Sequence[Window] = ((6, timedelta(minutes=1)), (60, timedelta(days=1)))
+# "Export all my data": a zip of everything, files included, built per request.
+EXPORT: Sequence[Window] = ((3, timedelta(hours=1)),)
 DEFAULT_RULES: Mapping[str, Sequence[Window]] = {
     "message": MESSAGES,
     "import": IMPORTS,
@@ -37,6 +39,7 @@ DEFAULT_RULES: Mapping[str, Sequence[Window]] = {
     "join": JOINS,
     "quote": QUOTES,
     "why": WHY,
+    "export": EXPORT,
 }
 
 

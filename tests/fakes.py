@@ -314,6 +314,9 @@ class FakeBucket:
     async def put(self, key: str, data: bytes, content_type: str) -> None:
         self.objects[key] = (data, content_type)
 
+    async def get(self, key: str) -> bytes:
+        return self.objects[key][0]
+
     async def delete(self, key: str) -> None:
         if self.fail_deletes:
             raise OSError("bucket unavailable")

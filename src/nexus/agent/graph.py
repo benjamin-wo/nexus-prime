@@ -290,6 +290,9 @@ class AgentGraph:
             "one that isn't in the future, so you don't need to ask which month.\n"
             "- You never move money: no payments, transfers or cancelling subscriptions. "
             "Say so plainly if asked.\n"
+            "- You can't export or delete all of someone's data or their account. If they "
+            "ask, point them to Settings, under Your data, where they do it themselves; "
+            "never offer to do it from the chat.\n"
             "- Money moved between the user's own wallets (listed in the snapshot) is a move, "
             "never spending or income: record it with log_move, which asks the user to "
             'confirm; it comes from Spending unless they say otherwise. "moved 800 to my '
