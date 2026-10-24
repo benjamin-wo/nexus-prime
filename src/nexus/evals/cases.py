@@ -32,6 +32,7 @@ from nexus.evals.checks import (
     SharedBooked,
     SharedTripIs,
     TheyPaid,
+    TimeZoneIs,
     TodoAdded,
     UpdatesAre,
 )
@@ -72,6 +73,7 @@ WRITES = (
     "add_wallet",
     "update_wallet",
     "delete_wallet",
+    "set_timezone",
 )
 
 TODAY = date(2026, 9, 28)
@@ -1014,6 +1016,21 @@ CASES: tuple[Case, ...] = (
         "log",
         _t("we're in Kyoto on 15 Dec"),
         calls=(Call("label_trip_day", {"day": Has("2026-12-15"), "label": Has("kyoto")}),),
+    ),
+    Case(
+        "timezone-arrived",
+        "timezone",
+        _t("I'm in Madrid now"),
+        calls=(Call("set_timezone", {"place": Has("madrid")}),),
+        checks=(TimeZoneIs("Europe/Madrid"),),
+    ),
+    Case(
+        "timezone-back-home",
+        "timezone",
+        _t("I'm in Madrid now", "I'm back home in Singapore"),
+        # Either home=true or place Singapore: both end on the home zone.
+        calls=(Call("set_timezone"),),
+        checks=(TimeZoneIs("Asia/Singapore"),),
     ),
     Case(
         "trip-add-cover",

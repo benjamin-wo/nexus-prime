@@ -53,6 +53,7 @@ from nexus.domain.ledger import (
     UserId,
     Wallet,
     WalletKind,
+    ZoneSource,
 )
 from nexus.domain.money import Money
 from nexus.domain.receipts import RETENTION_AFTER_DELETE, UNCLAIMED_TTL, Receipt, purge_due
@@ -90,6 +91,9 @@ def _user(row: Row[Any]) -> User:
         display_name=row.display_name,
         trip_activity_alerts=row.trip_activity_alerts,
         setup_dismissed_at=row.setup_dismissed_at,
+        home_timezone=row.home_timezone,
+        timezone_source=ZoneSource(row.timezone_source),
+        timezone_set_at=row.timezone_set_at,
     )
 
 
@@ -234,6 +238,9 @@ class SqlLedgerRepository:
                 telegram_user_id=user.telegram_user_id,
                 telegram_chat_id=user.telegram_chat_id,
                 timezone=user.timezone,
+                home_timezone=user.home_timezone,
+                timezone_source=user.timezone_source.value,
+                timezone_set_at=user.timezone_set_at,
                 home_currency=user.home_currency,
                 role=user.role.value,
                 created_at=user.created_at,
@@ -251,9 +258,27 @@ class SqlLedgerRepository:
         ).first()
         return _user(row) if row else None
 
-    async def get_user(self, user_id: UserId) -> User | None:
-        row = (await self._db.execute(select(users).where(users.c.id == user_id))).first()
+    async def get_user(self, user_id: UserId, *, for_update: bool = False) -> User | None:
+        stmt = select(users).where(users.c.id == user_id)
+        if for_update:
+            stmt = stmt.with_for_update()
+        row = (await self._db.execute(stmt)).first()
         return _user(row) if row else None
+
+    async def set_timezone(
+        self, user_id: UserId, timezone: str, source: ZoneSource, set_at: datetime | None
+    ) -> None:
+        await self._db.execute(
+            update(users)
+            .where(users.c.id == user_id)
+            .values(timezone=timezone, timezone_source=source.value, timezone_set_at=set_at)
+        )
+
+    async def users_with_zone_source(self, source: ZoneSource) -> list[UserId]:
+        rows = await self._db.execute(
+            select(users.c.id).where(users.c.timezone_source == source.value)
+        )
+        return [UserId(r[0]) for r in rows]
 
     async def set_display_name(self, user_id: UserId, name: str) -> None:
         await self._db.execute(update(users).where(users.c.id == user_id).values(display_name=name))

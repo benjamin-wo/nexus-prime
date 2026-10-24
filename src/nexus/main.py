@@ -54,6 +54,7 @@ from nexus.application.travel_research import research_kind
 from nexus.application.weather import Weather, WeatherSource
 from nexus.application.web_lookup import WebLookup
 from nexus.application.web_search import KeptReader, KeptSearch, Product, WebSearch
+from nexus.application.whereabouts import ZoneFinder
 from nexus.channels.telegram import webhook as telegram_webhook
 from nexus.channels.telegram.client import HttpTelegramClient, TelegramClient
 from nexus.channels.web import api as web_api
@@ -364,6 +365,7 @@ async def _telegram_runtime(
     ideas: IdeaFinder | None = None,
     lookup: WebLookup | None = None,
     routes: Routes | None = None,
+    zones: ZoneFinder | None = None,
 ) -> telegram_webhook.TelegramRuntime:
     def uow() -> SqlUnitOfWork:
         return SqlUnitOfWork(engine)
@@ -397,6 +399,7 @@ async def _telegram_runtime(
             routes=routes,
             ideas=ideas,
             lookup=lookup,
+            zones=zones,
         )
     )
     graph = agent_graph.compile(checkpointer)
@@ -678,12 +681,13 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                 departments = extra.departments or await _registry(
                     resolved, engine, models, rates, stack, web, news, quotes
                 )
+                weather = Weather(await _weather_source(extra, stack), clock=extra.clock or utcnow)
                 places = await _places(resolved, extra, stack, extra.clock or utcnow)
                 ideas = await _ideas(resolved, extra, stack, web, places, extra.clock or utcnow)
                 routes = await _routes(resolved, extra, stack, extra.clock or utcnow)
                 telegram = await _telegram_runtime(
                     resolved, engine, extra, stack, rates, archive, models, email, departments,
-                    places, ideas, _lookup(resolved, extra, web), routes,
+                    places, ideas, _lookup(resolved, extra, web), routes, weather,
                 )  # fmt: skip
                 app.state.telegram = telegram
                 origin = resolved.public_origin
@@ -703,6 +707,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                         await _photos(resolved, extra, stack, models),
                         origin,
                         quotes,
+                        weather,
                     )
                     schedules = list(SCHEDULES)
                     if resolved.ops_tickets_enabled:
@@ -740,7 +745,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                         places=places,
                         routes=routes,
                         ideas=ideas,
-                        weather=Weather(await _weather_source(extra, stack), clock=clock),
+                        weather=weather,
                         scans=_statement_pages(resolved, extra, models),
                     )
                     menu = asyncio.create_task(_set_menu_button(telegram.client, origin))

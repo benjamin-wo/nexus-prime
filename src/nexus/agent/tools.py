@@ -44,6 +44,7 @@ from nexus.application import trip_access as access_cases
 from nexus.application import trips as trip_cases
 from nexus.application import undo as undo_cases
 from nexus.application import wallets as wallet_cases
+from nexus.application import whereabouts as whereabouts_cases
 from nexus.application.departments import Departments
 from nexus.application.fx import Rate, RateSource
 from nexus.application.ideas import KINDS as IDEA_KINDS
@@ -52,6 +53,7 @@ from nexus.application.places import Places, PlacesError
 from nexus.application.ports import LedgerQuery, UnitOfWork
 from nexus.application.routes import Routes
 from nexus.application.web_lookup import WebLookup
+from nexus.application.whereabouts import ZoneFinder
 from nexus.domain import itinerary
 from nexus.domain.bookings import Booking, BookingDraft, BookingKind
 from nexus.domain.email import InboundEmail
@@ -67,6 +69,7 @@ from nexus.domain.ledger import (
     User,
     Wallet,
     WalletKind,
+    ZoneSource,
     plan_split,
 )
 from nexus.domain.levels import describe as describe_levels
@@ -83,6 +86,8 @@ from nexus.domain.settle import Debt as SettleDebt
 from nexus.domain.settle import PersonBalance, describe_balance
 from nexus.domain.trip_access import clean_name, without_money
 from nexus.domain.trips import Trip, TripItem, describe_trip
+from nexus.domain.whereabouts import clock_there, zone_named
+from nexus.domain.whereabouts import label as zone_label
 
 type UowFactory = Callable[[], UnitOfWork]
 
@@ -107,6 +112,8 @@ class ToolContext:
     ideas: IdeaFinder | None = None
     # Looking things up on the web; None when not set up.
     lookup: WebLookup | None = None
+    # Finds the time zone of a place by name, for set_timezone; None when not set up.
+    zones: ZoneFinder | None = None
     # Shared by everything the tools change in one chat turn, so Undo reverses it together.
     # None outside a turn: each change then stands alone.
     batch: UUID | None = None
@@ -3451,6 +3458,45 @@ async def _research_to_trip(ctx: ToolContext, a: ResearchToTripArgs) -> ToolResu
     return ToolResult(text, wrote=found.added > 0)
 
 
+class SetTimezoneArgs(Args):
+    place: str | None = Field(
+        default=None,
+        description="Where the user is now, as they said it: a city, a country or a zone "
+        "name, such as Madrid, Spain or Europe/Madrid",
+    )
+    home: bool = Field(
+        default=False, description="True when the user says they are back home (no place)"
+    )
+
+
+async def _set_timezone(ctx: ToolContext, a: SetTimezoneArgs) -> ToolResult:
+    if a.home:
+        reported = await whereabouts_cases.report_zone(
+            ctx.uow(), ctx.user.id, None, ZoneSource.HOME, ctx.now, notify=False
+        )
+    elif a.place:
+        zone = zone_named(a.place)
+        if zone is None and ctx.zones is not None:
+            zone = await ctx.zones.zone_of(a.place)
+        if zone is None:
+            raise InvalidInput(
+                f"couldn't find a time zone for {a.place!r}. Ask which city they are in, or "
+                "for a zone name like Europe/Madrid"
+            )
+        reported = await whereabouts_cases.report_zone(
+            ctx.uow(), ctx.user.id, zone, ZoneSource.CHAT, ctx.now, notify=False
+        )
+    else:
+        raise InvalidInput("say where the user is (a place), or set home=true for back home")
+    new, home = reported.new, reported.user.home_timezone
+    there = clock_there(new, ctx.now)
+    if not reported.changed:
+        return ToolResult(f"Already on {zone_label(new, ctx.now)}, {there} there.")
+    if new == home:
+        return ToolResult(f"Back on {zone_label(new, ctx.now)}, {there} there.")
+    return ToolResult(f"Now on {zone_label(new, ctx.now)}, {there} there.")
+
+
 class SkillArgs(Args):
     name: str
 
@@ -4100,6 +4146,16 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             BudgetTargetArgs,
             _remove_budget,
             confirm=_describe_remove_budget,
+        ),
+        ToolSpec(
+            "set_timezone",
+            "Set which time zone the user is in now, so their days, reminders and summaries "
+            "follow them. Call it when they say where they are ('I'm in Madrid now', 'we "
+            "landed in Tokyo') with place, or that they are back home ('back home') with "
+            "home=true. Not for asking what time it is, or for talking about a place they "
+            "are only planning to visit. No confirmation; the reply already tells them.",
+            SetTimezoneArgs,
+            _set_timezone,
         ),
         _skill_tool(load_skill),
         ToolSpec(

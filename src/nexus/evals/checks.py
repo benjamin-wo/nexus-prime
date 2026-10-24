@@ -565,6 +565,21 @@ class TodoAdded:
 
 
 @dataclass(frozen=True, slots=True)
+class TimeZoneIs:
+    """The user's current time zone is this one."""
+
+    zone: str
+
+    def describe(self) -> str:
+        return f"the user's current time zone is {self.zone}"
+
+    async def holds(self, world: World) -> bool:
+        async with world.uow() as tx:
+            user = await tx.ledger.get_user(world.user.id)
+        return user is not None and user.timezone == self.zone
+
+
+@dataclass(frozen=True, slots=True)
 class TheyPaid:
     """A fellow traveller's payment like this is noted on a trip, unsettled."""
 

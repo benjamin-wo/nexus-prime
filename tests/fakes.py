@@ -609,12 +609,17 @@ class FakeWeather:
 
     asked: list[str] = field(default_factory=list)
     failing: bool = False
+    # The time zone of a place by the name it is asked for ("Madrid": "Europe/Madrid").
+    zones: dict[str, str] = field(default_factory=dict)
+    finding_fails: bool = False  # the geocoder is down
 
     async def find(self, name: str) -> Spot | None:
         self.asked.append(f"find:{name}")
+        if self.finding_fails:
+            raise WeatherError("geocoder down")
         if name == "Nowhere":
             return None
-        return Spot(name, "Exampleland", 35.0, 139.0, "JP")
+        return Spot(name, "Exampleland", 35.0, 139.0, "JP", self.zones.get(name))
 
     async def forecast(self, spot: Spot, start: date, end: date) -> list[DayWeather]:
         self.asked.append(f"forecast:{start}:{end}")

@@ -201,12 +201,16 @@ class Kind(StrEnum):
     DAILY_SUMMARY = "daily_summary"
     TRANSACTION_UPDATE = "transaction_update"
     EMAIL_STATUS = "email_status"
+    TIMEZONE = "timezone"
     DIGEST = "digest"  # the message that folds held ones together: never recorded itself
     MESSAGE = "message"  # a job queued before messages had a kind
 
 
-# Summaries the user chose the frequency of, or timed: they never count toward the day's cap.
-UNCAPPED = frozenset({Kind.DAILY_SUMMARY, Kind.MARKET_SUMMARY, Kind.TRANSACTION_UPDATE})
+# Summaries the user chose the frequency of, or timed, and the one-line note that their time
+# zone changed: they never count toward the day's cap.
+UNCAPPED = frozenset(
+    {Kind.DAILY_SUMMARY, Kind.MARKET_SUMMARY, Kind.TRANSACTION_UPDATE, Kind.TIMEZONE}
+)
 # Where digests go besides the end of quiet hours (local time), for what was held outside them.
 DIGEST_EVENING = time(19)
 # A digest lists this many items, then says how many more are on the web.

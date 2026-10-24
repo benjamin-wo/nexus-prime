@@ -51,6 +51,7 @@ from nexus.application.places import Places
 from nexus.application.routes import Routes
 from nexus.application.users import get_user
 from nexus.application.web_lookup import WebLookup
+from nexus.application.whereabouts import ZoneFinder
 from nexus.domain.errors import DuplicateSource, InvalidInput, NexusError
 from nexus.domain.ledger import User, UserId
 from nexus.domain.money import Money
@@ -80,6 +81,7 @@ CORE_TOOLS = (
     "query_ledger",
     "list_categories",
     "answer_email",
+    "set_timezone",
     "web_search",
     "load_skill",
 )
@@ -142,6 +144,8 @@ class AgentDeps:
     ideas: IdeaFinder | None = None
     # Looking things up on the web; None: not set up.
     lookup: WebLookup | None = None
+    # Finds the time zone of a place by name, for set_timezone; None: not set up.
+    zones: ZoneFinder | None = None
 
 
 def strip_ids(text: str) -> str:
@@ -248,6 +252,7 @@ class AgentGraph:
             routes=self.deps.routes,
             ideas=self.deps.ideas,
             lookup=self.deps.lookup,
+            zones=self.deps.zones,
         )
 
     async def _prompt(self, ctx: ToolContext, state: AgentState) -> str:
@@ -261,19 +266,24 @@ class AgentGraph:
             if rules
             else ""
         )
+        home = ctx.user.home_timezone
+        home_zone = f", home: {home}" if home != ctx.user.timezone else ""
         return (
             "You are Nexus, a personal finance assistant chatting on a phone: a warm, "
             "sharp friend who's good with money. Friendly and quick, with a light touch "
             "of humour when it fits; glad about wins (a budget kept, payday), honest and "
             "kind about overspending, never preachy or salesy. Serious money questions "
             "get straight answers, not jokes.\n"
-            f"Now: {local:%A %Y-%m-%d %H:%M} ({ctx.user.timezone}). "
+            f"Now: {local:%A %Y-%m-%d %H:%M} ({ctx.user.timezone}{home_zone}). "
             f"Home currency: {ctx.user.home_currency}.\n"
             f"Categories: {', '.join(c.name for c in cats)}.\n"
             f"{rule_line}\n"
             "Rules:\n"
             "- Use tools for every read or change. Never invent transactions, amounts, "
             "dates or results; report only what tools return.\n"
+            '- When the user says where they are now ("I\'m in Madrid", "we landed in '
+            "Tokyo\") or that they're back home, call set_timezone so their days and "
+            "reminders follow them; asking the time isn't a reason to.\n"
             "- If anything a change needs is unclear (the amount, which transaction, what "
             "kind, who, which day), ask one short question offering the likely answers. "
             'Never guess. A day of the month on its own ("on the 3rd") means the latest '

@@ -36,6 +36,7 @@ from nexus.application import subscriptions as subscription_cases
 from nexus.application import transactions as tx_cases
 from nexus.application import wallet_figures as figure_cases
 from nexus.application import wallets as wallet_cases
+from nexus.application import whereabouts as whereabouts_cases
 from nexus.application.ports import LedgerQuery, SortField
 from nexus.application.statements import Verdict
 from nexus.application.users import RegisterUser
@@ -69,6 +70,7 @@ from nexus.domain.ledger import (
     TransactionStatus,
     User,
     Wallet,
+    ZoneSource,
 )
 from nexus.domain.money import Money
 from nexus.domain.notifications import (
@@ -276,7 +278,15 @@ class UserOut(Model):
     telegram_user_id: int
     role: str
     home_currency: str
+    # Their CURRENT time zone: it follows where they are. Everything shown in their day
+    # uses it.
     timezone: str
+    # Where they live, the zone they go back to.
+    home_timezone: str
+    # What set the current zone: home, phone, chat or trip.
+    timezone_source: str
+    # When their phone or they last said where they are; None if never.
+    timezone_set_at: datetime | None = None
     # Their Telegram name, kept at sign-in; None for someone who hasn't one.
     display_name: str | None = None
 
@@ -295,6 +305,9 @@ def me_out(user: User, csrf: str, joined_trip: UUID | None = None) -> MeOut:
             role=user.role.value,
             home_currency=user.home_currency,
             timezone=user.timezone,
+            home_timezone=user.home_timezone,
+            timezone_source=user.timezone_source.value,
+            timezone_set_at=user.timezone_set_at,
             display_name=user.display_name,
         ),
         csrf_token=csrf,
@@ -493,6 +506,58 @@ async def logout(auth: TripAuth, response: Response, web: Runtime) -> None:
 @router.get("/me")
 async def me(auth: TripAuth) -> MeOut:
     return me_out(auth.user, auth.session.csrf_token)
+
+
+class TimezoneIn(Model):
+    timezone: str = Field(max_length=64)
+    # "phone": the browser's own zone, sent on its own. "manual": the user picked it in
+    # Settings (an explicit statement, kept as source "chat").
+    source: Literal["phone", "manual"]
+
+
+class TimezoneOut(Model):
+    timezone: str
+    home_timezone: str
+    timezone_source: str
+    timezone_set_at: datetime | None = None
+    # Whether the current zone is now a different one than before the call.
+    changed: bool
+
+
+def timezone_out(reported: whereabouts_cases.Reported) -> TimezoneOut:
+    user = reported.user
+    return TimezoneOut(
+        timezone=user.timezone,
+        home_timezone=user.home_timezone,
+        timezone_source=user.timezone_source.value,
+        timezone_set_at=user.timezone_set_at,
+        changed=reported.changed,
+    )
+
+
+@router.post("/me/timezone")
+async def set_my_timezone(body: TimezoneIn, auth: Auth, web: Runtime) -> TimezoneOut:
+    """Say where the user is. A phone that repeats the zone they are in only refreshes
+    when it last said so; a new zone is told once on Telegram (not when picked by hand)."""
+    phone = body.source == "phone"
+    reported = await whereabouts_cases.report_zone(
+        web.uow(),
+        auth.user.id,
+        body.timezone,
+        ZoneSource.PHONE if phone else ZoneSource.CHAT,
+        web.clock(),
+        notify=phone,
+    )
+    return timezone_out(reported)
+
+
+@router.post("/me/timezone/home")
+async def set_my_timezone_home(auth: Auth, web: Runtime) -> TimezoneOut:
+    """Back to the user's home time zone."""
+    reported = await whereabouts_cases.report_zone(
+        web.uow(), auth.user.id, None, ZoneSource.HOME, web.clock(), notify=False
+    )
+    return timezone_out(reported)
 
 
 class InviteOut(Model):

@@ -38,6 +38,7 @@ class Spot:
     latitude: float
     longitude: float
     country_code: str | None = None  # ISO 3166, e.g. JP
+    timezone: str | None = None  # IANA name the geocoder gives it, e.g. Asia/Tokyo
 
 
 @dataclass(frozen=True, slots=True)
