@@ -527,18 +527,18 @@ async def test_chat_says_when_each_price_is_from(uow: UowFactory) -> None:
 
 
 async def test_migration_0049_goes_down_and_up_again(
-    engine: AsyncEngine, empty_database_url: str, uow: UowFactory
+    engine: AsyncEngine, empty_database_url: str, uow: UowFactory, admin_engine: AsyncEngine
 ) -> None:
     await keep(uow, [quote("NVDA", "104", "100", MON_OPEN)], at=MON_OPEN)
     await engine.dispose()
     config = alembic_config(empty_database_url)
     config.attributes["configure_logger"] = False
     await asyncio.to_thread(command.downgrade, config, "0048")
-    async with engine.connect() as db:
+    async with admin_engine.connect() as db:
         tables: set[str] = set(
             (await db.execute(text("SELECT tablename FROM pg_tables"))).scalars()
         )
     assert "market_quotes" not in tables
     await upgrade(empty_database_url)
-    async with engine.connect() as db:
+    async with admin_engine.connect() as db:
         assert (await db.execute(text("SELECT count(*) FROM market_quotes"))).scalar_one() == 0

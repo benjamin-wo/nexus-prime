@@ -1,8 +1,10 @@
 from types import TracebackType
 from typing import Self
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncTransaction
 
+from nexus.application.acting import current_user_id
 from nexus.infra.db.email_repository import SqlEmailRepository
 from nexus.infra.db.investment_repository import SqlInvestmentRepository
 from nexus.infra.db.ledger_repository import SqlLedgerRepository
@@ -123,6 +125,17 @@ class SqlUnitOfWork:
         self._used = True
         self._connection = await self._engine.connect()
         self._transaction = await self._connection.begin()
+        user_id = current_user_id()
+        if user_id is not None:
+            # Row-level security: this transaction sees and writes only this user's rows
+            # (and a trip's, if they are on it). Transaction-local, so it never outlives it.
+            try:
+                await self._connection.execute(
+                    text("SELECT set_config('app.user_id', :id, true)"), {"id": str(user_id)}
+                )
+            except BaseException:
+                await self._connection.close()
+                raise
         self._ledger = SqlLedgerRepository(self._connection)
         self._planning = SqlPlanningRepository(self._connection)
         self._jobs = SqlJobQueue(self._connection)

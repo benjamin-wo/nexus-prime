@@ -552,7 +552,7 @@ async def test_a_link_hides_flights_stays_and_tickets_but_keeps_the_users_own_pl
 
 
 async def test_the_migration_adds_the_columns_with_defaults_and_keeps_trips_and_links(
-    engine: AsyncEngine, uow: UowFactory, empty_database_url: str
+    engine: AsyncEngine, uow: UowFactory, empty_database_url: str, admin_engine: AsyncEngine
 ) -> None:
     user, trip = await going(uow)
     await trip_cases.share_trip(uow(), user.id, trip.id, renew=False, show_bookings=False, now=MADE)
@@ -564,7 +564,7 @@ async def test_the_migration_adds_the_columns_with_defaults_and_keeps_trips_and_
     config = alembic_config(empty_database_url)
     config.attributes["configure_logger"] = False
     await asyncio.to_thread(command.downgrade, config, "0044")
-    async with engine.connect() as db:
+    async with admin_engine.connect() as db:
         columns: set[str] = set(
             (
                 await db.execute(
@@ -582,7 +582,7 @@ async def test_the_migration_adds_the_columns_with_defaults_and_keeps_trips_and_
     assert "trip_paid_by_others" not in tables
 
     await upgrade(empty_database_url)
-    async with engine.connect() as db:
+    async with admin_engine.connect() as db:
         trips = (
             await db.execute(text("SELECT destination, split_evenly, not_split FROM trips"))
         ).all()

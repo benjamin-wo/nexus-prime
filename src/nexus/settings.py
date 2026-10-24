@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     environment: Environment = Environment.DEV
     # No default: the app must never start against an implicit database.
     database_url: PostgresDsn = Field(...)
+    # The role every connection switches to (SET ROLE), so row-level security applies to the
+    # app though the login is the owner. Empty: stay the login user (an old database from
+    # before migration 0056).
+    db_app_role: str = Field(default="nexus_app", pattern=r"^([A-Za-z_][A-Za-z0-9_]*)?$")
 
     # --- Telegram. Unset token = Telegram channel disabled. ---
     telegram_bot_token: SecretStr | None = None

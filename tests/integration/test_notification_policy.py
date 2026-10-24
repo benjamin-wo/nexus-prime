@@ -477,7 +477,7 @@ async def test_the_database_refuses_a_cap_outside_3_to_20(scene: Scene) -> None:
 
 
 async def test_migration_0053_keeps_settings_and_goes_down_and_up_again(
-    engine: AsyncEngine, empty_database_url: str, uow: UowFactory
+    engine: AsyncEngine, empty_database_url: str, uow: UowFactory, admin_engine: AsyncEngine
 ) -> None:
     user = await make_user(uow)
     await notify_cases.set_market(uow(), user.id, now=sgt(20, 12), quiet_start=time(22))
@@ -485,7 +485,7 @@ async def test_migration_0053_keeps_settings_and_goes_down_and_up_again(
     config = alembic_config(empty_database_url)
     config.attributes["configure_logger"] = False
     await asyncio.to_thread(command.downgrade, config, "0052")
-    async with engine.connect() as db:
+    async with admin_engine.connect() as db:
         tables: set[str] = set(
             (await db.execute(text("SELECT tablename FROM pg_tables"))).scalars()
         )

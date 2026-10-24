@@ -400,7 +400,7 @@ async def test_the_geocoder_gives_the_zone_and_junk_is_dropped() -> None:
 
 
 async def test_migration_0055_backfills_and_goes_down_again(
-    engine: AsyncEngine, empty_database_url: str
+    engine: AsyncEngine, empty_database_url: str, admin_engine: AsyncEngine
 ) -> None:
     await engine.dispose()
     config = alembic_config(empty_database_url)
@@ -408,7 +408,7 @@ async def test_migration_0055_backfills_and_goes_down_again(
     await asyncio.to_thread(command.downgrade, config, "0054")
 
     async def columns() -> set[str]:
-        async with engine.connect() as db:
+        async with admin_engine.connect() as db:
             rows = await db.execute(
                 text("SELECT column_name FROM information_schema.columns WHERE table_name='users'")
             )
@@ -416,7 +416,7 @@ async def test_migration_0055_backfills_and_goes_down_again(
 
     before = await columns()
     assert not {"home_timezone", "timezone_source", "timezone_set_at"} & before
-    async with engine.begin() as db:
+    async with admin_engine.begin() as db:
         for n, zone in enumerate(("Asia/Singapore", "Europe/Madrid")):
             await db.execute(
                 text(
@@ -427,7 +427,7 @@ async def test_migration_0055_backfills_and_goes_down_again(
             )
     await upgrade(empty_database_url)
     assert {"home_timezone", "timezone_source", "timezone_set_at"} <= await columns()
-    async with engine.connect() as db:
+    async with admin_engine.connect() as db:
         rows = (
             await db.execute(
                 text(
@@ -441,12 +441,12 @@ async def test_migration_0055_backfills_and_goes_down_again(
         ("Europe/Madrid", "Europe/Madrid", "home", None),
     ]
     with pytest.raises(IntegrityError):
-        async with engine.begin() as db:
+        async with admin_engine.begin() as db:
             await db.execute(text("UPDATE users SET timezone_source = 'teleport'"))
     with pytest.raises(IntegrityError):  # the home zone is required
-        async with engine.begin() as db:
+        async with admin_engine.begin() as db:
             await db.execute(text("UPDATE users SET home_timezone = NULL"))
-    await engine.dispose()
+    await admin_engine.dispose()
     await asyncio.to_thread(command.downgrade, config, "0054")
     assert await columns() == before
 

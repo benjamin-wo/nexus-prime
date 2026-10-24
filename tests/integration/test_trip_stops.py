@@ -156,7 +156,7 @@ async def test_another_users_trip_has_no_stops_to_see_or_set(uow: UowFactory) ->
 
 
 async def test_the_migration_adds_stops_and_keeps_the_trips(
-    engine: AsyncEngine, uow: UowFactory, empty_database_url: str
+    engine: AsyncEngine, uow: UowFactory, empty_database_url: str, admin_engine: AsyncEngine
 ) -> None:
     user, trip = await kyoto_and_tokyo(uow)
     await trip_cases.set_stops(uow(), user, trip.id, [Stop("Kyoto", d(10), d(20))], now=NOW)
@@ -164,14 +164,14 @@ async def test_the_migration_adds_stops_and_keeps_the_trips(
     config = alembic_config(empty_database_url)
     config.attributes["configure_logger"] = False
     await asyncio.to_thread(command.downgrade, config, "0043")
-    async with engine.connect() as db:
+    async with admin_engine.connect() as db:
         found = await db.execute(
             text("SELECT column_name FROM information_schema.columns WHERE table_name = 'trips'")
         )
         columns: set[str] = set(found.scalars())
     assert "stops" not in columns and "hop_modes" in columns
     await upgrade(empty_database_url)
-    async with engine.connect() as db:
+    async with admin_engine.connect() as db:
         rows = (await db.execute(text("SELECT destination, stops FROM trips"))).all()
     # The trip is still there; its stops went with the column, so it follows the hotels.
     assert [(r.destination, r.stops) for r in rows] == [("Exampleland", [])]

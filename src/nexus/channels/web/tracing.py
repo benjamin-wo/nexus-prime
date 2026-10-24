@@ -7,7 +7,7 @@ from typing import Any
 
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from nexus.application import ops
+from nexus.application import acting, ops
 
 TRACED = ("/api/", "/telegram/")
 HEADER = b"x-trace-id"
@@ -26,7 +26,11 @@ class Tracing:
         started = time.monotonic()
         done: dict[str, Any] = {}
 
-        with ops.scope(trace=ops.new_trace(), channel=channel, fresh=True) as trace:
+        # ``acting_as(None)``: whoever the request signs in as is forgotten when it ends.
+        with (
+            ops.scope(trace=ops.new_trace(), channel=channel, fresh=True) as trace,
+            acting.acting_as(None),
+        ):
 
             async def traced_send(message: Message) -> None:
                 if message["type"] == "http.response.start":

@@ -618,7 +618,7 @@ async def test_the_setup_api_needs_a_signed_in_user_and_a_csrf_token(world: Worl
 
 
 async def test_migration_0052_goes_up_and_down(
-    engine: AsyncEngine, empty_database_url: str, uow: UowFactory
+    engine: AsyncEngine, empty_database_url: str, uow: UowFactory, admin_engine: AsyncEngine
 ) -> None:
     user = await person(uow)
     assert user.setup_dismissed_at is None
@@ -629,7 +629,7 @@ async def test_migration_0052_goes_up_and_down(
     await asyncio.to_thread(command.downgrade, config, "0051")
 
     async def columns() -> set[str]:
-        async with engine.connect() as db:
+        async with admin_engine.connect() as db:
             rows = await db.execute(
                 text(
                     "SELECT column_name FROM information_schema.columns WHERE table_name = 'users'"
@@ -640,6 +640,6 @@ async def test_migration_0052_goes_up_and_down(
     assert "setup_dismissed_at" not in await columns()
     await upgrade(empty_database_url)
     assert "setup_dismissed_at" in await columns()
-    async with engine.connect() as db:
+    async with admin_engine.connect() as db:
         left: object = (await db.execute(text("SELECT setup_dismissed_at FROM users"))).scalar_one()
     assert left is None  # coming back, the checklist is shown again
