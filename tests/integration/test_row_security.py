@@ -203,6 +203,19 @@ async def test_with_no_user_named_every_row_is_visible(
             assert await count(db, "SELECT count(DISTINCT user_id) FROM transactions") == 2
 
 
+async def test_a_unit_of_work_keeps_its_user_after_a_commit(
+    uow: UowFactory, alice: UserId, bob: UserId
+) -> None:
+    await spend(uow, alice, "1")
+    await spend(uow, bob, "2")
+    with acting_as(alice):
+        async with uow() as tx:
+            await tx.commit()
+            # The next transaction still names Alice, so it never sees everyone's rows.
+            seen = await tx.web._c.execute(text("SELECT count(DISTINCT user_id) FROM transactions"))
+            assert seen.scalar_one() == 1
+
+
 async def test_queued_jobs_are_not_held_back(
     engine: AsyncEngine, uow: UowFactory, alice: UserId, bob: UserId
 ) -> None:

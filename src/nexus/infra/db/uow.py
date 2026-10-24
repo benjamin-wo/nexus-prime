@@ -5,6 +5,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncTransaction
 
 from nexus.application.acting import current_user_id
+from nexus.domain.ledger import UserId
 from nexus.infra.db.email_repository import SqlEmailRepository
 from nexus.infra.db.investment_repository import SqlInvestmentRepository
 from nexus.infra.db.ledger_repository import SqlLedgerRepository
@@ -27,6 +28,7 @@ class SqlUnitOfWork:
         self._connection: AsyncConnection | None = None
         self._transaction: AsyncTransaction | None = None
         self._used = False
+        self._user_id: UserId | None = None
         self._ledger: SqlLedgerRepository | None = None
         self._planning: SqlPlanningRepository | None = None
         self._jobs: SqlJobQueue | None = None
@@ -124,18 +126,12 @@ class SqlUnitOfWork:
             raise RuntimeError("a unit of work can only be used once")
         self._used = True
         self._connection = await self._engine.connect()
-        self._transaction = await self._connection.begin()
-        user_id = current_user_id()
-        if user_id is not None:
-            # Row-level security: this transaction sees and writes only this user's rows
-            # (and a trip's, if they are on it). Transaction-local, so it never outlives it.
-            try:
-                await self._connection.execute(
-                    text("SELECT set_config('app.user_id', :id, true)"), {"id": str(user_id)}
-                )
-            except BaseException:
-                await self._connection.close()
-                raise
+        self._user_id = current_user_id()
+        try:
+            await self._begin()
+        except BaseException:
+            await self._connection.close()
+            raise
         self._ledger = SqlLedgerRepository(self._connection)
         self._planning = SqlPlanningRepository(self._connection)
         self._jobs = SqlJobQueue(self._connection)
@@ -151,10 +147,24 @@ class SqlUnitOfWork:
         self._user_data = SqlUserData(self._connection)
         return self
 
+    async def _begin(self) -> None:
+        if self._connection is None:
+            raise RuntimeError("unit of work is not active")
+        self._transaction = await self._connection.begin()
+        if self._user_id is not None:
+            # Row-level security: this transaction sees and writes only this user's rows
+            # (and a trip's, if they are on it). Transaction-local, so it never outlives it.
+            await self._connection.execute(
+                text("SELECT set_config('app.user_id', :id, true)"), {"id": str(self._user_id)}
+            )
+
     async def commit(self) -> None:
         if self._transaction is None:
             raise RuntimeError("unit of work is not active")
         await self._transaction.commit()
+        # Work after a commit runs in a new transaction: name the user again, so it never
+        # falls back to seeing everyone's rows.
+        await self._begin()
 
     async def __aexit__(
         self,
