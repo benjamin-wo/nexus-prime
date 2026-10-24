@@ -5,17 +5,20 @@ Every page here is made up."""
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
 
 from nexus.application.web_search import (
     KEEP_FOR,
+    KEEP_TODAY,
+    KEEP_WEEK,
     KeptReader,
     KeptSearch,
     Product,
     ReadPages,
+    Recency,
     WebAnswer,
     WebSearchError,
     allowance,
@@ -26,24 +29,35 @@ from tests.integration.conftest import UowFactory
 pytestmark = pytest.mark.integration
 
 
+PUBLISHED = datetime(2026, 9, 28, 2, 0, tzinfo=UTC)
+
+
 @dataclass
 class Provider:
     name: str
     credits: int = 1
     fail: bool = False
+    # Give each question its own source (else every question finds the same one).
+    own_sources: bool = False
+    fail_on: str = ""  # fail only for this question
     asked: list[str] = field(default_factory=list)
+    recents: list[Recency | None] = field(default_factory=list)
 
-    async def ask(self, question: str) -> WebAnswer:
+    async def ask(self, question: str, recent: Recency | None = None) -> WebAnswer:
         self.asked.append(question)
-        if self.fail:
+        self.recents.append(recent)
+        if self.fail or (self.fail_on and question == self.fail_on):
             raise WebSearchError("HTTP 500")
+        tavily = self.name == "tavily"
+        slug = "-".join(question.split()).lower() if self.own_sources else "a"
         return WebAnswer(
             "",
-            [("https://guide.example.com/a", "A guide")],
-            Decimal(0) if self.name == "tavily" else Decimal("0.01"),
-            ["Exampleton's Old Harbour has late food."] if self.name == "tavily" else [],
+            [(f"https://guide.example.com/{slug}", "A guide")],
+            Decimal(0) if tavily else Decimal("0.01"),
+            ["Exampleton's Old Harbour has late food."] if tavily else [],
             self.credits,
             self.name,
+            [PUBLISHED if recent else None],
         )
 
 
@@ -175,3 +189,139 @@ async def test_past_its_share_or_failing_nothing_new_is_read(uow: UowFactory) ->
     # A failure isn't kept: next time it's tried again.
     working = Pages()
     assert await reader(uow, working, clock).read([A]) == {A: f"The article at {A}."}
+
+
+async def test_news_is_kept_ten_minutes_today_an_hour_this_week_and_a_day_otherwise(
+    uow: UowFactory,
+) -> None:
+    assert (KEEP_TODAY, KEEP_WEEK, KEEP_FOR) == (
+        timedelta(minutes=10),
+        timedelta(hours=1),
+        timedelta(hours=24),
+    )
+    modes: list[tuple[Recency | None, timedelta]] = [
+        ("today", KEEP_TODAY),
+        ("week", KEEP_WEEK),
+        (None, KEEP_FOR),
+    ]
+    for recent, ttl in modes:
+        clock, tavily = Clock(), Provider("tavily")
+        travel = search(uow, Product.GENERAL, tavily, None, clock)
+        question = f"protest in Exampleton {recent}"
+        await travel.ask(question, recent)
+        clock.now = NOW + ttl - timedelta(seconds=1)
+        await travel.ask(question, recent)
+        assert len(tavily.asked) == 1, recent  # still kept just inside the time
+        clock.now = NOW + ttl + timedelta(seconds=1)
+        await travel.ask(question, recent)
+        assert len(tavily.asked) == 2, recent  # searched afresh just past it
+        assert tavily.recents == [recent, recent]
+
+
+async def test_what_was_asked_and_how_is_part_of_the_key(uow: UowFactory) -> None:
+    clock, tavily = Clock(), Provider("tavily", own_sources=True)
+    travel = search(uow, Product.GENERAL, tavily, None, clock)
+    q = "protest in Exampleton"
+    await travel.ask(q)
+    await travel.ask(q, "today")
+    await travel.ask(q, "week")
+    await travel.ask(q, "today", "protesta en Exampleton")
+    await travel.ask(q, "today", "huelga en Exampleton")
+    assert len(tavily.asked) == 7  # the two-language searches asked both ways
+    # Each is kept under its own key: asking any of them again costs nothing.
+    await travel.ask(q)
+    await travel.ask(q, "today")
+    await travel.ask(q, "today", "  protesta  en Exampleton ")
+    assert len(tavily.asked) == 7
+    # The news search found a date; it survives being kept.
+    again = await travel.ask(q, "today")
+    assert again.published == [PUBLISHED] and again.credits == 0
+    assert (await travel.ask(q)).published == [None]
+
+
+async def test_a_local_query_is_a_second_search_at_two_credits_and_merged(
+    uow: UowFactory,
+) -> None:
+    clock, tavily = Clock(), Provider("tavily", own_sources=True)
+    travel = search(uow, Product.GENERAL, tavily, None, clock)
+    found = await travel.ask("protest Exampleton today", "today", "protesta Exampleton hoy")
+    assert sorted(tavily.asked) == ["protest Exampleton today", "protesta Exampleton hoy"]
+    assert tavily.recents == ["today", "today"]
+    assert [u for u, _ in found.sources] == [
+        "https://guide.example.com/protest-exampleton-today",
+        "https://guide.example.com/protesta-exampleton-hoy",
+    ]
+    assert found.published == [PUBLISHED, PUBLISHED] and found.credits == 2
+    async with uow() as db:
+        assert await db.web.credits(NOW.date().replace(day=1)) == {"general": 2}
+    # Kept, so asking again spends nothing more.
+    await travel.ask("protest Exampleton today", "today", "protesta Exampleton hoy")
+    assert len(tavily.asked) == 2
+    # The same words in both is one search.
+    await travel.ask("Strike Exampleton", "week", " strike   exampleton ")
+    assert len(tavily.asked) == 3
+    async with uow() as db:
+        assert await db.web.credits(NOW.date().replace(day=1)) == {"general": 3}
+
+
+async def test_with_one_credit_left_only_the_main_question_is_asked(uow: UowFactory) -> None:
+    clock, tavily, backup = Clock(), Provider("tavily", own_sources=True), Provider("openrouter")
+    monthly = 10
+    assert allowance(monthly, Product.TRAVEL) == 5
+    travel = search(uow, Product.TRAVEL, tavily, backup, clock, monthly)
+    for n in range(3):
+        await travel.ask(f"question {n}")  # 3 of 5 credits
+    both = await travel.ask("protest today", "today", "protesta hoy")  # 2 left: both asked
+    assert both.credits == 2 and len(both.sources) == 2
+    async with uow() as db:
+        assert await db.web.credits(NOW.date().replace(day=1)) == {"travel": 5}
+    # Nothing left: the fallback, with the main question alone.
+    out = await travel.ask("strike today", "today", "huelga hoy")
+    assert out.provider == "openrouter" and backup.asked == ["strike today"]
+    assert backup.recents == ["today"]
+
+    clock2, tavily2 = Clock(), Provider("tavily", own_sources=True)
+    travel2 = search(uow, Product.INVESTMENT, tavily2, None, clock2, 20)
+    assert allowance(20, Product.INVESTMENT) == 4
+    for n in range(3):
+        await travel2.ask(f"other question {n}")  # 3 of 4: one left
+    one = await travel2.ask("flood today", "today", "inundación hoy")
+    assert tavily2.asked[-1] == "flood today" and "inundación hoy" not in tavily2.asked
+    assert one.credits == 1 and len(one.sources) == 1
+    async with uow() as db:
+        assert (await db.web.credits(NOW.date().replace(day=1)))["investment"] == 4
+
+
+async def test_if_one_of_two_searches_fails_the_other_is_used(uow: UowFactory) -> None:
+    clock = Clock()
+    local_fails = Provider("tavily", own_sources=True, fail_on="protesta hoy")
+    travel = search(uow, Product.GENERAL, local_fails, Provider("openrouter"), clock)
+    found = await travel.ask("protest today", "today", "protesta hoy")
+    assert found.provider == "tavily" and len(found.sources) == 1 and found.credits == 1
+    async with uow() as db:
+        assert await db.web.credits(NOW.date().replace(day=1)) == {"general": 1}
+    # Both failing is a failed search: the fallback answers the main question.
+    both = Provider("tavily", fail=True)
+    backup = Provider("openrouter")
+    out = await search(uow, Product.GENERAL, both, backup, clock).ask("x today", "today", "x hoy")
+    assert out.provider == "openrouter" and backup.asked == ["x today"]
+
+
+async def test_pages_read_for_news_are_kept_only_as_long_as_news_answers(
+    uow: UowFactory,
+) -> None:
+    clock, pages = Clock(), Pages()
+    news = reader(uow, pages, clock)
+    await news.read([A], "today")
+    await news.read([A], "today")
+    assert pages.asked == [[A]]  # kept within the ten minutes
+    clock.now = NOW + KEEP_TODAY + timedelta(seconds=1)
+    await news.read([A], "today")
+    assert pages.asked == [[A], [A]]  # not served stale
+    # An ordinary read of the same page is kept separately, for the day.
+    await news.read([A])
+    await news.read([A])
+    assert pages.asked == [[A], [A], [A]]
+    clock.now = NOW + KEEP_TODAY + KEEP_WEEK
+    await news.read([A])
+    assert len(pages.asked) == 3

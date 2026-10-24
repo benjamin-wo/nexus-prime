@@ -70,6 +70,7 @@ class Zones:
 
     PLACES: ClassVar[dict[str, str]] = {
         "madrid": "Europe/Madrid",
+        "barcelona": "Europe/Madrid",
         "spain": "Europe/Madrid",
         "tokyo": "Asia/Tokyo",
         "singapore": "Asia/Singapore",

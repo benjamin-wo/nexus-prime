@@ -284,6 +284,13 @@ class AgentGraph:
             '- When the user says where they are now ("I\'m in Madrid", "we landed in '
             "Tokyo\") or that they're back home, call set_timezone so their days and "
             "reminders follow them; asking the time isn't a reason to.\n"
+            "- Anything happening now or today (a protest, strike, road or transport "
+            "disruption, closure, weather warning, an event tonight): call web_search with "
+            'recent "today" (or "week" for "this week"), name the city or area in the '
+            "question, and give local_query: the same question in the local language of "
+            "where they are (their time zone or trip tells you). Say when the sources were "
+            "published. If nothing fresh comes back, say plainly \"I couldn't find anything "
+            'from today"; never guess or give older news as current.\n'
             "- If anything a change needs is unclear (the amount, which transaction, what "
             "kind, who, which day), ask one short question offering the likely answers. "
             'Never guess. A day of the month on its own ("on the 3rd") means the latest '

@@ -2,7 +2,9 @@
 And reading pages by address (its extract endpoint), for news articles.
 
 A basic search costs one credit and returns each page's main text in the same call,
-so nothing is fetched from the pages by Nexus itself. A basic extract costs one
+so nothing is fetched from the pages by Nexus itself. For news from today or this week
+it searches Tavily's news topic over the last day or week, whose results say when each
+was published. A basic extract costs one
 credit for every five pages it reads; a page it can't read costs nothing. Only the
 question or the addresses are sent: never anything of the user's. What comes back
 is someone else's text, which the caller treats as data and checks in code.
@@ -12,12 +14,14 @@ import logging
 import math
 import re
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from decimal import Decimal
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 import httpx
 
-from nexus.application.web_search import ReadPages, WebAnswer, WebSearchError
+from nexus.application.web_search import ReadPages, Recency, WebAnswer, WebSearchError
 
 log = logging.getLogger(__name__)
 
@@ -29,6 +33,9 @@ MAX_QUESTION = 400
 MAX_URLS = 20
 # A page's text is kept up to this long: enough for an article, not a whole site.
 MAX_PAGE = 20_000
+
+# Tavily's own names for how far back news is searched.
+TIME_RANGE: dict[str, str] = {"today": "day", "week": "week"}
 
 _IMAGE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 _LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
@@ -44,6 +51,22 @@ def page_text(raw: object) -> str:
     text = _TAG.sub(" ", _LINK.sub(r"\1", _IMAGE.sub(" ", raw)))
     text = _BLANK_LINES.sub("\n\n", "\n".join(line.strip() for line in text.splitlines()))
     return text.strip()[:MAX_PAGE]
+
+
+def published_at(raw: object) -> datetime | None:
+    """When a news result was published, from Tavily's "Tue, 11 Mar 2025 17:00:00 GMT" (or
+    an ISO date); a time with no zone is taken as UTC. None if it isn't a date."""
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    text = raw.strip()
+    try:
+        found = parsedate_to_datetime(text)
+    except (TypeError, ValueError, IndexError):
+        try:
+            found = datetime.fromisoformat(text)
+        except ValueError:
+            return None
+    return found.replace(tzinfo=UTC) if found.tzinfo is None else found
 
 
 async def _call(
@@ -82,8 +105,8 @@ class TavilySearch:
         self._key = api_key
         self._max = max_results
 
-    async def ask(self, question: str) -> WebAnswer:
-        body = {
+    async def ask(self, question: str, recent: Recency | None = None) -> WebAnswer:
+        body: dict[str, Any] = {
             "query": " ".join(question.split())[:MAX_QUESTION],
             "search_depth": "basic",  # one credit; "advanced" is two
             "max_results": self._max,
@@ -91,15 +114,20 @@ class TavilySearch:
             "include_answer": False,
             "include_usage": True,
         }
+        if recent is not None:
+            body["topic"] = "news"
+            body["time_range"] = TIME_RANGE[recent]
         data, results = await _call(self._http, self._key, URL, body)
         sources: list[tuple[str, str]] = []
         pages: list[str] = []
+        published: list[datetime | None] = []
         for result in results:
             if not isinstance(result, dict) or not isinstance(result.get("url"), str):
                 continue
             sources.append((result["url"], str(result.get("title") or "")))
             pages.append(page_text(result.get("raw_content")) or page_text(result.get("content")))
-        return WebAnswer("", sources, Decimal(0), pages, _credits(data, 1), "tavily")
+            published.append(published_at(result.get("published_date")))
+        return WebAnswer("", sources, Decimal(0), pages, _credits(data, 1), "tavily", published)
 
 
 class TavilyReader:

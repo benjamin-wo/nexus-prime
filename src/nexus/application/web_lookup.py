@@ -1,22 +1,23 @@
 """Looking something up on the web from chat: "what's the tourist tax in Bali now?",
 "when does the new iPhone come out?".
 
-One search (general's share of the web credits, kept a day) is read by a model with
-no tools and nothing of the user's, which answers in a few sentences, citing the
-numbered pages. Code then keeps a sentence with a figure only if a page it cites
+One search (general's share of the web credits, kept a day, or a short while for news
+from today or this week, and optionally asked in the local language too) is read by a
+model with no tools and nothing of the user's, which answers in a few sentences, citing
+the numbered pages. Code then keeps a sentence with a figure only if a page it cites
 gives that figure, drops citations to pages that weren't found and any web address
 written in the answer (the sources carry the links), and lists only the public https
 pages cited. The chat agent gets the result as quoted data, never as instructions.
 
-Only the question goes to the search provider. The tool asks the agent never to put
-the user's own details in it.
+Only the question (and its local-language twin) goes to the search provider. The tool
+asks the agent never to put the user's own details in it.
 """
 
 import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel
@@ -24,7 +25,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from nexus.application.clock import utcnow
 from nexus.application.limits import RateLimiter
-from nexus.application.web_search import WebSearch, WebSearchError
+from nexus.application.web_search import LiveSearch, Recency, WebSearchError
 from nexus.domain.errors import InvalidInput
 from nexus.domain.evidence import figures
 from nexus.domain.ledger import UserId
@@ -58,6 +59,17 @@ _FORM = (
 )
 
 
+_RECENT = (
+    "The question is about what is happening now: say when the sources were published, "
+    "and if none is from the period asked about, say so rather than giving older news."
+)
+
+
+def _published(source: Source) -> str:
+    when = source.published
+    return f"; published {when.astimezone(UTC):%Y-%m-%d %H:%M} UTC" if when else ""
+
+
 @dataclass(frozen=True, slots=True)
 class Lookup:
     question: str
@@ -69,7 +81,7 @@ class Lookup:
 class WebLookup:
     def __init__(
         self,
-        web: WebSearch,
+        web: LiveSearch,
         model: BaseChatModel,
         *,
         clock: Callable[[], datetime] = utcnow,
@@ -79,23 +91,34 @@ class WebLookup:
         self._clock = clock
         self._limiter = RateLimiter(clock=clock)
 
-    async def ask(self, user_id: UserId, question: str) -> Lookup:
+    async def ask(
+        self,
+        user_id: UserId,
+        question: str,
+        *,
+        recent: Recency | None = None,
+        local_query: str | None = None,
+    ) -> Lookup:
         question = clean_text(question, MAX_QUESTION)
         if len(question) < 3:
             raise InvalidInput("say what to look up")
+        # The same question in the local language; worth a search only if it differs.
+        local = clean_text(local_query or "", MAX_QUESTION)
+        if len(local) < 3 or local.casefold() == question.casefold():
+            local = ""
         if not self._limiter.allow("web", user_id):
             raise InvalidInput("that's a lot of web searches; try again later")
         try:
-            answer = await self._web.ask(question)
+            answer = await self._web.ask(question, recent, local or None)
         except WebSearchError as exc:
             log.warning("web lookup failed: %s", exc)
             raise InvalidInput("the web search isn't answering right now") from exc
-        sources = sources_from(answer.sources, self._clock().date())
+        sources = sources_from(answer.sources, self._clock().date(), answer.published)
         if not sources:
             return Lookup(question, "", [], False)
         texts = pages_by_source(answer.sources, answer.pages, sources)
         if texts:
-            written = await self._write(question, sources, texts)
+            written = await self._write(question, sources, texts, recent)
             read = True
         else:
             # A fallback search answers in its own words, with no pages to check.
@@ -104,16 +127,19 @@ class WebLookup:
         text, cited = checked(written, sources, texts)
         return Lookup(question, text, [s for s in sources if s.id in cited], read)
 
-    async def _write(self, question: str, sources: list[Source], texts: dict[int, str]) -> str:
+    async def _write(
+        self, question: str, sources: list[Source], texts: dict[int, str], recent: Recency | None
+    ) -> str:
         quoted = "\n\n".join(
-            f"[{s.id}] {s.title} ({s.url})\n{texts[s.id][:EXCERPT]}"
+            f"[{s.id}] {s.title} ({s.url}{_published(s)})\n{texts[s.id][:EXCERPT]}"
             for s in sources
             if s.id in texts
         )
+        now = f"Now: {self._clock():%Y-%m-%d %H:%M} UTC. {_RECENT}\n\n" if recent else ""
         reply = await self._model.ainvoke(
             [
                 SystemMessage(_RULES),
-                HumanMessage(f"{_FORM}\n\nQuestion: {question}\n\n<web>\n{quoted}\n</web>"),
+                HumanMessage(f"{_FORM}\n\n{now}Question: {question}\n\n<web>\n{quoted}\n</web>"),
             ]
         )
         return _text(reply.content)
