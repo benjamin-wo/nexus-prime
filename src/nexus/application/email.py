@@ -301,15 +301,21 @@ async def disconnect(
         connection = await tx.email.get_connection(user_id, connection_id)
     if connection is None:
         raise NotFound("that mailbox isn't connected")
+    await revoke_access(runtime, connection)
+    async with uow() as tx:
+        await tx.email.delete_connection(user_id, connection_id)
+        await tx.commit()
+
+
+async def revoke_access(runtime: EmailRuntime, connection: EmailConnection) -> None:
+    """Revoke our access with the provider, or delete the forwarding address. Best effort:
+    a grant already gone, or a provider that is down, is logged and not raised."""
     mailbox = runtime.mailbox_for(connection.provider)
     try:
         if mailbox is not None:
             await mailbox.revoke(runtime.cipher.decrypt(connection.token))
     except Exception:
         log.warning("could not revoke a mailbox grant", exc_info=True)
-    async with uow() as tx:
-        await tx.email.delete_connection(user_id, connection_id)
-        await tx.commit()
 
 
 # --- sweeping -----------------------------------------------------------------------

@@ -58,7 +58,7 @@ from nexus.application.whereabouts import ZoneFinder
 from nexus.channels.telegram import webhook as telegram_webhook
 from nexus.channels.telegram.client import HttpTelegramClient, TelegramClient
 from nexus.channels.web import api as web_api
-from nexus.channels.web import email_api, health, investments_api, ops_api, travel_api
+from nexus.channels.web import data_api, email_api, health, investments_api, ops_api, travel_api
 from nexus.channels.web.errors import install_error_handlers
 from nexus.channels.web.frontend import mount_frontend
 from nexus.channels.web.hardening import install_hardening
@@ -767,6 +767,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
     app.include_router(health.router)
     app.include_router(telegram_webhook.router)
     app.include_router(web_api.router)
+    app.include_router(data_api.router)
     app.include_router(email_api.router)
     app.include_router(investments_api.router)
     app.include_router(travel_api.router)

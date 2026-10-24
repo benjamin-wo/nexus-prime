@@ -59,6 +59,7 @@ One LLM agent serves both surfaces, but the parts that must be right, like money
 
 **Everywhere**
 - **Web cockpit:** Home as a Today page (Nexus's brief, what needs you across money, stocks and trips with the urgent first, a short setup checklist, and your month, portfolio and next trip at a glance; a trip that is on leads it), a page per department (Accounting's tabs are Overview, Ledger, Budgets and Cash flow; Investment's are Portfolio, Watchlist and Trade plans), a filterable ledger with CSV export, Settings in three groups (Notifications, Connections, Your data), a Notifications page (from the bell on Home) listing what Nexus sent on Telegram in the last 30 days and what is waiting, and a chat drawer that keeps one running conversation, shared with Telegram. It is mobile-first and opens inside Telegram already signed in.
+- **Your data is yours.** Settings → Your data exports everything as one zip (a README, the ledger CSV, one JSON file per area, and receipt photos, no secrets) or deletes it all, with a typed confirmation: every row, the chat history, stored receipt files, the Gmail grant and the forwarding inbox. A test reads the schema and fails if a new table is left out of either.
 - **Private by construction.** It is invite-only, and each user's data is isolated by the database schema itself, not just by application code.
 
 ## Architecture

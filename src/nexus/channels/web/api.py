@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import binascii
+from collections.abc import Callable
 from collections.abc import Mapping as MappingType
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
@@ -935,6 +936,38 @@ async def undo(auth: Auth, web: Runtime) -> UndoOut:
     )
 
 
+async def ledger_csv(
+    web: WebRuntime, auth: Authed, query_at: Callable[[int, int], LedgerQuery] | None = None
+) -> str:
+    """The ledger CSV for the transactions ``query_at(limit, offset)`` asks for (the latest
+    ones, deleted left out, unless said), at most ``EXPORT_LIMIT`` of them. Also the
+    ledger.csv in "Export all my data"."""
+    user = auth.user
+
+    def latest(limit: int, offset: int) -> LedgerQuery:
+        return _query(
+            auth, None, None, None, None, False, None, None, None, False, False,
+            SortField.OCCURRED_AT, True, limit, offset,
+        )  # fmt: skip
+
+    ask = query_at or latest
+    rows: list[Transaction] = []
+    offset = 0
+    while len(rows) < EXPORT_LIMIT:
+        page = await tx_cases.list_ledger(web.uow(), user.id, ask(tx_cases.MAX_PAGE, offset))
+        rows += page.items
+        offset += len(page.items)
+        if not page.items or offset >= page.total:
+            break
+    cats = await category_cases.list_categories(web.uow(), user.id)
+    rows = rows[:EXPORT_LIMIT]
+    conversions = await _conversions(web, user, rows)
+    wallets_by_id = await _wallets_of(web, user, rows)
+    return to_csv(
+        rows, {c.id: c for c in cats}, _tz(user), user.home_currency, conversions, wallets_by_id
+    )
+
+
 @router.get("/export.csv")
 async def export_csv(
     auth: Auth,
@@ -952,27 +985,15 @@ async def export_csv(
     sort: SortField = SortField.OCCURRED_AT,
     descending: bool = True,
 ) -> Response:
-    user = auth.user
-    rows: list[Transaction] = []
-    offset = 0
-    while len(rows) < EXPORT_LIMIT:
-        query = _query(
+    body = await ledger_csv(
+        web,
+        auth,
+        lambda limit, offset: _query(
             auth, direction, start, end, category_id, uncategorized, search, status, source,
-            include_deleted, only_deleted, sort, descending, tx_cases.MAX_PAGE, offset,
-        )  # fmt: skip
-        page = await tx_cases.list_ledger(web.uow(), user.id, query)
-        rows += page.items
-        offset += len(page.items)
-        if not page.items or offset >= page.total:
-            break
-    cats = await category_cases.list_categories(web.uow(), user.id)
-    rows = rows[:EXPORT_LIMIT]
-    conversions = await _conversions(web, user, rows)
-    wallets_by_id = await _wallets_of(web, user, rows)
-    body = to_csv(
-        rows, {c.id: c for c in cats}, _tz(user), user.home_currency, conversions, wallets_by_id
-    )
-    stamp = web.clock().astimezone(_tz(user)).strftime("%Y%m%d")
+            include_deleted, only_deleted, sort, descending, limit, offset,
+        ),
+    )  # fmt: skip
+    stamp = web.clock().astimezone(_tz(auth.user)).strftime("%Y%m%d")
     return Response(
         content=body,
         media_type="text/csv; charset=utf-8",

@@ -1,8 +1,11 @@
+import io
 from datetime import timedelta
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+from botocore.response import StreamingBody
+from botocore.stub import Stubber
 from cryptography.fernet import Fernet
 
 from nexus.domain.errors import InvalidInput
@@ -80,3 +83,15 @@ def test_forwarding_addresses_need_an_encryption_key() -> None:
         settings(agentmail_api_key="am_key")
     key = Fernet.generate_key().decode()
     assert settings(agentmail_api_key="am_key", token_encryption_key=key).agentmail_api_key
+
+
+async def test_files_can_be_read_back() -> None:
+    kept = store()
+    stubber = Stubber(kept._client)
+    stubber.add_response(
+        "get_object",
+        {"Body": StreamingBody(io.BytesIO(b"jpeg-bytes"), 10)},
+        {"Bucket": "nexus-receipts", "Key": "receipts/u/r"},
+    )
+    with stubber:
+        assert await kept.get("receipts/u/r") == b"jpeg-bytes"
