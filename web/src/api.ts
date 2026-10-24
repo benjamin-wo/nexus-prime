@@ -153,12 +153,20 @@ export type ImportRecord = {
 
 export type Page = { items: Transaction[]; total: number };
 export type Category = { id: string; name: string };
+export type TimezoneSource = "home" | "phone" | "chat" | "trip";
 export type Me = {
   user: {
     telegram_user_id: number;
     role: "owner" | "member" | "guest";
     home_currency: string;
+    /** The zone Nexus uses for "today" right now; it follows the person (see `timezone_source`). */
     timezone: string;
+    /** Where they live; kept when `timezone` moves, and what "Use home time" goes back to. */
+    home_timezone?: string;
+    /** What set `timezone`: their home, their phone, something they said in chat or Settings, or a trip. */
+    timezone_source?: TimezoneSource;
+    /** When `timezone` was last set (ISO); null while it is still their home. */
+    timezone_set_at?: string | null;
     /** Their Telegram first name and last initial ("Alex T."), as other people on a trip see them. */
     display_name?: string | null;
   };
@@ -166,6 +174,19 @@ export type Me = {
   /** Set by a sign-in that added the person to a trip with a trip invite. */
   joined_trip?: string | null;
 };
+/** The answer to the two time zone writes: the same fields as `/me`, and whether the zone moved. */
+export type TimezoneChange = Me & { changed: boolean };
+
+/** Tells Nexus where the person is. "phone" is the browser's own zone, reported on start;
+ * "manual" is a zone they picked in Settings. An unknown zone is a 422. */
+export function setTimezone(timezone: string, source: "phone" | "manual"): Promise<TimezoneChange> {
+  return api<TimezoneChange>("/me/timezone", { method: "POST", body: { timezone, source } });
+}
+
+/** Puts the current zone back to their home zone. */
+export function goHomeTimezone(): Promise<TimezoneChange> {
+  return api<TimezoneChange>("/me/timezone/home", { method: "POST" });
+}
 export type Summary = {
   start: string;
   end: string;
