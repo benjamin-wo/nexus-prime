@@ -284,8 +284,8 @@ CASES: tuple[Case, ...] = (
     Case(
         "income-salary-amount-first",
         "income",
-        _t("9397 as salary today"),
-        checks=(Logged("9397", direction="in", category="Income", day=TODAY),),
+        _t("6500 as salary today"),
+        checks=(Logged("6500", direction="in", category="Income", day=TODAY),),
     ),
     Case(
         "income-bonus",

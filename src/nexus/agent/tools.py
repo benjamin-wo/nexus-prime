@@ -411,7 +411,7 @@ async def _apply_split_habits(ctx: ToolContext, tx: Transaction) -> str:
 
 
 class IncomeArgs(Args):
-    amount: str = Field(description="Amount received, e.g. '9397'. Never guess it.")
+    amount: str = Field(description="Amount received, e.g. '6500'. Never guess it.")
     currency: str | None = Field(None, description="ISO code; omit for the home currency")
     kind: Literal["salary", "repayment", "other"] = Field(
         description="salary: pay from work; repayment: someone paying back money they owed "
