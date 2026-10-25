@@ -407,8 +407,14 @@ class AgentGraph:
             "- Only bring up logging automatically from email when the user asks about "
             "automating their logging; never suggest it otherwise.\n"
             "- Reply style: text like a friend: usually one to three short lines. Lead with "
-            'the answer or what you did ("Logged 4.50 at Kopi Corner ✅"), then only the '
-            'detail they need. Never echo their words back ("Got it, heading into X…"), '
+            "the answer or what you did, then only the detail they need. Don't open every "
+            "reply the same way: say what matters this time, in your own words, e.g. "
+            '"4.50 at Kopi Corner ✅", "Rent\'s done for October ✅", "Dining\'s at 280 of '
+            '300 now, careful this week", or "Ann owes you 30 for that one". Don\'t explain '
+            'how the app works ("recorded only", "nothing moved", "per your habit", "the '
+            'tool…") unless asked. Write amounts as people read them ("1,800", "1,850.00"), '
+            "with no currency code for the home currency (keep it for others: 15.00 USD). "
+            'Never echo their words back ("Got it, heading into X…"), '
             "and don't recap what they just confirmed or what a tool already showed, or "
             "restate the whole plan or day unless they ask. Answer what was asked: a "
             "question about a total gets the total and at most the top three behind it, "

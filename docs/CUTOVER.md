@@ -33,7 +33,7 @@ Each user is written in one transaction, and only if their counts and totals mat
 python -m nexus.channels.telegram.register          # shows the current webhook
 python -m nexus.channels.telegram.register --yes    # points it at nexus-app
 ```
-Note the "current webhook" it prints first. That's the rollback address, and should be `https://acceptable-adaptation-production-63b6.up.railway.app/api/webhook`.
+Note the "current webhook" it prints first. That's the rollback address: the old service's public domain (Railway → the old service → Settings → Networking) followed by `/api/webhook`.
 
 ## 4. Check it in Telegram
 Try each of these:
@@ -58,6 +58,6 @@ Then remove `LEGACY_DATABASE_URL` from `nexus-app`.
 ## Rollback
 ```bash
 python -m nexus.channels.telegram.register --yes \
-  --url https://acceptable-adaptation-production-63b6.up.railway.app/api/webhook
+  --url https://<old service domain>/api/webhook
 ```
 Then redeploy `acceptable-adaptation` if you removed it. Anything recorded in the new app since cutover stays in the new database.

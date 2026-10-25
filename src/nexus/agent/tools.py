@@ -405,7 +405,7 @@ async def _apply_split_habits(ctx: ToolContext, tx: Transaction) -> str:
     owed = ", ".join(f"{s.participant_name} owes {s.share}" for s in split.splits)
     people = " and ".join(s.participant_name for s in split.splits)
     return (
-        f"\nSplit with {people} per their split habit: {owed}. If this one wasn't shared, "
+        f"\nSplit with {people} (a standing split): {owed}. If this one wasn't shared, "
         "undo_last_change removes the split."
     )
 
@@ -2204,7 +2204,7 @@ async def _bill_paid(ctx: ToolContext, a: BillPaidArgs) -> ToolResult:
     view = await _find_bill(ctx, a.name)
     amount = parse_money(ctx, a.amount, a.currency) if a.amount else None
     paid = await bill_cases.mark_paid(ctx.uow, ctx.user, view.bill.id, now=ctx.now, amount=amount)
-    return ToolResult(paid.message(ctx.tz) + " (Nothing was paid by me.)", wrote=True)
+    return ToolResult(paid.message(ctx.tz), wrote=True)
 
 
 async def _snooze_bill(ctx: ToolContext, a: BillNameArgs) -> ToolResult:
@@ -4099,7 +4099,8 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             "month's expense (skipped if it's already in the ledger). One that doesn't "
             "count as spending (an investment, a transfer to savings) is marked done and "
             "nothing is logged, except a scheduled move to a wallet: that logs the move "
-            "from Spending to the wallet (once, and not if it's already there). Pays nothing.",
+            "from Spending to the wallet (once, and not if it's already there). Records only: "
+            "nothing is paid or moved, so never say you paid it.",
             BillPaidArgs,
             _bill_paid,
         ),

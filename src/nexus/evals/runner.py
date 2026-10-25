@@ -37,7 +37,7 @@ from nexus.application.fx import Rate
 from nexus.application.ports import UnitOfWork
 from nexus.domain.ledger import User
 from nexus.evals import photos, seed
-from nexus.evals.cases import Call, Case, Has, Turn
+from nexus.evals.cases import WRITES, Call, Case, Has, Turn
 from nexus.evals.checks import World
 from nexus.infra.db import tables
 from nexus.infra.db.uow import SqlUnitOfWork
@@ -321,6 +321,23 @@ def asks_something(reply: str) -> bool:
     return "?" in reply or bool(_ASKS.search(reply))
 
 
+_WORD = re.compile(r"[a-z0-9']+")
+
+
+def opener(reply: str) -> str:
+    """A reply's first two words, lowercased, without numbers, emoji or punctuation:
+    "Logged 60.00 at Din Tai Fung ✅" -> "logged at"."""
+    words = [w for w in _WORD.findall(reply.casefold()) if not w[0].isdigit()]
+    return " ".join(words[:2])
+
+
+def openers(replies: Sequence[str]) -> list[tuple[str, float]]:
+    """The commonest openers and the share of replies that start with each, most first."""
+    counts = Counter(o for o in map(opener, replies) if o)
+    total = sum(counts.values())
+    return [(o, n / total) for o, n in counts.most_common(3)] if total else []
+
+
 def _in_reply(reply: str, wanted: str | tuple[str, ...]) -> bool:
     options = (wanted,) if isinstance(wanted, str) else wanted
     text = reply.casefold()
@@ -528,6 +545,15 @@ class Summary:
                 for k, (w, t) in self.by(lambda r: r.case.target).items()
             ),
         ]
+        # How alike the replies after a change sound: the share that open the same way.
+        wrote = [
+            t.last_reply for r in self.results for t in r.turns
+            if t.last_reply and any(name in WRITES for name, _ in t.calls)
+        ]  # fmt: skip
+        common = openers(wrote)
+        if common:
+            shown = ", ".join(f'"{o}" {share:.0%}' for o, share in common)
+            lines += ["", f"Openers after a change ({len(wrote)} replies): {shown}"]
         failed = [r for r in self.results if not r.passed]
         if failed:
             lines += ["", "Failures:", ""]
