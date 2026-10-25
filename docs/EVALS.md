@@ -182,3 +182,37 @@ Five newer or current models on the same 214 cases, OpenRouter choosing the host
 - Chat: DeepSeek v4.1 Flash with low reasoning (unchanged model): the most passes, as fast as any and the cheapest.
 - Fallback: Claude Haiku 5.5 replaces GLM-5.3 Flash, which now takes a median 10.8s with one reply in ten over 30s. Haiku is about as accurate, much faster and steadier, at about 3× DeepSeek's cost, paid only when DeepSeek fails. Set in production as `OPENROUTER_FALLBACK_MODELS=anthropic/claude-haiku-5.5`.
 
+
+## New providers (25 October 2026)
+
+Since 11:54 UTC today production pins DeepSeek's providers to `together,baseten,fireworks` instead of `deepinfra,fireworks,atlas-cloud,streamlake`. The full set (251 cases) was run with the production pairing on each: DeepSeek v4.1 Flash with low reasoning, Qwen3.8 Flash reading photos (which isn't affected by the provider list). The three runs went side by side, at commit `eaf4a17`.
+
+| Providers | Passed | Median | p90 | Slowest | Turns over 15s | Cost a case |
+|---|---|---|---|---|---|---|
+| **together, baseten, fireworks** | 246/251 | **1.8s** | **3.5s** | **9.3s** | **0 of 318** | $0.00100 |
+| **together, baseten, fireworks** | 248/251 | **1.7s** | **3.7s** | 15.9s | 1 | $0.00099 |
+| deepinfra, fireworks, atlas-cloud, streamlake (before) | 249/251 | 2.9s | 6.1s | 150.5s | 3 | $0.00098 |
+
+The new providers answer about 40% faster at the median and p90, at the same cost. Accuracy is about the same: no case failed in all three runs, and only `mem-split-habit` failed in both new runs and not the old one (it is a model choice, not a provider fault; see below). No reply was garbled (mixed scripts, repeated fragments, broken words) and every tool called exists; the only non-Latin reply is Chinese, answering "午饭 12块".
+
+What failed:
+- `mem-split-habit` (both new runs): after "i always split dinners with ann 50/50", "dinner 60 at din tai fung" was logged and then the reply asked whether to split it instead of splitting it.
+- `log-dollar-sign` (one new run, and the old providers): "$4.20 kopi" found the seeded 4.20 Kopitiam from today and called it a duplicate (old providers: asked whether it's a second one). Today's seeded kopi is the same amount, so this is partly the case's own setup.
+- `ctx-long-pending` (one new run, and the old providers): fourteen questions after "dinner at jumbo tonight, probably about 80. i'll tell you the exact amount later", "log that dinner now, it came to 85" asked which dinner, though the earlier turns had mentioned tonight's Jumbo dinner.
+- `plan-bill-paid` (one new run): "i paid the rent" asked "Was it the usual 1,800 for rent?" instead of marking it paid.
+- `cat-explain` (one new run): explained the 42.10 ride's category but never said "Grab".
+- `ask-which-kopitiam` (one new run): listed the three Kopitiam entries under "Which one —" but without a question mark, so it didn't count as a question.
+- `wallet-find-likely-moves` (one new run): searched transactions seven times instead of calling `find_likely_moves`.
+
+The old providers' slowest turn, 150.5s on `photo-eticket`, is the kind of stall that prompted the switch.
+
+### Bills: asking "the usual 1,800?" first
+
+`plan-bill-paid` sometimes answers "i paid the rent" with "Was it the usual 1,800?" and changes nothing. A patch told the model to call `mark_bill_paid` straight away, adding a sentence to the tool's description and to the bills skill: a bill with a set amount uses it, so don't confirm the usual amount first. The 14 bill cases (`log-bill-expense`, `q-bills`, the eight bill cases in `plan`, `wallet-card-bill`, `wallet-scheduled-move`, `safe-pay-card`, `calc-bills-next-month`) were run three times without it and three times with it, on the new providers:
+
+| | Run 1 | Run 2 | Run 3 | `plan-bill-paid` |
+|---|---|---|---|---|
+| Without the patch | 14/14 | 14/14 | 14/14 | 3/3 |
+| With the patch | 13/14 | 14/14 | 14/14 | 2/3 ("Was it the usual 1,800? I'll log it and tick off the rent bill.") |
+
+**Not adopted.** The patch didn't stop the question it was written for, and every other bill case passed either way. Counting the full runs too, `plan-bill-paid` asked first in 1 of 6 runs without the patch and 1 of 3 with it.
