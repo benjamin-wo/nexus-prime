@@ -7,7 +7,7 @@ can't do yet, so a baseline can tell expected failures from regressions.
 """
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 
 from nexus.evals import seed
 from nexus.evals.checks import (
@@ -111,6 +111,7 @@ class Turn:
     approve: bool = True  # the answer to any confirmation this turn asks for
     new_conversation: bool = False  # forget the chat so far (long-term memory stays)
     photo: str | None = None  # send this receipt photo (see ``photos``), ``text`` as caption
+    later: timedelta | None = None  # move the clock on this far before the turn
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,6 +129,7 @@ class Case:
     max_reply: int | None = None  # the last reply's length at most
     max_lines: int | None = None  # the last reply's non-empty lines at most
     never_match: tuple[str, ...] = ()  # regexes (any case) that match no reply at all
+    last_never_match: tuple[str, ...] = ()  # regexes (any case) the last turn's replies avoid
     at_most: tuple[AtMost, ...] = ()  # caps on tool calls in the last turn
     checks: tuple[Check, ...] = ()
     target: str | None = None  # the M8 part expected to make this pass
@@ -1932,5 +1934,16 @@ CASES: tuple[Case, ...] = (
         ),
         checks=(Logged("85", "jumbo"),),
         target="M8b",
+    ),
+    Case(
+        "ctx-next-day-words",
+        "context",
+        (
+            Turn("we might do a day trip to Sitges tomorrow, and there's a protest on near us now"),
+            Turn("morning! fancy a brunch spot before we head out?", later=timedelta(hours=21)),
+        ),
+        unchanged=True,
+        # The first reply may say "tomorrow"; the next morning's must not.
+        last_never_match=(r"\btomorrow\b", r"\btonight\b"),
     ),
 )

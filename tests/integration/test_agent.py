@@ -1,6 +1,7 @@
 """Agent trajectories: a scripted model drives the real graph, tools and database."""
 
-from datetime import timedelta
+from collections.abc import Callable
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -46,6 +47,7 @@ def build(
     trips: TripReader | None = None,
     places: Places | None = None,
     looker: ImageLooker | None = None,
+    clock: Callable[[], datetime] | None = None,
 ) -> AgentService:
     skills = SkillLibrary.load()
 
@@ -61,7 +63,7 @@ def build(
             skill_index=skills.index(),
             skill_tools=skills.tools(),
             health=health,
-            clock=lambda: NOW,
+            clock=clock or (lambda: NOW),
             departments=departments,
             places=places,
         )
@@ -71,7 +73,7 @@ def build(
         graph,
         uow,
         receipts,
-        lambda: NOW,
+        clock or (lambda: NOW),
         archive,
         holdings=holdings,
         trips=trips,

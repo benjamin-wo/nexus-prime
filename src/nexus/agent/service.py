@@ -6,7 +6,7 @@ import time as clock
 from collections import Counter, defaultdict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
@@ -17,7 +17,7 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
 from nexus.agent import kernel
-from nexus.agent.graph import BUTTONS, IMAGE, RECEIPT, REF, WROTE, strip_ids, thread_id
+from nexus.agent.graph import BUTTONS, IMAGE, RECEIPT, REF, SENT_AT, WROTE, strip_ids, thread_id
 from nexus.agent.holdings_reader import HoldingsReader, ScreenshotHoldings
 from nexus.agent.image_look import (
     MAX_TEXT,
@@ -314,6 +314,10 @@ class AgentService:
         await self._graph.ainvoke(Command(resume={"approved": False}), self._config(actor))
         return True
 
+    def _sent(self) -> str:
+        """Now, for stamping a user's message: UTC, ISO, from the service clock."""
+        return self._clock().astimezone(UTC).isoformat()
+
     def _over_limit(self, actor: UserId) -> bool:
         return self._limiter is not None and not self._limiter.allow("message", actor)
 
@@ -361,7 +365,9 @@ class AgentService:
             declined = await self._decline_pending(actor)
             if declined and kernel.is_termination(text):
                 return [Reply("Cancelled. Nothing was changed.")]
-            message = HumanMessage(content=text, additional_kwargs={REF: ref})
+            message = HumanMessage(
+                content=text, additional_kwargs={REF: ref, SENT_AT: self._sent()}
+            )
             replies = await self._run(actor, {"messages": [message]})
             await self._remember(actor, ref)
             return replies
@@ -522,7 +528,8 @@ class AgentService:
         async with self._locks[actor]:
             await self._decline_pending(actor)
             message = HumanMessage(
-                content=content, additional_kwargs={REF: ref, IMAGE: caption or ""}
+                content=content,
+                additional_kwargs={REF: ref, IMAGE: caption or "", SENT_AT: self._sent()},
             )
             replies = await self._run(actor, {"messages": [message]})
         await self._remember(actor, ref)
@@ -579,7 +586,7 @@ class AgentService:
             await self._decline_pending(actor)
             message = HumanMessage(
                 content="[receipt photo]" + (f" {caption}" if caption else ""),
-                additional_kwargs={RECEIPT: details, REF: picture.ref},
+                additional_kwargs={RECEIPT: details, REF: picture.ref, SENT_AT: self._sent()},
             )
             return await self._run(actor, {"messages": [message]})
 

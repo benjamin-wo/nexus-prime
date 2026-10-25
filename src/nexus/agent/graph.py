@@ -13,7 +13,7 @@ import re
 import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta, tzinfo
 from typing import Annotated, Any, Literal, NotRequired, TypedDict, cast
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
@@ -94,6 +94,9 @@ RECEIPT = "nexus_receipt"
 # On a message carrying what was read from images or files: the user's own caption.
 IMAGE = "nexus_image"
 REF = "nexus_ref"
+# On the user's messages: when they were sent (UTC, ISO), so the model can tell a message
+# from yesterday from one sent now.
+SENT_AT = "nexus_sent_at"
 # Extra reply buttons: rows of [label, data].
 BUTTONS = "nexus_buttons"
 
@@ -116,6 +119,7 @@ class AgentState(TypedDict):
     steps: int
     snapshot: NotRequired[str]  # the user's money picture, built once per turn
     summary: NotRequired[str]  # what came before the messages kept
+    summary_at: NotRequired[str]  # when the summary was written (UTC, ISO)
     memories: NotRequired[str]  # what Nexus remembers that bears on this turn
     skills: NotRequired[dict[str, int]]  # loaded skills: user messages left before they lapse
 
@@ -176,6 +180,74 @@ def _trim(messages: Sequence[AnyMessage]) -> list[AnyMessage]:
         if isinstance(message, HumanMessage):
             return window[i:]
     return window[-1:]
+
+
+def _sent_at(message: BaseMessage) -> datetime | None:
+    """When the user sent this message, if it was stamped."""
+    raw = message.additional_kwargs.get(SENT_AT)
+    if not isinstance(raw, str):
+        return None
+    try:
+        sent = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    return sent if sent.tzinfo else sent.replace(tzinfo=UTC)
+
+
+def _day(moment: datetime) -> str:
+    """ "Sat 24 Oct"."""
+    return f"{moment:%a} {moment.day} {moment:%b}"
+
+
+def _when(moment: datetime) -> str:
+    """ "Sat 24 Oct, 22:51"."""
+    return f"{_day(moment)}, {moment:%H:%M}"
+
+
+def _prefixed(message: HumanMessage, prefix: str) -> HumanMessage:
+    """A copy of the message with ``prefix`` before its text; images are left alone."""
+    content = message.content
+    if isinstance(content, str):
+        new: str | list[str | dict[str, Any]] = prefix + content
+    else:
+        parts = list(content)
+        for i, part in enumerate(parts):
+            if isinstance(part, str):
+                parts[i] = prefix + part
+                break
+            if part.get("type") == "text":
+                parts[i] = {**part, "text": prefix + str(part.get("text", ""))}
+                break
+        else:
+            parts.insert(0, {"type": "text", "text": prefix.rstrip()})
+        new = parts
+    return message.model_copy(update={"content": new})
+
+
+def _history(messages: Sequence[AnyMessage], now: datetime, tz: tzinfo) -> list[AnyMessage]:
+    """What the model reads: the recent history, with messages from an earlier local day
+    stamped with when they were sent, and a note on the newest one when the day has
+    turned since the one before it. Copies only; the stored messages are not touched.
+    Messages without a stamp (older threads) are left as they are."""
+    window = _trim(messages)
+    today = now.astimezone(tz).date()
+    humans = [i for i, m in enumerate(window) if isinstance(m, HumanMessage)]
+    shown = list(window)
+    for i in humans:
+        sent = _sent_at(window[i])
+        if sent is not None and sent.astimezone(tz).date() != today:
+            shown[i] = _prefixed(cast(HumanMessage, window[i]), f"[{_when(sent.astimezone(tz))}] ")
+    if len(humans) >= 2:
+        latest, before = _sent_at(window[humans[-1]]), _sent_at(window[humans[-2]])
+        if latest is not None and before is not None:
+            then = before.astimezone(tz)
+            if latest.astimezone(tz).date() > then.date():
+                note = (
+                    f"[It's now {_day(now.astimezone(tz))}; the messages above are from "
+                    f"{_day(then)} or earlier.]\n"
+                )
+                shown[humans[-1]] = _prefixed(cast(HumanMessage, shown[humans[-1]]), note)
+    return shown
 
 
 def _hands_off(state: AgentState) -> bool:
@@ -284,6 +356,9 @@ class AgentGraph:
             '- When the user says where they are now ("I\'m in Madrid", "we landed in '
             "Tokyo\") or that they're back home, call set_timezone so their days and "
             "reminders follow them; asking the time isn't a reason to.\n"
+            "- Earlier messages and the summary may be from previous days (stamped like "
+            "[Sat 24 Oct, 22:51]). Work out today and tomorrow from Now above, and treat "
+            'anything an older message called "now", "today" or "tonight" as past.\n'
             "- Anything happening now or today (a protest, strike, road or transport "
             "disruption, closure, weather warning, an event tonight): call web_search with "
             'recent "today" (or "week" for "this week"), name the city or area in the '
@@ -402,10 +477,23 @@ class AgentGraph:
                 state.get("memories", ""),
             )
             + _section(
-                "Earlier in this conversation (a summary; the messages themselves are gone)",
+                f"Earlier in this conversation (a summary{self._written(ctx, state)}; "
+                "the messages themselves are gone)",
                 state.get("summary", ""),
             )
         )
+
+    @staticmethod
+    def _written(ctx: ToolContext, state: AgentState) -> str:
+        """ ", written Sat 24 Oct, 22:58" for a summary that was stamped; else nothing."""
+        raw = state.get("summary_at")
+        if not raw:
+            return ""
+        try:
+            at = datetime.fromisoformat(raw)
+        except ValueError:
+            return ""
+        return f", written {_when(at.astimezone(ctx.tz))}"
 
     # --- nodes ------------------------------------------------------------------------
 
@@ -479,7 +567,8 @@ class AgentGraph:
         if snapshot.next or snapshot.interrupts:
             return False
         started = time.monotonic()
-        update = await self._condense(cast(AgentState, snapshot.values))
+        ctx = await self._context(config)
+        update = await self._condense(cast(AgentState, snapshot.values), ctx.now, ctx.tz)
         if not update:
             return False
         # As kernel_reply: its only edge leads to END, so writing as it schedules no
@@ -493,8 +582,9 @@ class AgentGraph:
         )
         return True
 
-    async def _condense(self, state: AgentState) -> dict[str, Any]:
-        """The update that folds the older messages into the summary, or {}."""
+    async def _condense(self, state: AgentState, now: datetime, tz: tzinfo) -> dict[str, Any]:
+        """The update that folds the older messages into the summary, or {}. ``now`` and
+        ``tz`` (the user's) let the summary date things in absolute terms."""
         messages = state["messages"]
         if len(messages) <= HISTORY_LIMIT:
             return {}
@@ -509,14 +599,37 @@ class AgentGraph:
             len(messages) - 1,
         )
         older = messages[:cut]
-        transcript = "\n".join(_line(m) for m in older)
+        transcript = "\n".join(_line(m, tz) for m in older)
+        sent = sorted(at for m in older if (at := _sent_at(m)) is not None)
+        if sent:
+            first, last = sent[0].astimezone(tz), sent[-1].astimezone(tz)
+            span = (
+                _when(first) if _when(first) == _when(last) else f"{_when(first)} to {_when(last)}"
+            )
+            when = (
+                f"The user's messages were sent {span} (their local time, {tz}); each is stamped."
+            )
+        else:
+            when = "The messages carry no dates; take them as sent around now."
+        written = state.get("summary_at")
+        so_far = (
+            f"Summary so far (written {_when(datetime.fromisoformat(written).astimezone(tz))})"
+            if written
+            else "Summary so far"
+        )
         request = (
             f"Update the running summary of a chat between a user and Nexus, their "
             f"personal finance assistant. Keep what the user said about themselves, "
             f"people, plans and preferences; decisions made; amounts, dates and "
             f"merchants they may refer back to; and anything left unanswered. Leave "
             f"out greetings and anything routine. At most {SUMMARY_WORDS} words, "
-            f"plain text.\n\nSummary so far:\n{state.get('summary') or '(none)'}\n\n"
+            f"plain text.\n\nThe summary is read later, maybe days on, so write every date "
+            f'and time in absolute terms ("Sitges on Sun 25 Oct", "protest on Pau Claris '
+            f'reported Sat 24 Oct evening") and never use relative words such as today, '
+            f"tomorrow, tonight, now, yesterday or this morning; work them out from when "
+            f"each message was sent and rewrite any in the summary so far. {when} It is "
+            f"now {_when(now.astimezone(tz))}.\n\n"
+            f"{so_far}:\n{state.get('summary') or '(none)'}\n\n"
             f"Messages to add:\n{transcript}"
         )
         try:
@@ -529,6 +642,7 @@ class AgentGraph:
             return {}
         return {
             "summary": summary,
+            "summary_at": now.astimezone(UTC).isoformat(),
             "messages": [RemoveMessage(id=m.id) for m in older if m.id],
         }
 
@@ -595,7 +709,7 @@ class AgentGraph:
             )
         ctx = await self._context(config)
         system = await self._prompt(ctx, state)
-        prompt = [SystemMessage(content=system), *_trim(state["messages"])]
+        prompt = [SystemMessage(content=system), *_history(state["messages"], ctx.now, ctx.tz)]
         try:
             response = await self._model(self.offered(state)).ainvoke(prompt)
         except Exception:
@@ -734,11 +848,13 @@ def _section(title: str, body: str) -> str:
     return f"\n\n{title}:\n{body}" if body else ""
 
 
-def _line(message: BaseMessage) -> str:
-    """One line of transcript for the summariser; tool results kept short."""
+def _line(message: BaseMessage, tz: tzinfo) -> str:
+    """One line of transcript for the summariser; tool results kept short. The user's
+    lines say when they were sent, in the user's time zone."""
     text = strip_ids(text_of(message.content)).replace("\n", " ")
     if isinstance(message, HumanMessage):
-        return f"User: {text}"
+        sent = _sent_at(message)
+        return f"User [{_when(sent.astimezone(tz))}]: {text}" if sent else f"User: {text}"
     if isinstance(message, ToolMessage):
         return f"(tool result: {text[:200]})"
     if isinstance(message, AIMessage) and message.tool_calls and not text:
