@@ -7,6 +7,7 @@ Every method is scoped to one user. Implementations must filter on
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from enum import StrEnum
 from types import TracebackType
 from typing import Any, Protocol, Self
@@ -64,6 +65,7 @@ from nexus.domain.receipts import Receipt
 from nexus.domain.recurring import Subscription
 from nexus.domain.rules import CategoryRule
 from nexus.domain.settle import PaidByOther
+from nexus.domain.split_habits import SplitHabit
 from nexus.domain.statements import SavedMapping, StatementImport
 from nexus.domain.trip_access import Activity, DigestState, TripAccess, TripInvite, TripMember
 from nexus.domain.trip_changes import TripChange
@@ -316,6 +318,17 @@ class LedgerRepository(Protocol):
     async def replace_splits(
         self, user_id: UserId, transaction_id: UUID, splits: list[Split]
     ) -> None: ...
+
+    # splitting habits
+    async def list_split_habits(self, user_id: UserId) -> list[SplitHabit]: ...
+    async def upsert_split_habit(
+        self, user_id: UserId, person: str, applies_to: str | None, share: Decimal, at: datetime
+    ) -> SplitHabit:
+        """Saves the habit for this person (any case) and category (None: any); one that
+        exists is changed to this share, and keeps its place."""
+        ...
+
+    async def delete_split_habits(self, user_id: UserId, habit_ids: list[UUID]) -> int: ...
     async def open_ious(
         self, user_id: UserId, *, participant_name: str | None = None, for_update: bool = False
     ) -> list[OpenIou]: ...

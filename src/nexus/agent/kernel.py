@@ -108,7 +108,7 @@ _INCOME: tuple[tuple[str, re.Pattern[str]], ...] = (
         ),
     ),
     (
-        # The amount first: "9397 as salary today", "5000 salary", "3k for my paycheck".
+        # The amount first: "6500 as salary today", "5000 salary", "3k for my paycheck".
         "salary",
         re.compile(
             rf"^\s*(?:i\s+(?:got|received)\s+)?{_MONEY}\s+(?:(?:as|for|is)\s+)?(?:my\s+)?"

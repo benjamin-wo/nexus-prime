@@ -289,6 +289,15 @@ async def seed(world: World, user: UUID, other: UUID) -> Seeded:
             created_at=now,
             updated_at=now,
         )
+        await add(
+            t["split_habits"],
+            id=uid(),
+            user_id=user,
+            person=f"Ann {tag}",
+            applies_to="Dining Out",
+            share=Decimal("0.5"),
+            created_at=now,
+        )
         await add(t["chat_log"], user_id=user, role="user", text=f"hello {tag}", created_at=now)
         await add(
             t["holdings"],

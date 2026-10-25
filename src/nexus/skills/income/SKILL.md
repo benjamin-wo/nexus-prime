@@ -10,7 +10,7 @@ them. Anything else about money received comes to you: record it with `record_in
 which asks the user to confirm before anything is saved.
 
 ## When it's clear, record it
-- "9397 as salary today", "got my pay, 4,200": kind salary.
+- "6500 as salary today", "got my pay, 4,200": kind salary.
 - "Ann sent over the 20 she owed", "Ben returned the 15 for dinner": kind repayment,
   from_whom the person. It settles what they owe first.
 - "Ann paid me back", "Ben settled up" with no amount: they paid back everything they

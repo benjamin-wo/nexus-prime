@@ -248,11 +248,11 @@ async def test_salary_is_recorded_deterministically(uow: UowFactory, alice: User
 async def test_salary_with_the_amount_first_and_a_day(uow: UowFactory, alice: UserId) -> None:
     model = scripted()
     agent = build(uow, model)
-    reply = only(await agent.handle_text(alice, "9397 as salary yesterday", "tg:1:1"))
-    assert reply.text == "Recorded 9397.00 SGD salary."
+    reply = only(await agent.handle_text(alice, "6500 as salary yesterday", "tg:1:1"))
+    assert reply.text == "Recorded 6500.00 SGD salary."
     assert model.seen == []  # recorded without the model
     [tx] = (await list_ledger(uow(), alice, LedgerQuery(direction=Direction.IN))).items
-    assert tx.amount == Money.of("9397", "SGD") and tx.notes == "Salary"
+    assert tx.amount == Money.of("6500", "SGD") and tx.notes == "Salary"
     assert tx.occurred_at == NOW - timedelta(days=1)
 
 
@@ -291,10 +291,10 @@ async def test_a_confirmed_repayment_settles_the_iou(uow: UowFactory, alice: Use
 
 
 async def test_a_declined_income_records_nothing(uow: UowFactory, alice: UserId) -> None:
-    model = scripted(call("record_income", amount="9397", kind="salary"), say("OK."))
+    model = scripted(call("record_income", amount="6500", kind="salary"), say("OK."))
     agent = build(uow, model)
-    reply = only(await agent.handle_text(alice, "paid today, 9397 landed", "tg:1:1"))
-    assert reply.text == "Record 9397.00 SGD salary on 28 Sep?"
+    reply = only(await agent.handle_text(alice, "paid today, 6500 landed", "tg:1:1"))
+    assert reply.text == "Record 6500.00 SGD salary on 28 Sep?"
     await agent.resolve(alice, reply.buttons[0][0].data.split(":")[1], False)
     assert await ledger(uow, alice) == []
 

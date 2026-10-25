@@ -50,3 +50,11 @@ def test_the_reply_style_cases_exist_and_expect_something() -> None:
         "trip-heading-there-no-parrot",
         "trip-castle-and-one-gelato",
     }
+
+
+async def test_asking_counts_a_clarifying_question_without_a_question_mark() -> None:
+    case = _case(asks=True)
+    assert await _grade(case, TurnLog("hi", replies=["Which one did you mean?"])) == []
+    listed = "Which one — the 4.20 on 28 Sep or the 7.20 on 15 Sep"
+    assert await _grade(case, TurnLog("hi", replies=[listed])) == []
+    assert await _grade(case, TurnLog("hi", replies=["Deleted it."])) == ["didn't ask a question"]

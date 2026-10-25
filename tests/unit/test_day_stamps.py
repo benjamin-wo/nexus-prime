@@ -26,13 +26,13 @@ def texts(messages: list[AnyMessage]) -> list[str]:
 
 def test_yesterdays_message_is_stamped_and_the_new_day_is_noted() -> None:
     messages: list[AnyMessage] = [
-        human("lets go to Sitges tomorrow", SAT_NIGHT),
+        human("lets go to Kamakura tomorrow", SAT_NIGHT),
         AIMessage(content="Sure."),
         human("brunch?", SUN_MORNING),
     ]
     shown = _history(messages, SUN_MORNING, MADRID)
     assert texts(shown) == [
-        "[Sat 24 Oct, 22:51] lets go to Sitges tomorrow",
+        "[Sat 24 Oct, 22:51] lets go to Kamakura tomorrow",
         "Sure.",
         NOTE + "brunch?",
     ]

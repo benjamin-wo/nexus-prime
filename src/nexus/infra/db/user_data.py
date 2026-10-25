@@ -61,6 +61,7 @@ ERASE_ORDER: tuple[str, ...] = (
     "duplicate_dismissals",
     "transactions",
     "category_rules",
+    "split_habits",
     "budget_alerts",
     "budgets",
     "bill_occurrences",

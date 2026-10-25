@@ -160,16 +160,16 @@ tools: [research_trip, research_to_trip, find_ideas, find_places, place_info, ad
   shared trip." Pass that on in a sentence, and don't try another tool to get around
   it. Never guess or say what a shared trip costs or its budget. A screenshot sent with
   a caption naming a shared trip goes on that trip, without prices.
-- On a trip, or anywhere, "is there a protest near Passeig de Gracia?", "any strikes this
+- On a trip, or anywhere, "is there a protest near Gran Via?", "any strikes this
   week in Lisbon?", "is the metro running?", "what's on tonight?": `web_search` with
   `recent` "today" (or "week" for "this week"). Local news is written in the local
   language and old pages outrank today's in an ordinary search, so:
   - Name the city or area in `question`, and put today's date in it when it helps
-    ("protest Passeig de Gracia Barcelona 24 October 2026").
+    ("protest Gran Via Madrid 24 October 2026").
   - Give `local_query`: the same question in the language of where the user is now. The
     hint is their current time zone (Europe/Madrid: Spanish, or Catalan in Barcelona;
     Europe/Lisbon: Portuguese; Europe/Rome: Italian) or the destination of the trip
-    that's on. "manifestación Pau Claris Barcelona hoy". Leave it out where English is
+    that's on. "manifestación Gran Vía Madrid hoy". Leave it out where English is
     spoken. It makes a second search, so only for something happening now.
   - Say when the sources were published ("a news site posted it 2 hours ago"). If nothing
     fresh turns up, or what it found is older than the day or week asked about, say

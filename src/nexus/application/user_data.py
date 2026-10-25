@@ -32,6 +32,8 @@ AREAS: tuple[Area, ...] = (
           "duplicate_dismissals")),
     Area("categories.json", "Your categories.", ("categories",)),
     Area("category_rules.json", "Your category rules.", ("category_rules",)),
+    Area("split_habits.json", "Who you usually split bills with, and your share.",
+         ("split_habits",)),
     Area("wallets.json", "Your wallets.", ("wallets",)),
     Area("budgets.json", "Your monthly budgets.", ("budgets",)),
     Area("bills.json", "Your bills and their due dates.", ("bills", "bill_occurrences")),
