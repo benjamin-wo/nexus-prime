@@ -283,6 +283,28 @@ splits = Table(
     Index("ix_splits_user_id_transaction_id", "user_id", "transaction_id"),
 )
 
+# "I always split dinners with Ann": applied to the expenses logged from chat. ``applies_to``
+# is a category's name (NULL: any category); ``share`` is the other person's part of the bill.
+split_habits = Table(
+    "split_habits",
+    metadata,
+    _uuid_pk(),
+    _user_fk(),
+    Column("person", Text, nullable=False),
+    Column("applies_to", Text),
+    Column("share", Numeric(5, 4), nullable=False, server_default=text("0.5")),
+    Column("created_at", TZ, nullable=False, server_default=func.now()),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+    CheckConstraint("share > 0 AND share < 1", name="share_range"),
+    Index(
+        "uq_split_habits_user_id_lower_person_applies_to",
+        "user_id",
+        func.lower(text("person")),
+        func.coalesce(text("applies_to"), text("''")),
+        unique=True,
+    ),
+)
+
 settlements = Table(
     "settlements",
     metadata,

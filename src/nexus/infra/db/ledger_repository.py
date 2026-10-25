@@ -1,8 +1,9 @@
 """PostgreSQL implementation of the ledger port. Every query filters on user_id."""
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import (
     ColumnElement,
@@ -16,6 +17,7 @@ from sqlalchemy import (
     func,
     insert,
     literal,
+    literal_column,
     or_,
     select,
     update,
@@ -58,6 +60,7 @@ from nexus.domain.ledger import (
 from nexus.domain.money import Money
 from nexus.domain.receipts import RETENTION_AFTER_DELETE, UNCLAIMED_TTL, Receipt, purge_due
 from nexus.domain.rules import CategoryRule
+from nexus.domain.split_habits import SplitHabit
 from nexus.infra.db.tables import (
     budgets,
     capability_gaps,
@@ -68,6 +71,7 @@ from nexus.infra.db.tables import (
     invites,
     receipts,
     settlements,
+    split_habits,
     splits,
     transaction_revisions,
     transaction_sources,
@@ -76,6 +80,17 @@ from nexus.infra.db.tables import (
     wallets,
     web_sessions,
 )
+
+
+def _split_habit(row: Row[Any]) -> SplitHabit:
+    return SplitHabit(
+        id=row.id,
+        user_id=UserId(row.user_id),
+        person=row.person,
+        applies_to=row.applies_to,
+        share=row.share,
+        created_at=row.created_at,
+    )
 
 
 def _user(row: Row[Any]) -> User:
@@ -1100,6 +1115,42 @@ class SqlLedgerRepository:
                     for s in new_splits
                 ],
             )
+
+    async def list_split_habits(self, user_id: UserId) -> list[SplitHabit]:
+        h = split_habits.c
+        rows = await self._db.execute(
+            select(split_habits)
+            .where(h.user_id == user_id)
+            .order_by(h.created_at, func.lower(h.person), h.id)
+        )
+        return [_split_habit(r) for r in rows]
+
+    async def upsert_split_habit(
+        self, user_id: UserId, person: str, applies_to: str | None, share: Decimal, at: datetime
+    ) -> SplitHabit:
+        h = split_habits.c
+        insert_stmt = pg_insert(split_habits).values(
+            id=uuid4(), user_id=user_id, person=person, applies_to=applies_to, share=share,
+            created_at=at,
+        )  # fmt: skip
+        stmt = insert_stmt.on_conflict_do_update(
+            index_elements=[
+                h.user_id,
+                func.lower(h.person),
+                func.coalesce(h.applies_to, literal_column("''")),
+            ],
+            set_={"person": insert_stmt.excluded.person, "share": insert_stmt.excluded.share},
+        ).returning(split_habits)
+        return _split_habit((await self._db.execute(stmt)).one())
+
+    async def delete_split_habits(self, user_id: UserId, habit_ids: list[UUID]) -> int:
+        if not habit_ids:
+            return 0
+        h = split_habits.c
+        result = await self._db.execute(
+            delete(split_habits).where(h.user_id == user_id, h.id.in_(habit_ids))
+        )
+        return int(result.rowcount or 0)
 
     async def open_ious(
         self, user_id: UserId, *, participant_name: str | None = None, for_update: bool = False

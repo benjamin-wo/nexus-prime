@@ -55,6 +55,8 @@ WRITES = (
     "set_market_alerts",
     "keep_plan_fresh",
     "split_bill",
+    "set_split_habit",
+    "remove_split_habit",
     "split_trip_costs",
     "they_paid",
     "add_trip_todo",
@@ -165,6 +167,13 @@ _FILLER = (
 
 _QUIET = ("remember", "noted", "i'll keep", "saved that", "memory")
 
+# A reply that asks again for the amount of the Jumbo dinner the user said they'd send
+# later. The seed has a Jumbo Seafood dinner of its own, so "jumbo" alone proves nothing.
+_ASKS_JUMBO_AMOUNT = (
+    r"\b(?:jumbo|dinner)\b[^.!?\n]*\b(?:exact|amount|total|how much|came to|cost)\b[^.!?\n]*\?",
+    r"\b(?:exact|amount|total|how much|came to|cost)\b[^.!?\n]*\b(?:jumbo|dinner)\b[^.!?\n]*\?",
+)
+
 CASES: tuple[Case, ...] = (
     # --- logging an expense -----------------------------------------------------------
     Case("log-grab", "log", _t("grab 12"), checks=(Logged("12", "grab", "Transport", day=TODAY),)),
@@ -195,8 +204,9 @@ CASES: tuple[Case, ...] = (
     Case(
         "log-dollar-sign",
         "log",
-        _t("$4.20 kopi"),
-        checks=(Logged("4.20", "kopi", "Dining Out"),),
+        # Not 4.20: today's seeded Kopitiam is 4.20, so that one may fairly be called a repeat.
+        _t("$3.60 kopi"),
+        checks=(Logged("3.60", "kopi", "Dining Out"),),
     ),
     Case(
         "log-last-friday",
@@ -588,6 +598,17 @@ CASES: tuple[Case, ...] = (
             BillIs("Rent", paid_on=date(2026, 10, 1)),
             Logged("1800", "rent", "Bills & Utilities"),
         ),
+        last_never_match=(r"\busual\b",),  # marked at once, not "the usual 1,800?"
+    ),
+    Case(
+        "plan-bill-paid-other-amount",
+        "plan",
+        _t("rent was 1,850 this month, paid it"),
+        checks=(
+            BillIs("Rent", paid_on=date(2026, 10, 1)),
+            Logged("1850", "rent", "Bills & Utilities"),
+        ),
+        last_never_match=(r"\busual\b",),
     ),
     Case(
         "plan-snooze",
@@ -661,7 +682,7 @@ CASES: tuple[Case, ...] = (
         _t("why is yesterday's grab ride in transport"),
         calls=(Call("explain_category"),),
         unchanged=True,
-        reply=("grab",),
+        reply=(("grab", "42.10"),),  # the ride, by name or amount
     ),
     Case(
         "dup-find",
@@ -888,13 +909,13 @@ CASES: tuple[Case, ...] = (
         "ask",
         # Barcelona is in the made-up zone list (see ``runner.Zones``), so the first turn
         # puts the user on Europe/Madrid time.
-        _t("I just landed in Barcelona", "is there a protest near Passeig de Gracia right now?"),
+        _t("I just landed in Madrid", "is there a protest near Gran Via right now?"),
         # A news search for today, and the same question in Spanish or Catalan: any two or
         # more words will do for the local query.
         calls=(
             Call(
                 "web_search",
-                {"question": Has("passeig"), "recent": "today", "local_query": Has(" ")},
+                {"question": Has("gran via"), "recent": "today", "local_query": Has(" ")},
             ),
         ),
         at_most=(AtMost("web_search", 2),),
@@ -1428,6 +1449,39 @@ CASES: tuple[Case, ...] = (
             _new("dinner 60 at din tai fung"),
         ),
         checks=(Owes("Ann", "70.00"),),
+        reply=("ann",),
+        max_reply=160,
+        target="M8e",
+    ),
+    # The habit is a default the model can override from context: not this time.
+    Case(
+        "mem-split-habit-mum",
+        "memory",
+        _t("i always split dinners with ann 50/50", _new("dinner with mum 60 at jumbo")),
+        forbid=("split_bill",),
+        checks=(Logged("60", "jumbo", "Dining Out"), Owes("Ann", "40.00")),
+        max_reply=160,
+        target="M8e",
+    ),
+    Case(
+        "mem-split-habit-treat",
+        "memory",
+        _t(
+            "i always split dinners with ann 50/50", _new("my treat tonight, dinner 80 at paradise")
+        ),
+        forbid=("split_bill",),
+        checks=(Logged("80", "paradise", "Dining Out"), Owes("Ann", "40.00")),
+        max_reply=160,
+        target="M8e",
+    ),
+    # Lunch at Maxwell is Dining Out in the seed too, so the habit is for another category.
+    Case(
+        "mem-split-habit-other-category",
+        "memory",
+        _t("i always split groceries with ann 50/50", _new("dinner 60 at din tai fung")),
+        forbid=("split_bill",),
+        checks=(Logged("60", "din tai fung", "Dining Out"), Owes("Ann", "40.00")),
+        max_reply=160,
         target="M8e",
     ),
     Case(
@@ -1949,10 +2003,37 @@ CASES: tuple[Case, ...] = (
         target="M8b",
     ),
     Case(
+        "ctx-open-not-nagging",
+        "context",
+        _t(
+            "dinner at jumbo tonight, probably about 80. i'll tell you the exact amount later",
+            *_FILLER,
+            "how's my dining budget looking?",
+        ),
+        unchanged=True,
+        reply=(("156.10", "143.90"),),
+        # Counting tonight's dinner into the budget answer is using it where it fits; asking
+        # for its amount in a reply about something else is nagging.
+        last_never_match=(*_ASKS_JUMBO_AMOUNT, r"\bexact (?:amount|total)\b"),
+    ),
+    Case(
+        "ctx-open-resolved",
+        "context",
+        _t(
+            "dinner at jumbo tonight, probably about 80. i'll tell you the exact amount later",
+            "it came to 85, log it",
+            *_FILLER,
+            "anything you still need from me?",
+        ),
+        checks=(Logged("85", "jumbo"),),
+        # The amount came in and was logged: nothing is left to ask about.
+        last_never_match=_ASKS_JUMBO_AMOUNT,
+    ),
+    Case(
         "ctx-next-day-words",
         "context",
         (
-            Turn("we might do a day trip to Sitges tomorrow, and there's a protest on near us now"),
+            Turn("might do a day trip to Kamakura tomorrow, and there's a protest on near us now"),
             Turn("morning! fancy a brunch spot before we head out?", later=timedelta(hours=21)),
         ),
         unchanged=True,

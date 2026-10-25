@@ -428,8 +428,8 @@ _AREA_MAX_WORDS = 4
 
 
 def area_in(name: str) -> str | None:
-    """The area a plan's name ends with ("Seafood Lunch in Sitges" -> "Sitges", "Beach +
-    wander near Sitges"): the capitalised words after the last "in", "at" or "near".
+    """The area a plan's name ends with ("Seafood Lunch in Kamakura" -> "Kamakura", "Beach +
+    wander near Kamakura"): the capitalised words after the last "in", "at" or "near".
     None for "Lunch at 1pm", "Dinner" or "Dinner at mum's"."""
     words = name.split()
     for i in range(len(words) - 2, -1, -1):
@@ -446,7 +446,7 @@ async def best_area_match(
     places: Places, user_id: UserId, name: str, address: str | None, destination: str | None
 ) -> Place | None:
     """The Google Maps place for the area a plan is in, for a plan that is no venue: the
-    address or area given, else the one its name ends with ("... in Sitges"). One search
+    address or area given, else the one its name ends with ("... in Kamakura"). One search
     at most; None when there is no area, nothing plausible or Google Maps can't be asked."""
     area = " ".join(address.split()) if address else area_in(name)
     if not area:

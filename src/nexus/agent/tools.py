@@ -36,6 +36,7 @@ from nexus.application import prep as prep_cases
 from nexus.application import receipts as receipt_cases
 from nexus.application import research as research_cases
 from nexus.application import salary as salary_cases
+from nexus.application import split_habits as habit_cases
 from nexus.application import splits as split_cases
 from nexus.application import subscriptions as subscription_cases
 from nexus.application import transactions as tx_cases
@@ -63,6 +64,7 @@ from nexus.domain.investments import clean_quantity, clean_symbol, describe_posi
 from nexus.domain.ledger import (
     Category,
     Direction,
+    RevisionKind,
     ShareRequest,
     Source,
     Transaction,
@@ -84,6 +86,7 @@ from nexus.domain.prep import CoverDraft, CoverKind, clean_cover
 from nexus.domain.rules import clean_pattern
 from nexus.domain.settle import Debt as SettleDebt
 from nexus.domain.settle import PersonBalance, describe_balance
+from nexus.domain.split_habits import parse_share
 from nexus.domain.travel_research import published_note
 from nexus.domain.trip_access import clean_name, without_money
 from nexus.domain.trips import Trip, TripItem, describe_trip
@@ -359,6 +362,11 @@ class LogExpenseArgs(Args):
     )
     date: str | None = Field(None, description="YYYY-MM-DD, 'today' or 'yesterday'; omit for now")
     notes: str | None = None
+    use_split_habit: bool = Field(
+        True,
+        description="false when the message says it isn't shared this time ('my treat', "
+        "'just me', 'dinner with mum' when the habit is with Ann)",
+    )
 
 
 async def _log_expense(ctx: ToolContext, a: LogExpenseArgs) -> ToolResult:
@@ -376,7 +384,30 @@ async def _log_expense(ctx: ToolContext, a: LogExpenseArgs) -> ToolResult:
             fallback_category_id=await guess_category(ctx, a.best_guess_category),
         ),
     )
-    return ToolResult(f"Logged: {await show(ctx, tx)}", wrote=True)
+    text = f"Logged: {await show(ctx, tx)}"
+    if a.use_split_habit:
+        text += await _apply_split_habits(ctx, tx)
+    return ToolResult(text, wrote=True)
+
+
+async def _apply_split_habits(ctx: ToolContext, tx: Transaction) -> str:
+    """Splits an expense just logged the way the user's split habits say, and returns what
+    happened for the model to word ("" when no habit holds for it)."""
+    category = (await category_map(ctx)).get(tx.category_id) if tx.category_id else None
+    try:
+        split = await habit_cases.apply_to_expense(
+            ctx.uow, ctx.user.id, tx, category.name if category else None
+        )
+    except NexusError as exc:  # the expense is logged either way
+        return f"\nThe split habit wasn't applied ({exc}); the expense is logged unsplit."
+    if split is None:
+        return ""
+    owed = ", ".join(f"{s.participant_name} owes {s.share}" for s in split.splits)
+    people = " and ".join(s.participant_name for s in split.splits)
+    return (
+        f"\nSplit with {people} per their split habit: {owed}. If this one wasn't shared, "
+        "undo_last_change removes the split."
+    )
 
 
 class IncomeArgs(Args):
@@ -598,7 +629,10 @@ async def _undo(ctx: ToolContext, _: NoArgs) -> ToolResult:
     if isinstance(result, undo_cases.TripUndo):
         return ToolResult(result.message(), wrote=True)
     tx = await show(ctx, result.transaction)
-    return ToolResult(f"Undid the last {result.undone.value}: {tx}", wrote=True)
+    text = f"Undid the last {result.undone.value}: {tx}"
+    if result.undone is RevisionKind.SPLIT:
+        text += " The expense itself is unchanged."
+    return ToolResult(text, wrote=True)
 
 
 class SummaryArgs(Args):
@@ -1923,6 +1957,74 @@ async def _ious(ctx: ToolContext, a: IousArgs) -> ToolResult:
     )
 
 
+class SetSplitHabitArgs(Args):
+    person: str = Field(description="Who the user splits with")
+    applies_to: str | None = Field(
+        None,
+        description="The category the habit holds for, exact name from the list ('dinners' "
+        "and 'meals out' are Dining Out); omit for any expense",
+    )
+    share: str | None = Field(
+        None,
+        description="The other person's share of the bill: '50%', '0.4' or '1/3'; omit for "
+        "half. With several people call once per person, e.g. 1/3 each for three of you",
+    )
+
+
+class RemoveSplitHabitArgs(Args):
+    person: str
+    applies_to: str | None = Field(
+        None, description="Only the habit for this category; omit to forget all with this person"
+    )
+
+
+async def _habit_category(ctx: ToolContext, name: str | None, *, strict: bool) -> str | None:
+    """The exact name of the category a habit is for. Unknown names are an error when saving
+    (``strict``), and left as written when forgetting, so a habit for a category that has
+    since been deleted can still be removed."""
+    if name is None:
+        return None
+    category_id = await (resolve_category if strict else guess_category)(ctx, name)
+    if category_id is None:
+        return name
+    return (await category_map(ctx))[category_id].name
+
+
+async def _set_split_habit(ctx: ToolContext, a: SetSplitHabitArgs) -> ToolResult:
+    habit = await habit_cases.set_habit(
+        ctx.uow(),
+        ctx.user.id,
+        a.person,
+        await _habit_category(ctx, a.applies_to, strict=True),
+        parse_share(a.share),
+        now=ctx.now,
+    )
+    return ToolResult(
+        f"Saved split habit: {habit.describe()}. From now on it splits matching expenses when "
+        "they're logged; expenses already logged aren't changed.",
+        wrote=True,
+    )
+
+
+async def _list_split_habits(ctx: ToolContext, _: NoArgs) -> ToolResult:
+    habits = await habit_cases.list_habits(ctx.uow(), ctx.user.id)
+    if not habits:
+        return ToolResult("No split habits saved.")
+    return ToolResult("\n".join(h.describe() for h in habits))
+
+
+async def _remove_split_habit(ctx: ToolContext, a: RemoveSplitHabitArgs) -> ToolResult:
+    removed = await habit_cases.remove_habit(
+        ctx.uow(),
+        ctx.user.id,
+        a.person,
+        await _habit_category(ctx, a.applies_to, strict=False),
+    )
+    return ToolResult(
+        "Removed split habit: " + "; ".join(h.describe() for h in removed) + ".", wrote=True
+    )
+
+
 class _NoRates:
     async def rate(self, base: str, quote: str, on: date) -> Rate | None:
         return None
@@ -2724,7 +2826,7 @@ async def _place_for(
         ctx.places, ctx.user.id, name, place_cases.query_for(f"{name}{where}", trip.destination)
     )
     if found is None and draft.kind is BookingKind.ACTIVITY:
-        # No venue by that name ("Seafood Lunch in Sitges"): the area it's in keeps the
+        # No venue by that name ("Seafood Lunch in Kamakura"): the area it's in keeps the
         # plan on the map, so the day still has travel times around it.
         return await place_cases.best_area_match(
             ctx.places, ctx.user.id, name, draft.address, trip.destination
@@ -3017,7 +3119,7 @@ class WebSearchArgs(Args):
         default=None,
         description="With recent: the same question in the local language of where the "
         "user is (from their time zone or trip destination), because local news is "
-        "written in it: 'manifestación Pau Claris Barcelona hoy', 'sciopero treni Roma "
+        "written in it: 'manifestación Gran Vía Madrid hoy', 'sciopero treni Roma "
         "oggi'. Searched alongside the question, at two credits instead of one. Skip it "
         "where English is the local language.",
     )
@@ -3578,6 +3680,7 @@ READ_ONLY = frozenset(
         "find_places",
         "find_transactions", "list_bills", "list_budgets", "list_categories",
         "list_category_rules", "list_ious", "list_subscriptions", "list_trips", "list_wallets",
+        "list_split_habits",
         "find_likely_moves", "load_skill",
         "place_info", "plan_record", "query_ledger", "show_dividends", "show_pay_schedule",
         "show_plan", "show_portfolio", "show_watchlist", "spending_summary", "stock_levels",
@@ -3945,6 +4048,27 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             confirm=_describe_split,
         ),
         ToolSpec("list_ious", "Who still owes the user money.", IousArgs, _ious),
+        ToolSpec(
+            "set_split_habit",
+            "Save a standing arrangement to split expenses with someone ('I always split "
+            "dinners with Ann'): from then on matching expenses are split when logged. Saves "
+            "at once. If the same message logs an expense, call this first. Not for splitting "
+            "one expense: that is split_bill.",
+            SetSplitHabitArgs,
+            _set_split_habit,
+        ),
+        ToolSpec(
+            "list_split_habits",
+            "The user's standing split arrangements and each person's share.",
+            NoArgs,
+            _list_split_habits,
+        ),
+        ToolSpec(
+            "remove_split_habit",
+            "Forget a standing split arrangement ('stop splitting dinners with Ann').",
+            RemoveSplitHabitArgs,
+            _remove_split_habit,
+        ),
         ToolSpec(
             "set_budget",
             "Set or change a monthly budget, overall or for one category.",

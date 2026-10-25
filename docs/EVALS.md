@@ -287,3 +287,14 @@ C had no empty replies, and its slowest turn was 15.6s.
 On accuracy and typical speed the two are even: 244/252 each, median 1.9s, p90 about 4s. Only D showed the production problems: three calls to made-up `*_placeholder`-style tools, two empty replies, and one 198s stall. No garbled text appeared in either run, so the production garble wasn't reproduced. These are one run each, so the counts are small. Still, every made-up tool call and empty reply came from `-1017` on Together, which points to that model version or host rather than to `:nitro` routing in general.
 
 **Chosen:** keep `deepseek/deepseek-v4.1-flash` with `OPENROUTER_PROVIDERS=together,baseten,fireworks` (above): as accurate as C, a little faster, and about $0.0010 a case on known hosts. Don't go back to `-1017`.
+
+## Split habits, open items, bills paid (25 October 2026)
+
+Code takes the bookkeeping, the model keeps the conversation: a split habit ("I always split dinners with Ann") is saved and applied when a matching expense is logged, unless the message says this one isn't shared; things the user will come back to ("I'll tell you the exact amount later") are carried through the rolling summary for up to 3 days as optional context; `mark_bill_paid` is always offered. The runner now condenses long chats as production does (it never had, which is why `ctx-long-pending` lost its dinner). Three cases were fixed where the case, not the reply, was wrong (`log-dollar-sign`, `ask-which-kopitiam`, `cat-explain`). Production pairing, together/baseten/fireworks:
+
+| Run | Passed | Median | p90 | Cost a case |
+|---|---|---|---|---|
+| Full set, run 1 | 256/258 | 1.8s | 3.5s | $0.00114 |
+| Full set, run 2 | 256/258 | 1.9s | 3.6s | $0.00115 |
+
+The four failures each happened once and none in what changed. The new and fixed cases, 3 runs each, all passed 3/3, except `ctx-open-not-nagging` (1/3): the "failures" folded tonight's dinner into a budget answer ("Jumbo tonight (~80) would take you to about 224"), which is the open item used where it fits. The case now fails only on asking for the amount. Replies to setting a habit and logging still read templated ("Saved — dinners with Ann will split 50/50 from now on" in 13 of 15); that is for a separate pass on tone.

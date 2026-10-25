@@ -183,7 +183,7 @@ class Agent:
         async def health() -> str:
             return "All systems fine."
 
-        self.graph = AgentGraph(
+        built = AgentGraph(
             AgentDeps(
                 uow=self.uow,
                 tools=self.tools,
@@ -196,10 +196,12 @@ class Agent:
                 rates=FixedRates(),
                 zones=Zones(),
             )
-        ).compile(InMemorySaver())
+        )
+        self.graph = built.compile(InMemorySaver())
+        # Long chats fold old messages into a summary, as in production.
         self.service = AgentService(
             self.graph, self.uow, self.receipts, lambda: self.now, None, FixedRates(),
-            trips=self.trips, looker=self.looker,
+            trips=self.trips, looker=self.looker, condense=built.condense,
         )  # fmt: skip
 
     async def messages(self, user: User) -> list[BaseMessage]:
@@ -240,6 +242,7 @@ async def _turn(agent: Agent, user: User, turn: Turn, ref: str) -> TurnLog:
         replies = await agent.service.press(user.id, data)
         all_replies.extend(replies)
     log.seconds = time.perf_counter() - started
+    await agent.service.drain()  # a summary written after the reply, before the next turn
     if not turn.photo:  # production queues this as a job once the reply is sent
         said = [
             text_of(m.content)
@@ -308,6 +311,16 @@ def _call_made(calls: list[tuple[str, dict[str, Any]]], wanted: Call) -> bool:
     )
 
 
+# A clarifying question without a question mark: "Which one — the 4.20 or the 7.20".
+_ASKS = re.compile(r"\b(?:which (?:one|of)|do you mean|did you mean)\b", re.IGNORECASE)
+
+
+def asks_something(reply: str) -> bool:
+    """Whether a reply asks the user something: a question mark, or a clear clarifying
+    question written without one."""
+    return "?" in reply or bool(_ASKS.search(reply))
+
+
 def _in_reply(reply: str, wanted: str | tuple[str, ...]) -> bool:
     options = (wanted,) if isinstance(wanted, str) else wanted
     text = reply.casefold()
@@ -327,7 +340,7 @@ async def grade(case: Case, turns: list[TurnLog], world: World, changed: bool) -
         if tool in called:
             failures.append(f"called {tool}")
     if case.asks:
-        if "?" not in last.last_reply:
+        if not asks_something(last.last_reply):
             failures.append("didn't ask a question")
         if changed:
             failures.append("changed data instead of asking")

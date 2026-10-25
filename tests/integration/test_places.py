@@ -125,36 +125,36 @@ async def test_a_plan_with_no_venue_lands_on_its_area(uow: UowFactory) -> None:
     trip = await trip_cases.create_trip(
         uow(),
         user,
-        trip_cases.TripDraft("Barcelona", date(2026, 11, 10), date(2026, 11, 14), "EUR", None),
+        trip_cases.TripDraft("Tokyo", date(2026, 11, 10), date(2026, 11, 14), "JPY", None),
         now=NOW,
     )
-    sitges = fake_place("fakePlaceSitges01", "Sitges", address="Sitges, Example Province")
+    kamakura = fake_place("fakePlaceKamakura01", "Kamakura", address="Kamakura, Example Province")
     # Nothing matches a plan's own name; only the area itself is found.
-    source = FakePlaces([], answers={"Sitges, Barcelona": [sitges]})
+    source = FakePlaces([], answers={"Kamakura, Tokyo": [kamakura]})
     tools = build_tools(lambda _: "")
     ctx = ToolContext(user, uow, NOW, RATES, places=Places(source))
 
     async def add(**args: object) -> None:
         await run_tool(tools["add_to_itinerary"], ctx, {"kind": "activity", **args})
 
-    await add(name="Seafood Lunch in Sitges", day="2026-11-12", time="15:00")
-    await add(name="Beach and wander", place="Sitges", day="2026-11-12", time="17:00")
+    await add(name="Seafood Lunch in Kamakura", day="2026-11-12", time="15:00")
+    await add(name="Beach and wander", place="Kamakura", day="2026-11-12", time="17:00")
     await add(name="Siesta", day="2026-11-12", time="13:00")
     await add(name="Walk in the old town", day="2026-11-13", time="10:00")
     async with uow() as tx:
         items = await tx.trips.list_bookings(user.id, trip_id=trip.id)
     linked = {b.draft.title: b.draft.place_id for b in items}
-    assert linked["Seafood Lunch in Sitges"] == "fakePlaceSitges01"
-    assert linked["Beach and wander"] == "fakePlaceSitges01"
+    assert linked["Seafood Lunch in Kamakura"] == "fakePlaceKamakura01"
+    assert linked["Beach and wander"] == "fakePlaceKamakura01"
     assert linked["Siesta"] is None and linked["Walk in the old town"] is None
     # The name is searched first, then the area when there is one (the second area search
     # is a cached repeat); a plan with no area costs no extra search.
     assert source.searches == [
-        "Seafood Lunch in Sitges, Barcelona",
-        "Sitges, Barcelona",
-        "Beach and wander Sitges, Barcelona",
-        "Siesta, Barcelona",
-        "Walk in the old town, Barcelona",
+        "Seafood Lunch in Kamakura, Tokyo",
+        "Kamakura, Tokyo",
+        "Beach and wander Kamakura, Tokyo",
+        "Siesta, Tokyo",
+        "Walk in the old town, Tokyo",
     ]
 
 

@@ -50,25 +50,25 @@ async def test_yesterdays_words_are_stamped_for_the_model_but_stored_as_said(
     uow: UowFactory, alice: UserId
 ) -> None:
     clock = Clock(SAT_NIGHT)
-    model = scripted(say("Sitges it is."), say("Brunch it is."))
+    model = scripted(say("Kamakura it is."), say("Brunch it is."))
     agent = build(uow, model, clock=clock)
-    await agent.handle_text(alice, "lets go to Sitges tomorrow", "tg:1:0")
-    assert _texts(model.seen[0]) == ["lets go to Sitges tomorrow"]  # same day: untouched
+    await agent.handle_text(alice, "lets go to Kamakura tomorrow", "tg:1:0")
+    assert _texts(model.seen[0]) == ["lets go to Kamakura tomorrow"]  # same day: untouched
 
     clock.now = SUN_MORNING
     await agent.handle_text(alice, "brunch?", "tg:1:1")
     note = "[It's now Sun 25 Oct; the messages above are from Sat 24 Oct or earlier.]\n"
     assert _texts(model.seen[1]) == [
-        "[Sat 24 Oct, 22:51] lets go to Sitges tomorrow",
-        "Sitges it is.",
+        "[Sat 24 Oct, 22:51] lets go to Kamakura tomorrow",
+        "Kamakura it is.",
         note + "brunch?",
     ]
     assert "Now: Sunday 2026-10-25 11:28" in _system(model.seen[1])
 
     stored = await _messages(agent, alice)  # what is kept is what was said
     assert [str(m.content) for m in stored] == [
-        "lets go to Sitges tomorrow",
-        "Sitges it is.",
+        "lets go to Kamakura tomorrow",
+        "Kamakura it is.",
         "brunch?",
         "Brunch it is.",
     ]
@@ -123,11 +123,11 @@ async def test_the_summariser_is_asked_for_absolute_dates_and_the_summary_is_dat
     model = scripted(
         *[say("ok") for _ in range(turns)],
         say("ok"),  # the turn that tips it over
-        say("User plans Sitges on Sun 25 Oct; protest on Pau Claris reported Sat 24 Oct evening."),
+        say("User plans Kamakura on Sun 25 Oct; protest on Gran Vía reported Sat 24 Oct evening."),
         say("Not today."),
     )
     agent = build(uow, model, clock=clock)
-    await agent.handle_text(alice, "protest on Pau Claris now, Sitges tomorrow", "tg:4:0")
+    await agent.handle_text(alice, "protest on Gran Vía now, Kamakura tomorrow", "tg:4:0")
     for n in range(1, turns):
         await agent.handle_text(alice, f"note {n}", f"tg:4:{n}")
     clock.now = SUN_MORNING
@@ -139,7 +139,7 @@ async def test_the_summariser_is_asked_for_absolute_dates_and_the_summary_is_dat
     text = str(request[0].content)
     assert "absolute" in text and "never use relative words" in text
     assert "tomorrow" in text  # named as the words to avoid
-    assert "User [Sat 24 Oct, 22:51]: protest on Pau Claris now, Sitges tomorrow" in text
+    assert "User [Sat 24 Oct, 22:51]: protest on Gran Vía now, Kamakura tomorrow" in text
     assert "(their local time, UTC)" in text
     assert "It is now Sun 25 Oct, 11:28." in text
     assert "Summary so far:\n(none)" in text
@@ -151,7 +151,7 @@ async def test_the_summariser_is_asked_for_absolute_dates_and_the_summary_is_dat
     await agent.handle_text(alice, "and today?", "tg:4:y")
     system = _system(model.seen[-1])
     assert "a summary, written Sun 25 Oct, 11:28; the messages themselves are gone" in system
-    assert "Sitges on Sun 25 Oct" in system
+    assert "Kamakura on Sun 25 Oct" in system
     assert "treat anything an older message called" in system  # the rule about old words
 
 

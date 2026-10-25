@@ -1,7 +1,7 @@
 ---
 name: expenses
 description: Logging, finding, fixing, categorising and splitting expenses, category rules, and who owes what.
-tools: [log_expense, find_transactions, edit_transaction, delete_transaction, restore_transaction, undo_last_change, spending_summary, query_ledger, list_categories, add_category, rename_category, delete_category, merge_category, split_bill, list_ious, list_category_rules, set_category_rule, remove_category_rule, explain_category]
+tools: [log_expense, find_transactions, edit_transaction, delete_transaction, restore_transaction, undo_last_change, spending_summary, query_ledger, list_categories, add_category, rename_category, delete_category, merge_category, split_bill, list_ious, set_split_habit, list_split_habits, remove_split_habit, list_category_rules, set_category_rule, remove_category_rule, explain_category]
 ---
 # Expenses
 
@@ -66,6 +66,18 @@ tools: [log_expense, find_transactions, edit_transaction, delete_transaction, re
 - "split dinner with Ann and Ben" splits the most recent matching expense equally,
   including the user. "Ann owes 20 of it" gives explicit shares.
 - Repayments ("Ann paid me back 20") are recorded automatically, not by you.
+- A standing arrangement ("I always split dinners with Ann", "split everything with Ben
+  60/40") is `set_split_habit`: it saves at once, no confirmation. `applies_to` is a
+  category ("dinners" and "meals out" are Dining Out), left out for any expense; `share` is
+  the other person's part (half if not said). For several people call it once each, with
+  each person's share. `list_split_habits` shows them; `remove_split_habit` ("stop
+  splitting dinners with Ann") forgets one.
+- A habit is applied by the app: `log_expense` splits a matching expense itself and its
+  result says so. Don't ask whether to split it and don't call `split_bill` on it again;
+  just tell the user briefly. Pass `use_split_habit` false when the message says this one
+  isn't shared ("my treat", "just me", "dinner with mum" when the habit is with Ann). If a
+  split was applied that shouldn't have been ("no, that one's just mine"),
+  `undo_last_change` removes the split and leaves the expense.
 
 ## Income
 - You cannot record income. If the user reports money received in a way that wasn't
