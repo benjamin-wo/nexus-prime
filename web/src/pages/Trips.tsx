@@ -14,7 +14,7 @@ import { DayCarousel } from "./DayCarousel";
 import { type Fix, type Go, type Stage, dayIsFree, nextUp, stageOf } from "./TripStage";
 import { ArrangeProvider, DayNotes, DayPickerSheet, DropZone, type Spot, daySpot, useArrange, useDragEntry } from "./TripArrange";
 import { DayHops, GETTING_AROUND, HopLine, MapAppPicker, TripMap } from "./TripMap";
-import { PlaceLine, PlaceWarning, TripPlacesProvider, useLinkedPlaces } from "./TripPlaces";
+import { LinkPlaceHint, linkable, PlaceLine, PlaceWarning, TripPlacesProvider, useLinkedPlaces } from "./TripPlaces";
 import { StopsRow, StopsSheet, pillMark, pillTitle } from "./TripStops";
 import { EntryEditor } from "./TripEntry";
 import { IdeasTab, listOf } from "./TripIdeas";
@@ -766,8 +766,13 @@ function Itinerary({ detail, day, onDay, onChange, onAdd, onIdeas }: {
                       {outs.map((b) => (
                         <TimelineEntry key={`out-${b.id}`} booking={b} iso={d} stop={null} />
                       ))}
-                      {entries.map((b) => {
+                      {entries.map((b, i) => {
                         if (b.kind === "activity") stop += 1;
+                        // A plan with no place breaks the chain of travel times: say so, once, where one
+                        // would go (after it, or before it when it is the day's last).
+                        const unlinked = Boolean(detail.routes) && linkable(b) && !b.place_id && entries.some((o) => o.id !== b.id && linkable(o));
+                        const hint = unlinked ? <LinkPlaceHint booking={b} /> : null;
+                        const last = i === entries.length - 1;
                         const hopsIn = into(b).map((h) => <HopLine key={`hop-${h.start_id}-${h.end_id}`} tripId={detail.trip.id} day={d} hop={h} addressOf={addressOf} />);
                         return editing === b.id ? (
                           <Fragment key={b.id}>
@@ -796,7 +801,9 @@ function Itinerary({ detail, day, onDay, onChange, onAdd, onIdeas }: {
                         ) : (
                           <Fragment key={b.id}>
                             {hopsIn}
+                            {last && hint}
                             <TimelineEntry booking={b} iso={d} stop={b.kind === "activity" ? stop : null} spot={daySpot(d)} onEdit={() => setEditing(b.id)} />
+                            {!last && hint}
                           </Fragment>
                         );
                       })}

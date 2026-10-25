@@ -91,7 +91,7 @@ export function PlacePicture({ place, large = false, tile = false }: { place: Pl
   );
 }
 
-const linkable = (b: Booking) => b.kind === "activity" || b.kind === "hotel";
+export const linkable = (b: Booking) => b.kind === "activity" || b.kind === "hotel";
 
 export function Rating({ place }: { place: Place }) {
   if (place.rating === null) return null;
@@ -351,6 +351,48 @@ export function PlaceFinder({ initial, pickLabel, saveText, onPick, ideas: ideas
   );
 }
 
+/** Links an entry to a place on Google Maps (or, with null, lets it go). */
+async function putPlace(booking: Booking, placeId: string | null) {
+  await api(`/travel/bookings/${booking.id}/place`, { method: "PUT", body: { place_id: placeId } });
+}
+
+/** The finder for linking an entry to its place on Google Maps, starting from its name and
+ * address. ``onLinked`` runs once the link is saved, after the trip has been told to refresh. */
+function PlaceLinker({ booking, onLinked, onCancel }: { booking: Booking; onLinked: () => void; onCancel: () => void }) {
+  const places = useContext(Context);
+  const name = booking.kind === "hotel" ? (booking.hotel ?? booking.title) : (booking.name ?? booking.title);
+  async function pick(f: Found) {
+    if (!f.place) return;
+    await putPlace(booking, f.place.id);
+    onLinked();
+    places?.onChange();
+  }
+  return <PlaceFinder initial={[name, booking.address].filter(Boolean).join(" ")} pickLabel="Link" onPick={pick} onCancel={onCancel} />;
+}
+
+/** In the day's list, where a travel time would go next to a plan with no place on Google
+ * Maps: it has none, and a way to link one. Nothing for a plan that has a place, one that
+ * can't have one, or when Google Maps isn't set up. It is a list item, for the day's list. */
+export function LinkPlaceHint({ booking }: { booking: Booking }) {
+  const places = useContext(Context);
+  const [finding, setFinding] = useState(false);
+  if (!places?.enabled || !linkable(booking) || booking.place_id) return null;
+  return (
+    <li className="timeline-hop timeline-hop-quiet" aria-label={`Travel time for ${booking.title}`}>
+      {finding ? (
+        <PlaceLinker booking={booking} onLinked={() => setFinding(false)} onCancel={() => setFinding(false)} />
+      ) : (
+        <span className="caption wrap">
+          No travel time: {booking.title} isn’t on the map ·{" "}
+          <button type="button" className="link-btn" onClick={() => setFinding(true)} aria-label={`Link a place for ${booking.title}`}>
+            <Icon name="place" size={16} className="icon-inline" /> link a place
+          </button>
+        </span>
+      )}
+    </li>
+  );
+}
+
 export function PlaceLine({ booking }: { booking: Booking }) {
   const places = useContext(Context);
   const [open, setOpen] = useState(false);
@@ -358,16 +400,12 @@ export function PlaceLine({ booking }: { booking: Booking }) {
   if (!places?.enabled || !linkable(booking)) return null;
   const linked = places.linked.get(booking.id);
 
-  async function link(placeId: string | null) {
-    await api(`/travel/bookings/${booking.id}/place`, { method: "PUT", body: { place_id: placeId } });
-    setFinding(false);
+  async function unlink() {
+    await putPlace(booking, null);
     places?.onChange();
   }
 
-  if (finding) {
-    const name = booking.kind === "hotel" ? (booking.hotel ?? booking.title) : (booking.name ?? booking.title);
-    return <PlaceFinder initial={[name, booking.address].filter(Boolean).join(" ")} pickLabel="Link" onPick={async (f) => { if (f.place) await link(f.place.id); }} onCancel={() => setFinding(false)} />;
-  }
+  if (finding) return <PlaceLinker booking={booking} onLinked={() => setFinding(false)} onCancel={() => setFinding(false)} />;
   if (!booking.place_id) {
     return (
       <span className="caption place-find">
@@ -406,7 +444,7 @@ export function PlaceLine({ booking }: { booking: Booking }) {
       {open && (
         <>
           <PlaceDetails place={p} />
-          <button type="button" className="link-btn caption" onClick={() => void link(null)}>
+          <button type="button" className="link-btn caption" onClick={() => void unlink()}>
             Not this place
           </button>
         </>

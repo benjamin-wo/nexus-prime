@@ -48,6 +48,8 @@ tools: [research_trip, research_to_trip, find_ideas, find_places, place_info, ad
   "I check out of Hotel Sakura on the 15th instead", "move dinner to 8pm", "the flight
   now leaves at 9:10": `change_itinerary_entry` with the entry and only what changed.
   "cancel the Nikko trip" (an entry): `remove_from_itinerary`.
+  A plan that isn't a specific venue ("seafood lunch", "beach + wander"): pass the town
+  or area as `place` so it lands on the map and gets travel times.
   Giving a plan a time: pass `time` only when the user said one. A plan added to a day
   without a time is given a free one by itself (today from now, another day from 09:00,
   clear of the day's other plans, flights and trains, with room to get there), so leave

@@ -1996,6 +1996,37 @@ test("places from Google Maps: saved, linked, rated, and flagged when usually cl
   await expect.poll(() => state.plans[1]).toMatchObject({ name: "Namdaemun Market", place_id: "fakePlaceMarket01" });
 });
 
+test("a plan with no place says there is no travel time, and linking one brings it", async ({ page }) => {
+  const state = await fakeApi(page);
+  state.mapKey = "test-browser-key";
+  await addTrip(page, "Seoul", "2026-11-10", "2026-11-13");
+  const plan = (id: string, name: string, at: string, place: string | null) => ({
+    id, trip_id: "trip1", kind: "activity", title: name, provider: null, starts: "2026-11-12", ends: "2026-11-12",
+    segments: [], hotel: null, address: null, check_in: null, check_out: null, name, day: "2026-11-12", at, note: null,
+    cost: null, logged: false, manual: true, reference: null, booked_via: null, category: null, place_id: place, scheduled: true,
+  });
+  // Day 3: two linked plans, then one with no place (the last, so the caption goes before it).
+  state.plans.push(plan("pl1", "Hanok Noodle Bar", "12:00", "fakePlaceNoodle01"), plan("pl2", "Namdaemun Market", "14:00", null));
+  await page.reload();
+  await itineraryOf(page).getByRole("navigation", { name: "Days" }).getByRole("button", { name: /12/ }).click();
+  await page.getByRole("heading", { name: /^Day 3 of \d+ ·/ }).scrollIntoViewIfNeeded();
+
+  // No travel time next to it, and a way to link a place; the linked plan has no such line.
+  const quiet = itineraryOf(page).getByRole("listitem", { name: "Travel time for Namdaemun Market" });
+  await expect(quiet).toContainText(/No travel time: Namdaemun Market isn’t on the map ·\s+link a place/);
+  await expect(itineraryOf(page).getByText("No travel time")).toHaveCount(1);
+  await expect(itineraryOf(page).getByRole("listitem", { name: /^From / })).toHaveCount(0);
+
+  // The place finder opens for that plan; linking a place brings the travel time in its place.
+  await quiet.getByRole("button", { name: "Link a place for Namdaemun Market" }).click();
+  await expect(page.getByRole("search", { name: "Search Google Maps" }).getByLabel("Look for")).toHaveValue("Namdaemun Market");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await page.getByRole("button", { name: "Link: Namdaemun Market" }).click();
+  await expect.poll(() => state.plans[1]).toMatchObject({ place_id: "fakePlaceMarket01" });
+  await expect(itineraryOf(page).getByRole("listitem", { name: "From Hanok Noodle Bar to Namdaemun Market" })).toContainText("14 min walk");
+  await expect(itineraryOf(page).getByText("No travel time")).toHaveCount(0);
+});
+
 test("where to next hands a place and a time to Nexus to research", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/travel");

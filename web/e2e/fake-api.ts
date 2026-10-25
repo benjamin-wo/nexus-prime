@@ -1671,12 +1671,15 @@ export async function fakeApi(
       const stops = state.plans
         .filter((p) => p.place_id && p.day === dayHops[2])
         .sort((a, b) => String(a.at ?? "").localeCompare(String(b.at ?? "")));
-      const hops = stops.slice(1).map((end, n) => {
-        const start = stops[n];
-        return {
+      // Like the server's: a plan with no place breaks the chain, so there is no time on either side of it.
+      const order = state.plans.filter((p) => p.day === dayHops[2]).sort((a, b) => String(a.at ?? "").localeCompare(String(b.at ?? "")));
+      const hops = order.slice(1).flatMap((end, n) => {
+        const start = order[n];
+        if (!start.place_id || !end.place_id) return [];
+        return [{
           start_id: start.id, end_id: end.id, start: start.title, end: end.title, mode: "walk", minutes: 14, metres: 944, tight: false,
           directions: `https://www.google.com/maps/dir/?api=1&origin_place_id=${String(start.place_id)}&destination_place_id=${String(end.place_id)}`,
-        };
+        }];
       });
       // From the airport a flight lands at to the hotel checked into that day: a long
       // way, 2 h 20 min by public transport or 1 h 30 min by car.

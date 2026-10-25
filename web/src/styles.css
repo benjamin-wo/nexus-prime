@@ -790,6 +790,9 @@ details.section[open] > summary { margin-bottom: var(--space-3); }
 .timeline-hop { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); padding: 0 var(--space-3); font-size: 0.8125rem; color: var(--text-secondary); }
 .timeline-hop .wrap { flex: 1 1 160px; min-width: 0; }
 .timeline-hop .badge { margin-left: var(--space-2); }
+/* A plan with no place: no travel time, quietly; its place finder takes the row. */
+.timeline-hop-quiet { color: var(--text-muted); }
+.timeline-hop-quiet .place-finder { flex: 1 1 100%; }
 /* The Plan's Check in and Check out badges. */
 .timeline-strip .badge { font-size: 0.8125rem; }
 .hop-back { color: var(--text-primary); font-weight: 600; }
