@@ -298,3 +298,15 @@ Code takes the bookkeeping, the model keeps the conversation: a split habit ("I 
 | Full set, run 2 | 256/258 | 1.9s | 3.6s | $0.00115 |
 
 The four failures each happened once and none in what changed. The new and fixed cases, 3 runs each, all passed 3/3, except `ctx-open-not-nagging` (1/3): the "failures" folded tonight's dinner into a budget answer ("Jumbo tonight (~80) would take you to about 224"), which is the open item used where it fits. The case now fails only on asking for the amount. Replies to setting a habit and logging still read templated ("Saved — dinners with Ann will split 50/50 from now on" in 13 of 15); that is for a separate pass on tone.
+
+## Reply tone (25 October 2026)
+
+Replies after a change all opened "Logged …": the prompt's one example reply was being copied, and tool results handed the model lines it repeated ("Nothing was paid by me"). The prompt now gives contrasting examples, asks for what matters this time in the model's own words, no talk of how the app works, and amounts as people read them; the report now shows how alike replies after a change open. Full set, production pairing:
+
+| Run | Passed | Median | Top openers after a change |
+|---|---|---|---|
+| main | 254/258 | 1.9s | "logged for" 16%, "logged at" 15%, "logged sgd" 6% |
+| branch, run 1 | 253/258 | 1.9s | "grab transport's" 3%, "dining out" 3%, "at maxwell" 2% |
+| branch, run 2 | 256/258 | 1.8s | "dining out" 3%, "grab transport's" 2%, "at maxwell" 2% |
+
+The four failures only in branch run 1 didn't recur in run 2. "1800.00"-style amounts in replies went from 25 to 1 a run; those left are in app-built confirmation cards, which the prompt can't reach. "i paid the rent" went from "Rent's marked paid and logged — 1800.00 SGD ✅ (a few days ahead of the 1 Oct due date…)" to "Rent's sorted ✅ 1,800 logged, and the 1 Oct reminder's cleared." The shorter style also shortened category names ("Dining" for Dining Out, 21–24 times a run); the prompt now asks for full names (added after these runs).
