@@ -171,6 +171,7 @@ class Agent:
         # The first look at each image: the main model without reasoning, with the
         # photo model as its fallback, as in production.
         self.looker = LlmImageLooker(quick(model), quick(vision) if vision else None)
+        self.now = seed.NOW  # the clock; a turn may move it on (``Turn.later``)
         self.skills = SkillLibrary.load()
         self.tools = build_tools(self.skills.body)
         self.new_conversation()
@@ -191,13 +192,13 @@ class Agent:
                 skill_index=self.skills.index(),
                 skill_tools=self.skills.tools(),
                 health=health,
-                clock=lambda: seed.NOW,
+                clock=lambda: self.now,
                 rates=FixedRates(),
                 zones=Zones(),
             )
         ).compile(InMemorySaver())
         self.service = AgentService(
-            self.graph, self.uow, self.receipts, lambda: seed.NOW, None, FixedRates(),
+            self.graph, self.uow, self.receipts, lambda: self.now, None, FixedRates(),
             trips=self.trips, looker=self.looker,
         )  # fmt: skip
 
@@ -220,6 +221,8 @@ def _confirmation(replies: Sequence[Reply], approve: bool) -> str | None:
 async def _turn(agent: Agent, user: User, turn: Turn, ref: str) -> TurnLog:
     if turn.new_conversation:
         agent.new_conversation()
+    if turn.later:
+        agent.now += turn.later
     log = TurnLog(turn.text)
     before = {m.id for m in await agent.messages(user)}  # by id: long chats drop old ones
     started = time.perf_counter()
@@ -246,7 +249,7 @@ async def _turn(agent: Agent, user: User, turn: Turn, ref: str) -> TurnLog:
         before_tokens = agent.memory.input_tokens, agent.memory.output_tokens
         try:
             await agent.memory.remember(
-                agent.uow, user, said[-RECENT_MESSAGES:] or [turn.text], seed.NOW
+                agent.uow, user, said[-RECENT_MESSAGES:] or [turn.text], agent.now
             )
         except Exception:
             log.memory_failed = True
@@ -347,6 +350,9 @@ async def grade(case: Case, turns: list[TurnLog], world: World, changed: bool) -
     for pattern in case.never_match:
         if any(re.search(pattern, r, re.IGNORECASE) for t in turns for r in t.replies):
             failures.append(f"reply matches {pattern!r}")
+    for pattern in case.last_never_match:
+        if any(re.search(pattern, r, re.IGNORECASE) for r in last.replies):
+            failures.append(f"last reply matches {pattern!r}")
     for cap in case.at_most:
         made = sum(
             1
