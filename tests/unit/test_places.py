@@ -10,7 +10,14 @@ from uuid import uuid4
 import httpx
 import pytest
 
-from nexus.application.places import Places, PlacesError, query_for, same_place
+from nexus.application.places import (
+    Places,
+    PlacesError,
+    area_in,
+    best_area_match,
+    query_for,
+    same_place,
+)
 from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.ledger import UserId
 from nexus.domain.places import (
@@ -88,6 +95,49 @@ def test_searches_are_narrowed_and_names_matched() -> None:
     assert not same_place("Dinner at mum's", noodle)
     assert not same_place("Hotel", fake_place("fakePlace0009", "Hotel Sakura"))
     assert same_place("一蘭 渋谷", fake_place("fakePlace0010", "一蘭 渋谷店"))
+
+
+@pytest.mark.parametrize(
+    ("name", "area"),
+    [
+        ("Seafood Lunch in Sitges", "Sitges"),
+        ("Beach + wander near Sitges", "Sitges"),
+        ("Walk at Old Town", "Old Town"),
+        ("Seafood lunch in Sitges.", "Sitges"),
+        ("Lunch in Sitges near the beach", None),
+        ("Lunch at 1pm", None),
+        ("Dinner at mum's", None),
+        ("Dinner", None),
+        ("Seafood Lunch", None),
+        ("Dinner in", None),
+        ("Walk around Old Town", None),
+        ("Seafood lunch in a small harbour town by the sea", None),
+    ],
+)
+def test_the_area_a_plan_name_ends_with(name: str, area: str | None) -> None:
+    assert area_in(name) == area
+
+
+async def test_the_area_match_searches_once_and_needs_a_plausible_result() -> None:
+    sitges = fake_place("fakePlace0011", "Sitges", address="Sitges, Example Province")
+    other = fake_place("fakePlace0012", "Example Harbour Cafe")
+    source = FakePlaces([sitges])
+    places = Places(source)
+    # From the name's trailing area, narrowed to the destination.
+    found = await best_area_match(places, ME, "Beach + wander near Sitges", None, "Barcelona")
+    assert found is not None and found.id == "fakePlace0011"
+    assert source.searches == ["Sitges, Barcelona"]
+    # An address given wins over the name's area.
+    await best_area_match(places, ME, "Beach near Elsewhere", "Sitges Old Town", "Barcelona")
+    assert source.searches[-1] == "Sitges Old Town, Barcelona" and len(source.searches) == 2
+    # No area: nothing is searched.
+    assert await best_area_match(places, ME, "Dinner", None, "Barcelona") is None
+    assert len(source.searches) == 2
+    # A result that isn't the area, or Google Maps failing, is no place.
+    source.results = [other]
+    assert await best_area_match(places, ME, "Lunch in Tarragona", None, "Barcelona") is None
+    source.results, source.failing = [sitges], True
+    assert await best_area_match(places, ME, "Lunch in Girona", None, None) is None
 
 
 class Clock:

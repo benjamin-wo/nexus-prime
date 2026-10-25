@@ -966,6 +966,19 @@ CASES: tuple[Case, ...] = (
         max_lines=3,
     ),
     Case(
+        "itinerary-add-plan-no-venue",
+        "log",
+        _t("add a seafood lunch in Kamakura on the 14th of my Japan trip at 3pm"),
+        # Not a specific venue: the town goes in `place`, so it lands on the map.
+        calls=(
+            Call(
+                "add_to_itinerary",
+                {"kind": "activity", "place": Has("kamakura"), "day": Has("2026-12-14")},
+            ),
+        ),
+        confirms=False,
+    ),
+    Case(
         "itinerary-gelato-after-the-castle",
         "log",
         _t(

@@ -2653,7 +2653,11 @@ class ItineraryArgs(TripNameArgs):
         "stop 20, a castle 90); left out: by its category (a meal 60, a sight 90)",
     )
     until: str | None = Field(None, description="A hotel's check-out day")
-    place: str | None = Field(None, description="Where: an address or area")
+    place: str | None = Field(
+        None,
+        description="Where: an address or area. For a plan that isn't a specific venue "
+        "('seafood lunch', 'beach + wander'), the town or area, so it lands on the map",
+    )
     link: str | None = Field(
         None, description="A booking page or menu the user gave (a public https address)"
     )
@@ -2705,7 +2709,8 @@ async def _place_for(
     ctx: ToolContext, trip: Trip, draft: BookingDraft, chosen: str | None
 ) -> Place | None:
     """The Google Maps place for a new plan or hotel: the one the user picked from
-    find_places, or the top search result when its name plausibly matches."""
+    find_places, or the top search result when its name plausibly matches. A plan with
+    no such venue falls back to the area it's in."""
     if ctx.places is None or draft.kind not in (BookingKind.ACTIVITY, BookingKind.HOTEL):
         return None
     if chosen:
@@ -2715,9 +2720,16 @@ async def _place_for(
             raise InvalidInput("that Google Maps place wasn't found; use find_places") from None
     name = (draft.hotel if draft.kind is BookingKind.HOTEL else draft.name) or draft.title
     where = f" {draft.address}" if draft.address else ""
-    return await place_cases.best_match(
+    found = await place_cases.best_match(
         ctx.places, ctx.user.id, name, place_cases.query_for(f"{name}{where}", trip.destination)
     )
+    if found is None and draft.kind is BookingKind.ACTIVITY:
+        # No venue by that name ("Seafood Lunch in Sitges"): the area it's in keeps the
+        # plan on the map, so the day still has travel times around it.
+        return await place_cases.best_area_match(
+            ctx.places, ctx.user.id, name, draft.address, trip.destination
+        )
+    return found
 
 
 async def _itinerary_entry(
@@ -4075,7 +4087,8 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             "Add an entry to a trip's itinerary by hand: a plan (dinner, tour, day trip), a "
             "flight, a hotel stay or a train. A plan on a day with no `time` is given a free "
             "time by itself (today from now; use `after` to put it after another plan, "
-            "`minutes` for how long it takes); the reply says the time it got. Saves at once, "
+            "`minutes` for how long it takes); the reply says the time it got. For a plan that "
+            "isn't a specific venue, pass the town or area as `place`. Saves at once, "
             "with Undo; asks to confirm when it carries a cost or is on someone else's trip.",
             ItineraryArgs,
             _add_to_itinerary,

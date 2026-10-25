@@ -543,10 +543,11 @@ def fake_place(
 @dataclass
 class FakePlaces:
     """Made-up Google Maps: every search returns ``results``; details come from the
-    same places. Counts what reached it."""
+    same places, unless ``answers`` has one for the exact query. Counts what reached it."""
 
     results: list[Place] = field(default_factory=list)
     failing: bool = False
+    answers: dict[str, list[Place]] = field(default_factory=dict)  # by exact query
     searches: list[str] = field(default_factory=list)
     near: list[Circle | None] = field(default_factory=list)
     looked_up: list[str] = field(default_factory=list)
@@ -557,7 +558,7 @@ class FakePlaces:
         self.near.append(near)
         if self.failing:
             raise PlacesError("HTTP 500")
-        return self.results[:limit]
+        return self.answers.get(query, self.results)[:limit]
 
     async def details(self, place_id: str) -> Place | None:
         self.looked_up.append(place_id)

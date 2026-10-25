@@ -421,3 +421,34 @@ async def best_match(places: Places, user_id: UserId, name: str, query: str) -> 
         return None
     top = found[0] if found else None
     return top if top is not None and same_place(name, top) else None
+
+
+_AREA_WORDS = frozenset({"in", "at", "near"})
+_AREA_MAX_WORDS = 4
+
+
+def area_in(name: str) -> str | None:
+    """The area a plan's name ends with ("Seafood Lunch in Sitges" -> "Sitges", "Beach +
+    wander near Sitges"): the capitalised words after the last "in", "at" or "near".
+    None for "Lunch at 1pm", "Dinner" or "Dinner at mum's"."""
+    words = name.split()
+    for i in range(len(words) - 2, -1, -1):
+        if words[i].casefold() not in _AREA_WORDS:
+            continue
+        area = words[i + 1 :]
+        area[-1] = area[-1].rstrip(".,;:!?)")
+        if len(area) <= _AREA_MAX_WORDS and all(w[:1].isupper() for w in area):
+            return " ".join(area)
+    return None
+
+
+async def best_area_match(
+    places: Places, user_id: UserId, name: str, address: str | None, destination: str | None
+) -> Place | None:
+    """The Google Maps place for the area a plan is in, for a plan that is no venue: the
+    address or area given, else the one its name ends with ("... in Sitges"). One search
+    at most; None when there is no area, nothing plausible or Google Maps can't be asked."""
+    area = " ".join(address.split()) if address else area_in(name)
+    if not area:
+        return None
+    return await best_match(places, user_id, area, query_for(area, destination))
