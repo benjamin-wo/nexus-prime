@@ -271,7 +271,7 @@ async def test_a_matching_habit_splits_the_expense_and_says_so(
     result = await dinner(uow, alice)
     assert result.startswith("Logged: ")
     assert (
-        "Split with Ann per their split habit: Ann owes 30.00 SGD. If this one wasn't shared, "
+        "Split with Ann (a standing split): Ann owes 30.00 SGD. If this one wasn't shared, "
         "undo_last_change removes the split."
     ) in result
     assert await owed(uow, alice) == {"Ann": sgd("30")}
@@ -284,9 +284,7 @@ async def test_a_habit_with_several_people_splits_among_them(
     await habit_cases.set_habit(uow(), alice, "Ann", "Dining Out", third)
     await habit_cases.set_habit(uow(), alice, "Ben", "Dining Out", third)
     result = await dinner(uow, alice, "100")
-    assert (
-        "Split with Ann and Ben per their split habit: Ann owes 33.33 SGD, Ben owes 33.33" in result
-    )
+    assert "Split with Ann and Ben (a standing split): Ann owes 33.33 SGD, Ben owes 33.33" in result
     assert await owed(uow, alice) == {"Ann": sgd("33.33"), "Ben": sgd("33.33")}
 
 

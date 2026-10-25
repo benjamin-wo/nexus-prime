@@ -169,6 +169,16 @@ _QUIET = ("remember", "noted", "i'll keep", "saved that", "memory")
 
 # A reply that asks again for the amount of the Jumbo dinner the user said they'd send
 # later. The seed has a Jumbo Seafood dinner of its own, so "jumbo" alone proves nothing.
+# Replies after a change say what happened, not how the app works, and write
+# amounts as people read them ("1,800.00", not "1800.00").
+_PLAIN = (
+    r"\bby me\b",
+    r"\bper (?:your|their) (?:split )?habit\b",
+    r"\brecorded only\b",
+    r"\bnothing (?:was )?moved\b",
+    r"\b\d{4,}\.\d{2}\b",
+)
+
 _ASKS_JUMBO_AMOUNT = (
     r"\b(?:jumbo|dinner)\b[^.!?\n]*\b(?:exact|amount|total|how much|came to|cost)\b[^.!?\n]*\?",
     r"\b(?:exact|amount|total|how much|came to|cost)\b[^.!?\n]*\b(?:jumbo|dinner)\b[^.!?\n]*\?",
@@ -598,7 +608,7 @@ CASES: tuple[Case, ...] = (
             BillIs("Rent", paid_on=date(2026, 10, 1)),
             Logged("1800", "rent", "Bills & Utilities"),
         ),
-        last_never_match=(r"\busual\b",),  # marked at once, not "the usual 1,800?"
+        last_never_match=(r"\busual\b", *_PLAIN),  # marked at once, not "the usual 1,800?"
     ),
     Case(
         "plan-bill-paid-other-amount",
@@ -608,7 +618,7 @@ CASES: tuple[Case, ...] = (
             BillIs("Rent", paid_on=date(2026, 10, 1)),
             Logged("1850", "rent", "Bills & Utilities"),
         ),
-        last_never_match=(r"\busual\b",),
+        last_never_match=(r"\busual\b", *_PLAIN),
     ),
     Case(
         "plan-snooze",
@@ -1451,6 +1461,7 @@ CASES: tuple[Case, ...] = (
         checks=(Owes("Ann", "70.00"),),
         reply=("ann",),
         max_reply=160,
+        never_match=_PLAIN,
         target="M8e",
     ),
     # The habit is a default the model can override from context: not this time.
@@ -1461,6 +1472,7 @@ CASES: tuple[Case, ...] = (
         forbid=("split_bill",),
         checks=(Logged("60", "jumbo", "Dining Out"), Owes("Ann", "40.00")),
         max_reply=160,
+        never_match=_PLAIN,
         target="M8e",
     ),
     Case(
@@ -1472,6 +1484,7 @@ CASES: tuple[Case, ...] = (
         forbid=("split_bill",),
         checks=(Logged("80", "paradise", "Dining Out"), Owes("Ann", "40.00")),
         max_reply=160,
+        never_match=_PLAIN,
         target="M8e",
     ),
     # Lunch at Maxwell is Dining Out in the seed too, so the habit is for another category.
@@ -1482,6 +1495,7 @@ CASES: tuple[Case, ...] = (
         forbid=("split_bill",),
         checks=(Logged("60", "din tai fung", "Dining Out"), Owes("Ann", "40.00")),
         max_reply=160,
+        never_match=_PLAIN,
         target="M8e",
     ),
     Case(

@@ -5,7 +5,7 @@ from typing import Any
 
 from nexus.evals.cases import CASES, AtMost, Case, Has, Turn
 from nexus.evals.checks import World
-from nexus.evals.runner import TurnLog, grade
+from nexus.evals.runner import TurnLog, grade, opener, openers
 
 
 def _case(**expect: Any) -> Case:
@@ -58,3 +58,10 @@ async def test_asking_counts_a_clarifying_question_without_a_question_mark() -> 
     listed = "Which one — the 4.20 on 28 Sep or the 7.20 on 15 Sep"
     assert await _grade(case, TurnLog("hi", replies=[listed])) == []
     assert await _grade(case, TurnLog("hi", replies=["Deleted it."])) == ["didn't ask a question"]
+
+
+def test_openers_count_how_replies_start_ignoring_amounts_and_emoji() -> None:
+    assert opener("Logged 60.00 at Din Tai Fung ✅") == "logged at"
+    assert opener("✅ Rent's done for October") == "rent's done"
+    replies = ["Logged 4.50 at A ✅", "Logged 9.10 at B", "Ann owes you 30", ""]
+    assert openers(replies) == [("logged at", 2 / 3), ("ann owes", 1 / 3)]
