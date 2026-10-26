@@ -22,8 +22,9 @@ from nexus.application import bills as bill_cases
 from nexus.application import subscriptions as subscription_cases
 from nexus.application.category_rules import list_rules
 from nexus.application.departments import Departments
+from nexus.application.limits import RateLimiter
 from nexus.application.places import Places
-from nexus.application.ports import LedgerQuery, ReceiptStore
+from nexus.application.ports import LedgerQuery, ReceiptStore, SpeechToText
 from nexus.application.splits import list_open_ious, split_bill
 from nexus.application.transactions import NewTransaction, list_ledger, log_transaction
 from nexus.application.users import get_user
@@ -48,6 +49,8 @@ def build(
     places: Places | None = None,
     looker: ImageLooker | None = None,
     clock: Callable[[], datetime] | None = None,
+    speech: SpeechToText | None = None,
+    limiter: RateLimiter | None = None,
 ) -> AgentService:
     skills = SkillLibrary.load()
 
@@ -79,6 +82,8 @@ def build(
         trips=trips,
         looker=looker,
         condense=agent_graph.condense,
+        speech=speech,
+        limiter=limiter,
     )
 
 

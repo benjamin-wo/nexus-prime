@@ -23,7 +23,7 @@ from nexus.agent.trip_reader import ShotEntry, ShotLeg, TripShot
 from nexus.application.fx import Rate
 from nexus.application.market import PriceSourceError
 from nexus.application.places import PlacesError
-from nexus.application.ports import MailboxGrant, MailboxRevoked
+from nexus.application.ports import MailboxGrant, MailboxRevoked, SpeechError, Transcript
 from nexus.application.quotes import QuoteRateLimited, QuoteSourceError
 from nexus.application.research import NewsSourceError
 from nexus.application.routes import Leg, RoutesError
@@ -646,3 +646,25 @@ class FakeWeather:
             DayWeather(start + timedelta(days=i), 12.0 + start.year % 3, 3.0, 4 if i == 0 else 0, 3)
             for i in range(days)
         ]
+
+
+@dataclass
+class FakeSpeech:
+    """Speech to text that "hears" the next scripted transcript (or fails, if it is an
+    exception), and records the audio and format it was given."""
+
+    script: list[str | Exception] = field(default_factory=list)
+    heard: list[tuple[bytes, str]] = field(default_factory=list)
+
+    async def transcribe(self, audio: bytes, audio_format: str) -> Transcript:
+        self.heard.append((audio, audio_format))
+        if not self.script:
+            raise AssertionError("the speech model was called more times than scripted")
+        step = self.script.pop(0)
+        if isinstance(step, Exception):
+            raise step
+        return Transcript(step, "fake/stt", 2.5, 0.0001)
+
+
+def speech_down() -> SpeechError:
+    return SpeechError("fake/stt: HTTP 503")

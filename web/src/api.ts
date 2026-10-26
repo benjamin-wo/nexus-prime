@@ -18,11 +18,20 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
   const headers: Record<string, string> = {};
   if (init.body !== undefined) headers["Content-Type"] = "application/json";
   if (method !== "GET") headers["X-CSRF-Token"] = csrfToken;
+  return request<T>(path, method, headers, init.body === undefined ? undefined : JSON.stringify(init.body));
+}
+
+/** POST a multipart form (a file upload). The browser sets the Content-Type, with its boundary. */
+export async function apiForm<T>(path: string, form: FormData): Promise<T> {
+  return request<T>(path, "POST", { "X-CSRF-Token": csrfToken }, form);
+}
+
+async function request<T>(path: string, method: string, headers: Record<string, string>, body: BodyInit | undefined): Promise<T> {
   const response = await fetch(`/api${path}`, {
     method,
     headers,
     credentials: "same-origin",
-    body: init.body === undefined ? undefined : JSON.stringify(init.body),
+    body,
   });
   if (response.status === 204) return undefined as T;
   const data: unknown = await response.json().catch(() => null);

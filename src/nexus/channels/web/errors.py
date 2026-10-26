@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from nexus.application.limits import RateLimited
 from nexus.domain.errors import (
     Conflict,
     Forbidden,
@@ -11,6 +12,7 @@ from nexus.domain.errors import (
 )
 
 _STATUS: tuple[tuple[type[NexusError], int], ...] = (
+    (RateLimited, 429),
     (NotFound, 404),
     (Forbidden, 403),
     (InvalidInput, 422),

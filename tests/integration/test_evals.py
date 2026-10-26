@@ -17,7 +17,7 @@ from nexus.application import splits as split_cases
 from nexus.application import transactions as tx_cases
 from nexus.application.ports import LedgerQuery
 from nexus.domain.ledger import Direction
-from nexus.evals import photos, seed
+from nexus.evals import clips, photos, seed
 from nexus.evals.cases import CASES, WRITES, Case
 from nexus.evals.runner import FixedRates, run_cases
 from nexus.infra.db.uow import SqlUnitOfWork
@@ -34,6 +34,8 @@ def test_cases_are_well_formed() -> None:
         assert case.turns, case.id
         for turn in case.turns:
             assert turn.photo is None or photos.known(turn.photo), (case.id, turn.photo)
+            assert turn.audio is None or clips.known(turn.audio), (case.id, turn.audio)
+            assert not (turn.audio and turn.photo), case.id
         for wanted in case.calls:
             assert wanted.tool in tools, (case.id, wanted.tool)
             assert set(wanted.args) <= set(tools[wanted.tool].args.model_fields), case.id

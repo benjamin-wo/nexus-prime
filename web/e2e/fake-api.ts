@@ -124,6 +124,8 @@ export async function fakeApi(
     running = false,
     research = false,
     chatHistory = false,
+    /** POST /chat/voice answers with this error status (413, 415, 429 or 503) and the server's words. */
+    voiceFails = 0 as 0 | 413 | 415 | 429 | 503,
     spendingOnly = false,
     planWarning = false,
     /** The user has an IBKR wallet, which statement rows and emails can name. */
@@ -254,6 +256,8 @@ export async function fakeApi(
     txs: Tx[];
     lastPress?: string;
     chatSent: string[];
+    /** Every POST /chat/voice: the upload's file name, type and size. */
+    voiceSent: { filename: string; contentType: string; bytes: number }[];
     runs: { id: string; status: string; progress: string; [key: string]: unknown }[];
     holdings: { symbol: string; quantity: string; average_cost: { amount: string; currency: string }; cost: { amount: string; currency: string }; updated_at: string }[];
     draft: Record<string, unknown> | null;
@@ -434,6 +438,7 @@ export async function fakeApi(
     keepMinePosts: [],
     settlePosts: [],
     chatSent: [],
+    voiceSent: [],
     trades: [],
     tripItems: ["k1", "k2"],
     looseBookings: [
@@ -734,7 +739,8 @@ export async function fakeApi(
     const url = new URL(request.url());
     const path = url.pathname.replace(/^\/api/, "");
     const method = request.method();
-    const body = request.postDataJSON?.() ?? null;
+    const multipart = (request.headers()["content-type"] ?? "").startsWith("multipart/form-data");
+    const body = multipart ? null : (request.postDataJSON?.() ?? null);
     if (path === "/auth/webapp" && method === "POST") {
       // Stands in for the server's signature check on the Mini App launch data.
       if (body?.init_data !== "user=%7B%22id%22%3A1%7D&hash=ok")
@@ -3130,6 +3136,28 @@ export async function fakeApi(
               { label: "Cancel", data: "hitl:x:n" },
             ],
           ],
+        },
+      ]);
+    }
+    if (path === "/chat/voice" && method === "POST") {
+      // The upload is multipart with one field, audio; note what it was called and how big it was.
+      const raw = request.postDataBuffer() ?? Buffer.alloc(0);
+      const text = raw.toString("latin1");
+      const filename = /name="audio"; filename="([^"]*)"/.exec(text)?.[1] ?? "";
+      const contentType = /name="audio";[^\r]*\r\nContent-Type: ([^\r]*)/.exec(text)?.[1] ?? "";
+      const bytes = Math.max(0, raw.length - text.indexOf("\r\n\r\n") - 4);
+      state.voiceSent.push({ filename, contentType, bytes });
+      const refusals: Record<number, string> = {
+        413: "That's too long — keep voice notes under 2 minutes.",
+        415: "That audio format isn't supported.",
+        429: "Too many voice notes just now — try again in a moment.",
+        503: "Voice notes aren't available right now.",
+      };
+      if (voiceFails) return json(route, { detail: refusals[voiceFails] }, voiceFails);
+      return json(route, [
+        {
+          text: "Delete 2026-09-27 · -25.00 SGD · Grab?",
+          buttons: [[{ label: "Confirm", data: "hitl:x:y" }, { label: "Cancel", data: "hitl:x:n" }]],
         },
       ]);
     }

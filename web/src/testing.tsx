@@ -14,7 +14,7 @@ export function mockApi(handlers: Record<string, (body: unknown) => unknown>): C
     const url = new URL(String(input), "http://localhost");
     const method = init?.method ?? "GET";
     const path = url.pathname.replace(/^\/api/, "");
-    const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+    const body = init?.body instanceof FormData ? init.body : init?.body ? JSON.parse(String(init.body)) : undefined;
     calls.push({ method, path, body });
     const handler = handlers[`${method} ${path}`];
     if (!handler) return new Response(JSON.stringify({ detail: "not mocked" }), { status: 404 });

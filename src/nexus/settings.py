@@ -26,6 +26,10 @@ class LlmProvider(StrEnum):
     OPENAI = "openai"
 
 
+DEFAULT_STT_MODEL = "openai/gpt-4o-mini-transcribe"
+DEFAULT_STT_FALLBACK_MODEL = "openai/whisper-large-v3-turbo"
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", frozen=True)
 
@@ -144,6 +148,10 @@ class Settings(BaseSettings):
     deepseek_model: str = "deepseek-v4-flash"
     openai_api_key: SecretStr | None = None
     openai_model: str = "gpt-4o-mini"
+    # --- Voice notes (speech to text through OpenRouter, so OPENROUTER_API_KEY turns them
+    # on). The fallback answers when STT_MODEL fails; blank = no fallback. ---
+    stt_model: str = Field(default=DEFAULT_STT_MODEL, min_length=1)
+    stt_fallback_model: str | None = DEFAULT_STT_FALLBACK_MODEL
     llm_request_timeout_seconds: float = Field(default=30.0, gt=0)
     llm_max_retries: int = Field(default=2, ge=0)
 
@@ -217,6 +225,7 @@ class Settings(BaseSettings):
         "ops_github_repo",
         "gemini_api_key",
         "openrouter_api_key",
+        "stt_fallback_model",
         "deepseek_api_key",
         "openai_api_key",
         "google_client_id",
@@ -282,6 +291,11 @@ class Settings(BaseSettings):
 
             FernetCipher(self.token_encryption_key.get_secret_value())  # fails on a bad key
         return self
+
+    @property
+    def speech_enabled(self) -> bool:
+        """Voice notes need OpenRouter's key; without it they are politely declined."""
+        return self.openrouter_api_key is not None
 
     @property
     def gmail_enabled(self) -> bool:

@@ -43,6 +43,7 @@ from nexus.application import ops
 from nexus.application import plans as plan_cases
 from nexus.application import receipts as receipt_cases
 from nexus.application import salary as salary_cases
+from nexus.application import speech as speech_rules
 from nexus.application import splits as split_cases
 from nexus.application import subscriptions as subscription_cases
 from nexus.application import transactions as tx_cases
@@ -52,8 +53,8 @@ from nexus.application import undo as undo_cases
 from nexus.application.acting import as_actor
 from nexus.application.categories import list_categories
 from nexus.application.fx import RateSource
-from nexus.application.limits import RateLimiter
-from nexus.application.ports import ReceiptStore
+from nexus.application.limits import RateLimited, RateLimiter
+from nexus.application.ports import ReceiptStore, SpeechError, SpeechToText
 from nexus.application.users import get_user
 from nexus.domain.chat import CHAT_KEEP, ChatLine, Speaker, channel_of, clip
 from nexus.domain.departments import RunStatus
@@ -62,6 +63,7 @@ from nexus.domain.investments import Position, clean_quantity, clean_symbol
 from nexus.domain.ledger import Direction, Transaction, UserId
 from nexus.domain.money import Money
 from nexus.domain.places import quoted
+from nexus.domain.transcript import HEARD_MARK, heard_line, tidy_transcript
 from nexus.infra.llm.factory import text_of
 from nexus.infra.pdf.text import PasswordNeeded, pdf_lines
 
@@ -109,6 +111,8 @@ HELP = (
 
 
 SLOW_DOWN = "That's a lot of messages at once. Give me a minute, then try again."
+TOO_MANY_VOICE_NOTES = "That's a lot of voice notes. Give it a while, or type it instead."
+NOT_HEARD = "I couldn't hear that right now — mind typing it?"
 RECENT_MESSAGES = 3  # the newest, and two before it for context
 
 
@@ -203,8 +207,11 @@ class AgentService:
         looker: ImageLooker | None = None,
         primary_model: str | None = None,
         condense: Callable[[RunnableConfig], Awaitable[bool]] | None = None,
+        speech: SpeechToText | None = None,
     ) -> None:
         self._graph = graph
+        # Turns voice notes into text; None: voice notes aren't set up.
+        self._speech = speech
         # The chat model's id: a turn answered by another model used the fallback.
         self._primary_model = primary_model
         # The first look at every image; None: images are read as receipts first.
@@ -371,6 +378,62 @@ class AgentService:
             replies = await self._run(actor, {"messages": [message]})
             await self._remember(actor, ref)
             return replies
+
+    @property
+    def hears_voice(self) -> bool:
+        return self._speech is not None
+
+    @as_actor
+    async def handle_voice(
+        self, actor: UserId, audio: bytes, mime: str, ref: str, *, forwarded: bool = False
+    ) -> list[Reply]:
+        """A voice note. What it says is handled exactly as if it were typed, except a
+        forwarded one: that is someone else's words, quoted as data like text read from
+        an image, so nothing is changed from it unless the user then asks. Raises
+        RateLimited past 30 notes an hour. The audio is only transcribed: it is never kept
+        or logged, and only the text goes on."""
+        speech = self._speech
+        if speech is None:
+            return [Reply(speech_rules.NOT_SET_UP)]
+        audio_format = speech_rules.audio_format(mime)
+        if audio_format is None:
+            return [Reply(speech_rules.UNSUPPORTED)]
+        if len(audio) > speech_rules.MAX_BYTES:
+            return [Reply(speech_rules.TOO_LONG)]
+        if self._limiter is not None and not self._limiter.allow("voice", actor):
+            raise RateLimited(TOO_MANY_VOICE_NOTES)
+        try:
+            heard = await speech.transcribe(audio, audio_format)
+        except SpeechError as exc:
+            log.warning("could not transcribe a voice note: %s", exc)
+            return [Reply(NOT_HEARD)]
+        finally:
+            del audio  # nothing after this needs the recording
+        user = await get_user(self._uow(), actor)
+        transcript = tidy_transcript(heard.text, user.home_currency)
+        if not transcript:
+            return [Reply(speech_rules.UNCLEAR)]
+        if forwarded:
+            look = ImageLook(
+                ImageKind.OTHER, None, "A forwarded voice note, written out by speech-to-text",
+                quoted(transcript, MAX_TEXT) or "",
+            )  # fmt: skip
+            replies = await self.ask_about(actor, [look], None, ref, label="[forwarded voice note]")
+            said = f"{HEARD_MARK} [Forwarded voice note] {transcript}"
+        else:
+            replies = await self._handle_text(actor, transcript, ref)
+            said = f"{HEARD_MARK} {transcript}"
+            first = replies[0].buttons if replies else []
+            changed = any(UNDO in row for row in first)
+            asks = any(b.data.startswith("hitl:") for row in first for b in row)
+            if replies and (changed or asks):
+                # The turn changed something, or is about to once confirmed: show what was
+                # understood, so a mishearing is seen at once (Undo or Cancel is right there).
+                replies[0] = Reply(
+                    f"{heard_line(transcript)}\n{replies[0].text}", replies[0].buttons
+                )
+        await self._keep(actor, said, replies, ref)
+        return replies
 
     async def _remember(self, actor: UserId, ref: str) -> None:
         """Hand the user's last few messages (their own words only) to ``after_turn``."""

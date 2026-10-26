@@ -4132,3 +4132,110 @@ test("after Make it a trip, the areas' ideas are added to the new trip when aske
   await expect(page).toHaveURL(/\/travel\/trips\/trip9\?tab=ideas/);
   await expect(page.getByRole("list", { name: "Ideas" })).toContainText("Nakamise street");
 });
+
+// A voice note in the chat. Chromium has no microphone here, so the page gets a stand-in
+// for getUserMedia and MediaRecorder (the upload and the replies are real).
+const STUB_RECORDER = () => {
+  const w = window as unknown as Record<string, unknown>;
+  class StubRecorder {
+    static isTypeSupported(type: string) {
+      return type === "audio/webm;codecs=opus";
+    }
+    state = "inactive";
+    mimeType: string;
+    ondataavailable: ((e: { data: Blob }) => void) | null = null;
+    onstop: (() => void) | null = null;
+    constructor(_stream: unknown, options?: { mimeType?: string }) {
+      this.mimeType = options?.mimeType ?? "audio/webm";
+    }
+    start() {
+      this.state = "recording";
+      (w.__recording as { on: boolean }).on = true;
+    }
+    stop() {
+      this.state = "inactive";
+      (w.__recording as { on: boolean }).on = false;
+      this.ondataavailable?.({ data: new Blob(["pretend voice"], { type: this.mimeType }) });
+      this.onstop?.();
+    }
+  }
+  w.__recording = { on: false, tracksStopped: 0 };
+  w.MediaRecorder = StubRecorder;
+  Object.defineProperty(navigator, "mediaDevices", {
+    configurable: true,
+    value: {
+      getUserMedia: async () => ({
+        getTracks: () => [{ stop: () => ((w.__recording as { tracksStopped: number }).tracksStopped += 1) }],
+      }),
+    },
+  });
+};
+
+test("a voice note in the chat is sent and answered like a typed message", async ({ page }) => {
+  await page.addInitScript(STUB_RECORDER);
+  const state = await fakeApi(page);
+  await page.goto("/accounting");
+  await page.getByRole("button", { name: "Ask Nexus" }).filter({ visible: true }).click();
+  const chat = page.getByRole("dialog", { name: "Chat" });
+  // The mic stands where Send does while the box is empty.
+  await expect(chat.getByRole("button", { name: "Send" })).toHaveCount(0);
+  await chat.getByRole("button", { name: "Record a voice note" }).click();
+  await expect(chat.getByRole("status").filter({ hasText: "Recording" })).toBeVisible();
+  await expect(chat.getByLabel("Message")).toBeDisabled();
+  await expect(chat.getByRole("button", { name: "Cancel recording" })).toBeVisible();
+  await expect(chat.getByText(/^0:0[1-9]$/)).toBeVisible(); // the timer is running
+  await chat.getByRole("button", { name: "Stop and send" }).click();
+
+  await expect(chat.locator(".msg-user").last()).toHaveText("🎙 Voice note…");
+  await expect(chat.locator(".msg-bot").first()).toContainText("Delete 2026-09-27");
+  await chat.getByRole("button", { name: "Confirm" }).click();
+  await expect(chat.getByText("Deleted.")).toBeVisible();
+  expect(state.voiceSent).toHaveLength(1);
+  expect(state.voiceSent[0]).toMatchObject({ filename: "voice.webm", contentType: "audio/webm;codecs=opus" });
+  expect(state.voiceSent[0].bytes).toBeGreaterThan(0);
+  expect(await page.evaluate(() => (window as unknown as { __recording: { tracksStopped: number } }).__recording.tracksStopped)).toBe(1);
+  // Nothing sideways on a phone or a desktop.
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(0);
+});
+
+test("a voice note that is too long is refused in the server's words", async ({ page }) => {
+  await page.addInitScript(STUB_RECORDER);
+  const state = await fakeApi(page, { voiceFails: 413 });
+  await page.goto("/accounting");
+  await page.getByRole("button", { name: "Ask Nexus" }).filter({ visible: true }).click();
+  const chat = page.getByRole("dialog", { name: "Chat" });
+  await chat.getByRole("button", { name: "Record a voice note" }).click();
+  await chat.getByRole("button", { name: "Stop and send" }).click();
+  await expect(chat.getByRole("alert")).toHaveText("That's too long — keep voice notes under 2 minutes.");
+  await expect(chat.getByText("🎙 Voice note…")).toHaveCount(0);
+  expect(state.voiceSent).toHaveLength(1);
+  await expect(chat.getByRole("button", { name: "Record a voice note" })).toBeVisible();
+});
+
+test("cancelling a recording sends nothing", async ({ page }) => {
+  await page.addInitScript(STUB_RECORDER);
+  const state = await fakeApi(page);
+  await page.goto("/accounting");
+  await page.getByRole("button", { name: "Ask Nexus" }).filter({ visible: true }).click();
+  const chat = page.getByRole("dialog", { name: "Chat" });
+  await chat.getByRole("button", { name: "Record a voice note" }).click();
+  await chat.getByRole("button", { name: "Cancel recording" }).click();
+  await expect(chat.getByRole("button", { name: "Record a voice note" })).toBeVisible();
+  expect(state.voiceSent).toHaveLength(0);
+  expect(await page.evaluate(() => (window as unknown as { __recording: { on: boolean } }).__recording.on)).toBe(false);
+});
+
+test("without a microphone the chat says so and still types", async ({ page }) => {
+  await page.addInitScript(() => Object.defineProperty(navigator, "mediaDevices", { value: undefined, configurable: true }));
+  await fakeApi(page);
+  await page.goto("/accounting");
+  await page.getByRole("button", { name: "Ask Nexus" }).filter({ visible: true }).click();
+  const chat = page.getByRole("dialog", { name: "Chat" });
+  const mic = chat.getByRole("button", { name: "Record a voice note" });
+  await expect(mic).toHaveAttribute("aria-disabled", "true");
+  await mic.click({ force: true }); // aria-disabled, not disabled: a tap still explains
+  await expect(chat.getByText("Mic isn't available here — send a voice note in the Telegram chat instead.")).toBeVisible();
+  await chat.getByLabel("Message").fill("delete the grab ride");
+  await expect(chat.getByRole("button", { name: "Send" })).toBeEnabled();
+});

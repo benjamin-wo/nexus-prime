@@ -33,6 +33,8 @@ from nexus.evals.cases import CASES, Case
 from nexus.evals.runner import CaseResult, Pricing, Summary, run_cases
 from nexus.infra.db.engine import make_engine
 from nexus.infra.db.migrations import alembic_config
+from nexus.infra.speech.openrouter import OpenRouterSpeech
+from nexus.settings import DEFAULT_STT_FALLBACK_MODEL, DEFAULT_STT_MODEL
 
 OPENROUTER = "https://openrouter.ai/api/v1"
 # --reasoning, as OpenRouter's reasoning setting for the main model.
@@ -158,6 +160,11 @@ async def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--memory-model", help="another model for the memory writer (default: each --model)"
     )
+    parser.add_argument(
+        "--stt-model",
+        default=os.environ.get("STT_MODEL", DEFAULT_STT_MODEL),
+        help="the speech model that hears the voice-* cases' clips, as STT_MODEL",
+    )
     parser.add_argument("--out", default="eval-results")
     parser.add_argument(
         "--providers",
@@ -188,6 +195,13 @@ async def main(argv: list[str] | None = None) -> int:
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     summaries: list[Summary] = []
 
+    # The real speech model, as in production (the voice-* cases play clips through it).
+    http = httpx.AsyncClient()
+    stt = OpenRouterSpeech(
+        http, api_key, args.stt_model, os.environ.get("STT_FALLBACK_MODEL")
+        or DEFAULT_STT_FALLBACK_MODEL,
+    )  # fmt: skip
+
     async with throwaway_database(admin_url) as url:
         await asyncio.to_thread(_migrate, url)
         engine = make_engine(url)
@@ -216,6 +230,7 @@ async def main(argv: list[str] | None = None) -> int:
                     memory=openrouter_model(args.memory_model, api_key)
                     if args.memory_model
                     else None,
+                    speech=stt,
                 )
                 print(flush=True)
                 label = name
@@ -236,6 +251,7 @@ async def main(argv: list[str] | None = None) -> int:
                 print(f"{name}: {summary.passed}/{len(results)} passed", flush=True)
         finally:
             await engine.dispose()
+            await http.aclose()
 
     report = "\n\n".join(s.markdown() for s in summaries)
     await _write(out / f"{stamp}-report.md", report + "\n")

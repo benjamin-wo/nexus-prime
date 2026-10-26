@@ -7,6 +7,7 @@ from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timedelta
 
 from nexus.application.clock import utcnow
+from nexus.domain.errors import NexusError
 
 type Window = tuple[int, timedelta]  # at most this many in this long
 
@@ -29,6 +30,8 @@ QUOTES: Sequence[Window] = ((30, timedelta(minutes=5)),)
 WHY: Sequence[Window] = ((6, timedelta(minutes=1)), (60, timedelta(days=1)))
 # "Export all my data": a zip of everything, files included, built per request.
 EXPORT: Sequence[Window] = ((3, timedelta(hours=1)),)
+# Voice notes: a speech-model call each, on top of the message that follows.
+VOICE: Sequence[Window] = ((30, timedelta(hours=1)),)
 DEFAULT_RULES: Mapping[str, Sequence[Window]] = {
     "message": MESSAGES,
     "import": IMPORTS,
@@ -40,7 +43,12 @@ DEFAULT_RULES: Mapping[str, Sequence[Window]] = {
     "quote": QUOTES,
     "why": WHY,
     "export": EXPORT,
+    "voice": VOICE,
 }
+
+
+class RateLimited(NexusError):
+    """The user has done this too often lately. The message is what to tell them."""
 
 
 class RateLimiter:
