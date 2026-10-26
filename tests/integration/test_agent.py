@@ -338,6 +338,37 @@ async def test_step_limit_stops_runaway_tool_loops(uow: UowFactory, alice: UserI
     assert len(model.seen) == MAX_STEPS
 
 
+async def test_step_limit_after_writes_says_what_was_done_and_offers_undo(
+    uow: UowFactory, alice: UserId
+) -> None:
+    model = scripted(
+        call("log_expense", amount="5.50", merchant="Starbucks", category="Dining Out"),
+        *[call("list_categories") for _ in range(MAX_STEPS - 1)],
+        *[call("list_categories") for _ in range(MAX_STEPS)],
+    )
+    agent = build(uow, model)
+    reply = only(await agent.handle_text(alice, "coffee 5.50", "tg:1:1"))
+    assert len(model.seen) == MAX_STEPS
+    assert reply.text.startswith("I stopped partway. Already done: Logged: 2026-09-28")
+    assert "Starbucks" in reply.text and "Dining Out" in reply.text
+    assert reply.text.endswith("Tell me if anything else needs changing.")
+    assert "too many steps" not in reply.text
+    assert [b.data for row in reply.buttons for b in row] == ["act:undo"]
+    assert await ledger(uow, alice) == [("out", Decimal("5.5"))]
+
+    # Only this turn's writes count: a later runaway loop that wrote nothing keeps the old text.
+    reply = only(await agent.handle_text(alice, "loop", "tg:1:2"))
+    assert "too many steps" in reply.text and not reply.buttons
+
+
+async def test_fields_the_tool_has_no_use_for_are_named_to_the_model(
+    uow: UowFactory, alice: UserId
+) -> None:
+    model = scripted(call("list_categories", colour="red"), say("Here."))
+    await build(uow, model).handle_text(alice, "categories", "tg:1:1")
+    assert tool_results(model)[0].endswith("(Ignored unknown fields: colour.)")
+
+
 async def test_model_outage_is_reported_honestly(uow: UowFactory, alice: UserId) -> None:
     model = scripted(RuntimeError("503"))
     reply = only(await build(uow, model).handle_text(alice, "coffee 4", "tg:1:1"))

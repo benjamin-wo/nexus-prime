@@ -3,7 +3,7 @@ user's data through the use cases and says, in words, what it looked for."""
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, time
 from decimal import Decimal
 from typing import Protocol
 from uuid import UUID
@@ -491,11 +491,14 @@ class Booked:
     cost: str | None = None  # the amount, in any currency
     absent: tuple[str, ...] = ()  # text that must not be stored anywhere in it
     scheduled: bool | None = None  # on a day (True), or a place to visit without one
+    ends: time | None = None  # the time it ends
 
     def describe(self) -> str:
         parts = [f"an itinerary entry '{self.title}'"]
         if self.starts:
             parts.append(f"from {self.starts}")
+        if self.ends:
+            parts.append(f"ending at {self.ends:%H:%M}")
         if self.reference:
             parts.append(f"ref {self.reference}")
         if self.booked_via:
@@ -525,6 +528,8 @@ class Booked:
             if self.starts and d.starts != self.starts:
                 continue
             if self.scheduled is not None and b.scheduled != self.scheduled:
+                continue
+            if self.ends and d.ends_at != self.ends:
                 continue
             if self.cost and (b.cost is None or b.cost.amount != Decimal(self.cost)):
                 continue

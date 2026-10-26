@@ -195,6 +195,7 @@ def test_brief_is_the_short_form_without_address_or_references() -> None:
     )  # fmt: skip
     assert plan is not None
     assert plan.brief() == "Casa Verde (Sat 12 Dec 12:30)"
+    assert plan.brief(span=True) == "Casa Verde (Sat 12 Dec 12:30\u201314:00)"
     assert "Carrer" in plan.describe() and "R-1" in plan.describe()  # the full form is kept
     idea = BookingDraft.from_dict({"kind": "activity", "name": "Night market", "address": "1 X St"})
     assert idea is not None and idea.brief() == "Night market (place to visit)"
