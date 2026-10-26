@@ -8,7 +8,7 @@ can't do yet, so a baseline can tell expected failures from regressions.
 
 import re
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date, time, timedelta
 
 from nexus.domain.transcript import HEARD_MARK
 from nexus.domain.voice import STOCK_PHRASES
@@ -1076,6 +1076,18 @@ CASES: tuple[Case, ...] = (
             Call("change_itinerary_entry", {"item": Has("sakura"), "until": Has("2026-12-15")}),
         ),
         confirms=False,
+    ),
+    Case(
+        "itinerary-change-length",
+        "log",
+        _t(
+            "add Shop visit to my Japan trip on 11 Dec from 10:45 to 11:45",
+            "make the shop visit 20 min instead",
+        ),
+        calls=(Call("change_itinerary_entry", {"item": Has("shop")}),),
+        never_say=("too many steps",),
+        confirms=False,
+        checks=(Booked("Shop visit", starts=date(2026, 12, 11), ends=time(11, 5)),),
     ),
     Case(
         "itinerary-hotel-whole-trip",

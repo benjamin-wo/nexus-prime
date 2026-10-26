@@ -163,6 +163,10 @@ class ToolSpec:
             "function": {"name": self.name, "description": self.description, "parameters": params},
         }
 
+    def ignored(self, raw: dict[str, Any]) -> list[str]:
+        """The keys the model sent that the arguments have no field for."""
+        return sorted(k for k in raw if k not in self.args.model_fields)
+
     def parse(self, raw: dict[str, Any]) -> Any:
         try:
             return self.args.model_validate(raw)
@@ -3374,6 +3378,12 @@ class ItineraryChangeArgs(ItineraryItemArgs):
     category: str | None = Field(None, description="A new kind: Food, Sight, Shopping")
     time: str | None = Field(None, description="A plan's new time, like 19:00")
     ends: str | None = Field(None, description="A plan's new end time, like 21:30")
+    minutes: int | None = Field(
+        None,
+        ge=1,
+        le=1440,
+        description="How long the plan lasts, in minutes; sets the end time from the start",
+    )
     until: str | None = Field(None, description="A hotel's new check-out day")
     place: str | None = Field(None, description="A new address or area")
     link: str | None = Field(None, description="A new booking page or menu (public https)")
@@ -3436,9 +3446,31 @@ async def _changed_entry(
     draft = BookingDraft.from_dict(data)
     if draft is None:
         raise InvalidInput("that change leaves the entry without a date")
+    if a.minutes is not None:
+        draft = _lasting(a, data, draft)
     # A member's change keeps the cost the entry had (it is the owner's money).
     cost = parse_money(ctx, a.cost, a.currency) if a.cost and not found.shared else item.cost
     return found, item, draft, cost
+
+
+def _lasting(a: ItineraryChangeArgs, data: dict[str, Any], draft: BookingDraft) -> BookingDraft:
+    """The plan ending ``a.minutes`` after its start (the new time if one was given, else
+    the one it had); an error when it has no start or ``a.ends`` says another end."""
+    if draft.kind is not BookingKind.ACTIVITY or draft.day is None:
+        raise InvalidInput("only a plan on a day has a length")
+    if draft.at is None:
+        raise InvalidInput("that plan has no start time; give its time as well")
+    end = datetime.combine(date.min, draft.at) + timedelta(minutes=a.minutes or 0)
+    if end.date() != date.min:
+        raise InvalidInput("that would run past midnight; give a shorter length")
+    if a.ends is not None and draft.ends_at != end.time():
+        raise InvalidInput(
+            f"ends {a.ends} and minutes {a.minutes} disagree; give one of them, or matching ones"
+        )
+    longer = BookingDraft.from_dict({**data, "ends_at": end.time().isoformat(timespec="minutes")})
+    if longer is None:  # pragma: no cover - the draft had a date a moment ago
+        raise InvalidInput("that change leaves the entry without a date")
+    return longer
 
 
 async def _after(
@@ -3478,7 +3510,7 @@ async def _describe_change_itinerary(ctx: ToolContext, a: ItineraryChangeArgs) -
     moving, after = await _after(ctx, a, found, item, draft)
     where = (f", after {after.draft.title}" if after else ", first that day") if moving else ""
     return (
-        f"Change {item.draft.brief()} to {draft.brief()}{price}{where} on the "
+        f"Change {item.draft.brief(span=True)} to {draft.brief(span=True)}{price}{where} on the "
         f"{found.trip.destination} trip{found.whose}?{_price_left_out(found, a.cost)}"
     )
 
@@ -3510,7 +3542,7 @@ async def _change_itinerary(ctx: ToolContext, a: ItineraryChangeArgs) -> ToolRes
             number = (moved.draft.day - found.trip.start).days + 1
             await _noted(ctx, found, f"moved {moved.draft.title} to Day {number}")
     return ToolResult(
-        f"Changed to {draft.brief()} on the {found.trip.destination} trip{found.whose}."
+        f"Changed to {draft.brief(span=True)} on the {found.trip.destination} trip{found.whose}."
         + _price_left_out(found, a.cost),
         wrote=True,
     )
@@ -4424,11 +4456,16 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
 
 
 async def run_tool(spec: ToolSpec, ctx: ToolContext, raw_args: dict[str, Any]) -> ToolResult:
-    """Validate and run one call. Expected failures come back as text for the model."""
+    """Validate and run one call. Expected failures come back as text for the model, and
+    so do arguments the tool has no field for (they are dropped, not refused)."""
     try:
-        return await spec.run(ctx, spec.parse(raw_args))
+        result = await spec.run(ctx, spec.parse(raw_args))
     except NexusError as exc:
-        return ToolResult(f"Error: {exc}")
+        result = ToolResult(f"Error: {exc}")
+    ignored = spec.ignored(raw_args)
+    if not ignored:
+        return result
+    return replace(result, text=f"{result.text} (Ignored unknown fields: {', '.join(ignored)}.)")
 
 
 def args_json(raw: dict[str, Any]) -> str:

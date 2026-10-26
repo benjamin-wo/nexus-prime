@@ -395,16 +395,19 @@ class BookingDraft:
         text = self._what()
         return f"{text[:-1]}; {extra})" if extra else text
 
-    def brief(self) -> str:
+    def brief(self, *, span: bool = False) -> str:
         """The short form for a confirmation or a chat reply: the name with its day and
         time (a stay's dates), without the address, reference or where it was booked.
-        ``describe`` keeps those, for the places that list an entry in full."""
+        ``describe`` keeps those, for the places that list an entry in full. ``span`` adds
+        a plan's end to its time, for a change to it (where the end may be what changed)."""
         if self.kind is BookingKind.ACTIVITY:
             if self.day is None:
                 return f"{self.title} (place to visit)"
             when = f"{self.day:%a %d %b}"
             if self.at:
                 when += f" {self.at:%H:%M}"
+                if span and self.ends_at:
+                    when += f"\u2013{self.ends_at:%H:%M}"
             return f"{self.title} ({when})"
         if self.kind is BookingKind.HOTEL:
             name = self.hotel or self.provider or "Hotel"

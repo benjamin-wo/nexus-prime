@@ -223,8 +223,8 @@ async def test_chat_puts_a_plan_after_another_and_says_what_clashes(uow: UowFact
         ctx, change.parse({"item": "sushi", "after": "castle", "cost": "1200", "currency": "JPY"})
     )
     assert asked == (
-        "Change Kaiten sushi (Fri 11 Dec 09:00) to Kaiten sushi (Fri 11 Dec 09:00), 1200 JPY, "
-        "after Castle tour on the Osaka trip?"
+        "Change Kaiten sushi (Fri 11 Dec 09:00\u201310:00) to Kaiten sushi (Fri 11 Dec "
+        "09:00\u201310:00), 1200 JPY, after Castle tour on the Osaka trip?"
     )
     await use("change_itinerary_entry", {"item": "sushi", "after": "castle"})
     async with uow() as tx:
@@ -241,3 +241,102 @@ async def test_chat_puts_a_plan_after_another_and_says_what_clashes(uow: UowFact
     status = await use("trip_status", {})
     assert "Worth a look on the itinerary (worked out in code):" in status
     assert "Fri 11 Dec: Tea ceremony (14:00 to 15:30) runs into Castle tour at 15:00" in status
+
+
+async def test_a_plans_length_is_shown_as_a_range_and_set_in_minutes(uow: UowFactory) -> None:
+    user = await person(uow)
+    trip = await trip_cases.create_trip(
+        uow(),
+        user,
+        trip_cases.TripDraft("Osaka", date(2026, 12, 10), date(2026, 12, 14), "JPY", None),
+        now=NOW,
+    )
+    for entry in (
+        {"name": "Shop visit", "at": "10:45", "ends_at": "11:45"},
+        {"name": "Sunset walk"},  # on a day, but with no start time
+        {"name": "Night market", "day": None},  # a place to visit
+    ):
+        await booking_cases.add_manual(
+            uow(), user.id, trip.id, {"kind": "activity", "day": "2026-12-11", **entry}, None,
+            now=NOW,
+        )  # fmt: skip
+    tools = build_tools(lambda _: "")
+    ctx = ToolContext(user, uow, NOW, RATES)
+
+    async def use(args: dict[str, object]) -> str:
+        return (await run_tool(tools["change_itinerary_entry"], ctx, args)).text
+
+    async def ends(title: str) -> time | None:
+        async with uow() as tx:
+            stored = await tx.trips.list_bookings(user.id)
+        return next(b.draft.ends_at for b in stored if b.draft.title == title)
+
+    # The confirmation and the reply show the range, so a new length can be seen.
+    change = tools["change_itinerary_entry"]
+    assert change.confirm is not None
+    assert await change.confirm(
+        ctx, change.parse({"item": "shop", "minutes": 20, "cost": "500", "currency": "JPY"})
+    ) == (
+        "Change Shop visit (Fri 11 Dec 10:45\u201311:45) to Shop visit (Fri 11 Dec "
+        "10:45\u201311:05), 500 JPY on the Osaka trip?"
+    )
+    # `minutes` sets the end from the start the plan has ...
+    assert await use({"item": "shop", "minutes": 20}) == (
+        "Changed to Shop visit (Fri 11 Dec 10:45\u201311:05) on the Osaka trip."
+    )
+    assert await ends("Shop visit") == time(11, 5)
+    # ... or from the new time given with it, and agrees with a matching `ends`.
+    assert await use({"item": "shop", "time": "14:00", "minutes": 30}) == (
+        "Changed to Shop visit (Fri 11 Dec 14:00\u201314:30) on the Osaka trip."
+    )
+    assert "14:00\u201314:45" in await use({"item": "shop", "ends": "14:45", "minutes": 45})
+    # A plan changed without a length keeps its range; one with no end shows only its time.
+    assert "(Fri 11 Dec 15:00\u201315:30)" in await use(
+        {"item": "shop", "time": "15:00", "ends": "15:30"}
+    )
+
+    # Errors change nothing.
+    disagree = await use({"item": "shop", "ends": "16:00", "minutes": 20})
+    assert disagree.startswith("Error: ends 16:00 and minutes 20 disagree")
+    nothing = await use({"item": "sunset", "minutes": 20})
+    assert nothing == "Error: that plan has no start time; give its time as well"
+    assert await ends("Sunset walk") is None
+    assert "give a shorter length" in await use({"item": "shop", "time": "23:50", "minutes": 20})
+    assert "only a plan on a day" in await use({"item": "market", "minutes": 20})
+    assert await ends("Shop visit") == time(15, 30)
+    # With a time it has a start, so it works.
+    assert await use({"item": "sunset", "time": "17:00", "minutes": 20}) == (
+        "Changed to Sunset walk (Fri 11 Dec 17:00\u201317:20) on the Osaka trip."
+    )
+
+
+async def test_fields_the_tool_does_not_have_are_named_in_its_result(uow: UowFactory) -> None:
+    user = await person(uow)
+    trip = await trip_cases.create_trip(
+        uow(),
+        user,
+        trip_cases.TripDraft("Osaka", date(2026, 12, 10), date(2026, 12, 14), "JPY", None),
+        now=NOW,
+    )
+    await booking_cases.add_manual(
+        uow(), user.id, trip.id,
+        {"kind": "activity", "name": "Shop visit", "day": "2026-12-11", "at": "10:45"},
+        None, now=NOW,
+    )  # fmt: skip
+    tools = build_tools(lambda _: "")
+    ctx = ToolContext(user, uow, NOW, RATES)
+    change = tools["change_itinerary_entry"]
+
+    # Dropped, not refused: the change is made, and the result says what was left out.
+    odd = await run_tool(change, ctx, {"item": "shop", "time": "11:00", "length": 20, "zzz": 1})
+    assert odd.wrote
+    assert odd.text == (
+        "Changed to Shop visit (Fri 11 Dec 11:00) on the Osaka trip. "
+        "(Ignored unknown fields: length, zzz.)"
+    )
+    # Also on a refusal, and not at all when every field is known.
+    refused = await run_tool(change, ctx, {"item": "museum", "time": "9:00", "length": 20})
+    assert refused.text.startswith("Error: no single itinerary entry matches 'museum'")
+    assert refused.text.endswith("(Ignored unknown fields: length.)")
+    plain = await run_tool(change, ctx, {"item": "shop", "time": "11:30"})
+    assert "Ignored" not in plain.text

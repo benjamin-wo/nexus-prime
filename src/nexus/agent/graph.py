@@ -194,6 +194,24 @@ def _turn_batch(messages: Sequence[BaseMessage]) -> UUID:
     return uuid5(NAMESPACE_URL, f"nexus-turn:{human.id}")
 
 
+def _done_this_turn(messages: Sequence[BaseMessage]) -> str:
+    """What the tools wrote since the user's latest message, in their own words, for a
+    turn that is cut short."""
+    turn: list[BaseMessage] = []
+    for message in reversed(messages):
+        if isinstance(message, HumanMessage):
+            break
+        turn.append(message)
+    lines = [
+        strip_ids(text_of(m.content)).strip()
+        for m in reversed(turn)
+        if isinstance(m, ToolMessage) and m.additional_kwargs.get(WROTE)
+    ]
+    return " ".join(
+        line if line.endswith((".", "!", "?")) else f"{line}." for line in lines if line
+    )
+
+
 def _trim(messages: Sequence[AnyMessage]) -> list[AnyMessage]:
     """The recent history, starting at a user message so no tool result is orphaned."""
     window = list(messages[-HISTORY_LIMIT:])
@@ -779,6 +797,13 @@ class AgentGraph:
     ) -> Command[Literal["confirm", "__end__"]]:
         steps = state.get("steps", 0) + 1
         if steps > MAX_STEPS:
+            done = _done_this_turn(state["messages"])
+            if done:
+                return _reply(
+                    f"I stopped partway. Already done: {done} Tell me if anything else needs "
+                    "changing.",
+                    wrote=True,
+                )
             return _reply(
                 "Sorry, that's taking too many steps. Could you break it into smaller requests?"
             )
