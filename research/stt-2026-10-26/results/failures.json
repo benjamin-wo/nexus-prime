@@ -1,0 +1,986 @@
+{
+ "google/gemini-3.5-transcribe": [
+  [
+   "grab-us-noisy",
+   "ogg",
+   "amount",
+   "grab 12 50"
+  ],
+  [
+   "grab-us-noisy",
+   "webm",
+   "amount",
+   "grab 12 50"
+  ],
+  [
+   "grab-us-noisy",
+   "mp4",
+   "amount",
+   "Grab 1250."
+  ],
+  [
+   "grab-gb-clean",
+   "ogg",
+   "amount",
+   "Grab 1250."
+  ],
+  [
+   "grab-gb-clean",
+   "webm",
+   "amount",
+   "Grab 1250."
+  ],
+  [
+   "grab-gb-clean",
+   "mp4",
+   "amount",
+   "Grab 1250."
+  ],
+  [
+   "grab-gb-noisy",
+   "ogg",
+   "amount",
+   "Grab 12:50."
+  ],
+  [
+   "grab-gb-noisy",
+   "webm",
+   "amount",
+   "Grab 1250."
+  ],
+  [
+   "grab-gb-noisy",
+   "mp4",
+   "amount",
+   "Grab 1250."
+  ],
+  [
+   "maxwell-in-clean",
+   "ogg",
+   "amount",
+   "Lunch at Maxwell 8:40."
+  ],
+  [
+   "maxwell-in-clean",
+   "webm",
+   "amount",
+   "Lunch at Maxwell 8:40."
+  ],
+  [
+   "maxwell-in-clean",
+   "mp4",
+   "amount",
+   "lunch at Maxwell 8:40"
+  ],
+  [
+   "maxwell-in-noisy",
+   "ogg",
+   "amount",
+   "Lunch at Maxwell 8:40."
+  ],
+  [
+   "maxwell-in-noisy",
+   "webm",
+   "amount",
+   "Lunch at Maxwell 8:40."
+  ],
+  [
+   "maxwell-in-noisy",
+   "mp4",
+   "amount",
+   "Lunch at Maxwell 8:40."
+  ],
+  [
+   "maxwell-au-clean",
+   "ogg",
+   "amount",
+   "lunch at Maxwell 8:40"
+  ],
+  [
+   "maxwell-au-clean",
+   "webm",
+   "amount",
+   "lunch at Maxwell 8:40"
+  ],
+  [
+   "maxwell-au-clean",
+   "mp4",
+   "amount",
+   "lunch at Maxwell 8:40"
+  ],
+  [
+   "maxwell-au-noisy",
+   "ogg",
+   "amount",
+   "lunch at Maxwell 8:40"
+  ],
+  [
+   "maxwell-au-noisy",
+   "webm",
+   "amount",
+   "lunch at Maxwell 8:40"
+  ],
+  [
+   "maxwell-au-noisy",
+   "mp4",
+   "amount",
+   "Lunch at Maxwell 8:40."
+  ],
+  [
+   "dtf-au-noisy",
+   "ogg",
+   "amount",
+   "Dinner 6:00 at Din Tai Fung split with Ann."
+  ],
+  [
+   "taxi-in-clean",
+   "ogg",
+   "amount",
+   "Taxi home 23:50 last Friday."
+  ],
+  [
+   "taxi-in-clean",
+   "webm",
+   "amount",
+   "Taxi home 2350 last Friday."
+  ],
+  [
+   "taxi-in-clean",
+   "mp4",
+   "amount",
+   "Taxi home 2350 last Friday."
+  ],
+  [
+   "taxi-in-noisy",
+   "ogg",
+   "amount",
+   "Taxi home 23:50 last Friday."
+  ],
+  [
+   "taxi-in-noisy",
+   "webm",
+   "amount",
+   "taxi home 2350 last Friday"
+  ],
+  [
+   "taxi-in-noisy",
+   "mp4",
+   "amount",
+   "taxi home 2350 last Friday"
+  ],
+  [
+   "taxi-au-clean",
+   "ogg",
+   "amount",
+   "Taxi home 2350 last Friday."
+  ],
+  [
+   "taxi-au-clean",
+   "webm",
+   "amount",
+   "Taxi home 23:50 last Friday."
+  ],
+  [
+   "taxi-au-clean",
+   "mp4",
+   "amount",
+   "taxi home 2350 last Friday"
+  ],
+  [
+   "taxi-au-noisy",
+   "ogg",
+   "amount",
+   "Taxi home 2350 last Friday."
+  ],
+  [
+   "taxi-au-noisy",
+   "webm",
+   "amount",
+   "Taxi home 23:50 last Friday."
+  ],
+  [
+   "taxi-au-noisy",
+   "mp4",
+   "amount",
+   "taxi home 2350 last Friday"
+  ],
+  [
+   "netflix-gb-clean",
+   "ogg",
+   "amount",
+   "1799 for Netflix. Don't."
+  ],
+  [
+   "netflix-gb-clean",
+   "webm",
+   "amount",
+   "1799 for Netflix don't."
+  ],
+  [
+   "netflix-gb-clean",
+   "mp4",
+   "amount",
+   "1799 for Netflix. Don't."
+  ],
+  [
+   "netflix-gb-noisy",
+   "ogg",
+   "amount",
+   "1799 for Netflix don't"
+  ],
+  [
+   "netflix-gb-noisy",
+   "webm",
+   "amount",
+   "1799 for Netflix don't"
+  ],
+  [
+   "netflix-gb-noisy",
+   "mp4",
+   "amount",
+   "1799 for Netflix. Don't."
+  ],
+  [
+   "netflix-in-clean",
+   "ogg",
+   "amount",
+   "1799 for Netflix"
+  ],
+  [
+   "netflix-in-clean",
+   "webm",
+   "amount",
+   "1799 for Netflix."
+  ],
+  [
+   "netflix-in-clean",
+   "mp4",
+   "amount",
+   "1799 for Netflix."
+  ],
+  [
+   "netflix-in-noisy",
+   "ogg",
+   "amount",
+   "1799 for Netflix"
+  ],
+  [
+   "netflix-in-noisy",
+   "webm",
+   "amount",
+   "1799 for Netflix"
+  ],
+  [
+   "payback-au-clean",
+   "ogg",
+   "noun",
+   "And paid me back forty."
+  ],
+  [
+   "payback-au-noisy",
+   "webm",
+   "noun",
+   "and paid me back forty"
+  ],
+  [
+   "payback-au-noisy",
+   "mp4",
+   "noun",
+   "and paid me back forty."
+  ],
+  [
+   "payback-us-clean",
+   "ogg",
+   "noun",
+   "and paid me back 40"
+  ],
+  [
+   "payback-us-noisy",
+   "ogg",
+   "noun",
+   "and paid me back forty."
+  ],
+  [
+   "payback-us-noisy",
+   "mp4",
+   "noun",
+   "and paid me back forty."
+  ]
+ ],
+ "mistralai/voxtral-mini-transcribe-3-0": [
+  [
+   "grab-us-clean",
+   "ogg",
+   "amount",
+   "Grab 12. 50."
+  ],
+  [
+   "grab-us-clean",
+   "webm",
+   "amount",
+   "Grab 12. 50."
+  ],
+  [
+   "grab-us-clean",
+   "mp4",
+   "amount",
+   "Grab 12. 50."
+  ],
+  [
+   "grab-us-noisy",
+   "ogg",
+   "amount",
+   "Grab 12. 50."
+  ],
+  [
+   "grab-us-noisy",
+   "webm",
+   "amount",
+   "Grab 12. 50."
+  ],
+  [
+   "grab-us-noisy",
+   "mp4",
+   "amount",
+   "Grab 12. 50."
+  ],
+  [
+   "grab-gb-clean",
+   "ogg",
+   "amount",
+   "Grab 12:50."
+  ],
+  [
+   "grab-gb-clean",
+   "webm",
+   "amount",
+   "Grab 12:50."
+  ],
+  [
+   "grab-gb-clean",
+   "mp4",
+   "amount",
+   "Grab 12:50."
+  ],
+  [
+   "grab-gb-noisy",
+   "ogg",
+   "amount",
+   "Grab 1250."
+  ],
+  [
+   "grab-gb-noisy",
+   "webm",
+   "amount",
+   "Grab 1250."
+  ],
+  [
+   "grab-gb-noisy",
+   "mp4",
+   "amount",
+   "Grab 1250."
+  ],
+  [
+   "maxwell-in-clean",
+   "ogg",
+   "amount",
+   "Lunch at Maxwell, 8:40."
+  ],
+  [
+   "maxwell-in-clean",
+   "webm",
+   "amount",
+   "Lunch at Maxwell, 8:40."
+  ],
+  [
+   "maxwell-in-clean",
+   "mp4",
+   "amount",
+   "Lunch at Maxwell, 8:40."
+  ],
+  [
+   "maxwell-in-noisy",
+   "ogg",
+   "amount",
+   "Lunch at Maxwell 840."
+  ],
+  [
+   "maxwell-in-noisy",
+   "webm",
+   "amount",
+   "Lunch at Maxwell 840."
+  ],
+  [
+   "maxwell-in-noisy",
+   "mp4",
+   "amount",
+   "Lunch at Maxwell 840."
+  ],
+  [
+   "maxwell-au-clean",
+   "ogg",
+   "amount",
+   "Lunch at Maxwell, 8:40."
+  ],
+  [
+   "maxwell-au-clean",
+   "webm",
+   "amount",
+   "Lunch at Maxwell, 8:40."
+  ],
+  [
+   "maxwell-au-clean",
+   "mp4",
+   "amount",
+   "Lunch at Maxwell, 8:40."
+  ],
+  [
+   "maxwell-au-noisy",
+   "ogg",
+   "amount",
+   "Lunch at Maxwell 840."
+  ],
+  [
+   "maxwell-au-noisy",
+   "webm",
+   "amount",
+   "Lunch at Maxwell 8:40."
+  ],
+  [
+   "maxwell-au-noisy",
+   "mp4",
+   "amount",
+   "Lunch at Maxwell 840."
+  ],
+  [
+   "rent-in-noisy",
+   "webm",
+   "noun",
+   "\u092a\u0947\u092f \u0926 \u0930\u0947\u0928\u0964"
+  ],
+  [
+   "taxi-in-clean",
+   "ogg",
+   "amount",
+   "Taxi home 23:50 last Friday."
+  ],
+  [
+   "taxi-in-clean",
+   "webm",
+   "amount",
+   "Taxi home 23:50 last Friday."
+  ],
+  [
+   "taxi-in-noisy",
+   "ogg",
+   "amount",
+   "Taxi home 2350 last Friday."
+  ],
+  [
+   "taxi-in-noisy",
+   "webm",
+   "amount",
+   "Taxi home 2350 last Friday."
+  ],
+  [
+   "taxi-in-noisy",
+   "mp4",
+   "amount",
+   "Taxi home 2350 last Friday."
+  ],
+  [
+   "taxi-au-clean",
+   "ogg",
+   "amount",
+   "Taxi home 23:50 last Friday."
+  ],
+  [
+   "taxi-au-clean",
+   "webm",
+   "amount",
+   "Taxi home 23:50 last Friday."
+  ],
+  [
+   "taxi-au-clean",
+   "mp4",
+   "amount",
+   "Taxi home 23:50 last Friday."
+  ],
+  [
+   "taxi-au-noisy",
+   "ogg",
+   "amount",
+   "Taxi home 2350 last Friday."
+  ],
+  [
+   "taxi-au-noisy",
+   "webm",
+   "amount",
+   "Taxi home 2350 last Friday."
+  ],
+  [
+   "taxi-au-noisy",
+   "mp4",
+   "amount",
+   "Taxi home 2350 last Friday."
+  ]
+ ],
+ "mistralai/voxtral-mini-transcribe-3-0 +prompt": [
+  [
+   "grab-us-clean",
+   "ogg",
+   "amount",
+   "Grab 12. 50."
+  ],
+  [
+   "grab-us-noisy",
+   "ogg",
+   "amount",
+   "Grab 12. 50."
+  ],
+  [
+   "grab-gb-clean",
+   "ogg",
+   "amount",
+   "Grab 12:50."
+  ],
+  [
+   "grab-gb-noisy",
+   "ogg",
+   "amount",
+   "Grab 1250."
+  ],
+  [
+   "maxwell-in-clean",
+   "ogg",
+   "amount",
+   "Lunch at Maxwell, 8:40."
+  ],
+  [
+   "maxwell-in-noisy",
+   "ogg",
+   "amount",
+   "Lunch at Maxwell 840."
+  ],
+  [
+   "maxwell-au-clean",
+   "ogg",
+   "amount",
+   "Lunch at Maxwell, 8:40."
+  ],
+  [
+   "maxwell-au-noisy",
+   "ogg",
+   "amount",
+   "Lunch at Maxwell 840."
+  ],
+  [
+   "taxi-in-clean",
+   "ogg",
+   "amount",
+   "Taxi home 23:50 last Friday."
+  ],
+  [
+   "taxi-in-noisy",
+   "ogg",
+   "amount",
+   "Taxi home 2350 last Friday."
+  ],
+  [
+   "taxi-au-clean",
+   "ogg",
+   "amount",
+   "Taxi home 23:50 last Friday."
+  ],
+  [
+   "taxi-au-noisy",
+   "ogg",
+   "amount",
+   "Taxi home 2350 last Friday."
+  ]
+ ],
+ "openai/gpt-4o-mini-transcribe": [
+  [
+   "maxwell-in-clean",
+   "ogg",
+   "amount",
+   "Lunch at Maxwell 8:40."
+  ],
+  [
+   "maxwell-in-clean",
+   "webm",
+   "amount",
+   "Lunch at Maxwell 8:40."
+  ],
+  [
+   "maxwell-in-clean",
+   "mp4",
+   "amount",
+   "Lunch at Maxwell 8:40."
+  ],
+  [
+   "maxwell-in-noisy",
+   "ogg",
+   "amount",
+   "Lunch at Maxwell 840."
+  ],
+  [
+   "maxwell-in-noisy",
+   "webm",
+   "amount",
+   "Lunch at Maxwell 840."
+  ],
+  [
+   "maxwell-in-noisy",
+   "mp4",
+   "amount",
+   "Lunch at Maxwell 840."
+  ],
+  [
+   "maxwell-au-clean",
+   "ogg",
+   "amount",
+   "Lunch at Maxwell, 8:40."
+  ],
+  [
+   "maxwell-au-clean",
+   "webm",
+   "amount",
+   "Lunch at Maxwell, 8:40."
+  ],
+  [
+   "maxwell-au-clean",
+   "mp4",
+   "amount",
+   "Lunch at Maxwell, 8:40."
+  ],
+  [
+   "maxwell-au-noisy",
+   "ogg",
+   "amount",
+   "Lunch at Maxwell 8:40."
+  ],
+  [
+   "maxwell-au-noisy",
+   "webm",
+   "amount",
+   "Lunch at Maxwell 8:40."
+  ],
+  [
+   "maxwell-au-noisy",
+   "mp4",
+   "amount",
+   "Lunch at Maxwell 8:40."
+  ],
+  [
+   "dtf-au-noisy",
+   "webm",
+   "amount",
+   "Gymnastics Day at Taifun, split with M."
+  ],
+  [
+   "dtf-au-noisy",
+   "webm",
+   "noun",
+   "Gymnastics Day at Taifun, split with M."
+  ],
+  [
+   "dtf-au-noisy",
+   "mp4",
+   "amount",
+   "Dinner at Din Tai Fung. Split with Anne."
+  ],
+  [
+   "taxi-au-clean",
+   "ogg",
+   "amount",
+   "Taxi home 23:50 last Friday."
+  ],
+  [
+   "taxi-au-clean",
+   "webm",
+   "amount",
+   "Taxi home 23:50 last Friday."
+  ],
+  [
+   "netflix-gb-clean",
+   "ogg",
+   "amount",
+   "1799 for Netflix. Dunked."
+  ],
+  [
+   "netflix-gb-clean",
+   "webm",
+   "amount",
+   "1799 for Netflix. Dunked."
+  ],
+  [
+   "netflix-gb-clean",
+   "mp4",
+   "amount",
+   "1799 for Netflix. Dunked."
+  ],
+  [
+   "netflix-gb-noisy",
+   "ogg",
+   "amount",
+   "1799 for Netflix. Don't."
+  ],
+  [
+   "netflix-gb-noisy",
+   "webm",
+   "amount",
+   "1799 for Netflix. Don't."
+  ],
+  [
+   "netflix-gb-noisy",
+   "mp4",
+   "amount",
+   "1799 for Netflix. Don't."
+  ],
+  [
+   "netflix-in-clean",
+   "ogg",
+   "amount",
+   "1799 for Netflix."
+  ],
+  [
+   "netflix-in-clean",
+   "webm",
+   "amount",
+   "1799 for Netflix."
+  ],
+  [
+   "netflix-in-clean",
+   "mp4",
+   "amount",
+   "1799 for Netflix."
+  ],
+  [
+   "netflix-in-noisy",
+   "ogg",
+   "amount",
+   "1799 for Netflix."
+  ],
+  [
+   "payback-us-noisy",
+   "ogg",
+   "noun",
+   "and paid me back forty."
+  ]
+ ],
+ "openai/gpt-4o-mini-transcribe +neutral-prompt": [
+  [
+   "maxwell-in-clean",
+   "ogg",
+   "amount",
+   "Lunch at Maxwell 8:40."
+  ],
+  [
+   "maxwell-in-clean",
+   "mp4",
+   "amount",
+   "Lunch at Maxwell 8:40."
+  ],
+  [
+   "maxwell-in-noisy",
+   "webm",
+   "amount",
+   "Lunch at Maxwell 840."
+  ],
+  [
+   "maxwell-in-noisy",
+   "mp4",
+   "amount",
+   "Lunch at Maxwell 840."
+  ],
+  [
+   "payback-au-clean",
+   "mp4",
+   "noun",
+   "M paid me back $40."
+  ],
+  [
+   "payback-au-noisy",
+   "mp4",
+   "noun",
+   "M paid me back $40."
+  ]
+ ],
+ "openai/whisper-large-v3-turbo": [
+  [
+   "grab-us-clean",
+   "ogg",
+   "amount",
+   " Grab 12.  50."
+  ],
+  [
+   "grab-us-clean",
+   "webm",
+   "amount",
+   " Grab 12.  50."
+  ],
+  [
+   "grab-us-clean",
+   "mp4",
+   "amount",
+   " Grab 12.  50."
+  ],
+  [
+   "grab-us-noisy",
+   "ogg",
+   "amount",
+   " Grab twelve.  50."
+  ],
+  [
+   "grab-us-noisy",
+   "webm",
+   "amount",
+   " Grab 12. 50."
+  ],
+  [
+   "grab-us-noisy",
+   "mp4",
+   "amount",
+   " Grab 12. 50."
+  ],
+  [
+   "grab-gb-noisy",
+   "ogg",
+   "amount",
+   " Grab 1250"
+  ],
+  [
+   "grab-gb-noisy",
+   "webm",
+   "amount",
+   " Grab 1250"
+  ],
+  [
+   "maxwell-in-noisy",
+   "ogg",
+   "amount",
+   " Lunch at Maxwell 8:40"
+  ],
+  [
+   "maxwell-in-noisy",
+   "webm",
+   "amount",
+   " Lunch at Maxwell 8:40"
+  ],
+  [
+   "maxwell-in-noisy",
+   "mp4",
+   "amount",
+   " Lunch at Maxwell 8:40"
+  ],
+  [
+   "maxwell-au-clean",
+   "ogg",
+   "amount",
+   " Lunch at Maxwell 8:40."
+  ],
+  [
+   "dtf-au-noisy",
+   "mp4",
+   "noun",
+   " Dinner 60 at Dim Tai Fung, split with N."
+  ],
+  [
+   "taxi-in-clean",
+   "ogg",
+   "amount",
+   " Taxi Home 2350 last Friday."
+  ],
+  [
+   "taxi-in-clean",
+   "webm",
+   "amount",
+   " Taxi Home 2350 Last Friday."
+  ],
+  [
+   "taxi-in-clean",
+   "mp4",
+   "amount",
+   " Taxi Home, 2350 last Friday."
+  ],
+  [
+   "taxi-in-noisy",
+   "ogg",
+   "amount",
+   " Taxi Home 2350 Loss  Friday."
+  ],
+  [
+   "taxi-in-noisy",
+   "webm",
+   "amount",
+   " Taxi Home 2350 Loss  Friday."
+  ],
+  [
+   "taxi-in-noisy",
+   "mp4",
+   "amount",
+   " Taxi Home 2350 last Friday."
+  ],
+  [
+   "taxi-au-clean",
+   "ogg",
+   "amount",
+   " Taxi home 2350 last Friday."
+  ],
+  [
+   "taxi-au-clean",
+   "webm",
+   "amount",
+   " Taxi home 2350 last Friday."
+  ],
+  [
+   "taxi-au-clean",
+   "mp4",
+   "amount",
+   " Taxi home 2350 last Friday."
+  ],
+  [
+   "taxi-au-noisy",
+   "ogg",
+   "amount",
+   " Taxi home 2350 last Friday."
+  ],
+  [
+   "taxi-au-noisy",
+   "webm",
+   "amount",
+   " Taxi home 2350 last Friday."
+  ],
+  [
+   "taxi-au-noisy",
+   "mp4",
+   "amount",
+   " Taxi home 2350 last Friday."
+  ],
+  [
+   "payback-us-clean",
+   "ogg",
+   "noun",
+   " and paid me back 40."
+  ],
+  [
+   "payback-us-noisy",
+   "ogg",
+   "noun",
+   " and paid me back $40."
+  ],
+  [
+   "payback-us-noisy",
+   "webm",
+   "noun",
+   " and paid me back $40."
+  ],
+  [
+   "payback-us-noisy",
+   "mp4",
+   "noun",
+   " and paid me back $40.  We'll be right back."
+  ]
+ ]
+}
