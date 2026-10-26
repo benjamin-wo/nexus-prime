@@ -1,0 +1,80 @@
+{
+  "dtf-us-clean": {
+    "expected": "dinner sixty at din tai fung, split with ann",
+    "accent": "us",
+    "noise": "clean",
+    "seconds": 4.96
+  },
+  "dtf-us-noisy": {
+    "expected": "dinner sixty at din tai fung, split with ann",
+    "accent": "us",
+    "noise": "noisy",
+    "seconds": 4.96
+  },
+  "grab-gb-noisy": {
+    "expected": "grab twelve fifty",
+    "accent": "gb",
+    "noise": "noisy",
+    "seconds": 2.32
+  },
+  "grab-us-clean": {
+    "expected": "grab twelve fifty",
+    "accent": "us",
+    "noise": "clean",
+    "seconds": 3.25
+  },
+  "laptop-au-clean": {
+    "expected": "one point eight k for a new laptop",
+    "accent": "au",
+    "noise": "clean",
+    "seconds": 3.54
+  },
+  "maxwell-in-clean": {
+    "expected": "lunch at maxwell eight forty",
+    "accent": "in",
+    "noise": "clean",
+    "seconds": 2.67
+  },
+  "maxwell-in-noisy": {
+    "expected": "lunch at maxwell eight forty",
+    "accent": "in",
+    "noise": "noisy",
+    "seconds": 2.67
+  },
+  "netflix-in-clean": {
+    "expected": "seventeen ninety nine for netflix",
+    "accent": "in",
+    "noise": "clean",
+    "seconds": 3.46
+  },
+  "query-au-noisy": {
+    "expected": "how much did I spend on grab this month",
+    "accent": "au",
+    "noise": "noisy",
+    "seconds": 3.64
+  },
+  "query-us-clean": {
+    "expected": "how much did I spend on grab this month",
+    "accent": "us",
+    "noise": "clean",
+    "seconds": 2.94
+  },
+  "rent-gb-clean": {
+    "expected": "paid the rent",
+    "accent": "gb",
+    "noise": "clean",
+    "seconds": 2.32
+  },
+  "savings-gb-clean": {
+    "expected": "move three hundred to savings on the twenty fifth",
+    "accent": "gb",
+    "noise": "clean",
+    "seconds": 3.78
+  },
+  "taxi-in-clean": {
+    "expected": "taxi home twenty three fifty last friday",
+    "accent": "in",
+    "noise": "clean",
+    "seconds": 4.9
+  }
+}

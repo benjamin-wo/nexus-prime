@@ -10,6 +10,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
+from nexus.domain.transcript import HEARD_MARK
 from nexus.domain.voice import STOCK_PHRASES
 from nexus.evals import seed
 from nexus.evals.checks import (
@@ -117,6 +118,7 @@ class Turn:
     approve: bool = True  # the answer to any confirmation this turn asks for
     new_conversation: bool = False  # forget the chat so far (long-term memory stays)
     photo: str | None = None  # send this receipt photo (see ``photos``), ``text`` as caption
+    audio: str | None = None  # play this voice clip (see ``clips``) as a voice note
     later: timedelta | None = None  # move the clock on this far before the turn
 
 
@@ -192,6 +194,8 @@ _ASKS_JUMBO_AMOUNT = (
     r"\b(?:jumbo|dinner)\b[^.!?\n]*\b(?:exact|amount|total|how much|came to|cost)\b[^.!?\n]*\?",
     r"\b(?:exact|amount|total|how much|came to|cost)\b[^.!?\n]*\b(?:jumbo|dinner)\b[^.!?\n]*\?",
 )
+
+_HEARD = (f"{HEARD_MARK} heard:",)
 
 CASES: tuple[Case, ...] = (
     # --- logging an expense -----------------------------------------------------------
@@ -2088,5 +2092,82 @@ CASES: tuple[Case, ...] = (
         unchanged=True,
         # The first reply may say "tomorrow"; the next morning's must not.
         last_never_match=(r"\btomorrow\b", r"\btonight\b"),
+    ),
+    # --- voice notes: clips heard by the real speech model, then handled as typed -------
+    # A turn that changed data opens with "🎙 heard: ..." (only then), so `reply` names it on
+    # writes and `never_match` on reads. A write that asks to confirm first changes nothing
+    # in the voice turn, so those cases leave the line unchecked.
+    *(
+        Case(
+            f"voice-{name}",
+            "voice",
+            _t(Turn("", audio=clip)),
+            checks=checks,
+            reply=_HEARD,
+        )
+        for name, clip, checks in (
+            ("grab", "grab-us-clean", (Logged("12.50", "grab", "Transport"),)),
+            ("grab-noisy", "grab-gb-noisy", (Logged("12.50", "grab", "Transport"),)),
+            # "eight forty": the speech model may write 8:40 or 840; tidy_transcript fixes it.
+            ("lunch-maxwell", "maxwell-in-clean", (Logged("8.40", "maxwell", "Dining Out"),)),
+            ("lunch-maxwell-noisy", "maxwell-in-noisy", (Logged("8.40", "maxwell", "Dining Out"),)),
+            (
+                "taxi-last-friday",
+                "taxi-in-clean",
+                (Logged("23.50", category="Transport", day=date(2026, 9, 25)),),
+            ),
+            ("netflix", "netflix-in-clean", (Logged("17.99", "netflix"),)),
+            ("laptop", "laptop-au-clean", (Logged("1800", "laptop", "Shopping"),)),
+        )
+    ),
+    Case(
+        "voice-rent-paid",
+        "voice",
+        _t(Turn("", audio="rent-gb-clean")),
+        checks=(
+            BillIs("Rent", paid_on=date(2026, 10, 1)),
+            Logged("1800", "rent", "Bills & Utilities"),
+        ),
+        reply=_HEARD,
+    ),
+    Case(
+        "voice-bill-savings",
+        "voice",
+        # "Move 300 to savings on the 25th", with no word for every month, is a one-off
+        # move: Nexus can't make it, so nothing changes (typed, it's refused the same way).
+        _t(Turn("", audio="savings-gb-clean")),
+        unchanged=True,
+        reply=("can't",),
+    ),
+    # "split with Ann" is heard as "Anne" (a homophone); the split asks to confirm first.
+    *(
+        Case(
+            f"voice-split-{noise}",
+            "voice",
+            _t(Turn("", audio=f"dtf-us-{noise}")),
+            confirms=True,
+            checks=(
+                Logged("60", "din tai fung", "Dining Out"),
+                # Ann already owes 40 in the seed; the new half makes 70.
+                Owes("Ann", "70.00", also=("Anne",)),
+            ),
+        )
+        for noise in ("clean", "noisy")
+    ),
+    Case(
+        "voice-question",
+        "voice",
+        _t(Turn("", audio="query-us-clean")),
+        unchanged=True,
+        reply=(seed.SEPT_GRAB,),
+        never_match=(r"heard:",),
+    ),
+    Case(
+        "voice-question-noisy",
+        "voice",
+        _t(Turn("", audio="query-au-noisy")),
+        unchanged=True,
+        reply=(seed.SEPT_GRAB,),
+        never_match=(r"heard:",),
     ),
 )

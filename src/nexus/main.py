@@ -44,6 +44,7 @@ from nexus.application.ports import (
     ForwardingInboxes,
     ReceiptStore,
     SignInMailbox,
+    SpeechToText,
     StatementPageReader,
 )
 from nexus.application.quotes import Quotes, QuoteSource
@@ -100,6 +101,7 @@ from nexus.infra.places.routes import GoogleRoutes
 from nexus.infra.search.openrouter_web import OpenRouterWebSearch
 from nexus.infra.search.serpapi import SerpApiTravel
 from nexus.infra.search.tavily import TavilyReader, TavilySearch
+from nexus.infra.speech.openrouter import OpenRouterSpeech
 from nexus.infra.storage.s3 import S3ReceiptStore
 from nexus.infra.weather.open_meteo import OpenMeteo
 from nexus.jobs import ops_tickets as ops_ticket_job
@@ -138,6 +140,7 @@ class Overrides:
     ideas: IdeaFinder | None = None
     lookup: WebLookup | None = None
     statement_pages: StatementPageReader | None = None
+    speech: SpeechToText | None = None
 
 
 def _receipt_store(settings: Settings, overrides: Overrides) -> ReceiptStore | None:
@@ -415,6 +418,15 @@ async def _telegram_runtime(
     looker: ImageLooker | None = overrides.image_looker
     if looker is None and models.vision is not None:
         looker = LlmImageLooker(*build_image_look_models(settings, models.vision))
+    speech: SpeechToText | None = overrides.speech
+    key = settings.openrouter_api_key
+    if speech is None and key is not None:
+        speech = OpenRouterSpeech(
+            await stack.enter_async_context(timed_client()),
+            key.get_secret_value(),
+            settings.stt_model,
+            settings.stt_fallback_model,
+        )
     client = overrides.telegram
     if client is None:
         token = settings.telegram_bot_token
@@ -440,6 +452,7 @@ async def _telegram_runtime(
             looker=looker,
             primary_model=_model_id(models.primary),
             condense=agent_graph.condense,
+            speech=speech,
         ),
         client=client,
     )

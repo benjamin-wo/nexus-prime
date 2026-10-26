@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
+from starlette.datastructures import UploadFile
 
 from nexus.agent.service import Reply
 from nexus.application import access, fx
@@ -31,6 +32,7 @@ from nexus.application import notifications as notify_cases
 from nexus.application import receipts as receipt_cases
 from nexus.application import salary as salary_cases
 from nexus.application import setup as setup_cases
+from nexus.application import speech as speech_rules
 from nexus.application import splits as split_cases
 from nexus.application import statements as statement_cases
 from nexus.application import subscriptions as subscription_cases
@@ -2531,6 +2533,41 @@ async def chat_history(
 async def chat(body: ChatIn, auth: Auth, web: Runtime) -> list[ReplyOut]:
     ref = f"web:{auth.session.token_hash[:16]}:{web.clock().timestamp()}"
     return replies_out(await web.service.handle_text(auth.user.id, body.message, ref))
+
+
+# A multipart body adds a little to the recording itself.
+_VOICE_OVERHEAD = 64 * 1024
+
+
+@router.post("/chat/voice")
+async def chat_voice(request: Request, auth: Auth, web: Runtime) -> list[ReplyOut]:
+    """A voice note (multipart, field ``audio``), handled as if its words were typed.
+    413 over 5 MB, 415 for a type browsers don't record, 429 past 30 an hour, 503 when
+    voice notes aren't set up. Nothing is kept of the recording."""
+    if not web.service.hears_voice:
+        raise HTTPException(status_code=503, detail=speech_rules.NOT_SET_UP)
+    too_long = HTTPException(status_code=413, detail=speech_rules.TOO_LONG)
+    declared = request.headers.get("content-length", "")
+    if declared.isdigit() and int(declared) > speech_rules.MAX_BYTES + _VOICE_OVERHEAD:
+        raise too_long
+    try:
+        form = await request.form(max_files=1, max_fields=1)
+    except Exception as exc:  # not multipart, or malformed
+        raise HTTPException(
+            status_code=422, detail="send the recording as form field audio"
+        ) from exc
+    upload = form.get("audio")
+    if not isinstance(upload, UploadFile):
+        raise HTTPException(status_code=422, detail="send the recording as form field audio")
+    mime = speech_rules.base_type(upload.content_type or "")
+    if mime not in speech_rules.WEB_TYPES:
+        raise HTTPException(status_code=415, detail=speech_rules.UNSUPPORTED)
+    audio = await upload.read(speech_rules.MAX_BYTES + 1)
+    await form.close()
+    if len(audio) > speech_rules.MAX_BYTES:
+        raise too_long
+    ref = f"web:{auth.session.token_hash[:16]}:{web.clock().timestamp()}"
+    return replies_out(await web.service.handle_voice(auth.user.id, audio, mime, ref))
 
 
 class PressIn(Model):

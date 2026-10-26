@@ -240,14 +240,18 @@ class Owes:
 
     name: str
     amount: str
+    # Other spellings of the same name (a speech model writes "Anne" for "Ann").
+    also: tuple[str, ...] = ()
 
     def describe(self) -> str:
         return f"{self.name} owes {self.amount}"
 
     async def holds(self, world: World) -> bool:
         ious = await split_cases.list_open_ious(world.uow(), world.user.id)
-        name = self.name.casefold()
-        theirs = [i.outstanding.amount for i in ious if i.split.participant_name.casefold() == name]
+        names = {n.casefold() for n in (self.name, *self.also)}
+        theirs = [
+            i.outstanding.amount for i in ious if i.split.participant_name.casefold() in names
+        ]
         owed = sum(theirs, Decimal(0))
         return owed == Decimal(self.amount)
 

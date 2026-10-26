@@ -34,9 +34,9 @@ from nexus.agent.skills import SkillLibrary
 from nexus.agent.tools import build_tools
 from nexus.agent.trip_reader import LlmTripReader
 from nexus.application.fx import Rate
-from nexus.application.ports import UnitOfWork
+from nexus.application.ports import SpeechToText, UnitOfWork
 from nexus.domain.ledger import User
-from nexus.evals import photos, seed
+from nexus.evals import clips, photos, seed
 from nexus.evals.cases import WRITES, Call, Case, Has, Turn
 from nexus.evals.checks import World
 from nexus.infra.db import tables
@@ -159,12 +159,15 @@ class Agent:
         photo_cache: Path,
         vision: BaseChatModel | None = None,
         memory: BaseChatModel | None = None,
+        speech: SpeechToText | None = None,
     ) -> None:
         self.engine = engine
         self.model = model
         # Long-term memory, like MEMORY_MODEL: run after each turn, outside its timing.
         self.memory = MemoryWriter(memory or model)
         self.photo_cache = photo_cache
+        # Voice clips are heard by this (the real speech model); None: no voice cases.
+        self.speech = speech
         # Receipt photos: a separate model if given, like OPENROUTER_VISION_MODEL.
         self.receipts = LlmReceiptReader(vision or model)
         # Travel screenshots: the photo model without reasoning, as in production.
@@ -202,7 +205,7 @@ class Agent:
         # Long chats fold old messages into a summary, as in production.
         self.service = AgentService(
             self.graph, self.uow, self.receipts, lambda: self.now, None, FixedRates(),
-            trips=self.trips, looker=self.looker, condense=built.condense,
+            trips=self.trips, looker=self.looker, condense=built.condense, speech=self.speech,
         )  # fmt: skip
 
     async def messages(self, user: User) -> list[BaseMessage]:
@@ -226,12 +229,17 @@ async def _turn(agent: Agent, user: User, turn: Turn, ref: str) -> TurnLog:
         agent.new_conversation()
     if turn.later:
         agent.now += turn.later
-    log = TurnLog(turn.text)
+    log = TurnLog(turn.text or (f"[voice: {turn.audio}]" if turn.audio else ""))
     before = {m.id for m in await agent.messages(user)}  # by id: long chats drop old ones
     started = time.perf_counter()
     if turn.photo:
         image, media = await photos.load(turn.photo, agent.photo_cache)
         replies = await agent.service.handle_photo(user.id, image, media, turn.text or None, ref)
+    elif turn.audio:
+        if agent.speech is None:
+            raise RuntimeError("a voice case needs a speech model (OPENROUTER_API_KEY)")
+        audio, mime = await clips.load(turn.audio)
+        replies = await agent.service.handle_voice(user.id, audio, mime, ref)
     else:
         replies = await agent.service.handle_text(user.id, turn.text, ref)
     all_replies = list(replies)
@@ -328,7 +336,8 @@ _WORD = re.compile(r"[a-z0-9']+")
 def opener(reply: str) -> str:
     """A reply's first two words, lowercased, without numbers, emoji or punctuation:
     "Logged 60.00 at Din Tai Fung ✅" -> "logged at"."""
-    words = [w for w in _WORD.findall(reply.casefold()) if not w[0].isdigit()]
+    lines = [ln for ln in reply.splitlines() if ln.strip() and " heard: " not in ln[:12]]
+    words = [w for w in _WORD.findall(" ".join(lines).casefold()) if not w[0].isdigit()]
     return " ".join(words[:2])
 
 
@@ -413,10 +422,11 @@ async def run_case(
     photo_cache: Path = Path("eval-results/photos"),
     vision: BaseChatModel | None = None,
     memory: BaseChatModel | None = None,
+    speech: SpeechToText | None = None,
 ) -> CaseResult:
     seeded = await seed.seed_user(lambda: SqlUnitOfWork(engine), telegram_id, shared=case.shared)
     user = seeded.user
-    agent = Agent(engine, model, photo_cache, vision, memory)
+    agent = Agent(engine, model, photo_cache, vision, memory, speech)
     world = World(
         agent.uow,
         user,
@@ -445,6 +455,7 @@ async def run_cases(
     on_result: Callable[[CaseResult], None] | None = None,
     vision: BaseChatModel | None = None,
     memory: BaseChatModel | None = None,
+    speech: SpeechToText | None = None,
 ) -> list[CaseResult]:
     """Run the cases, a few at a time, each as its own user."""
     gate = asyncio.Semaphore(concurrency)
@@ -458,6 +469,7 @@ async def run_cases(
                 first_telegram_id + n,
                 vision=vision,
                 memory=memory,
+                speech=speech,
             )
         if on_result:
             on_result(result)

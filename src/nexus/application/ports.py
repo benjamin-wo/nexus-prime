@@ -616,6 +616,26 @@ class ReceiptStore(Protocol):
         ...
 
 
+@dataclass(frozen=True, slots=True)
+class Transcript:
+    """What a voice note said, and what hearing it took. Never kept: only the text goes on."""
+
+    text: str
+    model: str  # the model that answered (the fallback, if the first failed)
+    seconds: float | None  # the audio's length, when the provider says
+    cost: float | None  # USD, when the provider says
+
+
+class SpeechError(Exception):
+    """No model could transcribe the audio. The message never holds audio or text."""
+
+
+class SpeechToText(Protocol):
+    """Turns a voice note into text. ``audio_format`` is ogg, webm, m4a, aac or mp3."""
+
+    async def transcribe(self, audio: bytes, audio_format: str) -> Transcript: ...
+
+
 class MemoryRepository(Protocol):
     """What Nexus remembers. Every call is scoped to one user."""
 

@@ -19,9 +19,11 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from nexus.agent.service import UNDO, AgentService, Button, Picture, Reply
 from nexus.agent.tools import UowFactory
 from nexus.application import acting, ops
+from nexus.application import speech as speech_rules
 from nexus.application.access import create_invite
 from nexus.application.clock import utcnow
 from nexus.application.inbound import claim_event
+from nexus.application.limits import RateLimited
 from nexus.application.users import RegisterUser, register_user
 from nexus.channels.telegram.client import MAX_DOWNLOAD, TelegramClient, TelegramError
 from nexus.domain.errors import Forbidden
@@ -44,6 +46,9 @@ PDF = "application/pdf"
 UNREADABLE_FILE = (
     "I can read photos, JPEG, PNG and WebP images, and PDFs. Send it as a photo instead."
 )
+# Where Telegram says a message was forwarded from (the field names changed over time).
+FORWARD_FIELDS = ("forward_origin", "forward_from", "forward_from_chat", "forward_sender_name",
+                  "forward_date")  # fmt: skip
 # Photos sent together arrive as separate updates; wait this long for the rest.
 ALBUM_WAIT = 1.5
 _albums: dict[str, list[dict[str, Any]]] = {}
@@ -212,12 +217,18 @@ async def _message(
 ) -> None:
     """A message from an allow-listed user: text, a command, a photo or a file."""
     ref = f"telegram:{chat_id}:{message.get('message_id')}"
+    clip = _audio_of(message)
+    if clip is not None:
+        await _voice(runtime, actor, chat_id, message, clip, ref)
+        return
     if message.get("photo") or message.get("document"):
         await _media(runtime, actor, chat_id, message, ref)
         return
     text = (message.get("text") or "").strip()
     if not text:
-        await runtime.client.send_message(chat_id, "I can read text, photos, screenshots and PDFs.")
+        await runtime.client.send_message(
+            chat_id, "I can read text, voice notes, photos, screenshots and PDFs."
+        )
         return
     replied = message.get("reply_to_message") or {}
     if not text.startswith("/") and _image_of(replied) is not None:
@@ -279,6 +290,56 @@ def _image_of(message: dict[str, Any]) -> dict[str, Any] | None:
     if document.get("mime_type") in IMAGE_TYPES:
         return document
     return None
+
+
+def _audio_of(message: dict[str, Any]) -> dict[str, Any] | None:
+    """The voice note, audio file or audio document a message carries, if any."""
+    if voice := message.get("voice"):
+        return {"mime_type": "audio/ogg", **voice}  # Telegram voice notes are Opus in Ogg
+    if audio := message.get("audio"):
+        return dict(audio)
+    document = message.get("document") or {}
+    if str(document.get("mime_type") or "").startswith("audio/"):
+        return dict(document)
+    return None
+
+
+async def _voice(
+    runtime: TelegramRuntime,
+    actor: UserId,
+    chat_id: int,
+    message: dict[str, Any],
+    clip: dict[str, Any],
+    ref: str,
+) -> None:
+    """A voice note: refused if too long, too big or not audio we read, before it is
+    downloaded; otherwise heard and handled like typed text (a forwarded one as quoted
+    material). The recording isn't kept."""
+    send = runtime.client.send_message
+    if not runtime.service.hears_voice:
+        await send(chat_id, speech_rules.NOT_SET_UP)
+        return
+    mime = str(clip.get("mime_type") or "")
+    if speech_rules.audio_format(mime) is None:
+        await send(chat_id, speech_rules.UNSUPPORTED)
+        return
+    too_long = int(clip.get("duration") or 0) > speech_rules.MAX_SECONDS
+    if too_long or int(clip.get("file_size") or 0) > speech_rules.MAX_BYTES:
+        await send(chat_id, speech_rules.TOO_LONG)
+        return
+    data = await runtime.client.download(str(clip["file_id"]))
+    if len(data) > speech_rules.MAX_BYTES:
+        await send(chat_id, speech_rules.TOO_LONG)
+        return
+    forwarded = any(message.get(name) for name in FORWARD_FIELDS)
+    try:
+        replies = await runtime.service.handle_voice(actor, data, mime, ref, forwarded=forwarded)
+    except RateLimited as exc:
+        await send(chat_id, str(exc))
+        return
+    finally:
+        del data
+    await _send(runtime, chat_id, replies)
 
 
 async def _media(
