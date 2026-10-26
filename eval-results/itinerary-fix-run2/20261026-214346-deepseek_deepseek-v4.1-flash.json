@@ -1,0 +1,1583 @@
+[
+  {
+    "id": "trip-create",
+    "area": "log",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "I'm going to Bali 3 to 8 Nov with Ben, budget 1500",
+        "replies": [
+          "Add a trip: Bali, Tue 03 Nov 2026 to Sun 08 Nov 2026, spending in IDR, budget 1500.00 SGD, with Ben?",
+          "Bali's saved: 3 to 8 Nov, with Ben, 1,500 budget, spending in IDR \u2705\n\nWant me to set aside something each payday for it?"
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "trips"
+            }
+          },
+          {
+            "tool": "create_trip",
+            "args": {
+              "destination": "Bali",
+              "start": "2026-11-03",
+              "end": "2026-11-08",
+              "currency": "IDR",
+              "budget": "1500",
+              "companions": [
+                "Ben"
+              ]
+            }
+          }
+        ],
+        "confirmations": 1,
+        "seconds": 3.2,
+        "input_tokens": 47706,
+        "output_tokens": 314,
+        "memory_input_tokens": 436,
+        "memory_output_tokens": 209,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "trip-spent",
+    "area": "ask",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "how much have I spent in Japan?",
+        "replies": [
+          "Nothing yet \u2014 the Tokyo trip hasn't started (10 to 18 Dec), so 0.00 spent so far, all 3,000.00 of the budget still there.\n\nOne thing to sort: you've got Hotel Sakura for 10\u201314 Dec, but nothing booked for the nights of 14\u201317 Dec. Want me to look at places for those?"
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "trips"
+            }
+          },
+          {
+            "tool": "find_transactions",
+            "args": {
+              "search": "Japan",
+              "limit": 50
+            }
+          },
+          {
+            "tool": "list_trips",
+            "args": {}
+          },
+          {
+            "tool": "trip_status",
+            "args": {
+              "trip": "Japan"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 3.49,
+        "input_tokens": 47909,
+        "output_tokens": 366,
+        "memory_input_tokens": 426,
+        "memory_output_tokens": 48,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "trip-left",
+    "area": "ask",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "how much is left in my trip budget?",
+        "replies": [
+          "Tokyo's untouched so far \u2014 all 3,000.00 of the 3,000.00 budget is still there, nothing spent yet.\n\nTrip's 10\u201318 Dec, so about 1,500.00 set aside on each of your 2 paydays before it would cover it. Want me to set that up?"
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "trips"
+            }
+          },
+          {
+            "tool": "list_trips",
+            "args": {}
+          },
+          {
+            "tool": "trip_status",
+            "args": {
+              "trip": "Tokyo"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 3.41,
+        "input_tokens": 67418,
+        "output_tokens": 211,
+        "memory_input_tokens": 427,
+        "memory_output_tokens": 62,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "trip-find-places",
+    "area": "ask",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "find good ramen near Shinjuku for my Japan trip",
+        "replies": [
+          "Ratings and place search aren't available right now, so I can't pull up ramen spots near Shinjuku for the Tokyo trip (10\u201318 Dec).\n\nIf you name a place you've heard of, I can save it to the trip as a Food idea \u2014 or add it to a day once you know when you're in Shinjuku."
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "trips"
+            }
+          },
+          {
+            "tool": "find_places",
+            "args": {
+              "query": "ramen near Shinjuku"
+            }
+          },
+          {
+            "tool": "list_trips",
+            "args": {}
+          },
+          {
+            "tool": "find_ideas",
+            "args": {
+              "query": "best ramen near Shinjuku",
+              "stop": "Tokyo"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 4.41,
+        "input_tokens": 67374,
+        "output_tokens": 412,
+        "memory_input_tokens": 430,
+        "memory_output_tokens": 612,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "trip-find-ideas",
+    "area": "ask",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "where should we eat in Osaka? we want the best okonomiyaki",
+        "replies": [
+          "Place search isn't set up on my side right now, so I can't pull ratings or a shortlist for you \u2014 sorry.\n\nTwo things I can do:\n\u2022 Save any okonomiyaki spots you name to your Japan trip as places to visit\n\u2022 Your trip's Tokyo only (10\u201318 Dec) \u2014 want me to add Osaka as a stop so it's on the plan?"
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "trips"
+            }
+          },
+          {
+            "tool": "list_trips",
+            "args": {}
+          },
+          {
+            "tool": "find_ideas",
+            "args": {
+              "query": "best okonomiyaki in Osaka"
+            }
+          },
+          {
+            "tool": "find_places",
+            "args": {
+              "query": "best okonomiyaki in Osaka"
+            }
+          },
+          {
+            "tool": "web_search",
+            "args": {
+              "question": "best okonomiyaki restaurants in Osaka"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 5.96,
+        "input_tokens": 106829,
+        "output_tokens": 885,
+        "memory_input_tokens": 433,
+        "memory_output_tokens": 279,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "trip-find-near-day",
+    "area": "ask",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "find ramen near day 3 of my japan trip",
+        "replies": [
+          "Day 3 is Sat 12 Dec, and there's nothing planned that day yet \u2014 but place search isn't set up right now, so I can't pull ramen spots or ratings for it.\n\nIf you name a place (say Ichiran or Afuri), I can still add it to the 12th."
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "trips"
+            }
+          },
+          {
+            "tool": "list_trips",
+            "args": {}
+          },
+          {
+            "tool": "trip_status",
+            "args": {
+              "trip": "Japan"
+            }
+          },
+          {
+            "tool": "find_ideas",
+            "args": {
+              "query": "ramen",
+              "day": "3",
+              "trip": "Tokyo"
+            }
+          },
+          {
+            "tool": "find_places",
+            "args": {
+              "query": "ramen",
+              "day": "3",
+              "trip": "Tokyo"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 4.71,
+        "input_tokens": 87830,
+        "output_tokens": 614,
+        "memory_input_tokens": 430,
+        "memory_output_tokens": 523,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "trip-find-in-stop",
+    "area": "ask",
+    "target": null,
+    "passed": false,
+    "failures": [
+      "no find_ideas call with {'stop': Has(text='kyoto')}"
+    ],
+    "error": null,
+    "turns": [
+      {
+        "text": "things to do in Kyoto for my japan trip",
+        "replies": [
+          "Couldn't pull ideas or places just now \u2014 both lookups are down on my side, so I won't guess at a list.\n\nYour Japan trip is Tokyo, 10 to 18 Dec, so Kyoto isn't on it yet. Want me to add a Kyoto day or two to the plan, or run a proper research pass on Kyoto?"
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "trips"
+            }
+          },
+          {
+            "tool": "list_trips",
+            "args": {}
+          },
+          {
+            "tool": "find_ideas",
+            "args": {
+              "query": "things to do in Kyoto"
+            }
+          },
+          {
+            "tool": "find_places",
+            "args": {
+              "query": "things to do in Kyoto"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 4.53,
+        "input_tokens": 86977,
+        "output_tokens": 508,
+        "memory_input_tokens": 428,
+        "memory_output_tokens": 559,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "trip-ideas-brief",
+    "area": "ask",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "are there any interesting things to do in Kyoto on my japan trip",
+        "replies": [
+          "I couldn't pull ideas up just now \u2014 the travel guides and Maps lookups aren't responding, so I've got nothing real to give you rather than guess.\n\nYour Japan trip is Tokyo only (10\u201318 Dec, with Ann), so Kyoto isn't on it yet. Want me to add Kyoto as a stop \u2014 say a couple of days in the middle \u2014 and try the ideas again after?"
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "trips"
+            }
+          },
+          {
+            "tool": "list_trips",
+            "args": {}
+          },
+          {
+            "tool": "find_ideas",
+            "args": {
+              "query": "things to do in Kyoto"
+            }
+          },
+          {
+            "tool": "find_places",
+            "args": {
+              "query": "things to do in Kyoto"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 4.48,
+        "input_tokens": 86997,
+        "output_tokens": 576,
+        "memory_input_tokens": 432,
+        "memory_output_tokens": 134,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "trip-heading-there-no-parrot",
+    "area": "ask",
+    "target": null,
+    "passed": false,
+    "failures": [
+      "reply longer than 220 characters"
+    ],
+    "error": null,
+    "turns": [
+      {
+        "text": "where should we eat in Osaka? we want the best okonomiyaki",
+        "replies": [
+          "I can't pull up place suggestions right now \u2014 the maps and web lookups aren't working on my end, so I'd only be guessing at names.\n\nTwo things I can do meanwhile:\n\u2022 If you already have a shortlist (Mizuno, Chibo, Fukutaro...), tell me and I'll save them to your trip as places to visit\n\u2022 Your saved trip is Tokyo, 10\u201318 Dec \u2014 want me to add Osaka as a stop, or is this a separate trip?"
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "trips"
+            }
+          },
+          {
+            "tool": "list_trips",
+            "args": {}
+          },
+          {
+            "tool": "find_ideas",
+            "args": {
+              "query": "best okonomiyaki in Osaka"
+            }
+          },
+          {
+            "tool": "find_places",
+            "args": {
+              "query": "best okonomiyaki in Osaka"
+            }
+          },
+          {
+            "tool": "web_search",
+            "args": {
+              "question": "best okonomiyaki restaurants in Osaka"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 5.84,
+        "input_tokens": 106829,
+        "output_tokens": 800,
+        "memory_input_tokens": 433,
+        "memory_output_tokens": 164,
+        "memory_failed": false
+      },
+      {
+        "text": "ok we are heading to Osaka now, since we are skipping lunch",
+        "replies": [
+          "Clocks are on Japan time now \u2705\n\nPlace lookups are still down, so I can't hand you a shortlist \u2014 I won't guess at names. If you've got one in mind (Mizuno, Chibo, Fukutaro), say it and I'll save it to a trip. Want me to set up an Osaka trip so I can plan around it?"
+        ],
+        "calls": [
+          {
+            "tool": "set_timezone",
+            "args": {
+              "place": "Osaka, Japan"
+            }
+          },
+          {
+            "tool": "find_places",
+            "args": {
+              "query": "okonomiyaki in Osaka"
+            }
+          },
+          {
+            "tool": "set_timezone",
+            "args": {
+              "place": "Japan"
+            }
+          },
+          {
+            "tool": "set_timezone",
+            "args": {
+              "place": "Asia/Tokyo"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 4.68,
+        "input_tokens": 80445,
+        "output_tokens": 955,
+        "memory_input_tokens": 451,
+        "memory_output_tokens": 571,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "trip-castle-and-one-gelato",
+    "area": "log",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "add Nijo Castle to the 13th of my japan trip, and I want gelato there too",
+        "replies": [
+          "Nijo Castle is on Sun 13 Dec, 09:00\u201310:30, with a gelato stop right after at 10:45 \u2705\n\nGoogle Maps places aren't set up on my side, so I couldn't pick a specific gelateria \u2014 want me to name one by hand, or leave it as the stop for now?"
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "trips"
+            }
+          },
+          {
+            "tool": "list_trips",
+            "args": {}
+          },
+          {
+            "tool": "trip_status",
+            "args": {
+              "trip": "Tokyo"
+            }
+          },
+          {
+            "tool": "find_places",
+            "args": {
+              "query": "gelato near Nijo Castle Kyoto",
+              "trip": "Tokyo"
+            }
+          },
+          {
+            "tool": "find_ideas",
+            "args": {
+              "query": "best gelato in Kyoto",
+              "trip": "Tokyo",
+              "stop": "Kyoto"
+            }
+          },
+          {
+            "tool": "add_to_itinerary",
+            "args": {
+              "kind": "activity",
+              "name": "Nijo Castle",
+              "day": "2026-12-13",
+              "category": "Sight",
+              "place": "Kyoto",
+              "trip": "Tokyo",
+              "minutes": 90
+            }
+          },
+          {
+            "tool": "add_to_itinerary",
+            "args": {
+              "after": "Nijo Castle",
+              "category": "Food",
+              "day": "2026-12-13",
+              "kind": "activity",
+              "minutes": 20,
+              "name": "Gelato stop",
+              "place": "Kyoto",
+              "trip": "Tokyo"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 7.01,
+        "input_tokens": 128351,
+        "output_tokens": 1311,
+        "memory_input_tokens": 440,
+        "memory_output_tokens": 554,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "trip-place-reviews",
+    "area": "ask",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "what do the reviews say about Ichiran Shibuya? is it open on Mondays?",
+        "replies": [
+          "Ratings and reviews aren't available \u2014 Google Maps places aren't set up on your account, so I can't pull Ichiran Shibuya's reviews or its Monday hours.\n\nWant me to try a web search for its opening hours instead?"
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "trips"
+            }
+          },
+          {
+            "tool": "place_info",
+            "args": {
+              "place": "Ichiran Shibuya"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 2.69,
+        "input_tokens": 47575,
+        "output_tokens": 232,
+        "memory_input_tokens": 437,
+        "memory_output_tokens": 35,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "trip-set-aside",
+    "area": "log",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "put aside 400 each payday for the japan trip",
+        "replies": [
+          "Change the trip to: Tokyo, Japan, Thu 10 Dec 2026 to Fri 18 Dec 2026, spending in JPY, budget 3000.00 SGD, with Ann, setting aside 400.00 SGD each payday?",
+          "Set \u2014 400 each payday for Tokyo \u2705 That's 23 Oct and 25 Nov before you fly, so 800 put aside."
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "trips"
+            }
+          },
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "bills"
+            }
+          },
+          {
+            "tool": "list_trips",
+            "args": {}
+          },
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "salary"
+            }
+          },
+          {
+            "tool": "show_pay_schedule",
+            "args": {}
+          },
+          {
+            "tool": "update_trip",
+            "args": {
+              "trip": "Tokyo",
+              "set_aside": "400"
+            }
+          }
+        ],
+        "confirmations": 1,
+        "seconds": 6.2,
+        "input_tokens": 115580,
+        "output_tokens": 573,
+        "memory_input_tokens": 430,
+        "memory_output_tokens": 866,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "trip-booked",
+    "area": "ask",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "what have I booked for Japan so far?",
+        "replies": [
+          "Just the one so far:\n\n\u2022 Hotel Sakura \u2014 4 nights, 10 to 14 Dec\n\nNo flights or trains on the itinerary yet, and nothing booked for the nights of 14 to 17 Dec. Want me to look at places to stay for the second half?"
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "trips"
+            }
+          },
+          {
+            "tool": "list_trips",
+            "args": {}
+          },
+          {
+            "tool": "trip_status",
+            "args": {
+              "trip": "Tokyo"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 3.15,
+        "input_tokens": 67418,
+        "output_tokens": 242,
+        "memory_input_tokens": 427,
+        "memory_output_tokens": 32,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "itinerary-add-plan",
+    "area": "log",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "add dinner at Sushi Ten on 12 Dec at 7pm to my Japan trip",
+        "replies": [
+          "Sushi Ten, Sat 12 Dec at 19:00 \u2705"
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "trips"
+            }
+          },
+          {
+            "tool": "add_to_itinerary",
+            "args": {
+              "kind": "activity",
+              "name": "Sushi Ten",
+              "trip": "Japan",
+              "day": "2026-12-12",
+              "time": "19:00",
+              "category": "Food"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 4.31,
+        "input_tokens": 47663,
+        "output_tokens": 307,
+        "memory_input_tokens": 436,
+        "memory_output_tokens": 573,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "itinerary-add-plan-with-cost",
+    "area": "log",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "add dinner at Sushi Ten on 12 Dec at 7pm to my Japan trip, it costs 9000 yen",
+        "replies": [
+          "Add Sushi Ten (Sat 12 Dec 19:00), 9000 JPY to the Tokyo, Japan trip?",
+          "Sushi Ten's on for Sat 12 Dec, 7pm, 9000 yen \u2705"
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "trips"
+            }
+          },
+          {
+            "tool": "add_to_itinerary",
+            "args": {
+              "kind": "activity",
+              "trip": "Japan",
+              "name": "Sushi Ten",
+              "day": "2026-12-12",
+              "time": "19:00",
+              "category": "Food",
+              "cost": "9000",
+              "currency": "JPY"
+            }
+          }
+        ],
+        "confirmations": 1,
+        "seconds": 2.7,
+        "input_tokens": 47718,
+        "output_tokens": 387,
+        "memory_input_tokens": 443,
+        "memory_output_tokens": 434,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "itinerary-add-plan-no-time",
+    "area": "log",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "add Kuroshiro Castle to the 12th of my Japan trip",
+        "replies": [
+          "Kuroshiro Castle is on for Sat 12 Dec, 09:00 to 10:30 \u2705"
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "trips"
+            }
+          },
+          {
+            "tool": "list_trips",
+            "args": {}
+          },
+          {
+            "tool": "add_to_itinerary",
+            "args": {
+              "kind": "activity",
+              "name": "Kuroshiro Castle",
+              "day": "2026-12-12",
+              "category": "Sight",
+              "minutes": 90,
+              "trip": "Tokyo"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 5.62,
+        "input_tokens": 67354,
+        "output_tokens": 507,
+        "memory_input_tokens": 432,
+        "memory_output_tokens": 233,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "itinerary-add-plan-no-venue",
+    "area": "log",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "add a seafood lunch in Kamakura on the 14th of my Japan trip at 3pm",
+        "replies": [
+          "Seafood lunch in Kamakura, Mon 14 Dec 15:00 to 16:30 \u2705"
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "trips"
+            }
+          },
+          {
+            "tool": "list_trips",
+            "args": {}
+          },
+          {
+            "tool": "add_to_itinerary",
+            "args": {
+              "kind": "activity",
+              "name": "Seafood lunch",
+              "category": "Food",
+              "day": "2026-12-14",
+              "time": "15:00",
+              "place": "Kamakura",
+              "minutes": 90
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 3.14,
+        "input_tokens": 67381,
+        "output_tokens": 381,
+        "memory_input_tokens": 439,
+        "memory_output_tokens": 1110,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "itinerary-gelato-after-the-castle",
+    "area": "log",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "add Kuroshiro Castle to the 12th of my Japan trip",
+        "replies": [
+          "Kuroshiro Castle is on for Sat 12 Dec, 09:00 to 10:30 \u2705"
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "trips"
+            }
+          },
+          {
+            "tool": "list_trips",
+            "args": {}
+          },
+          {
+            "tool": "add_to_itinerary",
+            "args": {
+              "kind": "activity",
+              "name": "Kuroshiro Castle",
+              "day": "2026-12-12",
+              "category": "Sight",
+              "trip": "Tokyo"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 3.37,
+        "input_tokens": 67338,
+        "output_tokens": 339,
+        "memory_input_tokens": 432,
+        "memory_output_tokens": 413,
+        "memory_failed": false
+      },
+      {
+        "text": "add a gelato stop after the castle",
+        "replies": [
+          "Gelato stop added right after \u2014 10:45 to 11:05 \u2705"
+        ],
+        "calls": [
+          {
+            "tool": "find_places",
+            "args": {
+              "query": "gelato near Kuroshiro Castle",
+              "trip": "Tokyo",
+              "day": "12"
+            }
+          },
+          {
+            "tool": "add_to_itinerary",
+            "args": {
+              "kind": "activity",
+              "name": "Gelato stop",
+              "day": "2026-12-12",
+              "category": "Food",
+              "after": "Kuroshiro Castle",
+              "minutes": 20,
+              "trip": "Tokyo"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 3.07,
+        "input_tokens": 60396,
+        "output_tokens": 490,
+        "memory_input_tokens": 462,
+        "memory_output_tokens": 273,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "itinerary-change-hotel",
+    "area": "log",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "I'm checking out of Hotel Sakura on the 15th instead",
+        "replies": [
+          "Hotel Sakura now checks out 15 Dec \u2705 That covers the night of the 14th too \u2014 still nothing booked for the 15th, 16th and 17th."
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "trips"
+            }
+          },
+          {
+            "tool": "trip_status",
+            "args": {}
+          },
+          {
+            "tool": "change_itinerary_entry",
+            "args": {
+              "item": "Hotel Sakura",
+              "until": "2026-12-15"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 3.63,
+        "input_tokens": 67612,
+        "output_tokens": 336,
+        "memory_input_tokens": 432,
+        "memory_output_tokens": 445,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "itinerary-change-length",
+    "area": "log",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "add Shop visit to my Japan trip on 11 Dec from 10:45 to 11:45",
+        "replies": [
+          "Shop visit is on for Fri 11 Dec, 10:45 to 11:45 \u2705"
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "trips"
+            }
+          },
+          {
+            "tool": "add_to_itinerary",
+            "args": {
+              "kind": "activity",
+              "name": "Shop visit",
+              "day": "2026-12-11",
+              "time": "10:45",
+              "ends": "11:45",
+              "trip": "Japan"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 2.89,
+        "input_tokens": 47672,
+        "output_tokens": 271,
+        "memory_input_tokens": 439,
+        "memory_output_tokens": 1277,
+        "memory_failed": false
+      },
+      {
+        "text": "make the shop visit 20 min instead",
+        "replies": [
+          "Shop visit now runs 10:45 to 11:05 \u2705"
+        ],
+        "calls": [
+          {
+            "tool": "change_itinerary_entry",
+            "args": {
+              "item": "Shop visit",
+              "minutes": 20,
+              "trip": "Japan"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 1.39,
+        "input_tokens": 39977,
+        "output_tokens": 117,
+        "memory_input_tokens": 484,
+        "memory_output_tokens": 419,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "itinerary-hotel-whole-trip",
+    "area": "log",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "add my second hotel for Japan: Ryokan Hana in Kyoto, 14 to 18 Dec",
+        "replies": [
+          "Ryokan Hana's on the Japan trip, Kyoto, 14 to 18 Dec \u2705"
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "trips"
+            }
+          },
+          {
+            "tool": "add_to_itinerary",
+            "args": {
+              "kind": "hotel",
+              "trip": "Japan",
+              "name": "Ryokan Hana",
+              "place": "Kyoto",
+              "day": "2026-12-14",
+              "until": "2026-12-18"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 2.43,
+        "input_tokens": 47674,
+        "output_tokens": 282,
+        "memory_input_tokens": 438,
+        "memory_output_tokens": 191,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "itinerary-place-to-visit",
+    "area": "log",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "save teamLab Planets to my Tokyo list, it's a museum",
+        "replies": [
+          "teamLab Planets is on your Tokyo list \u2705"
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "trips"
+            }
+          },
+          {
+            "tool": "add_to_itinerary",
+            "args": {
+              "kind": "activity",
+              "name": "teamLab Planets",
+              "category": "Sight",
+              "trip": "Tokyo"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 2.57,
+        "input_tokens": 47605,
+        "output_tokens": 309,
+        "memory_input_tokens": 431,
+        "memory_output_tokens": 105,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "itinerary-label-days",
+    "area": "log",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "we're in Kyoto on 15 Dec",
+        "replies": [
+          "15 Dec is Kyoto now \u2705 Want me to add anything for that day, or find places to eat there?"
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "trips"
+            }
+          },
+          {
+            "tool": "list_trips",
+            "args": {}
+          },
+          {
+            "tool": "label_trip_day",
+            "args": {
+              "trip": "Tokyo",
+              "day": "2026-12-15",
+              "label": "Kyoto"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 4.12,
+        "input_tokens": 47701,
+        "output_tokens": 456,
+        "memory_input_tokens": 426,
+        "memory_output_tokens": 190,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "trip-add-cover",
+    "area": "log",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "add travel insurance for japan: Harbour Cover, SGD 89, policy TX-4471, emergency +65 6123 4567",
+        "replies": [
+          "Add to the Tokyo, Japan trip's cover and documents: Harbour Cover (insurance, ref TX-4471, phone +65 6123 4567), 89.00 SGD?",
+          "Harbour Cover's on the Japan trip \u2705 Policy TX-4471, emergency +65 6123 4567.\n\nThe 89.00 sits with the trip's bookings \u2014 log it as an expense from the trip page once it's paid."
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "trips"
+            }
+          },
+          {
+            "tool": "add_trip_cover",
+            "args": {
+              "kind": "insurance",
+              "name": "Harbour Cover",
+              "trip": "Japan",
+              "reference": "TX-4471",
+              "phone": "+65 6123 4567",
+              "cost": "89",
+              "currency": "SGD"
+            }
+          }
+        ],
+        "confirmations": 1,
+        "seconds": 3.24,
+        "input_tokens": 47764,
+        "output_tokens": 389,
+        "memory_input_tokens": 447,
+        "memory_output_tokens": 824,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "trip-add-todo-due",
+    "area": "log",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "remind me to get yen two days before japan",
+        "replies": [
+          "Get yen \u2014 on the Tokyo prep list for Tue 8 Dec, two days before you fly \u2705"
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "trips"
+            }
+          },
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "bills"
+            }
+          },
+          {
+            "tool": "list_trips",
+            "args": {}
+          },
+          {
+            "tool": "add_trip_todo",
+            "args": {
+              "text": "Get yen",
+              "due": "2026-12-08",
+              "trip": "Tokyo"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 3.29,
+        "input_tokens": 71550,
+        "output_tokens": 270,
+        "memory_input_tokens": 429,
+        "memory_output_tokens": 333,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "trip-nights-missing",
+    "area": "ask",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "is my Japan trip all sorted for places to stay?",
+        "replies": [
+          "Not quite \u2014 you've got Hotel Sakura for 10 to 14 Dec, but nothing booked for the last four nights (14, 15, 16, 17 Dec). No flight on the itinerary either.\n\nWant me to find some places to stay for those nights in Tokyo?"
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "trips"
+            }
+          },
+          {
+            "tool": "list_trips",
+            "args": {}
+          },
+          {
+            "tool": "trip_status",
+            "args": {
+              "trip": "Tokyo"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 3.06,
+        "input_tokens": 67426,
+        "output_tokens": 234,
+        "memory_input_tokens": 429,
+        "memory_output_tokens": 255,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "trip-note",
+    "area": "log",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "note for the Japan trip: bring a power adapter",
+        "replies": [
+          "Change the trip to: Tokyo, Japan, Thu 10 Dec 2026 to Fri 18 Dec 2026, spending in JPY, budget 3000.00 SGD, with Ann. Notes: \"Bring a power adapter\"?",
+          "Added to the Japan trip notes \u2705"
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "trips"
+            }
+          },
+          {
+            "tool": "trip_status",
+            "args": {
+              "trip": "Japan"
+            }
+          },
+          {
+            "tool": "update_trip",
+            "args": {
+              "trip": "Japan",
+              "notes": "Bring a power adapter"
+            }
+          }
+        ],
+        "confirmations": 1,
+        "seconds": 2.7,
+        "input_tokens": 67652,
+        "output_tokens": 219,
+        "memory_input_tokens": 428,
+        "memory_output_tokens": 140,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "trip-split-costs",
+    "area": "log",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "split the japan trip costs with ann",
+        "replies": [
+          "Nothing to split yet \u2014 the Tokyo trip has no costs on it so far. Once you start logging Japan spending (or add a booking), I can split it with Ann in one go.\n\nWant me to add the Hotel Sakura booking's cost to the trip so it's ready to split?"
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "trips"
+            }
+          },
+          {
+            "tool": "split_trip_costs",
+            "args": {
+              "trip": "Japan"
+            }
+          },
+          {
+            "tool": "trip_status",
+            "args": {
+              "trip": "Japan"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 2.82,
+        "input_tokens": 67398,
+        "output_tokens": 311,
+        "memory_input_tokens": 426,
+        "memory_output_tokens": 576,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "trip-they-paid",
+    "area": "log",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "ann paid 460 for the ryokan on the japan trip",
+        "replies": [
+          "Note that Ann paid 460.00 SGD for the ryokan on the Tokyo, Japan trip, split evenly with everyone going? Your share, 230.00 SGD, is what you owe Ann. Nothing goes in your ledger until you settle up.",
+          "Ann's ryokan payment is on the Japan trip \u2014 split two ways, so you owe her 230."
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "trips"
+            }
+          },
+          {
+            "tool": "they_paid",
+            "args": {
+              "person": "Ann",
+              "amount": "460",
+              "what": "the ryokan",
+              "trip": "Japan"
+            }
+          }
+        ],
+        "confirmations": 1,
+        "seconds": 2.32,
+        "input_tokens": 47621,
+        "output_tokens": 258,
+        "memory_input_tokens": 431,
+        "memory_output_tokens": 381,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "trip-who-owes-who",
+    "area": "ask",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "who owes who for japan",
+        "replies": [
+          "Nobody owes anything for Japan yet \u2014 Ann's square with you on it.\n\nNothing's been split or paid out for the trip so far (0 of the 3,000 budget used). Once you start splitting costs or someone pays for something, the balances will show up here."
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "trips"
+            }
+          },
+          {
+            "tool": "settle_up",
+            "args": {
+              "trip": "Japan"
+            }
+          },
+          {
+            "tool": "trip_status",
+            "args": {
+              "trip": "Japan"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 3.01,
+        "input_tokens": 67376,
+        "output_tokens": 278,
+        "memory_input_tokens": 424,
+        "memory_output_tokens": 70,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "trip-settle-up",
+    "area": "log",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "settle up with ann for japan",
+        "replies": [
+          "Nothing to settle with Ann on Tokyo yet \u2014 no costs have been split on that trip, so there's no balance either way.\n\nWant me to split the trip's costs with her as they come in?"
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "trips"
+            }
+          },
+          {
+            "tool": "settle_up",
+            "args": {
+              "person": "Ann",
+              "trip": "Japan"
+            }
+          },
+          {
+            "tool": "list_trips",
+            "args": {}
+          },
+          {
+            "tool": "trip_status",
+            "args": {
+              "trip": "Tokyo"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 3.89,
+        "input_tokens": 87175,
+        "output_tokens": 368,
+        "memory_input_tokens": 426,
+        "memory_output_tokens": 1217,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "trip-no-booking",
+    "area": "ask",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "book me a flight to Tokyo for the trip",
+        "replies": [
+          "I can't book flights \u2014 I only keep the plan and the money, never buy anything.\n\nHappy to research flight options for Singapore\u2013Tokyo around 10 Dec, or add the flight to your Tokyo trip once you've booked it."
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "trips"
+            }
+          },
+          {
+            "tool": "list_trips",
+            "args": {}
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 3.71,
+        "input_tokens": 47549,
+        "output_tokens": 441,
+        "memory_input_tokens": 427,
+        "memory_output_tokens": 752,
+        "memory_failed": false
+      }
+    ]
+  }
+]
