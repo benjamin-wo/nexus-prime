@@ -6,9 +6,11 @@ hold. ``target`` names the M8 part expected to fix a case the current assistant
 can't do yet, so a baseline can tell expected failures from regressions.
 """
 
+import re
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
+from nexus.domain.voice import STOCK_PHRASES
 from nexus.evals import seed
 from nexus.evals.checks import (
     BillIs,
@@ -35,6 +37,7 @@ from nexus.evals.checks import (
     TimeZoneIs,
     TodoAdded,
     UpdatesAre,
+    VoiceIs,
 )
 
 # Tools that change data. Refusals and questions must call none of them.
@@ -76,6 +79,7 @@ WRITES = (
     "update_wallet",
     "delete_wallet",
     "set_timezone",
+    "set_voice",
 )
 
 TODAY = date(2026, 9, 28)
@@ -178,6 +182,11 @@ _PLAIN = (
     r"\bnothing (?:was )?moved\b",
     r"\b\d{4,}\.\d{2}\b",
 )
+
+# Pictographs, dingbats (✅ ⚠️ ★) and the variation selector that follows them.
+_EMOJI = r"[\U0001F000-\U0001FAFF\u2600-\u27BF\u2B50\u2B55\uFE0F]"
+# The stock phrases of a call centre, which no voice says.
+_STOCK = tuple(rf"\b{re.escape(phrase)}\b" for phrase in STOCK_PHRASES)
 
 _ASKS_JUMBO_AMOUNT = (
     r"\b(?:jumbo|dinner)\b[^.!?\n]*\b(?:exact|amount|total|how much|came to|cost)\b[^.!?\n]*\?",
@@ -1497,6 +1506,32 @@ CASES: tuple[Case, ...] = (
         max_reply=160,
         never_match=_PLAIN,
         target="M8e",
+    ),
+    # --- how Nexus talks (the tone is judged by hand; these check what code can) -------------
+    Case(
+        "voice-direct",
+        "voice",
+        _t("keep it short, no emoji", _new("grab 12")),
+        checks=(
+            Logged("12", "grab", "Transport", day=TODAY),
+            VoiceIs(emoji="none", length="short"),
+        ),
+        max_reply=80,
+        never_match=(_EMOJI,),
+    ),
+    Case(
+        "voice-cheeky",
+        "voice",
+        _t("you can be cheeky", _new("bubble tea 6.50")),
+        checks=(Logged("6.50", "bubble tea", day=TODAY), VoiceIs(preset="cheeky")),
+        max_reply=200,
+    ),
+    Case(
+        "voice-default-no-stock",
+        "voice",
+        _t("my salary comes from acme", "grab 12", "who owes me money", "thanks!"),
+        checks=(Logged("12", "grab", "Transport", day=TODAY), VoiceIs(preset="default")),
+        never_match=_STOCK,
     ),
     Case(
         "mem-short-replies",

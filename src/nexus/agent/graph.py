@@ -43,6 +43,7 @@ from nexus.application import departments as department_cases
 from nexus.application import income as income_cases
 from nexus.application import memory as memory_cases
 from nexus.application import ops
+from nexus.application import voice as voice_cases
 from nexus.application.categories import list_categories
 from nexus.application.category_rules import list_rules
 from nexus.application.fx import RateSource
@@ -56,6 +57,7 @@ from nexus.application.whereabouts import ZoneFinder
 from nexus.domain.errors import DuplicateSource, InvalidInput, NexusError
 from nexus.domain.ledger import User, UserId
 from nexus.domain.money import Money
+from nexus.domain.voice import STOCK_PHRASES, prompt_block
 from nexus.infra.llm.factory import text_of
 
 log = logging.getLogger(__name__)
@@ -86,12 +88,23 @@ CORE_TOOLS = (
     "list_categories",
     # "i always split dinners with ann" is said in passing, with no skill loaded.
     "set_split_habit",
+    # "be more chill" is said in passing too; show_voice answers "how are you talking now".
+    "set_voice",
+    "show_voice",
     "answer_email",
     "set_timezone",
     "web_search",
     "load_skill",
 )
 SKILL_TURNS = 5
+# In the reply style rules, for every voice the default included.
+STOCK_PHRASE_RULE = (
+    "Never say "
+    + ", ".join(f'"{p}"' for p in STOCK_PHRASES[:-1])
+    + f' or "{STOCK_PHRASES[-1]}", at the start of a reply or anywhere in it ("Noted on '
+    + 'the trip" too): just say what you did.'
+    + " "
+)
 _ID = re.compile(r"\s*\[id [0-9a-f-]{36}\]")
 
 WROTE = "nexus_wrote"
@@ -128,6 +141,7 @@ class AgentState(TypedDict):
     summary_at: NotRequired[str]  # when the summary was written (UTC, ISO)
     open_items: NotRequired[list[OpenItem]]  # what the user means to come back to (see there)
     memories: NotRequired[str]  # what Nexus remembers that bears on this turn
+    voice: NotRequired[str]  # the user's "How you talk" block, loaded once per turn
     skills: NotRequired[dict[str, int]]  # loaded skills: user messages left before they lapse
 
 
@@ -347,6 +361,7 @@ class AgentGraph:
         )
         home = ctx.user.home_timezone
         home_zone = f", home: {home}" if home != ctx.user.timezone else ""
+        voice = state.get("voice", "")
         return (
             "You are Nexus, a personal finance assistant chatting on a phone: a warm, "
             "sharp friend who's good with money. Friendly and quick, with a light touch "
@@ -429,9 +444,11 @@ class AgentGraph:
             "useful next step, offer it in a short last line; usually there isn't. A next "
             'step is something new ("Want a dining budget?"), never an offer to undo, '
             'restore or redo what you just did, since a plain "yes" would act on it. '
-            "Never show transaction ids. A reply style the user has asked for (shorter, "
+            + STOCK_PHRASE_RULE
+            + "Never show transaction ids. A reply style the user has asked for (shorter, "
             'no emoji, more detail) wins over all of this: "short" means a line or two.\n'
-            "- When the user says yes to something you offered, or clearly asks for a "
+            + (f"{voice}\n" if voice else "")
+            + "- When the user says yes to something you offered, or clearly asks for a "
             "change, do it; don't ask again in words. Several changes in one message are "
             "all made, not asked about one by one.\n"
             "- Choosing between options (a place, a time, a way to do it): decide yourself "
@@ -556,6 +573,7 @@ class AgentGraph:
             "steps": 0,
             "snapshot": await money_snapshot(ctx),
             "memories": await self._memories(ctx, text),
+            "voice": await self._voice(ctx),
             # Each new message brings every loaded skill a step closer to lapsing.
             "skills": {k: n - 1 for k, n in state.get("skills", {}).items() if n > 1},
         }
@@ -587,6 +605,14 @@ class AgentGraph:
             return memory_cases.describe(await memory_cases.recall(ctx.uow, ctx.user, text))
         except Exception:  # memory helps; it must never stop a turn
             log.exception("recalling memories failed")
+            return ""
+
+    async def _voice(self, ctx: ToolContext) -> str:
+        """The user's "How you talk" block; empty for the default voice."""
+        try:
+            return prompt_block(await voice_cases.get_voice(ctx.uow(), ctx.user.id))
+        except Exception:  # a voice is polish; it must never stop a turn
+            log.exception("loading the voice failed")
             return ""
 
     async def condense(self, config: RunnableConfig) -> bool:
@@ -810,6 +836,7 @@ class AgentGraph:
         from_kernel = bool(request.additional_kwargs.get(KERNEL))
         results: list[ToolMessage] = []
         loaded = dict(state.get("skills", {}))
+        voice_changed = False
         for call in request.tool_calls:
             spec = self.deps.tools.get(call["name"])
             buttons: list[list[tuple[str, str]]] | None = None
@@ -831,6 +858,8 @@ class AgentGraph:
                     skill = str(call["args"].get("name", "")).strip().lower()
                     if call["name"] == "load_skill" and not content.startswith("Error:"):
                         loaded[skill] = SKILL_TURNS
+                    if call["name"] == "set_voice" and not content.startswith("Error:"):
+                        voice_changed = True
                     # A tool's "Error: ..." is the model's to fix (a bad argument, a
                     # missing thing): counted, so a tool the model keeps misusing shows.
                     refused = content.startswith("Error:")
@@ -867,6 +896,9 @@ class AgentGraph:
         update: dict[str, Any] = {"messages": results}
         if loaded != state.get("skills", {}):
             update["skills"] = loaded
+        if voice_changed:
+            # So the reply to "be more chill" already talks that way.
+            update["voice"] = await self._voice(ctx)
         return Command(goto="kernel_reply" if from_kernel else "agent", update=update)
 
     async def kernel_reply_node(self, state: AgentState) -> dict[str, Any]:

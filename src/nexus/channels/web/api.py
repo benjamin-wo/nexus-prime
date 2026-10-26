@@ -35,6 +35,7 @@ from nexus.application import splits as split_cases
 from nexus.application import statements as statement_cases
 from nexus.application import subscriptions as subscription_cases
 from nexus.application import transactions as tx_cases
+from nexus.application import voice as voice_cases
 from nexus.application import wallet_figures as figure_cases
 from nexus.application import wallets as wallet_cases
 from nexus.application import whereabouts as whereabouts_cases
@@ -84,6 +85,7 @@ from nexus.domain.notifications import (
 from nexus.domain.planning import Cadence, PayRule, next_month_start
 from nexus.domain.statement_pdf import PAGE_BREAK
 from nexus.domain.statements import AmountSign, DateOrder, Mapping, StatementImport
+from nexus.domain.voice import PRESETS, VoiceSettings
 from nexus.infra.pdf.pages import page_images
 from nexus.infra.pdf.text import PasswordNeeded, pdf_text
 
@@ -2207,6 +2209,76 @@ async def set_notifications(body: UpdatesIn, auth: Auth, web: Runtime) -> Update
             daily_cap=body.daily_cap,
         )
     return _updates_out(updated)
+
+
+# --- how Nexus talks ----------------------------------------------------------------------
+
+
+class VoicePresetOut(Model):
+    id: str
+    label: str
+    blurb: str
+    emoji: str  # the dials this preset starts with
+    length: str
+    humour: str
+
+
+class VoiceOut(Model):
+    preset: str
+    emoji: str
+    length: str
+    humour: str
+    note: str | None
+    presets: list[VoicePresetOut]
+
+
+def _voice_out(voice: VoiceSettings) -> VoiceOut:
+    return VoiceOut(
+        preset=voice.preset,
+        emoji=voice.emoji,
+        length=voice.length,
+        humour=voice.humour,
+        note=voice.note,
+        presets=[
+            VoicePresetOut(
+                id=p.id, label=p.label, blurb=p.blurb, emoji=p.emoji, length=p.length,
+                humour=p.humour,
+            )
+            for p in PRESETS
+        ],
+    )  # fmt: skip
+
+
+@router.get("/settings/voice")
+async def get_voice(auth: Auth, web: Runtime) -> VoiceOut:
+    return _voice_out(await voice_cases.get_voice(web.uow(), auth.user.id))
+
+
+class VoiceIn(Model):
+    """What to change; what is left out stays as it was. A preset starts from its
+    own emoji, length and humour unless those are given too. A note of "" or null clears it."""
+
+    preset: str | None = None
+    emoji: str | None = None
+    length: str | None = None
+    humour: str | None = None
+    note: str | None = None
+
+
+@router.put("/settings/voice")
+async def set_voice(body: VoiceIn, auth: Auth, web: Runtime) -> VoiceOut:
+    updated = await voice_cases.set_voice(
+        web.uow(),
+        auth.user.id,
+        preset=body.preset,
+        emoji=body.emoji,
+        length=body.length,
+        humour=body.humour,
+        note=body.note,
+        clear_note="note" in body.model_fields_set and body.note is None,
+        now=web.clock(),
+    )
+    return _voice_out(updated)
 
 
 class NotificationOut(Model):

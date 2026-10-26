@@ -36,7 +36,7 @@ LINK_TTL = timedelta(hours=1)
 _SPOOL_BYTES = 8 * 1024 * 1024
 # One object, not a list, for tables that hold one row per user.
 _SINGLE = {"users": "profile", "salary_schedules": "salary_schedule",
-           "notification_settings": "settings"}  # fmt: skip
+           "notification_settings": "settings", "voice_settings": "voice"}  # fmt: skip
 
 
 def _plain(value: object) -> str:

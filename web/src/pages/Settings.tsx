@@ -10,6 +10,7 @@ import { MemorySection } from "./Memory";
 import { NotificationsCard } from "./Notifications";
 import { RulesSection } from "./Rules";
 import { UpdatesSection } from "./Updates";
+import { VoiceCard } from "./Voice";
 import { WalletsSection } from "./Wallets";
 import { YourDataSection } from "./YourData";
 
@@ -201,6 +202,7 @@ export function Settings({ me }: { me: Me }) {
         <TimeZoneSection me={me} />
         <TripAlertsSection />
         <NotificationsCard />
+        <VoiceCard />
       </div>
       <h2 className="section-title">Connections</h2>
       <div className="plan-grid">

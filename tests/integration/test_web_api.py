@@ -1113,6 +1113,123 @@ async def test_telegram_updates_default_to_daily_and_can_be_changed(world: World
     assert bad.status_code == 422
 
 
+# --- how Nexus talks --------------------------------------------------------------------
+
+
+PRESET_LIST = [
+    ("default", "Default", "some", "normal", "light"),
+    ("chill", "Chill friend", "some", "short", "light"),
+    ("direct", "Straight to the point", "none", "short", "off"),
+    ("hype", "Hype", "lots", "normal", "light"),
+    ("cheeky", "Cheeky", "some", "short", "playful"),
+]
+
+
+async def test_voice_defaults_to_the_usual_tone_and_lists_the_presets(world: World) -> None:
+    owner, _ = await owner_and_invite(world)
+    current = (await owner.get("/api/settings/voice")).json()
+    assert {k: v for k, v in current.items() if k != "presets"} == {
+        "preset": "default",
+        "emoji": "some",
+        "length": "normal",
+        "humour": "light",
+        "note": None,
+    }
+    assert [
+        (p["id"], p["label"], p["emoji"], p["length"], p["humour"]) for p in current["presets"]
+    ] == PRESET_LIST
+    for preset in current["presets"]:
+        assert set(preset) == {"id", "label", "blurb", "emoji", "length", "humour"}
+        assert preset["blurb"] and "\n" not in preset["blurb"]
+
+
+async def test_voice_can_be_changed_a_bit_at_a_time(world: World) -> None:
+    owner, _ = await owner_and_invite(world)
+    chill = await owner.send("PUT", "/api/settings/voice", {"preset": "chill"})
+    assert chill.status_code == 200
+    body = chill.json()
+    assert (body["preset"], body["emoji"], body["length"], body["humour"]) == (
+        "chill",
+        "some",
+        "short",
+        "light",
+    )
+    assert len(body["presets"]) == 5  # the same shape as GET
+
+    dial = (await owner.send("PUT", "/api/settings/voice", {"emoji": "none"})).json()
+    assert (dial["preset"], dial["emoji"], dial["length"]) == ("chill", "none", "short")
+
+    noted = (await owner.send("PUT", "/api/settings/voice", {"note": "  call me   boss "})).json()
+    assert noted["note"] == "call me boss" and noted["emoji"] == "none"
+    assert (await owner.get("/api/settings/voice")).json() == noted
+
+    # A different preset takes its own dials, unless dials come with it; the note stays.
+    direct = (await owner.send("PUT", "/api/settings/voice", {"preset": "direct"})).json()
+    assert (direct["preset"], direct["emoji"], direct["humour"]) == ("direct", "none", "off")
+    assert direct["note"] == "call me boss"
+    both = {"preset": "hype", "length": "detailed"}
+    hype = (await owner.send("PUT", "/api/settings/voice", both)).json()
+    assert (hype["emoji"], hype["length"], hype["humour"]) == ("lots", "detailed", "light")
+
+
+async def test_voice_note_is_cleared_by_an_empty_string_or_null(world: World) -> None:
+    owner, _ = await owner_and_invite(world)
+    for clearing in ("", None, "   "):
+        await owner.send("PUT", "/api/settings/voice", {"note": "call me boss"})
+        cleared = await owner.send("PUT", "/api/settings/voice", {"note": clearing})
+        assert cleared.status_code == 200 and cleared.json()["note"] is None
+    # Leaving the note out keeps it.
+    await owner.send("PUT", "/api/settings/voice", {"note": "call me boss"})
+    kept = await owner.send("PUT", "/api/settings/voice", {"humour": "off"})
+    assert kept.json()["note"] == "call me boss"
+
+
+async def test_voice_refuses_bad_values_in_plain_words(world: World) -> None:
+    owner, _ = await owner_and_invite(world)
+    await owner.send("PUT", "/api/settings/voice", {"preset": "chill"})
+    for body, message in (
+        ({"preset": "grumpy"}, "preset must be one of: default, chill, direct, hype, cheeky"),
+        ({"emoji": "many"}, "emoji must be one of: none, some, lots"),
+        ({"length": "long"}, "length must be one of: short, normal, detailed"),
+        ({"humour": "silly"}, "humour must be one of: off, light, playful"),
+        ({"note": "x" * 201}, "the note is at most 200 characters"),
+        ({"note": "bell\u0007"}, "the note can't contain control characters"),
+    ):
+        bad = await owner.send("PUT", "/api/settings/voice", body)
+        assert bad.status_code == 422, body
+        assert message in bad.json()["detail"], body
+    unknown = await owner.send("PUT", "/api/settings/voice", {"tone": "grumpy"})
+    assert unknown.status_code == 422
+    # A refused change changes nothing, even when part of it was fine.
+    mixed = await owner.send("PUT", "/api/settings/voice", {"preset": "hype", "emoji": "many"})
+    assert mixed.status_code == 422
+    assert (await owner.get("/api/settings/voice")).json()["preset"] == "chill"
+
+
+async def test_voice_needs_sign_in_csrf_and_our_origin(world: World) -> None:
+    owner, _ = await owner_and_invite(world)
+    stranger = world.browser()
+    assert (await stranger.get("/api/settings/voice")).status_code == 401
+    assert (await stranger.client.put("/api/settings/voice", json={})).status_code in (401, 403)
+
+    body = {"preset": "hype"}
+    no_token = await owner.send("PUT", "/api/settings/voice", body, **{"X-CSRF-Token": ""})
+    assert no_token.status_code == 403
+    wrong_origin = await owner.send("PUT", "/api/settings/voice", body, Origin="https://evil.test")
+    assert wrong_origin.status_code == 403
+    assert (await owner.get("/api/settings/voice")).json()["preset"] == "default"
+    assert (await owner.send("PUT", "/api/settings/voice", body)).status_code == 200
+
+
+async def test_voice_is_the_users_own(world: World) -> None:
+    owner, token = await owner_and_invite(world)
+    member = world.browser()
+    assert (await member.login(MEMBER, invite=token)).status_code == 200
+    await owner.send("PUT", "/api/settings/voice", {"preset": "cheeky", "note": "call me boss"})
+    theirs = (await member.get("/api/settings/voice")).json()
+    assert theirs["preset"] == "default" and theirs["note"] is None
+
+
 # --- salary -----------------------------------------------------------------------------
 
 
