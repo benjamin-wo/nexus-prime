@@ -258,3 +258,81 @@ async def test_the_shared_trip_cases_seed_a_member_and_grade_the_owners_trip(
     }
     assert any("Sushi Ten" in f for f in failed["shared-trip-add-plan"].failures)
     assert "reply lacks 'alex'" in failed["shared-trip-budget-refused"].failures
+
+
+async def test_the_voice_cases_are_graded_on_the_saved_voice_and_the_wording(
+    engine: AsyncEngine,
+) -> None:
+    # After each turn the memory writer shares the scripted model and takes two steps (it
+    # tries twice when a reply doesn't parse).
+    memory = (say("nothing to remember"), say("nothing to remember"))
+    grab = call("log_expense", amount="12", merchant="Grab", best_guess_category="Transport")
+    tea = call("log_expense", amount="6.50", merchant="Bubble Tea Place", category="Dining Out")
+    good = {
+        "voice-direct": lambda: scripted(
+            call("set_voice", preset="direct"), say("Done."), *memory, grab, say("12, Grab.")
+        ),
+        "voice-cheeky": lambda: scripted(
+            call("set_voice", preset="cheeky"),
+            say("Oh, can I."),
+            *memory,
+            tea,
+            say("6.50 on bubble tea."),
+        ),
+        "voice-default-no-stock": lambda: scripted(
+            say("Your salary's from Acme."),
+            *memory,
+            grab,
+            say("Grab, 12."),
+            *memory,
+            say("Nobody."),
+            *memory,
+            say("Anytime."),
+        ),
+    }
+    results = {
+        r.case.id: r
+        for r in await run_cases(engine, lambda case: good[case.id](), _only(*good), concurrency=3)
+    }
+    for case_id in good:
+        assert results[case_id].passed, (case_id, results[case_id].failures, results[case_id].error)
+
+    # An emoji, a long reply, or a stock phrase fails; so does never changing the voice.
+    wrong = {
+        "voice-direct": lambda: scripted(
+            say("Okay ✅"),
+            *memory,
+            grab,
+            say("Logged 12.00 at Grab for you, as you asked. " * 3 + "⚠️"),
+        ),
+        "voice-cheeky": lambda: scripted(say("Sure."), *memory, tea, say("Logged.")),
+        "voice-default-no-stock": lambda: scripted(
+            say("Fair enough."),
+            *memory,
+            grab,
+            say("Absolutely, logged."),
+            *memory,
+            say("Nobody."),
+            *memory,
+            say("Noted!"),
+        ),
+    }
+    failed = {
+        r.case.id: r
+        for r in await run_cases(
+            engine,
+            lambda case: wrong[case.id](),
+            _only(*wrong),
+            concurrency=3,
+            first_telegram_id=920_000,
+        )
+    }
+    direct = failed["voice-direct"].failures
+    assert "reply longer than 80 characters" in direct
+    assert any("reply matches" in f for f in direct)
+    assert any(f.startswith("expected voice emoji none") for f in direct)
+    assert any(
+        f.startswith("expected voice preset cheeky") for f in failed["voice-cheeky"].failures
+    )
+    stock = failed["voice-default-no-stock"].failures
+    assert len([f for f in stock if "reply matches" in f]) == 3

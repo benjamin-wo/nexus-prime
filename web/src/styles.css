@@ -2340,3 +2340,35 @@ body:has(.sheet-backdrop) .main-viewport { overflow: hidden; }
 .tz-picker { display: grid; gap: var(--space-3); margin-top: var(--space-4); }
 .tz-picker select { min-height: 9.5rem; }
 .tz-picker .actions { margin-top: 0; }
+
+/* Settings: the How Nexus talks card. */
+.voice-card { grid-column: 1 / -1; }
+.voice-card .card-head { margin-bottom: var(--space-1); }
+.voice-lead { margin: 0 0 var(--space-4); }
+.voice-presets { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: var(--space-2); }
+.voice-preset { display: grid; gap: 2px; align-content: start; min-width: 0; min-height: 44px; padding: var(--space-3); border-radius: 12px; border: 1px solid var(--border-card); background: var(--bg-card); color: var(--text-primary); font: inherit; text-align: left; cursor: pointer; transition: background var(--t-micro), border-color var(--t-micro); }
+.voice-preset:hover, .voice-preset:focus-visible { background: var(--bg-card-hover); }
+.voice-preset[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent-border); box-shadow: 0 0 0 1px var(--accent-border); }
+.voice-preset-label { font-weight: 600; }
+.voice-preset[aria-pressed="true"] .voice-preset-label { color: var(--accent-text); }
+.voice-preset-blurb { font-size: 0.8125rem; line-height: 1.35; color: var(--text-muted); overflow-wrap: anywhere; }
+.voice-dials { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: var(--space-3) var(--space-4); margin-top: var(--space-4); }
+.voice-dial { display: grid; gap: var(--space-1); min-width: 0; }
+.voice-dial-label { font-weight: 500; font-size: 0.8125rem; color: var(--text-secondary); }
+.seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-1); padding: var(--space-1); border-radius: 12px; background: var(--bg-input); border: 1px solid var(--border-card); }
+.seg-btn { min-width: 0; min-height: 40px; padding: 0 var(--space-2); border-radius: 8px; border: 0; background: transparent; color: var(--text-secondary); font: inherit; font-weight: 600; cursor: pointer; transition: background var(--t-micro), color var(--t-micro); }
+.seg-btn:hover, .seg-btn:focus-visible { background: var(--bg-card-hover); }
+.seg-btn[aria-pressed="true"] { background: var(--bg-card); color: var(--accent-text); box-shadow: 0 0 0 1px var(--accent-border); }
+.voice-note { margin-top: var(--space-4); }
+.voice-note-count { margin: var(--space-1) 0 0; }
+.voice-preview { margin-top: var(--space-4); }
+.voice-preview-title { margin: 0 0 var(--space-2); font-size: 0.8125rem; font-weight: 600; color: var(--text-secondary); }
+.voice-replies { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.voice-reply { display: grid; gap: 2px; min-width: 0; padding: var(--space-3); border-radius: 12px; background: var(--bg-card-hover); }
+.voice-said, .voice-text { overflow-wrap: anywhere; }
+.voice-error { margin: var(--space-3) 0 0; }
+@media (max-width: 560px) {
+  .voice-presets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .voice-preset { padding: var(--space-2) var(--space-3); }
+  .voice-preset-blurb { font-size: 0.75rem; }
+}

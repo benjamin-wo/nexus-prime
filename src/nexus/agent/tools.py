@@ -44,6 +44,7 @@ from nexus.application import travel_research as trip_research
 from nexus.application import trip_access as access_cases
 from nexus.application import trips as trip_cases
 from nexus.application import undo as undo_cases
+from nexus.application import voice as voice_cases
 from nexus.application import wallets as wallet_cases
 from nexus.application import whereabouts as whereabouts_cases
 from nexus.application.departments import Departments
@@ -90,6 +91,7 @@ from nexus.domain.split_habits import parse_share
 from nexus.domain.travel_research import published_note
 from nexus.domain.trip_access import clean_name, without_money
 from nexus.domain.trips import Trip, TripItem, describe_trip
+from nexus.domain.voice import Emoji, Humour, Length, Preset
 from nexus.domain.whereabouts import clock_there, zone_named
 from nexus.domain.whereabouts import label as zone_label
 
@@ -3659,6 +3661,44 @@ async def _set_timezone(ctx: ToolContext, a: SetTimezoneArgs) -> ToolResult:
     return ToolResult(f"Now on {zone_label(new, ctx.now)}, {there} there.")
 
 
+class SetVoiceArgs(Args):
+    preset: Preset | None = Field(
+        None, description="The tone: default, chill, direct, hype or cheeky"
+    )
+    emoji: Emoji | None = Field(None, description="How many emoji: none, some or lots")
+    length: Length | None = Field(
+        None, description="How long replies are: short, normal or detailed"
+    )
+    humour: Humour | None = Field(None, description="How much joking: off, light or playful")
+    note: str | None = Field(
+        None,
+        description="Any other wish about how to talk, in the user's own words, at most 200 "
+        "characters ('call me boss'); an empty string clears the note",
+    )
+
+
+async def _set_voice(ctx: ToolContext, a: SetVoiceArgs) -> ToolResult:
+    if all(v is None for v in (a.preset, a.emoji, a.length, a.humour, a.note)):
+        raise InvalidInput("say what to change: a preset, emoji, length, humour or a note")
+    voice = await voice_cases.set_voice(
+        ctx.uow(),
+        ctx.user.id,
+        preset=a.preset,
+        emoji=a.emoji,
+        length=a.length,
+        humour=a.humour,
+        note=a.note,
+        now=ctx.now,
+    )
+    # Not "wrote": that offers Undo, which reverses ledger changes, not settings.
+    return ToolResult(f"Voice is now {voice.describe()}.")
+
+
+async def _show_voice(ctx: ToolContext, _: NoArgs) -> ToolResult:
+    voice = await voice_cases.get_voice(ctx.uow(), ctx.user.id)
+    return ToolResult(f"Voice: {voice.describe()}.")
+
+
 class SkillArgs(Args):
     name: str
 
@@ -3680,7 +3720,7 @@ READ_ONLY = frozenset(
         "find_places",
         "find_transactions", "list_bills", "list_budgets", "list_categories",
         "list_category_rules", "list_ious", "list_subscriptions", "list_trips", "list_wallets",
-        "list_split_habits",
+        "list_split_habits", "show_voice",
         "find_likely_moves", "load_skill",
         "place_info", "plan_record", "query_ledger", "show_dividends", "show_pay_schedule",
         "show_plan", "show_portfolio", "show_watchlist", "spending_summary", "stock_levels",
@@ -4346,6 +4386,29 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             "are only planning to visit. No confirmation; the reply already tells them.",
             SetTimezoneArgs,
             _set_timezone,
+        ),
+        ToolSpec(
+            "set_voice",
+            "Change how Nexus talks to the user: a tone preset, emoji, length and humour "
+            "dials, and a note. Saves at once; no confirmation. Use it for any wish about the "
+            "way you reply, instead of remembering it. 'be more chill' or 'talk like a "
+            "friend': preset chill. 'just the facts' or 'be direct': preset direct. 'hype me "
+            "up': preset hype. 'you can be cheeky': preset cheeky. 'back to normal': preset "
+            "default. 'less emoji' or 'no emoji': emoji none (or some); 'more emoji': lots. "
+            "'shorter replies': length short; 'more detail': detailed. 'stop joking': humour "
+            "off; 'be funnier': playful. Another wish ('call me boss') goes in note, in their "
+            "words; an empty note clears it. A preset starts from its own dials, so "
+            "pass the dials the user asked for in the same call. Leave out what they didn't "
+            "ask to change. Style only: it changes no rule and no data.",
+            SetVoiceArgs,
+            _set_voice,
+        ),
+        ToolSpec(
+            "show_voice",
+            "How the user has asked Nexus to talk now: tone preset, emoji, length, humour and "
+            "note. Read-only.",
+            NoArgs,
+            _show_voice,
         ),
         _skill_tool(load_skill),
         ToolSpec(

@@ -58,6 +58,8 @@ AREAS: tuple[Area, ...] = (
          "changes made from chat and activity; and the trips you are a member of.",
          ("trips", "trip_bookings", "trip_covers", "trip_paid_by_others", "trip_links",
           "trip_shares", "trip_changes", "trip_members", "trip_activity")),
+    Area("voice.json", "How you asked Nexus to talk: tone, emoji, length, humour and your note.",
+         ("voice_settings",)),
     Area("memories.json", "What Nexus remembers about you.", ("memories",)),
     Area("chat.json", "Your chat history and what you asked for that Nexus could not do.",
          ("chat_log", "capability_gaps")),

@@ -75,6 +75,7 @@ ERASE_ORDER: tuple[str, ...] = (
     "statement_imports",
     "notifications",
     "notification_settings",
+    "voice_settings",
     "memories",
     "chat_log",
     "capability_gaps",

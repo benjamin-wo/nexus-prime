@@ -1,6 +1,6 @@
 import type { Page, Route } from "@playwright/test";
 
-import type { Setup } from "../src/api";
+import type { Setup, VoicePreset, VoiceSettings } from "../src/api";
 
 type WalletRef = { id: string; name: string; kind: string };
 
@@ -96,6 +96,15 @@ export function sharedTrip(over: Record<string, unknown> = {}): Record<string, u
     day_labels: {}, stops: [], split_evenly: true, role: "member", owner_name: "Alex T.", packing: [], ...over,
   };
 }
+
+/** The five voices, as the server lists them: Default first. */
+const VOICE_PRESETS: VoicePreset[] = [
+  { id: "default", label: "Default", blurb: "Warm and quick, like a friend who's good with money.", emoji: "some", length: "normal", humour: "light" },
+  { id: "chill", label: "Chill friend", blurb: "Casual and relaxed, like texting a mate.", emoji: "some", length: "short", humour: "light" },
+  { id: "direct", label: "Straight to the point", blurb: "Short answers, no chit-chat, no emoji.", emoji: "none", length: "short", humour: "off" },
+  { id: "hype", label: "Hype", blurb: "Warm and encouraging, celebrates your wins.", emoji: "lots", length: "normal", humour: "light" },
+  { id: "cheeky", label: "Cheeky", blurb: "Light, kind teasing about your spending.", emoji: "some", length: "short", humour: "playful" },
+];
 
 export async function fakeApi(
   page: Page,
@@ -314,6 +323,10 @@ export async function fakeApi(
     coverItems: Record<string, FakeItem[]>;
     /** Whether Settings tells the user when someone changes a trip they share (GET and PUT /trip-alerts). */
     tripAlerts: boolean;
+    /** How Nexus talks (GET and PUT /settings/voice); the server resets the dials when the preset changes alone. */
+    voice: VoiceSettings;
+    /** The bodies of PUT /settings/voice, in order. */
+    voicePuts: Record<string, unknown>[];
     inviteCount: number;
     /** Expenses split evenly from the trip page, by transaction id. */
     splitDone: string[];
@@ -410,6 +423,8 @@ export async function fakeApi(
     prepRequests: [],
     coverItems: {},
     tripAlerts: true,
+    voice: { preset: "default", emoji: "some", length: "normal", humour: "light", note: null, presets: VOICE_PRESETS },
+    voicePuts: [],
     inviteCount: 0,
     splitDone: [],
     justMine: {},
@@ -2638,6 +2653,21 @@ export async function fakeApi(
       const found = state.subs.find((s) => s.id === sub[1]);
       if (found) found.status = sub[2] === "track" ? "active" : "dismissed";
       return route.fulfill({ status: 204 });
+    }
+    if (path === "/settings/voice") {
+      if (method === "PUT") {
+        state.voicePuts.push(body);
+        const voice = state.voice;
+        const preset = state.voice.presets.find((p) => p.id === body.preset);
+        if (body.preset && !preset) return json(route, { detail: "not a voice" }, 422);
+        if (preset) Object.assign(voice, { preset: preset.id, emoji: preset.emoji, length: preset.length, humour: preset.humour });
+        for (const dial of ["emoji", "length", "humour"] as const) if (body[dial]) Object.assign(voice, { [dial]: body[dial] });
+        if (typeof body.note === "string") {
+          if (body.note.length > 200) return json(route, { detail: "keep the note to 200 characters" }, 422);
+          voice.note = body.note.trim() === "" ? null : body.note.trim();
+        }
+      }
+      return json(route, state.voice);
     }
     if (path === "/trip-alerts") {
       if (method === "PUT") state.tripAlerts = Boolean(body.enabled);

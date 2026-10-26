@@ -13,6 +13,7 @@ from nexus.application import memory as memory_cases
 from nexus.application import notifications as notification_cases
 from nexus.application import splits as split_cases
 from nexus.application import transactions as tx_cases
+from nexus.application import voice as voice_cases
 from nexus.application import wallets as wallet_cases
 from nexus.application.categories import list_categories
 from nexus.application.category_rules import list_rules
@@ -387,6 +388,35 @@ class UpdatesAre:
         if self.at is not None and settings.daily_at.strftime("%H:%M") != self.at:
             return False
         return settings.frequency.value == self.frequency
+
+
+@dataclass(frozen=True, slots=True)
+class VoiceIs:
+    """How the user asked Nexus to talk, as saved. What is left out isn't checked; a tuple
+    is any of."""
+
+    preset: str | tuple[str, ...] | None = None
+    emoji: str | tuple[str, ...] | None = None
+    length: str | tuple[str, ...] | None = None
+    humour: str | tuple[str, ...] | None = None
+
+    def describe(self) -> str:
+        wanted = {
+            "preset": self.preset,
+            "emoji": self.emoji,
+            "length": self.length,
+            "humour": self.humour,
+        }
+        return "voice " + ", ".join(f"{k} {v}" for k, v in wanted.items() if v is not None)
+
+    async def holds(self, world: World) -> bool:
+        voice = await voice_cases.get_voice(world.uow(), world.user.id)
+        return (
+            _one_of(voice.preset.value, self.preset)
+            and _one_of(voice.emoji.value, self.emoji)
+            and _one_of(voice.length.value, self.length)
+            and _one_of(voice.humour.value, self.humour)
+        )
 
 
 @dataclass(frozen=True, slots=True)

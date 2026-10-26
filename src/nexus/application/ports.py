@@ -70,6 +70,7 @@ from nexus.domain.statements import SavedMapping, StatementImport
 from nexus.domain.trip_access import Activity, DigestState, TripAccess, TripInvite, TripMember
 from nexus.domain.trip_changes import TripChange
 from nexus.domain.trips import Share, Trip
+from nexus.domain.voice import VoiceSettings
 
 
 class SortField(StrEnum):
@@ -639,6 +640,14 @@ class MemoryRepository(Protocol):
 
     async def chat(self, user_id: UserId, limit: int, before: int | None = None) -> list[ChatLine]:
         """The newest ``limit`` lines (with ids below ``before``), oldest first."""
+        ...
+
+    async def get_voice(self, user_id: UserId, *, for_update: bool = False) -> VoiceSettings:
+        """How the user wants Nexus to talk, or the default voice if they never chose."""
+        ...
+
+    async def save_voice(self, user_id: UserId, settings: VoiceSettings, now: datetime) -> None:
+        """Insert or replace the user's voice."""
         ...
 
 

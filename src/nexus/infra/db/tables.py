@@ -536,6 +536,26 @@ notification_settings = Table(
     CheckConstraint("daily_cap BETWEEN 3 AND 20", name="daily_cap"),
 )
 
+# How the user wants Nexus to talk (migration 0058): a preset, three dials and a short note
+# of their own. No row means the default voice. See nexus.domain.voice.
+voice_settings = Table(
+    "voice_settings",
+    metadata,
+    Column("user_id", UUID(as_uuid=True), primary_key=True),
+    Column("preset", Text, nullable=False),
+    Column("emoji", Text, nullable=False),
+    Column("length", Text, nullable=False),
+    Column("humour", Text, nullable=False),
+    Column("note", Text),
+    Column("updated_at", TZ, nullable=False),
+    ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+    CheckConstraint("preset IN ('default', 'chill', 'direct', 'hype', 'cheeky')", name="preset"),
+    CheckConstraint("emoji IN ('none', 'some', 'lots')", name="emoji"),
+    CheckConstraint("length IN ('short', 'normal', 'detailed')", name="length"),
+    CheckConstraint("humour IN ('off', 'light', 'playful')", name="humour"),
+    CheckConstraint("note IS NULL OR char_length(note) BETWEEN 1 AND 200", name="note_length"),
+)
+
 # Every message Nexus meant to send on Telegram, kept for 30 days: sent, held for quiet
 # hours or the next digest, told in a digest, or dropped (no chat to tell). See
 # nexus.domain.notifications (migration 0053).

@@ -429,6 +429,16 @@ export type NotificationEntry = {
 };
 /** Whether the user is told on Telegram when someone else changes a trip they share. */
 export type TripAlerts = { enabled: boolean };
+/** How Nexus words its replies (GET and PUT /settings/voice). Only wording: never what Nexus can do. */
+export type VoicePresetId = "default" | "chill" | "direct" | "hype" | "cheeky";
+export type VoiceEmoji = "none" | "some" | "lots";
+export type VoiceLength = "short" | "normal" | "detailed";
+export type VoiceHumour = "off" | "light" | "playful";
+export type VoiceDials = { emoji: VoiceEmoji; length: VoiceLength; humour: VoiceHumour };
+export type VoicePreset = { id: VoicePresetId; label: string; blurb: string } & VoiceDials;
+export type VoiceSettings = VoiceDials & { preset: VoicePresetId; note: string | null; presets: VoicePreset[] };
+/** Any of these may be sent; "" clears the note. Changing the preset alone resets the dials to its defaults. */
+export type VoiceUpdate = Partial<VoiceDials & { preset: VoicePresetId; note: string }>;
 export type Reply = { text: string; buttons: { label: string; data: string }[][] };
 /** The running chat as the user saw it, oldest first; notifications aren't part of it. */
 export type ChatHistory = {

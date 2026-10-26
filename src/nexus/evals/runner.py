@@ -59,6 +59,7 @@ _DATA_TABLES = (
     "salary_schedules",
     "subscriptions",
     "notification_settings",
+    "voice_settings",
     "wallets",
 )
 # What the owner of a shared trip keeps: a change to either is a change to the trip.

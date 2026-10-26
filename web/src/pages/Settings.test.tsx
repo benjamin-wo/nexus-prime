@@ -41,7 +41,7 @@ describe("Settings", () => {
     mockApi({ "GET /email": () => connected });
     renderWithProviders(<Settings me={me()} />);
     const names = (g: HTMLElement) => within(g).getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
-    expect(names(group("Notifications"))).toEqual(expect.arrayContaining(["Shared trips", "Notifications", "Time zone"]));
+    expect(names(group("Notifications"))).toEqual(expect.arrayContaining(["Shared trips", "Notifications", "Time zone", "How Nexus talks"]));
     expect(names(group("Connections"))).toEqual(["Receipts by email", "Import a statement"]);
     const data = names(group("Your data"));
     expect(data).toEqual(expect.arrayContaining(["Categories", "Wallets", "Category rules", "What Nexus remembers"]));

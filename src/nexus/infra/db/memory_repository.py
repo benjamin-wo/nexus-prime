@@ -6,12 +6,14 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import Row, and_, case, delete, func, insert, literal, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from nexus.domain.chat import ChatLine, Speaker
 from nexus.domain.ledger import UserId
 from nexus.domain.memory import Memory, MemoryKind
-from nexus.infra.db.tables import chat_log, memories
+from nexus.domain.voice import Emoji, Humour, Length, Preset, VoiceSettings
+from nexus.infra.db.tables import chat_log, memories, voice_settings
 
 _WORD = re.compile(r"[a-z0-9]{2,}")
 
@@ -158,3 +160,26 @@ class SqlMemoryRepository:
             for r in rows
         ]
         return found[::-1]
+
+    async def get_voice(self, user_id: UserId, *, for_update: bool = False) -> VoiceSettings:
+        stmt = select(voice_settings).where(voice_settings.c.user_id == user_id)
+        row = (await self._db.execute(stmt.with_for_update() if for_update else stmt)).first()
+        if row is None:
+            return VoiceSettings()
+        return VoiceSettings(
+            Preset(row.preset), Emoji(row.emoji), Length(row.length), Humour(row.humour), row.note
+        )
+
+    async def save_voice(self, user_id: UserId, settings: VoiceSettings, now: datetime) -> None:
+        values = {
+            "preset": settings.preset.value,
+            "emoji": settings.emoji.value,
+            "length": settings.length.value,
+            "humour": settings.humour.value,
+            "note": settings.note,
+            "updated_at": now,
+        }
+        stmt = pg_insert(voice_settings).values(user_id=user_id, **values)
+        await self._db.execute(
+            stmt.on_conflict_do_update(index_elements=[voice_settings.c.user_id], set_=values)
+        )

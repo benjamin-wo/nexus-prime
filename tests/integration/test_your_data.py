@@ -290,6 +290,16 @@ async def seed(world: World, user: UUID, other: UUID) -> Seeded:
             updated_at=now,
         )
         await add(
+            t["voice_settings"],
+            user_id=user,
+            preset="chill",
+            emoji="some",
+            length="short",
+            humour="light",
+            note=f"call me boss {tag}",
+            updated_at=now,
+        )
+        await add(
             t["split_habits"],
             id=uid(),
             user_id=user,
@@ -802,6 +812,7 @@ async def test_export_is_a_zip_of_only_my_rows(pair: Pair) -> None:
                 "users": "profile",
                 "salary_schedules": "salary_schedule",
                 "notification_settings": "settings",
+                "voice_settings": "voice",
             }.get(table, table)
             rows = content[key]
             assert len(rows) if isinstance(rows, list) else rows, table
