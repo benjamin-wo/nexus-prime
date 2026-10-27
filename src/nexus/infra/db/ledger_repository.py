@@ -20,6 +20,7 @@ from sqlalchemy import (
     literal_column,
     or_,
     select,
+    union_all,
     update,
 )
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -1151,6 +1152,21 @@ class SqlLedgerRepository:
             delete(split_habits).where(h.user_id == user_id, h.id.in_(habit_ids))
         )
         return int(result.rowcount or 0)
+
+    async def split_people(self, user_id: UserId, limit: int) -> list[tuple[str, datetime]]:
+        s, h = splits.c, split_habits.c
+        used = union_all(
+            select(s.participant_name.label("name"), s.created_at.label("at")).where(
+                s.user_id == user_id
+            ),
+            select(h.person, h.created_at).where(h.user_id == user_id),
+        ).subquery()
+        # Each spelling once, newest first: the caller keeps the newest spelling of a name.
+        last = func.max(used.c.at)
+        rows = await self._db.execute(
+            select(used.c.name, last).group_by(used.c.name).order_by(last.desc()).limit(limit)
+        )
+        return [(r[0], r[1]) for r in rows]
 
     async def open_ious(
         self, user_id: UserId, *, participant_name: str | None = None, for_update: bool = False
