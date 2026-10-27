@@ -118,11 +118,14 @@ async def test_a_member_finds_the_shared_trip_with_no_money_in_it(japan: Japan) 
     status = await japan.use(japan.sam, "trip_status", {"trip": "japan"})
     assert status.startswith("The Tokyo, Japan plan, shared with the user by Alex.")
     assert "Hotel Sakura" in status and "Tea ceremony" in status and "Notes: Bring cash" in status
-    for money in ("3000", "100 SGD", "48000", "6000", "Spent", "budget", "Booked:", "owed"):
+    for money in (
+        "3000", "3,000", "100 SGD", "48000", "48,000", "6000", "6,000", "Spent", "budget",
+        "Booked:", "owed",
+    ):  # fmt: skip
         assert money not in listed + status, money
     # The owner still gets all of it.
     own = await japan.use(japan.alex, "trip_status", {"trip": "japan"})
-    assert "budget 3000" in own and "Spent so far" in own and "Booked: " in own
+    assert "budget 3,000" in own and "Spent so far" in own and "Booked: " in own
 
 
 async def test_an_outsider_cannot_find_or_touch_the_trip(japan: Japan) -> None:
@@ -199,7 +202,7 @@ async def test_a_member_adds_a_plan_to_the_owners_trip_without_a_price(
     assert asked.startswith(
         "Add Dinner at Sushi Ten (Sat 12 Dec 19:00) to the Tokyo, Japan trip (Alex's trip)?"
     )
-    assert "9000" not in asked
+    assert "9000" not in asked and "9,000" not in asked
     assert asked.endswith("I left the price out: only Alex can add costs on a shared trip.")
 
     done = await japan.use(japan.sam, "add_to_itinerary", args)
@@ -238,7 +241,7 @@ async def test_a_member_is_asked_first_even_with_no_cost_but_the_owner_is_not(
     ):
         asked = await japan.asked(japan.sam, tool, {"trip": "Japan", **args})
         assert "trip (Alex's trip)?" in asked, (tool, asked)
-        assert "6000" not in asked
+        assert "6000" not in asked and "6,000" not in asked
     # On the owner's own trip an add with no cost goes through unasked ...
     assert await japan.asked(japan.alex, "add_to_itinerary", add) == ""
     # ... but an entry that has a cost (the tea ceremony cost 6000) still asks.
@@ -446,7 +449,8 @@ async def test_a_screenshot_captioned_with_the_shared_trip_lands_there_without_p
         japan.sam.id, b"png", "image/png", "add these to our Japan trip", "p1"
     )
     assert replies[0].text.splitlines()[0] == "✈️ Added to your Tokyo, Japan trip:"
-    assert "64500" not in replies[0].text and "JPY" not in replies[0].text
+    assert "64500" not in replies[0].text and "64,500" not in replies[0].text
+    assert "JPY" not in replies[0].text
     assert replies[-1].text == (
         "That's Alex's trip, so I left out any prices: only Alex can add costs."
     )

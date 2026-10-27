@@ -430,7 +430,7 @@ async def test_holdings_are_worth_the_live_price_while_the_market_is_open(uow: U
     assert v.as_of == date(2026, 10, 19) and v.as_of_at == ny("2026-10-19 10:41")
     assert v.price_kind is PriceKind.LIVE
     text = investment_cases.describe_valuation(v, ZoneInfo("Asia/Singapore"))
-    assert "104.00 USD at 10:41pm (live), worth 1040.00 USD" in text
+    assert "104.00 USD at 10:41pm (live), worth 1,040.00 USD" in text
     assert "100.00 USD at the close on Fri 16 Oct" in text
 
 

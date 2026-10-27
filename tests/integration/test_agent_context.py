@@ -27,9 +27,9 @@ async def test_the_snapshot_shows_the_users_money(uow: UowFactory) -> None:
     user = (await seed.seed_user(uow, 5150)).user
     text = await money_snapshot(ToolContext(user, uow, seed.NOW, FixedRates()))
     assert f"spent {seed.SEPT_SPENT} SGD" in text
-    assert "received 5000.00 SGD" in text
+    assert "received 5,000.00 SGD" in text
     assert "Dining Out 143.90 SGD of 300.00 SGD (47%, 156.10 SGD left)" in text
-    assert "Thu 1 Oct bill Rent 1800.00 SGD" in text  # due within the week
+    assert "Thu 1 Oct bill Rent 1,800.00 SGD" in text  # due within the week
     assert "Ann 40.00 SGD" in text and "Ben 40.00 SGD" in text
     assert text.index("Kopitiam") < text.index("Grab")  # newest first
     assert len(text) <= 2000

@@ -58,7 +58,12 @@ MEMBER_ID, OUTSIDER_ID, PEER_B_ID, EX_ID, GUEST_A_ID, GUEST_B_ID = 811, 822, 833
 BUDGET, SET_ASIDE, PLANNED = "4321.09", "1234.56", "777.77"
 DINNER_COST, TAXI, PAID_FOR_ME, B_COST = "987.65", "555.43", "321.09", "111.11"
 COVER_COST = "246.81"  # what the trip's insurance cost
-SECRETS = (BUDGET, SET_ASIDE, PLANNED, DINNER_COST, TAXI, PAID_FOR_ME, B_COST, COVER_COST)
+# The app writes amounts to people with thousands separators ("4,321.09 SGD"), so a leak
+# in chat text would show that way, not as stored.
+SECRETS = (
+    BUDGET, SET_ASIDE, PLANNED, DINNER_COST, TAXI, PAID_FOR_ME, B_COST, COVER_COST,
+    "4,321.09", "1,234.56",
+)  # fmt: skip
 COVER = {
     "kind": "insurance", "name": "Harbour Cover", "reference": "TX-4471", "phone": "+65 6123 4567",
 }  # fmt: skip
@@ -897,12 +902,13 @@ async def test_a_members_page_has_the_plan_and_no_trace_of_the_money(scene: Scen
     assert_no_money(got, "trip page")
     # Not even the rest of the owner's account is on it: other trips, the expense's
     # counterparty, what the friend paid for.
-    for word in ("Osaka", "Taxi", "Ann", OWNER_NOTE, "9999.99", "SGD"):
+    for word in ("Osaka", "Taxi", "Ann", OWNER_NOTE, "9999.99", "9,999.99", "SGD"):
         if word != "Ann":  # a companion is part of the plan
             assert word not in got.text, word
     listed = await scene.member.get("/api/travel/trips")
     assert [t["destination"] for t in listed.json()] == ["Tokyo"]
     assert "Osaka" not in listed.text and "9999.99" not in listed.text
+    assert "9,999.99" not in listed.text
     # The Prep tab is the plan's: to-dos and cover are there, the cover's cost is not.
     assert [(t["text"], t["due"]) for t in page["todos"]] == [("Get yen", "2026-12-08")]
     [cover] = page["covers"]
@@ -1725,7 +1731,7 @@ async def test_the_activity_feed_is_for_the_people_on_the_trip_and_has_no_money(
         )
         assert not _MONEY_TALK.search(feed.text), feed.text
         assert all(set(e) == {"actor", "summary", "at"} for e in feed.json())
-        for secret in (*SECRETS, "5555.55", "222.22", "88.88", "77.77", "66.66"):
+        for secret in (*SECRETS, "5555.55", "5,555.55", "222.22", "88.88", "77.77", "66.66"):
             assert secret not in feed.text
     # The people not on the trip read none of it.
     for who in (scene.outsider, scene.peer_b, scene.ex, scene.guest_b):
@@ -1850,7 +1856,7 @@ async def test_the_shared_link_is_still_read_only_and_still_hides_the_money(scen
     page = seen.json()
     assert set(page) == SHARED_KEYS
     assert page["bookings"] and all(set(b) == SHARED_BOOKING_KEYS for b in page["bookings"])
-    for secret in (*SECRETS, "1111.11", "HK-REF-9", "R-1", "Bring cash", "Taxi"):
+    for secret in (*SECRETS, "1111.11", "1,111.11", "HK-REF-9", "R-1", "Bring cash", "Taxi"):
         assert secret not in seen.text, secret
     # The Prep tab is not on the link either: no to-dos, no cover, no policy number.
     for word in ("Get yen", "todo", "cover", "Harbour", "TX-4471", "6123 4567"):

@@ -197,7 +197,7 @@ def test_a_missing_exchange_rate_leaves_the_total_unknown_but_keeps_the_parts() 
     assert alex.net_by_currency == [jpy("30000"), sgd("-10")]
     assert alex.direction is None  # two currencies, no rate: can't say who owes more
     assert "no exchange rate" in describe_balance(alex)
-    assert "Alex owes you 30000 JPY" in describe_balance(alex)
+    assert "Alex owes you 30,000 JPY" in describe_balance(alex)
     assert "you owe Alex 10.00 SGD" in describe_balance(alex)
 
     # In one currency the direction is still plain.

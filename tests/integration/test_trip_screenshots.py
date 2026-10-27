@@ -43,7 +43,7 @@ async def test_a_booking_screenshot_lands_on_the_trip_with_its_reference(
     assert reply.text.splitlines() == [
         "✈️ Added to your Tokyo trip:",
         "• hotel booking (Hotel Kumo, 3 nights, 10 Dec to 13 Dec; booked on Agoda, ref "
-        "9876543210), 64500 JPY",
+        "9876543210), 64,500 JPY",
         "• plan (Dinner at Sushi Ten, Sat 12 Dec 19:00; ref R-55821)",
         "• flight booking (ZZ12, SIN → NRT, Thu 10 Dec 08:25; ref ZK4P7Q)",
         "• place to visit (Senso-ji Temple, Sight)",

@@ -208,7 +208,7 @@ async def test_a_move_between_wallets_in_two_currencies(uow: UowFactory, alice: 
     agent = build(uow, model)
     ask = only(await agent.handle_text(alice, "moved 1000 from savings to ibkr", "tg:1:1"))
     assert ask.text == (
-        "Log a move of 1000.00 SGD from Savings to IBKR (740.00 USD arrives) on 20 Sep? "
+        "Log a move of 1,000.00 SGD from Savings to IBKR (740.00 USD arrives) on 20 Sep? "
         "It won't count as spending or income."
     )
     await agent.resolve(alice, ask.buttons[0][0].data.split(":")[1], True)
@@ -540,7 +540,7 @@ async def test_query_ledger_answers_how_much_went_into_a_wallet(
     year = {"direction": "move", "start_date": "2026-01-01", "end_date": "2026-09-28"}
 
     into = await run(uow, alice, "query_ledger", {**year, "wallet": "ibkr"})
-    assert "Moved, in SGD, 2026-01-01 to 2026-09-28: 1000.00 SGD over 2 transactions" in into
+    assert "Moved, in SGD, 2026-01-01 to 2026-09-28: 1,000.00 SGD over 2 transactions" in into
     assert "not spending or income" in into and "800.00 SGD → IBKR (move)" in into
     out_of = await run(
         uow, alice, "query_ledger", {**year, "wallet": "IBKR", "wallet_side": "out_of"}
@@ -549,9 +549,9 @@ async def test_query_ledger_answers_how_much_went_into_a_wallet(
     either = await run(
         uow, alice, "query_ledger", {**year, "wallet": "IBKR", "wallet_side": "either"}
     )
-    assert "1100.00 SGD over 3 transactions" in either
+    assert "1,100.00 SGD over 3 transactions" in either
     allmoves = await run(uow, alice, "query_ledger", year)
-    assert "1600.00 SGD over 4 transactions" in allmoves
+    assert "1,600.00 SGD over 4 transactions" in allmoves
     # Spending is only the expense; no move is in it.
     spent = await run(uow, alice, "query_ledger", {"start_date": "2026-01-01"})
     assert spent.startswith("Spent, in SGD, 2026-01-01 to 2026-09-28: 12.00 SGD over 1 transaction")
@@ -584,7 +584,7 @@ async def test_the_snapshot_lists_wallets_and_what_was_put_away(
         "Wallets besides Spending: Card (card), IBKR (investment, also interactive brokers), "
         "Savings (savings). Put away this month: 800.00 SGD (16% of income)."
     ) in text
-    assert "spent 0.00 SGD in 0 transactions, received 5000.00 SGD" in text
+    assert "spent 0.00 SGD in 0 transactions, received 5,000.00 SGD" in text
 
     await move(uow, alice, "300", w["Savings"], w["Spending"])
     assert "Put away this month: 500.00 SGD (10% of income)." in await money_snapshot(ctx)

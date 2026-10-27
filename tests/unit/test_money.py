@@ -60,3 +60,25 @@ def test_allocate_rejects_bad_input() -> None:
 def test_str_uses_minor_units() -> None:
     assert str(Money.of("5.5", "SGD")) == "5.50 SGD"
     assert str(Money.of("500", "JPY")) == "500 JPY"
+
+
+def test_str_separates_thousands() -> None:
+    assert str(Money.of("1240", "SGD")) == "1,240.00 SGD"
+    assert str(Money.of("-1240.5", "SGD")) == "-1,240.50 SGD"
+    assert str(Money.of("0", "SGD")) == "0.00 SGD"
+    assert str(Money.of("125000", "JPY")) == "125,000 JPY"
+    assert str(Money.of("-125000", "JPY")) == "-125,000 JPY"
+    assert str(Money.of("1234567.891", "KWD")) == "1,234,567.891 KWD"
+
+
+def test_parse_money_accepts_what_the_app_now_writes() -> None:
+    from types import SimpleNamespace
+    from typing import Any, cast
+
+    from nexus.agent.tools import parse_money
+
+    ctx = cast(Any, SimpleNamespace(user=SimpleNamespace(home_currency="SGD")))
+    assert parse_money(ctx, "1,240.50", None) == Money.of("1240.50", "SGD")
+    assert parse_money(ctx, "1,240,000", "JPY") == Money.of("1240000", "JPY")
+    assert parse_money(ctx, "-1,240.50", "USD") == Money.of("-1240.50", "USD")
+    assert parse_money(ctx, "1240.50", None) == Money.of("1240.50", "SGD")

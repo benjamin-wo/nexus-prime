@@ -92,7 +92,7 @@ async def test_amounts_count_and_time_groups(uow: UowFactory, user: User) -> Non
     )
     assert months.index("2026-08: 54.80 SGD") < months.index("2026-09: 96.30 SGD")
     income = await ask(uow, user, {"direction": "in"})
-    assert "Received, in SGD" in income and "5000.00 SGD over 1" in income
+    assert "Received, in SGD" in income and "5,000.00 SGD over 1" in income
 
 
 async def test_bad_arguments_are_refused(uow: UowFactory, user: User) -> None:

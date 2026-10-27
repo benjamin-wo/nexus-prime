@@ -246,7 +246,7 @@ async def test_repayment_settles_iou_without_the_model(uow: UowFactory, alice: U
 
 async def test_salary_is_recorded_deterministically(uow: UowFactory, alice: UserId) -> None:
     reply = only(await build(uow, scripted()).handle_text(alice, "salary 4,200", "tg:1:1"))
-    assert reply.text == "Recorded 4200.00 SGD salary."
+    assert reply.text == "Recorded 4,200.00 SGD salary."
     page = await list_ledger(uow(), alice, LedgerQuery(direction=Direction.IN))
     assert page.items[0].notes == "Salary"
     assert page.items[0].amount == Money.of("4200", "SGD")
@@ -256,7 +256,7 @@ async def test_salary_with_the_amount_first_and_a_day(uow: UowFactory, alice: Us
     model = scripted()
     agent = build(uow, model)
     reply = only(await agent.handle_text(alice, "6500 as salary yesterday", "tg:1:1"))
-    assert reply.text == "Recorded 6500.00 SGD salary."
+    assert reply.text == "Recorded 6,500.00 SGD salary."
     assert model.seen == []  # recorded without the model
     [tx] = (await list_ledger(uow(), alice, LedgerQuery(direction=Direction.IN))).items
     assert tx.amount == Money.of("6500", "SGD") and tx.notes == "Salary"
@@ -272,7 +272,7 @@ async def test_income_the_patterns_miss_goes_to_the_model_and_asks_first(
     )
     agent = build(uow, model)
     reply = only(await agent.handle_text(alice, "work gave me a 2k bonus yesterday", "tg:1:1"))
-    assert reply.text == "Record 2000.00 SGD income (bonus) on 27 Sep?"
+    assert reply.text == "Record 2,000.00 SGD income (bonus) on 27 Sep?"
     assert await ledger(uow, alice) == []  # nothing until the user confirms
     await agent.resolve(alice, reply.buttons[0][0].data.split(":")[1], True)
     [tx] = (await list_ledger(uow(), alice, LedgerQuery(direction=Direction.IN))).items
@@ -301,7 +301,7 @@ async def test_a_declined_income_records_nothing(uow: UowFactory, alice: UserId)
     model = scripted(call("record_income", amount="6500", kind="salary"), say("OK."))
     agent = build(uow, model)
     reply = only(await agent.handle_text(alice, "paid today, 6500 landed", "tg:1:1"))
-    assert reply.text == "Record 6500.00 SGD salary on 28 Sep?"
+    assert reply.text == "Record 6,500.00 SGD salary on 28 Sep?"
     await agent.resolve(alice, reply.buttons[0][0].data.split(":")[1], False)
     assert await ledger(uow, alice) == []
 
@@ -507,8 +507,8 @@ async def test_cash_flow_lists_what_is_coming(uow: UowFactory, alice: UserId) ->
     model = scripted(call("cash_flow", days=14), say("Rent is due soon."))
     await build(uow, model).handle_text(alice, "what's coming up?", "tg:1:1")
     [result] = tool_results(model)
-    assert "Rent (bill) -1800.00 SGD" in result
-    assert "net -1800.00 SGD" in result and "not a balance" in result
+    assert "Rent (bill) -1,800.00 SGD" in result
+    assert "net -1,800.00 SGD" in result and "not a balance" in result
 
 
 async def test_threads_are_per_user(uow: UowFactory, alice: UserId, bob: UserId) -> None:
