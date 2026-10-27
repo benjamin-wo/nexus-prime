@@ -1,0 +1,1312 @@
+[
+  {
+    "id": "edit-amount",
+    "area": "edit",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "change the starbucks coffee to 7.90",
+        "replies": [
+          "Change 2026-09-26 \u00b7 -6.90 SGD \u00b7 Starbucks \u00b7 Dining Out: amount \u2192 7.90 SGD?",
+          "Starbucks is 7.90 now \u2705"
+        ],
+        "calls": [
+          {
+            "tool": "find_transactions",
+            "args": {
+              "search": "Starbucks"
+            }
+          },
+          {
+            "tool": "edit_transaction",
+            "args": {
+              "transaction_id": "63a6de02-d4a0-4b0c-82da-761c2156abcb",
+              "amount": "7.90"
+            }
+          }
+        ],
+        "confirmations": 1,
+        "seconds": 3.08,
+        "input_tokens": 25696,
+        "output_tokens": 201,
+        "memory_input_tokens": 429,
+        "memory_output_tokens": 34,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "edit-delete",
+    "area": "edit",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "delete the netflix charge from september",
+        "replies": [
+          "Delete 2026-09-12 \u00b7 -17.98 SGD \u00b7 Netflix \u00b7 Subscriptions & Software?",
+          "Netflix 17.98 from 12 Sep is gone \u2705"
+        ],
+        "calls": [
+          {
+            "tool": "find_transactions",
+            "args": {
+              "search": "Netflix",
+              "start_date": "2026-09-01",
+              "end_date": "2026-09-30"
+            }
+          },
+          {
+            "tool": "delete_transaction",
+            "args": {
+              "transaction_id": "8dcb28e2-80b0-4422-b7db-bfad4165e94d"
+            }
+          }
+        ],
+        "confirmations": 1,
+        "seconds": 3.14,
+        "input_tokens": 25760,
+        "output_tokens": 187,
+        "memory_input_tokens": 425,
+        "memory_output_tokens": 69,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "edit-category",
+    "area": "edit",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "move the guardian purchase to shopping",
+        "replies": [
+          "Change 2026-09-21 \u00b7 -23.50 SGD \u00b7 Guardian \u00b7 Health: category \u2192 Shopping?",
+          "Guardian's 23.50 is under Shopping now \u2705\n\nWant me to always file \"guardian\" under Shopping?"
+        ],
+        "calls": [
+          {
+            "tool": "find_transactions",
+            "args": {
+              "search": "Guardian"
+            }
+          },
+          {
+            "tool": "edit_transaction",
+            "args": {
+              "transaction_id": "b15791ec-0deb-4256-8d44-2f96bb27134c",
+              "category": "Shopping"
+            }
+          }
+        ],
+        "confirmations": 1,
+        "seconds": 3.6,
+        "input_tokens": 25693,
+        "output_tokens": 187,
+        "memory_input_tokens": 424,
+        "memory_output_tokens": 323,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "edit-undo",
+    "area": "edit",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "grab 12",
+        "replies": [
+          "Grab 12.00 \u2705 Transport's at 108.30 this month."
+        ],
+        "calls": [
+          {
+            "tool": "log_expense",
+            "args": {
+              "amount": "12",
+              "merchant": "Grab",
+              "category": "Transport",
+              "best_guess_category": "Transport"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 2.98,
+        "input_tokens": 17043,
+        "output_tokens": 164,
+        "memory_input_tokens": 422,
+        "memory_output_tokens": 16,
+        "memory_failed": false
+      },
+      {
+        "text": "undo",
+        "replies": [
+          "Undone \u2014 the 12.00 Grab is off the books."
+        ],
+        "calls": [
+          {
+            "tool": "undo_last_change",
+            "args": {}
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 2.59,
+        "input_tokens": 17326,
+        "output_tokens": 52,
+        "memory_input_tokens": 427,
+        "memory_output_tokens": 47,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "edit-correction",
+    "area": "edit",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "grab 12",
+        "replies": [
+          "Grab 12.00 \u2705 Transport's at 108.30 this month."
+        ],
+        "calls": [
+          {
+            "tool": "log_expense",
+            "args": {
+              "amount": "12",
+              "merchant": "Grab",
+              "category": "Transport",
+              "best_guess_category": "Transport"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 2.49,
+        "input_tokens": 17041,
+        "output_tokens": 183,
+        "memory_input_tokens": 422,
+        "memory_output_tokens": 27,
+        "memory_failed": false
+      },
+      {
+        "text": "actually it was 14",
+        "replies": [
+          "Change 2026-09-28 \u00b7 -12.00 SGD \u00b7 Grab \u00b7 Transport: amount \u2192 14 SGD?",
+          "Fixed \u2014 14.00 now."
+        ],
+        "calls": [
+          {
+            "tool": "edit_transaction",
+            "args": {
+              "transaction_id": "72a8129c-7b81-49cf-ac59-8b12c81daecd",
+              "amount": "14"
+            }
+          }
+        ],
+        "confirmations": 1,
+        "seconds": 1.93,
+        "input_tokens": 17376,
+        "output_tokens": 334,
+        "memory_input_tokens": 431,
+        "memory_output_tokens": 60,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "edit-date",
+    "area": "edit",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "coffee 5.50",
+        "replies": [
+          "5.50 for coffee \u2705 Dining Out's at 149.40 of 300 this month."
+        ],
+        "calls": [
+          {
+            "tool": "log_expense",
+            "args": {
+              "amount": "5.50",
+              "merchant": "Coffee",
+              "best_guess_category": "Dining Out"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 3.33,
+        "input_tokens": 17032,
+        "output_tokens": 210,
+        "memory_input_tokens": 424,
+        "memory_output_tokens": 16,
+        "memory_failed": false
+      },
+      {
+        "text": "that was yesterday",
+        "replies": [
+          "Change 2026-09-28 \u00b7 -5.50 SGD \u00b7 Coffee \u00b7 Dining Out: date \u2192 2026-09-27?",
+          "Moved to Sun 27 Sep \u2705"
+        ],
+        "calls": [
+          {
+            "tool": "find_transactions",
+            "args": {
+              "search": "Coffee",
+              "limit": 10
+            }
+          },
+          {
+            "tool": "edit_transaction",
+            "args": {
+              "transaction_id": "7ca5ac08-7458-4778-81af-f625b75b82ba",
+              "date": "2026-09-27"
+            }
+          }
+        ],
+        "confirmations": 1,
+        "seconds": 5.55,
+        "input_tokens": 26195,
+        "output_tokens": 837,
+        "memory_input_tokens": 431,
+        "memory_output_tokens": 240,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "edit-older",
+    "area": "edit",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "the toast box one was actually 6.60",
+        "replies": [
+          "Change 2026-09-18 \u00b7 -5.60 SGD \u00b7 Toast Box \u00b7 Dining Out: amount \u2192 6.60 SGD?",
+          "Toast Box is 6.60 now \u2705"
+        ],
+        "calls": [
+          {
+            "tool": "find_transactions",
+            "args": {
+              "search": "Toast Box"
+            }
+          },
+          {
+            "tool": "edit_transaction",
+            "args": {
+              "transaction_id": "aa23e205-9987-47b6-a785-be92acfea54f",
+              "amount": "6.60"
+            }
+          }
+        ],
+        "confirmations": 1,
+        "seconds": 2.66,
+        "input_tokens": 25675,
+        "output_tokens": 202,
+        "memory_input_tokens": 428,
+        "memory_output_tokens": 69,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "edit-resplit",
+    "area": "edit",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "split the jumbo seafood dinner with ann, ben and carol instead",
+        "replies": [
+          "Split 2026-09-19 \u00b7 -120.00 SGD \u00b7 Jumbo Seafood \u00b7 Dining Out: Ann owes 30.00 SGD, Ben owes 30.00 SGD, Carol owes 30.00 SGD; your share 30.00 SGD?",
+          "Done \u2014 the 120 Jumbo Seafood dinner now splits four ways:\n\u2022 Ann 30\n\u2022 Ben 30\n\u2022 Carol 30\n\u2022 You 30\n\nAnn and Ben's earlier 40s are replaced by the 30s."
+        ],
+        "calls": [
+          {
+            "tool": "find_transactions",
+            "args": {
+              "search": "jumbo"
+            }
+          },
+          {
+            "tool": "find_transactions",
+            "args": {
+              "search": "seafood"
+            }
+          },
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "expenses"
+            }
+          },
+          {
+            "tool": "list_ious",
+            "args": {}
+          },
+          {
+            "tool": "find_transactions",
+            "args": {
+              "search": "Jumbo",
+              "limit": 5
+            }
+          },
+          {
+            "tool": "split_bill",
+            "args": {
+              "transaction_id": "6abe28bd-8914-4b79-9f93-cd5879d8fe3f",
+              "participants": [
+                {
+                  "name": "Ann"
+                },
+                {
+                  "name": "Ben"
+                },
+                {
+                  "name": "Carol"
+                }
+              ]
+            }
+          }
+        ],
+        "confirmations": 1,
+        "seconds": 7.29,
+        "input_tokens": 50382,
+        "output_tokens": 804,
+        "memory_input_tokens": 432,
+        "memory_output_tokens": 609,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "edit-resplit-near-name",
+    "area": "edit",
+    "target": null,
+    "passed": false,
+    "failures": [
+      "didn't ask a question",
+      "changed data instead of asking",
+      "expected Ann owes 40.00"
+    ],
+    "error": null,
+    "turns": [
+      {
+        "text": "split the jumbo seafood dinner with anne instead",
+        "replies": [
+          "Split 2026-09-19 \u00b7 -120.00 SGD \u00b7 Jumbo Seafood \u00b7 Dining Out: Ann owes 60.00 SGD; your share 60.00 SGD?",
+          "Jumbo Seafood's now split with Ann \u2014 she owes 60, your half's 60. Ben's 40 came off since it's Ann instead."
+        ],
+        "calls": [
+          {
+            "tool": "find_transactions",
+            "args": {
+              "search": "jumbo",
+              "limit": 20
+            }
+          },
+          {
+            "tool": "find_transactions",
+            "args": {
+              "search": "seafood",
+              "limit": 20
+            }
+          },
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "expenses"
+            }
+          },
+          {
+            "tool": "list_split_habits",
+            "args": {}
+          },
+          {
+            "tool": "list_ious",
+            "args": {}
+          },
+          {
+            "tool": "split_bill",
+            "args": {
+              "transaction_id": "ee74b78e-3b05-42f3-af95-7e43ba9cc9a7",
+              "participants": [
+                {
+                  "name": "Ann"
+                }
+              ]
+            }
+          },
+          {
+            "tool": "list_ious",
+            "args": {}
+          }
+        ],
+        "confirmations": 1,
+        "seconds": 9.1,
+        "input_tokens": 61544,
+        "output_tokens": 1107,
+        "memory_input_tokens": 427,
+        "memory_output_tokens": 364,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "edit-resplit-new-person",
+    "area": "edit",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "split the jumbo seafood dinner with anne instead",
+        "replies": [
+          "Split 2026-09-19 \u00b7 -120.00 SGD \u00b7 Jumbo Seafood \u00b7 Dining Out: Ann owes 60.00 SGD; your share 60.00 SGD?",
+          "Done \u2014 Ann owes 60 for the Jumbo Seafood dinner now, your half is 60.\n\nThat took Ben's 40 off it, since the split was replaced. Want him back on?"
+        ],
+        "calls": [
+          {
+            "tool": "find_transactions",
+            "args": {
+              "search": "jumbo",
+              "limit": 20
+            }
+          },
+          {
+            "tool": "find_transactions",
+            "args": {
+              "search": "seafood",
+              "limit": 20
+            }
+          },
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "expenses"
+            }
+          },
+          {
+            "tool": "list_split_habits",
+            "args": {}
+          },
+          {
+            "tool": "list_ious",
+            "args": {}
+          },
+          {
+            "tool": "split_bill",
+            "args": {
+              "transaction_id": "ce24750f-5f58-4050-94b8-1bcebfb93c1a",
+              "participants": [
+                {
+                  "name": "Ann"
+                }
+              ]
+            }
+          },
+          {
+            "tool": "list_ious",
+            "args": {}
+          }
+        ],
+        "confirmations": 1,
+        "seconds": 11.93,
+        "input_tokens": 61532,
+        "output_tokens": 1497,
+        "memory_input_tokens": 427,
+        "memory_output_tokens": 384,
+        "memory_failed": false
+      },
+      {
+        "text": "no, Anne is a new friend from work",
+        "replies": [
+          "Split 2026-09-19 \u00b7 -120.00 SGD \u00b7 Jumbo Seafood \u00b7 Dining Out: Anne owes 60.00 SGD; your share 60.00 SGD?",
+          "Anne owes 60 for the Jumbo dinner, your half 60. Ben's off it."
+        ],
+        "calls": [
+          {
+            "tool": "split_bill",
+            "args": {
+              "transaction_id": "ce24750f-5f58-4050-94b8-1bcebfb93c1a",
+              "participants": [
+                {
+                  "name": "Anne"
+                }
+              ],
+              "new_person": true
+            }
+          },
+          {
+            "tool": "list_ious",
+            "args": {}
+          }
+        ],
+        "confirmations": 1,
+        "seconds": 6.06,
+        "input_tokens": 34670,
+        "output_tokens": 1638,
+        "memory_input_tokens": 453,
+        "memory_output_tokens": 313,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "edit-restore",
+    "area": "edit",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "delete the netflix charge from september",
+        "replies": [
+          "Delete 2026-09-12 \u00b7 -17.98 SGD \u00b7 Netflix \u00b7 Subscriptions & Software?",
+          "Netflix 17.98 from 12 Sep is gone \u2705"
+        ],
+        "calls": [
+          {
+            "tool": "find_transactions",
+            "args": {
+              "search": "Netflix",
+              "start_date": "2026-09-01",
+              "end_date": "2026-09-30"
+            }
+          },
+          {
+            "tool": "delete_transaction",
+            "args": {
+              "transaction_id": "ba2b5c3c-f05f-44a3-a22c-dc7f81daaa99"
+            }
+          }
+        ],
+        "confirmations": 1,
+        "seconds": 3.19,
+        "input_tokens": 25761,
+        "output_tokens": 199,
+        "memory_input_tokens": 425,
+        "memory_output_tokens": 75,
+        "memory_failed": false
+      },
+      {
+        "text": "oh wait, bring it back",
+        "replies": [
+          "Back in \u2014 Netflix 17.98 on 12 Sep \u2705"
+        ],
+        "calls": [
+          {
+            "tool": "restore_transaction",
+            "args": {
+              "transaction_id": "ba2b5c3c-f05f-44a3-a22c-dc7f81daaa99"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 2.51,
+        "input_tokens": 17616,
+        "output_tokens": 85,
+        "memory_input_tokens": 436,
+        "memory_output_tokens": 50,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "voice-direct",
+    "area": "voice",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "keep it short, no emoji",
+        "replies": [
+          "Done \u2014 short replies, no emoji."
+        ],
+        "calls": [
+          {
+            "tool": "set_voice",
+            "args": {
+              "length": "short",
+              "emoji": "none"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 2.59,
+        "input_tokens": 17102,
+        "output_tokens": 83,
+        "memory_input_tokens": 425,
+        "memory_output_tokens": 86,
+        "memory_failed": false
+      },
+      {
+        "text": "grab 12",
+        "replies": [
+          "Grab 12.00 logged under Transport."
+        ],
+        "calls": [
+          {
+            "tool": "log_expense",
+            "args": {
+              "amount": "12",
+              "merchant": "Grab",
+              "category": "Transport",
+              "best_guess_category": "Transport"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 1.29,
+        "input_tokens": 17623,
+        "output_tokens": 149,
+        "memory_input_tokens": 433,
+        "memory_output_tokens": 28,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "voice-cheeky",
+    "area": "voice",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "you can be cheeky",
+        "replies": [
+          "Cheeky mode on. I'll keep the teasing to your bubble tea habit, not your bank balance \ud83d\ude0f"
+        ],
+        "calls": [
+          {
+            "tool": "set_voice",
+            "args": {
+              "preset": "cheeky"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 2.87,
+        "input_tokens": 17154,
+        "output_tokens": 84,
+        "memory_input_tokens": 423,
+        "memory_output_tokens": 76,
+        "memory_failed": false
+      },
+      {
+        "text": "bubble tea 6.50",
+        "replies": [
+          "Bubble tea 6.50 \u2705 Dining Out's at 150.40 of 300 \u2014 still room for a few more \ud83e\uddcb"
+        ],
+        "calls": [
+          {
+            "tool": "log_expense",
+            "args": {
+              "amount": "6.50",
+              "merchant": "Bubble tea",
+              "best_guess_category": "Dining Out"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 2.87,
+        "input_tokens": 17760,
+        "output_tokens": 180,
+        "memory_input_tokens": 438,
+        "memory_output_tokens": 15,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "voice-default-no-stock",
+    "area": "voice",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "my salary comes from acme",
+        "replies": [
+          "Got it \u2014 ACME's your employer."
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "salary"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 3.5,
+        "input_tokens": 17502,
+        "output_tokens": 352,
+        "memory_input_tokens": 424,
+        "memory_output_tokens": 70,
+        "memory_failed": false
+      },
+      {
+        "text": "grab 12",
+        "replies": [
+          "12.00 Grab ride, Transport \u2705"
+        ],
+        "calls": [
+          {
+            "tool": "log_expense",
+            "args": {
+              "amount": "12",
+              "merchant": "Grab",
+              "category": "Transport",
+              "best_guess_category": "Transport"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 1.31,
+        "input_tokens": 18652,
+        "output_tokens": 143,
+        "memory_input_tokens": 446,
+        "memory_output_tokens": 19,
+        "memory_failed": false
+      },
+      {
+        "text": "who owes me money",
+        "replies": [
+          "\u2022 Ann \u2014 40.00\n\u2022 Ben \u2014 40.00\n\n80.00 coming your way."
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "expenses"
+            }
+          },
+          {
+            "tool": "list_ious",
+            "args": {}
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 3.75,
+        "input_tokens": 32904,
+        "output_tokens": 114,
+        "memory_input_tokens": 451,
+        "memory_output_tokens": 26,
+        "memory_failed": false
+      },
+      {
+        "text": "thanks!",
+        "replies": [
+          "Anytime \ud83d\udc4d"
+        ],
+        "calls": [],
+        "confirmations": 0,
+        "seconds": 0.55,
+        "input_tokens": 11807,
+        "output_tokens": 11,
+        "memory_input_tokens": 447,
+        "memory_output_tokens": 22,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "voice-grab",
+    "area": "voice",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "[voice: grab-us-clean]",
+        "replies": [
+          "\ud83c\udf99 heard: \"Grab 12.50\"\nGrab 12.50 \u2705 Transport's at 108.80 this month."
+        ],
+        "calls": [
+          {
+            "tool": "log_expense",
+            "args": {
+              "amount": "12.50",
+              "merchant": "Grab",
+              "category": "Transport",
+              "best_guess_category": "Transport"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 3.12,
+        "input_tokens": 17049,
+        "output_tokens": 159,
+        "memory_input_tokens": 425,
+        "memory_output_tokens": 18,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "voice-grab-noisy",
+    "area": "voice",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "[voice: grab-gb-noisy]",
+        "replies": [
+          "\ud83c\udf99 heard: \"Grab 12.50\"\nGrab 12.50 \u2705 Transport's at 108.80 this month."
+        ],
+        "calls": [
+          {
+            "tool": "log_expense",
+            "args": {
+              "amount": "12.50",
+              "merchant": "Grab",
+              "category": "Transport",
+              "best_guess_category": "Transport"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 2.02,
+        "input_tokens": 17052,
+        "output_tokens": 164,
+        "memory_input_tokens": 425,
+        "memory_output_tokens": 18,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "voice-lunch-maxwell",
+    "area": "voice",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "[voice: maxwell-in-clean]",
+        "replies": [
+          "\ud83c\udf99 heard: \"Lunch at Maxwell 8.40\"\n8.40 at Maxwell \u2705 Dining Out's at 152.30 of 300 this month."
+        ],
+        "calls": [
+          {
+            "tool": "log_expense",
+            "args": {
+              "amount": "8.40",
+              "merchant": "Maxwell",
+              "best_guess_category": "Dining Out"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 3.57,
+        "input_tokens": 17041,
+        "output_tokens": 167,
+        "memory_input_tokens": 427,
+        "memory_output_tokens": 21,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "voice-lunch-maxwell-noisy",
+    "area": "voice",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "[voice: maxwell-in-noisy]",
+        "replies": [
+          "\ud83c\udf99 heard: \"Lunch at Maxwell, 8.40\"\n8.40 at Maxwell \u2705 Dining Out's at 152.30 of 300 this month."
+        ],
+        "calls": [
+          {
+            "tool": "log_expense",
+            "args": {
+              "amount": "8.40",
+              "merchant": "Maxwell",
+              "best_guess_category": "Dining Out"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 3.6,
+        "input_tokens": 17037,
+        "output_tokens": 171,
+        "memory_input_tokens": 428,
+        "memory_output_tokens": 21,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "voice-taxi-last-friday",
+    "area": "voice",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "[voice: taxi-in-clean]",
+        "replies": [
+          "\ud83c\udf99 heard: \"Taxi home, 23.50, last Friday\"\nTaxi home, 23.50 on Friday \u2705 Transport's at 119.80 this month."
+        ],
+        "calls": [
+          {
+            "tool": "log_expense",
+            "args": {
+              "amount": "23.50",
+              "merchant": "Taxi",
+              "category": "Transport",
+              "best_guess_category": "Transport",
+              "date": "2026-09-25",
+              "notes": "Taxi home"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 3.06,
+        "input_tokens": 17107,
+        "output_tokens": 242,
+        "memory_input_tokens": 430,
+        "memory_output_tokens": 127,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "voice-netflix",
+    "area": "voice",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "[voice: netflix-in-clean]",
+        "replies": [
+          "\ud83c\udf99 heard: \"17.99 for Netflix\"\nNetflix 17.99 \u2705"
+        ],
+        "calls": [
+          {
+            "tool": "log_expense",
+            "args": {
+              "amount": "17.99",
+              "merchant": "Netflix",
+              "category": "Subscriptions & Software",
+              "best_guess_category": "Subscriptions & Software"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 2.91,
+        "input_tokens": 17061,
+        "output_tokens": 166,
+        "memory_input_tokens": 424,
+        "memory_output_tokens": 31,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "voice-laptop",
+    "area": "voice",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "[voice: laptop-au-clean]",
+        "replies": [
+          "\ud83c\udf99 heard: \"1.8K for a new laptop\"\n1,800 for the laptop \u2705 Shopping. That's a big one \u2014 this month's spending jumps to about 2,260."
+        ],
+        "calls": [
+          {
+            "tool": "log_expense",
+            "args": {
+              "amount": "1800",
+              "merchant": "New laptop",
+              "best_guess_category": "Shopping"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 2.66,
+        "input_tokens": 17043,
+        "output_tokens": 224,
+        "memory_input_tokens": 427,
+        "memory_output_tokens": 110,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "voice-rent-paid",
+    "area": "voice",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "[voice: rent-gb-clean]",
+        "replies": [
+          "\ud83c\udf99 heard: \"Paid the rent\"\nRent's done \u2705 1,800 logged for October."
+        ],
+        "calls": [
+          {
+            "tool": "mark_bill_paid",
+            "args": {
+              "name": "Rent"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 2.28,
+        "input_tokens": 16970,
+        "output_tokens": 244,
+        "memory_input_tokens": 423,
+        "memory_output_tokens": 85,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "voice-bill-savings",
+    "area": "voice",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "[voice: savings-gb-clean]",
+        "replies": [
+          "I can't send or transfer money. I only keep track of it. Once you've moved it yourself, tell me (\"I moved 500 to savings\") and I'll record it. If it's a regular transfer, I can remind you before it's due: say \"remind me to move 300 to savings every month\"."
+        ],
+        "calls": [],
+        "confirmations": 0,
+        "seconds": 0.52,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "memory_input_tokens": 429,
+        "memory_output_tokens": 270,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "voice-split-clean",
+    "area": "voice",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "[voice: dtf-us-clean]",
+        "replies": [
+          "\ud83c\udf99 heard: \"Dinner 60 at Din Tai Fung, split with Ann\"\nSplit 2026-09-28 \u00b7 -60.00 SGD \u00b7 Din Tai Fung \u00b7 Dining Out: Ann owes 30.00 SGD; your share 30.00 SGD?",
+          "Dinner's in \u2014 60 at Din Tai Fung, Ann owes you 30 for her half \u2705"
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "expenses"
+            }
+          },
+          {
+            "tool": "list_split_habits",
+            "args": {}
+          },
+          {
+            "tool": "log_expense",
+            "args": {
+              "amount": "60",
+              "merchant": "Din Tai Fung",
+              "best_guess_category": "Dining Out"
+            }
+          },
+          {
+            "tool": "split_bill",
+            "args": {
+              "transaction_id": "759fe46c-7d55-4cb0-b34e-4178d3d44ab1",
+              "participants": [
+                {
+                  "name": "Ann"
+                }
+              ]
+            }
+          }
+        ],
+        "confirmations": 1,
+        "seconds": 5.29,
+        "input_tokens": 51961,
+        "output_tokens": 502,
+        "memory_input_tokens": 431,
+        "memory_output_tokens": 570,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "voice-split-noisy",
+    "area": "voice",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "[voice: dtf-us-noisy]",
+        "replies": [
+          "\ud83c\udf99 heard: \"Dinner 60 at Din Tai Fung, split with Ann\"\nSplit 2026-09-28 \u00b7 -60.00 SGD \u00b7 Din Tai Fung \u00b7 Dining Out: Ann owes 30.00 SGD; your share 30.00 SGD?",
+          "Din Tai Fung's in at 60, split down the middle \u2014 Ann owes you 30 \u2705"
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "expenses"
+            }
+          },
+          {
+            "tool": "list_split_habits",
+            "args": {}
+          },
+          {
+            "tool": "log_expense",
+            "args": {
+              "amount": "60",
+              "merchant": "Din Tai Fung",
+              "best_guess_category": "Dining Out",
+              "use_split_habit": false
+            }
+          },
+          {
+            "tool": "split_bill",
+            "args": {
+              "transaction_id": "2e621eeb-a1ec-43e8-8ebc-0ac1d55c2071",
+              "participants": [
+                {
+                  "name": "Ann"
+                }
+              ]
+            }
+          }
+        ],
+        "confirmations": 1,
+        "seconds": 5.18,
+        "input_tokens": 52002,
+        "output_tokens": 522,
+        "memory_input_tokens": 431,
+        "memory_output_tokens": 509,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "voice-question",
+    "area": "voice",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "[voice: query-us-clean]",
+        "replies": [
+          "96.30 on Grab this month, across 4 rides.\n\u2022 42.10 on 27 Sep\n\u2022 25.40 on 5 Sep\n\u2022 16.30 on 6 Sep"
+        ],
+        "calls": [
+          {
+            "tool": "query_ledger",
+            "args": {
+              "merchant": "Grab",
+              "start_date": "2026-09-01",
+              "end_date": "2026-09-28"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 2.31,
+        "input_tokens": 17174,
+        "output_tokens": 154,
+        "memory_input_tokens": 428,
+        "memory_output_tokens": 23,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "voice-question-noisy",
+    "area": "voice",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "[voice: query-au-noisy]",
+        "replies": [
+          "96.30 on Grab this month, across 4 rides.\n\u2022 42.10 on 27 Sep\n\u2022 25.40 on 5 Sep\n\u2022 16.30 on 6 Sep"
+        ],
+        "calls": [
+          {
+            "tool": "query_ledger",
+            "args": {
+              "merchant": "Grab",
+              "start_date": "2026-09-01",
+              "end_date": "2026-09-28"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 2.01,
+        "input_tokens": 17180,
+        "output_tokens": 156,
+        "memory_input_tokens": 428,
+        "memory_output_tokens": 23,
+        "memory_failed": false
+      }
+    ]
+  }
+]
