@@ -54,6 +54,7 @@ from nexus.application.acting import as_actor
 from nexus.application.categories import list_categories
 from nexus.application.fx import RateSource
 from nexus.application.limits import RateLimited, RateLimiter
+from nexus.application.people import known_people
 from nexus.application.ports import ReceiptStore, SpeechError, SpeechToText
 from nexus.application.users import get_user
 from nexus.domain.chat import CHAT_KEEP, ChatLine, Speaker, channel_of, clip
@@ -402,8 +403,9 @@ class AgentService:
             return [Reply(speech_rules.TOO_LONG)]
         if self._limiter is not None and not self._limiter.allow("voice", actor):
             raise RateLimited(TOO_MANY_VOICE_NOTES)
+        names = await known_people(self._uow(), actor)  # helps the model spell them
         try:
-            heard = await speech.transcribe(audio, audio_format)
+            heard = await speech.transcribe(audio, audio_format, names)
         except SpeechError as exc:
             log.warning("could not transcribe a voice note: %s", exc)
             return [Reply(NOT_HEARD)]

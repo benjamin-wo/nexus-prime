@@ -655,9 +655,13 @@ class FakeSpeech:
 
     script: list[str | Exception] = field(default_factory=list)
     heard: list[tuple[bytes, str]] = field(default_factory=list)
+    names: list[list[str]] = field(default_factory=list)  # the names offered with each note
 
-    async def transcribe(self, audio: bytes, audio_format: str) -> Transcript:
+    async def transcribe(
+        self, audio: bytes, audio_format: str, names: Sequence[str] = ()
+    ) -> Transcript:
         self.heard.append((audio, audio_format))
+        self.names.append(list(names))
         if not self.script:
             raise AssertionError("the speech model was called more times than scripted")
         step = self.script.pop(0)

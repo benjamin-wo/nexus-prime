@@ -330,6 +330,11 @@ class LedgerRepository(Protocol):
         ...
 
     async def delete_split_habits(self, user_id: UserId, habit_ids: list[UUID]) -> int: ...
+    async def split_people(self, user_id: UserId, limit: int) -> list[tuple[str, datetime]]:
+        """People the user has split with, in a split or a habit, each once (any case) with
+        when they were last used; newest first."""
+        ...
+
     async def open_ious(
         self, user_id: UserId, *, participant_name: str | None = None, for_update: bool = False
     ) -> list[OpenIou]: ...
@@ -631,9 +636,12 @@ class SpeechError(Exception):
 
 
 class SpeechToText(Protocol):
-    """Turns a voice note into text. ``audio_format`` is ogg, webm, m4a, aac or mp3."""
+    """Turns a voice note into text. ``audio_format`` is ogg, webm, m4a, aac or mp3.
+    ``names`` are people the user talks about, to help spell them."""
 
-    async def transcribe(self, audio: bytes, audio_format: str) -> Transcript: ...
+    async def transcribe(
+        self, audio: bytes, audio_format: str, names: Sequence[str] = ()
+    ) -> Transcript: ...
 
 
 class MemoryRepository(Protocol):
@@ -822,6 +830,12 @@ class TripRepository(Protocol):
         self, user_id: UserId, trip_id: UUID, payment_id: UUID, *, for_update: bool = False
     ) -> PaidByOther | None: ...
     async def list_payments(self, user_id: UserId, trip_id: UUID) -> list[PaidByOther]: ...
+    async def trip_people(self, user_id: UserId, limit: int) -> list[tuple[str, datetime]]:
+        """Travelling companions and people who paid for a trip, with when their trip or
+        payment was last written; newest first, at most ``limit`` trips and payments each
+        (a name can come up more than once)."""
+        ...
+
     async def delete_payment(self, user_id: UserId, trip_id: UUID, payment_id: UUID) -> bool: ...
     async def set_payment_settled(
         self, user_id: UserId, trip_id: UUID, payment_id: UUID, at: datetime | None

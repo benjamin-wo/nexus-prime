@@ -555,6 +555,24 @@ CASES: tuple[Case, ...] = (
         confirms=True,
         checks=(Owes("Ann", "30.00"), Owes("Carol", "30.00")),
     ),
+    # "anne" is a near miss for Ann, who the seed has: ask which, and make no second person.
+    Case(
+        "edit-resplit-near-name",
+        "edit",
+        _t("split the jumbo seafood dinner with anne instead"),
+        asks=True,
+        checks=(Owes("Ann", "40.00"), Owes("Anne", "0")),
+    ),
+    Case(
+        "edit-resplit-new-person",
+        "edit",
+        _t(
+            "split the jumbo seafood dinner with anne instead",
+            "no, Anne is a new friend from work",
+        ),
+        confirms=True,
+        checks=(Owes("Anne", "60.00"),),
+    ),
     Case(
         "edit-restore",
         "edit",
@@ -2151,7 +2169,9 @@ CASES: tuple[Case, ...] = (
         unchanged=True,
         reply=("can't",),
     ),
-    # "split with Ann" is heard as "Anne" (a homophone); the split asks to confirm first.
+    # "split with Ann" must be heard as "Ann" (the speech model is told the user's names),
+    # and if it still writes "Anne" the split must not make a second person; it asks to
+    # confirm first.
     *(
         Case(
             f"voice-split-{noise}",
@@ -2161,7 +2181,8 @@ CASES: tuple[Case, ...] = (
             checks=(
                 Logged("60", "din tai fung", "Dining Out"),
                 # Ann already owes 40 in the seed; the new half makes 70.
-                Owes("Ann", "70.00", also=("Anne",)),
+                Owes("Ann", "70.00"),
+                Owes("Anne", "0"),
             ),
         )
         for noise in ("clean", "noisy")
