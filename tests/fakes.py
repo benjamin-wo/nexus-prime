@@ -129,6 +129,46 @@ class FakeReceipts:
 
 
 @dataclass
+class FailingReceipts:
+    """A receipt reader whose model is down: every photo read raises."""
+
+    reads: int = 0
+
+    async def read(
+        self,
+        image: bytes,
+        mime_type: str,
+        caption: str | None,
+        *,
+        categories: Sequence[str] = (),
+        today: date | None = None,
+    ) -> ReceiptDraft:
+        self.reads += 1
+        raise TimeoutError
+
+
+@dataclass
+class FakeReceiptText:
+    """Reads a receipt from a look's text: ``draft`` (None: the model fails)."""
+
+    draft: ReceiptDraft | None
+    texts: list[str] = field(default_factory=list)
+
+    async def read_text(
+        self,
+        text: str,
+        caption: str | None,
+        *,
+        categories: Sequence[str] = (),
+        today: date | None = None,
+    ) -> ReceiptDraft:
+        self.texts.append(text)
+        if self.draft is None:
+            raise TimeoutError
+        return self.draft
+
+
+@dataclass
 class Sent:
     chat_id: int
     text: str

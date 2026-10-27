@@ -12,8 +12,11 @@ from nexus.application.ports import LedgerQuery
 from nexus.application.transactions import list_ledger
 from nexus.domain.ledger import UserId
 from tests.fakes import (
+    FailingReceipts,
+    FakeBucket,
     FakeImageLooker,
     FakeReceipts,
+    FakeReceiptText,
     FakeTripReader,
     ScriptedModel,
     say,
@@ -244,3 +247,76 @@ async def test_a_caption_that_asks_lets_it_act(uow: UowFactory, bob: UserId) -> 
     await agent.handle_photo(bob, IMG, "image/png", "add this bill", "tg:22")
     assert "log_expense" in model.bound[0]
     assert await bills(uow, bob) == ["Electricity"]
+
+
+TOAST = ImageLook(ImageKind.RECEIPT, "SGD", "A kopi shop receipt.", "TOAST BOX / TOTAL 6.40")
+TOAST_DRAFT = ReceiptDraft(is_receipt=True, amount="6.40", merchant="Toast Box")
+
+
+async def test_a_normal_receipt_never_reads_the_text(uow: UowFactory, alice: UserId) -> None:
+    text = FakeReceiptText(TOAST_DRAFT)
+    agent = build(uow, scripted(), FakeReceipts(TOAST_DRAFT), looker=FakeImageLooker([TOAST]),
+                  receipt_text=text)  # fmt: skip
+    reply = only(await agent.handle_photo(alice, IMG, "image/jpeg", None, "tg:r1"))
+    assert reply.text.startswith("Log 6.40 SGD at Toast Box on ") and text.texts == []
+
+
+async def test_the_look_text_reads_the_receipt_when_the_photo_cant_be_read(
+    uow: UowFactory, alice: UserId
+) -> None:
+    normal = build(uow, scripted(), FakeReceipts(TOAST_DRAFT), FakeBucket(),
+                   looker=FakeImageLooker([TOAST]))  # fmt: skip
+    expected = only(await normal.handle_photo(alice, IMG, "image/jpeg", None, "tg:r2"))
+
+    bucket, photo, text = FakeBucket(), FailingReceipts(), FakeReceiptText(TOAST_DRAFT)
+    model = scripted()
+    agent = build(uow, model, photo, bucket, looker=FakeImageLooker([TOAST]), receipt_text=text)
+    reply = only(await agent.handle_photo(alice, IMG, "image/jpeg", None, "tg:r3"))
+    assert (photo.reads, text.texts) == (1, [TOAST.text])
+    assert reply.text == expected.text
+    assert [[b.label for b in row] for row in reply.buttons] == [
+        [b.label for b in row] for row in expected.buttons
+    ]
+    assert not model.seen  # the chat agent was never asked, and nothing is logged yet
+    [(_, (data, kind))] = bucket.objects.items()  # the photo is kept, as for a normal read
+    assert (data, kind) == (IMG, "image/jpeg")
+    assert await expenses(uow, alice) == 0
+    done = only(await agent.resolve(alice, reply.buttons[0][0].data.split(":")[1], True))
+    assert done.text.startswith("Logged from receipt: ") and "6.40 SGD" in done.text
+    assert await expenses(uow, alice) == 1
+
+
+async def test_a_text_read_with_no_total_is_not_enough(uow: UowFactory, alice: UserId) -> None:
+    text = FakeReceiptText(ReceiptDraft(is_receipt=True, merchant="Toast Box"))
+    model = scripted(say("I couldn't make out the total. How much was it?"))
+    agent = build(uow, model, FailingReceipts(), looker=FakeImageLooker([TOAST]),
+                  receipt_text=text)  # fmt: skip
+    reply = only(await agent.handle_photo(alice, IMG, "image/jpeg", None, "tg:r4"))
+    assert reply.text == "I couldn't make out the total. How much was it?"
+    assert "couldn't be read" in told(model)
+
+
+async def test_when_both_reads_fail_the_chat_agent_asks_for_the_amount(
+    uow: UowFactory, alice: UserId
+) -> None:
+    model = scripted(say("I couldn't read the total. How much was it?"))
+    text = FakeReceiptText(None)
+    agent = build(uow, model, FailingReceipts(), looker=FakeImageLooker([TOAST]),
+                  receipt_text=text)  # fmt: skip
+    reply = only(await agent.handle_photo(alice, IMG, "image/jpeg", "from lunch", "tg:r5"))
+    assert reply.text == "I couldn't read the total. How much was it?"
+    given = told(model)
+    assert given.startswith("[photo] The total couldn't be read from this receipt. Ask the user")
+    assert "don't offer to log it" in given and "from lunch" in given
+    assert "text:\nTOAST BOX / TOTAL 6.40\n</image>" in given
+    assert text.texts == [TOAST.text] and await expenses(uow, alice) == 0
+
+
+async def test_the_text_is_only_read_for_receipts(uow: UowFactory, alice: UserId) -> None:
+    text = FakeReceiptText(TOAST_DRAFT)
+    model = scripted(say("It's a bank transfer."))
+    agent = build(uow, model, FailingReceipts(), looker=FakeImageLooker([TRANSFER]),
+                  receipt_text=text)  # fmt: skip
+    await agent.handle_photo(alice, IMG, "image/png", "log this", "tg:r6")
+    assert text.texts == []  # a transfer isn't read as a receipt
+    assert told(model).startswith("[photo] log this\n<image>")  # and no "total" note
