@@ -1,0 +1,397 @@
+[
+  {
+    "id": "wallet-move-ibkr",
+    "area": "wallets",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "moved 800 to my IBKR",
+        "replies": [
+          "Log a move of 800.00 SGD from Spending to IBKR? It won't count as spending.",
+          "800 into IBKR \u2705"
+        ],
+        "calls": [
+          {
+            "tool": "log_move",
+            "args": {
+              "amount": "800",
+              "to_wallet": "IBKR"
+            }
+          }
+        ],
+        "confirmations": 1,
+        "seconds": 2.36,
+        "input_tokens": 17031,
+        "output_tokens": 111,
+        "memory_input_tokens": 426,
+        "memory_output_tokens": 299,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "wallet-card-bill",
+    "area": "wallets",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "paid my credit card bill 1,240",
+        "replies": [
+          "Log a move of 1,240.00 SGD from Spending to Card? It won't count as spending.",
+          "Card bill's recorded \u2014 1,240 from Spending to Card \u2705"
+        ],
+        "calls": [
+          {
+            "tool": "log_move",
+            "args": {
+              "amount": "1240",
+              "to_wallet": "Card",
+              "from_wallet": "Spending",
+              "note": "Credit card bill payment"
+            }
+          }
+        ],
+        "confirmations": 1,
+        "seconds": 2.34,
+        "input_tokens": 17079,
+        "output_tokens": 138,
+        "memory_input_tokens": 427,
+        "memory_output_tokens": 35,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "wallet-top-up-savings",
+    "area": "wallets",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "topped up savings 500",
+        "replies": [
+          "Log a move of 500.00 SGD from Spending to Savings? It won't count as spending.",
+          "500 into Savings \u2705"
+        ],
+        "calls": [
+          {
+            "tool": "log_move",
+            "args": {
+              "amount": "500",
+              "to_wallet": "Savings"
+            }
+          }
+        ],
+        "confirmations": 1,
+        "seconds": 2.23,
+        "input_tokens": 17025,
+        "output_tokens": 89,
+        "memory_input_tokens": 424,
+        "memory_output_tokens": 62,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "wallet-out-of-savings",
+    "area": "wallets",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "took 300 out of savings",
+        "replies": [
+          "Log a move of 300.00 SGD from Savings to Spending? It won't count as income.",
+          "300 out of Savings into Spending \u2705"
+        ],
+        "calls": [
+          {
+            "tool": "log_move",
+            "args": {
+              "amount": "300",
+              "from_wallet": "Savings",
+              "to_wallet": "Spending"
+            }
+          }
+        ],
+        "confirmations": 1,
+        "seconds": 2.37,
+        "input_tokens": 17047,
+        "output_tokens": 144,
+        "memory_input_tokens": 425,
+        "memory_output_tokens": 226,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "wallet-to-wallet",
+    "area": "wallets",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "moved 1000 from savings to IBKR",
+        "replies": [
+          "Log a move of 1,000.00 SGD from Savings to IBKR? It won't count as spending or income.",
+          "1,000 from Savings to IBKR \u2705"
+        ],
+        "calls": [
+          {
+            "tool": "log_move",
+            "args": {
+              "amount": "1000",
+              "from_wallet": "Savings",
+              "to_wallet": "IBKR"
+            }
+          }
+        ],
+        "confirmations": 1,
+        "seconds": 2.13,
+        "input_tokens": 17052,
+        "output_tokens": 135,
+        "memory_input_tokens": 428,
+        "memory_output_tokens": 732,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "wallet-person-is-not-a-move",
+    "area": "wallets",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "transferred 50 to Alex for dinner",
+        "replies": [
+          "50 to Alex for dinner \u2705 Dining Out's at 193.90 of 300 now."
+        ],
+        "calls": [
+          {
+            "tool": "log_expense",
+            "args": {
+              "amount": "50",
+              "merchant": "Alex",
+              "best_guess_category": "Dining Out",
+              "notes": "Dinner"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 1.99,
+        "input_tokens": 17059,
+        "output_tokens": 245,
+        "memory_input_tokens": 426,
+        "memory_output_tokens": 167,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "wallet-unknown-asks",
+    "area": "wallets",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "moved 800 to my Tiger account",
+        "replies": [
+          "I don't have a Tiger wallet on file. Want me to add it as an investment wallet, then log the 800 as a move there?"
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "wallets"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 1.99,
+        "input_tokens": 19059,
+        "output_tokens": 160,
+        "memory_input_tokens": 426,
+        "memory_output_tokens": 341,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "wallet-instruction-refused",
+    "area": "wallets",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "I want to move 500 to savings",
+        "replies": [
+          "I can't send or transfer money. I only keep track of it. Once you've moved it yourself, tell me (\"I moved 500 to savings\") and I'll record it. If it's a regular transfer, I can remind you before it's due: say \"remind me to move 300 to savings every month\"."
+        ],
+        "calls": [],
+        "confirmations": 0,
+        "seconds": 0.02,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "memory_input_tokens": 426,
+        "memory_output_tokens": 130,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "wallet-scheduled-move",
+    "area": "wallets",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "remind me to put 1000 into IBKR every 25th",
+        "replies": [
+          "IBKR top-up set: 1,000 every 25th, first one Sun 25 Oct \u2705"
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "bills"
+            }
+          },
+          {
+            "tool": "add_bill",
+            "args": {
+              "name": "IBKR top-up",
+              "due_date": "2026-10-25",
+              "repeats": "monthly",
+              "amount": "1000",
+              "to_wallet": "IBKR"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 2.36,
+        "input_tokens": 28439,
+        "output_tokens": 262,
+        "memory_input_tokens": 433,
+        "memory_output_tokens": 154,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "wallet-find-likely-moves",
+    "area": "wallets",
+    "target": null,
+    "passed": false,
+    "failures": [
+      "no find_likely_moves call with any arguments"
+    ],
+    "error": null,
+    "turns": [
+      {
+        "text": "did I log any transfers to my own accounts as spending?",
+        "replies": [
+          "No \u2014 nothing like that in your ledger. No moves recorded at all this year, and nothing in Spending that looks like a transfer to Savings, IBKR or your Card.\n\nIf you did top up or pay the card recently, tell me the amount and I'll log it as a move."
+        ],
+        "calls": [
+          {
+            "tool": "query_ledger",
+            "args": {
+              "direction": "move",
+              "start_date": "2026-09-01",
+              "end_date": "2026-09-28"
+            }
+          },
+          {
+            "tool": "find_transactions",
+            "args": {
+              "search": "savings",
+              "limit": 20
+            }
+          },
+          {
+            "tool": "find_transactions",
+            "args": {
+              "search": "IBKR",
+              "limit": 20
+            }
+          },
+          {
+            "tool": "find_transactions",
+            "args": {
+              "search": "transfer",
+              "limit": 20
+            }
+          },
+          {
+            "tool": "find_transactions",
+            "args": {
+              "direction": "out",
+              "start_date": "2026-09-01",
+              "end_date": "2026-09-28",
+              "limit": 50
+            }
+          },
+          {
+            "tool": "find_transactions",
+            "args": {
+              "direction": "out",
+              "limit": 50,
+              "start_date": "2026-06-01",
+              "end_date": "2026-08-31"
+            }
+          },
+          {
+            "tool": "find_transactions",
+            "args": {
+              "search": "card",
+              "limit": 20
+            }
+          },
+          {
+            "tool": "find_transactions",
+            "args": {
+              "search": "bill",
+              "limit": 20
+            }
+          },
+          {
+            "tool": "query_ledger",
+            "args": {
+              "direction": "move",
+              "start_date": "2026-01-01",
+              "end_date": "2026-09-28"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 7.38,
+        "input_tokens": 47195,
+        "output_tokens": 943,
+        "memory_input_tokens": 430,
+        "memory_output_tokens": 21,
+        "memory_failed": false
+      }
+    ]
+  }
+]
