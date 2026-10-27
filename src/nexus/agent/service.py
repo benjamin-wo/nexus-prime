@@ -30,7 +30,7 @@ from nexus.agent.image_look import (
     route,
 )
 from nexus.agent.ops_timing import TurnTimer
-from nexus.agent.receipts import ReceiptReader, caption_date
+from nexus.agent.receipts import ReceiptDraft, ReceiptReader, ReceiptTextReader, caption_date
 from nexus.agent.tools import UowFactory
 from nexus.agent.trip_reader import TripReader, drafts
 from nexus.application import bills as bill_cases
@@ -163,6 +163,11 @@ class _NoRates:
         return None
 
 
+# Tells the chat agent a receipt photo's total couldn't be read from the photo or its text.
+_NO_TOTAL = (
+    "The total couldn't be read from this receipt. Ask the user for the amount; "
+    "don't offer to log it from the text below."
+)
 _NO_ENTRIES = Reply(
     "I couldn't find any bookings or plans with dates in that screenshot. Try a clearer "
     "one, or tell me the details."
@@ -209,6 +214,7 @@ class AgentService:
         primary_model: str | None = None,
         condense: Callable[[RunnableConfig], Awaitable[bool]] | None = None,
         speech: SpeechToText | None = None,
+        receipt_text: ReceiptTextReader | None = None,
     ) -> None:
         self._graph = graph
         # Turns voice notes into text; None: voice notes aren't set up.
@@ -225,6 +231,8 @@ class AgentService:
         self._rates = rates
         self._uow = uow
         self._receipts = receipts
+        # Reads a receipt from the look's text when the photo itself can't be read.
+        self._receipt_text = receipt_text
         self._clock = clock
         # Where receipt photos are kept; None = they're read but not kept.
         self._archive = archive
@@ -489,9 +497,12 @@ class AgentService:
         looks = await asyncio.gather(*(self._look(p, caption) for p in pictures))
         replies: list[Reply] = []
         to_chat: list[ImageLook] = []
+        no_total: list[ImageLook] = []  # receipts whose total couldn't be read at all
         unread = 0
         for picture, look in zip(pictures, looks, strict=True):
-            done = await self._read_as(actor, route(look, caption), picture, look, caption)
+            done = await self._read_as(
+                actor, route(look, caption), picture, look, caption, no_total
+            )
             if done is not None:
                 replies += done
             elif look is not None:
@@ -499,7 +510,10 @@ class AgentService:
             else:
                 unread += 1
         if to_chat:
-            replies += await self.ask_about(actor, to_chat, caption, ref)
+            label = f"[{len(to_chat)} photos]" if len(to_chat) > 1 else "[photo]"
+            if no_total:
+                label += f" {_NO_TOTAL}"
+            replies += await self.ask_about(actor, to_chat, caption, ref, label=label)
         elif unread and not replies:
             replies.append(Reply("I couldn't read that right now. Try again in a bit."))
         return replies
@@ -520,6 +534,7 @@ class AgentService:
         picture: Picture,
         look: ImageLook | None,
         caption: str | None,
+        no_total: list[ImageLook],
     ) -> list[Reply] | None:
         """The structured read for this route; None when it goes to the chat agent
         instead (a question, another kind, or a reader that found nothing)."""
@@ -539,7 +554,7 @@ class AgentService:
                 return [holding]
             return None if look is not None else [_NO_POSITIONS]
         if where is Route.RECEIPT and self._receipts is not None:
-            return await self._receipt_photo(actor, picture, look, caption)
+            return await self._receipt_photo(actor, picture, look, caption, no_total)
         return None
 
     @as_actor
@@ -600,8 +615,47 @@ class AgentService:
         await self._remember(actor, ref)
         return replies
 
+    async def _read_receipt(
+        self,
+        receipts: ReceiptReader,
+        picture: Picture,
+        look: ImageLook | None,
+        caption: str | None,
+        names: list[str],
+        today: date,
+    ) -> ReceiptDraft:
+        """The receipt read from the photo; if that fails, from the text the first look
+        took off it. Raises the photo's error when neither gives a total."""
+        try:
+            return await receipts.read(
+                picture.data, picture.mime_type, caption, categories=names, today=today
+            )
+        except Exception as failure:
+            reader = self._receipt_text
+            if (
+                reader is None
+                or look is None
+                or look.kind is not ImageKind.RECEIPT
+                or not look.text
+            ):
+                raise
+            log.warning("receipt photo read failed; trying the look's text", exc_info=True)
+            try:
+                draft = await reader.read_text(look.text, caption, categories=names, today=today)
+            except Exception:
+                log.warning("receipt read from the look's text failed", exc_info=True)
+                raise failure from None
+            if not draft.is_receipt or not draft.amount:
+                raise failure from None
+            return draft
+
     async def _receipt_photo(
-        self, actor: UserId, picture: Picture, look: ImageLook | None, caption: str | None
+        self,
+        actor: UserId,
+        picture: Picture,
+        look: ImageLook | None,
+        caption: str | None,
+        no_total: list[ImageLook],
     ) -> list[Reply] | None:
         receipts = self._receipts
         if receipts is None:  # pragma: no cover - routed only when set up
@@ -611,11 +665,12 @@ class AgentService:
             names = [c.name for c in await list_categories(self._uow(), actor)]
             user = await get_user(self._uow(), actor)
             today = self._clock().astimezone(ZoneInfo(user.timezone)).date()
-            draft = await receipts.read(image, mime_type, caption, categories=names, today=today)
+            draft = await self._read_receipt(receipts, picture, look, caption, names, today)
         except Exception:
             log.exception("receipt reading failed")
             if look is not None:
-                return None  # the chat agent still has what was read
+                no_total.append(look)
+                return None  # the chat agent still has what was read, and says what's missing
             return [Reply("I couldn't read that photo right now. Type the amount instead.")]
         if draft.is_travel and self._trips is not None:
             # A ticket or booking with a price on it: its entries go on the trip.

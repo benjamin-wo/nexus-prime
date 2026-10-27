@@ -20,7 +20,12 @@ from nexus.agent.holdings_reader import HoldingsReader, LlmHoldingsReader
 from nexus.agent.image_look import ImageLooker, LlmImageLooker
 from nexus.agent.memory_writer import MemoryWriter
 from nexus.agent.photo_picker import LlmChooser, LlmSpotter
-from nexus.agent.receipts import LlmReceiptReader, ReceiptReader
+from nexus.agent.receipts import (
+    LlmReceiptReader,
+    ReceiptReader,
+    ReceiptTextReader,
+    TextReceiptReader,
+)
 from nexus.agent.service import AgentService
 from nexus.agent.skills import SkillLibrary
 from nexus.agent.statement_reader import LlmStatementReader
@@ -119,6 +124,7 @@ class Overrides:
     models: ChatModels | None = None
     departments: Departments | None = None  # the registry, with test run kinds
     receipts: ReceiptReader | None = None
+    receipt_text: ReceiptTextReader | None = None
     holdings: HoldingsReader | None = None
     trip_reader: TripReader | None = None
     image_looker: ImageLooker | None = None
@@ -408,7 +414,12 @@ async def _telegram_runtime(
     graph = agent_graph.compile(checkpointer)
     receipts: ReceiptReader | None = overrides.receipts
     if receipts is None and models.vision is not None:
+        # Both attempts on the photo model: the fast look model misreads receipts.
         receipts = LlmReceiptReader(models.vision)
+    # If the photo can't be read at all, the main model reads the first look's text.
+    receipt_text: ReceiptTextReader | None = overrides.receipt_text
+    if receipt_text is None and models.vision is not None:
+        receipt_text = TextReceiptReader(models.primary)
     holdings: HoldingsReader | None = overrides.holdings
     if holdings is None and models.vision is not None:
         holdings = LlmHoldingsReader(models.vision)
@@ -453,6 +464,7 @@ async def _telegram_runtime(
             primary_model=_model_id(models.primary),
             condense=agent_graph.condense,
             speech=speech,
+            receipt_text=receipt_text,
         ),
         client=client,
     )

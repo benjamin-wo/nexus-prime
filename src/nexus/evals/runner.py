@@ -28,7 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from nexus.agent.graph import KERNEL, AgentDeps, AgentGraph, thread_id
 from nexus.agent.image_look import LlmImageLooker
 from nexus.agent.memory_writer import MemoryWriter
-from nexus.agent.receipts import LlmReceiptReader
+from nexus.agent.receipts import LlmReceiptReader, TextReceiptReader
 from nexus.agent.service import RECENT_MESSAGES, AgentService, Reply
 from nexus.agent.skills import SkillLibrary
 from nexus.agent.tools import build_tools
@@ -169,7 +169,9 @@ class Agent:
         # Voice clips are heard by this (the real speech model); None: no voice cases.
         self.speech = speech
         # Receipt photos: a separate model if given, like OPENROUTER_VISION_MODEL.
+        # If the photo can't be read at all, the main model reads the first look's text.
         self.receipts = LlmReceiptReader(vision or model)
+        self.receipt_text = TextReceiptReader(model)
         # Travel screenshots: the photo model without reasoning, as in production.
         self.trips = LlmTripReader(quick(vision or model))
         # The first look at each image: the main model without reasoning, with the
@@ -206,6 +208,7 @@ class Agent:
         self.service = AgentService(
             self.graph, self.uow, self.receipts, lambda: self.now, None, FixedRates(),
             trips=self.trips, looker=self.looker, condense=built.condense, speech=self.speech,
+            receipt_text=self.receipt_text,
         )  # fmt: skip
 
     async def messages(self, user: User) -> list[BaseMessage]:
