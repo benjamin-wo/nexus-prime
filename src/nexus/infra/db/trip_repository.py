@@ -509,6 +509,25 @@ class SqlTripRepository:
         )
         return [_payment(r) for r in rows]
 
+    async def trip_people(self, user_id: UserId, limit: int) -> list[tuple[str, datetime]]:
+        p = trip_paid_by_others.c
+        found: list[tuple[str, datetime]] = []
+        trip_rows = await self._db.execute(
+            select(trips.c.companions, trips.c.updated_at)
+            .where(trips.c.user_id == user_id)
+            .order_by(trips.c.updated_at.desc())
+            .limit(limit)
+        )
+        for companions, at in trip_rows:
+            found += [(name, at) for name in companions]
+        payment_rows = await self._db.execute(
+            select(p.person, p.created_at)
+            .where(p.user_id == user_id)
+            .order_by(p.created_at.desc())
+            .limit(limit)
+        )
+        return found + [(r.person, r.created_at) for r in payment_rows]
+
     async def delete_payment(self, user_id: UserId, trip_id: UUID, payment_id: UUID) -> bool:
         p = trip_paid_by_others.c
         result = await self._db.execute(

@@ -1,6 +1,7 @@
 """Ledger entities and the rules that don't need a database."""
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from datetime import datetime
 from decimal import Decimal
@@ -263,6 +264,56 @@ def same_person(known: str, given: str) -> bool:
         return False
     short, long = sorted((a, b), key=len)
     return set(short) <= set(long)
+
+
+def _edits(a: str, b: str) -> int:
+    """Damerau-Levenshtein distance (restricted): inserting, deleting or changing one
+    letter, or swapping two neighbours, each cost 1."""
+    before: list[int] = []
+    row = list(range(len(b) + 1))
+    for i, x in enumerate(a, 1):
+        current = [i]
+        for j, y in enumerate(b, 1):
+            cost = min(row[j] + 1, current[j - 1] + 1, row[j - 1] + (x != y))
+            if i > 1 and j > 1 and x == b[j - 2] and a[i - 2] == y:
+                cost = min(cost, before[j - 2] + 1)
+            current.append(cost)
+        before, row = row, current
+    return row[-1]
+
+
+def _near_words(a: list[str], b: list[str]) -> bool:
+    """Whether two names are the same number of words, each word at most one letter
+    off (two for words of 5+ letters), and begin with the same letter."""
+    if len(a) != len(b) or a[0][0] != b[0][0]:
+        return False
+    return all(
+        _edits(x, y) <= (1 if min(len(x), len(y)) < 5 else 2) for x, y in zip(a, b, strict=True)
+    )
+
+
+def near_name(known: Iterable[str], given: str) -> str | None:
+    """The one known name that ``given`` is probably a misspelling or mishearing of
+    (Ann for Anne, Sara for Sarah, Jon for John), as the user wrote it. None when
+    ``given`` already is a known person (``same_person``), when no known name is near,
+    or when several are: the caller can't tell which is meant.
+
+    Near means every word is a small edit away, one letter for words under 5 letters
+    and two for longer ones, and the first letters agree, so Pam is not Sam and Ann is
+    not Ian."""
+    wanted = _name_words(given)
+    if not wanted:
+        return None
+    near: dict[tuple[str, ...], str] = {}
+    for name in known:
+        words = _name_words(name)
+        if not words:
+            continue
+        if same_person(name, given):
+            return None
+        if _near_words(words, wanted):
+            near.setdefault(tuple(words), name)
+    return next(iter(near.values())) if len(near) == 1 else None
 
 
 def require_aware(value: datetime, *, field_name: str) -> datetime:

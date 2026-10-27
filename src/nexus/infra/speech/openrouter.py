@@ -5,12 +5,17 @@ The first model gets a short neutral prompt that makes it write money as "$12.50
 of "12:50" (96% of amounts exact in the bake-off, against 76% without). The fallback runs
 without a prompt: prompting Whisper through some providers returns nothing at all.
 
+When the caller knows names the user uses (people they split with), the first model's
+prompt also lists up to 20, so it writes "Ann" rather than "Anne". The fallback never
+gets them.
+
 Audio and transcripts are never logged. A log line holds the model, the audio's seconds
 and the cost.
 """
 
 import base64
 import logging
+from collections.abc import Sequence
 from typing import Any
 
 import httpx
@@ -26,6 +31,23 @@ PROMPT = (
     "Voice note to a personal expense tracker. Write money amounts as digits with a dollar "
     "sign and a decimal point, for example $4.20, $35.75, $6.05, $2.3k."
 )
+
+
+MAX_NAMES = 20
+MAX_NAME_LENGTH = 40
+
+
+def vocabulary(names: Sequence[str]) -> str:
+    """The sentence that lists names for the prompt ("" when there are none). Only letters,
+    spaces, hyphens and apostrophes get through, so a name can't carry instructions; a
+    name over 40 characters is dropped, and at most 20 are listed."""
+    clean: dict[str, None] = {}
+    for name in names:
+        letters = "".join(c if c.isalpha() or c in "-'" else " " for c in name)
+        word = " ".join(letters.split()).strip("-' ")
+        if word and len(word) <= MAX_NAME_LENGTH:
+            clean.setdefault(word)
+    return f" Names that may come up: {', '.join(list(clean)[:MAX_NAMES])}." if clean else ""
 
 
 def _number(value: Any) -> float | None:
@@ -48,10 +70,14 @@ class OpenRouterSpeech:
         self._fallback = fallback_model
         self._url = url
 
-    async def transcribe(self, audio: bytes, audio_format: str) -> Transcript:
+    async def transcribe(
+        self, audio: bytes, audio_format: str, names: Sequence[str] = ()
+    ) -> Transcript:
         encoded = base64.b64encode(audio).decode()
         try:
-            return await self._ask(self._model, encoded, audio_format, prompt=PROMPT)
+            return await self._ask(
+                self._model, encoded, audio_format, prompt=PROMPT + vocabulary(names)
+            )
         except SpeechError as first:
             if not self._fallback or self._fallback == self._model:
                 raise

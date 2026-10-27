@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nexus.agent.service import UNDO, AgentService
 from nexus.application import speech as speech_rules
+from nexus.application import split_habits as habit_cases
 from nexus.application.limits import VOICE as VOICE_LIMIT
 from nexus.application.limits import RateLimited, RateLimiter
 from nexus.application.transactions import NewTransaction, log_transaction
@@ -57,6 +58,17 @@ async def chat_lines(uow: UowFactory, user: UserId) -> list[tuple[str, str, str 
 
 
 # --- the service ---------------------------------------------------------------------
+
+
+async def test_the_speech_model_is_told_the_names_the_user_already_uses(
+    uow: UowFactory, alice: UserId
+) -> None:
+    speech = FakeSpeech(["Lunch at Maxwell 8:40.", "Lunch at Maxwell 8:40."])
+    agent = build(uow, scripted(*LOG_LUNCH, *LOG_LUNCH), speech=speech)
+    await agent.handle_voice(alice, AUDIO, "audio/ogg", "telegram:1:1")
+    await habit_cases.set_habit(uow(), alice, "Ann", None, Decimal("0.5"), now=NOW)
+    await agent.handle_voice(alice, AUDIO, "audio/ogg", "telegram:1:2")
+    assert speech.names == [[], ["Ann"]]
 
 
 async def test_a_spoken_expense_is_logged_like_a_typed_one_and_shows_what_was_heard(

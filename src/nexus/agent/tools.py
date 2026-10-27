@@ -30,6 +30,7 @@ from nexus.application import investments as investment_cases
 from nexus.application import ledger_questions as question_cases
 from nexus.application import moves as move_cases
 from nexus.application import notifications as notify_cases
+from nexus.application import people as people_cases
 from nexus.application import places as place_cases
 from nexus.application import plans as plan_cases
 from nexus.application import prep as prep_cases
@@ -130,6 +131,9 @@ class ToolContext:
 
     def today(self) -> date:
         return self.now.astimezone(self.tz).date()
+
+
+NEW_PERSON = "True only when the user said this is a different, new person"
 
 
 class Args(BaseModel):
@@ -1916,6 +1920,14 @@ class SplitArgs(Args):
     transaction_id: str
     participants: list[Participant] = Field(min_length=1, description="Everyone except the user")
     include_me: bool = Field(True, description="Whether the user takes an equal share")
+    new_person: bool = Field(False, description=NEW_PERSON)
+
+
+async def _check_people(ctx: ToolContext, names: Iterable[str], new_person: bool) -> None:
+    """Refuses a name that is a near miss for someone the user already knows (Anne for Ann),
+    so the model asks instead of making a second person; ``new_person`` says it is one."""
+    if not new_person:
+        await people_cases.check_not_misspelt(ctx.uow(), ctx.user.id, names)
 
 
 def _requests(ctx: ToolContext, a: SplitArgs, currency: str) -> list[ShareRequest]:
@@ -1926,6 +1938,7 @@ def _requests(ctx: ToolContext, a: SplitArgs, currency: str) -> list[ShareReques
 
 
 async def _describe_split(ctx: ToolContext, a: SplitArgs) -> str:
+    await _check_people(ctx, [p.name for p in a.participants], a.new_person)
     tx = await _load(ctx, a.transaction_id)
     plan = plan_split(tx.amount, _requests(ctx, a, tx.amount.currency), include_self=a.include_me)
     owed = ", ".join(f"{s.participant_name} owes {s.share}" for s in plan.shares)
@@ -1934,6 +1947,7 @@ async def _describe_split(ctx: ToolContext, a: SplitArgs) -> str:
 
 
 async def _split(ctx: ToolContext, a: SplitArgs) -> ToolResult:
+    await _check_people(ctx, [p.name for p in a.participants], a.new_person)
     tx = await _load(ctx, a.transaction_id)
     result = await split_cases.split_bill(
         ctx.uow(),
@@ -1975,6 +1989,7 @@ class SetSplitHabitArgs(Args):
         description="The other person's share of the bill: '50%', '0.4' or '1/3'; omit for "
         "half. With several people call once per person, e.g. 1/3 each for three of you",
     )
+    new_person: bool = Field(False, description=NEW_PERSON)
 
 
 class RemoveSplitHabitArgs(Args):
@@ -1997,6 +2012,7 @@ async def _habit_category(ctx: ToolContext, name: str | None, *, strict: bool) -
 
 
 async def _set_split_habit(ctx: ToolContext, a: SetSplitHabitArgs) -> ToolResult:
+    await _check_people(ctx, [a.person], a.new_person)
     habit = await habit_cases.set_habit(
         ctx.uow(),
         ctx.user.id,
@@ -2305,6 +2321,7 @@ class TripArgs(Args):
         None, description="Amount to put aside each payday until the trip, home currency"
     )
     notes: str | None = Field(None, description="The user's own notes for the trip")
+    new_person: bool = Field(False, description=NEW_PERSON)
 
 
 def _home_money(ctx: ToolContext, amount: str | None) -> Money | None:
@@ -2342,10 +2359,12 @@ def _draft_line(d: trip_cases.TripDraft) -> str:
 
 
 async def _describe_create_trip(ctx: ToolContext, a: TripArgs) -> str:
+    await _check_people(ctx, a.companions, a.new_person)
     return f"Add a trip: {_draft_line(_trip_draft(ctx, a))}?"
 
 
 async def _create_trip(ctx: ToolContext, a: TripArgs) -> ToolResult:
+    await _check_people(ctx, a.companions, a.new_person)
     trip = await trip_cases.create_trip(ctx.uow(), ctx.user, _trip_draft(ctx, a), now=ctx.now)
     return ToolResult(
         f"Trip saved: {_draft_line(trip_cases.draft_of(trip))}. Expenses in {trip.currency} "
@@ -2396,6 +2415,7 @@ class TripChangeArgs(TripNameArgs):
     notes: str | None = Field(
         None, description="The trip's notes in full, replacing them (include what to keep)"
     )
+    new_person: bool = Field(False, description=NEW_PERSON)
 
 
 _DETAILS = ("destination", "start", "end", "currency", "budget", "companions", "set_aside")
@@ -2413,6 +2433,8 @@ async def _changed_trip(
         # A member edits the plan and the notes; the dates, travellers and money are the
         # owner's.
         raise Forbidden(access_cases.refusal(found.owner_label))
+    if a.companions is not None:
+        await _check_people(ctx, a.companions, a.new_person)
     trip = found.trip
     d = trip_cases.draft_of(trip)
     changed = replace(
