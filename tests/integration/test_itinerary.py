@@ -224,7 +224,7 @@ async def test_chat_puts_a_plan_after_another_and_says_what_clashes(uow: UowFact
     )
     assert asked == (
         "Change Kaiten sushi (Fri 11 Dec 09:00\u201310:00) to Kaiten sushi (Fri 11 Dec "
-        "09:00\u201310:00), 1200 JPY, after Castle tour on the Osaka trip?"
+        "09:00\u201310:00), 1,200 JPY, after Castle tour on the Osaka trip?"
     )
     await use("change_itinerary_entry", {"item": "sushi", "after": "castle"})
     async with uow() as tx:

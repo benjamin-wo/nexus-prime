@@ -146,7 +146,7 @@ async def test_marking_done_logs_one_move_from_spending_to_the_wallet(uow: UowFa
     done = await bill_cases.mark_paid(uow, user, bill.id, now=now)
     assert done.moved is not None and done.logged is None and done.already_moved is None
     assert done.message(SG) == (
-        "Marked IBKR top-up (25 Sep) as done and logged a move of 1000.00 SGD from "
+        "Marked IBKR top-up (25 Sep) as done and logged a move of 1,000.00 SGD from "
         "Spending to IBKR."
     )
     (move,) = await moves_of(uow, user.id)
@@ -201,7 +201,7 @@ async def test_a_move_already_logged_in_chat_is_not_logged_again(uow: UowFactory
     assert done.moved is None and done.already_moved is not None
     assert done.already_moved.id == earlier.id
     assert done.message(SG) == (
-        "Marked IBKR top-up (25 Sep) as done. The move is already logged: 1004.00 SGD to "
+        "Marked IBKR top-up (25 Sep) as done. The move is already logged: 1,004.00 SGD to "
         "IBKR on 27 Sep, so I didn't log it again."
     )
     assert [m.id for m in await moves_of(uow, user.id)] == [earlier.id]
@@ -608,7 +608,7 @@ async def test_marking_done_in_chat_logs_the_move(uow: UowFactory) -> None:
     user, _, _ = await setup(uow, who=4747)
     said = await run(uow, user.id, "mark_bill_paid", {"name": "IBKR top-up"})
     assert said.startswith(
-        "Marked IBKR top-up (25 Sep) as done and logged a move of 1000.00 SGD from "
+        "Marked IBKR top-up (25 Sep) as done and logged a move of 1,000.00 SGD from "
         "Spending to IBKR."
     )
     assert len(await moves_of(uow, user.id)) == 1
@@ -658,7 +658,7 @@ async def test_remind_me_to_put_money_into_a_wallet_reaches_the_model_and_adds_t
     text = "remind me to put 1000 into IBKR every 25th"
     reply = only(await agent.handle_text(alice, text, "tg:1:1"))
     assert reply.text == "Done: I'll remind you every 25th."  # the kernel let it through
-    assert tool_results(model)[0].startswith("Added IBKR top-up 1000.00 SGD: due in 27 days")
+    assert tool_results(model)[0].startswith("Added IBKR top-up 1,000.00 SGD: due in 27 days")
     user = await get_user(uow(), alice)
     (view,) = await bill_cases.list_bills(uow, user, now=datetime(2026, 9, 28, 4, tzinfo=UTC))
     assert view.bill.wallet_id is not None and not view.bill.spending

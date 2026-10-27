@@ -1006,7 +1006,7 @@ async def test_bills_and_reminder_buttons(world: World) -> None:
 
     done = (await owner.send("POST", "/api/chat/press", {"data": paid_button})).json()
     assert done[0]["text"] == (
-        "Marked Rent (30 Sep) as paid and logged 1800.00 SGD in this month's spending."
+        "Marked Rent (30 Sep) as paid and logged 1,800.00 SGD in this month's spending."
     )
     again = (await owner.send("POST", "/api/chat/press", {"data": paid_button})).json()
     assert "out of date" in again[0]["text"]
@@ -1249,23 +1249,23 @@ async def test_salary_schedule_and_confirming_the_usual_amount(world: World) -> 
     # Reporting a different salary logs it, then asks before changing the usual amount.
     (reply,) = (await owner.send("POST", "/api/chat", {"message": "salary 5200"})).json()
     assert reply["text"] == (
-        "Recorded 5200.00 SGD salary. That's different from your usual 5000.00 SGD. "
-        "Make 5200.00 SGD your usual salary?"
+        "Recorded 5,200.00 SGD salary. That's different from your usual 5,000.00 SGD. "
+        "Make 5,200.00 SGD your usual salary?"
     )
     yes, no = reply["buttons"][0]
     assert (yes["label"], no["label"]) == ("Yes, update", "No")
     assert (await owner.get("/api/salary")).json()["usual"]["amount"] == "5000.0000"
     (done,) = (await owner.send("POST", "/api/chat/press", {"data": yes["data"]})).json()
-    assert done["text"] == "Your usual salary is now 5200.00 SGD."
+    assert done["text"] == "Your usual salary is now 5,200.00 SGD."
     assert (await owner.get("/api/salary")).json()["usual"]["amount"] == "5200.0000"
     world.clock.now += timedelta(minutes=1)  # a new message, not a redelivery
     (same,) = (await owner.send("POST", "/api/chat", {"message": "salary 5200"})).json()
-    assert same["text"] == "Recorded 5200.00 SGD salary."  # nothing to ask
+    assert same["text"] == "Recorded 5,200.00 SGD salary."  # nothing to ask
 
     # The payday button logs the usual salary once.
     log = {"data": "salary:log:2026-10-23"}
     (logged,) = (await owner.send("POST", "/api/chat/press", log)).json()
-    assert logged["text"].startswith("Logged 5200.00 SGD salary.")
+    assert logged["text"].startswith("Logged 5,200.00 SGD salary.")
     (again,) = (await owner.send("POST", "/api/chat/press", log)).json()
     assert again["text"] == "Your salary for that payday is already logged."
 
@@ -1633,7 +1633,7 @@ async def test_home_lists_what_needs_the_user(world: World) -> None:
             "/accounting/budgets",
             False,
         ),
-        ("bill", "Rent (1800.00 SGD) due tomorrow", "/accounting/budgets", False),
+        ("bill", "Rent (1,800.00 SGD) due tomorrow", "/accounting/budgets", False),
     ]
 
 

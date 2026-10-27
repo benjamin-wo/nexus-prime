@@ -1153,6 +1153,19 @@ class SqlLedgerRepository:
         )
         return int(result.rowcount or 0)
 
+    async def move_split_habits(
+        self, user_id: UserId, habit_ids: list[UUID], applies_to: str
+    ) -> int:
+        if not habit_ids:
+            return 0
+        h = split_habits.c
+        result = await self._db.execute(
+            update(split_habits)
+            .where(h.user_id == user_id, h.id.in_(habit_ids))
+            .values(applies_to=applies_to)
+        )
+        return int(result.rowcount or 0)
+
     async def split_people(self, user_id: UserId, limit: int) -> list[tuple[str, datetime]]:
         s, h = splits.c, split_habits.c
         used = union_all(

@@ -89,7 +89,7 @@ YESTERDAY = date(2026, 9, 27)
 
 @dataclass(frozen=True, slots=True)
 class Has:
-    """The argument's text contains this, any case."""
+    """The argument's text contains this, any case and ignoring accents."""
 
     text: str
 

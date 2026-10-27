@@ -66,7 +66,7 @@ async def test_a_receipt_is_logged_with_the_currency_the_look_saw(
     reader = FakeReceipts(ReceiptDraft(is_receipt=True, amount="1980", merchant="Ichiran"))
     agent = build(uow, scripted(), reader, looker=FakeImageLooker([RAMEN]))
     reply = only(await agent.handle_photo(alice, IMG, "image/jpeg", None, "telegram-photo:r1"))
-    assert reply.text.startswith("Log 1980 JPY at Ichiran on ")
+    assert reply.text.startswith("Log 1,980 JPY at Ichiran on ")
     assert "⚠️" not in reply.text
 
 
@@ -76,7 +76,7 @@ async def test_a_currency_disagreement_is_flagged(uow: UowFactory, alice: UserId
     )
     agent = build(uow, scripted(), reader, looker=FakeImageLooker([RAMEN]))
     reply = only(await agent.handle_photo(alice, IMG, "image/jpeg", None, "telegram-photo:r2"))
-    assert reply.text.startswith("Log 1980.00 SGD at Ichiran")
+    assert reply.text.startswith("Log 1,980.00 SGD at Ichiran")
     assert reply.text.endswith(
         "⚠️ The receipt may be in JPY, not SGD: if so, tap Cancel and tell me the amount "
         "and currency."

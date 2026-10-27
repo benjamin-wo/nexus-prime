@@ -80,7 +80,7 @@ async def test_marking_done_reports_whether_a_move_was_logged(world: World) -> N
     assert done.status_code == 200
     assert done.json() == {
         "message": (
-            "Marked IBKR top-up (5 Oct) as done and logged a move of 1000.00 SGD from "
+            "Marked IBKR top-up (5 Oct) as done and logged a move of 1,000.00 SGD from "
             "Spending to IBKR."
         ),
         "logged": False,

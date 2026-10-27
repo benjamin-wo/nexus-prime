@@ -99,7 +99,7 @@ async def test_everyone_gets_an_end_of_day_summary_by_default(
         "🧾 Today\n"
         "You spent 51.00 SGD (4 transactions).\n"
         "Dining Out 25.60 SGD · Other 13.00 SGD · Transport 12.40 SGD\n"
-        "You received 4200.00 SGD (1 transaction).\n"
+        "You received 4,200.00 SGD (1 transaction).\n"
         "To change how often or when I send these, just tell me."
     )
     assert "buttons" not in summary
@@ -171,7 +171,7 @@ async def test_instant_tells_what_the_chat_didnt(engine: AsyncEngine, uow: UowFa
     assert "anytime" not in message  # held in quiet hours, but never counted toward the cap
     assert message["text"] == (
         "🧾 2 new in your ledger:\n"
-        "Received 4200.00 SGD at Salary · Income\n"
+        "Received 4,200.00 SGD at Salary · Income\n"
         "Spent 12.40 SGD at Grab · Transport"
     )
     await log(uow, user, "6.00", sg(28, 9, 12), counterparty="Kopi")

@@ -419,8 +419,8 @@ async def test_budgets_month_has_left_to_spend_and_the_plan_check(world: World) 
     await owner.send("PUT", "/api/salary/usual", {"amount": "4,500"})
     warned = (await owner.get("/api/budgets/month")).json()
     assert warned["plan_warning"] == (
-        "A 4000.00 SGD budget plus 1000.00 SGD of scheduled moves is more than your usual "
-        "4500.00 SGD income."
+        "A 4,000.00 SGD budget plus 1,000.00 SGD of scheduled moves is more than your usual "
+        "4,500.00 SGD income."
     )
     stranger = world.browser()
     assert (await stranger.get("/api/budgets/month")).status_code == 401

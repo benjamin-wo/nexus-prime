@@ -330,6 +330,13 @@ class LedgerRepository(Protocol):
         ...
 
     async def delete_split_habits(self, user_id: UserId, habit_ids: list[UUID]) -> int: ...
+    async def move_split_habits(
+        self, user_id: UserId, habit_ids: list[UUID], applies_to: str
+    ) -> int:
+        """Points these habits at another category name. The caller has made sure none lands
+        beside a habit for the same person on that name."""
+        ...
+
     async def split_people(self, user_id: UserId, limit: int) -> list[tuple[str, datetime]]:
         """People the user has split with, in a split or a habit, each spelling once, with
         when they were last used; newest first."""
