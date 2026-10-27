@@ -7,7 +7,7 @@ import json
 import zipfile
 from decimal import Decimal
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from alembic import command
@@ -17,8 +17,10 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nexus.agent.graph import CORE_TOOLS
 from nexus.agent.tools import ToolContext, build_tools, run_tool
+from nexus.application import categories as category_cases
 from nexus.application import export
 from nexus.application import split_habits as habit_cases
+from nexus.application.categories import list_categories
 from nexus.application.ports import LedgerQuery
 from nexus.application.splits import list_open_ious
 from nexus.application.transactions import NewTransaction, list_ledger, log_transaction
@@ -382,6 +384,154 @@ async def test_the_whole_conversation_a_statement_then_an_expense_then_a_correct
     assert await owed(uow, alice) == {"Ann": sgd("30")}
     await agent.handle_text(alice, "my treat tonight, dinner 80 at paradise", "t")
     assert await owed(uow, alice) == {"Ann": sgd("30")}
+
+
+# --- categories that are renamed, merged or deleted ----------------------------------------
+
+
+async def category_ids(uow: UowFactory, user: UserId) -> dict[str, UUID]:
+    return {c.name: c.id for c in await list_categories(uow(), user)}
+
+
+async def habits_of(uow: UowFactory, user: UserId) -> list[tuple[str, str | None, Decimal]]:
+    habits = await habit_cases.list_habits(uow(), user)
+    return sorted((h.person, h.applies_to, h.share) for h in habits)
+
+
+async def test_a_renamed_category_keeps_its_habit_applying(uow: UowFactory, alice: UserId) -> None:
+    await habit_cases.set_habit(uow(), alice, "Ann", "Dining Out", HALF)
+    await habit_cases.set_habit(uow(), alice, "Ben", None, Decimal("0.25"))
+    ids = await category_ids(uow, alice)
+
+    await category_cases.rename_category(uow(), alice, ids["Dining Out"], "Eating Out")
+
+    assert await habits_of(uow, alice) == [
+        ("Ann", "Eating Out", HALF),
+        ("Ben", None, Decimal("0.25")),
+    ]
+    result = await run(
+        uow,
+        alice,
+        "log_expense",
+        amount="60",
+        best_guess_category="Eating Out",
+        merchant="Paradise",
+    )
+    assert "Split with Ann (a standing split): Ann owes 30.00 SGD" in result
+    assert await owed(uow, alice) == {"Ann": sgd("30")}
+
+
+async def test_renaming_follows_habits_whatever_their_case(uow: UowFactory, alice: UserId) -> None:
+    await habit_cases.set_habit(uow(), alice, "Ann", "dining OUT", HALF)
+    ids = await category_ids(uow, alice)
+    await category_cases.rename_category(uow(), alice, ids["Dining Out"], "Eating Out")
+    assert await habits_of(uow, alice) == [("Ann", "Eating Out", HALF)]
+
+    # Only the case of the name changes: the habit takes the new spelling.
+    await category_cases.rename_category(uow(), alice, ids["Dining Out"], "EATING OUT")
+    assert await habits_of(uow, alice) == [("Ann", "EATING OUT", HALF)]
+
+
+async def test_renaming_leaves_habits_on_other_categories_alone(
+    uow: UowFactory, alice: UserId
+) -> None:
+    await habit_cases.set_habit(uow(), alice, "Ann", "Groceries", HALF)
+    ids = await category_ids(uow, alice)
+    await category_cases.rename_category(uow(), alice, ids["Dining Out"], "Eating Out")
+    assert await habits_of(uow, alice) == [("Ann", "Groceries", HALF)]
+
+
+async def test_renaming_onto_a_name_the_person_has_a_habit_for_keeps_that_one(
+    uow: UowFactory, alice: UserId
+) -> None:
+    """A habit can name a category that doesn't exist (set before this one was renamed or
+    deleted, or typed in the API). The habit already on the new name wins; Ann's second
+    habit is dropped and Ben's moves over."""
+    await habit_cases.set_habit(uow(), alice, "Ann", "eating out", Decimal("0.3"))
+    await habit_cases.set_habit(uow(), alice, "Ann", "Dining Out", HALF)
+    await habit_cases.set_habit(uow(), alice, "Ben", "Dining Out", Decimal("0.4"))
+    ids = await category_ids(uow, alice)
+
+    await category_cases.rename_category(uow(), alice, ids["Dining Out"], "Eating Out")
+
+    assert await habits_of(uow, alice) == [
+        ("Ann", "eating out", Decimal("0.3")),
+        ("Ben", "Eating Out", Decimal("0.4")),
+    ]
+    await run(uow, alice, "log_expense", amount="100", best_guess_category="Eating Out")
+    assert await owed(uow, alice) == {"Ann": sgd("30"), "Ben": sgd("40")}
+
+
+async def test_merging_a_category_moves_its_habits_with_the_same_rule(
+    uow: UowFactory, alice: UserId
+) -> None:
+    await habit_cases.set_habit(uow(), alice, "Ann", "Dining Out", HALF)
+    await habit_cases.set_habit(uow(), alice, "Ben", "Dining Out", HALF)
+    await habit_cases.set_habit(uow(), alice, "Ann", "Socialising", Decimal("0.3"))
+    ids = await category_ids(uow, alice)
+
+    await category_cases.merge_category(
+        uow(), alice, ids["Dining Out"], ids["Socialising"], now=NOW
+    )
+
+    assert await habits_of(uow, alice) == [
+        ("Ann", "Socialising", Decimal("0.3")),
+        ("Ben", "Socialising", HALF),
+    ]
+
+
+async def test_deleting_a_category_moves_its_habits_to_where_the_expenses_go(
+    uow: UowFactory, alice: UserId
+) -> None:
+    await habit_cases.set_habit(uow(), alice, "Ann", "Dining Out", HALF)
+    await habit_cases.set_habit(uow(), alice, "Ben", "Dining Out", HALF)
+    await habit_cases.set_habit(uow(), alice, "Ann", "Socialising", Decimal("0.3"))
+    await habit_cases.set_habit(uow(), alice, "Cat", None, Decimal("0.2"))
+    ids = await category_ids(uow, alice)
+
+    await category_cases.delete_category(
+        uow(), alice, ids["Dining Out"], ids["Socialising"], now=NOW
+    )
+
+    assert await habits_of(uow, alice) == [
+        ("Ann", "Socialising", Decimal("0.3")),
+        ("Ben", "Socialising", HALF),
+        ("Cat", None, Decimal("0.2")),
+    ]
+
+
+async def test_deleting_a_category_without_saying_where_drops_its_habits(
+    uow: UowFactory, alice: UserId
+) -> None:
+    # Moved to Other, "groceries with Ann" would split every stray expense.
+    await habit_cases.set_habit(uow(), alice, "Ann", "Groceries", HALF)
+    await habit_cases.set_habit(uow(), alice, "Ben", None, HALF)
+    ids = await category_ids(uow, alice)
+    await category_cases.delete_category(uow(), alice, ids["Groceries"], None, now=NOW)
+    assert await habits_of(uow, alice) == [("Ben", None, HALF)]
+
+
+async def test_another_users_habits_are_not_touched_by_a_category_change(
+    uow: UowFactory, alice: UserId, bob: UserId
+) -> None:
+    await habit_cases.set_habit(uow(), alice, "Ann", "Dining Out", HALF)
+    await habit_cases.set_habit(uow(), bob, "Ann", "Dining Out", Decimal("0.25"))
+    await habit_cases.set_habit(uow(), bob, "Cat", "Groceries", Decimal("0.4"))
+    mine, theirs = await category_ids(uow, alice), await category_ids(uow, bob)
+
+    await category_cases.rename_category(uow(), alice, mine["Dining Out"], "Eating Out")
+    await category_cases.delete_category(uow(), alice, mine["Groceries"], None, now=NOW)
+    assert await habits_of(uow, alice) == [("Ann", "Eating Out", HALF)]
+    assert await habits_of(uow, bob) == [
+        ("Ann", "Dining Out", Decimal("0.25")),
+        ("Cat", "Groceries", Decimal("0.4")),
+    ]
+
+    # And bob's change doesn't reach alice's either.
+    await category_cases.merge_category(
+        uow(), bob, theirs["Dining Out"], theirs["Groceries"], now=NOW
+    )
+    assert await habits_of(uow, alice) == [("Ann", "Eating Out", HALF)]
 
 
 # --- the migration --------------------------------------------------------------------------

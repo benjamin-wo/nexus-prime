@@ -114,6 +114,36 @@ def matching(habits: list[SplitHabit], category: str | None) -> list[SplitHabit]
     return result
 
 
+def rehome(
+    habits: list[SplitHabit], old: str, new: str
+) -> tuple[list[SplitHabit], list[SplitHabit]]:
+    """Where the habits on category ``old`` go when it becomes (or is folded into) ``new``:
+    ``(to_move, to_drop)``.
+
+    ``old`` and ``new`` match habits the way ``matching`` does, in any case. A person has one
+    habit per category, so a habit that would land beside one the person already has on
+    ``new`` is dropped: the one that is already there wins, as the user set it up on the
+    category they are keeping. Of two habits for one person on ``old`` (the database tells
+    "Dining" from "dining"), the older stays. Habits for any category are never touched."""
+    old_key, new_key = old.casefold(), new.casefold()
+    moving = [h for h in habits if h.applies_to and h.applies_to.casefold() == old_key]
+    moving_ids = {h.id for h in moving}
+    taken = {
+        h.person.casefold()
+        for h in habits
+        if h.id not in moving_ids and h.applies_to and h.applies_to.casefold() == new_key
+    }
+    to_move: list[SplitHabit] = []
+    to_drop: list[SplitHabit] = []
+    for habit in sorted(moving, key=lambda h: (h.created_at, h.id)):
+        if habit.person.casefold() in taken:
+            to_drop.append(habit)
+        else:
+            taken.add(habit.person.casefold())
+            to_move.append(habit)
+    return to_move, to_drop
+
+
 def habit_shares(total: Money, habits: list[SplitHabit]) -> list[ShareRequest]:
     """What each person owes of ``total`` under their habit, rounded down to the currency's
     smallest unit so a friend is never charged more than their share. The user keeps the
