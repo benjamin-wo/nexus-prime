@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from nexus.agent.graph import MAX_STEPS, AgentDeps, AgentGraph
 from nexus.agent.holdings_reader import HoldingsReader
 from nexus.agent.image_look import ImageLooker
-from nexus.agent.receipts import ReceiptDraft, ReceiptReader
+from nexus.agent.receipts import ReceiptDraft, ReceiptReader, ReceiptTextReader
 from nexus.agent.service import AgentService, Reply
 from nexus.agent.skills import SkillLibrary
 from nexus.agent.tools import build_tools
@@ -51,6 +51,7 @@ def build(
     clock: Callable[[], datetime] | None = None,
     speech: SpeechToText | None = None,
     limiter: RateLimiter | None = None,
+    receipt_text: ReceiptTextReader | None = None,
 ) -> AgentService:
     skills = SkillLibrary.load()
 
@@ -84,6 +85,7 @@ def build(
         condense=agent_graph.condense,
         speech=speech,
         limiter=limiter,
+        receipt_text=receipt_text,
     )
 
 
