@@ -363,7 +363,7 @@ async def test_a_summary_lists_moves_apart_from_spending_and_income(
     assert "Moved 800.00 SGD to Investments." in mine
     assert "Moved 300.00 SGD from Savings to Spending." in mine
     assert "You spent 40.00 SGD (1 transaction)." in mine
-    assert "You received 3000.00 SGD (1 transaction)." in mine
+    assert "You received 3,000.00 SGD (1 transaction)." in mine
 
 
 async def test_an_instant_message_names_the_wallet(
@@ -605,8 +605,8 @@ async def test_items_without_an_amount_or_a_rate_are_skipped_and_named(uow: UowF
 # --- the plan check -----------------------------------------------------------------
 
 WARNING = (
-    "A 4000.00 SGD budget plus 1500.00 SGD of scheduled moves is more than your usual "
-    "5000.00 SGD income."
+    "A 4,000.00 SGD budget plus 1,500.00 SGD of scheduled moves is more than your usual "
+    "5,000.00 SGD income."
 )
 
 
@@ -650,7 +650,7 @@ async def test_scheduled_moves_are_a_months_worth_by_cadence(uow: UowFactory) ->
     await bill(uow, user, "Monthly top-up", 3, "201.01", spending=False)
     text = await warning(uow, user)
     assert text is not None
-    assert "plus 2001.01 SGD of scheduled moves" in text
+    assert "plus 2,001.01 SGD of scheduled moves" in text
 
 
 async def test_no_plan_warning_without_a_budget_moves_or_income_history(uow: UowFactory) -> None:

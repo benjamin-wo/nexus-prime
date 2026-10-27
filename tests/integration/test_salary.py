@@ -57,9 +57,9 @@ async def test_payday_checkin_once_after_nine(engine: AsyncEngine, uow: UowFacto
     assert await checkin(datetime(2026, 10, 23, 5, tzinfo=UTC)) == 0  # once only
     assert await checkin(datetime(2026, 10, 25, 2, tzinfo=UTC)) == 0  # the nominal Sunday
     (payload,) = await checkins(engine)
-    assert payload["text"].startswith("It's payday! 🎉 Has your salary of 5000.00 SGD come in?")
+    assert payload["text"].startswith("It's payday! 🎉 Has your salary of 5,000.00 SGD come in?")
     labels = [b["label"] for b in payload["buttons"][0]]
-    assert labels == ["Log 5000.00 SGD", "Not yet"]
+    assert labels == ["Log 5,000.00 SGD", "Not yet"]
     assert payload["buttons"][0][0]["data"] == "salary:log:2026-10-23"
     assert (payload["kind"], payload["level"]) == ("payday", "now")
 

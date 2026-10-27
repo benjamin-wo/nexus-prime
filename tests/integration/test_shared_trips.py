@@ -434,7 +434,7 @@ async def test_a_screenshot_by_a_member_drops_any_prices(shared: Shared) -> None
     body = read.json()
     hotel = next(b for b in body["added"] if b["kind"] == "hotel")
     assert hotel["cost"] is None and hotel["reference"] == "9876543210"
-    assert "64500" not in body["message"]
+    assert "64500" not in body["message"] and "64,500" not in body["message"]
     # The hotel is on the owner's trip without the price a member's screenshot showed.
     mine = (await shared.owner.get(shared.path)).json()
     stay = next(b for b in mine["bookings"] if b["kind"] == "hotel")

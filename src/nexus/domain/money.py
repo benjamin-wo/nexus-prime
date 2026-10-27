@@ -116,5 +116,6 @@ class Money:
         return [Money(base + (unit if i < remainder else 0), self.currency) for i in range(parts)]
 
     def __str__(self) -> str:
+        """For people: thousands separated, "1,240.00 SGD"."""
         shown = self.amount.quantize(Decimal(1).scaleb(-minor_units(self.currency)))
-        return f"{shown} {self.currency}"
+        return f"{shown:,} {self.currency}"

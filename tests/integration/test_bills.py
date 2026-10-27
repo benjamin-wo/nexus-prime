@@ -77,9 +77,9 @@ async def test_reminders_at_7_3_1_days_once_each(engine: AsyncEngine, uow: UowFa
     assert await sweep(date(2026, 10, 15)) == 0  # due today: 1-day reminder already sent
     texts = [p["text"] for p in await reminders(engine)]
     assert texts == [
-        "Reminder: Rent (1800.00 SGD) is due in 7 days (Thu 15 Oct).",
-        "Reminder: Rent (1800.00 SGD) is due in 3 days (Thu 15 Oct).",
-        "Reminder: Rent (1800.00 SGD) is due tomorrow (Thu 15 Oct).",
+        "Reminder: Rent (1,800.00 SGD) is due in 7 days (Thu 15 Oct).",
+        "Reminder: Rent (1,800.00 SGD) is due in 3 days (Thu 15 Oct).",
+        "Reminder: Rent (1,800.00 SGD) is due tomorrow (Thu 15 Oct).",
     ]
     buttons = (await reminders(engine))[0]["buttons"][0]
     assert [b["label"] for b in buttons] == ["Mark paid", "Snooze 1 day"]
@@ -119,7 +119,7 @@ async def test_marking_paid_logs_the_bill_in_the_months_spending(
     assert paid.logged.amount == Money.of("1800", "SGD")
     assert paid.logged.counterparty == "Rent"
     assert paid.message(SGT) == (
-        "Marked Rent (1 Oct) as paid and logged 1800.00 SGD in this month's spending."
+        "Marked Rent (1 Oct) as paid and logged 1,800.00 SGD in this month's spending."
     )
     async with uow() as tx:
         categories = {c.id: c.name for c in await tx.ledger.list_categories(user.id)}

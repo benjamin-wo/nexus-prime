@@ -11,6 +11,7 @@ import hashlib
 import re
 import statistics
 import time
+import unicodedata
 from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -307,12 +308,18 @@ def _same_number(a: str, b: str) -> bool:
         return False
 
 
+def _folded(text: str) -> str:
+    """Any case and without accents, so "Gran Vía" contains "gran via"."""
+    decomposed = unicodedata.normalize("NFKD", text.casefold())
+    return "".join(c for c in decomposed if not unicodedata.combining(c))
+
+
 def _arg_matches(value: Any, wanted: str | Has) -> bool:
     if value is None:
         return False
     text = str(value)
     if isinstance(wanted, Has):
-        return wanted.text.casefold() in text.casefold()
+        return _folded(wanted.text) in _folded(text)
     return _same_number(text, wanted) or text.casefold() == wanted.casefold()
 
 

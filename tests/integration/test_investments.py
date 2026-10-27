@@ -235,9 +235,9 @@ async def test_holdings_are_valued_in_the_home_currency(uow: UowFactory) -> None
     text = investment_cases.describe_valuation(v, SGT)
     assert (
         "• NVDA: 10 at 118.40 USD avg; 130.26 USD at the close on Fri 25 Sep, "
-        "worth 1302.55 USD (+10.01%)"
+        "worth 1,302.55 USD (+10.01%)"
     ) in text
-    assert "Total 1680.94 SGD, up 152.99 (+10.01%); +29.10 (+1.76%) on the day." in text
+    assert "Total 1,680.94 SGD, up 152.99 (+10.01%); +29.10 (+1.76%) on the day." in text
     assert text.endswith("No price yet for AAPL.")
     # Without an exchange rate the stock is shown but left out of the totals.
     bare = await investment_cases.valuation(uow(), FakeRates(), user, now=NOW)
