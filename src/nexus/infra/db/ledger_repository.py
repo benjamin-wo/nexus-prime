@@ -1161,12 +1161,10 @@ class SqlLedgerRepository:
             ),
             select(h.person, h.created_at).where(h.user_id == user_id),
         ).subquery()
+        # Each spelling once, newest first: the caller keeps the newest spelling of a name.
         last = func.max(used.c.at)
         rows = await self._db.execute(
-            select(func.min(used.c.name), last)
-            .group_by(func.lower(used.c.name))
-            .order_by(last.desc())
-            .limit(limit)
+            select(used.c.name, last).group_by(used.c.name).order_by(last.desc()).limit(limit)
         )
         return [(r[0], r[1]) for r in rows]
 
