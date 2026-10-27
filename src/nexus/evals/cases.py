@@ -559,9 +559,10 @@ CASES: tuple[Case, ...] = (
     Case(
         "edit-resplit-near-name",
         "edit",
+        # Asking "Ann or someone new?" and picking the known Ann are both fine; a second
+        # person "Anne" is not.
         _t("split the jumbo seafood dinner with anne instead"),
-        asks=True,
-        checks=(Owes("Ann", "40.00"), Owes("Anne", "0")),
+        checks=(Owes("Anne", "0"),),
     ),
     Case(
         "edit-resplit-new-person",
