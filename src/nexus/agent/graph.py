@@ -93,6 +93,9 @@ CORE_TOOLS = (
     # "be more chill" is said in passing too; show_voice answers "how are you talking now".
     "set_voice",
     "show_voice",
+    # "did i log any transfers to my own accounts as spending?" is asked in passing; it is
+    # read-only, and without it the model hand-searched with find_transactions instead.
+    "find_likely_moves",
     "answer_email",
     "set_timezone",
     "web_search",

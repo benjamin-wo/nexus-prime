@@ -3819,7 +3819,9 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
         ),
         ToolSpec(
             "find_transactions",
-            "Search the user's ledger. Use it to find ids before changing anything.",
+            "Search the user's ledger. Use it to find ids before changing anything. To find "
+            "spending that's really a move between the user's own accounts, use "
+            "find_likely_moves instead.",
             FindArgs,
             _find,
         ),
@@ -3976,7 +3978,9 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             "by dates, merchant, category, amount or day of the week; group by category, "
             "merchant, day, week, month or weekday; rank by total, count, average or largest; "
             "compare with the period before. Read-only. Prefer it for any 'how much', "
-            "'how often', 'biggest' or 'compare' question over adding up search results.",
+            "'how often', 'biggest' or 'compare' question over adding up search results. "
+            "To find spending that's really a move between the user's own accounts, use "
+            "find_likely_moves.",
             QueryArgs,
             _query_ledger,
         ),
@@ -4028,10 +4032,13 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
         ),
         ToolSpec(
             "find_likely_moves",
-            "Entries from the last six months that may really have been moves between the "
-            "user's wallets: they name a wallet's match words, or are the same amount to the "
-            "same payee every month. Read-only; offer mark_as_move for each, which asks the "
-            "user to confirm.",
+            "Finds spending that was really a move between the user's own wallets (savings, "
+            "IBKR, a card payment, top-ups): entries from the last six months that name a "
+            "wallet's match words, or are the same amount to the same payee every month. Use "
+            "it for 'did I log transfers to my own accounts as spending?', 'which expenses are "
+            "really transfers or top-ups?' and 'anything that should be a move?'. Do not hunt "
+            "with find_transactions keywords for this. Read-only; offer mark_as_move for each, "
+            "which asks the user to confirm.",
             NoArgs,
             _find_likely_moves,
         ),
