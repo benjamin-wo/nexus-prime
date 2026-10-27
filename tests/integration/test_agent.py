@@ -363,6 +363,56 @@ async def test_step_limit_after_writes_says_what_was_done_and_offers_undo(
     assert "too many steps" in reply.text and not reply.buttons
 
 
+async def test_unknown_tool_error_names_the_closest_real_tools(
+    uow: UowFactory, alice: UserId
+) -> None:
+    model = scripted(call("log_expense_placeholder", amount="5"), say("Sorry."))
+    await build(uow, model).handle_text(alice, "starbucks 5", "tg:1:1")
+    assert tool_results(model)[0] == (
+        "Error: there is no tool called 'log_expense_placeholder'. Did you mean log_expense?"
+    )
+
+    model = scripted(call("zzz_unrelated"), say("Sorry."))
+    await build(uow, model).handle_text(alice, "hello", "tg:1:2")
+    assert tool_results(model)[0] == "Error: there is no tool called 'zzz_unrelated'."
+
+
+async def test_an_empty_reply_is_retried_once(uow: UowFactory, alice: UserId) -> None:
+    model = scripted(say(""), say("Hi there."))
+    reply = only(await build(uow, model).handle_text(alice, "hello", "tg:1:1"))
+    assert reply.text == "Hi there."
+    assert len(model.seen) == 2
+    assert "Your last reply was empty" in str(model.seen[1][-1].content)
+    assert "Your last reply was empty" not in str(model.seen[0][-1].content)
+
+
+async def test_two_empty_replies_with_no_writes_get_the_fallback(
+    uow: UowFactory, alice: UserId
+) -> None:
+    model = scripted(say(""), say(""))
+    reply = only(await build(uow, model).handle_text(alice, "hello", "tg:1:1"))
+    assert reply.text == "Sorry, I didn't get that. Could you say it another way?"
+    assert not reply.buttons
+    assert len(model.seen) == 2
+
+
+async def test_two_empty_replies_after_a_write_say_what_was_done_and_offer_undo(
+    uow: UowFactory, alice: UserId
+) -> None:
+    model = scripted(
+        call("log_expense", amount="5.50", merchant="Starbucks", category="Dining Out"),
+        say(""),
+        say(""),
+    )
+    reply = only(await build(uow, model).handle_text(alice, "coffee 5.50", "tg:1:1"))
+    assert len(model.seen) == 3
+    assert reply.text.startswith("Done: Logged: 2026-09-28")
+    assert "Starbucks" in reply.text and "Dining Out" in reply.text
+    assert "Sorry" not in reply.text
+    assert [b.data for row in reply.buttons for b in row] == ["act:undo"]
+    assert await ledger(uow, alice) == [("out", Decimal("5.5"))]
+
+
 async def test_fields_the_tool_has_no_use_for_are_named_to_the_model(
     uow: UowFactory, alice: UserId
 ) -> None:

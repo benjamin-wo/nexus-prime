@@ -8,10 +8,11 @@
 and has no side effects of its own, so re-running it on resume is safe.
 """
 
+import difflib
 import logging
 import re
 import time
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta, tzinfo
 from typing import Annotated, Any, Literal, NotRequired, TypedDict, cast
@@ -64,6 +65,7 @@ log = logging.getLogger(__name__)
 
 _END: Literal["__end__"] = "__end__"
 MAX_STEPS = 8
+EMPTY_REPLY_NUDGE = "Your last reply was empty. Reply to the user, or call a tool."
 HISTORY_LIMIT = 40
 # Past HISTORY_LIMIT messages, all but about the last KEEP are condensed into a
 # rolling summary and dropped from the conversation.
@@ -210,6 +212,19 @@ def _done_this_turn(messages: Sequence[BaseMessage]) -> str:
     return " ".join(
         line if line.endswith((".", "!", "?")) else f"{line}." for line in lines if line
     )
+
+
+# Suffixes models tack onto a tool name they made up ("log_expense_placeholder").
+_JUNK_SUFFIX = re.compile(r"(?:_(?:placeholder|stub|dummy|fake|mock|example|todo|tbd|tool|func))+$")
+
+
+def _unknown_tool(name: str, offered: Iterable[str]) -> str:
+    """The error for a tool that isn't there, naming up to 3 of the offered tools closest to
+    what the model typed, so it can pick the real one instead of giving up."""
+    text = f"Error: there is no tool called {name!r}."
+    names = sorted(offered)
+    close = difflib.get_close_matches(_JUNK_SUFFIX.sub("", name.lower()), names, n=3)
+    return f"{text} Did you mean {', '.join(close)}?" if close else text
 
 
 def _trim(messages: Sequence[AnyMessage]) -> list[AnyMessage]:
@@ -810,17 +825,41 @@ class AgentGraph:
         ctx = await self._context(config)
         system = await self._prompt(ctx, state)
         prompt = [SystemMessage(content=system), *_history(state["messages"], ctx.now, ctx.tz)]
-        try:
-            response = await self._model(self.offered(state)).ainvoke(prompt)
-        except Exception:
-            log.exception("model call failed")
-            return _reply("Sorry, I can't reach the AI model right now. Nothing was changed.")
-        if not isinstance(response, AIMessage):  # pragma: no cover - chat models return AIMessage
-            response = AIMessage(content=str(response))
+        model = self._model(self.offered(state))
+        # An empty reply (no text, no tool calls) is a model hiccup: ask once more, in this
+        # same step, so the retry doesn't count against MAX_STEPS.
+        for attempt in (1, 2):
+            try:
+                response = await model.ainvoke(prompt)
+            except Exception:
+                log.exception("model call failed")
+                return _reply("Sorry, I can't reach the AI model right now. Nothing was changed.")
+            if not isinstance(response, AIMessage):  # pragma: no cover - models return AIMessage
+                response = AIMessage(content=str(response))
+            if response.tool_calls:
+                break
+            if text_of(response.content):
+                break
+            log.warning(
+                "model returned an empty reply (attempt %d)%s",
+                attempt,
+                ": retrying" if attempt == 1 else ", the retry was empty too",
+            )
+            if attempt == 1:
+                prompt = [*prompt, SystemMessage(content=EMPTY_REPLY_NUDGE)]
+        else:
+            done = _done_this_turn(state["messages"])
+            if done:
+                return _reply(
+                    f"Done: {done} I didn't get a final answer to go with it. Tell me if "
+                    "anything else needs changing.",
+                    wrote=True,
+                )
+            return _reply("Sorry, I didn't get that. Could you say it another way?")
+        if attempt == 2:
+            log.warning("the retry after an empty model reply worked")
         if response.tool_calls:
             return Command(goto="confirm", update={"messages": [response], "steps": steps})
-        if not text_of(response.content):
-            return _reply("Sorry, I didn't get that. Could you say it another way?")
         return Command(goto=_END, update={"messages": [response], "steps": steps})
 
     async def confirm_node(
@@ -867,7 +906,7 @@ class AgentGraph:
             spec = self.deps.tools.get(call["name"])
             buttons: list[list[tuple[str, str]]] | None = None
             if spec is None or not (spec.exposed or from_kernel):
-                content, wrote = f"Error: there is no tool called {call['name']!r}.", False
+                content, wrote = _unknown_tool(call["name"], self.offered(state)), False
             elif not from_kernel and _hands_off(state) and not safe_for_images(spec):
                 content, wrote = (
                     f"Error: {call['name']} wasn't run: nothing changes from an image unless "
