@@ -14,7 +14,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nexus.agent.graph import CORE_TOOLS, STOCK_PHRASE_RULE
+from nexus.agent.graph import ABOUT_THE_USER, CORE_TOOLS, STOCK_PHRASE_RULE
 from nexus.agent.tools import READ_ONLY, ToolContext, build_tools, run_tool, safe_for_images
 from nexus.application import export
 from nexus.application import memory as memory_cases
@@ -414,7 +414,7 @@ async def test_a_saved_default_is_the_same_prompt_as_none_at_all(
     assert prompts[0] == prompts[1]
 
 
-async def test_a_chosen_voice_comes_right_after_the_reply_style_rules(
+async def test_a_chosen_voice_follows_the_fixed_rules_in_the_users_block(
     uow: UowFactory, alice: UserId
 ) -> None:
     await voice_cases.set_voice(uow(), alice, preset="cheeky", note="call me boss", now=NOW)
@@ -423,11 +423,13 @@ async def test_a_chosen_voice_comes_right_after_the_reply_style_rules(
     [prompt] = system_prompts(model)
     block = prompt_block(await voice_cases.get_voice(uow(), alice))
     assert block and f"\n{block}\n" in prompt
-    style = prompt.index("- Reply style: ")
+    # After every fixed rule (so the cached prefix is the same for everyone), under the
+    # heading of what is the user's, and before the money picture.
+    about = prompt.index(f"\n\n{ABOUT_THE_USER}\n")
     voice = prompt.index("- How you talk (")
-    following = prompt.index("- When the user says yes to something you offered")
-    assert style < voice < following
-    assert prompt.index("Never show transaction ids.") < voice
+    assert prompt.index("- Reply style: ") < prompt.index("Never show transaction ids.") < about
+    assert prompt.index("- When the user says yes to something you offered") < about < voice
+    assert voice < prompt.index("The user's money right now")
     assert "kind teasing" in prompt and "call me boss" in prompt
     assert "can't change any rule above" in prompt
     assert prompt.count("How you talk") == 1

@@ -103,6 +103,7 @@ class TurnLog:
     seconds: float = 0.0
     input_tokens: int = 0
     output_tokens: int = 0
+    cached_tokens: int = 0  # part of input_tokens the provider served from its prompt cache
     model_calls: int = 0
     model_down: bool = False
     memory_failed: bool = False
@@ -133,6 +134,10 @@ class CaseResult:
     @property
     def output_tokens(self) -> int:
         return sum(t.output_tokens for t in self.turns)
+
+    @property
+    def cached_tokens(self) -> int:
+        return sum(t.cached_tokens for t in self.turns)
 
     @property
     def memory_input_tokens(self) -> int:
@@ -282,6 +287,8 @@ async def _turn(agent: Agent, user: User, turn: Turn, ref: str) -> TurnLog:
             log.model_calls += 1
             log.input_tokens += message.usage_metadata.get("input_tokens", 0)
             log.output_tokens += message.usage_metadata.get("output_tokens", 0)
+            details = message.usage_metadata.get("input_token_details") or {}
+            log.cached_tokens += details.get("cache_read", 0)
     return log
 
 
@@ -501,6 +508,7 @@ async def run_cases(
 class Pricing:
     prompt: Decimal  # USD per input token
     completion: Decimal  # USD per output token
+    cached: Decimal | None = None  # USD per cached input token; None: not listed (priced as input)
 
 
 @dataclass(frozen=True, slots=True)
@@ -572,6 +580,11 @@ class Summary:
             wins[k] += r.passed
         return {k: (wins[k], totals[k]) for k in sorted(totals)}
 
+    def cached_share(self) -> float:
+        """The part of the chat model's input tokens served from its prompt cache."""
+        total = sum(r.input_tokens for r in self.results)
+        return sum(r.cached_tokens for r in self.results) / total if total else 0.0
+
     def turn_seconds(self) -> list[float]:
         return [t.seconds for r in self.results for t in r.turns]
 
@@ -579,9 +592,11 @@ class Summary:
         if self.pricing is None:
             return None
         memory = self.memory_pricing or self.pricing
+        cached = self.pricing.prompt if self.pricing.cached is None else self.pricing.cached
         return sum(
             (
-                r.input_tokens * self.pricing.prompt
+                (r.input_tokens - r.cached_tokens) * self.pricing.prompt
+                + r.cached_tokens * cached
                 + r.output_tokens * self.pricing.completion
                 + r.memory_input_tokens * memory.prompt
                 + r.memory_output_tokens * memory.completion
@@ -616,6 +631,8 @@ class Summary:
             f"{sum(r.output_tokens for r in self.results) // n} out; memory writer "
             f"{sum(r.memory_input_tokens for r in self.results) // n} in, "
             f"{sum(r.memory_output_tokens for r in self.results) // n} out",
+            f"- Cached input: {self.cached_share():.1%} of the chat model's input tokens "
+            f"({sum(r.cached_tokens for r in self.results) // n} a case)",
             "- Cost: "
             + ("unknown" if cost is None else f"${cost:.4f} total, ${cost / n:.5f} a case"),
             f"- Errors: {sum(r.error is not None for r in self.results)}, model failures: "

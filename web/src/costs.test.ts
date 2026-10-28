@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { costDayLabel, featureLabel, formatCount, formatTokens, formatUsd } from "./costs";
+import { costDayLabel, featureLabel, formatCount, formatShare, formatTokens, formatUsd } from "./costs";
 
 describe("formatUsd", () => {
   it("writes cents for ordinary amounts", () => {
@@ -45,6 +45,15 @@ describe("formatTokens and formatCount", () => {
   it("separates thousands in call counts", () => {
     expect(formatCount(1200)).toBe("1,200");
     expect(formatCount(52)).toBe("52");
+  });
+});
+
+describe("formatShare", () => {
+  it("is a whole percent, and says so when it is only a little", () => {
+    expect(formatShare(0)).toBe("0%");
+    expect(formatShare(0.6213)).toBe("62%");
+    expect(formatShare(1)).toBe("100%");
+    expect(formatShare(0.004)).toBe("<1%");
   });
 });
 

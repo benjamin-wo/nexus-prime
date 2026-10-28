@@ -221,7 +221,7 @@ test("the bottom bar on a phone has a short label under each icon, and nothing s
     // The names a screen reader hears still say what each is.
     const names = await bar.getByRole("link").evaluateAll((els) => els.map((e) => e.getAttribute("aria-label") ?? e.textContent));
     expect(names).toEqual(["Home", "Money (Accounting)", "Invest (Investment)", "Travel"]);
-    await expect(bar.getByRole("button", { name: "Ask Nexus" })).toBeVisible();
+    await expect(bar.getByRole("button", { name: "Ask Nexus", exact: true })).toBeVisible();
 
     const problems = await bar.evaluate((el, w) => {
       const out: string[] = [];

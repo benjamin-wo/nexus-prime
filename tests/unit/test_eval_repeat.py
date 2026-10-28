@@ -2,12 +2,13 @@
 result files. Fake results only; no model calls."""
 
 import json
+from decimal import Decimal as D
 from pathlib import Path
 
 from nexus.evals import compare
 from nexus.evals.__main__ import _results_json
 from nexus.evals.cases import Case, Turn
-from nexus.evals.runner import CaseResult, Summary, TurnLog
+from nexus.evals.runner import CaseResult, Pricing, Summary, TurnLog
 
 
 def _result(case_id: str, passed: bool, round_no: int = 1, area: str = "log") -> CaseResult:
@@ -152,3 +153,20 @@ def test_compare_prints_rates_side_by_side(tmp_path: Path, capsys: object) -> No
     assert "steady" not in out.split("(")[0]  # always passed in both: left out
     assert compare.main([str(main), str(branch), "--all"]) == 0
     assert "steady" in capsys.readouterr().out  # type: ignore[attr-defined]
+
+
+def test_cached_input_is_reported_and_priced_at_the_cache_rate() -> None:
+    case = Case("a", "log", (Turn("hi"),))
+    turn = TurnLog("hi", replies=["ok"], input_tokens=1000, output_tokens=100, cached_tokens=750)
+    result = CaseResult(case, [turn], [])
+    priced = Summary("m", [result], Pricing(D("0.000001"), D("0.000002"), D("0.0000001")))
+    # 250 uncached in, 750 cached in, 100 out.
+    assert priced.cost() == D("0.00025") + D("0.000075") + D("0.0002")
+    assert priced.cached_share() == 0.75
+    assert (
+        "- Cached input: 75.0% of the chat model's input tokens (750 a case)" in priced.markdown()
+    )
+    unlisted = Summary("m", [result], Pricing(D("0.000001"), D("0.000002")))
+    assert unlisted.cost() == D("0.001") + D("0.0002")  # no cache rate listed: all input at full
+    assert json.loads(_results_json(priced))[0]["turns"][0]["cached_tokens"] == 750
+    assert Summary("m", [], None).cached_share() == 0.0

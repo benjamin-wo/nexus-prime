@@ -425,7 +425,7 @@ test("bulk delete asks first and can be undone", async ({ page }, info) => {
 test("chat asks before deleting and confirms", async ({ page }) => {
   const state = await fakeApi(page);
   await page.goto("/accounting");
-  await page.getByRole("button", { name: "Ask Nexus" }).filter({ visible: true }).click();
+  await page.getByRole("button", { name: "Ask Nexus", exact: true }).filter({ visible: true }).click();
   const chat = page.getByRole("dialog", { name: "Chat" });
   await chat.getByLabel("Message").fill("delete the grab ride");
   await chat.getByRole("button", { name: "Send" }).click();
@@ -442,7 +442,7 @@ test("chat asks before deleting and confirms", async ({ page }) => {
 test("the chat opens on the running conversation, from the web and Telegram", async ({ page }) => {
   await fakeApi(page, { chatHistory: true });
   await page.goto("/");
-  await page.getByRole("button", { name: "Ask Nexus" }).filter({ visible: true }).click();
+  await page.getByRole("button", { name: "Ask Nexus", exact: true }).filter({ visible: true }).click();
   const chat = page.getByRole("dialog", { name: "Chat" });
   await expect(chat.locator(".msg-user").first()).toHaveText(/kopi 4\.20/);
   await expect(chat.locator(".msg-bot").first()).toContainText("Logged SGD 4.20 at Kopi.");
@@ -463,7 +463,7 @@ test("the app never throws while chatting", async ({ page }) => {
   page.on("pageerror", (e) => errors.push(e.message));
   await fakeApi(page);
   await page.goto("/accounting");
-  await page.getByRole("button", { name: "Ask Nexus" }).filter({ visible: true }).click();
+  await page.getByRole("button", { name: "Ask Nexus", exact: true }).filter({ visible: true }).click();
   const chat = page.getByRole("dialog", { name: "Chat" });
   for (const message of ["one", "two"]) {
     await chat.getByLabel("Message").fill(message);
@@ -977,7 +977,7 @@ test("Nexus sits in the middle of the bar on a phone, in the rail on a wide scre
   await fakeApi(page);
   await page.goto("/accounting/budgets");
   const where = info.project.name === "mobile" ? "Main (mobile)" : "Main";
-  const nexus = page.getByRole("navigation", { name: where, exact: true }).getByRole("button", { name: "Ask Nexus" });
+  const nexus = page.getByRole("navigation", { name: where, exact: true }).getByRole("button", { name: "Ask Nexus", exact: true });
   await expect(nexus).toBeVisible();
   if (info.project.name === "mobile") {
     // Two tabs either side of it.
@@ -1102,7 +1102,7 @@ test("a suggested question on home opens the chat with it", async ({ page }) => 
 test("asking on home opens the chat with the question", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/");
-  await page.getByRole("textbox", { name: "Ask Nexus" }).fill("how much on grab?");
+  await page.getByRole("textbox", { name: "Ask Nexus", exact: true }).fill("how much on grab?");
   await page.getByRole("button", { name: "Ask", exact: true }).click();
   const chat = page.getByRole("dialog", { name: "Chat" });
   await expect(chat.locator(".msg-user").first()).toHaveText("how much on grab?");
@@ -4175,7 +4175,7 @@ test("a voice note in the chat is sent and answered like a typed message", async
   await page.addInitScript(STUB_RECORDER);
   const state = await fakeApi(page);
   await page.goto("/accounting");
-  await page.getByRole("button", { name: "Ask Nexus" }).filter({ visible: true }).click();
+  await page.getByRole("button", { name: "Ask Nexus", exact: true }).filter({ visible: true }).click();
   const chat = page.getByRole("dialog", { name: "Chat" });
   // The mic stands where Send does while the box is empty.
   await expect(chat.getByRole("button", { name: "Send" })).toHaveCount(0);
@@ -4203,7 +4203,7 @@ test("a voice note that is too long is refused in the server's words", async ({ 
   await page.addInitScript(STUB_RECORDER);
   const state = await fakeApi(page, { voiceFails: 413 });
   await page.goto("/accounting");
-  await page.getByRole("button", { name: "Ask Nexus" }).filter({ visible: true }).click();
+  await page.getByRole("button", { name: "Ask Nexus", exact: true }).filter({ visible: true }).click();
   const chat = page.getByRole("dialog", { name: "Chat" });
   await chat.getByRole("button", { name: "Record a voice note" }).click();
   await chat.getByRole("button", { name: "Stop and send" }).click();
@@ -4217,7 +4217,7 @@ test("cancelling a recording sends nothing", async ({ page }) => {
   await page.addInitScript(STUB_RECORDER);
   const state = await fakeApi(page);
   await page.goto("/accounting");
-  await page.getByRole("button", { name: "Ask Nexus" }).filter({ visible: true }).click();
+  await page.getByRole("button", { name: "Ask Nexus", exact: true }).filter({ visible: true }).click();
   const chat = page.getByRole("dialog", { name: "Chat" });
   await chat.getByRole("button", { name: "Record a voice note" }).click();
   await chat.getByRole("button", { name: "Cancel recording" }).click();
@@ -4230,7 +4230,7 @@ test("without a microphone the chat says so and still types", async ({ page }) =
   await page.addInitScript(() => Object.defineProperty(navigator, "mediaDevices", { value: undefined, configurable: true }));
   await fakeApi(page);
   await page.goto("/accounting");
-  await page.getByRole("button", { name: "Ask Nexus" }).filter({ visible: true }).click();
+  await page.getByRole("button", { name: "Ask Nexus", exact: true }).filter({ visible: true }).click();
   const chat = page.getByRole("dialog", { name: "Chat" });
   const mic = chat.getByRole("button", { name: "Record a voice note" });
   await expect(mic).toHaveAttribute("aria-disabled", "true");

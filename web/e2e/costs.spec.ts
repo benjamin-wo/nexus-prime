@@ -12,6 +12,7 @@ test("the owner opens Model costs from Settings, sees the figures and switches t
   // The three headline tiles.
   const tile = (name: string) => page.getByRole("region", { name });
   await expect(tile("This month so far")).toContainText("US$12.35");
+  await expect(tile("This month so far")).toContainText("62% of input cached");
   await expect(tile("Projected for the month")).toContainText("US$18.20");
   await expect(tile("Per active user per month")).toContainText("US$3.10");
 
@@ -35,7 +36,8 @@ test("the owner opens Model costs from Settings, sees the figures and switches t
   await expect(page.getByRole("region", { name: "By user" })).toContainText("Mia K.");
   const models = page.getByRole("region", { name: "By model" });
   await expect(models).toContainText("deepseek/deepseek-v4.1-flash");
-  await expect(models).toContainText("3.4M in · 220k out");
+  await expect(models).toContainText("3.4M in (62% cached) · 220k out");
+  await expect(models).toContainText("9.5k in (0% cached) · 480 out");
   await expect(models).toContainText("US$0.0042");
   await expect(page.getByText("Exact costs reported by OpenRouter. Search and Maps APIs are billed separately and aren't included.")).toBeVisible();
 
