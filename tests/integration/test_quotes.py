@@ -121,7 +121,7 @@ async def test_quotes_stamped_outside_regular_hours_are_counted_in_the_log(
     assert not [r for r in caplog.records if r.getMessage().startswith("quotes:")]
     late = FakeQuotes({"NVDA": quote("NVDA", "104", "100", ny("2026-10-19 19:42"))}, status=OPEN)
     await quote_cases.refresh_own(
-        uow, Quotes(late), user.id, now=MON_OPEN + timedelta(minutes=5), held=True
+        uow, Quotes(late), user.id, now=MON_OPEN + timedelta(minutes=7), held=True
     )
     [page_line] = [r.getMessage() for r in caplog.records if r.getMessage().startswith("quotes:")]
     assert page_line == "quotes: 1 of 1 stamped outside regular hours (latest 19:42 ET)"
@@ -310,10 +310,13 @@ async def test_a_page_refreshes_only_its_users_own_stale_stocks(uow: UowFactory)
     assert await refresh(held=True) == OPEN
     assert sorted(fake.asked) == ["AAPL", "NVDA"]  # not AMD (watched), not theirs
     fake.asked.clear()
-    # Fresh (a minute or less old): not asked again. A stale one is.
+    # Fresh (6 minutes or less old, what the job keeps): not asked again. A stale one is.
     await refresh(held=True)
+    await quote_cases.refresh_own(
+        uow, quotes, mine.id, now=MON_OPEN + timedelta(minutes=6), held=True
+    )
     assert fake.asked == []
-    later = MON_OPEN + timedelta(seconds=61)
+    later = MON_OPEN + timedelta(minutes=6, seconds=1)
     await quote_cases.refresh_own(uow, quotes, mine.id, now=later, held=True, watched=True)
     assert sorted(fake.asked) == ["AAPL", "AMD", "NVDA"]
     fake.asked.clear()
@@ -335,7 +338,7 @@ async def test_a_page_asks_about_at_most_fifteen_stocks_oldest_first(uow: UowFac
     first = set(fake.asked)
     fake.asked.clear()
     # The five not yet fetched go first the next time.
-    later = MON_OPEN + timedelta(seconds=90)
+    later = MON_OPEN + timedelta(minutes=7)
     await quote_cases.refresh_own(uow, quotes, user.id, now=later, held=True)
     assert len(fake.asked) == 15 and set(names) - first <= set(fake.asked)
 
