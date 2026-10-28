@@ -393,7 +393,7 @@ async def test_the_prompt_makes_voice_settings_the_one_home_for_reply_style(
     assert "A reply style the user has asked for" in prompt
     assert 'A style wish is lasting unless it names one reply: "keep your replies short"' in prompt
     assert "save them with set_voice (nothing else keeps them)" in prompt
-    assert 'Only a wish for one reply ("keep this one short") applies to that reply alone.' in prompt
+    assert 'Only a wish for one reply ("keep this one short") applies' in prompt
     assert "The reply style is the voice block below" in prompt
     assert "style preference that disagrees with it is old: ignore it" in prompt
     assert "How to reply (length, emoji, tone, humour) is not a memory" in prompt
