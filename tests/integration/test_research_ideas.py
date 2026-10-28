@@ -322,7 +322,8 @@ async def test_finding_in_a_stop_or_near_a_day_from_chat(uow: UowFactory) -> Non
     source = FakePlaces([GION, SHRINE])
     web = Web()
     ideas = IdeaFinder(
-        web, scripted(say("IDEA | Hanok Noodle Bar | Gion | Food | Hand-pulled. | 1")),
+        web,
+        scripted(*[say("IDEA | Hanok Noodle Bar | Gion | Food | Hand-pulled. | 1")] * 3),
         places=Places(source), clock=lambda: NOW,
     )  # fmt: skip
     ctx = ToolContext(user, uow, NOW, RATES, places=Places(source), ideas=ideas)
