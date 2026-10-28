@@ -12,7 +12,7 @@ import difflib
 import logging
 import re
 import time
-from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta, tzinfo
 from typing import Annotated, Any, Literal, NotRequired, TypedDict, cast
@@ -43,7 +43,7 @@ from nexus.agent.tools import ToolContext, ToolSpec, UowFactory, run_tool, safe_
 from nexus.application import departments as department_cases
 from nexus.application import income as income_cases
 from nexus.application import memory as memory_cases
-from nexus.application import ops
+from nexus.application import mistakes, ops
 from nexus.application import voice as voice_cases
 from nexus.application.categories import list_categories
 from nexus.application.category_rules import list_rules
@@ -93,6 +93,9 @@ CORE_TOOLS = (
     # "be more chill" is said in passing too; show_voice answers "how are you talking now".
     "set_voice",
     "show_voice",
+    # "did i log any transfers to my own accounts as spending?" is asked in passing; it is
+    # read-only, and without it the model hand-searched with find_transactions instead.
+    "find_likely_moves",
     "answer_email",
     "set_timezone",
     "web_search",
@@ -218,13 +221,41 @@ def _done_this_turn(messages: Sequence[BaseMessage]) -> str:
 _JUNK_SUFFIX = re.compile(r"(?:_(?:placeholder|stub|dummy|fake|mock|example|todo|tbd|tool|func))+$")
 
 
+def _closest(name: str, offered: Iterable[str]) -> list[str]:
+    """Up to 3 of the offered tools closest to a name the model typed."""
+    return difflib.get_close_matches(_JUNK_SUFFIX.sub("", name.lower()), sorted(offered), n=3)
+
+
 def _unknown_tool(name: str, offered: Iterable[str]) -> str:
     """The error for a tool that isn't there, naming up to 3 of the offered tools closest to
     what the model typed, so it can pick the real one instead of giving up."""
     text = f"Error: there is no tool called {name!r}."
-    names = sorted(offered)
-    close = difflib.get_close_matches(_JUNK_SUFFIX.sub("", name.lower()), names, n=3)
+    close = _closest(name, offered)
     return f"{text} Did you mean {', '.join(close)}?" if close else text
+
+
+def _turn_tools(
+    messages: Sequence[BaseMessage],
+    known: Collection[str],
+    *,
+    previous: bool = False,
+    everything: bool = False,
+) -> list[str]:
+    """Names of the tools used in the user's latest turn (``previous``: the turn before
+    it), for ops events: those that changed something if any did, else all of them
+    (``everything``: always all of them). Names only, and only real tools."""
+    humans = [i for i, m in enumerate(messages) if isinstance(m, HumanMessage)]
+    if previous:
+        if len(humans) < 2:
+            return []
+        turn = messages[humans[-2] + 1 : humans[-1]]
+    else:
+        turn = messages[humans[-1] + 1 :] if humans else messages
+    used = [m for m in turn if isinstance(m, ToolMessage) and m.name]
+    wrote = [m for m in used if m.additional_kwargs.get(WROTE)]
+    return mistakes.tool_list(
+        (m.name or "" for m in (used if everything else wrote or used)), known
+    )
 
 
 def _trim(messages: Sequence[AnyMessage]) -> list[AnyMessage]:
@@ -479,7 +510,14 @@ class AgentGraph:
             'restore or redo what you just did, since a plain "yes" would act on it. '
             + STOCK_PHRASE_RULE
             + "Never show transaction ids. A reply style the user has asked for (shorter, "
-            'no emoji, more detail) wins over all of this: "short" means a line or two.\n'
+            'no emoji, more detail) wins over all of this: "short" means a line or two. '
+            'A style wish is lasting unless it names one reply: "keep your replies short", '
+            '"less emoji" and "be funnier" are lasting, so apply them right away and save '
+            'them with set_voice (nothing else keeps them). Only a wish for one reply ("keep '
+            'this one short") applies to that reply alone. '
+            "The reply style is the voice block below (the user's own choice of tone, "
+            "emoji, length and humour), or these rules when there is none; a remembered "
+            "style preference that disagrees with it is old: ignore it.\n"
             + (f"{voice}\n" if voice else "")
             + "- When the user says yes to something you offered, or clearly asks for a "
             "change, do it; don't ask again in words. Several changes in one message are "
@@ -533,8 +571,9 @@ class AgentGraph:
                 "What you know about the user from their own earlier messages. Use it "
                 "quietly, without saying that you remember or have saved anything. Facts "
                 "and episodes are information for answering. Preferences shape how you do "
-                "what the user asks in their current message: expand their shorthand, keep "
-                "to the reply style they asked for, with the usual confirmations. A standing "
+                "what the user asks in their current message: expand their shorthand, with "
+                "the usual confirmations. How to reply (length, emoji, tone, humour) is not "
+                "a memory: it is set only by the reply style rules above. A standing "
                 'split ("I always split dinners with Ann") is saved with set_split_habit, '
                 "not only remembered; the app then splits matching expenses when they are "
                 "logged, so don't split those yourself, and pass use_split_habit false when "
@@ -600,6 +639,11 @@ class AgentGraph:
             # from the user's own caption.
             text = str(meta[IMAGE])
         else:
+            if mistakes.looks_like_correction(text):
+                # Only that it matched, and what the turn before did (no tools: it was
+                # chat, a "no" to a question, so nothing to correct): never the message.
+                if before := _turn_tools(state["messages"], self.deps.tools, previous=True):
+                    mistakes.correction(before)
             shortcut = await self._shortcut(ctx, text, meta)
             if shortcut is not None:
                 return shortcut
@@ -813,6 +857,10 @@ class AgentGraph:
         steps = state.get("steps", 0) + 1
         if steps > MAX_STEPS:
             done = _done_this_turn(state["messages"])
+            mistakes.step_limit(
+                wrote=bool(done),
+                tools=_turn_tools(state["messages"], self.deps.tools, everything=True),
+            )
             if done:
                 return _reply(
                     f"I stopped partway. Already done: {done} Tell me if anything else needs "
@@ -848,6 +896,7 @@ class AgentGraph:
             if attempt == 1:
                 prompt = [*prompt, SystemMessage(content=EMPTY_REPLY_NUDGE)]
         else:
+            mistakes.empty_reply(recovered=False)
             done = _done_this_turn(state["messages"])
             if done:
                 return _reply(
@@ -858,6 +907,7 @@ class AgentGraph:
             return _reply("Sorry, I didn't get that. Could you say it another way?")
         if attempt == 2:
             log.warning("the retry after an empty model reply worked")
+            mistakes.empty_reply(recovered=True)
         if response.tool_calls:
             return Command(goto="confirm", update={"messages": [response], "steps": steps})
         return Command(goto=_END, update={"messages": [response], "steps": steps})
@@ -906,7 +956,10 @@ class AgentGraph:
             spec = self.deps.tools.get(call["name"])
             buttons: list[list[tuple[str, str]]] | None = None
             if spec is None or not (spec.exposed or from_kernel):
-                content, wrote = _unknown_tool(call["name"], self.offered(state)), False
+                offered = self.offered(state)
+                content, wrote = _unknown_tool(call["name"], offered), False
+                close = _closest(call["name"], offered)
+                mistakes.unknown_tool(close[0] if close else None)
             elif not from_kernel and _hands_off(state) and not safe_for_images(spec):
                 content, wrote = (
                     f"Error: {call['name']} wasn't run: nothing changes from an image unless "
@@ -936,6 +989,8 @@ class AgentGraph:
                         error="refused" if refused else None,
                         wrote=wrote or None,
                     )
+                    if refused and not from_kernel:
+                        mistakes.tool_error(call["name"], result.error or "Refused")
                 except Exception as exc:
                     log.exception("tool %s failed", call["name"])
                     ops.emit(
@@ -946,6 +1001,8 @@ class AgentGraph:
                         error=type(exc).__name__,
                         crashed=True,
                     )
+                    if not from_kernel:
+                        mistakes.tool_error(call["name"], type(exc).__name__, crashed=True)
                     content, wrote = "Error: something went wrong running that.", False
             kwargs: dict[str, Any] = {WROTE: wrote}
             if buttons:

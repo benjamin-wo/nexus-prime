@@ -4,7 +4,7 @@ from enum import Enum
 from typing import Literal
 from uuid import UUID, uuid4
 
-from nexus.application import fx
+from nexus.application import fx, mistakes
 from nexus.application.categories import require_category
 from nexus.application.clock import utcnow
 from nexus.application.fx import RateSource
@@ -309,6 +309,9 @@ async def undo_last(uow: UnitOfWork, actor: UserId) -> UndoResult:
             raise NothingToUndo("there is nothing to undo")
         result = await reverse_revision(uow, actor, revision)
         await uow.commit()
+    mistakes.undo(
+        [mistakes.revision_tool(result.undone, result.transaction.direction)], revision.created_at
+    )
     return result
 
 

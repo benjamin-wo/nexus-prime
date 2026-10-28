@@ -22,7 +22,7 @@ from nexus.application import budgets as budget_cases
 from nexus.application import cashflow as cashflow_cases
 from nexus.application import categories as category_cases
 from nexus.application import category_rules as rule_cases
-from nexus.application import day_slots, trip_split
+from nexus.application import day_slots, mistakes, trip_split
 from nexus.application import duplicates as duplicate_cases
 from nexus.application import email as email_cases
 from nexus.application import income as income_cases
@@ -146,6 +146,8 @@ class ToolResult:
     wrote: bool = False
     # Extra reply buttons, rows of (label, data), shown under the agent's answer.
     buttons: list[list[tuple[str, str]]] | None = None
+    # For an expected failure (run_tool): its coarse class, like "NotFound". Never the message.
+    error: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -3819,7 +3821,9 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
         ),
         ToolSpec(
             "find_transactions",
-            "Search the user's ledger. Use it to find ids before changing anything.",
+            "Search the user's ledger. Use it to find ids before changing anything. To find "
+            "spending that's really a move between the user's own accounts, use "
+            "find_likely_moves instead.",
             FindArgs,
             _find,
         ),
@@ -3976,7 +3980,9 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             "by dates, merchant, category, amount or day of the week; group by category, "
             "merchant, day, week, month or weekday; rank by total, count, average or largest; "
             "compare with the period before. Read-only. Prefer it for any 'how much', "
-            "'how often', 'biggest' or 'compare' question over adding up search results.",
+            "'how often', 'biggest' or 'compare' question over adding up search results. "
+            "'How much did I save' means money in minus money out for the period (net), not "
+            "moves into a savings wallet, unless the user names that wallet.",
             QueryArgs,
             _query_ledger,
         ),
@@ -4028,10 +4034,13 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
         ),
         ToolSpec(
             "find_likely_moves",
-            "Entries from the last six months that may really have been moves between the "
-            "user's wallets: they name a wallet's match words, or are the same amount to the "
-            "same payee every month. Read-only; offer mark_as_move for each, which asks the "
-            "user to confirm.",
+            "Finds spending that was really a move between the user's own wallets (savings, "
+            "IBKR, a card payment, top-ups): entries from the last six months that name a "
+            "wallet's match words, or are the same amount to the same payee every month. Use "
+            "it for 'did I log transfers to my own accounts as spending?', 'which expenses are "
+            "really transfers or top-ups?' and 'anything that should be a move?'. Do not hunt "
+            "with find_transactions keywords for this. Read-only; offer mark_as_move for each, "
+            "which asks the user to confirm.",
             NoArgs,
             _find_likely_moves,
         ),
@@ -4483,7 +4492,7 @@ async def run_tool(spec: ToolSpec, ctx: ToolContext, raw_args: dict[str, Any]) -
     try:
         result = await spec.run(ctx, spec.parse(raw_args))
     except NexusError as exc:
-        result = ToolResult(f"Error: {exc}")
+        result = ToolResult(f"Error: {exc}", error=mistakes.error_kind(exc))
     ignored = spec.ignored(raw_args)
     if not ignored:
         return result
