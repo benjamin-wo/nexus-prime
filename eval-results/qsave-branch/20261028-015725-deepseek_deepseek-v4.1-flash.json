@@ -1,0 +1,2690 @@
+{
+  "repeat": 3,
+  "cases": 24,
+  "passes_per_round": [
+    23,
+    23,
+    24
+  ],
+  "mean_passes": 23.33,
+  "min_passes": 23,
+  "max_passes": 24,
+  "per_case": {
+    "q-month-spent": {
+      "passed": 3,
+      "runs": 3
+    },
+    "q-category-month": {
+      "passed": 3,
+      "runs": 3
+    },
+    "q-last-month": {
+      "passed": 3,
+      "runs": 3
+    },
+    "q-merchant-month": {
+      "passed": 3,
+      "runs": 3
+    },
+    "q-weekends": {
+      "passed": 3,
+      "runs": 3
+    },
+    "q-biggest": {
+      "passed": 3,
+      "runs": 3
+    },
+    "q-compare-months": {
+      "passed": 3,
+      "runs": 3
+    },
+    "q-who-owes": {
+      "passed": 3,
+      "runs": 3
+    },
+    "q-bills": {
+      "passed": 3,
+      "runs": 3
+    },
+    "q-budget": {
+      "passed": 3,
+      "runs": 3
+    },
+    "q-payday": {
+      "passed": 3,
+      "runs": 3
+    },
+    "q-subscriptions": {
+      "passed": 3,
+      "runs": 3
+    },
+    "q-coming-up": {
+      "passed": 3,
+      "runs": 3
+    },
+    "q-yesterday": {
+      "passed": 3,
+      "runs": 3
+    },
+    "q-earned": {
+      "passed": 3,
+      "runs": 3
+    },
+    "q-categories": {
+      "passed": 3,
+      "runs": 3
+    },
+    "q-top-merchants": {
+      "passed": 3,
+      "runs": 3
+    },
+    "q-average-ride": {
+      "passed": 3,
+      "runs": 3
+    },
+    "q-dining-vs-last": {
+      "passed": 3,
+      "runs": 3
+    },
+    "q-over-50": {
+      "passed": 3,
+      "runs": 3
+    },
+    "q-busiest-weekday": {
+      "passed": 3,
+      "runs": 3
+    },
+    "q-software-sgd": {
+      "passed": 3,
+      "runs": 3
+    },
+    "q-saved-august": {
+      "passed": 1,
+      "runs": 3
+    },
+    "messy-yen": {
+      "passed": 3,
+      "runs": 3
+    }
+  },
+  "flaky": [
+    "q-saved-august"
+  ],
+  "always_failing": [],
+  "runs": [
+    {
+      "round": 1,
+      "id": "q-month-spent",
+      "area": "ask",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "how much did i spend this month",
+          "replies": [
+            "460.03 this month, across 15 transactions.\n\n\u2022 Dining Out 143.90\n\u2022 Transport 96.30\n\u2022 Groceries 88.45\n\nThat's 1 Sep to today."
+          ],
+          "calls": [
+            {
+              "tool": "spending_summary",
+              "args": {}
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.18,
+          "input_tokens": 17680,
+          "output_tokens": 90,
+          "memory_input_tokens": 480,
+          "memory_output_tokens": 26,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "q-category-month",
+      "area": "ask",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "how much have i spent on dining out this month",
+          "replies": [
+            "143.90 on Dining Out this month, out of your 300 budget \u2014 156.10 left."
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 1.23,
+          "input_tokens": 8765,
+          "output_tokens": 43,
+          "memory_input_tokens": 483,
+          "memory_output_tokens": 23,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "q-last-month",
+      "area": "ask",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "how much did i spend in august",
+          "replies": [
+            "246.78 in August, across 8 transactions.\n\n\u2022 Groceries 64.30\n\u2022 Shopping 59.90\n\u2022 Transport 54.80\n\u2022 Bills & Utilities 45.00\n\u2022 Subscriptions & Software 15.98\n\u2022 Dining Out 6.80"
+          ],
+          "calls": [
+            {
+              "tool": "spending_summary",
+              "args": {
+                "start_date": "2026-08-01",
+                "end_date": "2026-08-31"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.31,
+          "input_tokens": 17709,
+          "output_tokens": 193,
+          "memory_input_tokens": 480,
+          "memory_output_tokens": 21,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "q-merchant-month",
+      "area": "ask",
+      "target": "M8c",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "how much did i spend on grab this month",
+          "replies": [
+            "96.30 on Grab this month, across 4 rides.\n\nBiggest was 42.10 on 27 Sep."
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "merchant": "grab",
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-28",
+                "measure": "total"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.15,
+          "input_tokens": 17812,
+          "output_tokens": 160,
+          "memory_input_tokens": 482,
+          "memory_output_tokens": 19,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "q-weekends",
+      "area": "ask",
+      "target": "M8c",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "how much did i spend on grab on weekends this month",
+          "replies": [
+            "83.80 on Grab this month's weekends, across 3 rides:\n\u2022 42.10 on Sun 27 Sep\n\u2022 25.40 on Sat 5 Sep\n\u2022 16.30 on Sun 6 Sep"
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "merchant": "grab",
+                "days": [
+                  "weekends"
+                ],
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-28"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.76,
+          "input_tokens": 17818,
+          "output_tokens": 168,
+          "memory_input_tokens": 484,
+          "memory_output_tokens": 23,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "q-biggest",
+      "area": "ask",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "what was my biggest expense this month",
+          "replies": [
+            "Biggest was 120.00 at Jumbo Seafood on 19 Sep (Dining Out).\n\nNext up: 88.45 at NTUC FairPrice, then 42.10 on Grab."
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "measure": "largest",
+                "top": 3
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.89,
+          "input_tokens": 17778,
+          "output_tokens": 119,
+          "memory_input_tokens": 480,
+          "memory_output_tokens": 21,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "q-compare-months",
+      "area": "ask",
+      "target": "M8c",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "compare my grab spending in august and september",
+          "replies": [
+            "Grab's up quite a bit:\n\n\u2022 August: 54.80 over 3 rides (18.27 avg)\n\u2022 September: 96.30 over 4 rides (24.08 avg) \u2014 and there are still 2 days left\n\nThat's 41.50 more, with the 42.10 ride on the 27th doing most of the damage."
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "merchant": "Grab",
+                "start_date": "2026-08-01",
+                "end_date": "2026-08-31",
+                "group_by": "merchant"
+              }
+            },
+            {
+              "tool": "query_ledger",
+              "args": {
+                "merchant": "Grab",
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-28",
+                "group_by": "merchant"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.06,
+          "input_tokens": 17848,
+          "output_tokens": 304,
+          "memory_input_tokens": 481,
+          "memory_output_tokens": 32,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "q-who-owes",
+      "area": "ask",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "who owes me money",
+          "replies": [
+            "Ann owes you 40, and Ben 40 \u2014 80 total."
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 0.76,
+          "input_tokens": 8759,
+          "output_tokens": 113,
+          "memory_input_tokens": 477,
+          "memory_output_tokens": 45,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "q-bills",
+      "area": "ask",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "what bills are coming up",
+          "replies": [
+            "Two on the books:\n\n\u2022 Rent 1,800.00 \u2014 Thu 1 Oct, in 3 days\n\u2022 Singtel 45.00 \u2014 Wed 28 Oct\n\nRent's the one to watch this week."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "bills"
+              }
+            },
+            {
+              "tool": "list_bills",
+              "args": {}
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.48,
+          "input_tokens": 29232,
+          "output_tokens": 125,
+          "memory_input_tokens": 478,
+          "memory_output_tokens": 25,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "q-budget",
+      "area": "ask",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "how's my dining out budget looking",
+          "replies": [
+            "Dining Out's at 143.90 of 300 this month \u2014 47% used, 156.10 left. Comfortable."
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 0.65,
+          "input_tokens": 8762,
+          "output_tokens": 57,
+          "memory_input_tokens": 480,
+          "memory_output_tokens": 22,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "q-payday",
+      "area": "ask",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "when is my next payday",
+          "replies": [
+            "Fri 23 Oct \u2014 the 25th falls on a Sunday, so it moves to the Friday before."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "show_pay_schedule",
+              "args": {}
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.48,
+          "input_tokens": 27571,
+          "output_tokens": 132,
+          "memory_input_tokens": 479,
+          "memory_output_tokens": 35,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "q-subscriptions",
+      "area": "ask",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "what subscriptions do i have",
+          "replies": [
+            "Just Netflix \u2014 17.98 a month, next charge around 12 Oct. That's your only tracked subscription, so 17.98 a month in all."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "subscriptions"
+              }
+            },
+            {
+              "tool": "list_subscriptions",
+              "args": {}
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.9,
+          "input_tokens": 26901,
+          "output_tokens": 112,
+          "memory_input_tokens": 478,
+          "memory_output_tokens": 17,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "q-coming-up",
+      "area": "ask",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "what's coming up this week",
+          "replies": [
+            "Just one thing on the calendar:\n\n\u2022 Thu 1 Oct \u2014 Rent, 1,800.00\n\nNet for the week: -1,800.00. That's bills, tracked subscriptions and payday only \u2014 everyday spending isn't in it, and it's not a balance."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "cashflow"
+              }
+            },
+            {
+              "tool": "cash_flow",
+              "args": {
+                "days": 7
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.02,
+          "input_tokens": 27253,
+          "output_tokens": 164,
+          "memory_input_tokens": 479,
+          "memory_output_tokens": 26,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "q-yesterday",
+      "area": "ask",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "what did i spend yesterday",
+          "replies": [
+            "Yesterday: 42.10 total, just the one.\n\n\u2022 Grab 42.10 (Transport)"
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "start_date": "2026-09-27",
+                "end_date": "2026-09-27",
+                "direction": "out",
+                "group_by": "merchant"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.62,
+          "input_tokens": 17686,
+          "output_tokens": 196,
+          "memory_input_tokens": 478,
+          "memory_output_tokens": 21,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "q-earned",
+      "area": "ask",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "how much money came in this month",
+          "replies": [
+            "5,000.00 came in this month \u2014 all of it your ACME Pte Ltd pay on 25 Sep."
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "direction": "in",
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-28",
+                "group_by": "merchant"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.96,
+          "input_tokens": 17699,
+          "output_tokens": 163,
+          "memory_input_tokens": 480,
+          "memory_output_tokens": 25,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "q-categories",
+      "area": "ask",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "what categories do i have",
+          "replies": [
+            "You've got 12:\n\n\u2022 Activities\n\u2022 Bills & Utilities\n\u2022 Dining Out\n\u2022 Groceries\n\u2022 Health\n\u2022 Income\n\u2022 Other\n\u2022 Shopping\n\u2022 Socialising\n\u2022 Subscriptions & Software\n\u2022 Transport\n\u2022 Travel"
+          ],
+          "calls": [
+            {
+              "tool": "list_categories",
+              "args": {}
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.22,
+          "input_tokens": 17587,
+          "output_tokens": 89,
+          "memory_input_tokens": 478,
+          "memory_output_tokens": 28,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "q-top-merchants",
+      "area": "ask",
+      "target": "M8c",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "what were my top 3 merchants by spending this month",
+          "replies": [
+            "Top 3 merchants this month:\n\u2022 Jumbo Seafood \u2014 120.00\n\u2022 Grab \u2014 96.30\n\u2022 NTUC FairPrice \u2014 88.45"
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "group_by": "merchant",
+                "measure": "total",
+                "top": 3,
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-28"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.26,
+          "input_tokens": 17757,
+          "output_tokens": 166,
+          "memory_input_tokens": 484,
+          "memory_output_tokens": 24,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "q-average-ride",
+      "area": "ask",
+      "target": "M8c",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "what's my average grab ride cost this month",
+          "replies": [
+            "24.08 a ride, across 4 Grab rides this month (96.30 total).\n\nBiggest was 42.10 on 27 Sep \u2014 that one's pulling the average up."
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "merchant": "Grab",
+                "measure": "average",
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-28"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.23,
+          "input_tokens": 17814,
+          "output_tokens": 165,
+          "memory_input_tokens": 482,
+          "memory_output_tokens": 22,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "q-dining-vs-last",
+      "area": "ask",
+      "target": "M8c",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "how does my dining out spending this month compare with last month",
+          "replies": [
+            "Up a lot: 143.90 this month vs 6.80 in August.\n\n\u2022 Sep: 143.90 over 5 transactions\n\u2022 Aug: 6.80 over 1 transaction\n\nAlmost all of it is one dinner \u2014 120.00 at Jumbo Seafood on 19 Sep. Without that, you're at 23.90 for the month."
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "category": "Dining Out",
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-28",
+                "compare_previous": true
+              }
+            },
+            {
+              "tool": "query_ledger",
+              "args": {
+                "category": "Dining Out",
+                "end_date": "2026-08-31",
+                "start_date": "2026-08-01"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.47,
+          "input_tokens": 27184,
+          "output_tokens": 404,
+          "memory_input_tokens": 485,
+          "memory_output_tokens": 26,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "q-over-50",
+      "area": "ask",
+      "target": "M8c",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "list my expenses over 50 dollars since august",
+          "replies": [
+            "Four over 50 since August, 332.65 total:\n\u2022 120.00 Jumbo Seafood \u2014 Dining Out, 19 Sep\n\u2022 88.45 NTUC FairPrice \u2014 Groceries, 10 Sep\n\u2022 64.30 NTUC FairPrice \u2014 Groceries, 14 Aug\n\u2022 59.90 Uniqlo \u2014 Shopping, 22 Aug"
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "start_date": "2026-08-01",
+                "end_date": "2026-09-28",
+                "min_amount": "50",
+                "direction": "out",
+                "measure": "largest",
+                "top": 20
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.49,
+          "input_tokens": 17905,
+          "output_tokens": 298,
+          "memory_input_tokens": 482,
+          "memory_output_tokens": 21,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "q-busiest-weekday",
+      "area": "ask",
+      "target": "M8c",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "which day of the week do i spend the most on this month",
+          "replies": [
+            "Saturday, at 170.28 across 4 transactions \u2014 Thursday's next at 151.35.\n\n\u2022 Sat 170.28 (4)\n\u2022 Thu 151.35 (3)\n\u2022 Sun 58.40 (2)"
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "group_by": "weekday",
+                "measure": "total",
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-28"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.32,
+          "input_tokens": 17776,
+          "output_tokens": 187,
+          "memory_input_tokens": 486,
+          "memory_output_tokens": 25,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "q-software-sgd",
+      "area": "ask",
+      "target": "M8c",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "how much have i spent on subscriptions and software this month, in sgd",
+          "replies": [
+            "44.98 this month, over 2 charges:\n\u2022 ChatGPT 20.00 USD (27.00)\n\u2022 Netflix 17.98"
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "category": "Subscriptions & Software",
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-28",
+                "measure": "total"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.98,
+          "input_tokens": 17805,
+          "output_tokens": 154,
+          "memory_input_tokens": 488,
+          "memory_output_tokens": 23,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "q-saved-august",
+      "area": "ask",
+      "target": "M8c",
+      "passed": false,
+      "failures": [
+        "reply lacks ('4753.22', '4,753.22')"
+      ],
+      "error": null,
+      "turns": [
+        {
+          "text": "how much did i save in august",
+          "replies": [
+            "Nothing recorded as put away in August \u2014 no moves into Savings or IBKR that month.\n\nWhat did happen:\n\u2022 In: 5,000.00 (ACME Pte Ltd, 25 Aug)\n\u2022 Out: 246.78 across 8 transactions\n\nSo the 5,000 just sat in Spending. Want me to set up a monthly transfer to Savings so it happens on its own?"
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "direction": "move",
+                "wallet": "Savings",
+                "wallet_side": "into",
+                "start_date": "2026-08-01",
+                "end_date": "2026-08-31"
+              }
+            },
+            {
+              "tool": "spending_summary",
+              "args": {
+                "start_date": "2026-08-01",
+                "end_date": "2026-08-31"
+              }
+            },
+            {
+              "tool": "query_ledger",
+              "args": {
+                "direction": "in",
+                "start_date": "2026-08-01",
+                "end_date": "2026-08-31"
+              }
+            },
+            {
+              "tool": "query_ledger",
+              "args": {
+                "direction": "move",
+                "start_date": "2026-08-01",
+                "end_date": "2026-08-31"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.58,
+          "input_tokens": 27482,
+          "output_tokens": 625,
+          "memory_input_tokens": 480,
+          "memory_output_tokens": 20,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "messy-yen",
+      "area": "messy",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "\u00a51200 ramen in tokyo",
+          "replies": [
+            "1,200 JPY ramen logged under Dining Out \u2705\n\nAlso switched you to Tokyo time, so your days and reminders follow you."
+          ],
+          "calls": [
+            {
+              "tool": "set_timezone",
+              "args": {
+                "place": "Tokyo"
+              }
+            },
+            {
+              "tool": "log_expense",
+              "args": {
+                "amount": "1200",
+                "currency": "JPY",
+                "category": "Dining Out",
+                "best_guess_category": "Dining Out",
+                "notes": "Ramen in Tokyo"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.31,
+          "input_tokens": 17762,
+          "output_tokens": 610,
+          "memory_input_tokens": 482,
+          "memory_output_tokens": 104,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "q-month-spent",
+      "area": "ask",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "how much did i spend this month",
+          "replies": [
+            "460.03 this month, across 15 transactions.\n\n\u2022 Dining Out 143.90\n\u2022 Transport 96.30\n\u2022 Groceries 88.45\n\nThat's 1\u201328 Sep."
+          ],
+          "calls": [
+            {
+              "tool": "spending_summary",
+              "args": {}
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.53,
+          "input_tokens": 17680,
+          "output_tokens": 97,
+          "memory_input_tokens": 480,
+          "memory_output_tokens": 21,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "q-category-month",
+      "area": "ask",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "how much have i spent on dining out this month",
+          "replies": [
+            "143.90 on Dining Out this month, out of your 300 budget \u2014 156.10 left."
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 0.61,
+          "input_tokens": 8765,
+          "output_tokens": 43,
+          "memory_input_tokens": 483,
+          "memory_output_tokens": 19,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "q-last-month",
+      "area": "ask",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "how much did i spend in august",
+          "replies": [
+            "246.78 in August, across 8 transactions.\n\n\u2022 Groceries 64.30\n\u2022 Shopping 59.90\n\u2022 Transport 54.80\n\u2022 Bills & Utilities 45.00\n\u2022 Subscriptions & Software 15.98\n\u2022 Dining Out 6.80"
+          ],
+          "calls": [
+            {
+              "tool": "spending_summary",
+              "args": {
+                "start_date": "2026-08-01",
+                "end_date": "2026-08-31"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.2,
+          "input_tokens": 17709,
+          "output_tokens": 188,
+          "memory_input_tokens": 480,
+          "memory_output_tokens": 25,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "q-merchant-month",
+      "area": "ask",
+      "target": "M8c",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "how much did i spend on grab this month",
+          "replies": [
+            "96.30 on Grab this month, across 4 rides.\n\n\u2022 42.10 on 27 Sep\n\u2022 25.40 on 5 Sep\n\u2022 16.30 on 6 Sep\n\u2022 12.50 on 1 Sep"
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "merchant": "grab",
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-28"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.04,
+          "input_tokens": 17796,
+          "output_tokens": 163,
+          "memory_input_tokens": 482,
+          "memory_output_tokens": 19,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "q-weekends",
+      "area": "ask",
+      "target": "M8c",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "how much did i spend on grab on weekends this month",
+          "replies": [
+            "83.80 on Grab this month's weekends, across 3 rides:\n\u2022 42.10 \u2014 Sun 27 Sep\n\u2022 25.40 \u2014 Sat 5 Sep\n\u2022 16.30 \u2014 Sun 6 Sep"
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "merchant": "grab",
+                "days": [
+                  "weekends"
+                ],
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-28"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.2,
+          "input_tokens": 17818,
+          "output_tokens": 168,
+          "memory_input_tokens": 484,
+          "memory_output_tokens": 23,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "q-biggest",
+      "area": "ask",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "what was my biggest expense this month",
+          "replies": [
+            "Jumbo Seafood, 120.00 on 19 Sep \u2014 that's your biggest this month.\n\nNext up: NTUC FairPrice 88.45, then Grab 42.10."
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "measure": "largest",
+                "top": 3
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.18,
+          "input_tokens": 17785,
+          "output_tokens": 117,
+          "memory_input_tokens": 480,
+          "memory_output_tokens": 21,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "q-compare-months",
+      "area": "ask",
+      "target": "M8c",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "compare my grab spending in august and september",
+          "replies": [
+            "Grab's up quite a bit:\n\n\u2022 August: 54.80 over 3 rides\n\u2022 September: 96.30 over 4 rides (and the month's not done)\n\nThat's 41.50 more, with one ride still to come this week."
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "merchant": "grab",
+                "start_date": "2026-08-01",
+                "end_date": "2026-08-31",
+                "group_by": "merchant"
+              }
+            },
+            {
+              "tool": "query_ledger",
+              "args": {
+                "merchant": "grab",
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-28",
+                "group_by": "merchant"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.55,
+          "input_tokens": 17848,
+          "output_tokens": 283,
+          "memory_input_tokens": 481,
+          "memory_output_tokens": 32,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "q-who-owes",
+      "area": "ask",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "who owes me money",
+          "replies": [
+            "Ann 40 and Ben 40 \u2014 80 total."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "expenses"
+              }
+            },
+            {
+              "tool": "list_ious",
+              "args": {}
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.35,
+          "input_tokens": 30927,
+          "output_tokens": 174,
+          "memory_input_tokens": 477,
+          "memory_output_tokens": 48,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "q-bills",
+      "area": "ask",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "what bills are coming up",
+          "replies": [
+            "Two on the books:\n\n\u2022 Rent 1,800.00 \u2014 Thu 1 Oct, in 3 days\n\u2022 Singtel 45.00 \u2014 Wed 28 Oct\n\nRent's the one to have ready this week."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "bills"
+              }
+            },
+            {
+              "tool": "list_bills",
+              "args": {}
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.21,
+          "input_tokens": 29232,
+          "output_tokens": 126,
+          "memory_input_tokens": 478,
+          "memory_output_tokens": 29,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "q-budget",
+      "area": "ask",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "how's my dining out budget looking",
+          "replies": [
+            "Dining Out's at 143.90 of 300 this month \u2014 47% used, 156.10 left. Comfortable, with three days to go."
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 0.75,
+          "input_tokens": 8762,
+          "output_tokens": 71,
+          "memory_input_tokens": 480,
+          "memory_output_tokens": 22,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "q-payday",
+      "area": "ask",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "when is my next payday",
+          "replies": [
+            "Fri 23 Oct \u2014 the 25th falls on a Sunday, so it moves to the Friday before."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "show_pay_schedule",
+              "args": {}
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.71,
+          "input_tokens": 27571,
+          "output_tokens": 197,
+          "memory_input_tokens": 479,
+          "memory_output_tokens": 25,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "q-subscriptions",
+      "area": "ask",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "what subscriptions do i have",
+          "replies": [
+            "Just Netflix \u2014 17.98 a month, next charge around 12 Oct. That's your whole subscription total."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "subscriptions"
+              }
+            },
+            {
+              "tool": "list_subscriptions",
+              "args": {}
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.76,
+          "input_tokens": 26901,
+          "output_tokens": 102,
+          "memory_input_tokens": 478,
+          "memory_output_tokens": 21,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "q-coming-up",
+      "area": "ask",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "what's coming up this week",
+          "replies": [
+            "Just one thing on the calendar this week:\n\n\u2022 Thu 1 Oct \u2014 Rent, 1,800.00\n\nNet for the week: -1,800.00. That's bills, subscriptions and payday only \u2014 everyday spending isn't in it, and it's not a balance.\n\nNo payday showing, so if your salary lands regularly, want me to set that up?"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "cashflow"
+              }
+            },
+            {
+              "tool": "cash_flow",
+              "args": {
+                "days": 7
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.19,
+          "input_tokens": 27253,
+          "output_tokens": 184,
+          "memory_input_tokens": 479,
+          "memory_output_tokens": 25,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "q-yesterday",
+      "area": "ask",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "what did i spend yesterday",
+          "replies": [
+            "42.10 yesterday \u2014 just the one:\n\u2022 Grab 42.10 (Transport)"
+          ],
+          "calls": [
+            {
+              "tool": "spending_summary",
+              "args": {
+                "start_date": "2026-09-27",
+                "end_date": "2026-09-27"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.2,
+          "input_tokens": 17639,
+          "output_tokens": 137,
+          "memory_input_tokens": 478,
+          "memory_output_tokens": 21,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "q-earned",
+      "area": "ask",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "how much money came in this month",
+          "replies": [
+            "5,000.00 in this month, all from ACME Pte Ltd on 25 Sep."
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "direction": "in",
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-28"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.27,
+          "input_tokens": 17711,
+          "output_tokens": 141,
+          "memory_input_tokens": 480,
+          "memory_output_tokens": 21,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "q-categories",
+      "area": "ask",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "what categories do i have",
+          "replies": [
+            "You've got 12:\n\n\u2022 Activities\n\u2022 Bills & Utilities\n\u2022 Dining Out\n\u2022 Groceries\n\u2022 Health\n\u2022 Income\n\u2022 Other\n\u2022 Shopping\n\u2022 Socialising\n\u2022 Subscriptions & Software\n\u2022 Transport\n\u2022 Travel"
+          ],
+          "calls": [
+            {
+              "tool": "list_categories",
+              "args": {}
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.35,
+          "input_tokens": 17587,
+          "output_tokens": 92,
+          "memory_input_tokens": 478,
+          "memory_output_tokens": 28,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "q-top-merchants",
+      "area": "ask",
+      "target": "M8c",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "what were my top 3 merchants by spending this month",
+          "replies": [
+            "Top 3 this month:\n\u2022 Jumbo Seafood \u2014 120.00\n\u2022 Grab \u2014 96.30\n\u2022 NTUC FairPrice \u2014 88.45"
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "group_by": "merchant",
+                "measure": "total",
+                "top": 3,
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-28"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.56,
+          "input_tokens": 17757,
+          "output_tokens": 246,
+          "memory_input_tokens": 484,
+          "memory_output_tokens": 24,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "q-average-ride",
+      "area": "ask",
+      "target": "M8c",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "what's my average grab ride cost this month",
+          "replies": [
+            "24.08 a ride, across 4 Grab rides this month (96.30 total).\n\n\u2022 42.10 on 27 Sep \u2014 the outlier\n\u2022 25.40 on 5 Sep\n\u2022 16.30 on 6 Sep\n\nDrop that 42.10 and you're at 18.07."
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "merchant": "grab",
+                "measure": "average",
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-28"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.22,
+          "input_tokens": 17813,
+          "output_tokens": 199,
+          "memory_input_tokens": 482,
+          "memory_output_tokens": 22,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "q-dining-vs-last",
+      "area": "ask",
+      "target": "M8c",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "how does my dining out spending this month compare with last month",
+          "replies": [
+            "September's at 143.90 so far, vs 6.80 in all of August \u2014 a 137.10 jump.\n\n\u2022 120.00 of it is one dinner at Jumbo Seafood on 19 Sep\n\u2022 The rest is small: Kopitiam, Starbucks, a couple of kopi runs\n\nAugust looks like it only has one entry logged, so the comparison is a bit lopsided. You're still at 143.90 of your 300 Dining Out budget, so there's room."
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "category": "Dining Out",
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-28",
+                "compare_previous": true
+              }
+            },
+            {
+              "tool": "query_ledger",
+              "args": {
+                "category": "Dining Out",
+                "end_date": "2026-08-31",
+                "start_date": "2026-08-01"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.91,
+          "input_tokens": 27184,
+          "output_tokens": 426,
+          "memory_input_tokens": 485,
+          "memory_output_tokens": 26,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "q-over-50",
+      "area": "ask",
+      "target": "M8c",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "list my expenses over 50 dollars since august",
+          "replies": [
+            "Four over 50 since August, 332.65 total:\n\n\u2022 120.00 Jumbo Seafood, Dining Out \u2014 19 Sep\n\u2022 88.45 NTUC FairPrice, Groceries \u2014 10 Sep\n\u2022 64.30 NTUC FairPrice, Groceries \u2014 14 Aug\n\u2022 59.90 Uniqlo, Shopping \u2014 22 Aug"
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "start_date": "2026-08-01",
+                "end_date": "2026-09-28",
+                "min_amount": "50",
+                "direction": "out",
+                "measure": "largest",
+                "top": 20
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.83,
+          "input_tokens": 17907,
+          "output_tokens": 337,
+          "memory_input_tokens": 482,
+          "memory_output_tokens": 21,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "q-busiest-weekday",
+      "area": "ask",
+      "target": "M8c",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "which day of the week do i spend the most on this month",
+          "replies": [
+            "Saturday's your big one \u2014 170.28 across 4 transactions.\n\n\u2022 Sat 170.28\n\u2022 Thu 151.35\n\u2022 Sun 58.40\n\nThose two alone are most of the month's 460.03."
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "group_by": "weekday",
+                "measure": "total",
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-28"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.25,
+          "input_tokens": 17776,
+          "output_tokens": 189,
+          "memory_input_tokens": 486,
+          "memory_output_tokens": 25,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "q-software-sgd",
+      "area": "ask",
+      "target": "M8c",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "how much have i spent on subscriptions and software this month, in sgd",
+          "replies": [
+            "44.98 this month, over 2 charges:\n\u2022 ChatGPT 20.00 USD (27.00)\n\u2022 Netflix 17.98"
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "category": "Subscriptions & Software",
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-28",
+                "direction": "out"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.32,
+          "input_tokens": 17802,
+          "output_tokens": 153,
+          "memory_input_tokens": 488,
+          "memory_output_tokens": 23,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "q-saved-august",
+      "area": "ask",
+      "target": "M8c",
+      "passed": false,
+      "failures": [
+        "reply lacks ('4753.22', '4,753.22')"
+      ],
+      "error": null,
+      "turns": [
+        {
+          "text": "how much did i save in august",
+          "replies": [
+            "Nothing put away in August \u2014 no moves into Savings at all.\n\n\u2022 In: 5,000.00 (ACME, 25 Aug)\n\u2022 Out: 246.78 across 8 transactions\n\nSo the rest just sat in Spending. Want me to set a standing transfer to Savings each payday?"
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "direction": "move",
+                "wallet": "Savings",
+                "wallet_side": "into",
+                "start_date": "2026-08-01",
+                "end_date": "2026-08-31"
+              }
+            },
+            {
+              "tool": "query_ledger",
+              "args": {
+                "direction": "in",
+                "start_date": "2026-08-01",
+                "end_date": "2026-08-31"
+              }
+            },
+            {
+              "tool": "query_ledger",
+              "args": {
+                "direction": "out",
+                "start_date": "2026-08-01",
+                "end_date": "2026-08-31"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.49,
+          "input_tokens": 18144,
+          "output_tokens": 447,
+          "memory_input_tokens": 480,
+          "memory_output_tokens": 24,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "messy-yen",
+      "area": "messy",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "\u00a51200 ramen in tokyo",
+          "replies": [
+            "Ramen logged \u2014 1,200 JPY (about 10.40) in Dining Out \u2705\n\nDays and reminders now follow Tokyo time."
+          ],
+          "calls": [
+            {
+              "tool": "set_timezone",
+              "args": {
+                "place": "Tokyo"
+              }
+            },
+            {
+              "tool": "log_expense",
+              "args": {
+                "amount": "1200",
+                "currency": "JPY",
+                "merchant": "Ramen",
+                "category": "Dining Out",
+                "best_guess_category": "Dining Out"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.47,
+          "input_tokens": 17755,
+          "output_tokens": 395,
+          "memory_input_tokens": 482,
+          "memory_output_tokens": 42,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "q-month-spent",
+      "area": "ask",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "how much did i spend this month",
+          "replies": [
+            "460.03 this month, across 15 transactions.\n\n\u2022 Dining Out 143.90\n\u2022 Transport 96.30\n\u2022 Groceries 88.45\n\nDining Out's at 143.90 of your 300 budget, so you've got room."
+          ],
+          "calls": [
+            {
+              "tool": "spending_summary",
+              "args": {}
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.77,
+          "input_tokens": 17680,
+          "output_tokens": 107,
+          "memory_input_tokens": 480,
+          "memory_output_tokens": 17,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "q-category-month",
+      "area": "ask",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "how much have i spent on dining out this month",
+          "replies": [
+            "143.90 on Dining Out this month, out of your 300 budget \u2014 156.10 left."
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 1.58,
+          "input_tokens": 8765,
+          "output_tokens": 40,
+          "memory_input_tokens": 483,
+          "memory_output_tokens": 23,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "q-last-month",
+      "area": "ask",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "how much did i spend in august",
+          "replies": [
+            "August came to 246.78 across 8 transactions.\n\n\u2022 Groceries 64.30\n\u2022 Shopping 59.90\n\u2022 Transport 54.80\n\nThat's a quiet month \u2014 September's already at 460.03."
+          ],
+          "calls": [
+            {
+              "tool": "spending_summary",
+              "args": {
+                "start_date": "2026-08-01",
+                "end_date": "2026-08-31"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.43,
+          "input_tokens": 17709,
+          "output_tokens": 182,
+          "memory_input_tokens": 480,
+          "memory_output_tokens": 21,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "q-merchant-month",
+      "area": "ask",
+      "target": "M8c",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "how much did i spend on grab this month",
+          "replies": [
+            "96.30 on Grab this month, across 4 rides.\n\n\u2022 42.10 on 27 Sep\n\u2022 25.40 on 5 Sep\n\u2022 16.30 on 6 Sep\n\u2022 12.50 on 2 Sep"
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "merchant": "grab",
+                "direction": "out",
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-28"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.5,
+          "input_tokens": 17812,
+          "output_tokens": 186,
+          "memory_input_tokens": 482,
+          "memory_output_tokens": 19,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "q-weekends",
+      "area": "ask",
+      "target": "M8c",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "how much did i spend on grab on weekends this month",
+          "replies": [
+            "83.80 on Grab across 3 weekend rides this month:\n\u2022 42.10 \u2014 Sun 27 Sep\n\u2022 25.40 \u2014 Sat 5 Sep\n\u2022 16.30 \u2014 Sun 6 Sep"
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "merchant": "grab",
+                "days": [
+                  "weekends"
+                ],
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-28"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.21,
+          "input_tokens": 17828,
+          "output_tokens": 166,
+          "memory_input_tokens": 484,
+          "memory_output_tokens": 23,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "q-biggest",
+      "area": "ask",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "what was my biggest expense this month",
+          "replies": [
+            "Biggest was 120.00 at Jumbo Seafood on 19 Sep (Dining Out).\n\nNext two: 88.45 at NTUC FairPrice, 42.10 on Grab."
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "measure": "largest",
+                "top": 3
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.47,
+          "input_tokens": 17779,
+          "output_tokens": 118,
+          "memory_input_tokens": 480,
+          "memory_output_tokens": 27,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "q-compare-months",
+      "area": "ask",
+      "target": "M8c",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "compare my grab spending in august and september",
+          "replies": [
+            "Grab's up this month:\n\n\u2022 August: 54.80 over 3 rides\n\u2022 September: 96.30 over 4 rides (so far)\n\nThat's 41.50 more, and September's not even done. Want a Transport budget to keep an eye on it?"
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "merchant": "Grab",
+                "start_date": "2026-08-01",
+                "end_date": "2026-08-31",
+                "group_by": "merchant"
+              }
+            },
+            {
+              "tool": "query_ledger",
+              "args": {
+                "merchant": "Grab",
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-28",
+                "group_by": "merchant"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.06,
+          "input_tokens": 17848,
+          "output_tokens": 289,
+          "memory_input_tokens": 481,
+          "memory_output_tokens": 23,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "q-who-owes",
+      "area": "ask",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "who owes me money",
+          "replies": [
+            "Ann and Ben, 40 each \u2014 80 total."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "expenses"
+              }
+            },
+            {
+              "tool": "list_ious",
+              "args": {}
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.4,
+          "input_tokens": 30927,
+          "output_tokens": 174,
+          "memory_input_tokens": 477,
+          "memory_output_tokens": 45,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "q-bills",
+      "area": "ask",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "what bills are coming up",
+          "replies": [
+            "Two on the books:\n\n\u2022 Rent 1,800.00 \u2014 Thu 1 Oct, in 3 days\n\u2022 Singtel 45.00 \u2014 Wed 28 Oct\n\nRent's the one to watch this week."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "bills"
+              }
+            },
+            {
+              "tool": "list_bills",
+              "args": {}
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.93,
+          "input_tokens": 29232,
+          "output_tokens": 125,
+          "memory_input_tokens": 478,
+          "memory_output_tokens": 29,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "q-budget",
+      "area": "ask",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "how's my dining out budget looking",
+          "replies": [
+            "Dining Out's at 143.90 of 300 this month \u2014 47% used, 156.10 left. Comfortable, with three days to go."
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 1.37,
+          "input_tokens": 8762,
+          "output_tokens": 71,
+          "memory_input_tokens": 480,
+          "memory_output_tokens": 25,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "q-payday",
+      "area": "ask",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "when is my next payday",
+          "replies": [
+            "Fri 23 Oct \u2014 the 25th falls on a Sunday, so it moves to the Friday before."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "show_pay_schedule",
+              "args": {}
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.73,
+          "input_tokens": 27571,
+          "output_tokens": 129,
+          "memory_input_tokens": 479,
+          "memory_output_tokens": 35,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "q-subscriptions",
+      "area": "ask",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "what subscriptions do i have",
+          "replies": [
+            "Just Netflix \u2014 17.98 a month, next charge around 12 Oct. That's your only tracked one, so 17.98 a month in all."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "subscriptions"
+              }
+            },
+            {
+              "tool": "list_subscriptions",
+              "args": {}
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.11,
+          "input_tokens": 26901,
+          "output_tokens": 112,
+          "memory_input_tokens": 478,
+          "memory_output_tokens": 21,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "q-coming-up",
+      "area": "ask",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "what's coming up this week",
+          "replies": [
+            "Just one thing on the calendar: Rent, 1,800.00, due Thursday 1 Oct.\n\nNet for the week: -1,800.00. That's bills, subscriptions and payday only \u2014 everyday spending isn't in it, and it's not a balance."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "cashflow"
+              }
+            },
+            {
+              "tool": "cash_flow",
+              "args": {
+                "days": 7
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.99,
+          "input_tokens": 27253,
+          "output_tokens": 163,
+          "memory_input_tokens": 479,
+          "memory_output_tokens": 29,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "q-yesterday",
+      "area": "ask",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "what did i spend yesterday",
+          "replies": [
+            "42.10 yesterday, all of it the Grab ride (Transport)."
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "start_date": "2026-09-27",
+                "end_date": "2026-09-27",
+                "direction": "out"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.29,
+          "input_tokens": 17703,
+          "output_tokens": 135,
+          "memory_input_tokens": 478,
+          "memory_output_tokens": 21,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "q-earned",
+      "area": "ask",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "how much money came in this month",
+          "replies": [
+            "5,000.00 in this month, all of it salary from ACME Pte Ltd on 25 Sep."
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "direction": "in",
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-28",
+                "group_by": "merchant"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.95,
+          "input_tokens": 17699,
+          "output_tokens": 162,
+          "memory_input_tokens": 480,
+          "memory_output_tokens": 21,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "q-categories",
+      "area": "ask",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "what categories do i have",
+          "replies": [
+            "You've got 12:\n\n\u2022 Activities\n\u2022 Bills & Utilities\n\u2022 Dining Out\n\u2022 Groceries\n\u2022 Health\n\u2022 Income\n\u2022 Other\n\u2022 Shopping\n\u2022 Socialising\n\u2022 Subscriptions & Software\n\u2022 Transport\n\u2022 Travel"
+          ],
+          "calls": [
+            {
+              "tool": "list_categories",
+              "args": {}
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.67,
+          "input_tokens": 17587,
+          "output_tokens": 89,
+          "memory_input_tokens": 478,
+          "memory_output_tokens": 28,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "q-top-merchants",
+      "area": "ask",
+      "target": "M8c",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "what were my top 3 merchants by spending this month",
+          "replies": [
+            "Top 3 this month:\n\u2022 Jumbo Seafood 120.00\n\u2022 Grab 96.30\n\u2022 NTUC FairPrice 88.45"
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "group_by": "merchant",
+                "measure": "total",
+                "top": 3,
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-28"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.13,
+          "input_tokens": 17757,
+          "output_tokens": 235,
+          "memory_input_tokens": 484,
+          "memory_output_tokens": 24,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "q-average-ride",
+      "area": "ask",
+      "target": "M8c",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "what's my average grab ride cost this month",
+          "replies": [
+            "24.08 across 4 Grab rides this month (96.30 total).\n\n\u2022 42.10 on 27 Sep \u2014 the big one\n\u2022 25.40 on 5 Sep\n\u2022 16.30 on 6 Sep\n\u2022 12.50 on 12 Sep"
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "merchant": "grab",
+                "measure": "average",
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-28"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.78,
+          "input_tokens": 17815,
+          "output_tokens": 195,
+          "memory_input_tokens": 482,
+          "memory_output_tokens": 22,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "q-dining-vs-last",
+      "area": "ask",
+      "target": "M8c",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "how does my dining out spending this month compare with last month",
+          "replies": [
+            "Up a lot \u2014 143.90 this month vs 6.80 in August.\n\n\u2022 Sep: 143.90 over 5 transactions\n\u2022 Aug: 6.80 over 1 transaction\n\u2022 Almost all of it is one dinner: 120.00 at Jumbo Seafood on 19 Sep\n\nTake that out and it's 23.90 for the month, so nothing to worry about. You're at 143.90 of your 300 Dining Out budget."
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "category": "Dining Out",
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-28",
+                "compare_previous": true
+              }
+            },
+            {
+              "tool": "query_ledger",
+              "args": {
+                "category": "Dining Out",
+                "end_date": "2026-08-31",
+                "start_date": "2026-08-01"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.06,
+          "input_tokens": 27180,
+          "output_tokens": 430,
+          "memory_input_tokens": 485,
+          "memory_output_tokens": 20,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "q-over-50",
+      "area": "ask",
+      "target": "M8c",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "list my expenses over 50 dollars since august",
+          "replies": [
+            "Four over 50 since August, 332.65 total:\n\u2022 120.00 Jumbo Seafood, 19 Sep (Dining Out)\n\u2022 88.45 NTUC FairPrice, 10 Sep (Groceries)\n\u2022 64.30 NTUC FairPrice, 14 Aug (Groceries)\n\u2022 59.90 Uniqlo, 22 Aug (Shopping)"
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "start_date": "2026-08-01",
+                "end_date": "2026-09-28",
+                "min_amount": "50",
+                "direction": "out",
+                "measure": "largest",
+                "top": 20
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.28,
+          "input_tokens": 17913,
+          "output_tokens": 322,
+          "memory_input_tokens": 482,
+          "memory_output_tokens": 21,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "q-busiest-weekday",
+      "area": "ask",
+      "target": "M8c",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "which day of the week do i spend the most on this month",
+          "replies": [
+            "Saturday, by a mile \u2014 170.28 across 4 transactions.\n\n\u2022 Sat 170.28\n\u2022 Thu 151.35\n\u2022 Sun 58.40\n\nThursday's close behind, mostly that 42.10 Grab ride and the 28 cinema trip."
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "group_by": "weekday",
+                "measure": "total",
+                "direction": "out",
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-28"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.26,
+          "input_tokens": 17792,
+          "output_tokens": 211,
+          "memory_input_tokens": 486,
+          "memory_output_tokens": 24,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "q-software-sgd",
+      "area": "ask",
+      "target": "M8c",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "how much have i spent on subscriptions and software this month, in sgd",
+          "replies": [
+            "44.98 this month, over 2 charges:\n\u2022 OpenAI ChatGPT 27.00\n\u2022 Netflix 17.98"
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "category": "Subscriptions & Software",
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-28",
+                "group_by": "merchant",
+                "measure": "total"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.88,
+          "input_tokens": 17745,
+          "output_tokens": 178,
+          "memory_input_tokens": 488,
+          "memory_output_tokens": 19,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "q-saved-august",
+      "area": "ask",
+      "target": "M8c",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "how much did i save in august",
+          "replies": [
+            "Nothing actually went into Savings in August \u2014 no transfers in.\n\nIf you mean what was left over: 5,000 in, 246.78 out, so 4,753.22 unspent. Want me to set up a monthly transfer to Savings so it's real?"
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "direction": "move",
+                "wallet": "Savings",
+                "wallet_side": "into",
+                "start_date": "2026-08-01",
+                "end_date": "2026-08-31"
+              }
+            },
+            {
+              "tool": "query_ledger",
+              "args": {
+                "direction": "in",
+                "start_date": "2026-08-01",
+                "end_date": "2026-08-31"
+              }
+            },
+            {
+              "tool": "query_ledger",
+              "args": {
+                "direction": "out",
+                "start_date": "2026-08-01",
+                "end_date": "2026-08-31"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.93,
+          "input_tokens": 18142,
+          "output_tokens": 542,
+          "memory_input_tokens": 480,
+          "memory_output_tokens": 20,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "messy-yen",
+      "area": "messy",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "\u00a51200 ramen in tokyo",
+          "replies": [
+            "1,200 JPY ramen logged under Dining Out \u2705\n\nDining Out's at about 154 of 300 for the month, so plenty of room."
+          ],
+          "calls": [
+            {
+              "tool": "set_timezone",
+              "args": {
+                "place": "Tokyo"
+              }
+            },
+            {
+              "tool": "log_expense",
+              "args": {
+                "amount": "1200",
+                "currency": "JPY",
+                "merchant": "Ramen",
+                "best_guess_category": "Dining Out",
+                "notes": "Ramen in Tokyo"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.81,
+          "input_tokens": 17764,
+          "output_tokens": 571,
+          "memory_input_tokens": 482,
+          "memory_output_tokens": 81,
+          "memory_failed": false
+        }
+      ]
+    }
+  ]
+}
