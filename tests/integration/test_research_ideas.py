@@ -322,7 +322,8 @@ async def test_finding_in_a_stop_or_near_a_day_from_chat(uow: UowFactory) -> Non
     source = FakePlaces([GION, SHRINE])
     web = Web()
     ideas = IdeaFinder(
-        web, scripted(say("IDEA | Hanok Noodle Bar | Gion | Food | Hand-pulled. | 1")),
+        web,
+        scripted(*[say("IDEA | Hanok Noodle Bar | Gion | Food | Hand-pulled. | 1")] * 3),
         places=Places(source), clock=lambda: NOW,
     )  # fmt: skip
     ctx = ToolContext(user, uow, NOW, RATES, places=Places(source), ideas=ideas)
@@ -347,13 +348,20 @@ async def test_finding_in_a_stop_or_near_a_day_from_chat(uow: UowFactory) -> Non
     assert dated == near
     assert source.searches.count("ramen, Gion, Kyoto") == 1  # the second came from the cache
 
-    wrong = await use("find_places", {"query": "ramen", "stop": "Osaka"})
-    assert wrong.startswith("Error: 'Osaka' isn't one of the trip's stops (Kyoto, Tokyo)")
+    # A city that isn't one of the trip's stops is searched as itself, not refused.
+    elsewhere = await use("find_places", {"query": "ramen", "stop": "Osaka"})
+    assert not elsewhere.startswith("Error") and source.searches[-1] == "ramen, Osaka"
     assert (await use("find_places", {"query": "x", "day": "40"})).startswith("Error:")
 
     text = await use("find_ideas", {"query": "noodles", "stop": "Kyoto"})
     assert len(web.asked) == 1 and web.asked[0].startswith("Best noodles in Kyoto: ")
     assert text.startswith("Ideas for noodles in Kyoto, from travel guides")
+
+    # A stop the query ends with is taken as the stop; one that isn't a stop is searched as asked.
+    moved = await use("find_ideas", {"query": "noodles in Kyoto"})
+    assert " in Kyoto, from travel guides" in moved
+    unmoved = await use("find_ideas", {"query": "noodles in Osaka"})
+    assert not unmoved.startswith("Error") and "Exampleland, from travel guides" in unmoved
 
 
 async def test_research_to_trip_from_chat_confirms_then_adds(uow: UowFactory) -> None:

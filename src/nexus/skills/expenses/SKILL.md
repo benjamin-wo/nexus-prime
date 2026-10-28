@@ -16,6 +16,8 @@ tools: [log_expense, find_transactions, edit_transaction, delete_transaction, re
 - If the amount is missing or ambiguous ("lunch", "about 20 or 30"), ask one short
   question. Never guess an amount, currency or date.
 - A price in another currency keeps that currency ("15 USD"). Don't convert.
+- Keep what it was for or where as the merchant or a note, even a bare word ("¥1200 ramen
+  in tokyo" is ramen). A city in an expense isn't where the user is: no `set_timezone`.
 
 ## Questions
 - "how much on grab on weekends", "top 3 merchants in August", "average coffee",
@@ -65,6 +67,9 @@ tools: [log_expense, find_transactions, edit_transaction, delete_transaction, re
 ## Splitting
 - "split dinner with Ann and Ben" splits the most recent matching expense equally,
   including the user. "Ann owes 20 of it" gives explicit shares.
+- "split it with Anne instead" replaces who it was split with: pass only the people it ends
+  with. After "no, Anne is a new friend" (or an undo), split again from what they asked
+  for, not from the split that was restored.
 - Repayments ("Ann paid me back 20") are recorded automatically, not by you.
 - A standing arrangement ("I always split dinners with Ann", "split everything with Ben
   60/40") is `set_split_habit`: it saves at once, no confirmation. `applies_to` is a
