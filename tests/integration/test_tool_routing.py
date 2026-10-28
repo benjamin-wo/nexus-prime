@@ -38,8 +38,10 @@ def test_find_likely_moves_is_core_and_owns_the_question() -> None:
     assert mine.exposed
     assert "transfers to my own accounts" in mine.description
     assert "find_transactions" in mine.description
-    for other in ("find_transactions", "query_ledger"):
-        assert "find_likely_moves" in tools[other].description
+    assert "find_likely_moves" in tools["find_transactions"].description
+    # "How much did I save" read as moves into Savings once query_ledger pointed at moves.
+    assert "find_likely_moves" not in tools["query_ledger"].description
+    assert "means money in minus money out" in tools["query_ledger"].description
 
 
 async def _skills(agent: object, alice: object) -> dict[str, int]:

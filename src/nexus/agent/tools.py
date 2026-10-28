@@ -3981,8 +3981,8 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             "merchant, day, week, month or weekday; rank by total, count, average or largest; "
             "compare with the period before. Read-only. Prefer it for any 'how much', "
             "'how often', 'biggest' or 'compare' question over adding up search results. "
-            "To find spending that's really a move between the user's own accounts, use "
-            "find_likely_moves.",
+            "'How much did I save' means money in minus money out for the period (net), not "
+            "moves into a savings wallet, unless the user names that wallet.",
             QueryArgs,
             _query_ledger,
         ),
