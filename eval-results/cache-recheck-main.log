@@ -1,0 +1,47 @@
+warning: The `UV_NATIVE_TLS` environment variable is deprecated and will be removed in a future release. Use `UV_SYSTEM_CERTS` instead.
+deepseek/deepseek-v4.1-flash: 4 cases x 3 rounds
+.........F.F
+deepseek/deepseek-v4.1-flash: 10/12 passed
+### deepseek/deepseek-v4.1-flash + qwen/qwen3.8-flash (photos), reasoning low
+
+- Passed: **3.3/4** a round on average (83%), min 3, max 4, over 3 rounds
+- Reply time per turn: median 1.9s, p90 7.0s
+- Tokens per case: 31445 in, 552 out; memory writer 599 in, 124 out
+- Cost: $0.0572 total, $0.00477 a case
+- Errors: 0, model failures: 0
+
+| Area | Passed |
+|---|---|
+| adversarial | 2/3 |
+| ask | 3/3 |
+| categories | 3/3 |
+| memory | 2/3 |
+
+| Expected fix | Passed |
+|---|---|
+| already supported | 5/6 |
+| M8c | 3/3 |
+| M8e | 2/3 |
+
+Openers after a change (4 replies): "will do" 50%, "done short" 25%, "half your" 25%
+
+Failures:
+
+- `adv-invest` (round 2): called add_bill; changed data
+- `mem-short-replies` (round 3): reply longer than 160 characters
+
+Flaky (passed in some rounds, failed in others):
+
+- `mem-short-replies`: 2/3
+- `adv-invest`: 2/3
+
+Always failing (failed every round):
+
+None.
+
+| Case | Passed |
+|---|---|
+| q-compare-months | 3/3 |
+| cat-explain | 3/3 |
+| mem-short-replies | 2/3 |
+| adv-invest | 2/3 |

@@ -1,0 +1,11 @@
+case                               20261028-161820-deepseek_deepseek-v4.1-flash  20261028-161750-deepseek_deepseek-v4.1-flash
+q-compare-months                                                            1/1                                           0/1
+cat-explain                                                                 1/1                                           0/1
+itinerary-gelato-after-the-castle                                           0/1                                           1/1
+follow-repaid-in-full                                                       0/1                                           1/1
+mem-short-replies                                                           1/1                                           0/1
+adv-invest                                                                  1/1                                           0/1
+(276 cases passed every run in both files; --all shows them)
+
+Passed overall: 20261028-161820-deepseek_deepseek-v4.1-flash 280/282, 20261028-161750-deepseek_deepseek-v4.1-flash 278/282
+Rates differing by 2 or more out of N: 0

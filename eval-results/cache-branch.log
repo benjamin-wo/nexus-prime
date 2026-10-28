@@ -1,0 +1,416 @@
+warning: The `UV_NATIVE_TLS` environment variable is deprecated and will be removed in a future release. Use `UV_SYSTEM_CERTS` instead.
+deepseek/deepseek-v4.1-flash: 282 cases
+.....................................F.....................turn took 21.8s (context 0.4s, model 21.2s, tools 0.1s): 2 model calls, tools: query_ledger
+turn took 21.3s (context 0.1s, model 21.0s, tools 0.0s): 2 model calls, tools: query_ledger
+..........................F..........................memory reply didn't parse; trying once more
+Traceback (most recent call last):
+  File "/home/user/nexus-prime/src/nexus/agent/memory_writer.py", line 137, in propose
+    reply = await asyncio.wait_for(
+            ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/tasks.py", line 520, in wait_for
+    return await fut
+           ^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/runnables/base.py", line 3496, in ainvoke
+    input_ = await coro_with_context(part(), context, create_task=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/runnables/base.py", line 4232, in ainvoke
+    results = await asyncio.gather(
+              ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/runnables/base.py", line 4224, in _ainvoke_step
+    return await coro_with_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/runnables/base.py", line 6027, in ainvoke
+    return await self.bound.ainvoke(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/language_models/chat_models.py", line 511, in ainvoke
+    llm_result = await self.agenerate_prompt(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/language_models/chat_models.py", line 1888, in agenerate_prompt
+    return await self.agenerate(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/language_models/chat_models.py", line 1846, in agenerate
+    raise exceptions[0]
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/language_models/chat_models.py", line 2179, in _agenerate_with_cache
+    result = await self._agenerate(
+             ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_openai/chat_models/base.py", line 2293, in _agenerate
+    raise e
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_openai/chat_models/base.py", line 2244, in _agenerate
+    response = raw_response.parse()
+               ^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/openai/_legacy_response.py", line 140, in parse
+    parsed = self._options.post_parser(parsed)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/openai/resources/chat/completions/completions.py", line 1822, in parser
+    return _parse_chat_completion(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/openai/lib/_parsing/_completions.py", line 110, in parse_chat_completion
+    raise LengthFinishReasonError(completion=chat_completion)
+openai.LengthFinishReasonError: Could not parse response content as the length limit was reached - CompletionUsage(completion_tokens=1500, prompt_tokens=482, total_tokens=1982, completion_tokens_details=CompletionTokensDetails(accepted_prediction_tokens=None, audio_tokens=0, reasoning_tokens=464, rejected_prediction_tokens=None, text_tokens=None, image_tokens=0), prompt_tokens_details=PromptTokensDetails(audio_tokens=0, cache_write_tokens=0, cached_tokens=384, image_tokens=None, text_tokens=None, video_tokens=0), cost=0.001831704, is_byok=False, cost_details={'upstream_inference_cost': 0.001831704, 'upstream_inference_prompt_cost': 3.1704e-05, 'upstream_inference_completions_cost': 0.0018})
+........................................................................memory reply didn't parse; trying once more
+Traceback (most recent call last):
+  File "/home/user/nexus-prime/src/nexus/agent/memory_writer.py", line 137, in propose
+    reply = await asyncio.wait_for(
+            ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/tasks.py", line 520, in wait_for
+    return await fut
+           ^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/runnables/base.py", line 3496, in ainvoke
+    input_ = await coro_with_context(part(), context, create_task=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/runnables/base.py", line 4232, in ainvoke
+    results = await asyncio.gather(
+              ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/runnables/base.py", line 4224, in _ainvoke_step
+    return await coro_with_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/runnables/base.py", line 6027, in ainvoke
+    return await self.bound.ainvoke(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/language_models/chat_models.py", line 511, in ainvoke
+    llm_result = await self.agenerate_prompt(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/language_models/chat_models.py", line 1888, in agenerate_prompt
+    return await self.agenerate(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/language_models/chat_models.py", line 1846, in agenerate
+    raise exceptions[0]
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/language_models/chat_models.py", line 2179, in _agenerate_with_cache
+    result = await self._agenerate(
+             ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_openai/chat_models/base.py", line 2293, in _agenerate
+    raise e
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_openai/chat_models/base.py", line 2244, in _agenerate
+    response = raw_response.parse()
+               ^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/openai/_legacy_response.py", line 140, in parse
+    parsed = self._options.post_parser(parsed)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/openai/resources/chat/completions/completions.py", line 1822, in parser
+    return _parse_chat_completion(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/openai/lib/_parsing/_completions.py", line 110, in parse_chat_completion
+    raise LengthFinishReasonError(completion=chat_completion)
+openai.LengthFinishReasonError: Could not parse response content as the length limit was reached - CompletionUsage(completion_tokens=1500, prompt_tokens=487, total_tokens=1987, completion_tokens_details=CompletionTokensDetails(accepted_prediction_tokens=None, audio_tokens=0, reasoning_tokens=81, rejected_prediction_tokens=None, text_tokens=None, image_tokens=0), prompt_tokens_details=PromptTokensDetails(audio_tokens=0, cache_write_tokens=0, cached_tokens=384, image_tokens=None, text_tokens=None, video_tokens=0), cost=0.001833204, is_byok=False, cost_details={'upstream_inference_cost': 0.001833204, 'upstream_inference_prompt_cost': 3.3204e-05, 'upstream_inference_completions_cost': 0.0018})
+..........F.........................................................receipt read failed or didn't parse; trying once more
+Traceback (most recent call last):
+  File "/home/user/nexus-prime/src/nexus/agent/receipts.py", line 182, in read
+    return await _ask(model, message)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/src/nexus/agent/receipts.py", line 149, in _ask
+    reply = await model.ainvoke([message])
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/runnables/base.py", line 3496, in ainvoke
+    input_ = await coro_with_context(part(), context, create_task=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/runnables/base.py", line 4232, in ainvoke
+    results = await asyncio.gather(
+              ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/runnables/base.py", line 4224, in _ainvoke_step
+    return await coro_with_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/runnables/base.py", line 6027, in ainvoke
+    return await self.bound.ainvoke(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/language_models/chat_models.py", line 511, in ainvoke
+    llm_result = await self.agenerate_prompt(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/language_models/chat_models.py", line 1888, in agenerate_prompt
+    return await self.agenerate(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/language_models/chat_models.py", line 1846, in agenerate
+    raise exceptions[0]
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/language_models/chat_models.py", line 2179, in _agenerate_with_cache
+    result = await self._agenerate(
+             ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_openai/chat_models/base.py", line 2293, in _agenerate
+    raise e
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_openai/chat_models/base.py", line 2244, in _agenerate
+    response = raw_response.parse()
+               ^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/openai/_legacy_response.py", line 140, in parse
+    parsed = self._options.post_parser(parsed)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/openai/resources/chat/completions/completions.py", line 1822, in parser
+    return _parse_chat_completion(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/openai/lib/_parsing/_completions.py", line 156, in parse_chat_completion
+    "parsed": maybe_parse_content(
+              ^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/openai/lib/_parsing/_completions.py", line 206, in maybe_parse_content
+    return _parse_content(response_format, message.content)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/openai/lib/_parsing/_completions.py", line 255, in _parse_content
+    return cast(ResponseFormatT, model_parse_json(response_format, content))
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/openai/_compat.py", line 178, in model_parse_json
+    return model.model_validate_json(data)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/pydantic/main.py", line 782, in model_validate_json
+    return cls.__pydantic_validator__.validate_json(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pydantic_core._pydantic_core.ValidationError: 1 validation error for ReceiptDraft
+  Input should be an object [type=model_type, input_value=[{'properties': {'is_rece...onalProperties': False}], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.13/v/model_type
+.turn took 36.9s (context 0.1s, model 36.7s, tools 0.0s): 1 model calls, tools: log_move
+....memory reply didn't parse; trying once more
+Traceback (most recent call last):
+  File "/home/user/nexus-prime/src/nexus/agent/memory_writer.py", line 137, in propose
+    reply = await asyncio.wait_for(
+            ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/tasks.py", line 520, in wait_for
+    return await fut
+           ^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/runnables/base.py", line 3496, in ainvoke
+    input_ = await coro_with_context(part(), context, create_task=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/runnables/base.py", line 4232, in ainvoke
+    results = await asyncio.gather(
+              ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/runnables/base.py", line 4224, in _ainvoke_step
+    return await coro_with_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/runnables/base.py", line 6027, in ainvoke
+    return await self.bound.ainvoke(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/language_models/chat_models.py", line 511, in ainvoke
+    llm_result = await self.agenerate_prompt(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/language_models/chat_models.py", line 1888, in agenerate_prompt
+    return await self.agenerate(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/language_models/chat_models.py", line 1846, in agenerate
+    raise exceptions[0]
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/language_models/chat_models.py", line 2179, in _agenerate_with_cache
+    result = await self._agenerate(
+             ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_openai/chat_models/base.py", line 2293, in _agenerate
+    raise e
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_openai/chat_models/base.py", line 2244, in _agenerate
+    response = raw_response.parse()
+               ^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/openai/_legacy_response.py", line 140, in parse
+    parsed = self._options.post_parser(parsed)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/openai/resources/chat/completions/completions.py", line 1822, in parser
+    return _parse_chat_completion(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/openai/lib/_parsing/_completions.py", line 110, in parse_chat_completion
+    raise LengthFinishReasonError(completion=chat_completion)
+openai.LengthFinishReasonError: Could not parse response content as the length limit was reached - CompletionUsage(completion_tokens=1500, prompt_tokens=479, total_tokens=1979, completion_tokens_details=CompletionTokensDetails(accepted_prediction_tokens=None, audio_tokens=0, reasoning_tokens=1500, rejected_prediction_tokens=None, text_tokens=None, image_tokens=0), prompt_tokens_details=PromptTokensDetails(audio_tokens=0, cache_write_tokens=0, cached_tokens=384, image_tokens=None, text_tokens=None, video_tokens=0), cost=0.001830804, is_byok=False, cost_details={'upstream_inference_cost': 0.001830804, 'upstream_inference_prompt_cost': 3.0804e-05, 'upstream_inference_completions_cost': 0.0018})
+.F....receipt photo read failed; trying the look's text
+Traceback (most recent call last):
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/anyio/streams/tls.py", line 187, in _call_sslobject_method
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "/usr/lib/python3.12/ssl.py", line 859, in read
+    v = self._sslobj.read(len)
+        ^^^^^^^^^^^^^^^^^^^^^^
+ssl.SSLWantReadError: The operation did not complete (read) (_ssl.c:2570)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/user/nexus-prime/src/nexus/agent/receipts.py", line 149, in _ask
+    reply = await model.ainvoke([message])
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/runnables/base.py", line 3496, in ainvoke
+    input_ = await coro_with_context(part(), context, create_task=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/runnables/base.py", line 4232, in ainvoke
+    results = await asyncio.gather(
+              ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/runnables/base.py", line 4224, in _ainvoke_step
+    return await coro_with_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/runnables/base.py", line 6027, in ainvoke
+    return await self.bound.ainvoke(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/language_models/chat_models.py", line 511, in ainvoke
+    llm_result = await self.agenerate_prompt(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/language_models/chat_models.py", line 1888, in agenerate_prompt
+    return await self.agenerate(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/language_models/chat_models.py", line 1808, in agenerate
+    results = await asyncio.gather(
+              ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/language_models/chat_models.py", line 2179, in _agenerate_with_cache
+    result = await self._agenerate(
+             ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_openai/chat_models/base.py", line 2241, in _agenerate
+    raw_response = await self.root_async_client.chat.completions.with_raw_response.parse(  # noqa: E501
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/openai/_legacy_response.py", line 386, in wrapped
+    return cast(LegacyAPIResponse[R], await func(*args, **kwargs))
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/openai/resources/chat/completions/completions.py", line 1828, in parse
+    return await self._post(
+           ^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/openai/_base_client.py", line 2052, in post
+    return await self.request(cast_to, opts, stream=stream, stream_cls=stream_cls)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/openai/_base_client.py", line 1772, in request
+    response = await self._send_request(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/openai/_client.py", line 1361, in _send_request
+    response = await self._send_with_auth_retry(request, stream=stream, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/openai/_client.py", line 1340, in _send_with_auth_retry
+    response = await super()._send_request(request, stream=stream, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/openai/_base_client.py", line 1689, in _send_request
+    return await self._client.send(request, stream=stream, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/httpx2/_client.py", line 1832, in send
+    raise exc
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/httpx2/_client.py", line 1826, in send
+    await response.aread()
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/httpx2/_models.py", line 976, in aread
+    self._content = b"".join([part async for part in parts])
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/httpx2/_models.py", line 993, in aiter_bytes
+    async for raw_bytes in raw_stream:
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/httpx2/_models.py", line 1049, in aiter_raw
+    async for raw_stream_bytes in stream:
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/httpx2/_client.py", line 165, in __aiter__
+    async for chunk in stream:
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/httpx2/_transports/default.py", line 266, in __aiter__
+    async for part in self._httpcore_stream:
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/httpcore2/_async/connection_pool.py", line 426, in __aiter__
+    async for chunk in iterator:
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/httpcore2/_async/http11.py", line 320, in __aiter__
+    raise exc
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/httpcore2/_async/http11.py", line 312, in __aiter__
+    async for chunk in iterator:
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/httpcore2/_async/http11.py", line 188, in _receive_response_body
+    event = await self._receive_event(timeout=timeout)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/httpcore2/_async/http11.py", line 200, in _receive_event
+    data = await self._network_stream.read(self.READ_NUM_BYTES, timeout=timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/httpcore2/_backends/anyio.py", line 37, in read
+    return await self._stream.receive(max_bytes=max_bytes)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/anyio/streams/tls.py", line 254, in receive
+    data = await self._call_sslobject_method(self._ssl_object.read, max_bytes)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/anyio/streams/tls.py", line 194, in _call_sslobject_method
+    data = await self.transport_stream.receive()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/anyio/_backends/_asyncio.py", line 1407, in receive
+    await self._protocol.read_event.wait()
+  File "/usr/lib/python3.12/asyncio/locks.py", line 212, in wait
+    await fut
+asyncio.exceptions.CancelledError
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/user/nexus-prime/src/nexus/agent/service.py", line 639, in _read_receipt
+    return await receipts.read(
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/src/nexus/agent/receipts.py", line 182, in read
+    return await _ask(model, message)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/src/nexus/agent/receipts.py", line 148, in _ask
+    async with asyncio.timeout(READ_TIMEOUT):
+  File "/usr/lib/python3.12/asyncio/timeouts.py", line 115, in __aexit__
+    raise TimeoutError from exc_val
+TimeoutError
+..................memory reply didn't parse; trying once more
+Traceback (most recent call last):
+  File "/home/user/nexus-prime/src/nexus/agent/memory_writer.py", line 137, in propose
+    reply = await asyncio.wait_for(
+            ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/tasks.py", line 520, in wait_for
+    return await fut
+           ^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/runnables/base.py", line 3496, in ainvoke
+    input_ = await coro_with_context(part(), context, create_task=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/runnables/base.py", line 4232, in ainvoke
+    results = await asyncio.gather(
+              ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/runnables/base.py", line 4224, in _ainvoke_step
+    return await coro_with_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/runnables/base.py", line 6027, in ainvoke
+    return await self.bound.ainvoke(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/language_models/chat_models.py", line 511, in ainvoke
+    llm_result = await self.agenerate_prompt(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/language_models/chat_models.py", line 1888, in agenerate_prompt
+    return await self.agenerate(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/language_models/chat_models.py", line 1846, in agenerate
+    raise exceptions[0]
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_core/language_models/chat_models.py", line 2179, in _agenerate_with_cache
+    result = await self._agenerate(
+             ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_openai/chat_models/base.py", line 2293, in _agenerate
+    raise e
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/langchain_openai/chat_models/base.py", line 2244, in _agenerate
+    response = raw_response.parse()
+               ^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/openai/_legacy_response.py", line 140, in parse
+    parsed = self._options.post_parser(parsed)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/openai/resources/chat/completions/completions.py", line 1822, in parser
+    return _parse_chat_completion(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/nexus-prime/.venv/lib/python3.12/site-packages/openai/lib/_parsing/_completions.py", line 110, in parse_chat_completion
+    raise LengthFinishReasonError(completion=chat_completion)
+openai.LengthFinishReasonError: Could not parse response content as the length limit was reached - CompletionUsage(completion_tokens=1500, prompt_tokens=486, total_tokens=1986, completion_tokens_details=CompletionTokensDetails(accepted_prediction_tokens=None, audio_tokens=0, reasoning_tokens=241, rejected_prediction_tokens=None, text_tokens=None, image_tokens=0), prompt_tokens_details=PromptTokensDetails(audio_tokens=0, cache_write_tokens=0, cached_tokens=384, image_tokens=None, text_tokens=None, video_tokens=0), cost=0.001832904, is_byok=False, cost_details={'upstream_inference_cost': 0.001832904, 'upstream_inference_prompt_cost': 3.2904e-05, 'upstream_inference_completions_cost': 0.0018})
+.
+deepseek/deepseek-v4.1-flash: 278/282 passed
+### deepseek/deepseek-v4.1-flash + qwen/qwen3.8-flash (photos), reasoning low
+
+- Passed: **278/282** (99%)
+- Reply time per turn: median 2.0s, p90 4.1s
+- Tokens per case: 36252 in, 339 out; memory writer 647 in, 150 out
+- Cached input: 89.1% of the chat model's input tokens (32310 a case)
+- Cost: $0.2775 total, $0.00098 a case
+- Errors: 0, model failures: 0
+
+| Area | Passed |
+|---|---|
+| adversarial | 7/8 |
+| ask | 49/50 |
+| categories | 7/8 |
+| clarify | 11/11 |
+| context | 9/9 |
+| edit | 11/11 |
+| followup | 8/8 |
+| image | 5/5 |
+| income | 7/7 |
+| log | 46/46 |
+| memory | 13/14 |
+| messy | 16/16 |
+| multistep | 6/6 |
+| plan | 20/20 |
+| reasoning | 12/12 |
+| receipt | 8/8 |
+| safety | 10/10 |
+| timezone | 3/3 |
+| voice | 18/18 |
+| wallets | 12/12 |
+
+| Expected fix | Passed |
+|---|---|
+| already supported | 246/248 |
+| M8b | 6/6 |
+| M8c | 11/12 |
+| M8d | 2/2 |
+| M8e | 13/14 |
+
+Openers after a change (144 replies): "for the" 3%, "grab ride" 3%, "at maxwell" 3%
+
+Failures:
+
+- `q-compare-months`: reply lacks '54.80'
+- `cat-explain`: no explain_category call with any arguments
+- `mem-short-replies`: reply longer than 160 characters
+- `adv-invest`: called log_move; changed data
+branch exit 0

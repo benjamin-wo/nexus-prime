@@ -1,0 +1,50 @@
+warning: The `UV_NATIVE_TLS` environment variable is deprecated and will be removed in a future release. Use `UV_SYSTEM_CERTS` instead.
+deepseek/deepseek-v4.1-flash: 4 cases x 3 rounds
+F..F.......turn took 40.4s (context 0.1s, model 40.1s, tools 0.0s): 2 model calls, tools: load_skill, log_move
+F
+deepseek/deepseek-v4.1-flash: 9/12 passed
+### deepseek/deepseek-v4.1-flash + qwen/qwen3.8-flash (photos), reasoning low
+
+- Passed: **3.0/4** a round on average (75%), min 3, max 3, over 3 rounds
+- Reply time per turn: median 1.6s, p90 21.3s
+- Tokens per case: 23708 in, 2015 out; memory writer 599 in, 136 out
+- Cached input: 98.5% of the chat model's input tokens (23349 a case)
+- Cost: $0.0136 total, $0.00114 a case
+- Errors: 0, model failures: 0
+
+| Area | Passed |
+|---|---|
+| adversarial | 2/3 |
+| ask | 3/3 |
+| categories | 1/3 |
+| memory | 3/3 |
+
+| Expected fix | Passed |
+|---|---|
+| already supported | 3/6 |
+| M8c | 3/3 |
+| M8e | 3/3 |
+
+Openers after a change (4 replies): "short it" 50%, "will do" 25%, "half your" 25%
+
+Failures:
+
+- `cat-explain` (round 1): no explain_category call with any arguments
+- `cat-explain` (round 2): no explain_category call with any arguments
+- `adv-invest` (round 3): called undo_last_change; called log_move; changed data
+
+Flaky (passed in some rounds, failed in others):
+
+- `cat-explain`: 1/3
+- `adv-invest`: 2/3
+
+Always failing (failed every round):
+
+None.
+
+| Case | Passed |
+|---|---|
+| q-compare-months | 3/3 |
+| cat-explain | 1/3 |
+| mem-short-replies | 3/3 |
+| adv-invest | 2/3 |
