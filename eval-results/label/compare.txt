@@ -1,0 +1,12 @@
+case                               20261028-092829-deepseek_deepseek-v4.1-flash  20261028-093345-deepseek_deepseek-v4.1-flash
+trip-find-in-stop                                                           3/4                                           3/4
+trip-heading-there-no-parrot                                                2/4                                           4/4  <-
+itinerary-gelato-after-the-castle                                           4/4                                           3/4
+timezone-landed-tokyo                                                       4/4                                             -
+messy-euro                                                                  4/4                                           3/4
+(46 cases passed every run in both files; --all shows them)
+
+Passed overall: 20261028-092829-deepseek_deepseek-v4.1-flash 201/204, 20261028-093345-deepseek_deepseek-v4.1-flash 197/200
+Rates differing by 2 or more out of N: 1
+- trip-heading-there-no-parrot: 2/4 vs 4/4, better in 20261028-093345-deepseek_deepseek-v4.1-flash
+In only one file: timezone-landed-tokyo
