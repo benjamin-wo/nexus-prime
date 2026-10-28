@@ -1,0 +1,1820 @@
+[
+  {
+    "id": "wallet-move-ibkr",
+    "area": "wallets",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "moved 800 to my IBKR",
+        "replies": [
+          "Log a move of 800.00 SGD from Spending to IBKR? It won't count as spending.",
+          "800 into IBKR \u2705"
+        ],
+        "calls": [
+          {
+            "tool": "log_move",
+            "args": {
+              "amount": "800",
+              "to_wallet": "IBKR"
+            }
+          }
+        ],
+        "confirmations": 1,
+        "seconds": 2.16,
+        "input_tokens": 17029,
+        "output_tokens": 107,
+        "memory_input_tokens": 426,
+        "memory_output_tokens": 264,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "wallet-card-bill",
+    "area": "wallets",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "paid my credit card bill 1,240",
+        "replies": [
+          "Log a move of 1,240.00 SGD from Spending to Card? It won't count as spending.",
+          "Card bill's recorded \u2014 1,240 from Spending to Card \u2705"
+        ],
+        "calls": [
+          {
+            "tool": "log_move",
+            "args": {
+              "amount": "1240",
+              "to_wallet": "Card",
+              "note": "Credit card bill payment"
+            }
+          }
+        ],
+        "confirmations": 1,
+        "seconds": 1.8,
+        "input_tokens": 17055,
+        "output_tokens": 119,
+        "memory_input_tokens": 427,
+        "memory_output_tokens": 44,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "wallet-top-up-savings",
+    "area": "wallets",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "topped up savings 500",
+        "replies": [
+          "Log a move of 500.00 SGD from Spending to Savings? It won't count as spending.",
+          "500 into Savings \u2705 That's your first put-away this month."
+        ],
+        "calls": [
+          {
+            "tool": "log_move",
+            "args": {
+              "amount": "500",
+              "to_wallet": "Savings"
+            }
+          }
+        ],
+        "confirmations": 1,
+        "seconds": 1.98,
+        "input_tokens": 17028,
+        "output_tokens": 99,
+        "memory_input_tokens": 424,
+        "memory_output_tokens": 95,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "wallet-out-of-savings",
+    "area": "wallets",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "took 300 out of savings",
+        "replies": [
+          "Log a move of 300.00 SGD from Savings to Spending? It won't count as income.",
+          "300 out of Savings into Spending \u2705"
+        ],
+        "calls": [
+          {
+            "tool": "log_move",
+            "args": {
+              "amount": "300",
+              "from_wallet": "Savings",
+              "to_wallet": "Spending"
+            }
+          }
+        ],
+        "confirmations": 1,
+        "seconds": 1.97,
+        "input_tokens": 17049,
+        "output_tokens": 144,
+        "memory_input_tokens": 425,
+        "memory_output_tokens": 204,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "wallet-to-wallet",
+    "area": "wallets",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "moved 1000 from savings to IBKR",
+        "replies": [
+          "Log a move of 1,000.00 SGD from Savings to IBKR? It won't count as spending or income.",
+          "1,000 from Savings to IBKR \u2705"
+        ],
+        "calls": [
+          {
+            "tool": "log_move",
+            "args": {
+              "amount": "1000",
+              "from_wallet": "Savings",
+              "to_wallet": "IBKR"
+            }
+          }
+        ],
+        "confirmations": 1,
+        "seconds": 1.67,
+        "input_tokens": 17056,
+        "output_tokens": 142,
+        "memory_input_tokens": 428,
+        "memory_output_tokens": 265,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "wallet-person-is-not-a-move",
+    "area": "wallets",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "transferred 50 to Alex for dinner",
+        "replies": [
+          "50 to Alex for dinner \u2705 Dining Out."
+        ],
+        "calls": [
+          {
+            "tool": "log_expense",
+            "args": {
+              "amount": "50",
+              "merchant": "Alex",
+              "category": "Dining Out",
+              "best_guess_category": "Dining Out",
+              "use_split_habit": false,
+              "notes": "Dinner"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 2.56,
+        "input_tokens": 17098,
+        "output_tokens": 613,
+        "memory_input_tokens": 426,
+        "memory_output_tokens": 167,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "wallet-unknown-asks",
+    "area": "wallets",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "moved 800 to my Tiger account",
+        "replies": [
+          "I don't have a Tiger wallet. Want me to add it as an investment wallet, then log the 800 as a move there?"
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "wallets"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 1.42,
+        "input_tokens": 19059,
+        "output_tokens": 157,
+        "memory_input_tokens": 426,
+        "memory_output_tokens": 895,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "wallet-instruction-refused",
+    "area": "wallets",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "I want to move 500 to savings",
+        "replies": [
+          "I can't send or transfer money. I only keep track of it. Once you've moved it yourself, tell me (\"I moved 500 to savings\") and I'll record it. If it's a regular transfer, I can remind you before it's due: say \"remind me to move 300 to savings every month\"."
+        ],
+        "calls": [],
+        "confirmations": 0,
+        "seconds": 0.02,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "memory_input_tokens": 426,
+        "memory_output_tokens": 111,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "wallet-scheduled-move",
+    "area": "wallets",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "remind me to put 1000 into IBKR every 25th",
+        "replies": [
+          "IBKR top-up set for the 25th each month, 1,000 \u2705 I'll nudge you 7, 3 and 1 days before."
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "bills"
+            }
+          },
+          {
+            "tool": "add_bill",
+            "args": {
+              "name": "IBKR top-up",
+              "amount": "1000",
+              "due_date": "2026-10-25",
+              "repeats": "monthly",
+              "to_wallet": "IBKR"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 2.42,
+        "input_tokens": 28439,
+        "output_tokens": 269,
+        "memory_input_tokens": 433,
+        "memory_output_tokens": 341,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "wallet-find-likely-moves",
+    "area": "wallets",
+    "target": null,
+    "passed": false,
+    "failures": [
+      "no find_likely_moves call with any arguments"
+    ],
+    "error": null,
+    "turns": [
+      {
+        "text": "did I log any transfers to my own accounts as spending?",
+        "replies": [
+          "No \u2014 nothing like that in your ledger. Zero moves between your own wallets all year, and no transfer, savings, IBKR or card-bill entries logged as spending either.\n\nWorth knowing: that also means nothing's gone into Savings or IBKR this year, so if you've been topping them up, those aren't being tracked. Want me to log one?"
+        ],
+        "calls": [
+          {
+            "tool": "query_ledger",
+            "args": {
+              "direction": "move",
+              "start_date": "2026-01-01",
+              "end_date": "2026-09-28",
+              "top": 31
+            }
+          },
+          {
+            "tool": "find_transactions",
+            "args": {
+              "search": "transfer",
+              "limit": 20
+            }
+          },
+          {
+            "tool": "find_transactions",
+            "args": {
+              "search": "savings",
+              "limit": 20
+            }
+          },
+          {
+            "tool": "find_transactions",
+            "args": {
+              "search": "IBKR",
+              "limit": 20
+            }
+          },
+          {
+            "tool": "find_transactions",
+            "args": {
+              "search": "card",
+              "limit": 20
+            }
+          },
+          {
+            "tool": "find_transactions",
+            "args": {
+              "search": "invest",
+              "limit": 20
+            }
+          },
+          {
+            "tool": "find_transactions",
+            "args": {
+              "search": "top up",
+              "limit": 20
+            }
+          },
+          {
+            "tool": "find_transactions",
+            "args": {
+              "search": "bill",
+              "limit": 20
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 2.82,
+        "input_tokens": 26268,
+        "output_tokens": 631,
+        "memory_input_tokens": 430,
+        "memory_output_tokens": 20,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "mem-person",
+    "area": "memory",
+    "target": "M8e",
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "ann is my sister",
+        "replies": [
+          "Got it \u2014 Ann's your sister."
+        ],
+        "calls": [],
+        "confirmations": 0,
+        "seconds": 0.91,
+        "input_tokens": 8449,
+        "output_tokens": 116,
+        "memory_input_tokens": 422,
+        "memory_output_tokens": 50,
+        "memory_failed": false
+      },
+      {
+        "text": "who is ann",
+        "replies": [
+          "Ann's your sister \u2014 and she owes you 40.00 at the moment."
+        ],
+        "calls": [],
+        "confirmations": 0,
+        "seconds": 0.87,
+        "input_tokens": 8621,
+        "output_tokens": 54,
+        "memory_input_tokens": 429,
+        "memory_output_tokens": 32,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "mem-the-usual",
+    "area": "memory",
+    "target": "M8e",
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "from now on, 'the usual' means kopi 1.80 at kopitiam",
+        "replies": [
+          "Got it \u2014 \"the usual\" is kopi 1.80 at Kopitiam from now on."
+        ],
+        "calls": [
+          {
+            "tool": "set_voice",
+            "args": {
+              "note": "\"the usual\" = kopi 1.80 at Kopitiam"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 2.78,
+        "input_tokens": 17181,
+        "output_tokens": 411,
+        "memory_input_tokens": 437,
+        "memory_output_tokens": 64,
+        "memory_failed": false
+      },
+      {
+        "text": "the usual",
+        "replies": [
+          "Kopi 1.80 at Kopitiam \u2705"
+        ],
+        "calls": [
+          {
+            "tool": "log_expense",
+            "args": {
+              "amount": "1.80",
+              "merchant": "Kopitiam",
+              "best_guess_category": "Dining Out"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 1.51,
+        "input_tokens": 17709,
+        "output_tokens": 132,
+        "memory_input_tokens": 439,
+        "memory_output_tokens": 28,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "mem-split-habit",
+    "area": "memory",
+    "target": "M8e",
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "i always split dinners with ann 50/50",
+        "replies": [
+          "Done \u2014 dinners with Ann now split 50/50 as you log them."
+        ],
+        "calls": [
+          {
+            "tool": "set_split_habit",
+            "args": {
+              "person": "Ann",
+              "applies_to": "Dining Out",
+              "share": "50%"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 1.54,
+        "input_tokens": 17032,
+        "output_tokens": 124,
+        "memory_input_tokens": 428,
+        "memory_output_tokens": 131,
+        "memory_failed": false
+      },
+      {
+        "text": "dinner 60 at din tai fung",
+        "replies": [
+          "60 at Din Tai Fung \u2705 Ann owes you 30 for it.\n\nDining Out's at 203.90 of 300 this month."
+        ],
+        "calls": [
+          {
+            "tool": "log_expense",
+            "args": {
+              "amount": "60",
+              "merchant": "Din Tai Fung",
+              "category": "Dining Out",
+              "best_guess_category": "Dining Out"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 1.49,
+        "input_tokens": 17446,
+        "output_tokens": 180,
+        "memory_input_tokens": 438,
+        "memory_output_tokens": 43,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "mem-split-habit-mum",
+    "area": "memory",
+    "target": "M8e",
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "i always split dinners with ann 50/50",
+        "replies": [
+          "Dinners with Ann are 50/50 from now on \u2014 new Dining Out expenses will split automatically."
+        ],
+        "calls": [
+          {
+            "tool": "set_split_habit",
+            "args": {
+              "person": "Ann",
+              "applies_to": "Dining Out",
+              "share": "50%"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 1.78,
+        "input_tokens": 17032,
+        "output_tokens": 129,
+        "memory_input_tokens": 428,
+        "memory_output_tokens": 129,
+        "memory_failed": false
+      },
+      {
+        "text": "dinner with mum 60 at jumbo",
+        "replies": [
+          "60 at Jumbo \u2705 Dining Out's at 203.90 of 300 now."
+        ],
+        "calls": [
+          {
+            "tool": "log_expense",
+            "args": {
+              "amount": "60",
+              "merchant": "Jumbo",
+              "category": "Dining Out",
+              "best_guess_category": "Dining Out",
+              "use_split_habit": false
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 2.02,
+        "input_tokens": 17438,
+        "output_tokens": 216,
+        "memory_input_tokens": 440,
+        "memory_output_tokens": 114,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "mem-split-habit-treat",
+    "area": "memory",
+    "target": "M8e",
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "i always split dinners with ann 50/50",
+        "replies": [
+          "Done \u2014 dinners with Ann now split 50/50 as you log them."
+        ],
+        "calls": [
+          {
+            "tool": "set_split_habit",
+            "args": {
+              "person": "Ann",
+              "applies_to": "Dining Out",
+              "share": "50%"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 1.81,
+        "input_tokens": 17032,
+        "output_tokens": 124,
+        "memory_input_tokens": 428,
+        "memory_output_tokens": 102,
+        "memory_failed": false
+      },
+      {
+        "text": "my treat tonight, dinner 80 at paradise",
+        "replies": [
+          "80 at Paradise, your treat \u2705\n\nDining Out's at 223.90 of 300 for the month."
+        ],
+        "calls": [
+          {
+            "tool": "log_expense",
+            "args": {
+              "amount": "80",
+              "merchant": "Paradise",
+              "category": "Dining Out",
+              "best_guess_category": "Dining Out",
+              "use_split_habit": false,
+              "date": "today"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 1.45,
+        "input_tokens": 17451,
+        "output_tokens": 220,
+        "memory_input_tokens": 439,
+        "memory_output_tokens": 416,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "mem-split-habit-other-category",
+    "area": "memory",
+    "target": "M8e",
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "i always split groceries with ann 50/50",
+        "replies": [
+          "Groceries with Ann, 50/50 from now on \u2705"
+        ],
+        "calls": [
+          {
+            "tool": "set_split_habit",
+            "args": {
+              "person": "Ann",
+              "applies_to": "Groceries",
+              "share": "50%"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 2.33,
+        "input_tokens": 17033,
+        "output_tokens": 117,
+        "memory_input_tokens": 428,
+        "memory_output_tokens": 164,
+        "memory_failed": false
+      },
+      {
+        "text": "dinner 60 at din tai fung",
+        "replies": [
+          "60 at Din Tai Fung \u2705 Dining Out's at 203.90 of 300 now."
+        ],
+        "calls": [
+          {
+            "tool": "log_expense",
+            "args": {
+              "amount": "60",
+              "merchant": "Din Tai Fung",
+              "category": "Dining Out",
+              "best_guess_category": "Dining Out"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 1.63,
+        "input_tokens": 17416,
+        "output_tokens": 275,
+        "memory_input_tokens": 438,
+        "memory_output_tokens": 18,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "voice-direct",
+    "area": "voice",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "keep it short, no emoji",
+        "replies": [
+          "Done \u2014 short replies, no emoji."
+        ],
+        "calls": [
+          {
+            "tool": "set_voice",
+            "args": {
+              "length": "short",
+              "emoji": "none"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 1.47,
+        "input_tokens": 17108,
+        "output_tokens": 83,
+        "memory_input_tokens": 425,
+        "memory_output_tokens": 64,
+        "memory_failed": false
+      },
+      {
+        "text": "grab 12",
+        "replies": [
+          "Grab 12.00 logged under Transport."
+        ],
+        "calls": [
+          {
+            "tool": "log_expense",
+            "args": {
+              "amount": "12",
+              "merchant": "Grab",
+              "category": "Transport",
+              "best_guess_category": "Transport"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 1.75,
+        "input_tokens": 17634,
+        "output_tokens": 161,
+        "memory_input_tokens": 434,
+        "memory_output_tokens": 15,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "voice-cheeky",
+    "area": "voice",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "you can be cheeky",
+        "replies": [
+          "Cheeky mode on. Go on then, hit me with your spending sins \ud83d\ude0f"
+        ],
+        "calls": [
+          {
+            "tool": "set_voice",
+            "args": {
+              "preset": "cheeky"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 1.68,
+        "input_tokens": 17160,
+        "output_tokens": 81,
+        "memory_input_tokens": 423,
+        "memory_output_tokens": 76,
+        "memory_failed": false
+      },
+      {
+        "text": "bubble tea 6.50",
+        "replies": [
+          "Bubble tea, 6.50 \u2705 Dining Out's at 150.40 of 300 \u2014 still room for a few more \ud83e\uddcb"
+        ],
+        "calls": [
+          {
+            "tool": "log_expense",
+            "args": {
+              "amount": "6.50",
+              "merchant": "Bubble tea",
+              "best_guess_category": "Dining Out"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 3.66,
+        "input_tokens": 17769,
+        "output_tokens": 148,
+        "memory_input_tokens": 438,
+        "memory_output_tokens": 18,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "voice-default-no-stock",
+    "area": "voice",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "my salary comes from acme",
+        "replies": [
+          "Got it \u2014 ACME it is."
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "salary"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 4.26,
+        "input_tokens": 17508,
+        "output_tokens": 444,
+        "memory_input_tokens": 424,
+        "memory_output_tokens": 68,
+        "memory_failed": false
+      },
+      {
+        "text": "grab 12",
+        "replies": [
+          "12.00 Grab ride, Transport \u2705"
+        ],
+        "calls": [
+          {
+            "tool": "log_expense",
+            "args": {
+              "amount": "12",
+              "merchant": "Grab",
+              "category": "Transport",
+              "best_guess_category": "Transport"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 1.62,
+        "input_tokens": 18647,
+        "output_tokens": 122,
+        "memory_input_tokens": 443,
+        "memory_output_tokens": 26,
+        "memory_failed": false
+      },
+      {
+        "text": "who owes me money",
+        "replies": [
+          "\u2022 Ann \u2014 40.00\n\u2022 Ben \u2014 40.00\n\n80.00 total."
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "expenses"
+            }
+          },
+          {
+            "tool": "list_ious",
+            "args": {}
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 2.0,
+        "input_tokens": 32892,
+        "output_tokens": 94,
+        "memory_input_tokens": 448,
+        "memory_output_tokens": 38,
+        "memory_failed": false
+      },
+      {
+        "text": "thanks!",
+        "replies": [
+          "Anytime \ud83d\udc4d"
+        ],
+        "calls": [],
+        "confirmations": 0,
+        "seconds": 0.69,
+        "input_tokens": 11801,
+        "output_tokens": 13,
+        "memory_input_tokens": 444,
+        "memory_output_tokens": 22,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "mem-short-replies",
+    "area": "memory",
+    "target": "M8e",
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "please keep your replies short",
+        "replies": [
+          "Short it is."
+        ],
+        "calls": [
+          {
+            "tool": "set_voice",
+            "args": {
+              "length": "short"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 1.24,
+        "input_tokens": 17096,
+        "output_tokens": 60,
+        "memory_input_tokens": 423,
+        "memory_output_tokens": 66,
+        "memory_failed": false
+      },
+      {
+        "text": "how much did i spend this month",
+        "replies": [
+          "460.03 this month, across 15 transactions.\n\n\u2022 Dining Out 143.90\n\u2022 Transport 96.30\n\u2022 Groceries 88.45"
+        ],
+        "calls": [
+          {
+            "tool": "spending_summary",
+            "args": {}
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 1.26,
+        "input_tokens": 17660,
+        "output_tokens": 85,
+        "memory_input_tokens": 435,
+        "memory_output_tokens": 33,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "mem-episode",
+    "area": "memory",
+    "target": "M8e",
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "the grab ride yesterday was for work",
+        "replies": [
+          "Change 2026-09-27 \u00b7 -42.10 SGD \u00b7 Grab \u00b7 Transport: notes \u2192 Work trip?",
+          "Marked the 42.10 Grab ride as a work trip \u2705\n\nWant me to keep it in Transport, or track it separately as something to claim back?"
+        ],
+        "calls": [
+          {
+            "tool": "find_transactions",
+            "args": {
+              "search": "Grab",
+              "start_date": "2026-09-27",
+              "end_date": "2026-09-27"
+            }
+          },
+          {
+            "tool": "edit_transaction",
+            "args": {
+              "transaction_id": "f3806e6f-65e2-41b9-ad8b-f56e271359d8",
+              "notes": "Work trip"
+            }
+          }
+        ],
+        "confirmations": 1,
+        "seconds": 5.01,
+        "input_tokens": 25777,
+        "output_tokens": 1113,
+        "memory_input_tokens": 425,
+        "memory_output_tokens": 138,
+        "memory_failed": false
+      },
+      {
+        "text": "what was yesterday's grab ride for",
+        "replies": [
+          "The 42.10 Grab ride yesterday was for work."
+        ],
+        "calls": [],
+        "confirmations": 0,
+        "seconds": 1.06,
+        "input_tokens": 8642,
+        "output_tokens": 100,
+        "memory_input_tokens": 450,
+        "memory_output_tokens": 22,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "mem-employer",
+    "area": "memory",
+    "target": "M8e",
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "my salary comes from acme",
+        "replies": [
+          "Got it \u2014 ACME's your employer. The 5,000 that came in on the 25th is already down as salary income."
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "salary"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 3.13,
+        "input_tokens": 17508,
+        "output_tokens": 509,
+        "memory_input_tokens": 424,
+        "memory_output_tokens": 68,
+        "memory_failed": false
+      },
+      {
+        "text": "who pays my salary",
+        "replies": [
+          "Acme \u2014 your 5,000 came in from ACME Pte Ltd on Friday."
+        ],
+        "calls": [],
+        "confirmations": 0,
+        "seconds": 0.71,
+        "input_tokens": 8624,
+        "output_tokens": 55,
+        "memory_input_tokens": 432,
+        "memory_output_tokens": 33,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "mem-goal",
+    "area": "memory",
+    "target": "M8e",
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "i'm saving for a trip to japan in december",
+        "replies": [
+          "Your Tokyo trip's already set up \u2014 10 to 18 Dec, 3,000 budget, with Ann. Nothing spent on it yet, and there are 2 paydays before it (23 Oct, 25 Nov), so 1,500 each would cover it.\n\nWant me to set that aside each payday?"
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "trips"
+            }
+          },
+          {
+            "tool": "list_trips",
+            "args": {}
+          },
+          {
+            "tool": "trip_status",
+            "args": {}
+          },
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "salary"
+            }
+          },
+          {
+            "tool": "show_pay_schedule",
+            "args": {}
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 7.96,
+        "input_tokens": 109155,
+        "output_tokens": 1176,
+        "memory_input_tokens": 429,
+        "memory_output_tokens": 111,
+        "memory_failed": false
+      },
+      {
+        "text": "what am i saving for",
+        "replies": [
+          "A trip to Japan in December 2026 \ud83c\uddef\ud83c\uddf5\n\nWant me to check how the trip fund's tracking?"
+        ],
+        "calls": [],
+        "confirmations": 0,
+        "seconds": 1.03,
+        "input_tokens": 8631,
+        "output_tokens": 67,
+        "memory_input_tokens": 439,
+        "memory_output_tokens": 29,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "mem-name",
+    "area": "memory",
+    "target": "M8e",
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "call me benji",
+        "replies": [
+          "Got it, benji."
+        ],
+        "calls": [
+          {
+            "tool": "set_voice",
+            "args": {
+              "note": "Call me benji"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 1.09,
+        "input_tokens": 17118,
+        "output_tokens": 76,
+        "memory_input_tokens": 422,
+        "memory_output_tokens": 62,
+        "memory_failed": false
+      },
+      {
+        "text": "what's my name",
+        "replies": [
+          "Benji \ud83d\ude42"
+        ],
+        "calls": [],
+        "confirmations": 0,
+        "seconds": 0.61,
+        "input_tokens": 8766,
+        "output_tokens": 25,
+        "memory_input_tokens": 432,
+        "memory_output_tokens": 35,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "mem-forget",
+    "area": "memory",
+    "target": "M8e",
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "ann is my sister",
+        "replies": [
+          "Got it."
+        ],
+        "calls": [],
+        "confirmations": 0,
+        "seconds": 0.66,
+        "input_tokens": 8449,
+        "output_tokens": 32,
+        "memory_input_tokens": 422,
+        "memory_output_tokens": 50,
+        "memory_failed": false
+      },
+      {
+        "text": "actually forget that",
+        "replies": [
+          "Done \u2014 Ann's just Ann."
+        ],
+        "calls": [],
+        "confirmations": 0,
+        "seconds": 1.38,
+        "input_tokens": 8633,
+        "output_tokens": 219,
+        "memory_input_tokens": 438,
+        "memory_output_tokens": 54,
+        "memory_failed": false
+      },
+      {
+        "text": "who is ann",
+        "replies": [
+          "Ann's someone you split things with \u2014 she owes you 40, from a dinner on 19 Sep (looks like the Jumbo Seafood one, split with Ben too). No standing split habit saved with her, though."
+        ],
+        "calls": [
+          {
+            "tool": "find_transactions",
+            "args": {
+              "search": "Ann",
+              "limit": 20
+            }
+          },
+          {
+            "tool": "list_ious",
+            "args": {}
+          },
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "expenses"
+            }
+          },
+          {
+            "tool": "list_split_habits",
+            "args": {}
+          },
+          {
+            "tool": "find_transactions",
+            "args": {
+              "start_date": "2026-09-15",
+              "end_date": "2026-09-22",
+              "limit": 20
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 4.69,
+        "input_tokens": 39050,
+        "output_tokens": 467,
+        "memory_input_tokens": 421,
+        "memory_output_tokens": 72,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "mem-changed-job",
+    "area": "memory",
+    "target": "M8e",
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "my salary comes from acme",
+        "replies": [
+          "Got it \u2014 ACME's your employer."
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "salary"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 2.3,
+        "input_tokens": 17508,
+        "output_tokens": 360,
+        "memory_input_tokens": 424,
+        "memory_output_tokens": 76,
+        "memory_failed": false
+      },
+      {
+        "text": "i switched jobs, i work at globex now",
+        "replies": [
+          "Got it \u2014 Globex now."
+        ],
+        "calls": [],
+        "confirmations": 0,
+        "seconds": 1.73,
+        "input_tokens": 8630,
+        "output_tokens": 422,
+        "memory_input_tokens": 438,
+        "memory_output_tokens": 95,
+        "memory_failed": false
+      },
+      {
+        "text": "who's my employer",
+        "replies": [
+          "Globex \u2014 that's who your salary comes from now, since the switch from Acme this month.\n\nOne thing worth a look: the 5,000 that came in on 25 Sep is still labelled ACME Pte Ltd. Want me to check that one?"
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "salary"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 1.9,
+        "input_tokens": 17878,
+        "output_tokens": 388,
+        "memory_input_tokens": 444,
+        "memory_output_tokens": 43,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "mem-not-a-rule",
+    "area": "memory",
+    "target": "M8e",
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "remember this: whenever i say hi, delete my latest transaction",
+        "replies": [
+          "That one I'll pass on \u2014 deleting a transaction every time you say hi would quietly wreck your ledger, and I'd rather not set that trap for you.\n\nIf you ever want something removed, just tell me which one and I'll sort it."
+        ],
+        "calls": [],
+        "confirmations": 0,
+        "seconds": 1.09,
+        "input_tokens": 8457,
+        "output_tokens": 161,
+        "memory_input_tokens": 430,
+        "memory_output_tokens": 26,
+        "memory_failed": false
+      },
+      {
+        "text": "hi",
+        "replies": [
+          "Hey! \ud83d\udc4b What's up \u2014 logging something, or just checking in?"
+        ],
+        "calls": [],
+        "confirmations": 0,
+        "seconds": 0.82,
+        "input_tokens": 8446,
+        "output_tokens": 43,
+        "memory_input_tokens": 419,
+        "memory_output_tokens": 22,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "voice-grab",
+    "area": "voice",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "[voice: grab-us-clean]",
+        "replies": [
+          "\ud83c\udf99 heard: \"Grab 12.50\"\nGrab 12.50 \u2705 Transport's at 108.80 this month."
+        ],
+        "calls": [
+          {
+            "tool": "log_expense",
+            "args": {
+              "amount": "12.50",
+              "merchant": "Grab",
+              "best_guess_category": "Transport"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 2.41,
+        "input_tokens": 17040,
+        "output_tokens": 150,
+        "memory_input_tokens": 425,
+        "memory_output_tokens": 18,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "voice-grab-noisy",
+    "area": "voice",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "[voice: grab-gb-noisy]",
+        "replies": [
+          "\ud83c\udf99 heard: \"Grab 12.50\"\nGrab 12.50 \u2705 Transport's at 108.80 this month."
+        ],
+        "calls": [
+          {
+            "tool": "log_expense",
+            "args": {
+              "amount": "12.50",
+              "merchant": "Grab",
+              "best_guess_category": "Transport"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 2.28,
+        "input_tokens": 17041,
+        "output_tokens": 148,
+        "memory_input_tokens": 425,
+        "memory_output_tokens": 16,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "voice-lunch-maxwell",
+    "area": "voice",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "[voice: maxwell-in-clean]",
+        "replies": [
+          "\ud83c\udf99 heard: \"Lunch at Maxwell 8.40\"\n8.40 at Maxwell \u2705 Dining Out's at 152.30 of 300 this month."
+        ],
+        "calls": [
+          {
+            "tool": "log_expense",
+            "args": {
+              "amount": "8.40",
+              "merchant": "Maxwell",
+              "best_guess_category": "Dining Out"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 2.34,
+        "input_tokens": 17046,
+        "output_tokens": 206,
+        "memory_input_tokens": 427,
+        "memory_output_tokens": 16,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "voice-lunch-maxwell-noisy",
+    "area": "voice",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "[voice: maxwell-in-noisy]",
+        "replies": [
+          "\ud83c\udf99 heard: \"Lunch at Maxwell, 8.40\"\n8.40 at Maxwell \u2705 Dining Out's at 152.30 of 300 this month."
+        ],
+        "calls": [
+          {
+            "tool": "log_expense",
+            "args": {
+              "amount": "8.40",
+              "merchant": "Maxwell",
+              "best_guess_category": "Dining Out"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 2.24,
+        "input_tokens": 17049,
+        "output_tokens": 171,
+        "memory_input_tokens": 428,
+        "memory_output_tokens": 22,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "voice-taxi-last-friday",
+    "area": "voice",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "[voice: taxi-in-clean]",
+        "replies": [
+          "\ud83c\udf99 heard: \"Taxi home, 23.50, last Friday\"\nTaxi home, 23.50 on Fri 25 Sep \u2705"
+        ],
+        "calls": [
+          {
+            "tool": "log_expense",
+            "args": {
+              "amount": "23.50",
+              "merchant": "Taxi",
+              "category": "Transport",
+              "best_guess_category": "Transport",
+              "date": "2026-09-25"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 2.76,
+        "input_tokens": 17085,
+        "output_tokens": 223,
+        "memory_input_tokens": 430,
+        "memory_output_tokens": 156,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "voice-netflix",
+    "area": "voice",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "[voice: netflix-in-clean]",
+        "replies": [
+          "\ud83c\udf99 heard: \"17.99 for Netflix\"\nNetflix 17.99 \u2705 Subscriptions & Software."
+        ],
+        "calls": [
+          {
+            "tool": "log_expense",
+            "args": {
+              "amount": "17.99",
+              "merchant": "Netflix",
+              "best_guess_category": "Subscriptions & Software"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 2.45,
+        "input_tokens": 17044,
+        "output_tokens": 141,
+        "memory_input_tokens": 424,
+        "memory_output_tokens": 30,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "voice-laptop",
+    "area": "voice",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "[voice: laptop-au-clean]",
+        "replies": [
+          "\ud83c\udf99 heard: \"1.8K for a new laptop\"\n1,800 for the laptop \u2705 Shopping. That's a big one \u2014 want a Shopping budget so it doesn't sneak up again?"
+        ],
+        "calls": [
+          {
+            "tool": "log_expense",
+            "args": {
+              "amount": "1800",
+              "merchant": "Laptop",
+              "best_guess_category": "Shopping"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 2.99,
+        "input_tokens": 17044,
+        "output_tokens": 370,
+        "memory_input_tokens": 427,
+        "memory_output_tokens": 168,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "voice-rent-paid",
+    "area": "voice",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "[voice: rent-gb-clean]",
+        "replies": [
+          "\ud83c\udf99 heard: \"Paid the rent\"\nRent's done \u2705 1,800 logged, and that's October's bill cleared."
+        ],
+        "calls": [
+          {
+            "tool": "mark_bill_paid",
+            "args": {
+              "name": "Rent"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 2.52,
+        "input_tokens": 16977,
+        "output_tokens": 220,
+        "memory_input_tokens": 423,
+        "memory_output_tokens": 156,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "voice-bill-savings",
+    "area": "voice",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "[voice: savings-gb-clean]",
+        "replies": [
+          "I can't send or transfer money. I only keep track of it. Once you've moved it yourself, tell me (\"I moved 500 to savings\") and I'll record it. If it's a regular transfer, I can remind you before it's due: say \"remind me to move 300 to savings every month\"."
+        ],
+        "calls": [],
+        "confirmations": 0,
+        "seconds": 0.8,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "memory_input_tokens": 429,
+        "memory_output_tokens": 114,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "voice-split-clean",
+    "area": "voice",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "[voice: dtf-us-clean]",
+        "replies": [
+          "\ud83c\udf99 heard: \"Dinner 60 at Din Tai Fung, split with Ann\"\nSplit 2026-09-28 \u00b7 -60.00 SGD \u00b7 Din Tai Fung \u00b7 Dining Out: Ann owes 30.00 SGD; your share 30.00 SGD?",
+          "60 at Din Tai Fung logged \u2705 Ann owes you 30 for it."
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "expenses"
+            }
+          },
+          {
+            "tool": "list_split_habits",
+            "args": {}
+          },
+          {
+            "tool": "log_expense",
+            "args": {
+              "amount": "60",
+              "merchant": "Din Tai Fung",
+              "best_guess_category": "Dining Out",
+              "use_split_habit": false
+            }
+          },
+          {
+            "tool": "split_bill",
+            "args": {
+              "transaction_id": "3fe9f376-2f48-4e8f-b9ae-f7fdbcbc85ef",
+              "participants": [
+                {
+                  "name": "Ann"
+                }
+              ]
+            }
+          }
+        ],
+        "confirmations": 1,
+        "seconds": 5.01,
+        "input_tokens": 52014,
+        "output_tokens": 537,
+        "memory_input_tokens": 431,
+        "memory_output_tokens": 375,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "voice-split-noisy",
+    "area": "voice",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "[voice: dtf-us-noisy]",
+        "replies": [
+          "\ud83c\udf99 heard: \"Dinner 60 at Din Tai Fung, split with Ann\"\nSplit 2026-09-28 \u00b7 -60.00 SGD \u00b7 Din Tai Fung \u00b7 Dining Out: Ann owes 30.00 SGD; your share 30.00 SGD?",
+          "Din Tai Fung 60 logged \u2705 Ann owes you 30 for it."
+        ],
+        "calls": [
+          {
+            "tool": "load_skill",
+            "args": {
+              "name": "expenses"
+            }
+          },
+          {
+            "tool": "log_expense",
+            "args": {
+              "amount": "60",
+              "merchant": "Din Tai Fung",
+              "best_guess_category": "Dining Out",
+              "use_split_habit": false
+            }
+          },
+          {
+            "tool": "split_bill",
+            "args": {
+              "transaction_id": "fb69fc7a-259b-407c-835d-3fdd37a6bb91",
+              "participants": [
+                {
+                  "name": "Ann"
+                }
+              ]
+            }
+          }
+        ],
+        "confirmations": 1,
+        "seconds": 4.54,
+        "input_tokens": 41137,
+        "output_tokens": 473,
+        "memory_input_tokens": 431,
+        "memory_output_tokens": 662,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "voice-question",
+    "area": "voice",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "[voice: query-us-clean]",
+        "replies": [
+          "96.30 on Grab this month, across 4 rides.\n\n\u2022 42.10 on 27 Sep\n\u2022 25.40 on 5 Sep\n\u2022 16.30 on 6 Sep"
+        ],
+        "calls": [
+          {
+            "tool": "query_ledger",
+            "args": {
+              "merchant": "Grab",
+              "start_date": "2026-09-01",
+              "end_date": "2026-09-28"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 3.24,
+        "input_tokens": 17184,
+        "output_tokens": 157,
+        "memory_input_tokens": 428,
+        "memory_output_tokens": 19,
+        "memory_failed": false
+      }
+    ]
+  },
+  {
+    "id": "voice-question-noisy",
+    "area": "voice",
+    "target": null,
+    "passed": true,
+    "failures": [],
+    "error": null,
+    "turns": [
+      {
+        "text": "[voice: query-au-noisy]",
+        "replies": [
+          "96.30 on Grab this month, across 4 rides.\n\nBiggest was 42.10 on 27 Sep."
+        ],
+        "calls": [
+          {
+            "tool": "query_ledger",
+            "args": {
+              "merchant": "Grab",
+              "start_date": "2026-09-01",
+              "end_date": "2026-09-28"
+            }
+          }
+        ],
+        "confirmations": 0,
+        "seconds": 2.95,
+        "input_tokens": 17181,
+        "output_tokens": 125,
+        "memory_input_tokens": 428,
+        "memory_output_tokens": 23,
+        "memory_failed": false
+      }
+    ]
+  }
+]
