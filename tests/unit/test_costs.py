@@ -127,6 +127,55 @@ def test_a_reply_with_no_usage_is_zero_and_garbage_is_ignored() -> None:
     assert (used.input_tokens, used.output_tokens, used.cost) == (0, 0, D(0))
 
 
+def test_cached_input_tokens_are_read_from_either_shape() -> None:
+    openrouter = result(
+        output={
+            "token_usage": {
+                "prompt_tokens": 1200,
+                "completion_tokens": 30,
+                "prompt_tokens_details": {"cached_tokens": 1000, "audio_tokens": 0},
+            }
+        }
+    )
+    used = usage_of(openrouter)
+    assert (used.input_tokens, used.cached_tokens) == (1200, 1000)
+    langchain = result(
+        usage={
+            "input_tokens": 500,
+            "output_tokens": 5,
+            "total_tokens": 505,
+            "input_token_details": {"cache_read": 400},
+        }
+    )
+    used = usage_of(langchain)
+    assert (used.input_tokens, used.cached_tokens) == (500, 400)
+
+
+def test_a_reply_without_cache_details_has_nothing_cached() -> None:
+    plain = result(output={"token_usage": {"prompt_tokens": 90, "completion_tokens": 4}})
+    assert usage_of(plain).cached_tokens == 0
+    nulled = result(
+        output={
+            "token_usage": {"prompt_tokens": 90, "prompt_tokens_details": {"cached_tokens": None}}
+        }
+    )
+    assert usage_of(nulled).cached_tokens == 0
+    junk = result(
+        output={"token_usage": {"prompt_tokens": 90, "prompt_tokens_details": "lots"}},
+        usage={"input_tokens": 90, "output_tokens": 1, "input_token_details": {"cache_read": -5}},
+    )
+    assert usage_of(junk).cached_tokens == 0
+
+
+def test_cached_tokens_are_part_of_the_input_never_more() -> None:
+    odd = result(
+        output={
+            "token_usage": {"prompt_tokens": 100, "prompt_tokens_details": {"cached_tokens": 250}}
+        }
+    )
+    assert usage_of(odd).cached_tokens == 100
+
+
 # --- who it was for ------------------------------------------------------------------------
 
 
@@ -164,6 +213,16 @@ def test_a_call_counts_under_the_feature_and_user_in_force(charges: list[costs.C
     assert (first.calls, first.input_tokens, first.output_tokens, first.cost) == (
         1, 10, 2, D("0.01"),
     )  # fmt: skip
+    assert first.cached_tokens == 0
+
+
+def test_cached_tokens_are_recorded_and_never_exceed_the_input(
+    charges: list[costs.Charge],
+) -> None:
+    costs.record("made-up/model", input_tokens=1000, cached_tokens=900)
+    costs.record("made-up/model", input_tokens=10, cached_tokens=50)
+    costs.record("made-up/model", input_tokens=10, cached_tokens="lots")
+    assert [c.cached_tokens for c in charges] == [900, 10, 0]
 
 
 def test_a_turn_started_by_a_voice_note_stays_voice(charges: list[costs.Charge]) -> None:
@@ -279,7 +338,11 @@ def test_other_providers_count_tokens_without_asking_openrouter() -> None:
 
 
 def reply(
-    content: str = "hi", *, cost: float | None = 0.00123, tool: dict[str, Any] | None = None
+    content: str = "hi",
+    *,
+    cost: float | None = 0.00123,
+    tool: dict[str, Any] | None = None,
+    cached: int | None = None,
 ) -> dict[str, Any]:
     message: dict[str, Any] = {"role": "assistant", "content": content}
     if tool is not None:
@@ -290,6 +353,8 @@ def reply(
     usage: dict[str, Any] = {"prompt_tokens": 100, "completion_tokens": 25, "total_tokens": 125}
     if cost is not None:
         usage["cost"] = cost
+    if cached is not None:
+        usage["prompt_tokens_details"] = {"cached_tokens": cached}
     return {
         "id": "gen-1",
         "object": "chat.completion",
@@ -347,6 +412,16 @@ async def test_a_call_asks_for_usage_and_is_counted(charges: list[costs.Charge])
     assert charge.day == datetime.now(UTC).date()
     # Never the words.
     assert "question" not in repr(charge) and "Logged" not in repr(charge)
+
+
+async def test_cached_input_tokens_are_counted_from_the_reply(
+    charges: list[costs.Charge],
+) -> None:
+    model = main_model()
+    wire(model, ok(reply(cached=80)))
+    await model.ainvoke("a made-up question")
+    [charge] = charges
+    assert (charge.input_tokens, charge.cached_tokens) == (100, 80)
 
 
 async def test_a_reply_without_a_cost_still_counts_the_call(charges: list[costs.Charge]) -> None:
@@ -410,8 +485,11 @@ async def test_a_failed_call_leaves_nothing_behind(charges: list[costs.Charge]) 
 def row(
     day: str, cost: str, *, user: UUID | None = ANN, feature: str = "chat",
     model: str = "made-up/main", calls: int = 1, tokens: tuple[int, int] = (100, 20),
+    cached: int = 0,
 ) -> Row:  # fmt: skip
-    return Row(date.fromisoformat(day), user, feature, model, calls, tokens[0], tokens[1], D(cost))
+    return Row(
+        date.fromisoformat(day), user, feature, model, calls, tokens[0], tokens[1], D(cost), cached
+    )
 
 
 TODAY = date(2026, 10, 28)  # 28 of 31 days
@@ -433,6 +511,7 @@ def test_the_month_to_date_and_its_projection() -> None:
         "projected": "13.84",  # 12.5 / 28 * 31 = 13.839...
         "days_elapsed": 28,
         "days_in_month": 31,
+        "cached_share": 0.0,
     }
 
 
@@ -490,10 +569,30 @@ def test_features_users_and_models_are_ranked_by_cost_with_shares() -> None:
     ]
     assert built["by_model"] == [
         {"model": "made-up/main", "cost": "8.0000", "calls": 19, "input_tokens": 300,
-         "output_tokens": 60},
+         "output_tokens": 60, "cached_tokens": 0, "cached_share": 0.0},
         {"model": "made-up/eyes", "cost": "2.0000", "calls": 4, "input_tokens": 100,
-         "output_tokens": 20},
+         "output_tokens": 20, "cached_tokens": 0, "cached_share": 0.0},
     ]  # fmt: skip
+
+
+def test_the_cached_share_of_input_is_per_model_and_for_the_month() -> None:
+    rows = [
+        row("2026-09-30", "1", tokens=(1000, 10), cached=1000),  # last month: not this month's
+        row("2026-10-27", "1", model="made-up/main", tokens=(3000, 30), cached=2000),
+        row("2026-10-28", "1", model="made-up/main", tokens=(1000, 10), cached=0),
+        row("2026-10-28", "1", model="made-up/eyes", tokens=(1000, 10), cached=1000),
+        row("2026-10-28", "1", model="made-up/none", tokens=(0, 0)),  # no input: share 0
+    ]
+    built = cost_report.build(rows, NAMES, TODAY, 7)
+    by_model = {m["model"]: (m["cached_tokens"], m["cached_share"]) for m in built["by_model"]}
+    assert by_model == {
+        "made-up/main": (2000, 0.5),
+        "made-up/eyes": (1000, 1.0),
+        "made-up/none": (0, 0.0),
+    }
+    assert built["month"]["cached_share"] == 0.6  # 3000 of 5000
+    third = [row("2026-10-28", "1", tokens=(3, 1), cached=1)]
+    assert cost_report.build(third, NAMES, TODAY, 1)["month"]["cached_share"] == 0.3333
 
 
 def test_shares_are_of_the_window_and_zero_when_nothing_was_spent() -> None:
@@ -546,6 +645,7 @@ def test_the_markdown_has_every_part_and_cannot_break_a_table() -> None:
     assert "| chat | 2.0000 | 2 | 100.0% |" in text
     assert "| Ann / Lee | 2.0000 | 2 |" in text
     assert "projected **2.21**" in text  # 2 / 28 * 31
+    assert "Input tokens served from the cache this month: 0.0%" in text
 
 
 def test_costs_are_kept_for_13_months() -> None:

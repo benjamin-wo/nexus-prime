@@ -1399,6 +1399,7 @@ model_costs = Table(
     Column("input_tokens", BigInteger, nullable=False, server_default=text("0")),
     Column("output_tokens", BigInteger, nullable=False, server_default=text("0")),
     Column("cost_usd", Numeric(14, 6), nullable=False, server_default=text("0")),
+    Column("cached_tokens", BigInteger, nullable=False, server_default=text("0")),
     ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
     CheckConstraint(
         "calls >= 0 AND input_tokens >= 0 AND output_tokens >= 0 AND cost_usd >= 0",

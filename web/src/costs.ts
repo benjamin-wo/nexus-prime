@@ -7,6 +7,8 @@ export type CostMonth = {
   projected: string;
   days_elapsed: number;
   days_in_month: number;
+  /** The part (0 to 1) of this month's input tokens the providers served from their prompt cache. */
+  cached_share: number;
 };
 export type CostDay = { day: string; cost: string; calls: number };
 export type CostFeature = { feature: string; cost: string; calls: number; share: number };
@@ -18,6 +20,9 @@ export type CostModel = {
   calls: number;
   input_tokens: number;
   output_tokens: number;
+  /** Part of `input_tokens` served from the provider's cache, and its share (0 to 1). */
+  cached_tokens: number;
+  cached_share: number;
 };
 export type Costs = {
   currency: string;
@@ -59,6 +64,12 @@ export function formatTokens(value: number): string {
   if (value >= 1_000_000) return `${trim(value / 1_000_000)}M`;
   if (value >= 1_000) return `${trim(value / 1_000)}k`;
   return String(value);
+}
+
+/** A 0-to-1 share as a whole percent: "62%", and "<1%" when it is only a little. */
+export function formatShare(share: number): string {
+  const percent = share * 100;
+  return percent > 0 && percent < 1 ? "<1%" : `${Math.round(percent)}%`;
 }
 
 // Keys as the server records them: a chat handler, or the kind of background job.

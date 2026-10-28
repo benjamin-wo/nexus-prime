@@ -12,6 +12,7 @@ import {
   type Costs,
   featureLabel,
   formatCount,
+  formatShare,
   formatTokens,
   formatUsd,
   RANGES,
@@ -106,7 +107,7 @@ export function CostsPage({ me }: { me: Me }) {
             <StatTile
               label="This month so far"
               value={formatUsd(data.month.spent)}
-              extra={`Day ${data.month.days_elapsed} of ${data.month.days_in_month}`}
+              extra={`Day ${data.month.days_elapsed} of ${data.month.days_in_month} · ${formatShare(data.month.cached_share)} of input cached`}
             />
             <StatTile label="Projected for the month" value={formatUsd(data.month.projected)} />
             <StatTile label="Per active user per month" value={formatUsd(data.per_active_user_month)} />
@@ -164,7 +165,8 @@ export function CostsPage({ me }: { me: Me }) {
                     <span className="num">{formatUsd(m.cost)}</span>
                   </div>
                   <span className="caption">
-                    {callsText(m.calls)} · {formatTokens(m.input_tokens)} in · {formatTokens(m.output_tokens)} out
+                    {callsText(m.calls)} · {formatTokens(m.input_tokens)} in ({formatShare(m.cached_share)} cached) ·{" "}
+                    {formatTokens(m.output_tokens)} out
                   </span>
                 </li>
               ))}

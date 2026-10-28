@@ -88,17 +88,20 @@ async def test_a_call_is_stored_with_its_feature_and_user(
     engine: AsyncEngine, store: CostStore, alice: UserId
 ) -> None:
     with costs.scope("chat", user=alice):
-        costs.record(MODEL, input_tokens=1200, output_tokens=300, cost="0.000456")
+        costs.record(
+            MODEL, input_tokens=1200, output_tokens=300, cached_tokens=1000, cost="0.000456"
+        )
     assert await store.flush() == 1
     [row] = await stored(engine)
     assert (row["feature"], row["user_id"], row["model"]) == ("chat", alice, MODEL)
     assert (row["calls"], row["input_tokens"], row["output_tokens"]) == (1, 1200, 300)
+    assert row["cached_tokens"] == 1000
     assert row["cost_usd"] == D("0.000456")
     assert row["day"] == utcnow().date()
     # Numbers only: nothing in the table can hold what anyone said.
     assert {c.name for c in model_costs.c} == {
         "id", "day", "user_id", "feature", "model", "calls", "input_tokens", "output_tokens",
-        "cost_usd",
+        "cost_usd", "cached_tokens",
     }  # fmt: skip
 
 
@@ -107,17 +110,18 @@ async def test_calls_add_up_across_flushes_in_one_row(
 ) -> None:
     for _ in range(3):
         with costs.scope("chat", user=alice):
-            costs.record(MODEL, input_tokens=100, output_tokens=10, cost="0.001")
+            costs.record(MODEL, input_tokens=100, output_tokens=10, cached_tokens=60, cost="0.001")
     with costs.scope("chat", user=bob):
         costs.record(MODEL, cost="0.5")
     assert await store.flush() == 2  # three calls of alice's were one entry in the buffer
     with costs.scope("chat", user=alice):
-        costs.record(MODEL, input_tokens=100, output_tokens=10, cost="0.001")
+        costs.record(MODEL, input_tokens=100, output_tokens=10, cached_tokens=60, cost="0.001")
     assert await store.flush() == 1
     rows = {r["user_id"]: r for r in await stored(engine)}
     assert len(rows) == 2
     mine = rows[alice]
     assert (mine["calls"], mine["input_tokens"], mine["output_tokens"]) == (4, 400, 40)
+    assert mine["cached_tokens"] == 240
     assert mine["cost_usd"] == D("0.004")
     assert rows[bob]["calls"] == 1 and rows[bob]["cost_usd"] == D("0.5")
 
@@ -346,6 +350,7 @@ def cost_row(
         "calls": calls,
         "input_tokens": 1000 * calls,
         "output_tokens": 100 * calls,
+        "cached_tokens": 400 * calls,
         "cost_usd": D(cost),
     }
 
@@ -419,7 +424,7 @@ async def test_the_costs_page_adds_up_across_users(world: World) -> None:
     assert [m["model"] for m in page["by_model"]] == [MODEL, "made-up/eyes"]
     assert page["by_model"][0] == {
         "model": MODEL, "cost": "2.7500", "calls": 21, "input_tokens": 21000,
-        "output_tokens": 2100,
+        "output_tokens": 2100, "cached_tokens": 8400, "cached_share": 0.4,
     }  # fmt: skip
 
     # The month: today and yesterday (when yesterday is still this month), projected.
@@ -428,6 +433,7 @@ async def test_the_costs_page_adds_up_across_users(world: World) -> None:
     assert month["start"] == month_start.isoformat()
     assert month["spent"] == f"{spent:.4f}"
     assert month["days_elapsed"] == today.day
+    assert month["cached_share"] == 0.4
     assert month["days_in_month"] in {28, 29, 30, 31}
     projected = (spent / today.day * month["days_in_month"]).quantize(D("0.01"), "ROUND_HALF_UP")
     assert month["projected"] == str(projected)

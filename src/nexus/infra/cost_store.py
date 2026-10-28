@@ -31,12 +31,14 @@ KEEP_MONTHS = 13
 _ADD = text(
     f"""
     INSERT INTO model_costs (day, user_id, feature, model, calls, input_tokens, output_tokens,
-                             cost_usd)
-    VALUES (:day, :user_id, :feature, :model, :calls, :input_tokens, :output_tokens, :cost)
+                             cached_tokens, cost_usd)
+    VALUES (:day, :user_id, :feature, :model, :calls, :input_tokens, :output_tokens,
+            :cached_tokens, :cost)
     ON CONFLICT (day, (coalesce(user_id, {NO_USER_ID})), feature, model) DO UPDATE SET
         calls = model_costs.calls + EXCLUDED.calls,
         input_tokens = model_costs.input_tokens + EXCLUDED.input_tokens,
         output_tokens = model_costs.output_tokens + EXCLUDED.output_tokens,
+        cached_tokens = model_costs.cached_tokens + EXCLUDED.cached_tokens,
         cost_usd = model_costs.cost_usd + EXCLUDED.cost_usd
     """  # noqa: S608  (built from this file's constants, never from input)
 )
@@ -75,6 +77,7 @@ class CostStore:
                     held.input_tokens + charge.input_tokens,
                     held.output_tokens + charge.output_tokens,
                     held.cost + charge.cost,
+                    held.cached_tokens + charge.cached_tokens,
                 )
             )
 
@@ -145,6 +148,7 @@ def _params(charge: Charge) -> dict[str, object]:
         "calls": charge.calls,
         "input_tokens": charge.input_tokens,
         "output_tokens": charge.output_tokens,
+        "cached_tokens": charge.cached_tokens,
         "cost": charge.cost,
     }
 
@@ -156,13 +160,13 @@ async def read_rows(engine: AsyncEngine, since: date) -> list[Row]:
     async with engine.connect() as db:
         found = await db.execute(
             select(c.day, c.user_id, c.feature, c.model, c.calls, c.input_tokens,
-                   c.output_tokens, c.cost_usd)
+                   c.output_tokens, c.cost_usd, c.cached_tokens)
             .where(c.day >= since)
             .order_by(c.day)
         )  # fmt: skip
         return [
             Row(r.day, r.user_id, r.feature, r.model, r.calls, r.input_tokens, r.output_tokens,
-                Decimal(r.cost_usd))
+                Decimal(r.cost_usd), r.cached_tokens)
             for r in found
         ]  # fmt: skip
 

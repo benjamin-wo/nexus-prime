@@ -90,7 +90,11 @@ async def pricing(models: list[str]) -> dict[str, Pricing]:
     for item in response.json().get("data", []):
         if item.get("id") in models and item.get("pricing"):
             p = item["pricing"]
-            found[item["id"]] = Pricing(Decimal(p["prompt"]), Decimal(p["completion"]))
+            try:
+                cached = Decimal(p["input_cache_read"])
+            except (KeyError, TypeError, ArithmeticError):  # not listed for this model
+                cached = None
+            found[item["id"]] = Pricing(Decimal(p["prompt"]), Decimal(p["completion"]), cached)
     return found
 
 
@@ -160,6 +164,7 @@ def _as_json(result: CaseResult, *, rounds: bool = False) -> dict[str, object]:
                 "seconds": round(t.seconds, 2),
                 "input_tokens": t.input_tokens,
                 "output_tokens": t.output_tokens,
+                "cached_tokens": t.cached_tokens,
                 "memory_input_tokens": t.memory_input_tokens,
                 "memory_output_tokens": t.memory_output_tokens,
                 "memory_failed": t.memory_failed,
