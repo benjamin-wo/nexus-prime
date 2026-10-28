@@ -12,6 +12,7 @@ import { CashFlowPage } from "./pages/CashFlow";
 import { ConnectDone, ConnectGmail } from "./pages/Connect";
 import { DEPARTMENTS } from "./departments";
 import { Dashboard } from "./pages/Dashboard";
+import { CostsPage } from "./pages/Costs";
 import { EmailPage } from "./pages/Email";
 import { Home } from "./pages/Home";
 import { InvestmentPage } from "./pages/Investment";
@@ -157,6 +158,7 @@ function Cockpit({ me }: { me: Me }) {
         <Route path="/settings" element={<Settings me={me} />} />
         <Route path="/settings/email" element={<EmailPage me={me} />} />
         <Route path="/settings/import" element={<ImportPage />} />
+        <Route path="/settings/costs" element={<CostsPage me={me} />} />
         <Route path="/settings/notifications" element={<NotificationsPage me={me} />} />
         {/* Where pages used to live, so old links and bookmarks still work. */}
         <Route path="/accounting/plan" element={<Navigate to="/accounting/budgets" replace />} />

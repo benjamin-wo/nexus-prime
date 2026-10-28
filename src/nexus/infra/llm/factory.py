@@ -7,7 +7,12 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 
+from nexus.infra.llm.usage import COST_CALLBACK
 from nexus.settings import LlmProvider, Settings
+
+OPENROUTER_URL = "https://openrouter.ai/api/v1"
+# Asks OpenRouter to put the call's cost (US dollars) and token counts in its reply.
+OPENROUTER_USAGE: dict[str, Any] = {"usage": {"include": True}}
 
 # Gemini 3.x Flash models reject temperature/top_p/top_k with a 400; they take
 # thinking_level instead.
@@ -42,6 +47,7 @@ def _gemini(settings: Settings, model: str) -> BaseChatModel:
         google_api_key=settings.gemini_api_key,
         timeout=settings.llm_request_timeout_seconds,
         max_retries=settings.llm_max_retries,
+        callbacks=[COST_CALLBACK],
         **_gemini_kwargs(model),
     )
 
@@ -57,6 +63,8 @@ def _openai_compatible(
 ) -> BaseChatModel:
     if api_key is None:
         raise LlmNotConfigured(f"the {name} API key is not set")
+    if base_url == OPENROUTER_URL:
+        extra_body = {**(extra_body or {}), **OPENROUTER_USAGE}
     return ChatOpenAI(
         model=model,
         api_key=api_key,
@@ -65,6 +73,7 @@ def _openai_compatible(
         timeout=settings.llm_request_timeout_seconds,
         max_retries=settings.llm_max_retries,
         extra_body=extra_body,
+        callbacks=[COST_CALLBACK],
     )
 
 
@@ -134,7 +143,7 @@ def _openrouter(
         settings,
         model=model,
         api_key=settings.openrouter_api_key,
-        base_url="https://openrouter.ai/api/v1",
+        base_url=OPENROUTER_URL,
         name="OpenRouter",
         extra_body=body or None,
     )
@@ -182,7 +191,7 @@ def _quick(settings: Settings, model: str) -> BaseChatModel:
         settings,
         model=model,
         api_key=settings.openrouter_api_key,
-        base_url="https://openrouter.ai/api/v1",
+        base_url=OPENROUTER_URL,
         name="OpenRouter",
         extra_body={**(routing or {}), "reasoning": {"enabled": False}},
     )
@@ -273,7 +282,7 @@ def build_research_reviewer(settings: Settings) -> BaseChatModel | None:
         settings,
         model=settings.research_review_model,
         api_key=settings.openrouter_api_key,
-        base_url="https://openrouter.ai/api/v1",
+        base_url=OPENROUTER_URL,
         name="OpenRouter",
         extra_body={"reasoning": {"effort": "low"}},
     )

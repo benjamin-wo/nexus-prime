@@ -432,7 +432,7 @@ Under Settings → Your data, a signed-in owner or member can take all their dat
 **Export:** `GET /api/me/export` (no CSRF token needed, it only reads; at most 3 an hour per user, then 429) answers with a zip, `Content-Type: application/zip`, `Content-Disposition: attachment; filename="nexus-export-YYYYMMDD.zip"` (the date in the user's time zone). It holds only the user's own rows, deleted and archived ones too:
 
 - `README.txt`, saying what is where; `ledger.csv`, the file the Ledger page's Export CSV makes (its latest 10,000 transactions; `transactions.json` has all of them).
-- One JSON file per area (`AREAS` in `application/user_data.py`): `profile`, `transactions` (with splits, settlements, history, receipt details), `categories`, `category_rules`, `wallets`, `budgets`, `bills`, `subscriptions`, `imports`, `email`, `holdings` (with trades and dividends), `watchlist`, `trade_plans`, `research`, `trips`, `memories`, `chat`, `notifications`. A trip carries its bookings and plans, stops, to-dos, packing, cover and documents, costs others paid, share-link settings and its activity. Dates are ISO 8601; money is an exact string beside its currency code, never a float.
+- One JSON file per area (`AREAS` in `application/user_data.py`): `profile`, `transactions` (with splits, settlements, history, receipt details), `categories`, `category_rules`, `wallets`, `budgets`, `bills`, `subscriptions`, `imports`, `email`, `holdings` (with trades and dividends), `watchlist`, `trade_plans`, `research`, `trips`, `voice`, `memories`, `chat`, `notifications`, `costs` (what the AI models cost to serve them: counts, tokens and dollars, never text). A trip carries its bookings and plans, stops, to-dos, packing, cover and documents, costs others paid, share-link settings and its activity. Dates are ISO 8601; money is an exact string beside its currency code, never a float.
 - `files.json` and `files/`: the receipt photos (the only stored files; trip documents are records, not files). If they total at most 50 MB (`FILES_LIMIT_BYTES`) they are in the zip under `files/`. Above that, `files.json` lists each with a presigned link that works for an hour (`LINK_TTL`). With no storage set up, or a file the bucket can't find, it lists the name, size and date only, with a note. This is the one thing that needs the bucket (`ReceiptStore.get`).
 - Never in it: sign-in sessions, the encrypted mail grant, one-time link and invite hashes, share-link tokens (`NOT_EXPORTED`, and any column named like a token, hash, secret, password or CSRF is dropped whatever the table), other people's ids (a trip's members appear only as when they were added), and market data, news, quotes, FX rates, cached web answers and ops timings (`SHARED`: not anyone's own).
 
@@ -619,6 +619,41 @@ Every week's counts become one problem, **"Agent mistakes this week"** (stable i
 3. Run it (`python -m nexus.evals --area <area>`, see [`EVALS.md`](EVALS.md)), fix the prompt, the tool's description or its arguments until it passes, and open a PR that says "Refs #N" for the ticket. Not "Fixes": the ticket closes itself once a week has fewer than 5 signals.
 
 Never paste a real message, amount or name into a case, a PR or an issue: the signals are built so there is none to paste.
+
+## Model costs
+
+What the AI models cost, per user, feature and model, per day and month, for the owner. It is separate from ops events (those hold a keyed hash for the user and never what anyone spent); this one names the user, so the owner can see who costs what, and holds numbers only.
+
+**What is recorded.** One row per UTC day, user, feature and model in `model_costs` (migration 0059): `calls`, `input_tokens`, `output_tokens` and `cost_usd` (`NUMERIC(14,6)`). Never a prompt, a reply, a transcript or a name. `user_id` is null for work done for no one in particular (the market-wide jobs, trip photos); a unique index treats all of those as one user, so they add up in one row. A row is added to (`INSERT ... ON CONFLICT DO UPDATE`), never rewritten.
+
+- **Chat models.** Every chat model the factory builds (`infra/llm/factory.py`: the main model, fallbacks, vision, the quick no-reasoning variants for email, memory, screenshots, image look, research, trip sorting and web answers, the research reviewer) carries one `CostCallback` (`infra/llm/usage.py`). Structured output and fallbacks reuse the same model objects, so nothing at a call site changes. On OpenRouter every request also sends `"usage": {"include": true}`, merged into whatever `extra_body` that model already sent, and OpenRouter answers with `usage.cost` in US dollars. The callback reads tokens and cost from the reply (`llm_output["token_usage"]`, the message's `response_metadata` and `usage_metadata`; `cost`, else `total_cost`) and is tolerant: a reply without a cost counts the call and its tokens at $0, and a malformed number counts as 0. A call that fails costs nothing and is not counted. Gemini, DeepSeek and OpenAI models count tokens at $0 (they send no dollar figure). OpenRouter bills against your credit, so the numbers match its activity page.
+- **Speech to text** (`infra/speech/openrouter.py`) records the `usage.cost` the transcription endpoint already returns, under the feature of the note.
+- **Not recorded:** the eval runner (`python -m nexus.evals`) builds its own models and records nothing.
+
+**Who and which feature** are context variables (`application/costs.py`), set where the work starts, not passed down: `chat` for a text turn (and for buttons, undo and anything else that reaches the agent), `voice`, `photo` (receipts, screenshots and images; also the trip and portfolio screenshot readers) and `pdf` in the agent service's handlers, with the actor as the user. A turn started by a voice note, photo or PDF stays under that feature. The job runner sets the feature to the job's kind (`memory.update`, `email.sweep`, `travel.photos`, `plans.refresh`, ...) and the user to the job payload's `user_id` when it has one; the sweeps that go user by user (email, budgets, bills...) narrow it to each user, and a research run's steps count under `department.step.<run kind>`. A call made anywhere else counts under `unknown`; for a web request it still gets the signed-in user.
+
+**Never in the way of a reply.** A charge is added to an in-memory total per day, user, feature and model (a dictionary update), and `CostStore` (`infra/cost_store.py`) writes the totals every 5 seconds in its own transaction. A failed write is logged and swallowed and the totals are kept for the next flush, so a database that is down delays the numbers, never a reply. A user erased between a call and the flush loses only their own rows. The app flushes once more on shutdown, and the costs endpoint flushes its own buffer before reading. Rows older than 13 months (the current month and the twelve before it, whole) are dropped by the same loop once a day.
+
+**The API.** `GET /api/ops/costs?days=30` (1 to 400 days; `&format=md` for Markdown). Owner signed in, or `Authorization: Bearer <OPS_TOKEN>`; anyone else gets a 404, like the ops report. It reads across users the way the report does (no user named for the transaction, so row-level security hides nothing). Money is a decimal string in US dollars. Lists run most expensive first over the `days` window; `month` is the current UTC calendar month to date whatever `days` is.
+
+```json
+{
+  "currency": "USD",
+  "month": {"start": "2026-10-01", "spent": "12.3456", "projected": "13.70",
+            "days_elapsed": 28, "days_in_month": 31},
+  "days": [{"day": "2026-10-01", "cost": "0.4123", "calls": 52}],
+  "by_feature": [{"feature": "chat", "cost": "7.5000", "calls": 310, "share": 0.61}],
+  "by_user": [{"user_id": "8d3f...", "name": "Ann", "cost": "6.1000", "calls": 280},
+              {"user_id": null, "name": "System", "cost": "0.9000", "calls": 120}],
+  "by_model": [{"model": "deepseek/deepseek-v4.1-flash", "cost": "9.0000", "calls": 700,
+                "input_tokens": 2100000, "output_tokens": 180000}],
+  "per_active_user_month": "3.10"
+}
+```
+
+`days` has one entry per day, oldest first, zero-filled. `projected` is `spent / days_elapsed x days_in_month`, where today counts as a day. `share` is the feature's part of the window's cost (0 when nothing was spent). `name` is the user's display name, else `User <first 8 of id>`; `System` (with a null `user_id`) is work for no one in particular. `per_active_user_month` is this month's cost that belongs to users, divided by the users who used a model this month, projected to the full month the same way. Equal costs sort by calls, then by name.
+
+**Your data.** A user's rows are in their export (`costs.json`, with `id` and day, feature, model and the counts) and deleted with them (and with the users row, `ON DELETE CASCADE`). They have row-level security like the user's other tables (see below); the system's rows (null user) are visible only when no user is named. Cost rows for an erased user are gone from the totals too.
 
 ## Evaluating the assistant
 

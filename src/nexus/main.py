@@ -31,8 +31,8 @@ from nexus.agent.skills import SkillLibrary
 from nexus.agent.statement_reader import LlmStatementReader
 from nexus.agent.tools import build_tools
 from nexus.agent.trip_reader import LlmTripReader, TripReader
+from nexus.application import costs, ops
 from nexus.application import email as email_cases
-from nexus.application import ops
 from nexus.application.clock import utcnow
 from nexus.application.departments import Departments, default_registry
 from nexus.application.destination_photos import PhotoFinder
@@ -71,6 +71,7 @@ from nexus.channels.web.hardening import install_hardening
 from nexus.channels.web.security import WebRuntime
 from nexus.channels.web.tracing import Tracing
 from nexus.domain.ledger import User, UserId
+from nexus.infra.cost_store import CostStore
 from nexus.infra.crypto.fernet import FernetCipher
 from nexus.infra.db.checkpointer import postgres_checkpointer
 from nexus.infra.db.engine import make_engine
@@ -676,6 +677,22 @@ async def _ops_store(
     return store
 
 
+async def _cost_store(engine: AsyncEngine, stack: AsyncExitStack) -> CostStore:
+    """What the AI models cost, counted in memory and written every few seconds; whatever is
+    left is written when the app stops."""
+    store = CostStore(engine)
+    costs.set_sink(store.add)
+    stop = asyncio.Event()
+    task = asyncio.create_task(store.run(stop))
+
+    async def close() -> None:
+        costs.set_sink(None)
+        await _stop_worker(stop, task)
+
+    stack.push_async_callback(close)
+    return store
+
+
 def create_app(settings: Settings | None = None, overrides: Overrides | None = None) -> FastAPI:
     configure_logging()
     resolved = settings or get_settings()
@@ -689,6 +706,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
             await assert_schema_at_head(engine)
             app.state.engine = engine
             app.state.ops = await _ops_store(resolved, engine, stack)
+            app.state.costs = await _cost_store(engine, stack)
             if resolved.telegram_enabled:
                 rates = extra.rates
                 if rates is None:

@@ -700,7 +700,7 @@ PUBLIC = {
     ("GET", "/api/email/gmail/callback"),
 }
 # Checked by the owner's token or session themselves, and a stranger sees "not found".
-HIDDEN = {("GET", "/api/ops/report"), ("POST", "/api/ops/tickets")}
+HIDDEN = {("GET", "/api/ops/report"), ("GET", "/api/ops/costs"), ("POST", "/api/ops/tickets")}
 VERBS = ("GET", "POST", "PUT", "PATCH", "DELETE")
 
 

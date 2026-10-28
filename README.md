@@ -111,6 +111,8 @@ The code follows a clean, layered architecture. `domain` holds pure rules with n
 
 **It learns where it slips, without reading your chats.** The agent records anonymous signals: an Undo soon after a change, a reply that starts like a correction ("no, I meant…"), tool errors, made-up tools and turns that run out of steps. Each one carries tool names, error classes, counts and timings only, never message text, amounts or names. A weekly job turns them into one "Agent mistakes this week" ticket with the top problem spots and the eval areas they map to, and those become made-up eval cases.
 
+**It knows what it costs.** Every model call is counted by day, person, feature and model: calls, tokens and the dollars OpenRouter reports, never what was said. The owner sees it under Settings → Model costs: this month so far and projected, a daily chart, and the split by feature, person and model, with the average cost per active person.
+
 **Idempotent everywhere.** Telegram updates, imports, alerts, reminders and payday logging all carry dedupe keys. A redelivered webhook or a double-tapped button is a no-op.
 
 **It replaced a live system without losing data.** A read-only importer migrated the previous bot's history and verified per-user totals. The webhook moved over by a written runbook, and the old database was kept as an archive.
@@ -122,7 +124,7 @@ The code follows a clean, layered architecture. `domain` holds pure rules with n
 | Backend | Python 3.12, FastAPI, SQLAlchemy 2 (async Core, asyncpg), Pydantic v2, Alembic |
 | Agent | LangGraph with a Postgres checkpointer, human-in-the-loop interrupts, skills loaded on demand, provider-agnostic LLM adapter |
 | Frontend | React 19, TypeScript, Vite, TanStack Query, React Router |
-| Data | PostgreSQL 16: 63 tables, 58 migrations, a job queue in the same database; receipts in a private S3-compatible bucket |
+| Data | PostgreSQL 16: 64 tables, 59 migrations, a job queue in the same database; receipts in a private S3-compatible bucket |
 | Outside data | Frankfurter (FX), Tiingo (daily prices), Finnhub (news, earnings dates and live quotes), SerpApi and Tavily web search, with OpenRouter as fallback (trip research, ideas, chat lookups and plans' news articles, quarantined, cached), Wikivoyage (travel guides), Google Places and Routes (travel times), Wikipedia and Wikimedia Commons (destination photos), Open-Meteo (weather), OpenRouter speech-to-text (voice notes) |
 | Channels | Telegram Bot API (webhook, inline buttons, Mini App), cookie sessions with CSRF |
 | Quality | ruff, mypy `--strict`, pytest, Vitest, Playwright, GitHub Actions |

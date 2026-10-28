@@ -1382,6 +1382,39 @@ ops_events = Table(
     Index("ix_ops_events_kind_at", "kind", "at"),
 )
 
+# What the AI models cost, counted by day (UTC), user, feature and model: calls, tokens and US
+# dollars, never what was asked or answered (migration 0059). ``user_id`` is NULL for work
+# done for no one in particular; the unique index treats all of those as one user. Kept 13
+# months. See nexus.application.costs.
+NO_USER_ID = "'00000000-0000-0000-0000-000000000000'::uuid"
+model_costs = Table(
+    "model_costs",
+    metadata,
+    Column("id", BigInteger, Identity(), primary_key=True),
+    Column("day", Date, nullable=False),
+    Column("user_id", UUID(as_uuid=True)),
+    Column("feature", Text, nullable=False),
+    Column("model", Text, nullable=False),
+    Column("calls", Integer, nullable=False, server_default=text("0")),
+    Column("input_tokens", BigInteger, nullable=False, server_default=text("0")),
+    Column("output_tokens", BigInteger, nullable=False, server_default=text("0")),
+    Column("cost_usd", Numeric(14, 6), nullable=False, server_default=text("0")),
+    ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+    CheckConstraint(
+        "calls >= 0 AND input_tokens >= 0 AND output_tokens >= 0 AND cost_usd >= 0",
+        name="not_negative",
+    ),
+    Index(
+        "uq_model_costs_day_user_feature_model",
+        "day",
+        func.coalesce(text("user_id"), text(NO_USER_ID)),
+        "feature",
+        "model",
+        unique=True,
+    ),
+    Index("ix_model_costs_user_id", "user_id"),
+)
+
 # Tables LangGraph's Postgres checkpointer creates for itself (migration 0003).
 CHECKPOINT_TABLES = frozenset(
     {"checkpoints", "checkpoint_blobs", "checkpoint_writes", "checkpoint_migrations"}

@@ -975,6 +975,7 @@ def test_only_the_routes_a_guest_needs_let_a_guest_in() -> None:
         "/api/email/gmail/callback",
         "/api/ops/tickets",
         "/api/ops/report",
+        "/api/ops/costs",
     }
 
 

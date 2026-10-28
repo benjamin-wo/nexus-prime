@@ -36,10 +36,10 @@ from nexus.agent.trip_reader import TripReader, drafts
 from nexus.application import bills as bill_cases
 from nexus.application import bookings as booking_cases
 from nexus.application import category_rules as rule_cases
+from nexus.application import costs, ops
 from nexus.application import departments as department_cases
 from nexus.application import email as email_cases
 from nexus.application import investments as investment_cases
-from nexus.application import ops
 from nexus.application import plans as plan_cases
 from nexus.application import receipts as receipt_cases
 from nexus.application import salary as salary_cases
@@ -261,6 +261,11 @@ class AgentService:
         return None
 
     async def _run(self, actor: UserId, payload: Any) -> list[Reply]:
+        # A turn is chat unless a voice note, photo or PDF started it.
+        with costs.scope("chat", user=actor, keep=True):
+            return await self._run_turn(actor, payload)
+
+    async def _run_turn(self, actor: UserId, payload: Any) -> list[Reply]:
         config = self._config(actor)
         # By id, not position: a long conversation drops its oldest messages mid-turn.
         seen = {m.id for m in (await self._graph.aget_state(config)).values.get("messages", [])}
@@ -368,6 +373,7 @@ class AgentService:
         return Reply(summary, buttons)
 
     @as_actor
+    @costs.as_feature("chat")
     async def handle_text(self, actor: UserId, text: str, ref: str) -> list[Reply]:
         replies = await self._handle_text(actor, text, ref)
         await self._keep(actor, text, replies, ref)
@@ -393,6 +399,7 @@ class AgentService:
         return self._speech is not None
 
     @as_actor
+    @costs.as_feature("voice")
     async def handle_voice(
         self, actor: UserId, audio: bytes, mime: str, ref: str, *, forwarded: bool = False
     ) -> list[Reply]:
@@ -470,6 +477,7 @@ class AgentService:
         return await self.handle_images(actor, [Picture(image, mime_type, ref)], caption, ref)
 
     @as_actor
+    @costs.as_feature("photo")
     async def handle_images(
         self, actor: UserId, pictures: list[Picture], caption: str | None, ref: str
     ) -> list[Reply]:
@@ -558,6 +566,7 @@ class AgentService:
         return None
 
     @as_actor
+    @costs.as_feature("pdf")
     async def handle_pdf(
         self, actor: UserId, data: bytes, name: str, caption: str | None, ref: str
     ) -> list[Reply]:
@@ -769,6 +778,7 @@ class AgentService:
         return self._trips is not None
 
     @as_actor
+    @costs.as_feature("photo")
     async def read_trip_screenshot(
         self,
         actor: UserId,
@@ -837,6 +847,7 @@ class AgentService:
         return self._holdings is not None
 
     @as_actor
+    @costs.as_feature("photo")
     async def read_portfolio(
         self, actor: UserId, image: bytes, mime_type: str, *, asked: bool = True
     ) -> investment_cases.Proposal | None:

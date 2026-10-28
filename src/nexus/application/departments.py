@@ -20,6 +20,7 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ValidationError
 
+from nexus.application import costs
 from nexus.application.ports import UnitOfWork
 from nexus.domain.departments import (
     STEP_TIMEOUT,
@@ -275,7 +276,9 @@ async def advance(
 
     ctx = StepContext(run=run, user=user, now=now)
     try:
-        output = await asyncio.wait_for(step.run(ctx), STEP_TIMEOUT.total_seconds())
+        # Its model calls count under the kind of run ("department.stock_plan").
+        with costs.scope(f"{STEP_JOB}.{run.kind}"):
+            output = await asyncio.wait_for(step.run(ctx), STEP_TIMEOUT.total_seconds())
     except Exception as exc:
         reason = "it took too long" if isinstance(exc, TimeoutError) else "a step failed"
         log.warning("department step %s/%s failed", run.kind, step.name, exc_info=True)

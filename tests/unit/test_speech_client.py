@@ -3,11 +3,14 @@
 import base64
 import json
 import logging
+from decimal import Decimal
 from typing import Any
+from uuid import UUID
 
 import httpx
 import pytest
 
+from nexus.application import costs
 from nexus.application.ports import SpeechError
 from nexus.infra.speech.openrouter import PROMPT, TIMEOUT, OpenRouterSpeech, vocabulary
 
@@ -151,3 +154,23 @@ async def test_it_logs_the_model_seconds_and_cost_but_never_audio_or_words(
     assert "vendor/whisper" in logged and "3.2 s" in logged and "0.000135" in logged
     for secret in ("Grab", "12.50", SECRET_KEY, base64.b64encode(AUDIO).decode(), "OggS"):
         assert secret not in logged
+
+
+async def test_what_a_transcription_cost_is_counted_under_the_voice_feature() -> None:
+    found: list[costs.Charge] = []
+    costs.set_sink(found.append)
+    ann = UUID("11111111-1111-1111-1111-111111111111")
+    try:
+        # The first model fails (not counted); the fallback answers and is.
+        server = Server((503, {}), (200, {"text": "Hi.", "usage": {"seconds": 2, "cost": 0.0002}}))
+        with costs.scope("voice", user=ann):
+            await server.client().transcribe(AUDIO, "ogg")
+        silent = Server((200, {"text": "Hi."}))  # no usage in the answer: still a call
+        await silent.client().transcribe(AUDIO, "ogg")
+    finally:
+        costs.set_sink(None)
+    assert [(c.feature, c.user_id, c.model, c.cost) for c in found] == [
+        ("voice", ann, "vendor/whisper", Decimal("0.0002")),
+        ("unknown", None, "vendor/mini", Decimal(0)),
+    ]
+    assert "Hi." not in repr(found)

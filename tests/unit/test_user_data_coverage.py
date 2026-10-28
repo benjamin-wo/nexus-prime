@@ -9,6 +9,8 @@ chain to another table that is. If this fails after you added a table, add it to
 ``nexus.infra.db.user_data``, children before the tables they reference).
 """
 
+import re
+
 from sqlalchemy import Table
 
 from nexus.application.user_data import (
@@ -131,9 +133,9 @@ def test_secrets_never_leave() -> None:
         assert not [n for n in names if is_secret(TABLES[name].c[n])], name
     for name in ERASE_ORDER:
         for column in TABLES[name].c:
-            secret_looking = any(
-                word in column.name for word in ("token", "secret", "password", "hash", "csrf")
-            )
+            secret_looking = bool(
+                re.search(r"token(?!s)|secret|password|hash|csrf", column.name)
+            )  # not "tokens": a count of words a model read
             kept = column.name in {c.name for c in exported_columns(TABLES[name])}
             assert not (secret_looking and kept), f"{name}.{column.name}"
     # The ones that exist today.

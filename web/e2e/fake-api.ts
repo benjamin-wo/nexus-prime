@@ -116,6 +116,8 @@ export async function fakeApi(
     emailConnected = false,
     /** GET /me/export answers 429, as the server does when it is asked too often. */
     exportLimited = false,
+    /** Signed in as a member (not the owner): the owner-only routes, like /ops/costs, answer 404. */
+    member = false,
     /** POST /me/delete answers 422 even for a right confirmation (to show how a refusal reads). */
     deleteRefused = false,
     forwarding = false,
@@ -238,17 +240,19 @@ export async function fakeApi(
   };
   const userBody = () => ({
     telegram_user_id: 1,
-    role: guest ? "guest" : "owner",
+    role: guest ? "guest" : member ? "member" : "owner",
     home_currency: "SGD",
     timezone: zone.timezone,
     home_timezone: zone.home,
     timezone_source: zone.source,
     timezone_set_at: zone.setAt,
-    display_name: guest ? "Gus L." : "Sam R.",
+    display_name: guest ? "Gus L." : member ? "Mia K." : "Sam R.",
   });
   const state: {
     /** How many times GET /me/export was asked for (429s included). */
     exports: number;
+    /** The `days` of every GET /ops/costs, in order (a member's 404s included). */
+    costRequests: string[];
     /** Every POST to /me/delete, in order: the body sent and the status it got. */
     deletes: { body: { confirm?: unknown } | null; status: number }[];
     /** Every POST to /me/timezone and /me/timezone/home, in order: the path and the body sent. */
@@ -382,6 +386,7 @@ export async function fakeApi(
     };
   } = {
     exports: 0,
+    costRequests: [],
     deletes: [],
     zonePosts: [],
     runs: running
@@ -2717,6 +2722,43 @@ export async function fakeApi(
             ? "You get a message for each transaction as it happens."
             : `You get a summary of your transactions ${options[state.frequency as keyof typeof options]}.`;
       return json(route, { frequency: state.frequency, daily_at: dailyAt, description, options, ...marketAlerts });
+    }
+    if (path === "/ops/costs" && method === "GET") {
+      // Owner only: anyone else is told there is no such page.
+      state.costRequests.push(url.searchParams.get("days") ?? "");
+      if (member) return json(route, { detail: "Not found" }, 404);
+      const count = Math.min(365, Math.max(1, Number(url.searchParams.get("days")) || 30));
+      // Made-up spend: a weekly rhythm, a quiet weekend, one busy day, ending on 28 Oct 2026.
+      const end = Date.UTC(2026, 9, 28);
+      const days = Array.from({ length: count }, (_, i) => {
+        const at = new Date(end - (count - 1 - i) * 86_400_000);
+        const weekend = at.getUTCDay() === 0 || at.getUTCDay() === 6;
+        const calls = (weekend ? 18 : 45) + ((i * 7) % 23) + (i === count - 4 ? 60 : 0);
+        return { day: at.toISOString().slice(0, 10), cost: (calls * 0.0079).toFixed(4), calls };
+      });
+      return json(route, {
+        currency: "USD",
+        month: { start: "2026-10-01", spent: "12.3456", projected: "18.20", days_elapsed: 28, days_in_month: 31 },
+        days,
+        by_feature: [
+          { feature: "chat", cost: "7.10", calls: 900, share: 0.575 },
+          { feature: "voice", cost: "2.40", calls: 210, share: 0.194 },
+          { feature: "memory.update", cost: "1.50", calls: 640, share: 0.122 },
+          { feature: "travel.photos", cost: "0.80", calls: 31, share: 0.065 },
+          { feature: "email.sweep", cost: "0.4856", calls: 120, share: 0.039 },
+          { feature: "brief.daily", cost: "0.0600", calls: 28, share: 0.005 },
+        ],
+        by_user: [
+          { user_id: "u1", name: "Sam R.", cost: "9.00", calls: 1000 },
+          { user_id: "u2", name: "Mia K.", cost: "3.3456", calls: 929 },
+          { user_id: null, name: "System", cost: "0.0000", calls: 0 },
+        ],
+        by_model: [
+          { model: "deepseek/deepseek-v4.1-flash", cost: "8.00", calls: 1200, input_tokens: 3_400_000, output_tokens: 220_000 },
+          { model: "example/vision-mini", cost: "0.0042", calls: 3, input_tokens: 9_500, output_tokens: 480 },
+        ],
+        per_active_user_month: "3.10",
+      });
     }
     if (path === "/notifications/history" && method === "GET") {
       // Made-up messages, newest first: one urgent and sent, one sent, one waiting for quiet hours
