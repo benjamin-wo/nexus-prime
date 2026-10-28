@@ -40,7 +40,7 @@ CACHE_SIZE = 500
 # cold (after a deploy) at once; the daily cap is what bounds the bill.
 LIMITS: Sequence[Window] = ((60, timedelta(minutes=1)), (200, timedelta(days=1)))
 # Photos fetched from Google, per user (billed per photo; cached ones don't count).
-PHOTO_LIMITS: Sequence[Window] = ((30, timedelta(minutes=1)), (100, timedelta(days=1)))
+PHOTO_LIMITS: Sequence[Window] = ((60, timedelta(minutes=1)), (100, timedelta(days=1)))
 PHOTO_CACHE_SIZE = 150
 # How far round a day's places a "near this day" search leans, in metres.
 NEAR_RADIUS = 2000.0
