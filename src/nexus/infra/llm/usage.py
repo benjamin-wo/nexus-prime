@@ -5,7 +5,8 @@ call however the model is used (plain, with tools, structured output, as a fallb
 no call site changes. OpenRouter adds ``usage.cost`` (US dollars) to a reply when the
 request asks for it (``"usage": {"include": true}``); other providers send tokens only,
 which are counted with a cost of zero. A reply with no usage at all still counts as a call.
-Only numbers are read: never the prompt or the reply.
+Input tokens the provider served from its prompt cache are counted too (a subset of the
+input tokens, billed far lower). Only numbers are read: never the prompt or the reply.
 """
 
 import logging
@@ -33,12 +34,24 @@ class Usage:
     input_tokens: int = 0
     output_tokens: int = 0
     cost: Decimal = Decimal(0)
+    cached_tokens: int = 0  # part of input_tokens
 
 
 def _first(source: dict[str, Any], keys: tuple[str, ...]) -> object:
     for key in keys:
         if source.get(key) is not None:
             return source[key]
+    return None
+
+
+def _cached(source: dict[str, Any]) -> object:
+    """Cached input tokens: OpenRouter's ``prompt_tokens_details.cached_tokens``, or
+    LangChain's ``input_token_details.cache_read``."""
+    for key, name in (("prompt_tokens_details", "cached_tokens"),
+                      ("input_token_details", "cache_read")):  # fmt: skip
+        details = source.get(key)
+        if isinstance(details, dict) and details.get(name) is not None:
+            return details[name]
     return None
 
 
@@ -61,7 +74,7 @@ def _sources(result: LLMResult) -> list[dict[str, Any]]:
 def usage_of(result: LLMResult) -> Usage:
     """Tokens and dollars from a reply; zero for whatever it doesn't say."""
     sources = _sources(result)
-    inputs = outputs = 0
+    inputs = outputs = cached = 0
     cost = Decimal(0)
     for source in sources:
         inputs = costs.to_count(_first(source, INPUT_KEYS))
@@ -75,7 +88,11 @@ def usage_of(result: LLMResult) -> Usage:
         cost = costs.to_cost(_first(source, COST_KEYS))
         if cost:
             break
-    return Usage(inputs, outputs, cost)
+    for source in sources:
+        cached = costs.to_count(_cached(source))
+        if cached:
+            break
+    return Usage(inputs, outputs, cost, min(cached, inputs))
 
 
 def _model_of(serialized: dict[str, Any] | None, params: dict[str, Any] | None) -> str | None:
@@ -141,6 +158,7 @@ class CostCallback(BaseCallbackHandler):
                 input_tokens=used.input_tokens,
                 output_tokens=used.output_tokens,
                 cost=used.cost,
+                cached_tokens=used.cached_tokens,
             )
         except Exception:  # counting a call must never break it
             log.debug("couldn't count a model call", exc_info=True)

@@ -1,7 +1,8 @@
 """What the AI models cost: who asked for each call, for which feature, and what it cost.
 
 Every model call is counted by the day (UTC), the user, the feature and the model: calls,
-tokens and US dollars. Never what was asked or answered. The numbers are for the owner's cost
+tokens (and how many of the input tokens the provider
+cached) and US dollars. Never what was asked or answered. The numbers are for the owner's cost
 page (``GET /api/ops/costs``).
 
 Who and which feature are context variables set where the work starts (a chat handler, a job
@@ -50,6 +51,7 @@ class Charge:
     input_tokens: int
     output_tokens: int
     cost: Decimal  # US dollars
+    cached_tokens: int = 0  # part of input_tokens the provider served from its cache
 
     @property
     def key(self) -> tuple[date, UUID | None, str, str]:
@@ -127,6 +129,7 @@ def record(
     input_tokens: object = 0,
     output_tokens: object = 0,
     cost: object = 0,
+    cached_tokens: object = 0,
     at: datetime | None = None,
 ) -> None:
     """Count one call. Never raises."""
@@ -144,6 +147,7 @@ def record(
                 input_tokens=to_count(input_tokens),
                 output_tokens=to_count(output_tokens),
                 cost=to_cost(cost),
+                cached_tokens=min(to_count(cached_tokens), to_count(input_tokens)),
             )
         )
     except Exception:  # a charge must never break the call it describes

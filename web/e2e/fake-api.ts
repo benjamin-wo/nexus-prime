@@ -2738,7 +2738,7 @@ export async function fakeApi(
       });
       return json(route, {
         currency: "USD",
-        month: { start: "2026-10-01", spent: "12.3456", projected: "18.20", days_elapsed: 28, days_in_month: 31 },
+        month: { start: "2026-10-01", spent: "12.3456", projected: "18.20", days_elapsed: 28, days_in_month: 31, cached_share: 0.6213 },
         days,
         by_feature: [
           { feature: "chat", cost: "7.10", calls: 900, share: 0.575 },
@@ -2754,8 +2754,8 @@ export async function fakeApi(
           { user_id: null, name: "System", cost: "0.0000", calls: 0 },
         ],
         by_model: [
-          { model: "deepseek/deepseek-v4.1-flash", cost: "8.00", calls: 1200, input_tokens: 3_400_000, output_tokens: 220_000 },
-          { model: "example/vision-mini", cost: "0.0042", calls: 3, input_tokens: 9_500, output_tokens: 480 },
+          { model: "deepseek/deepseek-v4.1-flash", cost: "8.00", calls: 1200, input_tokens: 3_400_000, output_tokens: 220_000, cached_tokens: 2_100_000, cached_share: 0.6176 },
+          { model: "example/vision-mini", cost: "0.0042", calls: 3, input_tokens: 9_500, output_tokens: 480, cached_tokens: 0, cached_share: 0 },
         ],
         per_active_user_month: "3.10",
       });

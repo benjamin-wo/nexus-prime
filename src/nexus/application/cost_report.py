@@ -32,6 +32,7 @@ class Row:
     input_tokens: int
     output_tokens: int
     cost: Decimal
+    cached_tokens: int = 0  # part of input_tokens
 
 
 def amount(value: Decimal) -> str:
@@ -54,12 +55,21 @@ class _Total:
     calls: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
+    cached_tokens: int = 0
+
+    @property
+    def cached_share(self) -> float:
+        """The part of the input tokens that came from the provider's cache, 0 to 1."""
+        if not self.input_tokens:
+            return 0.0
+        return float(round(Decimal(self.cached_tokens) / self.input_tokens, 4))
 
     def add(self, row: Row) -> None:
         self.cost += row.cost
         self.calls += row.calls
         self.input_tokens += row.input_tokens
         self.output_tokens += row.output_tokens
+        self.cached_tokens += row.cached_tokens
 
 
 def _totals[K](rows: list[Row], key: Any) -> dict[K, _Total]:
@@ -76,9 +86,14 @@ def _by_cost[K](totals: dict[K, _Total], label: Any) -> list[tuple[K, _Total]]:
 
 def month_figures(rows: list[Row], today: date) -> dict[str, Any]:
     """This month to date: spent, and spent so far / days so far x days in the month. Today
-    counts as a day, so the first of the month projects from one day of spend."""
+    counts as a day, so the first of the month projects from one day of spend. Also the share
+    of this month's input tokens that came from the providers' prompt cache."""
     start = today.replace(day=1)
-    spent = sum((r.cost for r in rows if start <= r.day <= today), Decimal(0))
+    so_far = _Total()
+    for r in rows:
+        if start <= r.day <= today:
+            so_far.add(r)
+    spent = so_far.cost
     in_month = calendar.monthrange(today.year, today.month)[1]
     projected = spent / today.day * in_month
     return {
@@ -87,6 +102,7 @@ def month_figures(rows: list[Row], today: date) -> dict[str, Any]:
         "projected": rounded(projected),
         "days_elapsed": today.day,
         "days_in_month": in_month,
+        "cached_share": so_far.cached_share,
     }
 
 
@@ -152,6 +168,8 @@ def build(rows: list[Row], names: dict[UUID, str | None], today: date, days: int
             "calls": t.calls,
             "input_tokens": t.input_tokens,
             "output_tokens": t.output_tokens,
+            "cached_tokens": t.cached_tokens,
+            "cached_share": t.cached_share,
         }
         for model, t in _by_cost(models, lambda m: m)
     ]
@@ -179,6 +197,7 @@ def markdown(report: dict[str, Any]) -> str:
         f"{month['days_elapsed']} of {month['days_in_month']} days, "
         f"projected **{month['projected']}**",
         f"- Per active user, projected for the month: {report['per_active_user_month']}",
+        f"- Input tokens served from the cache this month: {month['cached_share']:.1%}",
         "",
         f"## Last {len(report['days'])} days",
         "",
@@ -203,11 +222,11 @@ def markdown(report: dict[str, Any]) -> str:
         "",
         "## By model",
         "",
-        "| Model | Cost | Calls | Tokens in | Tokens out |",
-        "| --- | ---: | ---: | ---: | ---: |",
+        "| Model | Cost | Calls | Tokens in | Cached in | Tokens out |",
+        "| --- | ---: | ---: | ---: | ---: | ---: |",
         *(
             f"| {_cell(m['model'])} | {m['cost']} | {m['calls']} | {m['input_tokens']} "
-            f"| {m['output_tokens']} |"
+            f"| {m['cached_share']:.1%} | {m['output_tokens']} |"
             for m in report["by_model"]
         ),
         "",
