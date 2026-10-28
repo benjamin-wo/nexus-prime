@@ -6,7 +6,7 @@
 ![mypy strict](https://img.shields.io/badge/mypy-strict-2a6db2)
 ![Postgres 16](https://img.shields.io/badge/postgres-16-336791)
 
-**A personal finance assistant you talk to.** Text the Telegram bot "lunch at Maxwell 8.40" or send it a receipt photo, and it's in your ledger. Open the web cockpit, on desktop or inside Telegram as a Mini App, and Nexus opens with a brief of your month and what needs you today. Three departments share one assistant: **Accounting** (spending, budgets, bills, payday), **Investment** (holdings, research and trade plans; it never trades) and **Travel** (trips, bookings, itineraries; it never books).
+**A personal finance assistant you talk to.** Text the Telegram bot "lunch at Maxwell 8.40", say it in a voice note, or send it a receipt photo, and it's in your ledger. Open the web cockpit, on desktop or inside Telegram as a Mini App, and Nexus opens with a brief of your month and what needs you today. Three departments share one assistant: **Accounting** (spending, budgets, bills, payday), **Investment** (holdings, research and trade plans; it never trades) and **Travel** (trips, bookings, itineraries; it never books).
 
 One LLM agent serves both surfaces, but the parts that must be right, like money, identity and who can see what, never depend on the model.
 
@@ -23,8 +23,10 @@ One LLM agent serves both surfaces, but the parts that must be right, like money
 - **Capture in a sentence.**
   - "grab 12 yesterday", "coffee 5.50 USD", "split dinner 120 with Ann and Ben", "Ann paid me back 40".
   - Logging by hand on the web suggests where you've paid before as you type, and your most frequent places are one tap away, with the usual amount and category filled in.
-  - Receipt photos are read by a vision model and logged after you confirm. The photo is kept privately with the expense.
+  - **Voice notes** on Telegram, or the mic in the Mini App chat, work like typed text. Anything that changes your data starts with what was heard, so a mishearing shows at once, and the speech model is given the names you already use. Audio is never stored.
+  - Receipt photos are read by a vision model and logged after you confirm. The photo is kept privately with the expense. If the photo model is slow, the receipt is read from the text of a first look instead, so it still ends at a confirm card.
   - Ask it to log automatically and it offers **Connect Gmail**, or for other mail (Outlook, iCloud, work) your own **forwarding address** with steps for a receipts-only rule. Receipts become Telegram questions (**Log it / Skip**), with a Receipts by email page (Settings, under Connections) showing what happened to each one.
+- **Splitting with people.** "I always split dinners with Ann" is saved as a standing split that the app applies when a matching expense is logged (it follows the category if you rename it). A name one letter off someone you know ("Anne" when you know Ann) gets a quick "Ann, or someone new?" instead of a second person.
 - **Anything consequential asks first.** Edits, deletes, splits and budget removal show a Confirm / Cancel prompt. It survives restarts, because the conversation state lives in Postgres.
 - **One currency view.**
   - Totals are in your home currency.
@@ -44,6 +46,7 @@ One LLM agent serves both surfaces, but the parts that must be right, like money
   - Your usual salary changes only when you confirm it.
 - **Statements and duplicates:** import a bank statement from Settings or the Ledger's More menu (CSV, or PDF with its password used once and never kept), with saved column mappings; likely duplicates from email, statements and chat are paired for one tap to merge or keep.
 - **Memory:** Nexus remembers facts and preferences about you across conversations, shown and deletable in Settings under Your data, and every reply sees a snapshot of your money.
+- **How Nexus talks:** pick a voice (Default, Chill friend, Straight to the point, Hype or Cheeky), set emoji, length and humour, or just say "be more chill" or "keep it short". It's one setting, shown in Settings, and it changes wording only, never a rule about money or confirmations.
 
 **Investment** (research only; it never trades or connects to a broker)
 - **Holdings** from a broker screenshot or typed trades, valued daily in your home currency, with gains from sales and dividends received and expected.
@@ -88,7 +91,7 @@ The code follows a clean, layered architecture. `domain` holds pure rules with n
 - A deterministic kernel runs before the model. It records plain income ("salary 5000", "Ann paid me back 20") exactly, handles stop/cancel, and refuses money movement ("transfer $500 to…") with a logged capability gap. Income worded any other way goes to the model, which records it only after the user confirms, and asks a short question first when the amount, kind or payer is unclear.
 - Consequential tools pause the LangGraph run with `interrupt()` and wait for an explicit Confirm. The paused state is checkpointed in Postgres.
 - Categorisation is explainable. Rules, not the model, file known merchants; each transaction records the rule that filed it, and a correction offers a rule change instead of making one.
-- The model sits behind a provider-agnostic adapter with a fallback chain.
+- The model sits behind a provider-agnostic adapter with a fallback chain. A made-up tool name gets the nearest real tool back, an empty reply is retried once, and a turn cut short says what it already changed, with Undo.
 
 **Background jobs run exactly once, with no leader.**
 - A Postgres job queue claims work with `FOR UPDATE SKIP LOCKED` under a lease.
@@ -106,6 +109,8 @@ The code follows a clean, layered architecture. `domain` holds pure rules with n
 - Missing configuration stops startup instead of falling back.
 - The repo is public, so no secret ever touches it.
 
+**It learns where it slips, without reading your chats.** The agent records anonymous signals: an Undo soon after a change, a reply that starts like a correction ("no, I meant…"), tool errors, made-up tools and turns that run out of steps. Each one carries tool names, error classes, counts and timings only, never message text, amounts or names. A weekly job turns them into one "Agent mistakes this week" ticket with the top problem spots and the eval areas they map to, and those become made-up eval cases.
+
 **Idempotent everywhere.** Telegram updates, imports, alerts, reminders and payday logging all carry dedupe keys. A redelivered webhook or a double-tapped button is a no-op.
 
 **It replaced a live system without losing data.** A read-only importer migrated the previous bot's history and verified per-user totals. The webhook moved over by a written runbook, and the old database was kept as an archive.
@@ -117,8 +122,8 @@ The code follows a clean, layered architecture. `domain` holds pure rules with n
 | Backend | Python 3.12, FastAPI, SQLAlchemy 2 (async Core, asyncpg), Pydantic v2, Alembic |
 | Agent | LangGraph with a Postgres checkpointer, human-in-the-loop interrupts, skills loaded on demand, provider-agnostic LLM adapter |
 | Frontend | React 19, TypeScript, Vite, TanStack Query, React Router |
-| Data | PostgreSQL 16: 56 tables, 46 migrations, a job queue in the same database; receipts in a private S3-compatible bucket |
-| Outside data | Frankfurter (FX), Tiingo (daily prices), Finnhub (news, earnings dates and live quotes), SerpApi and Tavily web search, with OpenRouter as fallback (trip research, ideas, chat lookups and plans' news articles, quarantined, cached), Wikivoyage (travel guides), Google Places and Routes (travel times), Wikipedia and Wikimedia Commons (destination photos), Open-Meteo (weather) |
+| Data | PostgreSQL 16: 63 tables, 58 migrations, a job queue in the same database; receipts in a private S3-compatible bucket |
+| Outside data | Frankfurter (FX), Tiingo (daily prices), Finnhub (news, earnings dates and live quotes), SerpApi and Tavily web search, with OpenRouter as fallback (trip research, ideas, chat lookups and plans' news articles, quarantined, cached), Wikivoyage (travel guides), Google Places and Routes (travel times), Wikipedia and Wikimedia Commons (destination photos), Open-Meteo (weather), OpenRouter speech-to-text (voice notes) |
 | Channels | Telegram Bot API (webhook, inline buttons, Mini App), cookie sessions with CSRF |
 | Quality | ruff, mypy `--strict`, pytest, Vitest, Playwright, GitHub Actions |
 | Deploy | Docker multi-stage build on Railway; migrations run as a pre-deploy step and the app refuses to start on an unmigrated schema |
@@ -127,14 +132,14 @@ The code follows a clean, layered architecture. `domain` holds pure rules with n
 
 Every change goes through the same CI: lint, format, strict type-checking, and three test suites.
 
-- **828 Python tests.**
+- **About 2,500 Python tests.**
   - Unit tests cover pure rules: money arithmetic, budget thresholds at exact boundaries, due dates across short months and leap years, and paydays across weekends.
   - Integration tests run against a real Postgres, with a fresh database per test built by the real migrations.
   - A schema test fails if the migrations drift from the table definitions.
 - **Agent tests** use a scripted fake model, so conversations, confirmations and refusals are deterministic.
-- **An evaluation set** of real phrasings scores candidate models (pass rate, speed, cost) through OpenRouter, including prompt-injection cases for anything read from email, images or the web.
+- **An evaluation set** of about 280 made-up conversations (text, receipt photos, screenshots and recorded voice clips) scores the live model and candidates through OpenRouter: pass rate, speed and cost, including prompt-injection cases for anything read from email, images or the web. `--repeat N` runs each case several times and lists the flaky ones, and `compare` puts a branch next to main, so noise isn't mistaken for a regression.
 - **Concurrency tests** race two job runners and assert each job runs exactly once.
-- **Playwright journeys**, 52 of them, run on desktop and phone viewports. They include a check that nothing overflows a 320px screen.
+- **Playwright journeys**, about 190 of them, run on desktop and phone viewports. They include a check that nothing overflows a 320px screen.
 - **Vitest** covers the components, including a regression test for a React effect-cleanup crash found in production.
 
 ## Project layout
@@ -177,6 +182,7 @@ The build follows [`docs/PLAN.md`](docs/PLAN.md). Each milestone ships to produc
 - **Done:**
   - Accounting: foundations, ledger and agent, Telegram, the migration from the old bot, the web cockpit, multi-currency, the job runtime, budgets, bills, payday, category rules, the receipt archive, Connect Gmail and forwarding addresses, subscriptions, the cash-flow calendar, a smarter assistant (money snapshot, ledger questions, memory, an evaluation set), statement import, duplicates, and a hardening pass (security review, load test, restore drill).
   - Departments, Home, and the orange-and-black redesign; images, files and albums on Telegram; a web chat that remembers.
+  - The assistant: voice notes, a choice of how Nexus talks, standing splits, near-match names, receipts that always reach a confirm card, and a weekly report of where it slipped.
   - Investment: holdings, prices and valuation, watchlist, levels, news, odds, research plans and following them.
   - Travel: trips with stops, bookings from email and screenshots, reminders, trip research, Google Maps places, suggested day names, an Ideas map that shows the nearest days, destination photos, weather and packing lists, and shared trips.
 - **Next:** whatever daily use turns up; see [`docs/PLAN.md`](docs/PLAN.md).

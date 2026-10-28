@@ -1,7 +1,9 @@
 """Google Maps places: regular hours and warnings, the cached and capped lookups, name
 matching, and reading Google's JSON. Every place, address and review here is made up."""
 
+import asyncio
 import json
+import logging
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from typing import Any
@@ -201,6 +203,91 @@ async def test_many_leaves_out_what_fails() -> None:
     assert list(found) == ["fakePlace0012"]
     source.failing = True
     assert await Places(source).many(ME, ["fakePlace0012"]) == {}
+
+
+def _spots(n: int) -> list[Place]:
+    return [fake_place(f"fakePlaceSpot{i:02d}", f"Spot {i}") for i in range(n)]
+
+
+async def test_a_cold_trip_page_fits_in_the_minute_limit() -> None:
+    clock = Clock()
+    source = FakePlaces(_spots(30))
+    places = Places(source, clock=clock)
+    ids = [p.id for p in source.results]
+    assert len(await places.many(ME, ids)) == 30
+    assert len(source.looked_up) == 30
+    # The map asking for the same places a moment later is served from the cache.
+    assert len(await places.many(ME, ids)) == 30
+    assert len(source.looked_up) == 30
+
+
+async def test_views_asking_for_one_place_at_once_share_a_call() -> None:
+    release = asyncio.Event()
+
+    class Slow(FakePlaces):
+        async def details(self, place_id: str) -> Place | None:
+            await release.wait()
+            return await super().details(place_id)
+
+    source = Slow(_spots(1))
+    places = Places(source, clock=Clock(), limits=((1, timedelta(days=1)),))
+    pid = source.results[0].id
+    asked = [asyncio.create_task(places.details(ME, pid)) for _ in range(5)]
+    await asyncio.sleep(0)
+    release.set()
+    assert [p.id for p in await asyncio.gather(*asked)] == [pid] * 5
+    assert source.looked_up == [pid]  # one call, counted once (a limit of one allowed it)
+    assert not places._flights
+
+    # A failure reaches every waiter, is not kept, and the next ask tries again.
+    release.clear()
+    places = Places(source := Slow([]), clock=Clock())
+    failing = [asyncio.create_task(places.details(ME, "fakePlaceGone01")) for _ in range(3)]
+    await asyncio.sleep(0)
+    release.set()
+    results = await asyncio.gather(*failing, return_exceptions=True)
+    assert all(isinstance(r, NotFound) for r in results)
+    assert source.looked_up == ["fakePlaceGone01"] and not places._flights
+    with pytest.raises(NotFound):
+        await places.details(ME, "fakePlaceGone01")
+    assert len(source.looked_up) == 2
+
+
+async def test_many_stops_at_the_limit_and_says_so_once(caplog: pytest.LogCaptureFixture) -> None:
+    source = FakePlaces(_spots(10))
+    places = Places(source, clock=Clock(), limits=((6, timedelta(minutes=1)),))
+    ids = [p.id for p in source.results]
+    with caplog.at_level(logging.INFO, logger="nexus.application.places"):
+        found = await places.many(ME, ids)
+    assert list(found) == ids[:6]
+    assert len(source.looked_up) == 6  # no lookups started once the limit was hit
+    warnings = [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert len(warnings) == 1 and warnings[0].exc_info is None
+    assert warnings[0].getMessage() == (
+        "Google Maps lookup limit reached: asked for 10 places, got 6, skipped 4 for the limit"
+    )
+    assert all(r.exc_info is None for r in caplog.records)
+    # What is cached is still served once the limit is hit.
+    again = await places.many(ME, [*reversed(ids)])
+    assert list(again) == ids[5::-1]
+
+
+async def test_the_daily_cap_still_holds_with_the_wider_minute_window() -> None:
+    clock = Clock()
+    source = FakePlaces(_spots(30))
+    places = Places(source, clock=clock)
+    ids = [p.id for p in source.results]
+    for _ in range(6):  # six cold pages, as after six deploys: 180 lookups
+        assert len(await places.many(ME, ids)) == 30
+        clock.now += timedelta(minutes=31)  # the cache has expired
+    assert len(source.looked_up) == 180
+    assert len(await places.many(ME, ids)) == 20  # only 20 more fit in the day
+    assert len(source.looked_up) == 200
+    clock.now += timedelta(minutes=31)
+    with pytest.raises(InvalidInput, match="a lot of Google Maps lookups"):
+        await places.details(ME, ids[0])
+    clock.now += timedelta(days=1)  # a day on, there is room again
+    assert len(await places.many(ME, ids)) == 30
 
 
 GOOGLE_PLACE: dict[str, Any] = {
