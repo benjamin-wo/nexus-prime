@@ -26,7 +26,7 @@ NOW = datetime(2026, 10, 14, 12, 0, tzinfo=UTC)
         "actually it was 15",
         "Actually, make that lunch",
         "that's not right",
-        "That’s not right",
+        "That\u2019s not right",
         "thats not what I said",
         "that is not it",
         "not that one",
@@ -58,14 +58,6 @@ def test_a_message_that_starts_like_a_correction_matches(text: str) -> None:
 )
 def test_other_messages_do_not(text: str) -> None:
     assert not mistakes.looks_like_correction(text)
-
-
-def test_a_made_up_tool_name_is_kept_only_when_it_is_plain() -> None:
-    assert mistakes.safe_name("Log_Expense_Placeholder") == "log_expense_placeholder"
-    assert mistakes.safe_name("x" * 60) == "x" * 40
-    assert mistakes.safe_name("log expense for Jamie Tan") == "other"
-    assert mistakes.safe_name("log-expense") == "other"
-    assert mistakes.safe_name("") == "other"
 
 
 def test_only_real_tools_are_listed_and_only_a_few() -> None:
@@ -155,8 +147,8 @@ def test_signals_are_counted_per_signal_per_tool_and_per_pair() -> None:
         ("undo after split_bill", 6),
         ("tool_error InvalidInput on change_itinerary_entry", 4),
         ("correction after log_expense", 3),
+        ("empty_reply", 1),
         ("step_limit while using find_transactions", 1),
-        ("step_limit while using log_expense", 1),
     ]
 
 

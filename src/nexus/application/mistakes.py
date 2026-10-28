@@ -9,9 +9,9 @@ The signals (the event's name):
 
 - ``step_limit``: a turn ran out of steps. ``wrote`` (did it change anything), ``tools``.
 - ``empty_reply``: the model sent nothing. ``recovered`` (did the retry work).
-- ``unknown_tool``: the model called a tool that isn't there. ``made_up`` (its name, 40
-  characters of ``[a-z0-9_]``, else "other") and ``tool`` (the real tool it most likely
-  meant, if any is close).
+- ``unknown_tool``: the model called a tool that isn't there. ``tool`` (the real tool it
+  most likely meant, if any is close); the made-up name itself is not kept, since a model
+  can put a person's name in it ("split_with_ann").
 - ``tool_error``: a tool refused or crashed. ``tool``, ``error`` (a coarse class: NotFound,
   InvalidInput, Conflict, Forbidden, ... or "Refused" when the tool answered "Error:"
   without an exception; for a crash, the exception's class name) and ``crashed``.
@@ -20,7 +20,7 @@ The signals (the event's name):
   two minutes: a strong sign the change was wrong).
 - ``correction``: the user's next message starts like a correction ("no", "I meant"). Only
   that it matched, and ``tools`` of the turn before (those that changed something, else
-  all of them), never the message.
+  all of them), never the message. Not recorded when the turn before used no tool.
 """
 
 import re
@@ -44,16 +44,6 @@ SIGNALS = (STEP_LIMIT, EMPTY_REPLY, UNKNOWN_TOOL, TOOL_ERROR, UNDO, CORRECTION)
 
 QUICK_UNDO_SECONDS = 120
 MAX_TOOLS = 5  # tool names kept on one event
-MAX_NAME = 40
-
-_NAME = re.compile(r"[a-z0-9_]+")
-
-
-def safe_name(name: str) -> str:
-    """A tool name the model typed, as it may be kept: its first 40 characters if they
-    are all ``[a-z0-9_]`` (after lower-casing), else "other"."""
-    short = name.lower()[:MAX_NAME]
-    return short if _NAME.fullmatch(short) else "other"
 
 
 def tool_list(names: Iterable[str], known: Collection[str]) -> list[str]:
@@ -109,8 +99,8 @@ def empty_reply(*, recovered: bool) -> None:
     ops.emit(KIND, EMPTY_REPLY, ok=False, recovered=recovered)
 
 
-def unknown_tool(made_up: str, suggested: str | None) -> None:
-    ops.emit(KIND, UNKNOWN_TOOL, ok=False, made_up=safe_name(made_up), tool=suggested)
+def unknown_tool(suggested: str | None) -> None:
+    ops.emit(KIND, UNKNOWN_TOOL, ok=False, tool=suggested)
 
 
 def tool_error(tool: str, error: str, *, crashed: bool = False) -> None:
@@ -118,7 +108,7 @@ def tool_error(tool: str, error: str, *, crashed: bool = False) -> None:
 
 
 def correction(tools: Sequence[str]) -> None:
-    ops.emit(KIND, CORRECTION, ok=False, matched=True, tools=list(tools) or None)
+    ops.emit(KIND, CORRECTION, ok=False, matched=True, tools=list(tools))
 
 
 def undo(tools: Sequence[str], changed_at: datetime) -> None:

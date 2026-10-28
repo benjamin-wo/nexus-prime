@@ -567,6 +567,7 @@ The app records **ops events**: what it did and how it went, never what anyone s
 | `http` | the outside host (`api.telegram.org`) | status; failed on 5xx, 401, 403, 429 and exceptions. Never the path or query, which can carry tokens |
 | `log` | the logger | every warning and error: the message's template (a constant in the code, never its arguments), the exception's type (never its message), where in the code (`src/nexus/...:line`, the innermost frame in our code) and a fingerprint |
 | `access` | `telegram` | a message from someone not on the allowlist |
+| `agent` | the signal (`step_limit`, `empty_reply`, `unknown_tool`, `tool_error`, `undo`, `correction`) | tool names, counts, seconds and error classes only: see **Agent mistakes** below |
 
 The user is a 10-character keyed hash (HMAC-SHA256 with `OPS_SALT`, else the webhook secret), so one person's events can be told apart without saying who. Every event in a Telegram update, web request or job carries its **trace** (`tg-<update id>`, a random id for web requests, sent back as `X-Trace-Id`, `job-<id>`), and so do the JSON log lines (`"trace"`), so a trace from the report finds the full log lines in Railway. Events are buffered and written every 5 seconds in one insert (`ops_events`, migration 0040), never blocking or failing the work; if the database is down the oldest of 20,000 are dropped. They're kept 30 days. `OPS_EVENTS=false` records none.
 
@@ -582,6 +583,7 @@ Logs are JSON lines with their real level: uvicorn's start and stop lines are pr
 - routes answering 5xx (high); outside hosts failing 10% or more of 3 or more calls
 - Telegram's webhook with 10 or more updates waiting, or an error delivering one in the window
 - OpenRouter credit under $5 (from its key status), broken mailboxes, web search past 90% of the month's credits
+- "Agent mistakes this week" (medium): 5 or more `agent` signals in the last 7 days, whatever `hours` is (see **Agent mistakes**)
 
 The summary gives turn counts and times, model calls by model, tool, job and request counts, outside calls by host, the database's size and OpenRouter credit left. The owner can read it signed in; a script reads it with `Authorization: Bearer <OPS_TOKEN>` (unset: no token works). Anyone else gets a 404.
 
@@ -594,6 +596,29 @@ The summary gives turn counts and times, model calls by model, tool, job and req
 - an issue closed as "not planned" is left closed, however often it happens.
 
 Issues hold only what the report holds, so they're safe in a public repository. The token needs only Issues read and write on that one repository (a fine-grained personal access token). Issue titles are stable, so a fix PR says "Fixes #N" and the issue closes on merge; if the problem recurs, the job reopens it.
+
+**Agent mistakes.** The point is to learn every week where the agent gets things wrong from real use, without keeping or publishing anything a user said (the repository and its issues are public). Six signals are recorded as `agent` events (`application/mistakes.py` is the one place that emits them). The `detail` of each holds only the fields below; message text, amounts, names, merchants and error messages are never in an event:
+
+| Signal | Recorded when | `detail` |
+|---|---|---|
+| `step_limit` | a turn used `MAX_STEPS` steps ("I stopped partway" / "too many steps") | `wrote` (did the turn change anything), `tools` (names of the real tools it called, at most 5) |
+| `empty_reply` | the model sent no text and no tool call | `recovered` (did the one retry work) |
+| `unknown_tool` | the model called a tool that doesn't exist or isn't offered | `tool` (the closest real tool, if any); the made-up name is never kept, since it can carry a person's name |
+| `tool_error` | a tool the model called answered "Error: ..." or crashed (not tools the kernel calls itself) | `tool`, `error` (a coarse class from the exception: `InvalidInput`, `NotFound`, `Conflict`, `Forbidden`, `NothingToUndo`, `NexusError`; `Refused` when the tool returned "Error:" without one; the exception's class name for a crash), `crashed` |
+| `undo` | an Undo that undid something: the button, typed "undo", the `undo_last_change` tool or the web app's | `tools` (the tool the undone change most likely came from, such as `split_bill`, `log_expense` or `add_to_itinerary`, worked out from the kind of change), `seconds` since that change, `quick` (within 2 minutes, a strong sign it was wrong) |
+| `correction` | the user's message starts like a correction (`no`, `nope`, `not that`, `not what`, `I meant`, `wrong`, `that's not`, `actually`; not `now`, `nothing`, `no thanks`), checked by a small regex when the message reaches the graph | `matched`, `tools` (those the turn before used that changed something, else all of them). Not recorded when the turn before used no tool |
+
+Alongside the user's hash and the trace, like any event. An Undo that follows a correction counts as both.
+
+Every week's counts become one problem, **"Agent mistakes this week"** (stable id `fingerprint("agent-mistakes-week")`, area `agent`, medium), and so one ticket that the ops job keeps up to date. It only exists when the last 7 days hold at least 5 signals (`MISTAKES_MIN`), and closes itself when they hold fewer. It counts signals per kind and per tool, how many undos came within 2 minutes, and the top 5 (signal, tool) pairs, such as `undo after split_bill: 6`, `tool_error InvalidInput on change_itinerary_entry: 4` or `correction after log_expense: 3`. A signal that names several tools counts once for each. Below the pairs, **Suggested eval areas** maps each top pair's tool to the `area` of the cases in `src/nexus/evals/cases.py` (`TOOL_EVAL_AREAS` in `application/ops_report.py`: `split_bill` is `edit`, `log_expense` is `log`, and so on; a tool with no obvious area is left out until someone adds one). The ticket says again that it holds no user data, and has no traces, because there is no message to look up.
+
+**Turning a top pair into an eval case.** There is no user text to copy, so write the case from the pattern alone:
+
+1. Take the top pair, say `undo after split_bill`. It says people undid a `split_bill` change soon after making it, which suggests the model split a bill they didn't mean to split, or split it the wrong way.
+2. Invent a request that could lead there, with made-up names, merchants and amounts, and add a `Case` to `src/nexus/evals/cases.py` in the suggested area (`edit` here). Say what a right answer is: the calls it must make (or `forbid`), whether it should ask first (`asks=True`), and the checks on the data afterwards. For a `tool_error InvalidInput on change_itinerary_entry` pair, write a request that needs that tool and check its arguments; for `correction after log_expense`, a two-turn case where the second turn fixes the first; for `step_limit`, a request that tempts a loop, with `at_most` on the tool; for `unknown_tool near X`, a request that should reach X.
+3. Run it (`python -m nexus.evals --area <area>`, see [`EVALS.md`](EVALS.md)), fix the prompt, the tool's description or its arguments until it passes, and open a PR that says "Refs #N" for the ticket. Not "Fixes": the ticket closes itself once a week has fewer than 5 signals.
+
+Never paste a real message, amount or name into a case, a PR or an issue: the signals are built so there is none to paste.
 
 ## Evaluating the assistant
 

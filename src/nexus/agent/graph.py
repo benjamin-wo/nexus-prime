@@ -235,11 +235,15 @@ def _unknown_tool(name: str, offered: Iterable[str]) -> str:
 
 
 def _turn_tools(
-    messages: Sequence[BaseMessage], known: Collection[str], *, previous: bool = False
+    messages: Sequence[BaseMessage],
+    known: Collection[str],
+    *,
+    previous: bool = False,
+    everything: bool = False,
 ) -> list[str]:
     """Names of the tools used in the user's latest turn (``previous``: the turn before
-    it), for ops events: those that changed something if any did, else all of them.
-    Names only, and only real tools."""
+    it), for ops events: those that changed something if any did, else all of them
+    (``everything``: always all of them). Names only, and only real tools."""
     humans = [i for i, m in enumerate(messages) if isinstance(m, HumanMessage)]
     if previous:
         if len(humans) < 2:
@@ -249,7 +253,9 @@ def _turn_tools(
         turn = messages[humans[-1] + 1 :] if humans else messages
     used = [m for m in turn if isinstance(m, ToolMessage) and m.name]
     wrote = [m for m in used if m.additional_kwargs.get(WROTE)]
-    return mistakes.tool_list((m.name or "" for m in wrote or used), known)
+    return mistakes.tool_list(
+        (m.name or "" for m in (used if everything else wrote or used)), known
+    )
 
 
 def _trim(messages: Sequence[AnyMessage]) -> list[AnyMessage]:
@@ -633,8 +639,10 @@ class AgentGraph:
             text = str(meta[IMAGE])
         else:
             if mistakes.looks_like_correction(text):
-                # Only that it matched, and what the turn before did: never the message.
-                mistakes.correction(_turn_tools(state["messages"], self.deps.tools, previous=True))
+                # Only that it matched, and what the turn before did (no tools: it was
+                # chat, a "no" to a question, so nothing to correct): never the message.
+                if before := _turn_tools(state["messages"], self.deps.tools, previous=True):
+                    mistakes.correction(before)
             shortcut = await self._shortcut(ctx, text, meta)
             if shortcut is not None:
                 return shortcut
@@ -849,7 +857,8 @@ class AgentGraph:
         if steps > MAX_STEPS:
             done = _done_this_turn(state["messages"])
             mistakes.step_limit(
-                wrote=bool(done), tools=_turn_tools(state["messages"], self.deps.tools)
+                wrote=bool(done),
+                tools=_turn_tools(state["messages"], self.deps.tools, everything=True),
             )
             if done:
                 return _reply(
@@ -949,7 +958,7 @@ class AgentGraph:
                 offered = self.offered(state)
                 content, wrote = _unknown_tool(call["name"], offered), False
                 close = _closest(call["name"], offered)
-                mistakes.unknown_tool(call["name"], close[0] if close else None)
+                mistakes.unknown_tool(close[0] if close else None)
             elif not from_kernel and _hands_off(state) and not safe_for_images(spec):
                 content, wrote = (
                     f"Error: {call['name']} wasn't run: nothing changes from an image unless "
