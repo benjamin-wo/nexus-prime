@@ -7,6 +7,7 @@ hand. The user's own share counts (a bill less the shares of it others owe), in 
 home currency at the rate for the day it was spent.
 """
 
+import asyncio
 import re
 import secrets
 from collections.abc import Callable, Iterable, Sequence
@@ -27,7 +28,7 @@ from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.ledger import Direction, User, UserId, same_person
 from nexus.domain.money import Money
 from nexus.domain.packing import Outlook, PackItem, clean_list, suggestions
-from nexus.domain.planning import paydays
+from nexus.domain.planning import SalarySchedule, paydays
 from nexus.domain.prep import Cover
 from nexus.domain.private import hide_private
 from nexus.domain.settle import (
@@ -578,15 +579,34 @@ async def trip_view(
     return await _view(uow, rates, user, trip, now=now)
 
 
+async def _salary_schedule(uow: UowFactory, user_id: UserId) -> SalarySchedule | None:
+    async with uow() as tx:
+        return await tx.planning.get_salary_schedule(user_id)
+
+
+async def _bookings_and_covers(
+    uow: UowFactory, user_id: UserId, trip_id: UUID
+) -> tuple[list[Booking], list[Cover]]:
+    async with uow() as tx:
+        return (
+            await tx.trips.list_bookings(user_id, trip_id=trip_id),
+            await tx.trips.list_covers(user_id, trip_id),
+        )
+
+
 async def _view(
     uow: UowFactory, rates: RateSource, user: User, trip: Trip, *, now: datetime
 ) -> TripView:
     today = local_today(user, now)
     home = user.home_currency
-    found_spent = await spent_on(uow, rates, user, trip)
+    # The reads that don't depend on each other run together, each in a unit of work of its
+    # own (one can't be shared between tasks).
+    found_spent, schedule, (bookings, covers) = await asyncio.gather(
+        spent_on(uow, rates, user, trip),
+        _salary_schedule(uow, user.id),
+        _bookings_and_covers(uow, user.id, trip.id),
+    )
     items, ids = found_spent.items, found_spent.ids
-    async with uow() as tx:
-        schedule = await tx.planning.get_salary_schedule(user.id)
     done: list[date] = []
     ahead: list[date] = []
     if schedule is not None:
@@ -607,9 +627,6 @@ async def _view(
             await _fits(uow, rates, user, trip, now),
             saving.next_payday,
         )
-    async with uow() as tx:
-        bookings = await tx.trips.list_bookings(user.id, trip_id=trip.id)
-        covers = await tx.trips.list_covers(user.id, trip.id)
     tz = ZoneInfo(user.timezone)
     # Each cost, the day its rate is for, and the expense it was logged as. A place to
     # visit without a day isn't booked yet, so its cost isn't counted; a cover's is.
@@ -632,7 +649,10 @@ async def _view(
         if logged_as is None or logged_as not in ids:
             unlogged = unlogged + converted
     spent = spending(trip, items, today, home)
-    payments, balances = await balances_for(uow, rates, user, trip, found_spent, today)
+    (payments, balances), owed = await asyncio.gather(
+        balances_for(uow, rates, user, trip, found_spent, today),
+        _owed(uow, rates, user, ids, today),
+    )
     offered = trip.split_evenly and bool(trip.companions)
     to_split = [
         i
@@ -650,7 +670,7 @@ async def _view(
         spending=spent,
         saving=saving,
         paid=schedule is not None,
-        owed=await _owed(uow, rates, user, ids, today),
+        owed=owed,
         bookings=bookings,
         booked=booked if costed else None,
         booked_unlogged=unlogged if costed else None,

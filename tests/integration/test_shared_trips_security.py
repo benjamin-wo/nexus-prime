@@ -218,7 +218,7 @@ TRIP_TABLES = (
 # Tables that change just by being used: sessions, caches, traces and the job queue.
 NOISE = {
     "web_sessions", "ops_events", "inbound_events", "jobs", "web_cache", "web_credits",
-    "fx_rates", "alembic_version",
+    "external_cache", "fx_rates", "alembic_version",
 }  # fmt: skip
 Snapshot = dict[str, list[str]]
 

@@ -1102,6 +1102,22 @@ class WebRepository(Protocol):
     async def add_credits(self, month: date, product: str, credits: int) -> None: ...
 
 
+class ExternalCacheRepository(Protocol):
+    """Answers from outside services kept for a while, shared by all users: the key is a
+    hash of what was asked and the value only the answer."""
+
+    async def cached(self, key: str, now: datetime) -> tuple[Any, datetime] | None:
+        """The answer kept under ``key`` and when it goes stale, unless it already has."""
+        ...
+
+    async def keep(
+        self, key: str, kind: str, value: Any, expires_at: datetime, now: datetime
+    ) -> None:
+        """Keep ``value`` until ``expires_at`` (replacing any older answer), and remove
+        some answers that went stale before ``now``."""
+        ...
+
+
 class UserDataRepository(Protocol):
     """Everything tied to one user, for "Export all my data" and "Delete my data". Every
     call is scoped to one user; the tables are named in ``application.user_data``."""
@@ -1145,6 +1161,8 @@ class UnitOfWork(Protocol):
     def rates(self) -> RateRepository: ...
     @property
     def web(self) -> WebRepository: ...
+    @property
+    def external_cache(self) -> ExternalCacheRepository: ...
     @property
     def user_data(self) -> UserDataRepository: ...
 

@@ -37,6 +37,7 @@ from nexus.application.clock import utcnow
 from nexus.application.departments import Departments, default_registry
 from nexus.application.destination_photos import PhotoFinder
 from nexus.application.email import EmailRuntime
+from nexus.application.external_cache import KeptAnswers
 from nexus.application.fx import RateSource
 from nexus.application.ideas import IdeaFinder
 from nexus.application.limits import RateLimiter
@@ -724,7 +725,10 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                 departments = extra.departments or await _registry(
                     resolved, engine, models, rates, stack, web, news, quotes
                 )
-                weather = Weather(await _weather_source(extra, stack), clock=extra.clock or utcnow)
+                kept = KeptAnswers(lambda: SqlUnitOfWork(engine))
+                weather = Weather(
+                    await _weather_source(extra, stack), clock=extra.clock or utcnow, kept=kept
+                )
                 places = await _places(resolved, extra, stack, extra.clock or utcnow)
                 ideas = await _ideas(resolved, extra, stack, web, places, extra.clock or utcnow)
                 routes = await _routes(resolved, extra, stack, extra.clock or utcnow)

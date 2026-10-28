@@ -1,18 +1,22 @@
 """The weather on a trip page: the forecast for the trip's days once a forecast reaches
 them, and before that what the same dates were like over the last three years.
 
-Nothing is stored. Answers are kept in memory for a while (forecasts a few hours,
-past years a week), so pages don't ask again on every visit.
+Answers are kept in memory for a while (places a month, forecasts a few hours, past years
+a week), so pages don't ask again on every visit, and in the database for the same while
+(``external_cache``: a hash of the place or of the coordinates and dates, and the answer),
+so a deploy doesn't empty them.
 """
 
 import asyncio
 import logging
 from collections import OrderedDict
 from collections.abc import Callable
+from dataclasses import asdict
 from datetime import date, datetime, timedelta
-from typing import Protocol
+from typing import Any, Protocol
 
 from nexus.application.clock import utcnow
+from nexus.application.external_cache import KeptAnswers
 from nexus.domain.destination_photos import first_place, place_key
 from nexus.domain.trips import Trip
 from nexus.domain.weather import (
@@ -57,9 +61,16 @@ class WeatherSource(Protocol):
 
 
 class Weather:
-    def __init__(self, source: WeatherSource, *, clock: Callable[[], datetime] = utcnow) -> None:
+    def __init__(
+        self,
+        source: WeatherSource,
+        *,
+        clock: Callable[[], datetime] = utcnow,
+        kept: KeptAnswers | None = None,
+    ) -> None:
         self._source = source
         self._clock = clock
+        self._kept = kept
         self._cache: OrderedDict[str, tuple[datetime, timedelta, object]] = OrderedDict()
 
     def _cached(self, key: str) -> object | None:
@@ -79,13 +90,41 @@ class Weather:
         while len(self._cache) > CACHE_SIZE:
             self._cache.popitem(last=False)
 
+    async def _stored(self, kind: str, ask: str, decode: Callable[[Any], object]) -> object | None:
+        """An answer kept in the database, put back in memory for the rest of its time;
+        None when there is none or it can't be read."""
+        if self._kept is None:
+            return None
+        now = self._clock()
+        stored = await self._kept.get(kind, ask, now)
+        if stored is None:
+            return None
+        value, expires_at = stored
+        try:
+            found = decode(value)
+        except (KeyError, TypeError, ValueError):
+            log.warning("a kept %s answer wasn't readable", kind, exc_info=True)
+            return None
+        self._keep(f"{kind}:{ask}", found, expires_at - now)
+        return found
+
+    async def _store(self, kind: str, ask: str, value: object, keep: timedelta) -> None:
+        if self._kept is not None:
+            now = self._clock()
+            await self._kept.put(kind, ask, value, now + keep, now)
+
     async def spot(self, destination: str) -> Spot | None:
         place = first_place(destination)
-        key = f"spot:{place_key(place)}"
-        if key in self._cache and (hit := self._cached(key)) is not None:
+        ask = place_key(place)
+        key = f"spot:{ask}"
+        hit = self._cached(key)
+        if hit is None:
+            hit = await self._stored("spot", ask, _read_spot)
+        if hit is not None:
             return hit if isinstance(hit, Spot) else None
         found = await self._source.find(place)
         self._keep(key, found or "none", PLACE_FOR)
+        await self._store("spot", ask, {"spot": _write_spot(found)}, PLACE_FOR)
         return found
 
     async def zone_of(self, place: str) -> str | None:
@@ -115,14 +154,21 @@ class Weather:
         if forecast_reaches(trip.start, today):
             start = max(trip.start, today)
             end = min(trip.end, today + timedelta(days=FORECAST_DAYS - 1))
-            key = f"forecast:{spot.latitude},{spot.longitude}:{start}:{end}"
+            ask = f"{spot.latitude},{spot.longitude}:{start}:{end}"
+            key = f"forecast:{ask}"
             days = self._cached(key)
+            if not isinstance(days, tuple):
+                days = await self._stored("forecast", ask, _read_days)
             if not isinstance(days, tuple):
                 days = tuple(await self._source.forecast(spot, start, end))
                 self._keep(key, days, FORECAST_FOR)
+                await self._store("forecast", ask, _write_days(days), FORECAST_FOR)
             return TripWeather(spot, WeatherKind.FORECAST, days)
-        key = f"past:{spot.latitude},{spot.longitude}:{trip.start}:{trip.end}"
+        ask = f"{spot.latitude},{spot.longitude}:{trip.start}:{trip.end}"
+        key = f"past:{ask}"
         days = self._cached(key)
+        if not isinstance(days, tuple):
+            days = await self._stored("past", ask, _read_days)
         if not isinstance(days, tuple):
             years = []
             for n in range(1, YEARS + 1):
@@ -135,7 +181,26 @@ class Weather:
             trip_days = [trip.start + timedelta(days=i) for i in range(trip.days)]
             days = typical(trip_days, years)
             self._keep(key, days, PAST_FOR)
+            await self._store("past", ask, _write_days(days), PAST_FOR)
         return TripWeather(spot, WeatherKind.TYPICAL, days)
+
+
+def _write_spot(spot: Spot | None) -> dict[str, Any] | None:
+    return None if spot is None else asdict(spot)
+
+
+def _read_spot(value: Any) -> Spot | str:
+    """A kept place, or the "none" a place that wasn't found is kept as in memory."""
+    found = value["spot"]
+    return "none" if found is None else Spot(**found)
+
+
+def _write_days(days: tuple[DayWeather, ...]) -> dict[str, Any]:
+    return {"days": [{**asdict(d), "day": d.day.isoformat()} for d in days]}
+
+
+def _read_days(value: Any) -> tuple[DayWeather, ...]:
+    return tuple(DayWeather(**{**d, "day": date.fromisoformat(d["day"])}) for d in value["days"])
 
 
 def _wet(millimetres: int | None) -> int | None:

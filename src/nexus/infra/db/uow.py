@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncTransactio
 from nexus.application.acting import current_user_id
 from nexus.domain.ledger import UserId
 from nexus.infra.db.email_repository import SqlEmailRepository
+from nexus.infra.db.external_cache_repository import SqlExternalCacheRepository
 from nexus.infra.db.investment_repository import SqlInvestmentRepository
 from nexus.infra.db.ledger_repository import SqlLedgerRepository
 from nexus.infra.db.memory_repository import SqlMemoryRepository
@@ -41,6 +42,7 @@ class SqlUnitOfWork:
         self._trips: SqlTripRepository | None = None
         self._rates: SqlRateRepository | None = None
         self._web: SqlWebRepository | None = None
+        self._external_cache: SqlExternalCacheRepository | None = None
         self._user_data: SqlUserData | None = None
 
     @property
@@ -116,6 +118,12 @@ class SqlUnitOfWork:
         return self._web
 
     @property
+    def external_cache(self) -> SqlExternalCacheRepository:
+        if self._external_cache is None:
+            raise RuntimeError("unit of work is not active")
+        return self._external_cache
+
+    @property
     def user_data(self) -> SqlUserData:
         if self._user_data is None:
             raise RuntimeError("unit of work is not active")
@@ -144,6 +152,7 @@ class SqlUnitOfWork:
         self._trips = SqlTripRepository(self._connection)
         self._rates = SqlRateRepository(self._connection)
         self._web = SqlWebRepository(self._connection)
+        self._external_cache = SqlExternalCacheRepository(self._connection)
         self._user_data = SqlUserData(self._connection)
         return self
 

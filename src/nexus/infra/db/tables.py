@@ -1350,6 +1350,21 @@ web_cache = Table(
     Index("ix_web_cache_expires_at", "expires_at"),
 )
 
+# Answers from outside services (travel times, weather) kept for as long as the in-memory
+# caches keep them, so a deploy doesn't empty them. Shared by all users: the key is a hash
+# of what was asked (coordinates, dates, a way of travelling), never a user or a name, and
+# the value is only the answer (migration 0060).
+external_cache = Table(
+    "external_cache",
+    metadata,
+    Column("key", Text, nullable=False),
+    Column("kind", Text, nullable=False),
+    Column("value", JSONB, nullable=False),
+    Column("expires_at", TZ, nullable=False),
+    PrimaryKeyConstraint("key"),
+    Index("ix_external_cache_expires_at", "expires_at"),
+)
+
 # Search credits used each month by each product (travel, investment, general), so the
 # free tier is shared out and never overrun, across restarts (migration 0037).
 web_credits = Table(

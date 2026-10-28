@@ -6,7 +6,8 @@ group by department (accounting, investment, travel), and as found within a depa
 Each item's ``when`` says which group it is in.
 """
 
-from collections.abc import Callable
+import asyncio
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
@@ -76,11 +77,47 @@ def _plural(n: int, one: str, many: str) -> str:
     return f"{n} {one if n == 1 else many}"
 
 
+# The sections of the list are read at the same time, this many at once: each one opens its
+# own unit of work (a connection of its own), and the pool is shared with everything else.
+SECTIONS_AT_ONCE = 4
+
+
 async def needs_you(
     uow: UowFactory, rates: RateSource, user: User, *, now: datetime
 ) -> list[FeedItem]:
+    # Everything the list is made from is read first, at the same time (each read is
+    # read-only and uses a unit of work of its own); the items are then put together in the
+    # order they always were.
+    gate = asyncio.Semaphore(SECTIONS_AT_ONCE)
+
+    async def read[T](work: Awaitable[T]) -> T:
+        async with gate:
+            return await work
+
+    (
+        (emails, pairs, statuses, missed, bills),
+        (trip, loose, to_settle, invest, travel),
+    ) = await asyncio.gather(
+        asyncio.gather(
+            read(email_cases.overview(uow(), user.id, now=now)),
+            read(
+                duplicate_cases.find_pairs(
+                    uow, user, now - timedelta(days=DUPLICATE_DAYS), now + timedelta(days=1)
+                )
+            ),
+            read(budget_cases.budget_statuses(uow, rates, user, now=now)),
+            read(bill_cases.missed_moves(uow, user, now=now)),
+            read(bill_cases.list_bills(uow, user, now=now)),
+        ),
+        asyncio.gather(
+            read(trip_cases.next_trip(uow, rates, user, now=now)),
+            read(booking_cases.unattached(uow(), user.id)),
+            read(trip_cases.to_settle(uow, rates, user, now=now)),
+            read(_investment_items(uow, user, now)),
+            read(_travel_items(uow, user, now)),
+        ),
+    )
     items: list[FeedItem] = []
-    emails = await email_cases.overview(uow(), user.id, now=now)
     waiting = [e for e in emails.emails if e.status is EmailStatus.PENDING]
     if waiting:
         items.append(
@@ -91,9 +128,6 @@ async def needs_you(
                 "/settings/email",
             )
         )
-    pairs = await duplicate_cases.find_pairs(
-        uow, user, now - timedelta(days=DUPLICATE_DAYS), now + timedelta(days=1)
-    )
     if pairs:
         items.append(
             FeedItem(
@@ -103,7 +137,7 @@ async def needs_you(
                 "/accounting/ledger",
             )
         )
-    for status in await budget_cases.budget_statuses(uow, rates, user, now=now):
+    for status in statuses:
         if status.percent >= BUDGET_PERCENT:
             over = status.percent >= 100
             items.append(
@@ -117,14 +151,14 @@ async def needs_you(
                 )
             )
     asked: set[tuple[UUID, date]] = set()
-    for missed in await bill_cases.missed_moves(uow, user, now=now):
-        asked.add((missed.bill.id, missed.due))
-        query = f"?due={missed.due.isoformat()}"
+    for move in missed:
+        asked.add((move.bill.id, move.due))
+        query = f"?due={move.due.isoformat()}"
         items.append(
             FeedItem(
                 "accounting",
                 "missed_move",
-                missed.text(),
+                move.text(),
                 "/accounting/budgets",
                 urgent=False,
                 actions=(
@@ -132,15 +166,15 @@ async def needs_you(
                         "went_through",
                         "It went through",
                         "POST",
-                        f"/bills/{missed.bill.id}/paid{query}",
+                        f"/bills/{move.bill.id}/paid{query}",
                     ),
                     FeedAction(
-                        "skip", "Skip this month", "POST", f"/bills/{missed.bill.id}/skip{query}"
+                        "skip", "Skip this month", "POST", f"/bills/{move.bill.id}/skip{query}"
                     ),
                 ),
             )
         )
-    for view in await bill_cases.list_bills(uow, user, now=now):
+    for view in bills:
         if (view.bill.id, view.due) in asked:
             continue  # already asked about, with buttons
         if view.days_until <= BILL_DAYS and not view.snoozed(now):
@@ -164,7 +198,6 @@ async def needs_you(
                     urgent=days <= 0,
                 )
             )
-    trip = await trip_cases.next_trip(uow, rates, user, now=now)
     percent = trip.spending.percent if trip else None
     if trip and trip.status is TripStatus.ONGOING and percent is not None:
         s = trip.spending
@@ -180,7 +213,6 @@ async def needs_you(
                     urgent=over,
                 )
             )
-    loose = await booking_cases.unattached(uow(), user.id)
     today = now.astimezone(ZoneInfo(user.timezone)).date()
     loose = [b for b in loose if (b.draft.ends or b.starts) >= today]
     if loose:
@@ -192,7 +224,7 @@ async def needs_you(
                 "/travel",
             )
         )
-    for done, owed in await trip_cases.to_settle(uow, rates, user, now=now):
+    for done, owed in to_settle:
         items.append(
             FeedItem(
                 "travel",
@@ -202,8 +234,8 @@ async def needs_you(
                 f"/travel/trips/{done.id}",
             )
         )
-    items += await _investment_items(uow, user, now)
-    items += await _travel_items(uow, user, now)
+    items += invest
+    items += travel
     # sorted() is stable: within a group, department by department, items stay as found.
     return sorted(items, key=lambda i: (WHEN_ORDER[i.when], DEPARTMENT_ORDER[i.department]))
 

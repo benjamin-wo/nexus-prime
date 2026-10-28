@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 
 import { api, ApiError, type EditedTransaction, type Me, type RuleSuggestion, setCsrf, type Transaction } from "./api";
@@ -8,30 +8,38 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { EntrySheet } from "./components/EntrySheet";
 import { Shell } from "./components/Shell";
 import { Toast } from "./components/Toast";
-import { CashFlowPage } from "./pages/CashFlow";
-import { ConnectDone, ConnectGmail } from "./pages/Connect";
 import { DEPARTMENTS } from "./departments";
-import { Dashboard } from "./pages/Dashboard";
-import { CostsPage } from "./pages/Costs";
-import { EmailPage } from "./pages/Email";
 import { Home } from "./pages/Home";
-import { InvestmentPage } from "./pages/Investment";
-import { PlanPage, PlansPage } from "./pages/Plans";
-import { StockPage } from "./pages/Stock";
-import { ResearchPage } from "./pages/Research";
-import { SharedTripPage } from "./pages/SharedTrip";
-import { TripPage, TripsPage } from "./pages/Trips";
-import { WatchlistPage } from "./pages/Watchlist";
-import { BudgetsPage } from "./pages/BudgetsPage";
-import { NotificationsPage } from "./pages/Notifications";
-import { ImportPage } from "./pages/Import";
-import { Ledger } from "./pages/Ledger";
 import { forgetTripNote, LoginPage } from "./pages/LoginPage";
-import { Settings } from "./pages/Settings";
-import { TripInvite } from "./pages/TripInvite";
-import { Upcoming } from "./pages/Upcoming";
+import { lazyNamed } from "./lazyPage";
 import { initData, miniApp, tripInviteIn } from "./telegram";
 import { useReportTimeZone } from "./timezone";
+
+// Every page but Home and the sign-in page is fetched when its route is first opened.
+const CashFlowPage = lazyNamed(() => import("./pages/CashFlow"), "CashFlowPage");
+const ConnectDone = lazyNamed(() => import("./pages/Connect"), "ConnectDone");
+const ConnectGmail = lazyNamed(() => import("./pages/Connect"), "ConnectGmail");
+const Dashboard = lazyNamed(() => import("./pages/Dashboard"), "Dashboard");
+const CostsPage = lazyNamed(() => import("./pages/Costs"), "CostsPage");
+const EmailPage = lazyNamed(() => import("./pages/Email"), "EmailPage");
+const InvestmentPage = lazyNamed(() => import("./pages/Investment"), "InvestmentPage");
+const PlanPage = lazyNamed(() => import("./pages/Plans"), "PlanPage");
+const PlansPage = lazyNamed(() => import("./pages/Plans"), "PlansPage");
+const StockPage = lazyNamed(() => import("./pages/Stock"), "StockPage");
+const ResearchPage = lazyNamed(() => import("./pages/Research"), "ResearchPage");
+const SharedTripPage = lazyNamed(() => import("./pages/SharedTrip"), "SharedTripPage");
+const TripPage = lazyNamed(() => import("./pages/Trips"), "TripPage");
+const TripsPage = lazyNamed(() => import("./pages/Trips"), "TripsPage");
+const WatchlistPage = lazyNamed(() => import("./pages/Watchlist"), "WatchlistPage");
+const BudgetsPage = lazyNamed(() => import("./pages/BudgetsPage"), "BudgetsPage");
+const NotificationsPage = lazyNamed(() => import("./pages/Notifications"), "NotificationsPage");
+const ImportPage = lazyNamed(() => import("./pages/Import"), "ImportPage");
+const Ledger = lazyNamed(() => import("./pages/Ledger"), "Ledger");
+const Settings = lazyNamed(() => import("./pages/Settings"), "Settings");
+const TripInvite = lazyNamed(() => import("./pages/TripInvite"), "TripInvite");
+const Upcoming = lazyNamed(() => import("./pages/Upcoming"), "Upcoming");
+
+const pageLoading = <p className="state">Loading…</p>;
 
 /** Inside Telegram, sign in with the Mini App's launch data instead of the widget. */
 async function miniAppSignIn(): Promise<Me | null> {
@@ -103,11 +111,13 @@ function GuestApp({ me }: { me: Me }) {
   const closeNotice = useCallback(() => setNotice(null), [setNotice]);
   return (
     <Shell me={me} onOpenChat={() => undefined} onLogout={logout}>
-      <Routes>
-        <Route path="/travel" element={<TripsPage />} />
-        <Route path="/travel/trips/:id" element={<TripPage />} />
-        <Route path="*" element={<Navigate to="/travel" replace />} />
-      </Routes>
+      <Suspense fallback={pageLoading}>
+        <Routes>
+          <Route path="/travel" element={<TripsPage />} />
+          <Route path="/travel/trips/:id" element={<TripPage />} />
+          <Route path="*" element={<Navigate to="/travel" replace />} />
+        </Routes>
+      </Suspense>
       {notice && <Toast message={notice} onClose={closeNotice} />}
     </Shell>
   );
@@ -135,43 +145,45 @@ function Cockpit({ me }: { me: Me }) {
 
   return (
     <Shell me={me} onOpenChat={() => setChat({})} onLogout={logout}>
-      <Routes>
-        <Route path="/" element={<Home me={me} onAsk={(ask) => setChat({ ask })} onLog={() => setSheet({})} />} />
-        <Route path="/accounting" element={<Dashboard me={me} onLog={() => setSheet({})} onAsk={(ask) => setChat({ ask })} />} />
-        <Route
-          path="/accounting/ledger"
-          element={<Ledger me={me} onAdd={() => setSheet({})} onEdit={(tx) => setSheet({ editing: tx })} />}
-        />
-        <Route path="/accounting/budgets" element={<BudgetsPage me={me} />} />
-        <Route path="/accounting/cashflow" element={<CashFlowPage />} />
-        <Route path="/investment" element={<InvestmentPage />} />
-        <Route path="/investment/watchlist" element={<WatchlistPage />} />
-        <Route path="/investment/stocks/:symbol" element={<StockPage />} />
-        <Route path="/investment/plans" element={<PlansPage />} />
-        <Route path="/investment/plans/:id" element={<PlanPage />} />
-        <Route path="/travel" element={<TripsPage onAsk={(ask) => setChat({ ask })} />} />
-        <Route path="/travel/trips/:id" element={<TripPage onAsk={(ask) => setChat({ ask })} />} />
-        <Route path="/travel/research/:id" element={<ResearchPage />} />
-        {DEPARTMENTS.filter((d) => d.upcoming).map((d) => (
-          <Route key={d.name} path={d.path} element={<Upcoming department={d} />} />
-        ))}
-        <Route path="/settings" element={<Settings me={me} />} />
-        <Route path="/settings/email" element={<EmailPage me={me} />} />
-        <Route path="/settings/import" element={<ImportPage />} />
-        <Route path="/settings/costs" element={<CostsPage me={me} />} />
-        <Route path="/settings/notifications" element={<NotificationsPage me={me} />} />
-        {/* Where pages used to live, so old links and bookmarks still work. */}
-        <Route path="/accounting/plan" element={<Navigate to="/accounting/budgets" replace />} />
-        <Route path="/accounting/email" element={<Navigate to="/settings/email" replace />} />
-        <Route path="/accounting/import" element={<Navigate to="/settings/import" replace />} />
-        <Route path="/ledger" element={<Navigate to="/accounting/ledger" replace />} />
-        <Route path="/cashflow" element={<Navigate to="/accounting/cashflow" replace />} />
-        <Route path="/plan" element={<Navigate to="/accounting/budgets" replace />} />
-        <Route path="/budgets" element={<Navigate to="/accounting/budgets" replace />} />
-        <Route path="/email" element={<Navigate to="/settings/email" replace />} />
-        <Route path="/import" element={<Navigate to="/settings/import" replace />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      <Suspense fallback={pageLoading}>
+        <Routes>
+          <Route path="/" element={<Home me={me} onAsk={(ask) => setChat({ ask })} onLog={() => setSheet({})} />} />
+          <Route path="/accounting" element={<Dashboard me={me} onLog={() => setSheet({})} onAsk={(ask) => setChat({ ask })} />} />
+          <Route
+            path="/accounting/ledger"
+            element={<Ledger me={me} onAdd={() => setSheet({})} onEdit={(tx) => setSheet({ editing: tx })} />}
+          />
+          <Route path="/accounting/budgets" element={<BudgetsPage me={me} />} />
+          <Route path="/accounting/cashflow" element={<CashFlowPage />} />
+          <Route path="/investment" element={<InvestmentPage />} />
+          <Route path="/investment/watchlist" element={<WatchlistPage />} />
+          <Route path="/investment/stocks/:symbol" element={<StockPage />} />
+          <Route path="/investment/plans" element={<PlansPage />} />
+          <Route path="/investment/plans/:id" element={<PlanPage />} />
+          <Route path="/travel" element={<TripsPage onAsk={(ask) => setChat({ ask })} />} />
+          <Route path="/travel/trips/:id" element={<TripPage onAsk={(ask) => setChat({ ask })} />} />
+          <Route path="/travel/research/:id" element={<ResearchPage />} />
+          {DEPARTMENTS.filter((d) => d.upcoming).map((d) => (
+            <Route key={d.name} path={d.path} element={<Upcoming department={d} />} />
+          ))}
+          <Route path="/settings" element={<Settings me={me} />} />
+          <Route path="/settings/email" element={<EmailPage me={me} />} />
+          <Route path="/settings/import" element={<ImportPage />} />
+          <Route path="/settings/costs" element={<CostsPage me={me} />} />
+          <Route path="/settings/notifications" element={<NotificationsPage me={me} />} />
+          {/* Where pages used to live, so old links and bookmarks still work. */}
+          <Route path="/accounting/plan" element={<Navigate to="/accounting/budgets" replace />} />
+          <Route path="/accounting/email" element={<Navigate to="/settings/email" replace />} />
+          <Route path="/accounting/import" element={<Navigate to="/settings/import" replace />} />
+          <Route path="/ledger" element={<Navigate to="/accounting/ledger" replace />} />
+          <Route path="/cashflow" element={<Navigate to="/accounting/cashflow" replace />} />
+          <Route path="/plan" element={<Navigate to="/accounting/budgets" replace />} />
+          <Route path="/budgets" element={<Navigate to="/accounting/budgets" replace />} />
+          <Route path="/email" element={<Navigate to="/settings/email" replace />} />
+          <Route path="/import" element={<Navigate to="/settings/import" replace />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
       {sheet && (
         <EntrySheet
           key={sheet.editing?.id ?? "new"}
@@ -257,11 +269,13 @@ export function App({ client }: { client?: QueryClient }) {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <ErrorBoundary>
-          <Routes>
-            {/* A trip's read-only link: opened by anyone, so it never waits on a sign-in. */}
-            <Route path="/shared/:token" element={<SharedTripPage />} />
-            <Route path="*" element={<Gate />} />
-          </Routes>
+          <Suspense fallback={pageLoading}>
+            <Routes>
+              {/* A trip's read-only link: opened by anyone, so it never waits on a sign-in. */}
+              <Route path="/shared/:token" element={<SharedTripPage />} />
+              <Route path="*" element={<Gate />} />
+            </Routes>
+          </Suspense>
         </ErrorBoundary>
       </BrowserRouter>
     </QueryClientProvider>
