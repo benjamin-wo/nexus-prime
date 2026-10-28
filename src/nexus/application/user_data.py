@@ -92,6 +92,7 @@ SHARED: dict[str, str] = {
     "fx_rates": "reference exchange rates, shared by every user",
     "destination_photos": "Wikimedia Commons photos of places, shared by every trip there",
     "web_cache": "public web search answers, shared by all users",
+    "external_cache": "travel times and weather from outside services, shared by all users",
     "web_credits": "search credits used each month by product, not by user",
     "inbound_events": "ids of Telegram updates already handled; no user, no content",
     "ops_events": "timings and error types with a keyed hash for the user, never what anyone "

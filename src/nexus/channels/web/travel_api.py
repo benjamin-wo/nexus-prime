@@ -1,6 +1,7 @@
 """The Travel department's API: trips, what's been spent on them, money set aside
 and settling up. Nothing here books or buys anything."""
 
+import asyncio
 import base64
 import binascii
 import logging
@@ -833,8 +834,11 @@ async def next_trip(auth: Auth, web: Runtime) -> TripDetailOut | None:
 
 
 async def _detailed(view: trip_cases.TripView, web: WebRuntime, user: User) -> TripDetailOut:
-    suggested = await place_cases.suggested_stops(web.places, user.id, view.trip, view.bookings)
-    photos = await photo_cases.photos_of(web.uow(), [view.trip])
+    # Google Maps (kept in memory) and the database are asked at the same time.
+    suggested, photos = await asyncio.gather(
+        place_cases.suggested_stops(web.places, user.id, view.trip, view.bookings),
+        photo_cases.photos_of(web.uow(), [view.trip]),
+    )
     return _detail(view, web, photos, suggested, owner=user)
 
 
