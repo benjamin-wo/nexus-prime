@@ -35,8 +35,10 @@ MAX_QUERY = 120
 MAX_LINKED = 30  # entries a trip page looks up at once
 CACHE_FOR = timedelta(minutes=30)
 CACHE_SIZE = 500
-# Lookups that reach Google, per user (cached answers don't count).
-LIMITS: Sequence[Window] = ((30, timedelta(minutes=1)), (200, timedelta(days=1)))
+# Lookups that reach Google, per user (cached answers and lookups that share another's
+# call don't count). The minute window leaves room for a trip page and its map to load
+# cold (after a deploy) at once; the daily cap is what bounds the bill.
+LIMITS: Sequence[Window] = ((60, timedelta(minutes=1)), (200, timedelta(days=1)))
 # Photos fetched from Google, per user (billed per photo; cached ones don't count).
 PHOTO_LIMITS: Sequence[Window] = ((30, timedelta(minutes=1)), (100, timedelta(days=1)))
 PHOTO_CACHE_SIZE = 150
@@ -74,6 +76,9 @@ class Places:
         self._limiter = RateLimiter({"places": limits, "photos": photo_limits}, clock=clock)
         self._photos: OrderedDict[str, tuple[datetime, bytes, str]] = OrderedDict()
         self._cache: OrderedDict[str, tuple[datetime, object]] = OrderedDict()
+        # Details being fetched right now, by place id, so that views asking for the same
+        # place at the same moment share one call.
+        self._flights: dict[str, asyncio.Task[Place]] = {}
 
     def _cached(self, key: str) -> object | None:
         found = self._cache.get(key)
@@ -120,12 +125,27 @@ class Places:
         cached = self._cached(f"place:{pid}")
         if isinstance(cached, Place):
             return cached
-        self._allow(user_id)
+        flight = self._flights.get(pid)
+        if flight is None:  # nobody is asking Google about it: this lookup counts
+            self._allow(user_id)
+            flight = asyncio.ensure_future(self._fetch(pid))
+            self._flights[pid] = flight
+            flight.add_done_callback(lambda done: self._landed(pid, done))
+        # Shielded, so a caller giving up doesn't cancel the call the others wait on.
+        return await asyncio.shield(flight)
+
+    async def _fetch(self, pid: str) -> Place:
         found = await self._source.details(pid)
         if found is None:
             raise NotFound("Google Maps doesn't know that place")
         self._keep(f"place:{pid}", found)
         return found
+
+    def _landed(self, pid: str, flight: asyncio.Task[Place]) -> None:
+        if self._flights.get(pid) is flight:
+            del self._flights[pid]
+        if not flight.cancelled():
+            flight.exception()  # seen here, so a flight nobody waits on isn't reported
 
     async def photo(self, user_id: UserId, wanted: str) -> tuple[bytes, str, PlacePhoto]:
         """A place's first photo, for a thumbnail: its bytes, type and who to credit.
@@ -146,21 +166,46 @@ class Places:
             self._photos.popitem(last=False)
         return data, mime, place.photo
 
+    def _free(self, pid: str) -> bool:
+        """Whether details can be had without a new call to Google."""
+        return isinstance(self._cached(f"place:{pid}"), Place) or pid in self._flights
+
     async def many(self, user_id: UserId, ids: Sequence[str]) -> dict[str, Place]:
-        """Details for several places at once; any that fail are left out."""
+        """Details for several places at once; any that fail are left out. When the
+        user's limit is hit, no more lookups are started and what was found is returned."""
         wanted = list(dict.fromkeys(ids))[:MAX_LINKED]
         gate = asyncio.Semaphore(4)
+        limited = asyncio.Event()
+        skipped = 0
 
         async def one(pid: str) -> tuple[str, Place | None]:
+            nonlocal skipped
             async with gate:
+                if limited.is_set() and not self._free(pid):
+                    skipped += 1
+                    return pid, None
                 try:
                     return pid, await self.details(user_id, pid)
-                except (PlacesError, NotFound, InvalidInput):
-                    log.info("place details unavailable", exc_info=True)
-                    return pid, None
+                except InvalidInput:
+                    limited.set()
+                    skipped += 1
+                except NotFound as e:
+                    log.info("place details unavailable: %s", e)
+                except PlacesError as e:
+                    log.warning("place details unavailable: %s", e)
+                return pid, None
 
         results = await asyncio.gather(*(one(pid) for pid in wanted))
-        return {pid: place for pid, place in results if place is not None}
+        found = {pid: place for pid, place in results if place is not None}
+        if skipped:
+            log.warning(
+                "Google Maps lookup limit reached: asked for %d places, got %d, "
+                "skipped %d for the limit",
+                len(wanted),
+                len(found),
+                skipped,
+            )
+        return found
 
 
 def query_for(what: str, destination: str | None) -> str:

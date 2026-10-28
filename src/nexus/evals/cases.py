@@ -1051,7 +1051,7 @@ CASES: tuple[Case, ...] = (
         calls=(
             Call(
                 "add_to_itinerary",
-                {"name": Has("gelato"), "after": Has("kuroshiro"), "day": Has("2026-12-12")},
+                {"name": Has("gelato"), "after": Has("castle"), "day": Has("2026-12-12")},
             ),
         ),
         at_most=(
@@ -1139,6 +1139,13 @@ CASES: tuple[Case, ...] = (
         _t("I'm in Madrid now"),
         calls=(Call("set_timezone", {"place": Has("madrid")}),),
         checks=(TimeZoneIs("Europe/Madrid"),),
+    ),
+    Case(
+        "timezone-landed-tokyo",
+        "timezone",
+        _t("I just landed in Tokyo"),
+        calls=(Call("set_timezone", {"place": Has("tokyo")}),),
+        checks=(TimeZoneIs("Asia/Tokyo"),),
     ),
     Case(
         "timezone-back-home",
@@ -1690,6 +1697,8 @@ CASES: tuple[Case, ...] = (
         "messy",
         _t("¥1200 ramen in tokyo"),
         checks=(Logged("1200", "ramen", ("Dining Out", "Travel"), currency="JPY"),),
+        # A city in an expense is not where the user is.
+        forbid=("set_timezone",),
     ),
     Case(
         "messy-ringgit",

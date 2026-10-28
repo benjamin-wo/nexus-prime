@@ -363,7 +363,11 @@ async def _load(ctx: ToolContext, transaction_id: str) -> Transaction:
 class LogExpenseArgs(Args):
     amount: str = Field(description="Amount spent, e.g. '5.50'. Never guess it.")
     currency: str | None = Field(None, description="ISO code; omit for the home currency")
-    merchant: str | None = Field(None, description="Where or who was paid")
+    merchant: str | None = Field(
+        None,
+        description="Where or who was paid. Always fill it or `notes` with what was bought "
+        "or where, even a bare word ('ramen', 'taxi'); never drop it for the category",
+    )
     category: str | None = Field(
         None, description="Only a category the user named; exact name from the list"
     )
@@ -3009,8 +3013,9 @@ async def _add_to_itinerary(ctx: ToolContext, a: ItineraryArgs) -> ToolResult:
 class ScopedArgs(TripNameArgs):
     stop: str | None = Field(
         None,
-        description="One of the trip's stops to look in, like 'Kyoto' (from trip_status); "
-        "leave out to look across the whole trip",
+        description="The city or stop of the trip to look in, like 'Kyoto' (from trip_status): "
+        "whenever the user names one ('things to do in Kyoto'), put it here and not in the "
+        "query. Leave out to look across the whole trip",
     )
     day: str | None = Field(
         None,
@@ -3022,7 +3027,7 @@ class ScopedArgs(TripNameArgs):
 class FindPlacesArgs(ScopedArgs):
     query: str = Field(
         description="What to look for, as the user says it: 'ramen near Shinjuku', "
-        "'Ichiran Shibuya', 'rooftop bars'"
+        "'Ichiran Shibuya', 'rooftop bars'. A trip's city goes in `stop`, not here"
     )
 
 
@@ -3033,9 +3038,17 @@ async def _trip_destination(ctx: ToolContext, name: str | None) -> str | None:
         return None
 
 
-async def _search_scope(ctx: ToolContext, a: ScopedArgs) -> place_cases.SearchScope | None:
+async def _search_scope(
+    ctx: ToolContext, a: ScopedArgs, query: str = ""
+) -> place_cases.SearchScope | None:
     """Where a search looks: the trip's destination, one of its stops, or near a day
-    (None when there's no such trip and no stop or day was asked for)."""
+    (None when there's no such trip and no stop or day was asked for). With no stop or day
+    given, a stop the query ends with ("things to do in Kyoto") is taken as the stop."""
+    if not a.stop and not a.day and (area := place_cases.area_in(query)):
+        try:
+            return await _search_scope(ctx, a.model_copy(update={"stop": area}))
+        except (InvalidInput, NotFound):  # not one of the trip's stops: search as asked
+            pass
     if not a.stop and not a.day:
         destination = await _trip_destination(ctx, a.trip)
         return place_cases.SearchScope(destination) if destination else None
@@ -3065,7 +3078,7 @@ _QUOTED = (
 async def _find_places(ctx: ToolContext, a: FindPlacesArgs) -> ToolResult:
     if ctx.places is None:
         return ToolResult(_PLACES_OFF)
-    scope = await _search_scope(ctx, a)
+    scope = await _search_scope(ctx, a, a.query)
     try:
         found = await ctx.places.search(
             ctx.user.id,
@@ -3091,8 +3104,9 @@ async def _find_places(ctx: ToolContext, a: FindPlacesArgs) -> ToolResult:
 
 class FindIdeasArgs(ScopedArgs):
     query: str = Field(
-        description="What kind of places or ideas, as the user says it: 'ramen', 'things "
-        "to do on a rainy day', 'cheap eats near Dotonbori', 'day trips'"
+        description="Only the kind of thing, as the user says it: 'ramen', 'things to do', "
+        "'rainy day', 'cheap eats near Dotonbori', 'day trips'. A trip's city goes in "
+        "`stop`, not here ('things to do in Kyoto' is query 'things to do', stop 'Kyoto')"
     )
 
 
@@ -3102,7 +3116,7 @@ _IDEAS_OFF = "Quick ideas from the web aren't set up; find_places searches Googl
 async def _find_ideas(ctx: ToolContext, a: FindIdeasArgs) -> ToolResult:
     if ctx.ideas is None:
         return ToolResult(_IDEAS_OFF)
-    scope = await _search_scope(ctx, a)
+    scope = await _search_scope(ctx, a, a.query)
     if scope is None:
         return ToolResult("Which trip is this for? Make the trip first, or say where.")
     destination = scope.place
@@ -3795,7 +3809,9 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
     specs = [
         ToolSpec(
             "log_expense",
-            "Record money the user spent. Only when the amount is stated.",
+            "Record money the user spent. Only when the amount is stated. Keep what was "
+            "bought or where as the merchant or a note ('¥1200 ramen in tokyo' is merchant or "
+            "notes 'ramen'). A city named in an expense says nothing about where the user is.",
             LogExpenseArgs,
             _log_expense,
         ),
@@ -4145,7 +4161,12 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
         ),
         ToolSpec(
             "split_bill",
-            "Split an expense the user paid with other people. Asks the user to confirm.",
+            "Split an expense the user paid with other people. Asks the user to confirm. "
+            "The people given replace any split it already has, so list everyone it ends "
+            "with: for 'split it with Anne instead' that is Anne alone, not the earlier "
+            "people. If the user then corrects a detail ('no, Anne is a new friend') or "
+            "undoes the split, build it again from what they asked for, not from the earlier "
+            "split.",
             SplitArgs,
             _split,
             confirm=_describe_split,
@@ -4352,7 +4373,8 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
         ToolSpec(
             "find_places",
             "Search Google Maps for places (restaurants, sights, shops, hotels) near a "
-            "trip's destination, with their ratings, price level and address.",
+            "trip's destination, with their ratings, price level and address. A city of the "
+            "trip the user names goes in `stop`.",
             FindPlacesArgs,
             _find_places,
         ),
@@ -4361,7 +4383,9 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             "Ideas for a trip from travel guides and articles on the web: specific places "
             "to eat, see or do for what the user describes ('best ramen', 'rainy day', "
             "'cheap eats'), each with where it came from and its Google Maps match. Takes "
-            "about 15 seconds; for a place the user names, use find_places.",
+            "about 15 seconds; for a place the user names, use find_places. A city of the "
+            "trip the user names ('things to do in Kyoto') goes in `stop`; the query is only "
+            "the kind of thing.",
             FindIdeasArgs,
             _find_ideas,
         ),
@@ -4445,8 +4469,10 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             "Set which time zone the user is in now, so their days, reminders and summaries "
             "follow them. Call it when they say where they are ('I'm in Madrid now', 'we "
             "landed in Tokyo') with place, or that they are back home ('back home') with "
-            "home=true. Not for asking what time it is, or for talking about a place they "
-            "are only planning to visit. No confirmation; the reply already tells them.",
+            "home=true. Only when they say they are there now. Not for asking what time it "
+            "is, for a place they are only planning to visit, or for a city named in an "
+            "expense or plan ('ramen in Tokyo'). No confirmation; the reply already tells "
+            "them.",
             SetTimezoneArgs,
             _set_timezone,
         ),

@@ -80,7 +80,8 @@ tools: [research_trip, research_to_trip, find_ideas, find_places, place_info, ad
   `find_places` or `place_info` instead.
 - Where to look: `find_ideas` and `find_places` take an optional `stop` and `day`.
   "things to do in Kyoto for my Japan trip", "ramen in Osaka": `stop` is that city or
-  area ("Kyoto"), the query is what they want. If the tool says it isn't one of the
+  area ("Kyoto"), the query is only what they want ("things to do", "ramen"), never the
+  city. If the tool says it isn't one of the
   trip's stops, try again without `stop` and name the place in the query. "find ramen
   near day 3", "something to eat near where we are on the 12th": `day` is the day's
   number ("3") or its date; the search leans towards the places already planned that

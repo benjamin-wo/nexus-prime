@@ -355,6 +355,12 @@ async def test_finding_in_a_stop_or_near_a_day_from_chat(uow: UowFactory) -> Non
     assert len(web.asked) == 1 and web.asked[0].startswith("Best noodles in Kyoto: ")
     assert text.startswith("Ideas for noodles in Kyoto, from travel guides")
 
+    # A stop the query ends with is taken as the stop; one that isn't a stop is searched as asked.
+    moved = await use("find_ideas", {"query": "noodles in Kyoto"})
+    assert " in Kyoto, from travel guides" in moved
+    unmoved = await use("find_ideas", {"query": "noodles in Osaka"})
+    assert not unmoved.startswith("Error") and "Exampleland, from travel guides" in unmoved
+
 
 async def test_research_to_trip_from_chat_confirms_then_adds(uow: UowFactory) -> None:
     user, trip = await kyoto_and_tokyo(uow)
