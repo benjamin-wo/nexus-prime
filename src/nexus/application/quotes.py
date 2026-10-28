@@ -47,10 +47,14 @@ CLOSE_WINDOW = timedelta(minutes=20)
 STATUS_TTL = timedelta(minutes=5)
 RUN_STATUS_AGE = timedelta(minutes=4)
 # A page refreshes a user's quote when it is older than this, for at most this many
-# stocks, and gives up after this long (what is stored is shown).
-FRESH_FOR = timedelta(seconds=60)
+# stocks, and gives up after this long (what is stored is shown). The job keeps quotes
+# within about 5 minutes 40 seconds (every 5 minutes, up to 40 seconds a run), so a page
+# nearly always shows what is stored instead of waiting on the provider.
+PAGE_FRESH_FOR = timedelta(minutes=6)
 MAX_ON_REQUEST = 15
 REQUEST_BUDGET_SECONDS = 3.0
+# A plan run sets zones and stops from the price, so it refreshes a quote older than this.
+FRESH_FOR = timedelta(seconds=60)
 _NEVER = datetime.min.replace(tzinfo=UTC)
 
 
@@ -179,7 +183,7 @@ async def refresh_own(
 ) -> MarketStatus | None:
     """On a user's request: refresh the quotes of the user's own held and/or watched stocks,
     and ``symbol`` (a stock page's own), when the market is open and the stored quote is
-    more than a minute old. At most 15 stocks and 3 seconds; any failure is ignored, as
+    more than 6 minutes old. At most 15 stocks and 3 seconds; any failure is ignored, as
     what is stored is shown. Never asks for a stock that isn't the user's or ``symbol``.
     Returns the market's status as known (None if unknown), to price with."""
     if quotes is None:
@@ -193,7 +197,7 @@ async def refresh_own(
             if wanted and regular_open(status, now):
                 async with uow() as tx:
                     fetched = await tx.investments.quotes_fetched(wanted)
-                stale = [s for s in wanted if now - fetched.get(s, _NEVER) > FRESH_FOR]
+                stale = [s for s in wanted if now - fetched.get(s, _NEVER) > PAGE_FRESH_FOR]
                 stale.sort(key=lambda s: fetched.get(s, _NEVER))
                 await asyncio.gather(*(_ask(quotes.source, s, got) for s in stale[:MAX_ON_REQUEST]))
     except TimeoutError:

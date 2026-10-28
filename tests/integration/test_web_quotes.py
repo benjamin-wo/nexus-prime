@@ -84,7 +84,7 @@ async def test_the_portfolio_the_watchlist_and_a_stock_page_show_the_live_price(
     assert stocks[0]["price_at"].startswith("2026-09-28T14:41:00")
     assert world.quotes.asked == ["NVDA", "AMD"]
 
-    # Quotes under a minute old are not fetched again.
+    # Quotes under 6 minutes old (the job keeps them within that) are not fetched again.
     await owner.get("/api/investments")
     await owner.get("/api/investments/watchlist")
     assert world.quotes.asked == ["NVDA", "AMD"]
@@ -99,9 +99,14 @@ async def test_the_portfolio_the_watchlist_and_a_stock_page_show_the_live_price(
     assert amd["now_vs_levels"] and "50-day average" in " ".join(amd["now_vs_levels"])
     assert world.quotes.asked == ["NVDA", "AMD"]
 
-    # A minute and a bit on, they are asked again, and a price may have moved.
-    world.clock.now = OPEN_AT + timedelta(seconds=75)
+    # A minute and a bit on, the stored quote is still shown; past 6 minutes it is asked
+    # again, and a price may have moved.
     world.quotes.quotes["NVDA"] = quote("NVDA", "132", "129.50", QUOTED + timedelta(seconds=70))
+    world.clock.now = OPEN_AT + timedelta(seconds=75)
+    still = (await owner.get("/api/investments")).json()["holdings"][0]
+    assert still["price"]["amount"] == "131.5000"
+    assert world.quotes.asked == ["NVDA", "AMD"]
+    world.clock.now = OPEN_AT + timedelta(minutes=6, seconds=15)
     again = (await owner.get("/api/investments")).json()["holdings"][0]
     assert again["price"]["amount"] == "132.0000"
 
