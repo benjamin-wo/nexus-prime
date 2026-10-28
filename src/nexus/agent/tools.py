@@ -4412,8 +4412,9 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
         ),
         ToolSpec(
             "label_trip_day",
-            "Name a day of a trip, such as the city the user is in that day ('Busan') or "
-            "its plan ('Day trip to Nikko'). An empty label clears it.",
+            "Name a day of a trip, such as the city the user is in that day ('Busan'; 'we're "
+            "in Kyoto on 15 Dec' labels 15 Dec 'Kyoto') or its plan ('Day trip to Nikko'). An "
+            "empty label clears it.",
             DayLabelArgs,
             _label_day,
         ),
@@ -4470,9 +4471,9 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             "follow them. Call it when they say where they are ('I'm in Madrid now', 'we "
             "landed in Tokyo') with place, or that they are back home ('back home') with "
             "home=true. Only when they say they are there now. Not for asking what time it "
-            "is, for a place they are only planning to visit, or for a city named in an "
-            "expense or plan ('ramen in Tokyo'). No confirmation; the reply already tells "
-            "them.",
+            "is, for a place they are only planning to visit (a trip day in a city, 'we're in "
+            "Kyoto on 15 Dec', is label_trip_day), or for a city named in an expense ('ramen "
+            "in Tokyo'). No confirmation; the reply already tells them.",
             SetTimezoneArgs,
             _set_timezone,
         ),

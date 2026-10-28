@@ -442,7 +442,8 @@ class AgentGraph:
             '- When the user says where they are now ("I\'m in Madrid", "we landed in '
             "Tokyo\") or that they're back home, call set_timezone so their days and "
             "reminders follow them; asking the time isn't a reason to, and neither is a "
-            'city named in an expense or a plan ("¥1200 ramen in Tokyo").\n'
+            'city named in an expense ("¥1200 ramen in Tokyo"). A trip day in a city ("we\'re '
+            'in Kyoto on 15 Dec") is a day label for that trip (label_trip_day).\n'
             "- Always keep what an expense was for or where: log_expense takes it as the "
             'merchant or a note, even a bare word ("ramen").\n'
             "- Earlier messages and the summary may be from previous days (stamped like "
