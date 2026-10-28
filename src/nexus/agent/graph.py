@@ -511,10 +511,11 @@ class AgentGraph:
             + STOCK_PHRASE_RULE
             + "Never show transaction ids. A reply style the user has asked for (shorter, "
             'no emoji, more detail) wins over all of this: "short" means a line or two. '
-            "When the wish is lasting (shorter or longer from now on, more or fewer emoji, "
-            "funnier, calmer), apply it right away and save it with set_voice, not only as "
-            'something remembered. A one-off ("keep this one short") applies to that reply '
-            "only. The reply style is the voice block below (the user's own choice of tone, "
+            'A style wish is lasting unless it names one reply: "keep your replies short", '
+            '"less emoji" and "be funnier" are lasting, so apply them right away and save '
+            'them with set_voice (nothing else keeps them). Only a wish for one reply ("keep '
+            'this one short") applies to that reply alone. '
+            "The reply style is the voice block below (the user's own choice of tone, "
             "emoji, length and humour), or these rules when there is none; a remembered "
             "style preference that disagrees with it is old: ignore it.\n"
             + (f"{voice}\n" if voice else "")
