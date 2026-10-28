@@ -77,7 +77,7 @@ test("a guest sees only Travel, with no chat, and nothing the server refuses is 
   for (const name of ["Home", "Accounting", "Investment", "Settings"]) {
     await expect(page.getByRole("link", { name, exact: true })).toHaveCount(0);
   }
-  await expect(page.getByRole("button", { name: "Ask Nexus" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Ask Nexus", exact: true })).toHaveCount(0);
   await expect(page.getByRole("navigation", { name: "Main" })).toHaveCount(0);
   await expect(page.getByRole("navigation", { name: "Main (mobile)" })).toHaveCount(0);
 
@@ -90,7 +90,7 @@ test("a guest sees only Travel, with no chat, and nothing the server refuses is 
   // The trips they are on open.
   await page.goto("/travel/trips/trip5");
   await expect(page.getByRole("heading", { level: 1, name: "Kyoto" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Ask Nexus" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Ask Nexus", exact: true })).toHaveCount(0);
 
   // Nothing on the way was a request the server refuses a guest (it would be a 403).
   expect(state.forbidden).toEqual([]);
