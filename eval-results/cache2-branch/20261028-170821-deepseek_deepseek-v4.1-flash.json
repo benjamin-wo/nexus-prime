@@ -1,0 +1,163 @@
+{
+  "repeat": 3,
+  "cases": 1,
+  "passes_per_round": [
+    1,
+    1,
+    1
+  ],
+  "mean_passes": 1.0,
+  "min_passes": 1,
+  "max_passes": 1,
+  "per_case": {
+    "cat-explain": {
+      "passed": 3,
+      "runs": 3
+    }
+  },
+  "flaky": [],
+  "always_failing": [],
+  "runs": [
+    {
+      "round": 1,
+      "id": "cat-explain",
+      "area": "categories",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "why is yesterday's grab ride in transport",
+          "replies": [
+            "It was picked by hand when it was logged, not by a rule \u2014 your \"grab \u2192 Transport\" rule only files new ones. Want it somewhere else?"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "expenses"
+              }
+            },
+            {
+              "tool": "find_transactions",
+              "args": {
+                "search": "Grab",
+                "start_date": "2026-09-27",
+                "end_date": "2026-09-27"
+              }
+            },
+            {
+              "tool": "explain_category",
+              "args": {
+                "transaction_id": "80f1724a-69f5-47c2-9c98-0f64cee5deeb"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 4.37,
+          "input_tokens": 43880,
+          "output_tokens": 310,
+          "cached_tokens": 40960,
+          "memory_input_tokens": 481,
+          "memory_output_tokens": 84,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "cat-explain",
+      "area": "categories",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "why is yesterday's grab ride in transport",
+          "replies": [
+            "It was picked by hand when it was logged, not by a rule \u2014 your \"grab \u2192 Transport\" rule only files new expenses, so it didn't touch this one."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "expenses"
+              }
+            },
+            {
+              "tool": "find_transactions",
+              "args": {
+                "search": "Grab",
+                "start_date": "2026-09-27",
+                "end_date": "2026-09-27"
+              }
+            },
+            {
+              "tool": "explain_category",
+              "args": {
+                "transaction_id": "d77c589f-d40b-4a51-a4b3-2cdf34c0535d"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 4.81,
+          "input_tokens": 43875,
+          "output_tokens": 312,
+          "cached_tokens": 43520,
+          "memory_input_tokens": 481,
+          "memory_output_tokens": 70,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "cat-explain",
+      "area": "categories",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "why is yesterday's grab ride in transport",
+          "replies": [
+            "It's in Transport because it was picked for it when it was logged \u2014 not by a rule. (Your \"grab\" \u2192 Transport rule only files new ones.)"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "expenses"
+              }
+            },
+            {
+              "tool": "find_transactions",
+              "args": {
+                "search": "Grab",
+                "start_date": "2026-09-27",
+                "end_date": "2026-09-27"
+              }
+            },
+            {
+              "tool": "explain_category",
+              "args": {
+                "transaction_id": "82fe5dcf-3153-4cbd-979e-9de0676921a4"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 4.99,
+          "input_tokens": 43871,
+          "output_tokens": 307,
+          "cached_tokens": 34560,
+          "memory_input_tokens": 481,
+          "memory_output_tokens": 72,
+          "memory_failed": false
+        }
+      ]
+    }
+  ]
+}

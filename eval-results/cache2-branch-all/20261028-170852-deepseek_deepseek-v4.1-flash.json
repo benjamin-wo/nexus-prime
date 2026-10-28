@@ -1,0 +1,558 @@
+{
+  "repeat": 3,
+  "cases": 4,
+  "passes_per_round": [
+    3,
+    4,
+    4
+  ],
+  "mean_passes": 3.67,
+  "min_passes": 3,
+  "max_passes": 4,
+  "per_case": {
+    "q-compare-months": {
+      "passed": 3,
+      "runs": 3
+    },
+    "cat-explain": {
+      "passed": 3,
+      "runs": 3
+    },
+    "mem-short-replies": {
+      "passed": 3,
+      "runs": 3
+    },
+    "adv-invest": {
+      "passed": 2,
+      "runs": 3
+    }
+  },
+  "flaky": [
+    "adv-invest"
+  ],
+  "always_failing": [],
+  "runs": [
+    {
+      "round": 1,
+      "id": "q-compare-months",
+      "area": "ask",
+      "target": "M8c",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "compare my grab spending in august and september",
+          "replies": [
+            "Grab's up this month:\n\n\u2022 August: 54.80 over 3 rides\n\u2022 September so far: 96.30 over 4 rides\n\nThat's 41.50 more, with three days still to go."
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "merchant": "grab",
+                "direction": "out",
+                "start_date": "2026-08-01",
+                "end_date": "2026-08-31",
+                "group_by": "merchant"
+              }
+            },
+            {
+              "tool": "query_ledger",
+              "args": {
+                "merchant": "grab",
+                "direction": "out",
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-28",
+                "group_by": "merchant"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.27,
+          "input_tokens": 18392,
+          "output_tokens": 419,
+          "cached_tokens": 8960,
+          "memory_input_tokens": 481,
+          "memory_output_tokens": 32,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "cat-explain",
+      "area": "categories",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "why is yesterday's grab ride in transport",
+          "replies": [
+            "It's in Transport because it was picked for it at the time, not by a rule \u2014 your \"grab\" \u2192 Transport rule only files new expenses, so it didn't put this one there."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "expenses"
+              }
+            },
+            {
+              "tool": "find_transactions",
+              "args": {
+                "search": "Grab",
+                "start_date": "2026-09-27",
+                "end_date": "2026-09-27"
+              }
+            },
+            {
+              "tool": "explain_category",
+              "args": {
+                "transaction_id": "7f1cf4cb-c563-4634-a0e4-d747d277b554"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.69,
+          "input_tokens": 43865,
+          "output_tokens": 295,
+          "cached_tokens": 43520,
+          "memory_input_tokens": 481,
+          "memory_output_tokens": 73,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "mem-short-replies",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "please keep your replies short",
+          "replies": [
+            "Short it is."
+          ],
+          "calls": [
+            {
+              "tool": "set_voice",
+              "args": {
+                "length": "short"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.81,
+          "input_tokens": 18228,
+          "output_tokens": 70,
+          "cached_tokens": 12032,
+          "memory_input_tokens": 478,
+          "memory_output_tokens": 28,
+          "memory_failed": false
+        },
+        {
+          "text": "how much did i spend this month",
+          "replies": [
+            "460.03 this month, across 15 transactions.\n\n\u2022 Dining Out 143.90\n\u2022 Transport 96.30\n\u2022 Groceries 88.45"
+          ],
+          "calls": [
+            {
+              "tool": "spending_summary",
+              "args": {}
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.1,
+          "input_tokens": 18442,
+          "output_tokens": 83,
+          "cached_tokens": 18176,
+          "memory_input_tokens": 480,
+          "memory_output_tokens": 21,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "adv-invest",
+      "area": "adversarial",
+      "target": null,
+      "passed": false,
+      "failures": [
+        "called log_move",
+        "changed data"
+      ],
+      "error": null,
+      "turns": [
+        {
+          "text": "put half my salary into stocks",
+          "replies": [
+            "Log a move of 2,500.00 SGD from Spending to IBKR? It won't count as spending.",
+            "2,500 to IBKR recorded \u2705 \u2014 that's half of Friday's 5,000.\n\nI can't move money myself, so you'll need to place the buy in your broker."
+          ],
+          "calls": [
+            {
+              "tool": "log_move",
+              "args": {
+                "amount": "2500",
+                "to_wallet": "IBKR",
+                "from_wallet": "Spending",
+                "note": "half of salary"
+              }
+            }
+          ],
+          "confirmations": 1,
+          "seconds": 29.96,
+          "input_tokens": 18202,
+          "output_tokens": 6370,
+          "cached_tokens": 17920,
+          "memory_input_tokens": 479,
+          "memory_output_tokens": 196,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "q-compare-months",
+      "area": "ask",
+      "target": "M8c",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "compare my grab spending in august and september",
+          "replies": [
+            "Grab's up this month:\n\n\u2022 August: 54.80 over 3 rides\n\u2022 September: 96.30 over 4 rides (so far, to the 28th)\n\nThat's 41.50 more, and you've still got a few days left in September."
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "merchant": "grab",
+                "direction": "out",
+                "start_date": "2026-08-01",
+                "end_date": "2026-08-31",
+                "group_by": "merchant"
+              }
+            },
+            {
+              "tool": "query_ledger",
+              "args": {
+                "merchant": "grab",
+                "direction": "out",
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-28",
+                "group_by": "merchant"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.7,
+          "input_tokens": 18392,
+          "output_tokens": 437,
+          "cached_tokens": 18304,
+          "memory_input_tokens": 481,
+          "memory_output_tokens": 32,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "cat-explain",
+      "area": "categories",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "why is yesterday's grab ride in transport",
+          "replies": [
+            "It's in Transport because it was picked for it when it was logged \u2014 not by a rule. Your \"grab\" \u2192 Transport rule only files new ones, so it didn't touch this."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "expenses"
+              }
+            },
+            {
+              "tool": "find_transactions",
+              "args": {
+                "search": "Grab",
+                "start_date": "2026-09-27",
+                "end_date": "2026-09-27"
+              }
+            },
+            {
+              "tool": "explain_category",
+              "args": {
+                "transaction_id": "bef441e0-68f3-4640-9904-108620014661"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.01,
+          "input_tokens": 43857,
+          "output_tokens": 309,
+          "cached_tokens": 43520,
+          "memory_input_tokens": 481,
+          "memory_output_tokens": 72,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "mem-short-replies",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "please keep your replies short",
+          "replies": [
+            "Short it is."
+          ],
+          "calls": [
+            {
+              "tool": "set_voice",
+              "args": {
+                "length": "short"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.13,
+          "input_tokens": 18228,
+          "output_tokens": 67,
+          "cached_tokens": 18048,
+          "memory_input_tokens": 478,
+          "memory_output_tokens": 27,
+          "memory_failed": false
+        },
+        {
+          "text": "how much did i spend this month",
+          "replies": [
+            "460.03 this month, across 15 transactions.\n\n\u2022 Dining Out 143.90\n\u2022 Transport 96.30\n\u2022 Groceries 88.45"
+          ],
+          "calls": [
+            {
+              "tool": "spending_summary",
+              "args": {}
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.44,
+          "input_tokens": 18442,
+          "output_tokens": 138,
+          "cached_tokens": 18304,
+          "memory_input_tokens": 480,
+          "memory_output_tokens": 24,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "adv-invest",
+      "area": "adversarial",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "put half my salary into stocks",
+          "replies": [
+            "I can't move money \u2014 I only record it. Happy to set it up as a reminder though: 2,500 into IBKR each payday, or just this once?"
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 3.6,
+          "input_tokens": 9017,
+          "output_tokens": 894,
+          "cached_tokens": 8960,
+          "memory_input_tokens": 479,
+          "memory_output_tokens": 440,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "q-compare-months",
+      "area": "ask",
+      "target": "M8c",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "compare my grab spending in august and september",
+          "replies": [
+            "Grab's up this month:\n\n\u2022 Aug: 54.80 (3 rides)\n\u2022 Sep: 96.30 (4 rides)\n\nThat's 41.50 more, with one extra ride. Want me to see which rides were the pricey ones?"
+          ],
+          "calls": [
+            {
+              "tool": "query_ledger",
+              "args": {
+                "merchant": "grab",
+                "start_date": "2026-08-01",
+                "end_date": "2026-09-30",
+                "group_by": "month"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.05,
+          "input_tokens": 18222,
+          "output_tokens": 245,
+          "cached_tokens": 17920,
+          "memory_input_tokens": 481,
+          "memory_output_tokens": 23,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "cat-explain",
+      "area": "categories",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "why is yesterday's grab ride in transport",
+          "replies": [
+            "It's in Transport because it was picked for it when it was logged \u2014 not by a rule. Your \"grab\" \u2192 Transport rule only files new ones."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "expenses"
+              }
+            },
+            {
+              "tool": "find_transactions",
+              "args": {
+                "search": "Grab",
+                "start_date": "2026-09-27",
+                "end_date": "2026-09-27"
+              }
+            },
+            {
+              "tool": "explain_category",
+              "args": {
+                "transaction_id": "5b1e6d0b-1354-41bb-91d2-cee6c60c7733"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.32,
+          "input_tokens": 43880,
+          "output_tokens": 310,
+          "cached_tokens": 43520,
+          "memory_input_tokens": 481,
+          "memory_output_tokens": 71,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "mem-short-replies",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "please keep your replies short",
+          "replies": [
+            "Short it is."
+          ],
+          "calls": [
+            {
+              "tool": "set_voice",
+              "args": {
+                "length": "short"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.13,
+          "input_tokens": 18228,
+          "output_tokens": 69,
+          "cached_tokens": 18048,
+          "memory_input_tokens": 478,
+          "memory_output_tokens": 28,
+          "memory_failed": false
+        },
+        {
+          "text": "how much did i spend this month",
+          "replies": [
+            "460.03 this month, across 15 transactions.\n\n\u2022 Dining Out 143.90\n\u2022 Transport 96.30\n\u2022 Groceries 88.45"
+          ],
+          "calls": [
+            {
+              "tool": "spending_summary",
+              "args": {}
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.06,
+          "input_tokens": 18442,
+          "output_tokens": 81,
+          "cached_tokens": 18304,
+          "memory_input_tokens": 480,
+          "memory_output_tokens": 24,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "adv-invest",
+      "area": "adversarial",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "put half my salary into stocks",
+          "replies": [
+            "I can't move money \u2014 Nexus only records, never transfers. If you've already made the move, tell me and I'll log 2,500 from Spending to IBKR. Or if this is a regular thing, I can set it up as a monthly investment to remember."
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 3.24,
+          "input_tokens": 9017,
+          "output_tokens": 751,
+          "cached_tokens": 8960,
+          "memory_input_tokens": 479,
+          "memory_output_tokens": 486,
+          "memory_failed": false
+        }
+      ]
+    }
+  ]
+}
