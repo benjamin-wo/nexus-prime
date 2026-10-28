@@ -29,12 +29,13 @@ async def build_report(
 ) -> ops_report.Report:
     now = utcnow()
     since = now - timedelta(hours=hours)
-    window, jobs, state, webhook, credit = await asyncio.gather(
+    window, jobs, state, webhook, credit, agent = await asyncio.gather(
         ops_store.read_window(engine, since, now),
         ops_store.read_jobs(engine, now, since),
         ops_store.read_state(engine, date(now.year, now.month, 1)),
         _webhook(webhook_info),
         _openrouter(settings),
+        ops_store.read_agent_events(engine, now - timedelta(days=ops_report.MISTAKES_DAYS), now),
     )
     checks = ops_report.Checks(
         now=now,
@@ -50,6 +51,7 @@ async def build_report(
         search_credits=state["search_credits"],
         search_monthly=settings.tavily_monthly_credits if settings.tavily_api_key else None,
         database_bytes=state["database_bytes"],
+        mistakes=agent,
     )
     return ops_report.build(window.events, window.requests, window.calls, checks)
 

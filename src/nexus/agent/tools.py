@@ -22,7 +22,7 @@ from nexus.application import budgets as budget_cases
 from nexus.application import cashflow as cashflow_cases
 from nexus.application import categories as category_cases
 from nexus.application import category_rules as rule_cases
-from nexus.application import day_slots, trip_split
+from nexus.application import day_slots, mistakes, trip_split
 from nexus.application import duplicates as duplicate_cases
 from nexus.application import email as email_cases
 from nexus.application import income as income_cases

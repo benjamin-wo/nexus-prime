@@ -89,7 +89,7 @@ def error_kind(exc: Exception) -> str:
 # "no thanks" answers an offer rather than fixing anything.
 _CORRECTION = re.compile(
     r"^\W*(?:no(?!\s+(?:thanks|thank\s+you|need)\b)|nope|not\s+that|not\s+what|i\s+meant"
-    r"|wrong|that(?:['’]s|s|\s+is)\s+not|actually)\b",
+    r"|wrong|that(?:['\u2019]s|s|\s+is)\s+not|actually)\b",
     re.IGNORECASE,
 )
 

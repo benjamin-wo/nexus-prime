@@ -14,7 +14,7 @@ from typing import Any
 from sqlalchemy import delete, func, insert, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nexus.application import ops
+from nexus.application import mistakes, ops
 from nexus.application.clock import utcnow
 from nexus.infra.db.tables import email_connections, jobs, ops_events, web_credits
 
@@ -148,6 +148,26 @@ async def read_window(engine: AsyncEngine, since: datetime, until: datetime) -> 
             [dict(r._mapping) for r in requests],
             [dict(r._mapping) for r in calls],
         )
+
+
+# The newest agent events kept for the weekly mistakes problem; far more than a week holds.
+MAX_AGENT_EVENTS = 20_000
+
+
+async def read_agent_events(
+    engine: AsyncEngine, since: datetime, until: datetime
+) -> list[dict[str, Any]]:
+    """The "agent" events (signs the agent got something wrong; see
+    application/mistakes.py) in a window, oldest first."""
+    e = ops_events.c
+    async with engine.connect() as db:
+        rows = await db.execute(
+            select(e.at, e.name, e.ok, e.trace, e.user_ref, e.channel, e.detail)
+            .where(e.at >= since, e.at < until, e.kind == mistakes.KIND)
+            .order_by(e.at.desc())
+            .limit(MAX_AGENT_EVENTS)
+        )
+        return [dict(r._mapping) for r in reversed(rows.all())]
 
 
 async def read_jobs(engine: AsyncEngine, now: datetime, since: datetime) -> JobsState:

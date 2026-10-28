@@ -17,10 +17,13 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from nexus.agent.graph import CORE_TOOLS, STOCK_PHRASE_RULE
 from nexus.agent.tools import READ_ONLY, ToolContext, build_tools, run_tool, safe_for_images
 from nexus.application import export
+from nexus.application import memory as memory_cases
 from nexus.application import voice as voice_cases
+from nexus.application.memory import Action, MemoryChange
 from nexus.application.users import get_user
 from nexus.domain.errors import InvalidInput
 from nexus.domain.ledger import UserId
+from nexus.domain.memory import MemoryKind
 from nexus.domain.voice import (
     DEFAULT,
     STOCK_PHRASES,
@@ -377,6 +380,13 @@ async def test_a_default_user_is_told_nothing_about_a_voice(uow: UowFactory, ali
 async def test_the_prompt_makes_voice_settings_the_one_home_for_reply_style(
     uow: UowFactory, alice: UserId
 ) -> None:
+    # A remembered preference makes the memories section appear in the prompt.
+    await memory_cases.apply_changes(
+        uow(),
+        await get_user(uow(), alice),
+        [MemoryChange(Action.ADD, MemoryKind.PREFERENCE, "Prefers short replies.")],
+        now=NOW,
+    )
     model = scripted(say("Hi."))
     await build(uow, model).handle_text(alice, "hello", "t")
     [prompt] = system_prompts(model)
