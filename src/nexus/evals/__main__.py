@@ -7,6 +7,9 @@ Each run creates a throwaway database on EVAL_DATABASE_URL's server (the user mu
 be allowed to CREATE DATABASE), migrates it, and drops it afterwards. Results go
 to eval-results/ as JSON and Markdown. The key is read from the environment and
 never printed. Every case uses made-up data only.
+
+    python -m nexus.evals ... --repeat 3            # every case 3 times: pass rates, flaky cases
+    python -m nexus.evals compare main.json branch.json   # two result files, side by side
 """
 
 import argparse
@@ -30,6 +33,7 @@ from pydantic import SecretStr
 from sqlalchemy.engine import make_url
 
 from nexus.evals.cases import CASES, Case
+from nexus.evals.compare import main as compare_main
 from nexus.evals.runner import CaseResult, Pricing, Summary, run_cases
 from nexus.infra.db.engine import make_engine
 from nexus.infra.db.migrations import alembic_config
@@ -111,6 +115,22 @@ async def throwaway_database(admin_url: str) -> AsyncIterator[str]:
             await conn.close()
 
 
+def _rounds(text: str) -> int:
+    n = int(text)
+    if n < 1:
+        raise argparse.ArgumentTypeError("must be at least 1")
+    return n
+
+
+def _results_json(summary: Summary) -> str:
+    """One entry per case as ever for a single round; with repeats, the runs and the
+    per-case rates, flaky and always-failing cases, and passes per round."""
+    if summary.repeat == 1:
+        return json.dumps([_as_json(r) for r in summary.results], indent=2, default=str)
+    runs = [_as_json(r, rounds=True) for r in summary.results]
+    return json.dumps({**summary.stats(), "runs": runs}, indent=2, default=str)
+
+
 def _pick(ids: list[str], areas: list[str]) -> list[Case]:
     cases = [
         c
@@ -122,8 +142,9 @@ def _pick(ids: list[str], areas: list[str]) -> list[Case]:
     return cases
 
 
-def _as_json(result: CaseResult) -> dict[str, object]:
+def _as_json(result: CaseResult, *, rounds: bool = False) -> dict[str, object]:
     return {
+        **({"round": result.round_no} if rounds else {}),
         "id": result.case.id,
         "area": result.case.area,
         "target": result.case.target,
@@ -149,11 +170,22 @@ def _as_json(result: CaseResult) -> dict[str, object]:
 
 
 async def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["compare"]:
+        return compare_main(argv[1:])
     parser = argparse.ArgumentParser(prog="python -m nexus.evals", description=__doc__)
     parser.add_argument("--model", action="append", required=True, help="OpenRouter model id")
     parser.add_argument("--case", action="append", default=[], help="case id or id prefix")
     parser.add_argument("--area", action="append", default=[])
     parser.add_argument("--concurrency", type=int, default=4)
+    parser.add_argument(
+        "--repeat",
+        type=_rounds,
+        default=1,
+        metavar="N",
+        help="run every selected case N times, each from a fresh seed, and report pass rates, "
+        "flaky and always-failing cases (default 1)",
+    )
     parser.add_argument(
         "--vision-model", help="another model for receipt photos (default: each --model)"
     )
@@ -194,6 +226,7 @@ async def main(argv: list[str] | None = None) -> int:
     await asyncio.to_thread(out.mkdir, parents=True, exist_ok=True)
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     summaries: list[Summary] = []
+    stride = max(10_000, len(cases) * args.repeat)  # telegram ids per model
 
     # The real speech model, as in production (the voice-* cases play clips through it).
     http = httpx.AsyncClient()
@@ -211,7 +244,8 @@ async def main(argv: list[str] | None = None) -> int:
                 model = openrouter_model(
                     name, api_key, providers=providers or None, reasoning=reasoning
                 )
-                print(f"{name}: {len(cases)} cases", flush=True)
+                rounds = f" x {args.repeat} rounds" if args.repeat > 1 else ""
+                print(f"{name}: {len(cases)} cases{rounds}", flush=True)
 
                 def progress(result: CaseResult) -> None:
                     mark = "." if result.passed else "F"
@@ -222,7 +256,7 @@ async def main(argv: list[str] | None = None) -> int:
                     _always(model),
                     cases,
                     concurrency=args.concurrency,
-                    first_telegram_id=1_000_000 + offset * 10_000,
+                    first_telegram_id=1_000_000 + offset * stride,
                     on_result=progress,
                     vision=openrouter_model(args.vision_model, api_key)
                     if args.vision_model
@@ -231,6 +265,7 @@ async def main(argv: list[str] | None = None) -> int:
                     if args.memory_model
                     else None,
                     speech=stt,
+                    repeat=args.repeat,
                 )
                 print(flush=True)
                 label = name
@@ -246,7 +281,7 @@ async def main(argv: list[str] | None = None) -> int:
                 safe = name.replace("/", "_").replace(":", "_")
                 await _write(
                     out / f"{stamp}-{safe}.json",
-                    json.dumps([_as_json(r) for r in results], indent=2, default=str),
+                    _results_json(summary),
                 )
                 print(f"{name}: {summary.passed}/{len(results)} passed", flush=True)
         finally:

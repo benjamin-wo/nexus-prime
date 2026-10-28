@@ -9,6 +9,10 @@ opened before:
 - one that comes back after its ticket was closed as done reopens it, with a comment;
 - an open ticket whose problem is gone from the whole window is closed, with a comment.
 
+One problem is a weekly digest, not a fault: "Agent mistakes this week" (see
+ops_report.py), counted over 7 days whatever the report's window, closed once a week has
+fewer than 5 signals.
+
 A ticket someone closed as "not planned" is left alone. Tickets hold only what the
 report holds: names, counts, timings, error types and code locations, never user data.
 """
@@ -16,10 +20,10 @@ report holds: names, counts, timings, error types and code locations, never user
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Protocol
 
-from nexus.application.ops_report import RANK, Problem, Report, Severity
+from nexus.application.ops_report import MISTAKES_ID, MISTAKES_MIN, RANK, Problem, Report, Severity
 
 LABEL = "ops"
 MARK = "<!-- ops-id: {} -->"
@@ -103,7 +107,7 @@ async def sync(
             )
             await tracker.comment(
                 ticket.number,
-                f"Back again: seen {problem.count} times in the last {_hours(report)} hours, "
+                f"Back again: seen {problem.count} times in the last {_last(problem, report)}, "
                 f"last at {_when(problem.last_seen)}.",
             )
             reopened.append(ticket.number)
@@ -114,10 +118,13 @@ async def sync(
             updated.append(ticket.number)
     for problem_id, ticket in known.items():
         if ticket.open and problem_id not in seen:
+            gone = (
+                f"Fewer than {MISTAKES_MIN} signals in the last 7 days"
+                if problem_id == MISTAKES_ID
+                else f"Not seen in the last {_hours(report)} hours"
+            )
             await tracker.comment(
-                ticket.number,
-                f"Not seen in the last {_hours(report)} hours, so closing. It reopens if it "
-                "comes back.",
+                ticket.number, f"{gone}, so closing. It reopens if it comes back."
             )
             await tracker.edit(ticket.number, state="closed")
             closed.append(ticket.number)
@@ -136,6 +143,14 @@ def _hours(report: Report) -> int:
     return round((report.until - report.since).total_seconds() / 3600)
 
 
+def _last(problem: Problem, report: Report) -> str:
+    """How far back a problem's count looks: its own window, else the report's."""
+    hours = problem.window_hours
+    if hours is None:
+        return f"{_hours(report)} hours"
+    return f"{hours // 24} days" if hours % 24 == 0 else f"{hours} hours"
+
+
 def _when(at: datetime | None) -> str:
     return "unknown" if at is None else f"{at:%d %b %Y %H:%M} UTC"
 
@@ -152,6 +167,25 @@ def code_link(where: str, repo: str) -> str:
     return f"[`{where}`](https://github.com/{repo}/blob/main/{path}#L{line})"
 
 
+def _usual_steps(problem: Problem, repo: str) -> list[str]:
+    steps: list[str] = []
+    if problem.where:
+        steps.append(f"Start at {code_link(problem.where, repo)}.")
+    if problem.traces:
+        traces = ", ".join(f"`{t}`" for t in problem.traces)
+        steps.append(
+            "Read the full log lines: Railway, nexus-app, Logs, searching for a "
+            f"trace ({traces}). Every line of that update, request or job carries it."
+        )
+    steps += [
+        "Reproduce it in a test with made-up data, fix it, and open a PR that says "
+        '"Fixes #<this issue>".',
+        "The ops report (`GET /api/ops/report`) shows whether it has stopped; "
+        "this ticket closes itself once it's gone for a whole report window.",
+    ]
+    return [f"{n}. {text}" for n, text in enumerate(steps, 1)]
+
+
 def render(problem: Problem, report: Report, repo: str) -> str:
     lines = [
         f"**{problem.title}**",
@@ -160,7 +194,7 @@ def render(problem: Problem, report: Report, repo: str) -> str:
         "|---|---|",
         f"| Severity | {problem.severity} |",
         f"| Area | {problem.area} |",
-        f"| Seen | {problem.count} times in the last {_hours(report)} hours |",
+        f"| Seen | {problem.count} times in the last {_last(problem, report)} |",
     ]
     if problem.users:
         lines.append(f"| Users affected | {problem.users} (counted by hash) |")
@@ -175,25 +209,18 @@ def render(problem: Problem, report: Report, repo: str) -> str:
             lines.append(f"| {key.replace('_', ' ').capitalize()} | `{value}` |")
     if problem.hint:
         lines += ["", problem.hint]
+    if problem.lines:
+        lines += ["", *problem.lines]
     lines += ["", "### To fix", ""]
-    step = 1
-    if problem.where:
-        lines.append(f"{step}. Start at {code_link(problem.where, repo)}.")
-        step += 1
-    if problem.traces:
-        traces = ", ".join(f"`{t}`" for t in problem.traces)
-        lines.append(
-            f"{step}. Read the full log lines: Railway, nexus-app, Logs, searching for a "
-            f"trace ({traces}). Every line of that update, request or job carries it."
-        )
-        step += 1
+    if problem.steps:
+        lines += [f"{n}. {text}" for n, text in enumerate(problem.steps, 1)]
+    else:
+        lines += _usual_steps(problem, repo)
+    since = report.until - timedelta(hours=problem.window_hours or 0)
+    since = since if problem.window_hours else report.since
     lines += [
-        f"{step}. Reproduce it in a test with made-up data, fix it, and open a PR that says "
-        '"Fixes #<this issue>".',
-        f"{step + 1}. The ops report (`GET /api/ops/report`) shows whether it has stopped; "
-        "this ticket closes itself once it's gone for a whole report window.",
         "",
-        f"_Report window: {_when(report.since)} to {_when(report.until)}_",
+        f"_Report window: {_when(since)} to {_when(report.until)}_",
         "",
         "Opened and kept up to date by Nexus's ops job from anonymous ops events: no "
         "message text, amounts, names or other user data.",

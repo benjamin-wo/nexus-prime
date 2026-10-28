@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 from statistics import median
 from typing import Any, Literal
 
+from nexus.application import mistakes
 from nexus.application.ops import fingerprint
 
 Severity = Literal["high", "medium", "low"]
@@ -24,6 +25,13 @@ RANK: dict[str, int] = {"high": 0, "medium": 1, "low": 2}
 SLOW_TURN_MS = 30_000
 TURN_P90_MS = 15_000
 SAMPLE_TRACES = 3
+
+# The weekly mistakes problem: one id, so one ticket that updates.
+MISTAKES_ID = fingerprint("agent-mistakes-week")
+MISTAKES_TOPIC = "Agent mistakes this week"
+MISTAKES_DAYS = 7
+MISTAKES_MIN = 5  # signals in the window before there's anything to show
+MISTAKES_TOP = 5
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +51,12 @@ class Problem:
     # What it is without its counts ("Calls to x failing"): a ticket's title, which
     # stays the same while the problem lasts. Empty: the title is already that.
     topic: str = ""
+    # Markdown lines shown after the facts (a breakdown), and, when set, the ticket's
+    # "To fix" steps in place of the usual ones.
+    lines: list[str] = field(default_factory=list)
+    steps: list[str] = field(default_factory=list)
+    # How far back its count looks, when it isn't the report's window.
+    window_hours: int | None = None
 
     @property
     def subject(self) -> str:
@@ -66,6 +80,8 @@ class Checks:
     search_credits: dict[str, int] = field(default_factory=dict)
     search_monthly: int | None = None
     database_bytes: int | None = None
+    # "agent" ops events of the last MISTAKES_DAYS days (see application/mistakes.py).
+    mistakes: Sequence[dict[str, Any]] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -173,6 +189,7 @@ def build(
         *_from_requests(requests),
         *_from_calls(calls),
         *_from_checks(checks),
+        *_from_mistakes(checks),
     ]
     problems.sort(key=lambda p: (RANK[p.severity], -p.count, p.title))
     return Report(checks.since, checks.now, _summary(by_kind, requests, calls, checks), problems)
@@ -509,6 +526,253 @@ def _from_checks(checks: Checks) -> Iterable[Problem]:
         )
 
 
+# --- Agent mistakes ---------------------------------------------------------------
+
+# Which eval cases (the ``area`` of a case in evals/cases.py) cover a tool's behaviour.
+# Tools not listed have no obvious area: add cases and an entry.
+TOOL_EVAL_AREAS: dict[str, str] = {
+    **dict.fromkeys(
+        (
+            "log_expense",
+            "add_to_itinerary",
+            "change_itinerary_entry",
+            "remove_from_itinerary",
+            "create_trip",
+            "update_trip",
+            "delete_trip",
+            "add_to_trip",
+            "remove_from_trip",
+            "add_trip_todo",
+            "add_trip_cover",
+            "label_trip_day",
+            "split_trip_costs",
+            "they_paid",
+            "settle_up",
+            "research_to_trip",
+            "record_trade",
+            "watch_stock",
+            "unwatch_stock",
+        ),
+        "log",
+    ),
+    "log_receipt_expense": "receipt",
+    "record_income": "income",
+    **dict.fromkeys(
+        (
+            "edit_transaction",
+            "delete_transaction",
+            "restore_transaction",
+            "undo_last_change",
+            "split_bill",
+            "combine_duplicate_transactions",
+            "find_duplicates",
+        ),
+        "edit",
+    ),
+    **dict.fromkeys(
+        (
+            "log_move",
+            "mark_as_move",
+            "find_likely_moves",
+            "list_wallets",
+            "add_wallet",
+            "update_wallet",
+            "delete_wallet",
+        ),
+        "wallets",
+    ),
+    **dict.fromkeys(
+        (
+            "set_budget",
+            "remove_budget",
+            "list_budgets",
+            "add_bill",
+            "list_bills",
+            "mark_bill_paid",
+            "snooze_bill",
+            "remove_bill",
+            "set_pay_schedule",
+            "set_usual_salary",
+            "remove_pay_schedule",
+            "show_pay_schedule",
+            "set_market_alerts",
+            "keep_plan_fresh",
+            "research_trip",
+        ),
+        "plan",
+    ),
+    **dict.fromkeys(
+        (
+            "add_category",
+            "rename_category",
+            "delete_category",
+            "merge_category",
+            "list_categories",
+            "set_category_rule",
+            "remove_category_rule",
+            "list_category_rules",
+            "explain_category",
+        ),
+        "categories",
+    ),
+    **dict.fromkeys(("set_split_habit", "list_split_habits", "remove_split_habit"), "memory"),
+    "set_timezone": "timezone",
+    **dict.fromkeys(("set_voice", "show_voice"), "voice"),
+    **dict.fromkeys(
+        (
+            "find_transactions",
+            "spending_summary",
+            "query_ledger",
+            "list_ious",
+            "cash_flow",
+            "list_subscriptions",
+            "web_search",
+            "find_places",
+            "find_ideas",
+            "place_info",
+            "trip_status",
+            "list_trips",
+            "show_portfolio",
+            "what_moved_today",
+        ),
+        "ask",
+    ),
+}
+
+
+@dataclass(frozen=True, slots=True)
+class Tally:
+    """A week of agent mistake signals, counted."""
+
+    total: int
+    quick_undos: int
+    signals: dict[str, int]
+    tools: dict[str, int]
+    pairs: list[tuple[str, int]]  # (what happened, count), most first
+    # (what happened, tool) behind each pair, for suggesting eval areas
+    pair_tools: dict[str, list[str]]
+
+
+def _signal_tools(row: dict[str, Any]) -> list[str]:
+    detail = row["detail"]
+    found = detail.get("tools") or ([detail["tool"]] if detail.get("tool") else [])
+    return [t for t in found if isinstance(t, str)]
+
+
+def _pair_label(signal: str, tool: str | None, error: str | None) -> str:
+    """ "undo after split_bill", "tool_error InvalidInput on change_itinerary_entry"."""
+    if signal == mistakes.TOOL_ERROR:
+        label = f"{signal} {error}" if error else signal
+        return f"{label} on {tool}" if tool else label
+    if tool is None:
+        return signal
+    word = {
+        mistakes.UNDO: "after",
+        mistakes.CORRECTION: "after",
+        mistakes.UNKNOWN_TOOL: "near",
+        mistakes.STEP_LIMIT: "while using",
+    }.get(signal, "with")
+    return f"{signal} {word} {tool}"
+
+
+def tally(rows: Iterable[dict[str, Any]], top: int = MISTAKES_TOP) -> Tally:
+    """Counts per signal, per tool and per (signal, tool) pair. A signal that names
+    several tools counts once for each of them in the pairs and tool counts."""
+    signals: Counter[str] = Counter()
+    tools: Counter[str] = Counter()
+    pairs: Counter[str] = Counter()
+    pair_tools: dict[str, set[str]] = defaultdict(set)
+    quick = 0
+    for row in rows:
+        signal = row["name"]
+        if signal not in mistakes.SIGNALS:
+            continue
+        signals[signal] += 1
+        quick += signal == mistakes.UNDO and bool(row["detail"].get("quick"))
+        error = row["detail"].get("error")
+        error = error if isinstance(error, str) else None
+        named: list[str | None] = [*_signal_tools(row)] or [None]
+        for tool in named:
+            label = _pair_label(signal, tool, error)
+            pairs[label] += 1
+            if tool:
+                tools[tool] += 1
+                pair_tools[label].add(tool)
+    ranked = sorted(pairs.items(), key=lambda kv: (-kv[1], kv[0]))[:top]
+    return Tally(
+        total=sum(signals.values()),
+        quick_undos=quick,
+        signals=dict(signals.most_common()),
+        tools=dict(tools.most_common(8)),
+        pairs=ranked,
+        pair_tools={label: sorted(pair_tools[label]) for label, _ in ranked},
+    )
+
+
+def eval_areas(found: Tally) -> list[str]:
+    """For the top pairs, the eval area to add made-up cases to: "edit: undo after
+    split_bill (6)". Pairs whose tool has no obvious area are left out."""
+    by_area: dict[str, list[str]] = {}
+    for label, count in found.pairs:
+        areas = {
+            TOOL_EVAL_AREAS[t] for t in found.pair_tools.get(label, []) if t in TOOL_EVAL_AREAS
+        }
+        for area in sorted(areas):
+            by_area.setdefault(area, []).append(f"{label} ({count})")
+    return [f"`{area}`: {', '.join(what)}" for area, what in by_area.items()]
+
+
+def _from_mistakes(checks: Checks) -> Iterable[Problem]:
+    since = checks.now - timedelta(days=MISTAKES_DAYS)
+    rows = [r for r in checks.mistakes if since <= r["at"] <= checks.now]
+    found = tally(rows)
+    if found.total < MISTAKES_MIN:
+        return
+    first, last = _span(rows)
+    lines = ["**Most often** (signal and tool):", ""]
+    lines += [f"- {label}: {count}" for label, count in found.pairs]
+    areas = eval_areas(found)
+    if areas:
+        lines += ["", "**Suggested eval areas** (`area` in `src/nexus/evals/cases.py`):", ""]
+        lines += [f"- {a}" for a in areas]
+    lines += [
+        "",
+        "These counts come from anonymous agent events: tool names, counts, error classes and "
+        "seconds. No message text, amounts or names is stored or shown here, so every eval "
+        "case written from them has to be made up.",
+    ]
+    yield Problem(
+        id=MISTAKES_ID,
+        severity="medium",
+        area="agent",
+        title=f"{MISTAKES_TOPIC}: {found.total} signals",
+        topic=MISTAKES_TOPIC,
+        count=found.total,
+        first_seen=first,
+        last_seen=last,
+        users=_users(rows) or None,
+        detail={
+            "signals": found.signals,
+            "tools": found.tools,
+            "undos_within_2_minutes": found.quick_undos,
+        },
+        hint="Places the agent probably got something wrong: an Undo (soon after a change is "
+        "the strongest sign), a message that starts like a correction, a tool that refused or "
+        "crashed, a made-up tool, an empty reply or running out of steps.",
+        lines=lines,
+        steps=[
+            "Take the top pair and write a made-up eval case for it in `src/nexus/evals/cases.py`"
+            " (the area above): invent the wording, a name, merchant and amount; no real "
+            "message is stored, so there is nothing to copy.",
+            "Run it (`python -m nexus.evals --area <area>`, see docs/EVALS.md), then fix the "
+            "prompt, the tool's description or its arguments until the new case passes.",
+            'Open a PR that says "Refs #<this issue>". Not "Fixes": this ticket closes itself '
+            f"once a week has fewer than {MISTAKES_MIN} signals.",
+        ],
+        window_hours=MISTAKES_DAYS * 24,
+    )
+
+
 # --- Summary ----------------------------------------------------------------------
 
 
@@ -604,6 +868,8 @@ def markdown(report: Report) -> str:
                 lines.append(f"- Detail: {shown}")
         if p.traces:
             lines.append(f"- Traces: {', '.join(f'`{x}`' for x in p.traces)}")
+        if p.lines:
+            lines += ["", *p.lines]
         if p.hint:
             lines.append(f"- {p.hint}")
         lines.append("")

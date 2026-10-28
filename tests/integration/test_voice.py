@@ -17,10 +17,13 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from nexus.agent.graph import CORE_TOOLS, STOCK_PHRASE_RULE
 from nexus.agent.tools import READ_ONLY, ToolContext, build_tools, run_tool, safe_for_images
 from nexus.application import export
+from nexus.application import memory as memory_cases
 from nexus.application import voice as voice_cases
+from nexus.application.memory import Action, MemoryChange
 from nexus.application.users import get_user
 from nexus.domain.errors import InvalidInput
 from nexus.domain.ledger import UserId
+from nexus.domain.memory import MemoryKind
 from nexus.domain.voice import (
     DEFAULT,
     STOCK_PHRASES,
@@ -372,6 +375,29 @@ async def test_a_default_user_is_told_nothing_about_a_voice(uow: UowFactory, ali
     assert (
         'since a plain "yes" would act on it. ' + STOCK_PHRASE_RULE + "Never show transaction ids."
     ) in prompt
+
+
+async def test_the_prompt_makes_voice_settings_the_one_home_for_reply_style(
+    uow: UowFactory, alice: UserId
+) -> None:
+    # A remembered preference makes the memories section appear in the prompt.
+    await memory_cases.apply_changes(
+        uow(),
+        await get_user(uow(), alice),
+        [MemoryChange(Action.ADD, MemoryKind.PREFERENCE, "Prefers short replies.")],
+        now=NOW,
+    )
+    model = scripted(say("Hi."))
+    await build(uow, model).handle_text(alice, "hello", "t")
+    [prompt] = system_prompts(model)
+    assert "A reply style the user has asked for" in prompt
+    assert 'A style wish is lasting unless it names one reply: "keep your replies short"' in prompt
+    assert "save them with set_voice (nothing else keeps them)" in prompt
+    assert 'Only a wish for one reply ("keep this one short") applies' in prompt
+    assert "The reply style is the voice block below" in prompt
+    assert "style preference that disagrees with it is old: ignore it" in prompt
+    assert "How to reply (length, emoji, tone, humour) is not a memory" in prompt
+    assert "keep to the reply style they asked for" not in prompt
 
 
 async def test_a_saved_default_is_the_same_prompt_as_none_at_all(

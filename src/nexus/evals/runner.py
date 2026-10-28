@@ -120,6 +120,7 @@ class CaseResult:
     turns: list[TurnLog]
     failures: list[str]
     error: str | None = None
+    round_no: int = 1  # which repeat of the case this is (``--repeat``), from 1
 
     @property
     def passed(self) -> bool:
@@ -466,11 +467,14 @@ async def run_cases(
     vision: BaseChatModel | None = None,
     memory: BaseChatModel | None = None,
     speech: SpeechToText | None = None,
+    repeat: int = 1,
 ) -> list[CaseResult]:
-    """Run the cases, a few at a time, each as its own user."""
+    """Run the cases, a few at a time, each as its own user. With ``repeat`` above 1 every
+    case runs that many times (rounds), each time as a fresh user; results come back
+    round by round, in the order of ``cases``."""
     gate = asyncio.Semaphore(concurrency)
 
-    async def one(n: int, case: Case) -> CaseResult:
+    async def one(n: int, case: Case, round_no: int) -> CaseResult:
         async with gate:
             result = await run_case(
                 engine,
@@ -481,11 +485,16 @@ async def run_cases(
                 memory=memory,
                 speech=speech,
             )
+        result.round_no = round_no
         if on_result:
             on_result(result)
         return result
 
-    return list(await asyncio.gather(*(one(n, c) for n, c in enumerate(cases))))
+    return list(
+        await asyncio.gather(
+            *(one(r * len(cases) + n, c, r + 1) for r in range(repeat) for n, c in enumerate(cases))
+        )
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -508,6 +517,51 @@ class Summary:
     @property
     def rate(self) -> float:
         return self.passed / len(self.results) if self.results else 0.0
+
+    @property
+    def repeat(self) -> int:
+        """How many rounds the cases ran (1: a single sample, reported as ever)."""
+        return max((r.round_no for r in self.results), default=1)
+
+    def round_passes(self) -> list[int]:
+        """How many runs passed in each round."""
+        return [
+            sum(r.passed for r in self.results if r.round_no == n)
+            for n in range(1, self.repeat + 1)
+        ]
+
+    def per_case(self) -> dict[str, tuple[int, int]]:
+        """Each case's passes and runs, in the order the cases first appear."""
+        totals: Counter[str] = Counter()
+        wins: Counter[str] = Counter()
+        for r in self.results:
+            totals[r.case.id] += 1
+            wins[r.case.id] += r.passed
+        return {k: (wins[k], totals[k]) for k in totals}
+
+    def flaky(self) -> list[str]:
+        """Cases that passed in some rounds and failed in others."""
+        return [k for k, (w, t) in self.per_case().items() if 0 < w < t]
+
+    def always_failing(self) -> list[str]:
+        """Cases that failed in every round."""
+        return [k for k, (w, _) in self.per_case().items() if w == 0]
+
+    def stats(self) -> dict[str, object]:
+        """The repeat statistics, for the JSON file."""
+        passes = self.round_passes()
+        per_case = self.per_case()
+        return {
+            "repeat": self.repeat,
+            "cases": len(per_case),
+            "passes_per_round": passes,
+            "mean_passes": round(sum(passes) / len(passes), 2),
+            "min_passes": min(passes),
+            "max_passes": max(passes),
+            "per_case": {k: {"passed": w, "runs": t} for k, (w, t) in per_case.items()},
+            "flaky": self.flaky(),
+            "always_failing": self.always_failing(),
+        }
 
     def by(self, key: Callable[[CaseResult], str | None]) -> dict[str, tuple[int, int]]:
         totals: Counter[str] = Counter()
@@ -542,10 +596,20 @@ class Summary:
         p90 = statistics.quantiles(seconds, n=10)[-1] if len(seconds) >= 2 else median
         cost = self.cost()
         n = len(self.results) or 1
+        if self.repeat > 1:
+            passes = self.round_passes()
+            per_round = len(self.results) // self.repeat
+            passed_line = (
+                f"- Passed: **{self.passed / self.repeat:.1f}/{per_round}** a round on average "
+                f"({self.rate:.0%}), min {min(passes)}, max {max(passes)}, "
+                f"over {self.repeat} rounds"
+            )
+        else:
+            passed_line = f"- Passed: **{self.passed}/{len(self.results)}** ({self.rate:.0%})"
         lines = [
             f"### {self.model}",
             "",
-            f"- Passed: **{self.passed}/{len(self.results)}** ({self.rate:.0%})",
+            passed_line,
             f"- Reply time per turn: median {median:.1f}s, p90 {p90:.1f}s",
             "- Tokens per case: "
             f"{sum(r.input_tokens for r in self.results) // n} in, "
@@ -582,5 +646,22 @@ class Summary:
             lines += ["", "Failures:", ""]
             for r in failed:
                 why = r.error or "; ".join(r.failures)
-                lines.append(f"- `{r.case.id}`: {why}")
+                where = f" (round {r.round_no})" if self.repeat > 1 else ""
+                lines.append(f"- `{r.case.id}`{where}: {why}")
+        if self.repeat > 1:
+            lines += self._repeat_sections()
         return "\n".join(lines)
+
+    def _repeat_sections(self) -> list[str]:
+        """What a repeated run adds: the unsteady cases, the broken ones, every case's rate."""
+        per_case = self.per_case()
+        lines: list[str] = []
+        for title, ids in (
+            ("Flaky (passed in some rounds, failed in others)", self.flaky()),
+            ("Always failing (failed every round)", self.always_failing()),
+        ):
+            lines += ["", f"{title}:", ""]
+            lines += [f"- `{k}`: {per_case[k][0]}/{per_case[k][1]}" for k in ids] or ["None."]
+        lines += ["", "| Case | Passed |", "|---|---|"]
+        lines += [f"| {k} | {w}/{t} |" for k, (w, t) in per_case.items()]
+        return lines

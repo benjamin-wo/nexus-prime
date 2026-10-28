@@ -2,6 +2,33 @@
 
 How the assistant scores on the evaluation set (`src/nexus/evals`, see OPERATIONS). Every figure is from made-up data; each case starts from the same seeded user. Runs are single samples, so a difference of a case or two between models is noise; the pairing we chose was run twice.
 
+## Repeats and comparing
+
+A single run is one sample: a flaky case looks like a regression (`wallet-find-likely-moves` failed twice in a row on a branch, and a manual 4x4 comparison against main showed it was an existing weak spot). Run the selection several times instead:
+
+```
+python -m nexus.evals --model deepseek/deepseek-v4.1-flash --area wallets --repeat 3
+```
+
+`--repeat N` (default 1) runs every selected case N times, each as a fresh seeded user, sharing the usual `--concurrency`. With N above 1 the report adds:
+
+- the mean pass count a round, with the min and max round, in place of the single count;
+- a pass rate for every case ("3/4");
+- **Flaky**: cases that passed in some rounds and failed in others;
+- **Always failing**: cases that failed every round.
+
+Timing, tokens, cost and the area tables cover all the runs. The JSON then holds the per-case rates, the two lists, the passes in each round and every run (with its `round`) instead of a bare list of runs. With N = 1 the report and the JSON are as they always were.
+
+To compare two result files (say main and a branch, each run with `--repeat`):
+
+```
+python -m nexus.evals compare eval-results/main.json eval-results/branch.json
+```
+
+It prints each case's pass rate in both, side by side, and flags the cases whose rates differ by 2 or more out of N (N: the larger number of runs; one run each never flags). Cases that always passed in both are left out; `--all` lists them. Either file may be a single run or a repeated one. `python -m nexus.evals.compare` does the same.
+
+**Use:** run the areas a change touches with `--repeat 3`, and before calling a failure a regression, run main the same way and compare. A case that is flaky or always failing on main is not the branch's doing; a case that falls by 2 or more out of 3 or 4 is.
+
 ## M8a baseline (30 September 2026)
 
 ### First set: 103 cases

@@ -29,6 +29,21 @@ def test_every_tool_is_core_or_in_a_skill() -> None:
     assert len(CORE_TOOLS) < len(exposed) / 2
 
 
+def test_find_likely_moves_is_core_and_owns_the_question() -> None:
+    # Asked in passing ("did i log transfers to my own accounts as spending?"), with no
+    # skill loaded: the model hand-searched with find_transactions instead.
+    assert "find_likely_moves" in CORE_TOOLS
+    tools = build_tools(SkillLibrary.load().body)
+    mine = tools["find_likely_moves"]
+    assert mine.exposed
+    assert "transfers to my own accounts" in mine.description
+    assert "find_transactions" in mine.description
+    assert "find_likely_moves" in tools["find_transactions"].description
+    # "How much did I save" read as moves into Savings once query_ledger pointed at moves.
+    assert "find_likely_moves" not in tools["query_ledger"].description
+    assert "means money in minus money out" in tools["query_ledger"].description
+
+
 async def _skills(agent: object, alice: object) -> dict[str, int]:
     config = {"configurable": {"thread_id": thread_id(alice), "user_id": str(alice)}}  # type: ignore[arg-type]
     state = await agent._graph.aget_state(config)  # type: ignore[attr-defined]

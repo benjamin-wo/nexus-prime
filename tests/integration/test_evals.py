@@ -262,6 +262,42 @@ async def test_the_shared_trip_cases_seed_a_member_and_grade_the_owners_trip(
     assert "reply lacks 'alex'" in failed["shared-trip-budget-refused"].failures
 
 
+async def test_the_voice_cases_for_lasting_and_one_off_style(engine: AsyncEngine) -> None:
+    memory = (say("nothing to remember"), say("nothing to remember"))
+    good = {
+        "voice-shorter-from-now-on": lambda: scripted(
+            call("set_voice", length="short"), say("Done."), *memory
+        ),
+        "voice-one-off-short": lambda: scripted(say("Food: 58 this week."), *memory),
+    }
+    results = {
+        r.case.id: r
+        for r in await run_cases(engine, lambda case: good[case.id](), _only(*good), concurrency=2)
+    }
+    for case_id in good:
+        assert results[case_id].passed, (case_id, results[case_id].failures, results[case_id].error)
+
+    # Only remembering it is not enough, and a one-off must not change the voice.
+    wrong = {
+        "voice-shorter-from-now-on": lambda: scripted(say("Sure."), *memory),
+        "voice-one-off-short": lambda: scripted(
+            call("set_voice", length="short"), say("Food: 58 this week."), *memory
+        ),
+    }
+    failed = {
+        r.case.id: r
+        for r in await run_cases(
+            engine,
+            lambda case: wrong[case.id](),
+            _only(*wrong),
+            concurrency=2,
+            first_telegram_id=930_000,
+        )
+    }
+    assert not failed["voice-shorter-from-now-on"].passed
+    assert not failed["voice-one-off-short"].passed
+
+
 async def test_the_voice_cases_are_graded_on_the_saved_voice_and_the_wording(
     engine: AsyncEngine,
 ) -> None:
@@ -338,3 +374,27 @@ async def test_the_voice_cases_are_graded_on_the_saved_voice_and_the_wording(
     )
     stock = failed["voice-default-no-stock"].failures
     assert len([f for f in stock if "reply matches" in f]) == 3
+
+
+async def test_repeat_runs_each_case_in_every_round_as_a_fresh_user(engine: AsyncEngine) -> None:
+    seen: list[str] = []
+
+    def model_for(case: Case) -> BaseChatModel:
+        seen.append(case.id)
+        return (
+            scripted(say("How much was lunch?"))
+            if case.id == "ask-no-amount"
+            else scripted(
+                call("log_expense", amount="12", merchant="Grab", best_guess_category="Transport"),
+                say("Logged 12.00 at Grab."),
+            )
+        )
+
+    results = await run_cases(
+        engine, model_for, _only("log-grab", "ask-no-amount"), concurrency=2, repeat=3
+    )
+    assert [(r.case.id, r.round_no) for r in results] == [
+        (c, n) for n in (1, 2, 3) for c in ("log-grab", "ask-no-amount")
+    ]
+    assert len(seen) == 6
+    assert all(r.passed for r in results), [(r.case.id, r.failures, r.error) for r in results]
