@@ -8,7 +8,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
-import httpx
+import httpx2  # what the OpenAI client is built on
 import openai
 import pytest
 from langchain_core.messages import AIMessage
@@ -219,6 +219,12 @@ def settings(**values: Any) -> Settings:
     return Settings(_env_file=None, database_url="postgresql://u:p@h/db", **values)
 
 
+def as_list(callbacks: object) -> list[object]:
+    """A model's callbacks as a list (the factory sets a list, never a manager)."""
+    assert callbacks is None or isinstance(callbacks, list)
+    return list(callbacks or [])
+
+
 def test_every_model_is_built_to_count_and_openrouter_is_asked_for_the_cost() -> None:
     config = settings(
         llm_provider="openrouter",
@@ -254,7 +260,7 @@ def test_every_model_is_built_to_count_and_openrouter_is_asked_for_the_cost() ->
     assert len(models) >= 12
     for model in models:
         assert isinstance(model, ChatOpenAI)
-        assert COST_CALLBACK in (model.callbacks or [])
+        assert COST_CALLBACK in as_list(model.callbacks)
         assert model.openai_api_base == OPENROUTER_URL
         assert model.extra_body is not None and model.extra_body["usage"] == {"include": True}
 
@@ -263,10 +269,10 @@ def test_other_providers_count_tokens_without_asking_openrouter() -> None:
     plain = build_chat_models(
         settings(llm_provider="openai", openai_api_key="oa-key", openai_model="made-up/plain")
     ).primary
-    assert isinstance(plain, ChatOpenAI) and COST_CALLBACK in (plain.callbacks or [])
+    assert isinstance(plain, ChatOpenAI) and COST_CALLBACK in as_list(plain.callbacks)
     assert not (plain.extra_body or {}).get("usage")
     gemini = build_chat_models(settings(llm_provider="gemini", gemini_api_key="g-key")).primary
-    assert COST_CALLBACK in (gemini.callbacks or [])
+    assert COST_CALLBACK in as_list(gemini.callbacks)
 
 
 # --- a whole call, through the real client -----------------------------------------------------
@@ -294,19 +300,19 @@ def reply(
     }
 
 
-def wire(model: Any, handler: Callable[[httpx.Request], httpx.Response]) -> list[dict[str, Any]]:
+def wire(model: Any, handler: Callable[[httpx2.Request], httpx2.Response]) -> list[dict[str, Any]]:
     """Answer ``model``'s requests with ``handler`` instead of the network; returns the
     request bodies it was sent."""
     sent: list[dict[str, Any]] = []
 
-    def serve(request: httpx.Request) -> httpx.Response:
+    def serve(request: httpx2.Request) -> httpx2.Response:
         sent.append(json.loads(request.content))
         return handler(request)
 
     client = openai.AsyncOpenAI(
         api_key="k",
         base_url=OPENROUTER_URL,
-        http_client=httpx.AsyncClient(transport=httpx.MockTransport(serve)),
+        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(serve)),
         max_retries=0,
     )
     model.root_async_client = client
@@ -314,8 +320,8 @@ def wire(model: Any, handler: Callable[[httpx.Request], httpx.Response]) -> list
     return sent
 
 
-def ok(body: dict[str, Any]) -> Callable[[httpx.Request], httpx.Response]:
-    return lambda _: httpx.Response(200, json=body)
+def ok(body: dict[str, Any]) -> Callable[[httpx2.Request], httpx2.Response]:
+    return lambda _: httpx2.Response(200, json=body)
 
 
 def main_model() -> ChatOpenAI:
@@ -380,7 +386,7 @@ async def test_only_the_model_that_answered_is_counted_in_a_fallback(
     chat = build_chat_models(config)
     main, backup = chat.primary, chat.fallbacks[0]
     assert isinstance(main, ChatOpenAI) and isinstance(backup, ChatOpenAI)
-    wire(main, lambda _: httpx.Response(500, json={"error": {"message": "down"}}))
+    wire(main, lambda _: httpx2.Response(500, json={"error": {"message": "down"}}))
     wire(backup, ok(reply("From the backup.", cost=0.004)))
     with costs.scope("chat", user=BEN):
         answer = await main.with_fallbacks([backup]).ainvoke("hello")
@@ -391,7 +397,7 @@ async def test_only_the_model_that_answered_is_counted_in_a_fallback(
 
 async def test_a_failed_call_leaves_nothing_behind(charges: list[costs.Charge]) -> None:
     model = main_model()
-    wire(model, lambda _: httpx.Response(500, json={"error": {"message": "down"}}))
+    wire(model, lambda _: httpx2.Response(500, json={"error": {"message": "down"}}))
     with pytest.raises(openai.APIError):
         await model.ainvoke("hello")
     assert charges == []

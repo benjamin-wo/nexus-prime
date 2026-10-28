@@ -544,7 +544,9 @@ async def test_row_security_shows_a_user_only_their_own_costs(
         ],
     )
     async with acting(engine, alice) as db:
-        seen = (await db.execute(text("SELECT user_id FROM model_costs"))).scalars().all()
+        seen: list[UUID] = list(
+            (await db.execute(text("SELECT user_id FROM model_costs"))).scalars().all()
+        )
         assert list(seen) == [alice]
     async with acting(engine, None) as db:  # the owner's page, jobs, the writer: no one named
         assert len((await db.execute(text("SELECT 1 FROM model_costs"))).all()) == 3
