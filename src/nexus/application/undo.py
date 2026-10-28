@@ -7,7 +7,9 @@ undoable.
 """
 
 from dataclasses import dataclass, replace
+from datetime import datetime
 
+from nexus.application import mistakes
 from nexus.application import transactions as tx_cases
 from nexus.application.clock import utcnow
 from nexus.application.ports import UnitOfWork
@@ -77,12 +79,26 @@ async def undo_latest(uow: UnitOfWork, actor: UserId) -> tx_cases.UndoResult | T
         result: tx_cases.UndoResult | TripUndo
         if change is not None and (revision is None or change.created_at >= revision.created_at):
             result = await _undo_batch(uow, actor, change)
+            changed_at = change.created_at
         elif revision is not None:
             result = await tx_cases.reverse_revision(uow, actor, revision)
+            changed_at = revision.created_at
         else:
             raise NothingToUndo("there is nothing to undo")
         await uow.commit()
+    _record(result, changed_at)
     return result
+
+
+def _record(result: tx_cases.UndoResult | TripUndo, changed_at: datetime) -> None:
+    """An Undo is a sign the change was wrong: which tool's, and how long after."""
+    if isinstance(result, TripUndo):
+        done = {mistakes.TRIP_TOOLS[i.kind] for i in result.items if i.skipped is None}
+        if done:
+            mistakes.undo(sorted(done), changed_at)
+    else:
+        tx = result.transaction
+        mistakes.undo([mistakes.revision_tool(result.undone, tx.direction)], changed_at)
 
 
 async def _undo_batch(uow: UnitOfWork, actor: UserId, newest: TripChange) -> TripUndo:

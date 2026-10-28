@@ -75,6 +75,20 @@ async def test_the_writer_adds_updates_and_forgets(uow: UowFactory, alice: UserI
     assert writer.input_tokens == 300 and writer.output_tokens == 30
 
 
+async def test_the_writer_is_told_reply_style_lives_in_voice_settings(
+    uow: UowFactory, alice: UserId
+) -> None:
+    user = await user_of(uow, alice)
+    model = FakeWriterModel({})
+    writer = MemoryWriter(model)  # type: ignore[arg-type]
+    await writer.remember(uow, user, ["keep your replies short"], NOW)
+    prompt = str(model.seen[-1][0].content)
+    assert "Never store how Nexus should reply: length, emoji, tone or humour" in prompt
+    assert "That lives in the user's voice settings" in prompt
+    # Reply style is no longer offered as an example of a preference.
+    assert "wants short" not in prompt
+
+
 async def test_the_writer_ignores_what_it_cant_use(uow: UowFactory, alice: UserId) -> None:
     user = await user_of(uow, alice)
     model = FakeWriterModel(

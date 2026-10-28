@@ -146,6 +146,8 @@ class ToolResult:
     wrote: bool = False
     # Extra reply buttons, rows of (label, data), shown under the agent's answer.
     buttons: list[list[tuple[str, str]]] | None = None
+    # For an expected failure (run_tool): its coarse class, like "NotFound". Never the message.
+    error: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -4490,7 +4492,7 @@ async def run_tool(spec: ToolSpec, ctx: ToolContext, raw_args: dict[str, Any]) -
     try:
         result = await spec.run(ctx, spec.parse(raw_args))
     except NexusError as exc:
-        result = ToolResult(f"Error: {exc}")
+        result = ToolResult(f"Error: {exc}", error=mistakes.error_kind(exc))
     ignored = spec.ignored(raw_args)
     if not ignored:
         return result

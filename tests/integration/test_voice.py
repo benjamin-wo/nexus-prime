@@ -374,6 +374,21 @@ async def test_a_default_user_is_told_nothing_about_a_voice(uow: UowFactory, ali
     ) in prompt
 
 
+async def test_the_prompt_makes_voice_settings_the_one_home_for_reply_style(
+    uow: UowFactory, alice: UserId
+) -> None:
+    model = scripted(say("Hi."))
+    await build(uow, model).handle_text(alice, "hello", "t")
+    [prompt] = system_prompts(model)
+    assert "A reply style the user has asked for" in prompt
+    assert "save it with set_voice, not only as something remembered" in prompt
+    assert 'A one-off ("keep this one short") applies to that reply only.' in prompt
+    assert "The reply style is the voice block below" in prompt
+    assert "style preference that disagrees with it is old: ignore it" in prompt
+    assert "How to reply (length, emoji, tone, humour) is not a memory" in prompt
+    assert "keep to the reply style they asked for" not in prompt
+
+
 async def test_a_saved_default_is_the_same_prompt_as_none_at_all(
     uow: UowFactory, alice: UserId, bob: UserId
 ) -> None:

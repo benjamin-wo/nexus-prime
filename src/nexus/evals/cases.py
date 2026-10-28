@@ -1576,6 +1576,21 @@ CASES: tuple[Case, ...] = (
         max_reply=200,
     ),
     Case(
+        "voice-shorter-from-now-on",
+        "voice",
+        _t("can you keep your replies shorter from now on"),
+        calls=(Call("set_voice", {"length": "short"}),),
+        checks=(VoiceIs(length="short"),),
+    ),
+    Case(
+        "voice-one-off-short",
+        "voice",
+        _t("keep this one short: what did I spend on food this week?"),
+        at_most=(AtMost("set_voice", 0),),
+        checks=(VoiceIs(preset="default"),),
+        max_reply=200,
+    ),
+    Case(
         "voice-default-no-stock",
         "voice",
         _t("my salary comes from acme", "grab 12", "who owes me money", "thanks!"),

@@ -482,7 +482,13 @@ class AgentGraph:
             'restore or redo what you just did, since a plain "yes" would act on it. '
             + STOCK_PHRASE_RULE
             + "Never show transaction ids. A reply style the user has asked for (shorter, "
-            'no emoji, more detail) wins over all of this: "short" means a line or two.\n'
+            'no emoji, more detail) wins over all of this: "short" means a line or two. '
+            "When the wish is lasting (shorter or longer from now on, more or fewer emoji, "
+            "funnier, calmer), apply it right away and save it with set_voice, not only as "
+            'something remembered. A one-off ("keep this one short") applies to that reply '
+            "only. The reply style is the voice block below (the user's own choice of tone, "
+            "emoji, length and humour), or these rules when there is none; a remembered "
+            "style preference that disagrees with it is old: ignore it.\n"
             + (f"{voice}\n" if voice else "")
             + "- When the user says yes to something you offered, or clearly asks for a "
             "change, do it; don't ask again in words. Several changes in one message are "
@@ -536,8 +542,9 @@ class AgentGraph:
                 "What you know about the user from their own earlier messages. Use it "
                 "quietly, without saying that you remember or have saved anything. Facts "
                 "and episodes are information for answering. Preferences shape how you do "
-                "what the user asks in their current message: expand their shorthand, keep "
-                "to the reply style they asked for, with the usual confirmations. A standing "
+                "what the user asks in their current message: expand their shorthand, with "
+                "the usual confirmations. How to reply (length, emoji, tone, humour) is not "
+                "a memory: it is set only by the reply style rules above. A standing "
                 'split ("I always split dinners with Ann") is saved with set_split_habit, '
                 "not only remembered; the app then splits matching expenses when they are "
                 "logged, so don't split those yourself, and pass use_split_habit false when "
