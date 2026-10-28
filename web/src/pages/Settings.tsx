@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { api, goHomeTimezone, type Me, setTimezone, type TripAlerts } from "../api";
 import { describeZone, filterZones, friendlyZone, sourceNote, zoneChoices } from "../timezone";
 import { CategoriesSection } from "./Categories";
+import { CostsCard } from "./Costs";
 import { EmailCard } from "./Email";
 import { ImportCard } from "./Import";
 import { MemorySection } from "./Memory";
@@ -216,6 +217,7 @@ export function Settings({ me }: { me: Me }) {
         <RulesSection />
         <MemorySection />
         <YourDataSection />
+        {me.user.role === "owner" && <CostsCard />}
       </div>
     </>
   );

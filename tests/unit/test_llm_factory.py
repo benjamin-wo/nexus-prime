@@ -15,6 +15,9 @@ from nexus.infra.llm.factory import (
 )
 from nexus.settings import Settings
 
+# Every OpenRouter model asks for its calls' cost to be sent back.
+USAGE = {"usage": {"include": True}}
+
 
 def settings(**values: Any) -> Settings:
     return Settings(_env_file=None, database_url="postgresql://u:p@h/db", **values)
@@ -103,9 +106,10 @@ def test_openrouter_providers_pin_the_main_model_only(monkeypatch: pytest.Monkey
             "require_parameters": True,
         },
         "reasoning": {"effort": "low"},  # CHAT_REASONING's default
+        "usage": {"include": True},  # OpenRouter adds the call's cost to the reply
     }
     # The receipt reader is another model: those providers may not serve it.
-    assert isinstance(models.vision, ChatOpenAI) and models.vision.extra_body is None
+    assert isinstance(models.vision, ChatOpenAI) and models.vision.extra_body == USAGE
     unpinned = build_chat_models(
         settings(
             llm_provider="openrouter",
@@ -115,7 +119,7 @@ def test_openrouter_providers_pin_the_main_model_only(monkeypatch: pytest.Monkey
         )
     )
     assert isinstance(unpinned.primary, ChatOpenAI)
-    assert unpinned.primary.extra_body == {"reasoning": {"effort": "low"}}
+    assert unpinned.primary.extra_body == {"reasoning": {"effort": "low"}, **USAGE}
 
 
 @pytest.mark.parametrize(
@@ -143,7 +147,7 @@ def test_chat_reasoning_is_set_on_the_chat_model_only(
     assert isinstance(models.primary, ChatOpenAI) and models.primary.extra_body is not None
     assert models.primary.extra_body.get("reasoning") == sent
     assert models.primary.extra_body["provider"]["only"] == ["deepinfra"]  # still pinned
-    assert isinstance(models.vision, ChatOpenAI) and models.vision.extra_body is None
+    assert isinstance(models.vision, ChatOpenAI) and models.vision.extra_body == USAGE
 
 
 def test_email_and_memory_reads_run_without_reasoning(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -166,7 +170,7 @@ def test_email_and_memory_reads_run_without_reasoning(monkeypatch: pytest.Monkey
     memory = build_memory_model(config, primary)
     assert model_name(memory) == "small/model"
     assert isinstance(memory, ChatOpenAI)
-    assert memory.extra_body == {"reasoning": {"enabled": False}}
+    assert memory.extra_body == {"reasoning": {"enabled": False}, **USAGE}
     # Other providers keep the main model as it is.
     gemini = settings(llm_provider="gemini", gemini_api_key="g-key")
     main = build_chat_models(gemini).primary
@@ -186,7 +190,8 @@ def test_the_research_team_writes_without_reasoning() -> None:
     analyst, lead = build_research_models(s, primary)
     assert analyst is lead and model_name(analyst) == "openai/gpt-6-luna-pro"  # the default
     assert isinstance(analyst, ChatOpenAI)
-    assert analyst.extra_body == {"reasoning": {"enabled": False}}  # not the main model's hosts
+    # Not the main model's hosts.
+    assert analyst.extra_body == {"reasoning": {"enabled": False}, **USAGE}
     assert build_research_reviewer(s) is None  # no review unless asked for
     own = settings(
         llm_provider="openrouter",

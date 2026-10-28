@@ -2385,3 +2385,25 @@ body:has(.sheet-backdrop) .main-viewport { overflow: hidden; }
   .voice-preset { padding: var(--space-2) var(--space-3); }
   .voice-preset-blurb { font-size: 0.75rem; }
 }
+
+/* --- Model costs (owner only): a day-by-day bar chart and lists with a share bar --- */
+.cost-chart { display: grid; gap: var(--space-3); }
+.cost-readout { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3); margin: 0; min-height: 1.5em; }
+.cost-bars {
+  height: 180px; margin: 0; padding: 0; list-style: none; border-bottom: 1px dashed var(--border-card);
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 1px; align-items: stretch;
+}
+.cost-bars li { min-width: 0; }
+.cost-hit {
+  display: flex; align-items: flex-end; justify-content: center; width: 100%; height: 100%; margin: 0; padding: 0;
+  border: 0; background: none; cursor: pointer;
+}
+.cost-hit:focus-visible { outline: 2px solid var(--sky-accent); outline-offset: 1px; border-radius: 4px; }
+.cost-bar { display: block; width: 100%; max-width: 18px; border-radius: 3px 3px 0 0; background: var(--pal-iris); transition: background var(--t-micro); }
+.cost-hit.on .cost-bar { background: var(--accent); }
+.cost-axis { display: flex; justify-content: space-between; gap: var(--space-3); font-size: 0.8125rem; color: var(--text-muted); }
+.cost-list { display: grid; gap: var(--space-4); margin: 0; padding: 0; list-style: none; }
+.cost-list li { display: grid; gap: var(--space-2); min-width: 0; }
+.cost-line { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); min-width: 0; }
+.cost-name { min-width: 0; overflow-wrap: anywhere; color: var(--text-white); font-weight: 500; }
+.cost-line .num { white-space: nowrap; }

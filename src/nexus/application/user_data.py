@@ -65,6 +65,10 @@ AREAS: tuple[Area, ...] = (
          ("chat_log", "capability_gaps")),
     Area("notifications.json", "Your notification settings and the messages Nexus sent.",
          ("notification_settings", "notifications")),
+    Area("costs.json",
+         "What the AI models cost to serve you, by day, feature and model: counts, tokens and "
+         "dollars, never what was said.",
+         ("model_costs",)),
 )  # fmt: skip
 
 NOT_EXPORTED: dict[str, str] = {

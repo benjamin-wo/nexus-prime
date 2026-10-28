@@ -20,7 +20,7 @@ from sqlalchemy import and_, delete, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nexus.application import ops
+from nexus.application import costs, ops
 from nexus.application.clock import utcnow
 from nexus.infra.db.tables import jobs
 
@@ -171,8 +171,10 @@ class JobRunner:
             return [Claimed(r.id, r.kind, r.payload, r.attempts) for r in rows]
 
     async def _run(self, job: Claimed) -> None:
-        # Everything the job does, its log lines and events, carries the job's trace.
-        with ops.scope(trace=f"job-{job.id}"):
+        # Everything the job does, its log lines and events, carries the job's trace; its
+        # model calls count under the job's kind and the user in its payload, if any.
+        user = job.payload.get("user_id") if isinstance(job.payload, dict) else None
+        with ops.scope(trace=f"job-{job.id}"), costs.scope(job.kind, user=user):
             await self._execute(job)
 
     async def _execute(self, job: Claimed) -> None:

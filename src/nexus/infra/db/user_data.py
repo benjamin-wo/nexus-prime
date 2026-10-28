@@ -79,6 +79,7 @@ ERASE_ORDER: tuple[str, ...] = (
     "memories",
     "chat_log",
     "capability_gaps",
+    "model_costs",
     "holding_drafts",
     "market_alerts",
     "trades",
@@ -99,7 +100,8 @@ ERASE_ORDER: tuple[str, ...] = (
 # table and holds nothing of anyone's.
 CHECKPOINT_THREAD_TABLES: tuple[str, ...] = ("checkpoint_writes", "checkpoint_blobs", "checkpoints")
 
-_SECRET_NAME = re.compile(r"token|secret|password|passwd|csrf|hash", re.IGNORECASE)
+# "tokens" is a count of words a model read or wrote, not a secret; "token" and "token_hash" are.
+_SECRET_NAME = re.compile(r"token(?!s)|secret|password|passwd|csrf|hash", re.IGNORECASE)
 _ORDER_BY = ("created_at", "occurred_at", "added_at", "at", "traded_on", "day")
 
 

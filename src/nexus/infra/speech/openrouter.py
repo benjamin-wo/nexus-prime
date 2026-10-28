@@ -20,6 +20,7 @@ from typing import Any
 
 import httpx
 
+from nexus.application import costs
 from nexus.application.ports import SpeechError, Transcript
 
 log = logging.getLogger(__name__)
@@ -116,6 +117,13 @@ class OpenRouterSpeech:
         usage = data.get("usage")
         usage = usage if isinstance(usage, dict) else {}
         seconds, cost = _number(usage.get("seconds")), _number(usage.get("cost"))
+        # What it cost, counted under whoever sent the note (a charge is numbers only).
+        costs.record(
+            model,
+            input_tokens=usage.get("input_tokens"),
+            output_tokens=usage.get("output_tokens"),
+            cost=cost,
+        )
         log.info(
             "transcribed with %s: %s s of audio, cost $%s",
             model,

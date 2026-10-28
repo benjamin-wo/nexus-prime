@@ -11,6 +11,7 @@ from nexus.agent.service import Button
 from nexus.application import bills as bill_cases
 from nexus.application import bookings as booking_cases
 from nexus.application import budgets as budget_cases
+from nexus.application import costs
 from nexus.application import departments as department_cases
 from nexus.application import destination_photos as photo_cases
 from nexus.application import email as email_cases
@@ -135,7 +136,8 @@ def build_handlers(
                 async with uow() as tx:
                     user = await tx.ledger.get_user(user_id)
                 if user is not None:
-                    await check(user)
+                    with costs.scope(user=user_id):
+                        await check(user)
             except Exception:
                 # One user's failure must not stop the others; the next sweep retries.
                 log.exception("%s failed for a user", what)
@@ -184,17 +186,18 @@ def build_handlers(
                     user = await tx.ledger.get_user(connection.user_id)
                 mailbox = email.mailbox_for(connection.provider)
                 if user is not None and mailbox is not None:
-                    await email_cases.sweep(
-                        uow,
-                        mailbox,
-                        email.reader,
-                        email.cipher,
-                        archive,
-                        user,
-                        connection,
-                        now=clock(),
-                        review_url=email.review_url,
-                    )
+                    with costs.scope(user=user.id):
+                        await email_cases.sweep(
+                            uow,
+                            mailbox,
+                            email.reader,
+                            email.cipher,
+                            archive,
+                            user,
+                            connection,
+                            now=clock(),
+                            review_url=email.review_url,
+                        )
             except Exception:
                 # One mailbox's failure must not stop the others; the next sweep retries.
                 log.exception("email sweep failed for a mailbox")

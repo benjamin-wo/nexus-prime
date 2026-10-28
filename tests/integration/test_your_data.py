@@ -46,7 +46,8 @@ world = test_web_api.world  # the web API tests' app, as a fixture here too
 
 CIPHER = FernetCipher(TEST_KEY)
 # Values that must never reach an export: the secrets seeded for each user.
-SECRET = re.compile(r"token|secret|password|passwd|csrf|hash", re.IGNORECASE)
+# "tokens" is a count of words a model read or wrote; "token" and "token_hash" are secrets.
+SECRET = re.compile(r"token(?!s)|secret|password|passwd|csrf|hash", re.IGNORECASE)
 
 
 @dataclass
@@ -298,6 +299,17 @@ async def seed(world: World, user: UUID, other: UUID) -> Seeded:
             humour="light",
             note=f"call me boss {tag}",
             updated_at=now,
+        )
+        await add(
+            t["model_costs"],
+            day=now.date(),
+            user_id=user,
+            feature="chat",
+            model=f"made-up/model-{tag}",
+            calls=3,
+            input_tokens=1200,
+            output_tokens=340,
+            cost_usd=Decimal("0.012345"),
         )
         await add(
             t["split_habits"],
