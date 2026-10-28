@@ -348,8 +348,9 @@ async def test_finding_in_a_stop_or_near_a_day_from_chat(uow: UowFactory) -> Non
     assert dated == near
     assert source.searches.count("ramen, Gion, Kyoto") == 1  # the second came from the cache
 
-    wrong = await use("find_places", {"query": "ramen", "stop": "Osaka"})
-    assert wrong.startswith("Error: 'Osaka' isn't one of the trip's stops (Kyoto, Tokyo)")
+    # A city that isn't one of the trip's stops is searched as itself, not refused.
+    elsewhere = await use("find_places", {"query": "ramen", "stop": "Osaka"})
+    assert not elsewhere.startswith("Error") and source.searches[-1] == "ramen, Osaka"
     assert (await use("find_places", {"query": "x", "day": "40"})).startswith("Error:")
 
     text = await use("find_ideas", {"query": "noodles", "stop": "Kyoto"})

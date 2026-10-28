@@ -3039,14 +3039,15 @@ async def _trip_destination(ctx: ToolContext, name: str | None) -> str | None:
 
 
 async def _search_scope(
-    ctx: ToolContext, a: ScopedArgs, query: str = ""
+    ctx: ToolContext, a: ScopedArgs, query: str = "", *, strict: bool = False
 ) -> place_cases.SearchScope | None:
     """Where a search looks: the trip's destination, one of its stops, or near a day
     (None when there's no such trip and no stop or day was asked for). With no stop or day
-    given, a stop the query ends with ("things to do in Kyoto") is taken as the stop."""
+    given, a stop the query ends with ("things to do in Kyoto") is taken as the stop; a stop
+    that isn't one of the trip's is searched as a place of its own."""
     if not a.stop and not a.day and (area := place_cases.area_in(query)):
         try:
-            return await _search_scope(ctx, a.model_copy(update={"stop": area}))
+            return await _search_scope(ctx, a.model_copy(update={"stop": area}), strict=True)
         except (InvalidInput, NotFound):  # not one of the trip's stops: search as asked
             pass
     if not a.stop and not a.day:
@@ -3062,9 +3063,16 @@ async def _search_scope(
             if wanted.isdigit() and 1 <= int(wanted) <= trip.days
             else parse_day(ctx, a.day).date()
         )
-    _, scope = await place_cases.search_scope(
-        ctx.uow(), ctx.places, found.owner_id, trip.id, stop=a.stop or None, day=day
-    )
+    try:
+        _, scope = await place_cases.search_scope(
+            ctx.uow(), ctx.places, found.owner_id, trip.id, stop=a.stop or None, day=day
+        )
+    except InvalidInput:
+        if strict or day is not None or not a.stop or not a.stop.strip():
+            raise
+        # A city that isn't one of the trip's stops ("where to eat in Osaka?") is searched
+        # as itself rather than refused: an error there only made the model explain at length.
+        return place_cases.SearchScope(" ".join(a.stop.split()))
     return scope
 
 
