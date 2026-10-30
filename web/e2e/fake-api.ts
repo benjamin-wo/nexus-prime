@@ -147,6 +147,8 @@ export async function fakeApi(
      * default so the date-bound journeys stay on Singapore whatever zone this machine is in; the report is
      * still noted in `state.zonePosts`. */
     phoneFollows = false,
+    /** Forty more entries in the ledger, so that it scrolls on a phone and a wide screen alike. */
+    longLedger = false,
   } = {},
 ) {
   let session = signedIn;
@@ -624,6 +626,11 @@ export async function fakeApi(
       { ...mk("t201", "out", "500.00", "IBKR Cash Deposit", null), occurred_at: "2026-09-12T04:00:00Z" },
       { ...mk("t202", "in", "200.00", "FAST Transfer", null), occurred_at: "2026-09-18T04:00:00Z" },
     );
+  }
+  if (longLedger) {
+    for (let i = 1; i <= 40; i++) {
+      state.txs.push({ ...mk(`t3${String(i).padStart(2, "0")}`, "out", "8.00", `Corner Stall ${i}`, "food"), occurred_at: "2026-09-20T04:00:00Z" });
+    }
   }
   if (splitBill) {
     const bill = { ...mk("t4", "out", "30.00", "Hotpot Place", "food"), occurred_at: "2026-09-25T12:00:00Z" };

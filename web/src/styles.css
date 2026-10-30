@@ -1094,7 +1094,7 @@ a.ask-chip { display: inline-flex; align-items: center; text-decoration: none; }
 }
 /* While typing on a phone (viewport.ts): the tab bar and floating buttons step aside
    instead of riding up on the keyboard. */
-html.keyboard .bottom-nav, html.keyboard .trip-fab-button, html.keyboard .trip-fab {
+html.keyboard .bottom-nav, html.keyboard .fab, html.keyboard .trip-fab {
   visibility: hidden;
 }
 @media (prefers-reduced-motion: reduce) {
@@ -1221,9 +1221,9 @@ html.keyboard .bottom-nav, html.keyboard .trip-fab-button, html.keyboard .trip-f
 
 /* Phones: the floating buttons step aside while the page scrolls down, so they
    never sit on what's being read, and come back on the way up. */
-.trip-page > .trip-fab-button { transition: opacity var(--t-standard), transform var(--t-standard); }
+.fab { transition: opacity var(--t-standard), transform var(--t-standard); }
 @media (max-width: 900px) {
-  .shell.scrolling-down .trip-page > .trip-fab-button {
+  .shell.scrolling-down .fab {
     opacity: 0; transform: translateY(24px) scale(0.9); pointer-events: none;
   }
 }
@@ -1590,22 +1590,26 @@ html.keyboard .bottom-nav, html.keyboard .trip-fab-button, html.keyboard .trip-f
 .trip-form .day-pill { min-height: 44px; }
 .stop-chip .stop-dot { margin-right: 0; vertical-align: baseline; }
 
-/* The trip's add button: a pill with a plus and "Add", above the bottom bar (68px) on a phone. */
-.trip-fab-button {
+/* The floating add button (the trip's, and the Ledger's once its own Add has scrolled away): a pill
+   with a plus and "Add", above the bottom bar (68px) on a phone. */
+.fab {
+  position: fixed; right: var(--space-6); bottom: var(--space-6); z-index: 16;
   display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
   min-height: 52px; padding: 0 20px 0 16px; border-radius: 26px; border: 1px solid var(--accent);
   background: var(--accent); color: #fff; font: inherit; font-weight: 600; line-height: 1; cursor: pointer;
   box-shadow: 0 10px 24px -8px rgba(62, 82, 182, 0.6);
+  animation: fab-in var(--t-standard);
 }
-.trip-fab-button svg { flex: none; }
-.trip-fab-button:hover { background: var(--accent-hover); }
-.trip-fab-button:active { transform: scale(0.95); }
-.trip-page > .trip-fab-button { position: fixed; right: var(--space-6); bottom: var(--space-6); z-index: 16; }
+.fab svg { flex: none; }
+.fab:hover { background: var(--accent-hover); }
+.fab:active { transform: scale(0.95); }
+@keyframes fab-in { from { opacity: 0; transform: translateY(12px) scale(0.9); } }
 @media (max-width: 900px) {
-  .trip-page > .trip-fab-button { right: var(--space-4); bottom: calc(68px + var(--space-5) + env(safe-area-inset-bottom)); }
+  .fab { right: var(--space-4); bottom: calc(68px + var(--space-5) + env(safe-area-inset-bottom)); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .trip-fab-button:active { transform: none; }
+  .fab { animation: none; }
+  .fab:active { transform: none; }
 }
 
 /* The cover's photo credit: a small info button at the bottom right that shows the credit. */
