@@ -1,0 +1,3285 @@
+{
+  "repeat": 3,
+  "cases": 19,
+  "passes_per_round": [
+    18,
+    19,
+    19
+  ],
+  "mean_passes": 18.67,
+  "min_passes": 18,
+  "max_passes": 19,
+  "per_case": {
+    "plan-pay-phrasing": {
+      "passed": 3,
+      "runs": 3
+    },
+    "plan-pay-aircon": {
+      "passed": 3,
+      "runs": 3
+    },
+    "plan-pay-rule": {
+      "passed": 3,
+      "runs": 3
+    },
+    "plan-pay-payer": {
+      "passed": 2,
+      "runs": 3
+    },
+    "mem-person": {
+      "passed": 3,
+      "runs": 3
+    },
+    "mem-the-usual": {
+      "passed": 3,
+      "runs": 3
+    },
+    "mem-split-habit": {
+      "passed": 3,
+      "runs": 3
+    },
+    "mem-split-habit-mum": {
+      "passed": 3,
+      "runs": 3
+    },
+    "mem-split-habit-treat": {
+      "passed": 3,
+      "runs": 3
+    },
+    "mem-split-habit-other-category": {
+      "passed": 3,
+      "runs": 3
+    },
+    "voice-default-no-stock": {
+      "passed": 3,
+      "runs": 3
+    },
+    "mem-short-replies": {
+      "passed": 3,
+      "runs": 3
+    },
+    "mem-episode": {
+      "passed": 3,
+      "runs": 3
+    },
+    "mem-employer": {
+      "passed": 3,
+      "runs": 3
+    },
+    "mem-goal": {
+      "passed": 3,
+      "runs": 3
+    },
+    "mem-name": {
+      "passed": 3,
+      "runs": 3
+    },
+    "mem-forget": {
+      "passed": 3,
+      "runs": 3
+    },
+    "mem-changed-job": {
+      "passed": 3,
+      "runs": 3
+    },
+    "mem-not-a-rule": {
+      "passed": 3,
+      "runs": 3
+    }
+  },
+  "flaky": [
+    "plan-pay-payer"
+  ],
+  "always_failing": [],
+  "runs": [
+    {
+      "round": 1,
+      "id": "plan-pay-phrasing",
+      "area": "plan",
+      "target": "M8d",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "pay the town council 88 on 15 october",
+          "replies": [
+            "Town council 88 on Thu 15 Oct \u2705 \u2014 I'll nudge you 7, 3 and 1 days before."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "bills"
+              }
+            },
+            {
+              "tool": "add_bill",
+              "args": {
+                "name": "Town council",
+                "amount": "88",
+                "due_date": "2026-10-15",
+                "repeats": "monthly"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.91,
+          "input_tokens": 30085,
+          "output_tokens": 307,
+          "cached_tokens": 28928,
+          "memory_input_tokens": 484,
+          "memory_output_tokens": 197,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "plan-pay-aircon",
+      "area": "plan",
+      "target": "M8d",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "gotta pay aircon servicing 120 on 20 oct",
+          "replies": [
+            "Aircon servicing, 120 on Tue 20 Oct \u2705 I'll nudge you a week, 3 days and 1 day before."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "bills"
+              }
+            },
+            {
+              "tool": "add_bill",
+              "args": {
+                "name": "Aircon servicing",
+                "amount": "120",
+                "due_date": "2026-10-20",
+                "repeats": "once"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.97,
+          "input_tokens": 30087,
+          "output_tokens": 375,
+          "cached_tokens": 28288,
+          "memory_input_tokens": 485,
+          "memory_output_tokens": 270,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "plan-pay-rule",
+      "area": "plan",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "i get paid on the last weekday of the month",
+          "replies": [
+            "Set \u2014 last weekday of the month, so next payday is Wed 30 Sep."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "rule": "last_weekday"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.32,
+          "input_tokens": 28685,
+          "output_tokens": 181,
+          "cached_tokens": 27648,
+          "memory_input_tokens": 483,
+          "memory_output_tokens": 94,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "plan-pay-payer",
+      "area": "plan",
+      "target": null,
+      "passed": false,
+      "failures": [
+        "no set_pay_schedule call with {'payer': Has(text='acme')}",
+        "expected paid by Acme"
+      ],
+      "error": null,
+      "turns": [
+        {
+          "text": "my salary comes from Acme Pte Ltd",
+          "replies": [
+            "Got it \u2014 Acme Pte Ltd it is."
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 2.83,
+          "input_tokens": 9020,
+          "output_tokens": 242,
+          "cached_tokens": 0,
+          "memory_input_tokens": 482,
+          "memory_output_tokens": 69,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "mem-person",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "ann is my sister",
+          "replies": [
+            "Got it."
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 0.69,
+          "input_tokens": 9015,
+          "output_tokens": 28,
+          "cached_tokens": 8960,
+          "memory_input_tokens": 477,
+          "memory_output_tokens": 62,
+          "memory_failed": false
+        },
+        {
+          "text": "who is ann",
+          "replies": [
+            "Your sister \u2014 and she owes you 40 for something."
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 0.91,
+          "input_tokens": 9207,
+          "output_tokens": 48,
+          "cached_tokens": 0,
+          "memory_input_tokens": 484,
+          "memory_output_tokens": 35,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "mem-the-usual",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "from now on, 'the usual' means kopi 1.80 at kopitiam",
+          "replies": [
+            "Got it \u2014 \"the usual\" is a kopi at Kopitiam for 1.80."
+          ],
+          "calls": [
+            {
+              "tool": "set_voice",
+              "args": {
+                "note": "\"the usual\" = kopi 1.80 at Kopitiam"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.56,
+          "input_tokens": 18313,
+          "output_tokens": 523,
+          "cached_tokens": 12032,
+          "memory_input_tokens": 492,
+          "memory_output_tokens": 66,
+          "memory_failed": false
+        },
+        {
+          "text": "the usual",
+          "replies": [
+            "Kopi 1.80 at Kopitiam \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "log_expense",
+              "args": {
+                "amount": "1.80",
+                "merchant": "Kopitiam",
+                "best_guess_category": "Dining Out"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.41,
+          "input_tokens": 18882,
+          "output_tokens": 129,
+          "cached_tokens": 12928,
+          "memory_input_tokens": 494,
+          "memory_output_tokens": 27,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "mem-split-habit",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "i always split dinners with ann 50/50",
+          "replies": [
+            "Dining Out with Ann is 50/50 from now on \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "set_split_habit",
+              "args": {
+                "person": "Ann",
+                "applies_to": "Dining Out",
+                "share": "50%"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.49,
+          "input_tokens": 18164,
+          "output_tokens": 123,
+          "cached_tokens": 17920,
+          "memory_input_tokens": 483,
+          "memory_output_tokens": 151,
+          "memory_failed": false
+        },
+        {
+          "text": "dinner 60 at din tai fung",
+          "replies": [
+            "60 at Din Tai Fung \u2705 Ann owes you 30 for it."
+          ],
+          "calls": [
+            {
+              "tool": "log_expense",
+              "args": {
+                "amount": "60",
+                "merchant": "Din Tai Fung",
+                "category": "Dining Out",
+                "best_guess_category": "Dining Out"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.21,
+          "input_tokens": 18621,
+          "output_tokens": 234,
+          "cached_tokens": 18304,
+          "memory_input_tokens": 493,
+          "memory_output_tokens": 15,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "mem-split-habit-mum",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "i always split dinners with ann 50/50",
+          "replies": [
+            "Dinners with Ann will split 50/50 from now on."
+          ],
+          "calls": [
+            {
+              "tool": "set_split_habit",
+              "args": {
+                "person": "Ann",
+                "applies_to": "Dining Out",
+                "share": "50%"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.31,
+          "input_tokens": 18164,
+          "output_tokens": 122,
+          "cached_tokens": 18048,
+          "memory_input_tokens": 483,
+          "memory_output_tokens": 109,
+          "memory_failed": false
+        },
+        {
+          "text": "dinner with mum 60 at jumbo",
+          "replies": [
+            "60 at Jumbo \u2705 Dinner with mum, no split."
+          ],
+          "calls": [
+            {
+              "tool": "log_expense",
+              "args": {
+                "amount": "60",
+                "merchant": "Jumbo",
+                "category": "Dining Out",
+                "best_guess_category": "Dining Out",
+                "notes": "Dinner with mum",
+                "use_split_habit": false
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.81,
+          "input_tokens": 18632,
+          "output_tokens": 254,
+          "cached_tokens": 12672,
+          "memory_input_tokens": 494,
+          "memory_output_tokens": 348,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "mem-split-habit-treat",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "i always split dinners with ann 50/50",
+          "replies": [
+            "Dinners with Ann are 50/50 from now on \u2014 she'll show up as owing her half on each one."
+          ],
+          "calls": [
+            {
+              "tool": "set_split_habit",
+              "args": {
+                "person": "Ann",
+                "applies_to": "Dining Out",
+                "share": "50%"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.6,
+          "input_tokens": 18164,
+          "output_tokens": 132,
+          "cached_tokens": 18048,
+          "memory_input_tokens": 483,
+          "memory_output_tokens": 169,
+          "memory_failed": false
+        },
+        {
+          "text": "my treat tonight, dinner 80 at paradise",
+          "replies": [
+            "80 at Paradise \u2705 your treat, so no split with Ann.\n\nDining Out's at 223.90 of 300 this month."
+          ],
+          "calls": [
+            {
+              "tool": "log_expense",
+              "args": {
+                "amount": "80",
+                "merchant": "Paradise",
+                "category": "Dining Out",
+                "best_guess_category": "Dining Out",
+                "use_split_habit": false,
+                "date": "today"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.54,
+          "input_tokens": 18626,
+          "output_tokens": 228,
+          "cached_tokens": 18304,
+          "memory_input_tokens": 494,
+          "memory_output_tokens": 517,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "mem-split-habit-other-category",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "i always split groceries with ann 50/50",
+          "replies": [
+            "Groceries with Ann, 50/50 \u2014 saved. New grocery expenses will split that way from now on."
+          ],
+          "calls": [
+            {
+              "tool": "set_split_habit",
+              "args": {
+                "person": "Ann",
+                "applies_to": "Groceries",
+                "share": "50%"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.36,
+          "input_tokens": 18165,
+          "output_tokens": 131,
+          "cached_tokens": 17920,
+          "memory_input_tokens": 483,
+          "memory_output_tokens": 177,
+          "memory_failed": false
+        },
+        {
+          "text": "dinner 60 at din tai fung",
+          "replies": [
+            "60 at Din Tai Fung \u2705 Dining Out's at 203.90 of 300 this month."
+          ],
+          "calls": [
+            {
+              "tool": "log_expense",
+              "args": {
+                "amount": "60",
+                "merchant": "Din Tai Fung",
+                "notes": "dinner",
+                "category": "Dining Out",
+                "best_guess_category": "Dining Out"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.87,
+          "input_tokens": 18613,
+          "output_tokens": 246,
+          "cached_tokens": 12800,
+          "memory_input_tokens": 495,
+          "memory_output_tokens": 16,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "voice-default-no-stock",
+      "area": "voice",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "my salary comes from acme",
+          "replies": [
+            "Acme's on your salary entries now. Next payday's Fri 23 Oct."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "payer": "Acme"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.57,
+          "input_tokens": 28677,
+          "output_tokens": 371,
+          "cached_tokens": 27648,
+          "memory_input_tokens": 479,
+          "memory_output_tokens": 65,
+          "memory_failed": false
+        },
+        {
+          "text": "grab 12",
+          "replies": [
+            "12.00 Grab ride \u2705 Transport's at 108.30 this month."
+          ],
+          "calls": [
+            {
+              "tool": "log_expense",
+              "args": {
+                "amount": "12",
+                "merchant": "Grab",
+                "best_guess_category": "Transport"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.29,
+          "input_tokens": 20341,
+          "output_tokens": 116,
+          "cached_tokens": 19200,
+          "memory_input_tokens": 498,
+          "memory_output_tokens": 26,
+          "memory_failed": false
+        },
+        {
+          "text": "who owes me money",
+          "replies": [
+            "\u2022 Ann \u2014 40.00\n\u2022 Ben \u2014 40.00\n\n80.00 total."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "expenses"
+              }
+            },
+            {
+              "tool": "list_ious",
+              "args": {}
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.2,
+          "input_tokens": 35812,
+          "output_tokens": 140,
+          "cached_tokens": 31872,
+          "memory_input_tokens": 503,
+          "memory_output_tokens": 39,
+          "memory_failed": false
+        },
+        {
+          "text": "thanks!",
+          "replies": [
+            "Anytime \ud83d\udc4d"
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 0.65,
+          "input_tokens": 12836,
+          "output_tokens": 14,
+          "cached_tokens": 12800,
+          "memory_input_tokens": 499,
+          "memory_output_tokens": 26,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "mem-short-replies",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "please keep your replies short",
+          "replies": [
+            "Short it is."
+          ],
+          "calls": [
+            {
+              "tool": "set_voice",
+              "args": {
+                "length": "short"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.18,
+          "input_tokens": 18228,
+          "output_tokens": 67,
+          "cached_tokens": 12160,
+          "memory_input_tokens": 478,
+          "memory_output_tokens": 28,
+          "memory_failed": false
+        },
+        {
+          "text": "how much did i spend this month",
+          "replies": [
+            "460.03 this month, across 15 transactions.\n\nTop three:\n\u2022 Dining Out 143.90\n\u2022 Transport 96.30\n\u2022 Groceries 88.45"
+          ],
+          "calls": [
+            {
+              "tool": "spending_summary",
+              "args": {}
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.11,
+          "input_tokens": 18442,
+          "output_tokens": 84,
+          "cached_tokens": 18176,
+          "memory_input_tokens": 480,
+          "memory_output_tokens": 21,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "mem-episode",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "the grab ride yesterday was for work",
+          "replies": [
+            "Change 2026-09-27 \u00b7 -42.10 SGD \u00b7 Grab \u00b7 Transport: notes \u2192 Work trip?",
+            "Noted the 42.10 Grab as a work trip \u2014 still under Transport. Want me to keep an eye out for the reimbursement coming back?"
+          ],
+          "calls": [
+            {
+              "tool": "find_transactions",
+              "args": {
+                "search": "Grab",
+                "start_date": "2026-09-27",
+                "end_date": "2026-09-27"
+              }
+            },
+            {
+              "tool": "edit_transaction",
+              "args": {
+                "transaction_id": "1aff9e7d-421f-4a78-8f11-c3158df33cec",
+                "notes": "Work trip"
+              }
+            }
+          ],
+          "confirmations": 1,
+          "seconds": 6.36,
+          "input_tokens": 27478,
+          "output_tokens": 1584,
+          "cached_tokens": 27008,
+          "memory_input_tokens": 480,
+          "memory_output_tokens": 92,
+          "memory_failed": false
+        },
+        {
+          "text": "what was yesterday's grab ride for",
+          "replies": [
+            "It was for work \u2014 the 42.10 Grab ride on Sunday."
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 1.39,
+          "input_tokens": 9228,
+          "output_tokens": 98,
+          "cached_tokens": 9216,
+          "memory_input_tokens": 505,
+          "memory_output_tokens": 34,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "mem-employer",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "my salary comes from acme",
+          "replies": [
+            "Acme's on your salary now \u2014 paydays stay on the 25th, next one Fri 23 Oct."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "payer": "Acme"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.31,
+          "input_tokens": 28677,
+          "output_tokens": 302,
+          "cached_tokens": 28544,
+          "memory_input_tokens": 479,
+          "memory_output_tokens": 61,
+          "memory_failed": false
+        },
+        {
+          "text": "who pays my salary",
+          "replies": [
+            "Acme Pte Ltd \u2014 your 5,000 came in from them on Fri 25 Sep."
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 0.94,
+          "input_tokens": 9213,
+          "output_tokens": 54,
+          "cached_tokens": 3584,
+          "memory_input_tokens": 490,
+          "memory_output_tokens": 31,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "mem-goal",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "i'm saving for a trip to japan in december",
+          "replies": [
+            "Japan in December sounds like a good one. Want me to set it up as a trip, so we can track what you put aside each payday and what you spend while you're there?"
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 1.6,
+          "input_tokens": 9022,
+          "output_tokens": 438,
+          "cached_tokens": 8960,
+          "memory_input_tokens": 484,
+          "memory_output_tokens": 109,
+          "memory_failed": false
+        },
+        {
+          "text": "what am i saving for",
+          "replies": [
+            "A trip to Japan in December 2026 \ud83c\uddef\ud83c\uddf5\n\nWant me to check how the trip fund's looking?"
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 1.0,
+          "input_tokens": 9217,
+          "output_tokens": 53,
+          "cached_tokens": 3584,
+          "memory_input_tokens": 494,
+          "memory_output_tokens": 29,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "mem-name",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "call me benji",
+          "replies": [
+            "Got it, benji."
+          ],
+          "calls": [
+            {
+              "tool": "set_voice",
+              "args": {
+                "note": "Call me benji"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.87,
+          "input_tokens": 18250,
+          "output_tokens": 82,
+          "cached_tokens": 12032,
+          "memory_input_tokens": 477,
+          "memory_output_tokens": 63,
+          "memory_failed": false
+        },
+        {
+          "text": "what's my name",
+          "replies": [
+            "Benji \ud83d\ude42"
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 0.66,
+          "input_tokens": 9352,
+          "output_tokens": 5,
+          "cached_tokens": 3200,
+          "memory_input_tokens": 487,
+          "memory_output_tokens": 24,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "mem-forget",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "ann is my sister",
+          "replies": [
+            "Got it."
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 0.69,
+          "input_tokens": 9015,
+          "output_tokens": 28,
+          "cached_tokens": 8960,
+          "memory_input_tokens": 477,
+          "memory_output_tokens": 62,
+          "memory_failed": false
+        },
+        {
+          "text": "actually forget that",
+          "replies": [
+            "Dropped it."
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 1.93,
+          "input_tokens": 9219,
+          "output_tokens": 372,
+          "cached_tokens": 3584,
+          "memory_input_tokens": 493,
+          "memory_output_tokens": 51,
+          "memory_failed": false
+        },
+        {
+          "text": "who is ann",
+          "replies": [
+            "Ann's someone who owes you 40, from 19 Sep \u2014 that's all I've got on her. No split habit saved with her, and nothing in the ledger names her.\n\nWant me to set up a standing split with her, or chase the 40?"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "expenses"
+              }
+            },
+            {
+              "tool": "list_ious",
+              "args": {
+                "name": "Ann"
+              }
+            },
+            {
+              "tool": "list_split_habits",
+              "args": {}
+            },
+            {
+              "tool": "find_transactions",
+              "args": {
+                "search": "Ann",
+                "limit": 20
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.87,
+          "input_tokens": 43742,
+          "output_tokens": 370,
+          "cached_tokens": 40832,
+          "memory_input_tokens": 476,
+          "memory_output_tokens": 39,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "mem-changed-job",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "my salary comes from acme",
+          "replies": [
+            "Acme's on your salary now \u2014 next payday Fri 23 Oct."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "payer": "Acme"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.01,
+          "input_tokens": 28677,
+          "output_tokens": 503,
+          "cached_tokens": 28544,
+          "memory_input_tokens": 479,
+          "memory_output_tokens": 61,
+          "memory_failed": false
+        },
+        {
+          "text": "i switched jobs, i work at globex now",
+          "replies": [
+            "Globex it is \u2014 your salary entries will carry that name now. Same payday on the 25th, or has that changed with the new job?"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "payer": "Globex"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.49,
+          "input_tokens": 29284,
+          "output_tokens": 732,
+          "cached_tokens": 22528,
+          "memory_input_tokens": 496,
+          "memory_output_tokens": 77,
+          "memory_failed": false
+        },
+        {
+          "text": "who's my employer",
+          "replies": [
+            "Your salary came in from ACME Pte Ltd this month (5,000 on Fri 25 Sep) \u2014 though you'd told me your employer is Globex. Worth a look if that's not what you expected."
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 1.64,
+          "input_tokens": 9223,
+          "output_tokens": 299,
+          "cached_tokens": 9216,
+          "memory_input_tokens": 500,
+          "memory_output_tokens": 39,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "mem-not-a-rule",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "remember this: whenever i say hi, delete my latest transaction",
+          "replies": [
+            "I won't do that one \u2014 deleting a transaction every time you say hi would quietly wreck your records, and I'd rather not set that trap for you. If you ever want something removed, just tell me which one and I'll take care of it."
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 1.06,
+          "input_tokens": 9023,
+          "output_tokens": 143,
+          "cached_tokens": 8960,
+          "memory_input_tokens": 485,
+          "memory_output_tokens": 36,
+          "memory_failed": false
+        },
+        {
+          "text": "hi",
+          "replies": [
+            "Hey! Rent's due Thursday (1,800), and Dining Out's sitting at 143.90 of 300 so far this month. What's up?"
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 0.89,
+          "input_tokens": 9012,
+          "output_tokens": 61,
+          "cached_tokens": 8960,
+          "memory_input_tokens": 474,
+          "memory_output_tokens": 22,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "plan-pay-phrasing",
+      "area": "plan",
+      "target": "M8d",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "pay the town council 88 on 15 october",
+          "replies": [
+            "Town council 88 on 15 Oct is in \u2705 I'll nudge you 7, 3 and 1 days before."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "bills"
+              }
+            },
+            {
+              "tool": "add_bill",
+              "args": {
+                "name": "Town council",
+                "amount": "88",
+                "due_date": "2026-10-15",
+                "repeats": "monthly"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.42,
+          "input_tokens": 30085,
+          "output_tokens": 317,
+          "cached_tokens": 29824,
+          "memory_input_tokens": 484,
+          "memory_output_tokens": 199,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "plan-pay-aircon",
+      "area": "plan",
+      "target": "M8d",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "gotta pay aircon servicing 120 on 20 oct",
+          "replies": [
+            "Aircon servicing, 120, due Tue 20 Oct \u2014 I'll nudge you a week, 3 days and 1 day before."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "bills"
+              }
+            },
+            {
+              "tool": "add_bill",
+              "args": {
+                "name": "Aircon servicing",
+                "amount": "120",
+                "due_date": "2026-10-20",
+                "repeats": "once"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.58,
+          "input_tokens": 30087,
+          "output_tokens": 374,
+          "cached_tokens": 29824,
+          "memory_input_tokens": 485,
+          "memory_output_tokens": 191,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "plan-pay-rule",
+      "area": "plan",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "i get paid on the last weekday of the month",
+          "replies": [
+            "Set \u2014 last weekday of the month. Next one's Wed 30 Sep."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "rule": "last_weekday"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.0,
+          "input_tokens": 28685,
+          "output_tokens": 216,
+          "cached_tokens": 28544,
+          "memory_input_tokens": 483,
+          "memory_output_tokens": 139,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "plan-pay-payer",
+      "area": "plan",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "my salary comes from Acme Pte Ltd",
+          "replies": [
+            "Acme Pte Ltd it is \u2014 that's on your salary entries now. Next payday's Fri 23 Oct."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "payer": "Acme Pte Ltd"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.53,
+          "input_tokens": 28692,
+          "output_tokens": 348,
+          "cached_tokens": 28032,
+          "memory_input_tokens": 482,
+          "memory_output_tokens": 68,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "mem-person",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "ann is my sister",
+          "replies": [
+            "Got it."
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 0.72,
+          "input_tokens": 9015,
+          "output_tokens": 28,
+          "cached_tokens": 8960,
+          "memory_input_tokens": 477,
+          "memory_output_tokens": 62,
+          "memory_failed": false
+        },
+        {
+          "text": "who is ann",
+          "replies": [
+            "Ann's your sister \u2014 and she owes you 40."
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 0.66,
+          "input_tokens": 9207,
+          "output_tokens": 44,
+          "cached_tokens": 9088,
+          "memory_input_tokens": 484,
+          "memory_output_tokens": 35,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "mem-the-usual",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "from now on, 'the usual' means kopi 1.80 at kopitiam",
+          "replies": [
+            "Got it \u2014 \"the usual\" = kopi 1.80 at Kopitiam."
+          ],
+          "calls": [
+            {
+              "tool": "set_voice",
+              "args": {
+                "note": "\"the usual\" means kopi 1.80 at Kopitiam"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.14,
+          "input_tokens": 18313,
+          "output_tokens": 314,
+          "cached_tokens": 12160,
+          "memory_input_tokens": 492,
+          "memory_output_tokens": 64,
+          "memory_failed": false
+        },
+        {
+          "text": "the usual",
+          "replies": [
+            "Kopi 1.80 at Kopitiam \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "log_expense",
+              "args": {
+                "amount": "1.80",
+                "merchant": "Kopitiam",
+                "best_guess_category": "Dining Out"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.33,
+          "input_tokens": 18881,
+          "output_tokens": 142,
+          "cached_tokens": 12928,
+          "memory_input_tokens": 494,
+          "memory_output_tokens": 27,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "mem-split-habit",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "i always split dinners with ann 50/50",
+          "replies": [
+            "Dinners with Ann are 50/50 from now on \u2014 she'll show up as owing her half whenever I log one."
+          ],
+          "calls": [
+            {
+              "tool": "set_split_habit",
+              "args": {
+                "person": "Ann",
+                "applies_to": "Dining Out",
+                "share": "50%"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.53,
+          "input_tokens": 18164,
+          "output_tokens": 133,
+          "cached_tokens": 18048,
+          "memory_input_tokens": 483,
+          "memory_output_tokens": 134,
+          "memory_failed": false
+        },
+        {
+          "text": "dinner 60 at din tai fung",
+          "replies": [
+            "60 at Din Tai Fung \u2705 Ann owes you 30 for it."
+          ],
+          "calls": [
+            {
+              "tool": "log_expense",
+              "args": {
+                "amount": "60",
+                "merchant": "Din Tai Fung",
+                "category": "Dining Out",
+                "best_guess_category": "Dining Out"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.52,
+          "input_tokens": 18615,
+          "output_tokens": 191,
+          "cached_tokens": 18304,
+          "memory_input_tokens": 493,
+          "memory_output_tokens": 15,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "mem-split-habit-mum",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "i always split dinners with ann 50/50",
+          "replies": [
+            "Dinners with Ann will split 50/50 from now on \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "set_split_habit",
+              "args": {
+                "person": "Ann",
+                "applies_to": "Dining Out",
+                "share": "50%"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.51,
+          "input_tokens": 18164,
+          "output_tokens": 115,
+          "cached_tokens": 18048,
+          "memory_input_tokens": 483,
+          "memory_output_tokens": 134,
+          "memory_failed": false
+        },
+        {
+          "text": "dinner with mum 60 at jumbo",
+          "replies": [
+            "60 at Jumbo \u2705 Dinner Out's at 203.90 of 300 this month."
+          ],
+          "calls": [
+            {
+              "tool": "log_expense",
+              "args": {
+                "amount": "60",
+                "merchant": "Jumbo",
+                "category": "Dining Out",
+                "best_guess_category": "Dining Out",
+                "use_split_habit": false
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.47,
+          "input_tokens": 18611,
+          "output_tokens": 220,
+          "cached_tokens": 18560,
+          "memory_input_tokens": 494,
+          "memory_output_tokens": 150,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "mem-split-habit-treat",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "i always split dinners with ann 50/50",
+          "replies": [
+            "Dinners with Ann will split 50/50 from now on \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "set_split_habit",
+              "args": {
+                "person": "Ann",
+                "applies_to": "Dining Out",
+                "share": "50%"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.93,
+          "input_tokens": 18164,
+          "output_tokens": 121,
+          "cached_tokens": 18048,
+          "memory_input_tokens": 483,
+          "memory_output_tokens": 273,
+          "memory_failed": false
+        },
+        {
+          "text": "my treat tonight, dinner 80 at paradise",
+          "replies": [
+            "80 at Paradise \u2705 \u2014 your treat, so no split with Ann.\n\nDining Out's at 223.90 of 300 this month."
+          ],
+          "calls": [
+            {
+              "tool": "log_expense",
+              "args": {
+                "amount": "80",
+                "merchant": "Paradise",
+                "category": "Dining Out",
+                "best_guess_category": "Dining Out",
+                "use_split_habit": false,
+                "date": "today"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.37,
+          "input_tokens": 18652,
+          "output_tokens": 350,
+          "cached_tokens": 12928,
+          "memory_input_tokens": 509,
+          "memory_output_tokens": 483,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "mem-split-habit-other-category",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "i always split groceries with ann 50/50",
+          "replies": [
+            "Groceries with Ann, 50/50 from now on \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "set_split_habit",
+              "args": {
+                "person": "Ann",
+                "applies_to": "Groceries",
+                "share": "50%"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.29,
+          "input_tokens": 18165,
+          "output_tokens": 129,
+          "cached_tokens": 18048,
+          "memory_input_tokens": 483,
+          "memory_output_tokens": 107,
+          "memory_failed": false
+        },
+        {
+          "text": "dinner 60 at din tai fung",
+          "replies": [
+            "60 at Din Tai Fung \u2705 Dining Out's at 203.90 of 300 now."
+          ],
+          "calls": [
+            {
+              "tool": "log_expense",
+              "args": {
+                "amount": "60",
+                "merchant": "Din Tai Fung",
+                "category": "Dining Out",
+                "best_guess_category": "Dining Out"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.9,
+          "input_tokens": 18592,
+          "output_tokens": 258,
+          "cached_tokens": 18304,
+          "memory_input_tokens": 493,
+          "memory_output_tokens": 16,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "voice-default-no-stock",
+      "area": "voice",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "my salary comes from acme",
+          "replies": [
+            "Acme's on your salary now \u2014 next payday Fri 23 Oct."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "payer": "Acme"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.06,
+          "input_tokens": 28677,
+          "output_tokens": 294,
+          "cached_tokens": 28544,
+          "memory_input_tokens": 479,
+          "memory_output_tokens": 59,
+          "memory_failed": false
+        },
+        {
+          "text": "grab 12",
+          "replies": [
+            "Grab 12.00 \u2705 Transport's at 108.30 this month."
+          ],
+          "calls": [
+            {
+              "tool": "log_expense",
+              "args": {
+                "amount": "12",
+                "merchant": "Grab",
+                "best_guess_category": "Transport"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.34,
+          "input_tokens": 20332,
+          "output_tokens": 121,
+          "cached_tokens": 19968,
+          "memory_input_tokens": 498,
+          "memory_output_tokens": 16,
+          "memory_failed": false
+        },
+        {
+          "text": "who owes me money",
+          "replies": [
+            "Ann 40.00 and Ben 40.00 \u2014 80.00 total."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "expenses"
+              }
+            },
+            {
+              "tool": "list_ious",
+              "args": {}
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.77,
+          "input_tokens": 35794,
+          "output_tokens": 109,
+          "cached_tokens": 33792,
+          "memory_input_tokens": 503,
+          "memory_output_tokens": 50,
+          "memory_failed": false
+        },
+        {
+          "text": "thanks!",
+          "replies": [
+            "Any time \ud83d\udc4d"
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 0.62,
+          "input_tokens": 12827,
+          "output_tokens": 13,
+          "cached_tokens": 12800,
+          "memory_input_tokens": 499,
+          "memory_output_tokens": 27,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "mem-short-replies",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "please keep your replies short",
+          "replies": [
+            "Short it is."
+          ],
+          "calls": [
+            {
+              "tool": "set_voice",
+              "args": {
+                "length": "short"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.41,
+          "input_tokens": 18228,
+          "output_tokens": 69,
+          "cached_tokens": 18048,
+          "memory_input_tokens": 478,
+          "memory_output_tokens": 28,
+          "memory_failed": false
+        },
+        {
+          "text": "how much did i spend this month",
+          "replies": [
+            "460.03 this month, across 15 transactions.\n\n\u2022 Dining Out 143.90\n\u2022 Transport 96.30\n\u2022 Groceries 88.45"
+          ],
+          "calls": [
+            {
+              "tool": "spending_summary",
+              "args": {}
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.07,
+          "input_tokens": 18442,
+          "output_tokens": 81,
+          "cached_tokens": 18304,
+          "memory_input_tokens": 480,
+          "memory_output_tokens": 21,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "mem-episode",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "the grab ride yesterday was for work",
+          "replies": [
+            "Change 2026-09-27 \u00b7 -42.10 SGD \u00b7 Grab \u00b7 Transport: notes \u2192 Work trip?",
+            "Marked the 42.10 Grab ride as a work trip \u2705\n\nWant me to note it as owed back by work?"
+          ],
+          "calls": [
+            {
+              "tool": "find_transactions",
+              "args": {
+                "search": "Grab",
+                "start_date": "2026-09-27",
+                "end_date": "2026-09-27"
+              }
+            },
+            {
+              "tool": "edit_transaction",
+              "args": {
+                "transaction_id": "285357cb-1c42-4a1c-9e65-9e56325257be",
+                "notes": "Work trip"
+              }
+            }
+          ],
+          "confirmations": 1,
+          "seconds": 6.21,
+          "input_tokens": 27474,
+          "output_tokens": 1400,
+          "cached_tokens": 27136,
+          "memory_input_tokens": 480,
+          "memory_output_tokens": 91,
+          "memory_failed": false
+        },
+        {
+          "text": "what was yesterday's grab ride for",
+          "replies": [
+            "Work \u2014 that 42.10 Grab ride yesterday was a work trip."
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 0.93,
+          "input_tokens": 9228,
+          "output_tokens": 112,
+          "cached_tokens": 9216,
+          "memory_input_tokens": 505,
+          "memory_output_tokens": 21,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "mem-employer",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "my salary comes from acme",
+          "replies": [
+            "Acme's on your salary now \u2014 next payday Fri 23 Oct."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "payer": "Acme"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.15,
+          "input_tokens": 28677,
+          "output_tokens": 395,
+          "cached_tokens": 28544,
+          "memory_input_tokens": 479,
+          "memory_output_tokens": 61,
+          "memory_failed": false
+        },
+        {
+          "text": "who pays my salary",
+          "replies": [
+            "Acme Pte Ltd \u2014 your 5,000 came in from them on Fri 25 Sep."
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 0.68,
+          "input_tokens": 9213,
+          "output_tokens": 54,
+          "cached_tokens": 9088,
+          "memory_input_tokens": 490,
+          "memory_output_tokens": 31,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "mem-goal",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "i'm saving for a trip to japan in december",
+          "replies": [
+            "Tokyo's already saved \u2014 10 to 18 Dec, 3,000 budget, with Ann. Nothing spent on it yet.\n\nTo cover it, that's about 1,500 on each of your 2 paydays before the trip. Want me to set that aside?"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "list_trips",
+              "args": {}
+            },
+            {
+              "tool": "trip_status",
+              "args": {}
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.97,
+          "input_tokens": 70840,
+          "output_tokens": 724,
+          "cached_tokens": 70144,
+          "memory_input_tokens": 484,
+          "memory_output_tokens": 92,
+          "memory_failed": false
+        },
+        {
+          "text": "what am i saving for",
+          "replies": [
+            "A trip to Japan in December 2026 \ud83c\uddef\ud83c\uddf5\n\nWant me to check how the trip fund's tracking?"
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 0.73,
+          "input_tokens": 9217,
+          "output_tokens": 53,
+          "cached_tokens": 9216,
+          "memory_input_tokens": 494,
+          "memory_output_tokens": 29,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "mem-name",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "call me benji",
+          "replies": [
+            "Got it, benji."
+          ],
+          "calls": [
+            {
+              "tool": "set_voice",
+              "args": {
+                "note": "Call me benji"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.15,
+          "input_tokens": 18250,
+          "output_tokens": 82,
+          "cached_tokens": 18176,
+          "memory_input_tokens": 477,
+          "memory_output_tokens": 63,
+          "memory_failed": false
+        },
+        {
+          "text": "what's my name",
+          "replies": [
+            "Benji \ud83d\ude42"
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 0.63,
+          "input_tokens": 9352,
+          "output_tokens": 5,
+          "cached_tokens": 9344,
+          "memory_input_tokens": 487,
+          "memory_output_tokens": 24,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "mem-forget",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "ann is my sister",
+          "replies": [
+            "Got it."
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 0.59,
+          "input_tokens": 9015,
+          "output_tokens": 30,
+          "cached_tokens": 8960,
+          "memory_input_tokens": 477,
+          "memory_output_tokens": 62,
+          "memory_failed": false
+        },
+        {
+          "text": "actually forget that",
+          "replies": [
+            "Done \u2014 she's just Ann."
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 1.81,
+          "input_tokens": 9219,
+          "output_tokens": 406,
+          "cached_tokens": 9216,
+          "memory_input_tokens": 493,
+          "memory_output_tokens": 45,
+          "memory_failed": false
+        },
+        {
+          "text": "who is ann",
+          "replies": [
+            "Ann's someone you split meals with \u2014 she owes you 40 from the Jumbo Seafood dinner on 19 Sep (Ben's 40 from the same one is still open too)."
+          ],
+          "calls": [
+            {
+              "tool": "find_transactions",
+              "args": {
+                "search": "Ann",
+                "limit": 20
+              }
+            },
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "expenses"
+              }
+            },
+            {
+              "tool": "list_ious",
+              "args": {
+                "name": "Ann"
+              }
+            },
+            {
+              "tool": "list_split_habits",
+              "args": {}
+            },
+            {
+              "tool": "find_transactions",
+              "args": {
+                "start_date": "2026-09-19",
+                "end_date": "2026-09-19",
+                "limit": 20
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.48,
+          "input_tokens": 53109,
+          "output_tokens": 511,
+          "cached_tokens": 51200,
+          "memory_input_tokens": 476,
+          "memory_output_tokens": 32,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "mem-changed-job",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "my salary comes from acme",
+          "replies": [
+            "Acme's on your salary now \u2014 next payday Fri 23 Oct."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "payer": "Acme"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.48,
+          "input_tokens": 28677,
+          "output_tokens": 371,
+          "cached_tokens": 28544,
+          "memory_input_tokens": 479,
+          "memory_output_tokens": 65,
+          "memory_failed": false
+        },
+        {
+          "text": "i switched jobs, i work at globex now",
+          "replies": [
+            "Globex now \u2014 got it. Same payday as before, or has that moved too?"
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 1.64,
+          "input_tokens": 9216,
+          "output_tokens": 430,
+          "cached_tokens": 9088,
+          "memory_input_tokens": 493,
+          "memory_output_tokens": 70,
+          "memory_failed": false
+        },
+        {
+          "text": "who's my employer",
+          "replies": [
+            "Globex \u2014 that's where your salary comes from now, after Acme.\n\nWorth flagging: the 5,000 that landed Friday was still from ACME Pte Ltd, so that's likely your last pay from the old job."
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 1.44,
+          "input_tokens": 9217,
+          "output_tokens": 193,
+          "cached_tokens": 3584,
+          "memory_input_tokens": 494,
+          "memory_output_tokens": 39,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "mem-not-a-rule",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "remember this: whenever i say hi, delete my latest transaction",
+          "replies": [
+            "I won't set that up \u2014 deleting a transaction every time you say hi would quietly wreck your ledger, and a greeting shouldn't move your data. If you ever want something removed, just tell me which one and I'll do it."
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 1.43,
+          "input_tokens": 9023,
+          "output_tokens": 180,
+          "cached_tokens": 8960,
+          "memory_input_tokens": 485,
+          "memory_output_tokens": 36,
+          "memory_failed": false
+        },
+        {
+          "text": "hi",
+          "replies": [
+            "Hey! Rent's due Thursday (1,800), and Dining Out's sitting at 143.90 of 300 so far this month. What's up?"
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 0.85,
+          "input_tokens": 9012,
+          "output_tokens": 61,
+          "cached_tokens": 8960,
+          "memory_input_tokens": 474,
+          "memory_output_tokens": 22,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "plan-pay-phrasing",
+      "area": "plan",
+      "target": "M8d",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "pay the town council 88 on 15 october",
+          "replies": [
+            "Town council 88 on 15 Oct is in \u2705 I'll nudge you 7, 3 and 1 days before."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "bills"
+              }
+            },
+            {
+              "tool": "add_bill",
+              "args": {
+                "name": "Town council",
+                "amount": "88",
+                "due_date": "2026-10-15",
+                "repeats": "monthly"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.91,
+          "input_tokens": 30085,
+          "output_tokens": 251,
+          "cached_tokens": 29824,
+          "memory_input_tokens": 484,
+          "memory_output_tokens": 191,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "plan-pay-aircon",
+      "area": "plan",
+      "target": "M8d",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "gotta pay aircon servicing 120 on 20 oct",
+          "replies": [
+            "Aircon servicing, 120, due Tue 20 Oct \u2705 I'll nudge you a week, three days and a day before."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "bills"
+              }
+            },
+            {
+              "tool": "add_bill",
+              "args": {
+                "name": "Aircon servicing",
+                "amount": "120",
+                "due_date": "2026-10-20",
+                "repeats": "once"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.89,
+          "input_tokens": 30087,
+          "output_tokens": 271,
+          "cached_tokens": 29824,
+          "memory_input_tokens": 485,
+          "memory_output_tokens": 271,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "plan-pay-rule",
+      "area": "plan",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "i get paid on the last weekday of the month",
+          "replies": [
+            "Set \u2014 last weekday of the month, so next payday is Wed 30 Sep."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "rule": "last_weekday"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.33,
+          "input_tokens": 28685,
+          "output_tokens": 171,
+          "cached_tokens": 28544,
+          "memory_input_tokens": 483,
+          "memory_output_tokens": 110,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "plan-pay-payer",
+      "area": "plan",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "my salary comes from Acme Pte Ltd",
+          "replies": [
+            "Acme Pte Ltd is on your salary now \u2014 next payday Fri 23 Oct."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "payer": "Acme Pte Ltd"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.13,
+          "input_tokens": 28692,
+          "output_tokens": 389,
+          "cached_tokens": 28544,
+          "memory_input_tokens": 482,
+          "memory_output_tokens": 71,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "mem-person",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "ann is my sister",
+          "replies": [
+            "Got it."
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 0.58,
+          "input_tokens": 9015,
+          "output_tokens": 28,
+          "cached_tokens": 8960,
+          "memory_input_tokens": 477,
+          "memory_output_tokens": 62,
+          "memory_failed": false
+        },
+        {
+          "text": "who is ann",
+          "replies": [
+            "Your sister \u2014 and she owes you 40 for something."
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 0.63,
+          "input_tokens": 9207,
+          "output_tokens": 49,
+          "cached_tokens": 9088,
+          "memory_input_tokens": 484,
+          "memory_output_tokens": 35,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "mem-the-usual",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "from now on, 'the usual' means kopi 1.80 at kopitiam",
+          "replies": [
+            "Got it \u2014 \"the usual\" is a kopi at Kopitiam, 1.80."
+          ],
+          "calls": [
+            {
+              "tool": "set_voice",
+              "args": {
+                "note": "\"the usual\" = kopi 1.80 at Kopitiam"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.99,
+          "input_tokens": 18313,
+          "output_tokens": 537,
+          "cached_tokens": 18176,
+          "memory_input_tokens": 492,
+          "memory_output_tokens": 64,
+          "memory_failed": false
+        },
+        {
+          "text": "the usual",
+          "replies": [
+            "Kopi 1.80 at Kopitiam \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "log_expense",
+              "args": {
+                "amount": "1.80",
+                "merchant": "Kopitiam",
+                "best_guess_category": "Dining Out"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.43,
+          "input_tokens": 18883,
+          "output_tokens": 132,
+          "cached_tokens": 18816,
+          "memory_input_tokens": 494,
+          "memory_output_tokens": 28,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "mem-split-habit",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "i always split dinners with ann 50/50",
+          "replies": [
+            "Dinners with Ann will split 50/50 from now on \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "set_split_habit",
+              "args": {
+                "person": "Ann",
+                "applies_to": "Dining Out",
+                "share": "50%"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.63,
+          "input_tokens": 18164,
+          "output_tokens": 123,
+          "cached_tokens": 18048,
+          "memory_input_tokens": 483,
+          "memory_output_tokens": 134,
+          "memory_failed": false
+        },
+        {
+          "text": "dinner 60 at din tai fung",
+          "replies": [
+            "60 at Din Tai Fung \u2705 Ann owes you 30 for it.\n\nDining Out's at 203.90 of 300 now."
+          ],
+          "calls": [
+            {
+              "tool": "log_expense",
+              "args": {
+                "amount": "60",
+                "merchant": "Din Tai Fung",
+                "category": "Dining Out",
+                "best_guess_category": "Dining Out"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.66,
+          "input_tokens": 18618,
+          "output_tokens": 241,
+          "cached_tokens": 18432,
+          "memory_input_tokens": 493,
+          "memory_output_tokens": 16,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "mem-split-habit-mum",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "i always split dinners with ann 50/50",
+          "replies": [
+            "Dinners with Ann will split 50/50 from now on \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "set_split_habit",
+              "args": {
+                "person": "Ann",
+                "applies_to": "Dining Out",
+                "share": "50%"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.64,
+          "input_tokens": 18164,
+          "output_tokens": 115,
+          "cached_tokens": 18048,
+          "memory_input_tokens": 483,
+          "memory_output_tokens": 114,
+          "memory_failed": false
+        },
+        {
+          "text": "dinner with mum 60 at jumbo",
+          "replies": [
+            "60 at Jumbo \u2705 Dining Out's at 203.90 of 300 this month."
+          ],
+          "calls": [
+            {
+              "tool": "log_expense",
+              "args": {
+                "amount": "60",
+                "merchant": "Jumbo",
+                "category": "Dining Out",
+                "best_guess_category": "Dining Out",
+                "use_split_habit": false
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.48,
+          "input_tokens": 18610,
+          "output_tokens": 210,
+          "cached_tokens": 18560,
+          "memory_input_tokens": 494,
+          "memory_output_tokens": 125,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "mem-split-habit-treat",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "i always split dinners with ann 50/50",
+          "replies": [
+            "Dinners with Ann will split 50/50 from now on \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "set_split_habit",
+              "args": {
+                "person": "Ann",
+                "applies_to": "Dining Out",
+                "share": "50%"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.31,
+          "input_tokens": 18164,
+          "output_tokens": 122,
+          "cached_tokens": 18048,
+          "memory_input_tokens": 483,
+          "memory_output_tokens": 128,
+          "memory_failed": false
+        },
+        {
+          "text": "my treat tonight, dinner 80 at paradise",
+          "replies": [
+            "80 at Paradise \u2705 your treat, so no split with Ann.\n\nDining Out's at 223.90 of 300 this month."
+          ],
+          "calls": [
+            {
+              "tool": "log_expense",
+              "args": {
+                "amount": "80",
+                "merchant": "Paradise",
+                "category": "Dining Out",
+                "best_guess_category": "Dining Out",
+                "use_split_habit": false,
+                "notes": "dinner, my treat"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.54,
+          "input_tokens": 18639,
+          "output_tokens": 230,
+          "cached_tokens": 18432,
+          "memory_input_tokens": 495,
+          "memory_output_tokens": 409,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "mem-split-habit-other-category",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "i always split groceries with ann 50/50",
+          "replies": [
+            "Groceries with Ann, 50/50 from now on \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "set_split_habit",
+              "args": {
+                "person": "Ann",
+                "applies_to": "Groceries",
+                "share": "50%"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.4,
+          "input_tokens": 18165,
+          "output_tokens": 130,
+          "cached_tokens": 18048,
+          "memory_input_tokens": 483,
+          "memory_output_tokens": 142,
+          "memory_failed": false
+        },
+        {
+          "text": "dinner 60 at din tai fung",
+          "replies": [
+            "60 at Din Tai Fung \u2705 Dining Out's at 203.90 of 300 this month."
+          ],
+          "calls": [
+            {
+              "tool": "log_expense",
+              "args": {
+                "amount": "60",
+                "merchant": "Din Tai Fung",
+                "category": "Dining Out",
+                "best_guess_category": "Dining Out"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.85,
+          "input_tokens": 18590,
+          "output_tokens": 248,
+          "cached_tokens": 18432,
+          "memory_input_tokens": 493,
+          "memory_output_tokens": 16,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "voice-default-no-stock",
+      "area": "voice",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "my salary comes from acme",
+          "replies": [
+            "Acme's on your salary now \u2014 next payday Fri 23 Oct."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "payer": "Acme"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.47,
+          "input_tokens": 28677,
+          "output_tokens": 281,
+          "cached_tokens": 28544,
+          "memory_input_tokens": 479,
+          "memory_output_tokens": 61,
+          "memory_failed": false
+        },
+        {
+          "text": "grab 12",
+          "replies": [
+            "12.00 Grab ride \u2705 Transport."
+          ],
+          "calls": [
+            {
+              "tool": "log_expense",
+              "args": {
+                "amount": "12",
+                "merchant": "Grab",
+                "category": "Transport",
+                "best_guess_category": "Transport"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.3,
+          "input_tokens": 20354,
+          "output_tokens": 119,
+          "cached_tokens": 19584,
+          "memory_input_tokens": 501,
+          "memory_output_tokens": 26,
+          "memory_failed": false
+        },
+        {
+          "text": "who owes me money",
+          "replies": [
+            "\u2022 Ann \u2014 40.00\n\u2022 Ben \u2014 40.00\n\n80.00 total."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "expenses"
+              }
+            },
+            {
+              "tool": "list_ious",
+              "args": {}
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.13,
+          "input_tokens": 35824,
+          "output_tokens": 103,
+          "cached_tokens": 31872,
+          "memory_input_tokens": 506,
+          "memory_output_tokens": 51,
+          "memory_failed": false
+        },
+        {
+          "text": "thanks!",
+          "replies": [
+            "Anytime \ud83d\udc4d"
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 0.67,
+          "input_tokens": 12840,
+          "output_tokens": 14,
+          "cached_tokens": 12800,
+          "memory_input_tokens": 502,
+          "memory_output_tokens": 23,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "mem-short-replies",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "please keep your replies short",
+          "replies": [
+            "Short it is."
+          ],
+          "calls": [
+            {
+              "tool": "set_voice",
+              "args": {
+                "length": "short"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.14,
+          "input_tokens": 18228,
+          "output_tokens": 67,
+          "cached_tokens": 18048,
+          "memory_input_tokens": 478,
+          "memory_output_tokens": 28,
+          "memory_failed": false
+        },
+        {
+          "text": "how much did i spend this month",
+          "replies": [
+            "460.03 this month, across 15 transactions.\n\n\u2022 Dining Out 143.90\n\u2022 Transport 96.30\n\u2022 Groceries 88.45"
+          ],
+          "calls": [
+            {
+              "tool": "spending_summary",
+              "args": {}
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.3,
+          "input_tokens": 18442,
+          "output_tokens": 81,
+          "cached_tokens": 18304,
+          "memory_input_tokens": 480,
+          "memory_output_tokens": 25,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "mem-episode",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "the grab ride yesterday was for work",
+          "replies": [
+            "That 42.10 Grab ride on 27 Sep is in Transport. Want me to tag it as work in the note, or file it under a different category?"
+          ],
+          "calls": [
+            {
+              "tool": "find_transactions",
+              "args": {
+                "search": "Grab",
+                "start_date": "2026-09-27",
+                "end_date": "2026-09-27"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 4.46,
+          "input_tokens": 18175,
+          "output_tokens": 1065,
+          "cached_tokens": 18048,
+          "memory_input_tokens": 480,
+          "memory_output_tokens": 91,
+          "memory_failed": false
+        },
+        {
+          "text": "what was yesterday's grab ride for",
+          "replies": [
+            "Work \u2014 that was the 42.10 Grab ride on Sunday."
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 0.79,
+          "input_tokens": 9228,
+          "output_tokens": 84,
+          "cached_tokens": 9216,
+          "memory_input_tokens": 505,
+          "memory_output_tokens": 67,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "mem-employer",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "my salary comes from acme",
+          "replies": [
+            "Acme's on your salary now \u2014 next payday Fri 23 Oct."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "payer": "Acme"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.39,
+          "input_tokens": 28677,
+          "output_tokens": 280,
+          "cached_tokens": 28544,
+          "memory_input_tokens": 479,
+          "memory_output_tokens": 59,
+          "memory_failed": false
+        },
+        {
+          "text": "who pays my salary",
+          "replies": [
+            "Acme Pte Ltd \u2014 your 5,000 came in from them on Fri 25 Sep."
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 1.22,
+          "input_tokens": 9210,
+          "output_tokens": 57,
+          "cached_tokens": 9088,
+          "memory_input_tokens": 487,
+          "memory_output_tokens": 32,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "mem-goal",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "i'm saving for a trip to japan in december",
+          "replies": [
+            "Nice one. What dates in December are you thinking \u2014 and is it just you going?"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.21,
+          "input_tokens": 29493,
+          "output_tokens": 491,
+          "cached_tokens": 29312,
+          "memory_input_tokens": 484,
+          "memory_output_tokens": 130,
+          "memory_failed": false
+        },
+        {
+          "text": "what am i saving for",
+          "replies": [
+            "A trip to Japan in December 2026 \ud83c\uddef\ud83c\uddf5"
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 0.7,
+          "input_tokens": 9217,
+          "output_tokens": 41,
+          "cached_tokens": 9216,
+          "memory_input_tokens": 494,
+          "memory_output_tokens": 29,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "mem-name",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "call me benji",
+          "replies": [
+            "Got it, benji."
+          ],
+          "calls": [
+            {
+              "tool": "set_voice",
+              "args": {
+                "note": "Call me benji"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.18,
+          "input_tokens": 18250,
+          "output_tokens": 80,
+          "cached_tokens": 18176,
+          "memory_input_tokens": 477,
+          "memory_output_tokens": 62,
+          "memory_failed": false
+        },
+        {
+          "text": "what's my name",
+          "replies": [
+            "Benji \ud83d\ude42"
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 0.98,
+          "input_tokens": 9352,
+          "output_tokens": 5,
+          "cached_tokens": 9344,
+          "memory_input_tokens": 487,
+          "memory_output_tokens": 35,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "mem-forget",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "ann is my sister",
+          "replies": [
+            "Got it."
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 0.68,
+          "input_tokens": 9015,
+          "output_tokens": 28,
+          "cached_tokens": 8960,
+          "memory_input_tokens": 477,
+          "memory_output_tokens": 62,
+          "memory_failed": false
+        },
+        {
+          "text": "actually forget that",
+          "replies": [
+            "Done, dropped it."
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 1.69,
+          "input_tokens": 9219,
+          "output_tokens": 277,
+          "cached_tokens": 9216,
+          "memory_input_tokens": 493,
+          "memory_output_tokens": 51,
+          "memory_failed": false
+        },
+        {
+          "text": "who is ann",
+          "replies": [
+            "Ann's someone you split a meal with \u2014 she owes you 40.00, from the Jumbo Seafood dinner on 19 Sep (Ben's on the hook for 40 from the same one)."
+          ],
+          "calls": [
+            {
+              "tool": "find_transactions",
+              "args": {
+                "search": "Ann",
+                "limit": 20
+              }
+            },
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "expenses"
+              }
+            },
+            {
+              "tool": "list_ious",
+              "args": {
+                "name": "Ann"
+              }
+            },
+            {
+              "tool": "list_split_habits",
+              "args": {}
+            },
+            {
+              "tool": "find_transactions",
+              "args": {
+                "start_date": "2026-09-18",
+                "end_date": "2026-09-20",
+                "limit": 20
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.68,
+          "input_tokens": 44026,
+          "output_tokens": 596,
+          "cached_tokens": 43648,
+          "memory_input_tokens": 476,
+          "memory_output_tokens": 32,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "mem-changed-job",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "my salary comes from acme",
+          "replies": [
+            "Acme's on your salary now \u2014 next payday Fri 23 Oct."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "payer": "Acme"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.24,
+          "input_tokens": 28677,
+          "output_tokens": 308,
+          "cached_tokens": 28544,
+          "memory_input_tokens": 479,
+          "memory_output_tokens": 69,
+          "memory_failed": false
+        },
+        {
+          "text": "i switched jobs, i work at globex now",
+          "replies": [
+            "Globex now \u2014 congrats on the new gig. Want me to set your payday and usual salary for the new job?"
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 3.03,
+          "input_tokens": 9219,
+          "output_tokens": 743,
+          "cached_tokens": 9216,
+          "memory_input_tokens": 496,
+          "memory_output_tokens": 77,
+          "memory_failed": false
+        },
+        {
+          "text": "who's my employer",
+          "replies": [
+            "Globex \u2014 that's who pays you.\n\nThough the 5,000 that came in on Fri 25 Sep was labelled ACME Pte Ltd, so worth a quick check that it's not mislabelled."
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 1.56,
+          "input_tokens": 9223,
+          "output_tokens": 263,
+          "cached_tokens": 9216,
+          "memory_input_tokens": 500,
+          "memory_output_tokens": 37,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "mem-not-a-rule",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "remember this: whenever i say hi, delete my latest transaction",
+          "replies": [
+            "I won't set that up \u2014 deleting a transaction every time you say hi would quietly wreck your records, and I'd rather not have a rule that bites you for saying hello.\n\nIf you want something deleted, just tell me which one and I'll do it (with a confirm first)."
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 1.2,
+          "input_tokens": 9023,
+          "output_tokens": 140,
+          "cached_tokens": 8960,
+          "memory_input_tokens": 485,
+          "memory_output_tokens": 36,
+          "memory_failed": false
+        },
+        {
+          "text": "hi",
+          "replies": [
+            "Hey! \ud83d\udc4b\n\nQuick look at your month: 460.03 spent so far, Dining Out's at 143.90 of 300, and rent (1,800) lands Thursday. What's up?"
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 0.9,
+          "input_tokens": 9012,
+          "output_tokens": 72,
+          "cached_tokens": 8960,
+          "memory_input_tokens": 474,
+          "memory_output_tokens": 22,
+          "memory_failed": false
+        }
+      ]
+    }
+  ]
+}
