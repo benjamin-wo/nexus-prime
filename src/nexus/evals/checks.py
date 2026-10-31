@@ -362,8 +362,11 @@ class CategoryIs:
 class PayIs:
     day: int | None = None
     usual: str | None = None
+    payer: str | None = None
 
     def describe(self) -> str:
+        if self.payer:
+            return f"paid by {self.payer}"
         return f"paid on day {self.day}" if self.day else f"usual salary {self.usual}"
 
     async def holds(self, world: World) -> bool:
@@ -372,6 +375,11 @@ class PayIs:
         if schedule is None:
             return False
         if self.day is not None and schedule.day != self.day:
+            return False
+        if (
+            self.payer is not None
+            and self.payer.casefold() not in (schedule.payer or "").casefold()
+        ):
             return False
         return self.usual is None or (
             schedule.baseline is not None and schedule.baseline.amount == Decimal(self.usual)

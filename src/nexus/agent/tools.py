@@ -2253,9 +2253,16 @@ async def _remove_bill(ctx: ToolContext, a: BillNameArgs) -> ToolResult:
 
 
 class PayScheduleArgs(Args):
-    rule: Literal["day_of_month", "last_weekday", "every_two_weeks"]
+    rule: Literal["day_of_month", "last_weekday", "every_two_weeks"] | None = Field(
+        None, description="Leave out to only name who pays them; the schedule stays as it is"
+    )
     day: int | None = Field(None, description="1-31, for day_of_month")
     next_payday: str | None = Field(None, description="YYYY-MM-DD, for every_two_weeks")
+    payer: str | None = Field(
+        None,
+        description="Who pays their salary (the employer), as they said it: Acme. "
+        "'none' clears it. Leave out to keep what's saved",
+    )
 
 
 class SalaryArgs(Args):
@@ -2273,6 +2280,8 @@ _RULES = {
 def _pay_line(view: salary_cases.PayView) -> str:
     s = view.schedule
     usual = f" Usual salary: {s.baseline}." if s.baseline else " No usual salary saved."
+    if s.payer:
+        usual += f" Paid by {s.payer}."
     when = "today" if view.days_until == 0 else f"{view.next_payday:%a %-d %b}"
     return (
         f"Paid on {salary_cases.describe_rule(s)} (weekend paydays move to Friday). "
@@ -2281,10 +2290,18 @@ def _pay_line(view: salary_cases.PayView) -> str:
 
 
 async def _set_pay_schedule(ctx: ToolContext, a: PayScheduleArgs) -> ToolResult:
-    anchor = parse_day(ctx, a.next_payday).astimezone(ctx.tz).date() if a.next_payday else None
-    await salary_cases.set_schedule(
-        ctx.uow(), ctx.user, _RULES[a.rule], day=a.day, anchor=anchor, now=ctx.now
-    )
+    payer: tx_cases.Maybe[str | None] = tx_cases.UNSET
+    if a.payer is not None:
+        payer = None if a.payer.strip().lower() in {"none", "no"} else a.payer
+    if a.rule is None:
+        if payer is tx_cases.UNSET:
+            raise InvalidInput("say when they're paid, or who pays them")
+        await salary_cases.set_payer(ctx.uow(), ctx.user, payer, now=ctx.now)
+    else:
+        anchor = parse_day(ctx, a.next_payday).astimezone(ctx.tz).date() if a.next_payday else None
+        await salary_cases.set_schedule(
+            ctx.uow(), ctx.user, _RULES[a.rule], day=a.day, anchor=anchor, payer=payer, now=ctx.now
+        )
     view = await salary_cases.view(ctx.uow(), ctx.user, now=ctx.now)
     return ToolResult(_pay_line(view) if view else "Saved.", wrote=True)
 
@@ -4248,7 +4265,8 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
         ),
         ToolSpec(
             "set_pay_schedule",
-            "Set when the user is paid, as they told you.",
+            "Set when the user is paid and/or who pays them (the employer, named on their "
+            "salary entries), as they told you.",
             PayScheduleArgs,
             _set_pay_schedule,
         ),

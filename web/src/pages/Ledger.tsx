@@ -19,7 +19,7 @@ import { MoneyTrail } from "../components/MoneyTrail";
 import { DirectionBadge } from "../components/Badge";
 import { Toast } from "../components/Toast";
 import { Amount } from "../components/Amount";
-import { formatDate, formatMoney, moveLabel } from "../format";
+import { formatDate, formatMoney, moveLabel, txName } from "../format";
 
 const PAGE = 50;
 type View = "all" | "out" | "in" | "move" | "pending";
@@ -371,7 +371,7 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
                           onEdit(tx);
                         }}
                       >
-                        {tx.counterparty ?? (tx.direction === "move" ? moveLabel(tx) : "No merchant")}
+                        {txName(tx)}
                       </button>
                       {/* On a phone the Category column is gone: its name sits under the merchant. */}
                       {tx.category_id && names.get(tx.category_id) && (

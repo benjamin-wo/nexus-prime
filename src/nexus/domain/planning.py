@@ -175,6 +175,8 @@ def reminder_offset(days_until: int) -> int | None:
 # The payday check-in goes out from this time on payday (user's timezone).
 PAYDAY_CHECKIN = time(9)
 
+MAX_PAYER = 80
+
 
 class PayRule(StrEnum):
     MONTHLY_DAY = "monthly_day"  # a day of the month, clamped to short months
@@ -196,8 +198,11 @@ class SalarySchedule:
     baseline: Money | None
     created_at: datetime
     updated_at: datetime
+    payer: str | None = None  # who pays it, e.g. the employer; named on the salary rows
 
     def __post_init__(self) -> None:
+        if self.payer is not None and not 1 <= len(self.payer) <= MAX_PAYER:
+            raise ValueError(f"who pays you must be 1-{MAX_PAYER} characters")
         if (self.rule is PayRule.MONTHLY_DAY) != (self.day is not None):
             raise ValueError("a day of the month is needed exactly for monthly paydays")
         if self.day is not None and not 1 <= self.day <= 31:

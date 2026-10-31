@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 
 import { api, type LikelyMove, type Wallet, type WalletKind } from "../api";
-import { formatDate, formatMoney } from "../format";
+import { formatDate, formatMoney, txName } from "../format";
 
 const KIND_LABEL: Record<WalletKind, string> = {
   spending: "Spending",
@@ -266,7 +266,7 @@ function LikelyMoves({ found, wallets, onChanged }: { found: LikelyMove[]; walle
         {found.length - left.length + 1} of {found.length}
       </p>
       <div className="budget-head">
-        <h3 className="wrap">{tx.counterparty ?? "No merchant"}</h3>
+        <h3 className="wrap">{txName(tx)}</h3>
         <span className={tx.direction === "in" ? "num amount-in" : "num"}>
           {tx.direction === "in" ? "+" : ""}
           {formatMoney(tx.amount)}

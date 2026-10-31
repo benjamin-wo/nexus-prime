@@ -84,7 +84,7 @@ from nexus.domain.notifications import (
     Status,
     label,
 )
-from nexus.domain.planning import Cadence, PayRule, next_month_start
+from nexus.domain.planning import MAX_PAYER, Cadence, PayRule, next_month_start
 from nexus.domain.statement_pdf import PAGE_BREAK
 from nexus.domain.statements import AmountSign, DateOrder, Mapping, StatementImport
 from nexus.domain.voice import PRESETS, VoiceSettings
@@ -1938,6 +1938,9 @@ class SalaryOut(Model):
     anchor: date | None
     description: str
     usual: MoneyOut | None
+    payer: str | None
+    # Earlier salaries with no name, which "fill in" could put the payer on (0 with no payer).
+    unnamed_salaries: int
     next_payday: date
     days_until: int
 
@@ -1948,12 +1951,15 @@ async def salary(auth: Auth, web: Runtime) -> SalaryOut | None:
     if view is None:
         return None
     s = view.schedule
+    unnamed = await salary_cases.count_unnamed(web.uow(), auth.user) if s.payer else 0
     return SalaryOut(
         rule=s.rule.value,
         day=s.day,
         anchor=s.anchor,
         description=salary_cases.describe_rule(s),
         usual=money(s.baseline) if s.baseline else None,
+        payer=s.payer,
+        unnamed_salaries=unnamed,
         next_payday=view.next_payday,
         days_until=view.days_until,
     )
@@ -1963,13 +1969,32 @@ class SalaryIn(Model):
     rule: Literal["monthly_day", "last_weekday", "biweekly"]
     day: int | None = Field(None, ge=1, le=31)
     anchor: date | None = None
+    # Who pays you. Left out keeps the saved name; null (or blank) clears it.
+    payer: str | None = Field(None, max_length=MAX_PAYER)
 
 
 @router.put("/salary", status_code=204)
 async def set_salary_schedule(body: SalaryIn, auth: Auth, web: Runtime) -> None:
     await salary_cases.set_schedule(
-        web.uow(), auth.user, PayRule(body.rule), day=body.day, anchor=body.anchor, now=web.clock()
+        web.uow(),
+        auth.user,
+        PayRule(body.rule),
+        day=body.day,
+        anchor=body.anchor,
+        payer=body.payer if "payer" in body.model_fields_set else tx_cases.UNSET,
+        now=web.clock(),
     )
+
+
+class NamedSalariesOut(Model):
+    named: int
+
+
+@router.post("/salary/name-earlier")
+async def name_earlier_salaries(auth: Auth, web: Runtime) -> NamedSalariesOut:
+    """The Payday page's "fill in the earlier salaries" button."""
+    named = await salary_cases.name_unnamed(web.uow(), auth.user, now=web.clock())
+    return NamedSalariesOut(named=named)
 
 
 class UsualSalaryIn(Model):

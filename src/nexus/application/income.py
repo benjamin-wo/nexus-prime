@@ -72,9 +72,14 @@ async def record_income(
             return Recorded(f"Recorded {amount} from {counterparty}. {status}")
 
     category = None
+    schedule = None
     if kind is IncomeKind.SALARY:
         cats = await list_categories(uow(), user.id)
         category = next((c.id for c in cats if c.name.casefold() == "income"), None)
+        async with uow() as tx:
+            schedule = await tx.planning.get_salary_schedule(user.id)
+        if not counterparty and schedule:
+            counterparty = schedule.payer  # a name the user gave is never replaced
     await tx_cases.log_transaction(
         uow(),
         user.id,
@@ -93,8 +98,6 @@ async def record_income(
     source = f" from {counterparty}" if counterparty else ""
     done = f"Recorded {amount} {what}{source}."
     if kind is IncomeKind.SALARY:
-        async with uow() as tx:
-            schedule = await tx.planning.get_salary_schedule(user.id)
         question = salary_cases.baseline_question(schedule, amount)
         if question:
             # The usual amount only changes if the user says so.

@@ -10,6 +10,8 @@ tools: [set_pay_schedule, show_pay_schedule, set_usual_salary, remove_pay_schedu
   "last working day of the month": last_weekday. "every two weeks, next on 10 Oct":
   every_two_weeks with next_payday. Weekend paydays move to the Friday before.
   Ask one short question if the schedule is unclear.
+- "my salary comes from Acme" / "I'm paid by Acme": `set_pay_schedule` with only `payer`
+  (leave rule out). The name goes on salary entries that have none. "no employer" clears it.
 - "my salary is 5000" (as a standing fact, not "salary 5000 came in"):
   `set_usual_salary`; the confirmation step asks the user.
 - "salary 5000" or "got paid 5000" records income automatically; you don't do it.

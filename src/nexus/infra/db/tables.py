@@ -463,7 +463,7 @@ bill_occurrences = Table(
     CheckConstraint("paid_at IS NULL OR skipped_at IS NULL", name="not_paid_and_skipped"),
 )
 
-# When the user is paid, and their usual (confirmed) salary. One per user.
+# When the user is paid, who pays them, and their usual (confirmed) salary. One per user.
 salary_schedules = Table(
     "salary_schedules",
     metadata,
@@ -475,8 +475,10 @@ salary_schedules = Table(
     Column("currency", CURRENCY),
     Column("created_at", TZ, nullable=False),
     Column("updated_at", TZ, nullable=False),
+    Column("payer", Text),
     ForeignKeyConstraint(["user_id"], ["users.id"]),
     CheckConstraint("rule IN ('monthly_day', 'last_weekday', 'biweekly')", name="rule"),
+    CheckConstraint("payer IS NULL OR length(payer) BETWEEN 1 AND 80", name="payer_length"),
     CheckConstraint("(rule = 'monthly_day') = (day IS NOT NULL)", name="day_for_monthly"),
     CheckConstraint("day IS NULL OR day BETWEEN 1 AND 31", name="day_range"),
     CheckConstraint("(rule = 'biweekly') = (anchor IS NOT NULL)", name="anchor_for_biweekly"),

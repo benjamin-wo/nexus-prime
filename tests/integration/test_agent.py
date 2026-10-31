@@ -19,6 +19,7 @@ from nexus.agent.skills import SkillLibrary
 from nexus.agent.tools import build_tools
 from nexus.agent.trip_reader import TripReader
 from nexus.application import bills as bill_cases
+from nexus.application import salary as salary_cases
 from nexus.application import subscriptions as subscription_cases
 from nexus.application.category_rules import list_rules
 from nexus.application.departments import Departments
@@ -30,7 +31,7 @@ from nexus.application.transactions import NewTransaction, list_ledger, log_tran
 from nexus.application.users import get_user
 from nexus.domain.ledger import Direction, ShareRequest, Source, UserId
 from nexus.domain.money import Money
-from nexus.domain.planning import Cadence
+from nexus.domain.planning import Cadence, PayRule
 from nexus.infra.db.tables import capability_gaps
 from tests.fakes import NOW, FakeReceipts, ScriptedModel, call, say, scripted
 from tests.integration.conftest import UowFactory
@@ -295,6 +296,30 @@ async def test_a_confirmed_repayment_settles_the_iou(uow: UowFactory, alice: Use
     await agent.resolve(alice, reply.buttons[0][0].data.split(":")[1], True)
     assert "Recorded 30.00 SGD from Ann. Ann is all settled." in tool_results(model)
     assert await list_open_ious(uow(), alice) == []
+
+
+async def test_naming_who_pays_them_keeps_the_schedule_and_is_not_guessed(
+    uow: UowFactory, alice: UserId
+) -> None:
+    model = scripted(call("set_pay_schedule", payer="Acme Pte Ltd"), say("Done."))
+    reply = only(await build(uow, model).handle_text(alice, "my salary comes from Acme", "tg:1:1"))
+    assert reply.text == "Done."
+    # No schedule to hang the name on: the tool says so and nothing is saved.
+    assert any("set when you're paid first" in r for r in tool_results(model))
+
+    user = await get_user(uow(), alice)
+    await salary_cases.set_schedule(uow(), user, PayRule.MONTHLY_DAY, day=25, now=NOW)
+    model = scripted(call("set_pay_schedule", payer="Acme Pte Ltd"), say("Done."))
+    await build(uow, model).handle_text(alice, "I'm paid by Acme", "tg:1:2")
+    assert any(
+        "Paid on the 25th of each month" in r and "Paid by Acme Pte Ltd" in r
+        for r in tool_results(model)
+    )
+    model = scripted(call("set_pay_schedule", rule="last_weekday", payer="none"), say("Done."))
+    await build(uow, model).handle_text(alice, "no employer, last weekday", "tg:1:3")
+    view = await salary_cases.view(uow(), user, now=NOW)
+    assert view is not None and view.schedule.payer is None
+    assert view.schedule.rule is PayRule.LAST_WEEKDAY
 
 
 async def test_a_declined_income_records_nothing(uow: UowFactory, alice: UserId) -> None:

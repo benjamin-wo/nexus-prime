@@ -13,11 +13,13 @@ from nexus.application import transactions as tx_cases
 from nexus.application.budgets import TELEGRAM_SEND, UowFactory
 from nexus.application.categories import list_categories
 from nexus.application.ports import UnitOfWork
+from nexus.application.transactions import UNSET, Maybe
 from nexus.domain.errors import InvalidInput, NotFound
-from nexus.domain.ledger import Direction, Source, Transaction, User, UserId
+from nexus.domain.ledger import Direction, Source, Transaction, User, UserId, clean_text
 from nexus.domain.money import Money
 from nexus.domain.notifications import Kind, Level
 from nexus.domain.planning import (
+    MAX_PAYER,
     PAYDAY_CHECKIN,
     PayRule,
     SalarySchedule,
@@ -55,6 +57,10 @@ def describe_rule(schedule: SalarySchedule) -> str:
             return "every two weeks"
 
 
+def clean_payer(payer: str | None) -> str | None:
+    return clean_text(payer, field_name="who pays you", limit=MAX_PAYER)
+
+
 async def set_schedule(
     uow: UnitOfWork,
     user: User,
@@ -62,11 +68,17 @@ async def set_schedule(
     *,
     day: int | None = None,
     anchor: date | None = None,
+    payer: Maybe[str | None] = UNSET,
     now: datetime,
 ) -> SalarySchedule:
-    """Set when the user is paid. Keeps their usual amount."""
+    """Set when the user is paid. Keeps their usual amount, and who pays them unless
+    ``payer`` is given (None clears it)."""
     async with uow:
         existing = await uow.planning.get_salary_schedule(user.id)
+        if payer is UNSET:
+            name = existing.payer if existing else None
+        else:
+            name = clean_payer(payer)
         try:
             schedule = SalarySchedule(
                 user.id,
@@ -76,12 +88,41 @@ async def set_schedule(
                 existing.baseline if existing else None,
                 existing.created_at if existing else now,
                 now,
+                name,
             )
         except ValueError as exc:
             raise InvalidInput(str(exc)) from exc
         await uow.planning.save_salary_schedule(schedule)
         await uow.commit()
     return schedule
+
+
+async def set_payer(uow: UnitOfWork, user: User, payer: str | None, *, now: datetime) -> None:
+    """Name who pays the user (None clears it). Needs a pay schedule to hang it on."""
+    name = clean_payer(payer)
+    async with uow:
+        schedule = await uow.planning.get_salary_schedule(user.id)
+        if schedule is None:
+            raise InvalidInput("set when you're paid first")
+        await uow.planning.save_salary_schedule(replace(schedule, payer=name, updated_at=now))
+        await uow.commit()
+
+
+async def count_unnamed(uow: UnitOfWork, user: User) -> int:
+    """Earlier salary rows with no name, which the payer could be put on."""
+    async with uow:
+        return await uow.ledger.count_unnamed_salaries(user.id)
+
+
+async def name_unnamed(uow: UnitOfWork, user: User, *, now: datetime) -> int:
+    """Put the saved payer on every earlier salary with no name. Returns how many."""
+    async with uow:
+        schedule = await uow.planning.get_salary_schedule(user.id)
+        if schedule is None or schedule.payer is None:
+            raise InvalidInput("say who pays your salary first")
+        named = await uow.ledger.name_unnamed_salaries(user.id, schedule.payer, now)
+        await uow.commit()
+    return named
 
 
 async def set_baseline(uow: UnitOfWork, user: User, amount: Money, *, now: datetime) -> None:
@@ -192,6 +233,7 @@ async def log_payday_salary(
             amount=schedule.baseline,
             occurred_at=now,
             category_id=income,
+            counterparty=schedule.payer,
             notes="Salary",
             source=Source.MANUAL,
             external_id=f"payday:{day.isoformat()}",

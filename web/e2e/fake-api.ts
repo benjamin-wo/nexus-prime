@@ -225,7 +225,13 @@ export async function fakeApi(
   type FakeMember = { id: string; name: string; role: "owner" | "member"; added_at: string | null; you: boolean };
   type FakeInvite = { id: string; created_at: string; expires_at: string };
   type FakeRule = { id: string; pattern: string; category_id: string; category_name: string; explanation: string };
-  type FakeSalary = { rule: string; day: number | null; anchor: string | null; usual: string | null };
+  type FakeSalary = {
+    rule: string;
+    day: number | null;
+    anchor: string | null;
+    usual: string | null;
+    payer: string | null;
+  };
   let annRepaid = false;
   /** Counts the to-dos and covers made here, for their ids. */
   let coverCount = 0;
@@ -725,6 +731,9 @@ export async function fakeApi(
   };
   const categoryName = (id: string) => categories.find((c) => c.id === id)?.name ?? id;
   const live = () => state.txs.filter((t) => !t.deleted);
+  /** Money in noted "Salary" with no name: what "Fill in the earlier salaries" would name. */
+  const unnamedSalaries = () =>
+    live().filter((t) => t.direction === "in" && !t.counterparty && t.notes === "Salary");
   /** The made-up plan p1 as the list and its page give it now. */
   const currentPlan = () => ({
     ...PLAN_BRIEF,
@@ -2778,6 +2787,7 @@ export async function fakeApi(
       if (!pay) return json(route, null);
       return json(route, {
         ...pay,
+        unnamed_salaries: pay.payer ? unnamedSalaries().length : 0,
         description: pay.rule === "monthly_day" ? `the ${pay.day}th of each month` : "the last weekday of each month",
         usual: pay.usual ? { amount: Number(pay.usual).toFixed(4), currency: "SGD" } : null,
         next_payday: "2026-10-23",
@@ -2785,8 +2795,19 @@ export async function fakeApi(
       });
     }
     if (path === "/salary" && method === "PUT") {
-      state.salary = { rule: body.rule, day: body.day, anchor: body.anchor, usual: state.salary?.usual ?? null };
+      state.salary = {
+        rule: body.rule,
+        day: body.day,
+        anchor: body.anchor,
+        usual: state.salary?.usual ?? null,
+        payer: "payer" in body ? body.payer : (state.salary?.payer ?? null),
+      };
       return route.fulfill({ status: 204 });
+    }
+    if (path === "/salary/name-earlier" && method === "POST" && state.salary?.payer) {
+      const rows = unnamedSalaries();
+      for (const t of rows) t.counterparty = state.salary.payer;
+      return json(route, { named: rows.length });
     }
     if (path === "/salary/usual" && method === "PUT" && state.salary) {
       state.salary.usual = body.amount;

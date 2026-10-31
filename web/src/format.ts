@@ -75,6 +75,17 @@ export function moveLabel(tx: Pick<Transaction, "from_wallet" | "to_wallet">): s
   return !from || from.kind === "spending" ? `→ ${to.name}` : `${from.name} → ${to.name}`;
 }
 
+/** What a ledger row is called: its counterparty, else "Salary" or "Income" for money in
+ * (a salary logged without a payer is noted "Salary"), a move's route, or "No merchant". */
+export function txName(
+  tx: Pick<Transaction, "counterparty" | "direction" | "notes" | "from_wallet" | "to_wallet">,
+): string {
+  if (tx.counterparty) return tx.counterparty;
+  if (tx.direction === "move") return moveLabel(tx);
+  if (tx.direction === "in") return tx.notes?.trim().toLowerCase() === "salary" ? "Salary" : "Income";
+  return "No merchant";
+}
+
 export function formatDate(iso: string, timeZone?: string): string {
   return new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", year: "numeric", timeZone }).format(
     new Date(iso),

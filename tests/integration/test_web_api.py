@@ -1276,6 +1276,75 @@ async def test_salary_schedule_and_confirming_the_usual_amount(world: World) -> 
     assert (await owner.send("DELETE", "/api/salary")).status_code == 204
 
 
+async def test_salary_payer_names_salaries_and_fills_in_earlier_ones_only_on_request(
+    world: World,
+) -> None:
+    owner, token = await owner_and_invite(world)
+    member = world.browser()
+    await member.login(MEMBER, invite=token)
+    for who in (owner, member):
+        assert (
+            await who.send("PUT", "/api/salary", {"rule": "monthly_day", "day": 25})
+        ).status_code == 204
+        assert (await who.send("PUT", "/api/salary/usual", {"amount": "5000"})).status_code == 204
+    assert (await owner.get("/api/salary")).json()["payer"] is None
+
+    # Two salaries logged before the payer was known, and the member's own.
+    await owner.send("POST", "/api/chat", {"message": "salary 5000"})
+    world.clock.now += timedelta(minutes=1)
+    await owner.send("POST", "/api/chat/press", {"data": "salary:log:2026-10-23"})
+    await member.send("POST", "/api/chat", {"message": "salary 4000"})
+
+    async def salaries(who: Any) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = (await who.get("/api/transactions?direction=in")).json()[
+            "items"
+        ]
+        return items
+
+    assert [t["counterparty"] for t in await salaries(owner)] == [None, None]
+
+    # Saving a payer (and a later schedule change that leaves it out) keeps it; nothing is renamed.
+    body = {"rule": "monthly_day", "day": 25, "payer": "  Acme Pte Ltd "}
+    assert (await owner.send("PUT", "/api/salary", body)).status_code == 204
+    pay = (await owner.get("/api/salary")).json()
+    assert (pay["payer"], pay["unnamed_salaries"]) == ("Acme Pte Ltd", 2)
+    assert (
+        await owner.send("PUT", "/api/salary", {"rule": "monthly_day", "day": 26})
+    ).status_code == 204
+    assert (await owner.get("/api/salary")).json()["payer"] == "Acme Pte Ltd"
+    assert [t["counterparty"] for t in await salaries(owner)] == [None, None]
+    assert (
+        await owner.send(
+            "PUT", "/api/salary", {"rule": "monthly_day", "day": 25, "payer": "x" * 81}
+        )
+    ).status_code == 422
+
+    # The button names exactly those rows, once, and not the member's.
+    done = await owner.send("POST", "/api/salary/name-earlier")
+    assert done.json() == {"named": 2}
+    assert [t["counterparty"] for t in await salaries(owner)] == ["Acme Pte Ltd"] * 2
+    assert (await owner.get("/api/salary")).json()["unnamed_salaries"] == 0
+    assert (await owner.send("POST", "/api/salary/name-earlier")).json() == {"named": 0}
+    assert [t["counterparty"] for t in await salaries(member)] == [None]
+    assert (await member.send("POST", "/api/salary/name-earlier")).status_code == 422
+
+    # New salaries carry the name; clearing it (null) leaves old rows alone.
+    world.clock.now += timedelta(minutes=1)
+    await owner.send("POST", "/api/chat", {"message": "salary 5100"})
+    assert (await salaries(owner))[0]["counterparty"] == "Acme Pte Ltd"
+    assert (
+        await owner.send("PUT", "/api/salary", {"rule": "monthly_day", "day": 25, "payer": None})
+    ).status_code == 204
+    assert (await owner.get("/api/salary")).json()["payer"] is None
+
+    # The ledger's edit sheet can name a salary by hand (and clear it again).
+    first = (await salaries(owner))[0]["id"]
+    edit = await owner.send("PATCH", f"/api/transactions/{first}", {"counterparty": "Initech Ltd"})
+    assert edit.json()["counterparty"] == "Initech Ltd"
+    edit = await owner.send("PATCH", f"/api/transactions/{first}", {"counterparty": None})
+    assert edit.json()["counterparty"] is None
+
+
 # --- chat ---------------------------------------------------------------------------------
 
 
