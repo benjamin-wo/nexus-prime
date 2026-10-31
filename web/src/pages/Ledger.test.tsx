@@ -1,6 +1,6 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Me, Page, Transaction } from "../api";
 import { mockApi, renderWithProviders } from "../testing";
@@ -148,5 +148,48 @@ describe("the Ledger rows", () => {
     expect(caption?.previousElementSibling).toBe(within(cafe).getByRole("button", { name: "Corner Cafe" }));
     const mystery = screen.getByRole("button", { name: "Mystery shop" }).closest("tr")!;
     expect(mystery.querySelector(".category-line")).toBeNull();
+  });
+});
+
+describe("the floating Add", () => {
+  /** A stand-in for the browser's IntersectionObserver that lets a test say whether the header's Add is in view. */
+  function watchHeader() {
+    let callback: IntersectionObserverCallback = () => {};
+    const observe = vi.fn();
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(cb: IntersectionObserverCallback) {
+          callback = cb;
+        }
+        observe = observe;
+        disconnect = vi.fn();
+      },
+    );
+    return {
+      observe,
+      show: (inView: boolean) =>
+        act(() => callback([{ isIntersecting: inView } as IntersectionObserverEntry], {} as IntersectionObserver)),
+    };
+  }
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("appears only once the header's Add is out of view, and adds like it", async () => {
+    const header = watchHeader();
+    const { onAdd } = setup();
+    await screen.findByText("Corner Cafe");
+    expect(header.observe).toHaveBeenCalledWith(screen.getByRole("button", { name: "Add transaction" }));
+    expect(screen.queryByRole("button", { name: "Add a transaction" })).toBeNull();
+
+    header.show(false);
+    const floating = screen.getByRole("button", { name: "Add a transaction" });
+    // The header's button keeps its own name, so neither doubles the other.
+    expect(screen.getAllByRole("button", { name: "Add transaction" })).toHaveLength(1);
+    await userEvent.click(floating);
+    expect(onAdd).toHaveBeenCalledTimes(1);
+
+    header.show(true);
+    expect(screen.queryByRole("button", { name: "Add a transaction" })).toBeNull();
   });
 });

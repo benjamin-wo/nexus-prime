@@ -1418,7 +1418,7 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
           )}
 
           {stage !== "after" && (
-            <button type="button" className="trip-fab-button" aria-label={add.label} onClick={add.run}>
+            <button type="button" className="fab trip-fab-button" aria-label={add.label} onClick={add.run}>
               <Icon name="plus" size={20} />
               Add
             </button>
