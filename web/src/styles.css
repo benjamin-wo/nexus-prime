@@ -1223,7 +1223,7 @@ html.keyboard .bottom-nav, html.keyboard .fab, html.keyboard .trip-fab {
    never sit on what's being read, and come back on the way up. */
 .fab { transition: opacity var(--t-standard), transform var(--t-standard); }
 @media (max-width: 900px) {
-  .shell.scrolling-down .fab {
+  .shell.scrolling-down .fab:not(.fab-steady) {
     opacity: 0; transform: translateY(24px) scale(0.9); pointer-events: none;
   }
 }
@@ -1606,6 +1606,9 @@ html.keyboard .bottom-nav, html.keyboard .fab, html.keyboard .trip-fab {
 @keyframes fab-in { from { opacity: 0; transform: translateY(12px) scale(0.9); } }
 @media (max-width: 900px) {
   .fab { right: var(--space-4); bottom: calc(68px + var(--space-5) + env(safe-area-inset-bottom)); }
+  /* The Ledger's stays put while scrolling down (that is when it is wanted); its card leaves room
+     under the last row and the pager, so the button never covers them. */
+  .fab-clearance { margin-bottom: 60px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .fab { animation: none; }

@@ -235,7 +235,7 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
         </div>
       </div>
 
-      <section className="card" aria-label="Transactions">
+      <section className="card fab-clearance" aria-label="Transactions">
         <div className="filters">
           <div className="tabs" role="group" aria-label="Show">
             {VIEWS.map((v) => (
@@ -460,7 +460,7 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
         )}
       </section>
       {addAway && (
-        <button type="button" className="fab" aria-label="Add a transaction" onClick={onAdd}>
+        <button type="button" className="fab fab-steady" aria-label="Add a transaction" onClick={onAdd}>
           <Icon name="plus" size={20} />
           Add
         </button>
