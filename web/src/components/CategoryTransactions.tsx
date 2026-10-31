@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 
 import { api, type LedgerFilters, ledgerParams, type Page, type Transaction } from "../api";
-import { formatMoney, formatShortDate } from "../format";
+import { formatMoney, formatShortDate, txName } from "../format";
 
 const SHOWN = 8;
 
@@ -67,7 +67,7 @@ export function CategoryTransactions({
           {items.map((tx) => (
             <li key={tx.id} className="peek-row">
               <span className="caption peek-day">{formatShortDate(tx.occurred_at, timezone)}</span>
-              <span className="wrap">{tx.counterparty ?? "No merchant"}</span>
+              <span className="wrap">{txName(tx)}</span>
               <HomeAmount tx={tx} />
             </li>
           ))}

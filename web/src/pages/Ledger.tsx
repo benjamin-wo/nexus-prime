@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import {
@@ -19,7 +19,7 @@ import { MoneyTrail } from "../components/MoneyTrail";
 import { DirectionBadge } from "../components/Badge";
 import { Toast } from "../components/Toast";
 import { Amount } from "../components/Amount";
-import { formatDate, formatMoney, moveLabel } from "../format";
+import { formatDate, formatMoney, moveLabel, txName } from "../format";
 
 const PAGE = 50;
 type View = "all" | "out" | "in" | "move" | "pending";
@@ -50,6 +50,16 @@ function ranges(timezone: string): Range[] {
 
 export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdit: (tx: Transaction) => void }) {
   const client = useQueryClient();
+  // Once the header's Add has scrolled away, a floating one stands in for it.
+  const headerAdd = useRef<HTMLButtonElement>(null);
+  const [addAway, setAddAway] = useState(false);
+  useEffect(() => {
+    const button = headerAdd.current;
+    if (!button || typeof IntersectionObserver === "undefined") return;
+    const watch = new IntersectionObserver(([entry]) => setAddAway(!entry.isIntersecting));
+    watch.observe(button);
+    return () => watch.disconnect();
+  }, []);
   // A link from a spending category opens the ledger filtered to it.
   const [params, setParams] = useSearchParams();
   const [view, setView] = useState<View>(() => VIEWS.find((v) => v.key === params.get("view"))?.key ?? "all");
@@ -211,7 +221,7 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
       <div className="page-head page-head-row">
         <h1>Ledger</h1>
         <div className="quick">
-          <button type="button" className="btn btn-primary" aria-label="Add transaction" onClick={onAdd}>
+          <button type="button" className="btn btn-primary" aria-label="Add transaction" ref={headerAdd} onClick={onAdd}>
             <Icon name="plus" size={18} />
             Add
           </button>
@@ -225,7 +235,7 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
         </div>
       </div>
 
-      <section className="card" aria-label="Transactions">
+      <section className="card fab-clearance" aria-label="Transactions">
         <div className="filters">
           <div className="tabs" role="group" aria-label="Show">
             {VIEWS.map((v) => (
@@ -371,7 +381,7 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
                           onEdit(tx);
                         }}
                       >
-                        {tx.counterparty ?? (tx.direction === "move" ? moveLabel(tx) : "No merchant")}
+                        {txName(tx)}
                       </button>
                       {/* On a phone the Category column is gone: its name sits under the merchant. */}
                       {tx.category_id && names.get(tx.category_id) && (
@@ -449,6 +459,12 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
           </div>
         )}
       </section>
+      {addAway && (
+        <button type="button" className="fab fab-steady" aria-label="Add a transaction" onClick={onAdd}>
+          <Icon name="plus" size={20} />
+          Add
+        </button>
+      )}
       {toast && (
         <Toast
           message={toast.message}

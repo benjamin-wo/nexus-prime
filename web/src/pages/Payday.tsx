@@ -29,6 +29,8 @@ export function PaydaySection({ me }: { me: Me }) {
   const [rule, setRule] = useState<Salary["rule"]>("monthly_day");
   const [day, setDay] = useState("25");
   const [anchor, setAnchor] = useState("");
+  const [payer, setPayer] = useState("");
+  const [filled, setFilled] = useState<number | null>(null);
   const [usual, setUsual] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,6 +60,7 @@ export function PaydaySection({ me }: { me: Me }) {
       rule,
       day: rule === "monthly_day" ? Number(day) : null,
       anchor: rule === "biweekly" ? anchor : null,
+      payer: payer.trim() || null,
     };
     if (await run(() => api("/salary", { method: "PUT", body }))) setEditing(false);
   }
@@ -67,11 +70,22 @@ export function PaydaySection({ me }: { me: Me }) {
     if (await run(() => api("/salary/usual", { method: "PUT", body: { amount: usual.trim() } }))) setUsual("");
   }
 
+  async function fillIn() {
+    const done = await run(async () => {
+      const result = await api<{ named: number }>("/salary/name-earlier", { method: "POST" });
+      setFilled(result.named);
+      // The ledger lists the rows by name, so it has to be read again.
+      void client.invalidateQueries({ queryKey: ["transactions"] });
+    });
+    if (!done) setFilled(null);
+  }
+
   function startEditing() {
     if (current) {
       setRule(current.rule);
       setDay(String(current.day ?? 25));
       setAnchor(current.anchor ?? "");
+      setPayer(current.payer ?? "");
     }
     setEditing(true);
   }
@@ -93,6 +107,7 @@ export function PaydaySection({ me }: { me: Me }) {
               {current.usual ? formatMoney(current.usual) : <span className="muted">No usual amount</span>}
             </span>
           </div>
+          {current.payer && <p className="caption">Paid by {current.payer}</p>}
           <div className="budget-foot">
             <span className={`caption ${current.days_until === 0 ? "budget-state-ok-strong" : ""}`}>
               Next payday: {nextPayday(current)}
@@ -123,6 +138,25 @@ export function PaydaySection({ me }: { me: Me }) {
             )}
           </div>
         </div>
+      )}
+
+      {current && !editing && current.payer && current.unnamed_salaries > 0 && (
+        <div className="budget-foot">
+          <span>
+            Fill in the {current.unnamed_salaries} earlier {current.unnamed_salaries === 1 ? "salary" : "salaries"}{" "}
+            with {current.payer}?
+          </span>
+          <span className="quick">
+            <button type="button" className="btn" onClick={fillIn}>
+              Fill in
+            </button>
+          </span>
+        </div>
+      )}
+      {filled !== null && (
+        <p className="caption" role="status">
+          Added {current?.payer ?? "the name"} to {filled} {filled === 1 ? "salary" : "salaries"}.
+        </p>
       )}
 
       {showForm && (
@@ -163,6 +197,16 @@ export function PaydaySection({ me }: { me: Me }) {
               />
             </label>
           )}
+          <label className="field">
+            Paid by (optional)
+            <input
+              className="input"
+              placeholder="Your employer"
+              maxLength={80}
+              value={payer}
+              onChange={(e) => setPayer(e.target.value)}
+            />
+          </label>
           <button type="submit" className="btn btn-primary">
             Save
           </button>

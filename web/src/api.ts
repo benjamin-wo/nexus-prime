@@ -316,6 +316,10 @@ export type Salary = {
   anchor: string | null;
   description: string;
   usual: Money | null;
+  /** Who pays the salary (the employer), put on the salary entries logged without a name. */
+  payer: string | null;
+  /** Earlier salaries with no name that `POST /salary/name-earlier` would put the payer on. */
+  unnamed_salaries: number;
   next_payday: string;
   days_until: number;
 };

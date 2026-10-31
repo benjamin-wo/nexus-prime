@@ -670,6 +670,35 @@ class SqlLedgerRepository:
             .values(**_transaction_values(tx))
         )
 
+    @staticmethod
+    def _unnamed_salary(user_id: UserId) -> ColumnElement[bool]:
+        """Money in with no counterparty that is a salary: noted "Salary", or logged by a
+        payday check-in. Deleted rows are left alone."""
+        t = transactions.c
+        s = transaction_sources.c
+        payday = exists().where(
+            s.user_id == t.user_id, s.transaction_id == t.id, s.external_id.startswith("payday:")
+        )
+        return and_(
+            t.user_id == user_id,
+            t.direction == Direction.IN.value,
+            t.counterparty.is_(None),
+            t.deleted_at.is_(None),
+            or_(t.notes == "Salary", payday),
+        )
+
+    async def count_unnamed_salaries(self, user_id: UserId) -> int:
+        stmt = select(func.count()).select_from(transactions).where(self._unnamed_salary(user_id))
+        return int((await self._db.execute(stmt)).scalar_one())
+
+    async def name_unnamed_salaries(self, user_id: UserId, name: str, at: datetime) -> int:
+        result = await self._db.execute(
+            update(transactions)
+            .where(self._unnamed_salary(user_id))
+            .values(counterparty=name, updated_at=at)
+        )
+        return int(result.rowcount)
+
     async def outgoing_since(
         self, user_id: UserId, start: datetime, *, limit: int
     ) -> list[Transaction]:

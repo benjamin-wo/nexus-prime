@@ -247,6 +247,15 @@ class LedgerRepository(Protocol):
     async def recent_with_counterparty(
         self, user_id: UserId, direction: Direction, since: datetime, *, limit: int
     ) -> list[Transaction]: ...
+    async def count_unnamed_salaries(self, user_id: UserId) -> int:
+        """Salary rows (money in, noted "Salary" or logged by a payday check-in) with no
+        counterparty."""
+        ...
+
+    async def name_unnamed_salaries(self, user_id: UserId, name: str, at: datetime) -> int:
+        """Set the counterparty on exactly those rows; returns how many."""
+        ...
+
     async def list_transactions(self, user_id: UserId, query: LedgerQuery) -> Page: ...
     async def outgoing_since(
         self, user_id: UserId, start: datetime, *, limit: int

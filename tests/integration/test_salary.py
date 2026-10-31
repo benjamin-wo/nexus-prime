@@ -7,11 +7,14 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from nexus.application import income as income_cases
 from nexus.application import salary as salary_cases
+from nexus.application import transactions as tx_cases
 from nexus.application.budgets import TELEGRAM_SEND
+from nexus.application.income import IncomeKind
 from nexus.application.users import RegisterUser, register_user
 from nexus.domain.errors import DuplicateSource, InvalidInput, NotFound
-from nexus.domain.ledger import User
+from nexus.domain.ledger import Direction, Source, User
 from nexus.domain.money import Money
 from nexus.domain.planning import PayRule
 from nexus.infra.db.tables import jobs, transactions
@@ -109,6 +112,134 @@ async def test_schedule_changes_keep_the_usual_salary(uow: UowFactory) -> None:
     assert await salary_cases.view(uow(), user, now=NOW) is None
     with pytest.raises(NotFound):
         await salary_cases.remove_schedule(uow(), user.id)
+
+
+async def test_payer_is_kept_cleaned_and_cleared(uow: UowFactory) -> None:
+    user = await sgt_user(uow)
+    with pytest.raises(InvalidInput, match="when you're paid"):
+        await salary_cases.set_payer(uow(), user, "Acme Pte Ltd", now=NOW)
+    await salary_cases.set_schedule(
+        uow(), user, PayRule.MONTHLY_DAY, day=25, payer="  Acme Pte Ltd  ", now=NOW
+    )
+
+    async def payer() -> str | None:
+        view = await salary_cases.view(uow(), user, now=NOW)
+        assert view is not None
+        return view.schedule.payer
+
+    assert await payer() == "Acme Pte Ltd"
+    # Changing when they're paid keeps the name unless a new one (or None) is given.
+    await salary_cases.set_schedule(uow(), user, PayRule.LAST_WEEKDAY, now=NOW)
+    assert await payer() == "Acme Pte Ltd"
+    await salary_cases.set_payer(uow(), user, "Globex Ltd", now=NOW)
+    assert await payer() == "Globex Ltd"
+    with pytest.raises(InvalidInput, match="longer than 80"):
+        await salary_cases.set_payer(uow(), user, "x" * 81, now=NOW)
+    await salary_cases.set_schedule(uow(), user, PayRule.LAST_WEEKDAY, payer="   ", now=NOW)
+    assert await payer() is None
+
+
+async def _ledger_names(engine: AsyncEngine) -> list[str | None]:
+    async with engine.connect() as db:
+        rows = await db.execute(select(transactions.c.counterparty).order_by(transactions.c.amount))
+        return [r.counterparty for r in rows]
+
+
+async def test_payday_salary_and_income_take_the_payer_without_overwriting_a_name(
+    engine: AsyncEngine, uow: UowFactory
+) -> None:
+    user = await sgt_user(uow)
+    await salary_cases.set_schedule(uow(), user, PayRule.MONTHLY_DAY, day=25, now=NOW)
+    await salary_cases.set_baseline(uow(), user, Money.of("5000", SGD), now=NOW)
+    # No payer yet: no name.
+    await income_cases.record_income(
+        uow, user, kind=IncomeKind.SALARY, amount=Money.of("100", SGD), occurred_at=NOW
+    )
+    await salary_cases.set_payer(uow(), user, "Acme Pte Ltd", now=NOW)
+
+    tx = await salary_cases.log_payday_salary(uow, user, date(2026, 10, 23), now=NOW)
+    assert tx.counterparty == "Acme Pte Ltd"
+    recorded = await income_cases.record_income(
+        uow, user, kind=IncomeKind.SALARY, amount=Money.of("200", SGD), occurred_at=NOW
+    )
+    assert recorded.text.startswith("Recorded 200.00 SGD salary from Acme Pte Ltd.")
+    await income_cases.record_income(
+        uow,
+        user,
+        kind=IncomeKind.SALARY,
+        amount=Money.of("300", SGD),
+        occurred_at=NOW,
+        counterparty="Globex Ltd",
+    )
+    # Other income never takes the salary's payer.
+    await income_cases.record_income(
+        uow, user, kind=IncomeKind.OTHER, amount=Money.of("400", SGD), occurred_at=NOW
+    )
+    assert await _ledger_names(engine) == [
+        None,
+        "Acme Pte Ltd",
+        "Globex Ltd",
+        None,
+        "Acme Pte Ltd",
+    ]
+
+
+async def test_naming_earlier_salaries_touches_only_the_users_unnamed_salaries(
+    engine: AsyncEngine, uow: UowFactory
+) -> None:
+    user = await sgt_user(uow)
+    other = await sgt_user(uow, telegram_id=4343)
+    for who in (user, other):
+        await salary_cases.set_schedule(uow(), who, PayRule.MONTHLY_DAY, day=25, now=NOW)
+        await salary_cases.set_baseline(uow(), who, Money.of("5000", SGD), now=NOW)
+    await salary_cases.log_payday_salary(uow, user, date(2026, 9, 25), now=NOW)  # by external id
+    await salary_cases.log_payday_salary(uow, other, date(2026, 9, 25), now=NOW)
+    await income_cases.record_income(  # noted "Salary"
+        uow, user, kind=IncomeKind.SALARY, amount=Money.of("100", SGD), occurred_at=NOW
+    )
+    await income_cases.record_income(  # named already
+        uow,
+        user,
+        kind=IncomeKind.SALARY,
+        amount=Money.of("200", SGD),
+        occurred_at=NOW,
+        counterparty="Globex Ltd",
+    )
+    await income_cases.record_income(  # not a salary
+        uow, user, kind=IncomeKind.OTHER, amount=Money.of("300", SGD), occurred_at=NOW
+    )
+    await tx_cases.log_transaction(  # money out noted "Salary"
+        uow(),
+        user.id,
+        tx_cases.NewTransaction(
+            direction=Direction.OUT,
+            amount=Money.of("400", SGD),
+            occurred_at=NOW,
+            notes="Salary",
+            source=Source.MANUAL,
+        ),
+    )
+
+    assert await salary_cases.count_unnamed(uow(), user) == 2
+    with pytest.raises(InvalidInput, match="who pays your salary"):
+        await salary_cases.name_unnamed(uow(), user, now=NOW)
+    await salary_cases.set_payer(uow(), user, "Acme Pte Ltd", now=NOW)
+    assert await _ledger_names(engine) == [None, "Globex Ltd", None, None, None, None]
+
+    assert await salary_cases.name_unnamed(uow(), user, now=NOW) == 2
+    # 100 and 5000 (the user's) are named; the other user's 5000, 300 and 400 are not.
+    names = await _ledger_names(engine)
+    assert sorted(n or "" for n in names) == [
+        "",
+        "",
+        "",
+        "Acme Pte Ltd",
+        "Acme Pte Ltd",
+        "Globex Ltd",
+    ]
+    assert await salary_cases.count_unnamed(uow(), user) == 0
+    assert await salary_cases.count_unnamed(uow(), other) == 1
+    assert await salary_cases.name_unnamed(uow(), user, now=NOW) == 0
 
 
 def test_baseline_question() -> None:

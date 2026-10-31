@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatClock, formatMoney, formatRange, formatWholeMoney, formatWithHome, priceWhen } from "./format";
+import { formatClock, formatMoney, formatRange, formatWholeMoney, formatWithHome, priceWhen, txName } from "./format";
 
 // Intl puts a no-break space after the currency code.
 const plain = (text: string) => text.replace(/ /g, " ");
@@ -74,5 +74,25 @@ describe("priceWhen", () => {
     expect(priceWhen("provisional_close", null, null)).toBe("Close (provisional)");
     expect(priceWhen("close", null, null)).toBe("Close");
     expect(priceWhen(null, null, null)).toBe("Close");
+  });
+});
+
+describe("txName", () => {
+  const base = { counterparty: null, direction: "out" as const, notes: null, from_wallet: null, to_wallet: null };
+
+  it("prefers the counterparty", () => {
+    expect(txName({ ...base, counterparty: "Acme Pte Ltd", direction: "in", notes: "Salary" })).toBe("Acme Pte Ltd");
+  });
+
+  it("calls money in noted Salary a salary, and other money in income", () => {
+    expect(txName({ ...base, direction: "in", notes: "Salary" })).toBe("Salary");
+    expect(txName({ ...base, direction: "in", notes: "Bonus" })).toBe("Income");
+    expect(txName({ ...base, direction: "in" })).toBe("Income");
+  });
+
+  it("keeps the move label and No merchant for spending", () => {
+    const to = { id: "w", name: "IBKR", kind: "investment" as const };
+    expect(txName({ ...base, direction: "move", to_wallet: to })).toBe("→ IBKR");
+    expect(txName({ ...base, notes: "Salary" })).toBe("No merchant");
   });
 });

@@ -583,6 +583,30 @@ test("set when you're paid and your usual salary", async ({ page }) => {
   await expect(payday.getByRole("form", { name: "When you're paid" })).toBeVisible();
 });
 
+test("name who pays you, then fill in earlier salaries only when asked", async ({ page }) => {
+  const state = await fakeApi(page);
+  state.txs.unshift({ ...state.txs[0], id: "t200", direction: "in", counterparty: null, category_id: null, notes: "Salary" });
+  await page.goto("/accounting/ledger");
+  await expect(page.getByRole("button", { name: "Salary", exact: true })).toBeVisible();
+
+  await page.goto("/accounting/budgets");
+  const payday = page.getByRole("region", { name: "Payday" });
+  const when = payday.getByRole("form", { name: "When you're paid" });
+  await when.getByLabel("Day", { exact: true }).fill("25");
+  await when.getByLabel("Paid by (optional)").fill("Acme Pte Ltd");
+  await when.getByRole("button", { name: "Save" }).click();
+  await expect(payday.getByText("Paid by Acme Pte Ltd")).toBeVisible();
+  await expect(payday.getByText("Fill in the 1 earlier salary with Acme Pte Ltd?")).toBeVisible();
+  expect(state.txs.find((t) => t.id === "t200")?.counterparty).toBeNull(); // offered, not done
+
+  await payday.getByRole("button", { name: "Fill in" }).click();
+  await expect(payday.getByText("Added Acme Pte Ltd to 1 salary.")).toBeVisible();
+  await expect(payday.getByText(/Fill in the/)).toHaveCount(0);
+
+  await page.goto("/accounting/ledger");
+  await expect(page.getByRole("button", { name: "Acme Pte Ltd" })).toBeVisible();
+});
+
 test("add a bill, snooze its reminders and stop tracking it", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/accounting/budgets");
