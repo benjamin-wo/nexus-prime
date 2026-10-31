@@ -1,6 +1,6 @@
 ---
 name: salary
-description: The user's pay schedule, usual salary and payday.
+description: The user's pay schedule, usual salary, payday and who pays it ("my salary comes from Acme").
 tools: [set_pay_schedule, show_pay_schedule, set_usual_salary, remove_pay_schedule]
 ---
 # Salary
