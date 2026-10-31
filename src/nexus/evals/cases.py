@@ -665,6 +665,13 @@ CASES: tuple[Case, ...] = (
         calls=(Call("set_pay_schedule", {"rule": Has("last")}),),
     ),
     Case(
+        "plan-pay-payer",
+        "plan",
+        _t("my salary comes from Acme Pte Ltd"),
+        calls=(Call("set_pay_schedule", {"payer": Has("acme")}),),
+        checks=(PayIs(payer="Acme"),),
+    ),
+    Case(
         "plan-usual-salary",
         "plan",
         _t("my usual salary is now 5200"),

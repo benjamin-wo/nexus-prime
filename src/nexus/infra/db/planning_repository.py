@@ -318,6 +318,7 @@ class SqlPlanningRepository:
             baseline=Money(row.amount, row.currency) if row.amount is not None else None,
             created_at=row.created_at,
             updated_at=row.updated_at,
+            payer=row.payer,
         )
 
     async def save_salary_schedule(self, schedule: SalarySchedule) -> None:
@@ -327,6 +328,7 @@ class SqlPlanningRepository:
             "anchor": schedule.anchor,
             "amount": schedule.baseline.amount if schedule.baseline else None,
             "currency": schedule.baseline.currency if schedule.baseline else None,
+            "payer": schedule.payer,
             "updated_at": schedule.updated_at,
         }
         stmt = pg_insert(salary_schedules).values(
