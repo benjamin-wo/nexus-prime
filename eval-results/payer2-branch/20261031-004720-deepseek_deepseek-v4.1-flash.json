@@ -1,0 +1,2153 @@
+{
+  "repeat": 5,
+  "cases": 7,
+  "passes_per_round": [
+    7,
+    7,
+    7,
+    7,
+    7
+  ],
+  "mean_passes": 7.0,
+  "min_passes": 7,
+  "max_passes": 7,
+  "per_case": {
+    "plan-pay-phrasing": {
+      "passed": 5,
+      "runs": 5
+    },
+    "plan-pay-aircon": {
+      "passed": 5,
+      "runs": 5
+    },
+    "plan-pay-rule": {
+      "passed": 5,
+      "runs": 5
+    },
+    "plan-pay-payer": {
+      "passed": 5,
+      "runs": 5
+    },
+    "voice-default-no-stock": {
+      "passed": 5,
+      "runs": 5
+    },
+    "mem-employer": {
+      "passed": 5,
+      "runs": 5
+    },
+    "mem-changed-job": {
+      "passed": 5,
+      "runs": 5
+    }
+  },
+  "flaky": [],
+  "always_failing": [],
+  "runs": [
+    {
+      "round": 1,
+      "id": "plan-pay-phrasing",
+      "area": "plan",
+      "target": "M8d",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "pay the town council 88 on 15 october",
+          "replies": [
+            "Town Council 88 on 15 Oct, monthly \u2705 I'll nudge you 7, 3 and 1 days before."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "bills"
+              }
+            },
+            {
+              "tool": "add_bill",
+              "args": {
+                "name": "Town Council",
+                "amount": "88",
+                "due_date": "2026-10-15",
+                "repeats": "monthly"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.19,
+          "input_tokens": 30118,
+          "output_tokens": 294,
+          "cached_tokens": 19328,
+          "memory_input_tokens": 484,
+          "memory_output_tokens": 179,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "plan-pay-aircon",
+      "area": "plan",
+      "target": "M8d",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "gotta pay aircon servicing 120 on 20 oct",
+          "replies": [
+            "Aircon servicing, 120, Tue 20 Oct \u2705 I'll nudge you a week, 3 days and 1 day before."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "bills"
+              }
+            },
+            {
+              "tool": "add_bill",
+              "args": {
+                "name": "Aircon servicing",
+                "amount": "120",
+                "due_date": "2026-10-20",
+                "repeats": "once"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 4.29,
+          "input_tokens": 30120,
+          "output_tokens": 276,
+          "cached_tokens": 28928,
+          "memory_input_tokens": 485,
+          "memory_output_tokens": 230,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "plan-pay-rule",
+      "area": "plan",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "i get paid on the last weekday of the month",
+          "replies": [
+            "Payday's set to the last weekday of the month \u2014 next one's Wed 30 Sep."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "rule": "last_weekday"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.77,
+          "input_tokens": 28718,
+          "output_tokens": 179,
+          "cached_tokens": 27648,
+          "memory_input_tokens": 483,
+          "memory_output_tokens": 135,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "plan-pay-payer",
+      "area": "plan",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "my salary comes from Acme Pte Ltd",
+          "replies": [
+            "Acme Pte Ltd is on your salary entries now. Next payday's Fri 23 Oct."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "payer": "Acme Pte Ltd"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.67,
+          "input_tokens": 28725,
+          "output_tokens": 170,
+          "cached_tokens": 28032,
+          "memory_input_tokens": 482,
+          "memory_output_tokens": 66,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "voice-default-no-stock",
+      "area": "voice",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "my salary comes from acme",
+          "replies": [
+            "Acme's on your salary entries now. Next payday's Fri 23 Oct."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "payer": "Acme"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.28,
+          "input_tokens": 28710,
+          "output_tokens": 161,
+          "cached_tokens": 18688,
+          "memory_input_tokens": 479,
+          "memory_output_tokens": 61,
+          "memory_failed": false
+        },
+        {
+          "text": "grab 12",
+          "replies": [
+            "12.00 Grab ride \u2705 Transport's at 108.30 this month."
+          ],
+          "calls": [
+            {
+              "tool": "log_expense",
+              "args": {
+                "amount": "12",
+                "merchant": "Grab",
+                "best_guess_category": "Transport"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.47,
+          "input_tokens": 20365,
+          "output_tokens": 110,
+          "cached_tokens": 13568,
+          "memory_input_tokens": 501,
+          "memory_output_tokens": 16,
+          "memory_failed": false
+        },
+        {
+          "text": "who owes me money",
+          "replies": [
+            "\u2022 Ann \u2014 40.00\n\u2022 Ben \u2014 40.00\n\n80.00 total."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "expenses"
+              }
+            },
+            {
+              "tool": "list_ious",
+              "args": {}
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.34,
+          "input_tokens": 35842,
+          "output_tokens": 149,
+          "cached_tokens": 24960,
+          "memory_input_tokens": 506,
+          "memory_output_tokens": 28,
+          "memory_failed": false
+        },
+        {
+          "text": "thanks!",
+          "replies": [
+            "Any time \ud83d\udc4d"
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 0.69,
+          "input_tokens": 12846,
+          "output_tokens": 13,
+          "cached_tokens": 12800,
+          "memory_input_tokens": 502,
+          "memory_output_tokens": 23,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "mem-employer",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "my salary comes from acme",
+          "replies": [
+            "Acme's on your salary entries now. Next payday's Fri 23 Oct."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "payer": "Acme"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.12,
+          "input_tokens": 28710,
+          "output_tokens": 191,
+          "cached_tokens": 28544,
+          "memory_input_tokens": 479,
+          "memory_output_tokens": 61,
+          "memory_failed": false
+        },
+        {
+          "text": "who pays my salary",
+          "replies": [
+            "Acme \u2014 that's who your salary comes from."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.07,
+          "input_tokens": 19212,
+          "output_tokens": 195,
+          "cached_tokens": 12544,
+          "memory_input_tokens": 490,
+          "memory_output_tokens": 31,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "mem-changed-job",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "my salary comes from acme",
+          "replies": [
+            "Acme's on your salary now \u2014 next payday Fri 23 Oct."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "payer": "Acme"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.01,
+          "input_tokens": 28710,
+          "output_tokens": 159,
+          "cached_tokens": 28544,
+          "memory_input_tokens": 479,
+          "memory_output_tokens": 61,
+          "memory_failed": false
+        },
+        {
+          "text": "i switched jobs, i work at globex now",
+          "replies": [
+            "Globex it is \u2014 your salary entries will carry that name now. Payday's still the 25th, next one Fri 23 Oct."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "payer": "Globex"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.52,
+          "input_tokens": 29317,
+          "output_tokens": 221,
+          "cached_tokens": 28672,
+          "memory_input_tokens": 496,
+          "memory_output_tokens": 77,
+          "memory_failed": false
+        },
+        {
+          "text": "who's my employer",
+          "replies": [
+            "Globex \u2014 paid on the 25th, next one Fri 23 Oct."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "show_pay_schedule",
+              "args": {}
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.55,
+          "input_tokens": 29311,
+          "output_tokens": 257,
+          "cached_tokens": 22784,
+          "memory_input_tokens": 500,
+          "memory_output_tokens": 29,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "plan-pay-phrasing",
+      "area": "plan",
+      "target": "M8d",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "pay the town council 88 on 15 october",
+          "replies": [
+            "Town council 88 on 15 Oct \u2705 \u2014 I'll remind you 7, 3 and 1 days before, and it repeats monthly."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "bills"
+              }
+            },
+            {
+              "tool": "add_bill",
+              "args": {
+                "name": "Town council",
+                "amount": "88",
+                "due_date": "2026-10-15",
+                "repeats": "monthly"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.39,
+          "input_tokens": 30118,
+          "output_tokens": 296,
+          "cached_tokens": 29824,
+          "memory_input_tokens": 484,
+          "memory_output_tokens": 277,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "plan-pay-aircon",
+      "area": "plan",
+      "target": "M8d",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "gotta pay aircon servicing 120 on 20 oct",
+          "replies": [
+            "Aircon servicing, 120, Tue 20 Oct \u2705 I'll nudge you a week, 3 days and 1 day before."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "bills"
+              }
+            },
+            {
+              "tool": "add_bill",
+              "args": {
+                "name": "Aircon servicing",
+                "amount": "120",
+                "due_date": "2026-10-20",
+                "repeats": "once"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.38,
+          "input_tokens": 30120,
+          "output_tokens": 255,
+          "cached_tokens": 29824,
+          "memory_input_tokens": 485,
+          "memory_output_tokens": 182,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "plan-pay-rule",
+      "area": "plan",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "i get paid on the last weekday of the month",
+          "replies": [
+            "Payday's set to the last weekday of the month \u2014 next one is Wed 30 Sep."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "rule": "last_weekday"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.08,
+          "input_tokens": 28718,
+          "output_tokens": 184,
+          "cached_tokens": 28544,
+          "memory_input_tokens": 483,
+          "memory_output_tokens": 135,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "plan-pay-payer",
+      "area": "plan",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "my salary comes from Acme Pte Ltd",
+          "replies": [
+            "Acme Pte Ltd it is \u2014 that'll go on your salary entries from now on."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "payer": "Acme Pte Ltd"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.97,
+          "input_tokens": 28725,
+          "output_tokens": 168,
+          "cached_tokens": 28544,
+          "memory_input_tokens": 482,
+          "memory_output_tokens": 67,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "voice-default-no-stock",
+      "area": "voice",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "my salary comes from acme",
+          "replies": [
+            "Acme's on your salary entries now \u2014 next payday Fri 23 Oct."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "payer": "Acme"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.27,
+          "input_tokens": 28710,
+          "output_tokens": 170,
+          "cached_tokens": 28544,
+          "memory_input_tokens": 479,
+          "memory_output_tokens": 61,
+          "memory_failed": false
+        },
+        {
+          "text": "grab 12",
+          "replies": [
+            "Grab 12.00 \u2705 Transport."
+          ],
+          "calls": [
+            {
+              "tool": "log_expense",
+              "args": {
+                "amount": "12",
+                "merchant": "Grab",
+                "best_guess_category": "Transport"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.32,
+          "input_tokens": 20362,
+          "output_tokens": 99,
+          "cached_tokens": 20096,
+          "memory_input_tokens": 501,
+          "memory_output_tokens": 16,
+          "memory_failed": false
+        },
+        {
+          "text": "who owes me money",
+          "replies": [
+            "\u2022 Ann \u2014 40.00\n\u2022 Ben \u2014 40.00\n\n80.00 total."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "expenses"
+              }
+            },
+            {
+              "tool": "list_ious",
+              "args": {}
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.89,
+          "input_tokens": 35815,
+          "output_tokens": 121,
+          "cached_tokens": 33792,
+          "memory_input_tokens": 506,
+          "memory_output_tokens": 37,
+          "memory_failed": false
+        },
+        {
+          "text": "thanks!",
+          "replies": [
+            "Anytime \ud83d\udc4d"
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 0.74,
+          "input_tokens": 12837,
+          "output_tokens": 17,
+          "cached_tokens": 12800,
+          "memory_input_tokens": 502,
+          "memory_output_tokens": 22,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "mem-employer",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "my salary comes from acme",
+          "replies": [
+            "Acme's on your salary now \u2014 next payday Fri 23 Oct."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "payer": "Acme"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.15,
+          "input_tokens": 28710,
+          "output_tokens": 158,
+          "cached_tokens": 28544,
+          "memory_input_tokens": 479,
+          "memory_output_tokens": 61,
+          "memory_failed": false
+        },
+        {
+          "text": "who pays my salary",
+          "replies": [
+            "Acme \u2014 5,000.00 on the 25th each month. Next one's Fri 23 Oct (the 25th falls on a Sunday)."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "show_pay_schedule",
+              "args": {}
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.15,
+          "input_tokens": 29281,
+          "output_tokens": 174,
+          "cached_tokens": 29184,
+          "memory_input_tokens": 490,
+          "memory_output_tokens": 32,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "mem-changed-job",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "my salary comes from acme",
+          "replies": [
+            "Acme's on your salary entries now \u2014 next payday Fri 23 Oct."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "payer": "Acme"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.03,
+          "input_tokens": 28710,
+          "output_tokens": 181,
+          "cached_tokens": 28544,
+          "memory_input_tokens": 479,
+          "memory_output_tokens": 61,
+          "memory_failed": false
+        },
+        {
+          "text": "i switched jobs, i work at globex now",
+          "replies": [
+            "Congrats on the new job \ud83c\udf89 Salary entries will say Globex from now on."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "payer": "Globex"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.96,
+          "input_tokens": 29317,
+          "output_tokens": 197,
+          "cached_tokens": 29184,
+          "memory_input_tokens": 496,
+          "memory_output_tokens": 74,
+          "memory_failed": false
+        },
+        {
+          "text": "who's my employer",
+          "replies": [
+            "Globex \u2014 that's who pays your salary."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "show_pay_schedule",
+              "args": {}
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.71,
+          "input_tokens": 29302,
+          "output_tokens": 239,
+          "cached_tokens": 22784,
+          "memory_input_tokens": 497,
+          "memory_output_tokens": 30,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "plan-pay-phrasing",
+      "area": "plan",
+      "target": "M8d",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "pay the town council 88 on 15 october",
+          "replies": [
+            "Town council 88, due Thu 15 Oct \u2014 I'll nudge you 7, 3 and 1 days before. Set it monthly; say the word if it's a one-off."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "bills"
+              }
+            },
+            {
+              "tool": "add_bill",
+              "args": {
+                "name": "Town council",
+                "amount": "88",
+                "due_date": "2026-10-15",
+                "repeats": "monthly"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.43,
+          "input_tokens": 30118,
+          "output_tokens": 300,
+          "cached_tokens": 29824,
+          "memory_input_tokens": 484,
+          "memory_output_tokens": 178,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "plan-pay-aircon",
+      "area": "plan",
+      "target": "M8d",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "gotta pay aircon servicing 120 on 20 oct",
+          "replies": [
+            "Aircon servicing, 120, due Tue 20 Oct \u2014 I'll nudge you a week, 3 days and 1 day before \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "bills"
+              }
+            },
+            {
+              "tool": "add_bill",
+              "args": {
+                "name": "Aircon servicing",
+                "amount": "120",
+                "due_date": "2026-10-20",
+                "repeats": "once"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.12,
+          "input_tokens": 30120,
+          "output_tokens": 240,
+          "cached_tokens": 29824,
+          "memory_input_tokens": 485,
+          "memory_output_tokens": 249,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "plan-pay-rule",
+      "area": "plan",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "i get paid on the last weekday of the month",
+          "replies": [
+            "Payday's set to the last weekday of the month \u2014 next one's Wed 30 Sep."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "rule": "last_weekday"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.88,
+          "input_tokens": 28718,
+          "output_tokens": 184,
+          "cached_tokens": 28544,
+          "memory_input_tokens": 483,
+          "memory_output_tokens": 117,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "plan-pay-payer",
+      "area": "plan",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "my salary comes from Acme Pte Ltd",
+          "replies": [
+            "Acme Pte Ltd it is \u2014 that'll go on your salary entries from now on."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "payer": "Acme Pte Ltd"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.64,
+          "input_tokens": 28725,
+          "output_tokens": 167,
+          "cached_tokens": 28544,
+          "memory_input_tokens": 482,
+          "memory_output_tokens": 67,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "voice-default-no-stock",
+      "area": "voice",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "my salary comes from acme",
+          "replies": [
+            "Acme's on your salary entries now. Next payday's Fri 23 Oct."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "payer": "Acme"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.5,
+          "input_tokens": 28710,
+          "output_tokens": 171,
+          "cached_tokens": 28544,
+          "memory_input_tokens": 479,
+          "memory_output_tokens": 61,
+          "memory_failed": false
+        },
+        {
+          "text": "grab 12",
+          "replies": [
+            "12.00 Grab ride \u2705 Transport's at 108.30 this month."
+          ],
+          "calls": [
+            {
+              "tool": "log_expense",
+              "args": {
+                "amount": "12",
+                "merchant": "Grab",
+                "best_guess_category": "Transport"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.32,
+          "input_tokens": 20363,
+          "output_tokens": 106,
+          "cached_tokens": 20224,
+          "memory_input_tokens": 501,
+          "memory_output_tokens": 16,
+          "memory_failed": false
+        },
+        {
+          "text": "who owes me money",
+          "replies": [
+            "\u2022 Ann 40.00\n\u2022 Ben 40.00\n\n80.00 all in, both from 19 Sep."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "expenses"
+              }
+            },
+            {
+              "tool": "list_ious",
+              "args": {}
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.44,
+          "input_tokens": 35836,
+          "output_tokens": 126,
+          "cached_tokens": 34048,
+          "memory_input_tokens": 506,
+          "memory_output_tokens": 37,
+          "memory_failed": false
+        },
+        {
+          "text": "thanks!",
+          "replies": [
+            "Anytime \ud83d\udc4d"
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 0.61,
+          "input_tokens": 12849,
+          "output_tokens": 13,
+          "cached_tokens": 12800,
+          "memory_input_tokens": 502,
+          "memory_output_tokens": 23,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "mem-employer",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "my salary comes from acme",
+          "replies": [
+            "Acme's on your salary now \u2014 next payday Fri 23 Oct."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "payer": "Acme"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.64,
+          "input_tokens": 28710,
+          "output_tokens": 169,
+          "cached_tokens": 28544,
+          "memory_input_tokens": 479,
+          "memory_output_tokens": 65,
+          "memory_failed": false
+        },
+        {
+          "text": "who pays my salary",
+          "replies": [
+            "Acme \u2014 5,000.00 on the 25th each month, next one Fri 23 Oct."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "show_pay_schedule",
+              "args": {}
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.94,
+          "input_tokens": 29272,
+          "output_tokens": 147,
+          "cached_tokens": 22784,
+          "memory_input_tokens": 487,
+          "memory_output_tokens": 28,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "mem-changed-job",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "my salary comes from acme",
+          "replies": [
+            "Acme's on your salary now \u2014 next payday Fri 23 Oct."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "payer": "Acme"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.97,
+          "input_tokens": 28710,
+          "output_tokens": 168,
+          "cached_tokens": 28544,
+          "memory_input_tokens": 479,
+          "memory_output_tokens": 61,
+          "memory_failed": false
+        },
+        {
+          "text": "i switched jobs, i work at globex now",
+          "replies": [
+            "Globex it is \u2014 your salary entries will say Globex from now on. Payday's still the 25th, next one Fri 23 Oct."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "payer": "Globex"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.05,
+          "input_tokens": 29317,
+          "output_tokens": 298,
+          "cached_tokens": 29184,
+          "memory_input_tokens": 496,
+          "memory_output_tokens": 78,
+          "memory_failed": false
+        },
+        {
+          "text": "who's my employer",
+          "replies": [
+            "Globex \u2014 that's who pays your salary. Next payday's Fri 23 Oct."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "show_pay_schedule",
+              "args": {}
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.55,
+          "input_tokens": 29311,
+          "output_tokens": 284,
+          "cached_tokens": 29184,
+          "memory_input_tokens": 500,
+          "memory_output_tokens": 37,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 4,
+      "id": "plan-pay-phrasing",
+      "area": "plan",
+      "target": "M8d",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "pay the town council 88 on 15 october",
+          "replies": [
+            "Town council 88, due Thu 15 Oct \u2014 I'll remind you 7, 3 and 1 days before. Set it monthly; say the word if it's a one-off."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "bills"
+              }
+            },
+            {
+              "tool": "add_bill",
+              "args": {
+                "name": "Town council",
+                "amount": "88",
+                "due_date": "2026-10-15",
+                "repeats": "monthly"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.45,
+          "input_tokens": 30118,
+          "output_tokens": 315,
+          "cached_tokens": 29824,
+          "memory_input_tokens": 484,
+          "memory_output_tokens": 351,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 4,
+      "id": "plan-pay-aircon",
+      "area": "plan",
+      "target": "M8d",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "gotta pay aircon servicing 120 on 20 oct",
+          "replies": [
+            "Aircon servicing, 120, Tue 20 Oct \u2705 I'll nudge you a week, 3 days and 1 day before."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "bills"
+              }
+            },
+            {
+              "tool": "add_bill",
+              "args": {
+                "name": "Aircon servicing",
+                "amount": "120",
+                "due_date": "2026-10-20",
+                "repeats": "once"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.11,
+          "input_tokens": 30120,
+          "output_tokens": 247,
+          "cached_tokens": 29824,
+          "memory_input_tokens": 485,
+          "memory_output_tokens": 189,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 4,
+      "id": "plan-pay-rule",
+      "area": "plan",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "i get paid on the last weekday of the month",
+          "replies": [
+            "Payday's set to the last weekday of the month \u2014 next one's Wed 30 Sep."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "rule": "last_weekday"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.26,
+          "input_tokens": 28718,
+          "output_tokens": 206,
+          "cached_tokens": 28544,
+          "memory_input_tokens": 483,
+          "memory_output_tokens": 140,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 4,
+      "id": "plan-pay-payer",
+      "area": "plan",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "my salary comes from Acme Pte Ltd",
+          "replies": [
+            "Acme Pte Ltd it is \u2014 that'll go on your salary entries from now on."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "payer": "Acme Pte Ltd"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.77,
+          "input_tokens": 28725,
+          "output_tokens": 159,
+          "cached_tokens": 28544,
+          "memory_input_tokens": 482,
+          "memory_output_tokens": 66,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 4,
+      "id": "voice-default-no-stock",
+      "area": "voice",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "my salary comes from acme",
+          "replies": [
+            "Acme's on your salary now \u2014 next payday Fri 23 Oct."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "payer": "Acme"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.16,
+          "input_tokens": 28710,
+          "output_tokens": 163,
+          "cached_tokens": 28544,
+          "memory_input_tokens": 479,
+          "memory_output_tokens": 61,
+          "memory_failed": false
+        },
+        {
+          "text": "grab 12",
+          "replies": [
+            "12.00 Grab ride \u2705 Transport's at 108.30 this month."
+          ],
+          "calls": [
+            {
+              "tool": "log_expense",
+              "args": {
+                "amount": "12",
+                "merchant": "Grab",
+                "best_guess_category": "Transport"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.94,
+          "input_tokens": 20363,
+          "output_tokens": 110,
+          "cached_tokens": 20096,
+          "memory_input_tokens": 501,
+          "memory_output_tokens": 25,
+          "memory_failed": false
+        },
+        {
+          "text": "who owes me money",
+          "replies": [
+            "\u2022 Ann \u2014 40.00\n\u2022 Ben \u2014 40.00\n\n80.00 all in, both from 19 Sep."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "expenses"
+              }
+            },
+            {
+              "tool": "list_ious",
+              "args": {}
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.27,
+          "input_tokens": 35842,
+          "output_tokens": 156,
+          "cached_tokens": 33792,
+          "memory_input_tokens": 506,
+          "memory_output_tokens": 37,
+          "memory_failed": false
+        },
+        {
+          "text": "thanks!",
+          "replies": [
+            "Any time \ud83d\udc4d"
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 0.76,
+          "input_tokens": 12853,
+          "output_tokens": 13,
+          "cached_tokens": 12800,
+          "memory_input_tokens": 502,
+          "memory_output_tokens": 22,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 4,
+      "id": "mem-employer",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "my salary comes from acme",
+          "replies": [
+            "Acme's on your salary now \u2014 next payday Fri 23 Oct."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "payer": "Acme"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.19,
+          "input_tokens": 28710,
+          "output_tokens": 164,
+          "cached_tokens": 28544,
+          "memory_input_tokens": 479,
+          "memory_output_tokens": 61,
+          "memory_failed": false
+        },
+        {
+          "text": "who pays my salary",
+          "replies": [
+            "Acme \u2014 your salary comes from Acme Pte Ltd, and the 5,000 that landed on Friday was from them."
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 0.95,
+          "input_tokens": 9224,
+          "output_tokens": 105,
+          "cached_tokens": 9216,
+          "memory_input_tokens": 490,
+          "memory_output_tokens": 32,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 4,
+      "id": "mem-changed-job",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "my salary comes from acme",
+          "replies": [
+            "Acme's on your salary entries now. Next payday's Fri 23 Oct."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "payer": "Acme"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.54,
+          "input_tokens": 28710,
+          "output_tokens": 203,
+          "cached_tokens": 28544,
+          "memory_input_tokens": 479,
+          "memory_output_tokens": 69,
+          "memory_failed": false
+        },
+        {
+          "text": "i switched jobs, i work at globex now",
+          "replies": [
+            "Globex it is \u2014 your salary entries will carry that name now. Payday's still the 25th, next one Fri 23 Oct."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "payer": "Globex"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.42,
+          "input_tokens": 29311,
+          "output_tokens": 307,
+          "cached_tokens": 22784,
+          "memory_input_tokens": 494,
+          "memory_output_tokens": 71,
+          "memory_failed": false
+        },
+        {
+          "text": "who's my employer",
+          "replies": [
+            "Globex \u2014 you're paid on the 25th, next one Fri 23 Oct."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "show_pay_schedule",
+              "args": {}
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.23,
+          "input_tokens": 29296,
+          "output_tokens": 232,
+          "cached_tokens": 22784,
+          "memory_input_tokens": 495,
+          "memory_output_tokens": 33,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 5,
+      "id": "plan-pay-phrasing",
+      "area": "plan",
+      "target": "M8d",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "pay the town council 88 on 15 october",
+          "replies": [
+            "Town Council 88 on Thu 15 Oct, monthly \u2014 I'll nudge you 7, 3 and 1 days before."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "bills"
+              }
+            },
+            {
+              "tool": "add_bill",
+              "args": {
+                "name": "Town Council",
+                "amount": "88",
+                "due_date": "2026-10-15",
+                "repeats": "monthly"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.1,
+          "input_tokens": 30118,
+          "output_tokens": 246,
+          "cached_tokens": 29824,
+          "memory_input_tokens": 484,
+          "memory_output_tokens": 160,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 5,
+      "id": "plan-pay-aircon",
+      "area": "plan",
+      "target": "M8d",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "gotta pay aircon servicing 120 on 20 oct",
+          "replies": [
+            "Aircon servicing, 120, Tue 20 Oct \u2705 I'll nudge you a week out."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "bills"
+              }
+            },
+            {
+              "tool": "add_bill",
+              "args": {
+                "name": "Aircon servicing",
+                "amount": "120",
+                "due_date": "2026-10-20",
+                "repeats": "once"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.6,
+          "input_tokens": 30120,
+          "output_tokens": 291,
+          "cached_tokens": 29824,
+          "memory_input_tokens": 485,
+          "memory_output_tokens": 180,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 5,
+      "id": "plan-pay-rule",
+      "area": "plan",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "i get paid on the last weekday of the month",
+          "replies": [
+            "Payday's the last weekday of the month \u2014 so next one is Wed 30 Sep \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "rule": "last_weekday"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.33,
+          "input_tokens": 28718,
+          "output_tokens": 211,
+          "cached_tokens": 28544,
+          "memory_input_tokens": 483,
+          "memory_output_tokens": 139,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 5,
+      "id": "plan-pay-payer",
+      "area": "plan",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "my salary comes from Acme Pte Ltd",
+          "replies": [
+            "Acme Pte Ltd is on your salary now \u2014 next payday Fri 23 Oct."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "payer": "Acme Pte Ltd"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.1,
+          "input_tokens": 28725,
+          "output_tokens": 181,
+          "cached_tokens": 28544,
+          "memory_input_tokens": 482,
+          "memory_output_tokens": 67,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 5,
+      "id": "voice-default-no-stock",
+      "area": "voice",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "my salary comes from acme",
+          "replies": [
+            "Acme's on your salary entries now. Next payday's Fri 23 Oct."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "payer": "Acme"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.54,
+          "input_tokens": 28710,
+          "output_tokens": 185,
+          "cached_tokens": 28544,
+          "memory_input_tokens": 479,
+          "memory_output_tokens": 61,
+          "memory_failed": false
+        },
+        {
+          "text": "grab 12",
+          "replies": [
+            "12.00 Grab ride \u2705 Transport."
+          ],
+          "calls": [
+            {
+              "tool": "log_expense",
+              "args": {
+                "amount": "12",
+                "merchant": "Grab",
+                "best_guess_category": "Transport"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.35,
+          "input_tokens": 20365,
+          "output_tokens": 105,
+          "cached_tokens": 20224,
+          "memory_input_tokens": 501,
+          "memory_output_tokens": 25,
+          "memory_failed": false
+        },
+        {
+          "text": "who owes me money",
+          "replies": [
+            "\u2022 Ann \u2014 40.00\n\u2022 Ben \u2014 40.00\n\n80.00 total."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "expenses"
+              }
+            },
+            {
+              "tool": "list_ious",
+              "args": {}
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.08,
+          "input_tokens": 35818,
+          "output_tokens": 126,
+          "cached_tokens": 34048,
+          "memory_input_tokens": 506,
+          "memory_output_tokens": 28,
+          "memory_failed": false
+        },
+        {
+          "text": "thanks!",
+          "replies": [
+            "Anytime \ud83d\udc4d"
+          ],
+          "calls": [],
+          "confirmations": 0,
+          "seconds": 0.71,
+          "input_tokens": 12838,
+          "output_tokens": 13,
+          "cached_tokens": 12800,
+          "memory_input_tokens": 502,
+          "memory_output_tokens": 23,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 5,
+      "id": "mem-employer",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "my salary comes from acme",
+          "replies": [
+            "Acme's on your salary now \u2014 next payday Fri 23 Oct."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "payer": "Acme"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.72,
+          "input_tokens": 28710,
+          "output_tokens": 189,
+          "cached_tokens": 28544,
+          "memory_input_tokens": 479,
+          "memory_output_tokens": 69,
+          "memory_failed": false
+        },
+        {
+          "text": "who pays my salary",
+          "replies": [
+            "Acme \u2014 5,000.00 on the 25th each month. Next one's Fri 23 Oct."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "show_pay_schedule",
+              "args": {}
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.09,
+          "input_tokens": 29275,
+          "output_tokens": 150,
+          "cached_tokens": 22784,
+          "memory_input_tokens": 488,
+          "memory_output_tokens": 32,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 5,
+      "id": "mem-changed-job",
+      "area": "memory",
+      "target": "M8e",
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "my salary comes from acme",
+          "replies": [
+            "Acme's on your salary entries now \u2014 next payday Fri 23 Oct."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "payer": "Acme"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.03,
+          "input_tokens": 28710,
+          "output_tokens": 170,
+          "cached_tokens": 28544,
+          "memory_input_tokens": 479,
+          "memory_output_tokens": 61,
+          "memory_failed": false
+        },
+        {
+          "text": "i switched jobs, i work at globex now",
+          "replies": [
+            "Globex it is \u2014 your salary entries will carry that name now. Payday's still the 25th, next one Fri 23 Oct."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "set_pay_schedule",
+              "args": {
+                "payer": "Globex"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.83,
+          "input_tokens": 29317,
+          "output_tokens": 279,
+          "cached_tokens": 29184,
+          "memory_input_tokens": 496,
+          "memory_output_tokens": 68,
+          "memory_failed": false
+        },
+        {
+          "text": "who's my employer",
+          "replies": [
+            "Globex \u2014 paid on the 25th, next one Fri 23 Oct."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "salary"
+              }
+            },
+            {
+              "tool": "show_pay_schedule",
+              "args": {}
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.32,
+          "input_tokens": 29287,
+          "output_tokens": 323,
+          "cached_tokens": 22784,
+          "memory_input_tokens": 492,
+          "memory_output_tokens": 29,
+          "memory_failed": false
+        }
+      ]
+    }
+  ]
+}
