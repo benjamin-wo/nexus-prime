@@ -22,6 +22,7 @@ from pydantic import BaseModel, ValidationError
 
 from nexus.application import costs
 from nexus.application.ports import UnitOfWork
+from nexus.domain.demo import forbid
 from nexus.domain.departments import (
     STEP_TIMEOUT,
     Department,
@@ -181,6 +182,7 @@ async def start_run(
     now: datetime,
 ) -> Run:
     """Check the task and the user's limits, save the run, and queue its first step."""
+    forbid(user, "Research")
     kind = registry.kind(kind_name)
     try:
         checked = kind.task.model_validate(task)

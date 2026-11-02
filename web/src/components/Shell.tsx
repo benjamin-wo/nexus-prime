@@ -4,6 +4,7 @@ import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import type { Me } from "../api";
 import { DEPARTMENTS, departmentFor } from "../departments";
 import { useReveal } from "../motion";
+import { DemoBanner } from "./DemoBanner";
 import { Icon, departmentIcon } from "./Icon";
 import { withMiniApp } from "../telegram";
 import { InviteButton } from "./InviteButton";
@@ -202,6 +203,7 @@ export function Shell({
   );
   return (
     <div className={`shell${scrolling ? " scrolling-down" : ""}`} ref={shell}>
+      {me.demo && <DemoBanner expiresAt={me.demo.expires_at} onSignIn={onLogout} />}
       <nav className="rail" aria-label="Main">
         <div className="brand">
           <BrandMark />
@@ -213,7 +215,7 @@ export function Shell({
         {settings}
         {nexus("in-rail")}
         <div className="spacer" />
-        {me.user.role === "owner" && <InviteButton />}
+        {me.user.role === "owner" && !me.demo && <InviteButton />}
         <button type="button" className="btn btn-ghost" onClick={onLogout}>
           Sign out
         </button>

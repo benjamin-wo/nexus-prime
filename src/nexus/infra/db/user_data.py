@@ -12,12 +12,13 @@ silently missed.
 import re
 from typing import Any
 
-from sqlalchemy import Column, LargeBinary, String, Table, cast, delete, or_, select, text
+from sqlalchemy import Column, LargeBinary, String, Table, cast, delete, func, or_, select, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncConnection
 from sqlalchemy.sql.elements import ColumnElement
 
 from nexus.domain.ledger import UserId
-from nexus.infra.db.tables import jobs, metadata, users
+from nexus.infra.db.tables import demo_costs, jobs, metadata, model_costs, users
 
 # Columns that are tied to the user by something other than ``user_id``. Every other owned
 # table is tied by ``user_id``. A table's columns are OR-ed: a membership belongs both to the
@@ -91,6 +92,7 @@ ERASE_ORDER: tuple[str, ...] = (
     "trip_reminders",
     # Sign-in state, then the invites the user made or used, then the user.
     "web_sessions",
+    "login_links",
     "invites",
     "users",
 )
@@ -154,6 +156,7 @@ class SqlUserData:
         )
         if locked.first() is None:
             return
+        await self._keep_demo_costs(user_id)
         for name in ERASE_ORDER:
             await self._c.execute(delete(metadata.tables[name]).where(_where(name, user_id)))
         for name in CHECKPOINT_THREAD_TABLES:
@@ -162,3 +165,41 @@ class SqlUserData:
                 text(f"DELETE FROM {name} WHERE thread_id = :thread"),  # noqa: S608
                 {"thread": chat_thread},
             )
+
+    async def _keep_demo_costs(self, user_id: UserId) -> None:
+        """A demo account's model costs go with it; first add them to the demo totals, which
+        hold no user, so the day's demo spend (a daily cap reads it) and the owner's cost page
+        keep them. Nothing for a real user."""
+        m = model_costs.c
+        spent = (
+            select(
+                m.day, m.feature, m.model,
+                func.sum(m.calls), func.sum(m.input_tokens), func.sum(m.output_tokens),
+                func.sum(m.cached_tokens), func.sum(m.cost_usd),
+            )
+            .where(m.user_id == user_id)
+            .where(
+                select(users.c.id)
+                .where(users.c.id == user_id, users.c.demo_expires_at.is_not(None))
+                .exists()
+            )
+            .group_by(m.day, m.feature, m.model)
+        )  # fmt: skip
+        d = demo_costs.c
+        insert_costs = pg_insert(demo_costs).from_select(
+            [d.day, d.feature, d.model, d.calls, d.input_tokens, d.output_tokens,
+             d.cached_tokens, d.cost_usd],
+            spent,
+        )  # fmt: skip
+        await self._c.execute(
+            insert_costs.on_conflict_do_update(
+                index_elements=[d.day, d.feature, d.model],
+                set_={
+                    "calls": d.calls + insert_costs.excluded.calls,
+                    "input_tokens": d.input_tokens + insert_costs.excluded.input_tokens,
+                    "output_tokens": d.output_tokens + insert_costs.excluded.output_tokens,
+                    "cached_tokens": d.cached_tokens + insert_costs.excluded.cached_tokens,
+                    "cost_usd": d.cost_usd + insert_costs.excluded.cost_usd,
+                },
+            )
+        )

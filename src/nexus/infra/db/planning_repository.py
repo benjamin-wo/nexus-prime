@@ -26,6 +26,7 @@ from nexus.infra.db.tables import (
     budget_alerts,
     budgets,
     jobs,
+    not_demo,
     notification_settings,
     salary_schedules,
     subscriptions,
@@ -154,7 +155,9 @@ class SqlPlanningRepository:
         return bool(result.rowcount)
 
     async def users_with_budgets(self) -> list[UserId]:
-        rows = await self._db.execute(select(budgets.c.user_id).distinct())
+        rows = await self._db.execute(
+            select(budgets.c.user_id).where(not_demo(budgets.c.user_id)).distinct()
+        )
         return [UserId(r.user_id) for r in rows]
 
     async def record_alerts(
@@ -254,7 +257,9 @@ class SqlPlanningRepository:
 
     async def users_with_bills(self) -> list[UserId]:
         b = bills.c
-        rows = await self._db.execute(select(b.user_id).where(b.archived_at.is_(None)).distinct())
+        rows = await self._db.execute(
+            select(b.user_id).where(b.archived_at.is_(None), not_demo(b.user_id)).distinct()
+        )
         return [UserId(r.user_id) for r in rows]
 
     async def occurrences(
@@ -344,7 +349,9 @@ class SqlPlanningRepository:
         return bool(result.rowcount)
 
     async def users_with_salary_schedules(self) -> list[UserId]:
-        rows = await self._db.execute(select(salary_schedules.c.user_id))
+        rows = await self._db.execute(
+            select(salary_schedules.c.user_id).where(not_demo(salary_schedules.c.user_id))
+        )
         return [UserId(r.user_id) for r in rows]
 
     # subscriptions
@@ -455,7 +462,9 @@ class SqlPlanningRepository:
 
     async def users_to_notify(self) -> list[UserId]:
         rows = await self._db.execute(
-            select(users.c.id).where(users.c.telegram_chat_id.is_not(None))
+            select(users.c.id).where(
+                users.c.telegram_chat_id.is_not(None), users.c.demo_expires_at.is_(None)
+            )
         )
         return [UserId(r.id) for r in rows]
 

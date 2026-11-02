@@ -9,6 +9,7 @@ import { EntrySheet } from "./components/EntrySheet";
 import { Shell } from "./components/Shell";
 import { Toast } from "./components/Toast";
 import { DEPARTMENTS } from "./departments";
+import { DemoPage } from "./pages/DemoPage";
 import { Home } from "./pages/Home";
 import { forgetTripNote, LoginPage } from "./pages/LoginPage";
 import { lazyNamed } from "./lazyPage";
@@ -140,6 +141,11 @@ function Cockpit({ me }: { me: Me }) {
   const refresh = useCallback(() => {
     for (const key of ["transactions", "summary", "ious", "budgets", "bills", "salary", "category-explanation", "email", "home", "runs", "investments", "watchlist", "stock", "plans", "plan"]) void client.invalidateQueries({ queryKey: [key] });
   }, [client]);
+  // After a chat reply: the pages may have changed, and in the demo the messages left have.
+  const changed = useCallback(() => {
+    refresh();
+    if (me.demo) void client.invalidateQueries({ queryKey: ["me"] });
+  }, [client, refresh, me.demo]);
   const closeSheet = useCallback(() => setSheet(null), []);
   const closeChat = useCallback(() => setChat(null), []);
 
@@ -198,7 +204,7 @@ function Cockpit({ me }: { me: Me }) {
           }}
         />
       )}
-      {chat && <ChatDrawer ask={chat.ask} onClose={closeChat} onChanged={refresh} />}
+      {chat && <ChatDrawer ask={chat.ask} demo={me.demo} onClose={closeChat} onChanged={changed} />}
       {offer && (
         <Toast
           message={offer.suggestion.question}
@@ -246,6 +252,8 @@ function Gate() {
       <Route path="/invite/:token" element={me.data ? <Navigate to={landing(me.data)} replace /> : <LoginPage />} />
       {/* A trip's invite link: signed in joins the trip; signed out signs in with the link, and the server joins them. */}
       <Route path="/trip-invite/:token" element={me.data ? <TripInvite me={me.data} /> : <LoginPage trip />} />
+      {/* The resume's link: starts a demo account. Anyone already signed in just goes in. */}
+      <Route path="/demo" element={me.data ? <Navigate to={landing(me.data)} replace /> : <DemoPage />} />
       <Route path="/login" element={me.data ? <Navigate to={landing(me.data)} replace /> : <LoginPage />} />
       <Route
         path="*"

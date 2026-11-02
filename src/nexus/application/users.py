@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -32,6 +33,7 @@ class RegisterUser:
     telegram_chat_id: int | None = None
     timezone: str = "UTC"
     role: Role = Role.MEMBER
+    demo_expires_at: datetime | None = None  # a public-demo account, until this moment
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,7 +49,12 @@ def _validated(cmd: RegisterUser) -> RegisterUser:
         raise InvalidInput(f"unknown timezone {cmd.timezone!r}") from exc
     currency = Money.zero(cmd.home_currency.strip().upper()).currency
     return RegisterUser(
-        cmd.telegram_user_id, currency, cmd.telegram_chat_id, cmd.timezone, cmd.role
+        cmd.telegram_user_id,
+        currency,
+        cmd.telegram_chat_id,
+        cmd.timezone,
+        cmd.role,
+        cmd.demo_expires_at,
     )
 
 
@@ -62,6 +69,7 @@ async def ensure_user(repo: LedgerRepository, cmd: RegisterUser) -> Registration
         home_currency=cmd.home_currency,
         role=cmd.role,
         created_at=utcnow(),
+        demo_expires_at=cmd.demo_expires_at,
     )
     created = await repo.insert_user_if_absent(candidate)
     if created:

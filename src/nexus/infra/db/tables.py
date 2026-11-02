@@ -5,6 +5,7 @@ Child tables carry ``user_id`` and reference their parent by
 """
 
 import uuid
+from typing import Any
 
 from sqlalchemy import (
     BigInteger,
@@ -28,9 +29,11 @@ from sqlalchemy import (
     Time,
     UniqueConstraint,
     func,
+    select,
     text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
+from sqlalchemy.sql.elements import ColumnElement
 
 metadata = MetaData(
     naming_convention={
@@ -81,9 +84,25 @@ users = Table(
     # What set the current zone, and when their phone or they last said where they are.
     Column("timezone_source", Text, nullable=False, server_default=text("'home'")),
     Column("timezone_set_at", TZ),
+    # A public-demo account (migration 0063): when it ends; null for a real user. A demo's
+    # Telegram id is made up and negative, and it has no chat. The counters are what it has
+    # used of its small allowances.
+    Column("demo_expires_at", TZ),
+    Column("demo_messages", Integer, nullable=False, server_default=text("0")),
+    Column("demo_voice", Integer, nullable=False, server_default=text("0")),
+    Column("demo_photos", Integer, nullable=False, server_default=text("0")),
     CheckConstraint("role IN ('owner', 'member', 'guest')", name="role"),
     CheckConstraint("timezone_source IN ('home', 'phone', 'chat', 'trip')", name="timezone_source"),
     CheckConstraint("home_currency ~ '^[A-Z]{3}$'", name="home_currency"),
+    CheckConstraint("demo_expires_at IS NULL OR telegram_user_id < 0", name="demo_telegram_id"),
+    CheckConstraint(
+        "demo_messages >= 0 AND demo_voice >= 0 AND demo_photos >= 0", name="demo_counts"
+    ),
+    Index(
+        "ix_users_demo_expires_at",
+        "demo_expires_at",
+        postgresql_where=text("demo_expires_at IS NOT NULL"),
+    ),
 )
 
 categories = Table(
@@ -366,8 +385,26 @@ web_sessions = Table(
     Column("created_at", TZ, nullable=False),
     Column("expires_at", TZ, nullable=False),
     Column("revoked_at", TZ),
+    # How long the session lasts from its last renewal, and whether using it pushes the
+    # expiry out again (a short demo session must not).
+    Column("renewable", Boolean, nullable=False, server_default=text("true")),
+    Column("lifetime_seconds", Integer, nullable=False, server_default=text("7776000")),
     ForeignKeyConstraint(["user_id"], ["users.id"]),
     Index("ix_web_sessions_user_id", "user_id"),
+)
+
+# One-time sign-in links the bot's /web command sends: a hash, a few minutes to live, spent once.
+login_links = Table(
+    "login_links",
+    metadata,
+    _uuid_pk(),
+    _user_fk(),
+    Column("token_hash", Text, nullable=False, unique=True),
+    Column("created_at", TZ, nullable=False),
+    Column("expires_at", TZ, nullable=False),
+    Column("used_at", TZ),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+    Index("ix_login_links_user_id", "user_id"),
 )
 
 # Monthly spending limits in the user's home currency: at most one overall
@@ -1432,6 +1469,40 @@ model_costs = Table(
     ),
     Index("ix_model_costs_user_id", "user_id"),
 )
+
+# The public demo's spend and starts (migration 0063). A demo's model costs go with its user
+# when it is erased, so they are first added here, without the user: the day's demo spend is
+# these rows plus the live demos' own. Neither holds anything about a person.
+demo_costs = Table(
+    "demo_costs",
+    metadata,
+    Column("day", Date, nullable=False),
+    Column("feature", Text, nullable=False),
+    Column("model", Text, nullable=False),
+    Column("calls", Integer, nullable=False, server_default=text("0")),
+    Column("input_tokens", BigInteger, nullable=False, server_default=text("0")),
+    Column("output_tokens", BigInteger, nullable=False, server_default=text("0")),
+    Column("cached_tokens", BigInteger, nullable=False, server_default=text("0")),
+    Column("cost_usd", Numeric(14, 6), nullable=False, server_default=text("0")),
+    PrimaryKeyConstraint("day", "feature", "model"),
+)
+demo_starts = Table(
+    "demo_starts",
+    metadata,
+    Column("day", Date, primary_key=True),
+    Column("starts", Integer, nullable=False, server_default=text("0")),
+)
+
+
+def not_demo(user_id: ColumnElement[Any]) -> ColumnElement[bool]:
+    """For the sweeps that message people or reach outside services on a schedule: true when
+    the row's user is not a public-demo account, which they skip."""
+    return (
+        ~select(users.c.id)
+        .where(users.c.id == user_id, users.c.demo_expires_at.is_not(None))
+        .exists()
+    )
+
 
 # Tables LangGraph's Postgres checkpointer creates for itself (migration 0003).
 CHECKPOINT_TABLES = frozenset(

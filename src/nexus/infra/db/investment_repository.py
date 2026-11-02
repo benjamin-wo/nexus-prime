@@ -36,6 +36,7 @@ from nexus.infra.db.tables import (
     market_quotes,
     market_symbols,
     news_fetches,
+    not_demo,
     plans,
     trades,
     watchlist,
@@ -647,7 +648,11 @@ class SqlInvestmentRepository:
         p = plans.c
         rows = await self._db.execute(
             _plans_select()
-            .where(p.status == PlanStatus.OPEN.value, p.verdict.in_([v.value for v in FOLLOWED]))
+            .where(
+                p.status == PlanStatus.OPEN.value,
+                p.verdict.in_([v.value for v in FOLLOWED]),
+                not_demo(p.user_id),
+            )
             .order_by(p.created_at)
         )
         return [_plan(r) for r in rows]
@@ -657,7 +662,7 @@ class SqlInvestmentRepository:
         p = plans.c
         rows = await self._db.execute(
             _plans_select()
-            .where(p.status == PlanStatus.OPEN.value, p.keep_fresh.is_(True))
+            .where(p.status == PlanStatus.OPEN.value, p.keep_fresh.is_(True), not_demo(p.user_id))
             .order_by(p.created_at)
         )
         return [_plan(r) for r in rows]

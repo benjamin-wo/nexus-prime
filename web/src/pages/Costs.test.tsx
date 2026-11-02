@@ -24,6 +24,7 @@ const costs: Costs = {
   by_user: [{ user_id: "u1", name: "Ben", cost: "9.00", calls: 1000 }],
   by_model: [{ model: "deepseek/deepseek-v4.1-flash", cost: "8.00", calls: 1200, input_tokens: 3_400_000, output_tokens: 220_000, cached_tokens: 2_100_000, cached_share: 0.6176 }],
   per_active_user_month: "3.10",
+  demo: { cost: "0.8000", calls: 40, starts: 12 },
 };
 
 describe("Model costs", () => {
@@ -32,6 +33,7 @@ describe("Model costs", () => {
     renderWithProviders(<CostsPage me={me("owner")} />);
     expect(await screen.findByRole("region", { name: "This month so far" })).toHaveTextContent("US$12.35");
     expect(screen.getByRole("region", { name: "Projected for the month" })).toHaveTextContent("US$18.20");
+    expect(screen.getByRole("region", { name: "Public demo" })).toHaveTextContent("12 started · 40 calls");
     expect(screen.getByRole("region", { name: "By feature" })).toHaveTextContent("Voice notes");
     expect(screen.getByRole("region", { name: "This month so far" })).toHaveTextContent("62% of input cached");
     expect(screen.getByRole("region", { name: "By model" })).toHaveTextContent("3.4M in (62% cached) · 220k out");

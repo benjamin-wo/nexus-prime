@@ -14,7 +14,12 @@ class TelegramError(RuntimeError):
 
 class TelegramClient(Protocol):
     async def send_message(
-        self, chat_id: int, text: str, buttons: list[list[Button]] | None = None
+        self,
+        chat_id: int,
+        text: str,
+        buttons: list[list[Button]] | None = None,
+        *,
+        preview: bool = True,
     ) -> int | None: ...
     async def answer_callback(self, callback_id: str, text: str | None = None) -> None: ...
     async def clear_buttons(self, chat_id: int, message_id: int) -> None: ...
@@ -60,10 +65,19 @@ class HttpTelegramClient:
         return body.get("result")
 
     async def send_message(
-        self, chat_id: int, text: str, buttons: list[list[Button]] | None = None
+        self,
+        chat_id: int,
+        text: str,
+        buttons: list[list[Button]] | None = None,
+        *,
+        preview: bool = True,
     ) -> int | None:
-        """Returns the sent message's id, for changing its buttons later."""
+        """Returns the sent message's id, for changing its buttons later. ``preview=False``
+        stops Telegram fetching a link in the text to show a preview (a single-use link
+        would be spent by that fetch)."""
         payload: dict[str, Any] = {"chat_id": chat_id, "text": text[:MAX_TEXT]}
+        if not preview:
+            payload["link_preview_options"] = {"is_disabled": True}
         if buttons:
             payload["reply_markup"] = keyboard(buttons)
         sent = await self._call("sendMessage", payload)

@@ -16,13 +16,15 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.datastructures import UploadFile
 
+from nexus.agent.graph import thread_id
 from nexus.agent.service import Reply
-from nexus.application import access, fx
+from nexus.application import access, erasure, fx, ops
 from nexus.application import bills as bill_cases
 from nexus.application import budgets as budget_cases
 from nexus.application import cashflow as cashflow_cases
 from nexus.application import categories as category_cases
 from nexus.application import category_rules as rule_cases
+from nexus.application import demo as demo_cases
 from nexus.application import departments as department_cases
 from nexus.application import duplicates as duplicate_cases
 from nexus.application import home as home_cases
@@ -46,6 +48,7 @@ from nexus.application.statements import Verdict
 from nexus.application.users import RegisterUser
 from nexus.channels.web.csv_export import to_csv
 from nexus.channels.web.security import (
+    COOKIE,
     Auth,
     Authed,
     Runtime,
@@ -53,6 +56,8 @@ from nexus.channels.web.security import (
     WebRuntime,
     check_origin,
     clear_session_cookie,
+    client_ip,
+    demo_use,
     limit,
     set_session_cookie,
 )
@@ -62,6 +67,7 @@ from nexus.channels.web.telegram_login import (
     verify_login,
     verify_webapp,
 )
+from nexus.domain.demo import forbid as forbid_demo
 from nexus.domain.departments import Run
 from nexus.domain.errors import Forbidden, InvalidInput, NotFound
 from nexus.domain.ledger import (
@@ -92,6 +98,8 @@ from nexus.infra.pdf.pages import page_images
 from nexus.infra.pdf.text import PasswordNeeded, pdf_text
 
 router = APIRouter(prefix="/api")
+# The one page-level route the bot's sign-in link needs, outside /api (the SPA owns /login).
+login_link_router = APIRouter()
 EXPORT_LIMIT = 10_000
 
 
@@ -296,14 +304,26 @@ class UserOut(Model):
     display_name: str | None = None
 
 
+class DemoInfoOut(Model):
+    expires_at: datetime
+    messages_left: int
+
+
 class MeOut(Model):
     user: UserOut
     csrf_token: str
     # Set by a sign-in that added the person to a trip with a trip invite.
     joined_trip: UUID | None = None
+    # Set for a public-demo account: when it ends and how many chat messages it has left.
+    demo: DemoInfoOut | None = None
 
 
-def me_out(user: User, csrf: str, joined_trip: UUID | None = None) -> MeOut:
+def me_out(
+    user: User,
+    csrf: str,
+    joined_trip: UUID | None = None,
+    demo: demo_cases.DemoUsage | None = None,
+) -> MeOut:
     return MeOut(
         user=UserOut(
             telegram_user_id=user.telegram_user_id,
@@ -317,6 +337,14 @@ def me_out(user: User, csrf: str, joined_trip: UUID | None = None) -> MeOut:
         ),
         csrf_token=csrf,
         joined_trip=joined_trip,
+        demo=(
+            DemoInfoOut(
+                expires_at=user.demo_expires_at,
+                messages_left=demo.messages_left if demo else demo_cases.MESSAGES,
+            )
+            if user.demo_expires_at
+            else None
+        ),
     )
 
 
@@ -430,6 +458,8 @@ async def _open_session(
     invite: str | None,
     now: datetime,
     trip_invite: str | None = None,
+    *,
+    renewable: bool = True,
 ) -> access.LoggedIn:
     return await access.log_in(
         web.uow(),
@@ -446,6 +476,7 @@ async def _open_session(
         now=now,
         trip_invite_token=trip_invite,
         display_name=identity.display_name,
+        renewable=renewable,
     )
 
 
@@ -453,7 +484,7 @@ async def _open_session(
 async def login(body: LoginIn, request: Request, response: Response, web: Runtime) -> MeOut:
     check_origin(request, web)
     logged_in = await _log_in(web, body.telegram, body.invite, body.trip_invite)
-    set_session_cookie(response, web, logged_in.token)
+    set_session_cookie(response, web, logged_in.token, lifetime=logged_in.session.span)
     return me_out(logged_in.user, logged_in.session.csrf_token, logged_in.joined_trip)
 
 
@@ -474,8 +505,12 @@ async def login_webapp(
         identity = verify_webapp(body.init_data, _bot_token(web), now=now)
     except LoginRejected as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
-    logged_in = await _open_session(web, identity, None, now, body.trip_invite)
-    set_session_cookie(response, web, logged_in.token, embedded=True)
+    # The Mini App signs in again from Telegram's launch data whenever its session has ended,
+    # and its partitioned cookie is not one to re-send from a later request: so it does not slide.
+    logged_in = await _open_session(web, identity, None, now, body.trip_invite, renewable=False)
+    set_session_cookie(
+        response, web, logged_in.token, embedded=True, lifetime=logged_in.session.span
+    )
     return me_out(logged_in.user, logged_in.session.csrf_token, logged_in.joined_trip)
 
 
@@ -498,7 +533,33 @@ async def login_callback(request: Request, web: Runtime) -> Response:
     # Someone just added to a trip lands on it.
     where = f"/travel/trips/{logged_in.joined_trip}" if logged_in.joined_trip else "/"
     response = RedirectResponse(where, status_code=303)
-    set_session_cookie(response, web, logged_in.token)
+    set_session_cookie(response, web, logged_in.token, lifetime=logged_in.session.span)
+    return response
+
+
+_NO_STORE = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
+# Link previews (Telegram's own crawler above all) fetch an address the moment it is sent
+# in a chat; a sign-in link must survive that.
+_PREVIEW_BOTS = ("telegrambot", "twitterbot", "facebookexternalhit", "slackbot", "discordbot")
+
+
+@login_link_router.get("/login/link/{token}", include_in_schema=False)
+async def login_with_link(token: str, request: Request, web: Runtime) -> Response:
+    """The link the bot's ``/web`` sends: signs the person in on whatever browser opens it,
+    once, within five minutes, then goes to the app. A link that is unknown, used or expired
+    goes to the sign-in page with a note. Nothing here puts the token in a log or an event
+    (the access log's path is redacted, see ``infra.logs``)."""
+    if any(bot in request.headers.get("user-agent", "").lower() for bot in _PREVIEW_BOTS):
+        return Response(status_code=204)  # a preview must not spend the link
+    try:
+        logged_in = await access.redeem_login_link(web.uow(), token, now=web.clock())
+    except Forbidden:
+        ops.emit("access", "login_link", ok=False, reason="refused")
+        return RedirectResponse("/login?error=link", status_code=303, headers=_NO_STORE)
+    ops.set_user(logged_in.user.id)
+    ops.emit("access", "login_link", ok=True)
+    response = RedirectResponse("/", status_code=303, headers=_NO_STORE)
+    set_session_cookie(response, web, logged_in.token, lifetime=logged_in.session.span)
     return response
 
 
@@ -509,8 +570,53 @@ async def logout(auth: TripAuth, response: Response, web: Runtime) -> None:
 
 
 @router.get("/me")
-async def me(auth: TripAuth) -> MeOut:
-    return me_out(auth.user, auth.session.csrf_token)
+async def me(auth: TripAuth, web: Runtime) -> MeOut:
+    usage = await web.demo.usage(auth.user.id) if auth.user.is_demo and web.demo else None
+    return me_out(auth.user, auth.session.csrf_token, demo=usage)
+
+
+class DemoOut(Model):
+    expires_at: datetime
+
+
+@router.post("/demo")
+async def start_demo(request: Request, response: Response, web: Runtime) -> DemoOut:
+    """Start a public demo: a private account of the visitor's own, filled with made-up
+    data, signed in at once. No auth. 403 ``demo_off`` unless DEMO_ENABLED; a visitor who
+    already has a live demo gets that one back, and one signed in as themselves gets 409
+    ``signed_in`` (their session is never replaced); 429 past five new demos an hour from one
+    address; 503 ``demo_unavailable`` if the account could not be filled (it is erased, no
+    cookie is set). No CSRF token is needed (there is no session yet), as for the Telegram
+    sign-in; a request from another origin is 400, so 403 only ever means demos are off."""
+    try:
+        check_origin(request, web)
+    except HTTPException as exc:  # 403 here would read as "demos are off"
+        raise HTTPException(status_code=400, detail=exc.detail) from exc
+    if not web.settings.demo_enabled:
+        raise HTTPException(status_code=403, detail=demo_cases.DEMO_OFF)
+    token = request.cookies.get(COOKIE)
+    if token:
+        resolved = await access.resolve_session(web.uow(), token, now=web.clock())
+        if resolved is not None and resolved.user.is_demo:
+            return DemoOut(expires_at=resolved.session.expires_at)
+        if resolved is not None:
+            # Someone signed in as themselves keeps their own session: a demo never
+            # replaces it (the web sends them Home instead).
+            raise HTTPException(status_code=409, detail="signed_in")
+    if not web.limits.allow("demo", client_ip(request, web), demo=False):
+        raise HTTPException(status_code=429, detail=demo_cases.BUSY)
+
+    async def erase(user: User) -> None:
+        await erasure.delete_user_data(
+            web.uow, user, chat_thread=thread_id(user.id), store=web.archive, email=None
+        )
+
+    try:
+        logged_in = await demo_cases.start_demo(web.uow, now=web.clock(), erase=erase)
+    except demo_cases.DemoUnavailable as exc:
+        raise HTTPException(status_code=503, detail="demo_unavailable") from exc
+    set_session_cookie(response, web, logged_in.token, lifetime=demo_cases.DEMO_TTL)
+    return DemoOut(expires_at=logged_in.session.expires_at)
 
 
 class TimezoneIn(Model):
@@ -572,6 +678,7 @@ class InviteOut(Model):
 
 @router.post("/invites")
 async def invite(auth: Auth, web: Runtime) -> InviteOut:
+    forbid_demo(auth.user, "Inviting people")
     issued = await access.create_invite(web.uow(), auth.user.id, now=web.clock())
     return InviteOut(url=f"{web.origin}/invite/{issued.token}", expires_at=issued.invite.expires_at)
 
@@ -1521,6 +1628,7 @@ async def read_pdf_statement(body: PdfIn, auth: Auth, web: Runtime) -> PdfOut:
                 "that PDF is a scan, and reading scans isn't set up. Your bank's CSV export "
                 "will work instead"
             )
+        await demo_use(web, auth, demo_cases.Use.PHOTO)
         try:
             images = await asyncio.wait_for(
                 asyncio.to_thread(page_images, data, body.password), PDF_SECONDS

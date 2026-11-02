@@ -74,6 +74,7 @@ AREAS: tuple[Area, ...] = (
 NOT_EXPORTED: dict[str, str] = {
     "web_sessions": "sign-in sessions: secrets, and nothing you wrote",
     "email_links": "one-time links for connecting a mailbox: secrets",
+    "login_links": "one-time sign-in links from the bot (hashes): secrets, and no content",
     "invites": "single-use sign-in invites (hashes): secrets, and no content",
     "trip_invites": "single-use trip invites (hashes): secrets, and no content",
     "jobs": "queued background work: copies of data exported elsewhere, and short-lived",
@@ -95,6 +96,8 @@ SHARED: dict[str, str] = {
     "external_cache": "travel times and weather from outside services, shared by all users",
     "web_credits": "search credits used each month by product, not by user",
     "inbound_events": "ids of Telegram updates already handled; no user, no content",
+    "demo_costs": "what erased demo accounts cost, by day, feature and model: no user, no content",
+    "demo_starts": "how many demos were started each day: a count, no user",
     "ops_events": "timings and error types with a keyed hash for the user, never what anyone "
     "said or spent; kept 30 days",
 }

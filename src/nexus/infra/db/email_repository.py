@@ -18,7 +18,7 @@ from nexus.domain.email import (
     Provider,
 )
 from nexus.domain.ledger import UserId
-from nexus.infra.db.tables import email_connections, email_links, inbound_emails
+from nexus.infra.db.tables import email_connections, email_links, inbound_emails, not_demo
 
 
 def _connection(row: Row[Any]) -> EmailConnection:
@@ -154,7 +154,10 @@ class SqlEmailRepository:
         """Across all users: every working mailbox."""
         rows = await self._db.execute(
             select(email_connections)
-            .where(email_connections.c.status == ConnectionStatus.ACTIVE.value)
+            .where(
+                email_connections.c.status == ConnectionStatus.ACTIVE.value,
+                not_demo(email_connections.c.user_id),
+            )
             .order_by(email_connections.c.created_at)
         )
         return [_connection(r) for r in rows]

@@ -20,10 +20,10 @@ from nexus.agent.service import UNDO, AgentService, Button, Picture, Reply
 from nexus.agent.tools import UowFactory
 from nexus.application import acting, ops
 from nexus.application import speech as speech_rules
-from nexus.application.access import create_invite
+from nexus.application.access import NO_WEB_ACCESS, create_invite, issue_login_link
 from nexus.application.clock import utcnow
 from nexus.application.inbound import claim_event
-from nexus.application.limits import RateLimited
+from nexus.application.limits import RateLimited, RateLimiter
 from nexus.application.users import RegisterUser, register_user
 from nexus.channels.telegram.client import MAX_DOWNLOAD, TelegramClient, TelegramError
 from nexus.domain.errors import Forbidden
@@ -65,6 +65,7 @@ class TelegramRuntime:
     service: AgentService
     client: TelegramClient
     clock: Callable[[], datetime] = field(default=utcnow)
+    limits: RateLimiter = field(default_factory=RateLimiter)  # per user: the /web command
 
 
 def _runtime(request: Request) -> TelegramRuntime:
@@ -242,6 +243,10 @@ async def _message(
     if command == "/invite":
         await runtime.client.send_message(chat_id, await _invite(runtime, actor))
         return
+    if command == "/web":
+        # No link preview: Telegram's fetch of the link would spend it before the tap.
+        await runtime.client.send_message(chat_id, await _web_link(runtime, actor), preview=False)
+        return
     if command in {"/start", "/menu", "/help"}:
         await _send(runtime, chat_id, await runtime.service.quick_action(actor, "menu"))
         return
@@ -275,6 +280,27 @@ async def _invite(runtime: TelegramRuntime, actor: UserId) -> str:
     return (
         "Invite link for the web app (single use, expires in 24 hours):\n"
         f"{origin}/invite/{issued.token}"
+    )
+
+
+WEB_LINK_TOO_OFTEN = "That's a few sign-in links already. Try again in a while."
+
+
+async def _web_link(runtime: TelegramRuntime, actor: UserId) -> str:
+    """A one-tap link that signs this person in on any browser (single use, 5 minutes)."""
+    origin = runtime.settings.public_origin
+    if origin is None:
+        return "The web app isn't set up yet."
+    if not runtime.limits.allow("web_link", actor):
+        return WEB_LINK_TOO_OFTEN
+    try:
+        token = await issue_login_link(runtime.uow(), actor, now=runtime.clock())
+    except Forbidden:
+        return f"{NO_WEB_ACCESS.capitalize()}. Ask the owner for a link."
+    return (
+        "Sign-in link for the web app (single use, expires in 5 minutes). "
+        "Open it in the browser you want to sign in on:\n"
+        f"{origin}/login/link/{token}"
     )
 
 

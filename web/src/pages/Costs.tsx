@@ -111,6 +111,13 @@ export function CostsPage({ me }: { me: Me }) {
             />
             <StatTile label="Projected for the month" value={formatUsd(data.month.projected)} />
             <StatTile label="Per active user per month" value={formatUsd(data.per_active_user_month)} />
+            {data.demo && (data.demo.starts > 0 || data.demo.calls > 0) && (
+              <StatTile
+                label="Public demo"
+                value={formatUsd(data.demo.cost)}
+                extra={`${formatCount(data.demo.starts)} started · ${callsText(data.demo.calls)}`}
+              />
+            )}
           </div>
 
           <Block id="costs-days" title={`Last ${days} days`}>

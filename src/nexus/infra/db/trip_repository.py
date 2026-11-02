@@ -33,6 +33,7 @@ from nexus.infra.db.ledger_repository import _transaction
 from nexus.infra.db.tables import (
     categories,
     destination_photos,
+    not_demo,
     splits,
     transactions,
     trip_activity,
@@ -814,10 +815,11 @@ class SqlTripRepository:
         """Users with a trip not yet over or a booking still ahead."""
         rows = await self._db.execute(
             select(trips.c.user_id)
-            .where(trips.c.end_on >= since)
+            .where(trips.c.end_on >= since, not_demo(trips.c.user_id))
             .union(
                 select(trip_bookings.c.user_id).where(
-                    func.coalesce(trip_bookings.c.end_on, trip_bookings.c.start_on) >= since
+                    func.coalesce(trip_bookings.c.end_on, trip_bookings.c.start_on) >= since,
+                    not_demo(trip_bookings.c.user_id),
                 )
             )
         )
@@ -905,6 +907,7 @@ class SqlTripRepository:
                 trips.c.photo_id.is_(None),
                 trips.c.photo_off.is_(False),
                 or_(trips.c.photo_tried_at.is_(None), trips.c.photo_tried_at < tried_before),
+                not_demo(trips.c.user_id),
             )
             .order_by(trips.c.start_on, trips.c.id)
             .limit(limit)

@@ -360,7 +360,7 @@ async def test_sessions_expire_and_log_out(world: World) -> None:
     assert (await owner.get("/api/me")).status_code == 401
 
     await owner.login(OWNER)
-    world.clock.now = NOW + timedelta(days=31)
+    world.clock.now = NOW + timedelta(days=91)
     assert (await owner.get("/api/me")).status_code == 401
     assert (await world.browser().get("/api/transactions")).status_code == 401
 

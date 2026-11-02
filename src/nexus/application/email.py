@@ -41,6 +41,7 @@ from nexus.application.splits import owing_person
 from nexus.application.transactions import NewTransaction
 from nexus.application.wallets import create_move, require_wallet
 from nexus.domain.bookings import BookingDraft
+from nexus.domain.demo import forbid
 from nexus.domain.duplicates import NEAR_DAYS, Candidate, better_name, likely_same
 from nexus.domain.email import (
     ACTIONABLE,
@@ -125,6 +126,7 @@ class EmailRuntime:
 async def create_link(uow: UnitOfWork, user: User, *, now: datetime) -> str:
     """A one-time token that starts connecting a mailbox, valid for 10 minutes. It
     lets the sign-in run in the system browser, outside the app's session."""
+    forbid(user, "Connecting email")
     token = secrets.token_urlsafe(32)
     async with uow:
         await uow.email.insert_link(user.id, _hash(token), expires_at=now + LINK_TTL, now=now)
@@ -177,6 +179,7 @@ async def set_up_forwarding(
     uow: UowFactory, inboxes: ForwardingInboxes, cipher: Cipher, user: User, *, now: datetime
 ) -> EmailConnection:
     """The user's own forwarding address, made the first time they ask for it."""
+    forbid(user, "A forwarding address")
     async with uow() as tx:
         existing = [
             c

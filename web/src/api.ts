@@ -226,7 +226,10 @@ export type Me = {
   csrf_token: string;
   /** Set by a sign-in that added the person to a trip with a trip invite. */
   joined_trip?: string | null;
+  /** Set while this is the public demo account (made-up data, ends at `expires_at`); null for a real user. */
+  demo?: Demo | null;
 };
+export type Demo = { expires_at: string; messages_left: number };
 /** The answer to the two time zone writes: the same fields as `/me`, and whether the zone moved. */
 export type TimezoneChange = Me & { changed: boolean };
 

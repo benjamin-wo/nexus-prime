@@ -12,14 +12,20 @@ from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nexus.application.clock import utcnow
-from nexus.application.cost_report import Row
+from nexus.application.cost_report import DEMO_VISITORS, Row
 from nexus.application.costs import Charge
-from nexus.infra.db.tables import NO_USER_ID, model_costs, users
+from nexus.infra.db.tables import (
+    NO_USER_ID,
+    demo_costs,
+    demo_starts,
+    model_costs,
+    users,
+)
 
 log = logging.getLogger("nexus.ops.costs")
 
@@ -121,6 +127,8 @@ class CostStore:
         cutoff = keep_from(self._clock().date())
         async with self._engine.begin() as db:
             result = await db.execute(delete(model_costs).where(model_costs.c.day < cutoff))
+            await db.execute(delete(demo_costs).where(demo_costs.c.day < cutoff))
+            await db.execute(delete(demo_starts).where(demo_starts.c.day < cutoff))
         self._pruned = self._clock().date()
         return int(result.rowcount or 0)
 
@@ -155,20 +163,42 @@ def _params(charge: Charge) -> dict[str, object]:
 
 async def read_rows(engine: AsyncEngine, since: date) -> list[Row]:
     """Every stored row from ``since`` on, across users (the owner's view: no user is named
-    for the transaction, so row-level security hides nothing)."""
+    for the transaction, so row-level security hides nothing). Public-demo accounts, live and
+    erased, come as rows of one stand-in user (``DEMO_VISITORS``)."""
     c = model_costs.c
     async with engine.connect() as db:
         found = await db.execute(
             select(c.day, c.user_id, c.feature, c.model, c.calls, c.input_tokens,
-                   c.output_tokens, c.cost_usd, c.cached_tokens)
+                   c.output_tokens, c.cost_usd, c.cached_tokens,
+                   users.c.demo_expires_at.is_not(None).label("demo"))
+            .select_from(model_costs.outerjoin(users, users.c.id == c.user_id))
             .where(c.day >= since)
             .order_by(c.day)
         )  # fmt: skip
-        return [
-            Row(r.day, r.user_id, r.feature, r.model, r.calls, r.input_tokens, r.output_tokens,
-                Decimal(r.cost_usd), r.cached_tokens)
+        rows = [
+            Row(r.day, DEMO_VISITORS if r.demo else r.user_id, r.feature, r.model, r.calls,
+                r.input_tokens, r.output_tokens, Decimal(r.cost_usd), r.cached_tokens)
             for r in found
         ]  # fmt: skip
+        d = demo_costs.c
+        erased = await db.execute(select(demo_costs).where(d.day >= since).order_by(d.day))
+        rows += [
+            Row(r.day, DEMO_VISITORS, r.feature, r.model, r.calls, r.input_tokens,
+                r.output_tokens, Decimal(r.cost_usd), r.cached_tokens)
+            for r in erased
+        ]  # fmt: skip
+        return rows
+
+
+async def read_demo_starts(engine: AsyncEngine, since: date) -> int:
+    """How many public demos were started from ``since`` (UTC day) on."""
+    async with engine.connect() as db:
+        total = await db.execute(
+            select(func.coalesce(func.sum(demo_starts.c.starts), 0)).where(
+                demo_starts.c.day >= since
+            )
+        )
+        return int(total.scalar_one())
 
 
 async def read_names(engine: AsyncEngine, ids: set[UUID]) -> dict[UUID, str | None]:

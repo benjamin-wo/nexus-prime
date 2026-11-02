@@ -16,8 +16,9 @@ from nexus.application import moves as move_cases
 from nexus.application import plans as plan_cases
 from nexus.application import quotes as quote_cases
 from nexus.application import research as research_cases
+from nexus.application.demo import Use
 from nexus.channels.web.api import MoneyOut, money
-from nexus.channels.web.security import Auth, Runtime, limit
+from nexus.channels.web.security import Auth, Runtime, demo_use, limit
 from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.history import describe as describe_history
 from nexus.domain.investments import (
@@ -290,6 +291,7 @@ async def why(symbol: str, auth: Auth, web: Runtime) -> WhyOut:
     headlines. Kept for 30 minutes per stock and day."""
     ticker = clean_symbol(symbol)
     limit(web, auth, "why")
+    await demo_use(web, auth)
     if web.explainer is None:
         raise InvalidInput("reading why a stock moved isn't set up")
     now = web.clock()
@@ -317,6 +319,7 @@ async def read_screenshot(body: ScreenshotIn, auth: Auth, web: Runtime) -> Draft
     """A broker screenshot read into positions, waiting for the user to save them.
     The image is only held for this request."""
     limit(web, auth, "import")
+    await demo_use(web, auth, Use.PHOTO)
     try:
         image = base64.b64decode(body.image, validate=True)
     except (binascii.Error, ValueError) as exc:

@@ -1,6 +1,7 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
 
-import { api, apiForm, ApiError, type ChatHistory, type Reply } from "../api";
+import { api, apiForm, ApiError, type ChatHistory, type Demo, type Reply } from "../api";
+import { messagesLeft } from "../demo";
 import { openExternal } from "../telegram";
 import { clock, MAX_VOICE_SECONDS, NO_MIC_HINT, canRecord, useVoiceRecorder, type Recorded } from "../useVoiceRecorder";
 import { Icon } from "./Icon";
@@ -37,6 +38,14 @@ function voiceFailure(error: unknown): string {
   }
   return "Couldn't send that voice note. Try again.";
 }
+
+/** What to try when the chat is empty. */
+const SUGGESTIONS = [
+  "How's my dining budget?",
+  "Plan Saturday in Kyoto",
+  "I spent 12.50 on lunch at Kopi Corner",
+  "What moved in my portfolio today?",
+];
 
 // After this long, the typing bubble also says it's still going.
 const STILL_WORKING_MS = 10_000;
@@ -77,10 +86,12 @@ const WHEN = new Intl.DateTimeFormat(undefined, {
  * aren't part of it), with older messages a tap away. */
 export function ChatDrawer({
   ask,
+  demo,
   onClose,
   onChanged,
 }: {
   ask?: string; // a question asked on Home, sent as soon as the chat opens
+  demo?: Demo | null; // in the public demo: how many messages are left
   onClose: () => void;
   onChanged: () => void;
 }) {
@@ -88,6 +99,8 @@ export function ChatDrawer({
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [more, setMore] = useState(false);
+  // The history has come back (or failed), so an empty chat really is empty.
+  const [loaded, setLoaded] = useState(false);
   const [oldest, setOldest] = useState<number | null>(null);
   // A line under the messages about the mic: the one-time "not available" hint or why a note failed.
   const [note, setNote] = useState<{ kind: "hint" | "error"; text: string } | null>(null);
@@ -135,7 +148,10 @@ export function ChatDrawer({
         setOldest(history.lines[0]?.id ?? null);
         setMessages((m) => [...earlier, ...m]);
       })
-      .catch(() => undefined); // the chat still works without its history
+      .catch(() => undefined) // the chat still works without its history
+      .finally(() => {
+        if (live) setLoaded(true);
+      });
     return () => {
       live = false;
     };
@@ -267,6 +283,11 @@ export function ChatDrawer({
     >
       <header>
         <h2 id="chat-title">Chat</h2>
+        {demo && (
+          <span className="caption" role="status">
+            {messagesLeft(demo.messages_left)}
+          </span>
+        )}
         <button
           type="button"
           className="btn btn-ghost"
@@ -291,6 +312,15 @@ export function ChatDrawer({
             Try "coffee 5.50", "split dinner 90 with Ann and Ben" or "what did I
             spend on food?"
           </p>
+        )}
+        {messages.length === 0 && loaded && !busy && (
+          <div className="chips" role="group" aria-label="Suggestions">
+            {SUGGESTIONS.map((suggestion) => (
+              <button key={suggestion} type="button" className="ask-chip" onClick={() => say(suggestion)}>
+                {suggestion}
+              </button>
+            ))}
+          </div>
         )}
         {messages.map((m, i) => (
           <div
