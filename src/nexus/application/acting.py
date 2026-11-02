@@ -19,11 +19,24 @@ from typing import Any, cast
 from nexus.domain.ledger import UserId
 
 _current: ContextVar[UserId | None] = ContextVar("acting_user", default=None)
+# Whether that user is a public-demo account: its rate limits are a third of the usual.
+_demo: ContextVar[bool] = ContextVar("acting_demo", default=False)
 
 
 def current_user_id() -> UserId | None:
     """The user the current work is for; None for a job, a sign-in or an admin task."""
     return _current.get()
+
+
+def is_demo() -> bool:
+    """Whether the current work is for a public-demo account (named by the web session)."""
+    return _demo.get()
+
+
+def set_demo(demo: bool) -> None:
+    """Say, for the rest of this task, whether the acting user is a demo account. Like
+    ``set_acting_user``, for a web dependency; ``acting_as`` puts it back."""
+    _demo.set(demo)
 
 
 @contextmanager
@@ -34,9 +47,11 @@ def acting_as(user_id: UserId | None, *, keep: bool = False) -> Iterator[None]:
         yield
         return
     token = _current.set(user_id)
+    demo = _demo.set(False)  # whoever is named next says again
     try:
         yield
     finally:
+        _demo.reset(demo)
         _current.reset(token)
 
 

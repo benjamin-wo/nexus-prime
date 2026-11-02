@@ -52,6 +52,7 @@ from nexus.application import trip_access as access_cases
 from nexus.application import undo as undo_cases
 from nexus.application.acting import as_actor
 from nexus.application.categories import list_categories
+from nexus.application.demo import DemoGate, Use
 from nexus.application.fx import RateSource
 from nexus.application.limits import RateLimited, RateLimiter
 from nexus.application.people import known_people
@@ -107,7 +108,8 @@ HELP = (
     "• split dinner 90 with Ann and Ben\n"
     "• Ann paid me back 30\n"
     "• salary 4200\n"
-    "Or send a photo: a receipt to log, or any screenshot or bill to ask me about."
+    "Or send a photo: a receipt to log, or any screenshot or bill to ask me about.\n"
+    "To sign in to the web app on a computer, send /web for a one-time link."
 )
 
 
@@ -215,8 +217,11 @@ class AgentService:
         condense: Callable[[RunnableConfig], Awaitable[bool]] | None = None,
         speech: SpeechToText | None = None,
         receipt_text: ReceiptTextReader | None = None,
+        demo: DemoGate | None = None,
     ) -> None:
         self._graph = graph
+        # Public-demo accounts' allowances and spend cap; None: not counted (tests, evals).
+        self._demo = demo
         # Turns voice notes into text; None: voice notes aren't set up.
         self._speech = speech
         # The chat model's id: a turn answered by another model used the fallback.
@@ -342,6 +347,16 @@ class AgentService:
     def _over_limit(self, actor: UserId) -> bool:
         return self._limiter is not None and not self._limiter.allow("message", actor)
 
+    async def _demo_refusal(
+        self, actor: UserId, kind: Use, amount: int = 1, *, count: bool = True
+    ) -> str | None:
+        """For a public-demo account past its allowance of ``kind``, or when all demos have
+        used the day's budget: what to tell them instead of calling a model. None for
+        everyone else and for a demo with room."""
+        if self._demo is None:
+            return None
+        return await self._demo.use(actor, kind, amount, count=count)
+
     async def _keep(
         self, actor: UserId, said: str | None, replies: list[Reply], ref: str | None
     ) -> None:
@@ -375,7 +390,8 @@ class AgentService:
     @as_actor
     @costs.as_feature("chat")
     async def handle_text(self, actor: UserId, text: str, ref: str) -> list[Reply]:
-        replies = await self._handle_text(actor, text, ref)
+        refusal = await self._demo_refusal(actor, Use.MESSAGE)
+        replies = [Reply(refusal)] if refusal else await self._handle_text(actor, text, ref)
         await self._keep(actor, text, replies, ref)
         return replies
 
@@ -416,6 +432,9 @@ class AgentService:
             return [Reply(speech_rules.UNSUPPORTED)]
         if len(audio) > speech_rules.MAX_BYTES:
             return [Reply(speech_rules.TOO_LONG)]
+        refusal = await self._demo_refusal(actor, Use.VOICE)
+        if refusal:
+            return [Reply(refusal)]
         if self._limiter is not None and not self._limiter.allow("voice", actor):
             raise RateLimited(TOO_MANY_VOICE_NOTES)
         names = await known_people(self._uow(), actor)  # helps the model spell them
@@ -481,7 +500,12 @@ class AgentService:
     async def handle_images(
         self, actor: UserId, pictures: list[Picture], caption: str | None, ref: str
     ) -> list[Reply]:
-        replies = await self._handle_images(actor, pictures, caption, ref)
+        refusal = await self._demo_refusal(actor, Use.PHOTO, len(pictures))
+        replies = (
+            [Reply(refusal)]
+            if refusal
+            else await self._handle_images(actor, pictures, caption, ref)
+        )
         what = "a photo" if len(pictures) == 1 else f"{len(pictures)} photos"
         await self._keep(actor, f"[Sent {what}]{f' {caption}' if caption else ''}", replies, ref)
         return replies
@@ -570,7 +594,10 @@ class AgentService:
     async def handle_pdf(
         self, actor: UserId, data: bytes, name: str, caption: str | None, ref: str
     ) -> list[Reply]:
-        replies = await self._handle_pdf(actor, data, name, caption, ref)
+        refusal = await self._demo_refusal(actor, Use.PHOTO)
+        replies = (
+            [Reply(refusal)] if refusal else await self._handle_pdf(actor, data, name, caption, ref)
+        )
         said = f"[Sent {quoted(name, 80) or 'a PDF'}]{f' {caption}' if caption else ''}"
         await self._keep(actor, said, replies, ref)
         return replies
@@ -893,6 +920,10 @@ class AgentService:
 
     @as_actor
     async def resolve(self, actor: UserId, confirmation_id: str, approved: bool) -> list[Reply]:
+        # Confirming runs the model again: a check, not a use (the message was counted).
+        refusal = await self._demo_refusal(actor, Use.MESSAGE, 0, count=False)
+        if refusal:
+            return [Reply(refusal)]
         async with self._locks[actor]:
             pending = await self._pending(actor)
             if pending is None or pending[0] != confirmation_id:

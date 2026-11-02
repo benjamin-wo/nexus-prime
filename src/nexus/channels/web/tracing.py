@@ -9,7 +9,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from nexus.application import acting, ops
 
-TRACED = ("/api/", "/telegram/")
+TRACED = ("/api/", "/telegram/", "/login/link/")
 HEADER = b"x-trace-id"
 
 
@@ -22,7 +22,7 @@ class Tracing:
         if scope["type"] != "http" or not path.startswith(TRACED):
             await self.app(scope, receive, send)
             return
-        channel = "web" if path.startswith("/api/") else "telegram"
+        channel = "telegram" if path.startswith("/telegram/") else "web"
         started = time.monotonic()
         done: dict[str, Any] = {}
 

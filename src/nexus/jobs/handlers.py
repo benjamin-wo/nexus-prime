@@ -6,12 +6,14 @@ from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
 
+from nexus.agent.graph import thread_id
 from nexus.agent.memory_writer import MemoryWriter
 from nexus.agent.service import Button
 from nexus.application import bills as bill_cases
 from nexus.application import bookings as booking_cases
 from nexus.application import budgets as budget_cases
-from nexus.application import costs
+from nexus.application import costs, erasure
+from nexus.application import demo as demo_cases
 from nexus.application import departments as department_cases
 from nexus.application import destination_photos as photo_cases
 from nexus.application import email as email_cases
@@ -54,6 +56,7 @@ NOTIFY_SWEEP = "notify.sweep"
 NOTIFY_DIGEST = message_cases.DIGEST_SWEEP
 NOTIFY_PRUNE = message_cases.PRUNE_JOB
 SUBSCRIPTIONS_SWEEP = "subscriptions.sweep"
+DEMO_PURGE = "demo.purge"
 MEMORY_UPDATE = "memory.update"  # in PRIVATE_KINDS: its payload is the user's words
 SCHEDULES = (
     Schedule(BUDGETS_SWEEP, timedelta(minutes=10)),
@@ -74,6 +77,7 @@ SCHEDULES = (
     Schedule(booking_cases.REMIND_JOB, timedelta(hours=1)),
     Schedule(photo_cases.PHOTOS_JOB, timedelta(minutes=30)),
     Schedule(whereabouts_cases.FOLLOW_JOB, timedelta(hours=1)),
+    Schedule(DEMO_PURGE, timedelta(hours=1)),
 )
 
 
@@ -135,7 +139,7 @@ def build_handlers(
             try:
                 async with uow() as tx:
                     user = await tx.ledger.get_user(user_id)
-                if user is not None:
+                if user is not None and not user.is_demo:  # a demo is never messaged
                     with costs.scope(user=user_id):
                         await check(user)
             except Exception:
@@ -185,7 +189,7 @@ def build_handlers(
                 async with uow() as tx:
                     user = await tx.ledger.get_user(connection.user_id)
                 mailbox = email.mailbox_for(connection.provider)
-                if user is not None and mailbox is not None:
+                if user is not None and not user.is_demo and mailbox is not None:
                     with costs.scope(user=user.id):
                         await email_cases.sweep(
                             uow,
@@ -230,6 +234,18 @@ def build_handlers(
             "subscription check",
             lambda user: subscription_cases.check(uow, user, now=clock()),
         )
+
+    async def purge_demos(_: dict[str, Any]) -> None:
+        """Erase the demo accounts whose 24 hours are up, with everything of theirs."""
+
+        async def erase(user: User) -> None:
+            await erasure.delete_user_data(
+                uow, user, chat_thread=thread_id(user.id), store=archive, email=None
+            )
+
+        erased = await demo_cases.purge_expired(uow, now=clock(), erase=erase)
+        if erased:
+            log.info("demo: erased %d expired accounts", erased)
 
     async def update_memory(payload: dict[str, Any]) -> Defer | None:
         """Let the memory writer read what the user just said."""
@@ -379,4 +395,5 @@ def build_handlers(
         BUDGETS_SWEEP: sweep_budgets,
         BILLS_SWEEP: sweep_bills,
         PAYDAY_SWEEP: sweep_paydays,
+        DEMO_PURGE: purge_demos,
     }

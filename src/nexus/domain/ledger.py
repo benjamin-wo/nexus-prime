@@ -95,10 +95,16 @@ class User:
     timezone_source: ZoneSource = ZoneSource.HOME
     # When their phone or they last said where they are; None if never.
     timezone_set_at: datetime | None = None
+    # A public-demo account ends at this moment; None for a real user.
+    demo_expires_at: datetime | None = None
 
     def __post_init__(self) -> None:
         if not self.home_timezone:
             object.__setattr__(self, "home_timezone", self.timezone)
+
+    @property
+    def is_demo(self) -> bool:
+        return self.demo_expires_at is not None
 
     @property
     def has_web_access(self) -> bool:

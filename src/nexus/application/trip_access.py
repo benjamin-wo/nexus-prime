@@ -19,6 +19,7 @@ from nexus.application.budgets import TELEGRAM_SEND
 from nexus.application.ports import UnitOfWork
 from nexus.domain.access import new_token, token_hash
 from nexus.domain.bookings import Booking
+from nexus.domain.demo import forbid
 from nexus.domain.errors import Forbidden, InvalidInput, NotFound
 from nexus.domain.ledger import Role, User, UserId
 from nexus.domain.notifications import Kind, Level
@@ -278,6 +279,7 @@ async def create_invite(
 ) -> IssuedTripInvite:
     """A single-use link that adds one person to the trip, valid for 7 days. A guest
     account may be made for someone with none only when the app's owner issues it."""
+    forbid(actor, "Inviting people to a trip")
     async with uow:
         access = await uow.trips.trip_access(actor.id, trip_id)
         if access is None:
@@ -346,6 +348,7 @@ async def join_with_invite(
     Someone already on the trip is left as they are and the invite is kept; so is
     the owner, who can't join their own trip: they get the trip back, marked ``own``,
     and the invite is neither spent nor checked."""
+    forbid(user, "Joining someone else's trip")
     trip_id, owner_id = invite.trip_id, invite.owner_id
     if owner_id == user.id:
         return Joined(trip_id, owner_id, False, own=True)

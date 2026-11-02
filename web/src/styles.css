@@ -194,6 +194,23 @@ input[type="date"].input, input[type="time"].input, input[type="datetime-local"]
 .progress { height: 6px; border-radius: 3px; background: var(--border-subtle); overflow: hidden; }
 .progress > span { display: block; height: 100%; background: var(--accent); }
 .rail .spacer { flex: 1; }
+/* The demo bar sits over the rail and the page, in a row of its own. */
+.shell:has(> .demo-banner) { grid-template-rows: auto minmax(0, 1fr); }
+.demo-banner {
+  grid-column: 1 / -1; display: flex; align-items: center; justify-content: center; gap: var(--space-2);
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-4); background: var(--accent-soft);
+  border-bottom: 1px solid var(--accent-border); color: var(--text-primary); font-size: 0.8125rem; line-height: 1.4;
+}
+.demo-banner p { margin: 0; text-align: center; }
+.demo-banner-link {
+  padding: 0; border: 0; background: none; font: inherit; font-weight: 600; color: var(--accent-text);
+  text-decoration: underline; cursor: pointer;
+}
+.demo-banner-close {
+  flex: none; width: 32px; height: 32px; border: 0; border-radius: 50%; background: transparent;
+  color: var(--text-secondary); font-size: 1.25rem; line-height: 1; cursor: pointer;
+}
+.demo-banner-close:hover { background: var(--accent-soft); color: var(--text-primary); }
 .main-viewport { overflow-y: auto; overflow-x: hidden; padding: 40px 48px 96px; }
 .content { max-width: 1420px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; }
 .page-head { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: var(--space-4); }
@@ -386,6 +403,7 @@ table.ledger { width: 100%; border-collapse: collapse; }
 }
 .login { min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; padding: var(--space-4); }
 .login .card { width: min(420px, 100%); padding: var(--space-8); display: grid; gap: var(--space-4); text-align: center; }
+.login .landing-cta { min-height: 48px; text-decoration: none; }
 
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }

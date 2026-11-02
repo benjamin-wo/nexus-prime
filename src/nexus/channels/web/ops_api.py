@@ -14,7 +14,7 @@ import hmac
 from datetime import timedelta
 from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import PlainTextResponse
 
 from nexus.application import cost_report, ops_report
@@ -37,7 +37,8 @@ async def _allowed(request: Request, settings: Settings) -> None:
             return
         raise HTTPException(status_code=404)
     try:
-        authed = await authenticated(request, runtime(request))
+        # A throwaway response: a session renewed here gets its cookie from the next page's call.
+        authed = await authenticated(request, Response(), runtime(request))
     except HTTPException:
         raise HTTPException(status_code=404) from None
     if authed.user.role is not Role.OWNER:
@@ -84,7 +85,8 @@ async def costs(
     first = min(today - timedelta(days=days - 1), today.replace(day=1))
     rows = await cost_store.read_rows(engine, first)
     names = await cost_store.read_names(engine, {r.user_id for r in rows if r.user_id})
-    built = cost_report.build(rows, names, today, days)
+    starts = await cost_store.read_demo_starts(engine, today - timedelta(days=days - 1))
+    built = cost_report.build(rows, names, today, days, starts)
     if format == "md":
         return PlainTextResponse(cost_report.markdown(built), media_type="text/markdown")
     return built

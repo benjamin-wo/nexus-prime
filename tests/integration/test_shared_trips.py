@@ -962,7 +962,8 @@ def test_only_the_routes_a_guest_needs_let_a_guest_in() -> None:
     # Everything else is closed to guests, either by ``Auth`` or by being a route that needs
     # no session: sign-in itself, the read-only trip link, the config the sign-in page
     # needs, the Gmail connect pages (a one-time link, made by a signed-in owner or member),
-    # and the ops routes, which call ``authenticated`` themselves.
+    # starting a public demo (it makes its own account), and the ops routes, which call
+    # ``authenticated`` themselves.
     assert {path for _, path in unguarded} == {
         "/api/config",
         "/api/auth/telegram",
@@ -976,6 +977,7 @@ def test_only_the_routes_a_guest_needs_let_a_guest_in() -> None:
         "/api/ops/tickets",
         "/api/ops/report",
         "/api/ops/costs",
+        "/api/demo",
     }
 
 

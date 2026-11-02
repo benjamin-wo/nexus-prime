@@ -22,15 +22,17 @@ from nexus.application import travel_research as research_cases
 from nexus.application import trip_access as access_cases
 from nexus.application import trip_split as split_cases
 from nexus.application import trips as trip_cases
+from nexus.application.demo import Use
 from nexus.application.places import Places, PlacesError
 from nexus.application.routes import Routes
 from nexus.application.weather import WeatherError
 from nexus.channels.web.api import MoneyOut, money
 from nexus.channels.web.investments_api import MAX_IMAGE_CHARS
-from nexus.channels.web.security import Auth, Runtime, TripAuth, WebRuntime, limit
+from nexus.channels.web.security import Auth, Runtime, TripAuth, WebRuntime, demo_use, limit
 from nexus.domain import itinerary
 from nexus.domain.bookings import Booking
 from nexus.domain.currencies import currency_of
+from nexus.domain.demo import forbid
 from nexus.domain.destination_photos import DestinationPhoto
 from nexus.domain.errors import Forbidden, InvalidInput, NotFound
 from nexus.domain.itinerary import NoteKind
@@ -1457,6 +1459,7 @@ async def read_screenshot(
     only held for this request. For a member, any prices on it are left out."""
     opened = await _open(web, auth, trip_id)
     limit(web, auth, "import")
+    await demo_use(web, auth, Use.PHOTO)
     try:
         image = base64.b64decode(body.image, validate=True)
     except (binascii.Error, ValueError) as exc:
@@ -1643,6 +1646,7 @@ async def trip_ideas(
     _, scope = await place_cases.search_scope(
         web.uow(), web.places, opened.access.owner_id, _uuid(trip_id), stop=stop, day=day
     )
+    await demo_use(web, auth)
     found = await web.ideas.find(auth.user.id, scope.place, q)
     return IdeasOut(
         query=found.query,
@@ -2162,6 +2166,7 @@ async def get_share(trip_id: str, auth: Auth, web: Runtime) -> ShareOut:
 async def share_trip(trip_id: str, body: ShareIn, auth: Auth, web: Runtime) -> ShareOut:
     """The trip's read-only link, made if it has none (or anew with ``renew``). With
     ``show_bookings`` it also sets whether the link shows flights, stays and tickets."""
+    forbid(auth.user, "A shared trip link")
     await _open(web, auth, trip_id, owner_only=True)
     share = await trip_cases.share_trip(
         web.uow(),

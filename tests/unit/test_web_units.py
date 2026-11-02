@@ -106,6 +106,9 @@ def test_access_logs_drop_secret_query_strings() -> None:
     assert line("/api/email/gmail/callback?state=t&code=4/secret") == "/api/email/gmail/callback?…"
     assert line("/connect/gmail?t=token") == "/connect/gmail?…"
     assert line("/api/transactions?limit=5") == "/api/transactions?limit=5"
+    # A sign-in link carries its one-time token in the path itself.
+    assert line("/login/link/AbC-123_xyz") == "/login/link/…"
+    assert line("/login/link/AbC-123_xyz?x=1") == "/login/link/…"
 
 
 def test_app_logs_are_json_lines_with_a_level() -> None:

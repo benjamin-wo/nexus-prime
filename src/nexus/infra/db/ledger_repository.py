@@ -1,6 +1,6 @@
 """PostgreSQL implementation of the ledger port. Every query filters on user_id."""
 
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
@@ -67,9 +67,11 @@ from nexus.infra.db.tables import (
     capability_gaps,
     categories,
     category_rules,
+    demo_starts,
     duplicate_dismissals,
     inbound_events,
     invites,
+    login_links,
     receipts,
     settlements,
     split_habits,
@@ -110,6 +112,7 @@ def _user(row: Row[Any]) -> User:
         home_timezone=row.home_timezone,
         timezone_source=ZoneSource(row.timezone_source),
         timezone_set_at=row.timezone_set_at,
+        demo_expires_at=row.demo_expires_at,
     )
 
 
@@ -260,6 +263,7 @@ class SqlLedgerRepository:
                 home_currency=user.home_currency,
                 role=user.role.value,
                 created_at=user.created_at,
+                demo_expires_at=user.demo_expires_at,
             )
             .on_conflict_do_nothing(index_elements=[users.c.telegram_user_id])
             .returning(users.c.id)
@@ -292,9 +296,31 @@ class SqlLedgerRepository:
 
     async def users_with_zone_source(self, source: ZoneSource) -> list[UserId]:
         rows = await self._db.execute(
-            select(users.c.id).where(users.c.timezone_source == source.value)
+            select(users.c.id).where(
+                users.c.timezone_source == source.value, users.c.demo_expires_at.is_(None)
+            )
         )
         return [UserId(r[0]) for r in rows]
+
+    async def expired_demo_users(self, now: datetime, *, limit: int) -> list[User]:
+        """Across users: demo accounts whose time is up, the oldest first."""
+        rows = await self._db.execute(
+            select(users)
+            .where(users.c.demo_expires_at.is_not(None), users.c.demo_expires_at <= now)
+            .order_by(users.c.demo_expires_at)
+            .limit(limit)
+        )
+        return [_user(r) for r in rows]
+
+    async def record_demo_start(self, day: date) -> None:
+        """Count a demo started on this (UTC) day."""
+        await self._db.execute(
+            pg_insert(demo_starts)
+            .values(day=day, starts=1)
+            .on_conflict_do_update(
+                index_elements=[demo_starts.c.day], set_={"starts": demo_starts.c.starts + 1}
+            )
+        )
 
     async def set_display_name(self, user_id: UserId, name: str) -> None:
         await self._db.execute(update(users).where(users.c.id == user_id).values(display_name=name))
@@ -1354,6 +1380,8 @@ class SqlLedgerRepository:
                 csrf_token=session.csrf_token,
                 created_at=session.created_at,
                 expires_at=session.expires_at,
+                renewable=session.renewable,
+                lifetime_seconds=int(session.span.total_seconds()),
             )
         )
 
@@ -1372,7 +1400,53 @@ class SqlLedgerRepository:
             created_at=row.created_at,
             expires_at=row.expires_at,
             revoked_at=row.revoked_at,
+            renewable=row.renewable,
+            lifetime=timedelta(seconds=row.lifetime_seconds),
         )
+
+    async def renew_session(self, token_hash: str, *, seen: datetime, until: datetime) -> bool:
+        """Move a live, renewable session's expiry from ``seen`` (the value the caller read) to
+        ``until``. Only the first of several requests at once gets True: the others find the
+        expiry already moved. A revoked session is never touched."""
+        found = await self._db.scalar(
+            update(web_sessions)
+            .where(
+                web_sessions.c.token_hash == token_hash,
+                web_sessions.c.revoked_at.is_(None),
+                web_sessions.c.renewable.is_(True),
+                web_sessions.c.expires_at == seen,
+            )
+            .values(expires_at=until)
+            .returning(web_sessions.c.token_hash)
+        )
+        return found is not None
+
+    async def insert_login_link(
+        self, user_id: UserId, token_hash: str, *, now: datetime, expires_at: datetime
+    ) -> None:
+        await self._db.execute(
+            insert(login_links).values(
+                id=uuid4(),
+                user_id=user_id,
+                token_hash=token_hash,
+                created_at=now,
+                expires_at=expires_at,
+            )
+        )
+
+    async def use_login_link(self, token_hash: str, now: datetime) -> UserId | None:
+        """Spend a sign-in link: one atomic update, so only the first caller gets its user."""
+        found = await self._db.scalar(
+            update(login_links)
+            .where(
+                login_links.c.token_hash == token_hash,
+                login_links.c.used_at.is_(None),
+                login_links.c.expires_at > now,
+            )
+            .values(used_at=now)
+            .returning(login_links.c.user_id)
+        )
+        return UserId(found) if found else None
 
     async def revoke_session(self, token_hash: str, at: datetime) -> None:
         await self._db.execute(

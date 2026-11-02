@@ -72,7 +72,7 @@ async def seed(world: World, user: UUID, other: UUID) -> Seeded:
     tag = _tag(user)
     now = NOW
     uid = uuid4
-    secrets = [f"secret-{tag}-{n}" for n in range(8)]
+    secrets = [f"secret-{tag}-{n}" for n in range(9)]
     async with world.engine.begin() as db:
 
         async def add(table: Table, **values: Any) -> None:
@@ -638,6 +638,14 @@ async def seed(world: World, user: UUID, other: UUID) -> Seeded:
             csrf_token=secrets[7],
             created_at=now,
             expires_at=now + timedelta(days=1),
+        )
+        await add(
+            t["login_links"],
+            id=uid(),
+            user_id=user,
+            token_hash=secrets[8],
+            created_at=now,
+            expires_at=now + timedelta(minutes=5),
         )
         thread = user_thread(user)
         await db.execute(

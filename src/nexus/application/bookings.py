@@ -544,7 +544,7 @@ async def remind_everyone(uow: UowFactory, *, now: datetime) -> int:
     for user_id in users:
         async with uow() as tx:
             user = await tx.ledger.get_user(user_id)
-        if user is None:
+        if user is None or user.is_demo:  # a demo is never messaged
             continue
         try:
             sent += await remind(uow, user, now=now)

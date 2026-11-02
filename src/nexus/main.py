@@ -78,6 +78,7 @@ from nexus.infra.db.checkpointer import postgres_checkpointer
 from nexus.infra.db.engine import make_engine
 from nexus.infra.db.migrations import assert_schema_at_head
 from nexus.infra.db.uow import SqlUnitOfWork
+from nexus.infra.demo_store import DemoStore
 from nexus.infra.email.agentmail import AgentMailInboxes
 from nexus.infra.email.gmail import GmailMailbox
 from nexus.infra.fx.frankfurter import FrankfurterRates
@@ -377,6 +378,7 @@ async def _telegram_runtime(
     lookup: WebLookup | None = None,
     routes: Routes | None = None,
     zones: ZoneFinder | None = None,
+    demo: DemoStore | None = None,
 ) -> telegram_webhook.TelegramRuntime:
     def uow() -> SqlUnitOfWork:
         return SqlUnitOfWork(engine)
@@ -467,6 +469,7 @@ async def _telegram_runtime(
             condense=agent_graph.condense,
             speech=speech,
             receipt_text=receipt_text,
+            demo=demo,
         ),
         client=client,
     )
@@ -708,6 +711,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
             app.state.engine = engine
             app.state.ops = await _ops_store(resolved, engine, stack)
             app.state.costs = await _cost_store(engine, stack)
+            demo = DemoStore(engine, flush=app.state.costs.flush)
             if resolved.telegram_enabled:
                 rates = extra.rates
                 if rates is None:
@@ -734,7 +738,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                 routes = await _routes(resolved, extra, stack, extra.clock or utcnow)
                 telegram = await _telegram_runtime(
                     resolved, engine, extra, stack, rates, archive, models, email, departments,
-                    places, ideas, _lookup(resolved, extra, web), routes, weather,
+                    places, ideas, _lookup(resolved, extra, web), routes, weather, demo,
                 )  # fmt: skip
                 app.state.telegram = telegram
                 origin = resolved.public_origin
@@ -794,6 +798,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                         ideas=ideas,
                         weather=weather,
                         scans=_statement_pages(resolved, extra, models),
+                        demo=demo,
                     )
                     menu = asyncio.create_task(_set_menu_button(telegram.client, origin))
                     stack.push_async_callback(_finish, menu)
@@ -814,6 +819,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
     app.include_router(health.router)
     app.include_router(telegram_webhook.router)
     app.include_router(web_api.router)
+    app.include_router(web_api.login_link_router)
     app.include_router(data_api.router)
     app.include_router(email_api.router)
     app.include_router(investments_api.router)

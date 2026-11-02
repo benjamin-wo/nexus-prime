@@ -692,6 +692,7 @@ PUBLIC = {
     ("GET", "/api/config"),
     ("POST", "/api/auth/telegram"),
     ("POST", "/api/auth/webapp"),
+    ("POST", "/api/demo"),  # starts a public demo (403 demo_off unless switched on)
     ("GET", "/api/auth/telegram/callback"),
     ("GET", "/api/shared/trips/{token}"),
     ("GET", "/api/shared/trips/{token}/photo"),

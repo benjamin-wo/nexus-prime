@@ -6,10 +6,14 @@ from collections import defaultdict, deque
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timedelta
 
+from nexus.application import acting
 from nexus.application.clock import utcnow
 from nexus.domain.errors import NexusError
 
 type Window = tuple[int, timedelta]  # at most this many in this long
+
+# A public-demo account gets this fraction of every allowance (at least one use).
+DEMO_SHARE = 3
 
 # Generous for a person, tight for a script or a stuck client.
 MESSAGES: Sequence[Window] = ((20, timedelta(minutes=1)), (400, timedelta(days=1)))
@@ -32,6 +36,10 @@ WHY: Sequence[Window] = ((6, timedelta(minutes=1)), (60, timedelta(days=1)))
 EXPORT: Sequence[Window] = ((3, timedelta(hours=1)),)
 # Voice notes: a speech-model call each, on top of the message that follows.
 VOICE: Sequence[Window] = ((30, timedelta(hours=1)),)
+# New public demos, per visitor address.
+DEMOS: Sequence[Window] = ((5, timedelta(hours=1)),)
+# The bot's /web command: a sign-in link each.
+WEB_LINKS: Sequence[Window] = ((5, timedelta(hours=1)),)
 DEFAULT_RULES: Mapping[str, Sequence[Window]] = {
     "message": MESSAGES,
     "import": IMPORTS,
@@ -44,6 +52,8 @@ DEFAULT_RULES: Mapping[str, Sequence[Window]] = {
     "why": WHY,
     "export": EXPORT,
     "voice": VOICE,
+    "demo": DEMOS,
+    "web_link": WEB_LINKS,
 }
 
 
@@ -61,12 +71,15 @@ class RateLimiter:
         self._clock = clock
         self._seen: defaultdict[tuple[str, str], deque[datetime]] = defaultdict(deque)
 
-    def allow(self, kind: str, key: object) -> bool:
+    def allow(self, kind: str, key: object, *, demo: bool | None = None) -> bool:
         """Count one use of ``kind`` by ``key`` if every window has room; else refuse
-        without counting it."""
+        without counting it. A public-demo account (``demo``, by default whether the work is
+        for one) gets a third of each window's allowance."""
         windows = self._rules.get(kind)
         if not windows:
             return True
+        if acting.is_demo() if demo is None else demo:
+            windows = [(max(1, limit // DEMO_SHARE), span) for limit, span in windows]
         now = self._clock()
         seen = self._seen[(kind, str(key))]
         longest = max(span for _, span in windows)

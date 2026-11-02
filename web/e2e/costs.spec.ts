@@ -15,6 +15,8 @@ test("the owner opens Model costs from Settings, sees the figures and switches t
   await expect(tile("This month so far")).toContainText("62% of input cached");
   await expect(tile("Projected for the month")).toContainText("US$18.20");
   await expect(tile("Per active user per month")).toContainText("US$3.10");
+  await expect(tile("Public demo")).toContainText("US$0.42");
+  await expect(tile("Public demo")).toContainText("9 started");
 
   // The chart: 30 bars, the latest day named until another is picked.
   await expect(page.getByRole("heading", { name: "Last 30 days", level: 2 })).toBeVisible();

@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 
 import { api } from "../api";
 import { TelegramLogin } from "../components/TelegramLogin";
@@ -9,6 +9,7 @@ import { initData, miniApp } from "../telegram";
 const ERRORS: Record<string, string> = {
   signin: "That sign-in couldn't be verified. Please try again.",
   access: "You need an invite to use the web app. Ask the owner for a link.",
+  link: "That sign-in link has expired — send /web to the bot again.",
 };
 
 /** What the server's sign-in says about a trip invite it refused. */
@@ -72,9 +73,21 @@ export function LoginPage({ trip = false }: { trip?: boolean }) {
             <h1>
               Nexus <span style={{ color: "var(--accent)" }}>Prime</span>
             </h1>
-            <p className="secondary">
-              {token ? "You've been invited. Sign in with Telegram to accept." : "Sign in with your Telegram account."}
-            </p>
+            {token ? (
+              <p className="secondary">You've been invited. Sign in with Telegram to accept.</p>
+            ) : (
+              <>
+                <p className="secondary">
+                  A personal finance and travel assistant you talk to, on Telegram and the web.
+                </p>
+                {!initData && (
+                  <Link className="btn btn-primary landing-cta" to="/demo">
+                    Try the live demo
+                  </Link>
+                )}
+                <p className="muted">Already using Nexus? Sign in with Telegram.</p>
+              </>
+            )}
           </>
         )}
         {error && (

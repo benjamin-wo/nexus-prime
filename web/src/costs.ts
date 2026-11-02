@@ -12,7 +12,8 @@ export type CostMonth = {
 };
 export type CostDay = { day: string; cost: string; calls: number };
 export type CostFeature = { feature: string; cost: string; calls: number; share: number };
-/** `user_id` is null for work done for no one in particular ("System"). */
+/** `user_id` is null for work done for no one in particular ("System"), and "demo" for the one
+ * "Demo visitors" line that all public-demo accounts share. */
 export type CostUser = { user_id: string | null; name: string; cost: string; calls: number };
 export type CostModel = {
   model: string;
@@ -24,6 +25,9 @@ export type CostModel = {
   cached_tokens: number;
   cached_share: number;
 };
+/** The public demo in the period: what its visitors cost, in how many calls, and how many demos
+ * were started. */
+export type CostDemo = { cost: string; calls: number; starts: number };
 export type Costs = {
   currency: string;
   month: CostMonth;
@@ -32,6 +36,8 @@ export type Costs = {
   by_user: CostUser[];
   by_model: CostModel[];
   per_active_user_month: string;
+  // Missing from a server older than the demo.
+  demo?: CostDemo;
 };
 
 /** The day ranges the page offers. */

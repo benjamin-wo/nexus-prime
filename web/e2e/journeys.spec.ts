@@ -45,7 +45,7 @@ test("signed-out visitors get the Telegram sign-in", async ({ page }) => {
   await page.goto("/accounting/ledger");
   await expect(page).toHaveURL(/\/login$/);
   await expect(
-    page.getByText("Sign in with your Telegram account."),
+    page.getByText("Already using Nexus? Sign in with Telegram."),
   ).toBeVisible();
   const widget = page.locator(
     '.tg-login script[data-telegram-login="nexus_test_bot"]',

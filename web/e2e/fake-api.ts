@@ -149,9 +149,24 @@ export async function fakeApi(
     phoneFollows = false,
     /** Forty more entries in the ledger, so that it scrolls on a phone and a wide screen alike. */
     longLedger = false,
+    /** Signed in to the public demo account (a member, with `me.demo` set and a few chat messages left). */
+    demo = false,
+    /** What POST /demo answers: a new demo session (the default), 403 demo_off, 429, or a network failure
+     * for the first `demoFailures` asks (after those it works). */
+    demoStart = "ok" as "ok" | "off" | "limited" | "network",
+    /** How many POST /demo asks fail with a network error before one works (with demoStart "network"). */
+    demoFailures = 1,
+    /** How many chat messages a demo starts with. */
+    demoMessages = 5,
   } = {},
 ) {
-  let session = signedIn;
+  let session = signedIn || demo;
+  /** Whether the session is the demo account (signing out ends it). */
+  let demoSession = demo;
+  let demoLeft = demoMessages;
+  /** When the demo ends: just under a day from the first ask. */
+  let demoEnds = new Date(Date.now() + 23.5 * 3_600_000).toISOString();
+  let demoNetworkFailures = 0;
   /** What the made-up quotes are right now: live, or (after the close) provisional. */
   const quoteKind = () => (state.market === "open" ? "live" : "provisional_close");
   /** AMD's price on its stock page: its quote while the market is "open" or "after_close", else
@@ -248,13 +263,18 @@ export async function fakeApi(
   };
   const userBody = () => ({
     telegram_user_id: 1,
-    role: guest ? "guest" : member ? "member" : "owner",
+    role: guest ? "guest" : member || demoSession ? "member" : "owner",
     home_currency: "SGD",
     timezone: zone.timezone,
     home_timezone: zone.home,
     timezone_source: zone.source,
     timezone_set_at: zone.setAt,
-    display_name: guest ? "Gus L." : member ? "Mia K." : "Sam R.",
+    display_name: guest ? "Gus L." : demoSession ? "Demo" : member ? "Mia K." : "Sam R.",
+  });
+  const meBody = () => ({
+    user: userBody(),
+    csrf_token: "csrf-1",
+    demo: demoSession ? { expires_at: demoEnds, messages_left: demoLeft } : null,
   });
   const state: {
     /** How many times GET /me/export was asked for (429s included). */
@@ -268,6 +288,8 @@ export async function fakeApi(
     txs: Tx[];
     lastPress?: string;
     chatSent: string[];
+    /** How many times POST /demo was asked for (refusals and failures included). */
+    demoStarts: number;
     /** Every POST /chat/voice: the upload's file name, type and size. */
     voiceSent: { filename: string; contentType: string; bytes: number }[];
     runs: { id: string; status: string; progress: string; [key: string]: unknown }[];
@@ -451,6 +473,7 @@ export async function fakeApi(
     keepMinePosts: [],
     settlePosts: [],
     chatSent: [],
+    demoStarts: 0,
     voiceSent: [],
     trades: [],
     tripItems: ["k1", "k2"],
@@ -769,6 +792,21 @@ export async function fakeApi(
       session = true;
       return json(route, { user: { ...userBody(), role: "owner", display_name: "Sam R." }, csrf_token: "csrf-1" });
     }
+    if (path === "/demo" && method === "POST") {
+      // Public: no session and no CSRF token yet, like the server's.
+      state.demoStarts += 1;
+      if (demoStart === "off") return json(route, { detail: "demo_off" }, 403);
+      if (demoStart === "limited") return json(route, { detail: "too many demos from this address" }, 429);
+      if (demoStart === "network" && demoNetworkFailures < demoFailures) {
+        demoNetworkFailures += 1;
+        return route.abort("failed");
+      }
+      session = true;
+      demoSession = true;
+      demoLeft = demoMessages;
+      demoEnds = new Date(Date.now() + 23.5 * 3_600_000).toISOString();
+      return json(route, { expires_at: demoEnds });
+    }
     if (method !== "GET" && request.headers()["x-csrf-token"] !== "csrf-1") {
       return json(route, { detail: "missing or wrong CSRF token" }, 403);
     }
@@ -788,7 +826,7 @@ export async function fakeApi(
       return json(route, { bot_username: "nexus_test_bot" });
     if (path === "/me") {
       if (!session) return json(route, { detail: "not signed in" }, 401);
-      return json(route, { user: userBody(), csrf_token: "csrf-1" });
+      return json(route, meBody());
     }
     if (path === "/me/timezone" && method === "POST") {
       state.zonePosts.push({ path, body });
@@ -851,6 +889,7 @@ export async function fakeApi(
     }
     if (path === "/auth/logout") {
       session = false;
+      demoSession = false;
       return route.fulfill({ status: 204 });
     }
     const usd = (amount: string) => ({ amount, currency: "USD" });
@@ -2774,6 +2813,7 @@ export async function fakeApi(
           { model: "example/vision-mini", cost: "0.0042", calls: 3, input_tokens: 9_500, output_tokens: 480, cached_tokens: 0, cached_share: 0 },
         ],
         per_active_user_month: "3.10",
+        demo: { cost: "0.4200", calls: 380, starts: 9 },
       });
     }
     if (path === "/notifications/history" && method === "GET") {
@@ -3189,6 +3229,12 @@ export async function fakeApi(
     }
     if (path === "/chat") {
       state.chatSent.push(String(body.message));
+      if (demoSession) {
+        // A demo has a few messages; the reply itself says when they are used up.
+        if (demoLeft <= 0) return json(route, [{ text: "That's the end of the demo's messages. Sign in with Telegram to keep going.", buttons: [] }]);
+        demoLeft -= 1;
+        return json(route, [{ text: "Here's what I found in the demo data.", buttons: [] }]);
+      }
       if (String(body.message).startsWith("For my ")) {
         return json(route, [
           {

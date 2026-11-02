@@ -55,6 +55,13 @@ class Settings(BaseSettings):
     web_origin: str | None = None
     railway_public_domain: str | None = None
 
+    # --- Public live demo: POST /api/demo gives a visitor a private, seeded account for 24
+    # hours. Off unless DEMO_ENABLED=true. TRUSTED_PROXY_HOPS is how many proxies in front of
+    # the app add to X-Forwarded-For (Railway: 1; 0 ignores the header): the client address is
+    # the entry that many from the right, and the per-address limit on new demos uses it. ---
+    demo_enabled: bool = False
+    trusted_proxy_hops: int = Field(1, ge=0, le=5)
+
     # --- Background jobs (reminders, budget alerts). Unset: on in prod only, so
     # tests and local runs don't send messages unless asked to. ---
     jobs_enabled: bool | None = None

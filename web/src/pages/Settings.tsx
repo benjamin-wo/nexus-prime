@@ -201,13 +201,13 @@ export function Settings({ me }: { me: Me }) {
       <div className="plan-grid">
         <UpdatesSection />
         <TimeZoneSection me={me} />
-        <TripAlertsSection />
+        {!me.demo && <TripAlertsSection />}
         <NotificationsCard />
         <VoiceCard />
       </div>
       <h2 className="section-title">Connections</h2>
       <div className="plan-grid">
-        <EmailCard />
+        {!me.demo && <EmailCard />}
         <ImportCard />
       </div>
       <h2 className="section-title">Your data</h2>

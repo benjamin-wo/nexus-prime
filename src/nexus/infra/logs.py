@@ -11,6 +11,8 @@ from nexus.application import ops
 
 # Query strings on these paths carry one-time tokens or OAuth codes.
 _SECRET_PATHS = ("/api/email/", "/connect/", "/api/auth/", "/invite/")
+# Paths whose last segment is itself the one-time token.
+_TOKEN_PATHS = ("/login/link/",)
 
 
 class RedactQueries(logging.Filter):
@@ -20,6 +22,10 @@ class RedactQueries(logging.Filter):
         args: Any = record.args
         if isinstance(args, tuple) and len(args) >= 3 and isinstance(args[2], str):
             path = args[2]
+            for prefix in _TOKEN_PATHS:
+                if path.startswith(prefix):
+                    path = prefix + "…"
+                    record.args = (*args[:2], path, *args[3:])
             if "?" in path and path.startswith(_SECRET_PATHS):
                 record.args = (*args[:2], path.split("?", 1)[0] + "?…", *args[3:])
         return True

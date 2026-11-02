@@ -187,11 +187,19 @@ class FakeTelegram:
     menu_button: tuple[str, str] | None = None
     stale_presses: bool = False  # Telegram refuses to answer or edit for old presses
     typing: list[int] = field(default_factory=list)  # chats shown "typing…"
+    no_preview: list[int] = field(default_factory=list)  # indexes in sent sent without a preview
 
     async def send_message(
-        self, chat_id: int, text: str, buttons: list[list[Button]] | None = None
+        self,
+        chat_id: int,
+        text: str,
+        buttons: list[list[Button]] | None = None,
+        *,
+        preview: bool = True,
     ) -> int:
         self.sent.append(Sent(chat_id, text, buttons))
+        if not preview:
+            self.no_preview.append(len(self.sent) - 1)
         return 1000 + len(self.sent)  # the message id
 
     async def send_typing(self, chat_id: int) -> None:

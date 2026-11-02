@@ -16,6 +16,10 @@ from uuid import UUID
 
 CURRENCY = "USD"
 SYSTEM = "System"
+# Every public-demo account is one line, "Demo visitors", under this stand-in id.
+DEMO_VISITORS = UUID("00000000-0000-0000-0000-00000000de30")
+DEMO_NAME = "Demo visitors"
+DEMO_KEY = "demo"
 _CENTS = Decimal("0.01")
 _PARTS = Decimal("0.0001")
 
@@ -110,7 +114,7 @@ def per_active_user_month(rows: list[Row], today: date) -> str:
     """This month's cost that belongs to users, over the users who used a model this month,
     projected to the full month. Work for no one in particular is left out."""
     start = today.replace(day=1)
-    mine = [r for r in rows if start <= r.day <= today and r.user_id is not None]
+    mine = [r for r in rows if start <= r.day <= today and r.user_id not in (None, DEMO_VISITORS)]
     people = {r.user_id for r in mine}
     if not people:
         return rounded(Decimal(0))
@@ -119,9 +123,12 @@ def per_active_user_month(rows: list[Row], today: date) -> str:
     return rounded(spent / len(people) / today.day * in_month)
 
 
-def build(rows: list[Row], names: dict[UUID, str | None], today: date, days: int) -> dict[str, Any]:
+def build(
+    rows: list[Row], names: dict[UUID, str | None], today: date, days: int, starts: int = 0
+) -> dict[str, Any]:
     """The API's answer. ``rows`` may reach back further than the window (the month can start
-    before it); each part reads only what it covers."""
+    before it); each part reads only what it covers. Public-demo accounts arrive as rows of
+    ``DEMO_VISITORS``; ``starts`` is how many demos were started in the window."""
     first = today - timedelta(days=days - 1)
     window = [r for r in rows if first <= r.day <= today]
 
@@ -148,11 +155,16 @@ def build(rows: list[Row], names: dict[UUID, str | None], today: date, days: int
     people: dict[UUID | None, _Total] = _totals(window, lambda r: r.user_id)
 
     def who(user_id: UUID | None) -> str:
+        if user_id == DEMO_VISITORS:
+            return DEMO_NAME
         return SYSTEM if user_id is None else user_label(user_id, names.get(user_id))
+
+    def key(user_id: UUID | None) -> str | None:
+        return DEMO_KEY if user_id == DEMO_VISITORS else None if user_id is None else str(user_id)
 
     by_user = [
         {
-            "user_id": None if user_id is None else str(user_id),
+            "user_id": key(user_id),
             "name": who(user_id),
             "cost": amount(t.cost),
             "calls": t.calls,
@@ -174,6 +186,7 @@ def build(rows: list[Row], names: dict[UUID, str | None], today: date, days: int
         for model, t in _by_cost(models, lambda m: m)
     ]
 
+    visitors = people.get(DEMO_VISITORS, _Total())
     return {
         "currency": CURRENCY,
         "month": month_figures(rows, today),
@@ -182,6 +195,7 @@ def build(rows: list[Row], names: dict[UUID, str | None], today: date, days: int
         "by_user": by_user,
         "by_model": by_model,
         "per_active_user_month": per_active_user_month(rows, today),
+        "demo": {"cost": amount(visitors.cost), "calls": visitors.calls, "starts": starts},
     }
 
 
@@ -198,6 +212,8 @@ def markdown(report: dict[str, Any]) -> str:
         f"projected **{month['projected']}**",
         f"- Per active user, projected for the month: {report['per_active_user_month']}",
         f"- Input tokens served from the cache this month: {month['cached_share']:.1%}",
+        f"- Public demo in this period: {report['demo']['cost']} spent on "
+        f"{report['demo']['calls']} calls, {report['demo']['starts']} demos started",
         "",
         f"## Last {len(report['days'])} days",
         "",

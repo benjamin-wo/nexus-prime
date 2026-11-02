@@ -110,7 +110,7 @@ async def deliver(
         tz = ZoneInfo(user.timezone)
         uncapped = out.anytime or out.kind in UNCAPPED
         sent_today = 0 if uncapped else await _sent_today(tx, user.id, now, tz)
-    if user.telegram_chat_id is None:
+    if user.telegram_chat_id is None or user.is_demo:
         await _keep(uow, out, record, Status.DROPPED, now)  # nobody to tell; nothing to retry
         return None
     decision: Decision = Send()
@@ -238,7 +238,7 @@ async def _digest(uow: UowFactory, user_id: UserId, now: datetime) -> int:
         if not items:
             return 0
         ids = [i.id for i in items]
-        if user.telegram_chat_id is None:  # unlinked since: nobody to tell
+        if user.telegram_chat_id is None or user.is_demo:  # unlinked since: nobody to tell
             await tx.notifications.close_held(user_id, ids, Status.DROPPED, at=now)
             await tx.commit()
             return 0
