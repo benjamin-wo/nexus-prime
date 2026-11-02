@@ -6,9 +6,10 @@ import { vi } from "vitest";
 
 export type Call = { method: string; path: string; body: unknown };
 
-/** Route fetch calls to handlers keyed by "METHOD /path" (query string ignored). A handler
- * returns the JSON to send, or a Response of its own for another status. */
-export function mockApi(handlers: Record<string, (body: unknown) => unknown>): Call[] {
+/** Route fetch calls to handlers keyed by "METHOD /path" (query string ignored, but a
+ * handler is given the whole URL to read it). A handler returns the JSON to send, or a
+ * Response of its own for another status. */
+export function mockApi(handlers: Record<string, (body: unknown, url: URL) => unknown>): Call[] {
   const calls: Call[] = [];
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const url = new URL(String(input), "http://localhost");
@@ -18,7 +19,7 @@ export function mockApi(handlers: Record<string, (body: unknown) => unknown>): C
     calls.push({ method, path, body });
     const handler = handlers[`${method} ${path}`];
     if (!handler) return new Response(JSON.stringify({ detail: "not mocked" }), { status: 404 });
-    const result = await handler(body);
+    const result = await handler(body, url);
     if (result instanceof Response) return result;
     return new Response(JSON.stringify(result ?? null), {
       status: 200,
@@ -28,11 +29,11 @@ export function mockApi(handlers: Record<string, (body: unknown) => unknown>): C
   return calls;
 }
 
-export function renderWithProviders(ui: ReactElement) {
+export function renderWithProviders(ui: ReactElement, route = "/") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter>{ui}</MemoryRouter>
+      <MemoryRouter initialEntries={[route]}>{ui}</MemoryRouter>
     </QueryClientProvider>,
   );
 }

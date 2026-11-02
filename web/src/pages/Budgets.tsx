@@ -3,13 +3,8 @@ import { Fragment, type FormEvent, useState } from "react";
 
 import { api, type Budget, type BudgetMonth, type Category, type Me } from "../api";
 import { CategoryTransactions } from "../components/CategoryTransactions";
+import { level } from "../components/PastBudgets";
 import { formatMoney, isoDay } from "../format";
-
-function level(percent: number): "ok" | "warn" | "over" {
-  if (percent >= 100) return "over";
-  if (percent >= 80) return "warn";
-  return "ok";
-}
 
 /** This month so far, as budgets count it, in the user's timezone. */
 function thisMonth(timezone: string): { start: string; end: string } {

@@ -713,6 +713,44 @@ async def test_budgets_round_trip(world: World) -> None:
     assert [b["name"] for b in (await owner.get("/api/budgets")).json()] == ["Overall"]
 
 
+async def test_budgets_can_be_read_for_a_past_month(world: World) -> None:
+    owner = (await owner_and_invite(world))[0]
+    world.rates.published[("USD", "SGD")][date(2026, 7, 28)] = "1.2905"
+    food = next(c for c in (await owner.get("/api/categories")).json() if c["name"] == "Dining Out")
+    for body in ({"amount": "1,000"}, {"category_id": food["id"], "amount": "100"}):
+        assert (await owner.send("PUT", "/api/budgets", body)).status_code == 204
+    await spend(owner, "85", "SGD", "2026-08-31", category_id=food["id"])
+    await spend(owner, "40", "SGD", "2026-08-02")
+    await spend(owner, "20", "USD", "2026-07-28", category_id=food["id"])  # 25.81 SGD
+    await spend(owner, "30", "SGD", "2026-09-27", category_id=food["id"])  # this month
+
+    def figures(rows: list[dict[str, Any]]) -> dict[str, tuple[str, int]]:
+        return {r["name"]: (r["spent"]["amount"], r["percent"]) for r in rows}
+
+    # Against today's limits, counting only that month's spending.
+    august = await owner.get("/api/budgets", params={"month": "2026-08"})
+    assert august.status_code == 200
+    assert figures(august.json()) == {"Overall": ("125.0000", 12), "Dining Out": ("85.0000", 85)}
+    assert figures((await owner.get("/api/budgets", params={"month": "2026-07"})).json()) == {
+        "Overall": ("25.8100", 2),
+        "Dining Out": ("25.8100", 25),
+    }
+    assert figures((await owner.get("/api/budgets", params={"month": "2024-01"})).json()) == {
+        "Overall": ("0.0000", 0),
+        "Dining Out": ("0.0000", 0),
+    }
+
+    # This month, named or not, is what it was.
+    current = {"Overall": ("30.0000", 3), "Dining Out": ("30.0000", 30)}
+    assert figures((await owner.get("/api/budgets")).json()) == current
+    assert figures((await owner.get("/api/budgets", params={"month": "2026-09"})).json()) == current
+
+    # Not a month, not a real one, or not yet.
+    for bad in ("october", "2026-1", "2026-13", "2026-00", "2026-10", "2027-01"):
+        refused = await owner.get("/api/budgets", params={"month": bad})
+        assert refused.status_code == 422, bad
+
+
 # --- receipts -------------------------------------------------------------------------
 
 

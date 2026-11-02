@@ -106,6 +106,15 @@ const VOICE_PRESETS: VoicePreset[] = [
   { id: "cheeky", label: "Cheeky", blurb: "Light, kind teasing about your spending.", emoji: "some", length: "short", humour: "playful" },
 ];
 
+/** Made-up closed months for the past-month journeys: what came in and went out, what was put away, and
+ * the Dining Out share, which is also what the overall and Dining Out budgets count. */
+const CLOSED_MONTHS: Record<string, { out: number; in: number; put: number; food: number; foodCount: number; count: number }> = {
+  "2026-10": { out: 2140, in: 5200, put: 1000, food: 900, foodCount: 12, count: 31 },
+  "2026-09": { out: 2320, in: 4200, put: 800, food: 700, foodCount: 9, count: 27 },
+};
+/** Months before those, for the chart. */
+const EARLIER_SPENDING: Record<string, number> = { "2026-06": 2210, "2026-07": 1190.25, "2026-08": 1655 };
+
 export async function fakeApi(
   page: Page,
   {
@@ -158,6 +167,9 @@ export async function fakeApi(
     demoFailures = 1,
     /** How many chat messages a demo starts with. */
     demoMessages = 5,
+    /** Pretend today is this day (YYYY-MM-DD) for the Accounting overview: its chart ends with that month
+     * and the months before it have the made-up figures above. The spec sets the page's clock to match. */
+    today = null as string | null,
   } = {},
 ) {
   let session = signedIn || demo;
@@ -2462,17 +2474,27 @@ export async function fakeApi(
         .filter((t) => t.direction === "out")
         .reduce((s, t) => s + Number(t.amount.amount), 0);
       const overall = state.budgets.find((b) => b.category_id === null);
+      const sixMonths = (day: string) => {
+        const [year, month] = day.split("-").map(Number);
+        return [5, 4, 3, 2, 1, 0].map((back) => {
+          const key = new Date(Date.UTC(year, month - 1 - back, 1)).toISOString().slice(0, 7);
+          const spent = back ? (CLOSED_MONTHS[key]?.out ?? EARLIER_SPENDING[key] ?? 0) : now;
+          return { month: `${key}-01`, spent: sgd(spent), to_date: back === 0 };
+        });
+      };
       return json(route, {
         currency: "SGD",
-        months: [
-          ["2026-04-01", 1520],
-          ["2026-05-01", 1384.5],
-          ["2026-06-01", 2210],
-          ["2026-07-01", 1190.25],
-          ["2026-08-01", 1655],
-        ]
-          .map(([month, amount]) => ({ month, spent: sgd(amount as number), to_date: false }))
-          .concat([{ month: "2026-09-01", spent: sgd(now), to_date: true }]),
+        months: today
+          ? sixMonths(today)
+          : [
+              ["2026-04-01", 1520],
+              ["2026-05-01", 1384.5],
+              ["2026-06-01", 2210],
+              ["2026-07-01", 1190.25],
+              ["2026-08-01", 1655],
+            ]
+              .map(([month, amount]) => ({ month, spent: sgd(amount as number), to_date: false }))
+              .concat([{ month: "2026-09-01", spent: sgd(now), to_date: true }]),
         last_month_to_date: sgd(1402.1),
         budget: overall ? sgd(overall.limit) : null,
       });
@@ -2565,6 +2587,36 @@ export async function fakeApi(
       Object.assign(tx, { direction: "move", category_id: null, from_wallet: sent, to_wallet: received });
       return json(route, tx);
     }
+    if (path === "/summary" && url.searchParams.get("start")) {
+      // A period asked for by date: the made-up closed months, and nothing for any other.
+      const start = url.searchParams.get("start") ?? "";
+      const end = url.searchParams.get("end") ?? start;
+      const key = start.slice(0, 7);
+      const f = CLOSED_MONTHS[key] ?? { out: EARLIER_SPENDING[key] ?? 0, in: 0, put: 0, food: 0, foodCount: 0, count: 0 };
+      const sgd = (amount: number) => ({ amount: amount.toFixed(4), currency: "SGD" });
+      const total = (direction: string, amount: number, count: number) => ({
+        direction,
+        total: sgd(amount),
+        count,
+        converted: [],
+        unconverted: [],
+      });
+      return json(route, {
+        start,
+        end,
+        currency: "SGD",
+        totals: [total("out", f.out, f.count), total("in", f.in, f.in ? 1 : 0)],
+        put_away: sgd(f.put),
+        saving_rate: f.in ? f.put / f.in : null,
+        total_out: sgd(f.out + f.put),
+        by_category: f.food
+          ? [
+              { category_id: "food", category_name: "Dining Out", total: sgd(f.food), count: f.foodCount },
+              { category_id: null, category_name: null, total: sgd(f.out - f.food), count: f.count - f.foodCount },
+            ]
+          : [],
+      });
+    }
     if (path === "/summary") {
       const out = live().filter((t) => t.direction === "out");
       const total = out.reduce((s, t) => s + Number(t.amount.amount), 0);
@@ -2632,18 +2684,24 @@ export async function fakeApi(
     }
     if (path === "/budgets" && method === "GET") {
       const sgd = (amount: number) => ({ amount: amount.toFixed(4), currency: "SGD" });
+      // ?month= counts that month's spending (the made-up closed months) against today's limits.
+      const month = url.searchParams.get("month");
+      const closed = month ? (CLOSED_MONTHS[month] ?? { out: 0, food: 0 }) : null;
       return json(
         route,
-        state.budgets.map((b) => ({
-          id: b.id,
-          category_id: b.category_id,
-          name: b.category_id ? "Dining Out" : "Overall",
-          limit: sgd(b.limit),
-          spent: sgd(b.spent),
-          remaining: sgd(b.limit - b.spent),
-          percent: Math.floor((b.spent * 100) / b.limit),
-          unconverted: [],
-        })),
+        state.budgets.map((b) => {
+          const spent = closed ? (b.category_id ? closed.food : closed.out) : b.spent;
+          return {
+            id: b.id,
+            category_id: b.category_id,
+            name: b.category_id ? "Dining Out" : "Overall",
+            limit: sgd(b.limit),
+            spent: sgd(spent),
+            remaining: sgd(b.limit - spent),
+            percent: Math.floor((spent * 100) / b.limit),
+            unconverted: [],
+          };
+        }),
       );
     }
     if (path === "/budgets" && method === "PUT") {

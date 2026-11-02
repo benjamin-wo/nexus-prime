@@ -552,6 +552,14 @@ a.btn { text-decoration: none; }
 .cal-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 .flow-totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--space-3); margin-bottom: var(--space-4); }
 .month-nav { display: flex; align-items: center; gap: var(--space-2); }
+/* The month picker: ‹ October 2026 › on the input surface, like the tabs. */
+.month-picker { display: inline-flex; align-items: center; gap: var(--space-1); padding: var(--space-1); border-radius: 10px; background: var(--bg-input); border: 1px solid var(--border-card); }
+.month-picker-label { min-width: 9.5rem; text-align: center; font-weight: 600; color: var(--text-white); font-variant-numeric: tabular-nums; }
+.month-step { width: 40px; padding: 0; }
+@media (max-width: 720px) {
+  .month-picker { flex: 1 1 100%; justify-content: space-between; }
+  .month-picker-label { min-width: 0; flex: 1; }
+}
 @media (max-width: 480px) {
   .cal-day { min-height: 52px; padding: 3px; }
   .cal-amount { font-size: 0.62rem; }
@@ -924,6 +932,16 @@ details.section[open] > summary { margin-bottom: var(--space-3); }
 .month-bar { position: relative; display: block; width: 100%; border-radius: 10px; background: var(--pal-mist); }
 /* A usual month, outlined behind this month's bar. */
 .month-usual { position: absolute; left: 0; right: 0; bottom: 0; border: 1.5px dashed rgba(99, 112, 197, 0.7); border-radius: 10px; }
+/* In the chart, a month's column is a button; the month shown is outlined. */
+.month-hit {
+  position: relative; display: flex; align-items: flex-end; width: 100%; height: 100%; margin: 0; padding: 0;
+  border: 0; border-radius: 10px; background: transparent; color: inherit; font: inherit; cursor: pointer;
+}
+.month-hit:focus-visible { outline-offset: 4px; }
+@media (hover: hover) { .month-hit:hover .month-bar:not(.now):not(.over) { background: var(--pal-cornflower); } }
+.month.picked .month-bar { outline: 2px solid var(--accent); outline-offset: 2px; }
+.month-labels .picked { color: var(--accent-text); font-weight: 600; }
+.key.picked { background: transparent; border: 2px solid var(--accent); }
 .month-bar.over { background: repeating-linear-gradient(135deg, var(--rose-accent) 0 2px, rgba(192, 54, 92, 0.16) 2px 7px); }
 .month-bar.now { background: var(--accent); }
 .budget-line { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--text-secondary); pointer-events: none; }
@@ -1319,6 +1337,7 @@ html.keyboard .bottom-nav, html.keyboard .fab, html.keyboard .trip-fab {
 
 /* --- Today (Home): Needs you and the setup list on the left, the glance cards on the right --- */
 .spend-card .mini-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.spend-card .mini-tiles.single { grid-template-columns: minmax(0, 1fr); }
 .today { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-6); align-items: start; }
 @media (min-width: 1024px) { .today { grid-template-columns: minmax(0, 3fr) minmax(300px, 2fr); } }
 @media (max-width: 720px) { .today { gap: var(--space-4); } }

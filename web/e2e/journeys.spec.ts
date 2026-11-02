@@ -1105,7 +1105,7 @@ test("the spending by month chart is on the Accounting overview", async ({ page 
   // Six months of spending, this month so far last; the tiles compare and explain.
   const months = card.getByRole("list", { name: "Spending by month" });
   await expect(months.getByRole("listitem")).toHaveCount(6);
-  await expect(months.getByRole("listitem").last()).toContainText("Sep so far");
+  await expect(months.getByRole("listitem").last().getByRole("button")).toHaveAccessibleName(/^September 2026, so far: SGD/);
   // A usual month, rather than a comparison again; "Where it went" already names the biggest category.
   await expect(card.locator(".mini-tile").getByText("A usual month")).toBeVisible();
   await expect(card.getByText("Biggest category")).toHaveCount(0);

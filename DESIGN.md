@@ -166,6 +166,13 @@ All spacing derives from a 4px base unit.
 - Two small tiles underneath: budget left (or money received) and a usual month; the biggest category is Where it went, beside it
 - Every bar's month and amount is in text for screen readers; the legend names every mark
 
+### Month picker (Accounting overview and Budgets)
+
+- "‹ October 2026 ›" on the input surface (`.month-picker`, like the tabs): ghost chevron buttons labelled "Previous month" and "Next month" (disabled at the current month and 24 months back), the month between them as a live region; in the page head beside Log expense, on a row of its own on a phone
+- The month is kept in the address (`?month=YYYY-MM`); this month has no parameter. A past month is titled "Looking back" with the month's spending and its comparison with the month before as the caption
+- A past month hides what is forward-looking (budget left, left to spend, Latest, Who owes you, the nudge) and shows each budget against today's limits ("Against today's limits"), over in rose and warning in amber
+- In the Spending by month chart each bar is a button ("October 2026: SGD 2,140.00", `aria-pressed`); the month shown is outlined in indigo, its label in indigo, and the legend says "Month shown"
+
 ### Rows
 
 - Icon tile (42px, `--bg-raised`), title and caption, value on the right; rows divided by `--border-card`

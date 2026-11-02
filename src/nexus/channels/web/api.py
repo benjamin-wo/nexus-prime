@@ -1819,8 +1819,24 @@ class BudgetOut(Model):
 
 
 @router.get("/budgets")
-async def budgets(auth: Auth, web: Runtime) -> list[BudgetOut]:
-    statuses = await budget_cases.budget_statuses(web.uow, web.rates, auth.user, now=web.clock())
+async def budgets(
+    auth: Auth,
+    web: Runtime,
+    month: Annotated[str | None, Query(pattern=r"^\d{4}-\d{2}$")] = None,
+) -> list[BudgetOut]:
+    """Each budget against this month's spending, or against ``month`` (``2026-10``,
+    not a future one) at today's limits."""
+    user = auth.user
+    now = web.clock()
+    first: date | None = None
+    if month:
+        try:
+            first = date.fromisoformat(f"{month}-01")
+        except ValueError as exc:
+            raise InvalidInput("month must be a real month, like 2026-10") from exc
+        if first > now.astimezone(_tz(user)).date().replace(day=1):
+            raise InvalidInput("month can't be in the future")
+    statuses = await budget_cases.budget_statuses(web.uow, web.rates, user, now=now, month=first)
     return [
         BudgetOut(
             id=s.budget.id,
