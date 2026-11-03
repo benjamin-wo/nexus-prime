@@ -3,11 +3,12 @@ import { type FormEvent, useState } from "react";
 
 import { Link } from "react-router-dom";
 
-import { api, type CardNetwork, type LikelyMove, type Me, type Wallet, type WalletKind, type WalletSpend } from "../api";
+import { api, type LikelyMove, type Me, type Wallet, type WalletKind, type WalletSpend } from "../api";
+import { CardFields } from "../components/CardFields";
 import { MonthPicker } from "../components/MonthPicker";
 import { formatDate, formatMoney, txName } from "../format";
 import { currentMonth, type MonthKey, monthLabel } from "../months";
-import { keepLast4, LAST4_NOTE, payingWallets, walletLabel } from "../wallets";
+import { type CardDetails, detailsBody, NETWORKS, NO_DETAILS, payingWallets, walletLabel } from "../wallets";
 
 const KIND_LABEL: Record<WalletKind, string> = {
   spending: "Spending",
@@ -19,83 +20,17 @@ const KIND_LABEL: Record<WalletKind, string> = {
 };
 /** The kinds a wallet can be given; Spending and Cash are the ones that are always there. */
 const KINDS: WalletKind[] = ["savings", "investment", "card", "other"];
-const NETWORKS: { key: CardNetwork; label: string }[] = [
-  { key: "visa", label: "Visa" },
-  { key: "mastercard", label: "Mastercard" },
-  { key: "amex", label: "American Express" },
-  { key: "other", label: "Other" },
-];
 
-/** A card's details as the form holds them. */
-type CardDetails = { issuer: string; product: string; network: CardNetwork | ""; last4: string };
-const NO_DETAILS: CardDetails = { issuer: "", product: "", network: "", last4: "" };
 const detailsOf = (w: Wallet): CardDetails => ({
   issuer: w.issuer ?? "",
   product: w.product ?? "",
   network: w.network ?? "",
   last4: w.last4 ?? "",
 });
-/** What the API is sent for a card; a blank box clears the field. */
-const detailsBody = (d: CardDetails) => ({
-  issuer: d.issuer.trim() || null,
-  product: d.product.trim() || null,
-  network: d.network || null,
-  last4: d.last4 || null,
-});
 /** "Citi · PremierMiles · Visa", the details under a card's name. */
 function detailsLine(w: Wallet): string {
   const network = NETWORKS.find((n) => n.key === w.network)?.label;
   return [w.issuer, w.product, network].filter(Boolean).join(" · ");
-}
-
-/** The card's own fields: bank, card, network and the last four digits. */
-function CardFields({ value, onChange }: { value: CardDetails; onChange: (next: CardDetails) => void }) {
-  const [trimmed, setTrimmed] = useState(false);
-  return (
-    <>
-      <label className="field">
-        Bank
-        <input className="input" placeholder="Citi" value={value.issuer} onChange={(e) => onChange({ ...value, issuer: e.target.value })} />
-      </label>
-      <label className="field">
-        Card
-        <input className="input" placeholder="PremierMiles" value={value.product} onChange={(e) => onChange({ ...value, product: e.target.value })} />
-      </label>
-      <label className="field">
-        Network
-        <select className="input" value={value.network} onChange={(e) => onChange({ ...value, network: e.target.value as CardNetwork | "" })}>
-          <option value="">Not set</option>
-          {NETWORKS.map((n) => (
-            <option key={n.key} value={n.key}>
-              {n.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="field">
-        Last 4 digits
-        <input
-          className="input num"
-          inputMode="numeric"
-          autoComplete="off"
-          placeholder="4321"
-          pattern="[0-9]{4}"
-          title="The last 4 digits of the card"
-          value={value.last4}
-          onChange={(e) => {
-            const kept = keepLast4(e.target.value);
-            setTrimmed(kept.trimmed);
-            onChange({ ...value, last4: kept.value });
-          }}
-        />
-      </label>
-      {trimmed && (
-        <p className="caption wallet-note" role="status">
-          {LAST4_NOTE}
-        </p>
-      )}
-    </>
-  );
 }
 
 /** "efund, rainy" to ["efund", "rainy"]: trimmed, no blanks, no repeats. */

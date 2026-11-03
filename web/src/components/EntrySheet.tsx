@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
@@ -14,9 +14,13 @@ import {
   type Wallet,
 } from "../api";
 import { isoDay, moveLabel } from "../format";
-import { payingWallets, walletLabel } from "../wallets";
+import { type CardDetails, detailsBody, NO_DETAILS, payingWallets, walletLabel } from "../wallets";
+import { CardFields } from "./CardFields";
 import { MerchantField } from "./MerchantField";
 import { MoneyTrail } from "./MoneyTrail";
+
+/** The "Paid with" option that opens the inline new-card form; never a wallet id. */
+const ADD_CARD = "__add-card__";
 
 export function EntrySheet({
   me,
@@ -65,24 +69,81 @@ export function EntrySheet({
     editing ? isoDay(editing.occurred_at, tz) : isoDay(new Date().toISOString(), tz),
   );
   const [notes, setNotes] = useState(editing?.notes ?? "");
-  // What paid for it. Until the person picks, a new entry shows the usual card and an old one what it has;
-  // an untouched choice is not sent, so the server applies the usual card itself.
+  // What paid for it. Until the person picks, a new entry shows the usual card (or, with no usual card,
+  // the one card there is) and an old one what it has. An untouched choice is not sent, so the server
+  // applies the usual card itself; the lone card is not the usual card, so that one is sent.
   const [pickedPaidWith, setPickedPaidWith] = useState<string | null>(null);
   const paying = payingWallets(wallets.data ?? []);
-  const paidWith =
-    pickedPaidWith ?? (editing ? (editing.paid_with?.id ?? "") : (paying.find((w) => w.usual)?.id ?? ""));
+  const usualCard = paying.find((w) => w.usual);
+  const cards = paying.filter((w) => w.kind === "card");
+  const loneCard = !editing && !usualCard && cards.length === 1 ? cards[0] : undefined;
+  const paidWith = pickedPaidWith ?? (editing ? (editing.paid_with?.id ?? "") : (usualCard?.id ?? loneCard?.id ?? ""));
+  // With nothing preselected on a new entry, the empty option asks which card instead of saying "Not set".
+  const asking = !editing && wallets.data !== undefined && !usualCard && !loneCard;
+  const noCardLabel = !asking ? "Not set" : cards.length === 0 ? "Credit card (add details later)" : "Which card?";
   // A wallet that can't pay any more (its kind changed) stays in the list while the entry names it.
   const stale = editing?.paid_with && !paying.some((w) => w.id === editing.paid_with?.id) ? editing.paid_with : null;
+  // "Add a card…": the new card's details, kept apart from the entry so nothing typed there is lost.
+  const client = useQueryClient();
+  const [adding, setAdding] = useState(false);
+  const [card, setCard] = useState<CardDetails>(NO_DETAILS);
+  const [makeUsual, setMakeUsual] = useState(false);
+  const [cardError, setCardError] = useState<string | null>(null);
+  const [cardSaving, setCardSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const first = useRef<HTMLInputElement>(null);
+  const addingRef = useRef(false);
+  addingRef.current = adding;
 
   useEffect(() => {
     first.current?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    // Escape closes the new-card form first, and only then the sheet.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (addingRef.current) setAdding(false);
+      else onClose();
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  function openCardForm() {
+    setCard(NO_DETAILS);
+    setMakeUsual(false);
+    setCardError(null);
+    setAdding(true);
+  }
+
+  async function addCard() {
+    setCardSaving(true);
+    setCardError(null);
+    // Named like a person would: "Citi PremierMiles", or just "Card" with nothing said.
+    const name = [card.issuer, card.product].map((part) => part.trim()).filter(Boolean).join(" ") || "Card";
+    let made: Wallet;
+    try {
+      made = await api<Wallet>("/wallets", {
+        method: "POST",
+        body: { name, kind: "card", match_words: [], ...detailsBody(card) },
+      });
+    } catch (e) {
+      setCardError(e instanceof Error ? e.message : "Couldn't add it");
+      setCardSaving(false);
+      return;
+    }
+    try {
+      if (makeUsual) await api("/wallets/usual-card", { method: "PUT", body: { wallet_id: made.id } });
+    } catch (e) {
+      setError(
+        `${made.name} is added, but it couldn't be made your usual card${e instanceof Error ? `: ${e.message}` : ""}`,
+      );
+    }
+    // The card must be in the list before it can be selected.
+    await client.invalidateQueries({ queryKey: ["wallets"] });
+    setPickedPaidWith(made.id);
+    setAdding(false);
+    setCardSaving(false);
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -101,7 +162,7 @@ export function EntrySheet({
           direction: side,
           counterparty: counterparty.trim() || null,
           category_id: categoryId || null,
-          ...(side === "out" && pickedPaidWith !== null ? { paid_with_wallet_id: pickedPaidWith || null } : {}),
+          ...(side === "out" && (pickedPaidWith !== null || loneCard) ? { paid_with_wallet_id: paidWith || null } : {}),
         };
     try {
       const tx = moving
@@ -149,6 +210,7 @@ export function EntrySheet({
         : direction === "out"
           ? "Log money out"
           : "Log money in";
+  const cardFormOpen = adding && !isMove && !moving && side === "out";
   const needsWallet = moving && wallets.data !== undefined && elsewhere.length === 0;
   return (
     <div className="backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -268,16 +330,55 @@ export function EntrySheet({
         {!isMove && !moving && side === "out" && (
           <label className="field">
             Paid with
-            <select className="input" value={paidWith} onChange={(e) => setPickedPaidWith(e.target.value)}>
+            <select
+              className="input"
+              value={paidWith}
+              onChange={(e) => (e.target.value === ADD_CARD ? openCardForm() : setPickedPaidWith(e.target.value))}
+            >
+              {asking && <option value="">{noCardLabel}</option>}
               {paying.map((w) => (
                 <option key={w.id} value={w.id}>
                   {walletLabel(w)}
                 </option>
               ))}
               {stale && <option value={stale.id}>{walletLabel(stale)}</option>}
-              <option value="">Not set</option>
+              {!asking && <option value="">{noCardLabel}</option>}
+              <option value={ADD_CARD}>+ Add a card…</option>
             </select>
           </label>
+        )}
+        {cardFormOpen && (
+          <div
+            className="card-ask"
+            role="form"
+            aria-label="New card"
+            onKeyDown={(e) => {
+              // Enter in a box adds the card; it must not save the entry underneath.
+              if (e.key === "Enter" && e.target instanceof HTMLInputElement && e.target.type !== "checkbox") {
+                e.preventDefault();
+                if (!cardSaving) void addCard();
+              }
+            }}
+          >
+            <CardFields value={card} onChange={setCard} />
+            <label className="check-row">
+              <input type="checkbox" checked={makeUsual} onChange={(e) => setMakeUsual(e.target.checked)} />
+              Make this my usual card
+            </label>
+            {cardError && (
+              <p className="error-text" role="alert">
+                {cardError}
+              </p>
+            )}
+            <div className="quick">
+              <button type="button" className="btn btn-primary" disabled={cardSaving} onClick={() => void addCard()}>
+                {cardSaving ? "Adding…" : "Add card"}
+              </button>
+              <button type="button" className="btn" disabled={cardSaving} aria-label="Cancel new card" onClick={() => setAdding(false)}>
+                Cancel
+              </button>
+            </div>
+          </div>
         )}
         <label className="field">
           Date
@@ -335,7 +436,7 @@ export function EntrySheet({
           <button type="button" className="btn" onClick={onClose}>
             Cancel
           </button>
-          <button type="submit" className="btn btn-primary" disabled={saving || needsWallet}>
+          <button type="submit" className="btn btn-primary" disabled={saving || needsWallet || cardFormOpen}>
             {saving ? "Saving…" : "Save"}
           </button>
         </div>
