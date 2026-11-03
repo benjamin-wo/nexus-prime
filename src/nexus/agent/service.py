@@ -5,7 +5,7 @@ import logging
 import time as clock
 from collections import Counter, defaultdict
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 from uuid import UUID, uuid4
@@ -65,6 +65,7 @@ from nexus.domain.investments import Position, clean_quantity, clean_symbol
 from nexus.domain.ledger import Direction, Transaction, UserId
 from nexus.domain.money import Money
 from nexus.domain.places import quoted
+from nexus.domain.private import hide_card_numbers
 from nexus.domain.transcript import HEARD_MARK, heard_line, tidy_transcript
 from nexus.infra.llm.factory import text_of
 from nexus.infra.pdf.text import PasswordNeeded, pdf_lines
@@ -117,6 +118,43 @@ SLOW_DOWN = "That's a lot of messages at once. Give me a minute, then try again.
 TOO_MANY_VOICE_NOTES = "That's a lot of voice notes. Give it a while, or type it instead."
 NOT_HEARD = "I couldn't hear that right now — mind typing it?"
 RECENT_MESSAGES = 3  # the newest, and two before it for context
+# Added to the reply when a card number in what the user sent was cut down to its last four.
+CARD_NOTE = "I only keep the last 4 digits of card numbers."
+
+
+def _hidden(text: str) -> tuple[str, bool]:
+    """What the user sent with any card number cut down to its last four, and whether one
+    was. Every way words reach the agent (typed, spoken, a caption, text read from an image
+    or PDF) passes through here before they are shown to a model or kept anywhere."""
+    hidden = hide_card_numbers(text)
+    return hidden, hidden != text
+
+
+def _hidden_caption(caption: str | None) -> tuple[str | None, bool]:
+    if not caption:
+        return caption, False
+    return _hidden(caption)
+
+
+def _hidden_look(look: ImageLook | None) -> ImageLook | None:
+    """The look at an image with any card number in what it read cut down to its last
+    four; the very same look when there is none."""
+    if look is None:
+        return None
+    text, hid_text = _hidden(look.text)
+    summary, hid_summary = _hidden(look.summary)
+    return replace(look, summary=summary, text=text) if hid_text or hid_summary else look
+
+
+def _noted(replies: list[Reply], hid: bool) -> list[Reply]:
+    """``replies`` with the card note ending the last one, once, when a card number was
+    hidden. The rest of the reply, and its buttons, are as they were."""
+    if not hid or any(CARD_NOTE in r.text for r in replies):
+        return replies
+    if not replies:
+        return [Reply(CARD_NOTE)]
+    last = replies[-1]
+    return [*replies[:-1], replace(last, text=f"{last.text}\n\n{CARD_NOTE}")]
 
 
 def _log_turn(seconds: float, new: list[BaseMessage], timer: TurnTimer) -> None:
@@ -390,8 +428,10 @@ class AgentService:
     @as_actor
     @costs.as_feature("chat")
     async def handle_text(self, actor: UserId, text: str, ref: str) -> list[Reply]:
+        text, hid = _hidden(text)
         refusal = await self._demo_refusal(actor, Use.MESSAGE)
         replies = [Reply(refusal)] if refusal else await self._handle_text(actor, text, ref)
+        replies = _noted(replies, hid)
         await self._keep(actor, text, replies, ref)
         return replies
 
@@ -449,6 +489,8 @@ class AgentService:
         transcript = tidy_transcript(heard.text, user.home_currency)
         if not transcript:
             return [Reply(speech_rules.UNCLEAR)]
+        # After tidying, which would read a lone "1111" in a spending sentence as 11.11.
+        transcript, hid = _hidden(transcript)
         if forwarded:
             look = ImageLook(
                 ImageKind.OTHER, None, "A forwarded voice note, written out by speech-to-text",
@@ -468,6 +510,7 @@ class AgentService:
                 replies[0] = Reply(
                     f"{heard_line(transcript)}\n{replies[0].text}", replies[0].buttons
                 )
+        replies = _noted(replies, hid)
         await self._keep(actor, said, replies, ref)
         return replies
 
@@ -500,12 +543,14 @@ class AgentService:
     async def handle_images(
         self, actor: UserId, pictures: list[Picture], caption: str | None, ref: str
     ) -> list[Reply]:
+        caption, hid = _hidden_caption(caption)
         refusal = await self._demo_refusal(actor, Use.PHOTO, len(pictures))
         replies = (
             [Reply(refusal)]
             if refusal
             else await self._handle_images(actor, pictures, caption, ref)
         )
+        replies = _noted(replies, hid)
         what = "a photo" if len(pictures) == 1 else f"{len(pictures)} photos"
         await self._keep(actor, f"[Sent {what}]{f' {caption}' if caption else ''}", replies, ref)
         return replies
@@ -526,7 +571,9 @@ class AgentService:
             return [Reply("Reading photos isn't set up yet. Tell me what it says instead.")]
         if self._over_limit(actor):
             return [Reply(SLOW_DOWN)]
-        looks = await asyncio.gather(*(self._look(p, caption) for p in pictures))
+        seen = await asyncio.gather(*(self._look(p, caption) for p in pictures))
+        looks = [_hidden_look(look) for look in seen]
+        hid = any(a is not b for a, b in zip(looks, seen, strict=True))
         replies: list[Reply] = []
         to_chat: list[ImageLook] = []
         no_total: list[ImageLook] = []  # receipts whose total couldn't be read at all
@@ -548,7 +595,7 @@ class AgentService:
             replies += await self.ask_about(actor, to_chat, caption, ref, label=label)
         elif unread and not replies:
             replies.append(Reply("I couldn't read that right now. Try again in a bit."))
-        return replies
+        return _noted(replies, hid)
 
     async def _look(self, picture: Picture, caption: str | None) -> ImageLook | None:
         if self._looker is None:
@@ -594,10 +641,12 @@ class AgentService:
     async def handle_pdf(
         self, actor: UserId, data: bytes, name: str, caption: str | None, ref: str
     ) -> list[Reply]:
+        caption, hid = _hidden_caption(caption)
         refusal = await self._demo_refusal(actor, Use.PHOTO)
         replies = (
             [Reply(refusal)] if refusal else await self._handle_pdf(actor, data, name, caption, ref)
         )
+        replies = _noted(replies, hid)
         said = f"[Sent {quoted(name, 80) or 'a PDF'}]{f' {caption}' if caption else ''}"
         await self._keep(actor, said, replies, ref)
         return replies
@@ -623,8 +672,9 @@ class AgentService:
         text = quoted(" / ".join(lines), MAX_TEXT)
         if not text:
             return [Reply("There's no text in that PDF (it may be scanned). Send a photo of it.")]
+        text, hid = _hidden(text)
         look = ImageLook(ImageKind.OTHER, None, f"A PDF file named {quoted(name, 80)}", text)
-        return await self.ask_about(actor, [look], caption, ref, label="[PDF]")
+        return _noted(await self.ask_about(actor, [look], caption, ref, label="[PDF]"), hid)
 
     @as_actor
     async def ask_about(
@@ -825,6 +875,7 @@ class AgentService:
         what lands on a trip is kept for Undo."""
         if self._trips is None:
             raise InvalidInput("reading screenshots isn't set up yet")
+        caption = _hidden_caption(caption)[0]
         user = await get_user(self._uow(), actor)
         now = self._clock()
         try:

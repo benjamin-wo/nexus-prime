@@ -17,6 +17,7 @@ A small number of invited people's money records: transactions, budgets, bills, 
 | One user's data from another's | Every query filters on the acting user; child rows reference their parent by `(id, user_id)`, so the database refuses cross-user links; tests try every use case as the wrong user |
 | SQL injection | SQLAlchemy Core with bound parameters throughout; no SQL is built from user input |
 | The model | It can only call tools, never SQL; tools act as the authenticated user, and any `user_id` it sends is dropped; changes ask the user to confirm; there's no tool that moves money; emails and receipts are read by separate, tool-less calls; memories come only from the user's own words and can't start a change |
+| Card numbers in chat | A card number in what a user types, says or captions (13 to 19 digits that pass the Luhn check) is cut down to its last four digits before it reaches a model, the conversation checkpoint, the stored chat, the summary or the memory writer, and the reply says so; phone numbers, amounts, dates, references, IBANs and other numbers that fail the checksum are left alone. Older stored chat may still hold a full number (see OPERATIONS.md) |
 | Secrets | From the environment only; Gmail refresh tokens encrypted with Fernet (`TOKEN_ENCRYPTION_KEY`, rotatable); access logs drop query strings on paths that carry one-time tokens |
 | Files | Receipts in a private bucket behind links that expire in minutes; statements and their passwords are read for one request and never stored; CSV export neutralises cells a spreadsheet would run as formulas |
 | Trip weather and place photos | Only a place's name and coordinates go to Open-Meteo; Google photo links are fetched without our key, image types only, under 2 MB, and never stored; both are capped or cached so a page can't run up requests |
@@ -45,7 +46,7 @@ A small number of invited people's money records: transactions, budgets, bills, 
 
 - **Signed logins can be replayed for up to 24 hours** if someone captures one. That's Telegram's design; the window could be shortened at the cost of sign-ins from a stale page failing.
 - **Rate limits are in memory**, per process: a restart resets them, and more than one instance would each count separately. Fine for one instance; move them to Postgres before scaling out.
-- **The chat is kept for the web chat window**: the newest 500 lines per user (their messages and Nexus's replies; no images, emails or notifications), each user's alone.
+- **The chat is kept for the web chat window**: the newest 500 lines per user (their messages and Nexus's replies; no images, emails or notifications), each user's alone. Card numbers in them are cut down to their last four digits; lines kept before that change are not rewritten.
 - **The model provider sees what the model sees**: messages, the money snapshot, memories, receipt and email text, and the page images of a scanned statement being imported. OpenRouter's privacy settings exclude providers that train on prompts.
 - **A thread that a crafted PDF ties up** keeps running after the 30-second limit returns; the size and page caps bound it.
 - **The old database is kept read-only** for the legacy import; it's a separate Railway service and isn't reached at runtime.

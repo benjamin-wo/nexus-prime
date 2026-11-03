@@ -74,7 +74,7 @@ class Last4:
 
 def clean_last4(value: str | None) -> Last4:
     """The last four digits of a card number. Spaces and dashes between digits are fine
-    ("4111 1111 1111 1234"); anything else that isn't a digit is refused. If more than four
+    ("1357 2468 1357 1234"); anything else that isn't a digit is refused. If more than four
     digits are given, only the last four are kept, so the rest is never stored or echoed."""
     if value is None or not value.strip():
         return Last4(None, False)

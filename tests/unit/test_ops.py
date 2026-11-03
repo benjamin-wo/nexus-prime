@@ -90,7 +90,7 @@ def test_warnings_become_events_without_what_was_said(events: list[ops.Event]) -
         logger.info("fine")  # below a warning: not recorded
         logger.warning("couldn't read %s's receipt from %s", "Jamie Tan", "Kopi Corner")
         try:
-            raise ValueError("card 4111 1111 declined")
+            raise ValueError("card 1357 2468 declined")
         except ValueError:
             logger.exception("charge failed")
         handler.handle(logging.makeLogRecord({"name": ops.LOGGER, "msg": "about ops itself"}))

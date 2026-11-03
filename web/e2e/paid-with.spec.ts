@@ -35,7 +35,7 @@ test("add a card's details, make it the usual card, and an expense is paid with 
   await edit.getByLabel("Network").selectOption({ label: "Visa" });
   const last4 = edit.getByLabel("Last 4 digits");
   await expect(last4).toHaveAttribute("inputmode", "numeric");
-  await last4.fill("4111 1111 1111 4321");
+  await last4.fill("0000 0000 0000 4321");
   await expect(last4).toHaveValue("4321");
   await expect(edit.getByText("Only the last 4 digits are kept.")).toBeVisible();
   await edit.getByRole("button", { name: "Save" }).click();

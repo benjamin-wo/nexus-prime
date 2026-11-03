@@ -31,7 +31,7 @@ def test_last_four_digits_are_cut_and_anything_but_digits_is_refused() -> None:
         ("Paid with card: xxxx-1234", "1234"),
         ("Card: **** **** **** 4321", "4321"),
         ("Charged to *8765 today", "8765"),
-        ("Card number 4111 1111 1111 1234 was used", "1234"),
+        ("Card number 1357 2468 1357 1234 was used", "1234"),
         ("card ending 1234 ... card ending 1234", "1234"),
         ("card ending 1234 and also card ending 4321", None),  # two cards: unclear
         ("Order 1234567 total 12.00", None),

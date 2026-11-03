@@ -94,7 +94,7 @@ async def test_a_card_keeps_its_details_and_only_its_last_four_digits(
     )  # fmt: skip
 
     # A whole card number is cut to its last four before anything is stored.
-    long = await add_wallet(uow(), alice, "Old card", "card", last4="4111 1111 1111 1234")
+    long = await add_wallet(uow(), alice, "Old card", "card", last4="1357 2468 1357 1234")
     assert long.last4 == "1234"
     async with uow() as tx:
         stored = await tx.ledger.get_wallet(alice, long.id)
@@ -460,9 +460,9 @@ async def test_wallets_carry_card_details_and_say_when_digits_were_dropped(world
     )  # fmt: skip
     assert citi["usual"] is False and "note" not in citi  # nothing was dropped
 
-    long = await add_card(owner, "Old card", last4="4111 1111 1111 9876")
+    long = await add_card(owner, "Old card", last4="1357 2468 1357 9876")
     assert long["last4"] == "9876" and long["note"] == "Only the last 4 digits are kept."
-    assert "4111" not in str(long)
+    assert "1357" not in str(long)
 
     bad = await owner.send("POST", "/api/wallets", {"name": "Odd", "kind": "card", "last4": "12x4"})
     assert bad.status_code == 422
@@ -956,10 +956,10 @@ async def test_the_wallet_tools_add_and_change_a_card_and_never_keep_more_than_f
     )
 
     long = await run(
-        uow, alice, "add_wallet", {"name": "Old card", "kind": "card", "last4": "4111111111119876"}
+        uow, alice, "add_wallet", {"name": "Old card", "kind": "card", "last4": "1357246813579876"}
     )
     assert "ending 9876" in long and "Only the last 4 digits are kept." in long
-    assert "4111" not in long
+    assert "1357" not in long
     found = await wallets_by_name(uow, alice)
     assert found["Old card"].last4 == "9876"
 
@@ -979,14 +979,14 @@ async def test_the_wallet_tools_add_and_change_a_card_and_never_keep_more_than_f
 async def test_nothing_but_four_digits_is_in_the_database(
     engine: AsyncEngine, uow: UowFactory, alice: UserId
 ) -> None:
-    await add_wallet(uow(), alice, "Old card", "card", last4="4111 1111 1111 9876")
+    await add_wallet(uow(), alice, "Old card", "card", last4="1357 2468 1357 9876")
     async with engine.connect() as db:
         stored = (await db.execute(text("SELECT last4 FROM wallets WHERE last4 IS NOT NULL"))).all()
     assert [r.last4 for r in stored] == ["9876"]
     with pytest.raises(IntegrityError, match="last4"):
         async with engine.begin() as db:
             await db.execute(
-                text("UPDATE wallets SET last4 = '4111111111119876' WHERE name = 'Old card'")
+                text("UPDATE wallets SET last4 = '1357246813579876' WHERE name = 'Old card'")
             )
 
 

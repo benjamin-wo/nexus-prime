@@ -25,9 +25,11 @@ from nexus.domain.prep import (
 )
 from nexus.domain.trip_access import without_cover_money
 from nexus.domain.trips import Trip
+from tests.cards import card_number, last4, spaced
 
 USER = UserId(uuid4())
 MADE = datetime(2026, 9, 28, tzinfo=UTC)
+CARD = card_number()
 
 
 def trip(**changes: object) -> Trip:
@@ -55,14 +57,14 @@ def test_todo_lists_are_cleaned_and_capped() -> None:
         Todo("a2", "get yen"),  # the same words, ignoring case
         Todo("a3", "  "),
         Todo("a1", "Book the airport train", None, True),  # a repeated id gets a new one
-        Todo("", "Pay with 4111 1111 1111 1111"),
+        Todo("", f"Pay with {spaced(CARD)}"),
         Todo("b b", "Print tickets\x00‮"),
     ]
     kept = clean_list(items)
     assert [t.text for t in kept] == [
         "Get yen",
         "Book the airport train",
-        "Pay with •••• 1111",
+        f"Pay with •••• {last4(CARD)}",
         "Print tickets",
     ]
     assert kept[0] == Todo("a1", "Get yen", date(2026, 12, 8))
@@ -125,7 +127,7 @@ def test_a_cover_is_checked_and_tidied() -> None:
         ({"phone": "---"}, "can only have digits"),
         ({"phone": "1" * 31}, "longer than 30"),
         ({"note": "n" * 201}, "longer than 200"),
-        ({"reference": "4111 1111 1111 1111"}, "card or passport number"),
+        ({"reference": spaced(CARD)}, "card or passport number"),
         ({"reference": "Passport E1234567"}, "card or passport number"),
         ({"reference": "CVV 123"}, "card or passport number"),
         ({"name": "My passport", "reference": "E1234567"}, "passport's number isn't kept"),
@@ -142,10 +144,10 @@ def test_a_cover_refuses_what_it_should_not_keep(change: dict[str, object], mess
 def test_a_name_and_note_have_card_and_passport_numbers_hidden() -> None:
     kept = clean_cover(
         CoverDraft(
-            CoverKind.DOCUMENT, "Paid 4111 1111 1111 1111", note="Passport E1234567 is in the safe"
+            CoverKind.DOCUMENT, f"Paid {spaced(CARD)}", note="Passport E1234567 is in the safe"
         )
     )
-    assert kept.name == "Paid •••• 1111" and kept.note == "Passport ••• is in the safe"
+    assert kept.name == f"Paid •••• {last4(CARD)}" and kept.note == "Passport ••• is in the safe"
 
 
 def test_what_a_cover_cost_is_removed_for_a_member() -> None:

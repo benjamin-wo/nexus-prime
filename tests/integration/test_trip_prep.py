@@ -21,6 +21,7 @@ from nexus.domain.errors import Conflict
 from nexus.domain.money import Money
 from nexus.domain.prep import CoverDraft, CoverKind, Todo
 from nexus.infra.db.migrations import alembic_config
+from tests.cards import card_number, last4, spaced
 from tests.fakes import NOW, FakeRates
 from tests.integration import test_web_api
 from tests.integration.conftest import UowFactory, upgrade
@@ -58,6 +59,9 @@ async def owner_trip(world: World, **changes: Any) -> tuple[Any, str, str]:
     return owner, trip, f"/api/travel/trips/{trip}"
 
 
+CARD = card_number()
+
+
 async def page(who: Any, path: str) -> dict[str, Any]:
     got = await who.get(path)
     assert got.status_code == 200, got.text
@@ -77,14 +81,14 @@ async def test_the_to_do_list_is_replaced_whole_like_packing(world: World) -> No
             {"text": " Get  yen ", "due": "2026-12-08"},
             {"text": "get yen"},
             {"text": ""},
-            {"text": "Pay with 4111 1111 1111 1111", "done": True},
+            {"text": f"Pay with {spaced(CARD)}", "done": True},
         ]},
     )  # fmt: skip
     assert put.status_code == 200, put.text
     todos = put.json()["todos"]
     assert [(t["text"], t["due"], t["done"]) for t in todos] == [
         ("Get yen", "2026-12-08", False),
-        ("Pay with •••• 1111", None, True),
+        (f"Pay with •••• {last4(CARD)}", None, True),
     ]
     assert all(len(t["id"]) == 8 for t in todos)
     assert (await page(owner, path))["todos"] == todos
@@ -187,7 +191,7 @@ async def test_cover_is_added_changed_and_removed(world: World) -> None:
     assert plain.json()["cost"] == {"amount": "20.0000", "currency": "SGD"}
 
     for bad in (
-        {**INSURANCE, "reference": "4111 1111 1111 1111"},
+        {**INSURANCE, "reference": spaced(CARD)},
         {**INSURANCE, "reference": "Passport E1234567"},
         {**INSURANCE, "name": "Passport copy", "reference": "E1234567"},
         {**INSURANCE, "phone": "call me"},
@@ -508,7 +512,7 @@ async def test_chat_adds_to_dos_and_cover(uow: UowFactory) -> None:
         "Added to the Tokyo, Japan trip's cover and documents: Harbour Cover (insurance"
     )
     assert "counts under Money" in saved and "logged as an expense" in saved
-    refused = await use("add_trip_cover", {**args, "reference": "4111 1111 1111 1111"})
+    refused = await use("add_trip_cover", {**args, "reference": spaced(CARD)})
     assert refused.startswith("Error:") and "card or passport number" in refused
 
     status = await use("trip_status", {"trip": "japan"})

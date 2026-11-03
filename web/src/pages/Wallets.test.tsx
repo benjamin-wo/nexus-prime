@@ -56,7 +56,7 @@ describe("Wallets: card details", () => {
     expect(screen.queryByText("Only the last 4 digits are kept.")).toBeNull();
     await userEvent.clear(last4);
     await userEvent.click(last4);
-    await userEvent.paste("4111 1111 1111 8765");
+    await userEvent.paste("1357 2468 1357 8765");
     expect(last4).toHaveValue("8765");
     expect(screen.getByText("Only the last 4 digits are kept.")).toBeVisible();
 

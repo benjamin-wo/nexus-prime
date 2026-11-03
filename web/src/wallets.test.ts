@@ -13,12 +13,12 @@ describe("keepLast4", () => {
   });
 
   it("keeps the last four of a longer number and says it dropped some", () => {
-    expect(keepLast4("4111111111114321")).toEqual({ value: "4321", trimmed: true });
+    expect(keepLast4("000000000004321")).toEqual({ value: "4321", trimmed: true });
     expect(keepLast4("43215")).toEqual({ value: "3215", trimmed: true });
   });
 
   it("drops spaces, dashes and letters before counting", () => {
-    expect(keepLast4("4111 1111 1111 4321")).toEqual({ value: "4321", trimmed: true });
+    expect(keepLast4("0000 0000 0000 4321")).toEqual({ value: "4321", trimmed: true });
     expect(keepLast4("43-21")).toEqual({ value: "4321", trimmed: false });
     expect(keepLast4("ab12")).toEqual({ value: "12", trimmed: false });
   });

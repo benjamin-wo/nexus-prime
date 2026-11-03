@@ -15,9 +15,12 @@ from nexus.domain.bookings import (
 from nexus.domain.ledger import UserId
 from nexus.domain.money import Money
 from nexus.domain.trips import Trip, hide_private
+from tests.cards import card_number, last4, spaced
 
 USER = UserId(uuid4())
 MADE = datetime(2026, 9, 28, tzinfo=UTC)
+CARD = card_number()
+AMEX = card_number("37", 15, seed=2)
 
 
 def trip(destination: str, start: date, end: date, currency: str = "JPY") -> Trip:
@@ -47,8 +50,8 @@ def test_references_stay_but_card_and_passport_numbers_are_hidden() -> None:
     # The owner's references are what they need at the counter; a card isn't.
     kept = "Booking reference: XK7Q9P, booking ID 1234567890, e-ticket 123-4567890123"
     assert hide_private(kept) == kept
-    assert hide_private("Paid with 4111 1111 1111 1111") == "Paid with •••• 1111"
-    assert hide_private("amex 378282246310005, CVV 123") == "amex •••• 0005, CVV •••"
+    assert hide_private(f"Paid with {spaced(CARD)}") == f"Paid with •••• {last4(CARD)}"
+    assert hide_private(f"amex {AMEX}, CVV 123") == f"amex •••• {last4(AMEX)}, CVV •••"
     assert "E1234567" not in hide_private("Passport E1234567 on file")
     assert hide_private("Call +81 3-1234-5678") == "Call +81 3-1234-5678"
 
@@ -63,7 +66,7 @@ def test_a_booking_keeps_its_reference_and_where_it_was_booked() -> None:
         "hotel booking (Hotel Sakura, 4 nights, 10 Dec to 14 Dec; booked on Agoda, ref 1234567890)"
     )
     assert BookingDraft.from_dict(d.as_dict()) == d
-    card = BookingDraft.from_dict({**d.as_dict(), "reference": "4111111111111111"})
+    card = BookingDraft.from_dict({**d.as_dict(), "reference": CARD})
     assert card is not None and card.reference is None  # a card number is never a reference
 
 
