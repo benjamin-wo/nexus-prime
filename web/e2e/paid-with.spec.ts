@@ -60,7 +60,7 @@ test("add a card's details, make it the usual card, and an expense is paid with 
   const sheet = page.getByRole("dialog", { name: "Log money out" });
   const paidWith = sheet.getByLabel("Paid with");
   await expect(paidWith).toHaveValue("w-card");
-  await expect(paidWith.locator("option")).toHaveText(["Card ·· 4321", "Spending", "Cash", "Not set"]);
+  await expect(paidWith.locator("option")).toHaveText(["Card ·· 4321", "Spending", "Cash", "Not set", "+ Add a card…"]);
   await sheet.getByLabel("Amount").fill("8.40");
   await sheet.getByLabel("Paid to").fill("Kopi");
   await sheet.getByRole("button", { name: "Save" }).click();
@@ -74,6 +74,91 @@ test("add a card's details, make it the usual card, and an expense is paid with 
   await expect(another.getByLabel("Paid with")).toHaveCount(0);
   await another.getByRole("button", { name: "Move", exact: true }).click();
   await expect(another.getByLabel("Paid with")).toHaveCount(0);
+});
+
+test("with one card and no usual card, a new expense starts on that card and is saved with it", async ({ page }) => {
+  await open(page);
+  await page.goto("/accounting/ledger");
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  const sheet = page.getByRole("dialog", { name: "Log money out" });
+  await expect(sheet.getByLabel("Paid with")).toHaveValue("w-card");
+  await sheet.getByLabel("Amount").fill("3.20");
+  await sheet.getByLabel("Paid to").fill("Teh");
+  await sheet.getByRole("button", { name: "Save" }).click();
+  await expect(sheet).toBeHidden();
+  await expect(row(page, "Teh").getByText("Card", { exact: true })).toBeVisible();
+});
+
+test("with several cards and no usual card, the sheet asks which card", async ({ page }) => {
+  await open(page, { cards: true });
+  await page.goto("/accounting/ledger");
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  const sheet = page.getByRole("dialog", { name: "Log money out" });
+  const paidWith = sheet.getByLabel("Paid with");
+  await expect(paidWith).toHaveValue("");
+  await expect(paidWith.locator("option:checked")).toHaveText("Which card?");
+  await sheet.getByLabel("Amount").fill("2.00");
+  await sheet.getByLabel("Paid to").fill("Toast Box");
+  await sheet.getByRole("button", { name: "Save" }).click();
+  await expect(sheet).toBeHidden();
+  await expect(row(page, "Toast Box").getByText("Citi PremierMiles")).toHaveCount(0);
+  await expect(row(page, "Toast Box").getByText("DBS Altitude")).toHaveCount(0);
+});
+
+test("add a card from the entry sheet, keep what was typed, and save the expense paid with it", async ({ page }) => {
+  await open(page, { cards: true });
+  await page.goto("/accounting/ledger");
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  const sheet = page.getByRole("dialog", { name: "Log money out" });
+  await sheet.getByLabel("Amount").fill("8.40");
+  await sheet.getByLabel("Paid to").fill("Kopi");
+
+  const paidWith = sheet.getByLabel("Paid with");
+  await paidWith.selectOption({ label: "+ Add a card…" });
+  const form = sheet.getByRole("form", { name: "New card" });
+
+  // Cancel puts the select back where it was.
+  await form.getByRole("button", { name: "Cancel new card" }).click();
+  await expect(form).toBeHidden();
+  await expect(paidWith.locator("option:checked")).toHaveText("Which card?");
+
+  await paidWith.selectOption({ label: "+ Add a card…" });
+  await form.getByLabel("Bank").fill("OCBC");
+  await form.getByLabel("Card", { exact: true }).fill("Frank");
+  await form.getByLabel("Network").selectOption({ label: "Mastercard" });
+  const last4 = form.getByLabel("Last 4 digits");
+  await last4.fill("0000 0000 0000 4321");
+  await expect(last4).toHaveValue("4321");
+  await expect(form.getByText("Only the last 4 digits are kept.")).toBeVisible();
+  await form.getByLabel("Make this my usual card").check();
+  await form.getByRole("button", { name: "Add card" }).click();
+
+  await expect(form).toBeHidden();
+  await expect(paidWith.locator("option:checked")).toHaveText("OCBC Frank ·· 4321");
+  await expect(sheet.getByLabel("Amount")).toHaveValue("8.40");
+  await expect(sheet.getByLabel("Paid to")).toHaveValue("Kopi");
+  await sheet.getByRole("button", { name: "Save" }).click();
+  await expect(sheet).toBeHidden();
+  await expect(row(page, "Kopi").getByText("OCBC Frank ·· 4321")).toBeVisible();
+
+  // It is now the usual card: the next expense starts on it.
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  await expect(page.getByRole("dialog").getByLabel("Paid with").locator("option:checked")).toHaveText("OCBC Frank ·· 4321");
+});
+
+test("a card that can't be added shows why inside the form", async ({ page }) => {
+  await open(page, { cards: true });
+  await page.goto("/accounting/ledger");
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  const sheet = page.getByRole("dialog", { name: "Log money out" });
+  await sheet.getByLabel("Paid with").selectOption({ label: "+ Add a card…" });
+  const form = sheet.getByRole("form", { name: "New card" });
+  // "Citi PremierMiles" is a wallet already.
+  await form.getByLabel("Bank").fill("Citi");
+  await form.getByLabel("Card", { exact: true }).fill("PremierMiles");
+  await form.getByRole("button", { name: "Add card" }).click();
+  await expect(form.getByRole("alert")).toHaveText("a wallet with that name already exists");
+  await expect(form).toBeVisible();
 });
 
 test("change an entry's card, and filter the ledger by a card or by Not set", async ({ page }) => {

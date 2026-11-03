@@ -52,7 +52,7 @@ const written = (calls: ReturnType<typeof mockApi>) =>
   calls.find((c) => c.path === "/transactions" || c.path === "/transactions/t9")?.body as Record<string, unknown>;
 
 describe("Paid with in the entry sheet", () => {
-  it("lists cards, Spending, Cash and Other wallets, then Not set, and never investment or savings", async () => {
+  it("lists cards, Spending, Cash and Other wallets, then Not set and Add a card, and never investment or savings", async () => {
     setup();
     await waitFor(() =>
       expect(Array.from(select().options).map((o) => o.text)).toEqual([
@@ -62,6 +62,7 @@ describe("Paid with in the entry sheet", () => {
         "Cash",
         "Wise",
         "Not set",
+        "+ Add a card…",
       ]),
     );
   });
@@ -95,7 +96,7 @@ describe("Paid with in the entry sheet", () => {
 
   it("shows what an entry was paid with and changes it", async () => {
     const calls = setup({ ...saved, paid_with: { id: "w-dbs", name: "DBS Altitude", kind: "card", last4: "8765" } });
-    await waitFor(() => expect(select().options.length).toBeGreaterThan(2));
+    await waitFor(() => expect(select().options.length).toBeGreaterThan(3));
     expect(select().value).toBe("w-dbs");
     await userEvent.selectOptions(select(), "w-cash");
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -104,7 +105,7 @@ describe("Paid with in the entry sheet", () => {
 
   it("starts on Not set for an old entry, even with a usual card", async () => {
     setup(saved);
-    await waitFor(() => expect(select().options.length).toBeGreaterThan(1));
+    await waitFor(() => expect(select().options.length).toBeGreaterThan(3));
     expect(select().value).toBe("");
   });
 

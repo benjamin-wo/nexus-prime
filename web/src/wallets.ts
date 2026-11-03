@@ -1,4 +1,4 @@
-import type { Wallet, WalletKind } from "./api";
+import type { CardNetwork, Wallet, WalletKind } from "./api";
 
 /** The kinds of wallet that can pay for an expense. Investment and savings wallets only
  * ever receive money, so they are never offered as "Paid with". */
@@ -26,3 +26,22 @@ export function keepLast4(text: string): { value: string; trimmed: boolean } {
 }
 
 export const LAST4_NOTE = "Only the last 4 digits are kept.";
+
+export const NETWORKS: { key: CardNetwork; label: string }[] = [
+  { key: "visa", label: "Visa" },
+  { key: "mastercard", label: "Mastercard" },
+  { key: "amex", label: "American Express" },
+  { key: "other", label: "Other" },
+];
+
+/** A card's details as the form holds them. */
+export type CardDetails = { issuer: string; product: string; network: CardNetwork | ""; last4: string };
+export const NO_DETAILS: CardDetails = { issuer: "", product: "", network: "", last4: "" };
+
+/** What the API is sent for a card; a blank box clears the field. */
+export const detailsBody = (d: CardDetails) => ({
+  issuer: d.issuer.trim() || null,
+  product: d.product.trim() || null,
+  network: d.network || null,
+  last4: d.last4 || null,
+});
