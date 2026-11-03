@@ -14,6 +14,7 @@ import {
   type Wallet,
 } from "../api";
 import { isoDay, moveLabel } from "../format";
+import { payingWallets, walletLabel } from "../wallets";
 import { MerchantField } from "./MerchantField";
 import { MoneyTrail } from "./MoneyTrail";
 
@@ -64,6 +65,14 @@ export function EntrySheet({
     editing ? isoDay(editing.occurred_at, tz) : isoDay(new Date().toISOString(), tz),
   );
   const [notes, setNotes] = useState(editing?.notes ?? "");
+  // What paid for it. Until the person picks, a new entry shows the usual card and an old one what it has;
+  // an untouched choice is not sent, so the server applies the usual card itself.
+  const [pickedPaidWith, setPickedPaidWith] = useState<string | null>(null);
+  const paying = payingWallets(wallets.data ?? []);
+  const paidWith =
+    pickedPaidWith ?? (editing ? (editing.paid_with?.id ?? "") : (paying.find((w) => w.usual)?.id ?? ""));
+  // A wallet that can't pay any more (its kind changed) stays in the list while the entry names it.
+  const stale = editing?.paid_with && !paying.some((w) => w.id === editing.paid_with?.id) ? editing.paid_with : null;
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const first = useRef<HTMLInputElement>(null);
@@ -87,7 +96,13 @@ export function EntrySheet({
     };
     const body = isMove
       ? common
-      : { ...common, direction: side, counterparty: counterparty.trim() || null, category_id: categoryId || null };
+      : {
+          ...common,
+          direction: side,
+          counterparty: counterparty.trim() || null,
+          category_id: categoryId || null,
+          ...(side === "out" && pickedPaidWith !== null ? { paid_with_wallet_id: pickedPaidWith || null } : {}),
+        };
     try {
       const tx = moving
         ? await api<Transaction>("/moves", {
@@ -248,6 +263,20 @@ export function EntrySheet({
             {editing && categoryId === (editing.category_id ?? "") && why.data && (
               <span className="caption">{why.data.text}</span>
             )}
+          </label>
+        )}
+        {!isMove && !moving && side === "out" && (
+          <label className="field">
+            Paid with
+            <select className="input" value={paidWith} onChange={(e) => setPickedPaidWith(e.target.value)}>
+              {paying.map((w) => (
+                <option key={w.id} value={w.id}>
+                  {walletLabel(w)}
+                </option>
+              ))}
+              {stale && <option value={stale.id}>{walletLabel(stale)}</option>}
+              <option value="">Not set</option>
+            </select>
           </label>
         )}
         <label className="field">

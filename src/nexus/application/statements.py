@@ -58,7 +58,7 @@ from nexus.domain.statements import (
     read_table,
     suggest_mapping,
 )
-from nexus.domain.wallets import wallet_for
+from nexus.domain.wallets import PAYING_KINDS, wallet_for
 
 type UowFactory = Callable[[], UnitOfWork]
 
@@ -256,6 +256,7 @@ async def confirm(
     file_name: str,
     save_as: str | None = None,
     moves: MappingType[int, UUID] | None = None,
+    paid_with: UUID | None = None,
     now: datetime,
 ) -> Imported:
     """Add the ticked rows as one import. Rows that can't be read, or that an
@@ -263,7 +264,10 @@ async def confirm(
 
     A ticked row in ``moves`` (row to wallet, as the preview proposed or the user picked)
     is added as a move between that wallet and Spending (money out goes to the wallet,
-    money in comes from it); every other row is an ordinary entry."""
+    money in comes from it); every other row is an ordinary entry. With ``paid_with`` (a
+    card, or another wallet of the user's that can pay), every expense row of the import is
+    marked as paid with it; money in and moves never are. The user's usual card is not
+    applied to an import."""
     table = read_table(text)
     rows = read_rows(table, mapping)
     if not include:
@@ -279,6 +283,12 @@ async def confirm(
     async with uow_factory() as db:
         wallets = {w.id: w for w in await db.ledger.list_wallets(user.id)}
         spending = next((w for w in wallets.values() if w.kind is WalletKind.SPENDING), None)
+        if paid_with is not None:
+            payer = wallets.get(paid_with)
+            if payer is None:
+                raise NotFound("wallet not found")
+            if payer.kind not in PAYING_KINDS:
+                raise InvalidInput(f"{payer.name} is {payer.kind.value}: it can't pay for things")
         for wallet_id in set(chosen.values()):
             wallet = wallets.get(wallet_id)
             if wallet is None:
@@ -323,6 +333,7 @@ async def confirm(
                         source=Source.IMPORT,
                         status=TransactionStatus.CONFIRMED,
                         external_id=fingerprint,
+                        paid_with_wallet_id=paid_with if row.direction is Direction.OUT else None,
                     ),
                     now=now,
                 )

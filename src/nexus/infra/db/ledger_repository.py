@@ -39,6 +39,7 @@ from nexus.application.ports import (
 from nexus.domain.access import Invite, Session
 from nexus.domain.errors import Conflict, DuplicateSource
 from nexus.domain.ledger import (
+    CardNetwork,
     Category,
     Direction,
     Lineage,
@@ -113,6 +114,7 @@ def _user(row: Row[Any]) -> User:
         timezone_source=ZoneSource(row.timezone_source),
         timezone_set_at=row.timezone_set_at,
         demo_expires_at=row.demo_expires_at,
+        usual_card_wallet_id=row.usual_card_wallet_id,
     )
 
 
@@ -127,6 +129,10 @@ def _wallet(row: Row[Any]) -> Wallet:
         name=row.name,
         kind=WalletKind(row.kind),
         match_words=tuple(row.match_words),
+        issuer=row.issuer,
+        product=row.product,
+        network=CardNetwork(row.network) if row.network else None,
+        last4=row.last4,
     )
 
 
@@ -153,6 +159,7 @@ def _transaction(row: Row[Any]) -> Transaction:
             if row.received_amount is not None
             else None
         ),
+        paid_with_wallet_id=row.paid_with_wallet_id,
     )
 
 
@@ -199,6 +206,16 @@ def _transaction_values(tx: Transaction) -> dict[str, Any]:
         "to_wallet_id": tx.to_wallet_id,
         "received_amount": tx.received_amount.amount if tx.received_amount else None,
         "received_currency": tx.received_amount.currency if tx.received_amount else None,
+        "paid_with_wallet_id": tx.paid_with_wallet_id,
+    }
+
+
+def _card_values(wallet: Wallet) -> dict[str, Any]:
+    return {
+        "issuer": wallet.issuer,
+        "product": wallet.product,
+        "network": wallet.network.value if wallet.network else None,
+        "last4": wallet.last4,
     }
 
 
@@ -330,6 +347,11 @@ class SqlLedgerRepository:
             update(users).where(users.c.id == user_id).values(trip_activity_alerts=on)
         )
 
+    async def set_usual_card(self, user_id: UserId, wallet_id: UUID | None) -> None:
+        await self._db.execute(
+            update(users).where(users.c.id == user_id).values(usual_card_wallet_id=wallet_id)
+        )
+
     async def set_setup_dismissed(self, user_id: UserId, at: datetime | None) -> None:
         await self._db.execute(
             update(users).where(users.c.id == user_id).values(setup_dismissed_at=at)
@@ -420,6 +442,8 @@ class SqlLedgerRepository:
                 raise Conflict("a wallet with that name already exists") from exc
             if "uq_wallets_user_id_spending" in str(exc.orig):
                 raise Conflict("there is already a Spending wallet") from exc
+            if "uq_wallets_user_id_cash" in str(exc.orig):
+                raise Conflict("there is already a Cash wallet") from exc
             raise
 
     async def insert_wallet(self, wallet: Wallet) -> None:
@@ -430,6 +454,7 @@ class SqlLedgerRepository:
                 name=wallet.name,
                 kind=wallet.kind.value,
                 match_words=list(wallet.match_words),
+                **_card_values(wallet),
             )
         )
 
@@ -463,7 +488,12 @@ class SqlLedgerRepository:
         await self._write_wallet(
             update(wallets)
             .where(wallets.c.user_id == wallet.user_id, wallets.c.id == wallet.id)
-            .values(name=wallet.name, kind=wallet.kind.value, match_words=list(wallet.match_words))
+            .values(
+                name=wallet.name,
+                kind=wallet.kind.value,
+                match_words=list(wallet.match_words),
+                **_card_values(wallet),
+            )
         )
 
     async def count_moves(self, user_id: UserId, wallet_id: UUID) -> int:
@@ -809,6 +839,12 @@ class SqlLedgerRepository:
             conditions.append(t.from_wallet_id == query.from_wallet_id)
         if query.to_wallet_id is not None:
             conditions.append(t.to_wallet_id == query.to_wallet_id)
+        if query.paid_with_wallet_id is not None:
+            conditions.append(t.paid_with_wallet_id == query.paid_with_wallet_id)
+        if query.without_paid_with:
+            conditions.append(
+                and_(t.direction == Direction.OUT.value, t.paid_with_wallet_id.is_(None))
+            )
         if query.search:
             pattern = f"%{_escape_like(query.search)}%"
             conditions.append(
@@ -888,6 +924,26 @@ class SqlLedgerRepository:
         return [
             DayTotal(Direction(direction), category_id, name, on, Money(total, currency), count)
             for direction, category_id, name, on, currency, total, count in rows
+        ]
+
+    async def paid_with_by_day(
+        self, user_id: UserId, wallet_id: UUID, start: datetime, end: datetime, timezone: str
+    ) -> list[DayTotal]:
+        t = transactions.c
+        day = cast(func.timezone(timezone, t.occurred_at), Date)
+        rows = await self._db.execute(
+            select(day, t.currency, func.sum(t.amount), func.count())
+            .where(
+                self._counted(user_id, start, end),
+                t.direction == Direction.OUT.value,
+                t.paid_with_wallet_id == wallet_id,
+            )
+            .group_by(day, t.currency)
+            .order_by(day)
+        )
+        return [
+            DayTotal(Direction.OUT, None, None, on, Money(total, currency), count)
+            for on, currency, total, count in rows
         ]
 
     async def moves_by_day(

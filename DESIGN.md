@@ -211,6 +211,15 @@ All spacing derives from a 4px base unit.
 - **Motion**: 280ms bottom-sheet entry on mobile and opacity/transform entry on desktop
 - **Layout**: bottom-sheet on mobile, centered modal on desktop; dialog owns internal scroll
 
+### Paid with and card details
+
+- **What it is**: which wallet paid for an expense, groundwork for tracking miles and cashback per card. Only money out has one; money in and moves never do. Investment and savings wallets are never offered (`payingWallets` in `wallets.ts`: cards, then Spending, Cash, Other wallets).
+- **Cards**: a wallet of kind Card has Bank, Card (the product), Network (Visa, Mastercard, American Express, Other) and Last 4 digits. A card is written "Citi PremierMiles ·· 4321" everywhere (`walletLabel`); without digits it is just its name. Last 4 digits is a numeric input (`inputMode="numeric"`, no `maxLength`, which would keep the first four of a paste): whatever is typed or pasted is cut to its digits and then to the last four, with "Only the last 4 digits are kept." beneath when digits were dropped. Full card numbers are never sent or kept.
+- **Cash and Spending**: every user has one Cash wallet; like Spending it can be renamed but not deleted or given another kind. Neither counts as "somewhere money was put away", so Cash alone does not bring back the Put away tile.
+- **Settings, Wallets card**: a "Usual card" select (None, then the wallets that can pay; "Used when you don't say which card") and a "Paid with" group with the month picker (`MonthPicker`, kept in the card, this month to start) listing each paying wallet with "SGD 1,240.00 this month · 38 purchases" ("in October 2026" for another month) and a small "See in ledger" link to `/accounting/ledger?paid_with=<id>`. The usual card wears a "Usual card" chip in the Manage list, where a card's bank, product and network sit under its name.
+- **Entry sheet**: a "Paid with" select under Category for money out only, listing the same wallets with "Not set" last. A new entry starts on the usual card; an old one on what it was paid with. Nothing is sent for a choice nobody made (the server then applies the usual card); picking changes sends `paid_with_wallet_id`, and Not set sends `null`.
+- **Ledger**: the card is a caption under the merchant on every width ("Citi PremierMiles ·· 4321", "Cash"). A "Paid with" select beside the Dates select (a row of its own on a phone) lists "Paid with: any", the wallets that can pay and "Not set"; the choice is kept in the address as `?paid_with=<wallet id>|none`, shows as a removable chip like the category one, and goes into Export CSV with the other filters.
+
 ### Settlement control
 
 - **Structure**: participant name, amount due, status, settlement action

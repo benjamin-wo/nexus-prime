@@ -2,13 +2,14 @@
 are what the cases expect, and grading works end to end (with a scripted model;
 real models are scored on demand with ``python -m nexus.evals``)."""
 
+import re
 from collections.abc import Callable
 from datetime import datetime, time, timedelta
 from decimal import Decimal
 
 import pytest
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, BaseMessage
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nexus.agent.skills import SkillLibrary
@@ -183,11 +184,81 @@ async def test_the_wallet_cases_are_graded_on_data_not_just_words(engine: AsyncE
     ]
 
 
+def _edit_the_last_one() -> Callable[[list[BaseMessage]], AIMessage]:
+    """A model turn that edits the transaction the last tool result named."""
+
+    def step(messages: list[BaseMessage]) -> AIMessage:
+        found = re.findall(r"\[id ([0-9a-f-]{36})\]", " ".join(str(m.content) for m in messages))
+        return call("edit_transaction", transaction_id=found[-1], paid_with="dbs")
+
+    return step
+
+
+async def test_the_paid_with_cases_are_graded_on_the_card_in_the_data(
+    engine: AsyncEngine,
+) -> None:
+    scripts: dict[str, Callable[[], BaseChatModel]] = {
+        "wallet-paid-with-card": lambda: scripted(
+            call("log_expense", amount="12.50", merchant="Kopi Corner", paid_with="citi"),
+            say("Logged 12.50 on your Citi card."),
+        ),
+        "wallet-paid-with-unknown-card-asks": lambda: scripted(
+            call("log_expense", amount="30", merchant="Grab", paid_with="amex"),
+            say("I don't have an Amex card. Want me to add it as a card?"),
+        ),
+        "wallet-edit-paid-with": lambda: scripted(
+            call("log_expense", amount="12.50", merchant="Kopi Corner"),
+            say("Logged."),
+            say("Nothing to remember."),  # the memory pass that follows each turn
+            call("find_transactions", search="kopi corner"),
+            _edit_the_last_one(),
+            say("Done: it was on your DBS card."),
+        ),
+        "wallet-usual-card": lambda: scripted(
+            call("set_usual_card", wallet="citi"), say("Your Citi card is your usual one.")
+        ),
+    }
+    results = {
+        r.case.id: r
+        for r in await run_cases(
+            engine, lambda case: scripts[case.id](), _only(*scripts), concurrency=2
+        )
+    }
+    for good in scripts:
+        assert results[good].passed, (good, results[good].failures, results[good].error)
+
+
+async def test_the_paid_with_cases_fail_when_the_data_lacks_the_card(
+    engine: AsyncEngine,
+) -> None:
+    wrong: dict[str, Callable[[], BaseChatModel]] = {
+        "wallet-paid-with-card": lambda: scripted(
+            call("log_expense", amount="12.50", merchant="Kopi Corner"), say("Logged 12.50.")
+        ),
+        "wallet-usual-card": lambda: scripted(say("Sure, noted!")),
+    }
+    failed = {
+        r.case.id: r
+        for r in await run_cases(
+            engine, lambda case: wrong[case.id](), _only(*wrong), concurrency=2
+        )
+    }
+    assert not failed["wallet-paid-with-card"].passed
+    assert "expense 12.50 SGD mentioning 'kopi corner' paid with Citi PremierMiles" in str(
+        failed["wallet-paid-with-card"].failures
+    )
+    assert "expected usual card is Citi PremierMiles" in failed["wallet-usual-card"].failures
+
+
 async def test_the_seed_has_wallets_but_no_moves(engine: AsyncEngine) -> None:
     user = (await seed.seed_user(lambda: SqlUnitOfWork(engine), 778)).user
     async with SqlUnitOfWork(engine) as db:
         wallets = await db.ledger.list_wallets(user.id)
-    assert [w.name for w in wallets] == ["Spending", "Card", "IBKR", "Savings"]
+    assert [w.name for w in wallets] == [
+        "Spending", "Card", "Cash", "Citi PremierMiles", "DBS Altitude", "IBKR", "Savings",
+    ]  # fmt: skip
+    cards = {w.name: w.last4 for w in wallets if w.issuer}
+    assert cards == {"Citi PremierMiles": "4321", "DBS Altitude": "8765"}
     page = await tx_cases.list_ledger(
         SqlUnitOfWork(engine), user.id, LedgerQuery(direction=Direction.MOVE)
     )

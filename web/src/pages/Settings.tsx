@@ -213,7 +213,7 @@ export function Settings({ me }: { me: Me }) {
       <h2 className="section-title">Your data</h2>
       <div className="plan-grid">
         <CategoriesSection />
-        <WalletsSection />
+        <WalletsSection me={me} />
         <RulesSection />
         <MemorySection />
         <YourDataSection />

@@ -6,18 +6,23 @@ Nexus only records moves; it never moves money. A move is never spending and nev
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
+from typing import Any
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
+from nexus.application import fx
 from nexus.application.clock import utcnow
 from nexus.application.ports import LedgerQuery, LedgerRepository, UnitOfWork
+from nexus.application.transactions import UNSET, Maybe
 from nexus.domain.errors import Conflict, InvalidInput, NotFound
 from nexus.domain.ledger import (
+    CardNetwork,
     Direction,
     RevisionKind,
     Source,
     Transaction,
     TransactionStatus,
+    User,
     UserId,
     Wallet,
     WalletKind,
@@ -28,9 +33,18 @@ from nexus.domain.ledger import (
     snapshot,
 )
 from nexus.domain.money import Money
-from nexus.domain.wallets import match_wallet
+from nexus.domain.wallets import (
+    PAYING_KINDS,
+    clean_issuer,
+    clean_last4,
+    clean_network,
+    clean_product,
+    match_wallet,
+    paying_candidates,
+)
 
 SPENDING_NAME = "Spending"
+CASH_NAME = "Cash"
 MAX_MATCH_WORDS = 20
 MAX_MATCH_WORD = 60
 
@@ -40,11 +54,19 @@ def new_spending_wallet(user_id: UserId) -> Wallet:
     return Wallet(uuid4(), user_id, SPENDING_NAME, WalletKind.SPENDING)
 
 
+def new_cash_wallet(user_id: UserId) -> Wallet:
+    """The other wallet every user starts with: notes and coins."""
+    return Wallet(uuid4(), user_id, CASH_NAME, WalletKind.CASH)
+
+
+_FIXED_KINDS = (WalletKind.SPENDING, WalletKind.CASH)  # everyone has exactly one of each
+
+
 def _kind(value: WalletKind | str) -> WalletKind:
     try:
         return WalletKind(value)
     except ValueError as exc:
-        kinds = ", ".join(k.value for k in WalletKind if k is not WalletKind.SPENDING)
+        kinds = ", ".join(k.value for k in WalletKind if k not in _FIXED_KINDS)
         raise InvalidInput(f"wallet kind must be one of: {kinds}") from exc
 
 
@@ -79,22 +101,52 @@ async def list_wallets(uow: UnitOfWork, actor: UserId) -> list[Wallet]:
         return await uow.ledger.list_wallets(actor)
 
 
+def _card_details(
+    kind: WalletKind,
+    issuer: str | None,
+    product: str | None,
+    network: CardNetwork | str | None,
+    last4: str | None,
+) -> dict[str, Any]:
+    """The card fields, cleaned (a card number of more than four digits keeps its last
+    four). Only a card wallet has any."""
+    details: dict[str, Any] = {
+        "issuer": clean_issuer(issuer),
+        "product": clean_product(product),
+        "network": clean_network(network),
+        "last4": clean_last4(last4).digits,
+    }
+    if kind is not WalletKind.CARD and any(v is not None for v in details.values()):
+        raise InvalidInput("card details (issuer, product, network, last digits) are for cards")
+    return details
+
+
 async def add_wallet(
     uow: UnitOfWork,
     actor: UserId,
     name: str,
     kind: WalletKind | str,
     match_words: Iterable[str] = (),
+    *,
+    issuer: str | None = None,
+    product: str | None = None,
+    network: CardNetwork | str | None = None,
+    last4: str | None = None,
 ) -> Wallet:
+    """A new wallet. A card can say who issued it, which product and network it is and its
+    last four digits (if more digits are given, only the last four are kept)."""
     wallet_kind = _kind(kind)
     if wallet_kind is WalletKind.SPENDING:
         raise InvalidInput("everyone has one Spending wallet already")
+    if wallet_kind is WalletKind.CASH:
+        raise InvalidInput("everyone has one Cash wallet already")
     wallet = Wallet(
         uuid4(),
         actor,
         clean_name(name, field_name="wallet name"),
         wallet_kind,
         _match_words(match_words),
+        **_card_details(wallet_kind, issuer, product, network, last4),
     )
     async with uow:
         await uow.ledger.insert_wallet(wallet)
@@ -110,9 +162,15 @@ async def update_wallet(
     name: str | None = None,
     kind: WalletKind | str | None = None,
     match_words: Iterable[str] | None = None,
+    issuer: Maybe[str | None] = UNSET,
+    product: Maybe[str | None] = UNSET,
+    network: Maybe[CardNetwork | str | None] = UNSET,
+    last4: Maybe[str | None] = UNSET,
 ) -> Wallet:
-    """Change what's given. The Spending wallet keeps its kind, and no other wallet can
-    become it."""
+    """Change what's given (card details: None clears one, leaving it out keeps it). The
+    Spending and Cash wallets keep their kinds, and no other wallet can become them. A
+    wallet that stops being a card loses its card details; one that can no longer pay for
+    things (investment, savings) is no longer the usual card."""
     async with uow:
         wallet = await require_wallet(uow.ledger, actor, wallet_id)
         updated = wallet
@@ -120,19 +178,136 @@ async def update_wallet(
             updated = replace(updated, name=clean_name(name, field_name="wallet name"))
         if kind is not None:
             new_kind = _kind(kind)
-            if new_kind is not wallet.kind and WalletKind.SPENDING in (new_kind, wallet.kind):
-                raise InvalidInput("the Spending wallet can't change kind, and no other can be it")
+            if new_kind is not wallet.kind and set(_FIXED_KINDS) & {new_kind, wallet.kind}:
+                fixed = new_kind if new_kind in _FIXED_KINDS else wallet.kind
+                raise InvalidInput(
+                    f"the {fixed.value.capitalize()} wallet can't change kind, "
+                    "and no other can be it"
+                )
             updated = replace(updated, kind=new_kind)
         if match_words is not None:
             updated = replace(updated, match_words=_match_words(match_words))
+        if updated.kind is not WalletKind.CARD:
+            updated = replace(updated, issuer=None, product=None, network=None, last4=None)
+        details = _card_details(
+            updated.kind,
+            updated.issuer if issuer is UNSET else issuer,
+            updated.product if product is UNSET else product,
+            updated.network if network is UNSET else network,
+            updated.last4 if last4 is UNSET else last4,
+        )
+        updated = replace(updated, **details)
         if updated != wallet:
             await uow.ledger.update_wallet(updated)
+            if updated.kind not in PAYING_KINDS:
+                user = await uow.ledger.get_user(actor)
+                if user is not None and user.usual_card_wallet_id == wallet.id:
+                    await uow.ledger.set_usual_card(actor, None)
             await uow.commit()
     return updated
 
 
 async def rename_wallet(uow: UnitOfWork, actor: UserId, wallet_id: UUID, name: str) -> Wallet:
     return await update_wallet(uow, actor, wallet_id, name=name)
+
+
+# --- paying with a wallet ---------------------------------------------------------------
+
+
+async def require_paying_wallet(repo: LedgerRepository, actor: UserId, wallet_id: UUID) -> Wallet:
+    """One of the user's wallets that can pay for something: not an investment or savings
+    wallet."""
+    wallet = await require_wallet(repo, actor, wallet_id)
+    if wallet.kind not in PAYING_KINDS:
+        raise InvalidInput(f"{wallet.name} is {wallet.kind.value}: it can't pay for things")
+    return wallet
+
+
+def pick_paying_wallet(wallets: list[Wallet], text: str) -> Wallet:
+    """The wallet ``text`` names ("citi", "my DBS card", "ending 4321"), for an expense paid
+    with it. No such card, or more than one, is an error that says so for the user to be
+    asked; a wallet is never made up."""
+    found = paying_candidates(wallets, text)
+    if len(found) == 1:
+        return found[0]
+    cards = [w for w in wallets if w.kind is WalletKind.CARD]
+    if not found:
+        have = ", ".join(w.name for w in cards) or "none yet"
+        raise NotFound(
+            f"No card called {text.strip()!r}. Add it as a card? The user's cards: {have}. "
+            "Ask whether to add it (the wallets skill) or which one they mean; don't log the "
+            "expense or add a card until they answer."
+        )
+    names = ", ".join(w.name for w in found)
+    raise InvalidInput(f"{text.strip()!r} could be {names}. Ask which one they mean.")
+
+
+async def usual_card(repo: LedgerRepository, user: User) -> Wallet | None:
+    """The wallet new expenses are paid with when none is said, if the user set one."""
+    if user.usual_card_wallet_id is None:
+        return None
+    wallet = await repo.get_wallet(user.id, user.usual_card_wallet_id)
+    return wallet if wallet is not None and wallet.kind in PAYING_KINDS else None
+
+
+async def set_usual_card(uow: UnitOfWork, actor: UserId, wallet_id: UUID | None) -> Wallet | None:
+    """Make a wallet the usual card (new expenses on the web, in chat and from photos are
+    paid with it when none is said), or with None, have none. It must be one of the user's
+    own that can pay: not an investment or savings wallet."""
+    async with uow:
+        repo = uow.ledger
+        wallet = None
+        if wallet_id is not None:
+            wallet = await repo.get_wallet(actor, wallet_id)
+            if wallet is None:
+                raise InvalidInput("that isn't one of your wallets")
+            if wallet.kind not in PAYING_KINDS:
+                raise InvalidInput(
+                    f"{wallet.name} is {wallet.kind.value}: it can't be a usual card"
+                )
+        await repo.set_usual_card(actor, wallet.id if wallet else None)
+        await uow.commit()
+    return wallet
+
+
+@dataclass(frozen=True, slots=True)
+class WalletSpend:
+    total: Money  # in the home currency
+    count: int  # the expenses in it
+    unconverted: list[Money]  # foreign amounts left out for want of a rate
+
+
+async def spend_with(
+    uow: UnitOfWork,
+    rates: fx.RateSource,
+    user: User,
+    wallet_id: UUID,
+    start: datetime,
+    end: datetime,
+) -> WalletSpend:
+    """What was paid with this wallet in [start, end): confirmed, live money out as it left
+    the wallet (what friends paid back on a split is not taken off), in the home currency.
+    Foreign amounts convert per local day at that day's rate, as in the summaries; one with
+    no rate is reported, not guessed."""
+    home = user.home_currency
+    async with uow:
+        await require_wallet(uow.ledger, user.id, wallet_id)
+        days = await uow.ledger.paid_with_by_day(user.id, wallet_id, start, end, user.timezone)
+    found = await fx.rates_for(rates, home, ((d.total.currency, d.day) for d in days))
+    total, count = Money.zero(home), 0
+    unconverted: list[Money] = []
+    for d in days:
+        result = fx.convert(d.total, d.day, home, found)
+        if result.home is None:
+            unconverted.append(d.total)
+            continue
+        total, count = total + result.home, count + d.count
+    return WalletSpend(total, count, unconverted)
+
+
+def _refuse_fixed(wallet: Wallet) -> None:
+    if wallet.kind in _FIXED_KINDS:
+        raise InvalidInput(f"the {wallet.kind.value.capitalize()} wallet can't be deleted")
 
 
 _NEEDS_ANOTHER = "this wallet has moves or scheduled payments; pick another wallet to move them to"
@@ -165,8 +340,7 @@ async def delete_wallet(
     async with uow:
         repo = uow.ledger
         wallet = await require_wallet(repo, actor, wallet_id)
-        if wallet.kind is WalletKind.SPENDING:
-            raise InvalidInput("the Spending wallet can't be deleted")
+        _refuse_fixed(wallet)
         into = await require_wallet(repo, actor, move_to) if move_to is not None else None
         has_moves = await repo.count_moves(actor, wallet.id) > 0
         scheduled = await uow.planning.count_bills_for_wallet(actor, wallet.id)
@@ -198,8 +372,7 @@ async def preview_delete_wallet(
     async with uow:
         repo = uow.ledger
         wallet = await require_wallet(repo, actor, wallet_id)
-        if wallet.kind is WalletKind.SPENDING:
-            raise InvalidInput("the Spending wallet can't be deleted")
+        _refuse_fixed(wallet)
         into = await require_wallet(repo, actor, move_to) if move_to is not None else None
         total = await repo.count_moves(actor, wallet.id)
         scheduled = await uow.planning.count_bills_for_wallet(actor, wallet.id)
@@ -351,6 +524,7 @@ async def mark_as_move(
             direction=Direction.MOVE,
             category_id=None,
             category_rule_id=None,
+            paid_with_wallet_id=None,
             from_wallet_id=sent.id,
             to_wallet_id=received.id,
             updated_at=now,

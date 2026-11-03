@@ -153,6 +153,8 @@ class ExpenseDraft:
     date: str | None  # YYYY-MM-DD
     category: str | None = None  # the reader's closest match among the user's categories
     received: bool = False  # money in, not money spent
+    # The last four digits of the card the email says was used; never more than four.
+    card_last4: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         found = {
@@ -164,6 +166,8 @@ class ExpenseDraft:
         }
         if self.received:
             found["direction"] = "in"
+        if self.card_last4:
+            found["card_last4"] = self.card_last4
         return found
 
     @classmethod
@@ -175,6 +179,7 @@ class ExpenseDraft:
             data.get("date"),
             data.get("category"),
             data.get("direction") == "in",
+            data.get("card_last4"),
         )
 
 

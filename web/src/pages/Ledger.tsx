@@ -12,6 +12,7 @@ import {
   type Page,
   receiptUrl,
   type Transaction,
+  type Wallet,
 } from "../api";
 import { Icon } from "../components/Icon";
 import { Menu } from "../components/Menu";
@@ -20,6 +21,7 @@ import { DirectionBadge } from "../components/Badge";
 import { Toast } from "../components/Toast";
 import { Amount } from "../components/Amount";
 import { formatDate, formatMoney, moveLabel, txName } from "../format";
+import { payingWallets, walletLabel } from "../wallets";
 
 const PAGE = 50;
 type View = "all" | "out" | "in" | "move" | "pending";
@@ -68,6 +70,8 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
   const [start, setStart] = useState(() => params.get("start") ?? "");
   const [end, setEnd] = useState(() => params.get("end") ?? "");
   const [category, setCategory] = useState(() => params.get("category") ?? "");
+  // The card that paid, kept in the address as ?paid_with=<wallet id> ("none" for entries with no card set).
+  const paidWith = params.get("paid_with") ?? "";
   const [offset, setOffset] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const presets = useMemo(() => ranges(me.user.timezone), [me.user.timezone]);
@@ -93,8 +97,9 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
       end: end || undefined,
       category_id: category && category !== "none" ? category : undefined,
       uncategorized: category === "none" || undefined,
+      paid_with: paidWith || undefined,
     }),
-    [view, debounced, start, end, category],
+    [view, debounced, start, end, category, paidWith],
   );
   useEffect(() => {
     setOffset(0);
@@ -110,6 +115,9 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
     queryFn: () => api<Category[]>("/categories"),
   });
   const names = new Map(categories.data?.map((c) => [c.id, c.name]));
+  const wallets = useQuery({ queryKey: ["wallets"], queryFn: () => api<Wallet[]>("/wallets") });
+  const paying = payingWallets(wallets.data ?? []);
+  const paidWithWallet = wallets.data?.find((w) => w.id === paidWith);
   const rules = useQuery({ queryKey: ["category-rules"], queryFn: () => api<CategoryRule[]>("/category-rules") });
   const patterns = new Map(rules.data?.map((r) => [r.id, r.pattern]));
 
@@ -190,7 +198,7 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
   const items = page.data?.items ?? [];
   const allChecked = items.length > 0 && items.every((t) => selected.has(t.id));
   const exportHref = `/api/export.csv?${ledgerParams(filters)}`;
-  const filtered = view !== "all" || Boolean(debounced || start || end || category);
+  const filtered = view !== "all" || Boolean(debounced || start || end || category || paidWith);
   const categoryName = category === "none" ? "Uncategorised" : names.get(category);
 
   // One control for the usual ranges; "Custom dates" keeps what is set and shows the two date boxes.
@@ -203,6 +211,17 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
     setCustom(false);
     setStart(range.start);
     setEnd(range.end);
+  }
+
+  function pickPaidWith(value: string) {
+    setParams(
+      (p) => {
+        if (value) p.set("paid_with", value);
+        else p.delete("paid_with");
+        return p;
+      },
+      { replace: true },
+    );
   }
 
   function clearCategory() {
@@ -276,6 +295,36 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
                 <input className="input" type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
               </label>
             </div>
+          )}
+          <label className="paid-with-filter">
+            <span className="sr-only">Paid with</span>
+            <select className="input" value={paidWith} onChange={(e) => pickPaidWith(e.target.value)}>
+              <option value="">Paid with: any</option>
+              {paying.map((w) => (
+                <option key={w.id} value={w.id}>
+                  {walletLabel(w)}
+                </option>
+              ))}
+              {paidWith && paidWith !== "none" && !paying.some((w) => w.id === paidWith) && paidWithWallet && (
+                <option value={paidWith}>{walletLabel(paidWithWallet)}</option>
+              )}
+              <option value="none">Not set</option>
+            </select>
+          </label>
+          {paidWith && (
+            <span className="filter-chip">
+              <span>
+                <span className="caption">Paid with</span> {paidWith === "none" ? "Not set" : paidWithWallet ? walletLabel(paidWithWallet) : "…"}
+              </span>
+              <button
+                type="button"
+                className="chip-x"
+                onClick={() => pickPaidWith("")}
+                aria-label={`Show every card, not just ${paidWith === "none" ? "entries with no card set" : paidWithWallet ? walletLabel(paidWithWallet) : "this one"}`}
+              >
+                ×
+              </button>
+            </span>
           )}
           {category && (
             <span className="filter-chip">
@@ -387,6 +436,7 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
                       {tx.category_id && names.get(tx.category_id) && (
                         <div className="caption category-line">{names.get(tx.category_id)}</div>
                       )}
+                      {tx.paid_with && <div className="caption paid-with-line">{walletLabel(tx.paid_with)}</div>}
                       {tx.direction === "move" && tx.counterparty && (
                         <div className="caption">{moveLabel(tx)}</div>
                       )}

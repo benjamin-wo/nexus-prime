@@ -601,7 +601,7 @@ async def test_an_unknown_wallet_creates_nothing_and_tells_the_model_to_ask(
     assert said.startswith("Error: there's no wallet called 'Coinbase'")
     assert "offer to add it as a new wallet" in said
     assert await bill_cases.list_bills(uow, user, now=at(9, 28)) == []
-    assert list(await wallets_of(uow, user.id)) == ["Spending"]  # no wallet was made either
+    assert list(await wallets_of(uow, user.id)) == ["Spending", "Cash"]  # no wallet was made either
 
 
 async def test_marking_done_in_chat_logs_the_move(uow: UowFactory) -> None:

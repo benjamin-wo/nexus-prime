@@ -111,3 +111,34 @@ describe("SpendingChart", () => {
     expect(legend()).toBe("Within budgetOver budgetThis month so farA usual monthMonthly budget");
   });
 });
+
+describe("the Put away tile", () => {
+  const withPutAway: Summary = { ...summary, put_away: sgd("800.00") };
+
+  function serveWallets(wallets: { id: string; name: string; kind: string; match_words: string[] }[]) {
+    mockApi({
+      "GET /summary": () => withPutAway,
+      "GET /spending/months": () => spending(),
+      "GET /budgets": () => [],
+      "GET /transactions": () => ({ items: [], next_cursor: null }),
+      "GET /ious": () => [],
+      "GET /wallets": () => wallets,
+    });
+  }
+  const spendingWallet = { id: "w1", name: "Spending", kind: "spending", match_words: [] };
+  const cash = { id: "w2", name: "Cash", kind: "cash", match_words: [] };
+
+  it("does not come back because every user has a Cash wallet", async () => {
+    serveWallets([spendingWallet, cash]);
+    renderOverview();
+    await screen.findByRole("region", { name: "Spending by month" });
+    await waitFor(() => expect(screen.getByLabelText("Received")).toBeInTheDocument());
+    expect(screen.queryByLabelText("Put away")).toBeNull();
+  });
+
+  it("shows once there is a wallet to put money in", async () => {
+    serveWallets([spendingWallet, cash, { id: "w3", name: "Savings", kind: "savings", match_words: [] }]);
+    renderOverview();
+    expect(await screen.findByLabelText("Put away")).toHaveTextContent("800.00");
+  });
+});

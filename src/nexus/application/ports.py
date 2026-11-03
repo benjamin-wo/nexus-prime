@@ -92,6 +92,9 @@ class LedgerQuery:
     wallet_id: UUID | None = None
     from_wallet_id: UUID | None = None
     to_wallet_id: UUID | None = None
+    # Money out only: paid with this wallet, or with none (``without_paid_with``).
+    paid_with_wallet_id: UUID | None = None
+    without_paid_with: bool = False
     include_deleted: bool = False
     only_deleted: bool = False
     sort: SortField = SortField.OCCURRED_AT
@@ -165,6 +168,11 @@ class LedgerRepository(Protocol):
         """Put away Home's setup checklist (``at``), or bring it back (None)."""
         ...
 
+    async def set_usual_card(self, user_id: UserId, wallet_id: UUID | None) -> None:
+        """The wallet new expenses are paid with when none is said; None for no usual card.
+        The caller has checked it is the user's own, and can pay."""
+        ...
+
     # categories
     async def insert_category(self, category: Category) -> None: ...
     async def get_category(self, user_id: UserId, category_id: UUID) -> Category | None: ...
@@ -191,7 +199,7 @@ class LedgerRepository(Protocol):
         ...
 
     async def update_wallet(self, wallet: Wallet) -> None:
-        """Name, kind and match words. Raises Conflict like insert_wallet."""
+        """Name, kind, match words and card details. Raises Conflict like insert_wallet."""
         ...
 
     async def count_moves(self, user_id: UserId, wallet_id: UUID) -> int:
@@ -283,6 +291,13 @@ class LedgerRepository(Protocol):
     async def spending_by_category(
         self, user_id: UserId, start: datetime, end: datetime, *, net: bool = True
     ) -> list[CategoryTotal]: ...
+    async def paid_with_by_day(
+        self, user_id: UserId, wallet_id: UUID, start: datetime, end: datetime, timezone: str
+    ) -> list[DayTotal]:
+        """Confirmed, live money out paid with this wallet in [start, end), as it left
+        (friends' repayments not taken off), per currency and local day. No category."""
+        ...
+
     async def moves_by_day(
         self, user_id: UserId, start: datetime, end: datetime, timezone: str
     ) -> list[MoveTotal]:

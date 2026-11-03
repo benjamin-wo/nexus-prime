@@ -139,7 +139,7 @@ function Cockpit({ me }: { me: Me }) {
   const closeOffer = useCallback(() => setOffer(null), []);
   const closeNotice = useCallback(() => setNotice(null), []);
   const refresh = useCallback(() => {
-    for (const key of ["transactions", "summary", "ious", "budgets", "bills", "salary", "category-explanation", "email", "home", "runs", "investments", "watchlist", "stock", "plans", "plan"]) void client.invalidateQueries({ queryKey: [key] });
+    for (const key of ["transactions", "summary", "ious", "budgets", "bills", "salary", "category-explanation", "email", "home", "runs", "investments", "watchlist", "stock", "plans", "plan", "wallets"]) void client.invalidateQueries({ queryKey: [key] });
   }, [client]);
   // After a chat reply: the pages may have changed, and in the demo the messages left have.
   const changed = useCallback(() => {

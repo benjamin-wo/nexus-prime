@@ -451,7 +451,7 @@ export function Dashboard({
   );
   // Money put away only means something once there is a wallet to put it in.
   const putAway =
-    summary.data?.put_away && wallets?.some((w) => w.kind !== "spending")
+    summary.data?.put_away && wallets?.some((w) => w.kind !== "spending" && w.kind !== "cash")
       ? summary.data.put_away
       : null;
   const savingRate = summary.data?.saving_rate;
