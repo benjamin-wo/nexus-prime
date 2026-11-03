@@ -1339,12 +1339,21 @@ CASES: tuple[Case, ...] = (
         checks=(Moved("800", "IBKR"), NotSpent("800")),
     ),
     Case(
+        # The seed has three cards, so "my credit card" is a question; the answer settles it.
         "wallet-card-bill",
         "wallets",
-        _t("paid my credit card bill 1,240"),
+        _t("paid my credit card bill 1,240", "the DBS one"),
         confirms=True,
         forbid=("log_expense",),
-        checks=(Moved("1240", "Card"), NotSpent("1240")),
+        checks=(Moved("1240", "DBS Altitude"), NotSpent("1240")),
+    ),
+    Case(
+        "wallet-card-bill-named",
+        "wallets",
+        _t("paid my citi card bill 1,240"),
+        confirms=True,
+        forbid=("log_expense",),
+        checks=(Moved("1240", "Citi PremierMiles"), NotSpent("1240")),
     ),
     Case(
         "wallet-top-up-savings",
