@@ -1,0 +1,15 @@
+case                                20261103-043323-deepseek_deepseek-v4.1-flash  20261103-043323-deepseek_deepseek-v4.1-flash
+log-two-at-once                                                              0/1                                           1/1
+trip-heading-there-no-parrot                                                 1/1                                           0/1
+itinerary-gelato-after-the-castle                                            1/1                                           0/1
+wallet-card-bill                                                             1/1                                           0/1
+mem-short-replies                                                            1/1                                           0/1
+wallet-paid-with-card                                                          -                                           1/1
+wallet-paid-with-unknown-card-asks                                             -                                           1/1
+wallet-edit-paid-with                                                          -                                           1/1
+wallet-usual-card                                                              -                                           1/1
+(278 cases passed every run in both files; --all shows them)
+
+Passed overall: 20261103-043323-deepseek_deepseek-v4.1-flash 282/283, 20261103-043323-deepseek_deepseek-v4.1-flash 283/287
+Rates differing by 2 or more out of N: 0
+In only one file: wallet-paid-with-card, wallet-paid-with-unknown-card-asks, wallet-edit-paid-with, wallet-usual-card

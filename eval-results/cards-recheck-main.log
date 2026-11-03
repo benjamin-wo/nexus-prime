@@ -1,0 +1,94 @@
+warning: The `UV_NATIVE_TLS` environment variable is deprecated and will be removed in a future release. Use `UV_SYSTEM_CERTS` instead.
+deepseek/deepseek-v4.1-flash: 5 cases x 3 rounds
+..F.....F.....memory reply didn't parse; trying once more
+Traceback (most recent call last):
+  File "/home/user/main/src/nexus/agent/memory_writer.py", line 137, in propose
+    reply = await asyncio.wait_for(
+            ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/tasks.py", line 520, in wait_for
+    return await fut
+           ^^^^^^^^^
+  File "/home/user/main/.venv/lib/python3.12/site-packages/langchain_core/runnables/base.py", line 3496, in ainvoke
+    input_ = await coro_with_context(part(), context, create_task=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/main/.venv/lib/python3.12/site-packages/langchain_core/runnables/base.py", line 4232, in ainvoke
+    results = await asyncio.gather(
+              ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/main/.venv/lib/python3.12/site-packages/langchain_core/runnables/base.py", line 4224, in _ainvoke_step
+    return await coro_with_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/main/.venv/lib/python3.12/site-packages/langchain_core/runnables/base.py", line 6027, in ainvoke
+    return await self.bound.ainvoke(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/main/.venv/lib/python3.12/site-packages/langchain_core/language_models/chat_models.py", line 511, in ainvoke
+    llm_result = await self.agenerate_prompt(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/main/.venv/lib/python3.12/site-packages/langchain_core/language_models/chat_models.py", line 1888, in agenerate_prompt
+    return await self.agenerate(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/main/.venv/lib/python3.12/site-packages/langchain_core/language_models/chat_models.py", line 1846, in agenerate
+    raise exceptions[0]
+  File "/home/user/main/.venv/lib/python3.12/site-packages/langchain_core/language_models/chat_models.py", line 2179, in _agenerate_with_cache
+    result = await self._agenerate(
+             ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/main/.venv/lib/python3.12/site-packages/langchain_openai/chat_models/base.py", line 2293, in _agenerate
+    raise e
+  File "/home/user/main/.venv/lib/python3.12/site-packages/langchain_openai/chat_models/base.py", line 2244, in _agenerate
+    response = raw_response.parse()
+               ^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/main/.venv/lib/python3.12/site-packages/openai/_legacy_response.py", line 140, in parse
+    parsed = self._options.post_parser(parsed)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/main/.venv/lib/python3.12/site-packages/openai/resources/chat/completions/completions.py", line 1822, in parser
+    return _parse_chat_completion(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/main/.venv/lib/python3.12/site-packages/openai/lib/_parsing/_completions.py", line 110, in parse_chat_completion
+    raise LengthFinishReasonError(completion=chat_completion)
+openai.LengthFinishReasonError: Could not parse response content as the length limit was reached - CompletionUsage(completion_tokens=1500, prompt_tokens=506, total_tokens=2006, completion_tokens_details=CompletionTokensDetails(accepted_prediction_tokens=None, audio_tokens=0, reasoning_tokens=950, rejected_prediction_tokens=None, text_tokens=None, image_tokens=0), prompt_tokens_details=PromptTokensDetails(audio_tokens=0, cache_write_tokens=0, cached_tokens=384, image_tokens=None, text_tokens=None, video_tokens=0), cost=0.001838904, is_byok=False, cost_details={'upstream_inference_cost': 0.001838904, 'upstream_inference_prompt_cost': 3.8904e-05, 'upstream_inference_completions_cost': 0.0018})
+.
+deepseek/deepseek-v4.1-flash: 13/15 passed
+### deepseek/deepseek-v4.1-flash + qwen/qwen3.8-flash (photos), reasoning low
+
+- Passed: **4.3/5** a round on average (87%), min 4, max 5, over 3 rounds
+- Reply time per turn: median 2.9s, p90 6.3s
+- Tokens per case: 71987 in, 659 out; memory writer 785 in, 239 out
+- Cached input: 90.6% of the chat model's input tokens (65220 a case)
+- Cost: $0.0177 total, $0.00118 a case
+- Errors: 0, model failures: 0
+
+| Area | Passed |
+|---|---|
+| ask | 2/3 |
+| log | 3/3 |
+| memory | 2/3 |
+| safety | 3/3 |
+| wallets | 3/3 |
+
+| Expected fix | Passed |
+|---|---|
+| already supported | 11/12 |
+| M8e | 2/3 |
+
+Openers after a change (9 replies): "you're on" 33%, "card bill's" 33%, "short it" 22%
+
+Failures:
+
+- `mem-short-replies` (round 1): reply longer than 160 characters
+- `trip-heading-there-no-parrot` (round 2): reply longer than 220 characters
+
+Flaky (passed in some rounds, failed in others):
+
+- `trip-heading-there-no-parrot`: 2/3
+- `mem-short-replies`: 2/3
+
+Always failing (failed every round):
+
+None.
+
+| Case | Passed |
+|---|---|
+| trip-heading-there-no-parrot | 2/3 |
+| itinerary-gelato-after-the-castle | 3/3 |
+| wallet-card-bill | 3/3 |
+| safe-pay-card | 3/3 |
+| mem-short-replies | 2/3 |
