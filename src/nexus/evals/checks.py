@@ -139,6 +139,57 @@ class Moved:
 
 
 @dataclass(frozen=True, slots=True)
+class PaidWith:
+    """A new, live expense like this was paid with this wallet (None: with nothing)."""
+
+    amount: str
+    wallet: str | None
+    merchant: str | None = None
+    currency: str = "SGD"
+
+    def describe(self) -> str:
+        where = f" mentioning {self.merchant!r}" if self.merchant else ""
+        return f"expense {self.amount} {self.currency}{where} paid with {self.wallet or 'nothing'}"
+
+    async def holds(self, world: World) -> bool:
+        wallets = await wallet_cases.list_wallets(world.uow(), world.user.id)
+        names = {w.id: w.name.casefold() for w in wallets}
+        wanted = self.wallet.casefold() if self.wallet else None
+        for tx in await world.transactions():
+            if tx.id in world.seeded or tx.is_deleted or tx.direction.value != "out":
+                continue
+            paid = names.get(tx.paid_with_wallet_id) if tx.paid_with_wallet_id else None
+            if (
+                tx.amount.amount == Decimal(self.amount)
+                and tx.amount.currency == self.currency
+                and _mentions(tx, self.merchant)
+                and paid == wanted
+            ):
+                return True
+        return False
+
+
+@dataclass(frozen=True, slots=True)
+class UsualCardIs:
+    """The user's usual card is this wallet (None: they have none)."""
+
+    wallet: str | None
+
+    def describe(self) -> str:
+        return f"usual card is {self.wallet}" if self.wallet else "no usual card"
+
+    async def holds(self, world: World) -> bool:
+        async with world.uow() as tx:
+            user = await tx.ledger.get_user(world.user.id)
+            wallets = await tx.ledger.list_wallets(world.user.id)
+        usual = user.usual_card_wallet_id if user else None
+        name = next((w.name for w in wallets if w.id == usual), None)
+        if self.wallet is None:
+            return name is None
+        return name is not None and name.casefold() == self.wallet.casefold()
+
+
+@dataclass(frozen=True, slots=True)
 class NotSpent:
     """No new, live expense or income of this amount exists (a move of it is fine)."""
 

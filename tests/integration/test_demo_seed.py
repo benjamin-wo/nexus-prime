@@ -99,7 +99,12 @@ async def test_the_demo_account_has_a_full_life(world: World, now: datetime) -> 
     # Spread over many days.
     assert len({local_day(t["occurred_at"]) for t in spending}) >= 40
     wallets = {w["name"]: w["kind"] for w in await get(browser, "/api/wallets")}
-    assert wallets == {"Spending": "spending", "Savings": "savings", "IBKR": "investment"}
+    assert wallets == {
+        "Spending": "spending",
+        "Cash": "cash",
+        "Savings": "savings",
+        "IBKR": "investment",
+    }
     rules = await get(browser, "/api/category-rules")
     assert [(r["pattern"], r["category_name"]) for r in rules] == [("grab", "Transport")]
 

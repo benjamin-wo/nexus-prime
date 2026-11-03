@@ -21,7 +21,7 @@ from nexus.application.categories import list_categories
 from nexus.application.ports import LedgerQuery
 from nexus.application.wallet_figures import month_figures
 from nexus.application.wallets import list_wallets
-from nexus.domain.ledger import Direction, WalletKind
+from nexus.domain.ledger import Direction, Wallet, WalletKind
 from nexus.domain.money import Money
 
 log = logging.getLogger(__name__)
@@ -74,15 +74,26 @@ async def _month(ctx: ToolContext) -> str:
     return line
 
 
+def _wallet_facts(w: Wallet, usual: bool) -> list[str]:
+    facts = [w.kind.value]
+    if w.last4:
+        facts.append(f"ending {w.last4}")
+    facts += [f"also {m}" for m in w.match_words]
+    if usual:
+        facts.append("the usual card")
+    return facts
+
+
 async def _wallets(ctx: ToolContext) -> str:
     """The user's wallets, so a move's wallet can be named, and what they put away this
-    month. Only once they have a wallet besides Spending."""
+    month, and which card is the usual one. Only once they have a wallet besides Spending
+    and Cash, which everyone has."""
     wallets = await list_wallets(ctx.uow(), ctx.user.id)
     others = [w for w in wallets if w.kind is not WalletKind.SPENDING]
-    if not others:
+    if all(w.kind is WalletKind.CASH for w in others):
         return ""
     names = ", ".join(
-        f"{w.name} ({', '.join([w.kind.value, *(f'also {m}' for m in w.match_words)])})"
+        f"{w.name} ({', '.join(_wallet_facts(w, w.id == ctx.user.usual_card_wallet_id))})"
         for w in others
     )
     line = f"Wallets besides Spending: {names}."

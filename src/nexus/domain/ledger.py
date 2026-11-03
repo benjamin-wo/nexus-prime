@@ -47,6 +47,8 @@ class WalletKind(StrEnum):
     INVESTMENT = "investment"
     SAVINGS = "savings"
     CARD = "card"
+    # Notes and coins. Everyone has exactly one, like Spending; it can be renamed.
+    CASH = "cash"
     OTHER = "other"
 
 
@@ -97,6 +99,8 @@ class User:
     timezone_set_at: datetime | None = None
     # A public-demo account ends at this moment; None for a real user.
     demo_expires_at: datetime | None = None
+    # The wallet an expense is paid with when none is said (web add, chat, photo receipts).
+    usual_card_wallet_id: UUID | None = None
 
     def __post_init__(self) -> None:
         if not self.home_timezone:
@@ -118,10 +122,17 @@ class Category:
     name: str
 
 
+class CardNetwork(StrEnum):
+    VISA = "visa"
+    MASTERCARD = "mastercard"
+    AMEX = "amex"
+    OTHER = "other"
+
+
 @dataclass(frozen=True, slots=True)
 class Wallet:
     """A named place money sits. A label only: no balance is kept. Every user has
-    exactly one of kind SPENDING (the account the budget watches)."""
+    exactly one of kind SPENDING (the account the budget watches) and one of kind CASH."""
 
     id: UUID
     user_id: UserId
@@ -129,6 +140,12 @@ class Wallet:
     kind: WalletKind
     # Short strings that tie a statement line to this wallet.
     match_words: tuple[str, ...] = ()
+    # What kind of card it is, for a CARD wallet only; all optional. Never more than the
+    # card's last four digits is kept.
+    issuer: str | None = None
+    product: str | None = None
+    network: CardNetwork | None = None
+    last4: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,6 +171,9 @@ class Transaction:
     to_wallet_id: UUID | None = None
     # What arrived, when it isn't ``amount`` (another currency, or a fee came off).
     received_amount: Money | None = None
+    # Money out only: the wallet (usually a card) it was paid with. Metadata; it changes no
+    # total.
+    paid_with_wallet_id: UUID | None = None
 
     @property
     def is_deleted(self) -> bool:
@@ -353,11 +373,13 @@ def snapshot(tx: Transaction) -> dict[str, Any]:
         "to_wallet_id": str(tx.to_wallet_id) if tx.to_wallet_id else None,
         "received_amount": str(tx.received_amount.amount) if tx.received_amount else None,
         "received_currency": tx.received_amount.currency if tx.received_amount else None,
+        "paid_with_wallet_id": str(tx.paid_with_wallet_id) if tx.paid_with_wallet_id else None,
     }
 
 
 def apply_snapshot(tx: Transaction, data: dict[str, Any], *, now: datetime) -> Transaction:
-    # Snapshots from before wallets existed lack the wallet keys: those rows had none.
+    # Snapshots from before wallets existed lack the wallet keys: those rows had none (and
+    # those from before "paid with" lack that key).
     received = data.get("received_amount")
     return replace(
         tx,
@@ -373,6 +395,7 @@ def apply_snapshot(tx: Transaction, data: dict[str, Any], *, now: datetime) -> T
         from_wallet_id=UUID(w) if (w := data.get("from_wallet_id")) else None,
         to_wallet_id=UUID(w) if (w := data.get("to_wallet_id")) else None,
         received_amount=Money.of(received, data["received_currency"]) if received else None,
+        paid_with_wallet_id=UUID(w) if (w := data.get("paid_with_wallet_id")) else None,
         updated_at=now,
     )
 

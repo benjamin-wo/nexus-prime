@@ -1,13 +1,14 @@
 ---
 name: wallets
-description: The user's wallets (Spending, investment, savings, card) and moves of money between them; adding, renaming and deleting wallets, and turning an entry into a move.
-tools: [list_wallets, add_wallet, update_wallet, delete_wallet, mark_as_move, find_likely_moves, find_transactions, log_move]
+description: The user's wallets (Spending, Cash, investment, savings, card) and moves of money between them; adding, renaming and deleting wallets, a card's details and usual card, which card paid for an expense, and turning an entry into a move.
+tools: [list_wallets, add_wallet, update_wallet, set_usual_card, delete_wallet, mark_as_move, find_likely_moves, find_transactions, log_move]
 ---
 # Wallets and moves
 
 A wallet is a name for a place the user keeps money. It has no balance: Nexus doesn't know
-what's in it. Everyone has **Spending**, the main account the budget watches, and can add
-others: investment (a broker, a fund), savings, card (a credit card) or other.
+what's in it. Everyone has **Spending**, the main account the budget watches, and **Cash**
+(notes and coins; it can be renamed, not deleted), and can add others: investment (a
+broker, a fund), savings, card (a credit card) or other.
 
 A **move** is money going from one of the user's wallets to another. It is never spending
 and never income, so it stays out of the month's totals and budgets. Nexus only records
@@ -73,12 +74,37 @@ moves; it never moves money.
 ## Managing wallets
 - "add a savings wallet called Emergency fund": `add_wallet` with a kind of investment,
   savings, card or other. Add one only when the user asks (or says yes to your offer).
+- A card can carry its details: issuer, product, network (visa, mastercard, amex, other)
+  and last 4 digits. "add my Citi PremierMiles card ending 1234": `add_wallet` kind card,
+  name "Citi PremierMiles", issuer "Citi", product "PremierMiles", last4 "1234". Give
+  `last4` as four digits only. If the user gives a whole card number, pass just its last
+  four and tell them in words that only the last 4 digits are kept; never repeat the other
+  digits. Anything that isn't digits is refused. `update_wallet` changes the details later.
 - "call it Brokerage instead", "IBKR is also called interactive brokers":
   `update_wallet` (new name, kind or match words; match words replace the old ones).
 - "delete my Savings wallet": `delete_wallet` (asks the user to confirm, saying how many
   moves are affected). A wallet with moves needs another wallet for them to point at; ask
   which if they didn't say. Moves between the two are removed, since both ends would be the
   same wallet. This can't be undone. Spending can't be deleted.
+
+## Which card paid
+- Each expense can say what paid for it: a card, Spending, Cash or another wallet (never
+  investment or savings). It is only a note, and changes no total or budget.
+- "12.50 lunch on my citi card": `log_expense` with `paid_with` "citi". Name it as the
+  user did; a card's name, issuer, product or last 4 digits all work, in any case, as long
+  as one card fits. Without `paid_with`, the user's usual card is used if they set one
+  (the reply says so). It never applies to money in or to moves.
+- If the card isn't one of theirs ("paid 30 for grab with amex"), `log_expense` returns an
+  error and logs nothing. Ask: "I don't have an Amex card. Want me to add it as a card?"
+  Add it only after they say yes (`add_wallet`, kind card), then log the expense. If two
+  cards fit ("citi" with two Citi cards), ask which.
+- "that last one was on my DBS card": `find_transactions` for its id if you need it, then
+  `edit_transaction` with `paid_with` "DBS" (asks the user to confirm). "none" clears it.
+- "I usually pay with my Citi card": `set_usual_card` (saves at once). From then on
+  expenses logged in chat, on the web or from a photo are paid with it unless another is
+  said. Imports and emails aren't (an email that names the card's last 4 digits is matched
+  to the card with them). "I don't have a usual card" or "stop using a default card":
+  `set_usual_card` with "none".
 
 ## Questions
 - "how much did I put into IBKR this year": `query_ledger` with direction move, wallet

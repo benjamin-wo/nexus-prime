@@ -81,7 +81,7 @@ from nexus.domain.ledger import (
 from nexus.domain.money import Money
 from nexus.domain.notifications import Frequency, Kind, Level
 from nexus.domain.receipts import UNCLAIMED_TTL
-from nexus.domain.wallets import wallet_for
+from nexus.domain.wallets import card_last4_in, card_with_last4, wallet_for
 
 log = logging.getLogger(__name__)
 SWEEP_JOB = "email.sweep"
@@ -481,6 +481,12 @@ async def _read_one(
             # When the model's figure can't be read (once it gave the field's name,
             # "currency"), the one amount the email states with its currency will do.
             money = _amount(expense, user.home_currency) or amount_in_text(fetched.text)
+            if not screening.received:
+                # The card the email names, as its last four digits (what the text states
+                # wins over what the model read): only those four are kept.
+                expense = replace(
+                    expense, card_last4=card_last4_in(fetched.text) or expense.card_last4
+                )
             if money is None:
                 status = EmailStatus.NO_AMOUNT
                 raw = short(expense.amount or "", 40)
@@ -1046,6 +1052,7 @@ async def log_email(
             source=Source.EMAIL,
             external_id=key,
             fallback_category_id=await _category_named(tx, user.id, draft.get("category")),
+            paid_with_wallet_id=await _card_named(tx, user.id, read.card_last4),
         )
     try:
         saved = await receipt_cases.log_with_receipt(
@@ -1172,6 +1179,14 @@ async def _log_received(
             external_id=key,
         ),
     )
+
+
+async def _card_named(tx: UnitOfWork, user_id: UserId, last4: str | None) -> UUID | None:
+    """The user's card wallet with these last four digits, when exactly one has them."""
+    if not last4:
+        return None
+    card = card_with_last4(await tx.ledger.list_wallets(user_id), last4)
+    return card.id if card else None
 
 
 async def _category_named(tx: UnitOfWork, user_id: UserId, name: object) -> UUID | None:

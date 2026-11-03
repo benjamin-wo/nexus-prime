@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import binascii
+import re
 from collections.abc import Callable
 from collections.abc import Mapping as MappingType
 from datetime import date, datetime, time, timedelta
@@ -67,6 +68,7 @@ from nexus.channels.web.telegram_login import (
     verify_login,
     verify_webapp,
 )
+from nexus.domain import wallets as wallet_rules
 from nexus.domain.demo import forbid as forbid_demo
 from nexus.domain.departments import Run
 from nexus.domain.errors import Forbidden, InvalidInput, NotFound
@@ -171,6 +173,22 @@ def wallet_ref(wallets: MappingType[UUID, Wallet], wallet_id: UUID | None) -> Wa
     return WalletRefOut(id=wallet.id, name=wallet.name, kind=wallet.kind.value) if wallet else None
 
 
+class PaidWithOut(Model):
+    """The wallet an expense was paid with."""
+
+    id: UUID
+    name: str
+    kind: str
+    last4: str | None  # a card's last four digits, if it has them
+
+
+def paid_with_ref(wallets: MappingType[UUID, Wallet], wallet_id: UUID | None) -> PaidWithOut | None:
+    wallet = wallets.get(wallet_id) if wallet_id else None
+    if wallet is None:
+        return None
+    return PaidWithOut(id=wallet.id, name=wallet.name, kind=wallet.kind.value, last4=wallet.last4)
+
+
 class TransactionOut(Model):
     id: UUID
     direction: str  # "in", "out", or "move" (between two of the user's wallets)
@@ -193,6 +211,8 @@ class TransactionOut(Model):
     from_wallet: WalletRefOut | None = None
     to_wallet: WalletRefOut | None = None
     received: MoneyOut | None = None  # a move only: what arrived, when that isn't ``amount``
+    # Money out only: the wallet (a card, Spending, Cash) it was paid with; null for none.
+    paid_with: PaidWithOut | None = None
 
 
 def home_out(conversion: fx.Conversion) -> HomeAmountOut:
@@ -256,7 +276,8 @@ def tx_out(
     twin: Transaction | None = None,
     wallets: MappingType[UUID, Wallet] | None = None,
 ) -> TransactionOut:
-    """``wallets`` names the ends of a move; load them with ``_wallets_of``."""
+    """``wallets`` names the ends of a move and what an expense was paid with; load them
+    with ``_wallets_of``."""
     named = wallets or {}
     return TransactionOut(
         id=tx.id,
@@ -283,6 +304,7 @@ def tx_out(
         from_wallet=wallet_ref(named, tx.from_wallet_id),
         to_wallet=wallet_ref(named, tx.to_wallet_id),
         received=money(tx.received_amount) if tx.received_amount else None,
+        paid_with=paid_with_ref(named, tx.paid_with_wallet_id),
         **_moved(tx, moved),
     )
 
@@ -383,14 +405,15 @@ async def _conversions(
 
 
 async def _wallets_of(web: WebRuntime, user: User, txs: list[Transaction]) -> dict[UUID, Wallet]:
-    """The user's wallets by id, but only when one of ``txs`` is a move that names them."""
-    if not any(t.is_move for t in txs):
+    """The user's wallets by id, but only when one of ``txs`` names one: a move's ends, or
+    what an expense was paid with."""
+    if not any(t.is_move or t.paid_with_wallet_id for t in txs):
         return {}
     return {w.id: w for w in await wallet_cases.list_wallets(web.uow(), user.id)}
 
 
 async def _out(web: WebRuntime, user: User, tx: Transaction) -> TransactionOut:
-    """A bare transaction (no listing extras), with its wallets if it's a move."""
+    """A bare transaction (no listing extras), with its wallets if it names any."""
     return tx_out(tx, wallets=await _wallets_of(web, user, [tx]))
 
 
@@ -707,8 +730,10 @@ def _query(
     descending: bool,
     limit: int,
     offset: int,
+    paid_with: str | None = None,
 ) -> LedgerQuery:
     user = auth.user
+    paid_with_id, without = _paid_with_filter(paid_with)
     return LedgerQuery(
         direction=direction,
         start=_day_start(user, start) if start else None,
@@ -718,6 +743,8 @@ def _query(
         search=search or None,
         status=status,
         source=source,
+        paid_with_wallet_id=paid_with_id,
+        without_paid_with=without,
         include_deleted=include_deleted,
         only_deleted=only_deleted,
         sort=sort,
@@ -725,6 +752,18 @@ def _query(
         limit=limit,
         offset=offset,
     )
+
+
+def _paid_with_filter(value: str | None) -> tuple[UUID | None, bool]:
+    """``paid_with=<wallet id>`` or ``paid_with=none`` (expenses paid with nothing)."""
+    if value is None:
+        return None, False
+    if value.casefold() == "none":
+        return None, True
+    try:
+        return UUID(value), False
+    except ValueError:
+        raise InvalidInput("paid_with is a wallet id or none") from None
 
 
 @router.get("/transactions")
@@ -745,10 +784,11 @@ async def list_transactions(
     descending: bool = True,
     limit: Annotated[int, Query(ge=1, le=tx_cases.MAX_PAGE)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
+    paid_with: Annotated[str | None, Query(max_length=36)] = None,
 ) -> PageOut:
     query = _query(
         auth, direction, start, end, category_id, uncategorized, search, status, source,
-        include_deleted, only_deleted, sort, descending, limit, offset,
+        include_deleted, only_deleted, sort, descending, limit, offset, paid_with,
     )  # fmt: skip
     page = await tx_cases.list_ledger(web.uow(), auth.user.id, query)
     conversions = await _conversions(web, auth.user, page.items)
@@ -843,11 +883,15 @@ class TransactionIn(Model):
     counterparty: str | None = None
     category_id: UUID | None = None
     notes: str | None = None
+    # Money out: the wallet it was paid with. Left out, the user's usual card is used if they
+    # have one; null means none.
+    paid_with_wallet_id: UUID | None = None
 
 
 @router.post("/transactions", status_code=201)
 async def create_transaction(body: TransactionIn, auth: Auth, web: Runtime) -> TransactionOut:
     user = auth.user
+    said = "paid_with_wallet_id" in body.model_fields_set
     tx = await tx_cases.log_transaction(
         web.uow(),
         user.id,
@@ -859,9 +903,11 @@ async def create_transaction(body: TransactionIn, auth: Auth, web: Runtime) -> T
             category_id=body.category_id,
             notes=body.notes,
             source=Source.MANUAL,
+            paid_with_wallet_id=body.paid_with_wallet_id,
+            use_usual_card=not said,
         ),
     )
-    return tx_out(tx)
+    return await _out(web, user, tx)
 
 
 class MoveIn(Model):
@@ -921,6 +967,8 @@ class TransactionPatch(Model):
     category_id: UUID | None = None
     notes: str | None = None
     status: Literal["confirmed", "pending"] | None = None
+    # Money out: the wallet it was paid with; null clears it, leaving it out keeps it.
+    paid_with_wallet_id: UUID | None = None
 
 
 class RuleSuggestionOut(Model):
@@ -952,7 +1000,7 @@ async def edit_transaction(
         )
     if "date" in given and body.date:
         changes["occurred_at"] = _when(user, body.date, web.clock())
-    for field in ("counterparty", "category_id", "notes"):
+    for field in ("counterparty", "category_id", "notes", "paid_with_wallet_id"):
         if field in given:
             changes[field] = getattr(body, field)
     if "status" in given and body.status:
@@ -1095,13 +1143,14 @@ async def export_csv(
     only_deleted: bool = False,
     sort: SortField = SortField.OCCURRED_AT,
     descending: bool = True,
+    paid_with: Annotated[str | None, Query(max_length=36)] = None,
 ) -> Response:
     body = await ledger_csv(
         web,
         auth,
         lambda limit, offset: _query(
             auth, direction, start, end, category_id, uncategorized, search, status, source,
-            include_deleted, only_deleted, sort, descending, limit, offset,
+            include_deleted, only_deleted, sort, descending, limit, offset, paid_with,
         ),
     )  # fmt: skip
     stamp = web.clock().astimezone(_tz(auth.user)).strftime("%Y%m%d")
@@ -1307,16 +1356,97 @@ class WalletOut(Model):
     name: str
     kind: str
     match_words: list[str]
+    # A card's details (all optional, null for other wallets); never more than four digits.
+    issuer: str | None = None
+    product: str | None = None
+    network: str | None = None  # visa, mastercard, amex or other
+    last4: str | None = None
+    usual: bool = False  # the card new expenses are paid with when none is said
 
 
-def wallet_out(w: Wallet) -> WalletOut:
-    return WalletOut(id=w.id, name=w.name, kind=w.kind.value, match_words=list(w.match_words))
+def wallet_out(w: Wallet, usual: UUID | None = None) -> WalletOut:
+    """``usual`` is the user's usual card (``User.usual_card_wallet_id``)."""
+    return WalletOut(
+        id=w.id,
+        name=w.name,
+        kind=w.kind.value,
+        match_words=list(w.match_words),
+        issuer=w.issuer,
+        product=w.product,
+        network=w.network.value if w.network else None,
+        last4=w.last4,
+        usual=usual is not None and usual == w.id,
+    )
+
+
+class WalletSavedOut(WalletOut):
+    # Only present when a card number longer than four digits was given: the rest was
+    # dropped. (Left out otherwise: these routes set ``response_model_exclude_unset``.)
+    note: str | None = None
+
+
+def wallet_saved(w: Wallet, user: User, longer: bool) -> WalletSavedOut:
+    extra = {"note": wallet_rules.LAST4_KEPT} if longer else {}
+    return WalletSavedOut(**wallet_out(w, user.usual_card_wallet_id).model_dump(), **extra)
 
 
 @router.get("/wallets")
 async def wallets(auth: Auth, web: Runtime) -> list[WalletOut]:
     """The user's wallets, Spending first."""
-    return [wallet_out(w) for w in await wallet_cases.list_wallets(web.uow(), auth.user.id)]
+    usual = auth.user.usual_card_wallet_id
+    return [wallet_out(w, usual) for w in await wallet_cases.list_wallets(web.uow(), auth.user.id)]
+
+
+class UsualCardIn(Model):
+    wallet_id: UUID | None
+
+
+@router.put("/wallets/usual-card", status_code=204)
+async def set_usual_card(body: UsualCardIn, auth: Auth, web: Runtime) -> Response:
+    """The card new expenses are paid with when none is said (``null`` for none). 422 if it
+    isn't the user's wallet, or is an investment or savings wallet."""
+    await wallet_cases.set_usual_card(web.uow(), auth.user.id, body.wallet_id)
+    return Response(status_code=204)
+
+
+class WalletSpendOut(Model):
+    month: str  # YYYY-MM
+    total: MoneyOut  # home currency
+    count: int
+
+
+@router.get("/wallets/{wallet_id}/spend")
+async def wallet_spend(
+    wallet_id: UUID, auth: Auth, web: Runtime, month: Annotated[str | None, Query()] = None
+) -> WalletSpendOut:
+    """Confirmed money out paid with the wallet in a month (this one by default, in the
+    user's time zone), in the home currency, converted as in the summaries. A card's
+    spending, as it was charged: what friends paid back on a split is not taken off."""
+    user = auth.user
+    today = web.clock().astimezone(_tz(user)).date()
+    first = _month_of(month, today)
+    spent = await wallet_cases.spend_with(
+        web.uow(),
+        web.rates,
+        user,
+        wallet_id,
+        _day_start(user, first),
+        _day_start(user, _month_start(first, -1)),
+    )
+    return WalletSpendOut(month=f"{first:%Y-%m}", total=money(spent.total), count=spent.count)
+
+
+def _month_of(value: str | None, today: date) -> date:
+    """The first day of the month ``value`` (YYYY-MM) names, this month if none; refused if
+    it isn't a month or is still to come."""
+    if value is None:
+        return today.replace(day=1)
+    if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", value):
+        raise InvalidInput("month looks like 2026-09")
+    first = date(int(value[:4]), int(value[5:]), 1)
+    if first > today.replace(day=1):
+        raise InvalidInput("that month hasn't started yet")
+    return first
 
 
 class LikelyMoveOut(Model):
@@ -1344,36 +1474,63 @@ class WalletIn(Model):
     name: str = Field(min_length=1, max_length=100)
     kind: str = Field(max_length=20)
     match_words: list[str] = Field(default=[], max_length=wallet_cases.MAX_MATCH_WORDS)
+    # A card's details, all optional. More than four digits of a card number are cut to the
+    # last four (and the response says so); anything but digits is refused.
+    issuer: str | None = Field(None, max_length=wallet_rules.MAX_ISSUER)
+    product: str | None = Field(None, max_length=wallet_rules.MAX_PRODUCT)
+    network: str | None = Field(None, max_length=20)
+    last4: str | None = Field(None, max_length=40)
 
 
-@router.post("/wallets", status_code=201)
-async def create_wallet(body: WalletIn, auth: Auth, web: Runtime) -> WalletOut:
-    return wallet_out(
-        await wallet_cases.add_wallet(
-            web.uow(), auth.user.id, body.name, body.kind, body.match_words
-        )
+@router.post("/wallets", status_code=201, response_model_exclude_unset=True)
+async def create_wallet(body: WalletIn, auth: Auth, web: Runtime) -> WalletSavedOut:
+    digits = wallet_rules.clean_last4(body.last4)
+    made = await wallet_cases.add_wallet(
+        web.uow(),
+        auth.user.id,
+        body.name,
+        body.kind,
+        body.match_words,
+        issuer=body.issuer,
+        product=body.product,
+        network=body.network,
+        last4=digits.digits,
     )
+    return wallet_saved(made, auth.user, digits.longer)
 
 
 class WalletPatch(Model):
     name: str | None = Field(None, min_length=1, max_length=100)
     kind: str | None = Field(None, max_length=20)
     match_words: list[str] | None = Field(None, max_length=wallet_cases.MAX_MATCH_WORDS)
+    # Card details: null clears one, leaving it out keeps it.
+    issuer: str | None = Field(None, max_length=wallet_rules.MAX_ISSUER)
+    product: str | None = Field(None, max_length=wallet_rules.MAX_PRODUCT)
+    network: str | None = Field(None, max_length=20)
+    last4: str | None = Field(None, max_length=40)
 
 
-@router.patch("/wallets/{wallet_id}")
-async def edit_wallet(wallet_id: UUID, body: WalletPatch, auth: Auth, web: Runtime) -> WalletOut:
+@router.patch("/wallets/{wallet_id}", response_model_exclude_unset=True)
+async def edit_wallet(
+    wallet_id: UUID, body: WalletPatch, auth: Auth, web: Runtime
+) -> WalletSavedOut:
     given = body.model_fields_set
-    return wallet_out(
-        await wallet_cases.update_wallet(
-            web.uow(),
-            auth.user.id,
-            wallet_id,
-            name=body.name if "name" in given else None,
-            kind=body.kind if "kind" in given else None,
-            match_words=body.match_words if "match_words" in given else None,
-        )
+    digits = wallet_rules.clean_last4(body.last4 if "last4" in given else None)
+    details: dict[str, Any] = {
+        field: getattr(body, field) for field in ("issuer", "product", "network") if field in given
+    }
+    if "last4" in given:
+        details["last4"] = digits.digits
+    updated = await wallet_cases.update_wallet(
+        web.uow(),
+        auth.user.id,
+        wallet_id,
+        name=body.name if "name" in given else None,
+        kind=body.kind if "kind" in given else None,
+        match_words=body.match_words if "match_words" in given else None,
+        **details,
     )
+    return wallet_saved(updated, auth.user, digits.longer)
 
 
 class WalletDeletedOut(Model):
@@ -1663,6 +1820,9 @@ class ImportIn(Model):
     moves: list[RowMoveIn] = Field(default=[], max_length=5000)
     file_name: str = Field(min_length=1, max_length=200)
     save_as: str | None = Field(None, min_length=1, max_length=60)
+    # The card (or other wallet) every expense of this import was paid with. Money in and
+    # moves are not. Left out or null: none (the usual card is not applied to imports).
+    paid_with_wallet_id: UUID | None = None
 
 
 class ImportOut(Model):
@@ -1699,6 +1859,7 @@ async def import_statement(body: ImportIn, auth: Auth, web: Runtime) -> Imported
         file_name=body.file_name,
         save_as=body.save_as,
         moves={m.row: m.as_move for m in body.moves if m.as_move is not None},
+        paid_with=body.paid_with_wallet_id,
         now=web.clock(),
     )
     return ImportedOut(**import_out(done.record).model_dump(), skipped=done.skipped)

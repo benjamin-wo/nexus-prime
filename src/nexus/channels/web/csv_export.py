@@ -12,12 +12,18 @@ from nexus.domain.ledger import Category, Transaction, Wallet
 
 COLUMNS = ["date", "direction", "amount", "currency", "home_amount", "home_currency", "fx_rate",
            "fx_rate_date", "counterparty", "category", "notes", "status", "source", "from_wallet",
-           "to_wallet"]  # fmt: skip
+           "to_wallet", "paid_with"]  # fmt: skip
 _FORMULA_START = ("=", "+", "-", "@", "\t", "\r", "\n")
 
 
 def neutralise(value: str) -> str:
     return "'" + value if value.startswith(_FORMULA_START) else value
+
+
+def _paid_with(wallet: Wallet | None) -> str:
+    if wallet is None:
+        return ""
+    return f"{wallet.name} ··{wallet.last4}" if wallet.last4 else wallet.name
 
 
 def to_csv(
@@ -29,7 +35,8 @@ def to_csv(
     wallets: dict[UUID, Wallet] | None = None,
 ) -> str:
     """Home-currency columns are blank when a foreign row has no available rate. The wallet
-    columns are filled for moves only."""
+    columns are filled for moves only; ``paid_with`` is the wallet an expense was paid with,
+    with a card's last four digits ("Citi PremierMiles ··4321"), blank for none."""
     named = wallets or {}
     out = io.StringIO()
     writer = csv.writer(out, lineterminator="\r\n")
@@ -55,6 +62,7 @@ def to_csv(
             tx.source.value,
             named[tx.from_wallet_id].name if tx.from_wallet_id in named else "",
             named[tx.to_wallet_id].name if tx.to_wallet_id in named else "",
+            _paid_with(named.get(tx.paid_with_wallet_id)) if tx.paid_with_wallet_id else "",
         ]
         writer.writerow([neutralise(cell) for cell in row])
     return out.getvalue()
