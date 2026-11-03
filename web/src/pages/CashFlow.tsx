@@ -3,6 +3,7 @@ import { useState } from "react";
 
 import { api, type CashDay, type CashFlow, type Money } from "../api";
 import { formatMoney } from "../format";
+import { monthLabel, shiftMonth } from "../months";
 import { AccentTitle } from "../motion";
 
 const EXPECTED_KINDS: Record<string, string> = {
@@ -13,22 +14,6 @@ const EXPECTED_KINDS: Record<string, string> = {
 };
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-
-function monthKey(date: Date): string {
-  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
-}
-
-function shiftMonth(key: string, by: number): string {
-  const [year, month] = key.split("-").map(Number);
-  return monthKey(new Date(Date.UTC(year, month - 1 + by, 1)));
-}
-
-function monthLabel(key: string): string {
-  const [year, month] = key.split("-").map(Number);
-  return new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric", timeZone: "UTC" }).format(
-    new Date(Date.UTC(year, month - 1, 1)),
-  );
-}
 
 /** A compact signed figure for a calendar cell: "+4,200" or "-51". */
 function compact(money: Money): string {

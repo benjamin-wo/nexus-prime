@@ -32,7 +32,7 @@ TELEGRAM_SEND = "telegram.send"
 class BudgetStatus:
     budget: Budget
     name: str  # "Overall" or the category's name
-    spent: Money  # this month, in the home currency
+    spent: Money  # this month (or the month asked for), in the home currency
     unconverted: list[Money]  # foreign spending left out for want of a rate (overall only)
 
     @property
@@ -45,9 +45,11 @@ class BudgetStatus:
         return self.budget.limit - self.spent
 
 
-def _month(user: User, now: datetime) -> tuple[date, datetime, datetime]:
+def _month(user: User, now: datetime, month: date | None = None) -> tuple[date, datetime, datetime]:
+    """The month (this one unless ``month`` names another) as its first day and the
+    instants it begins and ends, in the user's timezone."""
     tz = ZoneInfo(user.timezone)
-    first = month_start(now.astimezone(tz).date())
+    first = month_start(month or now.astimezone(tz).date())
     return (
         first,
         datetime.combine(first, time(), tzinfo=tz),
@@ -81,15 +83,17 @@ async def remove_budget(uow: UnitOfWork, actor: UserId, budget_id: UUID) -> None
 
 
 async def budget_statuses(
-    uow: UowFactory, rates: RateSource, user: User, *, now: datetime
+    uow: UowFactory, rates: RateSource, user: User, *, now: datetime, month: date | None = None
 ) -> list[BudgetStatus]:
-    """Each budget with what has been spent against it this month."""
+    """Each budget with what has been spent against it this month, or in ``month``
+    (any day of it) when given: past spending against today's limits, since a limit
+    is the same every month."""
     async with uow() as tx:
         budgets = await tx.planning.list_budgets(user.id)
     if not budgets:
         return []
     names = {c.id: c.name for c in await category_cases.list_categories(uow(), user.id)}
-    _, start, end = _month(user, now)
+    _, start, end = _month(user, now, month)
     summary = await tx_cases.summarize_in_home(uow(), rates, user, start, end)
     out = summary.out
     by_category = {c.category_id: c.total for c in summary.spending_by_category}

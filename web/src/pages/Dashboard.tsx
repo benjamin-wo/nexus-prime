@@ -17,6 +17,8 @@ import {
 import { Block } from "../components/Block";
 import { CategoryBars } from "../components/CategoryBars";
 import { Icon } from "../components/Icon";
+import { MonthPicker } from "../components/MonthPicker";
+import { PastBudgets, usePastBudgets } from "../components/PastBudgets";
 import { StatTile } from "../components/StatTile";
 import {
   formatChange,
@@ -25,7 +27,9 @@ import {
   formatShortDate,
   moveLabel,
 } from "../format";
+import { type MonthKey, monthLabel, monthName, monthRange, shiftMonth } from "../months";
 import { AccentTitle } from "../motion";
+import { useMonthParam } from "../useMonthParam";
 
 type Total = Summary["totals"][number];
 
@@ -57,7 +61,7 @@ function usualMonth(months: Spending["months"]): { usual: number | null; count: 
   return { usual, count: past.length };
 }
 
-function monthName(m: Spending["months"][number]): string {
+function shortName(m: Spending["months"][number]): string {
   const name = MONTH.format(new Date(m.month));
   return m.to_date ? `${name} so far` : name;
 }
@@ -65,13 +69,24 @@ function monthName(m: Spending["months"][number]): string {
 /** Money out per month: quiet bars for past months (striped rose only when over
  * the overall budget), this month so far in solid indigo over the outline of a
  * usual month (so early in the month a short bar reads as "so far"), and the
- * budget as a dashed line. */
-export function SpendingChart({ data }: { data: Spending }) {
+ * budget as a dashed line. Given `onPick`, each bar is a button that opens its
+ * month ("October 2026: SGD 2,140.00"), and the `picked` month is outlined. */
+export function SpendingChart({
+  data,
+  picked,
+  onPick,
+}: {
+  data: Spending;
+  picked?: MonthKey;
+  onPick?: (month: MonthKey) => void;
+}) {
   const budget = data.budget ? Number(data.budget.amount) : null;
   const { usual } = usualMonth(data.months);
   const top = Math.max(1, budget ?? 0, usual ?? 0, ...data.months.map((m) => Number(m.spent.amount)));
   const anyOver = budget !== null && data.months.some((m) => !m.to_date && Number(m.spent.amount) > budget);
   const pct = (value: number) => `${Math.max(2, (value / top) * 100)}%`;
+  const isPicked = (m: Spending["months"][number]) => picked !== undefined && m.month.slice(0, 7) === picked;
+  const pickedPast = data.months.some((m) => !m.to_date && isPicked(m));
   return (
     <div className="month-chart">
       <div className="month-plot">
@@ -79,14 +94,35 @@ export function SpendingChart({ data }: { data: Spending }) {
           {data.months.map((m) => {
             const value = Number(m.spent.amount);
             const over = budget !== null && value > budget;
-            return (
-              <li key={m.month} className="month">
+            const key = m.month.slice(0, 7);
+            const picks = onPick !== undefined;
+            const marks = (
+              <>
                 {m.to_date && usual !== null && <span className="month-usual" aria-hidden="true" style={{ height: pct(usual) }} />}
                 <span className={`month-bar${m.to_date ? " now" : over ? " over" : ""}`} style={{ height: pct(value) }} />
-                <span className="sr-only">
-                  {monthName(m)}: {formatMoney(m.spent)}
-                  {over ? ", over budget" : ""}
-                </span>
+              </>
+            );
+            return (
+              <li key={m.month} className={`month${picks && isPicked(m) ? " picked" : ""}`}>
+                {picks ? (
+                  <button
+                    type="button"
+                    className="month-hit"
+                    aria-pressed={isPicked(m)}
+                    aria-label={`${monthLabel(key)}${m.to_date ? ", so far" : ""}: ${formatMoney(m.spent)}${over ? ", over budget" : ""}`}
+                    onClick={() => onPick(key)}
+                  >
+                    {marks}
+                  </button>
+                ) : (
+                  <>
+                    {marks}
+                    <span className="sr-only">
+                      {shortName(m)}: {formatMoney(m.spent)}
+                      {over ? ", over budget" : ""}
+                    </span>
+                  </>
+                )}
               </li>
             );
           })}
@@ -95,7 +131,7 @@ export function SpendingChart({ data }: { data: Spending }) {
       </div>
       <div className="month-labels" aria-hidden="true">
         {data.months.map((m) => (
-          <span key={m.month} className={m.to_date ? "now" : undefined}>
+          <span key={m.month} className={[m.to_date ? "now" : "", onPick && isPicked(m) ? "picked" : ""].filter(Boolean).join(" ") || undefined}>
             {MONTH.format(new Date(m.month))}
           </span>
         ))}
@@ -115,6 +151,12 @@ export function SpendingChart({ data }: { data: Spending }) {
           <i className="key now" />
           This month so far
         </span>
+        {onPick && pickedPast && (
+          <span>
+            <i className="key picked" />
+            Month shown
+          </span>
+        )}
         {usual !== null && (
           <span>
             <i className="key usual" />A usual month
@@ -137,19 +179,26 @@ function SpendingByMonth({
   spending,
   summary,
   overall,
+  picked,
+  past,
+  onPick,
 }: {
   spending?: Spending;
   summary?: Summary;
   overall?: Budget;
+  picked: MonthKey;
+  /** The picked month is over: budget left and money received are about this month, so they go. */
+  past: boolean;
+  onPick: (month: MonthKey) => void;
 }) {
   const now = spending?.months.at(-1);
   const { usual, count } = usualMonth(spending?.months ?? []);
   const received = summary?.totals.find((t) => t.direction === "in");
   return (
     <Block id="spending-months" title="Spending by month" className="spend-card">
-      {spending ? <SpendingChart data={spending} /> : <p className="state">Loading…</p>}
-      <div className="mini-tiles">
-        {overall ? (
+      {spending ? <SpendingChart data={spending} picked={picked} onPick={onPick} /> : <p className="state">Loading…</p>}
+      <div className={`mini-tiles${past ? " single" : ""}`}>
+        {past ? null : overall ? (
           <div className="mini-tile">
             <span className="caption">Budget left</span>
             <span className="mini-value">{formatMoney(overall.remaining)}</span>
@@ -307,6 +356,22 @@ function Latest({ page, timezone }: { page?: Page; timezone: string }) {
   );
 }
 
+/** `start=…&end=…` for a whole month, the way `/summary` takes a period (the end is included). */
+function rangeParams(month: MonthKey): string {
+  const { start, end } = monthRange(month);
+  return `start=${start}&end=${end}`;
+}
+
+/** "SGD 180.00 less than September": a month's spending against the month before. */
+function compare(spent: Money, before: Money, from: MonthKey): string {
+  const name = monthName(from);
+  if (Number(before.amount) === 0) return `Nothing spent in ${name}`;
+  const gap = Number(spent.amount) - Number(before.amount);
+  if (Math.abs(gap) < 0.005) return `Same as ${name}`;
+  const shown = formatMoney({ amount: Math.abs(gap).toFixed(2), currency: spent.currency });
+  return `${shown} ${gap < 0 ? "less" : "more"} than ${name}`;
+}
+
 export function Dashboard({
   me,
   onLog,
@@ -316,25 +381,41 @@ export function Dashboard({
   onLog: () => void;
   onAsk: (text: string) => void;
 }) {
+  const { month, current, past, setMonth } = useMonthParam(me.user.timezone);
   const summary = useQuery({
-    queryKey: ["summary"],
-    queryFn: () => api<Summary>("/summary"),
+    queryKey: ["summary", month],
+    queryFn: () => api<Summary>(past ? `/summary?${rangeParams(month)}` : "/summary"),
   });
   const budgets = useQuery({
     queryKey: ["budgets"],
     queryFn: () => api<Budget[]>("/budgets"),
   }).data;
-  const spending = useQuery({
+  const spendingQuery = useQuery({
     queryKey: ["spending-months"],
     queryFn: () => api<Spending>("/spending/months"),
-  }).data;
+  });
+  const spending = spendingQuery.data;
+  // The month before the one shown, for the comparison: from the chart's months when
+  // it holds that month, else the month's own summary.
+  const before = shiftMonth(month, -1);
+  const beforeRow = spending?.months.find((m) => !m.to_date && m.month.slice(0, 7) === before);
+  const beforeSummary = useQuery({
+    queryKey: ["summary", before],
+    queryFn: () => api<Summary>(`/summary?${rangeParams(before)}`),
+    enabled: past && !beforeRow && (spendingQuery.isSuccess || spendingQuery.isError),
+  });
+  const beforeSpent = beforeRow?.spent ?? beforeSummary.data?.totals.find((t) => t.direction === "out")?.total;
+  const pastBudgets = usePastBudgets(month, past);
+  // What only makes sense now (the latest entries, who owes you) isn't fetched for a past month.
   const latest = useQuery({
     queryKey: ["transactions", "latest"],
     queryFn: () => api<Page>("/transactions?limit=5"),
+    enabled: !past,
   }).data;
   const ious = useQuery({
     queryKey: ["ious"],
     queryFn: () => api<Iou[]>("/ious"),
+    enabled: !past,
   });
   const wallets = useQuery({
     queryKey: ["wallets"],
@@ -383,15 +464,25 @@ export function Dashboard({
       <div className="page-head">
         <div>
           <h1>
-            <AccentTitle text="This month" />
+            <AccentTitle text={past ? "Looking back" : "This month"} />
           </h1>
-          {summary.data && (
-            <p className="muted">
-              {formatDate(summary.data.start)} to {formatDate(summary.data.end)}
-            </p>
+          {past ? (
+            spent &&
+            beforeSpent && (
+              <p className="muted">
+                {formatMoney(spent.total)} · {compare(spent.total, beforeSpent, before)}
+              </p>
+            )
+          ) : (
+            summary.data && (
+              <p className="muted">
+                {formatDate(summary.data.start)} to {formatDate(summary.data.end)}
+              </p>
+            )
           )}
         </div>
         <div className="quick" aria-label="Quick actions">
+          <MonthPicker month={month} current={current} onChange={setMonth} />
           <button type="button" className="btn btn-primary" onClick={onLog}>
             Log expense
           </button>
@@ -399,9 +490,9 @@ export function Dashboard({
       </div>
 
       {summary.isError && (
-        <p className="error-text">Couldn't load this month's totals.</p>
+        <p className="error-text">Couldn't load {past ? `${monthLabel(month)}'s` : "this month's"} totals.</p>
       )}
-      <Nudge budgets={budgets} timezone={me.user.timezone} onAsk={onAsk} />
+      {!past && <Nudge budgets={budgets} timezone={me.user.timezone} onAsk={onAsk} />}
       <div className="tiles">
         <StatTile
           label="Spent"
@@ -442,6 +533,7 @@ export function Dashboard({
               <p className="state">Loading…</p>
             ) : (
               <CategoryBars
+                key={month}
                 rows={summary.data?.by_category ?? []}
                 period={summary.data && { start: summary.data.start, end: summary.data.end }}
                 timezone={me.user.timezone}
@@ -455,11 +547,32 @@ export function Dashboard({
               </p>
             )}
           </Block>
-          <SpendingByMonth spending={spending} summary={summary.data} overall={overall} />
+          <SpendingByMonth
+            spending={spending}
+            summary={summary.data}
+            overall={overall}
+            picked={month}
+            past={past}
+            onPick={setMonth}
+          />
         </div>
         <div className="stack">
-          <Latest page={latest} timezone={me.user.timezone} />
-          <Block id="owed" title="Who owes you">
+          {past ? (
+            <Block
+              id="past-budgets"
+              title="Budgets"
+              action={<span className="caption">Against today's limits</span>}
+            >
+              {pastBudgets.isLoading && <p className="state">Loading…</p>}
+              {pastBudgets.isError && <p className="state error-text">Couldn't load that month's budgets.</p>}
+              {pastBudgets.data && (
+                <PastBudgets budgets={pastBudgets.data} month={month} timezone={me.user.timezone} />
+              )}
+            </Block>
+          ) : (
+            <>
+              <Latest page={latest} timezone={me.user.timezone} />
+              <Block id="owed" title="Who owes you">
             {ious.isLoading && <p className="state">Loading…</p>}
             {ious.data?.length === 0 && (
               <p className="state">Nobody owes you anything.</p>
@@ -491,7 +604,9 @@ export function Dashboard({
               </div>
             ))}
             {repayError && <p className="error-text">{repayError}</p>}
-          </Block>
+              </Block>
+            </>
+          )}
         </div>
       </div>
     </>

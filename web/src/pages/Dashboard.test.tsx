@@ -59,8 +59,9 @@ describe("the spending chart", () => {
     const bars = await within(card).findByRole("list", { name: "Spending by month" });
     const months = within(bars).getAllByRole("listitem");
     expect(months).toHaveLength(6);
-    expect(months[5]).toHaveTextContent(/Oct so far: SGD.700\.00/);
-    expect(months[0]).toHaveTextContent(/May: SGD.1,800\.00/);
+    // Each bar is a button that opens its month, named with the month and its amount.
+    expect(within(months[5]).getByRole("button", { name: /October 2026, so far: SGD.700\.00/ })).toBeInTheDocument();
+    expect(within(months[0]).getByRole("button", { name: /May 2026: SGD.1,800\.00/ })).toBeInTheDocument();
     // Where it went sits beside it, in the same column.
     const went = screen.getByRole("region", { name: "Where it went" });
     expect(went.parentElement).toBe(card.parentElement);
