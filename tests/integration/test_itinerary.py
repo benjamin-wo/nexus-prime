@@ -13,6 +13,7 @@ from nexus.domain import itinerary
 from nexus.domain.bookings import BookingKind
 from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.money import Money
+from tests.cards import card_number, last4, spaced
 from tests.fakes import NOW, FakeRates
 from tests.integration.conftest import UowFactory
 from tests.integration.test_email import person
@@ -20,6 +21,7 @@ from tests.integration.test_email import person
 pytestmark = pytest.mark.integration
 
 RATES = FakeRates({("JPY", "SGD"): {date(2026, 9, 1): "0.0090"}})
+CARD = card_number()
 
 
 async def test_plans_flights_and_notes_added_by_hand(uow: UowFactory) -> None:
@@ -30,11 +32,13 @@ async def test_plans_flights_and_notes_added_by_hand(uow: UowFactory) -> None:
         user,
         trip_cases.TripDraft(
             "Tokyo", date(2026, 12, 10), date(2026, 12, 18), "JPY", Money.of("3000", "SGD"),
-            notes="Pack a power adapter.\nBooking reference: XK7Q9P\nCard 4111 1111 1111 1111",
+            notes=f"Pack a power adapter.\nBooking reference: XK7Q9P\nCard {spaced(CARD)}",
         ),
         now=NOW,
     )  # fmt: skip
-    assert trip.notes == "Pack a power adapter.\nBooking reference: XK7Q9P\nCard •••• 1111"
+    assert trip.notes == (
+        f"Pack a power adapter.\nBooking reference: XK7Q9P\nCard •••• {last4(CARD)}"
+    )
 
     dinner = await booking_cases.add_manual(
         uow(), user.id, trip.id,
