@@ -143,8 +143,11 @@ async def test_the_wallet_cases_are_graded_on_data_not_just_words(engine: AsyncE
         "wallet-move-ibkr": lambda: scripted(
             call("log_move", amount="800", to_wallet="IBKR"), say("Logged 800 to IBKR.")
         ),
-        "wallet-card-bill": lambda: scripted(  # logs an expense instead of a move
-            call("log_expense", amount="1240", merchant="Card", best_guess_category="Other"),
+        "wallet-card-bill": lambda: scripted(  # asks which card, then logs an expense
+            say("Which card was it: Card, Citi PremierMiles or DBS Altitude?"),
+            say("Nothing to remember."),  # the memory pass that follows each turn
+            say("Nothing to remember."),  # its one retry, since that isn't its JSON
+            call("log_expense", amount="1240", merchant="Card bill", best_guess_category="Other"),
             say("Logged."),
         ),
         "wallet-out-of-savings": lambda: scripted(
@@ -179,7 +182,7 @@ async def test_the_wallet_cases_are_graded_on_data_not_just_words(engine: AsyncE
     assert results["wallet-card-bill"].failures == [
         "called log_expense",
         "didn't ask to confirm",
-        "expected moved 1240 SGD from Spending to Card",
+        "expected moved 1240 SGD from Spending to DBS Altitude",
         "expected no expense or income of 1240",
     ]
 
