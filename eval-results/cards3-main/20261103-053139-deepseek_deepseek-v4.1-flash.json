@@ -1,0 +1,3190 @@
+{
+  "repeat": 6,
+  "cases": 10,
+  "passes_per_round": [
+    10,
+    10,
+    9,
+    10,
+    10,
+    10
+  ],
+  "mean_passes": 9.83,
+  "min_passes": 9,
+  "max_passes": 10,
+  "per_case": {
+    "itinerary-add-plan": {
+      "passed": 6,
+      "runs": 6
+    },
+    "itinerary-add-plan-with-cost": {
+      "passed": 6,
+      "runs": 6
+    },
+    "itinerary-add-plan-no-time": {
+      "passed": 6,
+      "runs": 6
+    },
+    "itinerary-add-plan-no-venue": {
+      "passed": 6,
+      "runs": 6
+    },
+    "itinerary-gelato-after-the-castle": {
+      "passed": 5,
+      "runs": 6
+    },
+    "itinerary-change-hotel": {
+      "passed": 6,
+      "runs": 6
+    },
+    "itinerary-change-length": {
+      "passed": 6,
+      "runs": 6
+    },
+    "itinerary-hotel-whole-trip": {
+      "passed": 6,
+      "runs": 6
+    },
+    "itinerary-place-to-visit": {
+      "passed": 6,
+      "runs": 6
+    },
+    "itinerary-label-days": {
+      "passed": 6,
+      "runs": 6
+    }
+  },
+  "flaky": [
+    "itinerary-gelato-after-the-castle"
+  ],
+  "always_failing": [],
+  "runs": [
+    {
+      "round": 1,
+      "id": "itinerary-add-plan",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add dinner at Sushi Ten on 12 Dec at 7pm to my Japan trip",
+          "replies": [
+            "Sushi Ten, Sat 12 Dec at 19:00 \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "Sushi Ten",
+                "trip": "Japan",
+                "day": "2026-12-12",
+                "time": "19:00",
+                "category": "Food"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.19,
+          "input_tokens": 50181,
+          "output_tokens": 267,
+          "cached_tokens": 45952,
+          "memory_input_tokens": 491,
+          "memory_output_tokens": 256,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "itinerary-add-plan-with-cost",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add dinner at Sushi Ten on 12 Dec at 7pm to my Japan trip, it costs 9000 yen",
+          "replies": [
+            "Add Sushi Ten (Sat 12 Dec 19:00), 9,000 JPY to the Tokyo, Japan trip?",
+            "Sushi Ten, Sat 12 Dec 19:00, 9,000 JPY on the Japan trip \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "Sushi Ten",
+                "day": "2026-12-12",
+                "time": "19:00",
+                "category": "Food",
+                "cost": "9000",
+                "currency": "JPY",
+                "trip": "Japan"
+              }
+            }
+          ],
+          "confirmations": 1,
+          "seconds": 3.26,
+          "input_tokens": 50236,
+          "output_tokens": 401,
+          "cached_tokens": 32384,
+          "memory_input_tokens": 498,
+          "memory_output_tokens": 209,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "itinerary-add-plan-no-time",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add Kuroshiro Castle to the 12th of my Japan trip",
+          "replies": [
+            "Kuroshiro Castle is on Sat 12 Dec, 09:00 to 10:30 \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "list_trips",
+              "args": {}
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "Kuroshiro Castle",
+                "day": "2026-12-12",
+                "trip": "Tokyo",
+                "category": "Sight"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 4.43,
+          "input_tokens": 70810,
+          "output_tokens": 342,
+          "cached_tokens": 52864,
+          "memory_input_tokens": 487,
+          "memory_output_tokens": 395,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "itinerary-add-plan-no-venue",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add a seafood lunch in Kamakura on the 14th of my Japan trip at 3pm",
+          "replies": [
+            "Seafood lunch in Kamakura, Mon 14 Dec, 15:00 to 16:30 \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "list_trips",
+              "args": {}
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "Seafood lunch",
+                "place": "Kamakura",
+                "category": "Food",
+                "day": "2026-12-14",
+                "time": "15:00",
+                "minutes": 90,
+                "trip": "Tokyo"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 4.07,
+          "input_tokens": 70870,
+          "output_tokens": 383,
+          "cached_tokens": 66432,
+          "memory_input_tokens": 494,
+          "memory_output_tokens": 290,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "itinerary-gelato-after-the-castle",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add Kuroshiro Castle to the 12th of my Japan trip",
+          "replies": [
+            "Kuroshiro Castle is on Sat 12 Dec, 09:00\u201310:30 \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "list_trips",
+              "args": {}
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "Kuroshiro Castle",
+                "day": "2026-12-12",
+                "category": "Sight",
+                "minutes": 90
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.05,
+          "input_tokens": 70809,
+          "output_tokens": 356,
+          "cached_tokens": 70528,
+          "memory_input_tokens": 487,
+          "memory_output_tokens": 441,
+          "memory_failed": false
+        },
+        {
+          "text": "add a gelato stop after the castle",
+          "replies": [
+            "Gelato stop 10:45\u201311:05, right after the castle \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "find_places",
+              "args": {
+                "query": "gelato",
+                "day": "12"
+              }
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "Gelato stop",
+                "day": "2026-12-12",
+                "category": "Food",
+                "after": "Kuroshiro Castle",
+                "minutes": 20,
+                "place": "Tokyo"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.04,
+          "input_tokens": 63279,
+          "output_tokens": 444,
+          "cached_tokens": 45312,
+          "memory_input_tokens": 523,
+          "memory_output_tokens": 283,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "itinerary-change-hotel",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "I'm checking out of Hotel Sakura on the 15th instead",
+          "replies": [
+            "Hotel Sakura now checks out on 15 Dec \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "list_trips",
+              "args": {}
+            },
+            {
+              "tool": "change_itinerary_entry",
+              "args": {
+                "item": "Hotel Sakura",
+                "until": "2026-12-15"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.0,
+          "input_tokens": 70740,
+          "output_tokens": 280,
+          "cached_tokens": 66432,
+          "memory_input_tokens": 487,
+          "memory_output_tokens": 189,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "itinerary-change-length",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add Shop visit to my Japan trip on 11 Dec from 10:45 to 11:45",
+          "replies": [
+            "Shop visit is on for Fri 11 Dec, 10:45 to 11:45 \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "Shop visit",
+                "day": "2026-12-11",
+                "time": "10:45",
+                "ends": "11:45",
+                "trip": "Japan"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.28,
+          "input_tokens": 50190,
+          "output_tokens": 280,
+          "cached_tokens": 45952,
+          "memory_input_tokens": 494,
+          "memory_output_tokens": 501,
+          "memory_failed": false
+        },
+        {
+          "text": "make the shop visit 20 min instead",
+          "replies": [
+            "Shop visit now runs 10:45 to 11:05 \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "change_itinerary_entry",
+              "args": {
+                "item": "Shop visit",
+                "minutes": 20,
+                "trip": "Japan"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.31,
+          "input_tokens": 41923,
+          "output_tokens": 113,
+          "cached_tokens": 24320,
+          "memory_input_tokens": 540,
+          "memory_output_tokens": 144,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "itinerary-hotel-whole-trip",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add my second hotel for Japan: Ryokan Hana in Kyoto, 14 to 18 Dec",
+          "replies": [
+            "Ryokan Hana, 14 to 18 Dec in Kyoto, is on the Japan trip \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "list_trips",
+              "args": {}
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "hotel",
+                "name": "Ryokan Hana",
+                "day": "2026-12-14",
+                "until": "2026-12-18",
+                "place": "Kyoto",
+                "trip": "Japan"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.75,
+          "input_tokens": 70837,
+          "output_tokens": 371,
+          "cached_tokens": 66432,
+          "memory_input_tokens": 493,
+          "memory_output_tokens": 133,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "itinerary-place-to-visit",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "save teamLab Planets to my Tokyo list, it's a museum",
+          "replies": [
+            "teamLab Planets is on your Tokyo list \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "list_trips",
+              "args": {}
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "teamLab Planets",
+                "category": "Sight",
+                "trip": "Tokyo"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.36,
+          "input_tokens": 70761,
+          "output_tokens": 252,
+          "cached_tokens": 66560,
+          "memory_input_tokens": 486,
+          "memory_output_tokens": 95,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "id": "itinerary-label-days",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "we're in Kyoto on 15 Dec",
+          "replies": [
+            "15 Dec is Kyoto on the Japan trip \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "list_trips",
+              "args": {}
+            },
+            {
+              "tool": "label_trip_day",
+              "args": {
+                "day": "2026-12-15",
+                "label": "Kyoto"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.11,
+          "input_tokens": 70711,
+          "output_tokens": 250,
+          "cached_tokens": 66304,
+          "memory_input_tokens": 481,
+          "memory_output_tokens": 116,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "itinerary-add-plan",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add dinner at Sushi Ten on 12 Dec at 7pm to my Japan trip",
+          "replies": [
+            "Sushi Ten, Sat 12 Dec at 19:00 \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "Sushi Ten",
+                "day": "2026-12-12",
+                "time": "19:00",
+                "category": "Food",
+                "trip": "Japan"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.55,
+          "input_tokens": 50181,
+          "output_tokens": 262,
+          "cached_tokens": 49920,
+          "memory_input_tokens": 491,
+          "memory_output_tokens": 257,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "itinerary-add-plan-with-cost",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add dinner at Sushi Ten on 12 Dec at 7pm to my Japan trip, it costs 9000 yen",
+          "replies": [
+            "Add Sushi Ten (Sat 12 Dec 19:00), 9,000 JPY to the Tokyo, Japan trip?",
+            "Sushi Ten is on for Sat 12 Dec, 7pm, 9,000 yen \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "Sushi Ten",
+                "day": "2026-12-12",
+                "time": "19:00",
+                "category": "Food",
+                "cost": "9000",
+                "currency": "JPY",
+                "trip": "Japan"
+              }
+            }
+          ],
+          "confirmations": 1,
+          "seconds": 2.39,
+          "input_tokens": 50236,
+          "output_tokens": 427,
+          "cached_tokens": 50048,
+          "memory_input_tokens": 498,
+          "memory_output_tokens": 253,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "itinerary-add-plan-no-time",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add Kuroshiro Castle to the 12th of my Japan trip",
+          "replies": [
+            "Kuroshiro Castle is on Sat 12 Dec, 09:00\u201310:30 \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "list_trips",
+              "args": {}
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "Kuroshiro Castle",
+                "day": "2026-12-12",
+                "category": "Sight",
+                "trip": "Tokyo",
+                "minutes": 90
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.84,
+          "input_tokens": 70826,
+          "output_tokens": 348,
+          "cached_tokens": 70528,
+          "memory_input_tokens": 487,
+          "memory_output_tokens": 435,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "itinerary-add-plan-no-venue",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add a seafood lunch in Kamakura on the 14th of my Japan trip at 3pm",
+          "replies": [
+            "Seafood lunch in Kamakura, Mon 14 Dec 15:00 to 16:30 \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "list_trips",
+              "args": {}
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "Seafood lunch",
+                "place": "Kamakura",
+                "day": "2026-12-14",
+                "time": "15:00",
+                "category": "Food",
+                "minutes": 90
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.73,
+          "input_tokens": 70853,
+          "output_tokens": 369,
+          "cached_tokens": 70528,
+          "memory_input_tokens": 494,
+          "memory_output_tokens": 242,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "itinerary-gelato-after-the-castle",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add Kuroshiro Castle to the 12th of my Japan trip",
+          "replies": [
+            "Kuroshiro Castle is on Sat 12 Dec, 09:00 to 10:30 \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "list_trips",
+              "args": {}
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "Kuroshiro Castle",
+                "day": "2026-12-12",
+                "category": "Sight",
+                "trip": "Tokyo"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.94,
+          "input_tokens": 70810,
+          "output_tokens": 318,
+          "cached_tokens": 70528,
+          "memory_input_tokens": 487,
+          "memory_output_tokens": 250,
+          "memory_failed": false
+        },
+        {
+          "text": "add a gelato stop after the castle",
+          "replies": [
+            "Gelato stop is in at 10:45, right after the castle \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "find_places",
+              "args": {
+                "query": "gelato",
+                "trip": "Tokyo",
+                "day": "12"
+              }
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "after": "Kuroshiro Castle",
+                "category": "Food",
+                "day": "2026-12-12",
+                "kind": "activity",
+                "minutes": 20,
+                "name": "Gelato stop",
+                "trip": "Tokyo"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.63,
+          "input_tokens": 63317,
+          "output_tokens": 528,
+          "cached_tokens": 45568,
+          "memory_input_tokens": 522,
+          "memory_output_tokens": 113,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "itinerary-change-hotel",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "I'm checking out of Hotel Sakura on the 15th instead",
+          "replies": [
+            "Hotel Sakura now checks out on 15 Dec \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "list_trips",
+              "args": {}
+            },
+            {
+              "tool": "change_itinerary_entry",
+              "args": {
+                "item": "Hotel Sakura",
+                "until": "2026-12-15"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.05,
+          "input_tokens": 70740,
+          "output_tokens": 266,
+          "cached_tokens": 70528,
+          "memory_input_tokens": 487,
+          "memory_output_tokens": 454,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "itinerary-change-length",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add Shop visit to my Japan trip on 11 Dec from 10:45 to 11:45",
+          "replies": [
+            "Shop visit is on for Fri 11 Dec, 10:45 to 11:45 \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "Shop visit",
+                "day": "2026-12-11",
+                "time": "10:45",
+                "ends": "11:45",
+                "trip": "Japan"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.26,
+          "input_tokens": 50190,
+          "output_tokens": 279,
+          "cached_tokens": 50048,
+          "memory_input_tokens": 494,
+          "memory_output_tokens": 299,
+          "memory_failed": false
+        },
+        {
+          "text": "make the shop visit 20 min instead",
+          "replies": [
+            "Shop visit now runs 10:45 to 11:05 \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "change_itinerary_entry",
+              "args": {
+                "item": "Shop visit",
+                "minutes": 20,
+                "trip": "Japan"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.25,
+          "input_tokens": 41923,
+          "output_tokens": 113,
+          "cached_tokens": 24576,
+          "memory_input_tokens": 540,
+          "memory_output_tokens": 89,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "itinerary-hotel-whole-trip",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add my second hotel for Japan: Ryokan Hana in Kyoto, 14 to 18 Dec",
+          "replies": [
+            "Ryokan Hana, Kyoto, 14 to 18 Dec \u2014 on the Japan trip \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "hotel",
+                "name": "Ryokan Hana",
+                "place": "Kyoto",
+                "day": "2026-12-14",
+                "until": "2026-12-18",
+                "trip": "Japan"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.77,
+          "input_tokens": 50192,
+          "output_tokens": 272,
+          "cached_tokens": 49920,
+          "memory_input_tokens": 493,
+          "memory_output_tokens": 136,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "itinerary-place-to-visit",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "save teamLab Planets to my Tokyo list, it's a museum",
+          "replies": [
+            "teamLab Planets is on your Tokyo list \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "list_trips",
+              "args": {}
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "teamLab Planets",
+                "category": "Sight",
+                "trip": "Tokyo"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.34,
+          "input_tokens": 70761,
+          "output_tokens": 247,
+          "cached_tokens": 70528,
+          "memory_input_tokens": 486,
+          "memory_output_tokens": 95,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "id": "itinerary-label-days",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "we're in Kyoto on 15 Dec",
+          "replies": [
+            "15 Dec is Kyoto on the Japan trip \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "list_trips",
+              "args": {}
+            },
+            {
+              "tool": "label_trip_day",
+              "args": {
+                "day": "2026-12-15",
+                "label": "Kyoto"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.94,
+          "input_tokens": 70711,
+          "output_tokens": 274,
+          "cached_tokens": 70400,
+          "memory_input_tokens": 481,
+          "memory_output_tokens": 130,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "itinerary-add-plan",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add dinner at Sushi Ten on 12 Dec at 7pm to my Japan trip",
+          "replies": [
+            "Sushi Ten's on for Sat 12 Dec, 7pm \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "Sushi Ten",
+                "day": "2026-12-12",
+                "time": "19:00",
+                "category": "Food",
+                "trip": "Japan"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.28,
+          "input_tokens": 50181,
+          "output_tokens": 268,
+          "cached_tokens": 50048,
+          "memory_input_tokens": 491,
+          "memory_output_tokens": 205,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "itinerary-add-plan-with-cost",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add dinner at Sushi Ten on 12 Dec at 7pm to my Japan trip, it costs 9000 yen",
+          "replies": [
+            "Add Sushi Ten (Sat 12 Dec 19:00), 9,000 JPY to the Tokyo, Japan trip?",
+            "Sushi Ten, Sat 12 Dec 19:00, 9,000 JPY \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "Sushi Ten",
+                "trip": "Japan",
+                "day": "2026-12-12",
+                "time": "19:00",
+                "category": "Food",
+                "cost": "9000",
+                "currency": "JPY"
+              }
+            }
+          ],
+          "confirmations": 1,
+          "seconds": 2.98,
+          "input_tokens": 50236,
+          "output_tokens": 459,
+          "cached_tokens": 49920,
+          "memory_input_tokens": 498,
+          "memory_output_tokens": 215,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "itinerary-add-plan-no-time",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add Kuroshiro Castle to the 12th of my Japan trip",
+          "replies": [
+            "Kuroshiro Castle is on Sat 12 Dec, 09:00\u201310:30 \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "list_trips",
+              "args": {}
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "Kuroshiro Castle",
+                "day": "2026-12-12",
+                "category": "Sight",
+                "minutes": 90
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.48,
+          "input_tokens": 70809,
+          "output_tokens": 378,
+          "cached_tokens": 70528,
+          "memory_input_tokens": 487,
+          "memory_output_tokens": 203,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "itinerary-add-plan-no-venue",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add a seafood lunch in Kamakura on the 14th of my Japan trip at 3pm",
+          "replies": [
+            "Seafood lunch in Kamakura, Mon 14 Dec, 15:00 to 16:30 \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "list_trips",
+              "args": {}
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "Seafood lunch",
+                "place": "Kamakura",
+                "day": "2026-12-14",
+                "time": "15:00",
+                "category": "Food",
+                "minutes": 90
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.37,
+          "input_tokens": 70853,
+          "output_tokens": 450,
+          "cached_tokens": 70656,
+          "memory_input_tokens": 494,
+          "memory_output_tokens": 679,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "itinerary-gelato-after-the-castle",
+      "area": "log",
+      "target": null,
+      "passed": false,
+      "failures": [
+        "no add_to_itinerary call with {'name': Has(text='gelato'), 'after': Has(text='castle'), 'day': Has(text='2026-12-12')}"
+      ],
+      "error": null,
+      "turns": [
+        {
+          "text": "add Kuroshiro Castle to the 12th of my Japan trip",
+          "replies": [
+            "Kuroshiro Castle is on Sat 12 Dec, 09:00\u201310:30 \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "list_trips",
+              "args": {}
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "Kuroshiro Castle",
+                "day": "2026-12-12",
+                "category": "Sight",
+                "minutes": 90
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.19,
+          "input_tokens": 70809,
+          "output_tokens": 432,
+          "cached_tokens": 70528,
+          "memory_input_tokens": 487,
+          "memory_output_tokens": 309,
+          "memory_failed": false
+        },
+        {
+          "text": "add a gelato stop after the castle",
+          "replies": [
+            "Gelato stop is right after the castle, 10:30\u201310:50 \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "find_places",
+              "args": {
+                "query": "gelato",
+                "day": "12"
+              }
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "after": "Kuroshiro Castle",
+                "category": "Food",
+                "kind": "activity",
+                "minutes": 20,
+                "name": "Gelato stop",
+                "place": "Tokyo"
+              }
+            },
+            {
+              "tool": "change_itinerary_entry",
+              "args": {
+                "item": "Gelato stop",
+                "day": "2026-12-12",
+                "after": "Kuroshiro Castle"
+              }
+            },
+            {
+              "tool": "trip_status",
+              "args": {}
+            },
+            {
+              "tool": "change_itinerary_entry",
+              "args": {
+                "item": "Gelato stop",
+                "time": "10:30",
+                "minutes": 20
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 6.12,
+          "input_tokens": 127953,
+          "output_tokens": 908,
+          "cached_tokens": 109568,
+          "memory_input_tokens": 524,
+          "memory_output_tokens": 168,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "itinerary-change-hotel",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "I'm checking out of Hotel Sakura on the 15th instead",
+          "replies": [
+            "Hotel Sakura now checks out on 15 Dec \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "list_trips",
+              "args": {}
+            },
+            {
+              "tool": "change_itinerary_entry",
+              "args": {
+                "item": "Hotel Sakura",
+                "until": "2026-12-15"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 4.28,
+          "input_tokens": 70740,
+          "output_tokens": 268,
+          "cached_tokens": 70528,
+          "memory_input_tokens": 487,
+          "memory_output_tokens": 362,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "itinerary-change-length",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add Shop visit to my Japan trip on 11 Dec from 10:45 to 11:45",
+          "replies": [
+            "Shop visit on Fri 11 Dec, 10:45 to 11:45 \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "Shop visit",
+                "day": "2026-12-11",
+                "time": "10:45",
+                "ends": "11:45",
+                "trip": "Japan"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.92,
+          "input_tokens": 50190,
+          "output_tokens": 299,
+          "cached_tokens": 50048,
+          "memory_input_tokens": 494,
+          "memory_output_tokens": 149,
+          "memory_failed": false
+        },
+        {
+          "text": "make the shop visit 20 min instead",
+          "replies": [
+            "Shop visit now 10:45 to 11:05 \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "change_itinerary_entry",
+              "args": {
+                "item": "Shop visit",
+                "minutes": 20,
+                "trip": "Japan"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.25,
+          "input_tokens": 41919,
+          "output_tokens": 112,
+          "cached_tokens": 24576,
+          "memory_input_tokens": 540,
+          "memory_output_tokens": 89,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "itinerary-hotel-whole-trip",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add my second hotel for Japan: Ryokan Hana in Kyoto, 14 to 18 Dec",
+          "replies": [
+            "Ryokan Hana, 14 to 18 Dec in Kyoto, is on the Japan trip \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "hotel",
+                "name": "Ryokan Hana",
+                "place": "Kyoto",
+                "day": "2026-12-14",
+                "until": "2026-12-18",
+                "trip": "Japan"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.85,
+          "input_tokens": 50192,
+          "output_tokens": 272,
+          "cached_tokens": 50048,
+          "memory_input_tokens": 493,
+          "memory_output_tokens": 129,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "itinerary-place-to-visit",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "save teamLab Planets to my Tokyo list, it's a museum",
+          "replies": [
+            "teamLab Planets is on your Tokyo list \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "list_trips",
+              "args": {}
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "teamLab Planets",
+                "category": "Sight",
+                "trip": "Tokyo"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.0,
+          "input_tokens": 70761,
+          "output_tokens": 281,
+          "cached_tokens": 70528,
+          "memory_input_tokens": 486,
+          "memory_output_tokens": 191,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "id": "itinerary-label-days",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "we're in Kyoto on 15 Dec",
+          "replies": [
+            "15 Dec is Kyoto now \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "list_trips",
+              "args": {}
+            },
+            {
+              "tool": "label_trip_day",
+              "args": {
+                "day": "2026-12-15",
+                "label": "Kyoto"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.68,
+          "input_tokens": 70711,
+          "output_tokens": 284,
+          "cached_tokens": 70400,
+          "memory_input_tokens": 481,
+          "memory_output_tokens": 166,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 4,
+      "id": "itinerary-add-plan",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add dinner at Sushi Ten on 12 Dec at 7pm to my Japan trip",
+          "replies": [
+            "Sushi Ten, Sat 12 Dec at 19:00 \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "Sushi Ten",
+                "category": "Food",
+                "day": "2026-12-12",
+                "time": "19:00",
+                "trip": "Japan"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.86,
+          "input_tokens": 50181,
+          "output_tokens": 267,
+          "cached_tokens": 49920,
+          "memory_input_tokens": 491,
+          "memory_output_tokens": 318,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 4,
+      "id": "itinerary-add-plan-with-cost",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add dinner at Sushi Ten on 12 Dec at 7pm to my Japan trip, it costs 9000 yen",
+          "replies": [
+            "Add Sushi Ten (Sat 12 Dec 19:00), 9,000 JPY to the Tokyo, Japan trip?",
+            "Sushi Ten, Sat 12 Dec 19:00, 9,000 yen \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "Sushi Ten",
+                "day": "2026-12-12",
+                "time": "19:00",
+                "category": "Food",
+                "cost": "9000",
+                "currency": "JPY",
+                "trip": "Japan"
+              }
+            }
+          ],
+          "confirmations": 1,
+          "seconds": 2.36,
+          "input_tokens": 50236,
+          "output_tokens": 384,
+          "cached_tokens": 50048,
+          "memory_input_tokens": 498,
+          "memory_output_tokens": 209,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 4,
+      "id": "itinerary-add-plan-no-time",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add Kuroshiro Castle to the 12th of my Japan trip",
+          "replies": [
+            "Kuroshiro Castle is on Sat 12 Dec, 09:00\u201310:30 \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "list_trips",
+              "args": {}
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "Kuroshiro Castle",
+                "day": "2026-12-12",
+                "category": "Sight",
+                "minutes": 90,
+                "trip": "Tokyo"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.23,
+          "input_tokens": 70826,
+          "output_tokens": 414,
+          "cached_tokens": 70528,
+          "memory_input_tokens": 487,
+          "memory_output_tokens": 286,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 4,
+      "id": "itinerary-add-plan-no-venue",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add a seafood lunch in Kamakura on the 14th of my Japan trip at 3pm",
+          "replies": [
+            "Seafood lunch in Kamakura, Mon 14 Dec, 15:00 to 16:30 \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "list_trips",
+              "args": {}
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "Seafood lunch",
+                "place": "Kamakura",
+                "day": "2026-12-14",
+                "time": "15:00",
+                "category": "Food",
+                "minutes": 90
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.41,
+          "input_tokens": 70853,
+          "output_tokens": 371,
+          "cached_tokens": 70656,
+          "memory_input_tokens": 494,
+          "memory_output_tokens": 469,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 4,
+      "id": "itinerary-gelato-after-the-castle",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add Kuroshiro Castle to the 12th of my Japan trip",
+          "replies": [
+            "Kuroshiro Castle is on Sat 12 Dec, 09:00\u201310:30 \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "list_trips",
+              "args": {}
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "Kuroshiro Castle",
+                "day": "2026-12-12",
+                "category": "Sight",
+                "trip": "Tokyo"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.0,
+          "input_tokens": 70810,
+          "output_tokens": 333,
+          "cached_tokens": 70528,
+          "memory_input_tokens": 487,
+          "memory_output_tokens": 276,
+          "memory_failed": false
+        },
+        {
+          "text": "add a gelato stop after the castle",
+          "replies": [
+            "Gelato stop is in at 10:45, right after the castle \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "find_places",
+              "args": {
+                "query": "gelato",
+                "day": "12",
+                "trip": "Tokyo"
+              }
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "after": "Kuroshiro Castle",
+                "category": "Food",
+                "day": "2026-12-12",
+                "kind": "activity",
+                "minutes": 20,
+                "name": "Gelato stop",
+                "trip": "Tokyo"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.86,
+          "input_tokens": 63320,
+          "output_tokens": 462,
+          "cached_tokens": 45568,
+          "memory_input_tokens": 524,
+          "memory_output_tokens": 151,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 4,
+      "id": "itinerary-change-hotel",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "I'm checking out of Hotel Sakura on the 15th instead",
+          "replies": [
+            "Hotel Sakura now checks out on 15 Dec \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "list_trips",
+              "args": {}
+            },
+            {
+              "tool": "change_itinerary_entry",
+              "args": {
+                "item": "Hotel Sakura",
+                "until": "2026-12-15"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.92,
+          "input_tokens": 70740,
+          "output_tokens": 277,
+          "cached_tokens": 70528,
+          "memory_input_tokens": 487,
+          "memory_output_tokens": 431,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 4,
+      "id": "itinerary-change-length",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add Shop visit to my Japan trip on 11 Dec from 10:45 to 11:45",
+          "replies": [
+            "Shop visit is on for Fri 11 Dec, 10:45 to 11:45 \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "Shop visit",
+                "day": "2026-12-11",
+                "time": "10:45",
+                "ends": "11:45",
+                "trip": "Japan"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.34,
+          "input_tokens": 50190,
+          "output_tokens": 274,
+          "cached_tokens": 50048,
+          "memory_input_tokens": 494,
+          "memory_output_tokens": 472,
+          "memory_failed": false
+        },
+        {
+          "text": "make the shop visit 20 min instead",
+          "replies": [
+            "Shop visit now runs 10:45 to 11:05 \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "change_itinerary_entry",
+              "args": {
+                "item": "Shop visit",
+                "minutes": 20,
+                "trip": "Japan"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.17,
+          "input_tokens": 41923,
+          "output_tokens": 116,
+          "cached_tokens": 41856,
+          "memory_input_tokens": 540,
+          "memory_output_tokens": 126,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 4,
+      "id": "itinerary-hotel-whole-trip",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add my second hotel for Japan: Ryokan Hana in Kyoto, 14 to 18 Dec",
+          "replies": [
+            "Ryokan Hana, 14 to 18 Dec in Kyoto \u2705 That's your second hotel on the Japan trip."
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "list_trips",
+              "args": {}
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "hotel",
+                "name": "Ryokan Hana",
+                "place": "Kyoto",
+                "day": "2026-12-14",
+                "until": "2026-12-18",
+                "trip": "Japan"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.11,
+          "input_tokens": 70837,
+          "output_tokens": 555,
+          "cached_tokens": 70528,
+          "memory_input_tokens": 493,
+          "memory_output_tokens": 128,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 4,
+      "id": "itinerary-place-to-visit",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "save teamLab Planets to my Tokyo list, it's a museum",
+          "replies": [
+            "teamLab Planets is on your Tokyo list \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "list_trips",
+              "args": {}
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "teamLab Planets",
+                "category": "Sight",
+                "trip": "Tokyo"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.67,
+          "input_tokens": 70761,
+          "output_tokens": 252,
+          "cached_tokens": 70528,
+          "memory_input_tokens": 486,
+          "memory_output_tokens": 105,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 4,
+      "id": "itinerary-label-days",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "we're in Kyoto on 15 Dec",
+          "replies": [
+            "15 Dec is Kyoto now \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "list_trips",
+              "args": {}
+            },
+            {
+              "tool": "label_trip_day",
+              "args": {
+                "day": "2026-12-15",
+                "label": "Kyoto"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 4.08,
+          "input_tokens": 70711,
+          "output_tokens": 243,
+          "cached_tokens": 70400,
+          "memory_input_tokens": 481,
+          "memory_output_tokens": 119,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 5,
+      "id": "itinerary-add-plan",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add dinner at Sushi Ten on 12 Dec at 7pm to my Japan trip",
+          "replies": [
+            "Sushi Ten, Sat 12 Dec at 19:00 \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "Sushi Ten",
+                "day": "2026-12-12",
+                "time": "19:00",
+                "category": "Food",
+                "trip": "Japan"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.71,
+          "input_tokens": 50181,
+          "output_tokens": 276,
+          "cached_tokens": 50048,
+          "memory_input_tokens": 491,
+          "memory_output_tokens": 295,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 5,
+      "id": "itinerary-add-plan-with-cost",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add dinner at Sushi Ten on 12 Dec at 7pm to my Japan trip, it costs 9000 yen",
+          "replies": [
+            "Add Sushi Ten (Sat 12 Dec 19:00), 9,000 JPY to the Tokyo, Japan trip?",
+            "Sushi Ten is on for Sat 12 Dec, 7pm, 9,000 yen \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "Sushi Ten",
+                "day": "2026-12-12",
+                "time": "19:00",
+                "category": "Food",
+                "cost": "9000",
+                "currency": "JPY",
+                "trip": "Japan"
+              }
+            }
+          ],
+          "confirmations": 1,
+          "seconds": 2.42,
+          "input_tokens": 50236,
+          "output_tokens": 415,
+          "cached_tokens": 50048,
+          "memory_input_tokens": 498,
+          "memory_output_tokens": 408,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 5,
+      "id": "itinerary-add-plan-no-time",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add Kuroshiro Castle to the 12th of my Japan trip",
+          "replies": [
+            "Kuroshiro Castle is on Sat 12 Dec, 09:00 to 10:30 \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "list_trips",
+              "args": {}
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "Kuroshiro Castle",
+                "day": "2026-12-12",
+                "category": "Sight",
+                "trip": "Tokyo"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.51,
+          "input_tokens": 70810,
+          "output_tokens": 357,
+          "cached_tokens": 70528,
+          "memory_input_tokens": 487,
+          "memory_output_tokens": 191,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 5,
+      "id": "itinerary-add-plan-no-venue",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add a seafood lunch in Kamakura on the 14th of my Japan trip at 3pm",
+          "replies": [
+            "Seafood lunch in Kamakura, Mon 14 Dec, 15:00 to 16:30 \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "list_trips",
+              "args": {}
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "Seafood lunch",
+                "place": "Kamakura",
+                "day": "2026-12-14",
+                "time": "15:00",
+                "category": "Food",
+                "minutes": 90
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.81,
+          "input_tokens": 70853,
+          "output_tokens": 378,
+          "cached_tokens": 70656,
+          "memory_input_tokens": 494,
+          "memory_output_tokens": 306,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 5,
+      "id": "itinerary-gelato-after-the-castle",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add Kuroshiro Castle to the 12th of my Japan trip",
+          "replies": [
+            "Kuroshiro Castle is on Sat 12 Dec, 09:00 to 10:30 \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "list_trips",
+              "args": {}
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "Kuroshiro Castle",
+                "day": "2026-12-12",
+                "category": "Sight",
+                "trip": "Tokyo"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.93,
+          "input_tokens": 70810,
+          "output_tokens": 322,
+          "cached_tokens": 70528,
+          "memory_input_tokens": 487,
+          "memory_output_tokens": 314,
+          "memory_failed": false
+        },
+        {
+          "text": "add a gelato stop after the castle",
+          "replies": [
+            "Gelato stop is in at 10:45, right after the castle \u2705\n\nI couldn't pull up specific gelato spots to name one \u2014 want me to try again later, or add a place you've got in mind?"
+          ],
+          "calls": [
+            {
+              "tool": "find_places",
+              "args": {
+                "query": "gelato",
+                "day": "12",
+                "trip": "Tokyo"
+              }
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "Gelato stop",
+                "day": "2026-12-12",
+                "category": "Food",
+                "after": "Kuroshiro Castle",
+                "minutes": 20,
+                "trip": "Tokyo"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.98,
+          "input_tokens": 63311,
+          "output_tokens": 553,
+          "cached_tokens": 45568,
+          "memory_input_tokens": 520,
+          "memory_output_tokens": 163,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 5,
+      "id": "itinerary-change-hotel",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "I'm checking out of Hotel Sakura on the 15th instead",
+          "replies": [
+            "Hotel Sakura now checks out on 15 Dec \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "list_trips",
+              "args": {}
+            },
+            {
+              "tool": "change_itinerary_entry",
+              "args": {
+                "item": "Hotel Sakura",
+                "until": "2026-12-15"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.17,
+          "input_tokens": 70740,
+          "output_tokens": 328,
+          "cached_tokens": 70528,
+          "memory_input_tokens": 487,
+          "memory_output_tokens": 652,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 5,
+      "id": "itinerary-change-length",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add Shop visit to my Japan trip on 11 Dec from 10:45 to 11:45",
+          "replies": [
+            "Shop visit is on for Fri 11 Dec, 10:45 to 11:45 \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "Shop visit",
+                "day": "2026-12-11",
+                "time": "10:45",
+                "ends": "11:45",
+                "trip": "Japan"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.0,
+          "input_tokens": 50190,
+          "output_tokens": 280,
+          "cached_tokens": 50048,
+          "memory_input_tokens": 494,
+          "memory_output_tokens": 336,
+          "memory_failed": false
+        },
+        {
+          "text": "make the shop visit 20 min instead",
+          "replies": [
+            "Shop visit now runs 10:45 to 11:05 \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "change_itinerary_entry",
+              "args": {
+                "item": "Shop visit",
+                "minutes": 20,
+                "trip": "Japan"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.69,
+          "input_tokens": 41923,
+          "output_tokens": 118,
+          "cached_tokens": 24576,
+          "memory_input_tokens": 540,
+          "memory_output_tokens": 89,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 5,
+      "id": "itinerary-hotel-whole-trip",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add my second hotel for Japan: Ryokan Hana in Kyoto, 14 to 18 Dec",
+          "replies": [
+            "Ryokan Hana's on the Japan trip, 14 to 18 Dec in Kyoto \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "hotel",
+                "name": "Ryokan Hana",
+                "place": "Kyoto",
+                "day": "2026-12-14",
+                "until": "2026-12-18",
+                "trip": "Japan"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.79,
+          "input_tokens": 50192,
+          "output_tokens": 271,
+          "cached_tokens": 50048,
+          "memory_input_tokens": 493,
+          "memory_output_tokens": 125,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 5,
+      "id": "itinerary-place-to-visit",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "save teamLab Planets to my Tokyo list, it's a museum",
+          "replies": [
+            "teamLab Planets is on your Tokyo list \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "list_trips",
+              "args": {}
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "teamLab Planets",
+                "category": "Sight",
+                "trip": "Tokyo"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.42,
+          "input_tokens": 70761,
+          "output_tokens": 248,
+          "cached_tokens": 70528,
+          "memory_input_tokens": 486,
+          "memory_output_tokens": 92,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 5,
+      "id": "itinerary-label-days",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "we're in Kyoto on 15 Dec",
+          "replies": [
+            "15 Dec is Kyoto now \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "list_trips",
+              "args": {}
+            },
+            {
+              "tool": "label_trip_day",
+              "args": {
+                "day": "2026-12-15",
+                "label": "Kyoto"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.5,
+          "input_tokens": 70711,
+          "output_tokens": 268,
+          "cached_tokens": 70400,
+          "memory_input_tokens": 481,
+          "memory_output_tokens": 132,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 6,
+      "id": "itinerary-add-plan",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add dinner at Sushi Ten on 12 Dec at 7pm to my Japan trip",
+          "replies": [
+            "Sushi Ten, Sat 12 Dec at 19:00 \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "Sushi Ten",
+                "category": "Food",
+                "day": "2026-12-12",
+                "time": "19:00",
+                "trip": "Japan"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.15,
+          "input_tokens": 50181,
+          "output_tokens": 253,
+          "cached_tokens": 50048,
+          "memory_input_tokens": 491,
+          "memory_output_tokens": 274,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 6,
+      "id": "itinerary-add-plan-with-cost",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add dinner at Sushi Ten on 12 Dec at 7pm to my Japan trip, it costs 9000 yen",
+          "replies": [
+            "Add Sushi Ten (Sat 12 Dec 19:00), 9,000 JPY to the Tokyo, Japan trip?",
+            "Sushi Ten is on for Sat 12 Dec, 7pm, 9,000 yen \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "Sushi Ten",
+                "day": "2026-12-12",
+                "time": "19:00",
+                "category": "Food",
+                "cost": "9000",
+                "currency": "JPY",
+                "trip": "Japan"
+              }
+            }
+          ],
+          "confirmations": 1,
+          "seconds": 4.27,
+          "input_tokens": 50236,
+          "output_tokens": 415,
+          "cached_tokens": 50048,
+          "memory_input_tokens": 498,
+          "memory_output_tokens": 234,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 6,
+      "id": "itinerary-add-plan-no-time",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add Kuroshiro Castle to the 12th of my Japan trip",
+          "replies": [
+            "Kuroshiro Castle is on Sat 12 Dec, 09:00\u201310:30 \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "list_trips",
+              "args": {}
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "Kuroshiro Castle",
+                "day": "2026-12-12",
+                "category": "Sight",
+                "trip": "Tokyo"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.2,
+          "input_tokens": 70810,
+          "output_tokens": 394,
+          "cached_tokens": 70528,
+          "memory_input_tokens": 487,
+          "memory_output_tokens": 291,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 6,
+      "id": "itinerary-add-plan-no-venue",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add a seafood lunch in Kamakura on the 14th of my Japan trip at 3pm",
+          "replies": [
+            "Seafood lunch in Kamakura, Mon 14 Dec, 15:00 to 16:30 \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "list_trips",
+              "args": {}
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "Seafood lunch",
+                "place": "Kamakura",
+                "day": "2026-12-14",
+                "time": "15:00",
+                "minutes": 90,
+                "category": "Food",
+                "trip": "Tokyo"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.2,
+          "input_tokens": 70870,
+          "output_tokens": 398,
+          "cached_tokens": 70528,
+          "memory_input_tokens": 494,
+          "memory_output_tokens": 318,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 6,
+      "id": "itinerary-gelato-after-the-castle",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add Kuroshiro Castle to the 12th of my Japan trip",
+          "replies": [
+            "Kuroshiro Castle is on Sat 12 Dec, 09:00 to 10:30 \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "list_trips",
+              "args": {}
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "Kuroshiro Castle",
+                "day": "2026-12-12",
+                "category": "Sight",
+                "trip": "Tokyo"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.01,
+          "input_tokens": 70810,
+          "output_tokens": 325,
+          "cached_tokens": 70528,
+          "memory_input_tokens": 487,
+          "memory_output_tokens": 315,
+          "memory_failed": false
+        },
+        {
+          "text": "add a gelato stop after the castle",
+          "replies": [
+            "Gelato stop is in at 10:45, right after the castle \u2705\n\nCouldn't pull up specific gelato shops \u2014 place search isn't available right now. Want me to name one later once it's back?"
+          ],
+          "calls": [
+            {
+              "tool": "find_places",
+              "args": {
+                "query": "gelato",
+                "day": "12",
+                "trip": "Tokyo"
+              }
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "Gelato stop",
+                "day": "2026-12-12",
+                "category": "Food",
+                "after": "Kuroshiro Castle",
+                "minutes": 20,
+                "trip": "Tokyo"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.33,
+          "input_tokens": 63320,
+          "output_tokens": 596,
+          "cached_tokens": 62720,
+          "memory_input_tokens": 523,
+          "memory_output_tokens": 146,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 6,
+      "id": "itinerary-change-hotel",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "I'm checking out of Hotel Sakura on the 15th instead",
+          "replies": [
+            "Hotel Sakura now checks out on 15 Dec \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "list_trips",
+              "args": {}
+            },
+            {
+              "tool": "change_itinerary_entry",
+              "args": {
+                "item": "Hotel Sakura",
+                "until": "2026-12-15"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 3.24,
+          "input_tokens": 70740,
+          "output_tokens": 290,
+          "cached_tokens": 70528,
+          "memory_input_tokens": 487,
+          "memory_output_tokens": 410,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 6,
+      "id": "itinerary-change-length",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add Shop visit to my Japan trip on 11 Dec from 10:45 to 11:45",
+          "replies": [
+            "Shop visit is on for Fri 11 Dec, 10:45 to 11:45 \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "Shop visit",
+                "day": "2026-12-11",
+                "time": "10:45",
+                "ends": "11:45",
+                "trip": "Japan"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.92,
+          "input_tokens": 50190,
+          "output_tokens": 273,
+          "cached_tokens": 50048,
+          "memory_input_tokens": 494,
+          "memory_output_tokens": 337,
+          "memory_failed": false
+        },
+        {
+          "text": "make the shop visit 20 min instead",
+          "replies": [
+            "Shop visit now runs 10:45 to 11:05 \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "change_itinerary_entry",
+              "args": {
+                "item": "Shop visit",
+                "trip": "Japan",
+                "minutes": 20
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 1.07,
+          "input_tokens": 41923,
+          "output_tokens": 108,
+          "cached_tokens": 41728,
+          "memory_input_tokens": 540,
+          "memory_output_tokens": 87,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 6,
+      "id": "itinerary-hotel-whole-trip",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "add my second hotel for Japan: Ryokan Hana in Kyoto, 14 to 18 Dec",
+          "replies": [
+            "Ryokan Hana, Kyoto, 14 to 18 Dec \u2014 on the Japan trip \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "hotel",
+                "trip": "Japan",
+                "name": "Ryokan Hana",
+                "place": "Kyoto",
+                "day": "2026-12-14",
+                "until": "2026-12-18"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.94,
+          "input_tokens": 50192,
+          "output_tokens": 272,
+          "cached_tokens": 49920,
+          "memory_input_tokens": 493,
+          "memory_output_tokens": 128,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 6,
+      "id": "itinerary-place-to-visit",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "save teamLab Planets to my Tokyo list, it's a museum",
+          "replies": [
+            "teamLab Planets is on your Tokyo list \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "list_trips",
+              "args": {}
+            },
+            {
+              "tool": "add_to_itinerary",
+              "args": {
+                "kind": "activity",
+                "name": "teamLab Planets",
+                "category": "Sight",
+                "trip": "Tokyo"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.74,
+          "input_tokens": 70761,
+          "output_tokens": 248,
+          "cached_tokens": 70528,
+          "memory_input_tokens": 486,
+          "memory_output_tokens": 92,
+          "memory_failed": false
+        }
+      ]
+    },
+    {
+      "round": 6,
+      "id": "itinerary-label-days",
+      "area": "log",
+      "target": null,
+      "passed": true,
+      "failures": [],
+      "error": null,
+      "turns": [
+        {
+          "text": "we're in Kyoto on 15 Dec",
+          "replies": [
+            "15 Dec is Kyoto on the Japan trip \u2705"
+          ],
+          "calls": [
+            {
+              "tool": "load_skill",
+              "args": {
+                "name": "trips"
+              }
+            },
+            {
+              "tool": "list_trips",
+              "args": {}
+            },
+            {
+              "tool": "label_trip_day",
+              "args": {
+                "day": "2026-12-15",
+                "label": "Kyoto"
+              }
+            }
+          ],
+          "confirmations": 0,
+          "seconds": 2.71,
+          "input_tokens": 70711,
+          "output_tokens": 246,
+          "cached_tokens": 70400,
+          "memory_input_tokens": 481,
+          "memory_output_tokens": 141,
+          "memory_failed": false
+        }
+      ]
+    }
+  ]
+}
