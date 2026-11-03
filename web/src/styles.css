@@ -308,6 +308,8 @@ input[type="date"].input, input[type="time"].input, input[type="datetime-local"]
 /* The date range is one select beside the search; "Custom dates" adds the two date boxes. */
 .filters .dates { flex: 0 0 auto; display: block; }
 .filters .dates .input { width: auto; min-width: 150px; }
+.filters .paid-with-filter { flex: 0 0 auto; display: block; }
+.filters .paid-with-filter .input { width: auto; min-width: 150px; max-width: 100%; }
 .date-range { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 /* The category under the merchant is for phones; wider screens have the Category column. */
 .category-line { display: none; }
@@ -465,6 +467,9 @@ table.ledger { width: 100%; border-collapse: collapse; }
   .filters .search { flex: 3 1 120px; min-width: 0; }
   .filters .dates { flex: 1 0 auto; }
   .filters .dates .input { width: 100%; min-width: 0; }
+  /* The Paid with select takes a row of its own under the search and dates. */
+  .filters .paid-with-filter { flex: 1 1 100%; }
+  .filters .paid-with-filter .input { width: 100%; min-width: 0; }
   /* From and To share a row of their own under the search. */
   .date-range { flex: 1 1 100%; flex-wrap: nowrap; }
   .page-head.page-head-row > :not(:first-child) { flex: 0 0 auto; }
@@ -1169,6 +1174,15 @@ html.keyboard .bottom-nav, html.keyboard .fab, html.keyboard .trip-fab {
 .move-ask { display: grid; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--border-subtle); border-radius: 10px; }
 .move-ask-open { justify-self: start; }
 .wallet-name { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); min-width: 0; }
+.wallet-note { flex: 1 1 100%; margin: 0; }
+.wallet-usual { display: grid; gap: var(--space-2); margin-top: var(--space-4); max-width: 420px; }
+.wallet-spend { display: grid; gap: var(--space-2); margin-top: var(--space-4); }
+.wallet-spend-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.wallet-spend-head h3 { margin: 0; }
+.wallet-spend-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+.wallet-spend-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3); padding: var(--space-3); border-radius: 12px; background: var(--bg-card-hover); }
+.wallet-spend-name { font-weight: 600; flex: 1 1 10rem; min-width: 0; }
+.wallet-spend-figure { font-variant-numeric: tabular-nums; }
 
 /* Adding: the ways to add (the sheet itself is under Sheets, at the end). */
 .ways { display: grid; gap: var(--space-2); }

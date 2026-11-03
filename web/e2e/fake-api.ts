@@ -3,12 +3,27 @@ import type { Page, Route } from "@playwright/test";
 import type { Setup, VoicePreset, VoiceSettings } from "../src/api";
 
 type WalletRef = { id: string; name: string; kind: string };
+type PaidWith = { id: string; name: string; kind: string; last4: string | null };
+/** A wallet as the API lists it; a card has its details, and one wallet can be the usual card. */
+type FakeWallet = {
+  id: string;
+  name: string;
+  kind: string;
+  match_words: string[];
+  issuer: string | null;
+  product: string | null;
+  network: string | null;
+  last4: string | null;
+  usual: boolean;
+  note?: string;
+};
 
 type Tx = {
   id: string;
   direction: "in" | "out" | "move";
   from_wallet?: WalletRef | null;
   to_wallet?: WalletRef | null;
+  paid_with?: PaidWith | null;
   amount: { amount: string; currency: string };
   occurred_at: string;
   counterparty: string | null;
@@ -138,6 +153,9 @@ export async function fakeApi(
     /** POST /chat/voice answers with this error status (413, 415, 429 or 503) and the server's words. */
     voiceFails = 0 as 0 | 413 | 415 | 429 | 503,
     spendingOnly = false,
+    /** Two cards with details (Citi PremierMiles ·· 4321 and DBS Altitude ·· 8765); the Maxwell entry was paid
+     * with the first and the Grab one with the second. */
+    cards = false,
     planWarning = false,
     /** The user has an IBKR wallet, which statement rows and emails can name. */
     ibkr = false,
@@ -732,18 +750,43 @@ export async function fakeApi(
     { id: "other", name: "Other" },
     { id: "income", name: "Income" },
   ];
-  const wallets = [
-    { id: "w-spending", name: "Spending", kind: "spending", match_words: [] as string[] },
+  const blank = { issuer: null, product: null, network: null, last4: null, usual: false };
+  const wallets: FakeWallet[] = [
+    { id: "w-spending", name: "Spending", kind: "spending", match_words: [] as string[], ...blank },
     ...(spendingOnly
       ? []
       : [
-          { id: "w-investments", name: "Investments", kind: "investment", match_words: [] as string[] },
-          { id: "w-savings", name: "Savings", kind: "savings", match_words: [] as string[] },
-          { id: "w-card", name: "Card", kind: "card", match_words: [] as string[] },
-          ...(ibkr ? [{ id: "w-ibkr", name: "IBKR", kind: "investment", match_words: ["ibkr"] }] : []),
+          { id: "w-investments", name: "Investments", kind: "investment", match_words: [] as string[], ...blank },
+          { id: "w-savings", name: "Savings", kind: "savings", match_words: [] as string[], ...blank },
+          { id: "w-card", name: "Card", kind: "card", match_words: [] as string[], ...blank },
+          ...(cards
+            ? [
+                { id: "w-citi", name: "Citi PremierMiles", kind: "card", match_words: [] as string[], ...blank, issuer: "Citi", product: "PremierMiles", network: "visa", last4: "4321" },
+                { id: "w-dbs", name: "DBS Altitude", kind: "card", match_words: [] as string[], ...blank, issuer: "DBS", product: "Altitude", network: "visa", last4: "8765" },
+              ]
+            : []),
+          ...(ibkr ? [{ id: "w-ibkr", name: "IBKR", kind: "investment", match_words: ["ibkr"], ...blank }] : []),
+          // Every user has one Cash wallet; `spendingOnly` is the older user who has nothing but Spending.
+          { id: "w-cash", name: "Cash", kind: "cash", match_words: [] as string[], ...blank },
         ]),
   ];
   const walletRef = (w: { id: string; name: string; kind: string }): WalletRef => ({ id: w.id, name: w.name, kind: w.kind });
+  const paidWithRef = (w: FakeWallet): PaidWith => ({ id: w.id, name: w.name, kind: w.kind, last4: w.last4 });
+  /** Keeps the last four digits, as the server does; says so when it dropped some. */
+  const takeLast4 = (value: unknown): { last4: string | null; note?: string } => {
+    const digits = String(value ?? "").replace(/\D/g, "");
+    if (!digits) return { last4: null };
+    return digits.length > 4 ? { last4: digits.slice(-4), note: "Only the last 4 digits are kept." } : { last4: digits };
+  };
+  const paysFor = (w: FakeWallet | null | undefined) => Boolean(w && ["card", "spending", "cash", "other"].includes(w.kind));
+  if (cards) {
+    const citi = wallets.find((w) => w.id === "w-citi")!;
+    const dbs = wallets.find((w) => w.id === "w-dbs")!;
+    const t1 = state.txs.find((t) => t.id === "t1")!;
+    const t2 = state.txs.find((t) => t.id === "t2")!;
+    t1.paid_with = paidWithRef(citi);
+    t2.paid_with = paidWithRef(dbs);
+  }
   if (missedMoves) {
     const target = (id: string) => walletRef(wallets.find((x) => x.id === id)!);
     const scheduled = (id: string, name: string, amount: string, wallet: string) => ({
@@ -2500,6 +2543,21 @@ export async function fakeApi(
       });
     }
     if (path === "/wallets" && method === "GET") return json(route, wallets);
+    if (path === "/wallets/usual-card" && method === "PUT") {
+      const chosen = body.wallet_id ? wallets.find((w) => w.id === body.wallet_id) : null;
+      if (body.wallet_id && !paysFor(chosen)) return json(route, { detail: "that wallet can't be the usual card" }, 422);
+      for (const w of wallets) w.usual = w.id === chosen?.id;
+      return route.fulfill({ status: 204 });
+    }
+    const walletSpend = path.match(/^\/wallets\/([\w-]+)\/spend$/);
+    if (walletSpend && method === "GET") {
+      const month = url.searchParams.get("month") ?? "";
+      const mine = live().filter(
+        (t) => t.direction === "out" && t.paid_with?.id === walletSpend[1] && t.occurred_at.startsWith(month),
+      );
+      const total = mine.reduce((sum, t) => sum + Number(t.amount.amount), 0);
+      return json(route, { month, total: { amount: total.toFixed(4), currency: "SGD" }, count: mine.length });
+    }
     if (path === "/wallets/likely-moves" && method === "GET") {
       const ibkrWallet = wallets.find((w) => w.id === "w-ibkr") ?? null;
       const reasons: Record<string, [typeof ibkrWallet, string]> = {
@@ -2517,15 +2575,26 @@ export async function fakeApi(
       const name = String(body.name).trim();
       if (wallets.some((w) => w.name.toLowerCase() === name.toLowerCase()))
         return json(route, { detail: "a wallet with that name already exists" }, 409);
-      const created = { id: `w-${wallets.length + 1}`, name, kind: String(body.kind), match_words: (body.match_words ?? []) as string[] };
+      const { last4, note } = takeLast4(body.last4);
+      const created: FakeWallet = {
+        id: `w-${wallets.length + 1}`,
+        name,
+        kind: String(body.kind),
+        match_words: (body.match_words ?? []) as string[],
+        issuer: (body.issuer as string | null) ?? null,
+        product: (body.product as string | null) ?? null,
+        network: (body.network as string | null) ?? null,
+        last4,
+        usual: false,
+      };
       wallets.push(created);
-      return json(route, created, 201);
+      return json(route, note ? { ...created, note } : created, 201);
     }
     const walletPreview = path.match(/^\/wallets\/([\w-]+)\/delete-preview$/);
     if (walletPreview && method === "GET") {
       const wallet = wallets.find((w) => w.id === walletPreview[1]);
       if (!wallet) return json(route, { detail: "wallet not found" }, 404);
-      if (wallet.kind === "spending") return json(route, { detail: "Spending can't be deleted" }, 422);
+      if (wallet.kind === "spending" || wallet.kind === "cash") return json(route, { detail: `${wallet.name} can't be deleted` }, 422);
       const { mine, dropped } = walletFold(wallet.id, url.searchParams.get("move_to"));
       return json(route, { moved: mine.length - dropped.length, removed: dropped.length });
     }
@@ -2533,20 +2602,29 @@ export async function fakeApi(
     if (walletOne && method === "PATCH") {
       const wallet = wallets.find((w) => w.id === walletOne[1]);
       if (!wallet) return json(route, { detail: "wallet not found" }, 404);
-      if (body.kind && wallet.kind === "spending" && body.kind !== "spending")
+      if (body.kind && ["spending", "cash"].includes(wallet.kind) && body.kind !== wallet.kind)
         return json(route, { detail: "Spending can't change kind" }, 400);
       if (body.name && wallets.some((w) => w.id !== wallet.id && w.name.toLowerCase() === String(body.name).toLowerCase()))
         return json(route, { detail: "a wallet with that name already exists" }, 409);
-      Object.assign(wallet, body);
-      for (const t of state.txs)
+      const { last4: sentLast4, ...rest } = body;
+      Object.assign(wallet, rest);
+      let note: string | undefined;
+      if ("last4" in body) {
+        const kept = takeLast4(sentLast4);
+        wallet.last4 = kept.last4;
+        note = kept.note;
+      }
+      for (const t of state.txs) {
         for (const end of ["from_wallet", "to_wallet"] as const)
           if (t[end]?.id === wallet.id) t[end] = walletRef(wallet);
-      return json(route, wallet);
+        if (t.paid_with?.id === wallet.id) t.paid_with = paidWithRef(wallet);
+      }
+      return json(route, note ? { ...wallet, note } : wallet);
     }
     if (walletOne && method === "DELETE") {
       const wallet = wallets.find((w) => w.id === walletOne[1]);
       if (!wallet) return json(route, { detail: "wallet not found" }, 404);
-      if (wallet.kind === "spending") return json(route, { detail: "Spending can't be deleted" }, 400);
+      if (wallet.kind === "spending" || wallet.kind === "cash") return json(route, { detail: `${wallet.name} can't be deleted` }, 400);
       const into = wallets.find((w) => w.id === url.searchParams.get("move_to") && w.id !== wallet.id);
       const { mine, dropped } = walletFold(wallet.id, into?.id ?? null);
       if (mine.length > 0 && !into) return json(route, { detail: "pick another wallet to move its moves to" }, 400);
@@ -2554,6 +2632,7 @@ export async function fakeApi(
         if (dropped.includes(t)) t.deleted = true;
         else for (const end of ["from_wallet", "to_wallet"] as const) if (t[end]?.id === wallet.id) t[end] = walletRef(into!);
       }
+      for (const t of state.txs) if (t.paid_with?.id === wallet.id) t.paid_with = null;
       wallets.splice(wallets.indexOf(wallet), 1);
       return json(route, { moved: mine.length - dropped.length, removed: dropped.length, into: mine.length ? into : null });
     }
@@ -2584,7 +2663,7 @@ export async function fakeApi(
       if (tx.split) return json(route, { detail: "this bill is split with others, so it can't be a move" }, 409);
       const spending = walletRef(wallets[0]);
       const [sent, received] = tx.direction === "out" ? [spending, walletRef(wallet)] : [walletRef(wallet), spending];
-      Object.assign(tx, { direction: "move", category_id: null, from_wallet: sent, to_wallet: received });
+      Object.assign(tx, { direction: "move", category_id: null, from_wallet: sent, to_wallet: received, paid_with: null });
       return json(route, tx);
     }
     if (path === "/summary" && url.searchParams.get("start")) {
@@ -3187,6 +3266,10 @@ export async function fakeApi(
       const changed = body.category_id !== tx.category_id;
       tx.category_id = body.category_id;
       tx.counterparty = body.counterparty;
+      if ("paid_with_wallet_id" in body) {
+        const paid = wallets.find((w) => w.id === body.paid_with_wallet_id);
+        tx.paid_with = paysFor(paid) ? paidWithRef(paid!) : null;
+      }
       const pattern = String(tx.counterparty ?? "").toLowerCase();
       const offer =
         changed && tx.category_id && pattern && !state.rules.some((r) => r.pattern === pattern)
@@ -3223,6 +3306,7 @@ export async function fakeApi(
       const q = url.searchParams;
       const direction = q.get("direction");
       const category = q.get("category_id");
+      const paidWith = q.get("paid_with");
       const status = q.get("status");
       const limit = Number(q.get("limit") ?? 1000);
       const items = live().filter(
@@ -3230,6 +3314,7 @@ export async function fakeApi(
           (!direction || t.direction === direction) &&
           (!category || t.category_id === category) &&
           (q.get("uncategorized") !== "true" || t.category_id === null) &&
+          (!paidWith || (paidWith === "none" ? !t.paid_with : t.paid_with?.id === paidWith)) &&
           (!status || t.status === status),
       );
       return json(route, { items: items.slice(0, limit), total: items.length });
@@ -3254,6 +3339,14 @@ export async function fakeApi(
         body.counterparty,
         body.category_id,
       );
+      // Left out, an expense is paid with the usual card; null says no card.
+      const paid =
+        body.direction !== "out"
+          ? undefined
+          : "paid_with_wallet_id" in body
+            ? wallets.find((w) => w.id === body.paid_with_wallet_id)
+            : wallets.find((w) => w.usual);
+      tx.paid_with = paysFor(paid) ? paidWithRef(paid!) : null;
       state.txs.unshift(tx);
       return json(route, tx, 201);
     }

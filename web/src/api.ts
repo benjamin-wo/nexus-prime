@@ -93,11 +93,31 @@ export type Direction = "in" | "out";
  * never spending and never income. */
 export type TxDirection = Direction | "move";
 
-export type WalletKind = "spending" | "investment" | "savings" | "card" | "other";
-/** A named place money sits (a label; no balance is kept). */
-export type Wallet = { id: string; name: string; kind: WalletKind; match_words: string[] };
+export type WalletKind = "spending" | "investment" | "savings" | "card" | "other" | "cash";
+export type CardNetwork = "visa" | "mastercard" | "amex" | "other";
+/** A named place money sits (a label; no balance is kept). A card also has its bank, product,
+ * network and last four digits (all optional), and one wallet at a time can be the usual card. */
+export type Wallet = {
+  id: string;
+  name: string;
+  kind: WalletKind;
+  match_words: string[];
+  issuer?: string | null;
+  product?: string | null;
+  network?: CardNetwork | null;
+  /** Four digits, never more. */
+  last4?: string | null;
+  /** The wallet an expense is paid with when none is said. */
+  usual?: boolean;
+  /** Said by the server when more than four digits were sent and only the last four were kept. */
+  note?: string;
+};
 /** A wallet as a transaction names it. */
 export type WalletRef = { id: string; name: string; kind: WalletKind };
+/** What paid for an expense. */
+export type PaidWith = { id: string; name: string; kind: WalletKind; last4: string | null };
+/** What a wallet paid for in a month. */
+export type WalletSpend = { month: string; total: Money; count: number };
 
 /** A foreign amount in the home currency; amount is null when no rate was available. */
 export type HomeAmount = { amount: Money | null; rate: string | null; rate_date: string | null };
@@ -109,6 +129,8 @@ export type Transaction = {
   /** A move only: where the money left and where it went (null for money in and out). */
   from_wallet?: WalletRef | null;
   to_wallet?: WalletRef | null;
+  /** Money out only: the card, Spending, Cash or other wallet that paid. */
+  paid_with?: PaidWith | null;
   /** A move only: what arrived, when that isn't `amount`. */
   received?: Money | null;
   /** Set on listings for rows not in the home currency. */
@@ -471,6 +493,8 @@ export type LedgerFilters = {
   end?: string;
   category_id?: string;
   uncategorized?: boolean;
+  /** A wallet id, or "none" for entries with no card set. */
+  paid_with?: string;
 };
 
 export function ledgerParams(filters: LedgerFilters, extra: Record<string, string | number> = {}): string {
