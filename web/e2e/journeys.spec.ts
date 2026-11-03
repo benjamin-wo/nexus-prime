@@ -183,7 +183,7 @@ test("add, edit and delete a wallet from Settings", async ({ page }) => {
   const card = page.getByRole("region", { name: "Wallets" });
   const yours = card.getByRole("list", { name: "Your wallets" });
   // Folded: a count and the names, until Manage opens the list.
-  await expect(card.getByText("4 wallets")).toBeVisible();
+  await expect(card.getByText("5 wallets")).toBeVisible();
   await expect(card.getByRole("list", { name: "Wallet names" }).getByText("Investments")).toBeVisible();
   await expect(yours).not.toBeVisible();
   await card.getByText("Manage", { exact: true }).click();
@@ -279,7 +279,7 @@ test("a move is added from the add sheet and shows under Moves, not in spending"
   await expect(sheet.getByLabel("Paid to")).toHaveCount(0);
   await expect(sheet.getByLabel("Category")).toHaveCount(0);
   await expect(sheet.getByLabel("From")).toHaveValue("w-spending");
-  await expect(sheet.getByLabel("To").locator("option")).toHaveText(["Pick a wallet", "Investments", "Savings", "Card"]);
+  await expect(sheet.getByLabel("To").locator("option")).toHaveText(["Pick a wallet", "Investments", "Savings", "Card", "Cash"]);
   await sheet.getByLabel("Amount").fill("500");
   await sheet.getByLabel("To").selectOption({ label: "Savings" });
   await sheet.getByLabel("Notes").fill("September top-up");
@@ -322,7 +322,7 @@ test("an expense is turned into a move to a wallet, and leaves Money out", async
   await sheet.getByRole("button", { name: "This was a move to…" }).click();
   const ask = sheet.getByRole("group", { name: "Turn into a move" });
   // Spending itself isn't offered: a move goes to or from another wallet.
-  await expect(ask.getByLabel("Wallet").locator("option")).toHaveText(["Investments", "Savings", "Card"]);
+  await expect(ask.getByLabel("Wallet").locator("option")).toHaveText(["Investments", "Savings", "Card", "Cash"]);
   await ask.getByLabel("Wallet").selectOption({ label: "Investments" });
   await expect(
     ask.getByText("Turn this into a move from Spending to Investments? It will stop counting as spending and lose its category."),
@@ -3665,7 +3665,7 @@ test("a scheduled move picks its wallet, which is only offered when it isn't spe
   await form.getByLabel("Counts as spending").uncheck();
   const wallet = form.getByLabel("Moves money to (optional)");
   // Spending itself isn't offered.
-  await expect(wallet.locator("option")).toHaveText(["No wallet", "Investments", "Savings", "Card", "IBKR"]);
+  await expect(wallet.locator("option")).toHaveText(["No wallet", "Investments", "Savings", "Card", "IBKR", "Cash"]);
   await form.getByLabel("Name").fill("IBKR top-up");
   await form.getByLabel("Next due").fill("2026-10-05");
   await form.getByLabel(/Amount/).fill("1000");
@@ -3726,6 +3726,7 @@ test("a payment that isn't spending can be linked to a wallet afterwards", async
     "Savings",
     "Card",
     "IBKR",
+    "Cash",
   ]);
   await link.getByLabel("Wallet for Index fund").selectOption({ label: "IBKR" });
   await link.getByRole("button", { name: "Save" }).click();
