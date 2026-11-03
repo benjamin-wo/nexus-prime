@@ -188,10 +188,11 @@ async def test_the_migration_gives_every_user_one_spending_wallet(
 # --- wallets ------------------------------------------------------------------
 
 
-async def test_a_new_user_has_a_spending_wallet(uow: UowFactory, alice: UserId) -> None:
+async def test_a_new_user_has_a_spending_and_a_cash_wallet(uow: UowFactory, alice: UserId) -> None:
     wallets = await list_wallets(uow(), alice)
     assert [(w.name, w.kind, w.match_words) for w in wallets] == [
-        ("Spending", WalletKind.SPENDING, ())
+        ("Spending", WalletKind.SPENDING, ()),
+        ("Cash", WalletKind.CASH, ()),
     ]
     assert wallets[0].user_id == alice
 
@@ -205,7 +206,7 @@ async def test_add_rename_update_and_list_wallets(uow: UowFactory, alice: UserId
     assert broker.name == "Brokerage"
     assert broker.match_words == ("ACME Securities",)  # tidied, no repeats
     # Spending first, then by name regardless of case.
-    assert await names(uow, alice) == ["Spending", "apple card", "Brokerage", "Rainy Day"]
+    assert await names(uow, alice) == ["Spending", "apple card", "Brokerage", "Cash", "Rainy Day"]
 
     renamed = await rename_wallet(uow(), alice, broker.id, "Stocks")
     assert renamed.name == "Stocks" and renamed.kind is WalletKind.INVESTMENT
@@ -238,9 +239,11 @@ async def test_wallet_refusals(uow: UowFactory, alice: UserId) -> None:
         await update_wallet(uow(), alice, home.id, kind="savings")
     with pytest.raises(InvalidInput, match="can't change kind"):
         await update_wallet(uow(), alice, saver.id, kind="spending")
+    with pytest.raises(InvalidInput, match="can't change kind"):
+        await update_wallet(uow(), alice, saver.id, kind="cash")
     with pytest.raises(NotFound):
         await rename_wallet(uow(), alice, uuid4(), "Ghost")
-    assert await names(uow, alice) == ["Spending", "Rainy Day"]
+    assert await names(uow, alice) == ["Spending", "Cash", "Rainy Day"]
 
 
 async def test_wallets_are_private_to_their_owner(
@@ -248,7 +251,7 @@ async def test_wallets_are_private_to_their_owner(
 ) -> None:
     mine = await add_wallet(uow(), alice, "Rainy Day", "savings")
     await add_wallet(uow(), bob, "rainy day", "savings")  # same name is fine for Bob
-    assert len(await list_wallets(uow(), bob)) == 2
+    assert len(await list_wallets(uow(), bob)) == 3  # Spending, Cash and the new one
     with pytest.raises(NotFound):
         await rename_wallet(uow(), bob, mine.id, "Mine now")
     with pytest.raises(NotFound):
@@ -268,7 +271,7 @@ async def test_delete_wallet(uow: UowFactory, alice: UserId) -> None:
     # Nothing recorded against it: it just goes.
     result = await delete_wallet(uow(), alice, saver.id)
     assert (result.wallet, result.moved, result.removed) == (saver, 0, 0)
-    assert await names(uow, alice) == ["Spending", "Brokerage"]
+    assert await names(uow, alice) == ["Spending", "Brokerage", "Cash"]
 
     # With moves, it needs another wallet to hand them to.
     await log_move(uow(), alice, amount=sgd("100"), to_wallet_id=broker.id, occurred_at=T0)
@@ -278,7 +281,7 @@ async def test_delete_wallet(uow: UowFactory, alice: UserId) -> None:
         await delete_wallet(uow(), alice, broker.id, broker.id)
     with pytest.raises(NotFound):
         await delete_wallet(uow(), alice, broker.id, uuid4())
-    assert await names(uow, alice) == ["Spending", "Brokerage"]
+    assert await names(uow, alice) == ["Spending", "Brokerage", "Cash"]
 
 
 async def test_deleting_a_wallet_repoints_its_moves_and_drops_the_ones_that_collapse(
@@ -301,7 +304,7 @@ async def test_deleting_a_wallet_repoints_its_moves_and_drops_the_ones_that_coll
 
     result = await delete_wallet(uow(), alice, broker.id, saver.id)
     assert (result.into, result.moved, result.removed) == (saver, 2, 2)
-    assert await names(uow, alice) == ["Spending", "Rainy Day"]
+    assert await names(uow, alice) == ["Spending", "Cash", "Rainy Day"]
 
     # Spending -> Brokerage is now Spending -> Rainy Day, deleted one included; the two moves
     # between Brokerage and Rainy Day would have been Rainy Day -> Rainy Day, so they're gone.
@@ -315,7 +318,7 @@ async def test_deleting_a_wallet_repoints_its_moves_and_drops_the_ones_that_coll
     # Their history went with them, so undo walks back to what still exists.
     assert (await undo_last(uow(), alice)).transaction.id == old.id
     # Bob is untouched by any of it.
-    assert len(await list_wallets(uow(), bob)) == 1
+    assert len(await list_wallets(uow(), bob)) == 2  # Spending and Cash
 
 
 # --- moves --------------------------------------------------------------------

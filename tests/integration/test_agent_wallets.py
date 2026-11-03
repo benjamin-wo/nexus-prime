@@ -151,10 +151,10 @@ async def test_an_unknown_wallet_is_asked_about_not_invented(
     assert reply.text.endswith("add it as an investment wallet?")
     result = tool_results(model)[0]
     assert result.startswith("Error: there's no wallet called 'Tiger'.")
-    assert "Spending, Card (card), IBKR (investment), Savings (savings)" in result
+    assert "Spending, Card (card), Cash (cash), IBKR (investment), Savings (savings)" in result
     assert "don't add one unless they say yes" in result
     assert await ledger(uow, alice) == []
-    assert set(await wallets_of(uow, alice)) == {"Spending", "IBKR", "Savings", "Card"}
+    assert set(await wallets_of(uow, alice)) == {"Spending", "Cash", "IBKR", "Savings", "Card"}
 
 
 async def test_an_unknown_origin_is_asked_about_too(uow: UowFactory, alice: UserId) -> None:
@@ -402,7 +402,7 @@ async def test_wallets_can_be_listed_added_and_changed(uow: UowFactory, alice: U
     await agent.handle_text(alice, "wallets", "tg:1:1")
     await agent.handle_text(alice, "more wallets", "tg:1:2")
     results = tool_results(model)
-    assert results[0] == "Spending (the main account the budget watches)"
+    assert results[0] == "Spending (the main account the budget watches)\nCash (cash)"
     assert results[1] == "Added the wallet Tiger (investment)."
     assert results[2] == "There's already a wallet called Tiger."
     assert results[3] == "Added the wallet Rainy day (savings)."
@@ -414,6 +414,7 @@ async def test_wallets_can_be_listed_added_and_changed(uow: UowFactory, alice: U
     assert results[9].startswith("Error: invalid arguments for add_wallet")
     assert results[10] == (
         "Spending (the main account the budget watches)\n"
+        "Cash (cash)\n"
         "Emergency fund (other)\n"
         "Tiger (investment; match words: tiger brokers)"
     )
@@ -452,7 +453,7 @@ async def test_deleting_a_wallet_says_how_many_moves_are_repointed_and_removed(
     assert reply.buttons == []  # it has moves and nowhere to point them: ask, don't confirm
     result = tool_results(model)[0]
     assert result.startswith("Error: IBKR has moves, so they need another wallet to point at")
-    assert "Spending, Card (card), Savings (savings)" in result
+    assert "Spending, Card (card), Cash (cash), Savings (savings)" in result
 
     ask = only(await agent.handle_text(alice, "into savings", "tg:1:2"))
     assert ask.text == (
@@ -500,7 +501,7 @@ async def test_deleting_a_wallet_with_one_move_and_with_none(
     assert ask.text == "Delete the wallet IBKR? It has no moves. This can't be undone."
     await agent.resolve(alice, ask.buttons[0][0].data.split(":")[1], True)
     assert tool_results(model)[-1] == "Deleted the wallet IBKR."
-    assert set(await wallets_of(uow, alice)) == {"Spending", "Savings"}
+    assert set(await wallets_of(uow, alice)) == {"Spending", "Cash", "Savings"}
 
     refused = only(await agent.handle_text(alice, "delete spending", "tg:1:3"))
     assert refused.text == "No."
@@ -581,7 +582,8 @@ async def test_the_snapshot_lists_wallets_and_what_was_put_away(
     await move(uow, alice, "1240", w["Spending"], w["Card"])  # a card bill isn't put away
     text = await money_snapshot(ctx)
     assert (
-        "Wallets besides Spending: Card (card), IBKR (investment, also interactive brokers), "
+        "Wallets besides Spending: Card (card), Cash (cash), "
+        "IBKR (investment, also interactive brokers), "
         "Savings (savings). Put away this month: 800.00 SGD (16% of income)."
     ) in text
     assert "spent 0.00 SGD in 0 transactions, received 5,000.00 SGD" in text

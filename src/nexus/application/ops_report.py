@@ -577,6 +577,7 @@ TOOL_EVAL_AREAS: dict[str, str] = {
             "list_wallets",
             "add_wallet",
             "update_wallet",
+            "set_usual_card",
             "delete_wallet",
         ),
         "wallets",

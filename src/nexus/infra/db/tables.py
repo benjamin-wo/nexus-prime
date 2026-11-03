@@ -91,6 +91,16 @@ users = Table(
     Column("demo_messages", Integer, nullable=False, server_default=text("0")),
     Column("demo_voice", Integer, nullable=False, server_default=text("0")),
     Column("demo_photos", Integer, nullable=False, server_default=text("0")),
+    # The wallet (usually a card) a new expense is paid with when none is said (migration
+    # 0065), one of the user's own. Set null if the wallet is deleted. Wallets point back
+    # at users, so this foreign key is added after both tables exist (``use_alter``).
+    Column("usual_card_wallet_id", UUID(as_uuid=True)),
+    ForeignKeyConstraint(
+        ["usual_card_wallet_id", "id"],
+        ["wallets.id", "wallets.user_id"],
+        ondelete="SET NULL (usual_card_wallet_id)",
+        use_alter=True,
+    ),
     CheckConstraint("role IN ('owner', 'member', 'guest')", name="role"),
     CheckConstraint("timezone_source IN ('home', 'phone', 'chat', 'trip')", name="timezone_source"),
     CheckConstraint("home_currency ~ '^[A-Z]{3}$'", name="home_currency"),
@@ -128,15 +138,40 @@ wallets = Table(
     Column("kind", Text, nullable=False),
     Column("match_words", ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")),
     Column("created_at", TZ, nullable=False, server_default=func.now()),
+    # Card details (migration 0065), only for kind 'card' and all optional. Never more than
+    # the card's last four digits.
+    Column("issuer", Text),
+    Column("product", Text),
+    Column("network", Text),
+    Column("last4", Text),
     ForeignKeyConstraint(["user_id"], ["users.id"]),
     UniqueConstraint("id", "user_id"),
-    CheckConstraint("kind IN ('spending', 'investment', 'savings', 'card', 'other')", name="kind"),
+    CheckConstraint(
+        "kind IN ('spending', 'investment', 'savings', 'card', 'cash', 'other')", name="kind"
+    ),
+    CheckConstraint("last4 IS NULL OR last4 ~ '^[0-9]{4}$'", name="last4"),
+    CheckConstraint(
+        "network IS NULL OR network IN ('visa', 'mastercard', 'amex', 'other')", name="network"
+    ),
+    CheckConstraint("issuer IS NULL OR char_length(issuer) <= 40", name="issuer_length"),
+    CheckConstraint("product IS NULL OR char_length(product) <= 60", name="product_length"),
+    CheckConstraint(
+        "kind = 'card' OR (issuer IS NULL AND product IS NULL AND network IS NULL "
+        "AND last4 IS NULL)",
+        name="card_details",
+    ),
     Index("uq_wallets_user_id_lower_name", "user_id", func.lower(text("name")), unique=True),
     Index(
         "uq_wallets_user_id_spending",
         "user_id",
         unique=True,
         postgresql_where=text("kind = 'spending'"),
+    ),
+    Index(
+        "uq_wallets_user_id_cash",
+        "user_id",
+        unique=True,
+        postgresql_where=text("kind = 'cash'"),
     ),
 )
 
@@ -191,6 +226,9 @@ transactions = Table(
     Column("to_wallet_id", UUID(as_uuid=True)),
     Column("received_amount", MONEY),
     Column("received_currency", CURRENCY),
+    # Money out only (migration 0065): the wallet, usually a card, it was paid with. Set
+    # null if the wallet is deleted. Metadata: it changes no total.
+    Column("paid_with_wallet_id", UUID(as_uuid=True)),
     ForeignKeyConstraint(["user_id"], ["users.id"]),
     ForeignKeyConstraint(["category_id", "user_id"], ["categories.id", "categories.user_id"]),
     ForeignKeyConstraint(
@@ -198,6 +236,11 @@ transactions = Table(
     ),
     ForeignKeyConstraint(["from_wallet_id", "user_id"], ["wallets.id", "wallets.user_id"]),
     ForeignKeyConstraint(["to_wallet_id", "user_id"], ["wallets.id", "wallets.user_id"]),
+    ForeignKeyConstraint(
+        ["paid_with_wallet_id", "user_id"],
+        ["wallets.id", "wallets.user_id"],
+        ondelete="SET NULL (paid_with_wallet_id)",
+    ),
     UniqueConstraint("id", "user_id"),
     CheckConstraint(
         "category_rule_id IS NULL OR category_id IS NOT NULL", name="rule_needs_category"
@@ -217,11 +260,18 @@ transactions = Table(
         "(received_amount IS NULL) = (received_currency IS NULL)", name="received_pair"
     ),
     CheckConstraint("received_amount IS NULL OR received_amount > 0", name="received_positive"),
+    CheckConstraint("paid_with_wallet_id IS NULL OR direction = 'out'", name="paid_with_out"),
     CheckConstraint("amount > 0", name="amount_positive"),
     CheckConstraint("currency ~ '^[A-Z]{3}$'", name="currency"),
     CheckConstraint("status IN ('confirmed', 'pending')", name="status"),
     CheckConstraint("source IN ('text', 'photo', 'email', 'import', 'manual')", name="source"),
     Index("ix_transactions_user_id_occurred_at", "user_id", "occurred_at"),
+    Index(
+        "ix_transactions_user_id_paid_with_wallet_id_occurred_at",
+        "user_id",
+        "paid_with_wallet_id",
+        "occurred_at",
+    ),
 )
 
 # A receipt file in the private bucket. Its visibility and purge follow its

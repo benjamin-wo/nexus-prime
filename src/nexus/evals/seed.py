@@ -1,8 +1,9 @@
 """The made-up user every evaluation case starts from: two months of ordinary
 spending in Singapore, a salary, a split dinner, a budget, bills, a pay schedule,
 a category rule, a tracked subscription, a trip to Japan in December, wallets
-(IBKR, Savings, Card) with no moves between them, and two open research plans (NVDA, and
-AMD with Keep fresh on). Nothing here is real data.
+(IBKR, Savings, Card, and the cards Citi PremierMiles and DBS Altitude, with made-up last
+digits) with no moves between them, and two open research plans (NVDA, and AMD with Keep
+fresh on). Nothing here is real data.
 
 "Now" is Monday 28 September 2026, 2pm in Singapore. The figures the cases check
 against are the constants below; a test recomputes them from the ledger.
@@ -192,6 +193,15 @@ async def seed_user(new_uow: UowFactory, telegram_id: int, *, shared: bool = Fal
     await wallet_cases.add_wallet(new_uow(), user.id, "IBKR", "investment", ["interactive brokers"])
     await wallet_cases.add_wallet(new_uow(), user.id, "Savings", "savings")
     await wallet_cases.add_wallet(new_uow(), user.id, "Card", "card", ["credit card"])
+    # Two cards that expenses can be paid with (made-up digits).
+    await wallet_cases.add_wallet(
+        new_uow(), user.id, "Citi PremierMiles", "card",
+        issuer="Citi", product="PremierMiles", network="visa", last4="4321",
+    )  # fmt: skip
+    await wallet_cases.add_wallet(
+        new_uow(), user.id, "DBS Altitude", "card",
+        issuer="DBS", product="Altitude", network="visa", last4="8765",
+    )  # fmt: skip
     jumbo = None
     for day, merchant, amount, currency, category, direction in _ROWS:
         tx = await tx_cases.log_transaction(

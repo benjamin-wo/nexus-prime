@@ -40,15 +40,19 @@ async def test_wallets_add_edit_and_refusals(world: World) -> None:
     await owner.login(OWNER)
     first = (await owner.get("/api/wallets")).json()
     assert [(w["name"], w["kind"], w["match_words"]) for w in first] == [
-        ("Spending", "spending", [])
+        ("Spending", "spending", []),
+        ("Cash", "cash", []),
     ]
-    assert set(first[0]) == {"id", "name", "kind", "match_words"}
+    assert set(first[0]) == {
+        "id", "name", "kind", "match_words", "issuer", "product", "network", "last4", "usual",
+    }  # fmt: skip
 
     ibkr = await add(owner, "IBKR", "investment", match_words=["Interactive Brokers", "ibkr"])
     assert ibkr["match_words"] == ["Interactive Brokers", "ibkr"] and ibkr["kind"] == "investment"
     await add(owner, "Emergency fund", "savings")
     assert [w["name"] for w in (await owner.get("/api/wallets")).json()] == [
         "Spending",
+        "Cash",
         "Emergency fund",
         "IBKR",
     ]
@@ -232,7 +236,7 @@ async def test_deleting_a_wallet_points_its_moves_elsewhere(world: World) -> Non
     assert gone.json()["moved"] == 2 and gone.json()["removed"] == 1
     assert gone.json()["into"] == new
     names = [w["name"] for w in (await owner.get("/api/wallets")).json()]
-    assert names == ["Spending", "New broker"]
+    assert names == ["Spending", "Cash", "New broker"]
     moves = (await owner.get("/api/transactions", params={"direction": "move"})).json()
     assert moves["total"] == 2
     assert {m["to_wallet"]["name"] for m in moves["items"]} == {"New broker"}
@@ -271,7 +275,7 @@ async def test_delete_preview_counts_match_the_real_delete(world: World) -> None
     preview = await owner.get(f"{preview_url}?move_to={new['id']}")
     assert preview.status_code == 200 and preview.json() == {"moved": 2, "removed": 1, "bills": 0}
     assert (await owner.get("/api/transactions", params={"direction": "move"})).json()["total"] == 3
-    assert len(await wallets_by_name(owner)) == 4
+    assert len(await wallets_by_name(owner)) == 5
 
     deleted = await owner.send("DELETE", f"/api/wallets/{old['id']}?move_to={new['id']}")
     gone = deleted.json()
@@ -327,11 +331,11 @@ async def test_csv_export_has_the_move_and_its_wallets(world: World) -> None:
     text = (await owner.get("/api/export.csv")).text
     header, *rows = text.strip().split("\r\n")
     assert header.split(",")[:3] == ["date", "direction", "amount"]
-    assert header.endswith(",status,source,from_wallet,to_wallet")
+    assert header.endswith(",status,source,from_wallet,to_wallet,paid_with")
     moved = next(r for r in rows if ",move," in r)
-    assert moved.endswith(",confirmed,manual,Spending,IBKR")
+    assert moved.endswith(",confirmed,manual,Spending,IBKR,")
     spent = next(r for r in rows if ",out," in r)
-    assert spent.endswith(",confirmed,manual,,")
+    assert spent.endswith(",confirmed,manual,,,")
     only = (await owner.get("/api/export.csv", params={"direction": "move"})).text.strip()
     assert len(only.split("\r\n")) == 2
 
@@ -343,7 +347,11 @@ async def test_other_users_wallets_do_not_exist(world: World) -> None:
     theirs = await add(owner, "IBKR", "investment")
     mine = await add(member, "Mine", "savings")
     assert (await member.get(f"/api/wallets/{theirs['id']}/delete-preview")).status_code == 404
-    assert [w["name"] for w in (await member.get("/api/wallets")).json()] == ["Spending", "Mine"]
+    assert [w["name"] for w in (await member.get("/api/wallets")).json()] == [
+        "Spending",
+        "Cash",
+        "Mine",
+    ]
 
     assert (
         await member.send("PATCH", f"/api/wallets/{theirs['id']}", {"name": "x"})

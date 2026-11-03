@@ -93,6 +93,7 @@ from nexus.domain.travel_research import published_note
 from nexus.domain.trip_access import clean_name, without_money
 from nexus.domain.trips import Trip, TripItem, describe_trip
 from nexus.domain.voice import Emoji, Humour, Length, Preset
+from nexus.domain.wallets import LAST4_KEPT, clean_last4
 from nexus.domain.whereabouts import clock_there, zone_named
 from nexus.domain.whereabouts import label as zone_label
 
@@ -282,6 +283,9 @@ def describe(
         parts.append(tx.counterparty)
     if tx.category_id and tx.category_id in cats:
         parts.append(cats[tx.category_id].name)
+    paid_with = (wallets or {}).get(tx.paid_with_wallet_id) if tx.paid_with_wallet_id else None
+    if paid_with is not None:
+        parts.append(f"paid with {paid_with.name}")
     if tx.notes:
         parts.append(f"note: {tx.notes}")
     if tx.status.value == "pending":
@@ -342,13 +346,15 @@ async def resolve_wallet(ctx: ToolContext, name: str) -> Wallet:
 
 
 async def show(ctx: ToolContext, tx: Transaction) -> str:
-    """``describe`` for one transaction, naming the wallets if it's a move."""
-    wallets = await wallet_map(ctx) if tx.is_move else None
+    """``describe`` for one transaction, naming the wallets if it's a move or was paid
+    with one."""
+    wallets = await wallet_map(ctx) if tx.is_move or tx.paid_with_wallet_id else None
     return describe(tx, await category_map(ctx), ctx.tz, wallets)
 
 
 async def show_all(ctx: ToolContext, txs: list[Transaction]) -> list[str]:
-    wallets = await wallet_map(ctx) if any(tx.is_move for tx in txs) else None
+    named = any(tx.is_move or tx.paid_with_wallet_id for tx in txs)
+    wallets = await wallet_map(ctx) if named else None
     cats = await category_map(ctx)
     return [describe(tx, cats, ctx.tz, wallets) for tx in txs]
 
@@ -358,6 +364,16 @@ async def _load(ctx: ToolContext, transaction_id: str) -> Transaction:
 
 
 # --- tools ------------------------------------------------------------------------
+
+NO_CARD = frozenset({"none", "no card", "nothing", "clear"})
+
+
+async def resolve_paid_with(ctx: ToolContext, name: str) -> Wallet:
+    """The user's wallet an expense was paid with, by what they called it (a name, issuer,
+    product or last four digits). An unknown or ambiguous one is for the model to ask
+    about: it never creates a wallet unasked."""
+    wallets = await wallet_cases.list_wallets(ctx.uow(), ctx.user.id)
+    return wallet_cases.pick_paying_wallet(wallets, name)
 
 
 class LogExpenseArgs(Args):
@@ -383,9 +399,17 @@ class LogExpenseArgs(Args):
         description="false when the message says it isn't shared this time ('my treat', "
         "'just me', 'dinner with mum' when the habit is with Ann)",
     )
+    paid_with: str | None = Field(
+        None,
+        description="Only when the user says what paid: the card or wallet, as they named "
+        "it ('citi', 'my DBS card', 'cash', or a card's last 4 digits). Omit it otherwise; "
+        "their usual card is used if they set one. An unknown card is an error to ask about.",
+    )
 
 
 async def _log_expense(ctx: ToolContext, a: LogExpenseArgs) -> ToolResult:
+    # An unknown card is asked about before anything is logged.
+    paid_with = await resolve_paid_with(ctx, a.paid_with) if a.paid_with else None
     tx = await tx_cases.log_transaction(
         ctx.uow(),
         ctx.user.id,
@@ -398,9 +422,16 @@ async def _log_expense(ctx: ToolContext, a: LogExpenseArgs) -> ToolResult:
             notes=a.notes,
             source=Source.TEXT,
             fallback_category_id=await guess_category(ctx, a.best_guess_category),
+            paid_with_wallet_id=paid_with.id if paid_with else None,
+            use_usual_card=True,
         ),
     )
     text = f"Logged: {await show(ctx, tx)}"
+    if paid_with is None and tx.paid_with_wallet_id is not None:
+        text += (
+            "\nPaid with the user's usual card; if it wasn't, edit_transaction paid_with "
+            "('none' clears it)."
+        )
     if a.use_split_habit:
         text += await _apply_split_habits(ctx, tx)
     return ToolResult(text, wrote=True)
@@ -509,6 +540,7 @@ async def _log_receipt_expense(ctx: ToolContext, a: ReceiptExpenseArgs) -> ToolR
             source=Source.PHOTO,
             external_id=a.external_id,
             fallback_category_id=await guess_category(ctx, a.best_guess_category),
+            use_usual_card=True,
         ),
         UUID(a.receipt_id) if a.receipt_id else None,
         now=ctx.now,
@@ -559,6 +591,11 @@ class EditArgs(Args):
     category: str | None = None
     date: str | None = None
     notes: str | None = None
+    paid_with: str | None = Field(
+        None,
+        description="What paid for it, as the user named it ('my DBS card', 'cash', a card's "
+        "last 4 digits); 'none' clears it. Only for money out.",
+    )
 
 
 def _changes(ctx: ToolContext, a: EditArgs, current: Transaction) -> tx_cases.TransactionChanges:
@@ -586,6 +623,7 @@ async def _describe_edit(ctx: ToolContext, a: EditArgs) -> str:
         "category": a.category,
         "date": a.date,
         "notes": a.notes,
+        "paid with": a.paid_with,
     }
     changes = ", ".join(f"{k} → {v}" for k, v in wanted.items() if v)
     return f"Change {(await show(ctx, tx)).split(' [id')[0]}: {changes}?"
@@ -596,6 +634,12 @@ async def _edit(ctx: ToolContext, a: EditArgs) -> ToolResult:
     changes = _changes(ctx, a, current)
     if a.category is not None:
         changes = replace(changes, category_id=await resolve_category(ctx, a.category))
+    if a.paid_with is not None:
+        if a.paid_with.strip().casefold() in NO_CARD:
+            changes = replace(changes, paid_with_wallet_id=None)
+        else:
+            card = await resolve_paid_with(ctx, a.paid_with)
+            changes = replace(changes, paid_with_wallet_id=card.id)
     tx = await tx_cases.edit_transaction(ctx.uow(), ctx.user.id, current.id, changes)
     text = f"Updated: {await show(ctx, tx)}"
     if tx.category_id == current.category_id:
@@ -1070,9 +1114,22 @@ async def _list_wallets(ctx: ToolContext, _: NoArgs) -> ToolResult:
         what = (
             "the main account the budget watches" if w.kind is WalletKind.SPENDING else w.kind.value
         )
+        card = _card_text(w)
         words = f"; match words: {', '.join(w.match_words)}" if w.match_words else ""
-        lines.append(f"{w.name} ({what}{words})")
+        usual = "; the usual card" if w.id == ctx.user.usual_card_wallet_id else ""
+        lines.append(f"{w.name} ({what}{card}{words}{usual})")
     return ToolResult("\n".join(lines))
+
+
+def _card_text(w: Wallet) -> str:
+    """A card's details for the model: "; Citi PremierMiles, visa, ending 4321"."""
+    bits = [
+        " ".join(p for p in (w.issuer, w.product) if p),
+        w.network.value if w.network else "",
+        f"ending {w.last4}" if w.last4 else "",
+    ]
+    text = ", ".join(b for b in bits if b)
+    return f"; {text}" if text else ""
 
 
 async def _find_likely_moves(ctx: ToolContext, _: NoArgs) -> ToolResult:
@@ -1101,6 +1158,27 @@ class AddWalletArgs(Args):
     match_words: list[str] | None = Field(
         None, description="Other names the user or their statements use for it"
     )
+    issuer: str | None = Field(
+        None, description="For a card: who issued it, e.g. 'Citi' (at most 40 characters)"
+    )
+    product: str | None = Field(
+        None, description="For a card: its product, e.g. 'PremierMiles' (at most 60 characters)"
+    )
+    network: Literal["visa", "mastercard", "amex", "other"] | None = Field(
+        None, description="For a card: its network"
+    )
+    last4: str | None = Field(
+        None,
+        description="For a card: the LAST 4 digits only, as digits. Never pass more than "
+        "four; if the user gave a whole number, give just its last four.",
+    )
+
+
+def _kept_four(value: str | None) -> tuple[str | None, str]:
+    """The last four digits of what the user gave, and a sentence for the reply when more
+    than four were given (they are dropped, never kept)."""
+    digits = clean_last4(value)
+    return digits.digits, (f" {LAST4_KEPT}" if digits.longer else "")
 
 
 async def _find_wallet(ctx: ToolContext, name: str) -> Wallet | None:
@@ -1112,10 +1190,21 @@ async def _add_wallet(ctx: ToolContext, a: AddWalletArgs) -> ToolResult:
     existing = await _find_wallet(ctx, a.name)
     if existing is not None:
         return ToolResult(f"There's already a wallet called {existing.name}.")
+    last4, kept = _kept_four(a.last4)
     made = await wallet_cases.add_wallet(
-        ctx.uow(), ctx.user.id, a.name, a.kind, a.match_words or ()
+        ctx.uow(),
+        ctx.user.id,
+        a.name,
+        a.kind,
+        a.match_words or (),
+        issuer=a.issuer,
+        product=a.product,
+        network=a.network,
+        last4=last4,
     )
-    return ToolResult(f"Added the wallet {made.name} ({made.kind.value}).", wrote=True)
+    return ToolResult(
+        f"Added the wallet {made.name} ({made.kind.value}{_card_text(made)}).{kept}", wrote=True
+    )
 
 
 class UpdateWalletArgs(Args):
@@ -1125,11 +1214,25 @@ class UpdateWalletArgs(Args):
     match_words: list[str] | None = Field(
         None, description="Replaces its other names; an empty list clears them"
     )
+    issuer: str | None = Field(None, description="For a card: who issued it, e.g. 'Citi'")
+    product: str | None = Field(None, description="For a card: its product, e.g. 'PremierMiles'")
+    network: Literal["visa", "mastercard", "amex", "other"] | None = Field(
+        None, description="For a card: its network"
+    )
+    last4: str | None = Field(
+        None,
+        description="For a card: the LAST 4 digits only, as digits. Never pass more than four.",
+    )
 
 
 async def _update_wallet(ctx: ToolContext, a: UpdateWalletArgs) -> ToolResult:
-    if a.new_name is None and a.kind is None and a.match_words is None:
-        raise InvalidInput("say what to change: the name, the kind or the match words")
+    details = {k: v for k, v in (("issuer", a.issuer), ("product", a.product),
+                                 ("network", a.network)) if v is not None}  # fmt: skip
+    last4, kept = _kept_four(a.last4)
+    if last4 is not None:
+        details["last4"] = last4
+    if a.new_name is None and a.kind is None and a.match_words is None and not details:
+        raise InvalidInput("say what to change: the name, the kind, the match words or the card")
     current = await resolve_wallet(ctx, a.wallet)
     if a.new_name is not None:
         clash = await _find_wallet(ctx, a.new_name)
@@ -1142,6 +1245,7 @@ async def _update_wallet(ctx: ToolContext, a: UpdateWalletArgs) -> ToolResult:
         name=a.new_name,
         kind=a.kind,
         match_words=a.match_words,
+        **details,
     )
     changes = []
     if updated.name != current.name:
@@ -1150,8 +1254,32 @@ async def _update_wallet(ctx: ToolContext, a: UpdateWalletArgs) -> ToolResult:
         changes.append(f"its kind is now {updated.kind.value}")
     if updated.match_words != current.match_words:
         changes.append("match words: " + (", ".join(updated.match_words) or "none"))
+    if _card_text(updated) != _card_text(current):
+        changes.append("card" + (_card_text(updated) or ": no details"))
     done = ", ".join(changes) or "nothing to change"
-    return ToolResult(f"Updated {current.name}: {done}.", wrote=bool(changes))
+    return ToolResult(f"Updated {current.name}: {done}.{kept}", wrote=bool(changes))
+
+
+class UsualCardArgs(Args):
+    wallet: str = Field(
+        description="The card or wallet the user usually pays with, as they named it "
+        "('citi', 'my DBS card'); 'none' to have no usual card"
+    )
+
+
+async def _set_usual_card(ctx: ToolContext, a: UsualCardArgs) -> ToolResult:
+    if a.wallet.strip().casefold() in NO_CARD:
+        await wallet_cases.set_usual_card(ctx.uow(), ctx.user.id, None)
+        return ToolResult(
+            "No usual card now: expenses aren't paid with a card unless said.", wrote=True
+        )
+    card = await resolve_paid_with(ctx, a.wallet)
+    await wallet_cases.set_usual_card(ctx.uow(), ctx.user.id, card.id)
+    return ToolResult(
+        f"{card.name} is now the usual card: expenses logged in chat, on the web or from a "
+        "photo are paid with it unless another is said. Imports and emails aren't.",
+        wrote=True,
+    )
 
 
 class DeleteWalletArgs(Args):
@@ -3836,7 +3964,9 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             "log_expense",
             "Record money the user spent. Only when the amount is stated. Keep what was "
             "bought or where as the merchant or a note ('¥1200 ramen in tokyo' is merchant or "
-            "notes 'ramen'). A city named in an expense says nothing about where the user is.",
+            "notes 'ramen'). A city named in an expense says nothing about where the user is. "
+            "If they say what paid ('on my citi card', 'with cash'), give paid_with; an "
+            "unknown card comes back as an error: ask whether to add it, don't log yet.",
             LogExpenseArgs,
             _log_expense,
         ),
@@ -3870,7 +4000,8 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
         ),
         ToolSpec(
             "edit_transaction",
-            "Change fields of one transaction. Asks the user to confirm.",
+            "Change fields of one transaction, including which card paid for it (paid_with: "
+            "'that was on my DBS card'; 'none' clears it). Asks the user to confirm.",
             EditArgs,
             _edit,
             confirm=_describe_edit,
@@ -4068,8 +4199,8 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
         ),
         ToolSpec(
             "list_wallets",
-            "The user's wallets (Spending, investment, savings, card, other) and their match "
-            "words. Read-only.",
+            "The user's wallets (Spending, Cash, investment, savings, card, other), a card's "
+            "details, their match words and the usual card. Read-only.",
             NoArgs,
             _list_wallets,
         ),
@@ -4088,15 +4219,26 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
         ToolSpec(
             "add_wallet",
             "Add a wallet: a place the user keeps money, such as a broker, savings or a credit "
-            "card. Only when the user says to add one. A wallet is a label; no balance is kept.",
+            "card. Only when the user says to add one. A wallet is a label; no balance is kept. "
+            "A card can have its issuer, product, network and last 4 digits ('add my Citi "
+            "PremierMiles card ending 1234'); never more than 4 digits are kept.",
             AddWalletArgs,
             _add_wallet,
         ),
         ToolSpec(
             "update_wallet",
-            "Rename a wallet, change its kind or replace its match words.",
+            "Rename a wallet, change its kind, replace its match words or change a card's "
+            "issuer, product, network or last 4 digits.",
             UpdateWalletArgs,
             _update_wallet,
+        ),
+        ToolSpec(
+            "set_usual_card",
+            "Set the card or wallet the user usually pays with ('I usually pay with my Citi "
+            "card'), so new expenses are paid with it unless another is said; 'none' clears "
+            "it. Saves at once.",
+            UsualCardArgs,
+            _set_usual_card,
         ),
         ToolSpec(
             "delete_wallet",

@@ -38,6 +38,7 @@ from nexus.domain.ledger import (
 from nexus.domain.merchants import LOOKBACK_DAYS, MAX_ENTRIES, MerchantSuggestion, suggest
 from nexus.domain.money import Money
 from nexus.domain.rules import CategoryRule, best_rule
+from nexus.domain.wallets import PAYING_KINDS
 
 MAX_PAGE = 500
 
@@ -67,6 +68,12 @@ class NewTransaction:
     # A best guess (e.g. the model's) used only when no category was given and no
     # rule matched. Failing that, expenses go to "Other" and income to "Income".
     fallback_category_id: UUID | None = None
+    # Money out only: the wallet (a card, Spending, Cash) it was paid with.
+    paid_with_wallet_id: UUID | None = None
+    # With no wallet given, pay an expense with the user's usual card, if they set one. For
+    # what the user enters themselves (the web form, chat, a photo of a receipt); never for
+    # an import, which names its own.
+    use_usual_card: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,6 +87,7 @@ class TransactionChanges:
     category_id: Maybe[UUID | None] = UNSET
     notes: Maybe[str | None] = UNSET
     status: Maybe[TransactionStatus] = UNSET
+    paid_with_wallet_id: Maybe[UUID | None] = UNSET
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,6 +127,7 @@ async def create_transaction(
             category_id = guess.id
     if category_id is None:
         category_id = await default_category(repo, actor, Direction(cmd.direction))
+    paid_with = await _paid_with(repo, actor, cmd)
     tx = Transaction(
         id=uuid4(),
         user_id=actor,
@@ -133,6 +142,7 @@ async def create_transaction(
         created_at=now,
         updated_at=now,
         category_rule_id=rule_id,
+        paid_with_wallet_id=paid_with,
     )
     await repo.insert_transaction(tx)
     if cmd.external_id is not None:
@@ -140,6 +150,32 @@ async def create_transaction(
         await repo.claim_source(actor, tx.source, external_id, tx.id)
     await repo.insert_revision(actor, tx.id, RevisionKind.CREATE, None, now)
     return tx
+
+
+async def _require_paying(repo: LedgerRepository, actor: UserId, wallet_id: UUID) -> UUID:
+    """A wallet of the user's that can pay for things (not investment or savings)."""
+    wallet = await repo.get_wallet(actor, wallet_id)
+    if wallet is None:
+        raise NotFound("wallet not found")
+    if wallet.kind not in PAYING_KINDS:
+        raise InvalidInput(f"{wallet.name} is {wallet.kind.value}: it can't pay for things")
+    return wallet.id
+
+
+async def _paid_with(repo: LedgerRepository, actor: UserId, cmd: NewTransaction) -> UUID | None:
+    """What a new transaction was paid with: the wallet named, else (when asked to, and for
+    money out) the user's usual card."""
+    if cmd.paid_with_wallet_id is not None:
+        if Direction(cmd.direction) is not Direction.OUT:
+            raise InvalidInput("only money out is paid with a wallet")
+        return await _require_paying(repo, actor, cmd.paid_with_wallet_id)
+    if cmd.use_usual_card and Direction(cmd.direction) is Direction.OUT:
+        user = await repo.get_user(actor)
+        usual = user.usual_card_wallet_id if user else None
+        wallet = await repo.get_wallet(actor, usual) if usual else None
+        if wallet is not None and wallet.kind in PAYING_KINDS:
+            return wallet.id
+    return None
 
 
 # Where a transaction goes when nothing else decides: every one gets a category.
@@ -226,6 +262,16 @@ async def edit_transaction(
             updated = replace(updated, notes=clean_text(changes.notes, field_name="notes"))
         if changes.status is not UNSET:
             updated = replace(updated, status=TransactionStatus(changes.status))
+        if changes.paid_with_wallet_id is not UNSET:
+            wanted = changes.paid_with_wallet_id
+            if wanted is not None and updated.direction is not Direction.OUT:
+                raise InvalidInput("only money out is paid with a wallet")
+            if wanted is not None and wanted != tx.paid_with_wallet_id:
+                await _require_paying(repo, actor, wanted)
+            updated = replace(updated, paid_with_wallet_id=wanted)
+        if updated.direction is not Direction.OUT:
+            # Money that is no longer money out wasn't paid with anything.
+            updated = replace(updated, paid_with_wallet_id=None)
         if updated == tx:
             return tx
         if (updated.direction is Direction.MOVE) != (tx.direction is Direction.MOVE):
@@ -287,7 +333,11 @@ async def _keep_existing_wallets(
     repo: LedgerRepository, actor: UserId, reverted: Transaction, current: Transaction
 ) -> Transaction:
     """A move's wallet may have been deleted since the change being undone (its moves
-    went to another wallet): the move keeps the wallets it has now."""
+    went to another wallet): the move keeps the wallets it has now. An expense's card that
+    was deleted since is no longer there to be paid with."""
+    paid_with = reverted.paid_with_wallet_id
+    if paid_with is not None and await repo.get_wallet(actor, paid_with) is None:
+        reverted = replace(reverted, paid_with_wallet_id=None)
     for wallet_id in (reverted.from_wallet_id, reverted.to_wallet_id):
         if wallet_id is not None and await repo.get_wallet(actor, wallet_id) is None:
             return replace(

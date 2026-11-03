@@ -92,6 +92,12 @@ def test_delete_covers_exactly_the_owned_tables_children_first() -> None:
     for name in ERASE_ORDER:
         for fk in TABLES[name].foreign_keys:
             parent = fk.column.table.name
+            if (name, parent) == ("users", "wallets"):
+                # The usual card (users.usual_card_wallet_id): wallets point at their user and
+                # the user at one wallet, so one of them must go first. The wallets do, and the
+                # foreign key nulls that column as they go (ON DELETE SET NULL).
+                assert fk.ondelete == "SET NULL (usual_card_wallet_id)"
+                continue
             if parent in position and parent != name and position[name] > position[parent]:
                 wrong.append(f"{name} is deleted after {parent}, which it references")
     assert wrong == []
