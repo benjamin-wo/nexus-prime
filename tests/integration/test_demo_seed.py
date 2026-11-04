@@ -104,6 +104,8 @@ async def test_the_demo_account_has_a_full_life(world: World, now: datetime) -> 
         "Cash": "cash",
         "Savings": "savings",
         "IBKR": "investment",
+        "Citi PremierMiles": "card",
+        "DBS Altitude": "card",
     }
     rules = await get(browser, "/api/category-rules")
     assert [(r["pattern"], r["category_name"]) for r in rules] == [("grab", "Transport")]
@@ -182,6 +184,42 @@ async def test_the_demo_account_has_a_full_life(world: World, now: datetime) -> 
     watching = (await get(browser, "/api/investments/watchlist"))["stocks"]
     assert sorted(s["symbol"] for s in watching) == ["AMD", "GOOGL"]
     assert len(await get(browser, "/api/investments/trades")) == 6
+
+
+async def test_the_demo_has_two_cards_a_usual_one_and_some_expenses_paid_with_them(
+    world: World,
+) -> None:
+    world.clock.now = NOWS[0]
+    _, invite = await owner_and_invite(world)
+    browser, _ = await seeded_visitor(world, MEMBER, invite)
+
+    cards = {w["name"]: w for w in await get(browser, "/api/wallets") if w["kind"] == "card"}
+    assert {
+        name: (w["issuer"], w["product"], w["network"], w["last4"]) for name, w in cards.items()
+    } == {
+        "Citi PremierMiles": ("Citi", "PremierMiles", "visa", "4321"),
+        "DBS Altitude": ("DBS", "Altitude", "mastercard", "8765"),
+    }
+    assert {name for name, w in cards.items() if w["usual"]} == {"Citi PremierMiles"}
+
+    items = (await get(browser, "/api/transactions?limit=500"))["items"]
+    spending = [t for t in items if t["direction"] == "out"]
+    tagged = [t for t in spending if t["paid_with"]]
+    untagged = [t for t in spending if not t["paid_with"]]
+    assert {t["paid_with"]["name"] for t in tagged} == set(cards)
+    assert len(tagged) >= 20 and len(untagged) >= 20
+    # Only expenses are paid with a card; the household bills and small hawker money are not.
+    assert all(t["paid_with"] is None for t in items if t["direction"] != "out")
+    assert {t["counterparty"] for t in untagged} >= {"Rent", "Singtel", "Hawker Centre"}
+
+    # The Paid with filter and the per-card spend this month read the same tags.
+    citi = cards["Citi PremierMiles"]["id"]
+    filtered = (await get(browser, f"/api/transactions?limit=500&paid_with={citi}"))["items"]
+    assert {t["id"] for t in filtered} == {t["id"] for t in tagged if t["paid_with"]["id"] == citi}
+    nothing = (await get(browser, "/api/transactions?limit=500&paid_with=none"))["items"]
+    assert {t["id"] for t in nothing} == {t["id"] for t in untagged}
+    spend = await get(browser, f"/api/wallets/{citi}/spend")
+    assert spend["count"] >= 1 and Decimal(spend["total"]["amount"]) > 0
 
 
 async def test_two_demo_accounts_stay_apart_and_each_takes_under_two_seconds(world: World) -> None:

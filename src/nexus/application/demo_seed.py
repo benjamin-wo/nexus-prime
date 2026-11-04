@@ -1,9 +1,10 @@
 """The demo persona: what a visitor to the public live demo finds in their new account.
 
 A made-up young professional in Singapore (SGD, Asia/Singapore): a salary from "Acme Pte Ltd"
-on the 25th, about two months of everyday spending, a few bills and subscriptions, monthly
-budgets with one near its limit, a trip to Japan three weeks away, and a small US-stock
-portfolio. Every name, merchant and figure is invented; nothing here is real data.
+on the 25th, about two months of everyday spending (much of it paid with one of two made-up
+credit cards, the Citi one the usual card), a few bills and subscriptions, monthly budgets
+with one near its limit, a trip to Japan three weeks away, and a small US-stock portfolio.
+Every name, merchant and figure is invented; nothing here is real data.
 
 Everything is dated from ``now`` (the ledger runs back about nine weeks from today, the trip
 starts three weeks on), so the demo looks current whenever it is opened. There is no
@@ -81,6 +82,17 @@ class _Spend:
     note: str | None = None
     with_friend: bool = False
 
+
+# The two made-up cards (the digits are invented too). Citi is the usual card.
+CITI = "Citi PremierMiles"
+DBS = "DBS Altitude"
+# Groceries, rides and subscriptions go on the DBS card; shopping, outings and dinners out of
+# SGD 15 or more on the Citi card. Hawker and coffee money, transport top-ups, health, the
+# odd errand and the household bills (rent, phone, electricity) stay untagged, as if paid in
+# cash or by transfer. It is decided from the entry itself, so there is no randomness.
+_ON_DBS = frozenset({"FairPrice", "Sheng Siong", "Cold Storage", "Grab", "Netflix", "Spotify"})
+_ON_CITI = frozenset({"Shopping", "Activities", "Socialising"})
+_CITI_DINING_FROM = Decimal(15)
 
 # Newest first. Times and amounts vary on purpose; none of it is anyone's real spending.
 _SPENDING: tuple[_Spend, ...] = (
@@ -303,17 +315,34 @@ async def _together(*work: Coroutine[Any, Any, object]) -> None:
         raise failed.exceptions[0] from None
 
 
+@dataclass(frozen=True, slots=True)
+class _Cards:
+    """The two cards that expenses are tagged with."""
+
+    citi: Wallet
+    dbs: Wallet
+
+    def paying(self, merchant: str, category: str | None, amount: str) -> UUID | None:
+        """The card an expense was paid with; None leaves it untagged."""
+        if merchant in _ON_DBS:
+            return self.dbs.id
+        if category in _ON_CITI or (category == DINING and Decimal(amount) >= _CITI_DINING_FROM):
+            return self.citi.id
+        return None
+
+
 async def _everyday(uow: UowFactory, user: User, days: _Days) -> None:
     """Money: wallets, salary, the ledger, bills, subscriptions and budgets."""
     now = days.now
     categories = {c.name: c.id for c in await list_categories(uow(), user.id)}
-    wallets, _, recent = await asyncio.gather(
+    wallets, cards, _, recent = await asyncio.gather(
         _wallets(uow, user),
+        _cards(uow, user),
         rule_cases.set_rule(uow(), user, "grab", categories["Transport"], now=now),
         _schedule(uow, user, days),
     )
     shared, _ = await asyncio.gather(
-        _ledger(uow, user, days, categories, recent, *wallets),
+        _ledger(uow, user, days, categories, recent, cards, *wallets),
         _log_salary(uow, user, days, recent),
     )
     # Splits first: a budget counts only the user's own share of a shared bill.
@@ -337,6 +366,23 @@ async def _wallets(uow: UowFactory, user: User) -> tuple[Wallet, Wallet, Wallet]
     )
     everything = await wallet_cases.list_wallets(uow(), user.id)
     return next(w for w in everything if w.kind is WalletKind.SPENDING), savings, ibkr
+
+
+async def _cards(uow: UowFactory, user: User) -> _Cards:
+    """Two made-up credit cards (the only digits are the last four of each), the Citi one
+    the usual card."""
+    citi, dbs = await asyncio.gather(
+        wallet_cases.add_wallet(
+            uow(), user.id, CITI, "card",
+            issuer="Citi", product="PremierMiles", network="visa", last4="4321",
+        ),
+        wallet_cases.add_wallet(
+            uow(), user.id, DBS, "card",
+            issuer="DBS", product="Altitude", network="mastercard", last4="8765",
+        ),
+    )  # fmt: skip
+    await wallet_cases.set_usual_card(uow(), user.id, citi.id)
+    return _Cards(citi, dbs)
 
 
 # --- salary ----------------------------------------------------------------------------
@@ -376,9 +422,11 @@ class _Move:
     note: str
 
 
-def _expenses(user: User, days: _Days, categories: dict[str, UUID]) -> list[_Expense]:
+def _expenses(
+    user: User, days: _Days, categories: dict[str, UUID], cards: _Cards
+) -> list[_Expense]:
     """Everyday spending, plus the subscriptions, rent, phone and electricity of the earlier
-    months (this month's rent goes through its bill)."""
+    months (this month's rent goes through its bill). Some are paid with a card."""
     home = user.home_currency
 
     def expense(
@@ -392,6 +440,7 @@ def _expenses(user: User, days: _Days, categories: dict[str, UUID]) -> list[_Exp
             category_id=categories[category] if category else None,
             notes=note,
             source=Source.TEXT,
+            paid_with_wallet_id=cards.paying(merchant, category, amount),
         )
 
     found: list[_Expense] = [
@@ -453,13 +502,14 @@ async def _ledger(
     days: _Days,
     categories: dict[str, UUID],
     recent: list[date],
+    cards: _Cards,
     spending: Wallet,
     savings: Wallet,
     ibkr: Wallet,
 ) -> list[Transaction]:
     """Spending and moves, written a few units of work at once, each in a single
     transaction. Returns the expenses to split with Ann."""
-    expenses = _expenses(user, days, categories)
+    expenses = _expenses(user, days, categories, cards)
     moves = _moves(days, recent, spending, savings, ibkr)
     written = await asyncio.gather(
         *(
