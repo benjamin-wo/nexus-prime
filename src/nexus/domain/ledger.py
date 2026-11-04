@@ -104,6 +104,9 @@ class User:
     # Whether they keep track of which card paid. Off, the usual card is not applied, emails
     # and imports don't name a card, and the assistant doesn't ask; what is stored stays.
     track_cards: bool = False
+    # Whether they were asked, or chose themselves, about tracking which card paid (see
+    # ``application.found_cards``): once true they are never asked again.
+    card_tracking_asked: bool = False
 
     def __post_init__(self) -> None:
         if not self.home_timezone:

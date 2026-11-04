@@ -98,6 +98,9 @@ users = Table(
     # Whether they keep track of which card paid (migration 0066): off ("simple mode") unless
     # they turn it on. Nothing stored is touched when it is off.
     Column("track_cards", Boolean, nullable=False, server_default=text("false")),
+    # Whether they were asked about turning it on from an email's card, or set it themselves
+    # (migration 0067): they are asked once and never nagged.
+    Column("card_tracking_asked", Boolean, nullable=False, server_default=text("false")),
     ForeignKeyConstraint(
         ["usual_card_wallet_id", "id"],
         ["wallets.id", "wallets.user_id"],

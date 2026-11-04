@@ -55,7 +55,9 @@ _albums: dict[str, list[dict[str, Any]]] = {}
 # Telegram shows "typing…" for about 5 seconds; it's sent again this often until
 # the reply goes out.
 TYPING_EVERY = 4.0
-ONE_SHOT = ("hitl:", "bill:", "salary:", "rule:", "email:", "run:", "hold:", "plan:", "trip:")
+ONE_SHOT = (
+    "hitl:", "bill:", "salary:", "rule:", "email:", "run:", "hold:", "plan:", "trip:", "card:",
+)  # fmt: skip
 
 
 @dataclass(frozen=True, slots=True)

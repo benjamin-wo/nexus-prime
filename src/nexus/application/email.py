@@ -21,6 +21,7 @@ from zoneinfo import ZoneInfo
 
 from nexus.application import bookings as booking_cases
 from nexus.application import duplicates as duplicate_cases
+from nexus.application import found_cards
 from nexus.application import receipts as receipt_cases
 from nexus.application import splits as split_cases
 from nexus.application import transactions as tx_cases
@@ -40,6 +41,7 @@ from nexus.application.ports import (
 from nexus.application.splits import owing_person
 from nexus.application.transactions import NewTransaction
 from nexus.application.wallets import create_move, require_wallet
+from nexus.domain.banks import issuer_from_sender
 from nexus.domain.bookings import BookingDraft
 from nexus.domain.demo import forbid
 from nexus.domain.duplicates import NEAR_DAYS, Candidate, better_name, likely_same
@@ -81,7 +83,7 @@ from nexus.domain.ledger import (
 from nexus.domain.money import Money
 from nexus.domain.notifications import Frequency, Kind, Level
 from nexus.domain.receipts import UNCLAIMED_TTL
-from nexus.domain.wallets import card_last4_in, card_with_last4, wallet_for
+from nexus.domain.wallets import card_last4_in, wallet_for
 
 log = logging.getLogger(__name__)
 SWEEP_JOB = "email.sweep"
@@ -483,9 +485,13 @@ async def _read_one(
             money = _amount(expense, user.home_currency) or amount_in_text(fetched.text)
             if not screening.received:
                 # The card the email names, as its last four digits (what the text states
-                # wins over what the model read): only those four are kept.
+                # wins over what the model read): only those four are kept. The sender's
+                # domain names the bank, as a label only.
+                last4 = card_last4_in(fetched.text) or expense.card_last4
                 expense = replace(
-                    expense, card_last4=card_last4_in(fetched.text) or expense.card_last4
+                    expense,
+                    card_last4=last4,
+                    card_issuer=issuer_from_sender(fetched.sender) if last4 else None,
                 )
             if money is None:
                 status = EmailStatus.NO_AMOUNT
@@ -1042,6 +1048,7 @@ async def log_email(
             raise
         await _set(uow(), user.id, email_id, EmailStatus.LOGGED, None, saved.id)
         return saved
+    card = await found_cards.card_for(uow, user.id, read.card_last4, read.card_issuer, now=now)
     async with uow() as tx:
         cmd = NewTransaction(
             direction=Direction.OUT,
@@ -1052,7 +1059,7 @@ async def log_email(
             source=Source.EMAIL,
             external_id=key,
             fallback_category_id=await _category_named(tx, user.id, draft.get("category")),
-            paid_with_wallet_id=await _card_named(tx, user.id, read.card_last4),
+            paid_with_wallet_id=card,
         )
     try:
         saved = await receipt_cases.log_with_receipt(
@@ -1181,18 +1188,6 @@ async def _log_received(
     )
 
 
-async def _card_named(tx: UnitOfWork, user_id: UserId, last4: str | None) -> UUID | None:
-    """The user's card wallet with these last four digits, when exactly one has them. None
-    for a user who doesn't track which card paid."""
-    if not last4:
-        return None
-    user = await tx.ledger.get_user(user_id)
-    if user is None or not user.track_cards:
-        return None
-    card = card_with_last4(await tx.ledger.list_wallets(user_id), last4)
-    return card.id if card else None
-
-
 async def _category_named(tx: UnitOfWork, user_id: UserId, name: object) -> UUID | None:
     if not isinstance(name, str) or not name.strip():
         return None
@@ -1242,11 +1237,18 @@ async def same_payment(
                 target = str(other.transaction_id)
             else:
                 theirs = ExpenseDraft.from_dict(other.draft or {})
+                kept = dict(other.draft or {})
                 named = better_name(theirs.merchant, draft.merchant)
                 if named != theirs.merchant:
-                    await tx.email.update_inbound(
-                        replace(other, draft={**(other.draft or {}), "merchant": named})
-                    )
+                    kept["merchant"] = named
+                # A bank's alert names the card; the shop's receipt that is kept may not.
+                if draft.card_last4 and theirs.card_last4 in (None, draft.card_last4):
+                    kept["card_last4"] = draft.card_last4
+                    issuer = theirs.card_issuer or draft.card_issuer
+                    if issuer:
+                        kept["card_issuer"] = issuer
+                if kept != (other.draft or {}):
+                    await tx.email.update_inbound(replace(other, draft=kept))
                 await tx.email.update_inbound(
                     replace(
                         email,
@@ -1261,10 +1263,24 @@ async def same_payment(
     current = await tx_cases.get_transaction(uow(), user.id, UUID(target))
     if current.is_deleted:
         raise InvalidInput("that entry was deleted; log this email instead")
+    changes: dict[str, Any] = {}
     named = better_name(current.counterparty, draft.merchant)
     if named != current.counterparty:
+        changes["counterparty"] = named
+    if (
+        current.paid_with_wallet_id is None
+        and current.direction is Direction.OUT
+        and draft.card_last4
+    ):
+        # The kept entry doesn't say which card paid, but the bank's alert does.
+        card = await found_cards.card_for(
+            uow, user.id, draft.card_last4, draft.card_issuer, now=now
+        )
+        if card is not None:
+            changes["paid_with_wallet_id"] = card
+    if changes:
         current = await tx_cases.edit_transaction(
-            uow(), user.id, current.id, tx_cases.TransactionChanges(counterparty=named)
+            uow(), user.id, current.id, tx_cases.TransactionChanges(**changes)
         )
     receipt = (email.draft or {}).get("receipt_id")
     async with uow() as tx:

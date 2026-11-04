@@ -36,7 +36,7 @@ from nexus.agent.trip_reader import TripReader, drafts
 from nexus.application import bills as bill_cases
 from nexus.application import bookings as booking_cases
 from nexus.application import category_rules as rule_cases
-from nexus.application import costs, ops
+from nexus.application import costs, found_cards, ops
 from nexus.application import departments as department_cases
 from nexus.application import email as email_cases
 from nexus.application import investments as investment_cases
@@ -60,7 +60,7 @@ from nexus.application.ports import ReceiptStore, SpeechError, SpeechToText
 from nexus.application.users import get_user
 from nexus.domain.chat import CHAT_KEEP, ChatLine, Speaker, channel_of, clip
 from nexus.domain.departments import RunStatus
-from nexus.domain.errors import DuplicateSource, InvalidInput, NexusError
+from nexus.domain.errors import DuplicateSource, InvalidInput, NexusError, NotFound
 from nexus.domain.investments import Position, clean_quantity, clean_symbol
 from nexus.domain.ledger import Direction, Transaction, UserId
 from nexus.domain.money import Money
@@ -1002,6 +1002,8 @@ class AgentService:
         if data.startswith("email:"):
             _, action, email_id = [*data.split(":"), "", ""][:3]
             return [await self._email_button(actor, action, email_id)]
+        if data.startswith(found_cards.PREFIX):
+            return [await self._card_button(actor, data.removeprefix(found_cards.PREFIX))]
         if data.startswith("rule:"):
             return [await self._rule_button(actor, data.removeprefix("rule:"))]
         if data.startswith("bill:"):
@@ -1184,6 +1186,41 @@ class AgentService:
         except NexusError as exc:
             return Reply(str(exc).capitalize() + ".")
         return Reply("I don't know that button.")
+
+    async def _card_button(self, actor: UserId, data: str) -> Reply:
+        """Keep / Remove on a card found in the user's bank emails, and Turn on / No thanks
+        on the question about tracking which card paid."""
+        action, _, rest = data.partition(":")
+        if action == "track":
+            if rest == "on":
+                await found_cards.turn_on_tracking(self._uow(), actor)
+                return Reply(
+                    "Card tracking is on. From the next bank email I'll note which card paid. "
+                    "You can turn it off in Settings."
+                )
+            await found_cards.decline_tracking(self._uow(), actor)
+            return Reply("OK, I won't ask again. You can turn it on in Settings.")
+        try:
+            wallet_id = UUID(rest)
+        except ValueError:
+            return Reply("I don't know that button.")
+        if action == "keep":
+            return Reply("Kept. You can rename or edit it in Wallets.")
+        if action != "remove":
+            return Reply("I don't know that button.")
+        try:
+            removed = await found_cards.remove_found_card(self._uow, actor, wallet_id)
+        except NotFound:
+            return Reply("That card is already gone.")
+        except InvalidInput:
+            return Reply(
+                "I couldn't remove that card safely, because other things use it. "
+                "You can change or delete it in Wallets."
+            )
+        card = removed.wallet
+        tagged = f" {removed.untagged} expense(s) no longer say which card paid."
+        label = found_cards.card_label(card.issuer, card.last4 or "")
+        return Reply(f"Removed {label}.{tagged if removed.untagged else ''}")
 
     async def _money_in(self, actor: UserId, tx: Transaction) -> str:
         """What logging money received did: a repayment says who still owes what."""

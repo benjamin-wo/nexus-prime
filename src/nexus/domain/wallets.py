@@ -158,11 +158,25 @@ def paying_candidates(wallets: Iterable[Wallet], text: str) -> list[Wallet]:
     return found
 
 
-def card_with_last4(wallets: Iterable[Wallet], last4: str) -> Wallet | None:
-    """The user's one card wallet whose last four digits these are; None when there is no
-    such card or more than one."""
-    found = [w for w in wallets if w.kind is WalletKind.CARD and w.last4 == last4]
-    return found[0] if len(found) == 1 else None
+def cards_with_last4(wallets: Iterable[Wallet], last4: str) -> list[Wallet]:
+    return [w for w in wallets if w.kind is WalletKind.CARD and w.last4 == last4]
+
+
+def card_with_last4(
+    wallets: Iterable[Wallet], last4: str, issuer: str | None = None
+) -> Wallet | None:
+    """The user's one card wallet whose last four digits these are. When several share them,
+    the one whose issuer is ``issuer`` (any case), if that picks exactly one. None when there
+    is no such card, or it is still ambiguous."""
+    found = cards_with_last4(wallets, last4)
+    if len(found) == 1:
+        return found[0]
+    if issuer and found:
+        wanted = issuer.strip().casefold()
+        same = [w for w in found if w.issuer and w.issuer.strip().casefold() == wanted]
+        if len(same) == 1:
+            return same[0]
+    return None
 
 
 # --- card digits in a line of text -----------------------------------------------------
