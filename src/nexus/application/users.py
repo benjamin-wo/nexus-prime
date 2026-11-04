@@ -103,9 +103,11 @@ async def get_user(uow: UnitOfWork, actor: UserId) -> User:
 async def set_track_cards(uow: UnitOfWork, actor: UserId, on: bool) -> bool:
     """Turn on or off keeping track of which card paid. Off, the usual card is not applied
     to new expenses, emails and imports don't name a card, and the assistant doesn't ask.
-    Nothing stored is changed, so turning it on again brings it all back."""
+    Nothing stored is changed, so turning it on again brings it all back. Choosing, either
+    way, also means they are never asked about it (see ``found_cards``)."""
     async with uow:
         await uow.ledger.set_track_cards(actor, on)
+        await uow.ledger.set_card_tracking_asked(actor)
         await uow.commit()
     return on
 

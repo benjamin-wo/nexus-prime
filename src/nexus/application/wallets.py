@@ -121,6 +121,34 @@ def _card_details(
     return details
 
 
+def build_wallet(
+    actor: UserId,
+    name: str,
+    kind: WalletKind | str,
+    match_words: Iterable[str] = (),
+    *,
+    issuer: str | None = None,
+    product: str | None = None,
+    network: CardNetwork | str | None = None,
+    last4: str | None = None,
+) -> Wallet:
+    """A new wallet, checked and cleaned but not saved: for a caller that saves it inside a
+    unit of work of its own (``add_wallet`` is the use case for one wallet)."""
+    wallet_kind = _kind(kind)
+    if wallet_kind is WalletKind.SPENDING:
+        raise InvalidInput("everyone has one Spending wallet already")
+    if wallet_kind is WalletKind.CASH:
+        raise InvalidInput("everyone has one Cash wallet already")
+    return Wallet(
+        uuid4(),
+        actor,
+        clean_name(name, field_name="wallet name"),
+        wallet_kind,
+        _match_words(match_words),
+        **_card_details(wallet_kind, issuer, product, network, last4),
+    )
+
+
 async def add_wallet(
     uow: UnitOfWork,
     actor: UserId,
@@ -135,18 +163,15 @@ async def add_wallet(
 ) -> Wallet:
     """A new wallet. A card can say who issued it, which product and network it is and its
     last four digits (if more digits are given, only the last four are kept)."""
-    wallet_kind = _kind(kind)
-    if wallet_kind is WalletKind.SPENDING:
-        raise InvalidInput("everyone has one Spending wallet already")
-    if wallet_kind is WalletKind.CASH:
-        raise InvalidInput("everyone has one Cash wallet already")
-    wallet = Wallet(
-        uuid4(),
+    wallet = build_wallet(
         actor,
-        clean_name(name, field_name="wallet name"),
-        wallet_kind,
-        _match_words(match_words),
-        **_card_details(wallet_kind, issuer, product, network, last4),
+        name,
+        kind,
+        match_words,
+        issuer=issuer,
+        product=product,
+        network=network,
+        last4=last4,
     )
     async with uow:
         await uow.ledger.insert_wallet(wallet)

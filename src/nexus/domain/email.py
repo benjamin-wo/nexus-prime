@@ -155,6 +155,9 @@ class ExpenseDraft:
     received: bool = False  # money in, not money spent
     # The last four digits of the card the email says was used; never more than four.
     card_last4: str | None = None
+    # The bank the email came from, by its sender's domain (``domain.banks``): a label for a
+    # card, never a reason to trust the email.
+    card_issuer: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         found = {
@@ -168,6 +171,8 @@ class ExpenseDraft:
             found["direction"] = "in"
         if self.card_last4:
             found["card_last4"] = self.card_last4
+            if self.card_issuer:
+                found["card_issuer"] = self.card_issuer
         return found
 
     @classmethod
@@ -180,6 +185,7 @@ class ExpenseDraft:
             data.get("category"),
             data.get("direction") == "in",
             data.get("card_last4"),
+            data.get("card_issuer"),
         )
 
 

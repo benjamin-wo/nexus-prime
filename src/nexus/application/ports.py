@@ -172,6 +172,11 @@ class LedgerRepository(Protocol):
         """Whether the user keeps track of which card paid (off: simple mode)."""
         ...
 
+    async def set_card_tracking_asked(self, user_id: UserId) -> None:
+        """They have been asked about tracking which card paid, or chose it themselves: never
+        ask again."""
+        ...
+
     async def set_usual_card(self, user_id: UserId, wallet_id: UUID | None) -> None:
         """The wallet new expenses are paid with when none is said; None for no usual card.
         The caller has checked it is the user's own, and can pay."""

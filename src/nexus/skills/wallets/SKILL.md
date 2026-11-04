@@ -106,8 +106,11 @@ moves; it never moves money.
   `edit_transaction` with `paid_with` "DBS" (asks the user to confirm). "none" clears it.
 - "I usually pay with my Citi card": `set_usual_card` (saves at once). From then on
   expenses logged in chat, on the web or from a photo are paid with it unless another is
-  said. Imports and emails aren't (an email that names the card's last 4 digits is matched
-  to the card with them). "I don't have a usual card" or "stop using a default card":
+  said. Imports aren't. An email that names the card's last 4 digits is matched to the
+  card with them (the bank's name, from the sender, tells two cards with the same digits
+  apart). If the user tracks cards and has no such card, one is added ("UOB card") and they
+  are told, with Keep and Remove buttons; if they don't track cards they are asked once
+  whether to turn it on. "I don't have a usual card" or "stop using a default card":
   `set_usual_card` with "none".
 
 ## Questions

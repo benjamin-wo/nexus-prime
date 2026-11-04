@@ -787,7 +787,10 @@ async def test_an_email_that_names_a_card_is_logged_as_paid_with_it(
         return tx.paid_with_wallet_id
 
     assert await paid("m1") == found["DBS Altitude"].id
-    assert await paid("m2") is None  # no such card
+    # No such card: it is added (found_cards; see test_found_cards.py) and the expense tagged.
+    added = await paid("m2")
+    assert added is not None and added not in {w.id for w in (citi, found["DBS Altitude"])}
+    assert {w.id: w.last4 for w in await list_wallets(uow(), user.id)}[added] == "1111"
     assert await paid("m3") is None  # two cards end 4321: not guessed
     assert await paid("m4") is None
     assert citi.id != found["DBS Altitude"].id

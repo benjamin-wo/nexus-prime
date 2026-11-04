@@ -201,6 +201,8 @@ class Kind(StrEnum):
     DAILY_SUMMARY = "daily_summary"
     TRANSACTION_UPDATE = "transaction_update"
     EMAIL_STATUS = "email_status"
+    CARD_FOUND = "card_found"
+    CARD_TRACKING = "card_tracking"
     TIMEZONE = "timezone"
     DIGEST = "digest"  # the message that folds held ones together: never recorded itself
     MESSAGE = "message"  # a job queued before messages had a kind
