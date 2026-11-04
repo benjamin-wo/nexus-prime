@@ -2380,10 +2380,11 @@ body:has(.sheet-backdrop) .main-viewport { overflow: hidden; }
 .set-group { display: grid; gap: var(--space-2); }
 .set-group > .section-title { margin: 0 var(--space-4); font-size: 0.8125rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); }
 .set-list {
-  display: grid; margin: 0; padding: 0; list-style: none; overflow: hidden;
+  display: grid; grid-template-columns: minmax(0, 1fr); margin: 0; padding: 0; list-style: none; overflow: hidden;
   background: var(--bg-card); border: 1px solid var(--border-card); border-radius: var(--radius); box-shadow: var(--shadow-card);
 }
 .set-list > li + li { border-top: 1px solid var(--border-card); }
+.set-list > li { min-width: 0; }
 .set-row {
   display: flex; align-items: center; gap: var(--space-3); min-height: 56px; padding: var(--space-3) var(--space-4);
   color: var(--text-primary); text-decoration: none; transition: background var(--t-micro);
