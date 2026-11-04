@@ -100,8 +100,10 @@ test("a demo hides what only a real account has", async ({ page }) => {
   await fakeApi(page, { demo: true });
   await page.goto("/settings");
   await expect(page.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Receipts by email" })).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Shared trips" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /^Wallets/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /^Receipts by email/ })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /^Shared trips/ })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /^Model costs/ })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Invite someone" })).toHaveCount(0);
 });
 

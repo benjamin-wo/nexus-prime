@@ -16,7 +16,7 @@ const row = (page: Page, name: string) => page.getByRole("row").filter({ has: pa
 
 test("add a card's details, make it the usual card, and an expense is paid with it", async ({ page }) => {
   await open(page);
-  await page.goto("/settings");
+  await page.goto("/settings/wallets");
   const card = walletsCard(page);
   await card.getByText("Manage", { exact: true }).click();
   const yours = card.getByRole("list", { name: "Your wallets" });
@@ -226,7 +226,7 @@ test("change an entry's card, and filter the ledger by a card or by Not set", as
 
 test("each card shows what it paid for this month and links to its entries", async ({ page }) => {
   await open(page, { cards: true });
-  await page.goto("/settings");
+  await page.goto("/settings/wallets");
   const group = walletsCard(page).getByRole("group", { name: "Spend by card" });
   const citi = group.getByRole("listitem").filter({ hasText: "Citi PremierMiles ·· 4321" });
   await expect(citi).toContainText(/SGD.12\.40 this month · 1 purchase/);
@@ -244,4 +244,56 @@ test("each card shows what it paid for this month and links to its entries", asy
   await expect(page).toHaveURL(/\/accounting\/ledger\?paid_with=w-citi$/);
   await expect(page.getByRole("button", { name: "Maxwell Food Centre", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Grab", exact: true })).toHaveCount(0);
+});
+
+test("with card tracking off, the sheet has no Paid with and saving sends no card", async ({ page }) => {
+  // One card and no usual card: with tracking on, the sheet would send that card.
+  const state = await open(page, { trackCards: false });
+  await page.goto("/accounting/ledger");
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  const sheet = page.getByRole("dialog", { name: "Log money out" });
+  await expect(sheet.getByLabel("Amount")).toBeVisible();
+  await expect(sheet.getByLabel("Paid with")).toHaveCount(0);
+  await expect(sheet.getByText("Add a card")).toHaveCount(0);
+  await sheet.getByLabel("Amount").fill("3.20");
+  await sheet.getByLabel("Paid to").fill("Teh");
+  await sheet.getByRole("button", { name: "Save" }).click();
+  await expect(sheet).toBeHidden();
+  await expect(page.getByRole("button", { name: "Teh", exact: true })).toBeVisible();
+  expect(state.txWrites).toHaveLength(1);
+  expect(state.txWrites[0]).toMatchObject({ direction: "out", counterparty: "Teh" });
+  expect(state.txWrites[0]).not.toHaveProperty("paid_with_wallet_id");
+
+  // Editing an entry doesn't show or send a card either.
+  await page.getByRole("button", { name: "Teh", exact: true }).click();
+  const edit = page.getByRole("dialog", { name: "Edit transaction" });
+  await expect(edit.getByLabel("Paid with")).toHaveCount(0);
+  await edit.getByRole("button", { name: "Save" }).click();
+  await expect(edit).toBeHidden();
+  expect(state.txWrites).toHaveLength(2);
+  expect(state.txWrites[1]).not.toHaveProperty("paid_with_wallet_id");
+});
+
+test("with card tracking off, the ledger has no card filter or card lines and Wallets has no card details", async ({ page }) => {
+  await open(page, { trackCards: false, cards: true });
+  await page.goto("/accounting/ledger");
+  await expect(page.getByRole("button", { name: "Maxwell Food Centre", exact: true })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Paid with" })).toHaveCount(0);
+  await expect(page.getByText("Citi PremierMiles ·· 4321")).toHaveCount(0);
+  await expect(page.getByText("DBS Altitude ·· 8765")).toHaveCount(0);
+
+  await page.goto("/settings");
+  const card = walletsCard(page);
+  await expect(card.getByLabel("Usual card")).toHaveCount(0);
+  await expect(card.getByRole("group", { name: "Spend by card" })).toHaveCount(0);
+  await card.getByText("Manage", { exact: true }).click();
+  const yours = card.getByRole("list", { name: "Your wallets" });
+  const citi = yours.getByRole("listitem").filter({ has: page.getByRole("heading", { name: "Citi PremierMiles", exact: true }) });
+  await expect(citi).toBeVisible();
+  await expect(citi.getByText("Citi · PremierMiles")).toHaveCount(0);
+  await citi.getByRole("button", { name: "Edit" }).click();
+  const form = card.getByRole("form", { name: "Edit Citi PremierMiles" });
+  await expect(form.getByLabel("Name")).toBeVisible();
+  await expect(form.getByLabel("Last 4 digits")).toHaveCount(0);
+  await expect(form.getByLabel("Bank")).toHaveCount(0);
 });

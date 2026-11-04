@@ -21,7 +21,7 @@ import { DirectionBadge } from "../components/Badge";
 import { Toast } from "../components/Toast";
 import { Amount } from "../components/Amount";
 import { formatDate, formatMoney, moveLabel, txName } from "../format";
-import { payingWallets, walletLabel } from "../wallets";
+import { payingWallets, tracksCards, walletLabel } from "../wallets";
 
 const PAGE = 50;
 type View = "all" | "out" | "in" | "move" | "pending";
@@ -71,7 +71,9 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
   const [end, setEnd] = useState(() => params.get("end") ?? "");
   const [category, setCategory] = useState(() => params.get("category") ?? "");
   // The card that paid, kept in the address as ?paid_with=<wallet id> ("none" for entries with no card set).
-  const paidWith = params.get("paid_with") ?? "";
+  // Without card tracking there is no card filter, so a ?paid_with= left in an old link is ignored.
+  const track = tracksCards(me);
+  const paidWith = track ? (params.get("paid_with") ?? "") : "";
   const [offset, setOffset] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const presets = useMemo(() => ranges(me.user.timezone), [me.user.timezone]);
@@ -296,21 +298,23 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
               </label>
             </div>
           )}
-          <label className="paid-with-filter">
-            <span className="sr-only">Paid with</span>
-            <select className="input" value={paidWith} onChange={(e) => pickPaidWith(e.target.value)}>
-              <option value="">Paid with: any</option>
-              {paying.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {walletLabel(w)}
-                </option>
-              ))}
-              {paidWith && paidWith !== "none" && !paying.some((w) => w.id === paidWith) && paidWithWallet && (
-                <option value={paidWith}>{walletLabel(paidWithWallet)}</option>
-              )}
-              <option value="none">Not set</option>
-            </select>
-          </label>
+          {track && (
+            <label className="paid-with-filter">
+              <span className="sr-only">Paid with</span>
+              <select className="input" value={paidWith} onChange={(e) => pickPaidWith(e.target.value)}>
+                <option value="">Paid with: any</option>
+                {paying.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {walletLabel(w)}
+                  </option>
+                ))}
+                {paidWith && paidWith !== "none" && !paying.some((w) => w.id === paidWith) && paidWithWallet && (
+                  <option value={paidWith}>{walletLabel(paidWithWallet)}</option>
+                )}
+                <option value="none">Not set</option>
+              </select>
+            </label>
+          )}
           {paidWith && (
             <span className="filter-chip">
               <span>
@@ -436,7 +440,7 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
                       {tx.category_id && names.get(tx.category_id) && (
                         <div className="caption category-line">{names.get(tx.category_id)}</div>
                       )}
-                      {tx.paid_with && <div className="caption paid-with-line">{walletLabel(tx.paid_with)}</div>}
+                      {track && tx.paid_with && <div className="caption paid-with-line">{walletLabel(tx.paid_with)}</div>}
                       {tx.direction === "move" && tx.counterparty && (
                         <div className="caption">{moveLabel(tx)}</div>
                       )}

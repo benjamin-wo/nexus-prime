@@ -6,7 +6,7 @@ import { fakeApi } from "./fake-api";
 
 test("pick Cheeky, the preview changes, set emoji to None, and the note is saved", async ({ page }) => {
   const api = await fakeApi(page);
-  await page.goto("/settings");
+  await page.goto("/settings/voice");
   const card = page.getByRole("region", { name: "How Nexus talks" });
   await expect(card.getByRole("button", { name: /^Default/ })).toHaveAttribute("aria-pressed", "true");
   const first = card.getByTestId("voice-reply").first();

@@ -9,7 +9,7 @@ const card = (page: import("@playwright/test").Page) => page.getByRole("region",
 
 test("opening the app reports the phone's zone, and Settings shows it with home beside it", async ({ page }) => {
   const api = await fakeApi(page, { phoneFollows: true });
-  await page.goto("/settings");
+  await page.goto("/settings/time-zone");
   await expect(card(page).getByTestId("time-zone-now")).toContainText("Madrid · UTC+");
   await expect(card(page)).toContainText("from your phone");
   await expect(card(page)).toContainText("Home: Singapore");
@@ -19,7 +19,7 @@ test("opening the app reports the phone's zone, and Settings shows it with home 
 
 test("a zone picked in Settings is saved as the user's own", async ({ page }) => {
   const api = await fakeApi(page, { phoneFollows: true });
-  await page.goto("/settings");
+  await page.goto("/settings/time-zone");
   await expect(card(page)).toContainText("from your phone");
   await card(page).getByRole("button", { name: "Change" }).click();
   await card(page).getByLabel("Find a time zone").fill("tokyo");
@@ -33,7 +33,7 @@ test("a zone picked in Settings is saved as the user's own", async ({ page }) =>
 
 test("Use home time goes back to Singapore and the button goes away", async ({ page }) => {
   const api = await fakeApi(page, { phoneFollows: true });
-  await page.goto("/settings");
+  await page.goto("/settings/time-zone");
   await expect(card(page)).toContainText("Madrid");
   await card(page).getByRole("button", { name: "Use home time" }).click();
   await expect(card(page).getByTestId("time-zone-now")).toContainText("Singapore · UTC+8");
@@ -47,7 +47,7 @@ test("Use home time goes back to Singapore and the button goes away", async ({ p
 
 test("a zone chosen in the last day is not overridden by the phone on reload", async ({ page }) => {
   const api = await fakeApi(page, { phoneFollows: true });
-  await page.goto("/settings");
+  await page.goto("/settings/time-zone");
   await expect(card(page)).toContainText("from your phone");
   await card(page).getByRole("button", { name: "Change" }).click();
   await card(page).getByLabel("Find a time zone").fill("tokyo");

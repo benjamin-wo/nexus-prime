@@ -250,6 +250,7 @@ export type Me = {
   joined_trip?: string | null;
   /** Set while this is the public demo account (made-up data, ends at `expires_at`); null for a real user. */
   demo?: Demo | null;
+  preferences?: { track_cards: boolean };
 };
 export type Demo = { expires_at: string; messages_left: number };
 /** The answer to the two time zone writes: the same fields as `/me`, and whether the zone moved. */

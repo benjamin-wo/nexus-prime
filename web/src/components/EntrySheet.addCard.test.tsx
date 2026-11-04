@@ -9,6 +9,7 @@ import { EntrySheet } from "./EntrySheet";
 const me: Me = {
   user: { telegram_user_id: 1, role: "member", home_currency: "SGD", timezone: "Asia/Singapore" },
   csrf_token: "c",
+  preferences: { track_cards: true },
 };
 
 const wallet = (over: Partial<Wallet>): Wallet => ({ id: "w", name: "Wallet", kind: "card", match_words: [], ...over });

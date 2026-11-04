@@ -35,7 +35,7 @@ AHEAD_DAYS = 7
 async def money_snapshot(ctx: ToolContext) -> str:
     """The snapshot as plain lines, or "" if nothing could be read."""
     parts: list[str] = []
-    for build in (_emails, _month, _wallets, _budgets, _ahead, _ious, _recent):
+    for build in (_cards, _emails, _month, _wallets, _budgets, _ahead, _ious, _recent):
         try:
             text = await build(ctx)
         except Exception:
@@ -74,6 +74,17 @@ async def _month(ctx: ToolContext) -> str:
     return line
 
 
+async def _cards(ctx: ToolContext) -> str:
+    """Simple mode: the user doesn't track which card paid. Said first, so the size cap
+    never cuts it. Paying a card's bill is a move and is not affected."""
+    if ctx.user.track_cards:
+        return ""
+    return (
+        "Card tracking is off: don't ask which card paid an expense, and don't pass paid_with "
+        "or set a usual card. Paying a card bill is a move and works as always."
+    )
+
+
 def _wallet_facts(w: Wallet, usual: bool) -> list[str]:
     facts = [w.kind.value]
     if w.last4:
@@ -92,10 +103,8 @@ async def _wallets(ctx: ToolContext) -> str:
     others = [w for w in wallets if w.kind is not WalletKind.SPENDING]
     if all(w.kind is WalletKind.CASH for w in others):
         return ""
-    names = ", ".join(
-        f"{w.name} ({', '.join(_wallet_facts(w, w.id == ctx.user.usual_card_wallet_id))})"
-        for w in others
-    )
+    usual_id = ctx.user.usual_card_wallet_id if ctx.user.track_cards else None
+    names = ", ".join(f"{w.name} ({', '.join(_wallet_facts(w, w.id == usual_id))})" for w in others)
     line = f"Wallets besides Spending: {names}."
     figures = await month_figures(ctx.uow, _rates(ctx), ctx.user, now=ctx.now)
     away = f"Put away this month: {_money(figures.put_away)}"

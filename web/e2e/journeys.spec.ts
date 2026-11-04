@@ -179,7 +179,7 @@ test("a move between wallets shows neutrally and is not counted as spending or i
 
 test("add, edit and delete a wallet from Settings", async ({ page }) => {
   await fakeApi(page);
-  await page.goto("/settings");
+  await page.goto("/settings/wallets");
   const card = page.getByRole("region", { name: "Wallets" });
   const yours = card.getByRole("list", { name: "Your wallets" });
   // Folded: a count and the names, until Manage opens the list.
@@ -235,7 +235,7 @@ test("add, edit and delete a wallet from Settings", async ({ page }) => {
 
 test("deleting a wallet re-points its moves at the one picked", async ({ page }) => {
   await fakeApi(page);
-  await page.goto("/settings");
+  await page.goto("/settings/wallets");
   const card = page.getByRole("region", { name: "Wallets" });
   await card.getByText("Manage", { exact: true }).click();
   const yours = card.getByRole("list", { name: "Your wallets" });
@@ -253,7 +253,7 @@ test("deleting a wallet re-points its moves at the one picked", async ({ page })
 
 test("Spending can be renamed but not deleted or given another kind", async ({ page }) => {
   await fakeApi(page);
-  await page.goto("/settings");
+  await page.goto("/settings/wallets");
   const card = page.getByRole("region", { name: "Wallets" });
   await card.getByText("Manage", { exact: true }).click();
   const spending = card
@@ -310,7 +310,7 @@ test("a move needs a second wallet, and the sheet says where to add one", async 
   await expect(sheet.getByRole("link", { name: "Add a wallet in Settings first" })).toBeVisible();
   await expect(sheet.getByRole("button", { name: "Save" })).toBeDisabled();
   await sheet.getByRole("link", { name: "Add a wallet in Settings first" }).click();
-  await expect(page).toHaveURL(/\/settings$/);
+  await expect(page).toHaveURL(/\/settings\/wallets$/);
   await expect(sheet).toBeHidden();
 });
 
@@ -680,7 +680,7 @@ test("a category correction offers a rule, saved only when accepted", async ({ p
   await offer.getByRole("button", { name: "Save rule" }).click();
   await expect(page.getByText("Saved. New expenses from “grab” will be filed the same way.")).toBeVisible();
 
-  await page.goto("/settings");
+  await page.goto("/settings/rules");
   const rules = page.getByRole("region", { name: "Category rules" });
   await expect(rules.getByRole("heading", { name: "“grab”" })).toBeVisible();
   await expect(rules.getByText("Added on 28 Sep 2026 when you filed “Grab” under Transport.")).toBeVisible();
@@ -725,17 +725,16 @@ test("a Connect Gmail link explains Google's warning before sign-in", async ({ p
   await expect(page.getByRole("heading", { name: "Gmail connected" })).toBeVisible();
 });
 
-test("Receipts by email is a Settings card before it is connected, then shows what happened to each email", async ({ page }) => {
+test("Receipts by email is a Settings row before it is connected, then shows what happened to each email", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/settings");
-  await expect(page.getByRole("region", { name: "Category rules" })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Receipts by email" }).getByText(/Not connected/)).toBeVisible();
+  await expect(page.getByRole("link", { name: /^Receipts by email/ }).getByText("Not connected")).toBeVisible();
 
   await fakeApi(page, { emailConnected: true });
   await page.goto("/settings");
-  const card = page.getByRole("region", { name: "Receipts by email" });
-  await expect(card.getByText("ann@gmail.com · 1 waiting for you")).toBeVisible();
-  await card.getByRole("link", { name: "Open" }).click();
+  const row = page.getByRole("link", { name: /^Receipts by email/ });
+  await expect(row.getByText("ann@gmail.com · 1 waiting")).toBeVisible();
+  await row.click();
   await expect(page).toHaveURL(/\/settings\/email$/);
   await expect(page.getByRole("heading", { name: "Receipts by email", level: 1 })).toBeVisible();
 
@@ -798,7 +797,7 @@ test("cash flow shows logged and expected days, with detail on tap", async ({ pa
 
 test("telegram updates default to an end-of-day summary and can be changed", async ({ page }) => {
   await fakeApi(page);
-  await page.goto("/settings");
+  await page.goto("/settings/updates");
   const card = page.getByRole("region", { name: "Telegram updates" });
   const choice = card.getByLabel("Send me my transactions");
   await expect(choice).toHaveValue("daily");
@@ -841,7 +840,7 @@ test("nothing spills sideways on a small phone", async ({ page }) => {
 
 test("add, rename and delete a category", async ({ page }) => {
   await fakeApi(page);
-  await page.goto("/settings");
+  await page.goto("/settings/categories");
   const card = page.getByRole("region", { name: "Categories" });
   const yours = card.getByRole("list", { name: "Your categories" });
   // The card starts folded: just the names, until Manage opens the list.
@@ -879,7 +878,7 @@ test("add, rename and delete a category", async ({ page }) => {
 
 test("Other and Income can't be deleted", async ({ page }) => {
   await fakeApi(page);
-  await page.goto("/settings");
+  await page.goto("/settings/categories");
   const card = page.getByRole("region", { name: "Categories" });
   await card.getByText("Manage", { exact: true }).click();
   const yours = card.getByRole("list", { name: "Your categories" });
@@ -892,7 +891,7 @@ test("Other and Income can't be deleted", async ({ page }) => {
 
 test("delete a category and find its expense under Other", async ({ page }) => {
   await fakeApi(page);
-  await page.goto("/settings");
+  await page.goto("/settings/categories");
   const card = page.getByRole("region", { name: "Categories" });
   const yours = card.getByRole("list", { name: "Your categories" });
   await card.getByText("Manage", { exact: true }).click();
@@ -919,9 +918,13 @@ test("the cog opens Settings, which is grouped, and Budgets keeps only budgeting
   await page.getByRole("link", { name: "Settings" }).filter({ visible: true }).click();
   await expect(page).toHaveURL(/\/settings$/);
   await expect(page.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible();
-  await expect(page.locator("h2.section-title")).toHaveText(["Notifications", "Connections", "Your data"]);
+  await expect(page.locator("h2.section-title")).toHaveText(["Preferences", "Notifications", "Connections", "Your data"]);
   for (const name of ["Telegram updates", "Shared trips", "Receipts by email", "Import a statement", "Categories", "Wallets", "Category rules", "What Nexus remembers"])
-    await expect(page.getByRole("region", { name })).toBeVisible();
+    await expect(page.getByRole("link", { name: new RegExp(`^${name}`) })).toBeVisible();
+  // Each one opens on its own page.
+  await page.getByRole("link", { name: /^Category rules/ }).click();
+  await expect(page).toHaveURL(/\/settings\/rules$/);
+  await expect(page.getByRole("region", { name: "Category rules" })).toBeVisible();
 });
 
 test("import a bank statement: preview, tick, confirm, undo", async ({ page }) => {
@@ -986,7 +989,7 @@ test("import a scanned PDF statement", async ({ page }) => {
 
 test("see and forget what Nexus remembers", async ({ page }) => {
   await fakeApi(page);
-  await page.goto("/settings");
+  await page.goto("/settings/memory");
   const card = page.getByRole("region", { name: "What Nexus remembers" });
   await expect(card.getByText("Ann is the user's sister.")).toBeVisible();
   await expect(card.getByText(/27 Sep|Sep 27/)).toBeVisible();
@@ -1014,7 +1017,7 @@ test("Nexus sits in the middle of the bar on a phone, in the rail on a wide scre
 
 test("merge one category into another from Settings", async ({ page }) => {
   await fakeApi(page);
-  await page.goto("/settings");
+  await page.goto("/settings/categories");
   const card = page.getByRole("region", { name: "Categories" });
   const yours = card.getByRole("list", { name: "Your categories" });
   await card.getByText("Manage", { exact: true }).click();
@@ -1407,7 +1410,7 @@ test("big move alerts, quiet hours and the morning summary are saved one field a
   page.on("request", (request) => {
     if (request.method() === "PUT" && new URL(request.url()).pathname === "/api/notifications") puts.push(request.postDataJSON());
   });
-  await page.goto("/settings");
+  await page.goto("/settings/updates");
   const card = page.getByRole("region", { name: "Telegram updates" });
   await expect(card.getByLabel("From", { exact: true })).toHaveValue("23:00");
   await expect(card.getByLabel("To", { exact: true })).toHaveValue("08:00");
@@ -3873,7 +3876,7 @@ test("'Expense' on a move question logs the email as usual", async ({ page }) =>
 
 test("entries that look like moves are reviewed one at a time from the Wallets card", async ({ page }) => {
   const state = await fakeApi(page, { ibkr: true, likelyMoves: true });
-  await page.goto("/settings");
+  await page.goto("/settings/wallets");
   const card = page.getByRole("region", { name: "Wallets" });
   await expect(card.getByText("2 entries look like moves")).toBeVisible();
   await card.getByRole("button", { name: "Review" }).click();

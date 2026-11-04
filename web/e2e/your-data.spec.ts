@@ -4,7 +4,7 @@ import { fakeApi } from "./fake-api";
 
 test("Download all my data hands over the zip and says so", async ({ page }) => {
   const state = await fakeApi(page);
-  await page.goto("/settings");
+  await page.goto("/settings/data");
   const card = page.getByRole("region", { name: "Download or delete" });
   await expect(card.getByText("Your ledger, budgets, trips, investments, memories and settings, as a zip.")).toBeVisible();
   const [download] = await Promise.all([page.waitForEvent("download"), card.getByRole("button", { name: "Download" }).click()]);
@@ -15,7 +15,7 @@ test("Download all my data hands over the zip and says so", async ({ page }) => 
 
 test("a download asked for too often says to wait", async ({ page }) => {
   const state = await fakeApi(page, { exportLimited: true });
-  await page.goto("/settings");
+  await page.goto("/settings/data");
   const card = page.getByRole("region", { name: "Download or delete" });
   await card.getByRole("button", { name: "Download" }).click();
   await expect(card.getByRole("alert")).toContainText("Try again in a few minutes");
@@ -25,7 +25,7 @@ test("a download asked for too often says to wait", async ({ page }) => {
 
 test("Delete everything waits for DELETE, can be cancelled, and signs out when confirmed", async ({ page }) => {
   const state = await fakeApi(page);
-  await page.goto("/settings");
+  await page.goto("/settings/data");
   const card = page.getByRole("region", { name: "Download or delete" });
   await expect(card.getByText(/This can't be undone, and you'd need a new invite to come back\./)).toBeVisible();
   const open = card.getByRole("button", { name: "Delete everything…" });
@@ -62,13 +62,13 @@ test("Delete everything waits for DELETE, can be cancelled, and signs out when c
 
 test("a refused deletion shows why and keeps the person signed in", async ({ page }) => {
   const state = await fakeApi(page, { deleteRefused: true });
-  await page.goto("/settings");
+  await page.goto("/settings/data");
   const card = page.getByRole("region", { name: "Download or delete" });
   await card.getByRole("button", { name: "Delete everything…" }).click();
   await card.getByLabel("Type DELETE to confirm").fill("DELETE");
   await card.getByRole("button", { name: "Delete everything", exact: true }).click();
   await expect(card.getByRole("alert")).toContainText("Type DELETE");
-  await expect(page).toHaveURL(/\/settings$/);
+  await expect(page).toHaveURL(/\/settings\/data$/);
   await expect(card.getByLabel("Type DELETE to confirm")).toHaveValue("DELETE");
   expect(state.deletes).toHaveLength(1);
   expect(state.deletes[0].status).toBe(422);

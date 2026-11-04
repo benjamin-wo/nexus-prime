@@ -5,7 +5,7 @@ import { fakeApi } from "./fake-api";
 test("the owner opens Model costs from Settings, sees the figures and switches to 7 days", async ({ page }) => {
   const state = await fakeApi(page);
   await page.goto("/settings");
-  await page.getByRole("region", { name: "Model costs" }).getByRole("link", { name: "Open" }).click();
+  await page.getByRole("link", { name: "Model costs" }).click();
   await expect(page).toHaveURL(/\/settings\/costs$/);
   await expect(page.getByRole("heading", { name: "Model costs", level: 1 })).toBeVisible();
 
@@ -61,7 +61,7 @@ test("a member has no Model costs link, and the page says it isn't available", a
   const state = await fakeApi(page, { member: true });
   await page.goto("/settings");
   await expect(page.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Time zone" })).toBeVisible();
+  await expect(page.getByRole("link", { name: /^Time zone/ })).toBeVisible();
   await expect(page.getByRole("link", { name: /model costs/i })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Model costs" })).toHaveCount(0);
 

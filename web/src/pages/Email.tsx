@@ -297,28 +297,3 @@ export function EmailPage({ me }: { me: Me }) {
     </>
   );
 }
-
-/** On the Settings page, under Connections: the way in to the Receipts by email page. */
-export function EmailCard() {
-  const overview = useQuery({ queryKey: ["email"], queryFn: () => api<EmailOverview>("/email") });
-  const data = overview.data;
-  const waiting = data?.emails.filter((e) => e.status === "pending").length ?? 0;
-  return (
-    <section className="card" aria-labelledby="email-card">
-      <div className="card-head">
-        <h2 id="email-card">Receipts by email</h2>
-        <Link className="btn" to="/settings/email">
-          Open
-        </Link>
-      </div>
-      {data && data.connections.length > 0 ? (
-        <p className="caption">
-          {data.connections.map((c) => c.address).join(", ")}
-          {waiting > 0 ? ` · ${waiting} waiting for you` : ""}
-        </p>
-      ) : (
-        <p className="caption">{data ? "Not connected. Nexus can log receipts from your email." : "Receipts found in your email."}</p>
-      )}
-    </section>
-  );
-}

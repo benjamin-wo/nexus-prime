@@ -115,6 +115,7 @@ def _user(row: Row[Any]) -> User:
         timezone_set_at=row.timezone_set_at,
         demo_expires_at=row.demo_expires_at,
         usual_card_wallet_id=row.usual_card_wallet_id,
+        track_cards=row.track_cards,
     )
 
 
@@ -351,6 +352,9 @@ class SqlLedgerRepository:
         await self._db.execute(
             update(users).where(users.c.id == user_id).values(usual_card_wallet_id=wallet_id)
         )
+
+    async def set_track_cards(self, user_id: UserId, on: bool) -> None:
+        await self._db.execute(update(users).where(users.c.id == user_id).values(track_cards=on))
 
     async def set_setup_dismissed(self, user_id: UserId, at: datetime | None) -> None:
         await self._db.execute(

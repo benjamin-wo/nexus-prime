@@ -188,6 +188,10 @@ export async function fakeApi(
     /** Pretend today is this day (YYYY-MM-DD) for the Accounting overview: its chart ends with that month
      * and the months before it have the made-up figures above. The spec sets the page's clock to match. */
     today = null as string | null,
+    /** Whether the "Track which card paid" preference starts on (GET /me and PUT /settings/preferences). */
+    trackCards = true,
+    /** PUT /settings/preferences answers 500, to show how a refused save reads. */
+    preferencesFail = false,
   } = {},
 ) {
   let session = signedIn || demo;
@@ -301,9 +305,11 @@ export async function fakeApi(
     timezone_set_at: zone.setAt,
     display_name: guest ? "Gus L." : demoSession ? "Demo" : member ? "Mia K." : "Sam R.",
   });
+  const preferences = { track_cards: trackCards };
   const meBody = () => ({
     user: userBody(),
     csrf_token: "csrf-1",
+    preferences: { ...preferences },
     demo: demoSession ? { expires_at: demoEnds, messages_left: demoLeft } : null,
   });
   const state: {
@@ -316,6 +322,8 @@ export async function fakeApi(
     /** Every POST to /me/timezone and /me/timezone/home, in order: the path and the body sent. */
     zonePosts: { path: string; body: { timezone?: string; source?: string } | null }[];
     txs: Tx[];
+    /** The body of every POST /transactions and PATCH /transactions/{id}, in order, as the sheet sent it. */
+    txWrites: Record<string, unknown>[];
     lastPress?: string;
     chatSent: string[];
     /** How many times POST /demo was asked for (refusals and failures included). */
@@ -395,6 +403,8 @@ export async function fakeApi(
     voice: VoiceSettings;
     /** The bodies of PUT /settings/voice, in order. */
     voicePuts: Record<string, unknown>[];
+    /** The bodies of PUT /settings/preferences, in order. */
+    preferencePuts: Record<string, unknown>[];
     inviteCount: number;
     /** Expenses split evenly from the trip page, by transaction id. */
     splitDone: string[];
@@ -449,6 +459,7 @@ export async function fakeApi(
     costRequests: [],
     deletes: [],
     zonePosts: [],
+    txWrites: [],
     runs: running
       ? [
           {
@@ -494,6 +505,7 @@ export async function fakeApi(
     tripAlerts: true,
     voice: { preset: "default", emoji: "some", length: "normal", humour: "light", note: null, presets: VOICE_PRESETS },
     voicePuts: [],
+    preferencePuts: [],
     inviteCount: 0,
     splitDone: [],
     justMine: {},
@@ -845,7 +857,7 @@ export async function fakeApi(
       if (body?.init_data !== "user=%7B%22id%22%3A1%7D&hash=ok")
         return json(route, { detail: "bad signature" }, 401);
       session = true;
-      return json(route, { user: { ...userBody(), role: "owner", display_name: "Sam R." }, csrf_token: "csrf-1" });
+      return json(route, { user: { ...userBody(), role: "owner", display_name: "Sam R." }, csrf_token: "csrf-1", preferences });
     }
     if (path === "/demo" && method === "POST") {
       // Public: no session and no CSRF token yet, like the server's.
@@ -883,6 +895,13 @@ export async function fakeApi(
       if (!session) return json(route, { detail: "not signed in" }, 401);
       return json(route, meBody());
     }
+    if (path === "/settings/preferences" && method === "PUT") {
+      state.preferencePuts.push(body);
+      if (preferencesFail) return json(route, { detail: "Couldn't save that preference" }, 500);
+      if (typeof body?.track_cards !== "boolean") return json(route, { detail: "track_cards must be true or false" }, 422);
+      preferences.track_cards = body.track_cards;
+      return json(route, { ...preferences });
+    }
     if (path === "/me/timezone" && method === "POST") {
       state.zonePosts.push({ path, body });
       if (!session) return json(route, { detail: "not signed in" }, 401);
@@ -902,7 +921,7 @@ export async function fakeApi(
         zone.source = body.source === "manual" ? "chat" : "phone";
         zone.setAt = new Date().toISOString();
       }
-      return json(route, { user: userBody(), csrf_token: "csrf-1", changed });
+      return json(route, { user: userBody(), csrf_token: "csrf-1", preferences, changed });
     }
     if (path === "/me/timezone/home" && method === "POST") {
       state.zonePosts.push({ path, body: null });
@@ -910,7 +929,7 @@ export async function fakeApi(
       zone.timezone = zone.home;
       zone.source = "home";
       zone.setAt = null;
-      return json(route, { user: userBody(), csrf_token: "csrf-1", changed });
+      return json(route, { user: userBody(), csrf_token: "csrf-1", preferences, changed });
     }
     if (path === "/me/export" && method === "GET") {
       state.exports += 1;
@@ -3263,6 +3282,7 @@ export async function fakeApi(
     }
     if (path.startsWith("/transactions/") && method === "PATCH") {
       const tx = state.txs.find((t) => `/transactions/${t.id}` === path)!;
+      state.txWrites.push(body);
       const changed = body.category_id !== tx.category_id;
       tx.category_id = body.category_id;
       tx.counterparty = body.counterparty;
@@ -3332,6 +3352,7 @@ export async function fakeApi(
       return json(route, { kept, removed });
     }
     if (path === "/transactions" && method === "POST") {
+      state.txWrites.push(body);
       const tx = mk(
         `t${state.txs.length + 1}`,
         body.direction,

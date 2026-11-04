@@ -208,6 +208,7 @@ async def test_a_visitor_gets_a_private_signed_in_account(world: Demo) -> None:
     assert me["user"]["display_name"] == "Demo"
     assert when(me["demo"]["expires_at"]) == NOW + timedelta(hours=24)
     assert me["demo"]["messages_left"] == 50
+    assert me["preferences"] == {"track_cards": True}  # a demo shows off which card paid
 
     user = await world.user_of(visitor)
     assert user.is_demo and user.telegram_chat_id is None and user.has_web_access
@@ -222,6 +223,17 @@ async def test_a_visitor_gets_a_private_signed_in_account(world: Demo) -> None:
 async def test_a_real_user_has_no_demo_block(world: Demo) -> None:
     owner = await world.owner()
     assert (await owner.get("/api/me")).json()["demo"] is None
+
+
+async def test_a_demo_can_switch_card_tracking_off_and_a_real_user_starts_with_it_off(
+    world: Demo,
+) -> None:
+    owner = await world.owner()
+    assert (await owner.get("/api/me")).json()["preferences"] == {"track_cards": False}
+    visitor = await world.visit()
+    off = await visitor.send("PUT", "/api/settings/preferences", {"track_cards": False})
+    assert off.status_code == 200 and off.json() == {"track_cards": False}
+    assert (await visitor.get("/api/me")).json()["preferences"] == {"track_cards": False}
 
 
 async def test_the_cookie_lasts_the_demos_24_hours_not_90_days(world: Demo) -> None:

@@ -64,6 +64,23 @@ describe("where pages live now", () => {
     expect(screen.queryByRole("navigation", { name: "Accounting pages" })).toBeNull();
   });
 
+  it.each([
+    ["/settings/time-zone", "Time zone"],
+    ["/settings/wallets", "Wallets"],
+    ["/settings/data", "Download or delete"],
+  ])("opens %s as its own page inside Settings", async (address, heading) => {
+    await open(address, heading);
+    expect(window.location.pathname).toBe(address);
+    expect(screen.getByRole("link", { name: "Back to Settings" })).toHaveAttribute("href", "/settings");
+    const rail = screen.getByRole("navigation", { name: "Main" });
+    expect(within(rail).getByRole("link", { name: "Settings" })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("sends an unknown Settings address back to the list", async () => {
+    await open("/settings/nonsense", "Settings");
+    expect(window.location.pathname).toBe("/settings");
+  });
+
   it("keeps the other old addresses working", async () => {
     await open("/ledger", "Ledger");
     expect(window.location.pathname).toBe("/accounting/ledger");

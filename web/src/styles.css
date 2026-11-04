@@ -2375,6 +2375,48 @@ body:has(.sheet-backdrop) .main-viewport { overflow: hidden; }
 .setting > p { margin: 0; }
 .setting .share-switch { min-height: 44px; }
 
+/* --- Settings: a short list of rows, each opening its own page --- */
+.set-page { width: 100%; max-width: 720px; margin: 0 auto; display: grid; gap: var(--space-6); align-content: start; }
+.set-group { display: grid; gap: var(--space-2); }
+.set-group > .section-title { margin: 0 var(--space-4); font-size: 0.8125rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); }
+.set-list {
+  display: grid; margin: 0; padding: 0; list-style: none; overflow: hidden;
+  background: var(--bg-card); border: 1px solid var(--border-card); border-radius: var(--radius); box-shadow: var(--shadow-card);
+}
+.set-list > li + li { border-top: 1px solid var(--border-card); }
+.set-row {
+  display: flex; align-items: center; gap: var(--space-3); min-height: 56px; padding: var(--space-3) var(--space-4);
+  color: var(--text-primary); text-decoration: none; transition: background var(--t-micro);
+}
+a.set-row:hover { background: var(--bg-card-hover); }
+a.set-row:active { background: var(--bg-raised); }
+a.set-row:focus-visible { outline-offset: -2px; }
+.set-row-title { font-weight: 500; color: var(--text-white); }
+.set-row-value {
+  flex: 1 1 0; min-width: 0; text-align: right; font-size: 0.875rem; color: var(--text-muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.set-row > .set-row-title { flex: none; }
+.set-row > svg { flex: none; margin-left: auto; color: var(--text-muted); }
+.set-row-value + svg { margin-left: 0; }
+.set-switch-row { cursor: pointer; justify-content: space-between; padding-block: var(--space-4); }
+.set-switch-row:has(.switch:disabled) { cursor: default; }
+.set-text { display: grid; gap: 2px; min-width: 0; }
+.set-error { margin: 0; padding: 0 var(--space-4) var(--space-3); }
+/* An iOS-style switch on a checkbox: the box is the track, its ::before the knob. */
+.switch {
+  -webkit-appearance: none; appearance: none; position: relative; flex: none; width: 48px; height: 28px; margin: 0;
+  border-radius: 999px; border: 0; background: var(--pal-mist); cursor: inherit; transition: background var(--t-standard);
+}
+.switch::before {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 24px; height: 24px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 3px rgba(27, 35, 51, 0.3); transition: transform var(--t-standard);
+}
+.switch:checked { background: var(--accent); }
+.switch:checked::before { transform: translateX(20px); }
+.switch:disabled { opacity: 0.6; }
+@media (prefers-reduced-motion: reduce) { .switch, .switch::before { transition: none; } }
+
 /* --- Notifications: what was sent on Telegram, a day at a time --- */
 .note { align-items: flex-start; }
 .note.urgent .row-icon { color: var(--status-warning); background: var(--status-warning-soft); }
@@ -2465,3 +2507,5 @@ body:has(.sheet-backdrop) .main-viewport { overflow: hidden; }
 .cost-line { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); min-width: 0; }
 .cost-name { min-width: 0; overflow-wrap: anywhere; color: var(--text-white); font-weight: 500; }
 .cost-line .num { white-space: nowrap; }
+/* A section page already titles itself with its h1; the card's own heading stays for screen readers only. */
+.set-page > .card > .card-head h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

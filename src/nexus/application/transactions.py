@@ -163,15 +163,15 @@ async def _require_paying(repo: LedgerRepository, actor: UserId, wallet_id: UUID
 
 
 async def _paid_with(repo: LedgerRepository, actor: UserId, cmd: NewTransaction) -> UUID | None:
-    """What a new transaction was paid with: the wallet named, else (when asked to, and for
-    money out) the user's usual card."""
+    """What a new transaction was paid with: the wallet named, else (when asked to, for money
+    out, and the user tracks which card paid) the user's usual card."""
     if cmd.paid_with_wallet_id is not None:
         if Direction(cmd.direction) is not Direction.OUT:
             raise InvalidInput("only money out is paid with a wallet")
         return await _require_paying(repo, actor, cmd.paid_with_wallet_id)
     if cmd.use_usual_card and Direction(cmd.direction) is Direction.OUT:
         user = await repo.get_user(actor)
-        usual = user.usual_card_wallet_id if user else None
+        usual = user.usual_card_wallet_id if user and user.track_cards else None
         wallet = await repo.get_wallet(actor, usual) if usual else None
         if wallet is not None and wallet.kind in PAYING_KINDS:
             return wallet.id
