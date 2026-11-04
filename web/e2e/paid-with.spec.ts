@@ -282,7 +282,7 @@ test("with card tracking off, the ledger has no card filter or card lines and Wa
   await expect(page.getByText("Citi PremierMiles ·· 4321")).toHaveCount(0);
   await expect(page.getByText("DBS Altitude ·· 8765")).toHaveCount(0);
 
-  await page.goto("/settings");
+  await page.goto("/settings/wallets");
   const card = walletsCard(page);
   await expect(card.getByLabel("Usual card")).toHaveCount(0);
   await expect(card.getByRole("group", { name: "Spend by card" })).toHaveCount(0);
