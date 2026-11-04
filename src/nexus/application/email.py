@@ -1182,8 +1182,12 @@ async def _log_received(
 
 
 async def _card_named(tx: UnitOfWork, user_id: UserId, last4: str | None) -> UUID | None:
-    """The user's card wallet with these last four digits, when exactly one has them."""
+    """The user's card wallet with these last four digits, when exactly one has them. None
+    for a user who doesn't track which card paid."""
     if not last4:
+        return None
+    user = await tx.ledger.get_user(user_id)
+    if user is None or not user.track_cards:
         return None
     card = card_with_last4(await tx.ledger.list_wallets(user_id), last4)
     return card.id if card else None

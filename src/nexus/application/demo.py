@@ -124,6 +124,8 @@ async def _create(uow: UowFactory, *, now: datetime, expires_at: datetime) -> Us
             user = registration.user
             await tx.ledger.grant_web_access(user.id, now)
             await tx.ledger.set_display_name(user.id, DISPLAY_NAME)
+            # A demo shows off which card paid for what (everyone else starts in simple mode).
+            await tx.ledger.set_track_cards(user.id, True)
             await tx.ledger.record_demo_start(now.astimezone(UTC).date())
             await tx.commit()
             made = await tx.ledger.get_user(user.id)

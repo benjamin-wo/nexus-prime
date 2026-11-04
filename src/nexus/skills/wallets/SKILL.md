@@ -88,6 +88,10 @@ moves; it never moves money.
   same wallet. This can't be undone. Spending can't be deleted.
 
 ## Which card paid
+- Only when the user tracks which card paid. If the snapshot says "Card tracking is off",
+  skip this whole section: don't ask which card paid, don't pass `paid_with`, and don't
+  call `set_usual_card`. If they ask for it, tell them it can be turned on with "Track
+  which card paid" in Settings. Paying a card's bill (a move, above) is not affected.
 - Each expense can say what paid for it: a card, Spending, Cash or another wallet (never
   investment or savings). It is only a note, and changes no total or budget.
 - "12.50 lunch on my citi card": `log_expense` with `paid_with` "citi". Name it as the

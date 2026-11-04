@@ -100,6 +100,16 @@ async def get_user(uow: UnitOfWork, actor: UserId) -> User:
     return user
 
 
+async def set_track_cards(uow: UnitOfWork, actor: UserId, on: bool) -> bool:
+    """Turn on or off keeping track of which card paid. Off, the usual card is not applied
+    to new expenses, emails and imports don't name a card, and the assistant doesn't ask.
+    Nothing stored is changed, so turning it on again brings it all back."""
+    async with uow:
+        await uow.ledger.set_track_cards(actor, on)
+        await uow.commit()
+    return on
+
+
 async def find_telegram_user(uow: UnitOfWork, telegram_user_id: int) -> User | None:
     async with uow:
         return await uow.ledger.get_user_by_telegram_id(telegram_user_id)

@@ -1,4 +1,8 @@
-import type { CardNetwork, Wallet, WalletKind } from "./api";
+import type { CardNetwork, Me, Wallet, WalletKind } from "./api";
+
+/** Whether the person keeps track of which card paid. Off ("simple mode") is the default, so a
+ * missing preference counts as off; every "which card" control is hidden then. */
+export const tracksCards = (me: Me): boolean => me.preferences?.track_cards === true;
 
 /** The kinds of wallet that can pay for an expense. Investment and savings wallets only
  * ever receive money, so they are never offered as "Paid with". */

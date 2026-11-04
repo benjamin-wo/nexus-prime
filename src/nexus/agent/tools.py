@@ -345,14 +345,24 @@ async def resolve_wallet(ctx: ToolContext, name: str) -> Wallet:
     return found
 
 
+def _card_shown(ctx: ToolContext, tx: Transaction) -> Transaction:
+    """The transaction as the model should see it: without which card paid while the user
+    doesn't track cards (what is stored stays)."""
+    if ctx.user.track_cards or tx.paid_with_wallet_id is None:
+        return tx
+    return replace(tx, paid_with_wallet_id=None)
+
+
 async def show(ctx: ToolContext, tx: Transaction) -> str:
     """``describe`` for one transaction, naming the wallets if it's a move or was paid
     with one."""
+    tx = _card_shown(ctx, tx)
     wallets = await wallet_map(ctx) if tx.is_move or tx.paid_with_wallet_id else None
     return describe(tx, await category_map(ctx), ctx.tz, wallets)
 
 
 async def show_all(ctx: ToolContext, txs: list[Transaction]) -> list[str]:
+    txs = [_card_shown(ctx, tx) for tx in txs]
     named = any(tx.is_move or tx.paid_with_wallet_id for tx in txs)
     wallets = await wallet_map(ctx) if named else None
     cats = await category_map(ctx)
@@ -408,8 +418,11 @@ class LogExpenseArgs(Args):
 
 
 async def _log_expense(ctx: ToolContext, a: LogExpenseArgs) -> ToolResult:
-    # An unknown card is asked about before anything is logged.
-    paid_with = await resolve_paid_with(ctx, a.paid_with) if a.paid_with else None
+    # An unknown card is asked about before anything is logged. Without card tracking the
+    # model's paid_with is ignored (and so is the usual card, in the use case).
+    paid_with = (
+        await resolve_paid_with(ctx, a.paid_with) if a.paid_with and ctx.user.track_cards else None
+    )
     tx = await tx_cases.log_transaction(
         ctx.uow(),
         ctx.user.id,
@@ -623,7 +636,7 @@ async def _describe_edit(ctx: ToolContext, a: EditArgs) -> str:
         "category": a.category,
         "date": a.date,
         "notes": a.notes,
-        "paid with": a.paid_with,
+        "paid with": a.paid_with if ctx.user.track_cards else None,
     }
     changes = ", ".join(f"{k} → {v}" for k, v in wanted.items() if v)
     return f"Change {(await show(ctx, tx)).split(' [id')[0]}: {changes}?"
@@ -634,7 +647,7 @@ async def _edit(ctx: ToolContext, a: EditArgs) -> ToolResult:
     changes = _changes(ctx, a, current)
     if a.category is not None:
         changes = replace(changes, category_id=await resolve_category(ctx, a.category))
-    if a.paid_with is not None:
+    if a.paid_with is not None and ctx.user.track_cards:
         if a.paid_with.strip().casefold() in NO_CARD:
             changes = replace(changes, paid_with_wallet_id=None)
         else:
@@ -1116,7 +1129,8 @@ async def _list_wallets(ctx: ToolContext, _: NoArgs) -> ToolResult:
         )
         card = _card_text(w)
         words = f"; match words: {', '.join(w.match_words)}" if w.match_words else ""
-        usual = "; the usual card" if w.id == ctx.user.usual_card_wallet_id else ""
+        is_usual = ctx.user.track_cards and w.id == ctx.user.usual_card_wallet_id
+        usual = "; the usual card" if is_usual else ""
         lines.append(f"{w.name} ({what}{card}{words}{usual})")
     return ToolResult("\n".join(lines))
 
@@ -1267,7 +1281,15 @@ class UsualCardArgs(Args):
     )
 
 
+CARDS_OFF = (
+    "The user isn't tracking which card paid (simple mode), so no usual card is saved. If they "
+    'want to, they can turn on "Track which card paid" in Settings. Don\'t ask which card.'
+)
+
+
 async def _set_usual_card(ctx: ToolContext, a: UsualCardArgs) -> ToolResult:
+    if not ctx.user.track_cards:
+        return ToolResult(CARDS_OFF)
     if a.wallet.strip().casefold() in NO_CARD:
         await wallet_cases.set_usual_card(ctx.uow(), ctx.user.id, None)
         return ToolResult(

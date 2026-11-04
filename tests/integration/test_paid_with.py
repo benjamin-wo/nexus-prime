@@ -26,7 +26,7 @@ from nexus.application.transactions import (
     log_transaction,
     undo_last,
 )
-from nexus.application.users import get_user
+from nexus.application.users import get_user, set_track_cards
 from nexus.application.wallets import add_wallet, list_wallets, update_wallet
 from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.ledger import Direction, UserId, Wallet, WalletKind
@@ -55,8 +55,11 @@ async def wallets_by_name(uow: UowFactory, user: UserId) -> dict[str, Wallet]:
     return {w.name: w for w in await list_wallets(uow(), user)}
 
 
-async def cards(uow: UowFactory, user: UserId) -> dict[str, Wallet]:
-    """Two made-up cards, and the wallets everyone has."""
+async def cards(uow: UowFactory, user: UserId, *, track: bool = True) -> dict[str, Wallet]:
+    """Two made-up cards, and the wallets everyone has. The user tracks which card paid
+    (``track``), unless a test is about simple mode."""
+    if track:
+        await set_track_cards(uow(), user, True)
     await add_wallet(
         uow(), user, "Citi PremierMiles", "card",
         issuer="Citi", product="PremierMiles", network="visa", last4="4321",
@@ -539,9 +542,15 @@ async def test_a_transaction_can_be_paid_with_a_card_set_changed_and_cleared(wor
     assert missing.status_code == 404
 
 
+async def track_cards(browser: Browser, on: bool = True) -> None:
+    done = await browser.send("PUT", "/api/settings/preferences", {"track_cards": on})
+    assert done.status_code == 200 and done.json() == {"track_cards": on}
+
+
 async def test_the_usual_card_is_used_for_a_new_expense_unless_one_is_said(world: World) -> None:
     owner = world.browser()
     await owner.login(OWNER)
+    await track_cards(owner)
     citi = await add_card(owner, "Citi PremierMiles")
     dbs = await add_card(owner, "DBS Altitude")
     saver = (
@@ -729,6 +738,7 @@ async def test_every_expense_of_an_import_gets_the_chosen_card_and_nothing_else_
 async def test_the_import_api_takes_the_card(world: World) -> None:
     owner = world.browser()
     await owner.login(OWNER)
+    await track_cards(owner)
     citi = await add_card(owner, "Citi PremierMiles")
     layout = {"date": 0, "description": [1, 4], "debit": 2, "credit": 3}
     body = {

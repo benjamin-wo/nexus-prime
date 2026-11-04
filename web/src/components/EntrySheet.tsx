@@ -14,7 +14,7 @@ import {
   type Wallet,
 } from "../api";
 import { isoDay, moveLabel } from "../format";
-import { type CardDetails, detailsBody, NO_DETAILS, payingWallets, walletLabel } from "../wallets";
+import { type CardDetails, detailsBody, NO_DETAILS, payingWallets, tracksCards, walletLabel } from "../wallets";
 import { CardFields } from "./CardFields";
 import { MerchantField } from "./MerchantField";
 import { MoneyTrail } from "./MoneyTrail";
@@ -37,6 +37,8 @@ export function EntrySheet({
   onSaved: (tx: EditedTransaction) => void;
 }) {
   const tz = me.user.timezone;
+  // Without card tracking there is no "Paid with" at all: no field, no "Add a card…", nothing sent.
+  const track = tracksCards(me);
   const categories = useQuery({ queryKey: ["categories"], queryFn: () => api<Category[]>("/categories") });
   const why = useQuery({
     queryKey: ["category-explanation", editing?.id],
@@ -162,7 +164,7 @@ export function EntrySheet({
           direction: side,
           counterparty: counterparty.trim() || null,
           category_id: categoryId || null,
-          ...(side === "out" && (pickedPaidWith !== null || loneCard) ? { paid_with_wallet_id: paidWith || null } : {}),
+          ...(track && side === "out" && (pickedPaidWith !== null || loneCard) ? { paid_with_wallet_id: paidWith || null } : {}),
         };
     try {
       const tx = moving
@@ -210,7 +212,7 @@ export function EntrySheet({
         : direction === "out"
           ? "Log money out"
           : "Log money in";
-  const cardFormOpen = adding && !isMove && !moving && side === "out";
+  const cardFormOpen = track && adding && !isMove && !moving && side === "out";
   const needsWallet = moving && wallets.data !== undefined && elsewhere.length === 0;
   return (
     <div className="backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -260,7 +262,7 @@ export function EntrySheet({
         </div>
         {moving && needsWallet && (
           <p className="caption">
-            <Link to="/settings" onClick={onClose}>
+            <Link to="/settings/wallets" onClick={onClose}>
               Add a wallet in Settings first
             </Link>{" "}
             to move money to.
@@ -327,7 +329,7 @@ export function EntrySheet({
             )}
           </label>
         )}
-        {!isMove && !moving && side === "out" && (
+        {track && !isMove && !moving && side === "out" && (
           <label className="field">
             Paid with
             <select

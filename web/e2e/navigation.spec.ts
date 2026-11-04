@@ -46,8 +46,8 @@ test("Accounting has four tabs, and Investment's plans are Trade plans", async (
 test("Settings leads to Receipts by email and back, with Settings still marked", async ({ page, isMobile }) => {
   await fakeApi(page, { emailConnected: true });
   await page.goto("/settings");
-  await expect(page.locator("h2.section-title")).toHaveText(["Notifications", "Connections", "Your data"]);
-  await page.getByRole("region", { name: "Receipts by email" }).getByRole("link", { name: "Open" }).click();
+  await expect(page.locator("h2.section-title")).toHaveText(["Preferences", "Notifications", "Connections", "Your data"]);
+  await page.getByRole("link", { name: /^Receipts by email/ }).click();
   await expect(page).toHaveURL(/\/settings\/email$/);
   await expect(page.getByRole("region", { name: "Checked emails" })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Accounting pages" })).toHaveCount(0);
@@ -58,7 +58,7 @@ test("Settings leads to Receipts by email and back, with Settings still marked",
   await page.getByRole("link", { name: "Back to Settings" }).click();
   await expect(page).toHaveURL(/\/settings$/);
 
-  await page.getByRole("region", { name: "Import a statement" }).getByRole("link", { name: "Open" }).click();
+  await page.getByRole("link", { name: /^Import a statement/ }).click();
   await expect(page).toHaveURL(/\/settings\/import$/);
   await expect(page.getByLabel("Choose a CSV or PDF")).toBeVisible();
   await page.getByRole("link", { name: "Back to Settings" }).click();
@@ -113,7 +113,7 @@ test.describe("Notifications", () => {
     await page.getByRole("link", { name: "Back to Settings" }).click();
     await expect(page).toHaveURL(/\/settings$/);
 
-    await page.getByRole("region", { name: "Notifications" }).getByRole("link", { name: "Open" }).click();
+    await page.getByRole("link", { name: /^Notifications/ }).click();
     await expect(page).toHaveURL(/\/settings\/notifications$/);
   });
 

@@ -1,6 +1,5 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { Link } from "react-router-dom";
 
 import { api, ApiError, type Me } from "../api";
 import { BackLink } from "../components/BackLink";
@@ -186,20 +185,5 @@ export function CostsPage({ me }: { me: Me }) {
         </div>
       )}
     </>
-  );
-}
-
-/** On the Settings page, for the owner only: the way in to the model costs. */
-export function CostsCard() {
-  return (
-    <section className="card" aria-labelledby="costs-card">
-      <div className="card-head">
-        <h2 id="costs-card">Model costs</h2>
-        <Link className="btn" to="/settings/costs">
-          Open
-        </Link>
-      </div>
-      <p className="caption">What the AI models cost this month, by feature, user and model.</p>
-    </section>
   );
 }

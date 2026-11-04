@@ -37,6 +37,7 @@ const NotificationsPage = lazyNamed(() => import("./pages/Notifications"), "Noti
 const ImportPage = lazyNamed(() => import("./pages/Import"), "ImportPage");
 const Ledger = lazyNamed(() => import("./pages/Ledger"), "Ledger");
 const Settings = lazyNamed(() => import("./pages/Settings"), "Settings");
+const SettingsSection = lazyNamed(() => import("./pages/Settings"), "SettingsSection");
 const TripInvite = lazyNamed(() => import("./pages/TripInvite"), "TripInvite");
 const Upcoming = lazyNamed(() => import("./pages/Upcoming"), "Upcoming");
 
@@ -177,6 +178,8 @@ function Cockpit({ me }: { me: Me }) {
           <Route path="/settings/import" element={<ImportPage />} />
           <Route path="/settings/costs" element={<CostsPage me={me} />} />
           <Route path="/settings/notifications" element={<NotificationsPage me={me} />} />
+          {/* The rest of Settings, a section to a page: /settings/wallets, /settings/time-zone and so on. */}
+          <Route path="/settings/:slug" element={<SettingsSection me={me} />} />
           {/* Where pages used to live, so old links and bookmarks still work. */}
           <Route path="/accounting/plan" element={<Navigate to="/accounting/budgets" replace />} />
           <Route path="/accounting/email" element={<Navigate to="/settings/email" replace />} />

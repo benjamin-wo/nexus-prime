@@ -168,6 +168,10 @@ class LedgerRepository(Protocol):
         """Put away Home's setup checklist (``at``), or bring it back (None)."""
         ...
 
+    async def set_track_cards(self, user_id: UserId, on: bool) -> None:
+        """Whether the user keeps track of which card paid (off: simple mode)."""
+        ...
+
     async def set_usual_card(self, user_id: UserId, wallet_id: UUID | None) -> None:
         """The wallet new expenses are paid with when none is said; None for no usual card.
         The caller has checked it is the user's own, and can pay."""

@@ -8,7 +8,7 @@ import { CardFields } from "../components/CardFields";
 import { MonthPicker } from "../components/MonthPicker";
 import { formatDate, formatMoney, txName } from "../format";
 import { currentMonth, type MonthKey, monthLabel } from "../months";
-import { type CardDetails, detailsBody, NETWORKS, NO_DETAILS, payingWallets, walletLabel } from "../wallets";
+import { type CardDetails, detailsBody, NETWORKS, NO_DETAILS, payingWallets, tracksCards, walletLabel } from "../wallets";
 
 const KIND_LABEL: Record<WalletKind, string> = {
   spending: "Spending",
@@ -56,10 +56,13 @@ type DeletePreview = { moved: number; removed: number };
 function WalletRow({
   wallet,
   others,
+  track,
   onChanged,
 }: {
   wallet: Wallet;
   others: Wallet[];
+  /** Whether card details are kept; without them a card is just a wallet with a name. */
+  track: boolean;
   onChanged: () => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -105,7 +108,7 @@ function WalletRow({
           name: name.trim(),
           match_words: parseWords(words),
           ...(isFixed ? {} : { kind }),
-          ...((isFixed ? wallet.kind : kind) === "card" ? detailsBody(details) : {}),
+          ...(track && (isFixed ? wallet.kind : kind) === "card" ? detailsBody(details) : {}),
         },
       });
       setEditing(false);
@@ -154,7 +157,7 @@ function WalletRow({
               </select>
             </label>
           )}
-          {kind === "card" && <CardFields value={details} onChange={setDetails} />}
+          {track && kind === "card" && <CardFields value={details} onChange={setDetails} />}
           <label className="field">
             Match words
             <input className="input" placeholder="efund, rainy day" value={words} onChange={(e) => setWords(e.target.value)} />
@@ -172,9 +175,9 @@ function WalletRow({
         <>
           <div className="budget-head">
             <div className="wallet-name">
-              <h3 className="wrap">{walletLabel(wallet)}</h3>
+              <h3 className="wrap">{track ? walletLabel(wallet) : wallet.name}</h3>
               <span className="caption">{KIND_LABEL[wallet.kind]}</span>
-              {wallet.usual && <span className="chip">Usual card</span>}
+              {track && wallet.usual && <span className="chip">Usual card</span>}
             </div>
             {!confirming && (
               <span className="quick">
@@ -189,7 +192,7 @@ function WalletRow({
               </span>
             )}
           </div>
-          {detailsLine(wallet) && <p className="caption">{detailsLine(wallet)}</p>}
+          {track && detailsLine(wallet) && <p className="caption">{detailsLine(wallet)}</p>}
           {wallet.match_words.length > 0 && (
             <ul className="chips category-chips" aria-label={`Match words for ${wallet.name}`}>
               {wallet.match_words.map((w) => (
@@ -377,6 +380,8 @@ function SpendLine({ wallet, month, current }: { wallet: Wallet; month: MonthKey
 /** The user's wallets: places money is moved between. Spending and Cash are always two of them. */
 export function WalletsSection({ me }: { me: Me }) {
   const client = useQueryClient();
+  // Without card tracking a card is an ordinary wallet: no details, usual-card picker or per-card spend.
+  const track = tracksCards(me);
   const current = currentMonth(me.user.timezone);
   const [month, setMonth] = useState<MonthKey>(current);
   const all = useQuery({ queryKey: ["wallets"], queryFn: () => api<Wallet[]>("/wallets") });
@@ -403,7 +408,7 @@ export function WalletsSection({ me }: { me: Me }) {
     try {
       await api("/wallets", {
         method: "POST",
-        body: { name: name.trim(), kind, match_words: parseWords(words), ...(kind === "card" ? detailsBody(details) : {}) },
+        body: { name: name.trim(), kind, match_words: parseWords(words), ...(track && kind === "card" ? detailsBody(details) : {}) },
       });
       setName("");
       setWords("");
@@ -450,7 +455,7 @@ export function WalletsSection({ me }: { me: Me }) {
           </ul>
         </>
       )}
-      {paying.length > 0 && (
+      {track && paying.length > 0 && (
         <div className="wallet-usual">
           <label className="field">
             Usual card
@@ -471,7 +476,7 @@ export function WalletsSection({ me }: { me: Me }) {
           )}
         </div>
       )}
-      {paying.length > 0 && (
+      {track && paying.length > 0 && (
         <div className="wallet-spend" role="group" aria-label="Spend by card">
           <div className="wallet-spend-head">
             <h3>Paid with</h3>
@@ -490,7 +495,7 @@ export function WalletsSection({ me }: { me: Me }) {
         {wallets.length > 0 && (
           <ul className="budgets" aria-label="Your wallets">
             {wallets.map((w) => (
-              <WalletRow key={w.id} wallet={w} others={wallets.filter((o) => o.id !== w.id)} onChanged={refresh} />
+              <WalletRow key={w.id} wallet={w} others={wallets.filter((o) => o.id !== w.id)} track={track} onChanged={refresh} />
             ))}
           </ul>
         )}
@@ -509,7 +514,7 @@ export function WalletsSection({ me }: { me: Me }) {
               ))}
             </select>
           </label>
-          {kind === "card" && <CardFields value={details} onChange={setDetails} />}
+          {track && kind === "card" && <CardFields value={details} onChange={setDetails} />}
           <label className="field">
             Match words (optional)
             <input className="input" placeholder="efund, rainy day" value={words} onChange={(e) => setWords(e.target.value)} />

@@ -40,6 +40,7 @@ from nexus.application import splits as split_cases
 from nexus.application import statements as statement_cases
 from nexus.application import subscriptions as subscription_cases
 from nexus.application import transactions as tx_cases
+from nexus.application import users as user_cases
 from nexus.application import voice as voice_cases
 from nexus.application import wallet_figures as figure_cases
 from nexus.application import wallets as wallet_cases
@@ -331,9 +332,15 @@ class DemoInfoOut(Model):
     messages_left: int
 
 
+class PreferencesOut(Model):
+    # Whether the user keeps track of which card paid (off: simple mode).
+    track_cards: bool
+
+
 class MeOut(Model):
     user: UserOut
     csrf_token: str
+    preferences: PreferencesOut
     # Set by a sign-in that added the person to a trip with a trip invite.
     joined_trip: UUID | None = None
     # Set for a public-demo account: when it ends and how many chat messages it has left.
@@ -357,6 +364,7 @@ def me_out(
             timezone_set_at=user.timezone_set_at,
             display_name=user.display_name,
         ),
+        preferences=PreferencesOut(track_cards=user.track_cards),
         csrf_token=csrf,
         joined_trip=joined_trip,
         demo=(
@@ -2591,6 +2599,19 @@ async def set_voice(body: VoiceIn, auth: Auth, web: Runtime) -> VoiceOut:
         now=web.clock(),
     )
     return _voice_out(updated)
+
+
+class PreferencesIn(Model):
+    track_cards: bool
+
+
+@router.put("/settings/preferences")
+async def set_preferences(body: PreferencesIn, auth: Auth, web: Runtime) -> PreferencesOut:
+    """Whether to keep track of which card paid. Off, the usual card isn't applied to new
+    expenses, emails and imports don't name a card, and the assistant doesn't ask; what is
+    stored stays, and turning it on again brings it back. Allowed for a demo."""
+    on = await user_cases.set_track_cards(web.uow(), auth.user.id, body.track_cards)
+    return PreferencesOut(track_cards=on)
 
 
 class NotificationOut(Model):

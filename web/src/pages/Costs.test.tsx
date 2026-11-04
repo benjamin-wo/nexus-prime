@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -70,15 +70,13 @@ describe("Settings and Model costs", () => {
   it("links the owner to the page", async () => {
     mockApi({});
     renderWithProviders(<Settings me={me("owner")} />);
-    const card = screen.getByRole("region", { name: "Model costs" });
-    expect(within(card).getByRole("link", { name: "Open" })).toHaveAttribute("href", "/settings/costs");
+    expect(screen.getByRole("link", { name: "Model costs" })).toHaveAttribute("href", "/settings/costs");
     await waitFor(() => expect(screen.getByRole("heading", { name: "Settings", level: 1 })).toBeInTheDocument());
   });
 
   it("shows no link to anyone else", () => {
     mockApi({});
     renderWithProviders(<Settings me={me("member")} />);
-    expect(screen.queryByRole("region", { name: "Model costs" })).toBeNull();
     expect(screen.queryByRole("link", { name: /costs/i })).toBeNull();
   });
 });

@@ -267,7 +267,8 @@ async def confirm(
     money in comes from it); every other row is an ordinary entry. With ``paid_with`` (a
     card, or another wallet of the user's that can pay), every expense row of the import is
     marked as paid with it; money in and moves never are. The user's usual card is not
-    applied to an import."""
+    applied to an import. A user who doesn't track which card paid (``track_cards`` off) gets
+    no tag: ``paid_with`` is ignored."""
     table = read_table(text)
     rows = read_rows(table, mapping)
     if not include:
@@ -283,6 +284,9 @@ async def confirm(
     async with uow_factory() as db:
         wallets = {w.id: w for w in await db.ledger.list_wallets(user.id)}
         spending = next((w for w in wallets.values() if w.kind is WalletKind.SPENDING), None)
+        current = await db.ledger.get_user(user.id)
+        if current is None or not current.track_cards:
+            paid_with = None
         if paid_with is not None:
             payer = wallets.get(paid_with)
             if payer is None:

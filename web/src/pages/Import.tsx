@@ -751,18 +751,3 @@ export function ImportPage() {
     </>
   );
 }
-
-/** On the Settings page, under Connections: the way in to the Import a statement page. */
-export function ImportCard() {
-  return (
-    <section className="card" aria-labelledby="import-card">
-      <div className="card-head">
-        <h2 id="import-card">Import a statement</h2>
-        <Link className="btn" to="/settings/import">
-          Open
-        </Link>
-      </div>
-      <p className="caption">A CSV or PDF from your bank or card. You check it before anything is added.</p>
-    </section>
-  );
-}

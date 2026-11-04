@@ -9,6 +9,7 @@ import { WalletsSection } from "./Wallets";
 const me: Me = {
   user: { telegram_user_id: 1, role: "member", home_currency: "SGD", timezone: "Asia/Singapore" },
   csrf_token: "c",
+  preferences: { track_cards: true },
 };
 
 const wallet = (over: Partial<Wallet>): Wallet => ({ id: "w", name: "Wallet", kind: "card", match_words: [], ...over });
@@ -18,7 +19,7 @@ const wallets: Wallet[] = [
   wallet({ id: "w-card", name: "Citi PremierMiles", issuer: "Citi", product: "PremierMiles", network: "visa", last4: "4321" }),
 ];
 
-function setup() {
+function setup(who: Me = me) {
   const calls = mockApi({
     "GET /wallets": () => wallets,
     "GET /wallets/likely-moves": () => [],
@@ -28,7 +29,7 @@ function setup() {
     "PATCH /wallets/w-card": () => wallets[2],
     "PUT /wallets/usual-card": () => undefined,
   });
-  renderWithProviders(<WalletsSection me={me} />);
+  renderWithProviders(<WalletsSection me={who} />);
   return calls;
 }
 
@@ -89,5 +90,45 @@ describe("Wallets: card details", () => {
       "href",
       "/accounting/ledger?paid_with=w-card",
     );
+  });
+});
+
+describe("Wallets with card tracking off", () => {
+  const simple: Me = { ...me, preferences: { track_cards: false } };
+
+  it("lists the card like any other wallet, with no details, usual card or per-card spend", async () => {
+    setup(simple);
+    await userEvent.click(await screen.findByText("Manage"));
+    const list = await screen.findByRole("list", { name: "Your wallets" });
+    const card = within(list).getByRole("heading", { name: "Citi PremierMiles" }).closest("li")!;
+    expect(card).not.toHaveTextContent("4321");
+    expect(card).not.toHaveTextContent("Visa");
+    expect(screen.queryByRole("combobox", { name: /Usual card/ })).toBeNull();
+    expect(screen.queryByRole("group", { name: "Spend by card" })).toBeNull();
+    expect(screen.queryByText("Paid with")).toBeNull();
+  });
+
+  it("has no card fields when editing a card or adding one, and saves without card details", async () => {
+    const calls = setup(simple);
+    await userEvent.click(await screen.findByText("Manage"));
+    const list = await screen.findByRole("list", { name: "Your wallets" });
+    await userEvent.click(within(within(list).getByRole("heading", { name: "Citi PremierMiles" }).closest("li")!).getByRole("button", { name: "Edit" }));
+    const form = screen.getByRole("form", { name: "Edit Citi PremierMiles" });
+    for (const label of ["Bank", "Card", "Network", "Last 4 digits"]) expect(within(form).queryByLabelText(label)).toBeNull();
+    await userEvent.click(within(form).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(calls.find((c) => c.method === "PATCH")).toBeDefined());
+    const sent = calls.find((c) => c.method === "PATCH")?.body as Record<string, unknown>;
+    for (const key of ["issuer", "product", "network", "last4"]) expect(sent).not.toHaveProperty(key);
+
+    const add = screen.getByRole("form", { name: "Add a wallet" });
+    await userEvent.selectOptions(within(add).getByLabelText("Kind"), "card");
+    expect(within(add).queryByLabelText("Last 4 digits")).toBeNull();
+  });
+
+  it("treats a missing preference as off", async () => {
+    setup({ ...me, preferences: undefined });
+    await userEvent.click(await screen.findByText("Manage"));
+    await screen.findByRole("list", { name: "Your wallets" });
+    expect(screen.queryByRole("combobox", { name: /Usual card/ })).toBeNull();
   });
 });

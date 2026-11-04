@@ -9,6 +9,7 @@ import { Ledger } from "./Ledger";
 const me: Me = {
   user: { telegram_user_id: 1, role: "member", home_currency: "SGD", timezone: "Asia/Singapore" },
   csrf_token: "c",
+  preferences: { track_cards: true },
 };
 
 const wallet = (over: Partial<Wallet>): Wallet => ({ id: "w", name: "Wallet", kind: "card", match_words: [], ...over });
@@ -34,7 +35,7 @@ const tx = (over: Partial<Transaction>): Transaction => ({
   ...over,
 });
 
-function setup(route = "/") {
+function setup(route = "/", who: Me = me) {
   const items = [
     tx({ paid_with: { id: "w-citi", name: "Citi PremierMiles", kind: "card", last4: "4321" } }),
     tx({ id: "t2", counterparty: "Mystery shop" }),
@@ -45,7 +46,7 @@ function setup(route = "/") {
     "GET /category-rules": () => [],
     "GET /wallets": () => wallets,
   });
-  renderWithProviders(<Ledger me={me} onAdd={vi.fn()} onEdit={vi.fn()} />, route);
+  renderWithProviders(<Ledger me={who} onAdd={vi.fn()} onEdit={vi.fn()} />, route);
   /** The query strings of the transaction lists asked for so far. */
   const asked = () =>
     vi
@@ -111,5 +112,31 @@ describe("Paid with in the Ledger", () => {
       "href",
       "/api/export.csv?paid_with=w-citi",
     );
+  });
+});
+
+describe("Ledger with card tracking off", () => {
+  const simple: Me = { ...me, preferences: { track_cards: false } };
+
+  it("has no Paid with filter and no card under the merchant", async () => {
+    setup("/", simple);
+    await screen.findByText("Corner Cafe");
+    expect(screen.queryByRole("combobox", { name: "Paid with" })).toBeNull();
+    expect(screen.getByText("Corner Cafe").closest("tr")!).not.toHaveTextContent("Citi PremierMiles");
+    expect(screen.queryByText("Citi PremierMiles ·· 4321")).toBeNull();
+  });
+
+  it("ignores a ?paid_with= left in the address: no chip, nothing asked for", async () => {
+    const { asked } = setup("/?paid_with=w-citi", simple);
+    await screen.findByText("Corner Cafe");
+    expect(screen.queryByText("Paid with")).toBeNull();
+    expect(asked().every((p) => !p.has("paid_with"))).toBe(true);
+    expect(screen.getByText("Mystery shop")).toBeVisible();
+  });
+
+  it("treats a missing preference as off", async () => {
+    setup("/", { ...me, preferences: undefined });
+    await screen.findByText("Corner Cafe");
+    expect(screen.queryByRole("combobox", { name: "Paid with" })).toBeNull();
   });
 });

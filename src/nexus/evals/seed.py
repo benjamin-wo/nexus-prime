@@ -10,7 +10,7 @@ against are the constants below; a test recomputes them from the ledger.
 """
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, time
 from decimal import Decimal
 from uuid import UUID, uuid4
@@ -202,6 +202,12 @@ async def seed_user(new_uow: UowFactory, telegram_id: int, *, shared: bool = Fal
         new_uow(), user.id, "DBS Altitude", "card",
         issuer="DBS", product="Altitude", network="visa", last4="8765",
     )  # fmt: skip
+    # The cards are tracked here (the cases below ask which card paid); a new user starts in
+    # simple mode, with tracking off.
+    async with new_uow() as db:
+        await db.ledger.set_track_cards(user.id, True)
+        await db.commit()
+    user = replace(user, track_cards=True)
     jumbo = None
     for day, merchant, amount, currency, category, direction in _ROWS:
         tx = await tx_cases.log_transaction(

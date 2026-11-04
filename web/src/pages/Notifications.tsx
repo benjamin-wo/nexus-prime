@@ -169,18 +169,3 @@ export function NotificationsPage({ me }: { me: Me }) {
     </>
   );
 }
-
-/** On the Settings page, under Notifications: the way in to the list of what was sent. */
-export function NotificationsCard() {
-  return (
-    <section className="card" aria-labelledby="notifications-card">
-      <div className="card-head">
-        <h2 id="notifications-card">Notifications</h2>
-        <Link className="btn" to="/settings/notifications">
-          Open
-        </Link>
-      </div>
-      <p className="caption">What Nexus sent you on Telegram in the last 30 days, and what is waiting.</p>
-    </section>
-  );
-}

@@ -95,6 +95,9 @@ users = Table(
     # 0065), one of the user's own. Set null if the wallet is deleted. Wallets point back
     # at users, so this foreign key is added after both tables exist (``use_alter``).
     Column("usual_card_wallet_id", UUID(as_uuid=True)),
+    # Whether they keep track of which card paid (migration 0066): off ("simple mode") unless
+    # they turn it on. Nothing stored is touched when it is off.
+    Column("track_cards", Boolean, nullable=False, server_default=text("false")),
     ForeignKeyConstraint(
         ["usual_card_wallet_id", "id"],
         ["wallets.id", "wallets.user_id"],

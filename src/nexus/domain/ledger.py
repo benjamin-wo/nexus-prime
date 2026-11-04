@@ -101,6 +101,9 @@ class User:
     demo_expires_at: datetime | None = None
     # The wallet an expense is paid with when none is said (web add, chat, photo receipts).
     usual_card_wallet_id: UUID | None = None
+    # Whether they keep track of which card paid. Off, the usual card is not applied, emails
+    # and imports don't name a card, and the assistant doesn't ask; what is stored stays.
+    track_cards: bool = False
 
     def __post_init__(self) -> None:
         if not self.home_timezone:
