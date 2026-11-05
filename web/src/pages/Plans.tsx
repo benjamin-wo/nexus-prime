@@ -105,7 +105,7 @@ export function PlansPage() {
       <div className="page-head">
         <div>
           <h1>Trade plans</h1>
-          <p className="muted">Swing-trade research for days to weeks. Research only: never an order.</p>
+          <p className="muted">Swing-trade research. Never an order.</p>
         </div>
       </div>
       <TrackRecord />

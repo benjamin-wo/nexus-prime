@@ -49,7 +49,7 @@ function EmailRow({ email, me, onChanged }: { email: InboundEmail; me: Me; onCha
     void act("log", { amount: amount.trim() });
   }
 
-  // "Move" keeps the wallet the email named; a figure typed in is sent along.
+  // "Transfer" keeps the wallet the email named; a figure typed in is sent along.
   const move = (figure?: string) => act("move", figure ? { amount: figure } : {});
 
   return (
@@ -72,7 +72,7 @@ function EmailRow({ email, me, onChanged }: { email: InboundEmail; me: Me; onCha
       {twin && <p className="caption email-twin">Looks like {twin}, already recorded or in another email. Same payment?</p>}
       {wallet && (
         <p className="caption email-twin">
-          Was this a move {email.received ? "from" : "to"} {wallet}?
+          Was this a transfer {email.received ? "from" : "to"} {wallet}?
         </p>
       )}
       <div className="budget-foot">
@@ -89,7 +89,7 @@ function EmailRow({ email, me, onChanged }: { email: InboundEmail; me: Me; onCha
             )}
             {wallet && (
               <button type="button" className="btn btn-primary" onClick={() => move()}>
-                Move
+                Transfer
               </button>
             )}
             <button type="button" className={twin || wallet ? "btn" : "btn btn-primary"} onClick={() => act("log")}>
@@ -122,7 +122,7 @@ function EmailRow({ email, me, onChanged }: { email: InboundEmail; me: Me; onCha
           </label>
           {wallet && (
             <button type="button" className="btn btn-primary" disabled={!amount.trim()} onClick={() => move(amount.trim())}>
-              Move
+              Transfer
             </button>
           )}
           <button type="submit" className="btn" disabled={!amount.trim()}>

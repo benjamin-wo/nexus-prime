@@ -17,10 +17,11 @@ import {
 import { Icon } from "../components/Icon";
 import { Menu } from "../components/Menu";
 import { MoneyTrail } from "../components/MoneyTrail";
+import { Sheet } from "../components/Sheet";
 import { DirectionBadge } from "../components/Badge";
 import { Toast } from "../components/Toast";
 import { Amount } from "../components/Amount";
-import { formatDate, formatMoney, moveLabel, txName } from "../format";
+import { formatDate, formatMoney, formatShortDate, moveLabel, txName } from "../format";
 import { payingWallets, tracksCards, walletLabel } from "../wallets";
 
 const PAGE = 50;
@@ -29,7 +30,7 @@ const VIEWS: { key: View; label: string }[] = [
   { key: "all", label: "All" },
   { key: "out", label: "Money out" },
   { key: "in", label: "Money in" },
-  { key: "move", label: "Moves" },
+  { key: "move", label: "Transfers" },
   { key: "pending", label: "Pending" },
 ];
 
@@ -48,6 +49,13 @@ function ranges(timezone: string): Range[] {
     { key: "this", label: "This month", start: iso(y, m, 1), end: "" },
     { key: "last", label: "Last month", start: iso(ly, lm, 1), end: iso(ly, lm, lastDay) },
   ];
+}
+
+/** What a date filter is called on its chip: a usual range by name, anything else by its dates. */
+function dateLabel(preset: Range | undefined, start: string, end: string): string {
+  if (preset) return preset.label;
+  if (start && end) return `${start} to ${end}`;
+  return start ? `From ${start}` : `Until ${end}`;
 }
 
 export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdit: (tx: Transaction) => void }) {
@@ -84,6 +92,8 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
   const [selecting, setSelecting] = useState(false);
   const [toast, setToast] = useState<{ message: string; undo?: () => void } | null>(null);
   const [confirming, setConfirming] = useState(false);
+  // The filter sheet: the type, the dates and (with card tracking) the card.
+  const [sheetOpen, setSheetOpen] = useState(false);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebounced(search.trim()), 250);
@@ -237,6 +247,34 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
     );
   }
 
+  // The filters set, as the count on the Filter button and the chips under it (the search has its own box).
+  const dated = Boolean(start || end);
+  const activeCount = (view !== "all" ? 1 : 0) + (dated ? 1 : 0) + (paidWith ? 1 : 0) + (category ? 1 : 0);
+  const viewLabel = VIEWS.find((v) => v.key === view)?.label ?? "";
+  const cardName = paidWith === "none" ? "No card set" : paidWithWallet ? walletLabel(paidWithWallet) : "…";
+  const total = page.data?.total;
+  // The date on a phone's second line is short ("27 Sep"), with the year only for another year.
+  const yearOf = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: me.user.timezone, year: "numeric" }).format(d);
+  const thisYear = yearOf(new Date());
+  const rowDate = (iso: string) =>
+    yearOf(new Date(iso)) === thisYear ? formatShortDate(iso, me.user.timezone) : formatDate(iso, me.user.timezone);
+
+  function clearAll() {
+    setView("all");
+    setStart("");
+    setEnd("");
+    setCustom(false);
+    setParams(
+      (p) => {
+        p.delete("paid_with");
+        p.delete("category");
+        return p;
+      },
+      { replace: true },
+    );
+    setCategory("");
+  }
+
   return (
     <>
       <div className="page-head page-head-row">
@@ -258,87 +296,75 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
 
       <section className="card fab-clearance" aria-label="Transactions">
         <div className="filters">
-          <div className="tabs" role="group" aria-label="Show">
-            {VIEWS.map((v) => (
-              <button key={v.key} type="button" className="tab" aria-pressed={view === v.key} onClick={() => setView(v.key)}>
-                {v.label}
-              </button>
-            ))}
-          </div>
-          <label className="search">
-            <span className="sr-only">Search merchant or notes</span>
-            <input
-              className="input"
-              type="search"
-              placeholder="Search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </label>
-          <label className="dates">
-            <span className="sr-only">Dates</span>
-            <select className="input" value={custom || !preset ? "custom" : preset.key} onChange={(e) => pickDates(e.target.value)}>
-              {presets.map((r) => (
-                <option key={r.key} value={r.key}>
-                  {r.label}
-                </option>
-              ))}
-              <option value="custom">Custom</option>
-            </select>
-          </label>
-          {custom && (
-            <div className="date-range">
-              <label className="date-field">
-                <span className="date-caption">From</span>
-                <input className="input" type="date" value={start} onChange={(e) => setStart(e.target.value)} />
-              </label>
-              <label className="date-field">
-                <span className="date-caption">To</span>
-                <input className="input" type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
-              </label>
-            </div>
-          )}
-          {track && (
-            <label className="paid-with-filter">
-              <span className="sr-only">Paid with</span>
-              <select className="input" value={paidWith} onChange={(e) => pickPaidWith(e.target.value)}>
-                <option value="">Paid with: any</option>
-                {paying.map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {walletLabel(w)}
-                  </option>
-                ))}
-                {paidWith && paidWith !== "none" && !paying.some((w) => w.id === paidWith) && paidWithWallet && (
-                  <option value={paidWith}>{walletLabel(paidWithWallet)}</option>
-                )}
-                <option value="none">Not set</option>
-              </select>
+          <div className="filter-row">
+            <label className="search">
+              <span className="sr-only">Search merchant or notes</span>
+              <input
+                className="input"
+                type="search"
+                placeholder="Search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
             </label>
-          )}
-          {paidWith && (
-            <span className="filter-chip">
-              <span>
-                <span className="caption">Paid with</span> {paidWith === "none" ? "Not set" : paidWithWallet ? walletLabel(paidWithWallet) : "…"}
-              </span>
-              <button
-                type="button"
-                className="chip-x"
-                onClick={() => pickPaidWith("")}
-                aria-label={`Show every card, not just ${paidWith === "none" ? "entries with no card set" : paidWithWallet ? walletLabel(paidWithWallet) : "this one"}`}
-              >
-                ×
-              </button>
-            </span>
-          )}
-          {category && (
-            <span className="filter-chip">
-              <span>
-                <span className="caption">Category</span> {categoryName ?? "…"}
-              </span>
-              <button type="button" className="chip-x" onClick={clearCategory} aria-label={`Show every category, not just ${categoryName ?? "this one"}`}>
-                ×
-              </button>
-            </span>
+            <button
+              type="button"
+              className="btn filter-btn"
+              aria-haspopup="dialog"
+              aria-label={activeCount > 0 ? `Filter, ${activeCount} active` : undefined}
+              onClick={() => setSheetOpen(true)}
+            >
+              <Icon name="sliders" size={18} />
+              Filter
+              {activeCount > 0 && (
+                <span className="filter-count" aria-hidden="true">
+                  {activeCount}
+                </span>
+              )}
+            </button>
+          </div>
+          {activeCount > 0 && (
+            <div className="filter-chips" role="group" aria-label="Active filters">
+              {view !== "all" && (
+                <span className="filter-chip">
+                  <span>{viewLabel}</span>
+                  <button type="button" className="chip-x" onClick={() => setView("all")} aria-label={`Show all types, not just ${viewLabel}`}>
+                    ×
+                  </button>
+                </span>
+              )}
+              {dated && (
+                <span className="filter-chip">
+                  <span>{dateLabel(preset, start, end)}</span>
+                  <button type="button" className="chip-x" onClick={() => pickDates("any")} aria-label="Show all dates">
+                    ×
+                  </button>
+                </span>
+              )}
+              {paidWith && (
+                <span className="filter-chip">
+                  <span>{cardName}</span>
+                  <button
+                    type="button"
+                    className="chip-x"
+                    onClick={() => pickPaidWith("")}
+                    aria-label={`Show every card, not just ${paidWith === "none" ? "entries with no card set" : paidWithWallet ? walletLabel(paidWithWallet) : "this one"}`}
+                  >
+                    ×
+                  </button>
+                </span>
+              )}
+              {category && (
+                <span className="filter-chip">
+                  <span>
+                    <span className="caption">Category</span> {categoryName ?? "…"}
+                  </span>
+                  <button type="button" className="chip-x" onClick={clearCategory} aria-label={`Show every category, not just ${categoryName ?? "this one"}`}>
+                    ×
+                  </button>
+                </span>
+              )}
+            </div>
           )}
         </div>
 
@@ -428,7 +454,7 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
                     <td className="wrap merchant">
                       <button
                         type="button"
-                        className="btn btn-ghost"
+                        className="btn btn-ghost tx-name"
                         onClick={(e) => {
                           e.stopPropagation();
                           onEdit(tx);
@@ -436,11 +462,26 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
                       >
                         {txName(tx)}
                       </button>
-                      {/* On a phone the Category column is gone: its name sits under the merchant. */}
-                      {tx.category_id && names.get(tx.category_id) && (
-                        <div className="caption category-line">{names.get(tx.category_id)}</div>
-                      )}
-                      {track && tx.paid_with && <div className="caption paid-with-line">{walletLabel(tx.paid_with)}</div>}
+                      {/* One line under the merchant. On a phone it holds the category and the date, whose own
+                          columns are gone; wider screens keep those in their columns. */}
+                      <div className="tx-meta">
+                        {tx.category_id && names.get(tx.category_id) && (
+                          <span className="category-line">{names.get(tx.category_id)}</span>
+                        )}
+                        <span className="date-line">{rowDate(tx.occurred_at)}</span>
+                        {track && tx.paid_with && <span className="caption paid-with-line">{walletLabel(tx.paid_with)}</span>}
+                        {tx.has_receipt && (
+                          <a
+                            className="receipt-link"
+                            href={receiptUrl(tx.id)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <span>Receipt</span>
+                          </a>
+                        )}
+                      </div>
                       {tx.direction === "move" && tx.counterparty && (
                         <div className="caption">{moveLabel(tx)}</div>
                       )}
@@ -461,17 +502,6 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
                             </button>
                           </span>
                         </div>
-                      )}
-                      {tx.has_receipt && (
-                        <a
-                          className="caption receipt-link"
-                          href={receiptUrl(tx.id)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          Receipt
-                        </a>
                       )}
                     </td>
                     <td className="hide-mobile secondary">
@@ -513,6 +543,80 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
           </div>
         )}
       </section>
+      {sheetOpen && (
+        <Sheet
+          title="Filter transactions"
+          className="filter-sheet"
+          onClose={() => setSheetOpen(false)}
+          footer={
+            <div className="filter-sheet-foot">
+              <button type="button" className="btn" disabled={activeCount === 0} onClick={clearAll}>
+                Clear
+              </button>
+              <button type="button" className="btn btn-primary" onClick={() => setSheetOpen(false)}>
+                {total === undefined ? "Done" : `Show ${total} ${total === 1 ? "transaction" : "transactions"}`}
+              </button>
+            </div>
+          }
+        >
+          <div className="filter-group">
+            <span className="filter-label" id="filter-type-label">
+              Show
+            </span>
+            <div className="tabs" role="group" aria-labelledby="filter-type-label">
+              {VIEWS.map((v) => (
+                <button key={v.key} type="button" className="tab" aria-pressed={view === v.key} onClick={() => setView(v.key)}>
+                  {v.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="filter-group">
+            <label className="field">
+              Dates
+              <select className="input" value={custom || !preset ? "custom" : preset.key} onChange={(e) => pickDates(e.target.value)}>
+                {presets.map((r) => (
+                  <option key={r.key} value={r.key}>
+                    {r.label}
+                  </option>
+                ))}
+                <option value="custom">Custom</option>
+              </select>
+            </label>
+            {custom && (
+              <div className="date-range">
+                <label className="date-field">
+                  <span className="date-caption">From</span>
+                  <input className="input" type="date" value={start} onChange={(e) => setStart(e.target.value)} />
+                </label>
+                <label className="date-field">
+                  <span className="date-caption">To</span>
+                  <input className="input" type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
+                </label>
+              </div>
+            )}
+          </div>
+          {track && (
+            <div className="filter-group">
+              <label className="field">
+                Paid with
+                <select className="input" value={paidWith} onChange={(e) => pickPaidWith(e.target.value)}>
+                  <option value="">Any</option>
+                  {paying.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {walletLabel(w)}
+                    </option>
+                  ))}
+                  {paidWith && paidWith !== "none" && !paying.some((w) => w.id === paidWith) && paidWithWallet && (
+                    <option value={paidWith}>{walletLabel(paidWithWallet)}</option>
+                  )}
+                  <option value="none">Not set</option>
+                </select>
+              </label>
+            </div>
+          )}
+        </Sheet>
+      )}
       {addAway && (
         <button type="button" className="fab fab-steady" aria-label="Add a transaction" onClick={onAdd}>
           <Icon name="plus" size={20} />

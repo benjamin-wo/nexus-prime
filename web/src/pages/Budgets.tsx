@@ -138,7 +138,7 @@ function BudgetRow({ budget, timezone, onChanged }: { budget: Budget; timezone: 
   );
 }
 
-/** This month so far, and what's still to come: spending plus moves to your wallets,
+/** This month so far, and what's still to come: spending plus transfers to your wallets,
  * then what's left to spend after the month's bills, next to what's left of the overall
  * budget (the lower of the two is marked). */
 function MonthPlan({ plan }: { plan: BudgetMonth }) {
@@ -148,10 +148,10 @@ function MonthPlan({ plan }: { plan: BudgetMonth }) {
   return (
     <div className="month-plan">
       <div className="month-figures" role="group" aria-label="This month">
-        <div className="month-figure" role="group" aria-label="Total out of Spending">
-          <span className="caption">Total out of Spending</span>
+        <div className="month-figure" role="group" aria-label="Total spent">
+          <span className="caption">Total spent</span>
           <span className="num month-value">{formatMoney(plan.total_out)}</span>
-          <span className="caption">spending plus moves to your wallets</span>
+          <span className="caption">spending plus transfers to your wallets</span>
         </div>
         <div
           className={`month-figure${tighter === "left_to_spend" ? " month-watch" : ""}`}
@@ -196,6 +196,8 @@ export function BudgetsSection({ me }: { me: Me }) {
   const [amount, setAmount] = useState("");
   const [error, setError] = useState<string | null>(null);
   const home = me.user.home_currency;
+  // With none yet, the page is just a short invitation to set one.
+  const none = budgets.data?.length === 0;
 
   const hasOverall = Boolean(budgets.data?.some((b) => b.category_id === null));
   const taken = new Set(budgets.data?.map((b) => b.category_id ?? "overall"));
@@ -227,14 +229,19 @@ export function BudgetsSection({ me }: { me: Me }) {
 
   return (
     <section className="card" aria-labelledby="budgets">
-      <div className="card-head">
+      <div className={`card-head${none ? " budget-head-first" : ""}`}>
         <h2 id="budgets">Budgets</h2>
-        <span className="caption">Monthly in {home} · alerts at 50/80/100%</span>
+        {!none && <span className="caption">Monthly in {home} · alerts at 50/80/100%</span>}
       </div>
       {budgets.isLoading && <p className="state">Loading…</p>}
       {budgets.isError && <p className="state error-text">Couldn't load budgets.</p>}
-      {budgets.data?.length === 0 && <p className="state">No budgets yet. Add one below.</p>}
-      {!hasOverall && month.data && <MonthPlan plan={month.data} />}
+      {none && (
+        <div className="budget-first">
+          <h3>Set a monthly limit</h3>
+          <p className="muted">Pick what to limit and how much, and I'll tell you when it's getting close.</p>
+        </div>
+      )}
+      {!none && !hasOverall && month.data && budgets.data && <MonthPlan plan={month.data} />}
       {budgets.data && budgets.data.length > 0 && (
         <ul className="budgets">
           {budgets.data.map((b) => (
@@ -252,7 +259,7 @@ export function BudgetsSection({ me }: { me: Me }) {
       {options.length > 0 && (
         <form className="budget-add plan-add" onSubmit={add} aria-label="Add a budget">
           <label className="field">
-            Budget for
+            {none ? "Category" : "Budget for"}
             <select className="input" value={chosen} onChange={(e) => setTarget(e.target.value)}>
               {options.map((o) => (
                 <option key={o.value} value={o.value}>
@@ -273,7 +280,7 @@ export function BudgetsSection({ me }: { me: Me }) {
             />
           </label>
           <button type="submit" className="btn btn-primary" disabled={!amount.trim()}>
-            Add budget
+            {none ? "Set limit" : "Add budget"}
           </button>
         </form>
       )}

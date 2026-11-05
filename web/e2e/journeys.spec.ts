@@ -1,6 +1,7 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 
 import { fakeApi } from "./fake-api";
+import { showOnly } from "./ledger-filters";
 
 // On failure, print what the page did: API calls, console errors and uncaught exceptions.
 test.beforeEach(async ({ page }, info) => {
@@ -110,18 +111,31 @@ test("dashboard shows the month, categories and IOUs", async ({ page }) => {
     page.getByRole("list", { name: "Spending by category" }),
   ).toContainText("Dining Out");
   await expect(page.getByText("Ann")).toBeVisible();
-  // The latest few, and a line from Nexus offering to set a budget.
+  // The latest few, and a headline that offers to set a budget, with no Log expense button.
   await expect(page.getByRole("region", { name: "Latest" }).getByRole("listitem").first()).toBeVisible();
-  await expect(page.getByRole("region", { name: "From Nexus" })).toContainText("Set a monthly budget");
+  await expect(page.locator(".overview-headline")).toContainText(/SGD.37\.40 spent this month/);
+  await expect(page.locator(".overview-headline").getByRole("link", { name: "Set a budget" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "From Nexus" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Log expense" })).toHaveCount(0);
+});
+
+test("the overview's headline says what is left of the overall budget once there is one", async ({ page }) => {
+  const state = await fakeApi(page);
+  state.budgets.push({ id: "b1", category_id: null, limit: 2000, spent: 600 });
+  await page.goto("/accounting");
+  await expect(page.locator(".overview-headline")).toContainText(/SGD.600\.00 spent · SGD.1,400\.00 left of SGD.2,000\.00/);
+  await expect(page.getByRole("link", { name: "Set a budget" })).toHaveCount(0);
+  await page.goto("/accounting?month=2026-08");
+  await expect(page.locator(".overview-headline")).toContainText(/spent in August/);
 });
 
 test("the overview shows what was put away and its share of income, once there is a wallet to put it in", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/accounting");
-  const tile = page.getByLabel("Put away");
+  const tile = page.getByLabel("Saved");
   await expect(tile).toContainText(/SGD.800\.00/);
   await expect(tile).toContainText("19% of income");
-  // Spent, Received, Net and Put away sit two by two, with no tile alone on a row.
+  // Spent, Received, Net and Saved sit two by two, with no tile alone on a row.
   // Layout positions, not the on-screen box: the tiles fade in with a staggered slide.
   const boxes = await page
     .locator(".tiles > .tile")
@@ -135,13 +149,13 @@ test("the overview shows what was put away and its share of income, once there i
   }
 });
 
-test("a user with only Spending sees no Put away tile", async ({ page }) => {
+test("a user with only a Main account sees no Saved tile", async ({ page }) => {
   await fakeApi(page, { spendingOnly: true });
   const wallets = page.waitForResponse((r) => r.url().includes("/api/wallets"));
   await page.goto("/accounting");
   await wallets;
   await expect(page.getByLabel("Received")).toContainText("4,200.00");
-  await expect(page.getByLabel("Put away")).toHaveCount(0);
+  await expect(page.getByLabel("Saved")).toHaveCount(0);
 });
 
 test("a move between wallets shows neutrally and is not counted as spending or income", async ({ page }) => {
@@ -161,18 +175,18 @@ test("a move between wallets shows neutrally and is not counted as spending or i
   await expect(row.locator("td.amount")).toContainText(/SGD.800\.00/);
   await expect(row.locator("td.amount")).not.toContainText(/[+−-]/);
   await expect(row.locator("td.amount")).toHaveClass(/amount-move/);
-  await expect(row.locator(".badge-move")).toHaveText("Move");
+  await expect(row.locator(".badge-move")).toHaveText("Transfer");
 
   // Editing it keeps it a move: no direction toggle, no category.
   await row.getByRole("button", { name: "→ Investments", exact: true }).click();
-  const sheet = page.getByRole("dialog", { name: "Edit move" });
+  const sheet = page.getByRole("dialog", { name: "Edit transfer" });
   await expect(sheet.getByText("→ Investments · not counted as spending or income")).toBeVisible();
   await expect(sheet.getByRole("group", { name: "Direction" })).toHaveCount(0);
   await expect(sheet.getByLabel("Category")).toHaveCount(0);
   await sheet.getByRole("button", { name: "Cancel" }).click();
 
   // It is neither money out nor money in.
-  await page.getByRole("button", { name: "Money out", exact: true }).click();
+  await showOnly(page, "Money out");
   await expect(page.getByRole("button", { name: "Maxwell Food Centre", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "→ Investments", exact: true })).toHaveCount(0);
 });
@@ -219,16 +233,16 @@ test("add, edit and delete a wallet from Settings", async ({ page }) => {
 
   // Deleting asks where its moves go, and says what that does to them.
   await renamed.getByRole("button", { name: "Delete" }).click();
-  await expect(renamed.getByText("Delete Rainy day fund? Its moves go to")).toBeVisible();
-  await expect(renamed.getByText("It has no moves.")).toBeVisible();
+  await expect(renamed.getByText("Delete Rainy day fund? Its transfers go to")).toBeVisible();
+  await expect(renamed.getByText("It has no transfers.")).toBeVisible();
   await renamed.getByRole("button", { name: "Delete", exact: true }).click();
   await expect(yours.getByRole("heading", { name: "Rainy day fund" })).toHaveCount(0);
 
   await investments.getByRole("button", { name: "Delete" }).click();
-  await expect(investments.getByLabel("Move Investments moves to")).toHaveValue("w-savings");
-  await expect(investments.getByText("1 move goes to Savings.")).toBeVisible();
-  await investments.getByLabel("Move Investments moves to").selectOption({ label: "Spending" });
-  await expect(investments.getByText("No moves go to Spending; 1 move between the two will be removed.")).toBeVisible();
+  await expect(investments.getByLabel("Move Investments transfers to")).toHaveValue("w-savings");
+  await expect(investments.getByText("1 transfer goes to Savings.")).toBeVisible();
+  await investments.getByLabel("Move Investments transfers to").selectOption({ label: "Main account" });
+  await expect(investments.getByText("No transfers go to Main account; 1 transfer between the two will be removed.")).toBeVisible();
   await investments.getByRole("button", { name: "Keep" }).click();
   await expect(yours.getByRole("heading", { name: "Investments" })).toBeVisible();
 });
@@ -241,17 +255,17 @@ test("deleting a wallet re-points its moves at the one picked", async ({ page })
   const yours = card.getByRole("list", { name: "Your wallets" });
   const investments = yours.getByRole("listitem").filter({ has: page.getByRole("heading", { name: "Investments" }) });
   await investments.getByRole("button", { name: "Delete" }).click();
-  await expect(investments.getByText("1 move goes to Savings.")).toBeVisible();
+  await expect(investments.getByText("1 transfer goes to Savings.")).toBeVisible();
   await investments.getByRole("button", { name: "Delete", exact: true }).click();
   await expect(yours.getByRole("heading", { name: "Investments" })).toHaveCount(0);
 
   await page.goto("/accounting/ledger");
-  await page.getByRole("button", { name: "Moves", exact: true }).click();
+  await showOnly(page, "Transfers");
   await expect(page.getByRole("button", { name: "→ Savings", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "→ Investments", exact: true })).toHaveCount(0);
 });
 
-test("Spending can be renamed but not deleted or given another kind", async ({ page }) => {
+test("The Main account can be renamed but not deleted or given another kind", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/settings/wallets");
   const card = page.getByRole("region", { name: "Wallets" });
@@ -259,12 +273,12 @@ test("Spending can be renamed but not deleted or given another kind", async ({ p
   const spending = card
     .getByRole("list", { name: "Your wallets" })
     .getByRole("listitem")
-    .filter({ has: page.getByRole("heading", { name: "Spending", exact: true }) });
+    .filter({ has: page.getByRole("heading", { name: "Main account", exact: true }) });
   await expect(spending.getByRole("button", { name: "Edit" })).toBeVisible();
   await expect(spending.getByRole("button", { name: "Delete" })).toHaveCount(0);
   await spending.getByRole("button", { name: "Edit" }).click();
-  const edit = card.getByRole("form", { name: "Edit Spending" });
-  await expect(edit.getByLabel("Name")).toHaveValue("Spending");
+  const edit = card.getByRole("form", { name: "Edit Main account" });
+  await expect(edit.getByLabel("Name")).toHaveValue("Main account");
   await expect(edit.getByLabel("Kind")).toHaveCount(0);
 });
 
@@ -272,8 +286,8 @@ test("a move is added from the add sheet and shows under Moves, not in spending"
   await fakeApi(page);
   await page.goto("/accounting/ledger");
   await page.getByRole("button", { name: "Add transaction" }).click();
-  await page.getByRole("dialog", { name: "Log money out" }).getByRole("button", { name: "Move", exact: true }).click();
-  const sheet = page.getByRole("dialog", { name: "Log a move" });
+  await page.getByRole("dialog", { name: "Log money out" }).getByRole("button", { name: "Transfer", exact: true }).click();
+  const sheet = page.getByRole("dialog", { name: "Log a transfer" });
   await expect(sheet).toBeVisible();
   // No merchant or category on a move; it starts from Spending and can't go to itself.
   await expect(sheet.getByLabel("Paid to")).toHaveCount(0);
@@ -287,7 +301,7 @@ test("a move is added from the add sheet and shows under Moves, not in spending"
   await expect(sheet).toBeHidden();
 
   // Under Moves, with no + or − on the amount.
-  await page.getByRole("button", { name: "Moves", exact: true }).click();
+  await showOnly(page, "Transfers");
   const row = page.getByRole("row").filter({ hasText: "→ Savings" });
   await expect(row.locator("td.amount")).toContainText(/SGD.500\.00/);
   await expect(row.locator("td.amount")).not.toContainText(/[+−-]/);
@@ -305,8 +319,8 @@ test("a move needs a second wallet, and the sheet says where to add one", async 
   await fakeApi(page, { spendingOnly: true });
   await page.goto("/accounting/ledger");
   await page.getByRole("button", { name: "Add transaction" }).click();
-  await page.getByRole("dialog", { name: "Log money out" }).getByRole("button", { name: "Move", exact: true }).click();
-  const sheet = page.getByRole("dialog", { name: "Log a move" });
+  await page.getByRole("dialog", { name: "Log money out" }).getByRole("button", { name: "Transfer", exact: true }).click();
+  const sheet = page.getByRole("dialog", { name: "Log a transfer" });
   await expect(sheet.getByRole("link", { name: "Add a wallet in Settings first" })).toBeVisible();
   await expect(sheet.getByRole("button", { name: "Save" })).toBeDisabled();
   await sheet.getByRole("link", { name: "Add a wallet in Settings first" }).click();
@@ -319,25 +333,25 @@ test("an expense is turned into a move to a wallet, and leaves Money out", async
   await page.goto("/accounting/ledger");
   await page.getByRole("button", { name: "Maxwell Food Centre", exact: true }).click();
   const sheet = page.getByRole("dialog", { name: "Edit transaction" });
-  await sheet.getByRole("button", { name: "This was a move to…" }).click();
-  const ask = sheet.getByRole("group", { name: "Turn into a move" });
+  await sheet.getByRole("button", { name: "This was a transfer to…" }).click();
+  const ask = sheet.getByRole("group", { name: "Turn into a transfer" });
   // Spending itself isn't offered: a move goes to or from another wallet.
   await expect(ask.getByLabel("Wallet").locator("option")).toHaveText(["Investments", "Savings", "Card", "Cash"]);
   await ask.getByLabel("Wallet").selectOption({ label: "Investments" });
   await expect(
-    ask.getByText("Turn this into a move from Spending to Investments? It will stop counting as spending and lose its category."),
+    ask.getByText("Turn this into a transfer from Main account to Investments? It will stop counting as spending and lose its category."),
   ).toBeVisible();
-  await ask.getByRole("button", { name: "Turn into a move" }).click();
+  await ask.getByRole("button", { name: "Turn into a transfer" }).click();
   await expect(sheet).toBeHidden();
 
-  await page.getByRole("button", { name: "Money out", exact: true }).click();
+  await showOnly(page, "Money out");
   await expect(page.getByRole("button", { name: "Grab", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Maxwell Food Centre", exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: "Moves", exact: true }).click();
+  await showOnly(page, "Transfers");
   const row = page.getByRole("row").filter({ hasText: "Maxwell Food Centre" });
   await expect(row).toContainText("→ Investments");
   await expect(row.locator("td.amount")).not.toContainText(/[+−-]/);
-  await expect(row.locator(".badge-move")).toHaveText("Move");
+  await expect(row.locator(".badge-move")).toHaveText("Transfer");
 });
 
 test("money in can be turned into a move from a wallet, and a split bill refuses", async ({ page }) => {
@@ -345,17 +359,17 @@ test("money in can be turned into a move from a wallet, and a split bill refuses
   await page.goto("/accounting/ledger");
   await page.getByRole("button", { name: "Employer", exact: true }).click();
   let sheet = page.getByRole("dialog", { name: "Edit transaction" });
-  await sheet.getByRole("button", { name: "This was a move to…" }).click();
+  await sheet.getByRole("button", { name: "This was a transfer to…" }).click();
   await sheet.getByLabel("Wallet").selectOption({ label: "Savings" });
-  await expect(sheet.getByText("Turn this into a move from Savings to Spending? It will stop counting as income.")).toBeVisible();
+  await expect(sheet.getByText("Turn this into a transfer from Savings to Main account? It will stop counting as income.")).toBeVisible();
   await sheet.getByRole("button", { name: "Keep as is" }).click();
-  await expect(sheet.getByRole("button", { name: "This was a move to…" })).toBeVisible();
+  await expect(sheet.getByRole("button", { name: "This was a transfer to…" })).toBeVisible();
   await sheet.getByRole("button", { name: "Cancel" }).click();
 
   await page.getByRole("button", { name: "Hotpot Place", exact: true }).click();
   sheet = page.getByRole("dialog", { name: "Edit transaction" });
-  await sheet.getByRole("button", { name: "This was a move to…" }).click();
-  await sheet.getByRole("button", { name: "Turn into a move" }).click();
+  await sheet.getByRole("button", { name: "This was a transfer to…" }).click();
+  await sheet.getByRole("button", { name: "Turn into a transfer" }).click();
   await expect(sheet.getByRole("alert")).toContainText("split with others");
   await expect(sheet).toBeVisible();
 });
@@ -381,7 +395,8 @@ test("tap a spending category to see its transactions, then all of them in the l
   await expect(page).toHaveURL(/\/accounting\/ledger\?.*category=food/);
   const ledger = page.getByRole("region", { name: "Transactions" });
   await expect(ledger.getByText("Category Dining Out")).toBeVisible();
-  await expect(ledger.getByRole("button", { name: "Money out" })).toHaveAttribute("aria-pressed", "true");
+  await expect(ledger.getByRole("group", { name: "Active filters" }).getByText("Money out")).toBeVisible();
+  await expect(ledger.getByRole("button", { name: "Filter, 3 active" })).toBeVisible();
   await expect(ledger.getByRole("button", { name: "Maxwell Food Centre", exact: true })).toBeVisible();
   await expect(ledger.getByRole("button", { name: "Grab", exact: true })).toHaveCount(0);
   await ledger.getByRole("button", { name: "Show every category, not just Dining Out" }).click();
@@ -391,8 +406,8 @@ test("tap a spending category to see its transactions, then all of them in the l
 
 test("log an expense from the entry sheet", async ({ page }) => {
   await fakeApi(page);
-  await page.goto("/accounting");
-  await page.getByRole("button", { name: "Log expense" }).click();
+  await page.goto("/accounting/ledger");
+  await page.getByRole("button", { name: "Add transaction" }).click();
   const sheet = page.getByRole("dialog", { name: "Log money out" });
   await expect(sheet.getByLabel("Amount")).toBeFocused();
   await sheet.getByLabel("Amount").fill("4.20");
@@ -476,7 +491,7 @@ test("the app never throws while chatting", async ({ page }) => {
 test("export links carry the current filters", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/accounting/ledger");
-  await page.getByRole("button", { name: "Money in" }).click();
+  await showOnly(page, "Money in");
   await page.getByRole("button", { name: "More" }).click();
   await expect(page.getByRole("menuitem", { name: "Export CSV" })).toHaveAttribute(
     "href",
@@ -497,11 +512,15 @@ test("set a budget, see how much is used, change and remove it", async ({ page }
   await page.goto("/accounting/budgets");
   await expect(page.getByRole("heading", { name: "Budgets", level: 1 })).toBeVisible();
   const budgets = page.getByRole("region", { name: "Budgets" });
-  await expect(budgets.getByText("No budgets yet. Add one below.")).toBeVisible();
+  // With none yet it is just a short form, and none of the month's figures.
+  await expect(budgets.getByRole("heading", { name: "Set a monthly limit" })).toBeVisible();
+  await expect(budgets.getByRole("group", { name: "Total spent" })).toHaveCount(0);
+  await expect(budgets.getByRole("group", { name: "Left to spend" })).toHaveCount(0);
+  await expect(budgets.getByLabel("Category")).toHaveValue("overall");
 
-  await budgets.getByLabel("Budget for").selectOption({ label: "Dining Out" });
+  await budgets.getByLabel("Category").selectOption({ label: "Dining Out" });
   await budgets.getByLabel("Monthly limit (SGD)").fill("100");
-  await budgets.getByRole("button", { name: "Add budget" }).click();
+  await budgets.getByRole("button", { name: "Set limit" }).click();
   const meter = budgets.getByRole("meter", { name: "Dining Out budget used" });
   await expect(meter).toHaveAttribute("aria-valuetext", "90% used");
   await expect(budgets.getByText(/90% used · SGD\s?10\.00 left/)).toBeVisible();
@@ -518,7 +537,7 @@ test("set a budget, see how much is used, change and remove it", async ({ page }
 
   await budgets.getByRole("button", { name: "Remove" }).click();
   await budgets.getByRole("button", { name: "Remove" }).click(); // confirm
-  await expect(budgets.getByText("No budgets yet. Add one below.")).toBeVisible();
+  await expect(budgets.getByRole("heading", { name: "Set a monthly limit" })).toBeVisible();
 });
 
 test("the budgets card shows total out and left to spend, with the lower of that and budget left marked", async ({ page }) => {
@@ -526,9 +545,9 @@ test("the budgets card shows total out and left to spend, with the lower of that
   state.budgets.push({ id: "b1", category_id: null, limit: 2000, spent: 600 });
   await page.goto("/accounting/budgets");
   const budgets = page.getByRole("region", { name: "Budgets" });
-  const total = budgets.getByRole("group", { name: "Total out of Spending" });
+  const total = budgets.getByRole("group", { name: "Total spent" });
   await expect(total).toContainText(/SGD.2,600\.00/);
-  await expect(total).toContainText("spending plus moves to your wallets");
+  await expect(total).toContainText("spending plus transfers to your wallets");
   const left = budgets.getByRole("group", { name: "Left to spend" });
   await expect(left).toContainText(/SGD.1,100\.00/);
   await expect(left).toContainText(/after what's still due this month \(SGD.1,300\.00\)/);
@@ -542,11 +561,12 @@ test("the budgets card shows total out and left to spend, with the lower of that
   expect(order).toEqual(["budget", "budget-month"]);
 });
 
-test("without an overall budget the card still shows total out and left to spend, and a plan that outgrows income is flagged", async ({ page }) => {
-  await fakeApi(page, { planWarning: true });
+test("without an overall budget, but with another, the card still shows total out and left to spend, and a plan that outgrows income is flagged", async ({ page }) => {
+  const state = await fakeApi(page, { planWarning: true });
+  state.budgets.push({ id: "b1", category_id: "food", limit: 100, spent: 90 });
   await page.goto("/accounting/budgets");
   const budgets = page.getByRole("region", { name: "Budgets" });
-  await expect(budgets.getByRole("group", { name: "Total out of Spending" })).toContainText(/SGD.2,600\.00/);
+  await expect(budgets.getByRole("group", { name: "Total spent" })).toContainText(/SGD.2,600\.00/);
   await expect(budgets.getByRole("group", { name: "Left to spend" })).toContainText(/SGD.1,100\.00/);
   await expect(budgets.getByRole("group", { name: "Budget left" })).toHaveCount(0);
   await expect(budgets.getByText("Watch this")).toHaveCount(0);
@@ -1007,9 +1027,11 @@ test("Nexus sits in the middle of the bar on a phone, in the rail on a wide scre
   const nexus = page.getByRole("navigation", { name: where, exact: true }).getByRole("button", { name: "Ask Nexus", exact: true });
   await expect(nexus).toBeVisible();
   if (info.project.name === "mobile") {
-    // Two tabs either side of it.
+    // Two tabs either side of it, each pair in its own half of the bar.
     const bar = page.getByRole("navigation", { name: "Main (mobile)" });
-    await expect(bar.locator(":scope > *").nth(2)).toHaveAccessibleName("Ask Nexus");
+    await expect(bar.locator(":scope > *").nth(1)).toHaveAccessibleName("Ask Nexus");
+    await expect(bar.locator(":scope > .bar-side").nth(0).getByRole("link")).toHaveCount(2);
+    await expect(bar.locator(":scope > .bar-side").nth(1).getByRole("link")).toHaveCount(2);
   }
   await nexus.click();
   await expect(page.getByRole("dialog", { name: "Chat" })).toBeVisible();
@@ -1101,7 +1123,7 @@ test("home is the front desk: what needs you, what's running, and each departmen
   await expect(page.getByRole("region", { name: "Next trip" })).toContainText("No trip coming up");
 });
 
-test("the spending by month chart is on the Accounting overview", async ({ page }) => {
+test("the spending by month chart is on the Money overview", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/accounting");
   const card = page.getByRole("region", { name: "Spending by month" });
@@ -1140,7 +1162,7 @@ test("departments have their own pages, and old links still work", async ({ page
   await fakeApi(page);
   await page.goto("/accounting/ledger");
   await expect(page).toHaveURL(/\/accounting\/ledger$/);
-  const tabs = page.getByRole("navigation", { name: "Accounting pages" });
+  const tabs = page.getByRole("navigation", { name: "Money pages" });
   await expect(tabs.getByRole("link")).toHaveText(["Overview", "Ledger", "Budgets", "Cash flow"]);
   await tabs.getByRole("link", { name: "Budgets" }).click();
   await expect(page).toHaveURL(/\/accounting\/budgets$/);
@@ -1149,7 +1171,7 @@ test("departments have their own pages, and old links still work", async ({ page
   await nav.getByRole("link", { name: "Travel" }).click();
   await expect(page.getByRole("heading", { name: "Your trips", level: 1 })).toBeVisible();
   await expect(page.getByText(/never books anything/)).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Accounting pages" })).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "Money pages" })).toHaveCount(0);
   await nav.getByRole("link", { name: "Home" }).click();
   await expect(page.getByRole("heading", { name: "Needs you" })).toBeVisible();
 });
@@ -2125,8 +2147,8 @@ test("a trip's weather, packing list, cover photo and stop photos", async ({ pag
 
 test("the entry sheet suggests where you usually pay, and fills the usual", async ({ page }) => {
   const state = await fakeApi(page);
-  await page.goto("/accounting");
-  await page.getByRole("button", { name: "Log expense" }).click();
+  await page.goto("/accounting/ledger");
+  await page.getByRole("button", { name: "Add transaction" }).click();
   const sheet = page.getByRole("dialog", { name: "Log money out" });
   // The most frequent places are a tap away before anything is typed.
   await expect(sheet.getByRole("group", { name: "Frequent" }).getByRole("button", { name: /^Maxwell Food Centre/ })).toBeVisible();
@@ -2146,7 +2168,7 @@ test("the entry sheet suggests where you usually pay, and fills the usual", asyn
   await expect.poll(() => state.txs[0]).toMatchObject({ counterparty: "Maxwell Food Centre", category_id: "food", amount: { amount: "12.4000" } });
 
   // A typed amount is never replaced; Escape closes the list, not the sheet.
-  await page.getByRole("button", { name: "Log expense" }).click();
+  await page.getByRole("button", { name: "Add transaction" }).click();
   await sheet.getByLabel("Amount").fill("9");
   await sheet.getByLabel("Paid to").fill("gra");
   await sheet.getByRole("option", { name: /^Grab/ }).click();
@@ -3664,9 +3686,9 @@ test("a scheduled move picks its wallet, which is only offered when it isn't spe
   const state = await fakeApi(page, { ibkr: true });
   await page.goto("/accounting/budgets");
   const form = page.getByRole("form", { name: "Add a scheduled payment" });
-  await expect(form.getByLabel("Moves money to (optional)")).toHaveCount(0); // spending
+  await expect(form.getByLabel("Transfers money to (optional)")).toHaveCount(0); // spending
   await form.getByLabel("Counts as spending").uncheck();
-  const wallet = form.getByLabel("Moves money to (optional)");
+  const wallet = form.getByLabel("Transfers money to (optional)");
   // Spending itself isn't offered.
   await expect(wallet.locator("option")).toHaveText(["No wallet", "Investments", "Savings", "Card", "IBKR", "Cash"]);
   await form.getByLabel("Name").fill("IBKR top-up");
@@ -3694,10 +3716,10 @@ test("a scheduled move picks its wallet, which is only offered when it isn't spe
   // Marking it done says that the move was logged, and the move is in the ledger.
   await row.getByRole("button", { name: "Mark done" }).click();
   await expect(bills.getByRole("status")).toContainText(
-    "logged a move of 1000.00 SGD from Spending to IBKR.",
+    "logged a transfer of 1000.00 SGD from your main account to IBKR.",
   );
   await page.goto("/accounting/ledger");
-  await page.getByRole("button", { name: "Moves", exact: true }).click();
+  await showOnly(page, "Transfers");
   await expect(page.getByRole("row").filter({ hasText: "IBKR top-up" })).toContainText("→ IBKR");
 });
 
@@ -3762,7 +3784,7 @@ test("the Home nudge for a missed move settles with 'It went through' or 'Skip t
 
   // Only the one that went through is in the ledger, as a move.
   await page.goto("/accounting/ledger");
-  await page.getByRole("button", { name: "Moves", exact: true }).click();
+  await showOnly(page, "Transfers");
   await expect(page.getByRole("row").filter({ hasText: "IBKR top-up" })).toContainText("→ IBKR");
   await expect(page.getByRole("row").filter({ hasText: "Savings top-up" })).toHaveCount(0);
 });
@@ -3796,8 +3818,8 @@ test("an import preview shows rows that name a wallet as moves, and sends back w
   });
   const preview = page.getByRole("region", { name: "Check before importing" });
   const row = (name: string) => preview.getByRole("row").filter({ hasText: name });
-  await expect(row("IBKR deposit")).toContainText("Move → IBKR");
-  await expect(row("IBKR withdrawal")).toContainText("Move IBKR → Spending");
+  await expect(row("IBKR deposit")).toContainText("Transfer → IBKR");
+  await expect(row("IBKR withdrawal")).toContainText("Transfer IBKR → Main account");
   await expect(row("IBKR deposit")).not.toContainText("Other");
   // An ordinary row is as it was: its category, and no move controls.
   await expect(row("Kopitiam")).toContainText("Other");
@@ -3805,10 +3827,10 @@ test("an import preview shows rows that name a wallet as moves, and sends back w
 
   // The wallet can be changed, and a move can go back to being an ordinary entry.
   await row("IBKR monthly").getByLabel("Wallet for IBKR monthly").selectOption({ label: "Savings" });
-  await expect(row("IBKR monthly")).toContainText("Move → Savings");
+  await expect(row("IBKR monthly")).toContainText("Transfer → Savings");
   await row("IBKR withdrawal").getByRole("button", { name: "Income instead" }).click();
   await expect(row("IBKR withdrawal")).toContainText("Ordinary entry");
-  await expect(row("IBKR withdrawal")).not.toContainText("Move IBKR");
+  await expect(row("IBKR withdrawal")).not.toContainText("Transfer IBKR");
 
   await preview.getByRole("button", { name: "Import 4 transactions" }).click();
   await expect(page.getByRole("status").getByText("Imported 4 transactions.")).toBeVisible();
@@ -3836,8 +3858,8 @@ test("an unticked move row is not sent, and an ordinary entry can be made a move
   const monthly = preview.getByRole("row").filter({ hasText: "IBKR monthly" });
   await monthly.getByRole("button", { name: "Expense instead" }).click();
   await expect(monthly).toContainText("Ordinary entry");
-  await monthly.getByRole("button", { name: "Make it a move" }).click();
-  await expect(monthly).toContainText("Move → IBKR");
+  await monthly.getByRole("button", { name: "Make it a transfer" }).click();
+  await expect(monthly).toContainText("Transfer → IBKR");
   await preview.getByRole("button", { name: "Import 1 transaction" }).click();
   await expect(page.getByRole("status").getByText("Imported 1 transaction.")).toBeVisible();
   expect(state.importBodies).toEqual([{ include: [1], moves: [{ row: 1, as_move: "w-ibkr" }] }]);
@@ -3848,20 +3870,20 @@ test("an email that names a wallet asks whether it was a move", async ({ page })
   await page.goto("/settings/email");
   const checked = page.getByRole("region", { name: "Checked emails" });
   const ibkr = checked.getByRole("listitem").filter({ hasText: "Transfer to IBKR" });
-  await expect(ibkr.getByText("Was this a move to IBKR?")).toBeVisible();
-  await expect(ibkr.getByRole("button")).toHaveText(["Move", "Expense", "Skip"]);
+  await expect(ibkr.getByText("Was this a transfer to IBKR?")).toBeVisible();
+  await expect(ibkr.getByRole("button")).toHaveText(["Transfer", "Expense", "Skip"]);
   // The other pending email has no such question.
   const grab = checked.getByRole("listitem").filter({ hasText: "Your Grab e-receipt" });
-  await expect(grab.getByText(/Was this a move/)).toHaveCount(0);
+  await expect(grab.getByText(/Was this a transfer/)).toHaveCount(0);
   await expect(grab.getByRole("button", { name: "Log it" })).toBeVisible();
 
-  await ibkr.getByRole("button", { name: "Move" }).click();
+  await ibkr.getByRole("button", { name: "Transfer" }).click();
   await expect(ibkr.getByText("Logged")).toBeVisible();
-  await expect(ibkr.getByText(/Was this a move/)).toHaveCount(0);
+  await expect(ibkr.getByText(/Was this a transfer/)).toHaveCount(0);
   expect(state.emailMoves).toEqual([{ id: "e4", body: {} }]);
 
   await page.goto("/accounting/ledger");
-  await page.getByRole("button", { name: "Moves", exact: true }).click();
+  await showOnly(page, "Transfers");
   await expect(page.getByRole("row").filter({ hasText: "IBKR" })).toContainText("→ IBKR");
 });
 
@@ -3874,26 +3896,26 @@ test("'Expense' on a move question logs the email as usual", async ({ page }) =>
   expect(state.emailMoves).toEqual([]);
 });
 
-test("entries that look like moves are reviewed one at a time from the Wallets card", async ({ page }) => {
+test("entries that look like transfers are reviewed one at a time from the Wallets card", async ({ page }) => {
   const state = await fakeApi(page, { ibkr: true, likelyMoves: true });
   await page.goto("/settings/wallets");
   const card = page.getByRole("region", { name: "Wallets" });
-  await expect(card.getByText("2 entries look like moves")).toBeVisible();
+  await expect(card.getByText("2 entries look like transfers")).toBeVisible();
   await card.getByRole("button", { name: "Review" }).click();
 
-  const review = card.getByRole("group", { name: "Review likely moves" });
+  const review = card.getByRole("group", { name: "Review likely transfers" });
   await expect(review).toContainText("IBKR Cash Deposit");
   await expect(review).toContainText("The description names IBKR.");
-  await expect(review.getByLabel("Moved to")).toHaveValue("w-ibkr"); // the API's own suggestion
-  await review.getByRole("button", { name: "Make it a move" }).click();
+  await expect(review.getByLabel("Transferred to")).toHaveValue("w-ibkr"); // the API's own suggestion
+  await review.getByRole("button", { name: "Make it a transfer" }).click();
   await expect.poll(() => state.txs.find((t) => t.id === "t201")?.direction).toBe("move");
   expect(state.txs.find((t) => t.id === "t201")?.to_wallet?.name).toBe("IBKR");
 
   // Next: money in, with no suggested wallet, so one has to be picked before it's a move.
   await expect(review).toContainText("FAST Transfer");
-  await expect(review.getByLabel("Moved from")).toHaveValue("");
-  await expect(review.getByRole("button", { name: "Make it a move" })).toBeDisabled();
-  await review.getByRole("button", { name: "Not a move" }).click();
+  await expect(review.getByLabel("Transferred from")).toHaveValue("");
+  await expect(review.getByRole("button", { name: "Make it a transfer" })).toBeDisabled();
+  await review.getByRole("button", { name: "Not a transfer" }).click();
   await expect(card.getByText("That's all of them.")).toBeVisible();
   expect(state.txs.find((t) => t.id === "t202")?.direction).toBe("in"); // nothing was changed
 });

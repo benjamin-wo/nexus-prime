@@ -126,6 +126,8 @@ async def _create(uow: UowFactory, *, now: datetime, expires_at: datetime) -> Us
             await tx.ledger.set_display_name(user.id, DISPLAY_NAME)
             # A demo shows off which card paid for what (everyone else starts in simple mode).
             await tx.ledger.set_track_cards(user.id, True)
+            # And Invest and Travel, in the menu from the start.
+            await tx.ledger.set_menu(user.id, invest=True, travel=True)
             await tx.ledger.record_demo_start(now.astimezone(UTC).date())
             await tx.commit()
             made = await tx.ledger.get_user(user.id)

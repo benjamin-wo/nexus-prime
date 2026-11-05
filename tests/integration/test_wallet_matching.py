@@ -103,8 +103,8 @@ async def test_a_preview_proposes_moves_for_rows_that_name_a_wallet(
         ("Card Payment 5678", Verdict.NEW, None),
     ]
     out, money_in, shop, card = (shown.rows[i] for i in (1, 2, 3, 4))
-    assert (out.move_to, out.move_from) == (wallets["IBKR"], None)  # Spending to IBKR
-    assert (money_in.move_to, money_in.move_from) == (None, wallets["IBKR"])  # IBKR to Spending
+    assert (out.move_to, out.move_from) == (wallets["IBKR"], None)  # Main account to IBKR
+    assert (money_in.move_to, money_in.move_from) == (None, wallets["IBKR"])  # IBKR to Main account
     assert (shop.move_to, shop.move_from) == (None, None)
     assert card.move_to == wallets["Card"]
     assert (shown.rows[0].move_to, shown.rows[0].move_from) == (None, None)
@@ -131,7 +131,7 @@ async def test_confirm_adds_proposed_rows_as_moves_with_the_import_linkage(
         moves=moves, now=NOW,
     )  # fmt: skip
     assert len(done.record.transaction_ids) == 5 and done.skipped == 0
-    spending = wallets["Spending"].id
+    spending = wallets["Main account"].id
     by_text = {t.counterparty: t for t in await all_entries(uow, alice)}
 
     topup = by_text["IBKR TOPUP"]
@@ -222,7 +222,7 @@ async def test_a_bad_wallet_for_a_row_is_refused_before_anything_is_added(
         )  # fmt: skip
 
     with pytest.raises(InvalidInput):
-        await confirm({1: wallets["Spending"].id})
+        await confirm({1: wallets["Main account"].id})
     with pytest.raises(NotFound):
         await confirm({1: theirs.id})  # another user's wallet
     assert await all_entries(uow, alice) == []
@@ -235,7 +235,7 @@ async def test_a_row_matching_an_existing_move_is_flagged_as_a_duplicate(
 ) -> None:
     wallets = await with_wallets(uow, alice)
     user = await user_of(uow, alice)
-    spending = wallets["Spending"].id
+    spending = wallets["Main account"].id
     sent = await log_move(  # logged in chat a day before the bank shows it
         uow(), alice, amount=sgd("800"), to_wallet_id=wallets["IBKR"].id,
         occurred_at=noon("2026-09-26"),
@@ -311,18 +311,18 @@ async def test_an_email_naming_a_wallet_asks_instead_of_offering_to_log_it(
     asked = {m["text"]: [b for row in m["buttons"] for b in row] for m in await messages(engine)}
     ids = await waiting_emails(uow, user)
 
-    money_out = "📧 From your email: 800.00 SGD at IBKR on 27 Sep. Was this a move to IBKR?"
+    money_out = "📧 From your email: 800.00 SGD at IBKR on 27 Sep. Was this a transfer to IBKR?"
     assert [(b["label"], b["data"]) for b in asked[money_out]] == [
-        ("Move", f"email:move:{ids['out']}"),
+        ("Transfer", f"email:move:{ids['out']}"),
         ("Expense", f"email:log:{ids['out']}"),
         ("Skip", f"email:skip:{ids['out']}"),
     ]
     money_in = (
         "📧 From your email: 300.00 SGD came in from Interactive Brokers on 27 Sep. "
-        "Was this a move from IBKR?"
+        "Was this a transfer from IBKR?"
     )
     assert [(b["label"], b["data"]) for b in asked[money_in]] == [
-        ("Move", f"email:move:{ids['in']}"),
+        ("Transfer", f"email:move:{ids['in']}"),
         ("Income", f"email:income:{ids['in']}"),
         ("Skip", f"email:skip:{ids['in']}"),
     ]
@@ -349,18 +349,24 @@ async def test_move_logs_a_move_and_marks_the_email_handled(uow: UowFactory) -> 
 
     done = only(await bot.press(user.id, f"email:move:{ids['out']}"))
     assert done.text == (
-        "Logged a move of 800.00 SGD to IBKR. It isn't counted as spending or income."
+        "Logged a transfer of 800.00 SGD to IBKR. It isn't counted as spending or income."
     )
     assert [b.label for row in done.buttons for b in row] == ["Undo"]
     back = only(await bot.press(user.id, f"email:move:{ids['in']}"))
     assert back.text == (
-        "Logged a move of 300.00 SGD from IBKR. It isn't counted as spending or income."
+        "Logged a transfer of 300.00 SGD from IBKR. It isn't counted as spending or income."
     )
     by_amount = {t.amount.amount: t for t in await all_entries(uow, user.id)}
     sent, got = by_amount[Decimal("800")], by_amount[Decimal("300")]
     assert (sent.direction, sent.source, sent.category_id) == (Direction.MOVE, Source.EMAIL, None)
-    assert (sent.from_wallet_id, sent.to_wallet_id) == (wallets["Spending"].id, wallets["IBKR"].id)
-    assert (got.from_wallet_id, got.to_wallet_id) == (wallets["IBKR"].id, wallets["Spending"].id)
+    assert (sent.from_wallet_id, sent.to_wallet_id) == (
+        wallets["Main account"].id,
+        wallets["IBKR"].id,
+    )
+    assert (got.from_wallet_id, got.to_wallet_id) == (
+        wallets["IBKR"].id,
+        wallets["Main account"].id,
+    )
     assert sent.counterparty == "IBKR" and sent.notes == "Receipt for your top-up"
     assert sent.occurred_at.date().isoformat() == "2026-09-27"
 
@@ -421,9 +427,9 @@ async def test_move_needs_a_wallet_and_cant_be_logged_twice(uow: UowFactory) -> 
     with pytest.raises(InvalidInput):
         await email_cases.move_email(uow, user, ids["grab"], now=NOW)
     wallets = await with_wallets(uow, user.id)
-    with pytest.raises(InvalidInput):  # Spending is not "the other wallet"
+    with pytest.raises(InvalidInput):  # the main account is not "the other wallet"
         await email_cases.move_email(
-            uow, user, ids["grab"], now=NOW, wallet_id=wallets["Spending"].id
+            uow, user, ids["grab"], now=NOW, wallet_id=wallets["Main account"].id
         )
     # The user can pick the wallet themselves.
     picked = await email_cases.move_email(
@@ -463,13 +469,13 @@ async def test_the_chat_can_answer_a_waiting_email_with_move(uow: UowFactory) ->
     model = scripted(call("answer_email", number=1, action="move"), say("Done."))
     agent = build(uow, model)
     ask = only(await agent.handle_text(user.id, "that IBKR one was a move", "tg:1:1"))
-    assert ask.text.startswith("Log it as a move between wallets, not spending or income? ")
-    assert "may be a move to IBKR" in ask.text
+    assert ask.text.startswith("Log it as a transfer between wallets, not spending or income? ")
+    assert "may be a transfer to IBKR" in ask.text
     assert await all_entries(uow, user.id) == []
     await agent.resolve(user.id, ask.buttons[0][0].data.split(":")[1], True)
     [tx] = await all_entries(uow, user.id)
     assert (tx.direction, tx.to_wallet_id) == (Direction.MOVE, wallets["IBKR"].id)
-    assert tool_results(model)[0].startswith("Logged a move (not spending or income): ")
+    assert tool_results(model)[0].startswith("Logged a transfer (not spending or income): ")
 
 
 # --- likely moves ------------------------------------------------------------------------
@@ -623,7 +629,7 @@ async def test_the_chat_lists_likely_moves_and_offers_to_convert_each(
     assert ask.text.startswith("Turn 2026-09-20 · -800.00 SGD · IBKR")
     listed = tool_results(model)[0]
     assert listed.startswith(
-        "4 entries that may really have been moves (nothing has been changed):"
+        "4 entries that may really have been transfers (nothing has been changed):"
     )
     assert f"[id {tx.id}]" in listed and "→ IBKR: matches 'ibkr'" in listed
     assert "(which wallet? ask the user): looks like a regular transfer: 500.00 SGD" in listed
@@ -640,7 +646,7 @@ async def test_the_chat_says_when_there_is_nothing_to_suggest(
     model = scripted(call("find_likely_moves"), say("Nothing."))
     await build(uow, model).handle_text(alice, "anything that should be a move?", "tg:1:1")
     assert tool_results(model)[0] == (
-        "No entries from the last six months look like moves between wallets."
+        "No entries from the last six months look like transfers between wallets."
     )
 
 
@@ -666,7 +672,7 @@ async def test_an_email_for_a_move_already_logged_asks_if_it_is_the_same_payment
 ) -> None:
     user = await person(uow)
     wallets = await with_wallets(uow, user.id)
-    spending = wallets["Spending"].id
+    spending = wallets["Main account"].id
     sent = await log_move(  # told to the chat the day before the email
         uow(), user.id, amount=sgd("800"), to_wallet_id=wallets["IBKR"].id,
         occurred_at=noon("2026-09-26"),
@@ -687,7 +693,7 @@ async def test_an_email_for_a_move_already_logged_asks_if_it_is_the_same_payment
     )
     assert len(asked) == 2
     for message in asked:
-        assert "Was this a move" not in message["text"] and "Same payment?" in message["text"]
+        assert "Was this a transfer" not in message["text"] and "Same payment?" in message["text"]
         assert "already in your ledger" in message["text"]
         assert [b["label"] for row in message["buttons"] for b in row] == [
             "Same one",
@@ -703,7 +709,7 @@ async def test_an_email_for_a_move_already_logged_asks_if_it_is_the_same_payment
             await email_cases.move_email(uow, user, ids[key], now=NOW)
     bot = build(uow, scripted())
     assert only(await bot.press(user.id, f"email:move:{ids['out']}")).text.startswith(
-        "That move is already in your ledger"
+        "That transfer is already in your ledger"
     )
     assert {t.id for t in await all_entries(uow, user.id)} == {sent.id, came_back.id}
 
@@ -726,7 +732,8 @@ async def test_a_different_amount_wallet_direction_or_day_still_asks_about_a_mov
     await log_move(uow(), user.id, amount=sgd("800"), to_wallet_id=wallets["Savings"].id,
                    occurred_at=noon("2026-09-27"))  # fmt: skip
     await log_move(uow(), user.id, amount=sgd("800"), from_wallet_id=wallets["IBKR"].id,
-                   to_wallet_id=wallets["Spending"].id, occurred_at=noon("2026-09-27"))  # fmt: skip
+                   to_wallet_id=wallets["Main account"].id,
+                   occurred_at=noon("2026-09-27"))  # fmt: skip
     await log_move(uow(), user.id, amount=sgd("800"), to_wallet_id=wallets["IBKR"].id,
                    occurred_at=noon("2026-09-20"))  # fmt: skip
     at = NOW + timedelta(minutes=10)
@@ -737,8 +744,12 @@ async def test_a_different_amount_wallet_direction_or_day_still_asks_about_a_mov
         {"out": fake_email("out", "Receipt for your top-up", IBKR_RECEIPT, at=at)},
     )
     [message] = asked
-    assert message["text"].endswith("Was this a move to IBKR?")
-    assert [b["label"] for row in message["buttons"] for b in row] == ["Move", "Expense", "Skip"]
+    assert message["text"].endswith("Was this a transfer to IBKR?")
+    assert [b["label"] for row in message["buttons"] for b in row] == [
+        "Transfer",
+        "Expense",
+        "Skip",
+    ]
     ids = await waiting_emails(uow, user)
     moved = await email_cases.move_email(uow, user, ids["out"], now=NOW)  # nothing in the way
     assert moved.transaction.amount == sgd("800")

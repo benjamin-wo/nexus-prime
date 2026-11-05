@@ -120,7 +120,7 @@ class Departments:
 
 ACCOUNTING = Department(
     name="accounting",
-    label="Accounting",
+    label="Money",
     emoji="🧾",
     skills=(
         "expenses",
@@ -398,7 +398,7 @@ def describe_runs(runs: Sequence[Run], tz: ZoneInfo) -> tuple[str, list[list[tup
     going = [r for r in runs if not r.finished]
     done = [r for r in runs if r.finished][:3]
     if not going and not done:
-        return "Nothing's running right now. Accounting work happens as you ask.", []
+        return "Nothing's running right now. Money work happens as you ask.", []
     lines = []
     if going:
         lines.append("Working on:")

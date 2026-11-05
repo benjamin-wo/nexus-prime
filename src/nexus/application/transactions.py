@@ -68,7 +68,7 @@ class NewTransaction:
     # A best guess (e.g. the model's) used only when no category was given and no
     # rule matched. Failing that, expenses go to "Other" and income to "Income".
     fallback_category_id: UUID | None = None
-    # Money out only: the wallet (a card, Spending, Cash) it was paid with.
+    # Money out only: the wallet (a card, the main account, Cash) it was paid with.
     paid_with_wallet_id: UUID | None = None
     # With no wallet given, pay an expense with the user's usual card, if they set one. For
     # what the user enters themselves (the web form, chat, a photo of a receipt); never for
@@ -113,7 +113,7 @@ async def create_transaction(
     caller's unit of work.
     """
     if Direction(cmd.direction) is Direction.MOVE:
-        raise InvalidInput("a move goes between two wallets: record it with log_move")
+        raise InvalidInput("a transfer goes between two wallets: record it with log_move")
     category_id, rule_id = cmd.category_id, None
     if category_id is not None:
         await require_category(repo, actor, category_id)
@@ -275,9 +275,9 @@ async def edit_transaction(
         if updated == tx:
             return tx
         if (updated.direction is Direction.MOVE) != (tx.direction is Direction.MOVE):
-            raise InvalidInput("a move can't be changed to money in or out, or the other way")
+            raise InvalidInput("a transfer can't be changed to money in or out, or the other way")
         if tx.direction is Direction.MOVE and updated.category_id != tx.category_id:
-            raise InvalidInput("a move has no category")
+            raise InvalidInput("a transfer has no category")
 
         splits = await repo.list_splits(actor, tx.id)
         if splits:

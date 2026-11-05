@@ -357,7 +357,7 @@ async def _everyday(uow: UowFactory, user: User, days: _Days) -> None:
 
 
 async def _wallets(uow: UowFactory, user: User) -> tuple[Wallet, Wallet, Wallet]:
-    """Spending (everyone has it), Savings and the IBKR investment wallet."""
+    """The main account (everyone has it), Savings and the IBKR investment wallet."""
     savings, ibkr = await asyncio.gather(
         wallet_cases.add_wallet(uow(), user.id, "Savings", "savings"),
         wallet_cases.add_wallet(
@@ -507,7 +507,7 @@ async def _ledger(
     savings: Wallet,
     ibkr: Wallet,
 ) -> list[Transaction]:
-    """Spending and moves, written a few units of work at once, each in a single
+    """The main account and transfers, written a few units of work at once, each in a single
     transaction. Returns the expenses to split with Ann."""
     expenses = _expenses(user, days, categories, cards)
     moves = _moves(days, recent, spending, savings, ibkr)

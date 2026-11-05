@@ -5,7 +5,7 @@ snooze and mark paid.
 Nothing here pays, invests or moves anything. Marking one paid records that the
 user says it's paid and, if it counts as spending, logs it as an expense; one that
 doesn't (money moved, not spent) is only marked done. A scheduled move (not spending,
-pointing at a wallet) also logs the move from Spending to that wallet, unless one like
+pointing at a wallet) also logs the move from the main account to that wallet, unless one like
 it is already logged.
 """
 
@@ -136,13 +136,13 @@ async def add_bill(
     wallet_id: UUID | None = None,
 ) -> Bill:
     """Remember a scheduled payment. With ``wallet_id`` it is a scheduled move of money
-    from Spending to that wallet, so it can't count as spending."""
+    from the main account to that wallet, so it can't count as spending."""
     if amount is not None and not amount.is_positive:
         raise InvalidInput("a bill's amount must be more than zero")
     if due < _today(user, now) - OVERDUE_GRACE and cadence is Cadence.ONCE:
         raise InvalidInput("that due date has already passed")
     if wallet_id is not None and spending:
-        raise InvalidInput("a bill that counts as spending can't move money to a wallet")
+        raise InvalidInput("a bill that counts as spending can't transfer money to a wallet")
     bill = Bill(
         uuid4(),
         user.id,
@@ -158,7 +158,9 @@ async def add_bill(
         if wallet_id is not None:
             target = await wallet_cases.require_wallet(uow.ledger, user.id, wallet_id)
             if target.kind is WalletKind.SPENDING:
-                raise InvalidInput("a scheduled move goes to a wallet other than Spending")
+                raise InvalidInput(
+                    "a scheduled transfer goes to a wallet other than the main account"
+                )
         await uow.planning.insert_bill(bill)
         await uow.commit()
     return bill
@@ -168,15 +170,19 @@ async def set_bill_wallet(
     uow: UnitOfWork, user: User, bill_id: UUID, wallet_id: UUID | None
 ) -> Bill:
     """Point an existing bill at a wallet, making it a scheduled move, or at none. A bill
-    that counts as spending can't have one, and the wallet can't be Spending."""
+    that counts as spending can't have one, and the wallet can't be the main account."""
     async with uow:
         bill = await _bill(uow, user.id, bill_id)
         if wallet_id is not None:
             if bill.spending:
-                raise InvalidInput("a bill that counts as spending can't move money to a wallet")
+                raise InvalidInput(
+                    "a bill that counts as spending can't transfer money to a wallet"
+                )
             target = await wallet_cases.require_wallet(uow.ledger, user.id, wallet_id)
             if target.kind is WalletKind.SPENDING:
-                raise InvalidInput("a scheduled move goes to a wallet other than Spending")
+                raise InvalidInput(
+                    "a scheduled transfer goes to a wallet other than the main account"
+                )
         await uow.planning.set_bill_wallet(user.id, bill.id, wallet_id)
         await uow.commit()
     return replace(bill, wallet_id=wallet_id)
@@ -237,20 +243,21 @@ class Paid:
     def _move_message(self, head: str, wallet: Wallet, tz: ZoneInfo) -> str:
         if self.moved is not None:
             return (
-                f"{head} and logged a move of {self.moved.amount} from Spending to {wallet.name}."
+                f"{head} and logged a transfer of {self.moved.amount} from your main account "
+                f"to {wallet.name}."
             )
         if self.already_moved is not None:
             when = self.already_moved.occurred_at.astimezone(tz)
             return (
-                f"{head}. The move is already logged: {self.already_moved.amount} to "
+                f"{head}. The transfer is already logged: {self.already_moved.amount} to "
                 f"{wallet.name} on {when:%-d %b}, so I didn't log it again."
             )
         if self.amount is None:
             return (
-                f"{head}. It has no set amount, so no move was logged; tell me how much it "
+                f"{head}. It has no set amount, so no transfer was logged; tell me how much it "
                 "was to log it."
             )
-        return f"{head}. That move was already logged, so I didn't log it again."
+        return f"{head}. That transfer was already logged, so I didn't log it again."
 
 
 async def mark_paid(
@@ -267,7 +274,7 @@ async def mark_paid(
     matching expense is already in the ledger (from email or a statement), it isn't
     logged twice; a bill with no amount is logged only when the user gives one. One that
     doesn't count as spending (an investment, a transfer to savings) is only marked done,
-    unless it moves money to a wallet: then the move from Spending to that wallet is
+    unless it moves money to a wallet: then the move from the main account to that wallet is
     logged, once, unless one like it is already there."""
     async with uow() as tx:
         view = await _target(tx, await _bill(tx, user.id, bill_id), _today(user, now), due)
@@ -319,7 +326,7 @@ async def mark_paid(
 async def _log_scheduled_move(
     uow: UowFactory, user: User, view: BillView, money: Money | None, now: datetime
 ) -> Paid:
-    """Log the move a scheduled move stands for, from Spending to its wallet: dated now, or
+    """Log the move a scheduled move stands for, from the main account to its wallet: dated now, or
     on its due date when that has passed (confirmed late, it belongs to that day's month).
     Not when a move like it is already logged, and the same due date only once (the
     external id)."""

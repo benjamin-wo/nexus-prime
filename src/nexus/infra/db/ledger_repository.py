@@ -44,6 +44,7 @@ from nexus.domain.ledger import (
     Direction,
     Lineage,
     Link,
+    MenuSection,
     OpenIou,
     Revision,
     RevisionKind,
@@ -117,6 +118,8 @@ def _user(row: Row[Any]) -> User:
         usual_card_wallet_id=row.usual_card_wallet_id,
         track_cards=row.track_cards,
         card_tracking_asked=row.card_tracking_asked,
+        show_invest=row.show_invest,
+        show_travel=row.show_travel,
     )
 
 
@@ -357,6 +360,27 @@ class SqlLedgerRepository:
     async def set_track_cards(self, user_id: UserId, on: bool) -> None:
         await self._db.execute(update(users).where(users.c.id == user_id).values(track_cards=on))
 
+    async def set_menu(
+        self, user_id: UserId, *, invest: bool | None = None, travel: bool | None = None
+    ) -> None:
+        values = {
+            name: on
+            for name, on in (("show_invest", invest), ("show_travel", travel))
+            if on is not None
+        }
+        if values:
+            await self._db.execute(update(users).where(users.c.id == user_id).values(**values))
+
+    async def turn_on_menu(self, user_id: UserId, section: MenuSection) -> bool:
+        column = users.c.show_invest if section is MenuSection.INVEST else users.c.show_travel
+        row = await self._db.execute(
+            update(users)
+            .where(users.c.id == user_id, column.is_(None))
+            .values({column.key: True})
+            .returning(users.c.id)
+        )
+        return row.first() is not None
+
     async def set_card_tracking_asked(self, user_id: UserId) -> None:
         await self._db.execute(
             update(users).where(users.c.id == user_id).values(card_tracking_asked=True)
@@ -451,7 +475,7 @@ class SqlLedgerRepository:
             if "uq_wallets_user_id_lower_name" in str(exc.orig):
                 raise Conflict("a wallet with that name already exists") from exc
             if "uq_wallets_user_id_spending" in str(exc.orig):
-                raise Conflict("there is already a Spending wallet") from exc
+                raise Conflict("there is already a main account") from exc
             if "uq_wallets_user_id_cash" in str(exc.orig):
                 raise Conflict("there is already a Cash wallet") from exc
             raise

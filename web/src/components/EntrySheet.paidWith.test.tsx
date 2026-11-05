@@ -14,7 +14,7 @@ const me: Me = {
 
 const wallet = (over: Partial<Wallet>): Wallet => ({ id: "w", name: "Wallet", kind: "card", match_words: [], ...over });
 const wallets: Wallet[] = [
-  wallet({ id: "w-spending", name: "Spending", kind: "spending" }),
+  wallet({ id: "w-spending", name: "Main account", kind: "spending" }),
   wallet({ id: "w-invest", name: "Investments", kind: "investment" }),
   wallet({ id: "w-savings", name: "Savings", kind: "savings" }),
   wallet({ id: "w-citi", name: "Citi PremierMiles", last4: "4321", usual: true }),
@@ -59,7 +59,7 @@ describe("Paid with in the entry sheet", () => {
       expect(Array.from(select().options).map((o) => o.text)).toEqual([
         "Citi PremierMiles ·· 4321",
         "DBS Altitude ·· 8765",
-        "Spending",
+        "Main account",
         "Cash",
         "Wise",
         "Not set",
@@ -115,7 +115,7 @@ describe("Paid with in the entry sheet", () => {
     await waitFor(() => expect(select().value).toBe("w-citi"));
     await userEvent.click(screen.getByRole("button", { name: "Money in" }));
     expect(screen.queryByLabelText("Paid with")).toBeNull();
-    await userEvent.click(screen.getByRole("button", { name: "Move" }));
+    await userEvent.click(screen.getByRole("button", { name: "Transfer" }));
     expect(screen.queryByLabelText("Paid with")).toBeNull();
   });
 });

@@ -699,7 +699,9 @@ async def test_chat_shows_who_owes_who_without_asking_and_settles_up_after_askin
     )  # fmt: skip
     model = scripted(call("settle_up", trip="tokyo"), say("Alex owes you less than you owe them."))
     reply = await asked(chat(uow, model), user, "who owes who for tokyo", "tg:1:1")
-    assert reply.buttons == [] and reply.text == "Alex owes you less than you owe them."
+    # The first travel tool for someone who hasn't decided puts Travel in their menu, and says so.
+    assert reply.buttons == []
+    assert reply.text == "Alex owes you less than you owe them.\n\nI've added Travel to your menu."
     [lines] = tool_results(model)
     assert "You owe Alex 113.34 SGD." in lines and "Sam owes you 40.00 SGD." in lines
     assert "  Owes the user: 40.00 SGD for Shop (10 Jan)" in lines

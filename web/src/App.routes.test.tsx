@@ -30,7 +30,7 @@ describe("where pages live now", () => {
   it("opens Budgets at /accounting/budgets", async () => {
     await open("/accounting/budgets", "Budgets");
     expect(window.location.pathname).toBe("/accounting/budgets");
-    const tabs = screen.getByRole("navigation", { name: "Accounting pages" });
+    const tabs = screen.getByRole("navigation", { name: "Money pages" });
     expect(within(tabs).getByRole("link", { name: "Budgets" })).toHaveAttribute("aria-current", "page");
   });
 
@@ -45,7 +45,7 @@ describe("where pages live now", () => {
     expect(screen.getByRole("link", { name: "Back to Settings" })).toHaveAttribute("href", "/settings");
     const rail = screen.getByRole("navigation", { name: "Main" });
     expect(within(rail).getByRole("link", { name: "Settings" })).toHaveAttribute("aria-current", "page");
-    expect(screen.queryByRole("navigation", { name: "Accounting pages" })).toBeNull();
+    expect(screen.queryByRole("navigation", { name: "Money pages" })).toBeNull();
   });
 
   it.each(["/accounting/import", "/import"])("sends %s to Import a statement, inside Settings", async (old) => {
@@ -61,7 +61,7 @@ describe("where pages live now", () => {
     expect(screen.getByRole("link", { name: "Back to Settings" })).toHaveAttribute("href", "/settings");
     const rail = screen.getByRole("navigation", { name: "Main" });
     expect(within(rail).getByRole("link", { name: "Settings" })).toHaveAttribute("aria-current", "page");
-    expect(screen.queryByRole("navigation", { name: "Accounting pages" })).toBeNull();
+    expect(screen.queryByRole("navigation", { name: "Money pages" })).toBeNull();
   });
 
   it.each([

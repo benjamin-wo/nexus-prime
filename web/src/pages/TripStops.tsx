@@ -140,7 +140,7 @@ export function StopsSheet({ trip, detail, onClose, onSaved }: { trip: Trip; det
   return (
     <Sheet title="Stops" titleId="stops-sheet-title" className="stops-sheet" onClose={onClose}>
       <p className="caption">
-        Where you are, and when. A travel day is the day one stop ends and the next starts.
+        Where you are, and when.
         {!saved && " These follow your places to stay until you save them."}
       </p>
       <form

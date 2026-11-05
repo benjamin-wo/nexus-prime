@@ -39,6 +39,7 @@ from nexus.domain.ledger import (
     Category,
     Direction,
     Lineage,
+    MenuSection,
     OpenIou,
     Revision,
     RevisionKind,
@@ -172,6 +173,18 @@ class LedgerRepository(Protocol):
         """Whether the user keeps track of which card paid (off: simple mode)."""
         ...
 
+    async def set_menu(
+        self, user_id: UserId, *, invest: bool | None = None, travel: bool | None = None
+    ) -> None:
+        """The user's own choice of which sections show in the menu; a section left None is
+        not changed. A False sticks: nothing turns it on by itself afterwards."""
+        ...
+
+    async def turn_on_menu(self, user_id: UserId, section: MenuSection) -> bool:
+        """Show a section in the menu if the user has not decided (null). True if it was
+        turned on now; False when it was already shown or the user turned it off."""
+        ...
+
     async def set_card_tracking_asked(self, user_id: UserId) -> None:
         """They have been asked about tracking which card paid, or chose it themselves: never
         ask again."""
@@ -198,13 +211,13 @@ class LedgerRepository(Protocol):
     # wallets
     async def insert_wallet(self, wallet: Wallet) -> None:
         """Raises Conflict if the user has a wallet with that name (any case), or a second
-        Spending wallet."""
+        main account."""
         ...
 
     async def get_wallet(self, user_id: UserId, wallet_id: UUID) -> Wallet | None: ...
     async def spending_wallet(self, user_id: UserId) -> Wallet | None: ...
     async def list_wallets(self, user_id: UserId) -> list[Wallet]:
-        """Spending first, then by name."""
+        """The main account first, then by name."""
         ...
 
     async def update_wallet(self, wallet: Wallet) -> None:

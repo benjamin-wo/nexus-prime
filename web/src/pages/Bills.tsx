@@ -31,7 +31,7 @@ type Paid = { message: string; logged: boolean; moved: boolean; needs_amount: bo
 function BillRow({ bill, home, wallets, onChanged, onPaid }: {
   bill: Bill;
   home: string;
-  /** The wallets a scheduled move can go to (not Spending). */
+  /** The wallets a scheduled move can go to (not the main account). */
   wallets: Wallet[];
   onChanged: () => void;
   onPaid: (message: string) => void;
@@ -313,12 +313,12 @@ export function BillsSection({ me }: { me: Me }) {
             Counts as spending
           </label>
           <span id="spending-hint" className="caption">
-            Untick for money you move rather than spend, like investing or saving.
+            Untick for money you transfer rather than spend, like investing or saving.
           </span>
         </div>
         {!spending && elsewhere.length > 0 && (
           <label className="field">
-            Moves money to (optional)
+            Transfers money to (optional)
             <select className="input" value={walletId} onChange={(e) => setWalletId(e.target.value)}>
               <option value="">No wallet</option>
               {elsewhere.map((w) => (
@@ -339,8 +339,7 @@ export function BillsSection({ me }: { me: Me }) {
         </p>
       )}
       <p className="caption">
-        Nexus only reminds you; it never pays, invests or moves money. Marking a payment paid logs it as spending, unless it's
-        already there. One that doesn't count as spending is marked done; if it moves money to a wallet, the move is logged too.
+        Nexus only reminds you; it never pays, invests or moves money.
       </p>
     </section>
   );

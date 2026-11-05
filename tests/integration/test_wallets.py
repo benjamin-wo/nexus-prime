@@ -129,7 +129,8 @@ async def test_the_migration_gives_every_user_one_spending_wallet(
                 )
             ).one()
         assert sorted((w.user_id, w.name, w.kind) for w in wallets) == sorted(
-            (u, "Spending", "spending") for u in (ann, ben)
+            (u, "Spending", "spending")
+            for u in (ann, ben)  # migration 0042 named it so
         )
         assert (tx.direction, float(tx.amount)) == ("out", 12.5)
         assert (tx.from_wallet_id, tx.to_wallet_id) == (None, None)
@@ -191,7 +192,7 @@ async def test_the_migration_gives_every_user_one_spending_wallet(
 async def test_a_new_user_has_a_spending_and_a_cash_wallet(uow: UowFactory, alice: UserId) -> None:
     wallets = await list_wallets(uow(), alice)
     assert [(w.name, w.kind, w.match_words) for w in wallets] == [
-        ("Spending", WalletKind.SPENDING, ()),
+        ("Main account", WalletKind.SPENDING, ()),
         ("Cash", WalletKind.CASH, ()),
     ]
     assert wallets[0].user_id == alice
@@ -205,8 +206,14 @@ async def test_add_rename_update_and_list_wallets(uow: UowFactory, alice: UserId
     await add_wallet(uow(), alice, "apple card", WalletKind.CARD)
     assert broker.name == "Brokerage"
     assert broker.match_words == ("ACME Securities",)  # tidied, no repeats
-    # Spending first, then by name regardless of case.
-    assert await names(uow, alice) == ["Spending", "apple card", "Brokerage", "Cash", "Rainy Day"]
+    # Main account first, then by name regardless of case.
+    assert await names(uow, alice) == [
+        "Main account",
+        "apple card",
+        "Brokerage",
+        "Cash",
+        "Rainy Day",
+    ]
 
     renamed = await rename_wallet(uow(), alice, broker.id, "Stocks")
     assert renamed.name == "Stocks" and renamed.kind is WalletKind.INVESTMENT
@@ -221,7 +228,7 @@ async def test_add_rename_update_and_list_wallets(uow: UowFactory, alice: UserId
 async def test_wallet_refusals(uow: UowFactory, alice: UserId) -> None:
     home = await spending(uow, alice)
     saver = await add_wallet(uow(), alice, "Rainy Day", "savings")
-    with pytest.raises(InvalidInput, match="Spending"):
+    with pytest.raises(InvalidInput, match="main account already"):
         await add_wallet(uow(), alice, "Second", "spending")
     with pytest.raises(InvalidInput, match="kind"):
         await add_wallet(uow(), alice, "Odd", "pension")
@@ -232,9 +239,9 @@ async def test_wallet_refusals(uow: UowFactory, alice: UserId) -> None:
     with pytest.raises(Conflict, match="already exists"):
         await add_wallet(uow(), alice, "RAINY day", "other")
     with pytest.raises(Conflict, match="already exists"):
-        await add_wallet(uow(), alice, "spending", "other")
+        await add_wallet(uow(), alice, "main account", "other")
     with pytest.raises(Conflict, match="already exists"):
-        await rename_wallet(uow(), alice, saver.id, "SPENDING")
+        await rename_wallet(uow(), alice, saver.id, "MAIN ACCOUNT")
     with pytest.raises(InvalidInput, match="can't change kind"):
         await update_wallet(uow(), alice, home.id, kind="savings")
     with pytest.raises(InvalidInput, match="can't change kind"):
@@ -243,7 +250,7 @@ async def test_wallet_refusals(uow: UowFactory, alice: UserId) -> None:
         await update_wallet(uow(), alice, saver.id, kind="cash")
     with pytest.raises(NotFound):
         await rename_wallet(uow(), alice, uuid4(), "Ghost")
-    assert await names(uow, alice) == ["Spending", "Cash", "Rainy Day"]
+    assert await names(uow, alice) == ["Main account", "Cash", "Rainy Day"]
 
 
 async def test_wallets_are_private_to_their_owner(
@@ -251,7 +258,7 @@ async def test_wallets_are_private_to_their_owner(
 ) -> None:
     mine = await add_wallet(uow(), alice, "Rainy Day", "savings")
     await add_wallet(uow(), bob, "rainy day", "savings")  # same name is fine for Bob
-    assert len(await list_wallets(uow(), bob)) == 3  # Spending, Cash and the new one
+    assert len(await list_wallets(uow(), bob)) == 3  # Main account, Cash and the new one
     with pytest.raises(NotFound):
         await rename_wallet(uow(), bob, mine.id, "Mine now")
     with pytest.raises(NotFound):
@@ -271,7 +278,7 @@ async def test_delete_wallet(uow: UowFactory, alice: UserId) -> None:
     # Nothing recorded against it: it just goes.
     result = await delete_wallet(uow(), alice, saver.id)
     assert (result.wallet, result.moved, result.removed) == (saver, 0, 0)
-    assert await names(uow, alice) == ["Spending", "Brokerage", "Cash"]
+    assert await names(uow, alice) == ["Main account", "Brokerage", "Cash"]
 
     # With moves, it needs another wallet to hand them to.
     await log_move(uow(), alice, amount=sgd("100"), to_wallet_id=broker.id, occurred_at=T0)
@@ -281,7 +288,7 @@ async def test_delete_wallet(uow: UowFactory, alice: UserId) -> None:
         await delete_wallet(uow(), alice, broker.id, broker.id)
     with pytest.raises(NotFound):
         await delete_wallet(uow(), alice, broker.id, uuid4())
-    assert await names(uow, alice) == ["Spending", "Brokerage", "Cash"]
+    assert await names(uow, alice) == ["Main account", "Brokerage", "Cash"]
 
 
 async def test_deleting_a_wallet_repoints_its_moves_and_drops_the_ones_that_collapse(
@@ -304,10 +311,11 @@ async def test_deleting_a_wallet_repoints_its_moves_and_drops_the_ones_that_coll
 
     result = await delete_wallet(uow(), alice, broker.id, saver.id)
     assert (result.into, result.moved, result.removed) == (saver, 2, 2)
-    assert await names(uow, alice) == ["Spending", "Cash", "Rainy Day"]
+    assert await names(uow, alice) == ["Main account", "Cash", "Rainy Day"]
 
-    # Spending -> Brokerage is now Spending -> Rainy Day, deleted one included; the two moves
-    # between Brokerage and Rainy Day would have been Rainy Day -> Rainy Day, so they're gone.
+    # Main account -> Brokerage is now Main account -> Rainy Day, deleted one included; the
+    # two moves between Brokerage and Rainy Day would have been Rainy Day -> Rainy Day, so
+    # they're gone.
     moved = await get_transaction(uow(), alice, into.id)
     assert (moved.from_wallet_id, moved.to_wallet_id) == (home.id, saver.id)
     assert moved.updated_at > into.updated_at
@@ -318,7 +326,7 @@ async def test_deleting_a_wallet_repoints_its_moves_and_drops_the_ones_that_coll
     # Their history went with them, so undo walks back to what still exists.
     assert (await undo_last(uow(), alice)).transaction.id == old.id
     # Bob is untouched by any of it.
-    assert len(await list_wallets(uow(), bob)) == 2  # Spending and Cash
+    assert len(await list_wallets(uow(), bob)) == 2  # Main account and Cash
 
 
 # --- moves --------------------------------------------------------------------
@@ -468,7 +476,7 @@ async def test_mark_money_out_as_a_move_and_undo_it(uow: UowFactory, alice: User
     assert (moved.category_id, moved.category_rule_id) == (None, None)
     assert (moved.amount, moved.counterparty) == (sgd("500"), "ACME Securities")
     assert await get_transaction(uow(), alice, spent.id) == moved
-    with pytest.raises(InvalidInput, match="already a move"):
+    with pytest.raises(InvalidInput, match="already a transfer"):
         await mark_as_move(uow(), alice, spent.id, broker.id)
 
     undone = await undo_last(uow(), alice)
@@ -524,7 +532,7 @@ async def test_mark_as_move_refusals(uow: UowFactory, alice: UserId, bob: UserId
         await mark_as_move(uow(), alice, spent.id, broker.id)
 
     plain = await log_transaction(uow(), alice, NewTransaction(Direction.OUT, sgd("6"), T0))
-    with pytest.raises(InvalidInput, match="other than Spending"):
+    with pytest.raises(InvalidInput, match="other than the main account"):
         await mark_as_move(uow(), alice, plain.id, home.id)
     with pytest.raises(NotFound):
         await mark_as_move(uow(), alice, plain.id, theirs.id)
@@ -622,7 +630,7 @@ async def test_the_database_allows_one_spending_wallet_and_unique_names(
     with pytest.raises(IntegrityError):
         await add("Another", "spending")
     with pytest.raises(IntegrityError):
-        await add("SPENDING", "other")
+        await add("MAIN ACCOUNT", "other")
     with pytest.raises(IntegrityError):
         await add("Odd", "pension")
     await add("Fine", "other")

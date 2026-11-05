@@ -68,15 +68,15 @@ export function formatWithHome(amount: Money, home: Money | null | undefined): s
   return home && home.currency !== amount.currency ? `${text} · ${formatMoney(home)}` : text;
 }
 
-/** Where a move went: "→ IBKR" from Spending, "Savings → Spending" from anywhere else. */
+/** Where a transfer went: "→ IBKR" from the main account, "Savings → Main account" from anywhere else. */
 export function moveLabel(tx: Pick<Transaction, "from_wallet" | "to_wallet">): string {
   const { from_wallet: from, to_wallet: to } = tx;
-  if (!to) return "Move";
+  if (!to) return "Transfer";
   return !from || from.kind === "spending" ? `→ ${to.name}` : `${from.name} → ${to.name}`;
 }
 
 /** What a ledger row is called: its counterparty, else "Salary" or "Income" for money in
- * (a salary logged without a payer is noted "Salary"), a move's route, or "No merchant". */
+ * (a salary logged without a payer is noted "Salary"), a transfer's route, or "No merchant". */
 export function txName(
   tx: Pick<Transaction, "counterparty" | "direction" | "notes" | "from_wallet" | "to_wallet">,
 ): string {

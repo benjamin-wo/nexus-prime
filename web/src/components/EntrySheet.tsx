@@ -59,7 +59,7 @@ export function EntrySheet({
   const [toId, setToId] = useState("");
   const from = wallets.data?.some((w) => w.id === fromId) ? fromId : (spending?.id ?? "");
   const to = toId !== from && wallets.data?.some((w) => w.id === toId) ? toId : "";
-  // "This was a move to…", for an entry already logged as money out or in.
+  // "This was a transfer to…", for an entry already logged as money out or in.
   const [marking, setMarking] = useState(false);
   const [markId, setMarkId] = useState("");
   const markWallet = elsewhere.find((w) => w.id === markId) ?? elsewhere[0];
@@ -197,18 +197,18 @@ export function EntrySheet({
     try {
       onSaved(await api<Transaction>(`/transactions/${editing.id}/move`, { method: "POST", body: { wallet_id: markWallet.id } }));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't make it a move");
+      setError(e instanceof Error ? e.message : "Couldn't make it a transfer");
     } finally {
       setSaving(false);
     }
   }
 
   const title = isMove
-    ? "Edit move"
+    ? "Edit transfer"
     : editing
       ? "Edit transaction"
       : moving
-        ? "Log a move"
+        ? "Log a transfer"
         : direction === "out"
           ? "Log money out"
           : "Log money in";
@@ -231,7 +231,7 @@ export function EntrySheet({
           <div className="tabs" role="group" aria-label="Direction">
             {(["out", "in", "move"] as const).filter((d) => !editing || d !== "move").map((d) => (
               <button key={d} type="button" className="tab" aria-pressed={direction === d} onClick={() => setDirection(d)}>
-                {d === "out" ? "Money out" : d === "in" ? "Money in" : "Move"}
+                {d === "out" ? "Money out" : d === "in" ? "Money in" : "Transfer"}
               </button>
             ))}
           </div>
@@ -265,7 +265,7 @@ export function EntrySheet({
             <Link to="/settings/wallets" onClick={onClose}>
               Add a wallet in Settings first
             </Link>{" "}
-            to move money to.
+            to transfer money to.
           </p>
         )}
         {moving && !needsWallet && (
@@ -398,7 +398,7 @@ export function EntrySheet({
         </label>
         {editing && !isMove && elsewhere.length > 0 && (
           marking ? (
-            <div className="move-ask" role="group" aria-label="Turn into a move">
+            <div className="move-ask" role="group" aria-label="Turn into a transfer">
               <label className="field">
                 Wallet
                 <select className="input" value={markWallet?.id ?? ""} onChange={(e) => setMarkId(e.target.value)}>
@@ -411,12 +411,12 @@ export function EntrySheet({
               </label>
               <p className="caption">
                 {editing.direction === "out"
-                  ? `Turn this into a move from Spending to ${markWallet?.name}? It will stop counting as spending and lose its category.`
-                  : `Turn this into a move from ${markWallet?.name} to Spending? It will stop counting as income.`}
+                  ? `Turn this into a transfer from ${spending?.name ?? "your main account"} to ${markWallet?.name}? It will stop counting as spending and lose its category.`
+                  : `Turn this into a transfer from ${markWallet?.name} to ${spending?.name ?? "your main account"}? It will stop counting as income.`}
               </p>
               <div className="quick">
                 <button type="button" className="btn btn-primary" disabled={saving} onClick={markAsMove}>
-                  Turn into a move
+                  Turn into a transfer
                 </button>
                 <button type="button" className="btn" onClick={() => setMarking(false)}>
                   Keep as is
@@ -425,7 +425,7 @@ export function EntrySheet({
             </div>
           ) : (
             <button type="button" className="btn btn-ghost move-ask-open" onClick={() => setMarking(true)}>
-              This was a move to…
+              This was a transfer to…
             </button>
           )
         )}

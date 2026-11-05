@@ -2,7 +2,7 @@ import { type ReactNode, type RefObject, useEffect, useRef, useState } from "rea
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 
 import type { Me } from "../api";
-import { DEPARTMENTS, departmentFor } from "../departments";
+import { DEPARTMENTS, departmentFor, inMenu } from "../departments";
 import { useReveal } from "../motion";
 import { DemoBanner } from "./DemoBanner";
 import { Icon, departmentIcon } from "./Icon";
@@ -140,7 +140,7 @@ export function Shell({
   useBarHeight(shell, bar);
   useReveal(content);
   // The rail names each place in full; the bottom bar on a phone uses a short word under the icon,
-  // and its accessible name keeps the full one ("Money (Accounting)").
+  // and its accessible name keeps the full one ("Invest (Investment)").
   const links = (bar: boolean) => [
     <NavLink key="home" to="/" end className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
       <span className="nav-glyph" aria-hidden="true">
@@ -148,7 +148,7 @@ export function Shell({
       </span>
       <span className="nav-label">Home</span>
     </NavLink>,
-    ...DEPARTMENTS.map((d) => (
+    ...DEPARTMENTS.filter((d) => inMenu(d, me.preferences)).map((d) => (
       <NavLink
         key={d.name}
         to={d.path}
@@ -162,6 +162,7 @@ export function Shell({
       </NavLink>
     )),
   ];
+  const barLinks = links(true);
   const settings = (
     <NavLink to="/settings" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
       <span className="nav-glyph" aria-hidden="true">
@@ -240,12 +241,14 @@ export function Shell({
           {children}
         </div>
       </main>
-      {/* Home and Money, Nexus in the middle, then Invest and Travel, each with a short label
-          under its icon. Settings is on Home (top right). */}
+      {/* Home and Money, Nexus in the middle, then Invest and Travel when they are in the menu,
+          each with a short label under its icon. The places are split over two equal halves, so
+          Nexus stays in the middle with three, four or five items. Settings is on Home (top
+          right). */}
       <nav className="bottom-nav" aria-label="Main (mobile)" ref={bar}>
-        {links(true).slice(0, 2)}
+        <div className="bar-side">{barLinks.slice(0, Math.ceil(barLinks.length / 2))}</div>
         {nexus("in-bar")}
-        {links(true).slice(2)}
+        <div className="bar-side">{barLinks.slice(Math.ceil(barLinks.length / 2))}</div>
       </nav>
     </div>
   );

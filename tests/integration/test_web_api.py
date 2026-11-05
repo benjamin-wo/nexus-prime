@@ -1716,7 +1716,7 @@ async def test_departments_and_runs(world: World) -> None:
     await owner.login(OWNER)
     departments = (await owner.get("/api/departments")).json()
     assert [d["name"] for d in departments] == ["accounting", "investment", "travel"]
-    assert departments[0]["label"] == "Accounting"
+    assert departments[0]["label"] == "Money"
     assert (await owner.get("/api/runs")).json() == []
     missing = "/api/runs/00000000-0000-0000-0000-000000000000"
     assert (await owner.get(missing)).status_code == 404

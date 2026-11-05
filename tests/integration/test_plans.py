@@ -190,7 +190,8 @@ async def test_asking_for_a_plan_in_chat(uow: UowFactory) -> None:
     registry = department_cases.default_registry([plan_cases.plan_kind(uow, team)])
     agent = build(uow, chat, departments=registry)
     reply = only(await agent.handle_text(user.id, "plan for AMD", "m1"))
-    assert reply.text == "I've started a plan for AMD."
+    # The first investing tool for someone who hasn't decided also puts Invest in their menu.
+    assert reply.text == "I've started a plan for AMD.\n\nI've added Invest to your menu."
     assert "Started 'Plan for AMD': 3 steps" in str(chat.seen[-1][-1].content)
     runs = await department_cases.list_runs(uow(), user.id, now=NOW)
     await finish(uow, registry, user, runs[0])

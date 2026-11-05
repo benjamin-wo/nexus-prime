@@ -7,7 +7,7 @@ from nexus.application.clock import utcnow
 from nexus.application.ports import LedgerRepository, UnitOfWork
 from nexus.application.wallets import new_cash_wallet, new_spending_wallet
 from nexus.domain.errors import InvalidInput, NotFound
-from nexus.domain.ledger import Category, Role, User, UserId
+from nexus.domain.ledger import Category, MenuSection, Role, User, UserId
 from nexus.domain.money import Money
 
 DEFAULT_CATEGORIES = (
@@ -110,6 +110,39 @@ async def set_track_cards(uow: UnitOfWork, actor: UserId, on: bool) -> bool:
         await uow.ledger.set_card_tracking_asked(actor)
         await uow.commit()
     return on
+
+
+async def set_preferences(
+    uow: UnitOfWork,
+    actor: UserId,
+    *,
+    track_cards: bool | None = None,
+    show_invest: bool | None = None,
+    show_travel: bool | None = None,
+) -> User:
+    """Change the preferences sent, and only those (None: leave it). Choosing a menu section
+    either way is the user's own say: a False sticks, and nothing turns it on by itself
+    afterwards. Returns the user as they now are."""
+    async with uow:
+        if track_cards is not None:
+            await uow.ledger.set_track_cards(actor, track_cards)
+            await uow.ledger.set_card_tracking_asked(actor)
+        await uow.ledger.set_menu(actor, invest=show_invest, travel=show_travel)
+        user = await uow.ledger.get_user(actor)
+        await uow.commit()
+    if user is None:
+        raise NotFound("user not found")
+    return user
+
+
+async def turn_on_menu(uow: UnitOfWork, actor: UserId, section: MenuSection) -> bool:
+    """Show Invest or Travel in the menu because the user used it in chat, if they have not
+    decided: only a null turns on, so a False (their own choice) stays off. True if it turned
+    on now, which is when the reply says so (once)."""
+    async with uow:
+        turned = await uow.ledger.turn_on_menu(actor, section)
+        await uow.commit()
+    return turned
 
 
 async def find_telegram_user(uow: UnitOfWork, telegram_user_id: int) -> User | None:

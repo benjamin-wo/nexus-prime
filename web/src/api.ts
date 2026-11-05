@@ -244,13 +244,17 @@ export type Me = {
     timezone_set_at?: string | null;
     /** Their Telegram first name and last initial ("Alex T."), as other people on a trip see them. */
     display_name?: string | null;
+    /** Whether a Telegram chat is linked, so the bot can message them. A demo has none. */
+    telegram_linked?: boolean;
   };
   csrf_token: string;
   /** Set by a sign-in that added the person to a trip with a trip invite. */
   joined_trip?: string | null;
   /** Set while this is the public demo account (made-up data, ends at `expires_at`); null for a real user. */
   demo?: Demo | null;
-  preferences?: { track_cards: boolean };
+  /** `show_invest` and `show_travel`: whether Invest and Travel are in the menu. Null is not decided
+   * (hidden; chat turns it on the first time it is used), false is switched off. */
+  preferences?: { track_cards: boolean; show_invest?: boolean | null; show_travel?: boolean | null };
 };
 export type Demo = { expires_at: string; messages_left: number };
 /** The answer to the two time zone writes: the same fields as `/me`, and whether the zone moved. */

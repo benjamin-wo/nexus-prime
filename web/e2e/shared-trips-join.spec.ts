@@ -74,7 +74,7 @@ test("a guest sees only Travel, with no chat, and nothing the server refuses is 
   await expect(page.getByRole("link", { name: "Kyoto" })).toBeVisible();
 
   // No other department, Settings or chat, in the header, a rail or a bar.
-  for (const name of ["Home", "Accounting", "Investment", "Settings"]) {
+  for (const name of ["Home", "Money", "Investment", "Settings"]) {
     await expect(page.getByRole("link", { name, exact: true })).toHaveCount(0);
   }
   await expect(page.getByRole("button", { name: "Ask Nexus", exact: true })).toHaveCount(0);

@@ -52,7 +52,7 @@ def test_a_card_is_found_by_name_issuer_product_or_last_four_and_only_if_unique(
     citi = wallet("Citi PremierMiles", issuer="Citi", product="PremierMiles", last4="4321")
     dbs = wallet("DBS Altitude", issuer="DBS", product="Altitude", last4="8765")
     rewards = wallet("Citi Rewards", issuer="Citi", product="Rewards", last4="1111")
-    spending = wallet("Spending", WalletKind.SPENDING)
+    spending = wallet("Main account", WalletKind.SPENDING)
     cash = wallet("Cash", WalletKind.CASH)
     saver = wallet("Citi Savings", WalletKind.SAVINGS)
     every = [citi, dbs, rewards, spending, cash, saver]
@@ -70,7 +70,7 @@ def test_a_card_is_found_by_name_issuer_product_or_last_four_and_only_if_unique(
     assert pick("4321") == ["Citi PremierMiles"]
     assert pick("the card ending in 8765") == ["DBS Altitude"]
     assert pick("citi 1111") == ["Citi Rewards"]
-    assert pick("cash") == ["Cash"] and pick("my spending") == ["Spending"]
+    assert pick("cash") == ["Cash"] and pick("my main account") == ["Main account"]
     assert sorted(pick("citi")) == ["Citi PremierMiles", "Citi Rewards"]  # ambiguous
     assert pick("amex") == [] and pick("my card") == [] and pick("") == []
     assert pick("savings") == []  # a savings wallet can't pay

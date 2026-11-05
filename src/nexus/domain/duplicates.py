@@ -7,8 +7,10 @@ and direction within a day, by what looks like the same merchant.
 """
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from nexus.domain.ledger import Direction, Source, Transaction
@@ -16,6 +18,14 @@ from nexus.domain.money import Money
 
 # A card alert and a receipt can be dated a day apart (a late-night ride).
 NEAR_DAYS = 1
+
+# Two amounts in different currencies are one payment when, converted at their days' rates,
+# they are this close: a card that does its own FX adds a markup.
+FX_TOLERANCE = Decimal("0.03")
+
+# An amount in the user's home currency on a local day, or None without a rate for it. The
+# application supplies it (it looks the rates up); this module does no I/O.
+type Valuer = Callable[[Money, date], Money | None]
 
 # Card statements shorten merchant names: "GRB*" is Grab.
 _ALIASES = {"GRB": "GRAB", "GRABPAY": "GRAB", "AMZN": "AMAZON", "SHP": "SHOPEE"}
@@ -73,15 +83,48 @@ def _same_kind(a: Candidate, b: Candidate) -> bool:
     return True
 
 
-def likely_same(a: Candidate, b: Candidate, tz: ZoneInfo, *, any_source: bool = False) -> bool:
+def _named_alike(a: str | None, b: str | None) -> bool:
+    """Both have a name and share a word that names the place."""
+    return bool(_words(a) & _words(b))
+
+
+def _close_in_value(a: Money, b: Money, a_day: date, b_day: date, value: Valuer) -> bool:
+    first, second = value(a, a_day), value(b, b_day)
+    if first is None or second is None or first.currency != second.currency:
+        return False
+    biggest = max(first.amount, second.amount)
+    return biggest > 0 and abs(first.amount - second.amount) <= biggest * FX_TOLERANCE
+
+
+def likely_same(
+    a: Candidate,
+    b: Candidate,
+    tz: ZoneInfo,
+    *,
+    any_source: bool = False,
+    value: Valuer | None = None,
+) -> bool:
     """Whether two records look like one payment. ``any_source``: for a bill marked
-    paid, where an entry of any kind for the same amount is the bill already logged."""
-    if a.direction is not b.direction or a.amount != b.amount:
+    paid, where an entry of any kind for the same amount is the bill already logged.
+
+    Amounts in two currencies (a shop's receipt in euros, the card's alert in the home
+    currency) match only through ``value``, and only when both sides name the merchant and
+    share a word: stricter than for one currency, where a record with no name may match.
+    Without ``value``, or without a rate, they never match."""
+    if a.direction is not b.direction:
         return False
-    days = abs((a.occurred_at.astimezone(tz).date() - b.occurred_at.astimezone(tz).date()).days)
-    if days > NEAR_DAYS:
+    a_day, b_day = a.occurred_at.astimezone(tz).date(), b.occurred_at.astimezone(tz).date()
+    if abs((a_day - b_day).days) > NEAR_DAYS:
         return False
-    return (any_source or not _same_kind(a, b)) and same_merchant(a.merchant, b.merchant)
+    if not (any_source or not _same_kind(a, b)):
+        return False
+    if a.amount.currency != b.amount.currency:
+        return (
+            value is not None
+            and _named_alike(a.merchant, b.merchant)
+            and _close_in_value(a.amount, b.amount, a_day, b_day, value)
+        )
+    return a.amount == b.amount and same_merchant(a.merchant, b.merchant)
 
 
 def _score(name: str) -> tuple[int, int, int]:

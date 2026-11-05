@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 
 import pytest
-from langchain_core.messages import BaseMessage, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langgraph.checkpoint.memory import InMemorySaver
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -157,7 +157,7 @@ async def test_delete_waits_for_confirmation(uow: UowFactory, alice: UserId) -> 
     agent = build(uow, model)
 
     reply = only(await agent.handle_text(alice, "delete the grab ride", "tg:1:1"))
-    assert reply.text == "Delete 2026-09-28 · -12.00 SGD · Grab · Other?"
+    assert reply.text == "Delete 28 Sep · SGD 12.00 at Grab (Other)?"
     confirm, cancel = reply.buttons[0]
     assert confirm.label == "Confirm" and cancel.label == "Cancel"
     assert await ledger(uow, alice) == [("out", Decimal("12"))]  # nothing yet
@@ -557,7 +557,7 @@ async def test_a_category_correction_offers_a_rule_and_waits_for_the_answer(
     )
     agent = build(uow, model)
     confirm = only(await agent.handle_text(alice, "grab was transport", "tg:1:1"))
-    assert confirm.text == "Change 2026-09-28 · -12.00 SGD · Grab · Other: category → Transport?"
+    assert confirm.text == "Change 28 Sep · SGD 12.00 at Grab (Other): category → Transport?"
     done = only(await agent.resolve(alice, confirm.buttons[0][0].data.split(":")[1], True))
     assert "Always file “grab” under Transport?" in tool_results(model)[-1]
     save, skip = done.buttons[0]
@@ -624,3 +624,114 @@ async def test_a_flood_of_messages_is_slowed_down(uow: UowFactory, alice: UserId
     agent._limiter = RateLimiter({"message": ((2, timedelta(minutes=1)),)})
     replies = [(await agent.handle_text(alice, f"hi {n}", f"tg:9:{n}"))[0].text for n in range(3)]
     assert replies == ["one", "two", SLOW_DOWN]  # the third never reached the model
+
+
+async def test_confirmations_read_as_a_person_would_say_them(
+    uow: UowFactory, alice: UserId
+) -> None:
+    """Money in names who sent it and says "income"; no note, no sign, no id."""
+    income = await log_transaction(
+        uow(),
+        alice,
+        NewTransaction(
+            Direction.IN,
+            Money.of("14", "EUR"),
+            NOW,
+            counterparty="Acme Hire",
+            notes="Payment confirmation",
+            source=Source.EMAIL,
+        ),
+    )
+    old = await log_transaction(
+        uow(),
+        alice,
+        NewTransaction(
+            Direction.OUT, Money.of("1240", "SGD"), NOW - timedelta(days=400), counterparty="Zeta"
+        ),
+    )
+    model = scripted(
+        call("delete_transaction", transaction_id=str(income.id)),
+        call("delete_transaction", transaction_id=str(old.id)),
+    )
+    agent = build(uow, model)
+    first = only(await agent.handle_text(alice, "delete the acme one", "tg:1:1"))
+    assert first.text == "Delete 28 Sep · EUR 14.00 from Acme Hire (income)?"
+    await agent.resolve(alice, first.buttons[0][0].data.split(":")[1], False)
+    second = only(await agent.handle_text(alice, "delete the zeta one", "tg:1:2"))
+    assert second.text == "Delete 24 Aug 2025 · SGD 1,240.00 at Zeta (Other)?"
+
+
+async def test_two_deletes_in_one_turn_are_one_message_with_a_bullet_each(
+    uow: UowFactory, alice: UserId
+) -> None:
+    twice = [
+        await log_transaction(
+            uow(),
+            alice,
+            NewTransaction(
+                Direction.IN,
+                Money.of("14", "EUR"),
+                NOW,
+                counterparty="Acme Hire",
+                notes="Payment confirmation",
+            ),
+        )
+        for _ in range(2)
+    ]
+    model = scripted(
+        AIMessage(
+            content="",
+            tool_calls=[
+                {"name": "delete_transaction", "args": {"transaction_id": str(t.id)}, "id": f"c{n}"}
+                for n, t in enumerate(twice)
+            ],
+        ),
+        say("Deleted both."),
+    )
+    agent = build(uow, model)
+    ask = only(await agent.handle_text(alice, "delete both", "tg:1:1"))
+    assert ask.text == (
+        "Delete 2 entries?\n"
+        "• 28 Sep · EUR 14.00 from Acme Hire (income)\n"
+        "• 28 Sep · EUR 14.00 from Acme Hire (income)"
+    )
+    assert [b.label for b in ask.buttons[0]] == ["Confirm", "Cancel"]
+    # The web chat shows the waiting question from the same text.
+    waiting = await agent.chat_pending(alice)
+    assert waiting is not None and waiting.text == ask.text
+    done = only(await agent.resolve(alice, ask.buttons[0][0].data.split(":")[1], True))
+    assert done.text == "Deleted both."
+    assert await ledger(uow, alice) == []
+
+
+async def test_mixed_actions_in_one_turn_get_a_bullet_per_action(
+    uow: UowFactory, alice: UserId
+) -> None:
+    ride = await log_transaction(
+        uow(), alice, NewTransaction(Direction.OUT, Money.of("12", "SGD"), NOW, counterparty="Grab")
+    )
+    lunch = await log_transaction(
+        uow(),
+        alice,
+        NewTransaction(Direction.OUT, Money.of("12.40", "SGD"), NOW, counterparty="Kopi Corner"),
+    )
+    model = scripted(
+        AIMessage(
+            content="",
+            tool_calls=[
+                {"name": "delete_transaction", "args": {"transaction_id": str(ride.id)}, "id": "1"},
+                {
+                    "name": "edit_transaction",
+                    "args": {"transaction_id": str(lunch.id), "category": "Transport"},
+                    "id": "2",
+                },
+            ],
+        ),
+        say("Done."),
+    )
+    ask = only(await build(uow, model).handle_text(alice, "do both", "tg:1:1"))
+    assert ask.text == (
+        "Confirm these changes?\n"
+        "• Delete 28 Sep · SGD 12.00 at Grab (Other)\n"
+        "• Change 28 Sep · SGD 12.40 at Kopi Corner (Other): category → Transport"
+    )

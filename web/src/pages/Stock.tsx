@@ -166,8 +166,7 @@ function RangesCard({ ranges }: { ranges: PriceRange[] }) {
         </tbody>
       </table>
       <p className="caption">
-        How far the price has typically swung over the last year, centred on today&apos;s close. It says how wide the
-        moves could be, not which way.
+        How far the price typically swings in a year: the width, not the direction.
       </p>
     </section>
   );

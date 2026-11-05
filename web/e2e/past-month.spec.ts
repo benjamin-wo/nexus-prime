@@ -36,11 +36,12 @@ test("step back a month on the overview: that month's totals, categories and the
   expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize()!.width);
 
   // That month's own figures, and how it compares with September.
-  await expect(page.getByText(/^SGD.2,140\.00 · SGD.180\.00 less than September$/)).toBeVisible();
+  await expect(page.getByText(/^SGD.180\.00 less than September$/)).toBeVisible();
+  await expect(page.locator(".overview-headline")).toHaveText(/^SGD.2,140\.00 spent in October$/);
   await expect(page.getByRole("region", { name: "Spent" })).toContainText(/SGD.2,140\.00/);
   await expect(page.getByRole("region", { name: "Received" })).toContainText(/SGD.5,200\.00/);
-  await expect(page.getByRole("region", { name: "Put away" })).toContainText(/SGD.1,000\.00/);
-  await expect(page.getByRole("region", { name: "Put away" })).toContainText("19% of income");
+  await expect(page.getByRole("region", { name: "Saved" })).toContainText(/SGD.1,000\.00/);
+  await expect(page.getByRole("region", { name: "Saved" })).toContainText("19% of income");
   const went = page.getByRole("region", { name: "Where it went" });
   await expect(went.getByRole("button", { name: /Dining Out: SGD.900\.00/ })).toBeVisible();
   await expect(went.getByRole("button", { name: /Uncategorised: SGD.1,240\.00/ })).toBeVisible();
@@ -60,8 +61,11 @@ test("step back a month on the overview: that month's totals, categories and the
   await went.getByRole("link", { name: /in the ledger/ }).click();
   await expect(page).toHaveURL(/\/accounting\/ledger\?view=out&start=2026-10-01&end=2026-10-31&category=food$/);
   await expect(page.getByRole("heading", { name: "Ledger", level: 1 })).toBeVisible();
-  await expect(page.locator(".filter-chip")).toContainText("Dining Out");
-  await expect(page.getByLabel("Dates")).toHaveValue(/last/i);
+  const chips = page.getByRole("group", { name: "Active filters" });
+  await expect(chips.locator(".filter-chip").filter({ hasText: "Dining Out" })).toBeVisible();
+  await expect(chips.locator(".filter-chip").filter({ hasText: "Last month" })).toBeVisible();
+  await expect(chips.locator(".filter-chip").filter({ hasText: "Money out" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Filter, 3 active" })).toBeVisible();
 
   // Back lands on October again, not on this month.
   await page.goBack();
@@ -79,7 +83,8 @@ test("a bar in the Spending by month chart opens that month, and this month's br
   await september.click();
   await expect(page).toHaveURL(/\/accounting\?month=2026-09$/);
   await expect(page.getByRole("group", { name: "Month", exact: true })).toContainText(/September.*2026/);
-  await expect(page.getByText(/^SGD.2,320\.00 · SGD.665\.00 more than August$/)).toBeVisible();
+  await expect(page.getByText(/^SGD.665\.00 more than August$/)).toBeVisible();
+  await expect(page.locator(".overview-headline")).toHaveText(/^SGD.2,320\.00 spent in September$/);
   // The picked month is marked, and the chart still shows the same six months ending now.
   await expect(september).toHaveAttribute("aria-pressed", "true");
   await expect(chart.getByRole("button")).toHaveCount(6);

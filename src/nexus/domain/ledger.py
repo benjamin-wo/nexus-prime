@@ -26,6 +26,13 @@ class Role(StrEnum):
     GUEST = "guest"
 
 
+class MenuSection(StrEnum):
+    """A part of the web app's menu that stays hidden until the user uses or asks for it."""
+
+    INVEST = "invest"
+    TRAVEL = "travel"
+
+
 class ZoneSource(StrEnum):
     """What set a user's current time zone (``User.timezone``)."""
 
@@ -47,7 +54,7 @@ class WalletKind(StrEnum):
     INVESTMENT = "investment"
     SAVINGS = "savings"
     CARD = "card"
-    # Notes and coins. Everyone has exactly one, like Spending; it can be renamed.
+    # Notes and coins. Everyone has exactly one, like the main account; it can be renamed.
     CASH = "cash"
     OTHER = "other"
 
@@ -107,6 +114,11 @@ class User:
     # Whether they were asked, or chose themselves, about tracking which card paid (see
     # ``application.found_cards``): once true they are never asked again.
     card_tracking_asked: bool = False
+    # Whether Invest and Travel show in the web menu. None: not decided (hidden, and turned on
+    # by itself the first time the user uses it in chat); True: shown; False: the user turned
+    # it off (hidden, never turned on by itself). Chat and the API work whatever they say.
+    show_invest: bool | None = None
+    show_travel: bool | None = None
 
     def __post_init__(self) -> None:
         if not self.home_timezone:

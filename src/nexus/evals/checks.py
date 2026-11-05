@@ -108,15 +108,17 @@ class Logged:
 
 @dataclass(frozen=True, slots=True)
 class Moved:
-    """A new, live move between two of the user's wallets like this exists."""
+    """A new, live transfer between two of the user's wallets like this exists."""
 
     amount: str
     to_wallet: str
-    from_wallet: str = "Spending"
+    from_wallet: str = "Main account"
     currency: str = "SGD"
 
     def describe(self) -> str:
-        return f"moved {self.amount} {self.currency} from {self.from_wallet} to {self.to_wallet}"
+        return (
+            f"transferred {self.amount} {self.currency} from {self.from_wallet} to {self.to_wallet}"
+        )
 
     async def holds(self, world: World) -> bool:
         wallets = await wallet_cases.list_wallets(world.uow(), world.user.id)

@@ -113,9 +113,9 @@ async def test_a_spending_bill_cannot_have_a_wallet_and_the_wallet_must_be_real(
         await bill_cases.add_bill(
             uow(), *args, now=at(9, 1), spending=True, wallet_id=wallets["IBKR"].id
         )
-    with pytest.raises(InvalidInput, match="other than Spending"):
+    with pytest.raises(InvalidInput, match="other than the main account"):
         await bill_cases.add_bill(
-            uow(), *args, now=at(9, 1), spending=False, wallet_id=wallets["Spending"].id
+            uow(), *args, now=at(9, 1), spending=False, wallet_id=wallets["Main account"].id
         )
     stranger = await person(uow, 5151)
     theirs = await add_wallet(uow(), stranger.id, "Brokerage", WalletKind.INVESTMENT)
@@ -146,12 +146,15 @@ async def test_marking_done_logs_one_move_from_spending_to_the_wallet(uow: UowFa
     done = await bill_cases.mark_paid(uow, user, bill.id, now=now)
     assert done.moved is not None and done.logged is None and done.already_moved is None
     assert done.message(SG) == (
-        "Marked IBKR top-up (25 Sep) as done and logged a move of 1,000.00 SGD from "
-        "Spending to IBKR."
+        "Marked IBKR top-up (25 Sep) as done and logged a transfer of 1,000.00 SGD from "
+        "your main account to IBKR."
     )
     (move,) = await moves_of(uow, user.id)
     assert move.id == done.moved.id
-    assert (move.from_wallet_id, move.to_wallet_id) == (wallets["Spending"].id, wallets["IBKR"].id)
+    assert (move.from_wallet_id, move.to_wallet_id) == (
+        wallets["Main account"].id,
+        wallets["IBKR"].id,
+    )
     assert move.amount == sgd("1000") and move.occurred_at == now
     assert move.counterparty == "IBKR top-up" and move.category_id is None
     # Not spending: nothing went out as an expense.
@@ -188,7 +191,7 @@ async def test_the_external_id_keeps_a_due_date_to_one_move(uow: UowFactory) -> 
     done = await bill_cases.mark_paid(uow, user, bill.id, now=at(9, 25))
     assert done.moved is None and done.already_moved is None
     assert done.message(SG) == (
-        "Marked IBKR top-up (25 Sep) as done. That move was already logged, so I didn't log "
+        "Marked IBKR top-up (25 Sep) as done. That transfer was already logged, so I didn't log "
         "it again."
     )
     assert len(await moves_of(uow, user.id)) == 1
@@ -201,7 +204,7 @@ async def test_a_move_already_logged_in_chat_is_not_logged_again(uow: UowFactory
     assert done.moved is None and done.already_moved is not None
     assert done.already_moved.id == earlier.id
     assert done.message(SG) == (
-        "Marked IBKR top-up (25 Sep) as done. The move is already logged: 1,004.00 SGD to "
+        "Marked IBKR top-up (25 Sep) as done. The transfer is already logged: 1,004.00 SGD to "
         "IBKR on 27 Sep, so I didn't log it again."
     )
     assert [m.id for m in await moves_of(uow, user.id)] == [earlier.id]
@@ -234,7 +237,7 @@ async def test_a_scheduled_move_with_no_amount_is_marked_done_and_logs_nothing(
     done = await bill_cases.mark_paid(uow, user, bill.id, now=at(9, 25))
     assert done.moved is None and done.amount is None
     assert done.message(SG) == (
-        "Marked IBKR top-up (25 Sep) as done. It has no set amount, so no move was logged; "
+        "Marked IBKR top-up (25 Sep) as done. It has no set amount, so no transfer was logged; "
         "tell me how much it was to log it."
     )
     assert await moves_of(uow, user.id) == []
@@ -512,7 +515,7 @@ async def test_deleting_a_wallet_points_its_scheduled_moves_at_the_replacement(
     engine: AsyncEngine, uow: UowFactory
 ) -> None:
     user, bill, wallets = await setup(uow)
-    with pytest.raises(InvalidInput, match="has moves or scheduled payments"):
+    with pytest.raises(InvalidInput, match="has transfers or scheduled payments"):
         await delete_wallet(uow(), user.id, wallets["IBKR"].id)
     done = await delete_wallet(uow(), user.id, wallets["IBKR"].id, wallets["Savings"].id)
     assert (done.bills, done.moved, done.into) == (1, 0, wallets["Savings"])
@@ -525,7 +528,7 @@ async def test_a_replacement_of_spending_leaves_a_plain_not_spending_bill(
     uow: UowFactory,
 ) -> None:
     user, _, wallets = await setup(uow)
-    await delete_wallet(uow(), user.id, wallets["IBKR"].id, wallets["Spending"].id)
+    await delete_wallet(uow(), user.id, wallets["IBKR"].id, wallets["Main account"].id)
     (view,) = await bill_cases.list_bills(uow, user, now=at(9, 20))
     assert (view.bill.wallet_id, view.bill.spending) == (None, False)
 
@@ -581,11 +584,11 @@ async def test_the_chat_tool_adds_a_scheduled_move(uow: UowFactory) -> None:
     )
     assert said == (
         "Added Savings top-up 500.00 SGD: due in 27 days (Sun 25 Oct), every month on the "
-        "25th, moved to Savings (not spending). I'll remind you 7, 3 and 1 days before."
+        "25th, transfer to Savings (not spending). I'll remind you 7, 3 and 1 days before."
     )
     (view,) = await bill_cases.list_bills(uow, user, now=at(9, 28))
     assert (view.bill.spending, view.bill.wallet_id) == (False, wallets["Savings"].id)
-    assert "moved to Savings (not spending)" in await run(uow, user.id, "list_bills", {})
+    assert "transfer to Savings (not spending)" in await run(uow, user.id, "list_bills", {})
 
 
 async def test_an_unknown_wallet_creates_nothing_and_tells_the_model_to_ask(
@@ -601,15 +604,18 @@ async def test_an_unknown_wallet_creates_nothing_and_tells_the_model_to_ask(
     assert said.startswith("Error: there's no wallet called 'Coinbase'")
     assert "offer to add it as a new wallet" in said
     assert await bill_cases.list_bills(uow, user, now=at(9, 28)) == []
-    assert list(await wallets_of(uow, user.id)) == ["Spending", "Cash"]  # no wallet was made either
+    assert list(await wallets_of(uow, user.id)) == [
+        "Main account",
+        "Cash",
+    ]  # no wallet was made either
 
 
 async def test_marking_done_in_chat_logs_the_move(uow: UowFactory) -> None:
     user, _, _ = await setup(uow, who=4747)
     said = await run(uow, user.id, "mark_bill_paid", {"name": "IBKR top-up"})
     assert said.startswith(
-        "Marked IBKR top-up (25 Sep) as done and logged a move of 1,000.00 SGD from "
-        "Spending to IBKR."
+        "Marked IBKR top-up (25 Sep) as done and logged a transfer of 1,000.00 SGD from "
+        "your main account to IBKR."
     )
     assert len(await moves_of(uow, user.id)) == 1
 
@@ -619,7 +625,7 @@ async def test_a_bill_row_cannot_name_another_users_wallet(
 ) -> None:
     _, bill, _ = await setup(uow)
     other = await person(uow, 4343)
-    theirs = (await wallets_of(uow, other.id))["Spending"]
+    theirs = (await wallets_of(uow, other.id))["Main account"]
     async with engine.begin() as db:
         with pytest.raises(IntegrityError, match="fk_bills_wallet_id_user_id_wallets"):
             await db.execute(

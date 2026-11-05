@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { fakeApi } from "./fake-api";
+import { openFilters } from "./ledger-filters";
 
 // Names, navigation and Settings: where pages live, how the bottom bar reads, the Ledger's menu.
 
@@ -23,10 +24,10 @@ for (const [old, now, heading] of OLD_ADDRESSES) {
   });
 }
 
-test("Accounting has four tabs, and Investment's plans are Trade plans", async ({ page }) => {
+test("Money has four tabs, and Investment's plans are Trade plans", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/accounting");
-  await expect(page.getByRole("navigation", { name: "Accounting pages" }).getByRole("link")).toHaveText([
+  await expect(page.getByRole("navigation", { name: "Money pages" }).getByRole("link")).toHaveText([
     "Overview",
     "Ledger",
     "Budgets",
@@ -50,7 +51,7 @@ test("Settings leads to Receipts by email and back, with Settings still marked",
   await page.getByRole("link", { name: /^Receipts by email/ }).click();
   await expect(page).toHaveURL(/\/settings\/email$/);
   await expect(page.getByRole("region", { name: "Checked emails" })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Accounting pages" })).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "Money pages" })).toHaveCount(0);
   if (!isMobile) {
     const rail = page.getByRole("navigation", { name: "Main", exact: true });
     await expect(rail.getByRole("link", { name: "Settings" })).toHaveAttribute("aria-current", "page");
@@ -76,10 +77,10 @@ test.describe("Notifications", () => {
     const hero = page.getByRole("region", { name: "Nexus" });
     const bell = hero.getByRole("link", { name: "Notifications" });
     await expect(bell).toBeVisible();
-    // The three round buttons stay inside the hero and apart from each other.
+    // The two round buttons (Notifications and Settings) stay inside the hero and apart from each other.
     const buttons = await hero.locator(".round-btn").evaluateAll((els) => els.map((el) => el.getBoundingClientRect()));
-    expect(buttons).toHaveLength(3);
-    for (const [a, b] of [[0, 1], [1, 2]]) expect(buttons[b].left).toBeGreaterThanOrEqual(buttons[a].right);
+    expect(buttons).toHaveLength(2);
+    expect(buttons[1].left).toBeGreaterThanOrEqual(buttons[0].right);
     await bell.click();
     await expect(page).toHaveURL(/\/settings\/notifications$/);
     await expect(page.getByRole("heading", { name: "Notifications", level: 1 })).toBeVisible();
@@ -109,7 +110,7 @@ test.describe("Notifications", () => {
       const rail = page.getByRole("navigation", { name: "Main", exact: true });
       await expect(rail.getByRole("link", { name: "Settings" })).toHaveAttribute("aria-current", "page");
     }
-    await expect(page.getByRole("navigation", { name: "Accounting pages" })).toHaveCount(0);
+    await expect(page.getByRole("navigation", { name: "Money pages" })).toHaveCount(0);
     await page.getByRole("link", { name: "Back to Settings" }).click();
     await expect(page).toHaveURL(/\/settings$/);
 
@@ -160,29 +161,58 @@ test("the Ledger has a compact Add and a More menu that opens, closes and goes t
   await expect(page.getByRole("heading", { name: "Import a statement", level: 1 })).toBeVisible();
 });
 
-test("the Ledger's Dates control is one select, and Custom dates shows From and To", async ({ page }) => {
+test("the Ledger's filters are one row; the Filter sheet has the types and Dates, and Custom dates shows From and To", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/accounting/ledger");
-  await expect(page.getByRole("group", { name: "When" })).toHaveCount(0);
-  const dates = page.getByRole("combobox", { name: "Dates" });
+  // One row: the search and the Filter button, with nothing else to filter by on the page.
+  await expect(page.getByRole("searchbox", { name: "Search merchant or notes" })).toBeVisible();
+  await expect(page.getByRole("group", { name: "Show" })).toHaveCount(0);
+  await expect(page.getByRole("combobox", { name: "Dates" })).toHaveCount(0);
+  await expect(page.getByRole("group", { name: "Active filters" })).toHaveCount(0);
+
+  const sheet = await openFilters(page);
+  const dates = sheet.getByRole("combobox", { name: "Dates" });
   await expect(dates).toHaveValue("any");
-  await expect(page.getByLabel("From")).toHaveCount(0);
+  await expect(sheet.getByLabel("From")).toHaveCount(0);
   await dates.selectOption("this");
   await expect(dates).toHaveValue("this");
   await dates.selectOption("custom");
-  await expect(page.getByLabel("From")).toBeVisible();
-  await expect(page.getByLabel("To", { exact: true })).toBeVisible();
+  await expect(sheet.getByLabel("From")).toBeVisible();
+  await expect(sheet.getByLabel("To", { exact: true })).toBeVisible();
   await dates.selectOption("any");
-  await expect(page.getByLabel("From")).toHaveCount(0);
-  // The type tabs and the search are in the same filter box.
-  await expect(page.getByRole("group", { name: "Show" }).getByRole("button")).toHaveText([
+  await expect(sheet.getByLabel("From")).toHaveCount(0);
+  await expect(sheet.getByRole("group", { name: "Show" }).getByRole("button")).toHaveText([
     "All",
     "Money out",
     "Money in",
-    "Moves",
+    "Transfers",
     "Pending",
   ]);
-  await expect(page.getByRole("searchbox", { name: "Search merchant or notes" })).toBeVisible();
+
+  // Escape closes the sheet and the Filter button has the focus again.
+  await page.keyboard.press("Escape");
+  await expect(sheet).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^Filter/ })).toBeFocused();
+});
+
+test("the Ledger's Filter sheet shows a count, chips and Clear, and nothing spills on a phone", async ({ page }) => {
+  await fakeApi(page);
+  await page.goto("/accounting/ledger");
+  const sheet = await openFilters(page);
+  await sheet.getByRole("button", { name: "Money out", exact: true }).click();
+  await sheet.getByRole("combobox", { name: "Dates" }).selectOption("this");
+  await expect(page.getByRole("button", { name: "Filter, 2 active" })).toBeVisible();
+  await sheet.getByRole("button", { name: /^Show \d+ transactions?$/ }).click();
+  await expect(sheet).toHaveCount(0);
+  const chips = page.getByRole("group", { name: "Active filters" });
+  await expect(chips.locator(".filter-chip")).toHaveText(["Money out×", "This month×"]);
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(0);
+
+  await (await openFilters(page)).getByRole("button", { name: "Clear" }).click();
+  await page.keyboard.press("Escape");
+  await expect(chips).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Filter", exact: true })).toBeVisible();
 });
 
 test("a Ledger row names its category under the merchant on a phone, and in its column on a wide screen", async ({ page, isMobile }) => {
@@ -220,7 +250,7 @@ test("the bottom bar on a phone has a short label under each icon, and nothing s
     }
     // The names a screen reader hears still say what each is.
     const names = await bar.getByRole("link").evaluateAll((els) => els.map((e) => e.getAttribute("aria-label") ?? e.textContent));
-    expect(names).toEqual(["Home", "Money (Accounting)", "Invest (Investment)", "Travel"]);
+    expect(names).toEqual(["Home", "Money", "Invest (Investment)", "Travel"]);
     await expect(bar.getByRole("button", { name: "Ask Nexus", exact: true })).toBeVisible();
 
     const problems = await bar.evaluate((el, w) => {
@@ -248,11 +278,11 @@ test("the bottom bar marks where you are, by weight as well as colour", async ({
   await fakeApi(page);
   await page.goto("/accounting/ledger");
   const bar = page.getByRole("navigation", { name: "Main (mobile)" });
-  const money = bar.getByRole("link", { name: "Money (Accounting)" });
+  const money = bar.getByRole("link", { name: "Money" });
   await expect(money).toHaveAttribute("aria-current", "page");
   const weight = (name: string) =>
     bar.getByRole("link", { name }).locator(".nav-label").evaluate((e) => Number(getComputedStyle(e).fontWeight));
-  expect(await weight("Money (Accounting)")).toBeGreaterThan(await weight("Home"));
+  expect(await weight("Money")).toBeGreaterThan(await weight("Home"));
 });
 
 test("the rail on a wide screen keeps the full names", async ({ page }, info) => {
@@ -260,5 +290,5 @@ test("the rail on a wide screen keeps the full names", async ({ page }, info) =>
   await fakeApi(page);
   await page.goto("/");
   const rail = page.getByRole("navigation", { name: "Main", exact: true });
-  await expect(rail.getByRole("link")).toHaveText(["Home", "Accounting", "Investment", "Travel", "Settings"]);
+  await expect(rail.getByRole("link")).toHaveText(["Home", "Money", "Investment", "Travel", "Settings"]);
 });

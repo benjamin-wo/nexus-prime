@@ -81,7 +81,7 @@ async def _cards(ctx: ToolContext) -> str:
         return ""
     return (
         "Card tracking is off: don't ask which card paid an expense, and don't pass paid_with "
-        "or set a usual card. Paying a card bill is a move and works as always."
+        "or set a usual card. Paying a card bill is a transfer and works as always."
     )
 
 
@@ -96,18 +96,18 @@ def _wallet_facts(w: Wallet, usual: bool) -> list[str]:
 
 
 async def _wallets(ctx: ToolContext) -> str:
-    """The user's wallets, so a move's wallet can be named, and what they put away this
-    month, and which card is the usual one. Only once they have a wallet besides Spending
-    and Cash, which everyone has."""
+    """The user's wallets, so a transfer's wallet can be named, and what they saved this
+    month, and which card is the usual one. Only once they have a wallet besides the main
+    account and Cash, which everyone has."""
     wallets = await list_wallets(ctx.uow(), ctx.user.id)
     others = [w for w in wallets if w.kind is not WalletKind.SPENDING]
     if all(w.kind is WalletKind.CASH for w in others):
         return ""
     usual_id = ctx.user.usual_card_wallet_id if ctx.user.track_cards else None
     names = ", ".join(f"{w.name} ({', '.join(_wallet_facts(w, w.id == usual_id))})" for w in others)
-    line = f"Wallets besides Spending: {names}."
+    line = f"Wallets besides the main account: {names}."
     figures = await month_figures(ctx.uow, _rates(ctx), ctx.user, now=ctx.now)
-    away = f"Put away this month: {_money(figures.put_away)}"
+    away = f"Saved this month: {_money(figures.put_away)}"
     if figures.saving_rate is not None:
         away += f" ({(figures.saving_rate * 100).quantize(Decimal(1))}% of income)"
     return f"{line} {away}."
@@ -175,7 +175,7 @@ async def _recent(ctx: ToolContext) -> str:
         when = t.occurred_at.astimezone(ctx.tz)
         if t.direction is Direction.MOVE:
             to = wallets.get(t.to_wallet_id, "another wallet") if t.to_wallet_id else "?"
-            lines.append(f"{when:%a %-d %b}: {_money(t.amount)} → {to} (move)")
+            lines.append(f"{when:%a %-d %b}: {_money(t.amount)} → {to} (transfer)")
             continue
         sign = "-" if t.direction is Direction.OUT else "+"
         who = t.counterparty or t.notes or "?"

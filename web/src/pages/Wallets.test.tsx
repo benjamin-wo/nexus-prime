@@ -14,7 +14,7 @@ const me: Me = {
 
 const wallet = (over: Partial<Wallet>): Wallet => ({ id: "w", name: "Wallet", kind: "card", match_words: [], ...over });
 const wallets: Wallet[] = [
-  wallet({ id: "w-spending", name: "Spending", kind: "spending" }),
+  wallet({ id: "w-spending", name: "Main account", kind: "spending" }),
   wallet({ id: "w-cash", name: "Cash", kind: "cash" }),
   wallet({ id: "w-card", name: "Citi PremierMiles", issuer: "Citi", product: "PremierMiles", network: "visa", last4: "4321" }),
 ];
@@ -72,7 +72,7 @@ describe("Wallets: card details", () => {
     expect(within(usual).getAllByRole("option").map((o) => o.textContent)).toEqual([
       "None",
       "Citi PremierMiles ·· 4321",
-      "Spending",
+      "Main account",
       "Cash",
     ]);
     await userEvent.selectOptions(usual, "w-card");

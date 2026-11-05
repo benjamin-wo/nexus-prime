@@ -142,9 +142,9 @@ def _check(q: LedgerQuestion) -> None:
     if q.uncategorised and q.category_id is not None:
         raise InvalidInput("choose a category or uncategorised, not both")
     if q.direction is not Direction.MOVE and (q.wallet_id or q.from_wallet_id or q.to_wallet_id):
-        raise InvalidInput("a wallet filter is for moves; ask about moves")
+        raise InvalidInput("a wallet filter is for transfers; ask about transfers")
     if q.direction is Direction.MOVE and (q.category_id or q.uncategorised):
-        raise InvalidInput("a move has no category")
+        raise InvalidInput("a transfer has no category")
     for bound in (q.min_amount, q.max_amount):
         if bound is not None and (not bound.is_finite() or bound < 0):
             raise InvalidInput("amount bounds must be zero or more")

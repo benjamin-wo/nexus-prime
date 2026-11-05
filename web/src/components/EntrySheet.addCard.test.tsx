@@ -13,7 +13,7 @@ const me: Me = {
 };
 
 const wallet = (over: Partial<Wallet>): Wallet => ({ id: "w", name: "Wallet", kind: "card", match_words: [], ...over });
-const spending = wallet({ id: "w-spending", name: "Spending", kind: "spending" });
+const spending = wallet({ id: "w-spending", name: "Main account", kind: "spending" });
 const cash = wallet({ id: "w-cash", name: "Cash", kind: "cash" });
 const citi = wallet({ id: "w-citi", name: "Citi PremierMiles", last4: "4321" });
 const dbs = wallet({ id: "w-dbs", name: "DBS Altitude", last4: "8765" });
@@ -70,7 +70,7 @@ describe("Paid with defaults for a new expense with no usual card", () => {
   it("starts on the only card, still offers Not set, and sends the card since the server won't pick it", async () => {
     const calls = setup([spending, cash, citi]);
     await waitFor(() => expect(select().value).toBe("w-citi"));
-    expect(optionTexts()).toEqual(["Citi PremierMiles ·· 4321", "Spending", "Cash", "Not set", "+ Add a card…"]);
+    expect(optionTexts()).toEqual(["Citi PremierMiles ·· 4321", "Main account", "Cash", "Not set", "+ Add a card…"]);
     await save();
     await waitFor(() => expect(written(calls)).toMatchObject({ paid_with_wallet_id: "w-citi" }));
   });

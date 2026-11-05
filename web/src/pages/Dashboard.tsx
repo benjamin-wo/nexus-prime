@@ -239,7 +239,7 @@ function daysLeft(timezone: string): number {
 }
 
 /** One line from Nexus about the budget closest to running out, with questions
- * worth one tap; without budgets, an offer to set one. */
+ * worth one tap. Without budgets there is nothing to say: the headline offers to set one. */
 function Nudge({
   budgets,
   timezone,
@@ -249,55 +249,85 @@ function Nudge({
   timezone: string;
   onAsk: (text: string) => void;
 }) {
-  if (!budgets) return null;
-  const tightest = [...budgets].sort((a, b) => b.percent - a.percent)[0];
+  const tightest = [...(budgets ?? [])].sort((a, b) => b.percent - a.percent)[0];
+  if (!tightest) return null;
   const left = daysLeft(timezone);
-  const what = tightest
-    ? tightest.category_id === null
-      ? "your overall budget"
-      : tightest.name
-    : "";
+  const what = tightest.category_id === null ? "your overall budget" : tightest.name;
   return (
     <section className="nudge" aria-label="From Nexus">
       <span className="assistant-mark" aria-hidden="true">
         <Icon name="sparkle" size={18} />
       </span>
-      {tightest ? (
-        <p>
-          You've used <span className="hl">{tightest.percent}%</span> of {what}{" "}
-          with {left} {left === 1 ? "day" : "days"} to go. Want me to look at
-          where it went?
-        </p>
-      ) : (
-        <p>Set a monthly budget and I'll tell you when it's getting tight.</p>
-      )}
+      <p>
+        You've used <span className="hl">{tightest.percent}%</span> of {what}{" "}
+        with {left} {left === 1 ? "day" : "days"} to go. Want me to look at
+        where it went?
+      </p>
       <div className="chips">
-        {tightest ? (
-          <>
-            <button
-              type="button"
-              className="ask-chip"
-              onClick={() =>
-                onAsk(
-                  tightest.category_id === null
-                    ? "Where did my money go this month?"
-                    : `Where did my ${tightest.name} money go this month?`,
-                )
-              }
-            >
-              Show me
-            </button>
-            <Link className="ask-chip" to="/accounting/budgets">
-              Change budgets
-            </Link>
-          </>
-        ) : (
-          <Link className="ask-chip" to="/accounting/budgets">
-            Set a budget
-          </Link>
-        )}
+        <button
+          type="button"
+          className="ask-chip"
+          onClick={() =>
+            onAsk(
+              tightest.category_id === null
+                ? "Where did my money go this month?"
+                : `Where did my ${tightest.name} money go this month?`,
+            )
+          }
+        >
+          Show me
+        </button>
+        <Link className="ask-chip" to="/accounting/budgets">
+          Change budgets
+        </Link>
       </div>
     </section>
+  );
+}
+
+/** The answer to "am I OK this month?", above the tiles: what is spent and, given an overall
+ * budget, how much of it is left ("SGD 87.60 left of SGD 125.00", or how far over). Without a
+ * budget it says what is spent and offers to set one; a past month just says what was spent. */
+function Headline({
+  spent,
+  past,
+  month,
+  budgetsLoaded,
+  overall,
+}: {
+  spent?: Money;
+  past: boolean;
+  month: MonthKey;
+  budgetsLoaded: boolean;
+  overall?: Budget;
+}) {
+  if (!spent) return null;
+  const when = past ? `in ${monthName(month)}` : "this month";
+  const budget = past ? undefined : overall;
+  const over = budget !== undefined && Number(budget.remaining.amount) < 0;
+  return (
+    <p className="overview-headline">
+      {/* Against a budget, its own spent figure, so spent and left add up to the limit. */}
+      <span className="overview-figure">{formatMoney(budget ? budget.spent : spent)}</span> spent
+      {budget === undefined ? (
+        ` ${when}`
+      ) : (
+        <>
+          {" · "}
+          <span className="overview-figure">
+            {formatMoney(over ? { ...budget.remaining, amount: String(-Number(budget.remaining.amount)) } : budget.remaining)}
+          </span>{" "}
+          <span className="overview-tail">
+            {over ? `over your ${formatMoney(budget.limit)} budget` : `left of ${formatMoney(budget.limit)}`}
+          </span>
+        </>
+      )}
+      {!past && budgetsLoaded && !overall && (
+        <Link className="overview-set" to="/accounting/budgets">
+          Set a budget
+        </Link>
+      )}
+    </p>
   );
 }
 
@@ -374,11 +404,9 @@ function compare(spent: Money, before: Money, from: MonthKey): string {
 
 export function Dashboard({
   me,
-  onLog,
   onAsk,
 }: {
   me: Me;
-  onLog: () => void;
   onAsk: (text: string) => void;
 }) {
   const { month, current, past, setMonth } = useMonthParam(me.user.timezone);
@@ -468,11 +496,7 @@ export function Dashboard({
           </h1>
           {past ? (
             spent &&
-            beforeSpent && (
-              <p className="muted">
-                {formatMoney(spent.total)} · {compare(spent.total, beforeSpent, before)}
-              </p>
-            )
+            beforeSpent && <p className="muted">{compare(spent.total, beforeSpent, before)}</p>
           ) : (
             summary.data && (
               <p className="muted">
@@ -481,19 +505,23 @@ export function Dashboard({
             )
           )}
         </div>
-        <div className="quick" aria-label="Quick actions">
+        <div className="quick">
           <MonthPicker month={month} current={current} onChange={setMonth} />
-          <button type="button" className="btn btn-primary" onClick={onLog}>
-            Log expense
-          </button>
         </div>
       </div>
+      <Headline
+        spent={spent?.total}
+        past={past}
+        month={month}
+        budgetsLoaded={budgets !== undefined}
+        overall={overall}
+      />
 
       {summary.isError && (
         <p className="error-text">Couldn't load {past ? `${monthLabel(month)}'s` : "this month's"} totals.</p>
       )}
       {!past && <Nudge budgets={budgets} timezone={me.user.timezone} onAsk={onAsk} />}
-      <div className="tiles">
+      <div className="tiles tiles-quiet">
         <StatTile
           label="Spent"
           value={spent ? formatMoney(spent.total) : "…"}
@@ -515,7 +543,7 @@ export function Dashboard({
         />
         {putAway && (
           <StatTile
-            label="Put away"
+            label="Saved"
             value={formatMoney(putAway)}
             extra={
               savingRate == null

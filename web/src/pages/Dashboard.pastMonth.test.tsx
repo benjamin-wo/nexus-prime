@@ -104,9 +104,9 @@ function serve() {
   return { asked, calls };
 }
 
-const open = (route: string) => renderWithProviders(<Dashboard me={me} onLog={() => {}} onAsk={() => {}} />, route);
+const open = (route: string) => renderWithProviders(<Dashboard me={me} onAsk={() => {}} />, route);
 
-describe("the Accounting overview for a past month", () => {
+describe("the Money overview for a past month", () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-11-02T04:00:00Z"));
@@ -120,11 +120,14 @@ describe("the Accounting overview for a past month", () => {
     expect(screen.getByRole("group", { name: "Month" })).toHaveTextContent(/October.*2026/);
     // September is one of the chart's months, so it isn't fetched again.
     const line = await screen.findByText(/SGD.180\.00 less than September/);
-    expect(line.textContent).toMatch(/^SGD.2,140\.00 · SGD.180\.00 less than September$/);
+    expect(line.textContent).toMatch(/^SGD.180\.00 less than September$/);
+    // The headline says what was spent that month, with no budget left to speak of.
+    expect(document.querySelector(".overview-headline")?.textContent).toMatch(/^SGD.2,140\.00 spent in October$/);
+    expect(screen.queryByRole("link", { name: "Set a budget" })).toBeNull();
     expect(asked).toEqual(["?start=2026-10-01&end=2026-10-31"]);
     expect(within(screen.getByRole("region", { name: "Spent" })).getByText(/2,140\.00/)).toBeInTheDocument();
     expect(await within(screen.getByRole("region", { name: "Received" })).findByText(/5,200\.00/)).toBeInTheDocument();
-    expect(await within(screen.getByRole("region", { name: "Put away" })).findByText(/19% of income/)).toBeInTheDocument();
+    expect(await within(screen.getByRole("region", { name: "Saved" })).findByText(/19% of income/)).toBeInTheDocument();
     const went = screen.getByRole("region", { name: "Where it went" });
     expect(await within(went).findByRole("button", { name: /Dining Out: SGD.900\.00/ })).toBeInTheDocument();
     expect(within(went).getByRole("button", { name: /Transport: SGD.400\.00/ })).toBeInTheDocument();

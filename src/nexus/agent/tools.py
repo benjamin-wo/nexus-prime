@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from nexus.agent.confirmation import Ask, entry_text
 from nexus.application import bills as bill_cases
 from nexus.application import bookings as booking_cases
 from nexus.application import budgets as budget_cases
@@ -66,6 +67,7 @@ from nexus.domain.investments import clean_quantity, clean_symbol, describe_posi
 from nexus.domain.ledger import (
     Category,
     Direction,
+    MenuSection,
     RevisionKind,
     ShareRequest,
     Source,
@@ -271,9 +273,9 @@ def describe(
     tz: ZoneInfo,
     wallets: dict[UUID, Wallet] | None = None,
 ) -> str:
-    """One line for the model. A move shows where the money went ("800.00 SGD → IBKR (move)"),
-    with no sign, and where it came from unless that's the Spending wallet; pass ``wallets``
-    (see ``wallet_map``) to name them."""
+    """One line for the model. A transfer shows where the money went
+    ("800.00 SGD → IBKR (transfer)"), with no sign, and where it came from unless that's the
+    main account; pass ``wallets`` (see ``wallet_map``) to name them."""
     parts = [tx.occurred_at.astimezone(tz).date().isoformat()]
     if tx.is_move:
         parts.append(_move_text(tx, wallets or {}))
@@ -301,7 +303,7 @@ def _move_text(tx: Transaction, wallets: dict[UUID, Wallet]) -> str:
     text = f"{tx.amount}"
     if origin is None or origin.kind is not WalletKind.SPENDING:
         text += f" {origin.name if origin else 'another wallet'}"
-    text += f" → {target.name if target else 'another wallet'} (move)"
+    text += f" → {target.name if target else 'another wallet'} (transfer)"
     if tx.received_amount is not None:
         text += f", {tx.received_amount} received"
     return text
@@ -345,6 +347,12 @@ async def resolve_wallet(ctx: ToolContext, name: str) -> Wallet:
     return found
 
 
+async def main_account(ctx: ToolContext) -> Wallet:
+    """The user's main account, found by its kind: it keeps working if they renamed it."""
+    wallets = await wallet_cases.list_wallets(ctx.uow(), ctx.user.id)
+    return next(w for w in wallets if w.kind is WalletKind.SPENDING)
+
+
 def _card_shown(ctx: ToolContext, tx: Transaction) -> Transaction:
     """The transaction as the model should see it: without which card paid while the user
     doesn't track cards (what is stored stays)."""
@@ -359,6 +367,18 @@ async def show(ctx: ToolContext, tx: Transaction) -> str:
     tx = _card_shown(ctx, tx)
     wallets = await wallet_map(ctx) if tx.is_move or tx.paid_with_wallet_id else None
     return describe(tx, await category_map(ctx), ctx.tz, wallets)
+
+
+async def ask_about(ctx: ToolContext, tx: Transaction, action: str, detail: str = "") -> str:
+    """What to ask the user about an entry: the readable form of ``show`` (no id, note or
+    sign, a short date). A move keeps its own line."""
+    if tx.is_move:
+        return f"{action} {(await show(ctx, tx)).split(' [id')[0]}{detail}?"
+    category = (await category_map(ctx)).get(tx.category_id) if tx.category_id else None
+    day = tx.occurred_at.astimezone(ctx.tz).date()
+    return Ask(
+        action, entry_text(tx, day, ctx.today(), category.name if category else None), detail
+    )
 
 
 async def show_all(ctx: ToolContext, txs: list[Transaction]) -> list[str]:
@@ -564,7 +584,7 @@ async def _log_receipt_expense(ctx: ToolContext, a: ReceiptExpenseArgs) -> ToolR
 class FindArgs(Args):
     search: str | None = Field(None, description="Text to find in merchant or notes")
     direction: Literal["in", "out", "move"] | None = Field(
-        None, description="move: money moved between the user's own wallets"
+        None, description="move: a transfer between the user's own wallets"
     )
     category: str | None = None
     start_date: str | None = Field(None, description="YYYY-MM-DD, inclusive")
@@ -639,7 +659,7 @@ async def _describe_edit(ctx: ToolContext, a: EditArgs) -> str:
         "paid with": a.paid_with if ctx.user.track_cards else None,
     }
     changes = ", ".join(f"{k} → {v}" for k, v in wanted.items() if v)
-    return f"Change {(await show(ctx, tx)).split(' [id')[0]}: {changes}?"
+    return await ask_about(ctx, tx, "Change", f": {changes}")
 
 
 async def _edit(ctx: ToolContext, a: EditArgs) -> ToolResult:
@@ -679,8 +699,7 @@ class IdArgs(Args):
 
 
 async def _describe_delete(ctx: ToolContext, a: IdArgs) -> str:
-    tx = await _load(ctx, a.transaction_id)
-    return f"Delete {(await show(ctx, tx)).split(' [id')[0]}?"
+    return await ask_about(ctx, await _load(ctx, a.transaction_id), "Delete")
 
 
 async def _delete(ctx: ToolContext, a: IdArgs) -> ToolResult:
@@ -755,16 +774,16 @@ class QueryArgs(Args):
     end_date: str | None = Field(None, description="YYYY-MM-DD inclusive; default: today")
     direction: Literal["out", "in", "move"] = Field(
         "out",
-        description="out: spending; in: money received; move: money moved between the "
+        description="out: spending; in: money received; move: a transfer between the "
         "user's own wallets (never spending or income)",
     )
     wallet: str | None = Field(
-        None, description="With direction move: only moves into or out of this wallet"
+        None, description="With direction move: only transfers into or out of this wallet"
     )
     wallet_side: Literal["into", "out_of", "either"] = Field(
         "into",
-        description='With wallet: into counts money moved into it ("how much did I put '
-        'into IBKR"), out_of money moved out of it, either both',
+        description='With wallet: into counts money transferred into it ("how much did I put '
+        'into IBKR"), out_of money transferred out of it, either both',
     )
     merchant: str | None = Field(None, description="Text found in the merchant or notes")
     category: str | None = Field(None, description="A category name, or 'uncategorised'")
@@ -869,11 +888,13 @@ async def _query_ledger(ctx: ToolContext, a: QueryArgs) -> ToolResult:
     cats = await category_map(ctx)
     wallets = await wallet_map(ctx) if q.direction is Direction.MOVE else None
     now, before = answer.current, answer.previous
-    word = {Direction.OUT: "Spent", Direction.IN: "Received", Direction.MOVE: "Moved"}[q.direction]
+    word = {Direction.OUT: "Spent", Direction.IN: "Received", Direction.MOVE: "Transferred"}[
+        q.direction
+    ]
     head, *notes = _figure_lines(now, ctx.tz)
     lines = [f"{word}, in {answer.currency}, {head}", *notes]
     if q.direction is Direction.MOVE:
-        lines.append("These are moves between the user's own wallets, not spending or income.")
+        lines.append("These are transfers between the user's own wallets, not spending or income.")
     if q.group_by:
         lines.append(f"By {q.group_by.value}:")
         lines += [_group_line(g, q.measure) for g in now.groups]
@@ -1024,8 +1045,9 @@ class LogMoveArgs(Args):
         description="The wallet the money went to, by name, as the snapshot lists them "
         "(e.g. 'IBKR'). Never invent one."
     )
-    from_wallet: str = Field(
-        "Spending", description="The wallet it came from; Spending unless the user says"
+    from_wallet: str | None = Field(
+        None,
+        description="The wallet it came from; omit for the Main account unless the user says",
     )
     date: str | None = Field(None, description="YYYY-MM-DD, 'today' or 'yesterday'; omit for now")
     received_amount: str | None = Field(
@@ -1038,10 +1060,13 @@ class LogMoveArgs(Args):
 
 
 async def _move_ends(ctx: ToolContext, a: LogMoveArgs) -> tuple[Wallet, Wallet]:
-    origin = await resolve_wallet(ctx, a.from_wallet)
+    if a.from_wallet is None:
+        origin = await main_account(ctx)
+    else:
+        origin = await resolve_wallet(ctx, a.from_wallet)
     target = await resolve_wallet(ctx, a.to_wallet)
     if origin.id == target.id:
-        raise InvalidInput("a move needs two different wallets")
+        raise InvalidInput("a transfer needs two different wallets")
     return origin, target
 
 
@@ -1064,7 +1089,7 @@ async def _describe_move(ctx: ToolContext, a: LogMoveArgs) -> str:
     else:
         counts = "spending or income"
     return (
-        f"Log a move of {sent} from {origin.name} to {target.name}{arrives}{when}? "
+        f"Log a transfer of {sent} from {origin.name} to {target.name}{arrives}{when}? "
         f"It won't count as {counts}."
     )
 
@@ -1083,34 +1108,37 @@ async def _log_move(ctx: ToolContext, a: LogMoveArgs) -> ToolResult:
         notes=a.note,
         source=Source.TEXT,
     )
-    return ToolResult(f"Logged a move (not spending or income): {await show(ctx, tx)}", wrote=True)
+    return ToolResult(
+        f"Logged a transfer (not spending or income): {await show(ctx, tx)}", wrote=True
+    )
 
 
 class MarkMoveArgs(Args):
     transaction_id: str = Field(description="From find_transactions")
     wallet: str = Field(
         description="The other wallet: where the money went (for an expense) or where it "
-        "came from (for money in). Not Spending."
+        "came from (for money in). Not the Main account."
     )
 
 
 async def _mark_pair(ctx: ToolContext, a: MarkMoveArgs) -> tuple[Transaction, Wallet]:
     tx = await _load(ctx, a.transaction_id)
     if tx.is_move:
-        raise InvalidInput("this is already a move")
+        raise InvalidInput("this is already a transfer")
     return tx, await resolve_wallet(ctx, a.wallet)
 
 
 async def _describe_mark_move(ctx: ToolContext, a: MarkMoveArgs) -> str:
     tx, wallet = await _mark_pair(ctx, a)
     head = (await show(ctx, tx)).split(" [id")[0]
+    main = (await main_account(ctx)).name
     if tx.direction is Direction.OUT:
         return (
-            f"Turn {head} into a move from Spending to {wallet.name}? It will stop counting "
+            f"Turn {head} into a transfer from {main} to {wallet.name}? It will stop counting "
             "as spending, and it loses its category."
         )
     return (
-        f"Turn {head} into a move from {wallet.name} to Spending? It will stop counting "
+        f"Turn {head} into a transfer from {wallet.name} to {main}? It will stop counting "
         "as income, and it loses its category."
     )
 
@@ -1118,7 +1146,7 @@ async def _describe_mark_move(ctx: ToolContext, a: MarkMoveArgs) -> str:
 async def _mark_as_move(ctx: ToolContext, a: MarkMoveArgs) -> ToolResult:
     tx, wallet = await _mark_pair(ctx, a)
     moved = await wallet_cases.mark_as_move(ctx.uow(), ctx.user.id, tx.id, wallet.id)
-    return ToolResult(f"Now a move: {await show(ctx, moved)}", wrote=True)
+    return ToolResult(f"Now a transfer: {await show(ctx, moved)}", wrote=True)
 
 
 async def _list_wallets(ctx: ToolContext, _: NoArgs) -> ToolResult:
@@ -1149,13 +1177,15 @@ def _card_text(w: Wallet) -> str:
 async def _find_likely_moves(ctx: ToolContext, _: NoArgs) -> ToolResult:
     found = await wallet_cases.likely_moves(ctx.uow(), ctx.user.id, now=ctx.now)
     if not found:
-        return ToolResult("No entries from the last six months look like moves between wallets.")
+        return ToolResult(
+            "No entries from the last six months look like transfers between wallets."
+        )
     lines = []
     for item in found:
         wallet = f" → {item.wallet.name}" if item.wallet else " (which wallet? ask the user)"
         lines.append(f"{await show(ctx, item.transaction)}{wallet}: {item.reason}")
     return ToolResult(
-        f"{len(found)} entries that may really have been moves (nothing has been changed):\n"
+        f"{len(found)} entries that may really have been transfers (nothing has been changed):\n"
         + "\n".join(lines)
     )
 
@@ -1167,7 +1197,7 @@ class AddWalletArgs(Args):
     name: str = Field(description="What to call it, e.g. 'IBKR' or 'Emergency fund'")
     kind: NewKind = Field(
         description="investment: a broker or fund; savings: savings or a fixed deposit; "
-        "card: a credit card (paying its bill is a move); other: anything else"
+        "card: a credit card (paying its bill is a transfer); other: anything else"
     )
     match_words: list[str] | None = Field(
         None, description="Other names the user or their statements use for it"
@@ -1305,11 +1335,11 @@ async def _set_usual_card(ctx: ToolContext, a: UsualCardArgs) -> ToolResult:
 
 
 class DeleteWalletArgs(Args):
-    wallet: str = Field(description="The wallet to delete; not Spending")
+    wallet: str = Field(description="The wallet to delete; not the Main account")
     move_to: str | None = Field(
         None,
-        description="Another wallet that its moves will point at instead; needed only if "
-        "it has moves",
+        description="Another wallet that its transfers will point at instead; needed only "
+        "if it has transfers",
     )
 
 
@@ -1322,18 +1352,18 @@ async def _delete_plan(ctx: ToolContext, a: DeleteWalletArgs) -> wallet_cases.Wa
             ctx.uow(), ctx.user.id, wallet.id, into.id if into else None
         )
     except InvalidInput as exc:
-        if into is None and "has moves" in str(exc):
+        if into is None and "has transfers" in str(exc):
             wallets = await wallet_cases.list_wallets(ctx.uow(), ctx.user.id)
             others = wallet_list([w for w in wallets if w.id != wallet.id])
             raise InvalidInput(
-                f"{wallet.name} has moves, so they need another wallet to point at "
+                f"{wallet.name} has transfers, so they need another wallet to point at "
                 f"({others}). Ask the user which."
             ) from exc
         raise
 
 
 def _moves(n: int) -> str:
-    return f"{n} move{'' if n == 1 else 's'}"
+    return f"{n} transfer{'' if n == 1 else 's'}"
 
 
 def _scheduled(n: int) -> str:
@@ -1343,13 +1373,13 @@ def _scheduled(n: int) -> str:
 async def _describe_delete_wallet(ctx: ToolContext, a: DeleteWalletArgs) -> str:
     plan = await _delete_plan(ctx, a)
     if plan.into is None:
-        return f"Delete the wallet {plan.wallet.name}? It has no moves. This can't be undone."
+        return f"Delete the wallet {plan.wallet.name}? It has no transfers. This can't be undone."
     into = plan.into.name
     text = (
         f"Delete the wallet {plan.wallet.name}? {_moves(plan.moved)} will point at {into} instead"
     )
     if plan.bills:
-        text += f", and {_scheduled(plan.bills)} to it will move money to {into} instead"
+        text += f", and {_scheduled(plan.bills)} to it will transfer money to {into} instead"
     if plan.removed:
         text += (
             f", and {_moves(plan.removed)} between the two will be removed, since both "
@@ -1370,7 +1400,7 @@ async def _delete_wallet(ctx: ToolContext, a: DeleteWalletArgs) -> ToolResult:
     verb = "points" if done.moved == 1 else "point"
     text = f"Deleted the wallet {wallet.name}. {_moves(done.moved)} now {verb} at {done.into.name}"
     if done.bills:
-        text += f"; {_scheduled(done.bills)} to it now move money to {done.into.name}"
+        text += f"; {_scheduled(done.bills)} to it now transfer money to {done.into.name}"
     if done.removed:
         text += f"; {_moves(done.removed)} between the two removed"
     return ToolResult(text + ".", wrote=True)
@@ -1498,8 +1528,8 @@ class AnswerEmailArgs(Args):
         "pays that back). repayment: money in that pays back what the sender owes. income: "
         "money in kept as plain income. skip: log nothing. same: it's the same payment as "
         "the one it looks like (already logged or in another email), so add nothing. move: "
-        "it was money moved to or from the wallet the email names (a line says it may be a "
-        "move), not spending or income"
+        "it was a transfer to or from the wallet the email names (a line says it may be a "
+        "transfer), not spending or income"
     )
     amount: str | None = Field(
         None,
@@ -1523,7 +1553,7 @@ async def _describe_answer(ctx: ToolContext, a: AnswerEmailArgs) -> str:
     if a.action == "same":
         return f"Treat this email as the same payment, adding nothing? {line}"
     if a.action == "move":
-        return f"Log it as a move between wallets, not spending or income? {line}"
+        return f"Log it as a transfer between wallets, not spending or income? {line}"
     figure = f" as {parse_money(ctx, a.amount, a.currency)}" if a.amount else ""
     how = {
         "log": "Log it",
@@ -1558,7 +1588,7 @@ async def _answer_email(ctx: ToolContext, a: AnswerEmailArgs) -> ToolResult:
             amount=parse_money(ctx, a.amount, a.currency) if a.amount else None,
         )
         return ToolResult(
-            f"Logged a move (not spending or income): {await show(ctx, moved.transaction)}",
+            f"Logged a transfer (not spending or income): {await show(ctx, moved.transaction)}",
             wrote=True,
         )
     tx = await email_cases.log_email(
@@ -2277,15 +2307,15 @@ class AddBillArgs(Args):
     repeats: Literal["once", "weekly", "monthly", "yearly"] = "monthly"
     counts_as_spending: bool = Field(
         True,
-        description="False for money the user moves rather than spends: a regular "
+        description="False for money the user transfers rather than spends: a regular "
         "investment, a transfer to savings, family or another account. True for bills "
         "(rent, utilities, insurance, phone). Set automatically to False with to_wallet.",
     )
     to_wallet: str | None = Field(
         None,
-        description="A scheduled move: the user's wallet the money goes to from Spending "
-        '("remind me to put 1,000 into IBKR every 25th"). It is never spending. A wallet '
-        "the user doesn't have yet isn't made: ask, or offer to add it first.",
+        description="A scheduled transfer: the user's wallet the money goes to from the Main "
+        'account ("remind me to put 1,000 into IBKR every 25th"). It is never spending. A '
+        "wallet the user doesn't have yet isn't made: ask, or offer to add it first.",
     )
     amount: str | None = Field(None, description="Only if the user gave one")
     currency: str | None = Field(None, description="Defaults to the home currency")
@@ -2329,7 +2359,7 @@ def _bill_line(
         }[bill.cadence]
         snoozed = ", reminders snoozed" if view.snoozed(now) else ""
         return (
-            f"{bill.name}{amount}: {bill_cases.describe_due(view)}{every}, moved to "
+            f"{bill.name}{amount}: {bill_cases.describe_due(view)}{every}, transfer to "
             f"{wallet.name} (not spending){snoozed}"
         )
     kind = "" if bill.spending else " (not spending)"
@@ -3974,6 +4004,31 @@ READ_ONLY = frozenset(
 )  # fmt: skip
 
 
+# The tools that belong to a menu section. The first one to succeed for a user who has not
+# decided (null) shows that section in the web menu (see AgentGraph.tools_node). The tools
+# themselves work the same for everyone: the menu only decides what the web app shows.
+MENU_OF: dict[str, MenuSection] = {
+    **dict.fromkeys(
+        (
+            "keep_plan_fresh", "plan_record", "record_trade", "research_plan", "set_market_alerts",
+            "show_dividends", "show_plan", "show_portfolio", "show_watchlist", "stock_levels",
+            "trade_history", "unwatch_stock", "watch_stock", "what_moved_today",
+        ),
+        MenuSection.INVEST,
+    ),
+    **dict.fromkeys(
+        (
+            "add_to_itinerary", "add_to_trip", "add_trip_cover", "add_trip_todo",
+            "change_itinerary_entry", "create_trip", "delete_trip", "label_trip_day",
+            "list_trips", "remove_from_itinerary", "remove_from_trip", "research_to_trip",
+            "research_trip", "settle_up", "split_trip_costs", "they_paid", "trip_status",
+            "update_trip",
+        ),
+        MenuSection.TRAVEL,
+    ),
+}  # fmt: skip
+
+
 def safe_for_images(spec: ToolSpec) -> bool:
     """Whether the agent may use this tool on a turn about an image the user hasn't
     asked it to act on: it only reads, or it asks the user to confirm first."""
@@ -3994,8 +4049,8 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
         ),
         ToolSpec(
             "log_move",
-            "Record money the user moved between their own wallets: into an investment or "
-            "savings wallet, a credit card bill paid from Spending, or back out to Spending. "
+            "Record a transfer the user made between their own wallets: into an investment or "
+            "savings wallet, a credit card bill paid from the Main account, or back out to it. "
             "Never spending and never income. Only when the amount is stated and both "
             "wallets are the user's own (an unknown one: ask, don't invent). Nexus only "
             "records; it never moves money. Asks the user to confirm.",
@@ -4015,7 +4070,7 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
         ToolSpec(
             "find_transactions",
             "Search the user's ledger. Use it to find ids before changing anything. To find "
-            "spending that's really a move between the user's own accounts, use "
+            "spending that's really a transfer between the user's own accounts, use "
             "find_likely_moves instead.",
             FindArgs,
             _find,
@@ -4176,7 +4231,7 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             "compare with the period before. Read-only. Prefer it for any 'how much', "
             "'how often', 'biggest' or 'compare' question over adding up search results. "
             "'How much did I save' means money in minus money out for the period (net), not "
-            "moves into a savings wallet, unless the user names that wallet.",
+            "transfers into a savings wallet, unless the user names that wallet.",
             QueryArgs,
             _query_ledger,
         ),
@@ -4212,7 +4267,7 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
         ),
         ToolSpec(
             "mark_as_move",
-            "Turn an entry already logged into a move between wallets: an expense that was "
+            "Turn an entry already logged into a transfer between wallets: an expense that was "
             "money put into savings or an investment, or money in that was a withdrawal from "
             "one. Find its id with find_transactions first. Asks the user to confirm.",
             MarkMoveArgs,
@@ -4221,18 +4276,18 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
         ),
         ToolSpec(
             "list_wallets",
-            "The user's wallets (Spending, Cash, investment, savings, card, other), a card's "
+            "The user's wallets (Main account, Cash, investment, savings, card, other), a card's "
             "details, their match words and the usual card. Read-only.",
             NoArgs,
             _list_wallets,
         ),
         ToolSpec(
             "find_likely_moves",
-            "Finds spending that was really a move between the user's own wallets (savings, "
+            "Finds spending that was really a transfer between the user's own wallets (savings, "
             "IBKR, a card payment, top-ups): entries from the last six months that name a "
             "wallet's match words, or are the same amount to the same payee every month. Use "
             "it for 'did I log transfers to my own accounts as spending?', 'which expenses are "
-            "really transfers or top-ups?' and 'anything that should be a move?'. Do not hunt "
+            "really transfers or top-ups?' and 'anything that should be a transfer?'. Do not hunt "
             "with find_transactions keywords for this. Read-only; offer mark_as_move for each, "
             "which asks the user to confirm.",
             NoArgs,
@@ -4264,8 +4319,9 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
         ),
         ToolSpec(
             "delete_wallet",
-            "Delete a wallet (never Spending). Its moves point at another wallet instead; "
-            "moves between the two are removed. Can't be undone. Asks the user to confirm.",
+            "Delete a wallet (never the Main account). Its transfers point at another wallet "
+            "instead; transfers between the two are removed. Can't be undone. Asks the user "
+            "to confirm.",
             DeleteWalletArgs,
             _delete_wallet,
             confirm=_describe_delete_wallet,
@@ -4395,7 +4451,7 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             "add_bill",
             "Remember a bill or another scheduled payment (a regular investment or a "
             "transfer to savings, family or another account) and remind the user before "
-            "it's due. With to_wallet it is a scheduled move to one of the user's wallets. "
+            "it's due. With to_wallet it is a scheduled transfer to one of the user's wallets. "
             "Nothing is paid or moved.",
             AddBillArgs,
             _add_bill,
@@ -4411,9 +4467,9 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             "Record that the user has paid a bill's current due date and log it as this "
             "month's expense (skipped if it's already in the ledger). One that doesn't "
             "count as spending (an investment, a transfer to savings) is marked done and "
-            "nothing is logged, except a scheduled move to a wallet: that logs the move "
-            "from Spending to the wallet (once, and not if it's already there). Records only: "
-            "nothing is paid or moved, so never say you paid it.",
+            "nothing is logged, except a scheduled transfer to a wallet: that logs the transfer "
+            "from the Main account to the wallet (once, and not if it's already there). "
+            "Records only: nothing is paid or moved, so never say you paid it.",
             BillPaidArgs,
             _bill_paid,
         ),

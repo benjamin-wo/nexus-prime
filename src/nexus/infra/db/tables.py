@@ -101,6 +101,10 @@ users = Table(
     # Whether they were asked about turning it on from an email's card, or set it themselves
     # (migration 0067): they are asked once and never nagged.
     Column("card_tracking_asked", Boolean, nullable=False, server_default=text("false")),
+    # Whether Invest and Travel show in the web menu (migration 0068). Null: not decided, hidden
+    # until first used in chat. True: shown. False: switched off, never turned on by itself.
+    Column("show_invest", Boolean),
+    Column("show_travel", Boolean),
     ForeignKeyConstraint(
         ["usual_card_wallet_id", "id"],
         ["wallets.id", "wallets.user_id"],

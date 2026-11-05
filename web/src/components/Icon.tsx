@@ -59,7 +59,8 @@ export type IconName =
   | "bell"
   | "x"
   | "mic"
-  | "stop";
+  | "stop"
+  | "sliders";
 
 const PATHS: Record<IconName, string[]> = {
   home: ["M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"],
@@ -175,6 +176,7 @@ const PATHS: Record<IconName, string[]> = {
   bell: ["M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9z", "M10.3 21a2 2 0 0 0 3.4 0"],
   x: ["M6 6l12 12", "M18 6L6 18"],
   mic: ["M12 3a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z", "M5 11a7 7 0 0 0 14 0", "M12 18v3"],
+  sliders: ["M4 7h9M17 7h3", "M4 17h3M11 17h9", "M15 5v4", "M9 15v4"],
   stop: ["M8 6h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z"],
 };
 

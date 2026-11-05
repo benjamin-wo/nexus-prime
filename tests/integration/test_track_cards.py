@@ -53,15 +53,16 @@ async def test_a_new_user_starts_in_simple_mode_and_the_setting_round_trips(
 async def test_me_shows_the_preference_and_the_endpoint_changes_it(world: World) -> None:  # noqa: F811
     owner = world.browser()
     await owner.login(OWNER)
-    assert (await owner.get("/api/me")).json()["preferences"] == {"track_cards": False}
+    undecided = {"show_invest": None, "show_travel": None}
+    assert (await owner.get("/api/me")).json()["preferences"] == {"track_cards": False, **undecided}
 
     on = await owner.send("PUT", "/api/settings/preferences", {"track_cards": True})
-    assert on.status_code == 200 and on.json() == {"track_cards": True}
-    assert (await owner.get("/api/me")).json()["preferences"] == {"track_cards": True}
+    assert on.status_code == 200 and on.json() == {"track_cards": True, **undecided}
+    assert (await owner.get("/api/me")).json()["preferences"] == {"track_cards": True, **undecided}
 
     off = await owner.send("PUT", "/api/settings/preferences", {"track_cards": False})
-    assert off.json() == {"track_cards": False}
-    assert (await owner.get("/api/me")).json()["preferences"] == {"track_cards": False}
+    assert off.json() == {"track_cards": False, **undecided}
+    assert (await owner.get("/api/me")).json()["preferences"] == {"track_cards": False, **undecided}
 
 
 async def test_the_preference_endpoint_is_strict_and_needs_a_session_and_csrf(
@@ -72,14 +73,14 @@ async def test_the_preference_endpoint_is_strict_and_needs_a_session_and_csrf(
         await owner.client.put("/api/settings/preferences", json={"track_cards": True})
     ).status_code == 401  # not signed in
     await owner.login(OWNER)
-    for bad in ({}, {"track_cards": "maybe"}, {"track_cards": True, "other": 1}):
+    for bad in ({}, {"track_cards": "maybe"}, {"track_cards": None}, {"track_cards": True, "x": 1}):
         refused = await owner.send("PUT", "/api/settings/preferences", bad)
         assert refused.status_code == 422, bad
     owner.csrf = "wrong"
     blocked = await owner.send("PUT", "/api/settings/preferences", {"track_cards": True})
     assert blocked.status_code in (400, 403)
     owner.csrf = (await owner.get("/api/me")).json()["csrf_token"]
-    assert (await owner.get("/api/me")).json()["preferences"] == {"track_cards": False}
+    assert (await owner.get("/api/me")).json()["preferences"]["track_cards"] is False
 
 
 # --- the usual card ------------------------------------------------------------------------
@@ -313,7 +314,7 @@ async def test_paying_a_card_bill_is_a_move_and_works_with_tracking_off(
 ) -> None:
     await cards(uow, alice, track=False)
     moved = await run(uow, alice, "log_move", {"amount": "200", "to_wallet": "Citi PremierMiles"})
-    assert "(move)" in moved and "Citi PremierMiles" in moved
+    assert "(transfer)" in moved and "Citi PremierMiles" in moved
     page = await list_ledger(uow(), alice, LedgerQuery())
     assert [t.direction for t in page.items] == [Direction.MOVE] * len(page.items)
     assert all(t.paid_with_wallet_id is None for t in page.items)

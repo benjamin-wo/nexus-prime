@@ -270,7 +270,7 @@ function WhereNext({ onAsk, onAdd }: { onAsk?: (text: string) => void; onAdd: ()
           Add a trip
         </button>
       </div>
-      <p className="caption">Nexus looks up when to go, what it costs and whether it fits your money.</p>
+      <p className="caption">Nexus looks up when to go and what it costs.</p>
     </section>
   );
 }
@@ -343,7 +343,7 @@ export function TripsPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
       {!guest && <LooseBookings trips={all} />}
       {!guest && <ResearchList />}
       {past.length > 0 && <PastTrips list={past} />}
-      {!guest && <p className="caption trips-foot">Each trip keeps its bookings, plans and money together. Nexus never books anything.</p>}
+      {!guest && <p className="caption trips-foot">Nexus never books anything.</p>}
     </>
   );
 }

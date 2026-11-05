@@ -43,7 +43,7 @@ from nexus.domain.wallets import (
     paying_candidates,
 )
 
-SPENDING_NAME = "Spending"
+SPENDING_NAME = "Main account"
 CASH_NAME = "Cash"
 MAX_MATCH_WORDS = 20
 MAX_MATCH_WORD = 60
@@ -60,6 +60,10 @@ def new_cash_wallet(user_id: UserId) -> Wallet:
 
 
 _FIXED_KINDS = (WalletKind.SPENDING, WalletKind.CASH)  # everyone has exactly one of each
+
+
+def _fixed_label(kind: WalletKind) -> str:
+    return "main account" if kind is WalletKind.SPENDING else "Cash wallet"
 
 
 def _kind(value: WalletKind | str) -> WalletKind:
@@ -91,12 +95,12 @@ async def require_wallet(repo: LedgerRepository, actor: UserId, wallet_id: UUID)
 async def _spending(repo: LedgerRepository, actor: UserId) -> Wallet:
     wallet = await repo.spending_wallet(actor)
     if wallet is None:  # pragma: no cover - every user is given one
-        raise InvalidInput("there is no Spending wallet")
+        raise InvalidInput("there is no main account")
     return wallet
 
 
 async def list_wallets(uow: UnitOfWork, actor: UserId) -> list[Wallet]:
-    """Spending first, then the rest by name."""
+    """The main account first, then the rest by name."""
     async with uow:
         return await uow.ledger.list_wallets(actor)
 
@@ -136,7 +140,7 @@ def build_wallet(
     unit of work of its own (``add_wallet`` is the use case for one wallet)."""
     wallet_kind = _kind(kind)
     if wallet_kind is WalletKind.SPENDING:
-        raise InvalidInput("everyone has one Spending wallet already")
+        raise InvalidInput("everyone has a main account already")
     if wallet_kind is WalletKind.CASH:
         raise InvalidInput("everyone has one Cash wallet already")
     return Wallet(
@@ -193,9 +197,9 @@ async def update_wallet(
     last4: Maybe[str | None] = UNSET,
 ) -> Wallet:
     """Change what's given (card details: None clears one, leaving it out keeps it). The
-    Spending and Cash wallets keep their kinds, and no other wallet can become them. A
-    wallet that stops being a card loses its card details; one that can no longer pay for
-    things (investment, savings) is no longer the usual card."""
+    The main account and Cash wallets keep their kinds, and no other wallet can become
+    them. A wallet that stops being a card loses its card details; one that can no longer
+    pay for things (investment, savings) is no longer the usual card."""
     async with uow:
         wallet = await require_wallet(uow.ledger, actor, wallet_id)
         updated = wallet
@@ -206,8 +210,7 @@ async def update_wallet(
             if new_kind is not wallet.kind and set(_FIXED_KINDS) & {new_kind, wallet.kind}:
                 fixed = new_kind if new_kind in _FIXED_KINDS else wallet.kind
                 raise InvalidInput(
-                    f"the {fixed.value.capitalize()} wallet can't change kind, "
-                    "and no other can be it"
+                    f"the {_fixed_label(fixed)} can't change kind, and no other can be it"
                 )
             updated = replace(updated, kind=new_kind)
         if match_words is not None:
@@ -332,10 +335,12 @@ async def spend_with(
 
 def _refuse_fixed(wallet: Wallet) -> None:
     if wallet.kind in _FIXED_KINDS:
-        raise InvalidInput(f"the {wallet.kind.value.capitalize()} wallet can't be deleted")
+        raise InvalidInput(f"the {_fixed_label(wallet.kind)} can't be deleted")
 
 
-_NEEDS_ANOTHER = "this wallet has moves or scheduled payments; pick another wallet to move them to"
+_NEEDS_ANOTHER = (
+    "this wallet has transfers or scheduled payments; pick another wallet to move them to"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -358,10 +363,10 @@ async def delete_wallet(
     """Delete a wallet. Moves into or out of it, and scheduled payments that move money to
     it, need ``move_to``, another wallet of the user's, to point at instead; those moves
     between the two are removed (there's nothing to record about money moved from a wallet
-    to itself). Scheduled payments moved to Spending would go nowhere, so they stay as
+    to itself). Scheduled payments moved to the main account would go nowhere, so they stay as
     plain not-spending ones. Not undoable."""
     if move_to == wallet_id:
-        raise InvalidInput("pick a different wallet to move its moves to")
+        raise InvalidInput("pick a different wallet to move its transfers to")
     async with uow:
         repo = uow.ledger
         wallet = await require_wallet(repo, actor, wallet_id)
@@ -393,7 +398,7 @@ async def preview_delete_wallet(
     """What ``delete_wallet`` would do with the same arguments, without doing it: the same
     checks, the same counts. Read-only."""
     if move_to == wallet_id:
-        raise InvalidInput("pick a different wallet to move its moves to")
+        raise InvalidInput("pick a different wallet to move its transfers to")
     async with uow:
         repo = uow.ledger
         wallet = await require_wallet(repo, actor, wallet_id)
@@ -445,7 +450,7 @@ async def create_move(
         require_positive(received_amount)
     occurred_at = require_aware(occurred_at, field_name="occurred_at")
     if origin.id == target.id:
-        raise InvalidInput("a move needs two different wallets")
+        raise InvalidInput("a transfer needs two different wallets")
     tx = Transaction(
         id=uuid4(),
         user_id=actor,
@@ -486,7 +491,7 @@ async def log_move(
     source: Source = Source.MANUAL,
     external_id: str | None = None,
 ) -> Transaction:
-    """Record money moved between two of the user's wallets (from Spending unless said
+    """Record money moved between two of the user's wallets (from the main account unless said
     otherwise). ``received_amount`` is what arrived, if that isn't ``amount`` (another
     currency, or a fee). Undoable like any new transaction. With an ``external_id`` the
     same one is recorded once: a second try raises DuplicateSource."""
@@ -519,8 +524,8 @@ async def log_move(
 async def mark_as_move(
     uow: UnitOfWork, actor: UserId, transaction_id: UUID, wallet_id: UUID
 ) -> Transaction:
-    """Turn money out into a move from Spending to ``wallet_id``, or money in into a move
-    from it to Spending (say a salary-day transfer to savings that was logged as spending).
+    """Turn money out into a move from the main account to ``wallet_id``, or money in into a move
+    from it to the main account (say a salary-day transfer to savings that was logged as spending).
     The category goes; undo brings the original back. Refused for a bill split with others
     and for money in that paid back an IOU."""
     async with uow:
@@ -531,16 +536,18 @@ async def mark_as_move(
         if tx.is_deleted:
             raise InvalidInput("this transaction is deleted; restore it first")
         if tx.direction is Direction.MOVE:
-            raise InvalidInput("this is already a move")
+            raise InvalidInput("this is already a transfer")
         wallet = await require_wallet(repo, actor, wallet_id)
         if wallet.kind is WalletKind.SPENDING:
-            raise InvalidInput("pick a wallet other than Spending to move it to or from")
+            raise InvalidInput(
+                "pick a wallet other than the main account to transfer it to or from"
+            )
         if await repo.list_splits(actor, tx.id):
-            raise Conflict("this bill is split with others, so it can't be a move")
+            raise Conflict("this bill is split with others, so it can't be a transfer")
         if await repo.has_settlements(actor, tx.id) or await repo.has_settlements_for_income(
             actor, tx.id
         ):
-            raise Conflict("this money paid back what friends owed, so it can't be a move")
+            raise Conflict("this money paid back what friends owed, so it can't be a transfer")
         spending = await _spending(repo, actor)
         sent, received = (spending, wallet) if tx.direction is Direction.OUT else (wallet, spending)
         now = utcnow()

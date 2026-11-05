@@ -80,7 +80,7 @@ class PreviewRow:
     category: str | None = None  # where it would be filed; None for a proposed move
     matches: Transaction | None = None  # the likely duplicate
     # Proposed as a move because the description names a wallet: money out goes from
-    # Spending to ``move_to``, money in comes from ``move_from`` to Spending.
+    # the main account to ``move_to``, money in comes from ``move_from`` to the main account.
     move_to: Wallet | None = None
     move_from: Wallet | None = None
 
@@ -209,7 +209,7 @@ async def preview(
             )
             existing = page.items
     money = {r.index: _money(r, user) for r in readable}
-    # A row naming a wallet is proposed as a move between it and Spending.
+    # A row naming a wallet is proposed as a move between it and the main account.
     proposals: dict[int, Wallet] = {}
     ends: dict[int, tuple[UUID, UUID]] = {}
     if spending is not None:
@@ -263,7 +263,7 @@ async def confirm(
     earlier import already added, are skipped rather than failing the rest.
 
     A ticked row in ``moves`` (row to wallet, as the preview proposed or the user picked)
-    is added as a move between that wallet and Spending (money out goes to the wallet,
+    is added as a move between that wallet and the main account (money out goes to the wallet,
     money in comes from it); every other row is an ordinary entry. With ``paid_with`` (a
     card, or another wallet of the user's that can pay), every expense row of the import is
     marked as paid with it; money in and moves never are. The user's usual card is not
@@ -298,7 +298,9 @@ async def confirm(
             if wallet is None:
                 raise NotFound("wallet not found")
             if wallet.kind is WalletKind.SPENDING:
-                raise InvalidInput("pick a wallet other than Spending to move it to or from")
+                raise InvalidInput(
+                    "pick a wallet other than the main account to transfer it to or from"
+                )
         claimed = await db.statements.claimed(user.id, Source.IMPORT, list(prints.values()))
         for row in rows:
             if row.index not in include:

@@ -141,6 +141,7 @@ describe("Ledger", () => {
     mockApi({ "GET /transactions": () => ({ items: [], total: 0 }), "GET /categories": () => [] });
     renderWithProviders(<Ledger me={me} onAdd={() => {}} onEdit={() => {}} />);
     const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Filter" }));
     await user.click(screen.getByRole("button", { name: "Money in" }));
     expect(await screen.findByText("Nothing matches these filters.")).toBeInTheDocument();
   });

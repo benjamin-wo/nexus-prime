@@ -136,7 +136,7 @@ function serve(answers: Answers = {}) {
   });
 }
 
-const renderHome = (onAsk = vi.fn()) => renderWithProviders(<Home me={me} onAsk={onAsk} onLog={() => {}} />);
+const renderHome = (onAsk = vi.fn()) => renderWithProviders(<Home me={me} onAsk={onAsk} />);
 
 afterEach(() => vi.useRealTimers());
 
@@ -163,11 +163,14 @@ describe("Home: the brief", () => {
 });
 
 describe("Home: the hero's buttons", () => {
-  it("has round Log expense, Notifications and Settings buttons, the bell opening the notifications page", async () => {
+  it("has round Notifications and Settings buttons, the bell opening the notifications page, and no Log expense button", async () => {
     serve();
     renderHome();
     const hero = await screen.findByRole("region", { name: "Nexus" });
-    expect(within(hero).getByRole("button", { name: "Log expense" })).toBeInTheDocument();
+    // Logging has one front door, the chat; Home's Ask box is its entry here.
+    expect(screen.queryByRole("button", { name: "Log expense" })).toBeNull();
+    expect(within(hero).queryByRole("button")).toBeNull();
+    expect(screen.getByPlaceholderText(/^Ask, or tell me what you spent/)).toBeInTheDocument();
     expect(within(hero).getByRole("link", { name: "Notifications" })).toHaveAttribute("href", "/settings/notifications");
     expect(within(hero).getByRole("link", { name: "Settings" })).toHaveAttribute("href", "/settings");
   });
@@ -238,73 +241,45 @@ describe("Home: Needs you", () => {
   });
 });
 
-describe("Home: Get set up", () => {
-  it("lists every step: done ones ticked, the rest with a way in", async () => {
-    const onAsk = vi.fn();
-    serve({ setup: setup() });
-    renderHome(onAsk);
-    const card = await screen.findByRole("region", { name: "Get set up" });
-    const steps = within(card).getAllByRole("listitem");
-    expect(steps).toHaveLength(4);
-    expect(card).toHaveTextContent("3 steps left.");
-    expect(within(steps[2]).getByText("Done")).toBeInTheDocument();
-    expect(within(steps[2]).queryByRole("link")).toBeNull();
-    expect(within(steps[0]).getByRole("link", { name: /^Set up\s?Set your payday$/ })).toHaveAttribute("href", "/accounting/budgets");
-    expect(within(steps[3]).getByRole("link", { name: /Set up/ })).toHaveAttribute("href", "/accounting/budgets");
-    // Every step can also be asked of Nexus, as a plain request for help.
-    expect(within(steps[2]).queryByRole("button")).toBeNull();
-    const user = userEvent.setup();
-    await user.click(within(steps[1]).getByRole("button", { name: /Ask Nexus/ }));
-    expect(onAsk).toHaveBeenCalledWith("Help me get my receipts in from email automatically");
-    await user.click(within(steps[0]).getByRole("button", { name: /Ask Nexus/ }));
-    expect(onAsk).toHaveBeenCalledWith("Help me set my payday");
-  });
-
-  it("counts one step left in the singular", async () => {
-    serve({ setup: setup([true, true, true, false]) });
-    renderHome();
-    expect(await screen.findByRole("region", { name: "Get set up" })).toHaveTextContent("One step left.");
-  });
-
-  it("Hide puts it away: it asks the server, fetches the list again and the card goes", async () => {
-    let dismissed = false;
-    const calls = mockApi({
-      "GET /home": () => [],
-      "GET /setup": () => setup(undefined, dismissed),
-      "POST /setup/dismiss": () => {
-        dismissed = true;
-        return new Response(null, { status: 204 });
-      },
-    });
-    renderHome();
-    const card = await screen.findByRole("region", { name: "Get set up" });
-    await userEvent.setup().click(within(card).getByRole("button", { name: "Hide" }));
-    await waitFor(() => expect(screen.queryByRole("region", { name: "Get set up" })).toBeNull());
-    expect(calls.filter((c) => c.method === "POST").map((c) => c.path)).toEqual(["/setup/dismiss"]);
-    expect(calls.filter((c) => c.path === "/setup")).toHaveLength(2);
-  });
-
-  it("says so when it can't hide, and stays", async () => {
+describe("Home: Get started", () => {
+  it("is the one first-run card, above Needs you, with the steps the person has left", async () => {
     mockApi({
-      "GET /home": () => [],
-      "GET /setup": () => setup(),
-      "POST /setup/dismiss": () => new Response(JSON.stringify({ detail: "Try again in a minute" }), { status: 429 }),
+      "GET /home": () => [item("Rent due tomorrow", "soon")],
+      "GET /config": () => ({ bot_username: "made_up_bot" }),
+      "GET /transactions": () => ({ items: [], total: 0 }),
+      "GET /setup": () => setup([false, false, true, false]),
     });
     renderHome();
-    const card = await screen.findByRole("region", { name: "Get set up" });
-    await userEvent.setup().click(within(card).getByRole("button", { name: "Hide" }));
-    expect(await within(card).findByRole("alert")).toHaveTextContent("Try again in a minute");
-    expect(within(card).getByRole("button", { name: "Hide" })).toBeEnabled();
+    const card = await screen.findByRole("region", { name: "Get started" });
+    expect(within(card).getAllByRole("listitem")).toHaveLength(4);
+    const needs = await screen.findByRole("region", { name: "Needs you" });
+    expect(card.compareDocumentPosition(needs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // The old checklist is gone: no second card, no "Get set up".
+    expect(screen.queryByRole("region", { name: "Get set up" })).toBeNull();
   });
 
   it("is not shown once dismissed, once everything is done, or when the server refuses", async () => {
-    for (const answer of [setup(undefined, true), setup([true, true, true, true]), setup([true, true, true, true], true), null]) {
-      serve({ setup: answer });
+    const answers: (Setup | null)[] = [setup(undefined, true), setup([true, true, true, true]), null];
+    for (const answer of answers) {
+      mockApi({
+        "GET /home": () => [],
+        "GET /runs": () => [],
+        "GET /summary": () => summary,
+        "GET /spending/months": () => spending,
+        "GET /budgets": () => [],
+        "GET /budgets/month": () => null,
+        "GET /investments": () => empty,
+        "GET /investments/today": () => session([]),
+        "GET /travel/next": () => null,
+        "GET /config": () => ({ bot_username: "made_up_bot" }),
+        "GET /transactions": () => ({ items: [], total: 1 }),
+        "GET /setup": () => (answer === null ? new Response("{}", { status: 403 }) : answer),
+      });
       const { unmount } = renderHome();
       await screen.findByRole("region", { name: "Needs you" });
       // Everything Home asks has answered once the glance cards have.
       await waitFor(() => expect(screen.getByRole("region", { name: "Money this month" })).toHaveTextContent("SGD"));
-      expect(screen.queryByRole("region", { name: "Get set up" })).toBeNull();
+      expect(screen.queryByRole("region", { name: "Get started" })).toBeNull();
       unmount();
       vi.restoreAllMocks();
     }
@@ -462,7 +437,7 @@ describe("Home: at a glance", () => {
   });
 });
 
-describe("Home: what moved to Accounting", () => {
+describe("Home: what moved to Money", () => {
   it("has no spending chart, budgets list or Today card", async () => {
     serve({ portfolio: held, today: session([mover("NVDA", "-5.1")]) });
     renderHome();
