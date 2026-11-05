@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nexus.application import bills as bill_cases
 from nexus.application import transactions as tx_cases
+from nexus.application import voice as voice_cases
 from nexus.application.budgets import TELEGRAM_SEND
 from nexus.application.transactions import NewTransaction
 from nexus.application.users import RegisterUser, register_user
@@ -50,6 +51,36 @@ async def reminders(engine: AsyncEngine) -> list[Any]:
             select(jobs).where(jobs.c.kind == TELEGRAM_SEND).order_by(jobs.c.id)
         )
         return [r.payload for r in rows]
+
+
+@pytest.mark.parametrize(
+    ("preset", "said"),
+    [
+        ("default", "Reminder: Rent (1,800.00 SGD) is due in 7 days (Thu 15 Oct)."),
+        ("direct", "Rent (1,800.00 SGD): due in 7 days (Thu 15 Oct)."),
+        ("chill", "Heads up, Rent (1,800.00 SGD) is due in 7 days (Thu 15 Oct)."),
+        ("hype", "Reminder: Rent (1,800.00 SGD) is due in 7 days (Thu 15 Oct)."),
+        ("cheeky", "Reminder: Rent (1,800.00 SGD) is due in 7 days (Thu 15 Oct)."),  # no jokes
+    ],
+)
+async def test_a_reminder_is_worded_for_the_voice_with_the_same_buttons(
+    engine: AsyncEngine, uow: UowFactory, preset: str, said: str
+) -> None:
+    user = await sgt_user(uow)
+    await voice_cases.set_voice(uow(), user.id, preset=preset, now=at(date(2026, 10, 1)))
+    await bill_cases.add_bill(
+        uow(),
+        user,
+        "Rent",
+        date(2026, 10, 15),
+        Cadence.MONTHLY,
+        Money.of("1800", "SGD"),
+        now=at(date(2026, 10, 1)),
+    )
+    assert await bill_cases.send_reminders(uow, user, now=at(date(2026, 10, 8))) == 1
+    [reminder] = await reminders(engine)
+    assert reminder["text"] == said
+    assert [b["label"] for b in reminder["buttons"][0]] == ["Mark paid", "Snooze 1 day"]
 
 
 async def test_reminders_at_7_3_1_days_once_each(engine: AsyncEngine, uow: UowFactory) -> None:

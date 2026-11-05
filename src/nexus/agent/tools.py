@@ -83,6 +83,7 @@ from nexus.domain.market import describe_price_time
 from nexus.domain.money import Money
 from nexus.domain.notifications import Frequency
 from nexus.domain.odds import describe_ranges
+from nexus.domain.phrases import Phrase, phrase
 from nexus.domain.places import Place, place_id
 from nexus.domain.places import describe as describe_place
 from nexus.domain.planning import Cadence, PayRule
@@ -578,7 +579,10 @@ async def _log_receipt_expense(ctx: ToolContext, a: ReceiptExpenseArgs) -> ToolR
         UUID(a.receipt_id) if a.receipt_id else None,
         now=ctx.now,
     )
-    return ToolResult(f"Logged from receipt: {await show(ctx, tx)}", wrote=True)
+    # The user reads this line as it is (a receipt is logged without the model), so it is
+    # worded for their voice.
+    entry = await show(ctx, tx)
+    return ToolResult(phrase(Phrase.RECEIPT_LOGGED, voice_cases.current(), entry=entry), wrote=True)
 
 
 class FindArgs(Args):

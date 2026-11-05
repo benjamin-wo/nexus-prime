@@ -14,6 +14,8 @@ from nexus.application.ports import UnitOfWork
 from nexus.domain.errors import InvalidInput
 from nexus.domain.ledger import Direction, Source, User
 from nexus.domain.money import Money
+from nexus.domain.phrases import Phrase, phrase
+from nexus.domain.voice import DEFAULT, VoiceSettings
 
 type UowFactory = Callable[[], UnitOfWork]
 
@@ -41,9 +43,11 @@ async def record_income(
     note: str | None = None,
     external_id: str | None = None,
     settle_first: bool = False,
+    voice: VoiceSettings = DEFAULT,
 ) -> Recorded:
     """Record it. A repayment (or, with ``settle_first``, any money from a named
-    person) settles that person's open IOUs first; without one it's plain income."""
+    person) settles that person's open IOUs first; without one it's plain income. The
+    plain-income line is worded for ``voice``; what a repayment says is always the same."""
     if counterparty and (kind is IncomeKind.REPAYMENT or settle_first):
         try:
             settled = await split_cases.settle_iou(
@@ -96,7 +100,7 @@ async def record_income(
     )
     what = "salary" if kind is IncomeKind.SALARY else "income"
     source = f" from {counterparty}" if counterparty else ""
-    done = f"Recorded {amount} {what}{source}."
+    done = phrase(Phrase.RECORDED_INCOME, voice, amount=amount, what=what, source=source)
     if kind is IncomeKind.SALARY:
         question = salary_cases.baseline_question(schedule, amount)
         if question:

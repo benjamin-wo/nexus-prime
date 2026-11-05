@@ -9,6 +9,8 @@ from decimal import Decimal
 
 from nexus.domain.ledger import Direction, Transaction
 from nexus.domain.money import Money, minor_units
+from nexus.domain.phrases import Phrase, phrase
+from nexus.domain.voice import DEFAULT, VoiceSettings
 
 
 class Ask(str):
@@ -53,22 +55,26 @@ def entry_text(tx: Transaction, day: date, today: date, category: str | None) ->
     return f"{text} ({label})" if label else text
 
 
-def combine(parts: Sequence[str]) -> str:
+def combine(parts: Sequence[str], voice: VoiceSettings = DEFAULT) -> str:
     """One message for everything waiting for the user's yes.
 
     - Other questions (plain text) are joined line by line, as they always were.
     - Entries all asked about in the same way: one entry is a sentence; several are
       "Delete 2 entries?" with a bullet each.
-    - A mix: "Confirm these changes?" with a bullet each, naming its action."""
+    - A mix: "Confirm these changes?" with a bullet each, naming its action.
+
+    ``voice`` words the line that heads several entries (see ``domain.phrases``); the
+    entries, their actions and amounts are always as they are."""
     asks = [p for p in parts if isinstance(p, Ask)]
     if not asks:
         return "\n".join(parts)
     if len(asks) == len(parts) and len({a.action for a in asks}) == 1:
         if len(asks) == 1:
             return str(asks[0])
-        return "\n".join([f"{asks[0].action} {len(asks)} entries?", *(a.bullet() for a in asks)])
+        head = phrase(Phrase.CONFIRM_COUNT, voice, action=asks[0].action, count=len(asks))
+        return "\n".join([head, *(a.bullet() for a in asks)])
     lines = [
         f"• {p.action} {p.entry}{p.detail}" if isinstance(p, Ask) else f"• {p.rstrip('?')}"
         for p in parts
     ]
-    return "\n".join(["Confirm these changes?", *lines])
+    return "\n".join([phrase(Phrase.CONFIRM_MANY, voice), *lines])

@@ -16,6 +16,12 @@ from nexus.agent import graph as graph_module
 from nexus.agent.graph import (
     ABOUT_THE_USER,
     CORE_TOOLS,
+    NEUTRAL_PERSONA,
+    NEUTRAL_STYLE_EMOJI,
+    NEUTRAL_STYLE_LEAD,
+    PERSONA,
+    STYLE_EMOJI,
+    STYLE_LEAD,
     AgentDeps,
     AgentGraph,
     AgentState,
@@ -24,7 +30,7 @@ from nexus.agent.graph import (
 from nexus.agent.skills import SkillLibrary
 from nexus.agent.tools import ToolContext, UowFactory, build_tools
 from nexus.domain.ledger import Role, User, UserId
-from nexus.domain.voice import Preset, prompt_block, settings_for
+from nexus.domain.voice import Preset, prompt_block, reminder, settings_for
 
 SKILLS = SkillLibrary.load()
 TOOLS = build_tools(SKILLS.body)
@@ -133,8 +139,28 @@ def head_of(text: str) -> str:
 
 async def test_every_users_prompt_starts_with_the_same_fixed_text() -> None:
     ann, ben, plain = await two_prompts()
-    assert head_of(ann) == head_of(ben) == head_of(plain)
-    head = head_of(ann)
+    assert head_of(ben) == head_of(plain)
+    head = head_of(ben)
+    # Ann chose a voice, so her prompt has the neutral persona and Reply style examples
+    # in three places and is the same fixed text everywhere else, and every user who chose
+    # a voice shares that one head, whatever the voice.
+    swapped = (
+        head_of(ann)
+        .replace(NEUTRAL_PERSONA, PERSONA)
+        .replace(NEUTRAL_STYLE_LEAD, STYLE_LEAD)
+        .replace(NEUTRAL_STYLE_EMOJI, STYLE_EMOJI)
+    )
+    assert head_of(ann) != head and swapped == head
+    direct = settings_for(Preset.DIRECT)
+    other = await prompt(
+        person("UTC", "USD"),
+        datetime(2026, 1, 5, 8, 0, tzinfo=UTC),
+        categories=[],
+        rules=[],
+        voice=prompt_block(direct),
+        voice_end=reminder(direct),
+    )
+    assert head_of(other) == head_of(ann)
     # The fixed text is the persona, every rule and the skill list: the bulk of the prompt.
     assert head.startswith("You are Nexus, a personal finance assistant")
     for fixed in (
