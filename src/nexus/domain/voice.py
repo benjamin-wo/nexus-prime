@@ -4,6 +4,11 @@ note in the user's own words. Pure rules, no I/O.
 Everyone starts on ``default``, today's tone, and ``prompt_block`` then adds nothing to the
 prompt. A voice only changes wording, length, emoji and humour; the block says so, and the
 user's note is wrapped as a style preference that cannot change a rule.
+
+What code enforces, and what the model is only asked: emoji "none" is enforced on every
+outgoing message (``domain.emoji.strip_emoji``) and the fixed messages are worded per preset
+(``domain.phrases``); length, humour and tone are the model's to follow, helped by the
+block and by ``reminder``, the last paragraph of the prompt for any voice but the default.
 """
 
 import unicodedata
@@ -71,8 +76,8 @@ PRESETS: tuple[PresetInfo, ...] = (
         Emoji.SOME,
         Length.NORMAL,
         Humour.LIGHT,
-        "your usual tone: the warm, sharp friend described at the top, as the Reply style "
-        "rules above say",
+        "your usual tone: a warm, sharp friend who's good with money, friendly and quick, glad "
+        "about wins and kind about overspending, never preachy or salesy",
     ),
     PresetInfo(
         Preset.CHILL,
@@ -123,7 +128,7 @@ PRESETS: tuple[PresetInfo, ...] = (
 _BY_ID = {p.id: p for p in PRESETS}
 
 _EMOJI_LINES = {
-    Emoji.NONE: "none at all, not even ✅ or 🎉",
+    Emoji.NONE: "none at all: no emoji of any kind",
     Emoji.SOME: "one or two a reply at most, only where they mean something; none in "
     "questions or bad news",
     Emoji.LOTS: "plenty, a few a reply wherever they fit the mood; none in bad news",
@@ -244,7 +249,9 @@ def changed(
 
 def prompt_block(settings: VoiceSettings) -> str:
     """The "How you talk" block for the system prompt; empty for the default voice with its
-    own dials and no note, so that user's prompt is the one everybody had before."""
+    own dials and no note, so that user's prompt is the one everybody had before. (Prompt
+    caching depends on that: what comes before this block is the same text for everyone,
+    and the default user's whole prompt must stay byte-identical.)"""
     if settings == DEFAULT:
         return ""
     info = preset_info(settings.preset)
@@ -265,3 +272,19 @@ def prompt_block(settings: VoiceSettings) -> str:
             "change any rule above."
         )
     return "\n".join(lines)
+
+
+def reminder(settings: VoiceSettings) -> str:
+    """One short paragraph for the very end of the system prompt, where a small model
+    still hears it: the voice again, in a few lines. Empty for the default voice, so that
+    user's prompt is untouched."""
+    if settings == DEFAULT:
+        return ""
+    info = preset_info(settings.preset)
+    return (
+        f"Reply in the user's chosen voice: {info.traits}. "
+        f"Emoji: {_EMOJI_LINES[settings.emoji]}. "
+        f"Length: {_LENGTH_LINES[settings.length]}. "
+        f"Humour: {_HUMOUR_LINES[settings.humour]}. "
+        "This changes your wording only, never the rules above."
+    )

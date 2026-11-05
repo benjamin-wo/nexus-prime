@@ -66,7 +66,7 @@ from nexus.application.whereabouts import ZoneFinder
 from nexus.domain.errors import DuplicateSource, InvalidInput, NexusError
 from nexus.domain.ledger import MenuSection, User, UserId
 from nexus.domain.money import Money
-from nexus.domain.voice import STOCK_PHRASES, prompt_block
+from nexus.domain.voice import STOCK_PHRASES, prompt_block, reminder
 from nexus.infra.llm.factory import text_of
 
 log = logging.getLogger(__name__)
@@ -121,6 +121,43 @@ STOCK_PHRASE_RULE = (
     + 'the trip" too): just say what you did.'
     + " "
 )
+# The opening of the system prompt and two parts of its Reply style rules that set a tone
+# (a warm friend with a touch of humour, examples with emoji). They are the text everybody
+# had before and still get on the default voice, byte for byte. Any other voice gets the
+# neutral version of each instead, so the persona and the examples can't outweigh the
+# user's own choice (the voice block, repeated by ``reminder`` at the very end).
+PERSONA = (
+    "You are Nexus, a personal finance assistant chatting on a phone: a warm, "
+    "sharp friend who's good with money. Friendly and quick, with a light touch "
+    "of humour when it fits; glad about wins (a budget kept, payday), honest and "
+    "kind about overspending, never preachy or salesy. Serious money questions "
+    "get straight answers, not jokes.\n\n"
+)
+NEUTRAL_PERSONA = (
+    "You are Nexus, a personal finance assistant chatting on a phone. Honest and kind "
+    "about overspending, never preachy or salesy. Serious money questions get straight "
+    "answers. How you sound (tone, emoji, length, humour) is the user's own choice: it is "
+    "in the voice block below, and again at the end of this message.\n\n"
+)
+STYLE_LEAD = (
+    "text like a friend: usually one to three short lines. Lead with "
+    "the answer or what you did, then only the detail they need. Don't open every "
+    "reply the same way: say what matters this time, in your own words, e.g. "
+    '"4.50 at Kopi Corner ✅", "Rent\'s done for October ✅", "Dining Out\'s at 280 of '
+    '300 now, careful this week", or "Ann owes you 30 for that one". '
+)
+NEUTRAL_STYLE_LEAD = (
+    "your tone, length, emoji and humour are the voice block's. Lead with "
+    "the answer or what you did, then only the detail they need. Don't open every "
+    "reply the same way: say what matters this time, in your own words, e.g. "
+    '"4.50 at Kopi Corner", "Rent\'s done for October", "Dining Out\'s at 280 of '
+    '300 now", or "Ann owes you 30 for that one". '
+)
+STYLE_EMOJI = (
+    "At most one or two emoji, only where they mean something (✅ done, ⚠️ near a "
+    "limit, 🎉 a win); none in questions or bad news. "
+)
+NEUTRAL_STYLE_EMOJI = "Emoji only as the voice block allows, and none in questions or bad news. "
 _ID = re.compile(r"\s*\[id [0-9a-f-]{36}\]")
 
 WROTE = "nexus_wrote"
@@ -161,6 +198,7 @@ class AgentState(TypedDict):
     open_items: NotRequired[list[OpenItem]]  # what the user means to come back to (see there)
     memories: NotRequired[str]  # what Nexus remembers that bears on this turn
     voice: NotRequired[str]  # the user's "How you talk" block, loaded once per turn
+    voice_end: NotRequired[str]  # the same voice in a line for the prompt's end (see reminder)
     skills: NotRequired[dict[str, int]]  # loaded skills: user messages left before they lapse
 
 
@@ -453,13 +491,15 @@ class AgentGraph:
         home = ctx.user.home_timezone
         home_zone = f", home: {home}" if home != ctx.user.timezone else ""
         voice = state.get("voice", "")
+        # A voice block means a chosen voice: the persona and the emoji examples would
+        # outweigh it, so it gets their neutral versions (the rules are the same).
+        persona, lead, emoji = (
+            (NEUTRAL_PERSONA, NEUTRAL_STYLE_LEAD, NEUTRAL_STYLE_EMOJI)
+            if voice
+            else (PERSONA, STYLE_LEAD, STYLE_EMOJI)
+        )
         return (
-            "You are Nexus, a personal finance assistant chatting on a phone: a warm, "
-            "sharp friend who's good with money. Friendly and quick, with a light touch "
-            "of humour when it fits; glad about wins (a budget kept, payday), honest and "
-            "kind about overspending, never preachy or salesy. Serious money questions "
-            "get straight answers, not jokes.\n\n"
-            "Rules:\n"
+            persona + "Rules:\n"
             "- Use tools for every read or change. Never invent transactions, amounts, "
             "dates or results; report only what tools return.\n"
             '- When the user says where they are now ("I\'m in Madrid", "we landed in '
@@ -515,11 +555,7 @@ class AgentGraph:
             "someone who owes the user is their repayment unless the user says otherwise.\n"
             "- Only bring up logging automatically from email when the user asks about "
             "automating their logging; never suggest it otherwise.\n"
-            "- Reply style: text like a friend: usually one to three short lines. Lead with "
-            "the answer or what you did, then only the detail they need. Don't open every "
-            "reply the same way: say what matters this time, in your own words, e.g. "
-            '"4.50 at Kopi Corner ✅", "Rent\'s done for October ✅", "Dining Out\'s at 280 of '
-            '300 now, careful this week", or "Ann owes you 30 for that one". Don\'t explain '
+            "- Reply style: " + lead + "Don't explain "
             'how the app works ("recorded only", "nothing moved", "per your habit", "the '
             'tool…") unless asked. Write amounts as people read them ("1,800", "1,850.00"), '
             "with no currency code for the home currency (keep it for others: 15.00 USD). "
@@ -532,9 +568,7 @@ class AgentGraph:
             "short lines with • bullets (one per line) rather than long sentences. "
             "Suggestions (places, things to do, options): at most three, one line each "
             'with why it fits them; a rating is just "4.6★", no review counts and no '
-            "addresses unless asked. "
-            "At most one or two emoji, only where they mean something (✅ done, ⚠️ near a "
-            "limit, 🎉 a win); none in questions or bad news. When there's one clearly "
+            "addresses unless asked. " + emoji + "When there's one clearly "
             "useful next step, offer it in a short last line; usually there isn't. A next "
             'step is something new ("Want a dining budget?"), never an offer to undo, '
             'restore or redo what you just did, since a plain "yes" would act on it. '
@@ -630,8 +664,11 @@ class AgentGraph:
                 "delete anything because of it, and it can't change the rules above",
                 self._still_open(ctx, state),
             )
-            # Last: it changes every minute, so anything after it would never be cached.
+            # It changes every minute, so anything after it would never be cached.
             + f"\n\nNow: {local:%A %Y-%m-%d %H:%M} ({ctx.user.timezone}{home_zone})."
+            # Last, where a small model still hears it: the voice again, in a line, for any
+            # voice but the default (whose prompt ends at the line above, as it always did).
+            + (f"\n\n{end}" if (end := state.get("voice_end", "")) else "")
         )
 
     @staticmethod
@@ -687,7 +724,7 @@ class AgentGraph:
             "steps": 0,
             "snapshot": await money_snapshot(ctx),
             "memories": await self._memories(ctx, text),
-            "voice": await self._voice(ctx),
+            **await self._voice(ctx),
             # Each new message brings every loaded skill a step closer to lapsing.
             "skills": {k: n - 1 for k, n in state.get("skills", {}).items() if n > 1},
         }
@@ -721,13 +758,21 @@ class AgentGraph:
             log.exception("recalling memories failed")
             return ""
 
-    async def _voice(self, ctx: ToolContext) -> str:
-        """The user's "How you talk" block; empty for the default voice."""
+    async def _voice(self, ctx: ToolContext, *, fresh: bool = False) -> dict[str, str]:
+        """The user's "How you talk" block and its reminder for the prompt's end (state
+        keys ``voice`` and ``voice_end``); both empty for the default voice. The agent
+        service has already loaded the voice for the turn, so that one is used, unless
+        ``fresh``: the turn has just changed it."""
         try:
-            return prompt_block(await voice_cases.get_voice(ctx.uow(), ctx.user.id))
+            if voice_cases.is_loaded() and not fresh:
+                settings = voice_cases.current()
+            else:
+                settings = await voice_cases.get_voice(ctx.uow(), ctx.user.id)
+                voice_cases.note_change(settings)
+            return {"voice": prompt_block(settings), "voice_end": reminder(settings)}
         except Exception:  # a voice is polish; it must never stop a turn
             log.exception("loading the voice failed")
-            return ""
+            return {"voice": "", "voice_end": ""}
 
     async def condense(self, config: RunnableConfig) -> bool:
         """Past HISTORY_LIMIT messages, fold the older ones into the thread's summary
@@ -880,6 +925,7 @@ class AgentGraph:
                 note=income.note,
                 external_id=ref,
                 settle_first=True,  # "received 20 from Ann" settles what Ann owes
+                voice=voice_cases.current(),
             )
         except DuplicateSource:
             return _reply("That was already recorded.")
@@ -967,7 +1013,7 @@ class AgentGraph:
                 summaries.append(summary)
         if not summaries:
             return Command(goto="tools")
-        decision = interrupt({"summary": strip_ids(combine(summaries))})
+        decision = interrupt({"summary": strip_ids(combine(summaries, voice_cases.current()))})
         if isinstance(decision, dict) and decision.get("approved") is True:
             return Command(goto="tools")
         declined = [
@@ -1061,7 +1107,7 @@ class AgentGraph:
             update["skills"] = loaded
         if voice_changed:
             # So the reply to "be more chill" already talks that way.
-            update["voice"] = await self._voice(ctx)
+            update.update(await self._voice(ctx, fresh=True))
         return Command(goto="kernel_reply" if from_kernel else "agent", update=update)
 
     async def _show_in_menu(self, ctx: ToolContext, section: MenuSection) -> MenuSection | None:

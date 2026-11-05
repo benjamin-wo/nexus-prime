@@ -21,6 +21,7 @@ from zoneinfo import ZoneInfo
 
 from nexus.application.budgets import TELEGRAM_SEND, UowFactory
 from nexus.application.ports import UnitOfWork
+from nexus.domain.emoji import strip_emoji
 from nexus.domain.ledger import UserId
 from nexus.domain.notifications import (
     UNCAPPED,
@@ -36,6 +37,7 @@ from nexus.domain.notifications import (
     local_day,
 )
 from nexus.domain.planning import quiet_until
+from nexus.domain.voice import Emoji
 
 log = logging.getLogger(__name__)
 
@@ -107,9 +109,14 @@ async def deliver(
         if out.notification_id and (record is None or record.status is not Status.HELD):
             return None  # told meanwhile, or forgotten
         settings = await tx.planning.get_notifications(out.user_id)
+        voice = await tx.memory.get_voice(out.user_id)
         tz = ZoneInfo(user.timezone)
         uncapped = out.anytime or out.kind in UNCAPPED
         sent_today = 0 if uncapped else await _sent_today(tx, user.id, now, tz)
+    if voice.emoji is Emoji.NONE:
+        # The one place every proactive message passes: sent, held, digested or recorded,
+        # it is without emoji for a user who chose none.
+        out = replace(out, text=strip_emoji(out.text))
     if user.telegram_chat_id is None or user.is_demo:
         await _keep(uow, out, record, Status.DROPPED, now)  # nobody to tell; nothing to retry
         return None

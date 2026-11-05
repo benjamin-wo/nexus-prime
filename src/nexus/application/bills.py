@@ -35,6 +35,7 @@ from nexus.domain.ledger import (
 )
 from nexus.domain.money import Money, minor_units
 from nexus.domain.notifications import Kind, Level
+from nexus.domain.phrases import Phrase, phrase
 from nexus.domain.planning import (
     OVERDUE_GRACE,
     Bill,
@@ -43,6 +44,7 @@ from nexus.domain.planning import (
     due_dates,
     reminder_offset,
 )
+from nexus.domain.voice import DEFAULT, VoiceSettings
 
 # Far enough ahead to find the next due date of any cadence.
 _LOOKAHEAD = timedelta(days=400)
@@ -420,8 +422,9 @@ async def remove_bill(uow: UnitOfWork, actor: UserId, bill_id: UUID, *, now: dat
         await uow.commit()
 
 
-def reminder_text(view: BillView) -> str:
-    return f"Reminder: {_label(view.bill)} is {describe_due(view)}."
+def reminder_text(view: BillView, voice: VoiceSettings = DEFAULT) -> str:
+    """The reminder, worded for ``voice``; a bill never gets a joke (see ``domain.phrases``)."""
+    return phrase(Phrase.BILL_REMINDER, voice, label=_label(view.bill), due=describe_due(view))
 
 
 async def send_reminders(uow: UowFactory, user: User, *, now: datetime) -> int:
@@ -436,6 +439,7 @@ async def send_reminders(uow: UowFactory, user: User, *, now: datetime) -> int:
         if sent is not None and offset >= sent:
             continue
         async with uow() as tx:
+            voice = await tx.memory.get_voice(user.id)
             current = view.occurrence or BillOccurrence(uuid4(), user.id, view.bill.id, view.due)
             stored = await tx.planning.save_occurrence(replace(current, reminded_offset=offset))
             # A snooze resets the reminder, so it's part of the key.
@@ -444,7 +448,7 @@ async def send_reminders(uow: UowFactory, user: User, *, now: datetime) -> int:
                 TELEGRAM_SEND,
                 {
                     "user_id": str(user.id),
-                    "text": reminder_text(view),
+                    "text": reminder_text(view, voice),
                     "buttons": [
                         [
                             {

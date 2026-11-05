@@ -13,11 +13,15 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nexus.agent.receipts import ReceiptDraft
 from nexus.agent.service import UNDO, Button, Reply
+from nexus.application import salary as salary_cases
+from nexus.application import voice as voice_cases
 from nexus.application.ports import LedgerQuery
 from nexus.application.transactions import list_ledger
 from nexus.application.users import find_telegram_user
 from nexus.channels.telegram import webhook
 from nexus.channels.telegram.client import TelegramError
+from nexus.domain.money import Money
+from nexus.domain.planning import PayRule
 from nexus.infra.db.tables import jobs
 from nexus.jobs.handlers import build_handlers
 from nexus.main import Overrides, create_app
@@ -295,3 +299,25 @@ async def test_typing_is_shown_again_until_the_reply_and_never_stops_it(
     async with webhook.typing(bot.runtime, OWNER):
         reply = "still sent"
     assert reply == "still sent"
+
+
+async def test_a_direct_voice_gets_no_emoji_in_replies_or_templates(
+    bot: Bot, model: ScriptedModel, uow: UowFactory
+) -> None:
+    model.script += [say("Hi.")]
+    await bot.post(bot.text("hello"))
+    owner = await find_telegram_user(uow(), OWNER)
+    assert owner is not None
+    await voice_cases.set_voice(uow(), owner.id, preset="direct", now=NOW)
+
+    # A model reply that has emoji in it.
+    model.script += [say("Dining Out's at 182.20 of 200 — 91% used ⚠️\n✅ Logged 2.20 🎉")]
+    await bot.post(bot.text("kopi 2.20"))
+    assert bot.telegram.sent[-1].text == "Dining Out's at 182.20 of 200 — 91% used\nLogged 2.20"
+
+    # A template: the payday button's "Logged ... Enjoy payday! 🎉", in the direct wording.
+    await salary_cases.set_schedule(uow(), owner, PayRule.MONTHLY_DAY, day=25, now=NOW)
+    await salary_cases.set_baseline(uow(), owner, Money.of("5000", "SGD"), now=NOW)
+    await bot.post(bot.press("salary:log:2026-10-23"))
+    assert bot.telegram.sent[-1].text == "Logged: 5,000.00 SGD salary."
+    assert [b.data for row in bot.telegram.sent[-1].buttons or [] for b in row] == ["act:undo"]

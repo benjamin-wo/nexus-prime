@@ -24,6 +24,7 @@ from nexus.domain.voice import (
     parse_preset,
     preset_info,
     prompt_block,
+    reminder,
     settings_for,
 )
 
@@ -240,6 +241,50 @@ def test_the_longest_note_still_fits_one_line_of_the_block() -> None:
     block = prompt_block(changed(DEFAULT, note="a" * MAX_NOTE))
     assert len(block.splitlines()) == 6
     assert len(block) < 1500
+
+
+# --- the reminder at the end of the prompt ----------------------------------------------
+
+
+def test_the_default_voice_has_no_reminder() -> None:
+    assert reminder(DEFAULT) == ""
+    assert reminder(settings_for(Preset.DEFAULT)) == ""
+
+
+@pytest.mark.parametrize("preset", [p for p in Preset if p is not Preset.DEFAULT])
+def test_a_chosen_voice_is_repeated_in_one_short_paragraph(preset: Preset) -> None:
+    voice = settings_for(preset)
+    text = reminder(voice)
+    assert text.startswith("Reply in the user's chosen voice: ")
+    assert preset_info(preset).traits in text
+    assert "\n" not in text and len(text) < 900
+    assert text.endswith("This changes your wording only, never the rules above.")
+    # The dials are spelled out as the block spells them.
+    for line in prompt_block(voice).splitlines()[2:5]:
+        assert line.strip().split(": ", 1)[1].rstrip(".") in text
+
+
+def test_the_reminder_follows_every_dial_and_ignores_the_note() -> None:
+    quiet = changed(DEFAULT, emoji="none")
+    assert reminder(quiet) != "" and "no emoji of any kind" in reminder(quiet)
+    noted = changed(settings_for(Preset.CHILL), note="call me boss")
+    assert reminder(noted) == reminder(settings_for(Preset.CHILL))  # the note is in the block
+    assert "plenty" in reminder(changed(settings_for(Preset.CHILL), emoji="lots"))
+
+
+def test_no_emoji_is_said_without_an_emoji() -> None:
+    from nexus.domain.emoji import strip_emoji
+
+    for preset in Preset:
+        voice = changed(settings_for(preset), emoji="none")
+        assert strip_emoji(reminder(voice)) == reminder(voice)
+        assert strip_emoji(prompt_block(voice)) == prompt_block(voice)
+
+
+def test_the_default_preset_with_a_changed_dial_no_longer_points_at_the_removed_persona() -> None:
+    block = prompt_block(changed(DEFAULT, humour="off"))
+    assert "described at the top" not in block and "rules above say" not in block
+    assert "warm, sharp friend" in block
 
 
 def test_stock_phrases_are_the_agreed_seven() -> None:

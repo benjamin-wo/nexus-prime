@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nexus.application import budgets as budget_cases
+from nexus.application import voice as voice_cases
 from nexus.application.budgets import TELEGRAM_SEND
 from nexus.application.categories import create_category, list_categories
 from nexus.application.transactions import NewTransaction, log_transaction
@@ -301,6 +302,23 @@ async def test_alerts_fire_once_at_exact_thresholds(engine: AsyncEngine, uow: Uo
     async with engine.connect() as db:
         recorded = [r.threshold for r in await db.execute(select(budget_alerts))]
     assert sorted(recorded) == [50, 80, 100]  # 80 recorded, never sent late
+
+
+async def test_alerts_are_worded_for_the_users_voice_and_never_joke(
+    engine: AsyncEngine, uow: UowFactory
+) -> None:
+    user = await sgt_user(uow)
+    await voice_cases.set_voice(uow(), user.id, preset="direct", now=NOON_SGT)
+    food = next(c for c in await list_categories(uow(), user.id) if c.name == "Dining Out")
+    await budget_cases.set_budget(uow(), user, food.id, sgd("100"), now=NOON_SGT)
+    await spend(uow, user.id, "50", NOON_SGT, category_id=food.id)
+    assert await budget_cases.check_budgets(uow, FakeRates(), user, now=NOON_SGT) == 1
+    await spend(uow, user.id, "60", NOON_SGT, category_id=food.id)
+    assert await budget_cases.check_budgets(uow, FakeRates(), user, now=NOON_SGT) == 1
+    assert await queued_texts(engine) == [
+        "50% of your Dining Out budget used for September: 50.00 SGD of 100.00 SGD.",
+        "Reached your Dining Out budget for September: 110.00 SGD of 100.00 SGD (110%).",
+    ]
 
 
 async def test_months_follow_the_users_timezone(engine: AsyncEngine, uow: UowFactory) -> None:

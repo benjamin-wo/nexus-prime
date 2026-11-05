@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nexus.application import messaging as message_cases
 from nexus.application import notifications as notify_cases
+from nexus.application import voice as voice_cases
 from nexus.application.budgets import TELEGRAM_SEND
 from nexus.application.users import RegisterUser, register_user
 from nexus.domain.errors import InvalidInput
@@ -505,6 +506,46 @@ async def test_migration_0053_keeps_settings_and_goes_down_and_up_again(
     assert settings.daily_cap == DAILY_CAP and settings.quiet_start == time(22)
     async with uow() as tx:  # the table is back and works
         assert await tx.notifications.recent(user.id, sgt(1, 0)) == []
+
+
+async def test_a_user_with_no_emoji_gets_none_in_a_message_sent_at_once(scene: Scene) -> None:
+    await voice_cases.set_voice(scene.uow(), scene.user.id, preset="direct", now=scene.clock())
+    await scene.say("⚠️ Reminder: Rent is due today 🎉")
+    assert scene.told() == ["Reminder: Rent is due today"]
+    (row,) = await scene.rows()
+    assert row.text == "Reminder: Rent is due today" and row.status == "sent"
+
+
+async def test_a_user_with_emoji_keeps_them_in_a_proactive_message(scene: Scene) -> None:
+    await voice_cases.set_voice(scene.uow(), scene.user.id, preset="hype", now=scene.clock())
+    await scene.say("⚠️ Reminder: Rent is due today")
+    assert scene.told() == ["⚠️ Reminder: Rent is due today"]
+
+
+async def test_a_held_message_and_its_digest_have_no_emoji_for_a_user_who_chose_none(
+    scene: Scene,
+) -> None:
+    await voice_cases.set_voice(scene.uow(), scene.user.id, emoji="none", now=scene.clock())
+    await hold_overnight(scene)
+    scene.clock.now = sgt(21, 8)
+    assert await scene.digest() == 1
+    await scene.run_queued()
+    assert scene.told() == [
+        "While you were away:\n"
+        "• You've used 100% of Food.\n"
+        "• ACME -5.4% today\n"
+        "• ACME plan refreshed: now Wait."
+    ]
+    assert all("📉" not in r.text for r in await scene.rows())
+
+
+async def test_a_message_with_buttons_loses_its_emoji_and_keeps_its_buttons(scene: Scene) -> None:
+    await voice_cases.set_voice(scene.uow(), scene.user.id, emoji="none", now=scene.clock())
+    buttons = [[{"label": "Track it", "data": "sub:track:1"}]]
+    await scene.say("🔁 Streamly has charged you…", buttons=buttons)
+    (sent,) = scene.telegram.sent
+    assert sent.text == "Streamly has charged you…"
+    assert [b.data for row in sent.buttons or [] for b in row] == ["sub:track:1"]
 
 
 def test_every_kind_and_level_the_record_allows_is_named() -> None:

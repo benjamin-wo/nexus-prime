@@ -58,6 +58,18 @@ The transcript is tidied in code before the agent reads it (`domain/transcript.p
 
 Limits: 2 minutes and 5 MB (refused before downloading on Telegram, 413 on the web), 30 voice notes an hour per user (in memory, like the message limit; 429 on the web). Audio is held in memory only for the call: it is never stored or logged, and no log line holds a transcript. A log line carries the model, the audio's seconds and the cost. The chat log keeps the words, not the recording.
 
+## What "How Nexus talks" controls in code, and what the model decides
+
+Settings → How Nexus talks (preset, emoji, length, humour, a note) is enforced in two ways. A small, fast model follows a prompt only so far, so what code can guarantee, code does.
+
+**Deterministic (the same on every channel, whatever the model wrote):**
+- *Emoji "none"* is enforced on every outgoing message: `strip_emoji` (`domain/emoji.py`) removes pictographic emoji, their joiners, skin tones, flags and variation selectors, and the spaces they leave, and keeps ordinary symbols (• · — → ★ ✓, currency signs), line breaks and indentation. Replies from `AgentService` (Telegram and the web chat alike, confirmations and buttons' answers included; the chat log keeps the stripped text) leave through the `in_voice` wrapper in `agent/service.py`, which opens the user's voice scope for the call (`application/voice.py`: read once per call, shared with the prompt) and strips last of all. Proactive messages (reminders, alerts, email questions, digests, anything queued as `telegram.send`) are stripped in `messaging.deliver`, before they are sent, held or recorded. A run's progress message is stripped in `departments.announce`. Anything that cannot be read about the voice is treated as the default voice: a voice is polish and never stops a message.
+- *The fixed messages* are worded per preset (`domain/phrases.py`, `phrase(key, voice, **values)`): the logged-expense and income lines, the payday salary line, the income shortcut's "Recorded…", a receipt's "Logged from receipt", the email questions, "Skipped", Undo's "Undone", the confirmation heads ("Confirm these changes?", "Delete 3 entries?"), budget alerts and bill reminders. Only the wording changes: amounts, names, dates and buttons are the same in every voice. The default preset is today's exact text. Cheeky teases only about everyday spending; budgets, bills, undoing and confirming (`SENSITIVE`) use the default wording for Cheeky, and Hype never cheers at them.
+
+**Asked of the model (not guaranteed):** tone, length and humour for everything the model writes. For a voice other than the default, the system prompt swaps the opening persona ("a warm, sharp friend… a light touch of humour") and the Reply style examples (with ✅ ⚠️ 🎉) for neutral versions, keeps the safety, money and confirmation rules word for word, puts the user's block ("How you talk") after the skills, and repeats the voice in one short paragraph at the very end, after the money snapshot and the clock. The default voice's prompt is byte-identical to before (a hash of it is pinned in `tests/integration/test_voice_enforced.py`), so providers' prompt caching of the shared prefix is unaffected; the end paragraph is only added for chosen voices and is not cached anyway, since it follows the clock line.
+
+When changing the wording of a fixed message, change it in `domain/phrases.py` (a new key needs values for every preset it differs for, and a decision on whether it is `SENSITIVE`), never in the caller.
+
 ## Web access
 
 The web API (`/api/...`) is on when Telegram is configured and the public origin is known (`WEB_ORIGIN`, or Railway's `RAILWAY_PUBLIC_DOMAIN`).

@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from nexus.application import category_rules as rule_cases
 from nexus.application import email as email_cases
 from nexus.application import notifications as notify_cases
+from nexus.application import voice as voice_cases
 from nexus.application.budgets import TELEGRAM_SEND
 from nexus.application.categories import list_categories
 from nexus.application.ports import LedgerQuery, MailboxGrant
@@ -197,6 +198,32 @@ async def test_the_first_sweep_looks_back_and_asks_once(
     assert (question["kind"], question["level"]) == ("receipt_question", "now")
     assert question["link"] == "/settings/email"
     assert log_it["data"].startswith("email:log:")
+
+
+@pytest.mark.parametrize(
+    ("preset", "asked"),
+    [
+        ("default", "📧 From your email: 18.50 SGD at Grab on 27 Sep. Log it?"),
+        ("direct", "Email: 18.50 SGD at Grab, 27 Sep. Log it?"),
+        ("chill", "📧 Spotted 18.50 SGD at Grab in your email (27 Sep). Log it?"),
+        ("hype", "📧 New one from your email: 18.50 SGD at Grab on 27 Sep. Log it?"),
+        ("cheeky", "📧 Your inbox snitched: 18.50 SGD at Grab on 27 Sep. Log it?"),
+    ],
+)
+async def test_the_question_about_an_email_is_worded_for_the_users_voice(
+    engine: AsyncEngine, uow: UowFactory, preset: str, asked: str
+) -> None:
+    user = await person(uow)
+    await voice_cases.set_voice(uow(), user.id, preset=preset, now=NOW)
+    mailbox = FakeMailbox({"m1": fake_email("m1", "Grab receipt", GRAB)})
+    connection = await connect(uow, user, mailbox)
+    await sweep(uow, user, mailbox, connection, at=NOW + timedelta(minutes=1))
+    [question] = await messages(engine)
+    assert question["text"] == asked
+    # Only the words change: the buttons and where they lead are the same for everyone.
+    [[log_it, skip]] = question["buttons"]
+    assert (log_it["label"], skip["label"]) == ("Log it", "Skip")
+    assert log_it["data"].startswith("email:log:") and skip["data"].startswith("email:skip:")
 
 
 async def test_confirming_logs_it_once_and_never_again(uow: UowFactory) -> None:

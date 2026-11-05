@@ -21,6 +21,7 @@ from zoneinfo import ZoneInfo
 from pydantic import BaseModel, ValidationError
 
 from nexus.application import costs
+from nexus.application import voice as voice_cases
 from nexus.application.ports import UnitOfWork
 from nexus.domain.demo import forbid
 from nexus.domain.departments import (
@@ -376,6 +377,7 @@ async def announce(
         kind = registry.kinds[run.kind]
         text = f"{text}\n{kind.summary(kind.result.model_validate(run.result))}"
     try:
+        text = await voice_cases.worded_for(uow(), user.id, text)  # no emoji if none chosen
         chat_id, message_id = await progress.show(run, user, text)
     except Exception:
         log.warning("could not show a run's progress", exc_info=True)

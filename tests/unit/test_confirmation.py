@@ -8,6 +8,7 @@ from uuid import uuid4
 from nexus.agent.confirmation import Ask, combine, entry_text, short_day, short_money
 from nexus.domain.ledger import Direction, Source, Transaction, TransactionStatus, UserId
 from nexus.domain.money import Money
+from nexus.domain.voice import Preset, settings_for
 
 TODAY = date(2026, 11, 5)
 NOW = datetime(2026, 11, 5, 4, 0, tzinfo=UTC)
@@ -84,3 +85,25 @@ def test_mixed_actions_get_a_bullet_each_and_other_questions_are_joined_as_befor
         "Confirm these changes?\n• Delete 5 Nov · SGD 3.00\n• Delete the wallet Cash"
     )
     assert combine(["Delete Travel?", "Delete Food?"]) == "Delete Travel?\nDelete Food?"
+
+
+def test_the_heading_over_several_entries_follows_the_voice_but_the_entries_never_do() -> None:
+    a = Ask("Delete", "5 Nov · EUR 14.00 from Acme Hire (income)")
+    b = Ask("Delete", "6 Nov · SGD 12.40 at Kopi Corner (Dining Out)")
+    mixed = [Ask("Delete", "5 Nov · SGD 3.00"), Ask("Change", "6 Nov · SGD 4.00", ": a")]
+    for preset in Preset:
+        voice = settings_for(preset)
+        many = combine([a, b], voice)
+        assert many.splitlines()[1:] == combine([a, b]).splitlines()[1:]
+        assert "2" in many.splitlines()[0] and "Delete" in many.splitlines()[0]
+        both = combine(mixed, voice)
+        assert both.splitlines()[1:] == combine(mixed).splitlines()[1:]
+    assert combine(mixed, settings_for(Preset.DIRECT)).splitlines()[0] == "Confirm?"
+    assert combine(mixed, settings_for(Preset.CHILL)).splitlines()[0] == (
+        "Okay to go ahead with these?"
+    )
+    # A joke never lands on a change to the ledger.
+    assert combine(mixed, settings_for(Preset.CHEEKY)) == combine(mixed)
+    assert combine([a, b], settings_for(Preset.CHEEKY)) == combine([a, b])
+    # One entry alone is the question itself, in every voice.
+    assert combine([a], settings_for(Preset.DIRECT)) == a

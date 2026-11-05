@@ -84,7 +84,9 @@ from nexus.domain.ledger import (
 )
 from nexus.domain.money import Money
 from nexus.domain.notifications import Frequency, Kind, Level
+from nexus.domain.phrases import Phrase, phrase
 from nexus.domain.receipts import UNCLAIMED_TTL
+from nexus.domain.voice import DEFAULT, VoiceSettings
 from nexus.domain.wallets import card_last4_in, wallet_for
 
 log = logging.getLogger(__name__)
@@ -357,30 +359,38 @@ def _day(email: InboundEmail, draft: ExpenseDraft, tz: ZoneInfo) -> date:
     return email.received_at.astimezone(tz).date()
 
 
-def prompt_text(email: InboundEmail, tz: ZoneInfo) -> str:
+def prompt_text(email: InboundEmail, tz: ZoneInfo, voice: VoiceSettings = DEFAULT) -> str:
+    """The question about an email: what was found, and whether to log it. Worded for the
+    user's ``voice`` (the default one is the text everybody had); the facts never change."""
     draft = ExpenseDraft.from_dict(email.draft or {})
     money = _amount(draft, draft.currency or "")
-    day = _day(email, draft, tz)
+    day = f"{_day(email, draft, tz):%-d %b}"
     if draft.received:
         sender = f" from {draft.merchant}" if draft.merchant else ""
-        return f"📧 From your email: {money} came in{sender} on {day:%-d %b}. Log it as money in?"
+        return phrase(Phrase.EMAIL_INCOME, voice, money=money, sender=sender, day=day)
     where = f" at {draft.merchant}" if draft.merchant else ""
     booking = BookingDraft.from_dict((email.draft or {}).get("booking") or {})
     if booking is not None:
         trip = (email.draft or {}).get("booking_trip")
         on = f" It's on your {trip} trip." if trip else ""
-        return (
-            f"📧 From your email: a {booking.describe()}, {money}{where} on {day:%-d %b}.{on} "
-            "Log the cost?"
+        return phrase(
+            Phrase.EMAIL_BOOKING,
+            voice,
+            booking=booking.describe(),
+            money=money,
+            where=where,
+            day=day,
+            on=on,
         )
-    return f"📧 From your email: {money}{where} on {day:%-d %b}. Log it?"
+    return phrase(Phrase.EMAIL_EXPENSE, voice, money=money, where=where, day=day)
 
 
 def question(
-    email: InboundEmail, tz: ZoneInfo, open_ious: list[OpenIou]
+    email: InboundEmail, tz: ZoneInfo, open_ious: list[OpenIou], voice: VoiceSettings = DEFAULT
 ) -> tuple[str, list[list[dict[str, str]]]]:
     """What to ask about an email, and its buttons. Money in from someone who owes
-    the user is offered as their repayment."""
+    the user is offered as their repayment. Only the plain question is worded for
+    ``voice``; the ones about a possible twin, a wallet or a repayment keep their words."""
     draft = ExpenseDraft.from_dict(email.draft or {})
     skip = {"label": "Skip", "data": f"email:skip:{email.id}"}
     twin = duplicate_of(email)
@@ -418,7 +428,7 @@ def question(
         return text, [[{"label": "Transfer", "data": f"email:move:{email.id}"}, other, skip]]
     person = owing_person(open_ious, draft.merchant) if draft.received and draft.merchant else None
     if person is None:
-        return prompt_text(email, tz), [
+        return prompt_text(email, tz, voice), [
             [{"label": "Log it", "data": f"email:log:{email.id}"}, skip]
         ]
     money = _amount(draft, draft.currency or "")
@@ -976,8 +986,9 @@ async def _ask(
         if settings.frequency is not Frequency.INSTANT:
             return
     open_ious = await tx.ledger.open_ious(user.id)
+    voice = await tx.memory.get_voice(user.id)
     for email in waiting:
-        text, buttons = question(email, tz, open_ious)
+        text, buttons = question(email, tz, open_ious, voice)
         await tx.jobs.enqueue(
             TELEGRAM_SEND,
             {

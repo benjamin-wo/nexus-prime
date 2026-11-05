@@ -1,13 +1,14 @@
 """What channels call. Turns graph runs into replies with buttons."""
 
 import asyncio
+import functools
 import logging
 import time as clock
 from collections import Counter, defaultdict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, time, timedelta
-from typing import Any
+from typing import Any, cast
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
@@ -60,6 +61,7 @@ from nexus.application import transactions as tx_cases
 from nexus.application import travel_research as research_cases
 from nexus.application import trip_access as access_cases
 from nexus.application import undo as undo_cases
+from nexus.application import voice as voice_cases
 from nexus.application.acting import as_actor
 from nexus.application.categories import list_categories
 from nexus.application.demo import DemoGate, Use
@@ -74,6 +76,7 @@ from nexus.domain.errors import DuplicateSource, InvalidInput, NexusError, NotFo
 from nexus.domain.investments import Position, clean_quantity, clean_symbol
 from nexus.domain.ledger import Direction, MenuSection, Transaction, UserId
 from nexus.domain.money import Money
+from nexus.domain.phrases import Phrase, phrase
 from nexus.domain.places import quoted
 from nexus.domain.private import hide_card_numbers
 from nexus.domain.transcript import HEARD_MARK, heard_line, tidy_transcript
@@ -130,6 +133,44 @@ NOT_HEARD = "I couldn't hear that right now — mind typing it?"
 RECENT_MESSAGES = 3  # the newest, and two before it for context
 # Added to the reply when a card number in what the user sent was cut down to its last four.
 CARD_NOTE = "I only keep the last 4 digits of card numbers."
+
+
+def _voiced_reply(reply: Reply) -> Reply:
+    """``reply`` without emoji when the user of this turn chose none; the same reply else.
+    Its buttons are as they were."""
+    text = voice_cases.sent(reply.text)
+    return reply if text == reply.text else replace(reply, text=text)
+
+
+def _voiced(result: Any) -> Any:
+    """What a channel method returns (a reply, a list of them or nothing) as it may leave
+    for the user of this turn."""
+    if isinstance(result, Reply):
+        return _voiced_reply(result)
+    if isinstance(result, list):
+        return [_voiced_reply(r) if isinstance(r, Reply) else r for r in result]
+    return result
+
+
+def in_voice[F: Callable[..., Awaitable[Any]]](method: F) -> F:
+    """For a method ``(self, actor, ...)`` that answers a channel with replies: open the
+    user's voice scope for the call (read once, the first time a turn, a button or a note
+    needs it: the prompt, the fixed wordings and the notes the turn keeps all read it from
+    there) and, last of all, take the emoji out of every reply when the user chose none.
+    This is the one place replies leave the agent for Telegram and the web chat alike; a
+    method called from inside another (a button press that resolves a confirmation) joins
+    the scope already open."""
+
+    @functools.wraps(method)
+    async def wrapper(self: Any, actor: UserId, *args: object, **kwargs: object) -> Any:
+        if voice_cases.in_scope():
+            return await method(self, actor, *args, **kwargs)
+        with voice_cases.scope():
+            replies = await method(self, actor, *args, **kwargs)
+            await voice_cases.load(self._uow(), actor)  # a call that never needed it before
+            return _voiced(replies)
+
+    return cast(F, wrapper)
 
 
 def _hidden(text: str) -> tuple[str, bool]:
@@ -343,6 +384,7 @@ class AgentService:
             return await self._run_turn(actor, payload)
 
     async def _run_turn(self, actor: UserId, payload: Any) -> list[Reply]:
+        await voice_cases.load(self._uow(), actor)  # in the user's turn, so not before the lock
         config = self._config(actor)
         # By id, not position: a long conversation drops its oldest messages mid-turn.
         seen = {m.id for m in (await self._graph.aget_state(config)).values.get("messages", [])}
@@ -436,11 +478,12 @@ class AgentService:
         """Keep this turn of the chat (the user's words and Nexus's replies) for the
         web chat to show again. Its failures never reach the user."""
         try:
+            await voice_cases.load(self._uow(), actor)
             now = self._clock()
             channel = channel_of(ref) if ref else None
             lines = [ChatLine(actor, Speaker.USER, clip(said), channel, now)] if said else []
             lines += [
-                ChatLine(actor, Speaker.NEXUS, clip(r.text), channel, now)
+                ChatLine(actor, Speaker.NEXUS, clip(voice_cases.sent(r.text)), channel, now)
                 for r in replies
                 if r.text.strip()
             ]
@@ -451,6 +494,7 @@ class AgentService:
             log.exception("could not keep the chat")
 
     @as_actor
+    @in_voice
     async def chat_pending(self, actor: UserId) -> Reply | None:
         """The confirmation waiting for an answer, with its buttons, if any."""
         pending = await self._pending(actor)
@@ -461,6 +505,7 @@ class AgentService:
         return Reply(summary, buttons)
 
     @as_actor
+    @in_voice
     @costs.as_feature("chat")
     async def handle_text(self, actor: UserId, text: str, ref: str) -> list[Reply]:
         text, hid = _hidden(text)
@@ -490,6 +535,7 @@ class AgentService:
         return self._speech is not None
 
     @as_actor
+    @in_voice
     @costs.as_feature("voice")
     async def handle_voice(
         self, actor: UserId, audio: bytes, mime: str, ref: str, *, forwarded: bool = False
@@ -568,12 +614,14 @@ class AgentService:
             log.exception("after-turn hook failed")
 
     @as_actor
+    @in_voice
     async def handle_photo(
         self, actor: UserId, image: bytes, mime_type: str, caption: str | None, ref: str
     ) -> list[Reply]:
         return await self.handle_images(actor, [Picture(image, mime_type, ref)], caption, ref)
 
     @as_actor
+    @in_voice
     @costs.as_feature("photo")
     async def handle_images(
         self, actor: UserId, pictures: list[Picture], caption: str | None, ref: str
@@ -672,6 +720,7 @@ class AgentService:
         return None
 
     @as_actor
+    @in_voice
     @costs.as_feature("pdf")
     async def handle_pdf(
         self, actor: UserId, data: bytes, name: str, caption: str | None, ref: str
@@ -712,6 +761,7 @@ class AgentService:
         return _noted(await self.ask_about(actor, [look], caption, ref, label="[PDF]"), hid)
 
     @as_actor
+    @in_voice
     async def ask_about(
         self,
         actor: UserId,
@@ -1005,6 +1055,7 @@ class AgentService:
         return Reply("I don't know that button.")
 
     @as_actor
+    @in_voice
     async def resolve(self, actor: UserId, confirmation_id: str, approved: bool) -> list[Reply]:
         # Confirming runs the model again: a check, not a use (the message was counted).
         refusal = await self._demo_refusal(actor, Use.MESSAGE, 0, count=False)
@@ -1017,8 +1068,10 @@ class AgentService:
             return await self._run(actor, Command(resume={"approved": approved}))
 
     @as_actor
+    @in_voice
     async def press(self, actor: UserId, data: str) -> list[Reply]:
         """A button press from any channel: confirmations, Undo and quick actions."""
+        await voice_cases.load(self._uow(), actor)
         # Answers to the chat's own questions are part of the chat; buttons on
         # notifications (bills, emails, plan alerts) are not.
         if data.startswith("hitl:"):
@@ -1158,7 +1211,10 @@ class AgentService:
                 case "log":
                     day = date.fromisoformat(rest)
                     tx = await salary_cases.log_payday_salary(self._uow, user, day, now=now)
-                    return Reply(f"Logged {tx.amount} salary. Enjoy payday! 🎉", [[UNDO]])
+                    return Reply(
+                        phrase(Phrase.LOGGED_SALARY, voice_cases.current(), amount=tx.amount),
+                        [[UNDO]],
+                    )
                 case "later":
                     return Reply("No problem. Tell me once it's in, like 'salary 5000'.")
                 case "base":
@@ -1195,10 +1251,15 @@ class AgentService:
                 if tx.direction is Direction.IN:
                     return Reply(await self._money_in(actor, tx), [[UNDO]])
                 where = f" at {tx.counterparty}" if tx.counterparty else ""
-                return Reply(f"Logged {tx.amount}{where}.", [[UNDO]])
+                return Reply(
+                    phrase(
+                        Phrase.LOGGED_EXPENSE, voice_cases.current(), amount=tx.amount, where=where
+                    ),
+                    [[UNDO]],
+                )
             if action == "skip":
                 await email_cases.skip_email(self._uow(), actor, found)
-                return Reply("Skipped. Nothing was logged.")
+                return Reply(phrase(Phrase.SKIPPED, voice_cases.current()))
             if action == "move":
                 moved = await email_cases.move_email(self._uow, user, found, now=self._clock())
                 tx = moved.transaction
@@ -1260,12 +1321,13 @@ class AgentService:
     async def _money_in(self, actor: UserId, tx: Transaction) -> str:
         """What logging money received did: a repayment says who still owes what."""
         who = tx.counterparty
+        voice = voice_cases.current()
         if who is None:
-            return f"Logged {tx.amount} received."
+            return phrase(Phrase.LOGGED_INCOME, voice, amount=tx.amount, source="")
         async with self._uow() as uow:
             settled = await uow.ledger.has_settlements_for_income(actor, tx.id)
         if not settled:
-            return f"Logged {tx.amount} received from {who}."
+            return phrase(Phrase.LOGGED_INCOME, voice, amount=tx.amount, source=f" from {who}")
         left = await split_cases.list_open_ious(self._uow(), actor, participant_name=who)
         owed = ", ".join(str(i.outstanding) for i in left)
         status = f"{who} still owes {owed}." if left else f"{who} is all settled. 🎉"
@@ -1321,8 +1383,10 @@ class AgentService:
         return Reply("I don't know that button.")
 
     @as_actor
+    @in_voice
     async def quick_action(self, actor: UserId, action: str) -> list[Reply]:
         """Buttons that don't need the model."""
+        await voice_cases.load(self._uow(), actor)
         match action:
             case "menu":
                 return [Reply("What would you like to do?", MENU)]
@@ -1339,7 +1403,10 @@ class AgentService:
                     return [Reply(result.message())]
                 tx = result.transaction
                 what = f"{tx.amount} {tx.counterparty}" if tx.counterparty else str(tx.amount)
-                return [Reply(f"Undone: the {result.undone.value} of {what}.")]
+                undone = phrase(
+                    Phrase.UNDONE, voice_cases.current(), kind=result.undone.value, what=what
+                )
+                return [Reply(undone)]
             case "ious":
                 ious = await split_cases.list_open_ious(self._uow(), actor)
                 if not ious:

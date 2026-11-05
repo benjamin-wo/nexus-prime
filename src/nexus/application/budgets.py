@@ -21,7 +21,9 @@ from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.ledger import User, UserId
 from nexus.domain.money import Money
 from nexus.domain.notifications import Kind, Level
+from nexus.domain.phrases import Phrase, phrase
 from nexus.domain.planning import Budget, month_start, next_month_start, reached
+from nexus.domain.voice import DEFAULT, VoiceSettings
 
 type UowFactory = Callable[[], UnitOfWork]
 
@@ -110,13 +112,19 @@ async def budget_statuses(
     return statuses
 
 
-def alert_text(status: BudgetStatus, threshold: int, month: date) -> str:
+def alert_text(
+    status: BudgetStatus, threshold: int, month: date, voice: VoiceSettings = DEFAULT
+) -> str:
+    """The alert for a threshold reached. Worded for ``voice``, but never with a joke: a
+    budget reached is not good news, so ``cheeky`` gets the default wording."""
     what = "overall budget" if status.budget.is_overall else f"{status.name} budget"
     when = month.strftime("%B")
     used = f"{status.spent} of {status.budget.limit}"
     if threshold >= 100:
-        return f"You've reached your {what} for {when}: {used} ({status.percent}%)."
-    return f"You've used {threshold}% of your {what} for {when}: {used}."
+        return phrase(
+            Phrase.BUDGET_REACHED, voice, what=what, month=when, used=used, percent=status.percent
+        )
+    return phrase(Phrase.BUDGET_USED, voice, threshold=threshold, what=what, month=when, used=used)
 
 
 async def check_budgets(uow: UowFactory, rates: RateSource, user: User, *, now: datetime) -> int:
@@ -127,6 +135,7 @@ async def check_budgets(uow: UowFactory, rates: RateSource, user: User, *, now: 
     month, _, _ = _month(user, now)
     queued = 0
     async with uow() as tx:
+        voice = await tx.memory.get_voice(user.id)
         for status in statuses:
             budget = status.budget
             new = await tx.planning.record_alerts(
@@ -139,7 +148,7 @@ async def check_budgets(uow: UowFactory, rates: RateSource, user: User, *, now: 
                 TELEGRAM_SEND,
                 {
                     "user_id": str(user.id),
-                    "text": alert_text(status, top, month),
+                    "text": alert_text(status, top, month, voice),
                     "kind": Kind.BUDGET_ALERT,
                     # Reaching the limit needs a decision; 50% and 80% are good to know.
                     "level": Level.NOW if top >= 100 else Level.DIGEST,

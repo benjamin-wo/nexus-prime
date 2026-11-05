@@ -24,16 +24,19 @@ from nexus.application import email as email_cases
 from nexus.application import market as market_cases
 from nexus.application import receipts as receipt_cases
 from nexus.application import research as research_cases
+from nexus.application import salary as salary_cases
 from nexus.application import subscriptions as subscription_cases
 from nexus.application.ideas import IdeaFinder
 from nexus.application.places import Places
 from nexus.application.transactions import NewTransaction, log_transaction
+from nexus.application.users import find_telegram_user
 from nexus.application.web_search import WebAnswer
 from nexus.channels.web.telegram_login import sign_for_tests, sign_webapp_for_tests
 from nexus.domain.ledger import Direction, Source, UserId
 from nexus.domain.market import MarketStatus
 from nexus.domain.money import Money
 from nexus.domain.places import Point
+from nexus.domain.planning import PayRule
 from nexus.infra.crypto.fernet import FernetCipher
 from nexus.infra.db.tables import jobs, users
 from nexus.infra.db.uow import SqlUnitOfWork
@@ -2935,3 +2938,34 @@ async def test_splitting_a_trips_costs_and_settling_up_on_the_web(world: World) 
     assert (await member.get(path)).status_code == 404
     # Nor can anyone with the owner's trip id get at it from outside.
     assert (await world.browser().get(path)).status_code in (401, 403)
+
+
+async def test_a_direct_voice_gets_no_emoji_in_the_web_chat(world: World) -> None:
+    owner, _ = await owner_and_invite(world)
+    assert (await owner.send("PUT", "/api/settings/voice", {"preset": "direct"})).status_code == 200
+
+    # A model reply that has emoji in it, as the reply and in the chat shown again.
+    world.model.script += [say("Dining Out's at 182.20 of 200 — 91% used ⚠️\n✅ Logged 2.20 🎉")]
+    [reply] = (await owner.send("POST", "/api/chat", {"message": "kopi 2.20"})).json()
+    assert reply["text"] == "Dining Out's at 182.20 of 200 — 91% used\nLogged 2.20"
+
+    # A template: the payday button's "Logged ... Enjoy payday! 🎉", in the direct wording.
+    user = await find_telegram_user(SqlUnitOfWork(world.engine), OWNER)
+    assert user is not None
+    await salary_cases.set_schedule(
+        SqlUnitOfWork(world.engine), user, PayRule.MONTHLY_DAY, day=25, now=NOW
+    )
+    await salary_cases.set_baseline(
+        SqlUnitOfWork(world.engine), user, Money.of("5000", "SGD"), now=NOW
+    )
+    pressed = (
+        await owner.send("POST", "/api/chat/press", {"data": "salary:log:2026-10-23"})
+    ).json()
+    [pressed] = pressed
+    assert pressed["text"] == "Logged: 5,000.00 SGD salary."
+    assert [b["data"] for row in pressed["buttons"] for b in row] == ["act:undo"]
+
+    history = (await owner.get("/api/chat/history")).json()
+    texts = [x["text"] for x in history["lines"] if x["role"] == "nexus"]
+    assert texts[0] == "Dining Out's at 182.20 of 200 — 91% used\nLogged 2.20"
+    assert not any(ch in "".join(texts) for ch in "✅⚠🎉")
