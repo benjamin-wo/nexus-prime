@@ -40,7 +40,7 @@ async def test_wallets_add_edit_and_refusals(world: World) -> None:
     await owner.login(OWNER)
     first = (await owner.get("/api/wallets")).json()
     assert [(w["name"], w["kind"], w["match_words"]) for w in first] == [
-        ("Spending", "spending", []),
+        ("Main account", "spending", []),
         ("Cash", "cash", []),
     ]
     assert set(first[0]) == {
@@ -51,7 +51,7 @@ async def test_wallets_add_edit_and_refusals(world: World) -> None:
     assert ibkr["match_words"] == ["Interactive Brokers", "ibkr"] and ibkr["kind"] == "investment"
     await add(owner, "Emergency fund", "savings")
     assert [w["name"] for w in (await owner.get("/api/wallets")).json()] == [
-        "Spending",
+        "Main account",
         "Cash",
         "Emergency fund",
         "IBKR",
@@ -69,7 +69,7 @@ async def test_wallets_add_edit_and_refusals(world: World) -> None:
     cleared = await owner.send("PATCH", f"/api/wallets/{ibkr['id']}", {"match_words": []})
     assert cleared.json()["match_words"] == [] and cleared.json()["name"] == "Brokerage"
 
-    # Refusals: a clashing name, a bad kind, a second Spending, changing Spending's kind.
+    # Refusals: a clashing name, a bad kind, a second Main account, changing its kind.
     assert (await owner.send("POST", "/api/wallets", {"name": "brokerage", "kind": "other"})
             ).status_code == 409  # fmt: skip
     assert (
@@ -90,10 +90,10 @@ async def test_a_move_is_logged_and_listed_with_its_wallets(world: World) -> Non
     await owner.login(OWNER)
     ibkr = await add(owner, "IBKR", "investment")
     made = await move(owner, "800", ibkr["id"], notes="monthly top-up")
-    spending = (await wallets_by_name(owner))["Spending"]
+    spending = (await wallets_by_name(owner))["Main account"]
     assert made["direction"] == "move"
     assert made["amount"] == {"amount": "800.0000", "currency": "SGD"}
-    assert made["from_wallet"] == {"id": spending["id"], "name": "Spending", "kind": "spending"}
+    assert made["from_wallet"] == {"id": spending["id"], "name": "Main account", "kind": "spending"}
     assert made["to_wallet"] == {"id": ibkr["id"], "name": "IBKR", "kind": "investment"}
     assert made["received"] is None and made["category_id"] is None and made["split"] is None
 
@@ -107,7 +107,7 @@ async def test_a_move_is_logged_and_listed_with_its_wallets(world: World) -> Non
     only = (await owner.get("/api/transactions", params={"direction": "move"})).json()
     assert only["total"] == 1 and only["items"][0]["id"] == made["id"]
     one = (await owner.get(f"/api/transactions/{made['id']}")).json()
-    assert one["from_wallet"]["name"] == "Spending"
+    assert one["from_wallet"]["name"] == "Main account"
 
     # Amount, notes and date may be edited; a move can't turn into money in or out.
     edited = await owner.send(
@@ -127,7 +127,7 @@ async def test_a_move_is_logged_and_listed_with_its_wallets(world: World) -> Non
     deleted = await owner.send("DELETE", f"/api/transactions/{made['id']}")
     assert deleted.json()["deleted"] is True and deleted.json()["to_wallet"]["name"] == "IBKR"
     restored = await owner.send("POST", f"/api/transactions/{made['id']}/restore")
-    assert restored.json()["from_wallet"]["name"] == "Spending"
+    assert restored.json()["from_wallet"]["name"] == "Main account"
 
 
 async def test_a_move_can_start_elsewhere_and_arrive_in_another_currency(world: World) -> None:
@@ -173,7 +173,9 @@ async def test_money_out_or_in_is_marked_as_a_move(world: World) -> None:
     assert marked.status_code == 200
     body = marked.json()
     assert body["direction"] == "move" and body["category_id"] is None
-    assert body["from_wallet"]["name"] == "Spending" and body["to_wallet"]["name"] == "Rainy day"
+    assert (
+        body["from_wallet"]["name"] == "Main account" and body["to_wallet"]["name"] == "Rainy day"
+    )
     again = await owner.send(
         "POST", f"/api/transactions/{out['id']}/move", {"wallet_id": savings["id"]}
     )
@@ -188,15 +190,15 @@ async def test_money_out_or_in_is_marked_as_a_move(world: World) -> None:
         "POST", f"/api/transactions/{refund['id']}/move", {"wallet_id": savings["id"]}
     )
     assert back.json()["from_wallet"]["name"] == "Rainy day"
-    assert back.json()["to_wallet"]["name"] == "Spending"
+    assert back.json()["to_wallet"]["name"] == "Main account"
 
     # Undo brings the refund back as money in.
     undone = await owner.send("POST", "/api/undo")
     assert undone.status_code == 200 and undone.json()["transaction"]["direction"] == "in"
     assert undone.json()["transaction"]["from_wallet"] is None
 
-    # Marking as a move to Spending itself, or to a wallet that isn't there, is refused.
-    spending = (await wallets_by_name(owner))["Spending"]["id"]
+    # Marking as a move to Main account itself, or to a wallet that isn't there, is refused.
+    spending = (await wallets_by_name(owner))["Main account"]["id"]
     more = (
         await owner.send("POST", "/api/transactions", {"direction": "out", "amount": "4"})
     ).json()
@@ -236,7 +238,7 @@ async def test_deleting_a_wallet_points_its_moves_elsewhere(world: World) -> Non
     assert gone.json()["moved"] == 2 and gone.json()["removed"] == 1
     assert gone.json()["into"] == new
     names = [w["name"] for w in (await owner.get("/api/wallets")).json()]
-    assert names == ["Spending", "Cash", "New broker"]
+    assert names == ["Main account", "Cash", "New broker"]
     moves = (await owner.get("/api/transactions", params={"direction": "move"})).json()
     assert moves["total"] == 2
     assert {m["to_wallet"]["name"] for m in moves["items"]} == {"New broker"}
@@ -264,7 +266,7 @@ async def test_delete_preview_counts_match_the_real_delete(world: World) -> None
     unknown = "00000000-0000-4000-8000-000000000000"
     assert (await owner.get(f"{preview_url}?move_to={unknown}")).status_code == 404
     assert (await owner.get(f"/api/wallets/{unknown}/delete-preview")).status_code == 404
-    spending = (await wallets_by_name(owner))["Spending"]["id"]
+    spending = (await wallets_by_name(owner))["Main account"]["id"]
     assert (await owner.get(f"/api/wallets/{spending}/delete-preview")).status_code == 422
     assert (await owner.get(f"/api/wallets/{spare['id']}/delete-preview")).json() == {
         "moved": 0,
@@ -303,7 +305,10 @@ async def test_summary_has_put_away_total_out_and_the_saving_rate(world: World) 
     await move(owner, "1000", ibkr["id"])
     await move(owner, "500", savings["id"])
     await move(
-        owner, "300", (await wallets_by_name(owner))["Spending"]["id"], from_wallet_id=savings["id"]
+        owner,
+        "300",
+        (await wallets_by_name(owner))["Main account"]["id"],
+        from_wallet_id=savings["id"],
     )
 
     summary = (await owner.get("/api/summary", params={"start": "2026-09-01"})).json()
@@ -333,7 +338,7 @@ async def test_csv_export_has_the_move_and_its_wallets(world: World) -> None:
     assert header.split(",")[:3] == ["date", "direction", "amount"]
     assert header.endswith(",status,source,from_wallet,to_wallet,paid_with")
     moved = next(r for r in rows if ",move," in r)
-    assert moved.endswith(",confirmed,manual,Spending,IBKR,")
+    assert moved.endswith(",confirmed,manual,Main account,IBKR,")
     spent = next(r for r in rows if ",out," in r)
     assert spent.endswith(",confirmed,manual,,,")
     only = (await owner.get("/api/export.csv", params={"direction": "move"})).text.strip()
@@ -348,7 +353,7 @@ async def test_other_users_wallets_do_not_exist(world: World) -> None:
     mine = await add(member, "Mine", "savings")
     assert (await member.get(f"/api/wallets/{theirs['id']}/delete-preview")).status_code == 404
     assert [w["name"] for w in (await member.get("/api/wallets")).json()] == [
-        "Spending",
+        "Main account",
         "Cash",
         "Mine",
     ]
@@ -427,7 +432,7 @@ async def test_budgets_month_has_left_to_spend_and_the_plan_check(world: World) 
     await owner.send("PUT", "/api/salary/usual", {"amount": "4,500"})
     warned = (await owner.get("/api/budgets/month")).json()
     assert warned["plan_warning"] == (
-        "A 4,000.00 SGD budget plus 1,000.00 SGD of scheduled moves is more than your usual "
+        "A 4,000.00 SGD budget plus 1,000.00 SGD of scheduled transfers is more than your usual "
         "4,500.00 SGD income."
     )
     stranger = world.browser()

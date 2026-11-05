@@ -12,12 +12,23 @@ export type DepartmentView = {
   blurb: string;
   tabs: DepartmentTab[];
   upcoming?: string; // what it will do, for a department that isn't ready yet
+  /** The preference that puts it in the menu (the nav rail and the bottom bar). Without one it is
+   * always there. Its pages open by link either way; only the menu changes. */
+  menu?: "show_invest" | "show_travel";
 };
+
+/** The preferences that decide what the menu shows. A section turns on only for `true`: not
+ * decided (null or absent) and switched off (false) are both hidden. */
+export type MenuPreferences = { show_invest?: boolean | null; show_travel?: boolean | null };
+
+/** Whether a department has a place in the menu for someone with these preferences. */
+export const inMenu = (d: DepartmentView, preferences?: MenuPreferences): boolean =>
+  d.menu === undefined || preferences?.[d.menu] === true;
 
 export const DEPARTMENTS: DepartmentView[] = [
   {
     name: "accounting",
-    label: "Accounting",
+    label: "Money",
     short: "Money",
     icon: "🧾",
     path: "/accounting",
@@ -34,6 +45,7 @@ export const DEPARTMENTS: DepartmentView[] = [
     name: "investment",
     label: "Investment",
     short: "Invest",
+    menu: "show_invest",
     icon: "📈",
     path: "/investment",
     blurb: "Your holdings, and research on when to buy and sell.",
@@ -47,6 +59,7 @@ export const DEPARTMENTS: DepartmentView[] = [
     name: "travel",
     label: "Travel",
     short: "Travel",
+    menu: "show_travel",
     icon: "✈️",
     path: "/travel",
     blurb: "Your trips: budgets, money set aside, spending and settling up.",

@@ -176,7 +176,7 @@ async def test_the_migration_gives_existing_users_a_cash_wallet(
                 await db.execute(
                     text(
                         "INSERT INTO wallets (id, user_id, name, kind) "
-                        "VALUES (gen_random_uuid(), :u, 'Spending', 'spending')"
+                        "VALUES (gen_random_uuid(), :u, 'Main account', 'spending')"
                     ),
                     {"u": user},
                 )
@@ -261,7 +261,7 @@ async def test_any_wallet_that_can_pay_is_accepted_and_others_are_not(
     saver = await add_wallet(uow(), alice, "Rainy Day", "savings")
     broker = await add_wallet(uow(), alice, "Brokerage", "investment")
     misc = await add_wallet(uow(), alice, "Gift card", "other")
-    for ok in (found["Spending"], found["Cash"], misc):
+    for ok in (found["Main account"], found["Cash"], misc):
         tx = await expense(uow, alice, paid_with_wallet_id=ok.id)
         assert tx.paid_with_wallet_id == ok.id
     for bad in (saver, broker):
@@ -318,7 +318,7 @@ async def test_the_database_refuses_a_card_on_money_in_or_a_move(
     engine: AsyncEngine, uow: UowFactory, alice: UserId
 ) -> None:
     citi = (await cards(uow, alice))["Citi PremierMiles"]
-    spending = (await wallets_by_name(uow, alice))["Spending"]
+    spending = (await wallets_by_name(uow, alice))["Main account"]
     row = {
         "user": alice, "amount": 5, "at": NOW, "paid": citi.id, "spending": spending.id,
     }  # fmt: skip
@@ -544,7 +544,7 @@ async def test_a_transaction_can_be_paid_with_a_card_set_changed_and_cleared(wor
 
 async def track_cards(browser: Browser, on: bool = True) -> None:
     done = await browser.send("PUT", "/api/settings/preferences", {"track_cards": on})
-    assert done.status_code == 200 and done.json() == {"track_cards": on}
+    assert done.status_code == 200 and done.json()["track_cards"] is on
 
 
 async def test_the_usual_card_is_used_for_a_new_expense_unless_one_is_said(world: World) -> None:
@@ -859,7 +859,7 @@ async def test_an_unknown_or_ambiguous_card_is_asked_about_and_nothing_is_logged
     assert "Citi PremierMiles" in result and "don't log the expense or add a card" in result
     assert (await list_ledger(uow(), alice, LedgerQuery())).total == 0
     assert set(await wallets_by_name(uow, alice)) == {
-        "Spending", "Cash", "Citi PremierMiles", "DBS Altitude", "Citi Rewards",
+        "Main account", "Cash", "Citi PremierMiles", "DBS Altitude", "Citi Rewards",
     }  # fmt: skip
 
     ambiguous = await run(uow, alice, "log_expense", {"amount": "30", "paid_with": "citi"})

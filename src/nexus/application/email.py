@@ -26,6 +26,7 @@ from nexus.application import receipts as receipt_cases
 from nexus.application import splits as split_cases
 from nexus.application import transactions as tx_cases
 from nexus.application.budgets import TELEGRAM_SEND
+from nexus.application.fx import RateSource
 from nexus.application.ports import (
     Cipher,
     EmailReader,
@@ -41,7 +42,7 @@ from nexus.application.ports import (
 from nexus.application.splits import owing_person
 from nexus.application.transactions import NewTransaction
 from nexus.application.wallets import create_move, require_wallet
-from nexus.domain.banks import issuer_from_sender
+from nexus.domain.banks import can_pay_you, issuer_from_sender
 from nexus.domain.bookings import BookingDraft
 from nexus.domain.demo import forbid
 from nexus.domain.duplicates import NEAR_DAYS, Candidate, better_name, likely_same
@@ -60,6 +61,7 @@ from nexus.domain.email import (
     FetchedEmail,
     InboundEmail,
     Provider,
+    Screening,
     amount_in_text,
     external_id,
     forwarding_notice,
@@ -403,17 +405,17 @@ def question(
             sender = f" from {draft.merchant}" if draft.merchant else ""
             text = (
                 f"📧 From your email: {money} came in{sender} on {day:%-d %b}. "
-                f"Was this a move from {named['name']}?"
+                f"Was this a transfer from {named['name']}?"
             )
             other = {"label": "Income", "data": f"email:income:{email.id}"}
         else:
             where = f" at {draft.merchant}" if draft.merchant else ""
             text = (
                 f"📧 From your email: {money}{where} on {day:%-d %b}. "
-                f"Was this a move to {named['name']}?"
+                f"Was this a transfer to {named['name']}?"
             )
             other = {"label": "Expense", "data": f"email:log:{email.id}"}
-        return text, [[{"label": "Move", "data": f"email:move:{email.id}"}, other, skip]]
+        return text, [[{"label": "Transfer", "data": f"email:move:{email.id}"}, other, skip]]
     person = owing_person(open_ious, draft.merchant) if draft.received and draft.merchant else None
     if person is None:
         return prompt_text(email, tz), [
@@ -449,6 +451,16 @@ def duplicate_of(email: InboundEmail) -> dict[str, str] | None:
     return found if isinstance(found, dict) else None
 
 
+def _only_from_payers(screening: Screening, sender: str) -> Screening:
+    """Money in is believed only from a bank or a payment service. A shop's "payment
+    confirmation" that the model took for money received means the reader paid, so it is
+    read as spending, with the same extraction a receipt gets."""
+    if not screening.received or can_pay_you(sender):
+        return screening
+    log.info("email read as money in, but the sender is no bank or payment service: spent")
+    return replace(screening, received=False)
+
+
 async def _read_one(
     reader: EmailReader,
     archive: ReceiptStore | None,
@@ -476,6 +488,7 @@ async def _read_one(
             if booking is not None:
                 reason, draft = "a travel booking, no payment found", {}
         else:
+            screening = _only_from_payers(screening, fetched.sender)
             expense = await asyncio.wait_for(
                 reader.extract(fetched, categories=categories, received=screening.received),
                 READ_TIMEOUT.total_seconds(),
@@ -604,6 +617,7 @@ async def sweep(
     *,
     now: datetime,
     review_url: str | None = None,
+    rates: RateSource | None = None,
 ) -> SweepResult:
     """Look for new receipts in one mailbox and ask the user about each."""
     first = connection.synced_until is None
@@ -634,7 +648,7 @@ async def sweep(
         email = told or await _read_one(
             reader, archive, uow, user, connection, fetched, now, categories
         )
-        if saved := await _record(uow, user, connection, email, new=True):
+        if saved := await _record(uow, user, connection, email, new=True, rates=rates):
             waiting.append(saved)
     # Then emails a slow or failing model couldn't read on an earlier sweep, while
     # time is left.
@@ -656,7 +670,7 @@ async def sweep(
                 reader, archive, uow, user, connection, fetched, now, categories, before.reads + 1
             )
             again = replace(before, status=result.status, reason=result.reason, draft=result.draft)
-        if saved := await _record(uow, user, connection, again, new=False):
+        if saved := await _record(uow, user, connection, again, new=False, rates=rates):
             waiting.append(saved)
     async with uow() as tx:
         current = await tx.email.get_connection(user.id, connection.id, for_update=True)
@@ -681,12 +695,18 @@ async def sweep(
 
 
 async def _record(
-    uow: UowFactory, user: User, connection: EmailConnection, email: InboundEmail, *, new: bool
+    uow: UowFactory,
+    user: User,
+    connection: EmailConnection,
+    email: InboundEmail,
+    *,
+    new: bool,
+    rates: RateSource | None = None,
 ) -> InboundEmail | None:
     """Save what a read found; the email if it's a receipt now waiting for the user."""
     if email.status is EmailStatus.PENDING:
         email = await _flag_wallet(uow, user, email)
-        email = await _flag_duplicate(uow, user, email)
+        email = await _flag_duplicate(uow, user, email, rates)
     async with uow() as tx:
         if not new:
             current = await tx.email.get_inbound(user.id, email.id, for_update=True)
@@ -739,7 +759,7 @@ async def _twin_move(
     when: datetime,
 ) -> Transaction | None:
     """A live move already logged that this payment is a second record of: between
-    Spending and ``wallet`` the same way round, the same amount, a day or so apart."""
+    The main account and ``wallet`` the same way round, the same amount, a day or so apart."""
     tz = ZoneInfo(user.timezone)
     margin = timedelta(days=NEAR_DAYS + 1)
     origin, target = (wallet, spending) if received else (spending, wallet)
@@ -789,10 +809,13 @@ async def _flag_wallet(uow: UowFactory, user: User, email: InboundEmail) -> Inbo
     return replace(email, draft=draft)
 
 
-async def _flag_duplicate(uow: UowFactory, user: User, email: InboundEmail) -> InboundEmail:
+async def _flag_duplicate(
+    uow: UowFactory, user: User, email: InboundEmail, rates: RateSource | None = None
+) -> InboundEmail:
     """Note in the draft the ledger entry, or another email still waiting, that looks
     like this same payment (a card alert and the shop's receipt), so the user is
-    asked "same one?" rather than logging it twice."""
+    asked "same one?" rather than logging it twice. With ``rates``, the same payment in
+    two currencies (a shop's euros, the card's home currency) is found too."""
     if "duplicate_of" in (email.draft or {}):
         return email  # a move already logged (see _flag_wallet)
     mine = _candidate(email, user.home_currency)
@@ -800,7 +823,7 @@ async def _flag_duplicate(uow: UowFactory, user: User, email: InboundEmail) -> I
         return email
     tz = ZoneInfo(user.timezone)
     found: dict[str, str] | None = None
-    tx = await duplicate_cases.check(uow(), user, mine)
+    tx = await duplicate_cases.check(uow(), user, mine, rates=rates)
     if tx is not None:
         found = {
             "transaction_id": str(tx.id),
@@ -811,11 +834,17 @@ async def _flag_duplicate(uow: UowFactory, user: User, email: InboundEmail) -> I
             recent = await db.email.list_inbound(
                 user.id, since=mine.occurred_at - timedelta(days=3), limit=200
             )
-        for other in recent:
-            if other.id == email.id or other.status is not EmailStatus.PENDING:
-                continue
-            theirs = _candidate(other, user.home_currency)
-            if theirs is not None and likely_same(mine, theirs, tz):
+        others = [
+            (other, theirs)
+            for other in recent
+            if other.id != email.id and other.status is EmailStatus.PENDING
+            if (theirs := _candidate(other, user.home_currency)) is not None
+        ]
+        value = await duplicate_cases.valuer(
+            rates, user.home_currency, tz, [mine, *(theirs for _, theirs in others)]
+        )
+        for other, theirs in others:
+            if likely_same(mine, theirs, tz, value=value):
                 found = {
                     "email_id": str(other.id),
                     "label": _label(theirs.merchant, theirs.amount, theirs.occurred_at, tz),
@@ -1091,8 +1120,8 @@ async def move_email(
     wallet_id: UUID | None = None,
     amount: Money | None = None,
 ) -> EmailMove:
-    """The user said it was a move: money spent goes from Spending to the wallet the email
-    named (or ``wallet_id``), money received comes from it to Spending. Nothing is spending
+    """The user said it was a move: money spent goes from the main account to the wallet the email
+    named (or ``wallet_id``), money received comes from it to the main account. Nothing is spending
     or income. Marks the email handled, like ``log_email``."""
     async with uow() as tx:
         email = await _pending(tx, user.id, email_id)
@@ -1110,15 +1139,17 @@ async def move_email(
             raise InvalidInput("that email doesn't name a wallet; say which one it was")
         other = await require_wallet(tx.ledger, user.id, chosen)
         if other.kind is WalletKind.SPENDING:
-            raise InvalidInput("pick a wallet other than Spending to move it to or from")
+            raise InvalidInput(
+                "pick a wallet other than the main account to transfer it to or from"
+            )
         spending = await tx.ledger.spending_wallet(user.id)
         if spending is None:  # pragma: no cover - every user is given one
-            raise InvalidInput("there is no Spending wallet")
+            raise InvalidInput("there is no main account")
         occurred = draft.get("occurred_at")
         when = datetime.fromisoformat(occurred) if occurred else email.received_at
         twin = await _twin_move(tx.ledger, user, other, spending, read.received, money, when)
         if twin is not None:
-            raise Conflict("that move is already in your ledger; answer 'same one' instead")
+            raise Conflict("that transfer is already in your ledger; answer 'same one' instead")
         key = external_id(connection.provider, connection.address, email.provider_message_id)
         try:
             moved = await create_move(
@@ -1241,6 +1272,15 @@ async def same_payment(
                 named = better_name(theirs.merchant, draft.merchant)
                 if named != theirs.merchant:
                     kept["merchant"] = named
+                # The same payment in two currencies is kept in the home currency.
+                mine_money = _amount(draft, user.home_currency)
+                theirs_money = _amount(theirs, user.home_currency)
+                if (
+                    mine_money is not None
+                    and theirs_money is not None
+                    and mine_money.currency == user.home_currency != theirs_money.currency
+                ):
+                    kept["amount"], kept["currency"] = str(mine_money.amount), mine_money.currency
                 # A bank's alert names the card; the shop's receipt that is kept may not.
                 if draft.card_last4 and theirs.card_last4 in (None, draft.card_last4):
                     kept["card_last4"] = draft.card_last4
@@ -1267,6 +1307,11 @@ async def same_payment(
     named = better_name(current.counterparty, draft.merchant)
     if named != current.counterparty:
         changes["counterparty"] = named
+    heard = _amount(draft, user.home_currency)
+    if heard is not None and heard.currency == user.home_currency != current.amount.currency:
+        # The entry is in a foreign currency and the email is in the home currency (the
+        # card's own conversion): the entry is kept in the home currency.
+        changes["amount"] = heard
     if (
         current.paid_with_wallet_id is None
         and current.direction is Direction.OUT
@@ -1279,9 +1324,18 @@ async def same_payment(
         if card is not None:
             changes["paid_with_wallet_id"] = card
     if changes:
-        current = await tx_cases.edit_transaction(
-            uow(), user.id, current.id, tx_cases.TransactionChanges(**changes)
-        )
+        try:
+            current = await tx_cases.edit_transaction(
+                uow(), user.id, current.id, tx_cases.TransactionChanges(**changes)
+            )
+        except Conflict:
+            # A split bill can't change its currency: keep the entry as it is, but still
+            # take the better name.
+            changes.pop("amount", None)
+            if changes:
+                current = await tx_cases.edit_transaction(
+                    uow(), user.id, current.id, tx_cases.TransactionChanges(**changes)
+                )
     receipt = (email.draft or {}).get("receipt_id")
     async with uow() as tx:
         if receipt and await tx.ledger.live_receipt(user.id, current.id) is None:
@@ -1370,5 +1424,5 @@ def describe(email: InboundEmail, tz: ZoneInfo) -> str:
     named = wallet_flag(email)
     if named:
         side = "from" if draft.received else "to"
-        same += f"; may be a move {side} {named['name']} (action move)"
+        same += f"; may be a transfer {side} {named['name']} (action move)"
     return f"{when:%a %-d %b %H:%M}, {what} (email: {short(email.subject, 60)}){same}"

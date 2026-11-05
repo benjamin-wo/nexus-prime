@@ -4,17 +4,21 @@ remembering a pair the user says is two payments.
 Merging never happens on a guess: the user taps Merge (or "Same one" on an email).
 """
 
+import logging
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
+from nexus.application import fx
 from nexus.application import transactions as tx_cases
+from nexus.application.fx import RateSource
 from nexus.application.ports import LedgerQuery, UnitOfWork
 from nexus.domain.duplicates import (
     NEAR_DAYS,
     Candidate,
+    Valuer,
     better_name,
     candidate,
     likely_same,
@@ -22,6 +26,9 @@ from nexus.domain.duplicates import (
 )
 from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.ledger import Transaction, User, UserId
+from nexus.domain.money import Money
+
+log = logging.getLogger(__name__)
 
 type UowFactory = Callable[[], UnitOfWork]
 
@@ -44,6 +51,28 @@ async def _pool(
     return page.items
 
 
+async def valuer(
+    rates: RateSource | None, home: str, tz: ZoneInfo, candidates: Iterable[Candidate]
+) -> Valuer | None:
+    """What lets ``likely_same`` compare amounts in two currencies: each one converted to
+    the home currency at its own day's rate. None when there is nothing to compare across
+    currencies, no rates to ask, or the rates can't be had (then no pair matches)."""
+    items = list(candidates)
+    if rates is None or len({c.amount.currency for c in items}) < 2:
+        return None
+    wanted = {(c.amount.currency, c.occurred_at.astimezone(tz).date()) for c in items}
+    try:
+        found = await fx.rates_for(rates, home, wanted)
+    except Exception:
+        log.warning("could not look up rates to compare amounts in two currencies", exc_info=True)
+        return None
+
+    def value(amount: Money, day: date) -> Money | None:
+        return fx.convert(amount, day, home, found).home
+
+    return value
+
+
 def _closest(
     item: Candidate,
     pool: Iterable[Transaction],
@@ -51,11 +80,12 @@ def _closest(
     skip: Callable[[Transaction], bool],
     *,
     any_source: bool = False,
+    value: Valuer | None = None,
 ) -> Transaction | None:
     found = [
         t
         for t in pool
-        if not skip(t) and likely_same(item, candidate(t), tz, any_source=any_source)
+        if not skip(t) and likely_same(item, candidate(t), tz, any_source=any_source, value=value)
     ]
     return min(found, key=lambda t: abs(t.occurred_at - item.occurred_at), default=None)
 
@@ -102,14 +132,22 @@ async def find_pairs(uow: UowFactory, user: User, start: datetime, end: datetime
 
 
 async def check(
-    uow: UnitOfWork, user: User, item: Candidate, *, any_source: bool = False
+    uow: UnitOfWork,
+    user: User,
+    item: Candidate,
+    *,
+    any_source: bool = False,
+    rates: RateSource | None = None,
 ) -> Transaction | None:
-    """The live transaction a payment about to be logged most likely duplicates."""
+    """The live transaction a payment about to be logged most likely duplicates. With
+    ``rates``, an entry in another currency can be the same payment too (see
+    ``likely_same``); without them only the same currency is compared."""
     tz = ZoneInfo(user.timezone)
     margin = timedelta(days=NEAR_DAYS + 1)
     async with uow:
         pool = await _pool(uow, user.id, item.occurred_at - margin, item.occurred_at + margin)
-    return _closest(item, pool, tz, lambda _: False, any_source=any_source)
+    value = await valuer(rates, user.home_currency, tz, [item, *(candidate(t) for t in pool)])
+    return _closest(item, pool, tz, lambda _: False, any_source=any_source, value=value)
 
 
 async def dismiss(uow: UnitOfWork, user_id: UserId, a: UUID, b: UUID, *, now: datetime) -> None:

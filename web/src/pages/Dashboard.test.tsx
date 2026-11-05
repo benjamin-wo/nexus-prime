@@ -49,10 +49,58 @@ function serve(over: { spending?: Spending; budgets?: unknown[] } = {}) {
   });
 }
 
-const renderOverview = () => renderWithProviders(<Dashboard me={me} onLog={() => {}} onAsk={() => {}} />);
+const renderOverview = () => renderWithProviders(<Dashboard me={me} onAsk={() => {}} />);
+
+const overall = { id: "b", category_id: null, name: "Overall", limit: sgd("2000.00"), spent: sgd("700.00"), remaining: sgd("1300.00"), percent: 35, unconverted: [] };
+
+describe("the headline", () => {
+  const headline = () => document.querySelector(".overview-headline");
+
+  it("says what is spent and what is left of the overall budget", async () => {
+    serve({ budgets: [overall] });
+    renderOverview();
+    await waitFor(() => expect(headline()?.textContent).toMatch(/^SGD.700\.00 spent · SGD.1,300\.00 left of SGD.2,000\.00$/));
+    expect(screen.queryByRole("link", { name: "Set a budget" })).toBeNull();
+    // The headline leads: it comes before the tiles.
+    expect(headline()!.compareDocumentPosition(document.querySelector(".tiles")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("says how far over the budget you are", async () => {
+    serve({ budgets: [{ ...overall, spent: sgd("2140.00"), remaining: sgd("-140.00"), percent: 107 }] });
+    renderOverview();
+    await waitFor(() => expect(headline()?.textContent).toMatch(/^SGD.2,140\.00 spent · SGD.140\.00 over your SGD.2,000\.00 budget$/));
+  });
+
+  it("with only a category budget says what is spent, and offers to set an overall one", async () => {
+    serve({ budgets: [{ ...overall, id: "c", category_id: "food", name: "Dining Out" }] });
+    renderOverview();
+    await waitFor(() => expect(headline()?.textContent).toMatch(/^SGD.700\.00 spent this month/));
+    expect(headline()?.textContent).not.toMatch(/left of/);
+    expect(await screen.findByRole("link", { name: "Set a budget" })).toBeInTheDocument();
+  });
+
+  it("says only what is spent, with a small Set a budget link, without a budget", async () => {
+    serve();
+    renderOverview();
+    await waitFor(() => expect(headline()?.textContent).toMatch(/^SGD.700\.00 spent this month/));
+    expect(headline()?.textContent).not.toMatch(/left/);
+    expect(await screen.findByRole("link", { name: "Set a budget" })).toHaveAttribute("href", "/accounting/budgets");
+    // The big "Set a monthly budget" card is gone, and so is the Log expense button.
+    expect(screen.queryByRole("region", { name: "From Nexus" })).toBeNull();
+    expect(screen.queryByText(/Set a monthly budget/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Log expense" })).toBeNull();
+  });
+
+  it("keeps the tiles under it, as quiet ones", async () => {
+    serve({ budgets: [overall] });
+    renderOverview();
+    await screen.findByLabelText("Received");
+    expect(document.querySelectorAll(".tiles.tiles-quiet > .tile").length).toBeGreaterThanOrEqual(3);
+  });
+});
 
 describe("the spending chart", () => {
-  it("is on the Accounting overview, near Where it went, with six months and this month so far last", async () => {
+  it("is on the Money overview, near Where it went, with six months and this month so far last", async () => {
     serve();
     renderOverview();
     const card = await screen.findByRole("region", { name: "Spending by month" });
@@ -112,7 +160,7 @@ describe("SpendingChart", () => {
   });
 });
 
-describe("the Put away tile", () => {
+describe("the Saved tile", () => {
   const withPutAway: Summary = { ...summary, put_away: sgd("800.00") };
 
   function serveWallets(wallets: { id: string; name: string; kind: string; match_words: string[] }[]) {
@@ -125,7 +173,7 @@ describe("the Put away tile", () => {
       "GET /wallets": () => wallets,
     });
   }
-  const spendingWallet = { id: "w1", name: "Spending", kind: "spending", match_words: [] };
+  const spendingWallet = { id: "w1", name: "Main account", kind: "spending", match_words: [] };
   const cash = { id: "w2", name: "Cash", kind: "cash", match_words: [] };
 
   it("does not come back because every user has a Cash wallet", async () => {
@@ -133,12 +181,12 @@ describe("the Put away tile", () => {
     renderOverview();
     await screen.findByRole("region", { name: "Spending by month" });
     await waitFor(() => expect(screen.getByLabelText("Received")).toBeInTheDocument());
-    expect(screen.queryByLabelText("Put away")).toBeNull();
+    expect(screen.queryByLabelText("Saved")).toBeNull();
   });
 
   it("shows once there is a wallet to put money in", async () => {
     serveWallets([spendingWallet, cash, { id: "w3", name: "Savings", kind: "savings", match_words: [] }]);
     renderOverview();
-    expect(await screen.findByLabelText("Put away")).toHaveTextContent("800.00");
+    expect(await screen.findByLabelText("Saved")).toHaveTextContent("800.00");
   });
 });

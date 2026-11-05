@@ -8,13 +8,13 @@ from collections.abc import Callable
 from collections.abc import Mapping as MappingType
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Self
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from starlette.datastructures import UploadFile
 
 from nexus.agent.graph import thread_id
@@ -212,7 +212,7 @@ class TransactionOut(Model):
     from_wallet: WalletRefOut | None = None
     to_wallet: WalletRefOut | None = None
     received: MoneyOut | None = None  # a move only: what arrived, when that isn't ``amount``
-    # Money out only: the wallet (a card, Spending, Cash) it was paid with; null for none.
+    # Money out only: the wallet (a card, the main account, Cash) it was paid with; null for none.
     paid_with: PaidWithOut | None = None
 
 
@@ -325,6 +325,9 @@ class UserOut(Model):
     timezone_set_at: datetime | None = None
     # Their Telegram name, kept at sign-in; None for someone who hasn't one.
     display_name: str | None = None
+    # Whether a Telegram chat is linked, so the bot can message them (Home's "Get started"
+    # guide shows it). A demo has none.
+    telegram_linked: bool = False
 
 
 class DemoInfoOut(Model):
@@ -335,6 +338,16 @@ class DemoInfoOut(Model):
 class PreferencesOut(Model):
     # Whether the user keeps track of which card paid (off: simple mode).
     track_cards: bool
+    # Whether Invest and Travel show in the menu. Null: not decided (hidden; it turns on by
+    # itself the first time they use it in chat). False: they turned it off.
+    show_invest: bool | None
+    show_travel: bool | None
+
+
+def preferences_out(user: User) -> PreferencesOut:
+    return PreferencesOut(
+        track_cards=user.track_cards, show_invest=user.show_invest, show_travel=user.show_travel
+    )
 
 
 class MeOut(Model):
@@ -363,8 +376,9 @@ def me_out(
             timezone_source=user.timezone_source.value,
             timezone_set_at=user.timezone_set_at,
             display_name=user.display_name,
+            telegram_linked=user.telegram_chat_id is not None,
         ),
-        preferences=PreferencesOut(track_cards=user.track_cards),
+        preferences=preferences_out(user),
         csrf_token=csrf,
         joined_trip=joined_trip,
         demo=(
@@ -922,7 +936,7 @@ class MoveIn(Model):
     amount: str = Field(max_length=32)
     currency: str | None = Field(None, max_length=3)  # default: the home currency
     to_wallet_id: UUID
-    from_wallet_id: UUID | None = None  # default: Spending
+    from_wallet_id: UUID | None = None  # default: the main account
     occurred_at: str | None = None  # a date or a full timestamp; default: now
     received_amount: str | None = Field(None, max_length=32)  # what arrived, if not ``amount``
     received_currency: str | None = Field(None, max_length=3)  # default: ``currency``
@@ -960,8 +974,8 @@ class MoveToIn(Model):
 async def mark_transaction_as_move(
     transaction_id: UUID, body: MoveToIn, auth: Auth, web: Runtime
 ) -> TransactionOut:
-    """ "This was a move": money out becomes a move from Spending to the wallet, money in a
-    move from the wallet to Spending. The category goes; undo brings it back."""
+    """ "This was a move": money out becomes a move from the main account to the wallet, money in a
+    move from the wallet to the main account. The category goes; undo brings it back."""
     tx = await wallet_cases.mark_as_move(web.uow(), auth.user.id, transaction_id, body.wallet_id)
     return await _out(web, auth.user, tx)
 
@@ -1196,7 +1210,7 @@ class SummaryOut(Model):
     # Over the same period, in the home currency (see ``application/wallet_figures.py``).
     put_away: MoneyOut  # net moved into savings and investment wallets
     saving_rate: float | None  # put_away / money in (0.24 is 24%); null without money in
-    total_out: MoneyOut  # spending, plus moved from Spending to anything but a card
+    total_out: MoneyOut  # spending, plus moved from the main account to anything but a card
 
 
 @router.get("/summary")
@@ -1400,7 +1414,7 @@ def wallet_saved(w: Wallet, user: User, longer: bool) -> WalletSavedOut:
 
 @router.get("/wallets")
 async def wallets(auth: Auth, web: Runtime) -> list[WalletOut]:
-    """The user's wallets, Spending first."""
+    """The user's wallets, The main account first."""
     usual = auth.user.usual_card_wallet_id
     return [wallet_out(w, usual) for w in await wallet_cases.list_wallets(web.uow(), auth.user.id)]
 
@@ -1696,7 +1710,7 @@ class PreviewRowOut(Model):
     problem: str | None
     matches: MatchOut | None
     # Proposed as a move because the description names a wallet: money out goes from
-    # Spending to ``move_to``; money in comes from ``move_from`` to Spending.
+    # the main account to ``move_to``; money in comes from ``move_from`` to the main account.
     move_to: WalletOut | None = None
     move_from: WalletOut | None = None
 
@@ -2025,7 +2039,7 @@ class MonthPlanOut(Model):
     """Left to spend this month: income - total_out - still_due_out (home currency)."""
 
     currency: str
-    total_out: MoneyOut  # spent so far, plus moved from Spending to anything but a card
+    total_out: MoneyOut  # spent so far, plus moved from the main account to anything but a card
     left_to_spend: MoneyOut  # can be negative
     still_due_out: MoneyOut  # bills, subscriptions and trip set-asides still ahead this month
     income: MoneyOut  # received so far, plus salary still due before month end
@@ -2602,16 +2616,35 @@ async def set_voice(body: VoiceIn, auth: Auth, web: Runtime) -> VoiceOut:
 
 
 class PreferencesIn(Model):
-    track_cards: bool
+    track_cards: bool | None = None
+    show_invest: bool | None = None
+    show_travel: bool | None = None
+
+    @model_validator(mode="after")
+    def _only_what_is_sent(self) -> Self:
+        """Send at least one, and not as null: only the fields sent are changed."""
+        sent = self.model_fields_set
+        if not sent or any(getattr(self, name) is None for name in sent):
+            raise ValueError("send at least one preference, each true or false")
+        return self
 
 
 @router.put("/settings/preferences")
 async def set_preferences(body: PreferencesIn, auth: Auth, web: Runtime) -> PreferencesOut:
-    """Whether to keep track of which card paid. Off, the usual card isn't applied to new
-    expenses, emails and imports don't name a card, and the assistant doesn't ask; what is
-    stored stays, and turning it on again brings it back. Allowed for a demo."""
-    on = await user_cases.set_track_cards(web.uow(), auth.user.id, body.track_cards)
-    return PreferencesOut(track_cards=on)
+    """Change the preferences sent (only those). ``track_cards``: whether to keep track of
+    which card paid; off, the usual card isn't applied to new expenses, emails and imports
+    don't name a card, and the assistant doesn't ask; what is stored stays, and turning it on
+    again brings it back. ``show_invest`` and ``show_travel``: whether Invest and Travel show
+    in the menu (the pages and chat work either way); setting one, either way, is the user's
+    choice, so a false is never turned on by itself. Allowed for a demo. Returns them all."""
+    user = await user_cases.set_preferences(
+        web.uow(),
+        auth.user.id,
+        track_cards=body.track_cards,
+        show_invest=body.show_invest,
+        show_travel=body.show_travel,
+    )
+    return preferences_out(user)
 
 
 class NotificationOut(Model):

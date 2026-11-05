@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 
-import type { Booking, Budget, Money, Portfolio, Setup, TripDetail } from "../api";
+import type { Booking, Budget, Money, Portfolio, TripDetail } from "../api";
 import { type Pace } from "../brief";
 import { Block } from "../components/Block";
 import { Icon } from "../components/Icon";
@@ -9,8 +9,8 @@ import { formatChange, formatMoney, formatPercent, formatShortDate } from "../fo
 import { daySpot, spotsOf } from "./TripArrange";
 import { landingOn, landsOnly, leavingOn, todayIso } from "./TripBits";
 
-/* Home's small cards: the glance column, the trip card for a trip that is on, and the
- * setup checklist. Each is given what it shows, so Home owns the queries. */
+/* Home's small cards: the glance column and the trip card for a trip that is on. Each is
+ * given what it shows, so Home owns the queries. */
 
 /** This month's spending and how it is going, against the overall budget or else last
  * month by this date. */
@@ -247,75 +247,6 @@ export function TripMode({ detail, timezone, now }: { detail: TripDetail; timezo
           </li>
         )}
       </ul>
-    </Block>
-  );
-}
-
-/** Done: a tick. To do: an empty ring. Both are named in words for a screen reader. */
-function Tick({ done }: { done: boolean }) {
-  return (
-    <span className={`row-icon${done ? " in" : ""}`} aria-hidden="true">
-      {done ? <Icon name="check" size={18} /> : <span className="ring" />}
-    </span>
-  );
-}
-
-/** The few things that make Nexus useful, until they are done or the person hides the list.
- * Each step opens the page where it is done, or asks Nexus for help with it (each `ask` is a
- * plain request with no values of its own). */
-export function SetupCard({
-  setup,
-  busy,
-  error,
-  onHide,
-  onAsk,
-}: {
-  setup: Setup;
-  busy: boolean;
-  error: string | null;
-  onHide: () => void;
-  onAsk: (text: string) => void;
-}) {
-  const left = setup.items.filter((i) => !i.done).length;
-  return (
-    <Block
-      id="setup"
-      title="Get set up"
-      action={
-        <button type="button" className="btn btn-small" disabled={busy} onClick={onHide}>
-          Hide
-        </button>
-      }
-    >
-      <p className="caption setup-note">
-        {left === 1 ? "One step left." : `${left} steps left.`}
-      </p>
-      <ul className="rows" aria-label="Setup steps">
-        {setup.items.map((item) => (
-          <li key={item.key} className={`row setup-row${item.done ? " is-done" : ""}`}>
-            <Tick done={item.done} />
-            <span className="row-main">
-              <span className="wrap">{item.label}</span>
-              {item.done && <span className="caption">Done</span>}
-            </span>
-            {!item.done && (
-              <span className="setup-actions">
-                <Link className="btn btn-soft btn-small" to={item.link}>
-                  Set up<span className="sr-only"> {item.label}</span>
-                </Link>
-                <button type="button" className="btn btn-ghost btn-small" onClick={() => onAsk(item.ask)}>
-                  Ask Nexus<span className="sr-only"> to {item.label.toLowerCase()}</span>
-                </button>
-              </span>
-            )}
-          </li>
-        ))}
-      </ul>
-      {error && (
-        <p className="error-text" role="alert">
-          {error}
-        </p>
-      )}
     </Block>
   );
 }

@@ -107,7 +107,7 @@ describe("Notifications page", () => {
 
   it("explains the rules in a line, and goes back to Settings", async () => {
     await open(rows);
-    expect(screen.getByText(/Urgent ones always come\. The rest respect your quiet hours and daily limit/)).toBeInTheDocument();
+    expect(screen.getByText(/Urgent ones always come; the rest wait for your quiet hours/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Back to Settings" })).toHaveAttribute("href", "/settings");
   });
 

@@ -17,7 +17,17 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
 from nexus.agent import kernel
-from nexus.agent.graph import BUTTONS, IMAGE, RECEIPT, REF, SENT_AT, WROTE, strip_ids, thread_id
+from nexus.agent.graph import (
+    BUTTONS,
+    IMAGE,
+    MENU_ADDED,
+    RECEIPT,
+    REF,
+    SENT_AT,
+    WROTE,
+    strip_ids,
+    thread_id,
+)
 from nexus.agent.holdings_reader import HoldingsReader, ScreenshotHoldings
 from nexus.agent.image_look import (
     MAX_TEXT,
@@ -62,7 +72,7 @@ from nexus.domain.chat import CHAT_KEEP, ChatLine, Speaker, channel_of, clip
 from nexus.domain.departments import RunStatus
 from nexus.domain.errors import DuplicateSource, InvalidInput, NexusError, NotFound
 from nexus.domain.investments import Position, clean_quantity, clean_symbol
-from nexus.domain.ledger import Direction, Transaction, UserId
+from nexus.domain.ledger import Direction, MenuSection, Transaction, UserId
 from nexus.domain.money import Money
 from nexus.domain.places import quoted
 from nexus.domain.private import hide_card_numbers
@@ -155,6 +165,30 @@ def _noted(replies: list[Reply], hid: bool) -> list[Reply]:
         return [Reply(CARD_NOTE)]
     last = replies[-1]
     return [*replies[:-1], replace(last, text=f"{last.text}\n\n{CARD_NOTE}")]
+
+
+# Added to the reply, once, when chat used Invest or Travel for a user who had neither decided
+# nor seen it in the menu: it is shown from now on.
+MENU_NOTES = {
+    MenuSection.INVEST: "I've added Invest to your menu.",
+    MenuSection.TRAVEL: "I've added Travel to your menu.",
+}
+
+
+def _menu_added(new: list[BaseMessage]) -> list[str]:
+    """The note for each menu section this turn's tools turned on, in the order they were."""
+    sections: list[MenuSection] = []
+    for m in new:
+        if isinstance(m, ToolMessage) and (value := m.additional_kwargs.get(MENU_ADDED)):
+            section = MenuSection(value)
+            if section not in sections:
+                sections.append(section)
+    return [MENU_NOTES[s] for s in sections]
+
+
+def _with_notes(text: str, notes: list[str]) -> str:
+    """``text`` with the menu notes as a short paragraph at its end."""
+    return f"{text}\n\n" + "\n".join(notes) if notes else text
 
 
 def _log_turn(seconds: float, new: list[BaseMessage], timer: TurnTimer) -> None:
@@ -326,10 +360,11 @@ class AgentService:
         _log_turn(clock.monotonic() - started, new, timer)
         _record_turn(clock.monotonic() - started, new, timer)
         pending = await self._pending(actor)
+        notes = _menu_added(new)
         if pending is not None:
             pid, summary = pending
             buttons = [[Button("Confirm", f"hitl:{pid}:y"), Button("Cancel", f"hitl:{pid}:n")]]
-            return [Reply(summary, buttons)]
+            return [Reply(_with_notes(summary, notes), buttons)]
         self._condense_soon(actor)
         wrote = any(
             isinstance(m, AIMessage | ToolMessage) and m.additional_kwargs.get(WROTE) for m in new
@@ -345,7 +380,7 @@ class AgentService:
             for m in sources
             for row in m.additional_kwargs.get(BUTTONS) or []
         ]
-        return [Reply(text or "Done.", extra + ([[UNDO]] if wrote else []))]
+        return [Reply(_with_notes(text or "Done.", notes), extra + ([[UNDO]] if wrote else []))]
 
     def _condense_soon(self, actor: UserId) -> None:
         """After a turn, condense the user's thread in the background: the summary is a
@@ -1169,8 +1204,8 @@ class AgentService:
                 tx = moved.transaction
                 side = "from" if tx.to_wallet_id != moved.wallet.id else "to"
                 return Reply(
-                    f"Logged a move of {tx.amount} {side} {moved.wallet.name}. It isn't counted "
-                    "as spending or income.",
+                    f"Logged a transfer of {tx.amount} {side} {moved.wallet.name}. It isn't "
+                    "counted as spending or income.",
                     [[UNDO]],
                 )
             if action == "same":

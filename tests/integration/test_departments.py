@@ -272,7 +272,7 @@ async def test_what_are_you_working_on(uow: UowFactory) -> None:
     user = await person(uow)
     bot = build(uow, scripted())  # no model turn: the kernel answers
     quiet = only(await bot.handle_text(user.id, "what are you working on?", "m1"))
-    assert quiet.text == "Nothing's running right now. Accounting work happens as you ask."
+    assert quiet.text == "Nothing's running right now. Money work happens as you ask."
     registry = lab(gather, decide)
     run = await start(uow, registry, user)
     busy = only(await bot.handle_text(user.id, "anything running?", "m2"))

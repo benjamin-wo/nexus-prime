@@ -12,7 +12,6 @@ import {
   type Money,
   type Portfolio,
   type Run,
-  type Setup,
   type Spending,
   type Summary,
   type Today,
@@ -20,12 +19,13 @@ import {
 } from "../api";
 import { brief, notableMove, pace, standing, suggestions } from "../brief";
 import { Block } from "../components/Block";
+import { GetStarted } from "../components/GetStarted";
 import { Icon, departmentIcon } from "../components/Icon";
 import { DEPARTMENTS } from "../departments";
 import { formatMoney } from "../format";
 import { livePolling } from "../prices";
 import { AccentTitle, CountUp } from "../motion";
-import { MoneyGlance, PortfolioGlance, SetupCard, TripGlance, TripMode } from "./HomeCards";
+import { MoneyGlance, PortfolioGlance, TripGlance, TripMode } from "./HomeCards";
 
 function greeting(timezone: string): string {
   const hour = Number(
@@ -107,14 +107,12 @@ function Hero({
   spent,
   stands,
   parts,
-  onLog,
 }: {
   date: string;
   greeting: string;
   spent?: Money;
   stands: ReturnType<typeof standing>;
   parts: ReturnType<typeof brief>;
-  onLog: () => void;
 }) {
   return (
     <section className="hero" aria-label="Nexus">
@@ -126,9 +124,6 @@ function Hero({
           </h1>
         </div>
         <div className="hero-actions">
-          <button type="button" className="round-btn" aria-label="Log expense" title="Log expense" onClick={onLog}>
-            <Icon name="plus" />
-          </button>
           <Link className="round-btn" to="/settings/notifications" aria-label="Notifications" title="Notifications">
             <Icon name="bell" />
           </Link>
@@ -307,16 +302,14 @@ function NeedsYou({
 }
 
 /** The front desk, as a Today page: Nexus's brief, what needs you, a box to ask anything, the
- * setup checklist while it's unfinished, and at a glance the month's money, the portfolio and
+ * first-steps guide while it's unfinished, and at a glance the month's money, the portfolio and
  * the next trip. While a trip is on, its day leads. */
 export function Home({
   me,
   onAsk,
-  onLog,
 }: {
   me: Me;
   onAsk: (text: string) => void;
-  onLog: () => void;
 }) {
   const client = useQueryClient();
   const feed = useQuery({
@@ -362,12 +355,6 @@ export function Home({
     queryKey: ["next-trip"],
     queryFn: () => api<TripDetail | null>("/travel/next"),
   });
-  const setup = useQuery({
-    queryKey: ["setup"],
-    queryFn: () => api<Setup>("/setup"),
-  }).data;
-  const [hiding, setHiding] = useState(false);
-  const [hideError, setHideError] = useState<string | null>(null);
 
   const overall = budgets?.find((b) => b.category_id === null);
   const spent = summary?.totals.find((t) => t.direction === "out")?.total;
@@ -393,23 +380,9 @@ export function Home({
       void client.invalidateQueries({ queryKey: [key] });
   }
 
-  async function hide() {
-    setHiding(true);
-    setHideError(null);
-    try {
-      await api("/setup/dismiss", { method: "POST" });
-      await client.invalidateQueries({ queryKey: ["setup"] });
-    } catch (e) {
-      setHideError(e instanceof Error ? e.message : "Couldn't hide that");
-    } finally {
-      setHiding(false);
-    }
-  }
-
   const going = (runs.data ?? []).slice(0, 3);
   const detail = trip.data;
   const tripOn = detail && detail.trip.status === "ongoing" ? detail : null;
-  const setUp = setup && !setup.dismissed && !setup.items.every((i) => i.done) ? setup : null;
   return (
     <>
       <Hero
@@ -418,13 +391,13 @@ export function Home({
         spent={spent}
         stands={standing({ spent, overall, lastMonthToDate: spending?.last_month_to_date })}
         parts={parts}
-        onLog={onLog}
       />
 
       {tripOn && <TripMode detail={tripOn} timezone={me.user.timezone} />}
 
       <div className="today">
         <div className="stack">
+          <GetStarted me={me} />
           <NeedsYou feed={feed} onSettled={settled} />
           {going.length > 0 && (
             <Block id="working-on" title="Working on" className="working">
@@ -436,7 +409,6 @@ export function Home({
             </Block>
           )}
           <AskPanel chips={suggestions({ trip: detail, holdings: held })} onAsk={onAsk} />
-          {setUp && <SetupCard setup={setUp} busy={hiding} error={hideError} onHide={() => void hide()} onAsk={onAsk} />}
         </div>
         <div className="stack">
           <MoneyGlance

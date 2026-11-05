@@ -184,7 +184,7 @@ _PLAIN = (
     r"\bby me\b",
     r"\bper (?:your|their) (?:split )?habit\b",
     r"\brecorded only\b",
-    r"\bnothing (?:was )?moved\b",
+    r"\bnothing (?:was )?(?:moved|transferred)\b",
     r"\b\d{4,}\.\d{2}\b",
 )
 
@@ -1328,7 +1328,7 @@ CASES: tuple[Case, ...] = (
         _t("from now on file golden village as activities"),
         checks=(RuleIs("golden village", "Activities"),),
     ),
-    # --- wallets and moves -----------------------------------------------------------
+    # --- wallets and transfers -----------------------------------------------------------
     Case(
         "wallet-move-ibkr",
         "wallets",
@@ -1369,7 +1369,7 @@ CASES: tuple[Case, ...] = (
         _t("took 300 out of savings"),
         confirms=True,
         forbid=("log_expense", "record_income"),
-        checks=(Moved("300", "Spending", from_wallet="Savings"), NotSpent("300")),
+        checks=(Moved("300", "Main account", from_wallet="Savings"), NotSpent("300")),
     ),
     Case(
         "wallet-to-wallet",

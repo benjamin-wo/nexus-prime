@@ -201,6 +201,7 @@ def build_handlers(
                             connection,
                             now=clock(),
                             review_url=email.review_url,
+                            rates=rates,
                         )
             except Exception:
                 # One mailbox's failure must not stop the others; the next sweep retries.

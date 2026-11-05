@@ -149,8 +149,7 @@ export function NotificationsPage({ me }: { me: Me }) {
           <BackLink to="/settings">Back to Settings</BackLink>
           <h1>Notifications</h1>
           <p className="muted">
-            Urgent ones always come. The rest respect your quiet hours and daily limit, and what's left is gathered into
-            one message.
+            Urgent ones always come; the rest wait for your quiet hours.
           </p>
         </div>
       </div>

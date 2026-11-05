@@ -29,7 +29,7 @@ MAX_DAYS = 62  # about two months per request
 
 class ExpectedKind(StrEnum):
     BILL = "bill"
-    MOVE = "move"  # a scheduled move to one of the user's wallets: out of Spending
+    MOVE = "move"  # a scheduled move to one of the user's wallets: out of the main account
     SUBSCRIPTION = "subscription"
     SALARY = "salary"
     TRIP = "trip"  # money set aside for a trip, on each payday before it
@@ -215,7 +215,7 @@ async def _expected(
         trips = [t for t in await tx.trips.list_trips(user.id) if t.set_aside is not None]
 
     for bill in bills:
-        # A scheduled move is still money out of Spending, so it is counted like a bill.
+        # A scheduled move is still money out of the main account, so it is counted like a bill.
         wallet = wallets.get(bill.wallet_id) if bill.wallet_id else None
         kind = ExpectedKind.MOVE if wallet else ExpectedKind.BILL
         name = f"{bill.name} → {wallet.name}" if wallet else bill.name

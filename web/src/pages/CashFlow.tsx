@@ -135,8 +135,7 @@ export function CashFlowPage() {
             <AccentTitle text="Cash flow" />
           </h1>
           <p className="muted">
-            What came in and went out each day, and what bills, subscriptions and payday will bring. Movement only, not
-            a balance.
+            Money in and out by day, plus what's coming.
           </p>
         </div>
       </div>

@@ -217,13 +217,13 @@ async def notify(
 
 
 def _move_line(t: Transaction, wallets: dict[UUID, Wallet]) -> str:
-    """ "Moved S$800 to Investments"; "from X to Y" unless it left the Spending wallet."""
+    """ "Transferred S$800 to Investments"; "from X to Y" unless it left the main account."""
     origin = wallets.get(t.from_wallet_id) if t.from_wallet_id else None
     target = wallets.get(t.to_wallet_id) if t.to_wallet_id else None
     to = target.name if target else "another wallet"
     if origin is None or origin.kind is WalletKind.SPENDING:
-        return f"Moved {t.amount} to {to}"
-    return f"Moved {t.amount} from {origin.name} to {to}"
+        return f"Transferred {t.amount} to {to}"
+    return f"Transferred {t.amount} from {origin.name} to {to}"
 
 
 def _line(t: Transaction, names: dict[UUID, str], wallets: dict[UUID, Wallet]) -> str:
@@ -295,7 +295,7 @@ async def _summary(
         lines.append(f"You received {received} ({_count(received_count)}).")
     lines += [f"{_move_line(t, wallets)}." for t in moves[:MOVE_LINES]]
     if len(moves) > MOVE_LINES:
-        lines.append(f"and {len(moves) - MOVE_LINES} more moves between your wallets.")
+        lines.append(f"and {len(moves) - MOVE_LINES} more transfers between your wallets.")
     if unconverted:
         shown = ", ".join(str(m) for m in unconverted[:3])
         lines.append(f"Also {shown}, which I couldn't convert to {home}.")

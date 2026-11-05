@@ -14,7 +14,7 @@ const me: Me = {
 
 const wallet = (over: Partial<Wallet>): Wallet => ({ id: "w", name: "Wallet", kind: "card", match_words: [], ...over });
 const wallets: Wallet[] = [
-  wallet({ id: "w-spending", name: "Spending", kind: "spending" }),
+  wallet({ id: "w-spending", name: "Main account", kind: "spending" }),
   wallet({ id: "w-invest", name: "Investments", kind: "investment" }),
   wallet({ id: "w-savings", name: "Savings", kind: "savings" }),
   wallet({ id: "w-citi", name: "Citi PremierMiles", last4: "4321" }),
@@ -57,6 +57,9 @@ function setup(route = "/", who: Me = me) {
   return { asked };
 }
 
+/** Opens the filter sheet, where Paid with lives. */
+const openFilters = () => userEvent.click(screen.getByRole("button", { name: /^Filter/ }));
+
 describe("Paid with in the Ledger", () => {
   it("names the card under the merchant, only where one is set", async () => {
     setup();
@@ -69,12 +72,13 @@ describe("Paid with in the Ledger", () => {
   it("offers cards, Spending and Cash and Not set, never an investment or savings wallet", async () => {
     setup();
     await screen.findByText("Corner Cafe");
+    await openFilters();
     const select = screen.getByRole("combobox", { name: "Paid with" });
     await waitFor(() =>
       expect(Array.from((select as HTMLSelectElement).options).map((o) => o.text)).toEqual([
-        "Paid with: any",
+        "Any",
         "Citi PremierMiles ·· 4321",
-        "Spending",
+        "Main account",
         "Cash",
         "Not set",
       ]),
@@ -86,6 +90,7 @@ describe("Paid with in the Ledger", () => {
     await screen.findByText("Corner Cafe");
     expect(asked().at(-1)?.get("paid_with")).toBeNull();
 
+    await openFilters();
     await userEvent.selectOptions(screen.getByRole("combobox", { name: "Paid with" }), "w-citi");
     await waitFor(() => expect(asked().at(-1)?.get("paid_with")).toBe("w-citi"));
     const clear = await screen.findByRole("button", { name: "Show every card, not just Citi PremierMiles ·· 4321" });
@@ -98,9 +103,37 @@ describe("Paid with in the Ledger", () => {
   it("filters to entries with no card from the Not set option", async () => {
     const { asked } = setup();
     await screen.findByText("Corner Cafe");
+    await openFilters();
     await userEvent.selectOptions(screen.getByRole("combobox", { name: "Paid with" }), "none");
     await waitFor(() => expect(asked().at(-1)?.get("paid_with")).toBe("none"));
     expect(await screen.findByRole("button", { name: "Show every card, not just entries with no card set" })).toBeVisible();
+  });
+
+  it("counts the card with the other filters, names its chip by the card, and Clear takes it off with the rest", async () => {
+    const { asked } = setup("/?view=out&paid_with=w-citi");
+    await waitFor(() => expect(asked().at(-1)?.get("paid_with")).toBe("w-citi"));
+    expect(await screen.findByRole("button", { name: "Filter, 2 active" })).toBeVisible();
+    const chips = screen.getByRole("group", { name: "Active filters" });
+    expect(within(chips).getByText("Citi PremierMiles ·· 4321")).toBeVisible();
+
+    await openFilters();
+    const sheet = screen.getByRole("dialog", { name: "Filter transactions" });
+    expect(within(sheet).getByRole("combobox", { name: "Paid with" })).toHaveValue("w-citi");
+    await userEvent.click(within(sheet).getByRole("button", { name: "Clear" }));
+    await waitFor(() => expect(asked().at(-1)?.get("paid_with")).toBeNull());
+    expect(asked().at(-1)?.get("direction")).toBeNull();
+    expect(within(sheet).getByRole("combobox", { name: "Paid with" })).toHaveValue("");
+    expect(screen.queryByRole("group", { name: "Active filters" })).toBeNull();
+
+    await userEvent.keyboard("{Escape}");
+    await userEvent.click(screen.getByRole("button", { name: "More" }));
+    expect(screen.getByRole("menuitem", { name: "Export CSV" })).toHaveAttribute("href", "/api/export.csv?");
+  });
+
+  it("calls the Not set filter 'No card set' on its chip", async () => {
+    setup("/?paid_with=none");
+    const chips = await screen.findByRole("group", { name: "Active filters" });
+    expect(within(chips).getByText("No card set")).toBeVisible();
   });
 
   it("starts filtered when the address names a card, and the export carries it too", async () => {

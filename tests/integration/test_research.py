@@ -94,7 +94,7 @@ async def test_levels_and_watching_in_chat(uow: UowFactory) -> None:
     )
     agent = build(uow, model)
     reply = only(await agent.handle_text(user.id, "levels for AMD", "m1"))
-    assert reply.text == "AMD closed at 129.50."
+    assert reply.text == "AMD closed at 129.50.\n\nI've added Invest to your menu."
     tool_output = str(model.seen[-1][-1].content)
     assert tool_output.startswith("AMD (USD, daily closes; levels worked out in code")
     assert "On the user's watchlist." in tool_output

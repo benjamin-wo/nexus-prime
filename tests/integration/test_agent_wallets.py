@@ -88,7 +88,7 @@ async def test_a_move_waits_for_confirmation_then_is_logged(uow: UowFactory, ali
 
     ask = only(await agent.handle_text(alice, "moved 800 to my IBKR", "tg:1:1"))
     assert ask.text == (
-        "Log a move of 800.00 SGD from Spending to IBKR? It won't count as spending."
+        "Log a transfer of 800.00 SGD from Main account to IBKR? It won't count as spending."
     )
     assert await ledger(uow, alice) == []  # nothing until confirmed
 
@@ -98,13 +98,13 @@ async def test_a_move_waits_for_confirmation_then_is_logged(uow: UowFactory, ali
     assert await ledger(uow, alice) == [("move", Decimal("800"))]
     [tx] = (await list_ledger(uow(), alice, LedgerQuery())).items
     assert (tx.from_wallet_id, tx.to_wallet_id) == (
-        wallets["Spending"].id,
+        wallets["Main account"].id,
         wallets["IBKR"].id,
     )
     assert tx.category_id is None
     result = tool_results(model)[0]
-    assert result.startswith("Logged a move (not spending or income): ")
-    assert "800.00 SGD → IBKR (move)" in result and "-800" not in result
+    assert result.startswith("Logged a transfer (not spending or income): ")
+    assert "800.00 SGD → IBKR (transfer)" in result and "-800" not in result
 
     # Declining changes nothing.
     other = build(uow, scripted(call("log_move", amount="5", to_wallet="Savings")))
@@ -134,7 +134,7 @@ async def test_a_move_is_not_spending_and_can_be_undone(uow: UowFactory, alice: 
 
     await agent.handle_text(alice, "undo", "tg:1:3")
     assert "Undid the last create: " in tool_results(model)[-1]
-    assert "800.00 SGD → IBKR (move)" in tool_results(model)[-1]
+    assert "800.00 SGD → IBKR (transfer)" in tool_results(model)[-1]
     assert await ledger(uow, alice) == []
 
 
@@ -151,10 +151,10 @@ async def test_an_unknown_wallet_is_asked_about_not_invented(
     assert reply.text.endswith("add it as an investment wallet?")
     result = tool_results(model)[0]
     assert result.startswith("Error: there's no wallet called 'Tiger'.")
-    assert "Spending, Card (card), Cash (cash), IBKR (investment), Savings (savings)" in result
+    assert "Main account, Card (card), Cash (cash), IBKR (investment), Savings (savings)" in result
     assert "don't add one unless they say yes" in result
     assert await ledger(uow, alice) == []
-    assert set(await wallets_of(uow, alice)) == {"Spending", "Cash", "IBKR", "Savings", "Card"}
+    assert set(await wallets_of(uow, alice)) == {"Main account", "Cash", "IBKR", "Savings", "Card"}
 
 
 async def test_an_unknown_origin_is_asked_about_too(uow: UowFactory, alice: UserId) -> None:
@@ -181,7 +181,8 @@ async def test_wallets_are_found_by_name_in_any_case_or_by_match_word(
     for n, expected in enumerate(("10.00", "20.00")):
         ask = only(await agent.handle_text(alice, "move", f"tg:1:{n}"))
         assert ask.text == (
-            f"Log a move of {expected} SGD from Spending to IBKR? It won't count as spending."
+            f"Log a transfer of {expected} SGD from Main account to IBKR? "
+            "It won't count as spending."
         )
         await agent.resolve(alice, ask.buttons[0][0].data.split(":")[1], True)
     page = await list_ledger(uow(), alice, LedgerQuery())
@@ -202,19 +203,19 @@ async def test_a_move_between_wallets_in_two_currencies(uow: UowFactory, alice: 
             note="top up",
         ),
         say("Logged."),
-        call("log_move", amount="300", from_wallet="Savings", to_wallet="Spending"),
+        call("log_move", amount="300", from_wallet="Savings", to_wallet="Main account"),
         say("Logged."),
     )
     agent = build(uow, model)
     ask = only(await agent.handle_text(alice, "moved 1000 from savings to ibkr", "tg:1:1"))
     assert ask.text == (
-        "Log a move of 1,000.00 SGD from Savings to IBKR (740.00 USD arrives) on 20 Sep? "
+        "Log a transfer of 1,000.00 SGD from Savings to IBKR (740.00 USD arrives) on 20 Sep? "
         "It won't count as spending or income."
     )
     await agent.resolve(alice, ask.buttons[0][0].data.split(":")[1], True)
     ask = only(await agent.handle_text(alice, "took 300 out of savings", "tg:1:2"))
     assert ask.text == (
-        "Log a move of 300.00 SGD from Savings to Spending? It won't count as income."
+        "Log a transfer of 300.00 SGD from Savings to Main account? It won't count as income."
     )
     await agent.resolve(alice, ask.buttons[0][0].data.split(":")[1], True)
 
@@ -229,7 +230,7 @@ async def test_a_move_between_wallets_in_two_currencies(uow: UowFactory, alice: 
     )
     assert (second.from_wallet_id, second.to_wallet_id) == (
         wallets["Savings"].id,
-        wallets["Spending"].id,
+        wallets["Main account"].id,
     )
     assert second.received_amount is None
 
@@ -239,8 +240,8 @@ async def test_a_move_to_the_same_wallet_or_a_bad_amount_is_refused(
 ) -> None:
     await with_wallets(uow, alice)
     assert (
-        await run(uow, alice, "log_move", {"amount": "5", "to_wallet": "Spending"})
-    ) == "Error: a move needs two different wallets"
+        await run(uow, alice, "log_move", {"amount": "5", "to_wallet": "Main account"})
+    ) == "Error: a transfer needs two different wallets"
     assert (await run(uow, alice, "log_move", {"amount": "lots", "to_wallet": "IBKR"})).startswith(
         "Error: "
     )
@@ -286,7 +287,7 @@ async def test_telling_it_a_move_happened_reaches_the_model_but_asking_it_to_mov
     agent = build(uow, model)
     for n, text in enumerate(("I moved 800 to IBKR", "just put 500 into savings")):
         ask = only(await agent.handle_text(alice, text, f"tg:1:{n}"))
-        assert ask.text.startswith("Log a move of")
+        assert ask.text.startswith("Log a transfer of")
 
     for n, text in enumerate(
         ("transfer 500 to savings for me", "move 500 to savings", "I want to move 500 to savings")
@@ -315,7 +316,7 @@ async def test_an_expense_can_be_turned_into_a_move(uow: UowFactory, alice: User
     agent = build(uow, model)
     ask = only(await agent.handle_text(alice, "that 800 to ibkr was a move", "tg:1:1"))
     assert ask.text == (
-        "Turn 2026-09-28 · -800.00 SGD · IBKR · Other into a move from Spending to IBKR? "
+        "Turn 2026-09-28 · -800.00 SGD · IBKR · Other into a transfer from Main account to IBKR? "
         "It will stop counting as spending, and it loses its category."
     )
     assert (await get_transaction(uow(), alice, tx.id)).direction is Direction.OUT  # not yet
@@ -324,10 +325,12 @@ async def test_an_expense_can_be_turned_into_a_move(uow: UowFactory, alice: User
     moved = await get_transaction(uow(), alice, tx.id)
     assert moved.direction is Direction.MOVE and moved.category_id is None
     assert (moved.from_wallet_id, moved.to_wallet_id) == (
-        wallets["Spending"].id,
+        wallets["Main account"].id,
         wallets["IBKR"].id,
     )
-    assert tool_results(model)[0].startswith("Now a move: 2026-09-28 · 800.00 SGD → IBKR (move)")
+    assert tool_results(model)[0].startswith(
+        "Now a transfer: 2026-09-28 · 800.00 SGD → IBKR (transfer)"
+    )
 
 
 async def test_money_in_can_be_turned_into_a_withdrawal_move(
@@ -343,16 +346,16 @@ async def test_money_in_can_be_turned_into_a_withdrawal_move(
     agent = build(uow, model)
     ask = only(await agent.handle_text(alice, "that was from my savings", "tg:1:1"))
     assert ask.text == (
-        "Turn 2026-09-28 · +300.00 SGD · Savings · Income into a move from Savings to "
-        "Spending? It will stop counting as income, and it loses its category."
+        "Turn 2026-09-28 · +300.00 SGD · Savings · Income into a transfer from Savings to "
+        "Main account? It will stop counting as income, and it loses its category."
     )
     await agent.resolve(alice, ask.buttons[0][0].data.split(":")[1], True)
     moved = await get_transaction(uow(), alice, tx.id)
     assert (moved.from_wallet_id, moved.to_wallet_id) == (
         wallets["Savings"].id,
-        wallets["Spending"].id,
+        wallets["Main account"].id,
     )
-    assert "300.00 SGD Savings → Spending (move)" in tool_results(model)[0]
+    assert "300.00 SGD Savings → Main account (transfer)" in tool_results(model)[0]
 
 
 async def test_mark_as_move_explains_what_it_cant_do(uow: UowFactory, alice: UserId) -> None:
@@ -364,16 +367,16 @@ async def test_mark_as_move_explains_what_it_cant_do(uow: UowFactory, alice: Use
     )
     assert "no wallet called 'Tiger'" in unknown
     spending = await run(
-        uow, alice, "mark_as_move", {"transaction_id": str(tx.id), "wallet": "Spending"}
+        uow, alice, "mark_as_move", {"transaction_id": str(tx.id), "wallet": "Main account"}
     )
-    assert spending.startswith("Error: pick a wallet other than Spending")
+    assert spending.startswith("Error: pick a wallet other than the main account")
     assert (
         await run(uow, alice, "mark_as_move", {"transaction_id": str(other.id), "wallet": "Card"})
-    ).startswith("Now a move")
+    ).startswith("Now a transfer")
     again = await run(
         uow, alice, "mark_as_move", {"transaction_id": str(other.id), "wallet": "Card"}
     )
-    assert again == "Error: this is already a move"
+    assert again == "Error: this is already a transfer"
     assert (await get_transaction(uow(), alice, tx.id)).direction is Direction.OUT
 
 
@@ -393,7 +396,7 @@ async def test_wallets_can_be_listed_added_and_changed(uow: UowFactory, alice: U
         say("ok"),
         call("update_wallet", wallet="Emergency fund", match_words=[]),
         call("update_wallet", wallet="Emergency fund"),
-        call("update_wallet", wallet="Spending", kind="savings"),
+        call("update_wallet", wallet="Main account", kind="savings"),
         tool_call("add_wallet", dict(name="X", kind="spending")),
         call("list_wallets"),
         say("ok"),
@@ -402,7 +405,7 @@ async def test_wallets_can_be_listed_added_and_changed(uow: UowFactory, alice: U
     await agent.handle_text(alice, "wallets", "tg:1:1")
     await agent.handle_text(alice, "more wallets", "tg:1:2")
     results = tool_results(model)
-    assert results[0] == "Spending (the main account the budget watches)\nCash (cash)"
+    assert results[0] == "Main account (the main account the budget watches)\nCash (cash)"
     assert results[1] == "Added the wallet Tiger (investment)."
     assert results[2] == "There's already a wallet called Tiger."
     assert results[3] == "Added the wallet Rainy day (savings)."
@@ -410,10 +413,10 @@ async def test_wallets_can_be_listed_added_and_changed(uow: UowFactory, alice: U
     assert results[5] == "Updated Rainy day: renamed to Emergency fund, its kind is now other."
     assert results[6] == "Updated Emergency fund: nothing to change."
     assert results[7].startswith("Error: say what to change")
-    assert results[8].startswith("Error: the Spending wallet can't change kind")
+    assert results[8].startswith("Error: the main account can't change kind")
     assert results[9].startswith("Error: invalid arguments for add_wallet")
     assert results[10] == (
-        "Spending (the main account the budget watches)\n"
+        "Main account (the main account the budget watches)\n"
         "Cash (cash)\n"
         "Emergency fund (other)\n"
         "Tiger (investment; match words: tiger brokers)"
@@ -424,7 +427,7 @@ async def test_deleting_a_wallet_says_how_many_moves_are_repointed_and_removed(
     uow: UowFactory, alice: UserId
 ) -> None:
     w = await with_wallets(uow, alice)
-    spend, ibkr, savings = w["Spending"], w["IBKR"], w["Savings"]
+    spend, ibkr, savings = w["Main account"], w["IBKR"], w["Savings"]
     await move(uow, alice, "800", spend, ibkr)
     await move(uow, alice, "100", spend, ibkr)
     await move(uow, alice, "50", ibkr, savings)
@@ -452,19 +455,20 @@ async def test_deleting_a_wallet_says_how_many_moves_are_repointed_and_removed(
     reply = only(await agent.handle_text(alice, "delete my ibkr wallet", "tg:1:1"))
     assert reply.buttons == []  # it has moves and nowhere to point them: ask, don't confirm
     result = tool_results(model)[0]
-    assert result.startswith("Error: IBKR has moves, so they need another wallet to point at")
-    assert "Spending, Card (card), Cash (cash), Savings (savings)" in result
+    assert result.startswith("Error: IBKR has transfers, so they need another wallet to point at")
+    assert "Main account, Card (card), Cash (cash), Savings (savings)" in result
 
     ask = only(await agent.handle_text(alice, "into savings", "tg:1:2"))
     assert ask.text == (
-        "Delete the wallet IBKR? 2 moves will point at Savings instead, and 3 moves between "
-        "the two will be removed, since both ends would be Savings. This can't be undone."
+        "Delete the wallet IBKR? 2 transfers will point at Savings instead, and 3 transfers "
+        "between the two will be removed, since both ends would be Savings. This can't be undone."
     )
     assert "IBKR" in await wallets_of(uow, alice)  # nothing until confirmed
 
     await agent.resolve(alice, ask.buttons[0][0].data.split(":")[1], True)
     assert tool_results(model)[-1] == (
-        "Deleted the wallet IBKR. 2 moves now point at Savings; 3 moves between the two removed."
+        "Deleted the wallet IBKR. 2 transfers now point at Savings; "
+        "3 transfers between the two removed."
     )
     assert "IBKR" not in await wallets_of(uow, alice)
     left = (await list_ledger(uow(), alice, LedgerQuery(include_deleted=True))).items
@@ -478,13 +482,13 @@ async def test_deleting_a_wallet_with_one_move_and_with_none(
     uow: UowFactory, alice: UserId
 ) -> None:
     w = await with_wallets(uow, alice)
-    await move(uow, alice, "40", w["Spending"], w["Card"])
+    await move(uow, alice, "40", w["Main account"], w["Card"])
     model = scripted(
         call("delete_wallet", wallet="Card", move_to="Savings"),
         say("Deleted."),
         call("delete_wallet", wallet="IBKR"),
         say("Deleted."),
-        call("delete_wallet", wallet="Spending", move_to="Savings"),
+        call("delete_wallet", wallet="Main account", move_to="Savings"),
         call("delete_wallet", wallet="Savings", move_to="Savings"),
         call("delete_wallet", wallet="Savings", move_to="Tiger"),
         say("No."),
@@ -492,21 +496,21 @@ async def test_deleting_a_wallet_with_one_move_and_with_none(
     agent = build(uow, model)
     ask = only(await agent.handle_text(alice, "delete card", "tg:1:1"))
     assert ask.text == (
-        "Delete the wallet Card? 1 move will point at Savings instead. This can't be undone."
+        "Delete the wallet Card? 1 transfer will point at Savings instead. This can't be undone."
     )
     await agent.resolve(alice, ask.buttons[0][0].data.split(":")[1], True)
-    assert tool_results(model)[-1] == "Deleted the wallet Card. 1 move now points at Savings."
+    assert tool_results(model)[-1] == "Deleted the wallet Card. 1 transfer now points at Savings."
 
     ask = only(await agent.handle_text(alice, "delete ibkr", "tg:1:2"))
-    assert ask.text == "Delete the wallet IBKR? It has no moves. This can't be undone."
+    assert ask.text == "Delete the wallet IBKR? It has no transfers. This can't be undone."
     await agent.resolve(alice, ask.buttons[0][0].data.split(":")[1], True)
     assert tool_results(model)[-1] == "Deleted the wallet IBKR."
-    assert set(await wallets_of(uow, alice)) == {"Spending", "Cash", "Savings"}
+    assert set(await wallets_of(uow, alice)) == {"Main account", "Cash", "Savings"}
 
     refused = only(await agent.handle_text(alice, "delete spending", "tg:1:3"))
     assert refused.text == "No."
     results = [str(m.content) for m in model.seen[-1] if m.type == "tool"][-3:]
-    assert results[0].startswith("Error: the Spending wallet can't be deleted")
+    assert results[0].startswith("Error: the main account can't be deleted")
     assert results[1].startswith("Error: pick a different wallet")
     assert "no wallet called 'Tiger'" in results[2]
 
@@ -517,16 +521,16 @@ async def test_deleting_a_wallet_with_one_move_and_with_none(
 async def test_moves_show_where_they_went_when_found(uow: UowFactory, alice: UserId) -> None:
     w = await with_wallets(uow, alice)
     await log_transaction(uow(), alice, NewTransaction(Direction.OUT, sgd("12"), NOW))
-    await move(uow, alice, "800", w["Spending"], w["IBKR"])
-    await move(uow, alice, "300", w["Savings"], w["Spending"])
+    await move(uow, alice, "800", w["Main account"], w["IBKR"])
+    await move(uow, alice, "300", w["Savings"], w["Main account"])
     text = await run(uow, alice, "find_transactions", {"direction": "move"})
     lines = text.splitlines()
     assert len(lines) == 2
-    assert any(line.startswith("2026-09-28 · 800.00 SGD → IBKR (move) [id ") for line in lines)
-    assert any("· 300.00 SGD Savings → Spending (move) [id " in line for line in lines)
+    assert any(line.startswith("2026-09-28 · 800.00 SGD → IBKR (transfer) [id ") for line in lines)
+    assert any("· 300.00 SGD Savings → Main account (transfer) [id " in line for line in lines)
     assert "-800" not in text and "+300" not in text
     everything = await run(uow, alice, "find_transactions", {})
-    assert "-12.00 SGD" in everything and "800.00 SGD → IBKR (move)" in everything
+    assert "-12.00 SGD" in everything and "800.00 SGD → IBKR (transfer)" in everything
 
 
 async def test_query_ledger_answers_how_much_went_into_a_wallet(
@@ -534,33 +538,33 @@ async def test_query_ledger_answers_how_much_went_into_a_wallet(
 ) -> None:
     w = await with_wallets(uow, alice)
     await log_transaction(uow(), alice, NewTransaction(Direction.OUT, sgd("12"), NOW))
-    await move(uow, alice, "800", w["Spending"], w["IBKR"], NOW - timedelta(days=100))
-    await move(uow, alice, "200", w["Spending"], w["IBKR"])
-    await move(uow, alice, "100", w["IBKR"], w["Spending"])
-    await move(uow, alice, "500", w["Spending"], w["Savings"])
+    await move(uow, alice, "800", w["Main account"], w["IBKR"], NOW - timedelta(days=100))
+    await move(uow, alice, "200", w["Main account"], w["IBKR"])
+    await move(uow, alice, "100", w["IBKR"], w["Main account"])
+    await move(uow, alice, "500", w["Main account"], w["Savings"])
     year = {"direction": "move", "start_date": "2026-01-01", "end_date": "2026-09-28"}
 
     into = await run(uow, alice, "query_ledger", {**year, "wallet": "ibkr"})
-    assert "Moved, in SGD, 2026-01-01 to 2026-09-28: 1,000.00 SGD over 2 transactions" in into
-    assert "not spending or income" in into and "800.00 SGD → IBKR (move)" in into
+    assert "Transferred, in SGD, 2026-01-01 to 2026-09-28: 1,000.00 SGD over 2 transactions" in into
+    assert "not spending or income" in into and "800.00 SGD → IBKR (transfer)" in into
     out_of = await run(
         uow, alice, "query_ledger", {**year, "wallet": "IBKR", "wallet_side": "out_of"}
     )
-    assert "100.00 SGD over 1 transaction" in out_of and "100.00 SGD IBKR → Spending" in out_of
+    assert "100.00 SGD over 1 transaction" in out_of and "100.00 SGD IBKR → Main account" in out_of
     either = await run(
         uow, alice, "query_ledger", {**year, "wallet": "IBKR", "wallet_side": "either"}
     )
     assert "1,100.00 SGD over 3 transactions" in either
     allmoves = await run(uow, alice, "query_ledger", year)
     assert "1,600.00 SGD over 4 transactions" in allmoves
-    # Spending is only the expense; no move is in it.
+    # the main account is only the expense; no move is in it.
     spent = await run(uow, alice, "query_ledger", {"start_date": "2026-01-01"})
     assert spent.startswith("Spent, in SGD, 2026-01-01 to 2026-09-28: 12.00 SGD over 1 transaction")
 
     unknown = await run(uow, alice, "query_ledger", {**year, "wallet": "Tiger"})
     assert "no wallet called 'Tiger'" in unknown
     wrong = await run(uow, alice, "query_ledger", {"wallet": "IBKR"})
-    assert wrong == "Error: a wallet filter is for moves; ask about moves"
+    assert wrong == "Error: a wallet filter is for transfers; ask about transfers"
 
 
 # --- the snapshot ------------------------------------------------------------------------------
@@ -572,24 +576,26 @@ async def test_the_snapshot_lists_wallets_and_what_was_put_away(
     user = await get_user(uow(), alice)
     ctx = ToolContext(user, uow, NOW)
     plain = await money_snapshot(ctx)
-    assert "Put away" not in plain and "Wallets besides" not in plain  # only Spending
+    assert (
+        "Saved this month" not in plain and "Wallets besides" not in plain
+    )  # only the main account
 
     w = await with_wallets(uow, alice)
     await log_transaction(
         uow(), alice, NewTransaction(Direction.IN, sgd("5000"), NOW, counterparty="Acme")
     )
-    await move(uow, alice, "800", w["Spending"], w["IBKR"])
-    await move(uow, alice, "1240", w["Spending"], w["Card"])  # a card bill isn't put away
+    await move(uow, alice, "800", w["Main account"], w["IBKR"])
+    await move(uow, alice, "1240", w["Main account"], w["Card"])  # a card bill isn't saved
     text = await money_snapshot(ctx)
     assert (
-        "Wallets besides Spending: Card (card), Cash (cash), "
+        "Wallets besides the main account: Card (card), Cash (cash), "
         "IBKR (investment, also interactive brokers), "
-        "Savings (savings). Put away this month: 800.00 SGD (16% of income)."
+        "Savings (savings). Saved this month: 800.00 SGD (16% of income)."
     ) in text
     assert "spent 0.00 SGD in 0 transactions, received 5,000.00 SGD" in text
 
-    await move(uow, alice, "300", w["Savings"], w["Spending"])
-    assert "Put away this month: 500.00 SGD (10% of income)." in await money_snapshot(ctx)
+    await move(uow, alice, "300", w["Savings"], w["Main account"])
+    assert "Saved this month: 500.00 SGD (10% of income)." in await money_snapshot(ctx)
 
 
 async def test_the_system_prompt_tells_a_move_from_an_expense(
@@ -600,7 +606,7 @@ async def test_the_system_prompt_tells_a_move_from_an_expense(
     system = str(model.seen[0][0].content)
     for phrase in (
         "never spending or income",
-        "paying a credit card bill from Spending",
+        "paying a credit card bill from the Main account",
         "transferred 50 to Alex for dinner",
         "dividend or interest paid out",
         "never invent one",

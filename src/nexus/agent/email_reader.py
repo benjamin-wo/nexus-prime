@@ -19,8 +19,10 @@ class Triage(BaseModel):
     kind: Literal["spent", "received", "neither"] = Field(
         description="spent: proves money the reader already spent (a receipt, invoice, "
         "order or payment confirmation, or a card transaction alert). received: a bank "
-        "alert that money arrived in the reader's account from someone (a transfer, "
-        "PayNow, FAST, GIRO credit). neither: anything else"
+        "or payment service (PayPal, Wise) saying money arrived in the reader's account "
+        "from someone (a transfer, PayNow, FAST, GIRO credit). A shop's or company's "
+        "'payment confirmation' or 'payment received' means the reader paid it: spent. "
+        "neither: anything else"
     )
     reason: str = Field(description="A few words, e.g. 'promotion', 'shipping update'")
     travel_booking: bool = Field(
@@ -33,7 +35,8 @@ class Triage(BaseModel):
 _TRIAGE = (
     "Is this email about money the reader already spent, money they received, or "
     "neither? Card and bank transaction alerts, paid orders and charged bills are "
-    "spent. A bank alert that a transfer or PayNow came in from someone is received. "
+    "spent. A bank or payment service alert that a transfer or PayNow came in from someone is "
+    "received; a merchant confirming the reader's payment is spent. "
     "Promotions, newsletters, shipping updates, statements, refunds, payment "
     "reminders and alerts about money the reader sent are neither. Separately, say "
     "whether it confirms a flight, hotel or train booking.\n\n"

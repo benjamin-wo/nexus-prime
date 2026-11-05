@@ -11,14 +11,14 @@ import { currentMonth, type MonthKey, monthLabel } from "../months";
 import { type CardDetails, detailsBody, NETWORKS, NO_DETAILS, payingWallets, tracksCards, walletLabel } from "../wallets";
 
 const KIND_LABEL: Record<WalletKind, string> = {
-  spending: "Spending",
+  spending: "Main account",
   cash: "Cash",
   investment: "Investment",
   savings: "Savings",
   card: "Card",
   other: "Other",
 };
-/** The kinds a wallet can be given; Spending and Cash are the ones that are always there. */
+/** The kinds a wallet can be given; the Main account and Cash are the ones that are always there. */
 const KINDS: WalletKind[] = ["savings", "investment", "card", "other"];
 
 const detailsOf = (w: Wallet): CardDetails => ({
@@ -48,7 +48,7 @@ function parseWords(text: string): string[] {
 }
 
 function moves(n: number): string {
-  return `${n} ${n === 1 ? "move" : "moves"}`;
+  return `${n} ${n === 1 ? "transfer" : "transfers"}`;
 }
 
 type DeletePreview = { moved: number; removed: number };
@@ -74,9 +74,9 @@ function WalletRow({
   const [moveTo, setMoveTo] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  // Spending and Cash are always there: they can be renamed, but not deleted or given another kind.
+  // The Main account and Cash are always there: they can be renamed, but not deleted or given another kind.
   const isFixed = wallet.kind === "spending" || wallet.kind === "cash";
-  // Its moves go to another wallet; one that isn't Spending, unless that's all there is.
+  // Its transfers go to another wallet; one that isn't the main account, unless that's all there is.
   const fallback = (others.find((w) => w.kind !== "spending") ?? others[0])?.id ?? "";
   const target = others.some((w) => w.id === moveTo) ? moveTo : fallback;
   const targetName = others.find((w) => w.id === target)?.name ?? "";
@@ -130,8 +130,8 @@ function WalletRow({
   }
 
   function previewText(p: DeletePreview): string {
-    if (p.moved + p.removed === 0) return "It has no moves.";
-    const go = p.moved === 0 ? `No moves go to ${targetName}` : `${moves(p.moved)} ${p.moved === 1 ? "goes" : "go"} to ${targetName}`;
+    if (p.moved + p.removed === 0) return "It has no transfers.";
+    const go = p.moved === 0 ? `No transfers go to ${targetName}` : `${moves(p.moved)} ${p.moved === 1 ? "goes" : "go"} to ${targetName}`;
     return p.removed > 0
       ? `${go}; ${moves(p.removed)} between the two will be removed.`
       : `${go}.`;
@@ -205,10 +205,10 @@ function WalletRow({
           {confirming && (
             <>
               <span className="quick">
-                <span>Delete {wallet.name}? Its moves go to</span>
+                <span>Delete {wallet.name}? Its transfers go to</span>
                 <select
                   className="input"
-                  aria-label={`Move ${wallet.name} moves to`}
+                  aria-label={`Move ${wallet.name} transfers to`}
                   value={target}
                   onChange={(e) => setMoveTo(e.target.value)}
                 >
@@ -220,7 +220,7 @@ function WalletRow({
                 </select>
               </span>
               {preview.data && <p className="caption">{previewText(preview.data)}</p>}
-              {preview.isError && <p className="caption error-text">Couldn't check its moves.</p>}
+              {preview.isError && <p className="caption error-text">Couldn't check its transfers.</p>}
               <span className="quick">
                 <button
                   type="button"
@@ -247,8 +247,8 @@ function WalletRow({
   );
 }
 
-/** Entries that look like moves, one at a time. Nothing changes until "Make it a move";
- * "Not a move" only skips it for now (it comes back next time). */
+/** Entries that look like transfers, one at a time. Nothing changes until "Make it a transfer";
+ * "Not a transfer" only skips it for now (it comes back next time). */
 function LikelyMoves({ found, wallets, onChanged }: { found: LikelyMove[]; wallets: Wallet[]; onChanged: () => void }) {
   const [reviewing, setReviewing] = useState(false);
   const [skipped, setSkipped] = useState<Set<string>>(new Set());
@@ -267,7 +267,7 @@ function LikelyMoves({ found, wallets, onChanged }: { found: LikelyMove[]; walle
         <p className="caption">
           {left.length === 0 && reviewing
             ? "That's all of them."
-            : `${left.length} ${left.length === 1 ? "entry looks" : "entries look"} like ${left.length === 1 ? "a move" : "moves"}`}
+            : `${left.length} ${left.length === 1 ? "entry looks" : "entries look"} like ${left.length === 1 ? "a transfer" : "transfers"}`}
         </p>
         {left.length > 0 && (
           <button type="button" className="btn btn-small" onClick={() => setReviewing(true)}>
@@ -287,14 +287,14 @@ function LikelyMoves({ found, wallets, onChanged }: { found: LikelyMove[]; walle
       await api(`/transactions/${tx.id}/move`, { method: "POST", body: { wallet_id: wallet } });
       onChanged();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't make it a move");
+      setError(e instanceof Error ? e.message : "Couldn't make it a transfer");
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div className="likely-moves" role="group" aria-label="Review likely moves">
+    <div className="likely-moves" role="group" aria-label="Review likely transfers">
       <p className="caption">
         {found.length - left.length + 1} of {found.length}
       </p>
@@ -309,7 +309,7 @@ function LikelyMoves({ found, wallets, onChanged }: { found: LikelyMove[]; walle
         {formatDate(tx.occurred_at)} · {current.reason}
       </p>
       <label className="field">
-        {tx.direction === "in" ? "Moved from" : "Moved to"}
+        {tx.direction === "in" ? "Transferred from" : "Transferred to"}
         <select className="input" value={wallet} onChange={(e) => setPicked({ ...picked, [tx.id]: e.target.value })}>
           {!wallet && <option value="">Choose a wallet</option>}
           {elsewhere.map((w) => (
@@ -321,7 +321,7 @@ function LikelyMoves({ found, wallets, onChanged }: { found: LikelyMove[]; walle
       </label>
       <span className="quick">
         <button type="button" className="btn btn-primary btn-small" disabled={!wallet || busy} onClick={() => void convert()}>
-          Make it a move
+          Make it a transfer
         </button>
         <button
           type="button"
@@ -329,7 +329,7 @@ function LikelyMoves({ found, wallets, onChanged }: { found: LikelyMove[]; walle
           disabled={busy}
           onClick={() => setSkipped(new Set(skipped).add(tx.id))}
         >
-          Not a move
+          Not a transfer
         </button>
         <button type="button" className="btn btn-ghost btn-small" onClick={() => setReviewing(false)}>
           Close
@@ -348,7 +348,7 @@ function purchases(n: number): string {
   return `${n} ${n === 1 ? "purchase" : "purchases"}`;
 }
 
-/** One card (or Spending, Cash) with what it paid for in the month: "SGD 1,240.00 this month · 38 purchases",
+/** One card (or the main account, Cash) with what it paid for in the month: "SGD 1,240.00 this month · 38 purchases",
  * and a link to the ledger filtered to it. */
 function SpendLine({ wallet, month, current }: { wallet: Wallet; month: MonthKey; current: MonthKey }) {
   const spend = useQuery({
@@ -377,7 +377,7 @@ function SpendLine({ wallet, month, current }: { wallet: Wallet; month: MonthKey
   );
 }
 
-/** The user's wallets: places money is moved between. Spending and Cash are always two of them. */
+/** The user's wallets: places money is transferred between. The Main account and Cash are always two of them. */
 export function WalletsSection({ me }: { me: Me }) {
   const client = useQueryClient();
   // Without card tracking a card is an ordinary wallet: no details, usual-card picker or per-card spend.
@@ -437,7 +437,7 @@ export function WalletsSection({ me }: { me: Me }) {
     <section className="card" aria-labelledby="wallets">
       <div className="card-head">
         <h2 id="wallets">Wallets</h2>
-        <span className="caption">Where you move money</span>
+        <span className="caption">Where you transfer money</span>
       </div>
       {all.isLoading && <p className="state">Loading…</p>}
       {all.isError && <p className="state error-text">Couldn't load wallets.</p>}

@@ -2,27 +2,26 @@ import { expect, test } from "@playwright/test";
 
 import { fakeApi } from "./fake-api";
 
-// Home as a Today page: what needs you across areas, the setup checklist, a trip that is on. Made-up data only.
+// Home as a Today page: what needs you across areas, a trip that is on. Made-up data only.
 
 test("Home reads top to bottom: the brief, what needs you, ask, then the cards at a glance", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/");
-  const order = ["Nexus", "Needs you", "Ask anything", "Get set up", "Money this month", "Portfolio today", "Next trip"];
+  const order = ["Nexus", "Needs you", "Ask anything", "Money this month", "Portfolio today", "Next trip"];
   const tops: number[] = [];
   for (const name of order) {
     const region = page.getByRole("region", { name, exact: true });
     await expect(region).toBeVisible();
     tops.push((await region.boundingBox())!.y);
   }
-  const [hero, needs, ask, setup, money, portfolio, trip] = tops;
+  const [hero, needs, ask, money, portfolio, trip] = tops;
   expect(hero).toBeLessThan(needs);
   // The brief points at the list directly below it.
   await expect(page.getByRole("region", { name: "Nexus" })).toContainText("2 things need you below.");
   if (page.viewportSize()!.width < 1024) {
     // One column on a phone: the cards at a glance come last.
     expect(needs).toBeLessThan(ask);
-    expect(ask).toBeLessThan(setup);
-    expect(setup).toBeLessThan(money);
+    expect(ask).toBeLessThan(money);
     expect(money).toBeLessThan(portfolio);
     expect(portfolio).toBeLessThan(trip);
   } else {
@@ -32,7 +31,6 @@ test("Home reads top to bottom: the brief, what needs you, ask, then the cards a
     expect(moneyBox.x).toBeGreaterThan(needsBox.x + needsBox.width - 1);
     expect(money).toBeLessThanOrEqual(needs + 1);
     expect(needs).toBeLessThan(ask);
-    expect(ask).toBeLessThan(setup);
   }
 });
 
@@ -77,44 +75,6 @@ test("a short list has no Show all", async ({ page }) => {
   const needs = page.getByRole("region", { name: "Needs you" });
   await expect(needs.getByRole("listitem")).toHaveCount(2);
   await expect(needs.getByRole("button", { name: /Show all/ })).toHaveCount(0);
-});
-
-test("the setup checklist shows what is left, and Hide puts it away for good", async ({ page }) => {
-  const state = await fakeApi(page);
-  await page.goto("/");
-  const setup = page.getByRole("region", { name: "Get set up" });
-  const steps = setup.getByRole("list", { name: "Setup steps" }).getByRole("listitem");
-  await expect(steps).toHaveCount(4);
-  await expect(setup).toContainText("3 steps left.");
-  // Done is ticked, in words too; each step left opens the page where it is done.
-  await expect(steps.filter({ hasText: "Add your stocks" })).toContainText("Done");
-  await expect(steps.filter({ hasText: "Add your stocks" }).getByRole("link")).toHaveCount(0);
-  await expect(steps.filter({ hasText: "Set your payday" }).getByRole("link", { name: "Set up Set your payday" })).toHaveAttribute(
-    "href",
-    "/accounting/budgets",
-  );
-  await expect(steps.filter({ hasText: "Set a monthly budget" }).getByRole("link")).toHaveAttribute("href", "/accounting/budgets");
-  // Receipts can also be asked of Nexus in the chat.
-  await steps.filter({ hasText: "Get receipts" }).getByRole("button", { name: /Ask Nexus/ }).click();
-  const chat = page.getByRole("dialog", { name: "Chat" });
-  await expect(chat.locator(".msg-user").first()).toHaveText("Help me get my receipts in from email automatically");
-  await chat.getByRole("button", { name: "Close chat" }).click();
-
-  await setup.getByRole("button", { name: "Hide" }).click();
-  await expect(setup).toHaveCount(0);
-  expect(state.setup.dismissed).toBe(true);
-  // It stays away.
-  await page.reload();
-  await expect(page.getByRole("region", { name: "Needs you" })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Get set up" })).toHaveCount(0);
-});
-
-test("the setup checklist goes by itself once every step is done", async ({ page }) => {
-  const state = await fakeApi(page);
-  state.setup.items.forEach((i) => (i.done = true));
-  await page.goto("/");
-  await expect(page.getByRole("region", { name: "Needs you" })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Get set up" })).toHaveCount(0);
 });
 
 test("a trip that is on leads Home with its day, what is next, today's spending and the next booking", async ({ page }) => {

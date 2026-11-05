@@ -304,13 +304,34 @@ input[type="date"].input, input[type="time"].input, input[type="datetime-local"]
 .tabs { display: inline-flex; max-width: 100%; overflow-x: auto; gap: var(--space-1); padding: var(--space-1); border-radius: 10px; background: var(--bg-input); border: 1px solid var(--border-card); }
 .tab { flex: none; min-height: 32px; padding: 0 var(--space-3); border-radius: 7px; border: 0; background: transparent; color: var(--text-secondary); font: inherit; font-weight: 600; cursor: pointer; }
 .tab[aria-pressed="true"] { background: var(--bg-card-hover); color: var(--text-white); }
-.filters .search { flex: 1 1 200px; }
-/* The date range is one select beside the search; "Custom dates" adds the two date boxes. */
-.filters .dates { flex: 0 0 auto; display: block; }
-.filters .dates .input { width: auto; min-width: 150px; }
-.filters .paid-with-filter { flex: 0 0 auto; display: block; }
-.filters .paid-with-filter .input { width: auto; min-width: 150px; max-width: 100%; }
-.date-range { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+/* The Ledger's filters are one row: the search and a Filter button, with chips for what is set under it. */
+.filter-row { flex: 1 1 100%; display: flex; align-items: center; gap: var(--space-2); }
+.filter-row .search { flex: 1 1 auto; min-width: 0; max-width: 420px; }
+.filter-btn { flex: none; min-height: 44px; gap: var(--space-2); }
+.filter-count {
+  display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px;
+  background: var(--accent); color: #fff; font-size: 0.75rem; font-weight: 700; line-height: 1;
+}
+.filter-chips { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: var(--space-2); }
+/* The sheet that opens from Filter: the type, the dates and the card, with Clear and Show N under them. */
+.filter-sheet { width: min(480px, calc(100vw - 48px)); }
+.filter-group { display: grid; gap: var(--space-2); }
+.filter-label { font-weight: 500; font-size: 0.8125rem; color: var(--text-secondary); }
+.filter-sheet .tabs { display: flex; flex-wrap: wrap; width: 100%; overflow: visible; }
+.filter-sheet .tab { flex: 1 1 auto; min-height: 40px; }
+.filter-sheet-foot { display: flex; align-items: center; gap: var(--space-2); }
+.filter-sheet-foot .btn { min-height: 44px; }
+.filter-sheet-foot .btn-primary { flex: 1 1 auto; }
+/* From and To share a row, each with a visible caption. iOS draws date inputs at its own size and
+   blank when empty, so reset its appearance. */
+.date-range { display: flex; gap: var(--space-2); }
+.filter-sheet .date-field { flex: 1 1 0; min-width: 0; display: grid; gap: 2px; }
+.filter-sheet .date-caption { position: static; width: auto; height: auto; clip: auto; font-size: 0.75rem; font-weight: 600; color: var(--text-muted); }
+.filter-sheet input[type="date"] {
+  -webkit-appearance: none; appearance: none; display: block; width: 100%; min-width: 0;
+  height: 44px; min-height: 44px; padding: 0 var(--space-2); line-height: 44px; text-align: left;
+}
+.filter-sheet input[type="date"]::-webkit-date-and-time-value { text-align: left; }
 /* The category under the merchant is for phones; wider screens have the Category column. */
 .category-line { display: none; }
 /* A page head whose actions stay beside the title, on a phone too. */
@@ -463,26 +484,10 @@ table.ledger { width: 100%; border-collapse: collapse; }
   /* All five views on one row. */
   .filters .tabs { display: flex; width: 100%; }
   .filters .tab { flex: 1 1 auto; padding: 0 var(--space-2); font-size: 0.74rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  /* The search takes most of its row, the dates control the rest (under it on the narrowest). */
-  .filters .search { flex: 3 1 120px; min-width: 0; }
-  .filters .dates { flex: 1 0 auto; }
-  .filters .dates .input { width: 100%; min-width: 0; }
-  /* The Paid with select takes a row of its own under the search and dates. */
-  .filters .paid-with-filter { flex: 1 1 100%; }
-  .filters .paid-with-filter .input { width: 100%; min-width: 0; }
-  /* From and To share a row of their own under the search. */
-  .date-range { flex: 1 1 100%; flex-wrap: nowrap; }
+  .filter-row .search { max-width: none; }
+  .filter-sheet { width: 100%; }
   .page-head.page-head-row > :not(:first-child) { flex: 0 0 auto; }
   .page-head.page-head-row .quick > .btn { flex: 0 0 auto; }
-  /* The two dates share a row, each with a visible caption. iOS draws date
-     inputs at its own size and blank when empty, so reset its appearance. */
-  .filters .date-field { flex: 1 1 0; min-width: 0; display: grid; gap: 2px; }
-  .date-caption { position: static; width: auto; height: auto; clip: auto; font-size: 0.7rem; font-weight: 600; color: var(--text-muted); }
-  .filters input[type="date"] {
-    -webkit-appearance: none; appearance: none; display: block; width: 100%; min-width: 0;
-    height: 40px; min-height: 40px; padding: 0 var(--space-2); line-height: 40px; text-align: left;
-  }
-  .filters input[type="date"]::-webkit-date-and-time-value { text-align: left; }
 
   /* Ledger: one readable column. Each row is merchant and date on the left,
      amount on the right; the column headings are for screen readers only. */
@@ -504,7 +509,6 @@ table.ledger { width: 100%; border-collapse: collapse; }
     display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
     font-weight: 500;
   }
-  .ledger td.merchant .category-line { display: block; -webkit-line-clamp: none; line-clamp: none; white-space: nowrap; text-overflow: ellipsis; font-weight: 500; }
   .table-wrap { overflow-x: visible; }
   .bulkbar { flex-wrap: wrap; }
   .pager { flex-wrap: wrap; gap: var(--space-2); }
@@ -1286,6 +1290,31 @@ html.keyboard .bottom-nav, html.keyboard .fab, html.keyboard .trip-fab {
 .mini-value { font-size: clamp(1rem, 13cqi, 1.25rem); }
 
 
+/* A row's second line: category, date, card and receipt. The category and the date have their own
+   columns on a wide screen, so only the card and the receipt show there. */
+.tx-meta { display: flex; align-items: baseline; flex-wrap: wrap; column-gap: 0.4em; font-size: 0.8125rem; font-weight: 500; color: var(--text-muted); }
+.tx-meta .category-line, .tx-meta .date-line { display: none; }
+.tx-meta > :not(.category-line):not(.date-line) ~ :not(.category-line):not(.date-line)::before { content: "·"; margin-right: 0.4em; color: var(--text-muted); text-decoration: none; }
+/* The underline is on the word, not on the dot before it. */
+.tx-meta .receipt-link { font-size: 0.8125rem; text-decoration: none; }
+.tx-meta .receipt-link > span { text-decoration: underline; }
+@media (max-width: 720px) {
+  /* Two lines a row: merchant and amount, then the meta line across the full width. The merchant cell
+     steps aside (display: contents) so its pieces sit in the row's own grid. */
+  .ledger-list tbody tr { --c: 2; row-gap: 2px; }
+  .ledger-list:not(.selecting) tbody tr { --c: 1; }
+  .ledger-list td.merchant { display: contents; }
+  .ledger-list td.date { display: none; }
+  .ledger-list .tx-name { grid-column: var(--c); grid-row: 1; justify-self: start; text-align: left; }
+  .ledger-list td.amount { grid-row: 1; }
+  .ledger-list td.merchant .tx-meta { grid-column: var(--c) / -1; grid-row: 2; flex-wrap: nowrap; min-width: 0; }
+  .ledger-list td.merchant .tx-meta > * { display: block; flex: none; min-width: 0; white-space: nowrap; font-size: 0.8125rem; font-weight: 500; line-height: 1.4; }
+  .ledger-list td.merchant .tx-meta > .category-line, .ledger-list td.merchant .tx-meta > .paid-with-line { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; }
+  .tx-meta > * ~ *::before { content: "·"; margin-right: 0.4em; color: var(--text-muted); text-decoration: none; }
+  /* Whatever else a row has (a note, a move, a trail, a possible duplicate) follows below, across the width. */
+  .ledger-list td.merchant > :not(.tx-name):not(.tx-meta) { grid-column: var(--c) / -1; }
+}
+
 /* Ledger on a phone: no tick box on every row until "Select" is tapped. */
 .list-head { display: none; }
 @media (max-width: 720px) {
@@ -1349,7 +1378,7 @@ html.keyboard .bottom-nav, html.keyboard .fab, html.keyboard .trip-fab {
   }
 }
 
-/* --- Today (Home): Needs you and the setup list on the left, the glance cards on the right --- */
+/* --- Today (Home): Needs you and the first steps on the left, the glance cards on the right --- */
 .spend-card .mini-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .spend-card .mini-tiles.single { grid-template-columns: minmax(0, 1fr); }
 .today { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-6); align-items: start; }
@@ -1374,14 +1403,12 @@ html.keyboard .bottom-nav, html.keyboard .fab, html.keyboard .trip-fab {
 @media (min-width: 720px) { .mode-lines { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); } }
 .mode-lines li { display: flex; align-items: flex-start; gap: var(--space-3); min-width: 0; overflow-wrap: anywhere; }
 .mode-lines svg { flex: none; margin-top: 2px; color: var(--accent-text); }
-.setup-note { margin: 0 0 var(--space-2); }
-.setup-row.is-done .wrap { color: var(--text-muted); }
-.setup-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-1); }
 .ring { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--border-card); }
-@media (max-width: 720px) {
-  .setup-row { flex-wrap: wrap; }
-  .setup-actions { flex: 1 1 100%; justify-content: flex-start; padding-left: calc(38px + var(--space-3)); }
-}
+/* Home's "Get started" guide: compact rows, one small action each. */
+.start-head { display: inline-flex; align-items: center; gap: var(--space-1); }
+.start-row { padding: var(--space-2) 0; }
+.start-row.is-done .wrap { color: var(--text-muted); }
+.start-note { margin: var(--space-2) 0 0; }
 
 /* A section whose title sits above its card. */
 .block { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
@@ -1417,6 +1444,10 @@ html.keyboard .bottom-nav, html.keyboard .fab, html.keyboard .trip-fab {
   .bottom-nav .nav-link.active .nav-label { font-weight: 700; }
   .bottom-nav .nav-glyph { width: 24px; height: 24px; }
   .nexus-button.in-bar { display: grid; place-items: center; flex: 0 0 auto; width: 64px; height: 44px; border-radius: 999px; color: #fff; }
+  /* The places sit in two equal halves either side of Nexus, so it stays in the middle whether the
+     bar has three, four or five items (Invest and Travel are in the menu only when turned on). */
+  .bottom-nav .bar-side { flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: space-around; gap: var(--space-1); }
+  .bottom-nav .bar-side .nav-link { max-width: 88px; }
 }
 /* The smallest phones: the bar gives its side padding back to the four labelled tabs. */
 @media (max-width: 359px) {
@@ -2510,3 +2541,26 @@ a.set-row:focus-visible { outline-offset: -2px; }
 .cost-line .num { white-space: nowrap; }
 /* A section page already titles itself with its h1; the card's own heading stays for screen readers only. */
 .set-page > .card > .card-head h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* --- one headline on the overview; the tiles under it are secondary --- */
+.overview-headline {
+  margin: 0;
+  font-size: clamp(1rem, 4.1vw, 1.5rem); line-height: 1.35; color: var(--text-secondary);
+}
+.overview-figure { font-weight: 700; color: var(--text-white); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.overview-tail { white-space: nowrap; }
+.overview-set { margin-left: var(--space-2); white-space: nowrap; font-size: 0.9375rem; color: var(--accent-text); font-weight: 600; }
+.tiles.tiles-quiet { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--space-2); }
+.tiles.tiles-quiet .tile { padding: var(--space-3) var(--space-4); gap: 2px; box-shadow: none; }
+.tiles.tiles-quiet .tile .caption { font-size: 0.8125rem; }
+.tiles.tiles-quiet .tile .value { font-size: clamp(1rem, 4.2vw, 1.25rem); font-weight: 600; }
+.tiles.tiles-quiet .tile .extra { font-size: 0.75rem; }
+@media (max-width: 720px) {
+  .tiles.tiles-quiet { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
+  .tiles.tiles-quiet .tile { padding: var(--space-3); }
+}
+.budget-first h3 { margin: 0 0 var(--space-1); font-size: 1.125rem; }
+.budget-first p { margin: 0; }
+.budget-first + .plan-add { border-top: 0; padding-top: 0; margin-top: var(--space-3); }
+.card-head.budget-head-first { margin: 0; }
+.card-head.budget-head-first h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

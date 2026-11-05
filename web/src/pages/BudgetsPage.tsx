@@ -20,7 +20,7 @@ export function BudgetsPage({ me }: { me: Me }) {
           <h1>Budgets</h1>
           <p className="muted">
             {past
-              ? `How each budget did in ${monthLabel(month)}. To change a limit, go to this month.`
+              ? `How each budget did in ${monthLabel(month)}.`
               : "Budgets reset on the 1st; nothing rolls over."}
           </p>
         </div>

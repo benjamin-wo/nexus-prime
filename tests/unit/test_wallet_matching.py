@@ -1,5 +1,5 @@
 """Telling which wallet a line of text is about: whole words and phrases in any case, the
-longest phrase wins, a tie is ambiguous, and Spending never matches. Made-up wallets."""
+longest phrase wins, a tie is ambiguous, and the main account never matches. Made-up wallets."""
 
 from uuid import uuid4
 
@@ -15,7 +15,7 @@ def wallet(name: str, kind: WalletKind, *words: str) -> Wallet:
     return Wallet(uuid4(), USER, name, kind, words)
 
 
-SPENDING = wallet("Spending", WalletKind.SPENDING, "everyday")
+SPENDING = wallet("Main account", WalletKind.SPENDING, "everyday")
 IBKR = wallet("IBKR", WalletKind.INVESTMENT, "ibkr", "interactive brokers")
 CARD = wallet("Card", WalletKind.CARD, "card payment")
 SAVINGS = wallet("Savings", WalletKind.SAVINGS, "savings", "fixed deposit")

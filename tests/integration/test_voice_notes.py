@@ -121,8 +121,7 @@ async def test_a_change_waiting_for_confirmation_shows_what_was_heard(
     reply = only(await agent.handle_voice(alice, AUDIO, "audio/ogg", "telegram:1:2"))
     # Asks first, and says what it heard so a mishearing is caught before Confirm.
     assert (
-        reply.text
-        == '🎙 heard: "Delete the Grab ride"\nDelete 2026-09-28 · -12.00 SGD · Grab · Other?'
+        reply.text == '🎙 heard: "Delete the Grab ride"\nDelete 28 Sep · SGD 12.00 at Grab (Other)?'
     )
     assert await ledger(uow, alice) == [("out", Decimal("12"))]
 

@@ -450,7 +450,7 @@ export function InvestmentPage() {
       <div className="page-head">
         <div>
           <h1>Portfolio</h1>
-          <p className="muted">What you hold and what it's worth at the latest price (live while the US market is open). Research only: Nexus never trades.</p>
+          <p className="muted">What you hold, at the latest price. Nexus never trades.</p>
         </div>
         {portfolio.data?.screenshots && (
           <label className="btn btn-primary">

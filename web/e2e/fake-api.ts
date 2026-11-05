@@ -163,7 +163,7 @@ export async function fakeApi(
     missedMoves = false,
     /** A pending email that may have been a move to the IBKR wallet (needs emailConnected). */
     emailMove = false,
-    /** Two entries that look like moves, for the review on the Wallets card. */
+    /** Two entries that look like transfers, for the review on the Wallets card. */
     likelyMoves = false,
     /** Home's Today items: a stop reached, a big move, earnings, a flight tomorrow and trip prep, in the order the server sorts them. */
     todayItems = false,
@@ -185,13 +185,25 @@ export async function fakeApi(
     demoFailures = 1,
     /** How many chat messages a demo starts with. */
     demoMessages = 5,
-    /** Pretend today is this day (YYYY-MM-DD) for the Accounting overview: its chart ends with that month
+    /** Pretend today is this day (YYYY-MM-DD) for the Money overview: its chart ends with that month
      * and the months before it have the made-up figures above. The spec sets the page's clock to match. */
     today = null as string | null,
     /** Whether the "Track which card paid" preference starts on (GET /me and PUT /settings/preferences). */
     trackCards = true,
+    /** Whether Invest and Travel are in the menu (GET /me preferences, and PUT /settings/preferences): true shows
+     * the tab, false is switched off, null is not decided yet. Both start true, so a spec that opens those pages
+     * finds their tabs. */
+    showInvest = true as boolean | null,
+    showTravel = true as boolean | null,
     /** PUT /settings/preferences answers 500, to show how a refused save reads. */
     preferencesFail = false,
+    /** Whether Home's "Get started" guide is put away (GET /setup `dismissed`; POST /setup/dismiss sets it). On by
+     * default so the specs that are not about the guide never see it; a spec for it passes false. */
+    setupDismissed = true,
+    /** Whether a Telegram chat is linked (GET /me user). */
+    telegramLinked = true,
+    /** Start with no transactions at all, as a brand-new person has (the made-up ones are not there). */
+    noTransactions = false,
   } = {},
 ) {
   let session = signedIn || demo;
@@ -304,8 +316,9 @@ export async function fakeApi(
     timezone_source: zone.source,
     timezone_set_at: zone.setAt,
     display_name: guest ? "Gus L." : demoSession ? "Demo" : member ? "Mia K." : "Sam R.",
+    telegram_linked: demoSession ? false : telegramLinked,
   });
-  const preferences = { track_cards: trackCards };
+  const preferences = { track_cards: trackCards, show_invest: showInvest, show_travel: showTravel };
   const meBody = () => ({
     user: userBody(),
     csrf_token: "csrf-1",
@@ -565,7 +578,7 @@ export async function fakeApi(
       // Money moved to an investment wallet: neither spent nor received.
       {
         ...mk("t100", "move", "800.00", null, null),
-        from_wallet: { id: "w-spending", name: "Spending", kind: "spending" },
+        from_wallet: { id: "w-spending", name: "Main account", kind: "spending" },
         to_wallet: { id: "w-investments", name: "Investments", kind: "investment" },
       },
     ],
@@ -577,7 +590,7 @@ export async function fakeApi(
     importBodies: [],
     missed: [],
     setup: {
-      dismissed: false,
+      dismissed: setupDismissed,
       items: [
         { key: "payday", label: "Set your payday", done: false, link: "/accounting/budgets", ask: "Help me set my payday" },
         { key: "receipts", label: "Get receipts in automatically", done: false, link: "/settings/email", ask: "Help me get my receipts in from email automatically" },
@@ -764,7 +777,7 @@ export async function fakeApi(
   ];
   const blank = { issuer: null, product: null, network: null, last4: null, usual: false };
   const wallets: FakeWallet[] = [
-    { id: "w-spending", name: "Spending", kind: "spending", match_words: [] as string[], ...blank },
+    { id: "w-spending", name: "Main account", kind: "spending", match_words: [] as string[], ...blank },
     ...(spendingOnly
       ? []
       : [
@@ -827,6 +840,7 @@ export async function fakeApi(
     return { mine, dropped };
   };
   const categoryName = (id: string) => categories.find((c) => c.id === id)?.name ?? id;
+  if (noTransactions) state.txs = [];
   const live = () => state.txs.filter((t) => !t.deleted);
   /** Money in noted "Salary" with no name: what "Fill in the earlier salaries" would name. */
   const unnamedSalaries = () =>
@@ -898,8 +912,12 @@ export async function fakeApi(
     if (path === "/settings/preferences" && method === "PUT") {
       state.preferencePuts.push(body);
       if (preferencesFail) return json(route, { detail: "Couldn't save that preference" }, 500);
-      if (typeof body?.track_cards !== "boolean") return json(route, { detail: "track_cards must be true or false" }, 422);
-      preferences.track_cards = body.track_cards;
+      // Only the fields sent change; each is true or false, and at least one is sent.
+      const keys = ["track_cards", "show_invest", "show_travel"] as const;
+      const sent = keys.filter((k) => body && k in body);
+      if (sent.length === 0 || sent.some((k) => typeof body?.[k] !== "boolean"))
+        return json(route, { detail: "send at least one preference, each true or false" }, 422);
+      for (const k of sent) preferences[k] = body?.[k] as boolean;
       return json(route, { ...preferences });
     }
     if (path === "/me/timezone" && method === "POST") {
@@ -2426,13 +2444,17 @@ export async function fakeApi(
         ...soon,
       ]);
     }
-    if (path === "/setup" && method === "GET") return json(route, state.setup);
+    if (path === "/setup" && method === "GET") {
+      // The budget step follows the budgets, as the server works it out; the others are as `state.setup` says.
+      const items = state.setup.items.map((i) => (i.key === "budget" ? { ...i, done: state.budgets.length > 0 } : i));
+      return json(route, { ...state.setup, items });
+    }
     if (path === "/setup/dismiss" && method === "POST") {
       state.setup.dismissed = true;
       return route.fulfill({ status: 204 });
     }
     if (path === "/departments" && method === "GET") {
-      return json(route, [{ name: "accounting", label: "Accounting", emoji: "🧾", blurb: "Spending." }]);
+      return json(route, [{ name: "accounting", label: "Money", emoji: "🧾", blurb: "Spending." }]);
     }
     if (path === "/runs" && method === "GET") {
       const done = research
@@ -2622,7 +2644,7 @@ export async function fakeApi(
       const wallet = wallets.find((w) => w.id === walletOne[1]);
       if (!wallet) return json(route, { detail: "wallet not found" }, 404);
       if (body.kind && ["spending", "cash"].includes(wallet.kind) && body.kind !== wallet.kind)
-        return json(route, { detail: "Spending can't change kind" }, 400);
+        return json(route, { detail: "The main account can't change kind" }, 400);
       if (body.name && wallets.some((w) => w.id !== wallet.id && w.name.toLowerCase() === String(body.name).toLowerCase()))
         return json(route, { detail: "a wallet with that name already exists" }, 409);
       const { last4: sentLast4, ...rest } = body;
@@ -2646,7 +2668,7 @@ export async function fakeApi(
       if (wallet.kind === "spending" || wallet.kind === "cash") return json(route, { detail: `${wallet.name} can't be deleted` }, 400);
       const into = wallets.find((w) => w.id === url.searchParams.get("move_to") && w.id !== wallet.id);
       const { mine, dropped } = walletFold(wallet.id, into?.id ?? null);
-      if (mine.length > 0 && !into) return json(route, { detail: "pick another wallet to move its moves to" }, 400);
+      if (mine.length > 0 && !into) return json(route, { detail: "pick another wallet to move its transfers to" }, 400);
       for (const t of mine) {
         if (dropped.includes(t)) t.deleted = true;
         else for (const end of ["from_wallet", "to_wallet"] as const) if (t[end]?.id === wallet.id) t[end] = walletRef(into!);
@@ -2659,7 +2681,7 @@ export async function fakeApi(
       const from = wallets.find((w) => w.id === (body.from_wallet_id ?? "w-spending"));
       const to = wallets.find((w) => w.id === body.to_wallet_id);
       if (!from || !to) return json(route, { detail: "wallet not found" }, 404);
-      if (from.id === to.id) return json(route, { detail: "a move needs two different wallets" }, 400);
+      if (from.id === to.id) return json(route, { detail: "a transfer needs two different wallets" }, 400);
       const tx: Tx = {
         ...mk(`t${state.txs.length + 1}`, "move", body.amount, null, null),
         from_wallet: walletRef(from),
@@ -2678,8 +2700,8 @@ export async function fakeApi(
       if (!tx) return json(route, { detail: "transaction not found" }, 404);
       if (tx.direction === "move") return json(route, { detail: "this is already a move" }, 400);
       if (!wallet || wallet.kind === "spending")
-        return json(route, { detail: "pick a wallet other than Spending to move it to or from" }, 400);
-      if (tx.split) return json(route, { detail: "this bill is split with others, so it can't be a move" }, 409);
+        return json(route, { detail: "pick a wallet other than the main account to transfer it to or from" }, 400);
+      if (tx.split) return json(route, { detail: "this bill is split with others, so it can't be a transfer" }, 409);
       const spending = walletRef(wallets[0]);
       const [sent, received] = tx.direction === "out" ? [spending, walletRef(wallet)] : [walletRef(wallet), spending];
       Object.assign(tx, { direction: "move", category_id: null, from_wallet: sent, to_wallet: received, paid_with: null });
@@ -3035,9 +3057,9 @@ export async function fakeApi(
       };
       if (body.wallet_id) {
         const target = wallets.find((w) => w.id === body.wallet_id);
-        if (bill.spending) return json(route, { detail: "a bill that counts as spending can't move money to a wallet" }, 422);
+        if (bill.spending) return json(route, { detail: "a bill that counts as spending can't transfer money to a wallet" }, 422);
         if (!target) return json(route, { detail: "wallet not found" }, 404);
-        if (target.kind === "spending") return json(route, { detail: "a scheduled move goes to a wallet other than Spending" }, 422);
+        if (target.kind === "spending") return json(route, { detail: "a scheduled transfer goes to a wallet other than the main account" }, 422);
         bill.wallet = walletRef(target);
       }
       state.bills.push(bill);
@@ -3049,9 +3071,9 @@ export async function fakeApi(
       if (!bill) return json(route, { detail: "bill not found" }, 404);
       const target = body.wallet_id ? wallets.find((w) => w.id === body.wallet_id) : null;
       if (body.wallet_id && bill.spending !== false)
-        return json(route, { detail: "a bill that counts as spending can't move money to a wallet" }, 422);
+        return json(route, { detail: "a bill that counts as spending can't transfer money to a wallet" }, 422);
       if (body.wallet_id && !target) return json(route, { detail: "wallet not found" }, 404);
-      if (target?.kind === "spending") return json(route, { detail: "a scheduled move goes to a wallet other than Spending" }, 422);
+      if (target?.kind === "spending") return json(route, { detail: "a scheduled transfer goes to a wallet other than the main account" }, 422);
       bill.wallet = target ? walletRef(target) : null;
       return json(route, bill);
     }
@@ -3076,7 +3098,7 @@ export async function fakeApi(
             to_wallet: marked.wallet,
           });
           const shown = Number(marked.amount.amount).toFixed(2);
-          return json(route, { message: `${head} and logged a move of ${shown} SGD from Spending to ${marked.wallet.name}.`, logged: false, moved: true, needs_amount: false });
+          return json(route, { message: `${head} and logged a transfer of ${shown} SGD from your main account to ${marked.wallet.name}.`, logged: false, moved: true, needs_amount: false });
         }
         if (marked?.spending === false) {
           return json(route, { message: "Marked it as done. It doesn't count as spending, so nothing was logged.", logged: false, moved: false, needs_amount: false });

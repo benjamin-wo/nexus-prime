@@ -47,3 +47,51 @@ describe("the Budgets page for a past month", () => {
     expect(screen.getByRole("group", { name: "Month" })).toHaveTextContent(/November.*2026/);
   });
 });
+
+describe("the Budgets page for this month", () => {
+  const plan = {
+    currency: "SGD",
+    total_out: sgd("2600.00"),
+    left_to_spend: sgd("1100.00"),
+    still_due_out: sgd("1300.00"),
+    income: sgd("5000.00"),
+    budget_left: null,
+    tighter: null,
+    plan_warning: null,
+    skipped: [],
+  };
+  const overall = { id: "b1", category_id: null, name: "Overall", limit: sgd("2000.00"), spent: sgd("600.00"), remaining: sgd("1400.00"), percent: 30, unconverted: [] };
+  const serve = (budgets: unknown[]) =>
+    mockApi({
+      "GET /budgets": () => budgets,
+      "GET /budgets/month": () => plan,
+      "GET /categories": () => [{ id: "food", name: "Dining Out" }],
+      "GET /bills": () => [],
+      "GET /salary": () => null,
+      "GET /subscriptions": () => ({ tracked: [], proposed: [], monthly_totals: [] }),
+      "GET /wallets": () => [],
+    });
+
+  it("starts as a short Set a monthly limit form, with no summary cards, until there is a budget", async () => {
+    serve([]);
+    renderWithProviders(<BudgetsPage me={me} />, "/accounting/budgets");
+    expect(await screen.findByRole("heading", { name: "Set a monthly limit" })).toBeInTheDocument();
+    const form = screen.getByRole("form", { name: "Add a budget" });
+    expect(within(form).getByLabelText("Category")).toHaveDisplayValue("All spending");
+    expect(within(form).getByLabelText(/Monthly limit/)).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Total spent" })).toBeNull();
+    expect(screen.queryByRole("group", { name: "Left to spend" })).toBeNull();
+    expect(screen.queryByText(/No budgets yet/)).toBeNull();
+    // The month picker stays.
+    expect(screen.getByRole("group", { name: "Month" })).toBeInTheDocument();
+  });
+
+  it("behaves as before once there is a budget: the summary cards come back", async () => {
+    serve([overall]);
+    renderWithProviders(<BudgetsPage me={me} />, "/accounting/budgets");
+    expect(await screen.findByRole("group", { name: "Total spent" })).toHaveTextContent(/SGD.2,600\.00/);
+    expect(screen.getByRole("group", { name: "Left to spend" })).toHaveTextContent(/SGD.1,100\.00/);
+    expect(screen.queryByRole("heading", { name: "Set a monthly limit" })).toBeNull();
+    expect(screen.getByRole("meter", { name: "Overall budget used" })).toBeInTheDocument();
+  });
+});

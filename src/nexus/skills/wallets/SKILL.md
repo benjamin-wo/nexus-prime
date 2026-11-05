@@ -1,33 +1,34 @@
 ---
 name: wallets
-description: The user's wallets (Spending, Cash, investment, savings, card) and moves of money between them; adding, renaming and deleting wallets, a card's details and usual card, which card paid for an expense, and turning an entry into a move.
+description: The user's wallets (Main account, Cash, investment, savings, card) and transfers of money between them; adding, renaming and deleting wallets, a card's details and usual card, which card paid for an expense, and turning an entry into a transfer.
 tools: [list_wallets, add_wallet, update_wallet, set_usual_card, delete_wallet, mark_as_move, find_likely_moves, find_transactions, log_move]
 ---
-# Wallets and moves
+# Wallets and transfers
 
 A wallet is a name for a place the user keeps money. It has no balance: Nexus doesn't know
-what's in it. Everyone has **Spending**, the main account the budget watches, and **Cash**
+what's in it. Everyone has a **Main account** (the one the budget watches; the user may have renamed
+it, so go by the snapshot) and **Cash**
 (notes and coins; it can be renamed, not deleted), and can add others: investment (a
 broker, a fund), savings, card (a credit card) or other.
 
-A **move** is money going from one of the user's wallets to another. It is never spending
+A **transfer** is money going from one of the user's wallets to another. It is never spending
 and never income, so it stays out of the month's totals and budgets. Nexus only records
-moves; it never moves money.
+transfers; it never moves money.
 
-## Recording a move
-- Call `log_move` (always offered; it asks the user to confirm). It comes from Spending
+## Recording a transfer
+- Call `log_move` (always offered; it asks the user to confirm). It comes from the Main account
   unless the user says otherwise.
   - "moved 800 to my IBKR": to IBKR.
   - "topped up savings 500": to Savings.
-  - "took 300 out of savings": `from_wallet` Savings, `to_wallet` Spending.
+  - "took 300 out of savings": `from_wallet` Savings, `to_wallet` Main account.
   - "moved 1000 from savings to IBKR": wallet to wallet.
   - "put 1000 SGD into my USD account, got 740 USD": `received_amount` 740,
     `received_currency` USD, when what arrived differs from what left.
-- Paying a credit card bill from Spending is a move to the Card wallet: "paid my credit
+- Paying a credit card bill from the Main account is a transfer to the Card wallet: "paid my credit
   card bill 1,240". The card's purchases are already logged as expenses, so the bill
   payment must not be logged as another one. Only if they have no card wallet: ask, and
   offer to add one.
-- Not a move:
+- Not a transfer:
   - Money given to a person ("transferred 50 to Alex for dinner", "sent mum 100"): an
     expense, split or owed as usual.
   - A dividend or interest paid out: income (`record_income`, kind other).
@@ -40,7 +41,7 @@ moves; it never moves money.
   ("my IBKR", "ibkr"); a wallet can also have match words (other names for it).
 - If what they name isn't one of their wallets ("moved 800 to my Tiger account"), ask
   which wallet they mean and offer to add it: "I don't have a Tiger wallet. Want me to add
-  it as an investment wallet?" Add it only after they say yes, then log the move. Never
+  it as an investment wallet?" Add it only after they say yes, then log the transfer. Never
   invent a wallet, and never log the money as an expense because there's no wallet.
 - `list_wallets` shows them all with their match words.
 
@@ -51,25 +52,25 @@ moves; it never moves money.
   only keep track, and offer to record it once they've done it.
 
 ## Fixing
-- "that 800 to IBKR was a move, not an expense": `find_transactions` for its id, then
+- "that 800 to IBKR was a transfer, not an expense": `find_transactions` for its id, then
   `mark_as_move` with the wallet (asks the user to confirm). It stops counting as
   spending and loses its category. Money in that was really a withdrawal from a wallet
   works the same way. A bill split with others, or money in that paid back an IOU, can't
-  be turned into a move. Undo brings it back.
-- `find_transactions` with direction move lists moves. Edit (amount, date, notes),
+  be turned into a transfer. Undo brings it back.
+- `find_transactions` with direction move lists transfers. Edit (amount, date, notes),
   delete and undo work as for any entry.
 
-## Finding entries that were really moves
-- "do I have anything that should be a move?", "check my history for transfers to IBKR":
+## Finding entries that were really transfers
+- "do I have anything that should be a transfer?", "check my history for transfers to IBKR":
   `find_likely_moves` lists entries from the last six months that name a wallet's match
   words, or are the same amount to the same payee every month. It changes nothing.
 - Offer them to the user, one at a time or in a short list. For each one they agree is a
-  move, call `mark_as_move` with its id and the wallet (it asks them to confirm). When
+  transfer, call `mark_as_move` with its id and the wallet (it asks them to confirm). When
   there's no wallet next to an entry, it only looks like a regular transfer: ask which
   wallet it went to, or leave it. Rent, bills and subscriptions can look the same, so
   never convert one without the user saying so.
-- An email receipt that names a wallet is asked about as "Was this a move to IBKR?". With
-  `answer_email`, action `move` records it as a move.
+- An email receipt that names a wallet is asked about as "Was this a transfer to IBKR?". With
+  `answer_email`, action `move` records it as a transfer.
 
 ## Managing wallets
 - "add a savings wallet called Emergency fund": `add_wallet` with a kind of investment,
@@ -83,21 +84,21 @@ moves; it never moves money.
 - "call it Brokerage instead", "IBKR is also called interactive brokers":
   `update_wallet` (new name, kind or match words; match words replace the old ones).
 - "delete my Savings wallet": `delete_wallet` (asks the user to confirm, saying how many
-  moves are affected). A wallet with moves needs another wallet for them to point at; ask
-  which if they didn't say. Moves between the two are removed, since both ends would be the
-  same wallet. This can't be undone. Spending can't be deleted.
+  transfers are affected). A wallet with transfers needs another wallet for them to point at;
+  ask which if they didn't say. Transfers between the two are removed, since both ends would
+  be the same wallet. This can't be undone. The Main account can't be deleted.
 
 ## Which card paid
 - Only when the user tracks which card paid. If the snapshot says "Card tracking is off",
   skip this whole section: don't ask which card paid, don't pass `paid_with`, and don't
   call `set_usual_card`. If they ask for it, tell them it can be turned on with "Track
-  which card paid" in Settings. Paying a card's bill (a move, above) is not affected.
-- Each expense can say what paid for it: a card, Spending, Cash or another wallet (never
+  which card paid" in Settings. Paying a card's bill (a transfer, above) is not affected.
+- Each expense can say what paid for it: a card, the Main account, Cash or another wallet (never
   investment or savings). It is only a note, and changes no total or budget.
 - "12.50 lunch on my citi card": `log_expense` with `paid_with` "citi". Name it as the
   user did; a card's name, issuer, product or last 4 digits all work, in any case, as long
   as one card fits. Without `paid_with`, the user's usual card is used if they set one
-  (the reply says so). It never applies to money in or to moves.
+  (the reply says so). It never applies to money in or to transfers.
 - If the card isn't one of theirs ("paid 30 for grab with amex"), `log_expense` returns an
   error and logs nothing. Ask: "I don't have an Amex card. Want me to add it as a card?"
   Add it only after they say yes (`add_wallet`, kind card), then log the expense. If two
@@ -117,4 +118,4 @@ moves; it never moves money.
 - "how much did I put into IBKR this year": `query_ledger` with direction move, wallet
   IBKR and wallet_side into (out_of for money taken out, either for both). Give the
   total it returns.
-- "how much did I put away this month" and the saving rate are in the snapshot.
+- "how much did I save this month" and the saving rate are in the snapshot.

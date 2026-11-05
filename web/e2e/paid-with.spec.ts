@@ -1,6 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 
 import { fakeApi } from "./fake-api";
+import { openFilters, showOnly } from "./ledger-filters";
 
 // Today is Monday 28 September 2026 in Singapore, the month the made-up entries (27 September) are in.
 test.use({ timezoneId: "Asia/Singapore", reducedMotion: "reduce" });
@@ -60,7 +61,7 @@ test("add a card's details, make it the usual card, and an expense is paid with 
   const sheet = page.getByRole("dialog", { name: "Log money out" });
   const paidWith = sheet.getByLabel("Paid with");
   await expect(paidWith).toHaveValue("w-card");
-  await expect(paidWith.locator("option")).toHaveText(["Card ·· 4321", "Spending", "Cash", "Not set", "+ Add a card…"]);
+  await expect(paidWith.locator("option")).toHaveText(["Card ·· 4321", "Main account", "Cash", "Not set", "+ Add a card…"]);
   await sheet.getByLabel("Amount").fill("8.40");
   await sheet.getByLabel("Paid to").fill("Kopi");
   await sheet.getByRole("button", { name: "Save" }).click();
@@ -72,7 +73,7 @@ test("add a card's details, make it the usual card, and an expense is paid with 
   const another = page.getByRole("dialog");
   await another.getByRole("button", { name: "Money in", exact: true }).click();
   await expect(another.getByLabel("Paid with")).toHaveCount(0);
-  await another.getByRole("button", { name: "Move", exact: true }).click();
+  await another.getByRole("button", { name: "Transfer", exact: true }).click();
   await expect(another.getByLabel("Paid with")).toHaveCount(0);
 });
 
@@ -178,34 +179,38 @@ test("change an entry's card, and filter the ledger by a card or by Not set", as
   await expect(row(page, "Grab").getByText("DBS Altitude ·· 8765")).toHaveCount(0);
 
   // The Paid with filter lists what can pay, never investment or savings wallets.
-  const filter = page.getByRole("combobox", { name: "Paid with" });
+  let filters = await openFilters(page);
+  const filter = filters.getByRole("combobox", { name: "Paid with" });
   await expect(filter.locator("option")).toHaveText([
-    "Paid with: any",
+    "Any",
     "Card",
     "Citi PremierMiles ·· 4321",
     "DBS Altitude ·· 8765",
-    "Spending",
+    "Main account",
     "Cash",
     "Not set",
   ]);
 
   // One card: its entries only, in the address and as a chip that takes it off.
   await filter.selectOption({ label: "Citi PremierMiles ·· 4321" });
+  await page.keyboard.press("Escape");
   await expect(page).toHaveURL(/paid_with=w-citi/);
   await expect(page.getByRole("button", { name: "Maxwell Food Centre", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Grab", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Employer", exact: true })).toHaveCount(0);
-  const chip = page.locator(".filter-chip").filter({ hasText: "Paid with" });
-  await expect(chip).toContainText("Citi PremierMiles ·· 4321");
+  const chip = page.locator(".filter-chip").filter({ hasText: "Citi PremierMiles ·· 4321" });
+  await expect(chip).toBeVisible();
+  await expect(page.getByRole("button", { name: "Filter, 1 active" })).toBeVisible();
   // Export carries it.
   await page.getByRole("button", { name: "More" }).click();
   await expect(page.getByRole("menuitem", { name: "Export CSV" })).toHaveAttribute("href", "/api/export.csv?paid_with=w-citi");
   await page.keyboard.press("Escape");
 
   // It sits beside the other filters.
-  await page.getByRole("button", { name: "Money out", exact: true }).click();
+  await showOnly(page, "Money out");
   await expect(page.getByRole("button", { name: "Maxwell Food Centre", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "All", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Filter, 2 active" })).toBeVisible();
+  await showOnly(page, "All");
 
   await chip.getByRole("button").click();
   await expect(page).not.toHaveURL(/paid_with/);
@@ -217,11 +222,13 @@ test("change an entry's card, and filter the ledger by a card or by Not set", as
   await sheet.getByLabel("Paid with").selectOption({ label: "Not set" });
   await sheet.getByRole("button", { name: "Save" }).click();
   await expect(sheet).toBeHidden();
-  await filter.selectOption({ label: "Not set" });
+  filters = await openFilters(page);
+  await filters.getByRole("combobox", { name: "Paid with" }).selectOption({ label: "Not set" });
+  await page.keyboard.press("Escape");
   await expect(page).toHaveURL(/paid_with=none/);
   await expect(page.getByRole("button", { name: "Grab", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Maxwell Food Centre", exact: true })).toHaveCount(0);
-  await expect(page.locator(".filter-chip").filter({ hasText: "Paid with" })).toContainText("Not set");
+  await expect(page.locator(".filter-chip").filter({ hasText: "No card set" })).toBeVisible();
 });
 
 test("each card shows what it paid for this month and links to its entries", async ({ page }) => {
@@ -278,7 +285,11 @@ test("with card tracking off, the ledger has no card filter or card lines and Wa
   await open(page, { trackCards: false, cards: true });
   await page.goto("/accounting/ledger");
   await expect(page.getByRole("button", { name: "Maxwell Food Centre", exact: true })).toBeVisible();
-  await expect(page.getByRole("combobox", { name: "Paid with" })).toHaveCount(0);
+  // The sheet has the type and Dates but no card.
+  const sheet = await openFilters(page);
+  await expect(sheet.getByRole("combobox", { name: "Dates" })).toBeVisible();
+  await expect(sheet.getByRole("combobox", { name: "Paid with" })).toHaveCount(0);
+  await page.keyboard.press("Escape");
   await expect(page.getByText("Citi PremierMiles ·· 4321")).toHaveCount(0);
   await expect(page.getByText("DBS Altitude ·· 8765")).toHaveCount(0);
 

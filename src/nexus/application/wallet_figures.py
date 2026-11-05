@@ -1,4 +1,4 @@
-"""What the user put away and what left their Spending wallet, from their wallet moves.
+"""What the user put away and what left their main account, from their wallet moves.
 
 A move between two of the user's wallets is never spending and never income, so the
 usual totals leave it out. These numbers add it back where it answers a question:
@@ -6,7 +6,7 @@ usual totals leave it out. These numbers add it back where it answers a question
 - put away: money moved into savings or investment wallets from anywhere else, less money
   moved back out of them to anywhere else. Between two savings or investment wallets
   it nets to nothing.
-- total out: spending, plus money moved from Spending to any wallet other than a card
+- total out: spending, plus money moved from the main account to any wallet other than a card
   (paying a card is not extra: the card's purchases are already spending).
 - saving rate: put away as a share of the month's income.
 - left to spend: the month's income (received, plus salary still due) less what has gone
@@ -46,7 +46,7 @@ class WalletFigures:
     end: datetime
     currency: str
     put_away: Money  # net into savings and investments, from outside them
-    total_out: Money  # spent, plus moved from Spending to anything but a card
+    total_out: Money  # spent, plus moved from the main account to anything but a card
     spent: Money  # as ``summarize_in_home`` reports it
     income: Money  # as ``summarize_in_home`` reports it
     saving_rate: Decimal | None  # put_away / income (0.24 is 24%); None without income
@@ -82,7 +82,7 @@ async def wallet_figures(
     found = await fx.rates_for(rates, home, ((m.total.currency, m.day) for m in moves))
 
     put_away = Money.zero(home)
-    moved_out = Money.zero(home)  # from Spending to anything but a card
+    moved_out = Money.zero(home)  # from the main account to anything but a card
     unconverted = list(summary.out.unconverted) + list(summary.income.unconverted)
     for m in moves:
         origin, target = kinds.get(m.from_wallet_id), kinds.get(m.to_wallet_id)
@@ -167,7 +167,7 @@ class MonthPlan:
     """
 
     currency: str
-    total_out: Money  # so far this month: spent, plus moved from Spending to non-cards
+    total_out: Money  # so far this month: spent, plus moved from the main account to non-cards
     still_due_out: Money  # bills (spending or not), subscriptions and trip set-asides ahead
     income: Money  # received this month so far, plus salary still due before month end
     left_to_spend: Money  # can be negative
@@ -277,7 +277,8 @@ async def _plan_warning(
     if usual is None or budget + moves <= usual:
         return None
     return (
-        f"A {budget} budget plus {moves} of scheduled moves is more than your usual {usual} income."
+        f"A {budget} budget plus {moves} of scheduled transfers is more than your usual "
+        f"{usual} income."
     )
 
 

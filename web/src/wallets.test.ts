@@ -31,7 +31,7 @@ describe("walletLabel", () => {
 
   it("is just the name without them", () => {
     expect(walletLabel({ name: "Cash", last4: null })).toBe("Cash");
-    expect(walletLabel({ name: "Spending" })).toBe("Spending");
+    expect(walletLabel({ name: "Main account" })).toBe("Main account");
   });
 });
 

@@ -196,7 +196,7 @@ async def test_only_savings_and_investments_count_as_put_away(uow: UowFactory) -
     w = await Wallets.create(uow, user)
     other = (await add_wallet(uow(), user.id, "Shoebox", WalletKind.OTHER)).id
     await seed_month(uow, user)
-    await w.move("400", w.spending, other, sg(3))  # out of Spending, but not put away
+    await w.move("400", w.spending, other, sg(3))  # out of the main account, but not saved
     await w.move("100", w.card, w.spending, sg(4))  # neither
     await w.move("50", other, w.investments, sg(5))  # from any other wallet counts
 
@@ -359,9 +359,9 @@ async def test_a_summary_lists_moves_apart_from_spending_and_income(
     assert await check(uow, ben, sg(28, 21).replace(minute=2))
     by_user = {p["user_id"]: p["text"].splitlines() for p in await sent(engine)}
     mine, theirs = by_user[str(ann.id)], by_user[str(ben.id)]
-    assert [line for line in mine if not line.startswith("Moved")] == theirs
-    assert "Moved 800.00 SGD to Investments." in mine
-    assert "Moved 300.00 SGD from Savings to Spending." in mine
+    assert [line for line in mine if not line.startswith("Transferred")] == theirs
+    assert "Transferred 800.00 SGD to Investments." in mine
+    assert "Transferred 300.00 SGD from Savings to Main account." in mine
     assert "You spent 40.00 SGD (1 transaction)." in mine
     assert "You received 3,000.00 SGD (1 transaction)." in mine
 
@@ -376,7 +376,7 @@ async def test_an_instant_message_names_the_wallet(
     await wallets.move("800", wallets.spending, wallets.investments, sg(28, 9))
     assert await check(uow, user, sg(28, 10))
     [message] = await sent(engine)
-    assert message["text"] == "🧾 Moved 800.00 SGD to Investments."
+    assert message["text"] == "🧾 Transferred 800.00 SGD to Investments."
 
 
 async def test_moves_are_not_trip_spending(uow: UowFactory) -> None:
@@ -445,7 +445,7 @@ async def test_the_snapshot_shows_a_move_by_where_it_went(uow: UowFactory) -> No
     await log(uow, user, "12", sg(14), category="Dining Out", counterparty="Coffee")
     await w.move("800", w.spending, w.investments, sg(15))
     text = await money_snapshot(ToolContext(user, uow, sg(16), FakeRates()))
-    assert "Tue 15 Sep: 800.00 SGD → Investments (move)" in text
+    assert "Tue 15 Sep: 800.00 SGD → Investments (transfer)" in text
     assert "Mon 14 Sep: -12.00 SGD Coffee (Dining Out)" in text
     assert "+800" not in text and "-800" not in text
 
@@ -579,7 +579,7 @@ async def test_a_paid_bill_is_not_due_again_and_a_move_made_reduces_left_to_spen
     await bill_cases.mark_paid(uow, user, ibkr.bill.id, now=sg(18))
     done = await month_plan(uow, FakeRates(), user, now=sg(18))
     assert done.still_due_out == sgd("0") and done.left_to_spend == sgd("2100")
-    # ... until the move is made, which is money out of Spending.
+    # ... until the move is made, which is money out of the main account.
     await w.move("1000", w.spending, w.investments, sg(18))
     moved = await month_plan(uow, FakeRates(), user, now=sg(18))
     assert moved.total_out == sgd("3900") and moved.left_to_spend == sgd("1100")
@@ -605,7 +605,7 @@ async def test_items_without_an_amount_or_a_rate_are_skipped_and_named(uow: UowF
 # --- the plan check -----------------------------------------------------------------
 
 WARNING = (
-    "A 4,000.00 SGD budget plus 1,500.00 SGD of scheduled moves is more than your usual "
+    "A 4,000.00 SGD budget plus 1,500.00 SGD of scheduled transfers is more than your usual "
     "5,000.00 SGD income."
 )
 
@@ -650,7 +650,7 @@ async def test_scheduled_moves_are_a_months_worth_by_cadence(uow: UowFactory) ->
     await bill(uow, user, "Monthly top-up", 3, "201.01", spending=False)
     text = await warning(uow, user)
     assert text is not None
-    assert "plus 2,001.01 SGD of scheduled moves" in text
+    assert "plus 2,001.01 SGD of scheduled transfers" in text
 
 
 async def test_no_plan_warning_without_a_budget_moves_or_income_history(uow: UowFactory) -> None:

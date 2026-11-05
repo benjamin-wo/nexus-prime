@@ -236,17 +236,17 @@ function MoveCell({
         <button
           type="button"
           className="btn btn-ghost"
-          aria-label={`Make it a move: ${label}`}
+          aria-label={`Make it a transfer: ${label}`}
           onClick={() => onChange(named?.id ?? null)}
         >
-          Make it a move
+          Make it a transfer
         </button>
       </>
     );
   return (
     <>
       <span className="import-move-label">
-        {row.direction === "in" ? `Move ${chosen.name} → Spending` : `Move → ${chosen.name}`}
+        {row.direction === "in" ? `Transfer ${chosen.name} → Main account` : `Transfer → ${chosen.name}`}
       </span>
       <span className="quick">
         <select
@@ -508,8 +508,7 @@ export function ImportPage() {
           <BackLink to="/settings">Back to Settings</BackLink>
           <h1>Import a statement</h1>
           <p className="muted">
-            A CSV or PDF statement from your bank or card. Nothing is added
-            until you check it and confirm.
+            A CSV or PDF from your bank. Nothing is added until you confirm.
           </p>
         </div>
       </div>

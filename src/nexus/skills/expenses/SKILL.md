@@ -12,7 +12,7 @@ tools: [log_expense, find_transactions, edit_transaction, delete_transaction, re
   the closest one from the list (Other if nothing fits). The user's category rules
   take precedence over your guess.
 - Money moved between the user's own wallets (savings, an investment account, paying a
-  credit card bill) is a move, not an expense: `log_move`, see the wallets skill.
+  credit card bill) is a transfer, not an expense: `log_move`, see the wallets skill.
 - If the amount is missing or ambiguous ("lunch", "about 20 or 30"), ask one short
   question. Never guess an amount, currency or date.
 - A price in another currency keeps that currency ("15 USD"). Don't convert.
@@ -34,7 +34,7 @@ tools: [log_expense, find_transactions, edit_transaction, delete_transaction, re
 ## Fixing
 - To change or delete something, first `find_transactions` to get its id. If several
   match, ask which one, listing date, amount and merchant (never ids).
-- "that was a move, not an expense" (money put into savings or an investment account):
+- "that was a transfer, not an expense" (money put into savings or an investment account):
   load the wallets skill and use `mark_as_move`.
 - "undo" or "that was wrong" right after a change: `undo_last_change`.
 - Edits, deletes and splits ask the user to confirm; tell them what you're about to do

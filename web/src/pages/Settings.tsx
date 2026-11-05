@@ -258,10 +258,15 @@ function useSummaries(me: Me): Record<string, string | undefined> {
   };
 }
 
-/** A switch that saves when flipped: the screen follows at once, and goes back with the reason if the save fails. */
-function TrackCardsSwitch({ me }: { me: Me }) {
+type Preferences = NonNullable<Me["preferences"]>;
+type PreferenceKey = keyof Preferences;
+
+/** A switch for one preference that saves when flipped: the screen follows at once, and goes back with
+ * the reason if the save fails. Not decided (null or absent) reads as off. The answer is the full
+ * preferences, kept in the cached /me so the rest of the app (the menu, Home) follows. */
+function PreferenceSwitch({ me, field, title, hint }: { me: Me; field: PreferenceKey; title: string; hint: string }) {
   const client = useQueryClient();
-  const saved = me.preferences?.track_cards ?? false;
+  const saved = me.preferences?.[field] === true;
   const [on, setOn] = useState(saved);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -275,10 +280,10 @@ function TrackCardsSwitch({ me }: { me: Me }) {
     setBusy(true);
     setError(null);
     try {
-      const result = await api<{ track_cards: boolean }>("/settings/preferences", { method: "PUT", body: { track_cards: next } });
-      setOn(result.track_cards);
+      const result = await api<Partial<Preferences>>("/settings/preferences", { method: "PUT", body: { [field]: next } });
+      setOn(result[field] === true);
       client.setQueryData<Me | null | undefined>(["me"], (old) =>
-        old ? { ...old, preferences: { ...old.preferences, track_cards: result.track_cards } } : old,
+        old ? { ...old, preferences: { ...old.preferences, ...result } as Preferences } : old,
       );
       void client.invalidateQueries({ queryKey: ["me"] });
     } catch (e) {
@@ -294,10 +299,10 @@ function TrackCardsSwitch({ me }: { me: Me }) {
       <label className="set-row set-switch-row">
         <span className="set-text">
           <span className="set-row-title" id={`${id}-name`}>
-            Track which card paid
+            {title}
           </span>
           <span className="caption" id={`${id}-hint`}>
-            Off keeps logging simple. On adds a Paid with field to expenses.
+            {hint}
           </span>
         </span>
         <input
@@ -330,7 +335,7 @@ export function Settings({ me }: { me: Me }) {
       <div className="page-head">
         <div>
           <h1>Settings</h1>
-          <p className="muted">How Nexus reaches you, what it connects to, and the data it keeps for you.</p>
+          <p className="muted">Your preferences and connections.</p>
         </div>
       </div>
       <section className="set-group" aria-labelledby="set-preferences">
@@ -338,7 +343,14 @@ export function Settings({ me }: { me: Me }) {
           Preferences
         </h2>
         <div className="set-list">
-          <TrackCardsSwitch me={me} />
+          <PreferenceSwitch
+            me={me}
+            field="track_cards"
+            title="Track which card paid"
+            hint="Off keeps logging simple. On adds a Paid with field to expenses."
+          />
+          <PreferenceSwitch me={me} field="show_invest" title="Investing" hint="Portfolio, watchlist and trade plans in the menu" />
+          <PreferenceSwitch me={me} field="show_travel" title="Travel" hint="Trips and trip research in the menu" />
         </div>
       </section>
       {GROUPS.map((group) => {

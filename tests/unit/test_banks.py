@@ -5,7 +5,7 @@ from uuid import uuid4
 
 import pytest
 
-from nexus.domain.banks import issuer_from_sender, sender_domain
+from nexus.domain.banks import can_pay_you, issuer_from_sender, sender_domain
 from nexus.domain.ledger import UserId, Wallet, WalletKind
 from nexus.domain.wallets import card_with_last4, cards_with_last4
 
@@ -59,6 +59,44 @@ def test_a_subdomain_counts_and_case_and_display_names_do_not_matter() -> None:
 )
 def test_lookalikes_and_other_senders_are_not_a_bank(sender: str) -> None:
     assert issuer_from_sender(sender) is None
+
+
+@pytest.mark.parametrize(
+    "sender",
+    [
+        "alerts@uob.com.sg",  # a bank
+        "UOB Alerts <alerts@alerts.uob.com.sg>",
+        "service@paypal.com",
+        "member@mail.paypal.com",
+        "no-reply@wise.com",
+        "noreply@transferwise.com",
+        "hello@revolut.com",
+        "hello@you.co",
+        "pay@grab.com",
+        "hello@amaze.co",
+        "hello@instarem.com",
+        "payouts@stripe.com",
+    ],
+)
+def test_banks_and_payment_services_can_pay_you(sender: str) -> None:
+    assert can_pay_you(sender)
+
+
+@pytest.mark.parametrize(
+    "sender",
+    [
+        "billing@acmehire.example",
+        "no-reply@kopi.test",
+        "alerts@notpaypal.com",  # a longer name is not a subdomain
+        "service@paypal.com.example.org",  # the service's name inside someone else's domain
+        "service@wise.com.evil.example",
+        "hello@xstripe.com",
+        "paypal.com",  # no address at all
+        "",
+    ],
+)
+def test_a_shop_or_a_lookalike_cannot_pay_you(sender: str) -> None:
+    assert not can_pay_you(sender)
 
 
 def card(name: str, last4: str | None, issuer: str | None = None) -> Wallet:

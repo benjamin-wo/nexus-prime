@@ -91,7 +91,7 @@ async def test_the_demo_account_has_a_full_life(world: World, now: datetime) -> 
     first, second = sorted(local_day(t["occurred_at"]) for t in income)
     assert today - timedelta(days=62) <= first < second <= today
     assert [m["to_wallet"]["name"] for m in moves].count("Savings") >= 3
-    assert {m["from_wallet"]["name"] for m in moves} == {"Spending"}
+    assert {m["from_wallet"]["name"] for m in moves} == {"Main account"}
     # The Grab rule filed the rides; a few entries carry a note.
     rides = [t for t in spending if t["counterparty"] == "Grab"]
     assert rides and all(t["category_rule_id"] for t in rides)
@@ -100,7 +100,7 @@ async def test_the_demo_account_has_a_full_life(world: World, now: datetime) -> 
     assert len({local_day(t["occurred_at"]) for t in spending}) >= 40
     wallets = {w["name"]: w["kind"] for w in await get(browser, "/api/wallets")}
     assert wallets == {
-        "Spending": "spending",
+        "Main account": "spending",
         "Cash": "cash",
         "Savings": "savings",
         "IBKR": "investment",

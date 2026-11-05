@@ -36,10 +36,18 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command, interrupt
 
 from nexus.agent import kernel, open_items
+from nexus.agent.confirmation import combine
 from nexus.agent.image_look import acts
 from nexus.agent.open_items import OpenItem
 from nexus.agent.snapshot import money_snapshot
-from nexus.agent.tools import ToolContext, ToolSpec, UowFactory, run_tool, safe_for_images
+from nexus.agent.tools import (
+    MENU_OF,
+    ToolContext,
+    ToolSpec,
+    UowFactory,
+    run_tool,
+    safe_for_images,
+)
 from nexus.application import departments as department_cases
 from nexus.application import income as income_cases
 from nexus.application import memory as memory_cases
@@ -52,11 +60,11 @@ from nexus.application.ideas import IdeaFinder
 from nexus.application.inbound import log_capability_gap
 from nexus.application.places import Places
 from nexus.application.routes import Routes
-from nexus.application.users import get_user
+from nexus.application.users import get_user, turn_on_menu
 from nexus.application.web_lookup import WebLookup
 from nexus.application.whereabouts import ZoneFinder
 from nexus.domain.errors import DuplicateSource, InvalidInput, NexusError
-from nexus.domain.ledger import User, UserId
+from nexus.domain.ledger import MenuSection, User, UserId
 from nexus.domain.money import Money
 from nexus.domain.voice import STOCK_PHRASES, prompt_block
 from nexus.infra.llm.factory import text_of
@@ -126,6 +134,9 @@ REF = "nexus_ref"
 SENT_AT = "nexus_sent_at"
 # Extra reply buttons: rows of [label, data].
 BUTTONS = "nexus_buttons"
+# On a tool result that turned a menu section on for the user (``MenuSection`` value): the
+# reply says so, once.
+MENU_ADDED = "nexus_menu_added"
 
 REFUSALS = {
     "transfer": (
@@ -480,13 +491,13 @@ class AgentGraph:
             "- You can't export or delete all of someone's data or their account. If they "
             "ask, point them to Settings, under Your data, where they do it themselves; "
             "never offer to do it from the chat.\n"
-            "- Money moved between the user's own wallets (listed in the snapshot) is a move, "
+            "- Money moved between the user's own wallets (listed in the snapshot) is a transfer, "
             "never spending or income: record it with log_move, which asks the user to "
-            'confirm; it comes from Spending unless they say otherwise. "moved 800 to my '
+            'confirm; it comes from the Main account unless they say otherwise. "moved 800 to my '
             'IBKR", "topped up savings 500", "took 300 out of savings", "moved 1000 from '
-            'savings to IBKR" are moves. So is paying a credit card bill from Spending '
-            '("paid my card bill 1,240": a move to their card wallet, since the card\'s '
-            "purchases are already expenses). Not moves: money given to a person "
+            'savings to IBKR" are transfers. So is paying a credit card bill from the Main account '
+            '("paid my card bill 1,240": a transfer to their card wallet, since the card\'s '
+            "purchases are already expenses). Not transfers: money given to a person "
             '("I transferred 50 to Alex for dinner", already done, is an expense, split or '
             'owed as usual; "send Alex 50" is an instruction: log nothing) and '
             "a dividend or interest paid out (income). If the wallet they name isn't one of "
@@ -949,14 +960,14 @@ class AgentGraph:
             if spec is None or spec.confirm is None or not (spec.exposed or from_kernel):
                 continue
             try:
-                summary = strip_ids(await spec.confirm(ctx, spec.parse(call["args"])))
+                summary = await spec.confirm(ctx, spec.parse(call["args"]))
             except NexusError:
                 continue  # the call will fail the same way in `tools`, changing nothing
             if summary:  # empty: this call only reads, so there's nothing to confirm
                 summaries.append(summary)
         if not summaries:
             return Command(goto="tools")
-        decision = interrupt({"summary": "\n".join(summaries)})
+        decision = interrupt({"summary": strip_ids(combine(summaries))})
         if isinstance(decision, dict) and decision.get("approved") is True:
             return Command(goto="tools")
         declined = [
@@ -980,6 +991,7 @@ class AgentGraph:
         for call in request.tool_calls:
             spec = self.deps.tools.get(call["name"])
             buttons: list[list[tuple[str, str]]] | None = None
+            menu_added: MenuSection | None = None
             if spec is None or not (spec.exposed or from_kernel):
                 offered = self.offered(state)
                 content, wrote = _unknown_tool(call["name"], offered), False
@@ -1006,6 +1018,8 @@ class AgentGraph:
                     # A tool's "Error: ..." is the model's to fix (a bad argument, a
                     # missing thing): counted, so a tool the model keeps misusing shows.
                     refused = content.startswith("Error:")
+                    if not refused and call["name"] in MENU_OF:
+                        menu_added = await self._show_in_menu(ctx, MENU_OF[call["name"]])
                     ops.emit(
                         "tool",
                         call["name"],
@@ -1032,6 +1046,8 @@ class AgentGraph:
             kwargs: dict[str, Any] = {WROTE: wrote}
             if buttons:
                 kwargs[BUTTONS] = [[list(b) for b in row] for row in buttons]
+            if menu_added is not None:
+                kwargs[MENU_ADDED] = menu_added.value
             results.append(
                 ToolMessage(
                     content=content,
@@ -1047,6 +1063,19 @@ class AgentGraph:
             # So the reply to "be more chill" already talks that way.
             update["voice"] = await self._voice(ctx)
         return Command(goto="kernel_reply" if from_kernel else "agent", update=update)
+
+    async def _show_in_menu(self, ctx: ToolContext, section: MenuSection) -> MenuSection | None:
+        """After a tool of ``section`` worked: show that section in the web menu if the user
+        has not decided (null), and say which one it turned on now. A user who turned it off
+        (false) keeps it off, and the tool worked all the same. Never fails the turn."""
+        decided = ctx.user.show_invest if section is MenuSection.INVEST else ctx.user.show_travel
+        if decided is not None:
+            return None
+        try:
+            return section if await turn_on_menu(self.deps.uow(), ctx.user.id, section) else None
+        except Exception:
+            log.exception("could not add %s to the menu", section.value)
+            return None
 
     async def kernel_reply_node(self, state: AgentState) -> dict[str, Any]:
         result: ToolMessage = _last(state["messages"], ToolMessage)

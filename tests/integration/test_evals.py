@@ -151,7 +151,7 @@ async def test_the_wallet_cases_are_graded_on_data_not_just_words(engine: AsyncE
             say("Logged."),
         ),
         "wallet-out-of-savings": lambda: scripted(
-            call("log_move", amount="300", from_wallet="Savings", to_wallet="Spending"),
+            call("log_move", amount="300", from_wallet="Savings", to_wallet="Main account"),
             say("Logged."),
         ),
         "wallet-person-is-not-a-move": lambda: scripted(
@@ -182,7 +182,7 @@ async def test_the_wallet_cases_are_graded_on_data_not_just_words(engine: AsyncE
     assert results["wallet-card-bill"].failures == [
         "called log_expense",
         "didn't ask to confirm",
-        "expected moved 1240 SGD from Spending to DBS Altitude",
+        "expected transferred 1240 SGD from Main account to DBS Altitude",
         "expected no expense or income of 1240",
     ]
 
@@ -258,7 +258,7 @@ async def test_the_seed_has_wallets_but_no_moves(engine: AsyncEngine) -> None:
     async with SqlUnitOfWork(engine) as db:
         wallets = await db.ledger.list_wallets(user.id)
     assert [w.name for w in wallets] == [
-        "Spending", "Card", "Cash", "Citi PremierMiles", "DBS Altitude", "IBKR", "Savings",
+        "Main account", "Card", "Cash", "Citi PremierMiles", "DBS Altitude", "IBKR", "Savings",
     ]  # fmt: skip
     cards = {w.name: w.last4 for w in wallets if w.issuer}
     assert cards == {"Citi PremierMiles": "4321", "DBS Altitude": "8765"}

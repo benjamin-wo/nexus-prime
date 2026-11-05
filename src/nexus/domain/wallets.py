@@ -3,7 +3,7 @@ wallet someone means by "my Citi card". Card details (issuer, product, network, 
 digits) are cleaned here too.
 
 Pure rules, no I/O. The same matching as category rules (whole words and phrases, any
-case): "ibkr" is in "IBKR top-up" but not in "fibkro". The Spending wallet never matches:
+case): "ibkr" is in "IBKR top-up" but not in "fibkro". The main account never matches:
 it is where everything else is.
 """
 

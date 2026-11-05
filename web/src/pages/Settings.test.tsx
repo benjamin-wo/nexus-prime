@@ -121,7 +121,7 @@ describe("Settings", () => {
         options: { instant: "as it happens", hourly: "every hour", thrice_daily: "3 times a day", daily: "once a day at 9pm", off: "off" },
       }),
       "GET /wallets": () => [
-        { id: "w1", name: "Spending", kind: "spending", match_words: [] },
+        { id: "w1", name: "Main account", kind: "spending", match_words: [] },
         { id: "w2", name: "Cash", kind: "cash", match_words: [] },
         { id: "w3", name: "Savings", kind: "savings", match_words: [] },
       ],
@@ -243,6 +243,88 @@ describe("Track which card paid", () => {
     await userEvent.click(sw());
     expect(await screen.findByRole("alert")).toBeInTheDocument();
     expect(sw()).toBeChecked();
+  });
+});
+
+describe("Investing and Travel in the menu", () => {
+  const invest = () => screen.getByRole("switch", { name: "Investing" });
+  const travel = () => screen.getByRole("switch", { name: "Travel" });
+  const prefs = (show_invest: boolean | null | undefined, show_travel: boolean | null | undefined) => ({
+    ...me(),
+    preferences: { track_cards: false, show_invest, show_travel },
+  });
+
+  it("are two switches with their explanations, off while not decided", () => {
+    mockApi({});
+    renderSettings(prefs(null, null));
+    expect(invest()).not.toBeChecked();
+    expect(travel()).not.toBeChecked();
+    expect(invest()).toHaveAccessibleDescription("Portfolio, watchlist and trade plans in the menu");
+    expect(travel()).toHaveAccessibleDescription("Trips and trip research in the menu");
+  });
+
+  it("are off while /me says nothing about them", () => {
+    mockApi({});
+    renderSettings(me());
+    expect(invest()).not.toBeChecked();
+    expect(travel()).not.toBeChecked();
+  });
+
+  it("start from /me: on when true, off when switched off", () => {
+    mockApi({});
+    renderSettings(prefs(true, false));
+    expect(invest()).toBeChecked();
+    expect(travel()).not.toBeChecked();
+  });
+
+  it("save only the one flipped, and update the cached /me", async () => {
+    let state = { track_cards: false, show_invest: null as boolean | null, show_travel: null as boolean | null };
+    const calls = mockApi({
+      "PUT /settings/preferences": (body) => {
+        state = { ...state, ...(body as object) };
+        return state;
+      },
+      "GET /me": () => ({ ...me(), preferences: state }),
+    });
+    const client = renderSettings(prefs(null, null));
+    client.setQueryData(["me"], prefs(null, null));
+    await userEvent.click(invest());
+    expect(invest()).toBeChecked();
+    await waitFor(() => expect(calls.find((c) => c.method === "PUT")?.body).toEqual({ show_invest: true }));
+    await waitFor(() =>
+      expect(client.getQueryData<Me>(["me"])?.preferences).toEqual({ track_cards: false, show_invest: true, show_travel: null }),
+    );
+    await waitFor(() => expect(invest()).not.toBeDisabled());
+    expect(travel()).not.toBeChecked();
+    // And Travel on, then Investing off again: false is sent, not null.
+    await userEvent.click(travel());
+    await waitFor(() => expect(travel()).toBeChecked());
+    await waitFor(() => expect(travel()).not.toBeDisabled());
+    await userEvent.click(invest());
+    await waitFor(() =>
+      expect(calls.filter((c) => c.method === "PUT").map((c) => c.body)).toEqual([
+        { show_invest: true },
+        { show_travel: true },
+        { show_invest: false },
+      ]),
+    );
+    await waitFor(() =>
+      expect(client.getQueryData<Me>(["me"])?.preferences).toEqual({ track_cards: false, show_invest: false, show_travel: true }),
+    );
+    expect(invest()).not.toBeChecked();
+    expect(travel()).toBeChecked();
+  });
+
+  it("go back and say why when the save fails, leaving the cached /me alone", async () => {
+    mockApi({ "PUT /settings/preferences": () => new Response(JSON.stringify({ detail: "Saving failed, try again" }), { status: 500 }) });
+    const client = renderSettings(prefs(null, true));
+    client.setQueryData(["me"], prefs(null, true));
+    await userEvent.click(invest());
+    expect(await screen.findByRole("alert")).toHaveTextContent("Saving failed, try again");
+    expect(invest()).not.toBeChecked();
+    await userEvent.click(travel());
+    await waitFor(() => expect(travel()).toBeChecked());
+    expect(client.getQueryData<Me>(["me"])?.preferences).toEqual({ track_cards: false, show_invest: null, show_travel: true });
   });
 });
 
