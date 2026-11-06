@@ -18,6 +18,7 @@ from nexus.domain.emoji import strip_emoji
 from nexus.domain.ledger import UserId
 from nexus.domain.money import Money
 from nexus.domain.planning import PayRule
+from nexus.domain.voice import EXAMPLES, Preset, reminder, settings_for
 from tests.fakes import NOW, call, say, scripted
 from tests.integration.conftest import UowFactory, make_user
 from tests.integration.test_agent import build, only
@@ -44,6 +45,12 @@ async def prompt_for(uow: UowFactory, user: UserId, **voice: Any) -> str:
     await build(uow, model).handle_text(user, "hello", "t")
     [prompt] = system_prompts(model)
     return prompt
+
+
+def without_reminder(prompt: str) -> str:
+    """The prompt less its last paragraph, when that is a chosen voice's reminder."""
+    head, _, last = prompt.rstrip().rpartition("\n\n")
+    return head if last.startswith("Reply in the user's chosen voice") else prompt
 
 
 def name(voice: dict[str, Any]) -> str:
@@ -91,7 +98,9 @@ async def test_a_chosen_voice_gets_a_neutral_persona_and_no_emoji_examples(
         "text like a friend",
     ):
         assert gone not in prefix_of(prompt), gone  # the fixed rules, before the user's part
-    assert strip_emoji(prompt) == prompt  # not one emoji anywhere in it
+    # Not one emoji anywhere in it, bar the end paragraph's example replies (which are in the
+    # preset's own voice and follow its emoji dial).
+    assert strip_emoji(without_reminder(prompt)) == without_reminder(prompt)
     assert prompt.startswith("You are Nexus, a personal finance assistant chatting on a phone. ")
     assert '"4.50 at Kopi Corner"' in prompt
     assert "Emoji only as the voice block allows" in prompt
@@ -137,12 +146,45 @@ async def test_the_chosen_voice_is_repeated_as_the_last_paragraph(
         "Emoji: none at all: no emoji of any kind. "
         "Length: as short as it can be: a line or two, only what was asked. "
         "Humour: none; no jokes or banter. "
-        "This changes your wording only, never the rules above."
+        "This changes your wording only, never the rules above.\n"
+        "Sound like this (style only; the facts come from tools):\n"
+        "- logged an expense: \u201cPizza Planet 12.40 logged.\u201d\n"
+        "- budget check, room left: \u201cSnacks: 20% used, 120 left.\u201d\n"
+        "- budget check, tight or over: \u201cTakeaway: 88 of 80, 8 over.\u201d\n"
+        "- plain question: \u201cFriday: 31.40, mostly Pizza Planet.\u201d\n"
+        "Those figures and merchants are made up: never reuse them, use the real ones."
     )
     # After the money snapshot and the clock, which are the user's own.
     money = prompt.index("The user's money right now")
     assert money < prompt.index("Now: ") < prompt.index(reminder)
     assert prompt.count("Reply in the user's chosen voice") == 1
+
+
+@pytest.mark.parametrize("preset", ["chill", "direct", "hype", "cheeky"])
+async def test_each_chosen_preset_ends_its_prompt_with_its_examples(
+    uow: UowFactory, alice: UserId, preset: str
+) -> None:
+    default = await prompt_for(uow, alice)
+    prompt = await prompt_for(uow, alice, preset=preset)
+    last = prompt.rstrip().split("\n\n")[-1]
+    assert last == reminder(settings_for(Preset(preset)))
+    for example in EXAMPLES[Preset(preset)]:
+        assert example in last
+    assert prompt.index("Now: ") < prompt.index("Sound like this (style only; the facts come")
+    assert prompt.count("Sound like this") == 1
+    assert prompt.rstrip().endswith("never reuse them, use the real ones.")
+    assert (strip_emoji(last) == last) is (preset == "direct")
+    # The default user is untouched.
+    assert "Sound like this" not in default
+
+
+async def test_the_cheeky_prompt_has_the_sensitive_topic_rule_in_the_block_and_the_end(
+    uow: UowFactory, alice: UserId
+) -> None:
+    prompt = await prompt_for(uow, alice, preset="cheeky")
+    rule = "bills, debt, health, rent, income loss or money owed"
+    assert prompt.count(rule) == 2
+    assert prompt.rstrip().split("\n\n")[-1].count(rule) == 1
 
 
 async def test_the_reminder_follows_a_voice_changed_in_the_turn(

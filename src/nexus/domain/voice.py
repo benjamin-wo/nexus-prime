@@ -8,13 +8,16 @@ user's note is wrapped as a style preference that cannot change a rule.
 What code enforces, and what the model is only asked: emoji "none" is enforced on every
 outgoing message (``domain.emoji.strip_emoji``) and the fixed messages are worded per preset
 (``domain.phrases``); length, humour and tone are the model's to follow, helped by the
-block and by ``reminder``, the last paragraph of the prompt for any voice but the default.
+block and by ``reminder``, the last paragraph of the prompt for any voice but the default
+(with example replies in the preset's voice, which a small model follows more than a
+description).
 """
 
 import unicodedata
 from dataclasses import dataclass, replace
 from enum import StrEnum
 
+from nexus.domain.emoji import strip_emoji
 from nexus.domain.errors import InvalidInput
 
 MAX_NOTE = 200
@@ -108,8 +111,8 @@ PRESETS: tuple[PresetInfo, ...] = (
         Length.NORMAL,
         Humour.LIGHT,
         "a warm, encouraging friend who celebrates wins (a budget kept, a saving, payday) "
-        "out loud and is upbeat about the next step; real praise only, never fake cheer "
-        "about bad news, and no party emoji when the user is down",
+        "out loud and is upbeat about the next step; real praise only, calm and supportive "
+        "(never fake cheer) about bad news, and no party emoji when the user is down",
     ),
     PresetInfo(
         Preset.CHEEKY,
@@ -118,11 +121,11 @@ PRESETS: tuple[PresetInfo, ...] = (
         Emoji.SOME,
         Length.SHORT,
         Humour.PLAYFUL,
-        "a cheeky friend: light, kind teasing about everyday spending (another bubble tea, "
-        "a third coffee) without assuming things you don't know about them, never mean and "
-        "never about sensitive things such as health or "
-        "stress about debt or money; if the user seems stressed or the news is bad, drop "
-        "the teasing and be kind",
+        "a cheeky friend: light, kind teasing about everyday discretionary purchases (drinks, "
+        "snacks, takeaway, shopping), even when the category is over budget, as long as the "
+        "joke stays light, never mean, and doesn't assume things you don't know about them; "
+        "drop the teasing and be kind and straight when the user sounds stressed or worried, "
+        "or the topic is bills, debt, health, rent, income loss or money owed",
     ),
 )
 _BY_ID = {p.id: p for p in PRESETS}
@@ -143,7 +146,46 @@ _HUMOUR_LINES = {
     Humour.OFF: "none; no jokes or banter",
     Humour.LIGHT: "a light touch when it fits; none in serious money questions",
     Humour.PLAYFUL: "playful, with jokes and banter when the moment is light; serious money "
-    "questions and bad news still get a straight, kind answer",
+    "questions and real bad news still get a straight, kind answer",
+}
+
+# Example replies per preset, for the end of the prompt: a small model copies examples far
+# more than it follows a description of a tone. One per situation, in this order: a logged
+# expense, a budget check with room left (good news), one that's tight or over (bad news),
+# and a plain answer. Made-up merchants and figures that can't be the user's; the reminder
+# tells the model never to reuse them. The emoji follow the preset's dial (hype: a party
+# only on good news); ``reminder`` strips them when the user's emoji dial is "none".
+EXAMPLE_SITUATIONS: tuple[str, ...] = (
+    "logged an expense",
+    "budget check, room left",
+    "budget check, tight or over",
+    "plain question",
+)
+EXAMPLES: dict[Preset, tuple[str, ...]] = {
+    Preset.CHILL: (
+        "moo cafe flat white 4.80, done 👍",
+        "snacks are chill, barely touched, 130 left",
+        "oof, takeaway's at 88 of 80. a bit over, but one quiet week sorts it",
+        "friday was 31.40 all up, mostly pizza planet",
+    ),
+    Preset.DIRECT: (
+        "Pizza Planet 12.40 logged.",
+        "Snacks: 20% used, 120 left.",
+        "Takeaway: 88 of 80, 8 over.",
+        "Friday: 31.40, mostly Pizza Planet.",
+    ),
+    Preset.HYPE: (
+        "Got it, Pizza Planet 12.40 is in!",
+        "Snacks only 20% used, 120 to spare, you're crushing it 🎉",
+        "Takeaway's at 88 of 80, a touch over. Totally fixable, there's still time to steer it.",
+        "Friday came to 31.40, mostly Pizza Planet. Steady stuff!",
+    ),
+    Preset.CHEEKY: (
+        "Third flat white at Moo Cafe this week? Logged, 5.20. The barista knows your name now 😏",
+        "Snacks only 20% used, 120 left. Look at you, being all disciplined.",
+        "Takeaway's at 88 of 80, 8 over. The noodles had a great week, the budget less so.",
+        "Friday came to 31.40, mostly Pizza Planet. No judgement. Okay, a little.",
+    ),
 }
 
 
@@ -281,10 +323,19 @@ def reminder(settings: VoiceSettings) -> str:
     if settings == DEFAULT:
         return ""
     info = preset_info(settings.preset)
-    return (
+    text = (
         f"Reply in the user's chosen voice: {info.traits}. "
         f"Emoji: {_EMOJI_LINES[settings.emoji]}. "
         f"Length: {_LENGTH_LINES[settings.length]}. "
         f"Humour: {_HUMOUR_LINES[settings.humour]}. "
         "This changes your wording only, never the rules above."
     )
+    examples = EXAMPLES.get(settings.preset)
+    if not examples:
+        return text
+    lines = ["Sound like this (style only; the facts come from tools):"]
+    for situation, example in zip(EXAMPLE_SITUATIONS, examples, strict=True):
+        shown = strip_emoji(example) if settings.emoji is Emoji.NONE else example
+        lines.append(f"- {situation}: “{shown}”")
+    lines.append("Those figures and merchants are made up: never reuse them, use the real ones.")
+    return text + "\n" + "\n".join(lines)
