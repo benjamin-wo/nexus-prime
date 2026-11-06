@@ -77,10 +77,11 @@ test.describe("Notifications", () => {
     const hero = page.getByRole("region", { name: "Nexus" });
     const bell = hero.getByRole("link", { name: "Notifications" });
     await expect(bell).toBeVisible();
-    // The two round buttons (Notifications and Settings) stay inside the hero and apart from each other.
+    // The three round buttons (Log expense, Notifications and Settings) stay inside the hero and apart from each other.
     const buttons = await hero.locator(".round-btn").evaluateAll((els) => els.map((el) => el.getBoundingClientRect()));
-    expect(buttons).toHaveLength(2);
+    expect(buttons).toHaveLength(3);
     expect(buttons[1].left).toBeGreaterThanOrEqual(buttons[0].right);
+    expect(buttons[2].left).toBeGreaterThanOrEqual(buttons[1].right);
     await bell.click();
     await expect(page).toHaveURL(/\/settings\/notifications$/);
     await expect(page.getByRole("heading", { name: "Notifications", level: 1 })).toBeVisible();

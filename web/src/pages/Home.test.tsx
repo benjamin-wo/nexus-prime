@@ -136,7 +136,8 @@ function serve(answers: Answers = {}) {
   });
 }
 
-const renderHome = (onAsk = vi.fn()) => renderWithProviders(<Home me={me} onAsk={onAsk} />);
+const renderHome = (onAsk = vi.fn(), onLog = vi.fn()) =>
+  renderWithProviders(<Home me={me} onAsk={onAsk} onLog={onLog} />);
 
 afterEach(() => vi.useRealTimers());
 
@@ -163,13 +164,14 @@ describe("Home: the brief", () => {
 });
 
 describe("Home: the hero's buttons", () => {
-  it("has round Notifications and Settings buttons, the bell opening the notifications page, and no Log expense button", async () => {
+  it("has round Log expense, Notifications and Settings buttons; Log expense opens the entry sheet", async () => {
     serve();
-    renderHome();
+    const onLog = vi.fn();
+    renderHome(vi.fn(), onLog);
     const hero = await screen.findByRole("region", { name: "Nexus" });
-    // Logging has one front door, the chat; Home's Ask box is its entry here.
-    expect(screen.queryByRole("button", { name: "Log expense" })).toBeNull();
-    expect(within(hero).queryByRole("button")).toBeNull();
+    // A quick manual entry beside the chat, for when there's no time to chat.
+    await userEvent.click(within(hero).getByRole("button", { name: "Log expense" }));
+    expect(onLog).toHaveBeenCalledOnce();
     expect(screen.getByPlaceholderText(/^Ask, or tell me what you spent/)).toBeInTheDocument();
     expect(within(hero).getByRole("link", { name: "Notifications" })).toHaveAttribute("href", "/settings/notifications");
     expect(within(hero).getByRole("link", { name: "Settings" })).toHaveAttribute("href", "/settings");
