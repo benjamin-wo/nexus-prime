@@ -107,12 +107,14 @@ function Hero({
   spent,
   stands,
   parts,
+  onLog,
 }: {
   date: string;
   greeting: string;
   spent?: Money;
   stands: ReturnType<typeof standing>;
   parts: ReturnType<typeof brief>;
+  onLog: () => void;
 }) {
   return (
     <section className="hero" aria-label="Nexus">
@@ -124,6 +126,10 @@ function Hero({
           </h1>
         </div>
         <div className="hero-actions">
+          {/* A quick manual entry for when there's no time to chat. */}
+          <button type="button" className="round-btn" aria-label="Log expense" title="Log expense" onClick={onLog}>
+            <Icon name="plus" />
+          </button>
           <Link className="round-btn" to="/settings/notifications" aria-label="Notifications" title="Notifications">
             <Icon name="bell" />
           </Link>
@@ -307,9 +313,11 @@ function NeedsYou({
 export function Home({
   me,
   onAsk,
+  onLog,
 }: {
   me: Me;
   onAsk: (text: string) => void;
+  onLog: () => void;
 }) {
   const client = useQueryClient();
   const feed = useQuery({
@@ -391,6 +399,7 @@ export function Home({
         spent={spent}
         stands={standing({ spent, overall, lastMonthToDate: spending?.last_month_to_date })}
         parts={parts}
+        onLog={onLog}
       />
 
       {tripOn && <TripMode detail={tripOn} timezone={me.user.timezone} />}

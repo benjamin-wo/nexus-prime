@@ -154,7 +154,7 @@ function Cockpit({ me }: { me: Me }) {
     <Shell me={me} onOpenChat={() => setChat({})} onLogout={logout}>
       <Suspense fallback={pageLoading}>
         <Routes>
-          <Route path="/" element={<Home me={me} onAsk={(ask) => setChat({ ask })} />} />
+          <Route path="/" element={<Home me={me} onAsk={(ask) => setChat({ ask })} onLog={() => setSheet({})} />} />
           <Route path="/accounting" element={<Dashboard me={me} onAsk={(ask) => setChat({ ask })} />} />
           <Route
             path="/accounting/ledger"
