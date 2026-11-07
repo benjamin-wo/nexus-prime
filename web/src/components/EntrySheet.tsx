@@ -21,6 +21,8 @@ import { MoneyTrail } from "./MoneyTrail";
 
 /** The "Paid with" option that opens the inline new-card form; never a wallet id. */
 const ADD_CARD = "__add-card__";
+/** The Category option that opens the inline new-category form; never a category id, never sent. */
+const ADD_CATEGORY = "__add-category__";
 
 export function EntrySheet({
   me,
@@ -92,18 +94,29 @@ export function EntrySheet({
   const [makeUsual, setMakeUsual] = useState(false);
   const [cardError, setCardError] = useState<string | null>(null);
   const [cardSaving, setCardSaving] = useState(false);
+  // "+ New category…": the name being typed, kept apart from the entry. The select keeps its previous value
+  // while the form is open, so Cancel has nothing to restore.
+  const [addingCategory, setAddingCategory] = useState(false);
+  const [categoryName, setCategoryName] = useState("");
+  const [categoryError, setCategoryError] = useState<string | null>(null);
+  const [categoryNote, setCategoryNote] = useState<string | null>(null);
+  const [categorySaving, setCategorySaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const first = useRef<HTMLInputElement>(null);
   const addingRef = useRef(false);
   addingRef.current = adding;
+  const categoryFormOpen = addingCategory && !isMove && !moving;
+  const categoryFormRef = useRef(false);
+  categoryFormRef.current = categoryFormOpen;
 
   useEffect(() => {
     first.current?.focus();
-    // Escape closes the new-card form first, and only then the sheet.
+    // Escape closes an inline form first, and only then the sheet.
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      if (addingRef.current) setAdding(false);
+      if (categoryFormRef.current) setAddingCategory(false);
+      else if (addingRef.current) setAdding(false);
       else onClose();
     };
     window.addEventListener("keydown", onKey);
@@ -145,6 +158,48 @@ export function EntrySheet({
     setPickedPaidWith(made.id);
     setAdding(false);
     setCardSaving(false);
+  }
+
+  function pickCategory(id: string) {
+    setCategoryNote(null);
+    if (id === ADD_CATEGORY) openCategoryForm();
+    else setCategoryId(id);
+  }
+
+  function openCategoryForm() {
+    setCategoryName("");
+    setCategoryError(null);
+    setAddingCategory(true);
+  }
+
+  async function addCategory() {
+    const name = categoryName.trim();
+    if (!name) return;
+    setCategoryError(null);
+    // A name they already have is picked, not made again.
+    const existing = categories.data?.find((c) => c.name.trim().toLowerCase() === name.toLowerCase());
+    if (existing) {
+      setCategoryId(existing.id);
+      setCategoryNote(`You already have ${existing.name}, picked it.`);
+      setAddingCategory(false);
+      return;
+    }
+    setCategorySaving(true);
+    let made: Category;
+    try {
+      made = await api<Category>("/categories", { method: "POST", body: { name } });
+    } catch (e) {
+      setCategoryError(e instanceof Error ? e.message : "Couldn't add it");
+      setCategorySaving(false);
+      return;
+    }
+    // The category must be in the list before it can be selected.
+    await client.invalidateQueries({ queryKey: ["categories"] });
+    if (!client.getQueryData<Category[]>(["categories"])?.some((c) => c.id === made.id))
+      client.setQueryData<Category[]>(["categories"], (list) => [...(list ?? []), made]);
+    setCategoryId(made.id);
+    setAddingCategory(false);
+    setCategorySaving(false);
   }
 
   async function submit(event: FormEvent) {
@@ -316,18 +371,73 @@ export function EntrySheet({
         {!isMove && !moving && (
           <label className="field">
             Category
-            <select className="input" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+            <select className="input" value={categoryId} onChange={(e) => pickCategory(e.target.value)}>
               <option value="">Uncategorised</option>
               {categories.data?.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
                 </option>
               ))}
+              <option value={ADD_CATEGORY}>+ New category…</option>
             </select>
             {editing && categoryId === (editing.category_id ?? "") && why.data && (
               <span className="caption">{why.data.text}</span>
             )}
           </label>
+        )}
+        {categoryNote && !categoryFormOpen && (
+          <p className="caption" role="status">
+            {categoryNote}
+          </p>
+        )}
+        {categoryFormOpen && (
+          <div
+            className="card-ask"
+            role="form"
+            aria-label="New category"
+            onKeyDown={(e) => {
+              // Enter in the box adds the category; it must not save the entry underneath.
+              if (e.key === "Enter" && e.target instanceof HTMLInputElement) {
+                e.preventDefault();
+                if (!categorySaving && categoryName.trim()) void addCategory();
+              }
+            }}
+          >
+            <label className="field">
+              Name
+              <input
+                className="input"
+                placeholder="e.g. Pets"
+                autoFocus
+                value={categoryName}
+                onChange={(e) => setCategoryName(e.target.value)}
+              />
+            </label>
+            {categoryError && (
+              <p className="error-text" role="alert">
+                {categoryError}
+              </p>
+            )}
+            <div className="quick">
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={categorySaving || !categoryName.trim()}
+                onClick={() => void addCategory()}
+              >
+                {categorySaving ? "Adding…" : "Add category"}
+              </button>
+              <button
+                type="button"
+                className="btn"
+                disabled={categorySaving}
+                aria-label="Cancel new category"
+                onClick={() => setAddingCategory(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         )}
         {track && !isMove && !moving && side === "out" && (
           <label className="field">
@@ -438,7 +548,7 @@ export function EntrySheet({
           <button type="button" className="btn" onClick={onClose}>
             Cancel
           </button>
-          <button type="submit" className="btn btn-primary" disabled={saving || needsWallet || cardFormOpen}>
+          <button type="submit" className="btn btn-primary" disabled={saving || needsWallet || cardFormOpen || categoryFormOpen}>
             {saving ? "Saving…" : "Save"}
           </button>
         </div>
