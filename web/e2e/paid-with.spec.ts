@@ -147,6 +147,64 @@ test("add a card from the entry sheet, keep what was typed, and save the expense
   await expect(page.getByRole("dialog").getByLabel("Paid with").locator("option:checked")).toHaveText("OCBC Frank ·· 4321");
 });
 
+test("from Home's +, add a new category inline and save an expense with it", async ({ page }) => {
+  const state = await open(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Log expense" }).click();
+  const sheet = page.getByRole("dialog", { name: "Log money out" });
+  await sheet.getByLabel("Amount").fill("23.50");
+  await sheet.getByLabel("Paid to").fill("Paws & Co");
+  await sheet.getByLabel("Notes").fill("Dog food");
+
+  const category = sheet.getByRole("combobox", { name: "Category" });
+  await expect(category.locator("option").last()).toHaveText("+ New category…");
+  await category.selectOption({ label: "+ New category…" });
+  const form = sheet.getByRole("form", { name: "New category" });
+  const add = form.getByRole("button", { name: "Add category" });
+  await expect(sheet.getByRole("button", { name: "Save" })).toBeDisabled();
+  await expect(add).toBeDisabled();
+
+  // Cancel puts the select back where it was.
+  await form.getByRole("button", { name: "Cancel new category" }).click();
+  await expect(form).toBeHidden();
+  await expect(category.locator("option:checked")).toHaveText("Uncategorised");
+
+  await category.selectOption({ label: "+ New category…" });
+  await form.getByLabel("Name").fill("Pets");
+  await expect(add).toBeEnabled();
+  await add.click();
+
+  await expect(form).toBeHidden();
+  await expect(category.locator("option:checked")).toHaveText("Pets");
+  await expect(sheet.getByLabel("Amount")).toHaveValue("23.50");
+  await expect(sheet.getByLabel("Paid to")).toHaveValue("Paws & Co");
+  await expect(sheet.getByLabel("Notes")).toHaveValue("Dog food");
+  await sheet.getByRole("button", { name: "Save" }).click();
+  await expect(sheet).toBeHidden();
+  expect(state.txWrites).toHaveLength(1);
+  expect(state.txWrites[0]).toMatchObject({ counterparty: "Paws & Co", amount: "23.50", category_id: "c5" });
+
+  // A name they already have is picked, not made twice.
+  await page.getByRole("button", { name: "Log expense" }).click();
+  const again = page.getByRole("dialog", { name: "Log money out" });
+  await again.getByRole("combobox", { name: "Category" }).selectOption({ label: "+ New category…" });
+  await again.getByRole("form", { name: "New category" }).getByLabel("Name").fill("pets");
+  await again.getByRole("form", { name: "New category" }).getByLabel("Name").press("Enter");
+  await expect(again.getByRole("form", { name: "New category" })).toBeHidden();
+  await expect(again).toBeVisible();
+  await expect(again.getByRole("combobox", { name: "Category" }).locator("option:checked")).toHaveText("Pets");
+  await expect(again.getByText("You already have Pets, picked it.")).toBeVisible();
+  await expect(again.getByRole("combobox", { name: "Category" }).locator("option")).toHaveText([
+    "Uncategorised",
+    "Dining Out",
+    "Transport",
+    "Other",
+    "Income",
+    "Pets",
+    "+ New category…",
+  ]);
+});
+
 test("a card that can't be added shows why inside the form", async ({ page }) => {
   await open(page, { cards: true });
   await page.goto("/accounting/ledger");
