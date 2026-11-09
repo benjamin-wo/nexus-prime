@@ -59,7 +59,7 @@ function applied(current: VoiceSettings, update: VoiceUpdate): VoiceSettings {
   return next;
 }
 
-/** How Nexus words its replies: a vibe, three dials and a note, with a preview that follows every change. Only wording. */
+/** How Kaya words its replies: a vibe, three dials and a note, with a preview that follows every change. Only wording. */
 export function VoiceCard() {
   const client = useQueryClient();
   const voice = useQuery({ queryKey: KEY, queryFn: () => api<VoiceSettings>("/settings/voice") });
@@ -103,11 +103,11 @@ export function VoiceCard() {
   return (
     <section className="card voice-card" aria-labelledby="voice-title">
       <div className="card-head">
-        <h2 id="voice-title">How Nexus talks</h2>
+        <h2 id="voice-title">How Kaya talks</h2>
       </div>
-      <p className="muted voice-lead">Pick a vibe, then fine-tune. Only changes wording — never what Nexus can do.</p>
+      <p className="muted voice-lead">Pick a vibe, then fine-tune. Only changes wording — never what Kaya can do.</p>
       {voice.isLoading && <p className="state">Loading…</p>}
-      {voice.isError && <p className="state error-text">Couldn't load how Nexus talks.</p>}
+      {voice.isError && <p className="state error-text">Couldn't load how Kaya talks.</p>}
       {data && (
         <>
           <div className="voice-presets" role="group" aria-label="Vibe">

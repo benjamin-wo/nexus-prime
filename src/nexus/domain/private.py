@@ -1,4 +1,4 @@
-"""Numbers Nexus shouldn't keep. Pure rules.
+"""Numbers Kaya shouldn't keep. Pure rules.
 
 ``hide_card_numbers`` is what chat (everything a user types, says or captions) is cleaned
 with: only card numbers, since a passport or security code in a message means little

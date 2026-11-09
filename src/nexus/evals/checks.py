@@ -456,7 +456,7 @@ class UpdatesAre:
 
 @dataclass(frozen=True, slots=True)
 class VoiceIs:
-    """How the user asked Nexus to talk, as saved. What is left out isn't checked; a tuple
+    """How the user asked Kaya to talk, as saved. What is left out isn't checked; a tuple
     is any of."""
 
     preset: str | tuple[str, ...] | None = None

@@ -1,4 +1,4 @@
-"""How often a user hears about their transactions on Telegram, and which of Nexus's
+"""How often a user hears about their transactions on Telegram, and which of Kaya's
 other messages are sent at once, held or folded into a digest. Pure rules, no I/O.
 
 Everyone gets an end-of-day summary unless they choose otherwise. The preset
@@ -229,7 +229,7 @@ class Status(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class Notification:
-    """One message Nexus meant to send a user, kept for 30 days."""
+    """One message Kaya meant to send a user, kept for 30 days."""
 
     id: UUID
     user_id: UserId

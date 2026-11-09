@@ -1478,8 +1478,8 @@ async def _connect_email(ctx: ToolContext, _: NoArgs) -> ToolResult:
     url = await ctx.connect_link(ctx.user)
     return ToolResult(
         "A one-time Connect Gmail link (it works for 10 minutes) is shown as a button. "
-        "Tell the user: Google will warn that Nexus isn't verified, because it's a private "
-        "app; they tap Advanced, then Go to Nexus, then Allow. Nexus only looks at "
+        "Tell the user: Google will warn that Kaya isn't verified, because it's a private "
+        "app; they tap Advanced, then Go to Kaya, then Allow. Kaya only looks at "
         "receipt-like emails, and nothing is logged until they confirm it.",
         buttons=[[("Connect Gmail", f"url:{url}")]],
     )
@@ -1493,10 +1493,10 @@ class ForwardArgs(Args):
 
 async def _forward_email(ctx: ToolContext, a: ForwardArgs) -> ToolResult:
     if ctx.forward_address is None:
-        return ToolResult("Forwarding to Nexus isn't set up on this server yet.")
+        return ToolResult("Forwarding to Kaya isn't set up on this server yet.")
     address = await ctx.forward_address(ctx.user)
     return ToolResult(
-        f"The user's own Nexus address is {address}. Nothing arrives there unless they "
+        f"The user's own Kaya address is {address}. Nothing arrives there unless they "
         "forward it, and nothing is logged until they confirm. Steps:\n"
         + email_cases.forwarding_steps(a.provider, address)
         + "\nAfterwards they can ask you to test the setup."
@@ -1516,7 +1516,7 @@ async def _test_email_setup(ctx: ToolContext, _: NoArgs) -> ToolResult:
     await email_cases.test_setup(ctx.uow(), ctx.user.id, now=ctx.now)
     return ToolResult(
         f"Tell the user: send an email to your usual address with the subject "
-        f'"Nexus test receipt", so it goes through your forwarding rule (or forward any '
+        f'"Kaya test receipt", so it goes through your forwarding rule (or forward any '
         f"email to {forward.address} by hand). I'll say here when it arrives, usually "
         "within a few minutes. If nothing comes within 15 minutes, the rule isn't "
         "forwarding yet."
@@ -4056,7 +4056,7 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             "Record a transfer the user made between their own wallets: into an investment or "
             "savings wallet, a credit card bill paid from the Main account, or back out to it. "
             "Never spending and never income. Only when the amount is stated and both "
-            "wallets are the user's own (an unknown one: ask, don't invent). Nexus only "
+            "wallets are the user's own (an unknown one: ask, don't invent). Kaya only "
             "records; it never moves money. Asks the user to confirm.",
             LogMoveArgs,
             _log_move,
@@ -4148,7 +4148,7 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
         ),
         ToolSpec(
             "record_trade",
-            "Record a stock trade the user made at their broker (Nexus never trades), "
+            "Record a stock trade the user made at their broker (Kaya never trades), "
             "updating their holdings. Asks the user to confirm.",
             TradeArgs,
             _record_trade,
@@ -4366,7 +4366,7 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
         ),
         ToolSpec(
             "forward_email",
-            "Give the user their own Nexus address to forward receipts to, with steps for "
+            "Give the user their own Kaya address to forward receipts to, with steps for "
             "their mail provider. For Outlook, iCloud, Yahoo, work email, or Gmail users "
             "who'd rather not connect. Only when the user asks to log expenses "
             "automatically.",
@@ -4376,7 +4376,7 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
         ToolSpec(
             "test_email_setup",
             "Check the user's email forwarding works: tells them what test email to send, "
-            "and Nexus confirms in chat when it arrives.",
+            "and Kaya confirms in chat when it arrives.",
             NoArgs,
             _test_email_setup,
         ),
@@ -4729,7 +4729,7 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
         ),
         ToolSpec(
             "set_voice",
-            "Change how Nexus talks to the user: a tone preset, emoji, length and humour "
+            "Change how Kaya talks to the user: a tone preset, emoji, length and humour "
             "dials, and a note. Saves at once; no confirmation. Use it for any wish about the "
             "way you reply, instead of remembering it. 'be more chill' or 'talk like a "
             "friend': preset chill. 'just the facts' or 'be direct': preset direct. 'hype me "
@@ -4745,7 +4745,7 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
         ),
         ToolSpec(
             "show_voice",
-            "How the user has asked Nexus to talk now: tone preset, emoji, length, humour and "
+            "How the user has asked Kaya to talk now: tone preset, emoji, length, humour and "
             "note. Read-only.",
             NoArgs,
             _show_voice,

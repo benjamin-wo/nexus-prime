@@ -127,7 +127,7 @@ describe("Keep this plan fresh", () => {
     renderPlan();
     const toggle = await screen.findByRole("checkbox", { name: "Keep this plan fresh" });
     expect(toggle).not.toBeChecked();
-    expect(toggle).toHaveAccessibleDescription("Nexus re-runs it when the price moves a lot, after earnings, or once a week.");
+    expect(toggle).toHaveAccessibleDescription("Kaya re-runs it when the price moves a lot, after earnings, or once a week.");
   });
 
   it("turns on at once, tells the server and reads the plan and the list again", async () => {

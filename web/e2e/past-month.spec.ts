@@ -47,7 +47,7 @@ test("step back a month on the overview: that month's totals, categories and the
   await expect(went.getByRole("button", { name: /Uncategorised: SGD.1,240\.00/ })).toBeVisible();
 
   // What is only about now isn't there.
-  for (const name of ["Latest", "Who owes you", "From Nexus"]) await expect(page.getByRole("region", { name })).toHaveCount(0);
+  for (const name of ["Latest", "Who owes you", "From Kaya"]) await expect(page.getByRole("region", { name })).toHaveCount(0);
   await expect(page.getByText(/Budget left|Left to spend|Still due/)).toHaveCount(0);
 
   // The budgets that month, against today's limits.

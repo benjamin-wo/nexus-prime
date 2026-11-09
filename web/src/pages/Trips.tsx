@@ -238,7 +238,7 @@ function TripForm({ initial, home, onDone }: { initial?: Trip; home: string; onD
 
 const WHERE_IDEAS = ["Japan in spring", "A long weekend in Bali", "Seoul in December"];
 
-/** "Where to next?": a place and a time, handed to Nexus to research. */
+/** "Where to next?": a place and a time, handed to Kaya to research. */
 function WhereNext({ onAsk, onAdd }: { onAsk?: (text: string) => void; onAdd: () => void }) {
   const [where, setWhere] = useState("");
   const ask = (text: string) => onAsk?.(`I'm thinking of a trip: ${text}. Can you research it?`);
@@ -270,7 +270,7 @@ function WhereNext({ onAsk, onAdd }: { onAsk?: (text: string) => void; onAdd: ()
           Add a trip
         </button>
       </div>
-      <p className="caption">Nexus looks up when to go and what it costs.</p>
+      <p className="caption">Kaya looks up when to go and what it costs.</p>
     </section>
   );
 }
@@ -330,7 +330,7 @@ export function TripsPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
       {trips.isLoading && <p className="state">Loading…</p>}
       {trips.isError && <p className="error-text">Couldn't load your trips.</p>}
       {/* Someone with trips of their own and none yet is led by "Where to next?" below, which already
-          offers to add one or have Nexus research it; only a guest, who has no such card, is told. */}
+          offers to add one or have Kaya research it; only a guest, who has no such card, is told. */}
       {trips.data && everything.length === 0 && !adding && guest && (
         <section className="card">
           <p className="state">You're not on any trips yet. Open an invite link to join one.</p>
@@ -343,7 +343,7 @@ export function TripsPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
       {!guest && <LooseBookings trips={all} />}
       {!guest && <ResearchList />}
       {past.length > 0 && <PastTrips list={past} />}
-      {!guest && <p className="caption trips-foot">Nexus never books anything.</p>}
+      {!guest && <p className="caption trips-foot">Kaya never books anything.</p>}
     </>
   );
 }
@@ -1400,7 +1400,7 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
                   }
                 >
                   <Icon name="sparkle" size={16} className="icon-inline" />
-                  Ask Nexus about this trip
+                  Ask Kaya about this trip
                 </button>
               )}
             </>

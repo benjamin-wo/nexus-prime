@@ -391,7 +391,7 @@ class FakeMailbox:
 
     async def exchange(self, code: str, *, redirect_uri: str) -> MailboxGrant:
         if code == "no-permission":
-            raise InvalidInput("Nexus needs permission to read your email to find receipts")
+            raise InvalidInput("Kaya needs permission to read your email to find receipts")
         return self.grant
 
     async def access_token(self, refresh_token: str) -> str:

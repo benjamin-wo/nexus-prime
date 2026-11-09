@@ -34,7 +34,7 @@ describe("the shell", () => {
     for (const name of ["Home", "Money", "Investment", "Travel", "Settings"]) {
       expect(screen.getAllByRole("link", { name }).length).toBeGreaterThan(0);
     }
-    expect(screen.getAllByRole("button", { name: "Ask Nexus" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("button", { name: "Ask Kaya" }).length).toBeGreaterThan(0);
   });
 
   it("puts a short label under each icon in the bottom bar, and the full names in the rail", () => {
@@ -50,9 +50,9 @@ describe("the shell", () => {
       "Travel",
     ]);
     expect(within(bar).getByRole("link", { name: "Money" })).toHaveAttribute("href", "/accounting");
-    // Nexus stays in the middle, as a button with its own name, with two places either side.
+    // Kaya stays in the middle, as a button with its own name, with two places either side.
     const kids = [...bar.children];
-    expect(kids[1]).toBe(within(bar).getByRole("button", { name: "Ask Nexus" }));
+    expect(kids[1]).toBe(within(bar).getByRole("button", { name: "Ask Kaya" }));
     expect(kids[1]).toHaveTextContent("");
     expect([...kids[0].children].map((l) => l.textContent)).toEqual(["Home", "Money"]);
     expect([...kids[2].children].map((l) => l.textContent)).toEqual(["Invest", "Travel"]);
@@ -100,7 +100,7 @@ describe("the shell", () => {
     for (const name of ["Home", "Money", "Investment", "Settings"]) {
       expect(screen.queryByRole("link", { name })).toBeNull();
     }
-    expect(screen.queryByRole("button", { name: "Ask Nexus" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Ask Kaya" })).toBeNull();
     expect(screen.queryByRole("navigation", { name: "Main" })).toBeNull();
     expect(screen.queryByRole("navigation", { name: "Main (mobile)" })).toBeNull();
     // The app's name is the only link, and it goes to Travel.
@@ -122,10 +122,10 @@ describe("Invest and Travel in the menu", () => {
   const bar = () => screen.getByRole("navigation", { name: "Main (mobile)" });
   const rail = () => screen.getByRole("navigation", { name: "Main" });
   const labels = (nav: HTMLElement) => within(nav).getAllByRole("link").map((l) => l.textContent);
-  /** The two halves of the bottom bar either side of Nexus, as the labels in each. */
+  /** The two halves of the bottom bar either side of Kaya, as the labels in each. */
   const halves = () => {
     const kids = [...bar().children];
-    expect(kids[1]).toBe(within(bar()).getByRole("button", { name: "Ask Nexus" }));
+    expect(kids[1]).toBe(within(bar()).getByRole("button", { name: "Ask Kaya" }));
     return [kids[0], kids[2]].map((side) => [...side.children].map((l) => l.textContent));
   };
 
@@ -134,13 +134,13 @@ describe("Invest and Travel in the menu", () => {
       const { unmount } = shell(me, "/accounting");
       expect(labels(bar())).toEqual(["Home", "Money"]);
       expect(labels(rail())).toEqual(["Home", "Money", "Settings"]);
-      // Home and Money either side of Nexus: it stays in the middle.
+      // Home and Money either side of Kaya: it stays in the middle.
       expect(halves()).toEqual([["Home"], ["Money"]]);
       unmount();
     }
   });
 
-  it("shows just Invest when only it is on, the bar still two and one around Nexus", () => {
+  it("shows just Invest when only it is on, the bar still two and one around Kaya", () => {
     shell(member(true, null), "/accounting");
     expect(labels(bar())).toEqual(["Home", "Money", "Invest"]);
     expect(labels(rail())).toEqual(["Home", "Money", "Investment", "Settings"]);
@@ -154,7 +154,7 @@ describe("Invest and Travel in the menu", () => {
     expect(halves()).toEqual([["Home", "Money"], ["Travel"]]);
   });
 
-  it("shows both, two either side of Nexus", () => {
+  it("shows both, two either side of Kaya", () => {
     shell(member(true, true), "/accounting");
     expect(halves()).toEqual([["Home", "Money"], ["Invest", "Travel"]]);
   });

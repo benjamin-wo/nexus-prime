@@ -46,7 +46,7 @@ test("signed-out visitors get the Telegram sign-in", async ({ page }) => {
   await page.goto("/accounting/ledger");
   await expect(page).toHaveURL(/\/login$/);
   await expect(
-    page.getByText("Already using Nexus? Sign in with Telegram."),
+    page.getByText("Already using Kaya? Sign in with Telegram."),
   ).toBeVisible();
   const widget = page.locator(
     '.tg-login script[data-telegram-login="nexus_test_bot"]',
@@ -115,7 +115,7 @@ test("dashboard shows the month, categories and IOUs", async ({ page }) => {
   await expect(page.getByRole("region", { name: "Latest" }).getByRole("listitem").first()).toBeVisible();
   await expect(page.locator(".overview-headline")).toContainText(/SGD.37\.40 spent this month/);
   await expect(page.locator(".overview-headline").getByRole("link", { name: "Set a budget" })).toBeVisible();
-  await expect(page.getByRole("region", { name: "From Nexus" })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "From Kaya" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Log expense" })).toHaveCount(0);
 });
 
@@ -440,7 +440,7 @@ test("bulk delete asks first and can be undone", async ({ page }, info) => {
 test("chat asks before deleting and confirms", async ({ page }) => {
   const state = await fakeApi(page);
   await page.goto("/accounting");
-  await page.getByRole("button", { name: "Ask Nexus", exact: true }).filter({ visible: true }).click();
+  await page.getByRole("button", { name: "Ask Kaya", exact: true }).filter({ visible: true }).click();
   const chat = page.getByRole("dialog", { name: "Chat" });
   await chat.getByLabel("Message").fill("delete the grab ride");
   await chat.getByRole("button", { name: "Send" }).click();
@@ -457,7 +457,7 @@ test("chat asks before deleting and confirms", async ({ page }) => {
 test("the chat opens on the running conversation, from the web and Telegram", async ({ page }) => {
   await fakeApi(page, { chatHistory: true });
   await page.goto("/");
-  await page.getByRole("button", { name: "Ask Nexus", exact: true }).filter({ visible: true }).click();
+  await page.getByRole("button", { name: "Ask Kaya", exact: true }).filter({ visible: true }).click();
   const chat = page.getByRole("dialog", { name: "Chat" });
   await expect(chat.locator(".msg-user").first()).toHaveText(/kopi 4\.20/);
   await expect(chat.locator(".msg-bot").first()).toContainText("Logged SGD 4.20 at Kopi.");
@@ -478,7 +478,7 @@ test("the app never throws while chatting", async ({ page }) => {
   page.on("pageerror", (e) => errors.push(e.message));
   await fakeApi(page);
   await page.goto("/accounting");
-  await page.getByRole("button", { name: "Ask Nexus", exact: true }).filter({ visible: true }).click();
+  await page.getByRole("button", { name: "Ask Kaya", exact: true }).filter({ visible: true }).click();
   const chat = page.getByRole("dialog", { name: "Chat" });
   for (const message of ["one", "two"]) {
     await chat.getByLabel("Message").fill(message);
@@ -577,7 +577,7 @@ test("home says when less is left to spend than the budget shows", async ({ page
   const state = await fakeApi(page);
   state.budgets.push({ id: "b1", category_id: null, limit: 2000, spent: 600 });
   await page.goto("/");
-  await expect(page.getByRole("region", { name: "Nexus" })).toContainText(
+  await expect(page.getByRole("region", { name: "Kaya", exact: true })).toContainText(
     /Left to spend is SGD.1,100\.00 after what's still due — less than your SGD.1,400\.00 budget left\./,
   );
 });
@@ -939,7 +939,7 @@ test("the cog opens Settings, which is grouped, and Budgets keeps only budgeting
   await expect(page).toHaveURL(/\/settings$/);
   await expect(page.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible();
   await expect(page.locator("h2.section-title")).toHaveText(["Preferences", "Notifications", "Connections", "Your data"]);
-  for (const name of ["Telegram updates", "Shared trips", "Receipts by email", "Import a statement", "Categories", "Wallets", "Category rules", "What Nexus remembers"])
+  for (const name of ["Telegram updates", "Shared trips", "Receipts by email", "Import a statement", "Categories", "Wallets", "Category rules", "What Kaya remembers"])
     await expect(page.getByRole("link", { name: new RegExp(`^${name}`) })).toBeVisible();
   // Each one opens on its own page.
   await page.getByRole("link", { name: /^Category rules/ }).click();
@@ -1007,10 +1007,10 @@ test("import a scanned PDF statement", async ({ page }) => {
   await expect(preview.getByRole("checkbox", { name: "Import Night Market" })).toBeChecked();
 });
 
-test("see and forget what Nexus remembers", async ({ page }) => {
+test("see and forget what Kaya remembers", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/settings/memory");
-  const card = page.getByRole("region", { name: "What Nexus remembers" });
+  const card = page.getByRole("region", { name: "What Kaya remembers" });
   await expect(card.getByText("Ann is the user's sister.")).toBeVisible();
   await expect(card.getByText(/27 Sep|Sep 27/)).toBeVisible();
   await card.getByRole("button", { name: "Forget: Ann is the user's sister." }).click();
@@ -1020,16 +1020,16 @@ test("see and forget what Nexus remembers", async ({ page }) => {
   await expect(card.getByText(/Nothing yet/)).toBeVisible();
 });
 
-test("Nexus sits in the middle of the bar on a phone, in the rail on a wide screen, and opens the chat", async ({ page }, info) => {
+test("Kaya sits in the middle of the bar on a phone, in the rail on a wide screen, and opens the chat", async ({ page }, info) => {
   await fakeApi(page);
   await page.goto("/accounting/budgets");
   const where = info.project.name === "mobile" ? "Main (mobile)" : "Main";
-  const nexus = page.getByRole("navigation", { name: where, exact: true }).getByRole("button", { name: "Ask Nexus", exact: true });
+  const nexus = page.getByRole("navigation", { name: where, exact: true }).getByRole("button", { name: "Ask Kaya", exact: true });
   await expect(nexus).toBeVisible();
   if (info.project.name === "mobile") {
     // Two tabs either side of it, each pair in its own half of the bar.
     const bar = page.getByRole("navigation", { name: "Main (mobile)" });
-    await expect(bar.locator(":scope > *").nth(1)).toHaveAccessibleName("Ask Nexus");
+    await expect(bar.locator(":scope > *").nth(1)).toHaveAccessibleName("Ask Kaya");
     await expect(bar.locator(":scope > .bar-side").nth(0).getByRole("link")).toHaveCount(2);
     await expect(bar.locator(":scope > .bar-side").nth(1).getByRole("link")).toHaveCount(2);
   }
@@ -1107,8 +1107,8 @@ test("home is the front desk: what needs you, what's running, and each departmen
   await working.getByRole("button", { name: "Cancel" }).click();
   await expect(working.getByText("Cancelled")).toBeVisible();
   expect(state.cancelled).toEqual(["r1"]);
-  // Nexus opens with a brief from the user's own figures, and a few one-tap questions.
-  const nexus = page.getByRole("region", { name: "Nexus" });
+  // Kaya opens with a brief from the user's own figures, and a few one-tap questions.
+  const nexus = page.getByRole("region", { name: "Kaya", exact: true });
   await expect(nexus).toContainText("spent this month");
   await expect(nexus).toContainText("than by this time last month.");
   await expect(nexus).toContainText("2 things need you below.");
@@ -1151,7 +1151,7 @@ test("a suggested question on home opens the chat with it", async ({ page }) => 
 test("asking on home opens the chat with the question", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/");
-  await page.getByRole("textbox", { name: "Ask Nexus", exact: true }).fill("how much on grab?");
+  await page.getByRole("textbox", { name: "Ask Kaya", exact: true }).fill("how much on grab?");
   await page.getByRole("button", { name: "Ask", exact: true }).click();
   const chat = page.getByRole("dialog", { name: "Chat" });
   await expect(chat.locator(".msg-user").first()).toHaveText("how much on grab?");
@@ -1438,7 +1438,7 @@ test("big move alerts, quiet hours and the morning summary are saved one field a
   await expect(card.getByLabel("To", { exact: true })).toHaveValue("08:00");
   await expect(card.getByLabel("Big move alerts (%)")).toHaveValue("5");
   await expect(card.getByRole("switch", { name: "Morning investment summary" })).toBeChecked();
-  await expect(card.getByText("Nexus holds its messages in these hours. A broken stop on a stock you hold still comes through.")).toBeVisible();
+  await expect(card.getByText("Kaya holds its messages in these hours. A broken stop on a stock you hold still comes through.")).toBeVisible();
   await expect(card.getByText("At 8am after each US trading day.")).toBeVisible();
 
   await card.getByLabel("From", { exact: true }).fill("22:30");
@@ -1597,7 +1597,7 @@ test("a plan can be kept fresh from its page, and the list tags it", async ({ pa
   await expect(page.getByText("Price 129.50", { exact: true })).toBeVisible();
   await expect(page.locator(".plan-price")).toContainText("Close of");
   const fresh = page.getByRole("region", { name: "Keep this plan fresh" });
-  await expect(fresh).toContainText("Nexus re-runs it when the price moves a lot, after earnings, or once a week.");
+  await expect(fresh).toContainText("Kaya re-runs it when the price moves a lot, after earnings, or once a week.");
   const toggle = fresh.getByRole("checkbox", { name: "Keep this plan fresh" });
   await expect(toggle).not.toBeChecked();
   await toggle.check();
@@ -1777,7 +1777,7 @@ test("a trip is added and shows its spending, set-aside and settle-up", async ({
   await page.goto("/");
   const trip = page.getByRole("region", { name: "Next trip" });
   await expect(trip).toContainText("Tokyo in 43 days");
-  await expect(page.getByRole("region", { name: "Nexus" })).toContainText("Tokyo trip is in 43 days");
+  await expect(page.getByRole("region", { name: "Kaya", exact: true })).toContainText("Tokyo trip is in 43 days");
   await page.goto("/travel");
   const coming = page.getByRole("region", { name: "Coming up" });
   await expect(coming.getByRole("link", { name: "Tokyo" })).toBeVisible();
@@ -1877,7 +1877,7 @@ test("plans are added to a trip's itinerary by hand, day by day, and changed", a
   await expect.poll(() => state.plans[0]).toMatchObject({ check_in: "2026-11-10", check_out: "2026-11-13" });
 });
 
-test("a booking is added by typing it, and Nexus asks before saving", async ({ page }) => {
+test("a booking is added by typing it, and Kaya asks before saving", async ({ page }) => {
   const state = await fakeApi(page);
   await addTrip(page, "Tokyo", "2026-11-10", "2026-11-15");
   // The strip under the cover starts the stay as a booking; typing it is one of the quick ways.
@@ -1885,7 +1885,7 @@ test("a booking is added by typing it, and Nexus asks before saving", async ({ p
   await page.getByRole("dialog", { name: "Add a booking" }).getByRole("button", { name: "Back to the ways to add" }).click();
   await page.getByRole("dialog", { name: "Add to Tokyo" }).getByRole("button", { name: "Type it" }).click();
   const typeIt = page.getByRole("dialog", { name: "Type it" });
-  const box = typeIt.getByLabel("Tell Nexus about a booking");
+  const box = typeIt.getByLabel("Tell Kaya about a booking");
   await expect(box).toHaveAttribute("placeholder", /Hotel Ume 13 to 15 Nov/);
   await box.fill("Hotel Ume 13 to 15 Nov, ref 8812, booked on Agoda");
   await typeIt.getByRole("button", { name: "Send" }).click();
@@ -2076,7 +2076,7 @@ test("a plan with no place says there is no travel time, and linking one brings 
   await expect(itineraryOf(page).getByText("No travel time")).toHaveCount(0);
 });
 
-test("where to next hands a place and a time to Nexus to research", async ({ page }) => {
+test("where to next hands a place and a time to Kaya to research", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/travel");
   const where = page.getByRole("region", { name: "Where to next?" });
@@ -2758,8 +2758,8 @@ test("trip forms don't jump when a field is tapped", async ({ page }, info) => {
   await expect(sheet).toHaveAccessibleName("Add to Seoul");
   await expect(viewport).toHaveCSS("overflow-y", "hidden");
   await sheet.getByRole("button", { name: "Type it" }).click();
-  if (phone) await expect(sheet.getByLabel("Tell Nexus about a booking")).not.toBeFocused();
-  else await expect(sheet.getByLabel("Tell Nexus about a booking")).toBeFocused();
+  if (phone) await expect(sheet.getByLabel("Tell Kaya about a booking")).not.toBeFocused();
+  else await expect(sheet.getByLabel("Tell Kaya about a booking")).toBeFocused();
   await sheet.getByRole("button", { name: "Back to the ways to add" }).click();
   await sheet.getByRole("button", { name: "Find a place" }).click();
   if (phone) expect(await smallest(sheet)).toBeGreaterThanOrEqual(16);
@@ -2799,7 +2799,7 @@ test("the keyboard opening leaves the background still and the tab bar out of th
   const bar = page.getByRole("navigation", { name: "Main (mobile)" });
   await expect(bar).toBeVisible();
 
-  // Typing: the bar (and Nexus in it) steps aside.
+  // Typing: the bar (and Kaya in it) steps aside.
   await page.getByRole("button", { name: "Add a trip" }).click();
   const where = page.getByRole("form", { name: "Add a trip" }).getByLabel("Where");
   await where.focus();
@@ -3046,7 +3046,7 @@ test("mark settled records the payment, with or without counting your share as s
   const confirm = settle.getByRole("group", { name: "Settle up with Ann" });
   const record = confirm.getByRole("checkbox", { name: "Also record my share as spent" });
   await expect(record).toBeChecked();
-  await expect(confirm).toContainText("Nexus doesn't move any money.");
+  await expect(confirm).toContainText("Kaya doesn't move any money.");
   // Not now records nothing.
   await confirm.getByRole("button", { name: "Not now" }).click();
   await expect(confirm).toHaveCount(0);
@@ -3151,7 +3151,7 @@ test("a shared link can leave bookings out, and the shared page says so", async 
 test("cards rise into view and figures count up, unless less motion is asked for", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/");
-  const hero = page.getByRole("region", { name: "Nexus" });
+  const hero = page.getByRole("region", { name: "Kaya", exact: true });
   await expect(hero).toHaveAttribute("data-reveal", "in");
   await expect(hero.locator(".hero-value")).toHaveText("SGD 37.40");
   await expect(page.getByRole("heading", { level: 1 }).locator("em.accent-serif")).toHaveText(/morning|afternoon|evening/);
@@ -4225,7 +4225,7 @@ test("a voice note in the chat is sent and answered like a typed message", async
   await page.addInitScript(STUB_RECORDER);
   const state = await fakeApi(page);
   await page.goto("/accounting");
-  await page.getByRole("button", { name: "Ask Nexus", exact: true }).filter({ visible: true }).click();
+  await page.getByRole("button", { name: "Ask Kaya", exact: true }).filter({ visible: true }).click();
   const chat = page.getByRole("dialog", { name: "Chat" });
   // The mic stands where Send does while the box is empty.
   await expect(chat.getByRole("button", { name: "Send" })).toHaveCount(0);
@@ -4253,7 +4253,7 @@ test("a voice note that is too long is refused in the server's words", async ({ 
   await page.addInitScript(STUB_RECORDER);
   const state = await fakeApi(page, { voiceFails: 413 });
   await page.goto("/accounting");
-  await page.getByRole("button", { name: "Ask Nexus", exact: true }).filter({ visible: true }).click();
+  await page.getByRole("button", { name: "Ask Kaya", exact: true }).filter({ visible: true }).click();
   const chat = page.getByRole("dialog", { name: "Chat" });
   await chat.getByRole("button", { name: "Record a voice note" }).click();
   await chat.getByRole("button", { name: "Stop and send" }).click();
@@ -4267,7 +4267,7 @@ test("cancelling a recording sends nothing", async ({ page }) => {
   await page.addInitScript(STUB_RECORDER);
   const state = await fakeApi(page);
   await page.goto("/accounting");
-  await page.getByRole("button", { name: "Ask Nexus", exact: true }).filter({ visible: true }).click();
+  await page.getByRole("button", { name: "Ask Kaya", exact: true }).filter({ visible: true }).click();
   const chat = page.getByRole("dialog", { name: "Chat" });
   await chat.getByRole("button", { name: "Record a voice note" }).click();
   await chat.getByRole("button", { name: "Cancel recording" }).click();
@@ -4280,7 +4280,7 @@ test("without a microphone the chat says so and still types", async ({ page }) =
   await page.addInitScript(() => Object.defineProperty(navigator, "mediaDevices", { value: undefined, configurable: true }));
   await fakeApi(page);
   await page.goto("/accounting");
-  await page.getByRole("button", { name: "Ask Nexus", exact: true }).filter({ visible: true }).click();
+  await page.getByRole("button", { name: "Ask Kaya", exact: true }).filter({ visible: true }).click();
   const chat = page.getByRole("dialog", { name: "Chat" });
   const mic = chat.getByRole("button", { name: "Record a voice note" });
   await expect(mic).toHaveAttribute("aria-disabled", "true");

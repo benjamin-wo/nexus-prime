@@ -4,7 +4,7 @@ import { fakeApi } from "./fake-api";
 
 const banner = (page: import("@playwright/test").Page) => page.getByRole("region", { name: "Demo account" });
 const openChat = (page: import("@playwright/test").Page) =>
-  page.getByRole("button", { name: "Ask Nexus", exact: true }).filter({ visible: true }).click();
+  page.getByRole("button", { name: "Ask Kaya", exact: true }).filter({ visible: true }).click();
 
 test("a signed-out visitor sees the landing page and goes into the demo from it", async ({ page }) => {
   const state = await fakeApi(page, { signedIn: false });

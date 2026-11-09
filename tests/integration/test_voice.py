@@ -1,4 +1,4 @@
-"""How Nexus talks: the use cases, tenant isolation, row-level security, export and erasure,
+"""How Kaya talks: the use cases, tenant isolation, row-level security, export and erasure,
 the chat tools, and what the model is told each turn. Made-up notes only."""
 
 import asyncio

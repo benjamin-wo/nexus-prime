@@ -89,7 +89,7 @@ test.describe("the bottom bar on a phone", () => {
     ["4", true, null, 3],
     ["5", true, true, 4],
   ] as const) {
-    test(`keeps Nexus in the middle with ${name} items`, async ({ page }) => {
+    test(`keeps Kaya in the middle with ${name} items`, async ({ page }) => {
       await page.setViewportSize({ width: 390, height: 700 });
       await fakeApi(page, { showInvest: invest, showTravel: travel });
       await page.goto("/");

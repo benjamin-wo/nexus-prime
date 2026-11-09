@@ -238,7 +238,7 @@ function daysLeft(timezone: string): number {
   return new Date(Date.UTC(y, m, 0)).getUTCDate() - d;
 }
 
-/** One line from Nexus about the budget closest to running out, with questions
+/** One line from Kaya about the budget closest to running out, with questions
  * worth one tap. Without budgets there is nothing to say: the headline offers to set one. */
 function Nudge({
   budgets,
@@ -254,7 +254,7 @@ function Nudge({
   const left = daysLeft(timezone);
   const what = tightest.category_id === null ? "your overall budget" : tightest.name;
   return (
-    <section className="nudge" aria-label="From Nexus">
+    <section className="nudge" aria-label="From Kaya">
       <span className="assistant-mark" aria-hidden="true">
         <Icon name="sparkle" size={18} />
       </span>

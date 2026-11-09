@@ -43,7 +43,7 @@ async def test_an_inbox_per_user_with_an_unguessable_name() -> None:
     assert request.url == "https://api.agentmail.to/v0/inboxes"
     assert request.headers["Authorization"] == "Bearer am_test"
     assert body["client_id"] == "nexus-user-1"  # a retried create returns the same inbox
-    assert body["username"].startswith("nexus-") and len(body["username"]) == 18
+    assert body["username"].startswith("kaya-") and len(body["username"]) == 17
     assert "domain" not in body
     assert inbox == "ibx_1" and address == body["username"] + "@agentmail.to"
 
@@ -141,8 +141,9 @@ def test_a_provider_link_elsewhere_is_dropped() -> None:
 
 
 def test_test_emails_are_recognised() -> None:
-    assert is_test_email(email("ann@outlook.com", "Nexus test receipt"))
-    assert is_test_email(email("ann@outlook.com", "FW: nexus TEST"))
+    assert is_test_email(email("ann@outlook.com", "Kaya test receipt"))
+    assert is_test_email(email("ann@outlook.com", "FW: kaya TEST"))
+    assert is_test_email(email("ann@outlook.com", "FW: nexus TEST"))  # the old wording
     assert not is_test_email(email("ann@outlook.com", "Your receipt"))
 
 

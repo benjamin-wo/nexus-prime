@@ -42,9 +42,9 @@ test("a brand-new person sees the guide with all four steps to do, above Needs y
   await expect(step(page, "Set a monthly budget").getByRole("link")).toHaveAttribute("href", "/accounting/budgets");
   await expect(step(page, "Get receipts in automatically").getByRole("link")).toHaveAttribute("href", "/settings/email");
 
-  // Logging one brings the person to the Ask anything box.
+  // Logging one brings the person to the Just ask Kaya box.
   await step(page, "Log your first expense").getByRole("button").click();
-  await expect(page.getByPlaceholder(/^Ask, or tell me what you spent/)).toBeFocused();
+  await expect(page.getByPlaceholder(/^Just ask Kaya… e.g./)).toBeFocused();
 
   // It stays compact and inside the screen.
   const box = (await guide(page).boundingBox())!;

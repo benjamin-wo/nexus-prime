@@ -705,7 +705,7 @@ class SpeechToText(Protocol):
 
 
 class MemoryRepository(Protocol):
-    """What Nexus remembers. Every call is scoped to one user."""
+    """What Kaya remembers. Every call is scoped to one user."""
 
     async def list_memories(
         self, user_id: UserId, kinds: tuple[MemoryKind, ...] | None = None, limit: int = 500
@@ -731,7 +731,7 @@ class MemoryRepository(Protocol):
         ...
 
     async def get_voice(self, user_id: UserId, *, for_update: bool = False) -> VoiceSettings:
-        """How the user wants Nexus to talk, or the default voice if they never chose."""
+        """How the user wants Kaya to talk, or the default voice if they never chose."""
         ...
 
     async def save_voice(self, user_id: UserId, settings: VoiceSettings, now: datetime) -> None:

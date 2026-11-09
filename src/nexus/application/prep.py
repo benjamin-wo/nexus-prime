@@ -3,7 +3,7 @@
 Like packing and the plan, these are edited by anyone on the trip, and every function
 here runs as the trip's owner (see ``trip_access.open_trip``). What a cover cost is the
 owner's money: a member's edit keeps the cost a cover had, and only the owner logs it.
-Nexus only records a cost as an expense; it never pays for or claims on anything.
+Kaya only records a cost as an expense; it never pays for or claims on anything.
 """
 
 from dataclasses import replace

@@ -147,21 +147,21 @@ describe("adding up", () => {
 describe("marking someone settled", () => {
   it("says what it records when they owe you", () => {
     const b = balance("Alex", sgd("768"), { owes_you: [part("iou", sgd("500")), part("iou", sgd("268"))] });
-    expect(plain(settleConfirmText(b, true))).toBe("This records that Alex paid you back SGD 768.00. Nexus doesn't move any money.");
+    expect(plain(settleConfirmText(b, true))).toBe("This records that Alex paid you back SGD 768.00. Kaya doesn't move any money.");
   });
 
   it("says what it records when you owe them, with or without your share as spent", () => {
     const b = balance("Sam", sgd("-40"), { you_owe: [part("payment", sgd("40"))] });
-    expect(plain(settleConfirmText(b, true))).toBe("This records that you paid Sam SGD 40.00 and counts it as spent. Nexus doesn't move any money.");
+    expect(plain(settleConfirmText(b, true))).toBe("This records that you paid Sam SGD 40.00 and counts it as spent. Kaya doesn't move any money.");
     expect(plain(settleConfirmText(b, false))).toBe(
-      "This marks the SGD 40.00 you owe Sam as paid, without adding it to what you've spent. Nexus doesn't move any money.",
+      "This marks the SGD 40.00 you owe Sam as paid, without adding it to what you've spent. Kaya doesn't move any money.",
     );
   });
 
   it("covers both ways at once", () => {
     const b = balance("Alex", sgd("728"), { owes_you: [part("iou", sgd("768"))], you_owe: [part("payment", sgd("40"))] });
     expect(plain(settleConfirmText(b, true))).toBe(
-      "This records that Alex paid you back SGD 768.00. It also records that you paid Alex SGD 40.00 and counts it as spent. Nexus doesn't move any money.",
+      "This records that Alex paid you back SGD 768.00. It also records that you paid Alex SGD 40.00 and counts it as spent. Kaya doesn't move any money.",
     );
   });
 

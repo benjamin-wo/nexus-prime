@@ -3,9 +3,9 @@ and prep suggestions worked out in code from the trip. Pure rules, no I/O.
 
 A to-do is a short line with an optional due date, ticked off when done. A cover is a
 record of a policy or document: what it is, its reference and the number to call, the
-dates it covers and what it cost. Nexus keeps the reference as the user's own, like a
+dates it covers and what it cost. Kaya keeps the reference as the user's own, like a
 booking reference, and never a card or passport number. What a cover cost is the trip
-owner's money (see ``trip_access.without_cover_money``); Nexus only records it, and never
+owner's money (see ``trip_access.without_cover_money``); Kaya only records it, and never
 buys or claims anything.
 """
 

@@ -1,6 +1,6 @@
 """Wallets (named places money sits) and moves of money between them.
 
-Nexus only records moves; it never moves money. A move is never spending and never income.
+Kaya only records moves; it never moves money. A move is never spending and never income.
 """
 
 from collections.abc import Iterable

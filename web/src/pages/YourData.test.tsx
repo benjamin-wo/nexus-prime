@@ -80,7 +80,7 @@ describe("the Telegram webview note", () => {
   });
 
   it("says to use the browser when the download may not start", () => {
-    expect(downloadNote(true)).toBe("If the download doesn't start, open Nexus in your browser to download it.");
+    expect(downloadNote(true)).toBe("If the download doesn't start, open Kaya in your browser to download it.");
     expect(downloadNote(false)).toBeNull();
   });
 
@@ -102,7 +102,7 @@ describe("the Telegram webview note", () => {
     mockApi({ "GET /me/export": () => new Response("PK", { status: 200, headers: { "Content-Type": "application/zip" } }) });
     renderWithProviders(<YourDataSection />);
     await userEvent.setup().click(screen.getByRole("button", { name: "Download" }));
-    expect(await screen.findByRole("status")).toHaveTextContent("Downloaded. If the download doesn't start, open Nexus in your browser to download it.");
+    expect(await screen.findByRole("status")).toHaveTextContent("Downloaded. If the download doesn't start, open Kaya in your browser to download it.");
   });
 
   it("answers a 429 with a friendly line", async () => {

@@ -99,7 +99,7 @@ function RunRow({ run, onCancel }: { run: Run; onCancel: (run: Run) => void }) {
 }
 
 /** The top of Home, on an indigo gradient rather than in a card: the day and a
- * greeting, this month's spending as the one big figure with how it stands, and Nexus's
+ * greeting, this month's spending as the one big figure with how it stands, and Kaya's
  * brief. What needs the person follows directly under it. */
 function Hero({
   date,
@@ -117,7 +117,7 @@ function Hero({
   onLog: () => void;
 }) {
   return (
-    <section className="hero" aria-label="Nexus">
+    <section className="hero" aria-label="Kaya">
       <div className="hero-top">
         <div>
           <p className="hero-date">{date}</p>
@@ -176,10 +176,10 @@ function AskPanel({ chips, onAsk }: { chips: string[]; onAsk: (text: string) => 
     onAsk(text);
   }
   return (
-    <Block id="ask" title="Ask anything" className="ask-panel">
+    <Block id="ask" title="Just ask Kaya" className="ask-panel">
       <form className="ask" onSubmit={ask}>
         <label className="sr-only" htmlFor="ask-input">
-          Ask Nexus
+          Ask Kaya
         </label>
         <input
           id="ask-input"
@@ -187,7 +187,7 @@ function AskPanel({ chips, onAsk }: { chips: string[]; onAsk: (text: string) => 
           value={draft}
           maxLength={2000}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder='Ask, or tell me what you spent: "kopi 4.20"'
+          placeholder='Just ask Kaya… e.g. "kopi 4.20"'
         />
         <button type="submit" className="ask-send" aria-label="Ask" disabled={!draft.trim()}>
           <Icon name="send" size={18} />
@@ -307,7 +307,7 @@ function NeedsYou({
   );
 }
 
-/** The front desk, as a Today page: Nexus's brief, what needs you, a box to ask anything, the
+/** The front desk, as a Today page: Kaya's brief, what needs you, a box to ask anything, the
  * first-steps guide while it's unfinished, and at a glance the month's money, the portfolio and
  * the next trip. While a trip is on, its day leads. */
 export function Home({

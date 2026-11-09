@@ -76,7 +76,7 @@ describe("the trips list", () => {
     await screen.findByRole("heading", { name: "Where to next?" });
     expect(screen.getByRole("button", { name: "New trip" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Japan in spring" })).toBeInTheDocument();
-    expect(screen.getByText(/Nexus looks up when to go/)).toBeInTheDocument();
+    expect(screen.getByText(/Kaya looks up when to go/)).toBeInTheDocument();
     expect(screen.queryByText(/No trips yet/)).toBeNull();
     expect(screen.getByRole("heading", { level: 1 }).closest(".page-head")?.nextElementSibling?.getAttribute("aria-labelledby")).toBe("where-next");
   });
@@ -219,11 +219,11 @@ describe("a trip you were added to", () => {
     expect(screen.queryByRole("menuitem", { name: "Delete trip" })).toBeNull();
   });
 
-  it("lets a member ask Nexus about the plan, with no budget in the question", async () => {
+  it("lets a member ask Kaya about the plan, with no budget in the question", async () => {
     mockApi(handlers());
     const asked: string[] = [];
     renderTrip("/travel/trips/t2", (text) => asked.push(text));
-    await userEvent.setup().click(await screen.findByRole("button", { name: /Ask Nexus about this trip/ }));
+    await userEvent.setup().click(await screen.findByRole("button", { name: /Ask Kaya about this trip/ }));
     expect(asked).toEqual(["How's the Lisbon trip shared with me looking? What's booked and what's missing?"]);
   });
 

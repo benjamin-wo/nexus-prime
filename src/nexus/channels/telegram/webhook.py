@@ -250,12 +250,13 @@ async def _message(
         await runtime.client.send_message(chat_id, await _web_link(runtime, actor), preview=False)
         return
     if command in {"/start", "/menu", "/help"}:
-        await _send(runtime, chat_id, await runtime.service.quick_action(actor, "menu"))
+        action = "start" if command == "/start" else "menu"
+        await _send(runtime, chat_id, await runtime.service.quick_action(actor, action))
         return
     await _send(runtime, chat_id, await runtime.service.handle_text(actor, text, ref))
 
 
-APP_LABEL = "Open Nexus"
+APP_LABEL = "Open Kaya"
 
 
 async def _open_app(runtime: TelegramRuntime, chat_id: int) -> None:

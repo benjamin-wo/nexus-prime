@@ -5,7 +5,7 @@ import { api, type Frequency, type Updates } from "../api";
 
 const ORDER: Frequency[] = ["instant", "hourly", "thrice_daily", "daily", "off"];
 
-/** How often Nexus messages the user on Telegram about their transactions. */
+/** How often Kaya messages the user on Telegram about their transactions. */
 export function UpdatesSection() {
   const client = useQueryClient();
   const updates = useQuery({ queryKey: ["notifications"], queryFn: () => api<Updates>("/notifications") });
@@ -143,7 +143,7 @@ export function UpdatesSection() {
                 </label>
               </div>
               <p className="caption">
-                Nexus holds its messages in these hours. A broken stop on a stock you hold still comes through.
+                Kaya holds its messages in these hours. A broken stop on a stock you hold still comes through.
               </p>
             </fieldset>
           </div>

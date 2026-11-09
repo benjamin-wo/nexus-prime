@@ -5,14 +5,14 @@ tools: [list_wallets, add_wallet, update_wallet, set_usual_card, delete_wallet, 
 ---
 # Wallets and transfers
 
-A wallet is a name for a place the user keeps money. It has no balance: Nexus doesn't know
+A wallet is a name for a place the user keeps money. It has no balance: Kaya doesn't know
 what's in it. Everyone has a **Main account** (the one the budget watches; the user may have renamed
 it, so go by the snapshot) and **Cash**
 (notes and coins; it can be renamed, not deleted), and can add others: investment (a
 broker, a fund), savings, card (a credit card) or other.
 
 A **transfer** is money going from one of the user's wallets to another. It is never spending
-and never income, so it stays out of the month's totals and budgets. Nexus only records
+and never income, so it stays out of the month's totals and budgets. Kaya only records
 transfers; it never moves money.
 
 ## Recording a transfer

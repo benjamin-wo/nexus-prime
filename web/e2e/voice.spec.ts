@@ -2,12 +2,12 @@ import { expect, test } from "@playwright/test";
 
 import { fakeApi } from "./fake-api";
 
-// How Nexus talks, in Settings: pick a vibe, fine-tune, leave a note. Made-up data only.
+// How Kaya talks, in Settings: pick a vibe, fine-tune, leave a note. Made-up data only.
 
 test("pick Cheeky, the preview changes, set emoji to None, and the note is saved", async ({ page }) => {
   const api = await fakeApi(page);
   await page.goto("/settings/voice");
-  const card = page.getByRole("region", { name: "How Nexus talks" });
+  const card = page.getByRole("region", { name: "How Kaya talks" });
   await expect(card.getByRole("button", { name: /^Default/ })).toHaveAttribute("aria-pressed", "true");
   const first = card.getByTestId("voice-reply").first();
   await expect(first).toHaveText("Grab 12.00 ✅ Transport's at 108.30 this month.");

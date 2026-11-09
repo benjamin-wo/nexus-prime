@@ -1,1 +1,1 @@
-"""Nexus Prime: personal finance assistant."""
+"""Kaya: a personal finance assistant (the code is still named ``nexus``)."""

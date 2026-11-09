@@ -8,6 +8,7 @@ import { DemoBanner } from "./DemoBanner";
 import { Icon, departmentIcon } from "./Icon";
 import { withMiniApp } from "../telegram";
 import { InviteButton } from "./InviteButton";
+import { Kaya } from "./Kaya";
 
 /** True while the page is being scrolled down (past its top, short of its end):
  * the floating buttons step aside then, so they never sit on what's being read,
@@ -103,16 +104,13 @@ function useTelegramColours(home: boolean) {
 function BrandMark() {
   return (
     <span className="brand-mark" aria-hidden="true">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"
-        strokeLinecap="round" strokeLinejoin="round" focusable="false">
-        <path d="M5 19V5l14 14V5" />
-      </svg>
+      <Kaya size={34} />
     </span>
   );
 }
 
 /** The front desk (Home), a switcher for the departments behind it, Settings and
- * Nexus: a rail on wide screens; on phones a dark bottom bar with Nexus in the
+ * Kaya: a rail on wide screens; on phones a dark bottom bar with Kaya in the
  * middle. A department's own pages are tabs along the top of its section.
  *
  * A guest (someone a trip's owner brought in) gets none of that: a slim header with
@@ -177,9 +175,7 @@ export function Shell({
         <header className="guest-bar">
           <Link className="guest-brand" to="/travel">
             <BrandMark />
-            <span>
-              Nexus <span className="brand-accent">Prime</span>
-            </span>
+            <span>Kaya</span>
           </Link>
           <div className="guest-user">
             {me.user.display_name && <span className="guest-name">{me.user.display_name}</span>}
@@ -197,9 +193,9 @@ export function Shell({
     );
   }
   const nexus = (where: string) => (
-    <button type="button" className={`nexus-button ${where}`} aria-label="Ask Nexus" title="Ask Nexus" onClick={onOpenChat}>
-      <Icon name="sparkle" size={22} />
-      {where === "in-rail" && <span>Ask Nexus</span>}
+    <button type="button" className={`nexus-button ${where}`} aria-label="Ask Kaya" title="Ask Kaya" onClick={onOpenChat}>
+      <Kaya size={where === "in-rail" ? 28 : 38} />
+      {where === "in-rail" && <span>Ask Kaya</span>}
     </button>
   );
   return (
@@ -208,9 +204,7 @@ export function Shell({
       <nav className="rail" aria-label="Main">
         <div className="brand">
           <BrandMark />
-          <span>
-            Nexus <span className="brand-accent">Prime</span>
-          </span>
+          <span>Kaya</span>
         </div>
         {links(false)}
         {settings}
@@ -241,9 +235,9 @@ export function Shell({
           {children}
         </div>
       </main>
-      {/* Home and Money, Nexus in the middle, then Invest and Travel when they are in the menu,
+      {/* Home and Money, Kaya in the middle, then Invest and Travel when they are in the menu,
           each with a short label under its icon. The places are split over two equal halves, so
-          Nexus stays in the middle with three, four or five items. Settings is on Home (top
+          Kaya stays in the middle with three, four or five items. Settings is on Home (top
           right). */}
       <nav className="bottom-nav" aria-label="Main (mobile)" ref={bar}>
         <div className="bar-side">{barLinks.slice(0, Math.ceil(barLinks.length / 2))}</div>

@@ -83,7 +83,7 @@ async def test_the_writer_is_told_reply_style_lives_in_voice_settings(
     writer = MemoryWriter(model)  # type: ignore[arg-type]
     await writer.remember(uow, user, ["keep your replies short"], NOW)
     prompt = str(model.seen[-1][0].content)
-    assert "Never store how Nexus should reply: length, emoji, tone or humour" in prompt
+    assert "Never store how Kaya should reply: length, emoji, tone or humour" in prompt
     assert "That lives in the user's voice settings" in prompt
     # Reply style is no longer offered as an example of a preference.
     assert "wants short" not in prompt

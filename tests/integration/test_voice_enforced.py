@@ -1,4 +1,4 @@
-"""What code enforces about How Nexus talks, as opposed to what the model is asked: the
+"""What code enforces about How Kaya talks, as opposed to what the model is asked: the
 prompt for a chosen voice (and the default's, unchanged), no emoji on any reply for a user
 who chose none, and the fixed messages worded per preset. Made-up data only."""
 
@@ -29,9 +29,10 @@ pytestmark = pytest.mark.integration
 # The default user's prompt up to "About this user and now:", as it was before a voice could
 # outweigh the persona. Providers cache a request only up to its first difference from an
 # earlier one, so this text must stay the same for everyone on the default voice. Change it
-# on purpose only (and know that it invalidates every cached prefix).
-DEFAULT_PREFIX_SHA256 = "da69ebc9764bb043cf8f2a76298a057f1e9152bdcd997882ff3fb514e308a236"
-DEFAULT_PREFIX_LENGTH = 12997
+# on purpose only (and know that it invalidates every cached prefix). Last changed by the
+# rename of the assistant from Nexus to Kaya (four mentions in the prompt).
+DEFAULT_PREFIX_SHA256 = "ca495b35c16a13a464b408bd71cd5c3cc940cc05340c22b6a1e036ca4686f8e6"
+DEFAULT_PREFIX_LENGTH = 12993
 
 
 def prefix_of(prompt: str) -> str:
@@ -77,7 +78,7 @@ async def test_the_default_prompt_is_byte_for_byte_what_it_was(
     prefix = prefix_of(prompt)
     assert len(prefix) == DEFAULT_PREFIX_LENGTH
     assert hashlib.sha256(prefix.encode()).hexdigest() == DEFAULT_PREFIX_SHA256
-    assert prompt.startswith("You are Nexus, a personal finance assistant chatting on a phone: a")
+    assert prompt.startswith("You are Kaya, a personal finance assistant chatting on a phone: a")
     assert "a light touch of humour when it fits" in prompt
     assert '"4.50 at Kopi Corner ✅"' in prompt
     assert "(✅ done, ⚠️ near a limit, 🎉 a win)" in prompt
@@ -101,7 +102,7 @@ async def test_a_chosen_voice_gets_a_neutral_persona_and_no_emoji_examples(
     # Not one emoji anywhere in it, bar the end paragraph's example replies (which are in the
     # preset's own voice and follow its emoji dial).
     assert strip_emoji(without_reminder(prompt)) == without_reminder(prompt)
-    assert prompt.startswith("You are Nexus, a personal finance assistant chatting on a phone. ")
+    assert prompt.startswith("You are Kaya, a personal finance assistant chatting on a phone. ")
     assert '"4.50 at Kopi Corner"' in prompt
     assert "Emoji only as the voice block allows" in prompt
     assert prompt.count("How you talk") == 1
@@ -195,7 +196,7 @@ async def test_the_reminder_follows_a_voice_changed_in_the_turn(
     before, after = system_prompts(model)
     assert "Reply in the user's chosen voice" not in before
     assert "warm, encouraging friend" in after.rstrip().split("\n\n")[-1]
-    assert after.startswith("You are Nexus, a personal finance assistant chatting on a phone. ")
+    assert after.startswith("You are Kaya, a personal finance assistant chatting on a phone. ")
 
 
 # --- emoji, enforced on every reply -----------------------------------------------------------

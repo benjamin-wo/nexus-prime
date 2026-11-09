@@ -1,6 +1,6 @@
 """Settling up a trip with the people on it: what each owes the other, netted.
 
-Pure rules, no I/O. Nexus never moves money: it works out who owes whom from what the
+Pure rules, no I/O. Kaya never moves money: it works out who owes whom from what the
 user recorded, and settling only records what the user says has happened.
 """
 

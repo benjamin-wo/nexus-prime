@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 
 import { api } from "../api";
+import { Kaya } from "../components/Kaya";
 import { TelegramLogin } from "../components/TelegramLogin";
 import { initData, miniApp } from "../telegram";
 
@@ -60,18 +61,17 @@ export function LoginPage({ trip = false }: { trip?: boolean }) {
   return (
     <div className="login">
       <section className="card">
+        <Kaya big size={150} className="kaya-hero" />
         {trip ? (
           <>
-            <p className="caption">
-              Nexus <span style={{ color: "var(--accent)" }}>Prime</span>
-            </p>
+            <p className="caption">Kaya</p>
             <h1>You've been invited to a trip</h1>
             {!initData && <p className="secondary">Sign in with Telegram to join.</p>}
           </>
         ) : (
           <>
             <h1>
-              Nexus <span style={{ color: "var(--accent)" }}>Prime</span>
+              Just ask <span style={{ color: "var(--accent)" }}>Kaya</span>
             </h1>
             {token ? (
               <p className="secondary">You've been invited. Sign in with Telegram to accept.</p>
@@ -85,7 +85,7 @@ export function LoginPage({ trip = false }: { trip?: boolean }) {
                     Try the live demo
                   </Link>
                 )}
-                <p className="muted">Already using Nexus? Sign in with Telegram.</p>
+                <p className="muted">Already using Kaya? Sign in with Telegram.</p>
               </>
             )}
           </>

@@ -5,6 +5,7 @@ import { messagesLeft } from "../demo";
 import { openExternal } from "../telegram";
 import { clock, MAX_VOICE_SECONDS, NO_MIC_HINT, canRecord, useVoiceRecorder, type Recorded } from "../useVoiceRecorder";
 import { Icon } from "./Icon";
+import { Kaya } from "./Kaya";
 
 type Message = {
   from: "user" | "bot";
@@ -50,7 +51,7 @@ const SUGGESTIONS = [
 // After this long, the typing bubble also says it's still going.
 const STILL_WORKING_MS = 10_000;
 
-/** Nexus's side of the chat while a reply is worked out: three dots, then a word
+/** Kaya's side of the chat while a reply is worked out: three dots, then a word
  * that it's still going, so a slow reply never looks like nothing is happening. */
 function Typing() {
   const [long, setLong] = useState(false);
@@ -62,8 +63,9 @@ function Typing() {
     <div
       className="msg msg-bot typing"
       role="status"
-      aria-label="Nexus is typing"
+      aria-label="Kaya is typing"
     >
+      <Kaya size={28} className="msg-avatar" lazy />
       <span className="typing-dots" aria-hidden="true">
         <span />
         <span />
@@ -309,7 +311,7 @@ export function ChatDrawer({
         )}
         {messages.length === 0 && (
           <p className="muted">
-            Try "coffee 5.50", "split dinner 90 with Ann and Ben" or "what did I
+            Just ask Kaya. Try "coffee 5.50", "split dinner 90 with Ann and Ben" or "what did I
             spend on food?"
           </p>
         )}
@@ -328,6 +330,7 @@ export function ChatDrawer({
             className={`msg msg-${m.from}`}
             title={m.at ? WHEN.format(new Date(m.at)) : undefined}
           >
+            {m.from === "bot" && <Kaya size={28} className="msg-avatar" lazy />}
             {m.text}
             {m.telegram && <span className="msg-via">on Telegram</span>}
             {m.buttons.length > 0 && (
