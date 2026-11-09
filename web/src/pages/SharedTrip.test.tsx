@@ -79,7 +79,7 @@ describe("the shared page", () => {
     expect(screen.getByText("Shared with you · read only")).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 1 })).toHaveClass("accent-serif");
     expect(document.querySelector(".trip-hero-meta")).toHaveTextContent(/ – .* · Tokyo and Kyoto/);
-    expect(screen.getByText("Shared from Nexus. No money, booking references, notes or travellers are shown.")).toBeInTheDocument();
+    expect(screen.getByText("Shared from Kaya. No money, booking references, notes or travellers are shown.")).toBeInTheDocument();
   });
 
   it("leaves the stops out when it has none", async () => {

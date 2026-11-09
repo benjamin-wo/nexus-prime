@@ -71,7 +71,7 @@ export function inPhoneWebview(): boolean {
 
 /** Said under a finished export when the download may not have started; null elsewhere. */
 export function downloadNote(webview: boolean): string | null {
-  return webview ? "If the download doesn't start, open Nexus in your browser to download it." : null;
+  return webview ? "If the download doesn't start, open Kaya in your browser to download it." : null;
 }
 
 const READY = "nexus:telegram-ready";

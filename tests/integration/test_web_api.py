@@ -291,7 +291,7 @@ async def test_mini_app_rejects_forged_expired_uninvited_and_cross_site(world: W
 
 async def test_bot_offers_the_mini_app(world: World) -> None:
     await asyncio.sleep(0)  # the menu button is set in the background at startup
-    assert world.telegram.menu_button == ("Open Nexus", f"{ORIGIN}/")
+    assert world.telegram.menu_button == ("Open Kaya", f"{ORIGIN}/")
     async with AsyncClient(transport=ASGITransport(app=world.app), base_url=ORIGIN) as client:
         update = {
             "update_id": 1,
@@ -306,7 +306,7 @@ async def test_bot_offers_the_mini_app(world: World) -> None:
             "/telegram/webhook", json=update, headers={"X-Telegram-Bot-Api-Secret-Token": "hook"}
         )
     assert response.status_code == 200
-    assert world.telegram.app_buttons == [(OWNER, "Open Nexus", f"{ORIGIN}/")]
+    assert world.telegram.app_buttons == [(OWNER, "Open Kaya", f"{ORIGIN}/")]
 
 
 async def test_login_rejects_forged_expired_and_cross_site(world: World) -> None:
@@ -576,7 +576,7 @@ async def test_csv_export(world: World) -> None:
     await owner.send("POST", "/api/transactions", {"direction": "in", "amount": "100"})
     response = await owner.get("/api/export.csv", params={"direction": "out"})
     assert response.headers["content-type"].startswith("text/csv")
-    assert 'filename="nexus-ledger-20260928.csv"' in response.headers["content-disposition"]
+    assert 'filename="kaya-ledger-20260928.csv"' in response.headers["content-disposition"]
     lines = response.text.strip().split("\r\n")
     assert len(lines) == 2 and ",'=1+1," in lines[1]
 
@@ -807,7 +807,7 @@ async def test_connect_gmail_from_a_one_time_link(world: World) -> None:
     assert url.startswith(f"{ORIGIN}/connect/gmail?t=")
     link = url.split("t=", 1)[1]
 
-    # The link works in a browser with no Nexus session (opened from Telegram).
+    # The link works in a browser with no Kaya session (opened from Telegram).
     phone = world.browser()
     check = (await phone.get(f"/api/email/link?t={link}")).json()
     assert check == {"valid": True, "account_hint": str(OWNER)[-4:]}
@@ -895,7 +895,7 @@ async def test_the_bot_gives_a_forwarding_address_when_asked(world: World) -> No
 
     world.model.script += [call("test_email_setup"), say("Send the test email now.")]
     [reply] = (await owner.send("POST", "/api/chat", {"message": "test my setup"})).json()
-    assert '"Nexus test receipt"' in world.model.seen[-1][-1].content
+    assert '"Kaya test receipt"' in world.model.seen[-1][-1].content
 
 
 async def test_the_chat_is_kept_and_shown_again(world: World) -> None:
@@ -1154,7 +1154,7 @@ async def test_telegram_updates_default_to_daily_and_can_be_changed(world: World
     assert bad.status_code == 422
 
 
-# --- how Nexus talks --------------------------------------------------------------------
+# --- how Kaya talks --------------------------------------------------------------------
 
 
 PRESET_LIST = [

@@ -105,7 +105,7 @@ describe("GetStarted: each step's state", () => {
     expect(urls()).toContain("/api/transactions?limit=1");
   });
 
-  it("Log one brings the person to the Ask anything box", async () => {
+  it("Log one brings the person to the Just ask Kaya box", async () => {
     serve();
     const input = document.createElement("input");
     input.id = "ask-input";

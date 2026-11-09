@@ -1,7 +1,7 @@
 """Connect Gmail, and the Email page's API.
 
 Connecting runs in whatever browser opens the link, often the phone's browser
-from a Telegram button, where there's no Nexus session. So it's authorised by a
+from a Telegram button, where there's no Kaya session. So it's authorised by a
 one-time link instead:
 
     POST /api/email/link          (signed in) -> a link valid for 10 minutes, once
@@ -63,7 +63,7 @@ async def link(auth: Auth, web: Runtime) -> LinkOut:
 
 class LinkCheckOut(Model):
     valid: bool
-    account_hint: str | None  # the end of the Nexus account's Telegram id
+    account_hint: str | None  # the end of the Kaya account's Telegram id
 
 
 @router.get("/link")
@@ -142,7 +142,7 @@ async def callback(
 
 class ConnectionOut(Model):
     id: UUID
-    provider: str  # gmail, or forward (a Nexus address the user forwards to)
+    provider: str  # gmail, or forward (a Kaya address the user forwards to)
     address: str
     status: str
     last_checked: datetime | None

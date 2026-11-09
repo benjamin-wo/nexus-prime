@@ -241,7 +241,7 @@ export function PaydaySection({ me }: { me: Me }) {
           {error}
         </p>
       )}
-      <p className="caption">Your salary is only what you tell Nexus; it's never guessed from your transactions.</p>
+      <p className="caption">Your salary is only what you tell Kaya; it's never guessed from your transactions.</p>
     </section>
   );
 }

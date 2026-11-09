@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
 import { api, ApiError } from "../api";
+import { Kaya } from "../components/Kaya";
 import { TelegramLogin } from "../components/TelegramLogin";
 
 type Step = "working" | "off" | "limited" | "error";
@@ -45,8 +46,9 @@ export function DemoPage() {
   return (
     <div className="login">
       <section className="card" aria-live="polite">
+        <Kaya big size={150} className="kaya-hero" />
         <p className="caption">
-          Nexus <span style={{ color: "var(--accent)" }}>Prime</span>
+          Just ask <span style={{ color: "var(--accent)" }}>Kaya</span>
         </p>
         {step === "working" && (
           <>

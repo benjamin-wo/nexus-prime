@@ -807,7 +807,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
     # The API's own docs map every route; they aren't served in production.
     hidden = resolved.environment is Environment.PROD
     app = FastAPI(
-        title="Nexus Prime",
+        title="Kaya",
         lifespan=lifespan,
         docs_url=None if hidden else "/docs",
         redoc_url=None if hidden else "/redoc",

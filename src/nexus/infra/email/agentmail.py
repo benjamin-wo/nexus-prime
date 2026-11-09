@@ -49,8 +49,8 @@ class AgentMailInboxes:
     async def create_inbox(self, owner: str) -> tuple[str, str]:
         """A new inbox for ``owner`` (an opaque id). Returns (inbox id, address)."""
         body: dict[str, Any] = {
-            "username": f"nexus-{secrets.token_hex(6)}",
-            "display_name": "Nexus receipts",
+            "username": f"kaya-{secrets.token_hex(6)}",
+            "display_name": "Kaya receipts",
             "client_id": f"nexus-{owner}",  # makes a retried create return the same inbox
         }
         if self._domain:

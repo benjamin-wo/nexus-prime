@@ -179,7 +179,7 @@ _ACT = re.compile(
 
 
 def acts(caption: str | None) -> bool:
-    """Whether the user's own words with an image ask Nexus to do something with it
+    """Whether the user's own words with an image ask Kaya to do something with it
     ("add this bill", "log it", "split with Ann"). Without that, nothing read from an
     image may change their data."""
     return bool(caption and _ACT.search(caption))

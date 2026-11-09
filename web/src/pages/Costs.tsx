@@ -83,7 +83,7 @@ export function CostsPage({ me }: { me: Me }) {
         <div>
           <BackLink to="/settings">Back to Settings</BackLink>
           <h1>Model costs</h1>
-          {!hidden && <p className="muted">What the AI models cost to run Nexus.</p>}
+          {!hidden && <p className="muted">What the AI models cost to run Kaya.</p>}
         </div>
         {!hidden && (
           <div className="filters">

@@ -216,7 +216,7 @@ function ConnectionRow({
   );
 }
 
-/** Every email Nexus checked in the last 30 days, and what became of it. */
+/** Every email Kaya checked in the last 30 days, and what became of it. */
 export function EmailPage({ me }: { me: Me }) {
   const client = useQueryClient();
   const overview = useQuery({ queryKey: ["email"], queryFn: () => api<EmailOverview>("/email") });
@@ -248,7 +248,7 @@ export function EmailPage({ me }: { me: Me }) {
       {data && data.connections.length === 0 && (
         <section className="card">
           <p className="state">
-            No email is connected. To log receipts from email automatically, ask Nexus in chat: "how can I log my
+            No email is connected. To log receipts from email automatically, ask Kaya in chat: "how can I log my
             expenses automatically?"
           </p>
         </section>
@@ -273,7 +273,7 @@ export function EmailPage({ me }: { me: Me }) {
               ))}
             </ul>
             <p className="caption">
-              Disconnecting removes Nexus's access (a forwarding address stops working). Expenses already logged
+              Disconnecting removes Kaya's access (a forwarding address stops working). Expenses already logged
               stay.
             </p>
           </section>

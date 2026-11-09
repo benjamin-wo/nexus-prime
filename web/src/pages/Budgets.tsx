@@ -3,6 +3,7 @@ import { Fragment, type FormEvent, useState } from "react";
 
 import { api, type Budget, type BudgetMonth, type Category, type Me } from "../api";
 import { CategoryTransactions } from "../components/CategoryTransactions";
+import { Kaya } from "../components/Kaya";
 import { level } from "../components/PastBudgets";
 import { formatMoney, isoDay } from "../format";
 
@@ -238,7 +239,10 @@ export function BudgetsSection({ me }: { me: Me }) {
       {none && (
         <div className="budget-first">
           <h3>Set a monthly limit</h3>
-          <p className="muted">Pick what to limit and how much, and I'll tell you when it's getting close.</p>
+          <p className="muted budget-first-text">
+            <Kaya size={44} lazy />
+            <span>Just ask Kaya to set one, or set a limit here and Kaya will tell you when it's getting close.</span>
+          </p>
         </div>
       )}
       {!none && !hasOverall && month.data && budgets.data && <MonthPlan plan={month.data} />}

@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { api, type Me, type Page, type Setup } from "../api";
 import { Block } from "./Block";
 import { Icon } from "./Icon";
+import { Kaya } from "./Kaya";
 
 /** Done: a tick. To do: an empty ring. The state is also said in words for a screen reader. */
 function Tick({ done }: { done: boolean }) {
@@ -15,7 +16,7 @@ function Tick({ done }: { done: boolean }) {
   );
 }
 
-/** Home's "Ask anything" box is where a first expense is typed on this page: bring the person to it. */
+/** Home's "Just ask Kaya" box is where a first expense is typed on this page: bring the person to it. */
 function focusAsk() {
   const box = document.getElementById("ask-input");
   if (!box) return;
@@ -94,7 +95,12 @@ export function GetStarted({ me }: { me: Me }) {
   return (
     <Block
       id="get-started"
-      title="Get started"
+      title={
+        <span className="title-kaya">
+          <Kaya size={30} lazy />
+          Get started
+        </span>
+      }
       className="start-card"
       action={
         <span className="start-head">

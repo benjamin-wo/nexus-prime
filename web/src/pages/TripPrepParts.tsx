@@ -106,7 +106,7 @@ export function AddTodoForm({ onAdd, inputRef }: { onAdd: (text: string, due: st
           Add
         </button>
       </div>
-      <p className="caption">With a date, Nexus reminds you the day before.</p>
+      <p className="caption">With a date, Kaya reminds you the day before.</p>
     </form>
   );
 }
@@ -133,7 +133,7 @@ export function CopyReference({ reference }: { reference: string }) {
   );
 }
 
-/** Logging a cover's cost as an expense: asked first, in place. Nexus only writes it down. */
+/** Logging a cover's cost as an expense: asked first, in place. Kaya only writes it down. */
 export function useCoverLog(tripId: string, cover: Cover, onLogged: (logged: Cover) => void) {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -170,7 +170,7 @@ export function LogConfirm({ cover, log }: { cover: Cover; log: CoverLog }) {
   if (!cover.cost) return null;
   return (
     <div className="confirm-box" role="group" aria-label={`Log ${cover.name}`}>
-      <p>Record {formatMoney(cover.cost)} as spent on Travel? Nexus only records it.</p>
+      <p>Record {formatMoney(cover.cost)} as spent on Travel? Kaya only records it.</p>
       <div className="people-actions">
         <button type="button" className="btn btn-primary" disabled={log.busy} onClick={() => void log.log()}>
           {log.busy ? "Logging…" : "Log it"}

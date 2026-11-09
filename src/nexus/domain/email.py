@@ -34,8 +34,10 @@ SWEEP_BUDGET = timedelta(seconds=30)
 LINK_TTL = timedelta(minutes=10)
 # A forwarding address that hears nothing for this long gets one nudge.
 QUIET_NUDGE = timedelta(days=14)
-# The subject line of a test email ("Nexus test receipt" also passes a receipt filter).
-TEST_SUBJECT = "nexus test"
+# The subject line of a test email ("Kaya test receipt" also passes a receipt filter).
+TEST_SUBJECT = "kaya test"
+# What the same instruction said before the rename; a test email already on its way still counts.
+_OLD_TEST_SUBJECT = "nexus test"
 # Subject words a forwarding filter should match: what a receipt usually says.
 FILTER_WORDS = ("receipt", "invoice", "order", "payment", "transaction", "paid", "purchase")
 
@@ -54,7 +56,7 @@ RECEIPT_QUERY = (
 
 class Provider(StrEnum):
     GMAIL = "gmail"
-    FORWARD = "forward"  # a Nexus address the user forwards receipts to (AgentMail)
+    FORWARD = "forward"  # a Kaya address the user forwards receipts to (AgentMail)
 
 
 class ConnectionStatus(StrEnum):
@@ -278,7 +280,8 @@ def _currency(text: str) -> str | None:
 
 
 def is_test_email(email: FetchedEmail) -> bool:
-    return TEST_SUBJECT in email.subject.casefold()
+    subject = email.subject.casefold()
+    return TEST_SUBJECT in subject or _OLD_TEST_SUBJECT in subject
 
 
 # Mail providers whose "confirm this forwarding address" emails are passed on to

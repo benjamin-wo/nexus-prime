@@ -43,7 +43,7 @@ type Line = { who: "you" | "nexus"; text: string; buttons?: Reply["buttons"] };
 // it; there the field waits for a tap.
 const finePointer = () => typeof window !== "undefined" && window.matchMedia?.("(pointer: fine)").matches === true;
 
-/** Telling Nexus about a booking in a sentence, without leaving the trip. What it
+/** Telling Kaya about a booking in a sentence, without leaving the trip. What it
  * reads is shown, and anything it changes waits for Confirm, as in the chat. */
 function TypeIt({ trip, preset, onChanged }: { trip: Trip; preset: AddPreset | null; onChanged: () => void }) {
   const [text, setText] = useState("");
@@ -65,7 +65,7 @@ function TypeIt({ trip, preset, onChanged }: { trip: Trip; preset: AddPreset | n
       setLines((l) => [...l, ...replies.map((r) => ({ who: "nexus" as const, text: r.text, buttons: r.buttons }))]);
       onChanged();
     } catch (e) {
-      setLines((l) => [...l, { who: "nexus", text: e instanceof Error ? e.message : "Couldn't reach Nexus. Try again." }]);
+      setLines((l) => [...l, { who: "nexus", text: e instanceof Error ? e.message : "Couldn't reach Kaya. Try again." }]);
     } finally {
       setBusy(false);
     }
@@ -91,7 +91,7 @@ function TypeIt({ trip, preset, onChanged }: { trip: Trip; preset: AddPreset | n
   return (
     <div className="type-it">
       {lines.length > 0 && (
-        <div className="type-it-lines" aria-live="polite" aria-label="Nexus">
+        <div className="type-it-lines" aria-live="polite" aria-label="Kaya">
           {lines.map((line, i) => (
             <div key={i} className={`type-it-line ${line.who}`}>
               <p>{line.text}</p>
@@ -111,7 +111,7 @@ function TypeIt({ trip, preset, onChanged }: { trip: Trip; preset: AddPreset | n
       )}
       <form className="type-it-form" onSubmit={send}>
         <label className="sr-only" htmlFor="type-it-input">
-          Tell Nexus about a booking
+          Tell Kaya about a booking
         </label>
         <input
           id="type-it-input"

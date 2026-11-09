@@ -163,7 +163,7 @@ describe("the Money overview for a past month", () => {
     const { calls } = serve();
     open("/accounting?month=2026-10");
     await screen.findByText(/less than September/);
-    for (const name of ["Latest", "Who owes you", "From Nexus"]) expect(screen.queryByRole("region", { name })).toBeNull();
+    for (const name of ["Latest", "Who owes you", "From Kaya"]) expect(screen.queryByRole("region", { name })).toBeNull();
     expect(screen.queryByText(/Budget left|Left to spend|Still due/)).toBeNull();
     expect(calls.some((c) => c.path === "/ious")).toBe(false);
     // Under the chart only "a usual month" is left.

@@ -28,7 +28,7 @@ def page_images(data: bytes, password: str | None = None) -> list[bytes]:
     try:
         if len(pdf) > MAX_SCANNED_PAGES:
             raise InvalidInput(
-                f"that scan has {len(pdf)} pages; Nexus reads up to {MAX_SCANNED_PAGES} at a "
+                f"that scan has {len(pdf)} pages; Kaya reads up to {MAX_SCANNED_PAGES} at a "
                 "time. Split it into parts, or use your bank's CSV export"
             )
         images: list[bytes] = []

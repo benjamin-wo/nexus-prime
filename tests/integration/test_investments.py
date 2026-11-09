@@ -1,5 +1,5 @@
 """Holdings from a broker screenshot (checked by the user before saving) and from
-trades the user tells Nexus about. Every ticker and figure here is made up."""
+trades the user tells Kaya about. Every ticker and figure here is made up."""
 
 from datetime import date, timedelta
 from decimal import Decimal
@@ -318,7 +318,7 @@ async def test_dividends_on_shares_held_when_they_went_ex(
         uow(), holder.id, investment_cases.Side.SELL, "NVDA", Decimal(4), usd("120"),
         now=NOW, traded_on=date(2026, 9, 20),
     )  # fmt: skip
-    # Saved today with no earlier trades: Nexus can't know they held it in September.
+    # Saved today with no earlier trades: Kaya can't know they held it in September.
     await trade(uow, newcomer.id, "buy", "NVDA", "50", "120")
     prices = FakePrices(
         {"NVDA": {date(2026, 6, 15): "110", date(2026, 9, 15): "125", date(2026, 9, 25): "130"}},

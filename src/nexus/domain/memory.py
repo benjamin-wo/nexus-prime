@@ -1,4 +1,4 @@
-"""What Nexus remembers about a user, from the user's own words.
+"""What Kaya remembers about a user, from the user's own words.
 
 Three kinds: facts about the user and their world ("Ann is my sister"),
 preferences about how they like things done ("split dinners with Ann 50/50"),

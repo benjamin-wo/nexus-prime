@@ -1,10 +1,10 @@
 # Security review (M10, 1 October 2026)
 
-What Nexus protects, how, what this review changed, and what's left. Reviewed against the code at `86b1752`.
+What Kaya protects, how, what this review changed, and what's left. Reviewed against the code at `86b1752`.
 
 ## What's at stake
 
-A small number of invited people's money records: transactions, budgets, bills, IOUs, receipt photos, statements they import, connected mailboxes, and what Nexus remembers about them. The things that would hurt most: one user seeing or changing another's data, someone outside the allowlist getting in, credentials leaking (the bot token, API keys, Gmail refresh tokens), and the model being steered into changing data the user didn't ask to change.
+A small number of invited people's money records: transactions, budgets, bills, IOUs, receipt photos, statements they import, connected mailboxes, and what Kaya remembers about them. The things that would hurt most: one user seeing or changing another's data, someone outside the allowlist getting in, credentials leaking (the bot token, API keys, Gmail refresh tokens), and the model being steered into changing data the user didn't ask to change.
 
 ## Controls in place
 
@@ -46,7 +46,7 @@ A small number of invited people's money records: transactions, budgets, bills, 
 
 - **Signed logins can be replayed for up to 24 hours** if someone captures one. That's Telegram's design; the window could be shortened at the cost of sign-ins from a stale page failing.
 - **Rate limits are in memory**, per process: a restart resets them, and more than one instance would each count separately. Fine for one instance; move them to Postgres before scaling out.
-- **The chat is kept for the web chat window**: the newest 500 lines per user (their messages and Nexus's replies; no images, emails or notifications), each user's alone. Card numbers in them are cut down to their last four digits; lines kept before that change are not rewritten.
+- **The chat is kept for the web chat window**: the newest 500 lines per user (their messages and Kaya's replies; no images, emails or notifications), each user's alone. Card numbers in them are cut down to their last four digits; lines kept before that change are not rewritten.
 - **The model provider sees what the model sees**: messages, the money snapshot, memories, receipt and email text, and the page images of a scanned statement being imported. OpenRouter's privacy settings exclude providers that train on prompts.
 - **A thread that a crafted PDF ties up** keeps running after the 30-second limit returns; the size and page caps bound it.
 - **The old database is kept read-only** for the legacy import; it's a separate Railway service and isn't reached at runtime.

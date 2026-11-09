@@ -1,4 +1,4 @@
-"""The chat as the user saw it: their messages and Nexus's replies, on the web or
+"""The chat as the user saw it: their messages and Kaya's replies, on the web or
 Telegram. Kept so the web chat can show the conversation again; notifications
 (alerts, reminders, digests) are not part of it."""
 

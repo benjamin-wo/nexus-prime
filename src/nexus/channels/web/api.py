@@ -1179,7 +1179,7 @@ async def export_csv(
     return Response(
         content=body,
         media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="nexus-ledger-{stamp}.csv"'},
+        headers={"Content-Disposition": f'attachment; filename="kaya-ledger-{stamp}.csv"'},
     )
 
 
@@ -1914,7 +1914,7 @@ async def forget_import_layout(layout_id: UUID, auth: Auth, web: Runtime) -> Non
     await statement_cases.forget_layout(web.uow(), auth.user.id, layout_id)
 
 
-# --- what Nexus remembers ------------------------------------------------------------
+# --- what Kaya remembers ------------------------------------------------------------
 
 
 class MemoryOut(Model):
@@ -2545,7 +2545,7 @@ async def set_notifications(body: UpdatesIn, auth: Auth, web: Runtime) -> Update
     return _updates_out(updated)
 
 
-# --- how Nexus talks ----------------------------------------------------------------------
+# --- how Kaya talks ----------------------------------------------------------------------
 
 
 class VoicePresetOut(Model):
@@ -2661,7 +2661,7 @@ class NotificationOut(Model):
 
 @router.get("/notifications/history")
 async def notification_history(auth: Auth, web: Runtime) -> list[NotificationOut]:
-    """What Nexus meant to tell the user on Telegram in the last 30 days, newest first."""
+    """What Kaya meant to tell the user on Telegram in the last 30 days, newest first."""
     found = await message_cases.history(web.uow(), auth.user.id, now=web.clock())
     return [
         NotificationOut(

@@ -15,6 +15,7 @@ import {
   type Wallet,
 } from "../api";
 import { Icon } from "../components/Icon";
+import { Kaya } from "../components/Kaya";
 import { Menu } from "../components/Menu";
 import { MoneyTrail } from "../components/MoneyTrail";
 import { Sheet } from "../components/Sheet";
@@ -411,7 +412,14 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
         {page.isLoading && <p className="state">Loading…</p>}
         {page.isError && <p className="state error-text">Couldn't load transactions.</p>}
         {page.data && items.length === 0 && (
-          <p className="state">{filtered ? "Nothing matches these filters." : "No transactions yet."}</p>
+          filtered ? (
+            <p className="state">Nothing matches these filters.</p>
+          ) : (
+            <p className="state state-kaya">
+              <Kaya size={44} lazy />
+              <span>No transactions yet. Just ask Kaya to log one, e.g. "kopi 4.20".</span>
+            </p>
+          )
         )}
         {items.length > 0 && (
           <div className="table-wrap">

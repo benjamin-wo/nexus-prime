@@ -151,7 +151,7 @@ async def test_strangers_and_groups_are_not_served(bot: Bot, uow: UowFactory) ->
     assert await find_telegram_user(uow(), 999) is None
     assert await bot.post(bot.text("coffee 5", chat_type="group")) == 200
     assert len(bot.telegram.sent) == 1
-    assert bot.telegram.typing == []  # nothing shows a stranger Nexus is working
+    assert bot.telegram.typing == []  # nothing shows a stranger Kaya is working
 
 
 async def test_text_round_trip_and_replayed_update(
@@ -199,6 +199,17 @@ async def test_menu_and_quick_actions(bot: Bot) -> None:
     assert {b.data for row in menu.buttons for b in row} >= {"qa:summary", "act:undo"}
     await bot.post(bot.press("qa:help"))
     assert bot.telegram.sent[-1].text.startswith("Just tell me")
+
+
+async def test_start_welcomes_and_help_has_the_tagline(bot: Bot) -> None:
+    await bot.post(bot.text("/start"))
+    welcome = bot.telegram.sent[-1]
+    assert welcome.text.startswith("Hi, I'm Kaya") and "Just ask me" in welcome.text
+    assert welcome.buttons is not None
+    await bot.post(bot.text("/menu"))
+    assert bot.telegram.sent[-1].text == "What would you like to do?"
+    await bot.post(bot.press("qa:help"))
+    assert "Just ask Kaya" in bot.telegram.sent[-1].text
 
 
 async def test_an_old_button_press_still_works(bot: Bot) -> None:

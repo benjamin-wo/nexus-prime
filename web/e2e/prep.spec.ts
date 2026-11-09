@@ -158,7 +158,7 @@ test("travel insurance is added from Add to prep, counted under Money, and logge
   // Log it asks first; Not now leaves it as it was.
   await paid.getByRole("button", { name: "Log it: Harbour Cover" }).click();
   const confirm = paid.getByRole("group", { name: "Log Harbour Cover" });
-  await expect(confirm).toContainText("Record SGD 89.00 as spent on Travel? Nexus only records it.");
+  await expect(confirm).toContainText("Record SGD 89.00 as spent on Travel? Kaya only records it.");
   await confirm.getByRole("button", { name: "Not now" }).click();
   await expect(confirm).toHaveCount(0);
   expect(state.coverItems.trip1 ?? []).toHaveLength(0);

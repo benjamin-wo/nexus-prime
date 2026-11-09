@@ -86,7 +86,7 @@ describe("the headline", () => {
     expect(headline()?.textContent).not.toMatch(/left/);
     expect(await screen.findByRole("link", { name: "Set a budget" })).toHaveAttribute("href", "/accounting/budgets");
     // The big "Set a monthly budget" card is gone, and so is the Log expense button.
-    expect(screen.queryByRole("region", { name: "From Nexus" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "From Kaya" })).toBeNull();
     expect(screen.queryByText(/Set a monthly budget/)).toBeNull();
     expect(screen.queryByRole("button", { name: "Log expense" })).toBeNull();
   });

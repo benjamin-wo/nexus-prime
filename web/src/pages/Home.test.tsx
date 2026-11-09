@@ -149,7 +149,7 @@ describe("Home: the brief", () => {
       next: trip("upcoming"),
     });
     renderHome();
-    const hero = await screen.findByRole("region", { name: "Nexus" });
+    const hero = await screen.findByRole("region", { name: "Kaya" });
     await waitFor(() => expect(hero).toHaveTextContent("NVDA is down 5% today."));
     expect(hero).toHaveTextContent(/NVDA is down 5% today\. Your Tokyo trip is in 12 days\. 1 thing needs you below\./);
   });
@@ -157,7 +157,7 @@ describe("Home: the brief", () => {
   it("leaves the market out when nothing moved much", async () => {
     serve({ today: session([mover("NVDA", "1.1")]) });
     renderHome();
-    const hero = await screen.findByRole("region", { name: "Nexus" });
+    const hero = await screen.findByRole("region", { name: "Kaya" });
     await waitFor(() => expect(hero).toHaveTextContent("Nothing needs you right now."));
     expect(hero).not.toHaveTextContent("NVDA");
   });
@@ -168,11 +168,11 @@ describe("Home: the hero's buttons", () => {
     serve();
     const onLog = vi.fn();
     renderHome(vi.fn(), onLog);
-    const hero = await screen.findByRole("region", { name: "Nexus" });
+    const hero = await screen.findByRole("region", { name: "Kaya" });
     // A quick manual entry beside the chat, for when there's no time to chat.
     await userEvent.click(within(hero).getByRole("button", { name: "Log expense" }));
     expect(onLog).toHaveBeenCalledOnce();
-    expect(screen.getByPlaceholderText(/^Ask, or tell me what you spent/)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/^Just ask Kaya… e.g./)).toBeInTheDocument();
     expect(within(hero).getByRole("link", { name: "Notifications" })).toHaveAttribute("href", "/settings/notifications");
     expect(within(hero).getByRole("link", { name: "Settings" })).toHaveAttribute("href", "/settings");
   });
@@ -305,7 +305,7 @@ describe("Home: trip mode", () => {
     const needs = screen.getByRole("region", { name: "Needs you" });
     expect(card.compareDocumentPosition(needs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.queryByRole("region", { name: "Next trip" })).toBeNull();
-    expect(screen.getByRole("region", { name: "Nexus" })).toHaveTextContent("You're on day 3 of 6 in Tokyo.");
+    expect(screen.getByRole("region", { name: "Kaya" })).toHaveTextContent("You're on day 3 of 6 in Tokyo.");
   });
 
   it("leaves out what the trip's data does not have", async () => {

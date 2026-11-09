@@ -2,7 +2,7 @@
 And reading pages by address (its extract endpoint), for news articles.
 
 A basic search costs one credit and returns each page's main text in the same call,
-so nothing is fetched from the pages by Nexus itself. For news from today or this week
+so nothing is fetched from the pages by Kaya itself. For news from today or this week
 it searches Tavily's news topic over the last day or week, whose results say when each
 was published. A basic extract costs one
 credit for every five pages it reads; a page it can't read costs nothing. Only the

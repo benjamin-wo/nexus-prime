@@ -14,7 +14,7 @@ import { VoiceCard } from "./Voice";
 import { WalletsSection } from "./Wallets";
 import { YourDataSection } from "./YourData";
 
-/** Whether Nexus messages the user on Telegram when someone else changes a trip they
+/** Whether Kaya messages the user on Telegram when someone else changes a trip they
  * share (at most one message per trip every 30 minutes). */
 function TripAlertsSection() {
   const client = useQueryClient();
@@ -69,7 +69,7 @@ function TripAlertsSection() {
   );
 }
 
-/** The zone Nexus counts "today" in. It follows the phone; this is where to see why, pick another or go back home. */
+/** The zone Kaya counts "today" in. It follows the phone; this is where to see why, pick another or go back home. */
 export function TimeZoneSection({ me }: { me: Me }) {
   const client = useQueryClient();
   const user = me.user;
@@ -107,7 +107,7 @@ export function TimeZoneSection({ me }: { me: Me }) {
     <section className="card" aria-labelledby="time-zone">
       <div className="card-head">
         <h2 id="time-zone">Time zone</h2>
-        <span className="caption">Where Nexus counts your day</span>
+        <span className="caption">Where Kaya counts your day</span>
       </div>
       <div className="setting tz-now">
         <p>
@@ -162,7 +162,7 @@ export function TimeZoneSection({ me }: { me: Me }) {
               type="button"
               className="btn btn-primary btn-small"
               disabled={busy || !choice}
-              onClick={() => void run(() => setTimezone(choice, "manual"), `Saved. Nexus now uses ${friendlyZone(choice)} time.`)}
+              onClick={() => void run(() => setTimezone(choice, "manual"), `Saved. Kaya now uses ${friendlyZone(choice)} time.`)}
             >
               Save
             </button>
@@ -204,13 +204,13 @@ const SECTIONS: Section[] = [
   { slug: "time-zone", title: "Time zone", group: "Notifications", render: (me) => <TimeZoneSection me={me} /> },
   { slug: "shared-trips", title: "Shared trips", group: "Notifications", notDemo: true, render: () => <TripAlertsSection /> },
   { slug: "notifications", title: "Notifications", group: "Notifications" },
-  { slug: "voice", title: "How Nexus talks", group: "Notifications", render: () => <VoiceCard /> },
+  { slug: "voice", title: "How Kaya talks", group: "Notifications", render: () => <VoiceCard /> },
   { slug: "email", title: "Receipts by email", group: "Connections", notDemo: true },
   { slug: "import", title: "Import a statement", group: "Connections" },
   { slug: "categories", title: "Categories", group: "Your data", render: () => <CategoriesSection /> },
   { slug: "wallets", title: "Wallets", group: "Your data", render: (me) => <WalletsSection me={me} /> },
   { slug: "rules", title: "Category rules", group: "Your data", render: () => <RulesSection /> },
-  { slug: "memory", title: "What Nexus remembers", group: "Your data", render: () => <MemorySection /> },
+  { slug: "memory", title: "What Kaya remembers", group: "Your data", render: () => <MemorySection /> },
   { slug: "data", title: "Download or delete", group: "Your data", render: () => <YourDataSection /> },
   { slug: "costs", title: "Model costs", group: "Your data", ownerOnly: true },
 ];

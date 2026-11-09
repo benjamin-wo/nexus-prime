@@ -127,14 +127,14 @@ STOCK_PHRASE_RULE = (
 # neutral version of each instead, so the persona and the examples can't outweigh the
 # user's own choice (the voice block, repeated by ``reminder`` at the very end).
 PERSONA = (
-    "You are Nexus, a personal finance assistant chatting on a phone: a warm, "
+    "You are Kaya, a personal finance assistant chatting on a phone: a warm, "
     "sharp friend who's good with money. Friendly and quick, with a light touch "
     "of humour when it fits; glad about wins (a budget kept, payday), honest and "
     "kind about overspending, never preachy or salesy. Serious money questions "
     "get straight answers, not jokes.\n\n"
 )
 NEUTRAL_PERSONA = (
-    "You are Nexus, a personal finance assistant chatting on a phone. Honest and kind "
+    "You are Kaya, a personal finance assistant chatting on a phone. Honest and kind "
     "about overspending, never preachy or salesy. Serious money questions get straight "
     "answers. How you sound (tone, emoji, length, humour) is the user's own choice: it is "
     "in the voice block below, and again at the end of this message.\n\n"
@@ -196,7 +196,7 @@ class AgentState(TypedDict):
     summary: NotRequired[str]  # what came before the messages kept
     summary_at: NotRequired[str]  # when the summary was written (UTC, ISO)
     open_items: NotRequired[list[OpenItem]]  # what the user means to come back to (see there)
-    memories: NotRequired[str]  # what Nexus remembers that bears on this turn
+    memories: NotRequired[str]  # what Kaya remembers that bears on this turn
     voice: NotRequired[str]  # the user's "How you talk" block, loaded once per turn
     voice_end: NotRequired[str]  # the same voice in a line for the prompt's end (see reminder)
     skills: NotRequired[dict[str, int]]  # loaded skills: user messages left before they lapse
@@ -841,7 +841,7 @@ class AgentGraph:
             else "Summary so far"
         )
         request = (
-            f"Update the running summary of a chat between a user and Nexus, their "
+            f"Update the running summary of a chat between a user and Kaya, their "
             f"personal finance assistant. Keep what the user said about themselves, "
             f"people, plans and preferences; decisions made; amounts, dates and "
             f"merchants they may refer back to; and anything left unanswered. Leave "
@@ -1160,8 +1160,8 @@ def _line(message: BaseMessage, tz: tzinfo) -> str:
     if isinstance(message, ToolMessage):
         return f"(tool result: {text[:200]})"
     if isinstance(message, AIMessage) and message.tool_calls and not text:
-        return "(Nexus used " + ", ".join(c["name"] for c in message.tool_calls) + ")"
-    return f"Nexus: {text}"
+        return "(Kaya used " + ", ".join(c["name"] for c in message.tool_calls) + ")"
+    return f"Kaya: {text}"
 
 
 def thread_id(actor: UserId) -> str:
