@@ -1924,6 +1924,8 @@ test("a booking screenshot goes on the itinerary with its reference", async ({ p
 });
 
 test("the trip overview: getting ready, places to visit, and labelled days", async ({ page }) => {
+  // The trip is still to come (on its first day the plan shows "Today", not "Day 1").
+  await page.clock.setFixedTime(new Date("2026-11-01T04:00:00Z"));
   const state = await fakeApi(page);
   await addTrip(page, "Seoul", "2026-11-10", "2026-11-13");
   await expect.poll(() => state.trips[0]).toMatchObject({ currency: "KRW" });
